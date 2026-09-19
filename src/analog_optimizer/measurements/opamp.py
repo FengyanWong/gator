@@ -8,7 +8,7 @@ from .ac import measure_ac
 from analog_optimizer.backends.spectre_validation import validate_completion
 
 
-def analyze(job, *, result_name="result.json"):
+def analyze(job, *, result_name="result.json", mos_names=tuple(f'M{i}' for i in range(1, 6))):
     from virtuoso_bridge.spectre.psf import read_psf_ascii, result_file, scalar, vector, frequency_hz
     result = json.loads((job / result_name).read_text())
     if result['status'] != 'success':
@@ -34,9 +34,9 @@ def analyze(job, *, result_name="result.json"):
             raise ValueError('Monte Carlo requires an explicit per-sample measurement reader')
         if not math.isclose(dc_values['VDD'], condition['corner']['supply_v'], rel_tol=1e-6, abs_tol=1e-9):
             raise ValueError('Measured VDD differs from the requested PVT condition')
-    operating_points = {f'XU1.M{i}': {key: scalar(op, f'XU1.M{i}:{key}')
+    operating_points = {f'XU1.{name}': {key: scalar(op, f'XU1.{name}:{key}')
                         for key in ('ids', 'gm', 'gds', 'vgs', 'vds', 'vth', 'vdsat', 'region')}
-                        for i in range(1, 6)}
+                        for name in mos_names}
     metrics = {**response, 'supply_current_a': -dc_values['VDD:p'],
                'supply_power_w': -dc_values['VDD:p'] * dc_values['VDD'],
                'output_dc_v': dc_values['VOUT']}

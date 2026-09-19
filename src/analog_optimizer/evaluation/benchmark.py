@@ -340,8 +340,10 @@ def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance
                 env = env_factory(task, steps, directory / 'environments')
             else:
                 env = env_factory.create_recorded(task, steps, directory / 'environments', phase_recorder)
+            check = (baseline_check.for_task(task) if hasattr(baseline_check, 'for_task')
+                     else baseline_check)
             summary = run_episode(env, task, method, batch_size=settings['batch_size'],
-                                  baseline_check=baseline_check, history_limit=limits.history_limit,
+                                  baseline_check=check, history_limit=limits.history_limit,
                                   checkpoints=checkpoints, update_recorder=update_recorder, **kwargs)
             if phase_recorder is not None:
                 summary['recording_run_id'] = phase_recorder.run_id

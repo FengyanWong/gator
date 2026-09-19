@@ -102,11 +102,28 @@ def build(client, cfg, library, remote_library_path, output):
         ('M4', cfg['pmos_cell'], 3.0, 3.0, 'MY', {'D': 'VOUT', 'G': 'NLOAD', 'S': 'VDD', 'B': 'VDD'}, 'load'),
         ('M5', cfg['nmos_cell'], 1.5, 0.0, 'R0', {'D': 'NTAIL', 'G': 'VBIAS', 'S': 'VSS', 'B': 'VSS'}, 'tail'),
     ]
+    two_stage = cfg.get('topology') == 'two_stage_miller'
+    if two_stage:
+        # The second common-source stage inverts; swap the first-stage inputs
+        # to retain the measured non-inverting VOUT/(VINP-VINN) convention.
+        devices[0][5]['G'] = 'VINN'
+        devices[1][5].update(G='VINP', D='NSTAGE')
+        devices[3][5]['D'] = 'NSTAGE'
+        devices += [
+            ('M6', cfg['pmos_cell'], 6.0, 3.0, 'R0',
+             {'D': 'VOUT', 'G': 'NSTAGE', 'S': 'VDD', 'B': 'VDD'}, 'output_p'),
+            ('M7', cfg['nmos_cell'], 6.0, 0.0, 'R0',
+             {'D': 'VOUT', 'G': 'VBIAS', 'S': 'VSS', 'B': 'VSS'}, 'output_n'),
+        ]
     with client.schematic.create(library, core, timeout=90) as sch:
         for name, cell, x, y, orient, terms, _ in devices:
             sch.add(inst(cfg['pdk_library'], cell, 'symbol', name, x, y, orient))
             for term, net in terms.items():
                 sch.add(label(name, term, net))
+        if two_stage:
+            sch.add(inst('analogLib', 'cap', 'symbol', 'CC', 4.5, 1.5, 'R0'))
+            sch.add(label('CC', 'PLUS', 'NSTAGE'))
+            sch.add(label('CC', 'MINUS', 'VOUT'))
         for i, (name, direction) in enumerate([
             ('VINP', 'input'), ('VINN', 'input'), ('VBIAS', 'input'),
             ('VDD', 'inputOutput'), ('VSS', 'inputOutput'), ('VOUT', 'output'),
@@ -115,10 +132,16 @@ def build(client, cfg, library, remote_library_path, output):
     require_ok(client.open_window(library, core, view='schematic'))
     for name, _, _, _, _, _, group in devices:
         set_gpdk_mos(client, library, core, name, cfg[f'{group}_width'], cfg[f'{group}_length'])
+    if two_stage:
+        set_instance_params(client, 'CC', param_filters=None, strict=True, c=cfg['compensation_capacitance'])
     actual = client.schematic.read(library, core, include_positions=True, param_filters=None)
     by_name = {item['name']: item for item in actual['instances']}
-    if set(by_name) != {d[0] for d in devices}:
+    if set(by_name) != {d[0] for d in devices} | ({'CC'} if two_stage else set()):
         raise RuntimeError('Core instance readback mismatch')
+    if two_stage and (by_name['CC']['terms'] != {'PLUS': 'NSTAGE', 'MINUS': 'VOUT'} or not
+                     math.isclose(evaluate(by_name['CC']['params']['c'], {}.__getitem__),
+                                  evaluate(cfg['compensation_capacitance'], {}.__getitem__), rel_tol=1e-9)):
+        raise RuntimeError('Compensation capacitor readback mismatch')
     for name, _, _, _, _, terms, group in devices:
         if by_name[name]['terms'] != terms:
             raise RuntimeError(f'Terminal readback mismatch: {name}: {by_name[name]["terms"]}')

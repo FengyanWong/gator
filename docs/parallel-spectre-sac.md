@@ -80,4 +80,4 @@ checkpoint 继续支持完成轮次/完成运行的恢复，从新 episode reset
 
 测试需要本机 Unix socket，因此在允许本机 IPC 的执行环境运行。[JUnit 记录](../artifacts/local/native-cdf-regression-tests.xml)包含逐项结果。新增的四 worker 测试分别覆盖 JSON 与 SQLite 路径，实际创建独立 Python 进程，确认同一准备进程串行处理 12 个候选、仿真并发峰值为 4、两阶段存在时间重叠、8 条 transition 的尺寸和指标归属正确；其中的仿真是离线夹具。
 
-本机已安装 bridge 0.8.0，但沙箱内外只读检查均确认选定配置没有存活的既有隧道。本轮未启动隧道、未调用真实 Spectre（0 次），新版 CDF/原生导出/并行 Spectre 的真实闭环仍待连接恢复后验收。[连接检查记录](../artifacts/local/native-cdf-connection-check.json)。旧版两 worker 和有限表的真实验收不能证明新版吞吐。
+实现完成时 bridge 隧道尚未运行，当时真实调用为 0；[连接检查记录](../artifacts/local/native-cdf-connection-check.json)保留为历史证据。随后恢复连接并按用户要求完成新版真实验收：**24 次 Spectre、18 条新 transition、16 次 SAC 更新**，覆盖单 worker、默认四 worker 和 checkpoint 续跑。CDF/原生导出、环境归属、checkpoint、数据库与清理审计均通过，三个阶段后完整原理图均恢复一致。四 worker 阶段实测 Spectre 并发峰值为 **2**，未实测四路同时占用；详细耗时和限制见 [逐候选真实验收](native-cdf-real-verification.md)。

@@ -1,0 +1,23 @@
+{
+  "pdk_library": "gpdk045",
+  "nmos_cell": "nmos1v",
+  "pmos_cell": "pmos1v",
+  "core_cell": "ota7_m5_v2",
+  "testbench_cell": "tb_ota7_m5_ac_v2",
+  "input_width": "4u",
+  "input_length": "500n",
+  "load_width": "8u",
+  "load_length": "500n",
+  "tail_width": "4u",
+  "tail_length": "1u",
+  "supply_v": "1.0",
+  "common_mode_v": "0.6",
+  "bias_v": "0.4",
+  "load_capacitance": "1p",
+  "topology": "two_stage_miller",
+  "output_p_width": "8u",
+  "output_p_length": "500n",
+  "output_n_width": "2u",
+  "output_n_length": "1u",
+  "compensation_capacitance": "1p"
+}

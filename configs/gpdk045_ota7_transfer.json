@@ -1,0 +1,14 @@
+{
+  "version": "m5-real-topology-v1",
+  "purpose": "Prospectively frozen nominal pipeline benchmark after seven declared baseline/domain qualification calls. The two-stage topology is held out from source training, but was inspected for commissioning and specification design; this is not a blind or broad generalization benchmark. No selection or retuning using benchmark results.",
+  "lineage": "Five-MOS current-mirror OTA plus PMOS common-source output stage, NMOS sink, fixed Miller capacitor and swapped input polarity. Same GPDK045, same OTA family. Seven MOS plus compensation capacitor; action dimension 1 -> 2.",
+  "id": "ota7-test-topology",
+  "specs": [
+    {"metric_id": "gain_db_at_start", "unit": "dB", "comparator": "min", "lower": 53.30, "scale": 1.0},
+    {"metric_id": "unity_gain_hz", "unit": "Hz", "comparator": "min", "lower": 3240000.0, "scale": 1000000.0},
+    {"metric_id": "phase_margin_estimate_deg", "unit": "deg", "comparator": "min", "lower": 30.0, "scale": 10.0},
+    {"metric_id": "supply_power_w", "unit": "W", "comparator": "range", "lower": 0.0, "upper": 0.00000324, "scale": 0.000001},
+    {"metric_id": "output_dc_v", "unit": "V", "comparator": "range", "lower": 0.3, "upper": 0.5, "scale": 1.0},
+    {"metric_id": "unity_downward_crossings", "unit": "count", "comparator": "range", "lower": 1.0, "upper": 1.0, "scale": 1.0}
+  ]
+}

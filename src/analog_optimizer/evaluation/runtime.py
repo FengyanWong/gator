@@ -62,3 +62,35 @@ class BaselineCheck:
             self.netlist_sha256 = record['netlist_sha256']
         elif record['netlist_sha256'] != self.netlist_sha256:
             raise RuntimeError('Baseline netlist differs from the verified reference')
+
+
+@dataclass
+class TaskBaselineChecks:
+    """Each real circuit retains its own verified metrics and executed deck."""
+    checks: dict
+
+    def for_task(self, task):
+        return self.checks[task.id]
+
+
+@dataclass(frozen=True)
+class MultiCircuitFactory:
+    """Sequential native CDF episodes across independently qualified circuits.
+
+    Each episode acquires the shared Virtuoso session lock and restores its
+    circuit on exit. No overlapping preparation services own that session.
+    """
+    factories: dict
+    parallel_safe: bool = False
+
+    def __call__(self, task, steps, output):
+        return self.create_recorded(task, steps, output, None)
+
+    def create_recorded(self, task, steps, output, recorder):
+        from analog_optimizer.envs.sizing import graph_contract
+        factory = self.factories[task.id]
+        if factory.origin != 'real' or factory.preparation is not None:
+            raise ValueError('Multi-circuit factory requires serialized native real backends')
+        if graph_contract(task.graph) != graph_contract(factory.profile.optimization_graph()):
+            raise ValueError('Task graph does not match its qualified circuit profile')
+        return factory.create_recorded(task, steps, output, recorder)

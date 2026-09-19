@@ -29,6 +29,9 @@ def equal(a, b):
 class Gpdk045OtaProfile:
     """Only the input-pair width is writable; all other exported fields are fixed."""
 
+    writable_keys = INPUT_KEYS
+    mos_names = tuple(f'M{i}' for i in range(1, 6))
+
     def __init__(self, *, design_file: Path, mapping_file: Path,
                  reference_structure: Path, reference_readback: Path,
                  width_bounds=(3.6e-6, 4.4e-6), width_step=5e-9,

@@ -160,3 +160,21 @@
 - 默认和硬上限均为 4；可选 1–4。候选/环境身份、原始 proposal、实际 CDF 参数、派生量及网表摘要保留；同步轮次稳定入池、中央 SAC、记录与故障恢复规则继续有效。旧表方案 checkpoint 因实验和源码签名变化不自动迁移。
 - 实现及验收见 [逐候选 CDF 与并行 Spectre](parallel-spectre-sac.md)。
 - 完整离线回归 **426 passed、0 failed、0 skipped**（177.21 秒），新增测试包含 JSON/SQLite 四 worker 准备流水线。bridge 0.8.0 已安装，但既有隧道未运行；本轮真实调用为 0，新版真实闭环未验收。
+
+# 逐候选 CDF 与并行 Spectre 真实验收 — 2026-09-19
+
+- 用户恢复 bridge 连接后明确要求真实验收。使用已有专用 OTA、M1/M2 匹配宽度组及 nominal 条件，完成单 worker、默认四 worker、checkpoint 续跑三个阶段：合计 **24 次 Spectre、18 条新 transition、16 次实际 SAC 更新**，失败、重试、不确定调用和缓存命中均为 0。
+- 24 个实际候选均经真实 CDF 回写、读回与原生导出。逐条参数、派生 geometry、图状态、网表摘要、reward 和环境轨迹核对通过；三个阶段后完整原理图快照相同，输入对恢复 4 µm。PDK 模型文件摘要未变。
+- 四 worker 阶段进程采样覆盖 16 个 Spectre PID，45 条记录看到两个 Spectre 同时运行；实测峰值 **2**，未超过硬上限 4。本轮不证明四路满载或加速比，不扩展参数域、PVT/MC、真实新拓扑或 M6。
+- 三个最终 checkpoint 精确恢复下一次 replay 采样、loss、网络和 optimizer 状态；审计只在内存执行额外更新，不追加仿真。每 run 保留 2 full checkpoint、1 final policy 及 initial/best 原生网表与 AC/DC 附件。24 个本地和 24 个远端 owned workspace 已清理，数据库完整且 pending=0。
+- 持久记录位于 WSL ext4 `native-cdf-real-31afdfba86bb`，详见 [真实验收记录](native-cdf-real-verification.md)。本轮未修改生产源码；此前完整离线回归 426 项通过，真实验收脚本及只读审计作为本机产物保存。
+
+
+## M5 真实同类新拓扑补验（2026-09-19）
+
+- 用户要求“做 M5 剩下没做的”，本轮补齐独立真实两级 OTA 基线、可恢复后端及固定预算拓扑迁移对照，未启动 M6。新增专用 `ota7_m5_v2` / `tb_ota7_m5_ac_v2`，原五管电路权限不变。
+- 七管 Miller OTA 使用输入匹配宽度与输出级 4:1 比例宽度两个动作组，均经 CDF 回写、读回、派生 geometry、原生导出和恢复验证。首次 16 µm 单指配置被 CDF 限为 10 µm，校验拒绝并记录 0 次 Spectre 的创建失败；成功版本 M6/M7=8/2 µm。
+- 新拓扑在源训练中完全留出，但先做了基线/参数域验收再确定规格，属于前瞻冻结的 nominal 验收，不是盲测。源 train/validation/test 规格维持首轮定义；每个 test task 独立微调，冻结模型不更新，validation 不选超参数。
+- 3 seeds × 6 methods：每架构/seed 16 步源预训练；每测试 run 12 步，reset 单独计入预算。新增 7 次电路验收 + 576 次实验评价 + 2 次最终复验 = **585 次真实 Spectre**，全部测量有效、无失败/重试/缓存。共 288 次实际 SAC 更新。
+- 新拓扑达标率：GT scratch/frozen 0/3，GT adapt 1/3，random 1/3，pattern search 3/3，port-GNN adapt 2/3；没有 GT 迁移优势证据。GT 与 GNN 分别有 105,476 / 92,804 个 actor+Q1+Q2 参数，未声称等参数比较。
+- 离线 **440 passed，0 failed，0 skipped**；24 个 checkpoint 核对来源、隔离、冻结权重和下一次更新的精确恢复。两个电路最终 CDF 全快照、基线网表与指标均恢复，PDK 入口/MOS 摘要保持一致。证据、成本、复现命令见 [M5 真实拓扑验收](m5-real-topology.md)；机器可读汇总位于 `artifacts/local/m5-topology-acceptance-summary.json`。

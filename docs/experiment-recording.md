@@ -17,7 +17,7 @@ $PY examples/train_synthetic_sac.py \
   --episodes 1 --steps 2 --batch-size 2
 
 # 对已有 train_opamp_sac_parallel.py 命令增加同样两个参数即可。
-# 保留原来的 CDF 表、profile、spec、模型和连接参数；这会运行真实仿真，非本次验收命令。
+# 沿用逐候选原生准备所需的 profile、spec、模型和连接参数；这会运行真实仿真。
 ```
 
 `/tmp` 只适合验收，可被系统清理。长期实验请使用持久的本机 ext4 目录并备份 SQLite 数据库及 checkpoint。运行中备份使用 SQLite backup API；不要只复制 WAL 模式下的主 `.sqlite3` 文件。

@@ -186,7 +186,7 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         return deepcopy(snapshot)
 
     def _write_widths(self, parameters):
-        for device, parameter in INPUT_KEYS:
+        for device, parameter in self.circuit.writable_keys:
             name = device.split('/')[1]
             length = self.circuit.instances(self._initial)[name]['params']['l']
             set_gpdk_mos(self.client, self.config.library, self.circuit.design['core_cell'],
@@ -195,7 +195,7 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
     def _verify_restored(self, snapshot, reference):
         self.circuit.validate_readback(snapshot)
         a, b = self.circuit.instances(snapshot), self.circuit.instances(reference)
-        for name in ('M1', 'M2'):
+        for name in {device.split('/')[1] for device, _ in self.circuit.writable_keys}:
             for key in ('w', 'fw', 'l', 'm', 'fingers') + GEOMETRY:
                 if not equal(number(a[name]['params'][key]), number(b[name]['params'][key])):
                     raise RuntimeError(f'Restoration mismatch: {name}.{key}')
@@ -387,7 +387,7 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                 status, reason = SimulationStatus.BACKEND_ERROR, 'bridge_reported_failure'
             else:
                 try:
-                    measured = analyze(job, result_name='bridge_result.json')
+                    measured = analyze(job, result_name='bridge_result.json', mos_names=self.circuit.mos_names)
                     metrics, units, validity = (measured[k] for k in ('metrics', 'metric_units', 'metric_validity'))
                     operating_points = measured['operating_points']
                     for key in request.required_metrics:

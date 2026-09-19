@@ -24,8 +24,9 @@ def project_snapshot(root, files):
         path = (root / name).resolve()
         if not path.is_relative_to(root) or not path.is_file():
             raise ValueError('Snapshot file must belong to this project')
-        if any(word in part.lower() for part in path.relative_to(root).parts
-               for word in ('license', '.env', 'secret', 'credential', 'pdk', 'node_modules', 'site-packages')):
+        if any(part.lower() in ('pdk', 'node_modules', 'site-packages') or
+               any(part.lower().startswith(word) for word in ('license', '.env', 'secret', 'credential'))
+               for part in path.relative_to(root).parts):
             raise ValueError('PDK, installed dependencies and credentials are not project snapshots')
         contents[str(path.relative_to(root))] = path.read_bytes()
     def git(*args):

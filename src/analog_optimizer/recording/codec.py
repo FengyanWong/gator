@@ -95,7 +95,20 @@ def unpack(value):
 
 
 def identity(value):
-    return hashlib.sha256(raw(value)).hexdigest()
+    # Mapping insertion order is not content; explicit variable/array field-order
+    # lists remain ordered. Storage still preserves original mapping order.
+    def canonical(node):
+        if isinstance(node, list):
+            return [canonical(x) for x in node]
+        if isinstance(node, dict):
+            result = {key: canonical(val) for key, val in node.items()}
+            if '@dict' in result:
+                result['@dict'].sort(key=lambda pair: json.dumps(pair[0], sort_keys=True, ensure_ascii=False))
+            return result
+        return node
+    encoded = json.dumps(canonical(tree(value)), sort_keys=True, separators=(',', ':'),
+                         ensure_ascii=False, allow_nan=False).encode('utf8')
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def diff(before, after, path=()):

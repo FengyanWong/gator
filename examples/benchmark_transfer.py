@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import redirect_stdout, redirect_stderr
-from dataclasses import replace
+from contextlib import ExitStack
 import hashlib
 import json
 from pathlib import Path
@@ -34,7 +33,6 @@ def build_tasks(origin):
                     ('toy-validation-96', 'validation', 'specification', graph, .96),
                     ('toy-test-spec-98', 'test', 'specification', graph, .98),
                     ('toy-test-topology-98', 'test', 'topology', heldout, .98)]]
-    from analog_optimizer.backends.gpdk045 import Gpdk045OtaProfile
     profile = make_profile()
     graph = profile.optimization_graph()
     raw = json.loads((ROOT / 'configs/gpdk045_opamp_transfer.json').read_text())
@@ -52,6 +50,9 @@ def make_profile():
 
 
 def main():
+    from analog_optimizer.training.runtime import RunResources, add_runtime_arguments, limits_from_args
+    from analog_optimizer.evaluation.runtime import BenchmarkFactory, BaselineCheck
+    from save_recording_summary import add_summary_to_report
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--origin', choices=['synthetic', 'real'], default='synthetic')
     parser.add_argument('--output', type=Path, default=ROOT / 'artifacts/local/m5')
@@ -59,9 +60,7 @@ def main():
     parser.add_argument('--pretrain-steps', type=int)
     parser.add_argument('--test-steps', type=int)
     parser.add_argument('--max-calls', type=int)
-    parser.add_argument('--encoders', nargs='+',
-                        choices=['graph_transformer', 'mlp', 'rgcn', 'gat', 'port_gnn', 'gcn'],
-                        help='Each selected encoder runs scratch/frozen/adapt; omitted keeps the M5 six methods')
+    parser.add_argument('--encoders', nargs='+', choices=['graph_transformer', 'mlp', 'rgcn', 'gat', 'port_gnn', 'gcn'])
     parser.add_argument('--hidden-dim', type=int, default=32)
     parser.add_argument('--heads', type=int, default=4)
     parser.add_argument('--layers', type=int, default=2)
@@ -69,18 +68,23 @@ def main():
     parser.add_argument('--library')
     parser.add_argument('--creation-receipt', type=Path)
     parser.add_argument('--model-file')
+    parser.add_argument('--profile')
     parser.add_argument('--reference-measurements', type=Path)
     parser.add_argument('--bridge-site-packages', type=Path)
+    parser.add_argument('--max-workers', type=int, choices=range(1, 5), default=4, help='Parallel independent seeds, one environment per process')
+    parser.add_argument('--timeout-seconds', type=float, default=120)
+    add_runtime_arguments(parser)
     args = parser.parse_args()
+    limits = limits_from_args(args)
     real = args.origin == 'real'
+    if args.max_workers < 1:
+        parser.error('--max-workers must be positive')
     if real and any(getattr(args, k) is None for k in
                     ('env', 'library', 'creation_receipt', 'model_file', 'reference_measurements')):
         parser.error('Real benchmark requires the existing explicit bridge/model/baseline arguments')
     if args.bridge_site_packages:
         site.addsitedir(str(args.bridge_site_packages.resolve()))
     import torch
-    from analog_optimizer.backends.synthetic_sizing import SyntheticSizingBackend
-    from analog_optimizer.envs.sizing import CircuitSizingEnv, write_record
     from analog_optimizer.evaluation.benchmark import run_benchmark
     torch.set_num_threads(1)
     torch.use_deterministic_algorithms(True)
@@ -90,10 +94,11 @@ def main():
                     hidden_dim=args.hidden_dim, heads=args.heads, layers=args.layers,
                     pretrain_steps=args.pretrain_steps if args.pretrain_steps is not None else (2 if real else 16),
                     test_steps=args.test_steps if args.test_steps is not None else (3 if real else 8), batch_size=2,
-                    max_calls=(args.max_calls if args.max_calls is not None else (100 if real else 600)) - int(real))
-    # Reserve one extra real call to verify the restored baseline by simulation.
+                    max_calls=(args.max_calls if args.max_calls is not None else (100 if real else 600)) - int(real),
+                    max_workers=args.max_workers, sampling='independent seed processes',
+                    worker_timeout_seconds=limits.operation_seconds, shutdown_timeout_seconds=limits.shutdown_seconds,
+                    simulation_timeout_seconds=args.timeout_seconds)
     tasks = build_tasks(args.origin)
-    baseline_records = []
     check = None
     provenance = {'fixtures_are_analytic_not_circuit_simulation': not real,
                   'real_scope': 'same-topology specifications only' if real else None}
@@ -105,55 +110,52 @@ def main():
     provenance['files'] = {f: hashlib.sha256((ROOT / f).read_bytes()).hexdigest() for f in files}
     provenance['entrypoint_sha256'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     if real:
-        from analog_optimizer.backends.virtuoso_bridge import BridgeConfig, VirtuosoBridgeBackend
-        from verify_opamp_environment import metrics_match
+        from analog_optimizer.backends.virtuoso_bridge import BridgeConfig
         reference = json.loads(args.reference_measurements.read_text())
         if reference['origin'] != 'real':
             raise ValueError('Real baseline reference required')
         provenance.update(library=args.library, model_file=args.model_file,
                           reference_sha256=hashlib.sha256(args.reference_measurements.read_bytes()).hexdigest())
         config = BridgeConfig(args.env.resolve(), args.library, args.creation_receipt.resolve(),
-                              ROOT / 'artifacts/local/bridge-state', args.model_file)
-        def factory(task, steps, output):
-            return CircuitSizingEnv(VirtuosoBridgeBackend(config, make_profile()), task.graph, task.specs,
-                                    output, max_steps=steps, stop_on_success=False, expected_origin='real')
-        def check(record):
-            baseline_records.append(record)
-            if (not record.get('evaluation_valid') or not metrics_match(record['metrics'], reference['metrics'])
-                    or record['netlist_sha256'] != baseline_records[0]['netlist_sha256']):
-                raise RuntimeError('Baseline parameters/deck/metrics differ from the verified reference')
+                              ROOT / 'artifacts/local/bridge-state', args.model_file, profile=args.profile)
+        profile = make_profile()
+        factory = BenchmarkFactory('real', config, profile, timeout_seconds=args.timeout_seconds)
+        check = BaselineCheck(reference['metrics'])
     else:
         provenance['toy_targets'] = {'w': .4, 'c': -.3}
-        def factory(task, steps, output):
-            return CircuitSizingEnv(SyntheticSizingBackend(task.graph, targets=provenance['toy_targets']),
-                                    task.graph, task.specs, output, max_steps=steps, stop_on_success=False,
-                                    expected_origin='synthetic')
-    stdout = sys.stdout
-    progress = lambda message: print(message, file=stdout, flush=True)
+        factory = BenchmarkFactory('synthetic', timeout_seconds=args.timeout_seconds)
+    report = dict(completed=False, passed=False, origin=args.origin)
     started = perf_counter()
-    try:
-        with (directory / 'execution.log').open('w') as log, redirect_stdout(log), redirect_stderr(log):
-            report = run_benchmark(tasks, factory, directory, origin=args.origin, settings=settings,
-                                   provenance=provenance, progress=progress, baseline_check=check)
-            if real:
-                verify = factory(tasks[0], 1, directory / 'restoration-verification')
-                try:
-                    with verify:
-                        _, info = verify.reset()
+    with RunResources(report, directory / 'report.json', recording_root=args.recording_root,
+                      recording_config=args.recording_config, cleanup_seconds=limits.shutdown_seconds,
+                      summary_export=add_summary_to_report) as resources, ExitStack() as preparation_stack:
+        resources.start(ROOT, dict(settings=settings, provenance=provenance, role='benchmark_controller'),
+                        project_files=files)
+        factory = preparation_stack.enter_context(factory.preparation_context(limits, report))
+        run_benchmark(tasks, factory, directory, origin=args.origin, settings=settings, provenance=provenance,
+                      baseline_check=check, recorder=resources.recorder, max_workers=args.max_workers,
+                      limits=limits, report=report)
+        if real:
+            verify = factory.create_recorded(tasks[0], 1, directory / 'restoration-verification', resources.recorder)
+            try:
+                with verify:
+                    _, info = verify.reset()
+                    if resources.recorder is None:
                         record = json.loads(Path(info['record_path']).read_text())
-                        check(record)
-                    report['restoration_verified'] = True
-                    report['restoration_record'] = info['record_path']
-                finally:
-                    report['restoration_verification_calls'] = verify.simulation_calls
-                    report['real_simulation_calls'] += verify.simulation_calls
-                    report['calls'] += verify.simulation_calls
-                    report['end_to_end_seconds'] = perf_counter() - started
-                    if not report.get('restoration_verified'):
-                        report['completed'] = False
-                    write_record(directory / 'report.json', report)
-    finally:
-        progress('REPORT ' + str(directory / 'report.json'))
+                    else:
+                        from analog_optimizer.recording.session import evaluation_record
+                        record = evaluation_record(resources.store, info['candidate_id'])
+                    check(record)
+                report['restoration_verified'] = True
+                report['restoration_record'] = info['record_path']
+            finally:
+                report['restoration_verification_calls'] = verify.simulation_calls
+                report['real_simulation_calls'] += verify.simulation_calls
+                report['calls'] += verify.simulation_calls
+                if not report.get('restoration_verified'):
+                    report['completed'] = False
+        report.update(passed=report['completed'], end_to_end_seconds=perf_counter()-started)
+    print('REPORT', directory / 'report.json', flush=True)
     return 0
 
 

@@ -75,6 +75,11 @@ class SimulationResult:
     condition: SimulationCondition | None = None
     # None for deterministic runs; explicit zero-based index for future MC samples.
     sample_index: int | None = None
+    # Explicit invocation evidence; None means unknown (e.g. transport failure before acknowledgement).
+    simulator_invocations: int | None = None
+    error_summary: str = ''
+    simulator_version: str | None = None
+    operating_points: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -110,7 +115,7 @@ class MonteCarloResult:
 
 
 class VirtuosoBackend(ABC):
-    """Our abstraction, NOT the upstream virtuoso-bridge-lite API.
+    """Our abstraction, NOT the upstream Virtuoso Bridge API.
 
     The bridge adapter implements these operations for its explicit circuit profile.
     Optional operations fail loudly rather than returning fabricated success.

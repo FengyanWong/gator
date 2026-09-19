@@ -179,7 +179,7 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         return self.circuit.validate_readback(self._read_snapshot())
 
     def read_cdf_snapshot(self):
-        """Return a verified full snapshot for finite-table preparation."""
+        """Return a verified full snapshot of the current native candidate."""
         self._require_connection()
         snapshot = self._read_snapshot()
         self._verify_restored(snapshot, self._current)
@@ -328,10 +328,21 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         return graph
 
     def _new_simulator(self, work_dir, timeout):
+        if getattr(self, '_recording_scratch', None) is not None:
+            return self._recording_scratch.simulator(work_dir, math.ceil(timeout))
         from virtuoso_bridge.spectre.runner import SpectreSimulator
         return SpectreSimulator.from_env(work_dir=work_dir, timeout=math.ceil(timeout),
                                         output_format='psfascii', spectre_args=[], keep_remote_files=True,
                                         profile=self.config.profile)
+
+    def prepare_recording(self, recorder, eval_id):
+        from analog_optimizer.recording.remote import BridgeScratch
+        self._recording_scratch = BridgeScratch(recorder, eval_id, profile=self.config.profile)
+
+    def finish_recording(self, receipt):
+        if getattr(self, '_recording_scratch', None) is not None:
+            self._recording_scratch.cleanup(receipt)
+            self._recording_scratch = None
 
     def run_simulation(self, request: SimulationRequest):
         condition = request.condition or request.netlist.condition
@@ -361,10 +372,14 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         metrics, units, validity = {}, {}, {}
         evaluated, retryable = False, False
         status, reason = SimulationStatus.BACKEND_ERROR, 'unclassified_bridge_failure'
+        invocations, error_summary, operating_points = None, '', None
         try:
             simulator = self._new_simulator(job / 'results', request.timeout_seconds)
             with (job / 'bridge.log').open('w') as log, redirect_stdout(log), redirect_stderr(log):
                 raw = simulator.run_simulation(deck)  # Never pass sizing assignments as bridge params.
+            # An intended command is not proof of execution: Bridge also returns
+            # it when upload/transport fails before launching Spectre.
+            error_summary = '\n'.join(map(str, raw.errors))[-16384:]
             write_json(job / 'bridge_result.json', {**manifest, 'status': raw.status.value,
                        'errors': raw.errors, 'metadata': raw.metadata})
             if not raw.ok:
@@ -374,6 +389,7 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                 try:
                     measured = analyze(job, result_name='bridge_result.json')
                     metrics, units, validity = (measured[k] for k in ('metrics', 'metric_units', 'metric_validity'))
+                    operating_points = measured['operating_points']
                     for key in request.required_metrics:
                         metrics.setdefault(key, None)
                         units.setdefault(key, 'unspecified')
@@ -382,19 +398,33 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                     required = request.required_metrics or tuple(metrics)
                     if not required or not all(validity[k] for k in required):
                         raise ValueError('A required metric is missing or invalid')
-                    self._op = measured['operating_points']
+                    self._op = operating_points
                     status, reason = SimulationStatus.OK, 'validated_spectre_completion'
                 except (ValueError, KeyError, FileNotFoundError) as exc:
                     status, reason = SimulationStatus.MEASUREMENT_ERROR, 'measurement_validation_failed'
                     write_json(job / 'measurement_error.json', {'error': str(exc)})
         except TimeoutError as exc:
+            error_summary = str(exc)
             status, reason, retryable = SimulationStatus.TIMEOUT, 'python_timeout', True
             write_json(job / 'exception.json', {'type': type(exc).__name__, 'error': str(exc)})
         except Exception as exc:
+            error_summary = str(exc)
             write_json(job / 'exception.json', {'type': type(exc).__name__, 'error': str(exc)})
         elapsed = perf_counter() - started
+        simulator_version = None
+        log_path = job / 'results' / 'spectre.out'
+        if log_path.is_file():
+            with log_path.open(errors='replace') as stream:
+                header = stream.read(8192)
+            version = re.search(r'(?im)^\s*(?:Spectre\s+.*?\s+)?Version\s+([^\r\n]+)', header)
+            if version:
+                simulator_version = version.group(1).strip()
+            if re.search(r'(?i)Spectre.*Circuit Simulator', header):
+                invocations = 1
         result = SimulationResult(job_id, 'virtuoso_bridge', 'real', status, reason, retryable,
-                                  evaluated, metrics, units, validity, applied, job, elapsed, condition)
+                                  evaluated, metrics, units, validity, applied, job, elapsed, condition,
+                                  simulator_invocations=invocations, error_summary=error_summary,
+                                  simulator_version=simulator_version, operating_points=operating_points)
         serialized = asdict(result)
         serialized['applied_parameters'] = parameter_rows(applied)
         serialized['netlist_sha256'] = artifact.sha256

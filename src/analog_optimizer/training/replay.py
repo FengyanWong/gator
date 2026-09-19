@@ -28,6 +28,11 @@ class Transition:
     record_path: str
     action_version: str = 'absolute-group-v1'
 
+    def fingerprint(self):
+        """Hash every replay field, including exact dynamic arrays and provenance."""
+        from analog_optimizer.recording.codec import identity
+        return 'transition-v1:' + identity(vars(self))
+
     def validate(self):
         first, last = self.observation, self.next_observation
         validate_observation(first)
@@ -69,8 +74,10 @@ class Transition:
         next_observation, reward, terminated, truncated, info = step
         if info.get('replay_eligible') is not True or next_observation is None or reward is None:
             raise ValueError('Step is not eligible for replay')
-        path = Path(info['record_path'])
-        record = json.loads(path.read_text())
+        path = info['record_path']
+        record = info.get('record')
+        if record is None:
+            record = json.loads(Path(path).read_text())
         applied = {(p['device'], p['parameter']): p['value'] for p in record['applied_parameters']}
         transition = cls(deepcopy(observation), dict(proposal), reward, deepcopy(next_observation),
                          terminated, truncated, info['bootstrap'], applied, info['candidate_id'], str(path))
@@ -93,10 +100,11 @@ class Transition:
 
 
 class ReplayBuffer:
-    def __init__(self, capacity=10000, *, origin, seed=0):
+    def __init__(self, capacity=10000, *, origin, seed=0, store=None):
         if type(capacity) is not int or capacity < 1 or origin not in ('real', 'synthetic'):
             raise ValueError('Replay needs positive capacity and explicit origin')
         self.capacity, self.origin = capacity, origin
+        self.store = store
         self._items, self._position, self.insertions = [], 0, 0
         self._rng = random.Random(seed)
 
@@ -107,6 +115,7 @@ class ReplayBuffer:
         transition.validate()
         if transition.observation.origin != self.origin:
             raise ValueError('Cannot mix synthetic and real replay')
+        self._verify_persistence(transition)
         transition = deepcopy(transition)
         if len(self._items) < self.capacity:
             self._items.append(transition)
@@ -114,6 +123,12 @@ class ReplayBuffer:
             self._items[self._position] = transition
         self._position = (self._position + 1) % self.capacity
         self.insertions += 1
+
+    def _verify_persistence(self, transition):
+        if self.store is not None:
+            # The writer commits this fingerprint together with the evaluation
+            # and both states. Admission need not reconstruct graphs from SQLite.
+            self.store.call('verify_transition', transition.candidate_id, transition.fingerprint())
 
     def sample(self, batch_size):
         if type(batch_size) is not int or not 1 <= batch_size <= len(self):
@@ -123,6 +138,26 @@ class ReplayBuffer:
     def state_dict(self):
         return deepcopy(dict(capacity=self.capacity, origin=self.origin, items=self._items,
                              position=self._position, insertions=self.insertions, rng=self._rng.getstate()))
+
+    def manifest(self):
+        if self.store is None:
+            raise ValueError('Persistent replay requires an experiment store')
+        return dict(version='replay-ids-v1', capacity=self.capacity, origin=self.origin,
+                    members=[t.candidate_id for t in self._items], position=self._position,
+                    insertions=self.insertions, rng=self._rng.getstate(),
+                    database=self.store.call('position'))
+
+    @classmethod
+    def from_manifest(cls, manifest, store):
+        from analog_optimizer.recording.session import transition_from_store
+        position = store.call('position')
+        saved = manifest['database']
+        if manifest['version'] != 'replay-ids-v1' or position['database_id'] != saved['database_id'] or any(
+                position[key] < saved[key] for key in ('evaluation_seq', 'transition_seq')):
+            raise ValueError('Checkpoint database identity/recovery position mismatch')
+        result = cls.from_state_dict(dict(manifest, items=[transition_from_store(store, key) for key in manifest['members']]))
+        result.store = store
+        return result
 
     @classmethod
     def from_state_dict(cls, state):

@@ -85,7 +85,7 @@ class CircuitSizingEnv:
 
     def __init__(self, backend, graph, specs, work_root, *, max_steps=5,
                  timeout_seconds=120.0, stop_on_success=True, expected_origin='real',
-                 condition: SimulationCondition | None = None):
+                 condition: SimulationCondition | None = None, recorder=None):
         if isinstance(max_steps, bool) or not isinstance(max_steps, int) or max_steps < 1:
             raise ValueError('max_steps must be a positive integer')
         if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
@@ -103,6 +103,8 @@ class CircuitSizingEnv:
             raise ValueError('A real environment needs an explicit nominal condition')
         backend.validate_condition(self.condition)
         self.backend = backend
+        self.recorder = recorder
+        self._recording_observation = None
         self._reference_graph = deepcopy(graph)
         self.mapper = ActionMapper(graph)
         self.evaluator = SpecificationEvaluator(specs)
@@ -113,9 +115,13 @@ class CircuitSizingEnv:
         self._initial = None
         self._seen = {}
         self.steps, self.simulation_calls, self.episode = 0, 0, 0
+        if recorder is not None:
+            from analog_optimizer.recording.space import RecordingConfig, require_filesystem_space
+            require_filesystem_space(work_root, RecordingConfig(**recorder.store.call('configuration')))
         self.directory = Path(work_root).resolve() / uuid4().hex
         self.directory.mkdir(parents=True, exist_ok=False)
-        (self.directory / 'candidates').mkdir()
+        if recorder is None:
+            (self.directory / 'candidates').mkdir()
         config = {'schema_version': 'sizing-env-v2', 'action_version': 'absolute-group-v1',
                   'condition': None if self.condition is None else asdict(self.condition),
                   'evaluation_purpose': 'nominal',
@@ -126,7 +132,11 @@ class CircuitSizingEnv:
                   'budget_semantics': 'finite_horizon_termination',
                   'critic_action_semantics': 'normalized_proposal'}
         self.config_sha256 = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
-        write_record(self.directory / 'config.json', {**config, 'sha256': self.config_sha256})
+        if recorder is None:
+            write_record(self.directory / 'config.json', {**config, 'sha256': self.config_sha256})
+        else:
+            recorder.bind(graph, self.evaluator.specs,
+                          {k: v for k, v in config.items() if k not in ('initial_graph', 'specs')})
 
     def __enter__(self):
         if self._closed or self._connected:
@@ -139,8 +149,11 @@ class CircuitSizingEnv:
             expected = self._reference_graph.assignments({g.id: g.value for g in self.mapper.groups})
             if not same_parameters(self._initial, expected):
                 raise ValueError('Initial backend parameters differ from the reference graph')
-        except BaseException:
-            self.close()
+        except BaseException as original:
+            try:
+                self.close()
+            except BaseException as cleanup:
+                original.cleanup_error = f'{type(cleanup).__name__}: {cleanup}'
             raise
         return self
 
@@ -185,31 +198,54 @@ class CircuitSizingEnv:
                   'duplicate_of': self._seen.get(key), 'cache_hit': False,
                   'simulation_calls': self.simulation_calls, 'replay_eligible': False,
                   'timings': {}}
-        write_record(path, record)  # Before restoration or the first candidate mutation.
+        workspace, result, committed, finalizing = None, None, False, False
+        if self.recorder is None:
+            write_record(path, record)  # Before restoration or the first candidate mutation.
+            output_root = self.directory
+        else:
+            from analog_optimizer.recording.space import RecordingConfig, require_filesystem_space
+            require_filesystem_space(self.directory, RecordingConfig(**self.recorder.store.call('configuration')))
+            workspace = self.recorder.begin(record)
+            output_root = Path(workspace['path'])
+            path = f"sqlite:{self.recorder.run_id}/{candidate_id}"
         self._done = True
         try:
+            if self.recorder is not None and hasattr(self.backend, 'prepare_recording'):
+                self.backend.prepare_recording(self.recorder, candidate_id)
             stage = perf_counter()
-            if reset:
-                self.backend.restore()
+            prepare = getattr(self.backend, 'prepare_candidate', None)
+            if callable(prepare):
+                artifact, applied = prepare(output_root / 'exports', dict(expected),
+                    condition=self.condition, candidate_id=candidate_id)
+                record['timings']['candidate_preparation'] = perf_counter() - stage
+                record['timings']['queue_wait'] = self.backend.timings.get('queue_wait', 0.)
+                record['timings']['parameter_update_readback'] = self.backend.timings.get('parameter_update', 0.)
             else:
-                self.backend.set_parameters(dict(expected))
-            applied = self.backend.read_parameters()
+                if reset:
+                    self.backend.restore()
+                else:
+                    self.backend.set_parameters(dict(expected))
+                applied = self.backend.read_parameters()
+                record['applied_parameters'] = parameter_rows(applied)
+                if not same_parameters(applied, expected):
+                    raise ValueError('Parameter readback differs from requested candidate')
+                record['timings']['parameter_update_readback'] = perf_counter() - stage
+                stage = perf_counter()
+                kwargs = {} if self.condition is None else {'condition': self.condition}
+                artifact = self.backend.generate_netlist(output_root / 'exports', **kwargs)
             record['applied_parameters'] = parameter_rows(applied)
             if not same_parameters(applied, expected):
                 raise ValueError('Parameter readback differs from requested candidate')
             key = tuple(sorted(applied.items()))
             record['duplicate_of'] = self._seen.get(key)
-            record['timings']['parameter_update_readback'] = perf_counter() - stage
-            stage = perf_counter()
-            kwargs = {} if self.condition is None else {'condition': self.condition}
-            artifact = self.backend.generate_netlist(self.directory / 'exports', **kwargs)
             record.update(export_job_id=artifact.job_id, netlist_sha256=artifact.sha256,
                           netlist_path=str(artifact.path))
             if artifact.origin != self.expected_origin:
                 raise ValueError('Unexpected netlist origin')
             if artifact.condition != self.condition:
                 raise ValueError('Exported condition differs from the nominal environment')
-            record['timings']['netlisting'] = perf_counter() - stage
+            record['timings']['netlisting'] = (self.backend.timings.get('netlisting', 0.)
+                                                if callable(prepare) else perf_counter() - stage)
             stage = perf_counter()
             graph = self.backend.get_circuit_graph(artifact)
             graph.validate()
@@ -221,10 +257,14 @@ class CircuitSizingEnv:
             record['timings']['graph_build'] = perf_counter() - stage
             self.simulation_calls += 1
             record.update(state='simulation_started', simulation_calls=self.simulation_calls)
-            write_record(path, record)
+            if self.recorder is None:
+                write_record(path, record)
+            else:
+                self.recorder.start(candidate_id, dict(applied), record)
+            record['simulation_dispatched'] = True
             stage = perf_counter()
             result = self.backend.run_simulation(SimulationRequest(
-                artifact, self.directory / 'simulations', self.evaluator.required_metrics,
+                artifact, output_root / 'simulations', self.evaluator.required_metrics,
                 self.timeout_seconds, dict(applied), condition=self.condition))
             record['timings']['simulation_and_measurement'] = perf_counter() - stage
             if result.origin != self.expected_origin or not same_parameters(result.applied_parameters, applied):
@@ -270,16 +310,40 @@ class CircuitSizingEnv:
                     'simulation_calls': self.simulation_calls, 'job_id': result.job_id}
             record.update(state='completed', **{k: v for k, v in info.items() if k not in ('record_path',)},
                           reward=reward, metrics=metrics, metric_validity=validity,
-                          metric_units=result.metric_units, observation=None if observation is None else asdict(observation),
+                          metric_units=result.metric_units,
                           elapsed_seconds=perf_counter() - started)
-            write_record(path, record)
+            if self.recorder is None:
+                record['observation'] = None if observation is None else asdict(observation)
+                write_record(path, record)
+            else:
+                from analog_optimizer.backends.backend import UnsupportedCapability
+                operating_points = result.operating_points
+                if operating_points is None:
+                    try:
+                        operating_points = self.backend.get_operating_points()
+                    except UnsupportedCapability:
+                        pass
+                finalizing = True
+                receipt = self.recorder.finish(record, result, observation, self._recording_observation,
+                                               action, operating_points)
+                committed = True
+                info['record'] = deepcopy(record)
+                info['eval_id'] = candidate_id
+                info['receipt'] = receipt
+                self._recording_observation = deepcopy(observation)
+                self.recorder.retain_and_clean(receipt, workspace, self.backend)
             return observation, reward, terminated, truncated, info
         except BaseException as exc:
             self._done = True
             record.update(state='execution_error', exception_type=type(exc).__name__, error=str(exc),
                           replay_eligible=False, reward=None, simulation_calls=self.simulation_calls,
                           elapsed_seconds=perf_counter() - started)
-            write_record(path, record)
+            if self.recorder is None:
+                write_record(path, record)
+            elif not committed and not finalizing:
+                self.recorder.finish(record, result, None, self._recording_observation, action)
+                # An unexpected exception does not prove the simulator stopped.
+                # Keep all workspaces for explicit recovery/inspection.
             raise
 
     def close(self):
@@ -288,25 +352,42 @@ class CircuitSizingEnv:
         if self._connected and threading.get_ident() != self._thread:
             raise RuntimeError('Close the environment from its owning worker thread')
         record = {'state': 'pending', 'simulation_calls': self.simulation_calls}
-        write_record(self.directory / 'restoration.json', record)
+        primary = None
         try:
-            try:
-                if self._connected:
-                    self.backend.restore()
-                    actual = self.backend.read_parameters()
-                    if self._initial is not None and not same_parameters(actual, self._initial):
-                        raise RuntimeError('Environment restoration readback mismatch')
-                    record.update(state='restored', parameters=parameter_rows(actual))
-                else:
-                    record['state'] = 'not_connected'
-            finally:
-                self.backend.close()
-        except BaseException as exc:
-            record.update(state='recovery_required', exception_type=type(exc).__name__, error=str(exc))
-            raise
-        finally:
-            self._closed, self._connected, self._done = True, False, True
             write_record(self.directory / 'restoration.json', record)
+        except BaseException as exc:
+            primary = exc
+        try:
+            if self._connected:
+                self.backend.restore()
+                actual = self.backend.read_parameters()
+                if self._initial is not None and not same_parameters(actual, self._initial):
+                    raise RuntimeError('Environment restoration readback mismatch')
+                record.update(state='restored', parameters=parameter_rows(actual))
+            else:
+                record['state'] = 'not_connected'
+        except BaseException as exc:
+            primary = primary or exc
+            record.update(state='recovery_required', exception_type=type(exc).__name__, error=str(exc))
+        finally:
+            try:
+                self.backend.close()
+            except BaseException as exc:
+                primary = primary or exc
+                record.update(state='recovery_required', close_error=str(exc))
+            self._closed, self._connected, self._done = True, False, True
+            try:
+                write_record(self.directory / 'restoration.json', record)
+            except BaseException as exc:
+                primary = primary or exc
+        if primary is not None:
+            raise primary
 
     def __exit__(self, exc_type, exc, traceback):
-        self.close()
+        try:
+            self.close()
+        except BaseException as cleanup:
+            if exc is None:
+                raise
+            exc.cleanup_error = f'{type(cleanup).__name__}: {cleanup}'
+        return False

@@ -1,4 +1,4 @@
-"""Single-worker M5 experiment runner with isolated replay and fixed budgets."""
+"""M5 experiment runner with isolated replay, bounded seed workers and fixed budgets."""
 from __future__ import annotations
 
 from copy import deepcopy
@@ -15,7 +15,8 @@ from analog_optimizer.envs.sizing import graph_contract, write_record
 from analog_optimizer.models import ENCODER_TYPES, ModelConfig
 from analog_optimizer.training.replay import ReplayBuffer, Transition
 from analog_optimizer.training.sac import SACLearner, source_digest
-from .transfer import aggregate_runs, digest, freeze_protocol, summarize_run
+from analog_optimizer.training.runtime import write_report_preserving_error
+from .transfer import aggregate_runs, digest, freeze_protocol
 
 
 METHODS = ('gt_scratch', 'gt_frozen', 'gt_adapt', 'random', 'pattern_search', 'gnn_adapt')
@@ -128,11 +129,18 @@ class PatternSearch:
 
 
 def run_episode(env, task, method, *, learner=None, replay=None, seed=0, batch_size=2,
-                phase='frozen', warmup=1, checkpoint=None, baseline_check=None):
+                phase='frozen', warmup=1, checkpoint=None, baseline_check=None,
+                history_limit=100, checkpoints=None, update_recorder=None):
     seed_all(seed)
     rng = random.Random(seed)
     started = perf_counter()
+    from analog_optimizer.training.workers import append_history, worker_progress
+    from .streaming import RunStatistics
+    limit = history_limit if env.recorder is not None else None
     records, updates = [], []
+    history = dict(records=records, updates=updates, records_count=0, updates_count=0)
+    statistics = RunStatistics(limit)
+    last_recorded = None
     before = weight_digest(learner) if learner else None
     summary = dict(task=task.id, partition=task.partition, transfer=task.transfer, method=method,
                    seed=seed, phase=phase, origin=env.expected_origin, records=[],
@@ -150,10 +158,18 @@ def run_episode(env, task, method, *, learner=None, replay=None, seed=0, batch_s
         raise ValueError('Frozen evaluation must not receive a replay buffer')
 
     def record(info):
-        row = json.loads(Path(info['record_path']).read_text())
+        nonlocal last_recorded
+        if env.recorder is None:
+            row = json.loads(Path(info['record_path']).read_text())
+        else:
+            from analog_optimizer.recording.session import evaluation_record
+            row = evaluation_record(env.recorder.store, info['candidate_id'])
         row['time_from_start_seconds'] = perf_counter() - started
-        records.append(row)
-        summary['records'].append(info['record_path'])
+        statistics.add(row)
+        last_recorded = row['candidate_id']
+        append_history(history, 'records', row, limit)
+        append_history(summary, 'records', info['record_path'], limit)
+        worker_progress(dict(task=task.id, method=method, seed=seed, call=env.simulation_calls))
         return row
 
     try:
@@ -177,18 +193,29 @@ def run_episode(env, task, method, *, learner=None, replay=None, seed=0, batch_s
                         proposal = learner.act([observation], deterministic=not training)[0]
                         action_source = 'stochastic_policy' if training else 'mean_policy'
                     summary['inference_seconds'] += perf_counter() - start
+                    if env.recorder is not None:
+                        env.recorder.phase = phase
+                        env.recorder.policy_version = learner.updates if learner is not None else None
                     step = env.step(proposal)
                     row = record(step[4])
                     row['action_source'] = action_source
-                    summary['actions'].append(dict(candidate_id=row['candidate_id'], proposal=proposal,
-                                                   source=action_source))
+                    append_history(summary, 'actions', dict(candidate_id=row['candidate_id'], proposal=proposal,
+                                                           source=action_source), limit)
                     search.observe(proposal, step[1])
                     if training and step[4]['replay_eligible']:
                         admit_transition(replay, task, phase, observation, proposal, step)
                         if len(replay) >= batch_size:
                             start = perf_counter()
-                            updates.append(learner.update(replay.sample(batch_size)))
+                            update = learner.update(replay.sample(batch_size))
+                            append_history(history, 'updates', update, limit)
+                            if update_recorder is not None:
+                                update_recorder.add(update)
                             summary['update_seconds'] += perf_counter() - start
+                    if checkpoints is not None and training:
+                        checkpoints.maybe_save(learner, replay, replay.insertions,
+                            run_state=dict(task=task.id, phase=phase, seed=seed, collector_rng=rng.getstate(),
+                                           simulation_calls=env.simulation_calls,
+                                           boundary='completed_benchmark_step; fresh episode required'))
                     observation = step[0]
                     if step[2] or step[3]:
                         break
@@ -196,34 +223,51 @@ def run_episode(env, task, method, *, learner=None, replay=None, seed=0, batch_s
     except BaseException as exc:
         summary.update(exception_type=type(exc).__name__, error=str(exc))
         # Include any journal written before an exception (including charged failed calls).
-        recorded = {r['candidate_id'] for r in records}
-        for path in sorted((env.directory / 'candidates').glob('*.json')):
-            row = json.loads(path.read_text())
-            if row['candidate_id'] not in recorded:
-                row['time_from_start_seconds'] = perf_counter() - started
-                records.append(row)
-                summary['records'].append(str(path))
+        if env.recorder is None:
+            recorded = {r['candidate_id'] for r in records}
+            for path in sorted((env.directory / 'candidates').glob('*.json')):
+                row = json.loads(path.read_text())
+                if row['candidate_id'] not in recorded:
+                    record(dict(record_path=str(path), candidate_id=row['candidate_id']))
+        elif env.recorder.last_eval_id is not None and env.recorder.last_eval_id != last_recorded:
+            try:
+                record(dict(candidate_id=env.recorder.last_eval_id,
+                            record_path=f'sqlite:{env.recorder.run_id}/{env.recorder.last_eval_id}'))
+            except Exception as recording_error:
+                summary['unconfirmed_evaluation'] = dict(id=env.recorder.last_eval_id, error=str(recording_error))
         raise
     finally:
-        summary.update(summarize_run(records, calls=env.simulation_calls,
+        summary.update(statistics.summary(calls=env.simulation_calls,
                                      wall_seconds=perf_counter()-started, budget=1+env.max_steps))
-        summary.update(updates=len(updates), update_log=updates, weight_before=before,
+        summary.update(updates=history['updates_count'], update_log=updates, weight_before=before,
                        weight_after=weight_digest(learner) if learner else None,
                        replay_insertions=0 if replay is None else replay.insertions)
         restore = env.directory / 'restoration.json'
         summary['restoration'] = json.loads(restore.read_text()) if restore.exists() else {'state': 'unknown'}
-        write_record(env.directory / 'run.json', summary)
+        write_report_preserving_error(env.directory / 'run.json', summary)
     if not training and summary['weight_before'] != summary['weight_after']:
         raise RuntimeError('Frozen evaluation changed model weights')
-    if checkpoint and training:
-        learner.save(checkpoint, replay, run_state=dict(task=task.id, phase=phase, seed=seed,
-                                                       simulation_calls=env.simulation_calls, summary=summary))
+    if training:
+        state = dict(task=task.id, phase=phase, seed=seed, simulation_calls=env.simulation_calls,
+                     boundary='completed_benchmark_episode', summary=summary)
+        if checkpoints is not None:
+            path = checkpoints.maybe_save(learner, replay, replay.insertions, run_state=state, force=True)
+            checkpoints.policy(learner, replay.insertions)
+            summary['checkpoint'] = str(path)
+        elif checkpoint:
+            learner.save(checkpoint, replay, run_state=state)
     return summary
 
 
 def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance, progress=print,
-                  baseline_check=None):
+                  baseline_check=None, recorder=None, max_workers=1, limits=None, _execution_seeds=None, report=None):
     """Factory(task, max_steps, output) must return a NEW restorable environment."""
+    from analog_optimizer.training.workers import WorkerLimits
+    limits = limits or WorkerLimits()
+    from analog_optimizer.backends.native_preparation import validate_workers
+    validate_workers(max_workers)
+    if max_workers > 1 and not getattr(env_factory, 'parallel_safe', False):
+        raise ValueError('Parallel benchmark requires isolated immutable-netlist or synthetic environments')
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     seeds = settings['seeds']
@@ -253,12 +297,19 @@ def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance
                   budget_unit='one nominal DC/AC candidate package including reset, no cache/retries',
                   normalizer='fixed physical references; no data fitting', stop_on_success=False)
     protocol_sha = freeze_protocol(directory / 'protocol.json', tasks, frozen)
-    report = dict(origin=origin, protocol_sha256=protocol_sha, completed=False, phases=[], methods=tuple(methods),
+    report = {} if report is None else report
+    report.update(origin=origin, protocol_sha256=protocol_sha, completed=False, phases=[], methods=tuple(methods),
                   models={k: asdict(v) for k, v in models.items()},
                   calls=0, planned_calls=planned, real_simulation_calls=0, synthetic_calls=0,
                   automatic_retries=0, cache_hits=0, pretraining_costs=[], test_runs=[],
                   validation_used_for_selection=False)
     started = perf_counter()
+    execution_seeds = seeds if _execution_seeds is None else _execution_seeds
+    if max_workers > 1:
+        from .parallel import run_seeds
+        return run_seeds(tasks, env_factory, directory, origin=origin, settings=settings,
+                         provenance=provenance, report=report, baseline_check=baseline_check,
+                         recorder=recorder, limits=limits, max_workers=max_workers, progress=progress)
 
     def fresh(model, seed, phase, task_ids):
         seed_all(seed)
@@ -268,31 +319,79 @@ def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance
     def execute(task, method, steps, **kwargs):
         if report['calls'] + 1 + steps > settings['max_calls']:
             raise RuntimeError('Global call budget exhausted before environment creation')
-        env = env_factory(task, steps, directory / 'environments')
+        env = None
+        phase_recorder = checkpoints = update_recorder = None
+        run_id = None
+        primary = None
         try:
+            if recorder is not None:
+                from analog_optimizer.recording import RunRecorder, UpdateAggregator
+                from analog_optimizer.recording.checkpoint import CheckpointManager
+                run_id = recorder.store.call('run', dict(parent_run_id=recorder.run_id,
+                    parent_configuration_asset_id=recorder.store.call('read', 'run', recorder.run_id)['config_id'],
+                    protocol_sha256=protocol_sha, task=task.id, method=method, seed=kwargs['seed'], phase=kwargs['phase']))
+                phase_recorder = RunRecorder(recorder.store, run_id, worker_id=f"seed-{kwargs['seed']}", phase=kwargs['phase'])
+                config = recorder.store.call('configuration')
+                if kwargs.get('replay') is not None:
+                    checkpoints = CheckpointManager(recorder.store, run_id, recorder.store.call('recording_root'),
+                                                    interval=config['checkpoint_interval'])
+                    update_recorder = UpdateAggregator(recorder.store, run_id, interval=config['update_interval'])
+            if phase_recorder is None:
+                env = env_factory(task, steps, directory / 'environments')
+            else:
+                env = env_factory.create_recorded(task, steps, directory / 'environments', phase_recorder)
             summary = run_episode(env, task, method, batch_size=settings['batch_size'],
-                                  baseline_check=baseline_check, **kwargs)
-        except BaseException:
-            path = env.directory / 'run.json'
-            if task.partition == 'test' and path.exists():
+                                  baseline_check=baseline_check, history_limit=limits.history_limit,
+                                  checkpoints=checkpoints, update_recorder=update_recorder, **kwargs)
+            if phase_recorder is not None:
+                summary['recording_run_id'] = phase_recorder.run_id
+        except BaseException as exc:
+            primary = exc
+            path = None if env is None else env.directory / 'run.json'
+            if task.partition == 'test' and path is not None and path.exists():
                 report['test_runs'].append(json.loads(path.read_text()))
             raise
         finally:
-            report['calls'] += env.simulation_calls
-            path = env.directory / 'run.json'
-            if path.exists():
-                report['phases'].append(json.loads(path.read_text()))
-            write_record(directory / 'report.json', report)
+            handling_error = primary is not None
+            if env is not None:
+                report['calls'] += env.simulation_calls
+            def collect_summary():
+                if env is None:
+                    return
+                path = env.directory / 'run.json'
+                if path.exists():
+                    row = json.loads(path.read_text())
+                    if phase_recorder is not None:
+                        row['recording_run_id'] = phase_recorder.run_id
+                    report['phases'].append(row)
+            # Cleanup attempts are independent and never replace a training error.
+            cleanup = []
+            if update_recorder is not None:
+                cleanup.append(update_recorder.flush)
+            if run_id is not None:
+                cleanup.append(lambda: recorder.store.call('end_run', run_id))
+            cleanup.append(collect_summary)
+            cleanup.append(lambda: write_record(directory / 'report.json', report))
+            for operation in cleanup:
+                try:
+                    operation()
+                except BaseException as exc:
+                    if primary is None:
+                        primary = exc
+                    else:
+                        report.setdefault('cleanup_errors', []).append(str(exc))
+            if primary is not None and not handling_error:
+                raise primary
         progress(f'{task.id} {method} seed={kwargs["seed"]}: calls={report["calls"]}/{planned}, '
                  f'success={summary["success"]}, updates={summary["updates"]}')
         return summary
 
     try:
-        for seed in seeds:
+        for seed in execution_seeds:
             sources, costs = {}, {}
             for model in models:
                 source = fresh(model, seed, 'pretrain', [t.id for t in train])
-                replay = ReplayBuffer(origin=origin, seed=seed)
+                replay = ReplayBuffer(origin=origin, seed=seed, store=None if recorder is None else recorder.store)
                 phases = []
                 for i, task in enumerate(train):
                     phases.append(execute(task, model+'_pretrain', settings['pretrain_steps'],
@@ -317,7 +416,7 @@ def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance
                         if phase != 'scratch':
                             transfer_weights(sources[model], learner)
                         if phase != 'frozen':
-                            replay = ReplayBuffer(origin=origin, seed=seed)
+                            replay = ReplayBuffer(origin=origin, seed=seed, store=None if recorder is None else recorder.store)
                             checkpoint = directory / f'{task.id}-{method}-{seed}.pt'
                     row = execute(task, method, settings['test_steps'], learner=learner, replay=replay,
                                   seed=seed, phase=phase, checkpoint=checkpoint)
@@ -335,12 +434,12 @@ def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance
     finally:
         finished = {(r['task'], r['method'], r['seed']) for r in report['test_runs']}
         report['unexecuted_test_runs'] = [dict(task=t.id, method=m, seed=s) for t in test
-                                         for m in methods for s in seeds if (t.id, m, s) not in finished]
+                                         for m in methods for s in execution_seeds if (t.id, m, s) not in finished]
         report['cost_by_partition'] = {part: dict(calls=sum(r['calls'] for r in report['phases'] if r['partition'] == part),
                                                   wall_seconds=sum(r['wall_seconds'] for r in report['phases'] if r['partition'] == part))
                                        for part in ('train', 'validation', 'test')}
         report.update(aggregate=aggregate_runs(report['test_runs']), elapsed_seconds=perf_counter()-started,
                       real_simulation_calls=report['calls'] if origin == 'real' else 0,
                       synthetic_calls=report['calls'] if origin == 'synthetic' else 0)
-        write_record(directory / 'report.json', report)
+        write_report_preserving_error(directory / 'report.json', report)
     return report

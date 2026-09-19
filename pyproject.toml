@@ -12,6 +12,7 @@ dependencies = []
 [project.optional-dependencies]
 graph = ["torch>=2.2,<3", "torch-geometric>=2.5,<3", "numpy>=1.24,<3", "networkx>=3,<4"]
 test = ["pytest>=8,<10"]
+export = ["pyarrow>=14,<24"]
 
 [project.scripts]
 analog-graph-demo = "analog_optimizer.demo:main"

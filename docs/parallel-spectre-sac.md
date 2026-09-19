@@ -1,79 +1,83 @@
-# 有限 CDF 表、Python 网表与并行 Spectre SAC
+# 逐候选 CDF、原生网表与并行 Spectre SAC
 
-2026-09-19，用户授权预先建立有限参数表，用 CDF 读回与 Python 模板生成网表，并通过用户输入控制同时运行的 Spectre worker 数量。
+2026-09-19 按用户修订撤销有限 CDF 表方案。训练与迁移入口不再读取 `table.json`，建表程序、查表后端和 Python 器件网表模板已移除。历史表及历史验收记录仅作为旧实验证据，不参与当前执行。
 
-## 两个阶段
+## 执行流程
 
-1. `examples/build_opamp_cdf_table.py`：独占现有 Virtuoso 会话，在已授权 GPDK045 OTA 上串行修改 M1/M2 匹配宽度，读取完整 CDF 参数。范围仍为 3.6–4.4 µm、5 nm 网格，共 161 行，其他尺寸、finger、multiplicity 和偏置固定。保存原生测试台网表作为模板；每行把 `w/ad/as/pd/ps/nrd/nrs/sa/sb/sd/sca/scb/scc` 从 CDF 读回写入模板，并与该行的 Virtuoso 原生导出逐参数、逐连接比较。基线导出一次，加上 161 行原生导出；此阶段不调用 Spectre。全部通过且原理图恢复之后才发布 `table.json`，失败保留记录并由原有后端恢复。
-2. `examples/train_opamp_sac_parallel.py`：读取并校验有限表，Python 查表生成各自的不可变网表。通过原有 bridge standalone Spectre 和测量提取路径执行 DC/AC，训练期间不连接或修改 Virtuoso。
-
-表记录 PDK 文件内容摘要、模型路径、bridge 版本、图/映射/设计/工况/搜索域的配置摘要及每行核验记录。PDK 树在准备前后和每个 worker 启动时检查，未复制或上传 PDK 内容。只排除临时 `.cdslck`/`.lock` 文件。配置、模板或 PDK 变化后需要重建；这不是通用 PDK 自动约束提取，也没有重新推导 CDF 几何公式。表只缓存器件参数和网表，不缓存仿真结果。
-
-## worker 和 SAC 的关系
-
-`--max-workers N` 必须由调用者指定为正整数，表示同时存在的 Spectre 作业上限。实际 worker 数为 `min(N, episodes)`；每个 worker 是独立的 Python 子进程，最多运行一个 Spectre 作业。各 worker 有独立的 backend、环境状态、网表、PSF、日志与计数，使用同一个只读 CDF 表。独立进程也隔离 bridge 的进程级环境变量和 stdout 重定向。
-
-主进程持有唯一的 actor、critics、replay 和优化器。第一版采用同步轮次：主进程按各环境当前观测生成动作，多个 worker 同时执行；本轮全部返回后，按固定 worker 顺序核验 transition、写 replay，并在达到 batch 大小后对每条有效新增经验做一次 SAC 更新。下一轮使用更新后的 actor。记录 proposal、policy version、执行尺寸与候选 ID；不会把不同 worker 的前后状态拼成一条轨迹。
-
-每个 episode 有一次真实 reset 和指定步数的候选；reset 不进入 replay，但计入仿真调用。总预算上限为 `episodes × (steps-per-episode + 1)`。当前入口保持 nominal-only、固定步数且不因达标提前停止。明确归因的电路失败沿用有限惩罚；超时、基础设施或测量错误不进入 replay，当前轮其他已完成的有效样本仍被收集，然后排空并关闭所有 worker，报告失败。没有自动重试。
-
-`--max-workers` 不是单个 Spectre 的内部线程数，也不承诺相同数量的物理核心或许可证。可以先用 2，再比较不同并行数的有效候选吞吐。进程启动、PDK 检查和有限表准备成本单独考虑；小预算 smoke 不能用于证明加速比或学习优势。
-
-## 当前环境复现
-
-先保存并关闭与专用 OTA 冲突的 ADE/Maestro 窗口，保持已有 bridge 会话。以下是本机已配置路径，不是代码硬编码的连接参数。
-
-```bash
-/tmp/analog-optimizer-venv/bin/python -B examples/build_opamp_cdf_table.py \
-  --env /home/fyworkstation/.virtuoso-bridge/.env \
-  --library GATOR_TESTS \
-  --creation-receipt artifacts/local/opamp-baseline/creation.json \
-  --model-file /home/minlei/pdk/gpdk045_v_6_0/models/spectre/gpdk045.scs \
-  --pdk-root /home/minlei/pdk/gpdk045_v_6_0 \
-  --output artifacts/local/opamp-cdf-table \
-  --bridge-site-packages /home/fyworkstation/virtuoso-bridge-lite/.venv/lib/python3.10/site-packages
+```mermaid
+flowchart TD
+    A[SAC 各环境提议] --> B[范围、网格、整数和匹配约束]
+    B --> C[单个专用 Virtuoso 准备进程]
+    C --> D[完整候选回写、PDK 初始化与 callbacks、结束处理]
+    D --> E[CDF 读回与原生网表核验]
+    E --> F[固定候选输入与独立结果目录]
+    F --> G[Spectre worker 1–4]
+    G --> H[按候选和环境身份返回指标、reward、replay]
+    H --> A
 ```
 
-输出目录必须不存在，避免覆盖已有表。完成后同一张表可以跨训练运行复用：
+`NativeEnvironmentFactory` 为整个采样运行启动一个准备服务。服务在独立进程的同一线程持有 `VirtuosoBridgeBackend`，取得现有 session 锁；各环境通过本机 IPC 提交完整候选。回写、回读和导出作为一个事务串行处理，不允许不同环境交错修改原理图。
+
+专用设计是 `--creation-receipt` 标识的、项目已创建并核验的 OTA 测试电路（含 core 和 testbench），不是任意用户原设计。应使用专用 Virtuoso 会话，所有本项目使用者共享 `--state-root`，运行期间不得手动编辑或打开冲突的 ADE/Maestro 窗口。适配器不会自动复制任意生产电路。
+
+候选 A 导出完成即交还其环境执行 standalone Spectre，准备进程随即处理 B。每个候选保存独立的原生导出 package、CDF readback、执行网表和 manifest；候选 ID、导出 ID、网表摘要及实际参数随结果传递。导出核验失败不会调用 Spectre，任何准备失败会停止接收新候选，保留恢复记录。
+
+没有预枚举，也没有候选缓存；重复候选和每个 episode 的 reset 都真实执行 CDF、导出及仿真。一次完整运行的准备次数和 Spectre 调用预算均为 `episodes × (steps_per_episode + 1)`。准备进程关闭时额外执行原理图恢复与回读，不做额外仿真。
+
+## 当前 PDK 参数契约
+
+| 项目 | 当前已核验含义 |
+| --- | --- |
+| 可调器件 | GPDK045 OTA 的 M1、M2，宽度必须匹配 |
+| 动作参数 | `w`，以米表示；范围 3.6–4.4 µm，步长 5 nm |
+| CDF 写入 | `fw` 为单指宽度；当前 `fingers=1`，因此 `w=fw` |
+| 固定项 | `L`、fingers、multiplicity、其他管尺寸、偏置与测试台 |
+| 回调适配 | `PasCdfFormInit` → l/fingers/fw/m callbacks → `PasCdfDone` |
+| 核验 | 实际 w/fw、匹配关系、固定参数、派生 geometry、拓扑和原生导出参数 |
+| 工况 | nominal TT / 27°C / 1.0 V |
+
+网格、匹配和范围由已有 `ActionMapper` / `Gpdk045OtaProfile` 约束。归一化 proposal 与 CDF 实际执行值均保留。读回超出容差或派生参数未更新直接报错，不以模型提议值冒充执行值。尚未开放 L 或 fingers 优化；为其他器件/PDK 扩展时必须另外定义参数语义、初始化、回调顺序和核验规则。[Cadence 对程序化 callbacks 的说明](https://community.cadence.com/cadence_technology_forums/f/custom-ic-skill/50707/changing-schematic-properties-and-callbacks/1382755)说明这部分需要 PDK 适配。
+
+## 并发、学习与恢复
+
+训练和 benchmark CLI 的 `--max-workers` 默认 **4**，只接受 **1–4**；程序接口也在启动 worker 前拒绝超限。每个环境独占一个 Python 进程，同一时刻最多一个 Spectre，实际数量为 `min(max_workers, episodes)`（benchmark 为独立 seed 数）。准备进程不运行 Spectre，也不占一个仿真名额。
+
+采样仍以同步轮次推进，整轮结束后按稳定 lane 顺序入池；每个环境保存自己的前后状态。单个主进程执行 actor、replay 和 SAC 更新，更新预算按有效 transition 计数。benchmark 则保持各 seed 独立 learner/replay，复用同一个串行准备服务。
+
+先关闭/排空各仿真 worker，再恢复并关闭准备会话。worker 的 restoration 表示该环境本地状态复位；报告中的 `preparation_restoration` 才是实际原理图恢复结果。准备失败、超时、断连不会自动重试，也不会把基础设施故障写成低 reward 样本。`--worker-timeout-seconds` 包括等待其他候选准备的时间，需覆盖排队、回调、导出、仿真和通信；恢复失败保留 `recovery_required`。
+
+checkpoint 继续支持完成轮次/完成运行的恢复，从新 episode reset 开始，不接管在途任务。移除表后代码与实验签名已改变，旧表方案的 checkpoint 不自动迁移。
+
+## 运行
+
+无需任何建表步骤，沿用既有连接、设计 receipt、模型路径和真实参考测量：
 
 ```bash
 /tmp/analog-optimizer-venv/bin/python -B examples/train_opamp_sac_parallel.py \
-  --env /home/fyworkstation/.virtuoso-bridge/.env \
-  --library GATOR_TESTS \
-  --creation-receipt artifacts/local/opamp-baseline/creation.json \
-  --model-file /home/minlei/pdk/gpdk045_v_6_0/models/spectre/gpdk045.scs \
-  --cdf-table artifacts/local/opamp-cdf-table/table.json \
-  --reference-measurements artifacts/local/opamp-baseline/simulations/ff6dc7e7c3944d77a0ace70da4d63385/measurements.json \
-  --max-workers 2 --episodes 2 --steps-per-episode 3 --warmup 2 --batch-size 2 \
-  --output artifacts/local/parallel-sac \
-  --bridge-site-packages /home/fyworkstation/virtuoso-bridge-lite/.venv/lib/python3.10/site-packages
+  --env /path/to/bridge.env \
+  --library YOUR_DEDICATED_TEST_LIBRARY \
+  --creation-receipt /path/to/creation.json \
+  --model-file /spectre/host/path/to/model.scs \
+  --reference-measurements /path/to/measurements.json \
+  --bridge-site-packages /path/to/bridge/site-packages \
+  --max-workers 4 --episodes 4 --steps-per-episode 2 \
+  --batch-size 2 --warmup 4 \
+  --output artifacts/local/native-parallel-sac
 ```
 
-调整 `--max-workers` 控制并发，`--episodes` 控制全体 worker 合计 episode 数量，`--steps-per-episode` 控制各 episode 的候选步数。`--encoder` 支持既有六种编码器。首次启动和每个 episode 的基线均与提供的真实参考指标核对。
+`--recording-root` / `--recording-config` 继续接入 SQLite、附件保留、临时目录清理和 checkpoint；普通 JSON 记录路径也保留。`examples/benchmark_transfer.py --origin real` 使用同样的原生准备流程，不再接受 `--cdf-table`。
 
-`report.json` 保存各 worker 的 PID/目录、reset、候选、SAC loss、调用数、并发上限及恢复状态。完成后保存完整 `checkpoint.pt`。`--resume CHECKPOINT` 从一个已完成运行继续新增 `--episodes` 个 episode，恢复网络、优化器、replay 和 RNG；要求实验配置与源码一致。每个新 episode 重新真实 reset，不接管半完成的 Spectre 作业。失败运行保留完整日志，不产生可当作成功运行继续的 checkpoint。
+## 验收边界
 
-## 验收
+本次新增测试覆盖实际候选按需准备、重复候选不缓存、CDF/导出不一致拒绝、完整事务不交错、准备与四个仿真进程重叠、候选 ID 和 replay 参数绑定、超过四个 worker 拒绝以及恢复。离线测试的模拟 CDF/仿真数值仅是故障与调度夹具，不能作为真实 PDK 结果或性能证据。
 
-完整离线回归 **373 项通过，零失败、零跳过**。新增验收覆盖表缺行/摘要错误/派生参数变化、独立网表、原生导出不一致时拒绝发布并恢复、PDK 内容变化、真实子进程的 1/2 worker 上限、不同完成顺序的轨迹与 replay 归属、SAC 更新、checkpoint 下一次更新精确恢复，以及一个 worker 超时后排除其经验并排空其他 worker。
+本轮完整离线回归 **426 passed、0 failed、0 skipped**（177.21 秒）；仅有上游 Torch 的弃用提示。命令：
 
-本轮真实验收已完成：
+```bash
+/tmp/analog-optimizer-venv/bin/python -m pytest -q \
+  --junitxml=artifacts/local/native-cdf-regression-tests.xml
+```
 
-| 阶段 | Spectre 调用 | replay 条数 | SAC 更新 |
-| --- | ---: | ---: | ---: |
-| CDF 预计算与全部 161 行核验 | 0 | 0 | 0 |
-| 2 worker × 1 episode × 3 候选，另各 1 次 reset | 8 | 6 | 5 |
-| 从 checkpoint 续训同样预算 | 8 | 累计 12 | 累计 11 |
+测试需要本机 Unix socket，因此在允许本机 IPC 的执行环境运行。[JUnit 记录](../artifacts/local/native-cdf-regression-tests.xml)包含逐项结果。新增的四 worker 测试分别覆盖 JSON 与 SQLite 路径，实际创建独立 Python 进程，确认同一准备进程串行处理 12 个候选、仿真并发峰值为 4、两阶段存在时间重叠、8 条 transition 的尺寸和指标归属正确；其中的仿真是离线夹具。
 
-有限表准备耗时 204.58 s，包含 162 次原生导出、161 行 CDF 回写/读回及恢复。PDK 摘要覆盖 2014 个文件，准备前后保持一致。训练入口两次运行分别耗时 11.37 s、10.52 s（collector 计时，包含 worker 启动/检查/关闭，不含主进程模型初始化和最终 checkpoint 保存）。训练阶段没有原理图回写；worker 基线均与已有真实指标匹配。首次运行的 Python 网表准备平均 68 ms，参数选择/读回约 0.52 ms；这是本次测量，不是与旧路径成对执行的速度基准。
-
-续训期间在 Spectre 主机以约 0.1 s 间隔采样 300 次进程列表，15 次看到两个不同 PID 的本项目 Spectre 同时运行，观测峰值为 **2**，没有超过 `--max-workers 2`。不是只凭 Python Future 数量判断实际仿真并发。最终额外只读检查确认 Virtuoso M1/M2 仍为 4 µm，其他固定尺寸与基线一致。两次真实训练合计 **16 次 Spectre**，没有自动重试；前面的沙箱连接失败尝试为 0 次仿真。
-
-- [有限 CDF 表](../artifacts/local/opamp-cdf-table/table.json)、[准备统计](../artifacts/local/opamp-cdf-table/preparation.json)
-- [首次 2-worker 训练](../artifacts/local/parallel-sac/cfc7994e674c4b8a94f39a7fa87f25bc/report.json)
-- [真实 checkpoint 续训](../artifacts/local/parallel-sac/71c21ac121eb49cd80fccef4a71448bb/report.json)
-- [Spectre 主机进程采样摘要](../artifacts/local/parallel-sac-process-monitor.json)、[原始记录](../artifacts/local/parallel-sac-process-monitor.log)
-- [最终原理图只读检查](../artifacts/local/parallel-final-inspection/220b9874a36248cf8dbc2582e478abde/verification.json)
-- [完整离线回归 JUnit](../artifacts/local/parallel-spectre-tests.xml)
-
-这些结果验证有限表、实际并发和 SAC 数据更新链路，不构成 SAC 收敛、迁移优势或线性加速结论。当前表仅适用于固定的五管 OTA、输入对单一宽度参数组、nominal 工况；扩大 W/L/nf 或换 PDK/拓扑需要建立新的合法化与表验证契约。
+本机已安装 bridge 0.8.0，但沙箱内外只读检查均确认选定配置没有存活的既有隧道。本轮未启动隧道、未调用真实 Spectre（0 次），新版 CDF/原生导出/并行 Spectre 的真实闭环仍待连接恢复后验收。[连接检查记录](../artifacts/local/native-cdf-connection-check.json)。旧版两 worker 和有限表的真实验收不能证明新版吞吐。

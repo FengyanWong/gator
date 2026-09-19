@@ -183,6 +183,8 @@ def test_result_status_measurements_and_no_stale_op(adapter, tmp_path, monkeypat
                     'missing_psf': SimulationStatus.MEASUREMENT_ERROR, 'valid': SimulationStatus.OK}[mode]
         assert result.status == expected
         assert result.candidate_evaluated == (mode in ('missing', 'valid'))
+        if mode in ('missing', 'valid'):
+            assert result.operating_points == {'test_only': {'gm': 1e-6}}
         assert json.loads((result.artifact_directory / 'result.json').read_text())['status'] == expected.value
         if mode != 'valid':
             with pytest.raises(UnsupportedCapability):

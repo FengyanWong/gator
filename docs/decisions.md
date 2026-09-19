@@ -105,3 +105,58 @@
 - checkpoint 仅在完整运行结束后保存，恢复网络/优化器/replay/RNG，并在新的独立环境真实 reset 后继续。失败运行不接管半完成作业，无自动重试。旧 M4/M5 checkpoint 仍受源码摘要约束，不自动迁移。
 - 本轮仅扩展采样执行路径，未启动 M6、PVT/MC 训练或真实新拓扑迁移。原串行入口保持兼容。完整使用方法、证据和性能计时边界见 [并行训练说明](parallel-spectre-sac.md)。
 - 最终完整离线回归 373 项通过、零失败、零跳过。真实成本合计 16 次 Spectre；离线进程测试明确使用 synthetic 环境，不计作真实电路证据。
+
+# 轻量实验记录与恢复 — 2026-09-19
+
+- 用户要求独立于 replay 保存所有昂贵仿真尝试，并实现存储、清理、测试。复用当前 Virtuoso Bridge 和已有 SAC/collector，不改变优化算法，不新增 surrogate、PVT/MC 调度或真实仿真。本次实际真实调用为 0。
+- 新增 opt-in `recording/`：SQLite 唯一核心源，单 writer 队列与进程间本地 IPC；静态资产内容哈希，动态状态精确 patch，evaluation/transition 原子提交，参数和测量无损保存。开启后不生成逐候选 JSON 或在 checkpoint 中重复保存 replay 样本。
+- 本机 SQLite 3.37.2 使用 DELETE journal + synchronous=EXTRA；WAL 仅在已修复 WAL-reset 的版本分支与已知本地文件系统启用。不在 WSL `/mnt/d` 的 9p 或网络共享上写数据库。
+- feasible 独立判定全部 required spec；默认保留首个 feasible，支持显式物理指标 min/max；infeasible 比较未截断加权违反量。不将 reward 最大解释为达标或全局最优。无法确认启动的仿真另列不确定计数。
+- 默认 500 env steps checkpoint、两份完整文件和一个 final policy；replay 用数据库成员 ID/槽顺序/cursor/RNG 恢复。保留现有源码/schema/依赖的严格校验；精确恢复覆盖 learner/replay，外部 collector 仍从新 episode reset，不能接管半完成模拟器。
+- 默认附件 256 MiB/run、项目 20 GiB、每文件系统空闲 5 GiB，并保留临时、journal、checkpoint 替换空间。只清理有归属标记、已结束、结果已获持久化确认的项目工作目录。VMware 端通过已有 Bridge transport 接专属 scratch 检查与清理；本次只做 helper 离线验证，不声称真实远端清理已验收。严格临时容量限制需要文件系统配额。
+- 使用方法与波形缺失后的可恢复边界见 [实验记录说明](experiment-recording.md)，最终测试与 6000 次 MockBackend 体积见 [记录验收](recording-verification.md)。关闭方式为不传 `--recording-root`；历史产物不迁移、不删除。
+
+# 实验记录重复 I/O 优化 — 2026-09-19
+
+- 用户明确记录主要服务运行管理与手动查阅，授权减少重复 I/O、改善摘要和测量开销。权重保存/加载继续独立；不修改 SAC、动作、reward 或仿真流程，不调用真实 Spectre。
+- replay 入池由完整数据库重建改为核对同事务保存的完整字段指纹；恢复仍完整校验，历史行没有指纹时保留原回读兼容。缓存已持久化静态资产 ID 和不可变图定义，避免重复 next_state 处理、已存在内容的重复压缩/写入，以及清理/导出中的冗余回读。环境诊断中的重复字段按明确 result/request/condition 引用保存。
+- 请求/工作目录同一事务登记，结果独立提交后再合并本地保留/清理元数据事务。普通无附件评价主要写事务由 6 个变为 4 个；未降低 SQLite durability。清理仍要求已确认结果、目录归属和进程退出；删除后元数据失败可以显式重试补齐。
+- checkpoint 数据库登记复用实际写入文件的恢复位置。内置并行 factory 在环境构造时接入 recorder，避免每 worker 先落一份旧 JSON 配置；外部 factory 的可选 `create_recorded` hook 保留向后兼容。
+- 新增只读 `summary` 文本及 `summary --json` / `RunReader.overview()`，新 run 的分组统计不扫描历史。未结束登记不代表 worker 存活；存储统计只覆盖本地记录根目录。
+- 完整离线回归 **411 passed，0 failed，0 skipped**。600 次评价×3 种路径×3 次重复的配对计时核对全部评价轨迹及网络参数一致；入池约 7.56→3.24 ms，但相比原有 JSON 路径 SQLite 在快速 mock 上仍增加约 25.67 ms/评价，文件系统耗时有波动。不能将此表述为所有训练中零开销或真实 Spectre 提速。证据见 [重复 I/O 审查](recording-io-audit.md)、[开销对照](recording-overhead.md)。
+- 回退方式：不传 `--recording-root` 仍走原 JSON 路径；旧数据库无须迁移。源码摘要校验仍严格，改码前 checkpoint 不自动迁移。
+
+# 实验记录真实闭环验收 — 2026-09-19
+
+- 用户授权执行单 worker、2-worker 和 checkpoint 续跑的小规模真实验收。复用已有 OTA、有限 CDF 表和 nominal specs；合计新增 16 次 Spectre、12 条 transition、10 次实际训练更新，无自动重试或原理图回写。
+- 发现虚拟机只有 Python 2.7.5，原记录 helper 写死 python3。第一次尝试在派发前失败，真实调用为 0。修复 helper 的解释器选择及标准库兼容性，保留归属、路径、容量、存活进程和提交确认门槛；不因操作失败而换解释器重试，不安装新解释器。
+- 数据库放在持久 WSL ext4 `/home/fyworkstation/gator-records/recording-real-20260919/`。本轮仅将 checkpoint 间隔设为 2 步以验证轮换，默认 500 步不变。三个成功 run 各保留 2 full checkpoint + 1 final policy；六份真实 AC/DC 波形附件与数据库指标/网表摘要一致。
+- 逐条参数/网表/reward/transition、Parquet 数值及 checkpoint 重载后的下一次采样、loss、网络和 optimizer 状态全部核对通过。共清理 17 个本地与 16 个远端 owned workspace，包含确认未启动仿真的首次失败空目录，失败历史仍保留。SQLite 完整性正常、pending=0、无不确定调用。
+- 600 次虚拟机进程采样中 22 次确认两个 Spectre 同时运行，观测峰值为 2；前后 Virtuoso 完整 CDF 快照相同，输入对仍为 4 µm。完整离线回归 413 passed，零失败、零跳过。证据和复现见 [真实记录验收](recording-real-verification.md)。
+- 验收覆盖现有单参数 nominal 任务的工程闭环；不推导训练收敛、迁移优势或加速比，不扩展动作域/PVT/MC/M6。恢复仍从新 episode 开始；真实磁盘耗尽和大波形超预算没有刻意触发，严格临时容量上限仍需文件系统配额。
+
+# 中文摘要随记录保存 — 2026-09-19
+
+- 用户要求中文 summary 也保存到 ext4。当前真实续跑 run 的摘要已补存到记录根目录的 `summaries/0aeec628645143d686a93137beb2c404.txt`，原工作区摘要保留。
+- 新增 `examples/save_recording_summary.py`，复用只读 `RunReader.overview()` 和现有中文排版，UTF-8 临时文件 fsync 后原子发布，每个 run 单独命名。两个 recorded 训练入口和 6000 次记录验收入口在结束登记、关闭 writer 后自动导出，并记录 `summary_path`；衍生文本失败显式报告，不掩盖训练异常。文本不自动刷新，已有 run 可单独补导出。
+- 修改只在 examples 和说明文档中，未改变训练核心、数据库 schema 或源码摘要，已验证的真实 checkpoint 保持兼容。双拓扑 synthetic CLI smoke 完成 6 次 toy evaluation、4 条经验、3 次训练更新，恢复和自动摘要导出通过；新增真实 Spectre 调用为 0。
+
+# 运行恢复、worker 限时与迁移入口整合 — 2026-09-19
+
+- 用户明确要求修复周期备份与 CLI 不兼容、初始化/报告异常清理、worker 无期限等待、迁移入口未接入有限表与记录，以及长运行报告内存增长。沿用现有 nominal、SAC、动作/奖励、分区和调用预算规则，不扩展真实参数权限或启动 M6。
+- 并行完整轮次与完整运行 checkpoint 使用统一累计计数；恢复从新 episode reset 开始，保留 checkpoint 位置的 learner/replay/RNG。synthetic 周期备份补齐累计字段。失败更新的轮次不发布新备份；未接管在途仿真。
+- 公共运行资源管理覆盖服务启动后的初始化、训练和结束处理，各项清理独立尝试，保留原始错误。环境恢复记录写入失败也继续尝试 backend 恢复/关闭。
+- 以拥有明确进程句柄的 spawned worker 替换无期限 executor 等待；操作、关闭、terminate/kill 分阶段限时。只停止本次本地 worker，远端未知状态保留且无自动重试。训练仍按稳定 lane 顺序入池，保留正常 peer 的已完成样本。
+- 迁移入口增加有限表、SQLite 和独立 seed 并行；真实并行必须选择不可变网表。协议与总预算在启动前冻结，各 seed 和各测试任务保持独立 learner/replay。阶段 run 关联控制 run 的来源配置，测试 replay 仅持有本任务成员 ID。
+- SQLite 模式只在内存保留近期报告条目，累计统计与完整数据库评价保留。未开启记录的 JSON 行为兼容；不宣称对所有 backend 缓存设置了进程级内存硬上限。
+- 本轮采用离线故障注入与 CLI 测试，真实 Spectre 调用为 0。源码已变化，旧 checkpoint 的严格代码摘要限制仍有效，不自动迁移。参数、成本计数边界、复现与验收见 [运行可靠性说明](runtime-reliability.md)。
+- 完整回归 **430 passed，0 failed，0 skipped**（175.26 秒），含新增 17 项恢复、清理、限时退出和迁移入口验收；记录见 `artifacts/local/runtime-reliability-tests.xml`。
+
+# 撤销 CDF 预计算表，接入逐候选原生准备 — 2026-09-19
+
+- 用户明确撤回穷举 CDF 表方案，要求完整候选逐次经过 PDK 参数处理、读回和原生导出，并把最大 Spectre 并发设为 4。此前有限表章节仅代表历史决定和历史验收。
+- 删除建表入口与查表/模板后端；训练与 benchmark 均改为一个专用 Virtuoso 准备进程，串行执行完整候选事务，再把独立且核验过的网表交给各环境 Spectre 进程。A 仿真期间可准备 B，不预枚举、不缓存。
+- 保留现有 GPDK045 的初始化、回调顺序、结束处理及 M1/M2 匹配宽度授权；不将其推广到其他 PDK，不扩大 L/fingers 等动作域。使用已有 receipt 核验的项目测试电路及会话锁，最后由准备进程恢复原理图。
+- 默认和硬上限均为 4；可选 1–4。候选/环境身份、原始 proposal、实际 CDF 参数、派生量及网表摘要保留；同步轮次稳定入池、中央 SAC、记录与故障恢复规则继续有效。旧表方案 checkpoint 因实验和源码签名变化不自动迁移。
+- 实现及验收见 [逐候选 CDF 与并行 Spectre](parallel-spectre-sac.md)。
+- 完整离线回归 **426 passed、0 failed、0 skipped**（177.21 秒），新增测试包含 JSON/SQLite 四 worker 准备流水线。bridge 0.8.0 已安装，但既有隧道未运行；本轮真实调用为 0，新版真实闭环未验收。

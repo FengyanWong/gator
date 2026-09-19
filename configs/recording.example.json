@@ -1,0 +1,12 @@
+{
+  "project_budget": 21474836480,
+  "min_free": 5368709120,
+  "attachment_budget": 268435456,
+  "temporary_reserve": 268435456,
+  "journal_reserve": 67108864,
+  "result_reserve": 1048576,
+  "error_bytes": 16384,
+  "checkpoint_interval": 500,
+  "update_interval": 100,
+  "journal_mode": "DELETE"
+}

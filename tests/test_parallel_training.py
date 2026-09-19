@@ -42,9 +42,12 @@ class Factory:
     failure: bool = False
 
     def __call__(self, lane):
+        return self.create_recorded(lane, None)
+
+    def create_recorded(self, lane, recorder):
         return CircuitSizingEnv(TimedBackend(self.graph, self.output, lane, self.failure), self.graph,
                                 (MetricSpec('score', 'fixture', 'min', 1, lower=.95),), self.output,
-                                max_steps=2, stop_on_success=False, expected_origin='synthetic')
+                                max_steps=2, stop_on_success=False, expected_origin='synthetic', recorder=recorder)
 
 
 def make_learner():
@@ -101,3 +104,25 @@ def test_failed_worker_is_excluded_peers_drained_and_every_worker_closed(opamp, 
 def test_invalid_worker_limit_rejected_before_starting(value):
     with pytest.raises(ValueError, match='max_workers'):
         collect_parallel_episodes(None, None, None, None, max_workers=value, episodes=1)
+
+
+def test_parallel_recording_with_shared_writer_and_durable_replay(opamp, tmp_path):
+    from analog_optimizer.recording import start_service, RunRecorder
+    from analog_optimizer.recording.codec import raw
+    manager, store = start_service(tmp_path / 'records', dict(min_free=0, temporary_reserve=0))
+    try:
+        run = store.call('run', {})
+        replay = ReplayBuffer(origin='synthetic', store=store)
+        learner = make_learner()
+        report = collect_parallel_episodes(Factory(opamp, tmp_path), learner, replay, random.Random(8),
+            max_workers=2, episodes=2, warmup=1, batch_size=2, recorder=RunRecorder(store, run))
+        assert report['passed'] and len(replay) == 4
+        assert store.call('read', 'run', run)['summary']['evaluations'] == 6
+        saved = ReplayBuffer.from_manifest(replay.manifest(), store)
+        assert raw(vars(saved.sample(1)[0])) == raw(vars(replay.sample(1)[0]))
+        assert not list((tmp_path / 'records/temporary').iterdir())
+        assert not list(tmp_path.rglob('config.json'))
+        assert not list(tmp_path.rglob('candidates'))
+    finally:
+        store.close()
+        manager.shutdown()

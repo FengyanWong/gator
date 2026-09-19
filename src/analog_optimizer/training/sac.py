@@ -155,25 +155,25 @@ class SACLearner:
                     experiment=self.experiment, device='cpu', code_sha256=source_digest(),
                     torch_version=str(torch.__version__), pyg_version=str(torch_geometric.__version__))
 
-    def save(self, path, replay, *, run_state=None):
+    def save(self, path, replay, *, run_state=None, preflight=None):
         if replay.origin != self.experiment['origin']:
             raise ValueError('Checkpoint replay origin mismatch')
         payload = dict(contract=self.contract(), actor=self.actor.state_dict(), critics=self.critics.state_dict(),
                        targets=self.targets.state_dict(), log_alpha=self.log_alpha.detach(),
                        actor_optimizer=self.actor_optimizer.state_dict(),
                        critic_optimizer=self.critic_optimizer.state_dict(), alpha_optimizer=self.alpha_optimizer.state_dict(),
-                       replay=replay.state_dict(), updates=self.updates, run_state=deepcopy(run_state or {}),
+                       replay=replay.state_dict() if replay.store is None else replay.manifest(),
+                       replay_format='embedded-v1' if replay.store is None else 'replay-ids-v1',
+                       updates=self.updates, run_state=deepcopy(run_state or {}),
                        torch_rng=torch.get_rng_state(), python_rng=random.getstate(), numpy_rng=np.random.get_state(),
                        torch_threads=torch.get_num_threads(), deterministic=torch.are_deterministic_algorithms_enabled())
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(path.suffix + '.tmp')
-        torch.save(payload, temporary)
-        temporary.replace(path)
+        from analog_optimizer.recording.checkpoint import atomic_torch_save
+        atomic_torch_save(payload, path, preflight=preflight)
+        return payload['replay'].get('database')
 
     @classmethod
     def load(cls, path, *, experiment, feature_schema=None, spec_schema=None, model_config=None, config=None,
-             input_cache_capacity=2048, topology_cache_capacity=64):
+             input_cache_capacity=2048, topology_cache_capacity=64, store=None):
         # This API intentionally accepts trusted checkpoints only (see class docstring).
         payload = torch.load(path, map_location='cpu', weights_only=False)
         learner = cls(experiment=experiment, feature_schema=feature_schema, spec_schema=spec_schema,
@@ -190,7 +190,12 @@ class SACLearner:
         learner.critic_optimizer.load_state_dict(payload['critic_optimizer'])
         learner.alpha_optimizer.load_state_dict(payload['alpha_optimizer'])
         learner.updates = payload['updates']
-        replay = ReplayBuffer.from_state_dict(payload['replay'])
+        if payload.get('replay_format') == 'replay-ids-v1':
+            if store is None:
+                raise ValueError('This checkpoint requires its original recording database')
+            replay = ReplayBuffer.from_manifest(payload['replay'], store)
+        else:
+            replay = ReplayBuffer.from_state_dict(payload['replay'])
         if replay.origin != learner.experiment['origin']:
             raise ValueError('Checkpoint replay origin mismatch')
         torch.set_num_threads(payload['torch_threads'])

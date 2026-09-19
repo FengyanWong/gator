@@ -2,7 +2,7 @@
 
 已实现离线基础链路：`VirtuosoBackend` 抽象 → synthetic `MockBackend` 导出网表 → Spectre 子集解析器 → `CircuitGraph` → PyTorch Geometric `HeteroData`。包含 op-amp、LDO、VCO 三个小型 synthetic fixture。另外已在真实 Virtuoso 中创建 GPDK045 五管 OTA 和测试台，完成 Spectre DC/AC、负载扰动、原参数复跑以及真实网表到 PyG 的验收；见 [运放基线](docs/opamp-baseline.md)。
 
-真实接口使用已有的 **[virtuoso-bridge-lite](https://github.com/Arcadia-1/virtuoso-bridge-lite)** 0.8.0。已实现专用于当前 GPDK045 OTA 的 `VirtuosoBridgeBackend` 薄适配层，完成 M1/M2 宽度 4 → 4.4 → 4 µm 的真实回写、仿真和恢复；见 [后端验收](docs/opamp-backend.md)。本项目的 `VirtuosoBackend` 方法属于自有接口，底层继续调用上游连接、导出和 Spectre API；尚未实现通用 PDK 适配。
+真实接口使用已有的 **Virtuoso Bridge**（发行包 `virtuoso-bridge`，import `virtuoso_bridge`）。已实现专用于当前 GPDK045 OTA 的 `VirtuosoBridgeBackend` 薄适配层，完成 M1/M2 宽度 4 → 4.4 → 4 µm 的真实回写、仿真和恢复；见 [后端验收](docs/opamp-backend.md)。本项目的 `VirtuosoBackend` 方法属于自有接口，底层继续调用上游连接、导出和 Spectre API；尚未实现通用 PDK 适配。
 
 已进一步实现单 worker 的 **`CircuitSizingEnv.reset/step` → 参数合法化 → 真实仿真 → 规格评价/奖励 → 候选记录与恢复**。M3 完整验收实际运行 8 次 Spectre，覆盖宽度边界、3 个随机候选、重复候选和恢复基线。真实 CDF 的宽度取整已纳入 5 nm 动作网格。详见 [环境与随机候选验收](docs/opamp-environment.md)。
 
@@ -18,7 +18,13 @@ M3 已补充 typed PVT/Monte Carlo 工况接口、GPDK045 来源配置、nominal
 
 **训练输入缓存**已默认启用：同一拓扑复用连接与端口，同一历史观测复用原始张量；更新尺寸/规格/测量时刷新输入，每次训练重新计算网络表示。354 项离线测试通过；本机合成 batch=32 的 GT 完整 SAC 更新实测约 112→62 ms，未新增真实仿真。容量、失效规则和计时边界见 [输入缓存说明](docs/input-tensor-cache.md)。
 
-**并行 Spectre SAC**新增有限 CDF 参数表与 Python 网表后端：已核验 161 个匹配宽度取值，训练时独立进程并行运行 Spectre，共享一个主进程 learner/replay。用户通过 `--max-workers` 指定并发上限；真实 2-worker 训练与 checkpoint 续训共完成 16 次 Spectre、12 条经验、11 次 SAC 更新，主机进程采样确认同时运行 2 个 Spectre。准备表、训练与恢复命令见 [并行训练说明](docs/parallel-spectre-sac.md)。
+**并行 Spectre SAC**改为按实际候选调用 CDF 并导出原生网表：一个专用 Virtuoso 准备进程串行处理完整候选，各环境独立并行运行 Spectre，共享主进程 learner/replay。默认及最大并发均为 **4**；不再预计算或依赖 CDF 表。参数语义、运行与恢复见 [并行训练说明](docs/parallel-spectre-sac.md)。
+
+**轻量实验记录**可通过训练入口的 `--recording-root` 开启：单 writer SQLite 保存所有 evaluation、静态资产引用和完整动态 transition，独立于内存 replay；checkpoint 使用 replay 成员 ID，默认保留最近两份及一份 final policy。带容量门槛、提交确认后的附件/工作目录清理、只读查询和按需 Parquet+ZSTD 导出。数据库使用 WSL 本机 ext4 目录；配置与恢复边界见 [实验记录说明](docs/experiment-recording.md)。后续真实验收完成 16 次 Spectre，覆盖单 worker、2-worker 和 checkpoint 续跑；实际波形保留、远端清理、数据及恢复审计通过，完整回归 413 项通过。见 [真实记录验收](docs/recording-real-verification.md)。
+
+日常查看：`python -m analog_optimizer.recording /path/to/records summary`；加 `--json` 可给自动控制脚本使用。已减少 replay 全量回读、重复静态登记与状态写入，检查清单见 [重复 I/O 审查](docs/recording-io-audit.md)；`examples/benchmark_recording_overhead.py` 可复测记录开销。
+
+**运行可靠性与迁移入口**已补齐周期 checkpoint 续训、累计计数、初始化/异常清理和 worker 等待上限；记录模式的报告历史有界。迁移入口可使用有限 CDF 表、SQLite 和独立 seed 并行，保持各任务 learner/replay 隔离。参数、恢复边界及离线验收见 [运行说明](docs/runtime-reliability.md)。
 
 ## 安装与运行
 
@@ -66,6 +72,7 @@ PYTHONPATH=src python3 -m analog_optimizer.demo tests/fixtures/synthetic/vco.scs
 | `src/analog_optimizer/evaluation/` | nominal top-k/corner 汇总纯函数，以及 M5 划分检查、定额迁移实验和成本汇总；不调度 PVT/MC |
 | `src/analog_optimizer/models/` | 固定特征/规格注册表、packed batch、可切换 GT/MLP/GCN/RGCN/GAT/port-GNN 编码器、group actor/critic |
 | `src/analog_optimizer/training/` | nominal replay、连续 SAC、串行/并行 collector、checkpoint 保存/恢复 |
+| `src/analog_optimizer/recording/` | 单 writer SQLite、静态去重、动态状态、摘要、容量/附件清理、checkpoint、只读查询与导出 |
 | `tests/fixtures/synthetic/` | 三个合成网表，使用同一个解析器 |
 | `examples/netlist_demo.py` | 命令行 demo |
 

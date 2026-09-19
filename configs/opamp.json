@@ -1,0 +1,10 @@
+{
+  "models_file": "synthetic_models.json",
+  "mapping_version": "synthetic-1",
+  "global_nets": ["0"],
+  "net_roles": {"0": ["ground"], "vdd": ["supply"], "vinp": ["input"], "vinn": ["input"], "out": ["output"]},
+  "parameter_groups": [
+    {"id": "input_pair_width", "parameter_kind": "w", "unit": "m", "lower": 1e-6, "upper": 8e-6, "scale": "log", "members": [{"device_id": "input_left", "parameter": "w"}, {"device_id": "input_right", "parameter": "w"}]},
+    {"id": "load_capacitance", "parameter_kind": "c", "unit": "F", "lower": 1e-13, "upper": 5e-12, "scale": "log", "members": [{"device_id": "CL", "parameter": "c"}]}
+  ]
+}

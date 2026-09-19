@@ -1,0 +1,15 @@
+// SYNTHETIC two-stage OTA structural fixture. Analytic score only, no electrical validation.
+simulator lang=spectre
+global 0
+parameters width=2u length=180n supply=1.2
+input_left (left vinp tail 0) nmos_demo w=width l=length nf=2 m=1
+input_right (out vinn tail 0) nmos_demo w=width l=length nf=2 m=1
+load_left (left left vdd vdd) pmos_demo w=4u l=length
+load_right (out left vdd vdd) pmos_demo w=4u l=length
+ITAIL (tail 0) isource dc=20u
+stage2 (out2 out 0 0) nmos_demo w=2u l=length
+ILOAD (vdd out2) isource dc=20u
+CL (out2 0) capacitor c=1p
+VSUPPLY (vdd 0) vsource type=dc dc=supply
+ac_test ac start=1 stop=1G
+save out2

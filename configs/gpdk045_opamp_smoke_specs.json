@@ -1,0 +1,11 @@
+{
+  "purpose": "DC/AC environment acceptance targets near the measured baseline, not a product specification or held-out evaluation set",
+  "specs": [
+    {"metric_id": "gain_db_at_start", "unit": "dB", "comparator": "min", "lower": 25.015, "scale": 1.0},
+    {"metric_id": "unity_gain_hz", "unit": "Hz", "comparator": "min", "lower": 3550000.0, "scale": 1000000.0},
+    {"metric_id": "phase_margin_estimate_deg", "unit": "deg", "comparator": "min", "lower": 90.0, "scale": 10.0},
+    {"metric_id": "supply_power_w", "unit": "W", "comparator": "range", "lower": 0.0, "upper": 0.0000021, "scale": 0.000001},
+    {"metric_id": "output_dc_v", "unit": "V", "comparator": "range", "lower": 0.2, "upper": 0.8, "scale": 1.0},
+    {"metric_id": "unity_downward_crossings", "unit": "count", "comparator": "range", "lower": 1.0, "upper": 1.0, "scale": 1.0}
+  ]
+}

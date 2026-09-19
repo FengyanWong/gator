@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "analog-optimizer"
+version = "0.1.0"
+description = "Terminal-aware circuit graphs and nominal graph SAC sizing"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+graph = ["torch>=2.2,<3", "torch-geometric>=2.5,<3", "numpy>=1.24,<3", "networkx>=3,<4"]
+test = ["pytest>=8,<10"]
+
+[project.scripts]
+analog-graph-demo = "analog_optimizer.demo:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

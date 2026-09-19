@@ -1,0 +1,14 @@
+// SYNTHETIC ring-like hierarchy, not a validated oscillator.
+simulator lang=spectre
+global 0 vdd
+parameters wn=1u
+subckt inverter (in out vplus vminus)
+parameters width=1u length=200n
+pull_down (local in vminus vminus) nmos_demo w=width l=length
+pull_up (local in vplus vplus) pmos_demo w=2*width l=length
+Rout (local out) resistor r=10
+ends inverter
+stage_a (n3 n1 vdd 0) inverter width=wn
+stage_b (n1 n2 vdd 0) inverter width=2*wn
+stage_c (n2 n3 vdd 0) inverter width=3*wn
+VSUPPLY (vdd 0) vsource dc=1.2

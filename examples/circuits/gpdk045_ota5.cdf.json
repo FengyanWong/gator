@@ -1,0 +1,160 @@
+{
+  "origin": "recorded_real_readback",
+  "instances": [
+    {
+      "name": "M5",
+      "lib": "gpdk045",
+      "cell": "nmos1v",
+      "view": "symbol",
+      "terms": {
+        "D": "NTAIL",
+        "B": "VSS",
+        "G": "VBIAS",
+        "S": "VSS"
+      },
+      "params": {
+        "w": "4u",
+        "fw": "4u",
+        "l": "1u",
+        "m": "1",
+        "fingers": "1",
+        "ad": "560f",
+        "as": "560f",
+        "pd": "8.28u",
+        "ps": "8.28u",
+        "nrd": "35m",
+        "nrs": "35m",
+        "sa": "140n",
+        "sb": "140n",
+        "sd": "160n",
+        "sca": "16.54351",
+        "scb": "0.01251",
+        "scc": "0.00129"
+      }
+    },
+    {
+      "name": "M2",
+      "lib": "gpdk045",
+      "cell": "nmos1v",
+      "view": "symbol",
+      "terms": {
+        "D": "VOUT",
+        "B": "VSS",
+        "G": "VINN",
+        "S": "NTAIL"
+      },
+      "params": {
+        "w": "4u",
+        "fw": "4u",
+        "l": "500n",
+        "m": "1",
+        "fingers": "1",
+        "ad": "560f",
+        "as": "560f",
+        "pd": "8.28u",
+        "ps": "8.28u",
+        "nrd": "35m",
+        "nrs": "35m",
+        "sa": "140n",
+        "sb": "140n",
+        "sd": "160n",
+        "sca": "22.49589",
+        "scb": "0.02034",
+        "scc": "0.00174"
+      }
+    },
+    {
+      "name": "M1",
+      "lib": "gpdk045",
+      "cell": "nmos1v",
+      "view": "symbol",
+      "terms": {
+        "D": "NLOAD",
+        "B": "VSS",
+        "G": "VINP",
+        "S": "NTAIL"
+      },
+      "params": {
+        "w": "4u",
+        "fw": "4u",
+        "l": "500n",
+        "m": "1",
+        "fingers": "1",
+        "ad": "560f",
+        "as": "560f",
+        "pd": "8.28u",
+        "ps": "8.28u",
+        "nrd": "35m",
+        "nrs": "35m",
+        "sa": "140n",
+        "sb": "140n",
+        "sd": "160n",
+        "sca": "22.49589",
+        "scb": "0.02034",
+        "scc": "0.00174"
+      }
+    },
+    {
+      "name": "M4",
+      "lib": "gpdk045",
+      "cell": "pmos1v",
+      "view": "symbol",
+      "terms": {
+        "D": "VOUT",
+        "B": "VDD",
+        "G": "NLOAD",
+        "S": "VDD"
+      },
+      "params": {
+        "w": "8u",
+        "fw": "8u",
+        "l": "500n",
+        "m": "1",
+        "fingers": "1",
+        "ad": "1.12p",
+        "as": "1.12p",
+        "pd": "16.28u",
+        "ps": "16.28u",
+        "nrd": "17.5m",
+        "nrs": "17.5m",
+        "sa": "140n",
+        "sb": "140n",
+        "sd": "160n",
+        "sca": "18.42136",
+        "scb": "0.01814",
+        "scc": "0.00133"
+      }
+    },
+    {
+      "name": "M3",
+      "lib": "gpdk045",
+      "cell": "pmos1v",
+      "view": "symbol",
+      "terms": {
+        "D": "NLOAD",
+        "B": "VDD",
+        "G": "NLOAD",
+        "S": "VDD"
+      },
+      "params": {
+        "w": "8u",
+        "fw": "8u",
+        "l": "500n",
+        "m": "1",
+        "fingers": "1",
+        "ad": "1.12p",
+        "as": "1.12p",
+        "pd": "16.28u",
+        "ps": "16.28u",
+        "nrd": "17.5m",
+        "nrs": "17.5m",
+        "sa": "140n",
+        "sb": "140n",
+        "sd": "160n",
+        "sca": "18.42136",
+        "scb": "0.01814",
+        "scc": "0.00133"
+      }
+    }
+  ]
+}

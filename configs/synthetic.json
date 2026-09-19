@@ -1,0 +1,6 @@
+{
+  "models_file": "synthetic_models.json",
+  "mapping_version": "synthetic-1",
+  "global_nets": ["0"],
+  "net_roles": {"0": ["ground"], "vdd": ["supply"], "vinp": ["input"], "vinn": ["input"], "out": ["output"], "bias": ["bias"]}
+}

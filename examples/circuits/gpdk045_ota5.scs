@@ -1,0 +1,32 @@
+
+// Library name: GATOR_TESTS
+// Cell name: ota5_v1
+// View name: schematic
+subckt ota5_v1 VBIAS VDD VINN VINP VOUT VSS
+    M5 (NTAIL VBIAS VSS VSS) g45n1svt w=(4u) l=1u nf=1 as=560f ad=560f \
+        ps=8.28u pd=8.28u nrd=35m nrs=35m sa=140n sb=140n sd=160n \
+        sca=16.54351 scb=0.01251 scc=0.00129 m=(1)
+    M2 (VOUT VINN NTAIL VSS) g45n1svt w=(4u) l=500n nf=1 as=560f ad=560f \
+        ps=8.28u pd=8.28u nrd=35m nrs=35m sa=140n sb=140n sd=160n \
+        sca=22.49589 scb=0.02034 scc=0.00174 m=(1)
+    M1 (NLOAD VINP NTAIL VSS) g45n1svt w=(4u) l=500n nf=1 as=560f ad=560f \
+        ps=8.28u pd=8.28u nrd=35m nrs=35m sa=140n sb=140n sd=160n \
+        sca=22.49589 scb=0.02034 scc=0.00174 m=(1)
+    M4 (VOUT NLOAD VDD VDD) g45p1svt w=(8u) l=500n nf=1 as=1.12p ad=1.12p \
+        ps=16.28u pd=16.28u nrd=17.5m nrs=17.5m sa=140n sb=140n sd=160n \
+        sca=18.42136 scb=0.01814 scc=0.00133 m=(1)
+    M3 (NLOAD NLOAD VDD VDD) g45p1svt w=(8u) l=500n nf=1 as=1.12p ad=1.12p \
+        ps=16.28u pd=16.28u nrd=17.5m nrs=17.5m sa=140n sb=140n sd=160n \
+        sca=18.42136 scb=0.01814 scc=0.00133 m=(1)
+ends ota5_v1
+// End of subcircuit definition.
+
+// Library name: GATOR_TESTS
+// Cell name: tb_ota5_ac_v1
+// View name: schematic
+XU1 (VBIAS VDD VINN VINP VOUT 0) ota5_v1
+VN (VINN 0) vsource dc=600.0m mag=500.0m phase=180 type=dc
+VP (VINP 0) vsource dc=600.0m mag=500.0m phase=0 type=dc
+VB (VBIAS 0) vsource dc=400.0m mag=0 phase=0 type=dc
+VDD (VDD 0) vsource dc=1.0 mag=0 phase=0 type=dc
+CL (VOUT 0) capacitor c=1p

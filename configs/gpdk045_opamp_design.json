@@ -1,0 +1,17 @@
+{
+  "pdk_library": "gpdk045",
+  "nmos_cell": "nmos1v",
+  "pmos_cell": "pmos1v",
+  "core_cell": "ota5_v1",
+  "testbench_cell": "tb_ota5_ac_v1",
+  "input_width": "4u",
+  "input_length": "500n",
+  "load_width": "8u",
+  "load_length": "500n",
+  "tail_width": "4u",
+  "tail_length": "1u",
+  "supply_v": "1.0",
+  "common_mode_v": "0.6",
+  "bias_v": "0.4",
+  "load_capacitance": "1p"
+}

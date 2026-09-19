@@ -1,0 +1,9 @@
+// SYNTHETIC pass-device/divider structure, not a validated LDO testbench.
+simulator lang=spectre
+parameters pass_w=40u
+pass (out bias vdd vdd) pmos_demo w=pass_w l=500n
+reference (bias 0) vsource type=dc dc=0.6
+RUP (out fb) resistor r=10k
+RDOWN (fb 0) resistor r=20k
+COUT (out 0) capacitor c=10n
+VSUPPLY (vdd 0) vsource dc=1.8

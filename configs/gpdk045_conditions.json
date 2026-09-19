@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "nominal": {"id": "nominal", "model_section": "tt", "temperature_c": 27.0, "supply_v": 1.0},
+  "screening_corners": [
+    {"id": "nominal", "model_section": "tt", "temperature_c": 27.0, "supply_v": 1.0},
+    {"id": "ss_hot_low", "model_section": "ss", "temperature_c": 125.0, "supply_v": 0.9},
+    {"id": "ff_cold_high", "model_section": "ff", "temperature_c": -40.0, "supply_v": 1.1},
+    {"id": "fs_nominal", "model_section": "fs", "temperature_c": 27.0, "supply_v": 1.0},
+    {"id": "sf_nominal", "model_section": "sf", "temperature_c": 27.0, "supply_v": 1.0}
+  ],
+  "model_policy": {
+    "deterministic_sections": ["tt", "ss", "ff", "fs", "sf"],
+    "temperature_c_bounds": [-40.0, 125.0],
+    "screening_supply_v_bounds": [0.9, 1.1],
+    "bias_policy": "fixed_absolute_vinp_vinn_0.6V_vbias_0.4V",
+    "statistical_section": "mc",
+    "monte_carlo_execution_implemented": false
+  },
+  "post_validation": {
+    "top_k": 3,
+    "lambda_failed": 1.0,
+    "reject_any_failed_corner": true,
+    "training_condition": "nominal_only",
+    "monte_carlo": null,
+    "max_deterministic_points_per_screen": 15
+  },
+  "evidence": {
+    "pdk_version": "GPDK045 v6.0",
+    "model_entry": "models/spectre/gpdk045.scs",
+    "model_entry_sha256": "549a462274a2f1efb833d97b77fd7f6596fa88a4b160e850f2e33464ac8455ff",
+    "model_report": "docs/gpdk045_PDK_Model_Report.pdf, Tables 2.1 and 2.3, pages 1-2",
+    "model_report_sha256": "33c5cf2919ad2e9401123921740d44836b522deb3a8ebe6e486e501499541626",
+    "soa_file": "models/spectre/gpdk045_soa.scs, section ON, max_vdd_1v=1.1",
+    "soa_sha256": "84f3c6dd8d414af7d1370d577ea159109b09f843fd1c5a0fda2805234fe29814",
+    "selection_note": "The PDK supplies process sections, -40..125 C model range and the 1.1 V SOA check threshold. 1.0 V preserves the verified testbench; 0.9 V is a project -10% screening choice, NOT a foundry-specified minimum. These five combinations are an engineering subset, not an exhaustive or proven worst-case set. The upstream corner entry includes SOA OFF; this configuration does not enable SOA checks or certify terminal voltages."
+  }
+}

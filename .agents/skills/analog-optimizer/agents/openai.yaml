@@ -1,0 +1,14 @@
+interface:
+  display_name: Analog Optimizer
+  short_description: Virtuoso 电路优化：端口感知图、Graph Transformer 与 SAC
+  default_prompt: 使用 $analog-optimizer 检查当前仓库，按最近的项目决策完成一个最小可验收步骤；先核对真实 bridge API，优先离线测试，不默认加入
+    surrogate 或运行昂贵仿真。
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  allow_implicit_invocation: true
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas

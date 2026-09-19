@@ -1,0 +1,9 @@
+{
+  "models_file": "synthetic_models.json",
+  "mapping_version": "synthetic-1",
+  "global_nets": ["0"],
+  "net_roles": {"0": ["ground"], "vdd": ["supply"], "out": ["output"], "bias": ["bias"]},
+  "parameter_groups": [
+    {"id": "pass_width", "parameter_kind": "w", "unit": "m", "lower": 1e-5, "upper": 1e-4, "scale": "log", "members": [{"device_id": "pass", "parameter": "w"}]}
+  ]
+}

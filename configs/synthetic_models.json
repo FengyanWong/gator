@@ -1,0 +1,8 @@
+{
+  "nmos_demo": {"kind": "nmos", "terminals": ["D", "G", "S", "B"], "roles": ["drain", "gate", "source", "bulk"], "parameters": {"w": "w", "l": "l", "m": "m", "nf": "nf"}},
+  "pmos_demo": {"kind": "pmos", "terminals": ["D", "G", "S", "B"], "roles": ["drain", "gate", "source", "bulk"], "parameters": {"w": "w", "l": "l", "m": "m", "nf": "nf"}},
+  "resistor": {"kind": "resistor", "terminals": ["p", "n"], "roles": ["positive", "negative"], "parameters": {"r": "r"}},
+  "capacitor": {"kind": "capacitor", "terminals": ["p", "n"], "roles": ["positive", "negative"], "parameters": {"c": "c"}},
+  "vsource": {"kind": "vsource", "terminals": ["p", "n"], "roles": ["positive", "negative"], "parameters": {"dc": "dc"}},
+  "isource": {"kind": "isource", "terminals": ["p", "n"], "roles": ["positive", "negative"], "parameters": {"dc": "dc"}}
+}

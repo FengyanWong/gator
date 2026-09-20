@@ -8,6 +8,9 @@ dist/
 .demo-jobs/
 artifacts/local/
 configs/local/
+# GATOR workbench: run outputs (data, models, logs) and frontend build products are never committed.
+outputs/
+frontend/node_modules/
 .codex/
 .env
 .env.*

@@ -1,0 +1,223 @@
+"""Evaluation lanes: isolated owners of one EXISTING ``CircuitSizingEnv`` each.
+
+A lane runs at most one simulation job at a time, so ``concurrency`` lanes means
+``concurrency`` independent jobs (not threads inside one job). Lanes never write
+data tables; they return attempt results to the scheduler, the single writer.
+
+* ``ThreadLane``  - one dedicated thread per environment (the environment enforces
+  same-thread ownership). Used for the pure-Python analytic mock backend.
+* ``ProcessLane`` - the optimizer's own spawned ``OwnedWorker`` process, with its
+  operation deadlines and bounded shutdown. Used for real backends.
+
+A retry re-runs the SAME legalized action through the environment's evaluation
+routine without consuming another episode step, so it remains one evaluation with an
+additional job attempt. The environment itself still performs no automatic retries.
+"""
+from __future__ import annotations
+
+from concurrent.futures import Future
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import queue
+import threading
+
+
+def _now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+class _EnvDriver:
+    """Runs inside the lane (thread or worker process) and owns the environment."""
+    def __init__(self, factory, lane_id):
+        self.env = factory(lane_id)
+        self.env.__enter__()
+        self.lane_id = lane_id
+        self._journal = Path(self.env.directory) / 'candidates'
+        self._seen = set()
+        self._last = None          # ('reset', None) | ('step', LegalizedAction)
+
+    def describe(self):
+        env = self.env
+        return dict(lane_id=self.lane_id, directory=str(env.directory), origin=env.expected_origin,
+                    group_ids=list(env.mapper.group_ids), max_steps=env.max_steps,
+                    config_sha256=env.config_sha256, supports_retry=hasattr(env, '_evaluate'))
+
+    def _new_records(self):
+        records = []
+        if self._journal.is_dir():
+            for path in sorted(self._journal.glob('*.json'), key=lambda p: p.stat().st_mtime_ns):
+                if path.name not in self._seen and not path.name.endswith('.tmp'):
+                    self._seen.add(path.name)
+                    try:
+                        records.append(json.loads(path.read_text()))
+                    except (OSError, json.JSONDecodeError):
+                        pass
+        return records
+
+    def run(self, op, proposal=None):
+        env = self.env
+        calls_before, started = env.simulation_calls, _now()
+        result = dict(op=op, lane_id=self.lane_id, started_at=started, ok=False, step=None, exception=None,
+                      episode=None, episode_step=None)
+        try:
+            if op == 'reset':
+                observation, info = env.reset()
+                self._last = ('reset', None)
+                step = (observation, None, info['terminated'], info['truncated'], info)
+            elif op == 'step':
+                action = env.mapper.legalize(proposal)      # invalid input costs nothing, as in env.step
+                self._last = ('step', action)
+                step = env.step(proposal)
+            elif op == 'retry':
+                if self._last is None:
+                    raise RuntimeError('Nothing to retry')
+                env._require_connection()
+                kind, action = self._last
+                step = env._evaluate(action, reset=kind == 'reset')
+                if kind == 'reset':
+                    observation, _, _, _, info = step
+                    step = (observation, None, info['terminated'], info['truncated'], info)
+            else:
+                raise ValueError(f'Unknown lane operation {op!r}')
+            result.update(ok=True, step=step)
+        except BaseException as exc:                       # reported to the scheduler, never swallowed
+            result['exception'] = dict(type=type(exc).__name__, message=str(exc)[:4000],
+                                       cleanup_error=getattr(exc, 'cleanup_error', None))
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                result['interrupted'] = True
+        records = self._new_records()
+        result.update(ended_at=_now(), launches=env.simulation_calls - calls_before, records=records,
+                      record=records[-1] if records else None, episode=env.episode, episode_step=env.steps)
+        return result
+
+    def close(self):
+        outcome = dict(lane_id=self.lane_id, state='unknown', simulation_calls=self.env.simulation_calls)
+        try:
+            self.env.close()
+        finally:
+            path = Path(self.env.directory) / 'restoration.json'
+            if path.exists():
+                try:
+                    outcome.update(json.loads(path.read_text()))
+                except (OSError, json.JSONDecodeError):
+                    pass
+        return outcome
+
+
+class _Handle:
+    def __init__(self, future):
+        self._future = future
+
+    def done(self):
+        return self._future.done()
+
+    def result(self):
+        return self._future.result()
+
+
+class ThreadLane:
+    kind = 'thread'
+
+    def __init__(self, lane_id, factory):
+        self.lane_id = str(lane_id)
+        self._commands = queue.Queue()
+        self._ready = Future()
+        self._thread = threading.Thread(target=self._serve, args=(factory,), name=f'gator-lane-{lane_id}',
+                                        daemon=True)
+        self._thread.start()
+        self.info = self._ready.result()
+
+    def _serve(self, factory):
+        try:
+            driver = _EnvDriver(factory, self.lane_id)
+            self._ready.set_result(driver.describe())
+        except BaseException as exc:
+            self._ready.set_exception(exc)
+            return
+        while True:
+            item = self._commands.get()
+            if item is None:
+                return
+            (op, proposal), future = item
+            try:
+                future.set_result(driver.close() if op == 'close' else driver.run(op, proposal))
+            except BaseException as exc:
+                future.set_exception(exc)
+            if op == 'close':
+                return
+
+    def submit(self, op, proposal=None):
+        future = Future()
+        self._commands.put(((op, proposal), future))
+        return _Handle(future)
+
+    def close(self, timeout=30.0):
+        if not self._thread.is_alive():
+            return dict(lane_id=self.lane_id, state='already_closed')
+        outcome = self.submit('close')._future.result(timeout=timeout)
+        self._thread.join(timeout)
+        return outcome
+
+
+# ---- worker-process side (module level so that spawn can import it) -------------------------
+_DRIVER = None
+
+
+def _process_open(factory, lane_id):
+    global _DRIVER
+    if _DRIVER is not None:
+        raise RuntimeError('Worker already owns an environment')
+    _DRIVER = _EnvDriver(factory, lane_id)
+    return _DRIVER.describe()
+
+
+def _process_run(op, proposal=None):
+    return _DRIVER.run(op, proposal)
+
+
+def _process_close():
+    if _DRIVER is None:
+        return dict(state='not_opened', simulation_calls=0)
+    return _DRIVER.close()
+
+
+class ProcessLane:
+    kind = 'process'
+
+    def __init__(self, lane_id, factory, limits=None):
+        from analog_optimizer.training.workers import OwnedWorker, WorkerLimits
+        self.lane_id = str(lane_id)
+        self.limits = limits or WorkerLimits()
+        self._worker = OwnedWorker(self.lane_id, self.limits)
+        try:
+            self.info = self._worker.submit(_process_open, factory, self.lane_id).result()
+        except BaseException:
+            self._worker.shutdown()
+            raise
+
+    def submit(self, op, proposal=None):
+        return self._worker.submit(_process_run, op, proposal)
+
+    def close(self, timeout=None):
+        outcome = dict(lane_id=self.lane_id, state='unknown')
+        try:
+            outcome = self._worker.submit(_process_close, timeout=timeout or self.limits.shutdown_seconds).result()
+        finally:
+            outcome['shutdown'] = self._worker.shutdown()   # terminates only this owned Python child
+        return outcome
+
+
+def open_lanes(factory, count, *, use_processes, limits=None):
+    lanes = []
+    try:
+        for index in range(count):
+            lanes.append(ProcessLane(index, factory, limits) if use_processes else ThreadLane(index, factory))
+    except BaseException:
+        for lane in lanes:
+            try:
+                lane.close()
+            except BaseException:
+                pass
+        raise
+    return lanes

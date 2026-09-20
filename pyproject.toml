@@ -13,9 +13,14 @@ dependencies = []
 graph = ["torch>=2.2,<3", "torch-geometric>=2.5,<3", "numpy>=1.24,<3", "networkx>=3,<4"]
 test = ["pytest>=8,<10"]
 export = ["pyarrow>=14,<24"]
+# Local engineering workbench (src/gator_workbench): FastAPI backend + Parquet raw tables.
+# No plotting libraries by design; the workbench produces data only.
+web = ["fastapi>=0.110,<1", "uvicorn>=0.29,<1", "pydantic>=2.6,<3", "pyarrow>=14,<24"]
+webtest = ["httpx>=0.27,<1"]
 
 [project.scripts]
 analog-graph-demo = "analog_optimizer.demo:main"
+gator-workbench = "gator_workbench.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

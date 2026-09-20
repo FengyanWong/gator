@@ -1,0 +1,796 @@
+{
+  "instances": [
+    {
+      "name": "MP3",
+      "lib": "gpdk045",
+      "cell": "pmos1v",
+      "xy": [
+        8.0,
+        4.0
+      ],
+      "orient": "R0",
+      "bBox": [
+        [
+          7.575,
+          3.6375
+        ],
+        [
+          8.8,
+          4.28125
+        ]
+      ],
+      "numInst": 1,
+      "view": "symbol",
+      "params": {
+        "model": "g45p1svt",
+        "m": "1",
+        "simM": "iPar(\\\\\"m\\\\\")",
+        "l": "100n",
+        "fw": "2u",
+        "w": "2u",
+        "simW": "iPar(\\\\\"w\\\\\")",
+        "fingers": "1",
+        "AreaFormula": "((iPar(\\\\\"fingers\\\\\")+1)*0.5u+iPar(\\\\\"fingers\\\\\")*iPar(\\\\\"l\\\\\"))*(iPar(\\\\\"fw\\\\\")+0.5u)*iPar(\\\\\"m\\\\\")",
+        "threshold": "10u",
+        "diffCont": "t",
+        "connectGates": "None",
+        "dfm": "Minimum",
+        "sdMtlWidth": "60n",
+        "connectSD": "None",
+        "leftAbut": "0",
+        "rightAbut": "0",
+        "tap": "None",
+        "leftTap": "t",
+        "tapCntRows": "1",
+        "ad": "280f",
+        "as": "280f",
+        "pd": "4.28u",
+        "ps": "4.28u",
+        "nrd": "70m",
+        "nrs": "70m",
+        "sa": "140n",
+        "sb": "140n",
+        "sd": "160n",
+        "sca": "49.51456",
+        "scb": "0.05015",
+        "scc": "0.00537",
+        "region": " ",
+        "pasUpdateParamList": "fw, l"
+      },
+      "terms": {
+        "D": "VOUT",
+        "B": "VDD",
+        "G": "N2",
+        "S": "VDD"
+      }
+    },
+    {
+      "name": "MP2",
+      "lib": "gpdk045",
+      "cell": "pmos1v",
+      "xy": [
+        4.0,
+        4.0
+      ],
+      "orient": "R0",
+      "bBox": [
+        [
+          3.575,
+          3.6375
+        ],
+        [
+          4.8,
+          4.28125
+        ]
+      ],
+      "numInst": 1,
+      "view": "symbol",
+      "params": {
+        "model": "g45p1svt",
+        "m": "1",
+        "simM": "iPar(\\\\\"m\\\\\")",
+        "l": "100n",
+        "fw": "2u",
+        "w": "2u",
+        "simW": "iPar(\\\\\"w\\\\\")",
+        "fingers": "1",
+        "AreaFormula": "((iPar(\\\\\"fingers\\\\\")+1)*0.5u+iPar(\\\\\"fingers\\\\\")*iPar(\\\\\"l\\\\\"))*(iPar(\\\\\"fw\\\\\")+0.5u)*iPar(\\\\\"m\\\\\")",
+        "threshold": "10u",
+        "diffCont": "t",
+        "connectGates": "None",
+        "dfm": "Minimum",
+        "sdMtlWidth": "60n",
+        "connectSD": "None",
+        "leftAbut": "0",
+        "rightAbut": "0",
+        "tap": "None",
+        "leftTap": "t",
+        "tapCntRows": "1",
+        "ad": "280f",
+        "as": "280f",
+        "pd": "4.28u",
+        "ps": "4.28u",
+        "nrd": "70m",
+        "nrs": "70m",
+        "sa": "140n",
+        "sb": "140n",
+        "sd": "160n",
+        "sca": "49.51456",
+        "scb": "0.05015",
+        "scc": "0.00537",
+        "region": " ",
+        "pasUpdateParamList": "fw, l"
+      },
+      "terms": {
+        "D": "N2",
+        "B": "VDD",
+        "G": "N1",
+        "S": "VDD"
+      }
+    },
+    {
+      "name": "MP1",
+      "lib": "gpdk045",
+      "cell": "pmos1v",
+      "xy": [
+        0.0,
+        4.0
+      ],
+      "orient": "R0",
+      "bBox": [
+        [
+          -0.425,
+          3.6375
+        ],
+        [
+          0.8,
+          4.28125
+        ]
+      ],
+      "numInst": 1,
+      "view": "symbol",
+      "params": {
+        "model": "g45p1svt",
+        "m": "1",
+        "simM": "iPar(\\\\\"m\\\\\")",
+        "l": "100n",
+        "fw": "2u",
+        "w": "2u",
+        "simW": "iPar(\\\\\"w\\\\\")",
+        "fingers": "1",
+        "AreaFormula": "((iPar(\\\\\"fingers\\\\\")+1)*0.5u+iPar(\\\\\"fingers\\\\\")*iPar(\\\\\"l\\\\\"))*(iPar(\\\\\"fw\\\\\")+0.5u)*iPar(\\\\\"m\\\\\")",
+        "threshold": "10u",
+        "diffCont": "t",
+        "connectGates": "None",
+        "dfm": "Minimum",
+        "sdMtlWidth": "60n",
+        "connectSD": "None",
+        "leftAbut": "0",
+        "rightAbut": "0",
+        "tap": "None",
+        "leftTap": "t",
+        "tapCntRows": "1",
+        "ad": "280f",
+        "as": "280f",
+        "pd": "4.28u",
+        "ps": "4.28u",
+        "nrd": "70m",
+        "nrs": "70m",
+        "sa": "140n",
+        "sb": "140n",
+        "sd": "160n",
+        "sca": "49.51456",
+        "scb": "0.05015",
+        "scc": "0.00537",
+        "region": " ",
+        "pasUpdateParamList": "fw, l"
+      },
+      "terms": {
+        "D": "N1",
+        "B": "VDD",
+        "G": "VOUT",
+        "S": "VDD"
+      }
+    },
+    {
+      "name": "MS3",
+      "lib": "gpdk045",
+      "cell": "nmos1v",
+      "xy": [
+        8.0,
+        0.0
+      ],
+      "orient": "R0",
+      "bBox": [
+        [
+          7.575,
+          -0.3625
+        ],
+        [
+          8.8,
+          0.28125
+        ]
+      ],
+      "numInst": 1,
+      "view": "symbol",
+      "params": {
+        "model": "g45n1svt",
+        "m": "1",
+        "simM": "iPar(\\\\\"m\\\\\")",
+        "l": "500n",
+        "fw": "1u",
+        "w": "1u",
+        "simW": "iPar(\\\\\"w\\\\\")",
+        "fingers": "1",
+        "AreaFormula": "((iPar(\\\\\"fingers\\\\\")+1)*0.5u+iPar(\\\\\"fingers\\\\\")*iPar(\\\\\"l\\\\\"))*(iPar(\\\\\"fw\\\\\")+0.5u)*iPar(\\\\\"m\\\\\")",
+        "threshold": "10u",
+        "diffCont": "t",
+        "connectGates": "None",
+        "dfm": "Minimum",
+        "sdMtlWidth": "60n",
+        "connectSD": "None",
+        "leftAbut": "0",
+        "rightAbut": "0",
+        "tap": "None",
+        "leftTap": "t",
+        "tapCntRows": "1",
+        "ad": "140f",
+        "as": "140f",
+        "pd": "2.28u",
+        "ps": "2.28u",
+        "nrd": "140m",
+        "nrs": "140m",
+        "sa": "140n",
+        "sb": "140n",
+        "sd": "160n",
+        "sca": "45.73226",
+        "scb": "0.03350",
+        "scc": "0.00423",
+        "region": " ",
+        "pasUpdateParamList": "fw, l"
+      },
+      "terms": {
+        "D": "S3",
+        "B": "VSS",
+        "G": "VCTRL",
+        "S": "VSS"
+      }
+    },
+    {
+      "name": "MN3",
+      "lib": "gpdk045",
+      "cell": "nmos1v",
+      "xy": [
+        8.0,
+        2.0
+      ],
+      "orient": "R0",
+      "bBox": [
+        [
+          7.575,
+          1.6375
+        ],
+        [
+          8.8,
+          2.28125
+        ]
+      ],
+      "numInst": 1,
+      "view": "symbol",
+      "params": {
+        "model": "g45n1svt",
+        "m": "1",
+        "simM": "iPar(\\\\\"m\\\\\")",
+        "l": "100n",
+        "fw": "1u",
+        "w": "1u",
+        "simW": "iPar(\\\\\"w\\\\\")",
+        "fingers": "1",
+        "AreaFormula": "((iPar(\\\\\"fingers\\\\\")+1)*0.5u+iPar(\\\\\"fingers\\\\\")*iPar(\\\\\"l\\\\\"))*(iPar(\\\\\"fw\\\\\")+0.5u)*iPar(\\\\\"m\\\\\")",
+        "threshold": "10u",
+        "diffCont": "t",
+        "connectGates": "None",
+        "dfm": "Minimum",
+        "sdMtlWidth": "60n",
+        "connectSD": "None",
+        "leftAbut": "0",
+        "rightAbut": "0",
+        "tap": "None",
+        "leftTap": "t",
+        "tapCntRows": "1",
+        "ad": "140f",
+        "as": "140f",
+        "pd": "2.28u",
+        "ps": "2.28u",
+        "nrd": "140m",
+        "nrs": "140m",
+        "sa": "140n",
+        "sb": "140n",
+        "sd": "160n",
+        "sca": "64.77987",
+        "scb": "0.05893",
+        "scc": "0.00702",
+        "region": " ",
+        "pasUpdateParamList": "fw, l"
+      },
+      "terms": {
+        "D": "VOUT",
+        "B": "VSS",
+        "G": "N2",
+        "S": "S3"
+      }
+    },
+    {
+      "name": "MS2",
+      "lib": "gpdk045",
+      "cell": "nmos1v",
+      "xy": [
+        4.0,
+        0.0
+      ],
+      "orient": "R0",
+      "bBox": [
+        [
+          3.575,
+          -0.3625
+        ],
+        [
+          4.8,
+          0.28125
+        ]
+      ],
+      "numInst": 1,
+      "view": "symbol",
+      "params": {
+        "model": "g45n1svt",
+        "m": "1",
+        "simM": "iPar(\\\\\"m\\\\\")",
+        "l": "500n",
+        "fw": "1u",
+        "w": "1u",
+        "simW": "iPar(\\\\\"w\\\\\")",
+        "fingers": "1",
+        "AreaFormula": "((iPar(\\\\\"fingers\\\\\")+1)*0.5u+iPar(\\\\\"fingers\\\\\")*iPar(\\\\\"l\\\\\"))*(iPar(\\\\\"fw\\\\\")+0.5u)*iPar(\\\\\"m\\\\\")",
+        "threshold": "10u",
+        "diffCont": "t",
+        "connectGates": "None",
+        "dfm": "Minimum",
+        "sdMtlWidth": "60n",
+        "connectSD": "None",
+        "leftAbut": "0",
+        "rightAbut": "0",
+        "tap": "None",
+        "leftTap": "t",
+        "tapCntRows": "1",
+        "ad": "140f",
+        "as": "140f",
+        "pd": "2.28u",
+        "ps": "2.28u",
+        "nrd": "140m",
+        "nrs": "140m",
+        "sa": "140n",
+        "sb": "140n",
+        "sd": "160n",
+        "sca": "45.73226",
+        "scb": "0.03350",
+        "scc": "0.00423",
+        "region": " ",
+        "pasUpdateParamList": "fw, l"
+      },
+      "terms": {
+        "D": "S2",
+        "B": "VSS",
+        "G": "VCTRL",
+        "S": "VSS"
+      }
+    },
+    {
+      "name": "MN2",
+      "lib": "gpdk045",
+      "cell": "nmos1v",
+      "xy": [
+        4.0,
+        2.0
+      ],
+      "orient": "R0",
+      "bBox": [
+        [
+          3.575,
+          1.6375
+        ],
+        [
+          4.8,
+          2.28125
+        ]
+      ],
+      "numInst": 1,
+      "view": "symbol",
+      "params": {
+        "model": "g45n1svt",
+        "m": "1",
+        "simM": "iPar(\\\\\"m\\\\\")",
+        "l": "100n",
+        "fw": "1u",
+        "w": "1u",
+        "simW": "iPar(\\\\\"w\\\\\")",
+        "fingers": "1",
+        "AreaFormula": "((iPar(\\\\\"fingers\\\\\")+1)*0.5u+iPar(\\\\\"fingers\\\\\")*iPar(\\\\\"l\\\\\"))*(iPar(\\\\\"fw\\\\\")+0.5u)*iPar(\\\\\"m\\\\\")",
+        "threshold": "10u",
+        "diffCont": "t",
+        "connectGates": "None",
+        "dfm": "Minimum",
+        "sdMtlWidth": "60n",
+        "connectSD": "None",
+        "leftAbut": "0",
+        "rightAbut": "0",
+        "tap": "None",
+        "leftTap": "t",
+        "tapCntRows": "1",
+        "ad": "140f",
+        "as": "140f",
+        "pd": "2.28u",
+        "ps": "2.28u",
+        "nrd": "140m",
+        "nrs": "140m",
+        "sa": "140n",
+        "sb": "140n",
+        "sd": "160n",
+        "sca": "64.77987",
+        "scb": "0.05893",
+        "scc": "0.00702",
+        "region": " ",
+        "pasUpdateParamList": "fw, l"
+      },
+      "terms": {
+        "D": "N2",
+        "B": "VSS",
+        "G": "N1",
+        "S": "S2"
+      }
+    },
+    {
+      "name": "MS1",
+      "lib": "gpdk045",
+      "cell": "nmos1v",
+      "xy": [
+        0.0,
+        0.0
+      ],
+      "orient": "R0",
+      "bBox": [
+        [
+          -0.425,
+          -0.3625
+        ],
+        [
+          0.8,
+          0.28125
+        ]
+      ],
+      "numInst": 1,
+      "view": "symbol",
+      "params": {
+        "model": "g45n1svt",
+        "m": "1",
+        "simM": "iPar(\\\\\"m\\\\\")",
+        "l": "500n",
+        "fw": "1u",
+        "w": "1u",
+        "simW": "iPar(\\\\\"w\\\\\")",
+        "fingers": "1",
+        "AreaFormula": "((iPar(\\\\\"fingers\\\\\")+1)*0.5u+iPar(\\\\\"fingers\\\\\")*iPar(\\\\\"l\\\\\"))*(iPar(\\\\\"fw\\\\\")+0.5u)*iPar(\\\\\"m\\\\\")",
+        "threshold": "10u",
+        "diffCont": "t",
+        "connectGates": "None",
+        "dfm": "Minimum",
+        "sdMtlWidth": "60n",
+        "connectSD": "None",
+        "leftAbut": "0",
+        "rightAbut": "0",
+        "tap": "None",
+        "leftTap": "t",
+        "tapCntRows": "1",
+        "ad": "140f",
+        "as": "140f",
+        "pd": "2.28u",
+        "ps": "2.28u",
+        "nrd": "140m",
+        "nrs": "140m",
+        "sa": "140n",
+        "sb": "140n",
+        "sd": "160n",
+        "sca": "45.73226",
+        "scb": "0.03350",
+        "scc": "0.00423",
+        "region": " ",
+        "pasUpdateParamList": "fw, l"
+      },
+      "terms": {
+        "D": "S1",
+        "B": "VSS",
+        "G": "VCTRL",
+        "S": "VSS"
+      }
+    },
+    {
+      "name": "MN1",
+      "lib": "gpdk045",
+      "cell": "nmos1v",
+      "xy": [
+        0.0,
+        2.0
+      ],
+      "orient": "R0",
+      "bBox": [
+        [
+          -0.425,
+          1.6375
+        ],
+        [
+          0.8,
+          2.28125
+        ]
+      ],
+      "numInst": 1,
+      "view": "symbol",
+      "params": {
+        "model": "g45n1svt",
+        "m": "1",
+        "simM": "iPar(\\\\\"m\\\\\")",
+        "l": "100n",
+        "fw": "1u",
+        "w": "1u",
+        "simW": "iPar(\\\\\"w\\\\\")",
+        "fingers": "1",
+        "AreaFormula": "((iPar(\\\\\"fingers\\\\\")+1)*0.5u+iPar(\\\\\"fingers\\\\\")*iPar(\\\\\"l\\\\\"))*(iPar(\\\\\"fw\\\\\")+0.5u)*iPar(\\\\\"m\\\\\")",
+        "threshold": "10u",
+        "diffCont": "t",
+        "connectGates": "None",
+        "dfm": "Minimum",
+        "sdMtlWidth": "60n",
+        "connectSD": "None",
+        "leftAbut": "0",
+        "rightAbut": "0",
+        "tap": "None",
+        "leftTap": "t",
+        "tapCntRows": "1",
+        "ad": "140f",
+        "as": "140f",
+        "pd": "2.28u",
+        "ps": "2.28u",
+        "nrd": "140m",
+        "nrs": "140m",
+        "sa": "140n",
+        "sb": "140n",
+        "sd": "160n",
+        "sca": "64.77987",
+        "scb": "0.05893",
+        "scc": "0.00702",
+        "region": " ",
+        "pasUpdateParamList": "fw, l"
+      },
+      "terms": {
+        "D": "N1",
+        "B": "VSS",
+        "G": "VOUT",
+        "S": "S1"
+      }
+    },
+    {
+      "name": "C3",
+      "lib": "analogLib",
+      "cell": "cap",
+      "xy": [
+        10.0,
+        3.0
+      ],
+      "orient": "R0",
+      "bBox": [
+        [
+          9.2375,
+          2.6
+        ],
+        [
+          10.5875,
+          3.025
+        ]
+      ],
+      "numInst": 1,
+      "view": "symbol",
+      "params": {
+        "c": "50f",
+        "polyCoef": "0"
+      },
+      "terms": {
+        "MINUS": "VSS",
+        "PLUS": "VOUT"
+      }
+    },
+    {
+      "name": "C2",
+      "lib": "analogLib",
+      "cell": "cap",
+      "xy": [
+        6.0,
+        3.0
+      ],
+      "orient": "R0",
+      "bBox": [
+        [
+          5.2375,
+          2.6
+        ],
+        [
+          6.5875,
+          3.025
+        ]
+      ],
+      "numInst": 1,
+      "view": "symbol",
+      "params": {
+        "c": "50f",
+        "polyCoef": "0"
+      },
+      "terms": {
+        "MINUS": "VSS",
+        "PLUS": "N2"
+      }
+    },
+    {
+      "name": "C1",
+      "lib": "analogLib",
+      "cell": "cap",
+      "xy": [
+        2.0,
+        3.0
+      ],
+      "orient": "R0",
+      "bBox": [
+        [
+          1.2375,
+          2.6
+        ],
+        [
+          2.5875,
+          3.025
+        ]
+      ],
+      "numInst": 1,
+      "view": "symbol",
+      "params": {
+        "c": "50f",
+        "polyCoef": "0"
+      },
+      "terms": {
+        "MINUS": "VSS",
+        "PLUS": "N1"
+      }
+    }
+  ],
+  "nets": {
+    "VCTRL": {
+      "connections": [
+        "MS3.G",
+        "MS2.G",
+        "MS1.G"
+      ],
+      "numBits": 1,
+      "sigType": "signal",
+      "isGlobal": false
+    },
+    "VDD": {
+      "connections": [
+        "MP1.S",
+        "MP1.B",
+        "MP2.S",
+        "MP2.B",
+        "MP3.B",
+        "MP3.S"
+      ],
+      "numBits": 1,
+      "sigType": "signal",
+      "isGlobal": false
+    },
+    "VSS": {
+      "connections": [
+        "MN1.B",
+        "MS1.S",
+        "MS1.B",
+        "MN2.B",
+        "MS2.S",
+        "MS2.B",
+        "MN3.B",
+        "MS3.S",
+        "MS3.B",
+        "C2.MINUS",
+        "C3.MINUS",
+        "C1.MINUS"
+      ],
+      "numBits": 1,
+      "sigType": "signal",
+      "isGlobal": false
+    },
+    "VOUT": {
+      "connections": [
+        "MP1.G",
+        "MN3.D",
+        "MN1.G",
+        "C3.PLUS",
+        "MP3.D"
+      ],
+      "numBits": 1,
+      "sigType": "signal",
+      "isGlobal": false
+    },
+    "N1": {
+      "connections": [
+        "C1.PLUS",
+        "MN1.D",
+        "MP2.G",
+        "MP1.D",
+        "MN2.G"
+      ],
+      "numBits": 1,
+      "sigType": "signal",
+      "isGlobal": false
+    },
+    "N2": {
+      "connections": [
+        "MP3.G",
+        "C2.PLUS",
+        "MP2.D",
+        "MN3.G",
+        "MN2.D"
+      ],
+      "numBits": 1,
+      "sigType": "signal",
+      "isGlobal": false
+    },
+    "S1": {
+      "connections": [
+        "MS1.D",
+        "MN1.S"
+      ],
+      "numBits": 1,
+      "sigType": "signal",
+      "isGlobal": false
+    },
+    "S2": {
+      "connections": [
+        "MS2.D",
+        "MN2.S"
+      ],
+      "numBits": 1,
+      "sigType": "signal",
+      "isGlobal": false
+    },
+    "S3": {
+      "connections": [
+        "MS3.D",
+        "MN3.S"
+      ],
+      "numBits": 1,
+      "sigType": "signal",
+      "isGlobal": false
+    }
+  },
+  "pins": {
+    "VCTRL": {
+      "direction": "input",
+      "numBits": 1
+    },
+    "VDD": {
+      "direction": "inputOutput",
+      "numBits": 1
+    },
+    "VSS": {
+      "direction": "inputOutput",
+      "numBits": 1
+    },
+    "VOUT": {
+      "direction": "output",
+      "numBits": 1
+    }
+  },
+  "notes": []
+}

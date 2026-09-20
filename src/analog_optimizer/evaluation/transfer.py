@@ -1,4 +1,4 @@
-"""Frozen M5 splits and auditable reporting; no simulator execution here."""
+"""Frozen within-class and cross-category splits; no simulator execution here."""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -56,11 +56,16 @@ class TransferTask:
     family: str
     graph: CircuitGraph
     specs: tuple[MetricSpec, ...]
+    circuit_class: str | None = None
 
     def __post_init__(self):
         if (not self.id or not self.family or self.partition not in ('train', 'validation', 'test')
-                or self.transfer not in ('specification', 'topology')):
+                or self.transfer not in ('specification', 'topology', 'category')):
             raise ValueError('Invalid transfer task identity/partition')
+        if self.circuit_class is not None and (not isinstance(self.circuit_class, str) or not self.circuit_class.strip()):
+            raise ValueError('Circuit class must be a nonempty explicit label')
+        if self.transfer == 'category' and (self.partition != 'test' or self.circuit_class is None):
+            raise ValueError('Category transfer requires a test task with an explicit circuit class')
         self.graph.validate()
         SpecificationEvaluator(self.specs)
 
@@ -71,25 +76,36 @@ def validate_split(tasks):
     if {t.partition for t in tasks} != {'train', 'validation', 'test'}:
         raise ValueError('Freeze train, validation and test tasks before running')
     training = [t for t in tasks if t.partition == 'train']
+    cross_category = any(t.transfer == 'category' for t in tasks)
+    if cross_category and any(t.circuit_class is None for t in tasks):
+        raise ValueError('Cross-category protocols require explicit circuit classes on every task')
+    development_classes = {t.circuit_class for t in tasks if t.partition != 'test'}
     for i, task in enumerate(tasks):
-        if task.partition != 'train' and task.family not in {t.family for t in training}:
+        if task.transfer == 'category' and task.circuit_class in development_classes:
+            raise ValueError('Held-out category appears in train or validation')
+        if task.partition != 'train' and task.transfer != 'category' and not any(
+                t.family == task.family and t.circuit_class == task.circuit_class for t in training):
             raise ValueError('M5 requires a training circuit in the same declared family')
         seen = [t for t in training if same_topology(task.graph, t.graph)]
         if task.partition != 'train' and task.transfer == 'specification' and not seen:
             raise ValueError('Specification transfer must use a training topology')
         for other in tasks[:i]:
+            equivalent = same_topology(task.graph, other.graph)
+            if task.circuit_class != other.circuit_class and (task.family == other.family or equivalent):
+                raise ValueError('Circuit class relabeling cannot change a topology or its family')
             if task.partition == other.partition:
                 continue
-            equivalent = same_topology(task.graph, other.graph)
             if equivalent and spec_identity(task.specs) == spec_identity(other.specs):
                 raise ValueError('Leaked topology/specification pair across partitions')
-            if equivalent and any(t.transfer == 'topology' and t.partition != 'train' for t in (task, other)):
+            if equivalent and any(t.transfer in ('topology', 'category') and t.partition != 'train'
+                                  for t in (task, other)):
                 raise ValueError('Held-out topology is isomorphic to another partition')
 
 
 def freeze_protocol(path, tasks, settings):
     validate_split(tasks)
-    payload = dict(version='m5-transfer-v1', tasks=[asdict(t) for t in tasks], settings=settings)
+    version = 'm6-cross-category-v1' if any(t.transfer == 'category' for t in tasks) else 'm5-transfer-v1'
+    payload = dict(version=version, tasks=[asdict(t) for t in tasks], settings=settings)
     payload['sha256'] = digest(payload)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

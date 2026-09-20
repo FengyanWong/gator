@@ -42,7 +42,7 @@ def parameter_rows(parameters):
     return [{'device': d, 'parameter': p, 'value': value} for (d, p), value in sorted(parameters.items())]
 
 
-def build_deck(structure, model_file, section='tt', *, temperature_c=27.0):
+def build_deck_header(structure, model_file, section='tt', *, temperature_c=27.0):
     if not model_file.startswith('/') or any(c in model_file for c in '\n\r"'):
         raise ValueError('Model file must be an absolute Spectre-host path')
     if not re.fullmatch(r'[A-Za-z_]\w*', section):
@@ -53,7 +53,11 @@ def build_deck(structure, model_file, section='tt', *, temperature_c=27.0):
         raise ValueError('Invalid simulation temperature')
     return ('simulator lang=spectre\nglobal 0\n'
             + f'include "{model_file}" section={section}\n' + structure + '\n'
-            + f'simulatorOptions options reltol=1e-5 vabstol=1e-8 iabstol=1e-13 temp={temperature_c:.12g} tnom=27\n'
+            + f'simulatorOptions options reltol=1e-5 vabstol=1e-8 iabstol=1e-13 temp={temperature_c:.12g} tnom=27\n')
+
+
+def build_deck(structure, model_file, section='tt', *, temperature_c=27.0):
+    return (build_deck_header(structure, model_file, section, temperature_c=temperature_c)
             + 'dcOp dc\ndcOpInfo info what=oppoint where=rawfile\n'
             + 'ac ac start=10 stop=1G dec=60\n'
             + 'save VOUT VINP VINN VDD VBIAS XU1.NTAIL XU1.NLOAD VDD:p\n'
@@ -294,10 +298,11 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         # Keep the raw export as evidence; the graph reflects the executed supply.
         structure = directory / 'conditioned_structure.scs'
         structure.write_text(prepared)
-        deck = directory / 'opamp.scs'
+        deck = directory / getattr(self.circuit, 'deck_name', 'opamp.scs')
         corner = condition.corner
-        deck.write_text(build_deck(prepared, self.config.model_file, corner.model_section,
-                                   temperature_c=corner.temperature_c))
+        builder = getattr(self.circuit, 'build_deck', build_deck)
+        deck.write_text(builder(prepared, self.config.model_file, corner.model_section,
+                               temperature_c=corner.temperature_c))
         self.timings['netlisting'] = perf_counter() - started
         artifact = NetlistArtifact(deck, job_id, digest(deck), 'real', condition)
         metadata = {'job_id': job_id, 'origin': 'real', 'bridge_version': self.bridge_version,
@@ -311,6 +316,8 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                     'structure_path': str(structure.resolve()),
                     'applied_parameters': parameter_rows(parameters), 'timings': dict(self.timings),
                     'files': {str(p.relative_to(directory)): digest(p) for p in directory.rglob('*') if p.is_file()}}
+        if hasattr(self.circuit, 'analysis_settings'):
+            metadata['analysis_settings'] = self.circuit.analysis_settings
         write_json(directory / 'manifest.json', metadata)
         self._exports[job_id] = (artifact, deepcopy(parameters), metadata)
         return artifact
@@ -349,7 +356,7 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         self.validate_condition(condition)
         self._require_connection()
         if request.analysis:
-            raise UnsupportedCapability('Only the prepared DC/AC analyses are supported; use typed conditions for PVT')
+            raise UnsupportedCapability('Only the analyses prepared by the circuit profile are supported')
         artifact, applied, metadata = self._exports.get(request.netlist.job_id, (None, None, None))
         if artifact != request.netlist or artifact is None or digest(artifact.path) != artifact.sha256:
             raise ValueError('Unknown or modified netlist artifact')
@@ -361,7 +368,7 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         job_id = uuid4().hex
         job = Path(request.work_root).resolve() / job_id
         job.mkdir(parents=True, exist_ok=False)
-        deck = job / 'opamp.scs'
+        deck = job / getattr(self.circuit, 'deck_name', 'opamp.scs')
         deck.write_bytes(artifact.path.read_bytes())
         if digest(deck) != artifact.sha256:
             raise ValueError('Netlist changed while preparing the simulation')
@@ -387,7 +394,8 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                 status, reason = SimulationStatus.BACKEND_ERROR, 'bridge_reported_failure'
             else:
                 try:
-                    measured = analyze(job, result_name='bridge_result.json', mos_names=self.circuit.mos_names)
+                    analyzer = getattr(self.circuit, 'analyze', analyze)
+                    measured = analyzer(job, result_name='bridge_result.json', mos_names=self.circuit.mos_names)
                     metrics, units, validity = (measured[k] for k in ('metrics', 'metric_units', 'metric_validity'))
                     operating_points = measured['operating_points']
                     for key in request.required_metrics:

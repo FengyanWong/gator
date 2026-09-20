@@ -44,7 +44,7 @@ Virtuoso schematic / exported Spectre netlist
 - 首版**不加入 surrogate**，也不把 surrogate 插成 encoder 与 SAC 之间的必经层。
 - 优化范围先是固定拓扑的器件尺寸、偏置及被明确允许的参数；不是拓扑搜索或自动布局布线。
 - 初始目标是可靠单电路闭环；之后验证同类电路的规格与拓扑迁移，再研究 LDO/VCO/OpAmp 跨类别迁移。
-- 当前项目已完成 M4、M5 首轮与真实同类新拓扑补验，以及 M6 前的编码器接口；M6 尚未开始。不要再用早期“止于 M3”的范围限制覆盖后续授权；新任务仍以用户请求为准。最新证据和边界见项目 `docs/decisions.md`、`docs/m5-real-topology.md`、`docs/encoder-ablation.md`。
+- 当前项目已完成 M4、M5 首轮与真实同类新拓扑补验，以及 M6 前的编码器接口；M6 已完成合成跨类别协议、真实 LDO/VCO 基线鉴定和一次冻结的真实跨类别试点（2,811 次 Spectre 调用、1,566 次 SAC 更新，独立审计与 544 项回归全部通过），但未证明 GT 迁移优势；优化后 VCO 设计的严格模式复验与更大规模前瞻实验尚未进行。不要再用早期“止于 M3”的范围限制覆盖后续授权；新任务仍以用户请求为准。最新证据和边界见项目 `docs/decisions.md`、`docs/m5-real-topology.md`、`docs/encoder-ablation.md`、`docs/m6-real-results.md`。
 - 训练/采样维持已验证 nominal、单 worker；PVT 仅用于以后对 nominal top 3 独立设计的 5 个代表性工况后验证，不进入训练奖励或 replay。PVT 调度及 Monte Carlo 执行仍未实现；编码器接口完成不自动启动这些扩展或 M6。
 - 工艺角与温度从实际 PDK 模型/文档读取，电压还需核对所用器件的限制。用户撤回的 1.8 V 示例不作为 GPDK045 当前 OTA 的配置。区分 PDK 明文范围与项目自行选取的筛选点。
 - 当前 GT 使用局部端口注意力；宽度、层数及与其他架构的优劣仍需实验比较，不能从接口通过推断迁移优势。

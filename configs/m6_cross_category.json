@@ -1,0 +1,49 @@
+{
+  "version": "m6-synthetic-categories-v1",
+  "origin": "synthetic",
+  "description": "Analytic interface acceptance only. These structures and toy metrics do not model electrical OpAmp, LDO or VCO performance.",
+  "classes": {
+    "opamp": {
+      "family": "synthetic_differential_pair",
+      "netlist": "tests/fixtures/synthetic/opamp.scs",
+      "mapping": "configs/opamp.json",
+      "targets": {"w": 0.4, "c": -0.3},
+      "metric_id": "toy_opamp_quality",
+      "score_multiplier": 1.0,
+      "score_offset": 0.0,
+      "specs": {
+        "train": {"comparator": "min", "lower": 0.90},
+        "validation": {"comparator": "min", "lower": 0.95},
+        "test": {"comparator": "min", "lower": 0.98}
+      }
+    },
+    "ldo": {
+      "family": "synthetic_pass_divider",
+      "netlist": "tests/fixtures/synthetic/ldo.scs",
+      "mapping": "configs/ldo.json",
+      "targets": {"w": -0.2},
+      "metric_id": "toy_ldo_error",
+      "score_multiplier": -1.0,
+      "score_offset": 1.0,
+      "specs": {
+        "train": {"comparator": "max", "upper": 0.10},
+        "validation": {"comparator": "max", "upper": 0.05},
+        "test": {"comparator": "max", "upper": 0.02}
+      }
+    },
+    "vco": {
+      "family": "synthetic_three_stage_ring",
+      "netlist": "tests/fixtures/synthetic/vco.scs",
+      "mapping": "configs/vco.json",
+      "targets": {"w": 0.65},
+      "metric_id": "toy_vco_window",
+      "score_multiplier": 1.0,
+      "score_offset": -0.5,
+      "specs": {
+        "train": {"comparator": "range", "lower": 0.40, "upper": 0.50},
+        "validation": {"comparator": "range", "lower": 0.45, "upper": 0.50},
+        "test": {"comparator": "range", "lower": 0.48, "upper": 0.50}
+      }
+    }
+  }
+}

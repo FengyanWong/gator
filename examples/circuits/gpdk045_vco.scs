@@ -1,0 +1,44 @@
+
+// Library name: GATOR_TESTS
+// Cell name: vco_m6_v1
+// View name: schematic
+subckt vco_m6_v1 VCTRL VDD VOUT VSS
+    MP3 (VOUT N2 VDD VDD) g45p1svt w=(2u) l=100n nf=1 as=280f ad=280f \
+        ps=4.28u pd=4.28u nrd=70m nrs=70m sa=140n sb=140n sd=160n \
+        sca=49.51456 scb=0.05015 scc=0.00537 m=(1)
+    MP2 (N2 N1 VDD VDD) g45p1svt w=(2u) l=100n nf=1 as=280f ad=280f \
+        ps=4.28u pd=4.28u nrd=70m nrs=70m sa=140n sb=140n sd=160n \
+        sca=49.51456 scb=0.05015 scc=0.00537 m=(1)
+    MP1 (N1 VOUT VDD VDD) g45p1svt w=(2u) l=100n nf=1 as=280f ad=280f \
+        ps=4.28u pd=4.28u nrd=70m nrs=70m sa=140n sb=140n sd=160n \
+        sca=49.51456 scb=0.05015 scc=0.00537 m=(1)
+    MS3 (S3 VCTRL VSS VSS) g45n1svt w=(1u) l=500n nf=1 as=140f ad=140f \
+        ps=2.28u pd=2.28u nrd=140m nrs=140m sa=140n sb=140n sd=160n \
+        sca=45.73226 scb=0.03350 scc=0.00423 m=(1)
+    MN3 (VOUT N2 S3 VSS) g45n1svt w=(1u) l=100n nf=1 as=140f ad=140f \
+        ps=2.28u pd=2.28u nrd=140m nrs=140m sa=140n sb=140n sd=160n \
+        sca=64.77987 scb=0.05893 scc=0.00702 m=(1)
+    MS2 (S2 VCTRL VSS VSS) g45n1svt w=(1u) l=500n nf=1 as=140f ad=140f \
+        ps=2.28u pd=2.28u nrd=140m nrs=140m sa=140n sb=140n sd=160n \
+        sca=45.73226 scb=0.03350 scc=0.00423 m=(1)
+    MN2 (N2 N1 S2 VSS) g45n1svt w=(1u) l=100n nf=1 as=140f ad=140f \
+        ps=2.28u pd=2.28u nrd=140m nrs=140m sa=140n sb=140n sd=160n \
+        sca=64.77987 scb=0.05893 scc=0.00702 m=(1)
+    MS1 (S1 VCTRL VSS VSS) g45n1svt w=(1u) l=500n nf=1 as=140f ad=140f \
+        ps=2.28u pd=2.28u nrd=140m nrs=140m sa=140n sb=140n sd=160n \
+        sca=45.73226 scb=0.03350 scc=0.00423 m=(1)
+    MN1 (N1 VOUT S1 VSS) g45n1svt w=(1u) l=100n nf=1 as=140f ad=140f \
+        ps=2.28u pd=2.28u nrd=140m nrs=140m sa=140n sb=140n sd=160n \
+        sca=64.77987 scb=0.05893 scc=0.00702 m=(1)
+    C3 (VOUT VSS) capacitor c=50f
+    C2 (N2 VSS) capacitor c=50f
+    C1 (N1 VSS) capacitor c=50f
+ends vco_m6_v1
+// End of subcircuit definition.
+
+// Library name: GATOR_TESTS
+// Cell name: tb_vco_m6_v1
+// View name: schematic
+XU1 (VCTRL VDD VOUT 0) vco_m6_v1
+VCTRL (VCTRL 0) vsource dc=650.00m mag=0 phase=0 type=dc
+VDD (VDD 0) vsource dc=1.0 mag=0 phase=0 type=dc

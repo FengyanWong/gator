@@ -1,0 +1,11 @@
+{
+  "models_file": "synthetic_models.json",
+  "mapping_version": "synthetic-1",
+  "global_nets": ["0"],
+  "net_roles": {"0": ["ground"], "vdd": ["supply"], "n3": ["output"]},
+  "parameter_groups": [
+    {"id": "stage_a_width", "parameter_kind": "w", "unit": "m", "lower": 5e-7, "upper": 2e-6, "scale": "log", "members": [{"device_id": "stage_a/pull_down", "parameter": "w"}, {"device_id": "stage_a/pull_up", "parameter": "w", "ratio": 2}]},
+    {"id": "stage_b_width", "parameter_kind": "w", "unit": "m", "lower": 1e-6, "upper": 4e-6, "scale": "log", "members": [{"device_id": "stage_b/pull_down", "parameter": "w"}, {"device_id": "stage_b/pull_up", "parameter": "w", "ratio": 2}]},
+    {"id": "stage_c_width", "parameter_kind": "w", "unit": "m", "lower": 1.5e-6, "upper": 6e-6, "scale": "log", "members": [{"device_id": "stage_c/pull_down", "parameter": "w"}, {"device_id": "stage_c/pull_up", "parameter": "w", "ratio": 2}]}
+  ]
+}

@@ -13,10 +13,11 @@ import torch
 
 from analog_optimizer.envs.sizing import graph_contract, write_record
 from analog_optimizer.models import ENCODER_TYPES, ModelConfig
+from analog_optimizer.models.inputs import SpecSchema
 from analog_optimizer.training.replay import ReplayBuffer, Transition
 from analog_optimizer.training.sac import SACLearner, source_digest
 from analog_optimizer.training.runtime import write_report_preserving_error
-from .transfer import aggregate_runs, digest, freeze_protocol
+from .transfer import aggregate_runs, digest, freeze_protocol, validate_split
 
 
 METHODS = ('gt_scratch', 'gt_frozen', 'gt_adapt', 'random', 'pattern_search', 'gnn_adapt')
@@ -49,6 +50,26 @@ def benchmark_models(settings):
             model, suffix = name.rsplit('_', 1)
             methods[name] = (model, 'adaptation' if suffix == 'adapt' else suffix)
     return models, methods, ('gt',) if legacy else tuple(models)
+
+
+def benchmark_call_budget(tasks, settings):
+    """Validate and count a complete matrix before constructing any backend."""
+    validate_split(tasks)
+    seeds = settings['seeds']
+    if (not seeds or len(set(seeds)) != len(seeds) or any(type(s) is not int or not 0 <= s < 2**32 for s in seeds)
+            or any(type(settings[k]) is not int or settings[k] < 1 for k in
+                   ('pretrain_steps', 'test_steps', 'batch_size', 'max_calls'))):
+        raise ValueError('Invalid seed or call/update budgets')
+    if settings['batch_size'] > min(settings['pretrain_steps'], settings['test_steps']):
+        raise ValueError('Budget must allow learning in both pretraining and adaptation')
+    models, methods, validation_models = benchmark_models(settings)
+    counts = {p: sum(t.partition == p for t in tasks) for p in ('train', 'validation', 'test')}
+    planned = len(seeds) * (len(models)*counts['train']*(1+settings['pretrain_steps']) +
+                           2*len(validation_models)*counts['validation'] +
+                           len(methods)*counts['test']*(1+settings['test_steps']))
+    if planned > settings['max_calls']:
+        raise ValueError(f'Planned {planned} calls exceed max_calls={settings["max_calls"]}')
+    return planned
 
 
 def seed_all(seed):
@@ -142,7 +163,8 @@ def run_episode(env, task, method, *, learner=None, replay=None, seed=0, batch_s
     statistics = RunStatistics(limit)
     last_recorded = None
     before = weight_digest(learner) if learner else None
-    summary = dict(task=task.id, partition=task.partition, transfer=task.transfer, method=method,
+    summary = dict(task=task.id, partition=task.partition, transfer=task.transfer,
+                   circuit_class=task.circuit_class, family=task.family, method=method,
                    seed=seed, phase=phase, origin=env.expected_origin, records=[],
                    actions=[], inference_seconds=0., update_seconds=0., updates=0, completed=False)
     summary['model_config'] = asdict(learner.model_config) if learner else None
@@ -270,22 +292,19 @@ def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance
         raise ValueError('Parallel benchmark requires isolated immutable-netlist or synthetic environments')
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
+    planned = benchmark_call_budget(tasks, settings)
+    schema_settings = settings.get('spec_schema')
+    spec_schema = (SpecSchema() if schema_settings is None else SpecSchema(
+        version=schema_settings['version'], metrics=tuple(tuple(m) for m in schema_settings['metrics'])))
+    registry = {name: unit for name, unit, _ in spec_schema.metrics}
+    for task in tasks:
+        if any(registry.get(s.metric_id) != s.unit for s in task.specs):
+            raise ValueError('Task metric identity/unit is absent from the frozen specification schema')
     seeds = settings['seeds']
-    if (not seeds or len(set(seeds)) != len(seeds) or any(type(s) is not int or not 0 <= s < 2**32 for s in seeds)
-            or any(type(settings[k]) is not int or settings[k] < 1 for k in
-                   ('pretrain_steps', 'test_steps', 'batch_size', 'max_calls'))):
-        raise ValueError('Invalid seed or call/update budgets')
-    if settings['batch_size'] > min(settings['pretrain_steps'], settings['test_steps']):
-        raise ValueError('Budget must allow learning in both pretraining and adaptation')
     train = [t for t in tasks if t.partition == 'train']
     validation = [t for t in tasks if t.partition == 'validation']
     test = [t for t in tasks if t.partition == 'test']
     models, methods, validation_models = benchmark_models(settings)
-    planned = len(seeds) * (len(models)*len(train)*(1+settings['pretrain_steps']) +
-                           2*len(validation_models)*len(validation) +
-                           len(methods)*len(test)*(1+settings['test_steps']))
-    if planned > settings['max_calls']:
-        raise ValueError(f'Planned {planned} calls exceed max_calls={settings["max_calls"]}')
     frozen = dict(**settings, origin=origin, methods=tuple(methods), planned_calls=planned,
                   models={k: asdict(v) for k, v in models.items()}, provenance=provenance,
                   method_models={k: dict(model=v[0], phase=v[1]) for k, v in methods.items()},
@@ -294,7 +313,11 @@ def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance
                   source_sha256=source_digest(), adaptation='fresh optimizers/replay; copied weights and alpha',
                   validation='frozen diagnostic only; no model/hyperparameter selection',
                   frozen_policy='deterministic mean, no parameter updates',
-                  budget_unit='one nominal DC/AC candidate package including reset, no cache/retries',
+                  budget_unit=('one analytic toy evaluation including reset, no cache/retries' if origin == 'synthetic'
+                               else 'one nominal candidate package including reset, no cache/retries'),
+                  resolved_spec_schema=asdict(spec_schema),
+                  source_task_order=[t.id for t in train],
+                  source_sampling='sequential episodes; one shared learner/replay per encoder and seed',
                   normalizer='fixed physical references; no data fitting', stop_on_success=False)
     protocol_sha = freeze_protocol(directory / 'protocol.json', tasks, frozen)
     report = {} if report is None else report
@@ -314,7 +337,8 @@ def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance
     def fresh(model, seed, phase, task_ids):
         seed_all(seed)
         return SACLearner(experiment=dict(origin=origin, split=phase, designs=task_ids,
-                                         protocol_sha256=protocol_sha), model_config=models[model])
+                                         protocol_sha256=protocol_sha), model_config=models[model],
+                          spec_schema=spec_schema)
 
     def execute(task, method, steps, **kwargs):
         if report['calls'] + 1 + steps > settings['max_calls']:
@@ -402,6 +426,8 @@ def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance
                             run_state=dict(phase='pretrain', tasks=[t.id for t in train],
                                            protocol_sha256=protocol_sha, seed=seed))
                 costs[model] = dict(model=model, seed=seed, calls=sum(p['calls'] for p in phases),
+                                    tasks=[t.id for t in train],
+                                    circuit_classes=sorted({t.circuit_class for t in train if t.circuit_class}),
                                     wall_seconds=sum(p['wall_seconds'] for p in phases), updates=source.updates,
                                     parameters=sum(p.numel() for module in (source.actor, source.critics)
                                                    for p in module.parameters()), weight_sha256=weight_digest(source))

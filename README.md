@@ -1,5 +1,7 @@
 # Analog Optimizer
 
+**M6 physical pilot execution is complete:** the [three category holdouts](docs/m6-real-results.md) used exactly 2,811 Spectre calls and 1,566 SAC updates, with final circuit/baseline restoration passed. The independent audit verified all 2,811 saved candidate packages and 162 learner checkpoints with zero new simulator calls, and the final regression suite passed 544 tests. GT adaptation achieved 2/3 OTA, 3/3 LDO and 3/3 VCO successes; coordinate search achieved 3/3 in every class without pretraining. This short experiment on known circuits does not establish a GT advantage. The [frozen protocol](docs/m6-real-protocol.md), [VCO runtime qualification](docs/m6-vco-runtime.md) and earlier [synthetic benchmark](docs/m6-cross-category.md) remain separate evidence.
+
 已实现离线基础链路：`VirtuosoBackend` 抽象 → synthetic `MockBackend` 导出网表 → Spectre 子集解析器 → `CircuitGraph` → PyTorch Geometric `HeteroData`。包含 op-amp、LDO、VCO 三个小型 synthetic fixture。另外已在真实 Virtuoso 中创建 GPDK045 五管 OTA 和测试台，完成 Spectre DC/AC、负载扰动、原参数复跑以及真实网表到 PyG 的验收；见 [运放基线](docs/opamp-baseline.md)。
 
 真实接口使用已有的 **Virtuoso Bridge**（发行包 `virtuoso-bridge`，import `virtuoso_bridge`）。已实现专用于当前 GPDK045 OTA 的 `VirtuosoBridgeBackend` 薄适配层，完成 M1/M2 宽度 4 → 4.4 → 4 µm 的真实回写、仿真和恢复；见 [后端验收](docs/opamp-backend.md)。本项目的 `VirtuosoBackend` 方法属于自有接口，底层继续调用上游连接、导出和 Spectre API；尚未实现通用 PDK 适配。
@@ -47,6 +49,8 @@ python examples/train_synthetic_sac.py
 python examples/benchmark_transfer.py
 # M6 前：四架构的最小迁移流程验收。
 python examples/benchmark_transfer.py --encoders graph_transformer mlp rgcn gat --seeds 17 --pretrain-steps 2 --test-steps 2 --max-calls 120
+# M6: validate the cross-category suite and its total budget, without evaluations.
+python examples/benchmark_cross_category.py --dry-run
 ```
 
 Demo 输出 devices、nets、带 terminal/ordinal/role 的连接、参数组、节点 features/masks、正反向边和参数组绑定 tensors。
@@ -111,4 +115,4 @@ M4 新增的 `SyntheticSizingBackend` 是独立、显式的解析二次函数测
 
 真实环境只开放 `input_pair_width`，范围 3.6–4.4 µm、linear 映射、5 nm 网格；镜像与尾管参数组在环境图中为 `mutable=False`。通用图解析配置 `gpdk045_opamp.json` 中较宽的参数范围仅用于表示，不能直接作为真实动作权限。提议动作和实际执行值分开记录；连续提议加网格投影不等于严格的离散 SAC。
 
-当前已完成 M5 首轮及真实同类新拓扑补验、M6 前可切换编码器接口，M6 尚未开始。训练维持 nominal-only；一个专用准备进程独占原理图，逐候选导出后通过独立进程并行 Spectre，上限 4。本轮 M5 多电路对照为串行独占 CDF；PVT top-k 仿真调度、MC、跨类别泛化与 surrogate 尚未验证，不将合成结构测试视为真实电路迁移证据。项目级 [analog-optimizer skill](.agents/skills/analog-optimizer/SKILL.md) 记录当前阶段与编码器对照约定。
+M5's same-class real topology verification and encoder interfaces are complete. M6 now has an offline cross-category protocol, qualified nominal LDO/VCO baselines and one executed, audited physical cross-category pilot; the pilot does not establish transfer or encoder superiority, and strict-mode requalification of optimized VCO designs plus a larger prospectively defined circuit set remain open. Training stays nominal-only. The existing real parallel path serializes native CDF preparation and permits at most four Spectre workers; the M5 multi-circuit and M6 category experiments run sequentially. PVT scheduling, Monte Carlo and surrogate extensions remain unverified. The latest milestone status is recorded in [project decisions](docs/decisions.md), [M6 protocol](docs/m6-cross-category.md), [LDO qualification](docs/m6-ldo-baseline.md), [VCO qualification](docs/m6-vco-baseline.md) and [physical pilot results](docs/m6-real-results.md).

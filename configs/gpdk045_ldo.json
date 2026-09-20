@@ -1,0 +1,159 @@
+{
+  "mapping_version": "gpdk045-v6.0-ldo-m6-v1",
+  "models": {
+    "g45n1svt": {
+      "kind": "nmos",
+      "terminals": [
+        "D",
+        "G",
+        "S",
+        "B"
+      ],
+      "roles": [
+        "drain",
+        "gate",
+        "source",
+        "bulk"
+      ],
+      "parameters": {
+        "w": "w",
+        "l": "l",
+        "nf": "nf",
+        "m": "m"
+      }
+    },
+    "g45p1svt": {
+      "kind": "pmos",
+      "terminals": [
+        "D",
+        "G",
+        "S",
+        "B"
+      ],
+      "roles": [
+        "drain",
+        "gate",
+        "source",
+        "bulk"
+      ],
+      "parameters": {
+        "w": "w",
+        "l": "l",
+        "nf": "nf",
+        "m": "m"
+      }
+    },
+    "vsource": {
+      "kind": "vsource",
+      "terminals": [
+        "PLUS",
+        "MINUS"
+      ],
+      "roles": [
+        "positive",
+        "negative"
+      ],
+      "parameters": {
+        "dc": "dc"
+      }
+    },
+    "capacitor": {
+      "kind": "capacitor",
+      "terminals": [
+        "PLUS",
+        "MINUS"
+      ],
+      "roles": [
+        "positive",
+        "negative"
+      ],
+      "parameters": {
+        "c": "c"
+      }
+    },
+    "isource": {
+      "kind": "isource",
+      "terminals": [
+        "p",
+        "n"
+      ],
+      "roles": [
+        "positive",
+        "negative"
+      ],
+      "parameters": {
+        "dc": "dc"
+      }
+    },
+    "resistor": {
+      "kind": "resistor",
+      "terminals": [
+        "p",
+        "n"
+      ],
+      "roles": [
+        "positive",
+        "negative"
+      ],
+      "parameters": {
+        "r": "r"
+      }
+    }
+  },
+  "global_nets": [
+    "0"
+  ],
+  "net_roles": {
+    "0": [
+      "ground"
+    ],
+    "VDD": [
+      "supply"
+    ],
+    "VREF": [
+      "input"
+    ],
+    "VBIAS": [
+      "bias"
+    ],
+    "VOUT": [
+      "output"
+    ]
+  },
+  "parameter_groups": [
+    {
+      "id": "input_pair_width",
+      "parameter_kind": "w",
+      "unit": "m",
+      "lower": 3.6e-06,
+      "upper": 4.4e-06,
+      "scale": "linear",
+      "step": 5e-09,
+      "members": [
+        {
+          "device_id": "XU1/M1",
+          "parameter": "w"
+        },
+        {
+          "device_id": "XU1/M2",
+          "parameter": "w"
+        }
+      ]
+    },
+    {
+      "id": "pass_width",
+      "parameter_kind": "w",
+      "unit": "m",
+      "lower": 7.2e-06,
+      "upper": 8.8e-06,
+      "scale": "linear",
+      "step": 5e-09,
+      "members": [
+        {
+          "device_id": "XU1/MP",
+          "parameter": "w"
+        }
+      ]
+    }
+  ]
+}

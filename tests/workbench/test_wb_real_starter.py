@@ -110,7 +110,7 @@ def test_a_generated_profile_gets_its_parameters_and_probes_and_no_invented_targ
     assert sorted({i.code for i in report.issues if i.level in ('error', 'blocker')}) == ['no_hard_constraint']    # the one thing left to the user
     from analog_optimizer.envs.sizing import graph_contract
     assert graph_contract(compile_task(as_config(dict(raw, targets=[dict(
-        metric_id='osc_frequency_hz', measurement_id='m_osc_frequency_hz', unit='GHz', constraint='>=', lower=1.0, normalization_scale=1.0)])),
+        metric_id='osc_frequency_hz', equation='m_osc_frequency_hz', unit='GHz', constraint='>=', lower=1.0, normalization_scale=1.0)])),
         runtime.base_graph).graph) == graph_contract(runtime.base_graph)
 
 

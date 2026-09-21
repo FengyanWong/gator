@@ -16,11 +16,40 @@ async function call(method: string, url: string, body?: Json): Promise<Json> {
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  return answer(response);
+}
+
+async function answer(response: Response): Promise<Json> {
   const text = await response.text();
   let data: Json = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = { message: text.slice(0, 500) }; }
   if (!response.ok) throw new ApiError(response.status, data?.detail ?? data);
   return data;
+}
+
+// An agent request whose answer arrives LIVE, as Server-Sent Events: `onProgress` gets the thinking summary and the reply
+// text while they are written (backend agents/live.py). It ends like `call`: with the proposal, or with an ApiError(409)
+// carrying the same detail. A server older than live answers ignores the Accept header and sends one JSON body: taken as is.
+async function proposeLive(body: Json, onProgress: (event: Json) => void): Promise<Json> {
+  const response = await fetch('/api/agent/propose', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(body) });
+  if (!response.ok || !response.body || !(response.headers.get('Content-Type') ?? '').startsWith('text/event-stream')) return answer(response);
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    for (let end = buffer.indexOf('\n\n'); end >= 0; end = buffer.indexOf('\n\n')) {
+      const frame = buffer.slice(0, end), kind = /^event: ?(.*)$/m.exec(frame)?.[1], data = /^data: ?(.*)$/m.exec(frame)?.[1];
+      buffer = buffer.slice(end + 2);
+      if (!kind || data === undefined) continue;                  // a keep-alive comment while the agent works
+      const payload = JSON.parse(data);
+      if (kind === 'result') return payload;
+      if (kind === 'error') throw new ApiError(409, payload);
+      onProgress(payload);
+    }
+    if (done) throw new Error('the connection to the workbench server closed before the answer was complete');
+  }
 }
 
 const q = (params: Record<string, string | number | boolean | undefined | null>) =>
@@ -79,6 +108,7 @@ export const api = {
   agentDiagnostics: () => call('GET', '/api/agent/diagnostics'),
   agentReadiness: (config: Json) => call('POST', '/api/agent/readiness', { config }),      // free: no model is called, nothing is probed
   propose: (body: Json) => call('POST', '/api/agent/propose', body),
+  proposeLive,
   cancelAgent: (request_id: string) => call('POST', '/api/agent/cancel', { request_id }),
   exportTask: (body: Json) => call('POST', '/api/agent/export-task', body),
   importResult: (body: Json) => call('POST', '/api/agent/import-result', body),

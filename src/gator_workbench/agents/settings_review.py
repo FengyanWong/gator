@@ -42,8 +42,7 @@ PUBLICATION_DOMAINS = ('arxiv.org', '*.arxiv.org', 'ieeexplore.ieee.org', 'dl.ac
                        'www.nature.com', 'www.mdpi.com', 'doi.org', 'www.semanticscholar.org', 'api.semanticscholar.org',
                        'github.com', 'raw.githubusercontent.com', 'pytorch-geometric.readthedocs.io')
 HOST = re.compile(r'^(\*\.)?[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)+$')
-WEB_TIMEOUT_SECONDS = 900.0          # reading publications takes minutes, not seconds
-WEB_MAX_TURNS = 40                   # bounds what one research request can cost
+WEB_MAX_TURNS = 40                   # bounds what one research request can cost (there is no time limit: status record 7.48)
 
 
 def domains(extra=()) -> tuple:

@@ -14,6 +14,17 @@ Not documented, therefore NOT used: a non-billable authentication check (authent
 reported as unknown until a real request answers), ``--disable-slash-commands``, a nested-session
 variable. ``--bare`` is never passed because it skips skill discovery.
 
+A LIVE request (the page shows the thinking and the reply while they are written; status record
+7.48) adds three things, each checked against the real ``claude`` 2.1.278 on 2026-09-21:
+  * ``--include-partial-messages`` (in ``claude --help``): the API's stream events as they arrive;
+  * ``--thinking-display summarized``: a readable summary of the thinking instead of none. The option
+    is hidden from ``--help`` but is the one the Agent SDK itself passes for ``thinking.display``;
+  * environment variable ``CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING=1``: the answer (the input
+    of the ``StructuredOutput`` call) then arrives a few words at a time instead of a field at a time.
+If a CLI version refuses one of the options, the request is repeated once without them. An unknown
+option fails before any model call, so the first attempt costs nothing; the reply then arrives in
+one piece, as before.
+
 Only the final ``structured_output`` is treated as configuration. stderr, progress text and
 Markdown are never parsed as JSON.
 """
@@ -29,10 +40,18 @@ import tempfile
 from ..security import redact
 from .base import (AgentError, AgentProvider, AgentRequest, AgentResult, WRITE_OR_EXEC_TOOLS, run_cli)
 from .catalog import supports_effort
-from .settings_review import WEB_MAX_TURNS, WEB_TIMEOUT_SECONDS
+from .live import LiveTranslator
+from .settings_review import WEB_MAX_TURNS
 from .prompts import build_prompt, proposal_schema_json
 
 WEB_TOOLS = ('WebSearch', 'WebFetch')
+LIVE_OPTIONS = ('--include-partial-messages', '--thinking-display', 'summarized')
+LIVE_ENV = {'CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING': '1'}
+LIVE_OPTION_REFUSED = re.compile(r"(?i)unknown option[^\n]*--(thinking-display|include-partial-messages)"
+                                 r"|--(thinking-display|include-partial-messages)[^\n]*(invalid|unknown)")
+# Pieces of a live request: shown on the page while it runs, not kept as logs (a long request has thousands).
+QUIET_EVENTS = ('stream_event', 'rate_limit_event')
+QUIET_SYSTEM = ('thinking_tokens', 'status')
 AUTH_PATTERNS = re.compile(r'(?i)(invalid api key|please run /login|not logged in|authentication[_ ]error|'
                            r'oauth token (has )?expired|unauthorized|401\b|credit balance|login required)')
 MODEL_PATTERNS = re.compile(r'(?i)(model[^.\n]{0,80}(not found|does not exist|not available|unavailable|invalid|'
@@ -63,11 +82,14 @@ class ClaudeCodeProvider(AgentProvider):
         scratch = tempfile.mkdtemp(prefix='gator-agent-')
         return Path(scratch), scratch
 
-    def build_argv(self, executable, request: AgentRequest):
+    def build_argv(self, executable, request: AgentRequest, live=False):
         s = self.settings
-        argv = [executable, '-p', '--output-format', 'stream-json' if s.stream else 'json']
-        if s.stream:
+        events = live or s.stream                                  # a live request needs the event stream
+        argv = [executable, '-p', '--output-format', 'stream-json' if events else 'json']
+        if events:
             argv.append('--verbose')
+        if live:
+            argv += list(LIVE_OPTIONS)
         # Online research (a settings_review that asked for it, nothing else): the two web tools come off the deny list - a
         # denied tool cannot be re-allowed - and WebFetch is allowed for the operator's publication hosts only. Everything that
         # writes or executes stays denied, and the working directory stays the empty scratch directory.
@@ -85,7 +107,7 @@ class ClaudeCodeProvider(AgentProvider):
             argv += ['--max-turns', str(int(s.max_turns or WEB_MAX_TURNS))]
         return argv
 
-    def propose(self, request: AgentRequest) -> AgentResult:
+    def propose(self, request: AgentRequest, on_event=None) -> AgentResult:
         request.validate()
         executable = self.executable()
         if executable is None:
@@ -96,11 +118,24 @@ class ClaudeCodeProvider(AgentProvider):
             visibility = skill_visibility()
             if not visibility['any_visible_on_disk']:
                 raise AgentError('skill_not_visible', visibility['summary'], visibility=visibility)
+        if on_event is not None:
+            try:
+                return self._run(executable, request, on_event)
+            except AgentError as exc:
+                if exc.code != 'nonzero_exit' or not LIVE_OPTION_REFUSED.search(str(exc.extra.get('stderr') or '')):
+                    raise
+                on_event(dict(type='step', text='This version of the claude CLI cannot show the answer while it is written; '
+                                                'it will arrive in one piece.'))
+        return self._run(executable, request, None)
+
+    def _run(self, executable, request, on_event):
+        live = on_event is not None
         cwd, scratch = self.working_directory(request)
         try:
-            code, stdout, stderr = run_cli(self.build_argv(executable, request), stdin_text=build_prompt(request),
-                                           cwd=cwd, timeout=max(self.settings.timeout_seconds, WEB_TIMEOUT_SECONDS) if request.web
-                                           else self.settings.timeout_seconds, request_id=request.request_id)
+            code, stdout, stderr = run_cli(self.build_argv(executable, request, live=live), stdin_text=build_prompt(request), cwd=cwd,
+                                           timeout=self.settings.timeout_seconds, request_id=request.request_id,
+                                           env=dict(os.environ, **LIVE_ENV) if live else None,
+                                           on_line=LiveTranslator(on_event).feed if live else None)
         finally:
             if scratch:
                 shutil.rmtree(scratch, ignore_errors=True)
@@ -179,6 +214,9 @@ class ClaudeCodeProvider(AgentProvider):
                 continue
             if isinstance(event, dict) and event.get('type') == 'result':
                 result = event
+            elif isinstance(event, dict) and (event.get('type') in QUIET_EVENTS
+                                              or event.get('type') == 'system' and event.get('subtype') in QUIET_SYSTEM):
+                continue
             elif isinstance(event, dict):
                 logs.append(dict(type=event.get('type'), subtype=event.get('subtype'),
                                  summary=redact(json.dumps(event)[:500])))

@@ -2109,3 +2109,321 @@ deleting its folder by hand.
   testbench cell and the ring oscillator -> none. Live `dist` rebuilt.
 * Python changed (new endpoint, wider lookup): restart the backend; until then the page says "This backend is older
   than the page" on Delete profile. Uncommitted.
+* Re-checked after 7.49 (the testbench box finds `tb_<cell>`, Probes follow the testbench - another session, same
+  files): `virtuoso_source_check.mjs` 66/66 on the live `dist`; `test_wb_profiles.py` + `test_wb_testbench_probes.py`
+  29 passed. The testbench that comes back with a deleted profile's cell is not overwritten by the name lookup.
+
+### 7.48 Agent tab: the answer is shown while it is written (thinking summary, then the reply); no time limit (2026-09-21 evening, separate session, explicit user request)
+
+User: "Considering the agent tab, is it possible for the agent chat box to reply real time thinking and real time reply
+but not as a whole message back?", then: "if you can show real time reply at the agent tab, remove the time limit of 300s".
+
+Found (verified, not assumed):
+* The CLI already ran with `--output-format stream-json --verbose` (setting `stream: true`), but `run_cli` waited in
+  `communicate()` and `/api/agent/propose` answered once, so nothing could reach the page before the end.
+* The thinking of every earlier Agent-tab request came back EMPTY: the CLI transcripts
+  (`~/.claude/projects/-tmp-gator-agent-*/`) hold thinking blocks of length 0 with a signature. Current models
+  default to `thinking.display: "omitted"`. In `-p` mode, `claude` 2.1.278 asks for nothing else: its `showThinkingSummaries`
+  setting only applies to interactive sessions. The option `--thinking-display summarized` is hidden from `--help`,
+  but it is what the embedded Agent SDK passes for `thinking.display` (choices summarized / omitted / highlights), and it
+  returns a readable summary. The display does not change billing (claude-api reference: "billed the same under every
+  setting").
+* The chat text is the `reasoning` field of the `StructuredOutput` tool call. The CLI sets `eager_input_streaming` on
+  its tools only behind a server flag, or with `CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING=1`; with it the input
+  arrives a few words at a time.
+* Two real requests (claude-sonnet-5, $0.08 + $0.27 notional on the Max subscription, 12 s and 211 s): reply pieces
+  about every 50 ms; at effort max, 1,390 thinking pieces (17,365 characters of summary) over 3.5 minutes. The model
+  wrote the fields in the order the schema lists them. The user's saved setting was opus at effort max: 300 s was
+  within reach.
+
+Backend:
+* `agents/live.py` (new). `PartialAnswer` makes one pass per character over the JSON of the answer as it arrives: it
+  reports each top-level field as it starts and decodes the `reasoning` string (escapes, `\uXXXX`, surrogate pairs cut
+  between pieces). `LiveTranslator` turns CLI lines into the events `model`, `thinking`, `step` (WebSearch / WebFetch /
+  Read..., API retries; `ToolSearch` skipped), `say`, `writing`, `reply` and `restart` (the CLI asked for the answer
+  again). Subagent lines and anything unreadable are ignored. Display only.
+* `base.run_cli(on_line=)`: stdout is read line by line while the CLI runs, with stdin and stderr on threads of their
+  own. `timeout` None means no limit (a caller may still set one: a Timer stops the process group).
+  `AgentSettings.timeout_seconds` now defaults to None; `AgentProvider.propose(request, on_event=None)`.
+* `claude_code.py`: a live request uses stream-json with `--include-partial-messages --thinking-display summarized`
+  and the environment variable above. `stream_event`, `rate_limit_event` and system `thinking_tokens` / `status` lines
+  are no longer kept as logs (a long request has thousands). If stderr says a live option is unknown or invalid, the
+  request runs once more without the options (no model call had happened) and a `step` says so. Codex and Disabled
+  accept `on_event` and ignore it (Codex: superseded the same evening by 7.50).
+* `prompts.PROPOSAL_SCHEMA`: `reasoning` moved right after `kind` (required list and properties), so the text streams
+  before the rows.
+* `api/app.py`: `POST /api/agent/propose` with `Accept: text/event-stream` goes to `live_answer`. The provider runs on
+  a thread of its own and its events cross into the event loop (`call_soon_threadsafe`). The stream is SSE `progress`
+  events, then ONE `result` (the same proposal as the JSON answer, incl. `readiness_after` and the checked
+  suggestions) or ONE `error` (the same dict as the 409 detail; an unexpected exception gives `internal_error`). A
+  comment line goes out every 10 s. A stream that ends before its verdict (page closed or reloaded) cancels the request.
+  A request that fails validation is still a plain 409, and a request without the header is unchanged. The time limit
+  is gone: `agent_settings()` drops a saved `timeout_seconds` (the user's file had 300), PUT accepts and ignores it
+  (older pages send it), and nothing saves it. `WEB_TIMEOUT_SECONDS` removed.
+
+Frontend:
+* `api.proposeLive(body, onProgress)`: a fetch with a ReadableStream SSE reader. `result` resolves; `error` throws
+  `ApiError(409, detail)`, so `fail()` and the neutral cancel line work unchanged. A JSON answer (an older server, or
+  the canned answers of `agent_tab_check.mjs`) is taken as is. A stream that ends without a verdict becomes an error line.
+* `Bottom.tsx` `AgentTab`: events go into a ref and are drawn at most every 150 ms. The pending bubble shows:
+  * the model the CLI runs;
+  * a "Thinking" box that follows the newest line unless scrolled up;
+  * the steps;
+  * the reply (RichText);
+  * a status line ("Sent. Waiting..." / "Thinking..." / "Looking things up..." / "Writing the reply / the proposed
+    rows / the warnings...") with the seconds.
+  The hint is 'No time limit. "Cancel request" below stops it; what has arrived stays in the chat.' The finished reply
+  carries `thinking` + `thinking_seconds`, shown as a closed `<details>` "Thinking - N s" above its text (component
+  `Thought`). An error line keeps its thinking the same way; a cancel line keeps "Thinking" and "Reply so far" folded
+  under it. The chat follows a growing answer only while scrolled to the bottom. `save()` no longer sends
+  `timeout_seconds`; `WEB_TIMEOUT_SECONDS` removed.
+* `styles.css`: `.thinking-live`, `.thought-text`, `details.thought`, `.live-steps`, `.live-reply`.
+
+Checks:
+* `tests/workbench/test_wb_agent_live.py`, 19 tests:
+  * decoding under every cut (char / random / whole; as written or reply first; raw or `\u`-escaped, incl. a surrogate
+    pair), with nested "reasoning" keys ignored;
+  * the RECORDED real stream (`fixtures/claude_live_recorded.ndjson`: request 2 above, trimmed to its first 60 thinking
+    pieces, ids replaced) rebuilds the thinking and the reply exactly;
+  * steps, retry, say and restart;
+  * the provider: argv and environment, a plain request unchanged, progress more than 1 s before the end, the fallback
+    for a CLI without the options, cancel mid-stream, no default limit;
+  * the API: progress then the same proposal as the JSON path, error shape, cancel, a saved limit ignored;
+  * a real uvicorn socket: events spread over time, and a closed connection cancels the agent;
+  * `live_answer` closed early cancels.
+* `fake_cli.py`: scenarios `live`, `live_slow`, `live_hang`, `live_demo` (`FAKE_CLI_PAUSE`; a prompt containing
+  FAKE-HANG hangs) and `live_refused`; it records the environment variable.
+* `frontend/scripts/agent_live_check.mjs` (new):
+  * hermetic, 14 checks: SSE fixtures, one JSON answer and a cut stream; safe on 8765;
+  * `--live`, 12 checks against a scratch backend with the fake CLI: the thinking grows over 4 samples and the reply
+    over 13, the statuses, the folded thinking, and a cancel keeps the thinking.
+* `agent_tab_check.mjs`: only the online waiting-line check changed (it now expects "No time limit" instead of
+  "900 s"); all its checks pass against the new build.
+* `tsc` clean. Whole `tests/workbench`: no failure (`-x` run, exit 0; 473 tests collected afterwards).
+* Live `dist` rebuilt at 18:11 by the session "Virtuoso cells optional fields", together with its own `Left.tsx`
+  work (checked: the build contains the live answer). Restart the backend (8765) for the live answer and the removed
+  limit. Until then the new page gets one JSON answer as before, and the old server still stops a request at 300 s.
+  Uncommitted.
+
+### 7.49 Virtuoso source: the testbench is found by its name, and Probes follow the testbench (2026-09-21 evening, separate session, explicit user request)
+
+User: "for the testbench cell, add the functionality of detecting the name in format tb_cell_name with the same name
+as the original cell. The probes should be updated according to the testbench cell". Owner sessions of the files
+(7.47 profile-from-cell, 7.44 task starter rows) were told before the edit.
+
+* **Found by its name** (`Left.tsx`, `namedTestbench`): choosing a cell chooses `tb_<cell>` when the library has it
+  (the `tb_` prefix in any case, the cell name exact, a schematic view required; `tb_` beats `TB_`). A hint says
+  "Found by its name: tb_ + the cell's name". Without a `tb_` of its own, a new cell drops the old cell's `tb_` but
+  keeps a testbench chosen by hand. When the cell list ARRIVES (page load, Refresh) an EMPTY box is filled the same
+  way, like the PDK id - never over a chosen testbench, and a testbench that comes with a Delete-profile answer is
+  untouched. The box's tooltip no longer says "Optional": Create profile has always refused a cell read without one.
+  Not found by this rule: the verified OTAs' `tb_ota5_ac_v1` / `tb_ota7_m5_ac_v2` (those cells are registered tasks).
+* **Probes follow the testbench** - backend `profiles.testbench_probes(imported)`: from the COPY that was read
+  (`native_cells`), which of the circuit types the testbench fits (the same readings Create profile makes: `_supply`
+  + `_ring` for the ring oscillator, new `_opamp_fit` for the op-amp - `create_profile` now calls it, same message)
+  and one Probes row per result of that type (`probe_results`: the registry the profile will bring, else the default
+  one), each with `signal` = where in THIS testbench it is read (`OUT`; the ring nets `OUT XU1.N1 XU1.N2`; `V0:p`)
+  and a note "Testbench <tb>, circuit type <label>: <meaning>". Nothing when read without a testbench, or when the
+  testbench fits no type (or both) - with the reasons per type. `POST /api/circuit/load` answers it as
+  `testbench_probes` for a Virtuoso draft (`load_cell_import` alias: `native_cells` is a route name in `create_app`).
+  `signal` is documentation for a `backend_profile` row: the circuit type measures fixed nets; the folded help says
+  so. **A generated profile's starter (`tasks.real_starter_config`) now builds its Probes with the same function**
+  from its `design.json`, so after Create profile the rows are still "the task's own" for `chooseTask`'s JSON
+  comparison (key order included). The four verified and all synthetic starters are unchanged.
+* Frontend (`Left.tsx`, `followTestbench`): only after an own choice of library / cell / testbench (exchanged inside
+  that choice's Undo step) or a Read press (a step of its own); never on page load. Rows are exchanged only while
+  nobody's work - empty, brought by an earlier testbench in this page session, or JSON-equal to the starter of the
+  config's `task_id` (the last registered task); that task's untouched targets leave Specs with them (they point at
+  its probes) and the line says so. Edited rows stay: "Probes hold rows you edited, not the ones of the testbench
+  <tb>." + **Use testbench probes**. No fitting type: "Probes were left as they were. <reason>" + folded "Why no
+  circuit type fits". Create profile's Circuit type follows the detected type. When the box and the copy differ:
+  "This copy was read through <tb> (without a testbench). Press Read the cell again to read it through <tb>: Probes
+  then follow it." A cell that already has a registered task gets nothing. Own state `probeNote`, not `taskRows`.
+* Not handled: Parameters rows name the testbench's core instance (`XU1/MN1`); a testbench with another instance
+  name makes them stale. Only the two circuit types exist, so e.g. `rfExamples/lna300` brings no probes.
+* Checks: `tests/workbench/test_wb_testbench_probes.py` (7: ring and verified-OTA exports, no testbench, fits no type,
+  cell missing from the testbench, the API answer + validation, starter rows == testbench rows as JSON text).
+  `frontend/scripts/testbench_probes_check.mjs` (new, 39 checks, hermetic: all Virtuoso calls and Virtuoso-source
+  loads are fixtures, safe on 8765), plus `virtuoso_source_check` (66), `project_help_check` (42), `task_rows_check`
+  (31), `circuit_source_check` (21) - all pass on a scratch build served on 5174. `tsc --noEmit` clean. Whole
+  `tests/workbench`: 480 passed. The live `frontend/dist` was rebuilt afterwards (the 7.48 session said its frontend
+  was ready; `tsc` right before), and `testbench_probes_check` + `virtuoso_source_check` pass on it at 8765.
+* **Restart the backend (8765)** for `testbench_probes`; until then the auto-find works and Probes simply do not
+  follow. Uncommitted.
+
+### 7.50 Agent tab: the live answer for the Codex provider too (2026-09-21 evening, same session as 7.48, explicit user request)
+
+User, after 7.48: "also do this for the codex if havent". It had not been done: `CodexProvider.propose` ignored `on_event`.
+
+Found (verified against documentation, NOT against a real CLI - `codex` is installed neither in WSL nor on Windows):
+* `codex exec --json` prints JSON lines: `thread.started`, `turn.started`, `item.started` / `item.updated` /
+  `item.completed`, `turn.completed` (usage), `turn.failed`, `error`. The items are `agent_message`, `reasoning`
+  (`text`), `command_execution` (`command`, `aggregated_output`, `exit_code`, `status`), `file_change` (`changes[].path`),
+  `mcp_tool_call` (`server`, `tool`), `web_search` (`query`), `todo_list` (`items[].text`), `error` (`message`).
+  Sources: learn.chatgpt.com/docs/non-interactive-mode (redirect from developers.openai.com/codex/noninteractive) and
+  github.com/openai/codex `sdk/typescript/src/events.ts`, `items.ts`, `exec.ts`, read 2026-09-21.
+* There are NO text pieces: an item arrives whole. So Codex can show its reasoning summaries paragraph by paragraph and
+  its steps, but the reply only in one piece. The SDK itself passes `--experimental-json` together with
+  `--output-schema`.
+* Reasoning summaries: `model_reasoning_summary` (auto | concise | detailed | none) defaults to auto; `hide_agent_reasoning`
+  suppresses them in `codex exec` output. The workbench leaves both to the user's Codex configuration.
+
+Built:
+* `agents/live.py` `CodexTranslator` emits the same events as the Claude translator:
+  * `turn.started` -> `thinking ''` ("Thinking...");
+  * `reasoning` -> `thinking`, a new paragraph per item; an `item.updated` that extends an item adds the rest;
+  * command / web search / MCP call / file change / plan / item error -> one `step` each; a failed command adds one more;
+  * `turn.failed` and `error` -> a `step`;
+  * the final `agent_message` -> `writing reasoning` + `reply` when it is the JSON answer, otherwise `say`.
+  It keeps `last_message`.
+* `codex.py`: with `on_event`, the first of `--json` / `--experimental-json` that `codex exec --help` lists as a whole
+  word (`listed()`) is added, and stdout is read line by line (`run_cli(on_line=)`). Neither listed: a `step` says the
+  answer will arrive in one piece. The proposal is still the `--output-last-message` file, or the stream's last agent
+  message if a CLI version writes none (the SDK reads it from the stream). Online research stays refused for Codex.
+* The page is unchanged: the pending bubble is provider-agnostic.
+
+Checks:
+* `test_wb_agent_live.py`: 7 new, 26 in all.
+  * argv `exec --json`, and the proposal from the file;
+  * events in documented order, the steps, and the reply;
+  * items more than 1 s before the end;
+  * a CLI without `--json`: one piece, plus the note;
+  * the answer from the stream when no file is written;
+  * cancel mid-stream;
+  * every documented item type, `item.updated` growth, junk lines;
+  * the API streams a Codex answer.
+* `fake_cli.py` (codex part):
+  * `--json` in its help (except scenarios `old_codex` / `codex_without_json`);
+  * `codex_events()` in the documented shape;
+  * scenarios `codex_live`, `codex_live_slow`, `codex_live_hang`, `codex_live_nofile`, and `codex_demo`
+    (`FAKE_CLI_PAUSE`, FAKE-HANG).
+* `agent_live_check.mjs --live --codex`: 12 checks against a scratch backend (fake `claude` and `codex`, scenario
+  `codex_demo`; the check saves provider = codex there).
+  * the reasoning appears item by item (72 then 134 characters);
+  * "Running: ls" and the web search appear as steps; the status goes "Thinking..." then "Looking things up...";
+  * the reply, with its thinking folded;
+  * cancel keeps the first paragraph.
+* The agent/API test files pass (89); whole `tests/workbench`: 480 passed (5 min 31 s).
+* No frontend source changed, so no build. Restart the backend (8765) - the same restart as 7.48. Uncommitted. Untested
+  with a real `codex`: the first real Codex request will show whether its stream matches the documentation. If it does
+  not, only the live display is affected; the proposal path is the one of before.
+
+### 7.51 Editor tabs: Probes before Specs (2026-09-21 ~18:35, separate session, explicit user request)
+
+Request: "change the order of the Spec tab and the Probes tab, probes at front and spec follows it".
+
+The centre strip now reads **Parameters | Probes | Specs** (a Spec row is written on a Probe's result, so the strip
+now follows the order in which the rows build on each other). Order only: the names, the configuration keys
+(`parameters`, `measurements`, `targets`), saved configurations, exports and agent proposals are unchanged, and
+Parameters is still the tab that opens first.
+
+* the strip: `Editors.tsx` `TITLES` - its key order IS the tab order (the strip is `Object.keys(TITLES)`);
+* the start checklist: `agents/readiness.py` `TABLES` (and `TITLES`, kept equal to the frontend's) - the checklist now
+  lists circuit, Parameters, Probes, Specs, ... in tab order. With all three tables empty the first missing item is
+  still Parameters. `changeable_rows` is keyed by name, so a `minimal_start` proposal is unaffected;
+* texts that list the three tabs list them in the new order: the agent's brief (`run_readiness.md`, together with the
+  keys it maps them to), the "Load starter configuration" tooltip and the two task-rows notes (`Left.tsx`), the
+  empty-conversation hint of the Agent tab (`Bottom.tsx`), and `docs/workbench.md`, including the column order of the
+  "whose rows" task table.
+
+Left alone: validation messages and request kinds (config vocabulary), `ROW_SECTIONS` in `Left.tsx` (used only as an
+order-free list), the entry 7.34 above (a record of its time) and the specification file (the user's document).
+
+Verification:
+* `test_wb_agent_readiness.py`: the order assertion now expects `circuit, parameters, measurements, targets`; with
+  `test_wb_agent_settings_review.py`, 24 passed. `tsc --noEmit` clean.
+* `task_rows_check.mjs` (hermetic) on a scratch build (`vite build --outDir <Windows temp>` + `vite preview`, API proxied
+  to 8765): 32/32 pass. Its four strip assertions now expect, for example, "Parameters (2) | Probes (3) | Specs (3)";
+  the notes read "Parameters, Probes and Specs now show this task's rows".
+* `agent_tab_check.mjs`: its strip check now checks the order as well, and its empty-conversation text follows
+  `Bottom.tsx`. Not run this time: it needs a scratch backend, and the Python tree was being edited by the session of
+  the Specs-equation work. Its strip assertion is the same one `task_rows_check.mjs` passed.
+* Live page: `frontend/dist` rebuilt at 18:38 (after `tsc --noEmit`, with the go-ahead of the busy peer session). Its
+  bundle `index-D6Fe8gKs.js` is byte-identical to the scratch build checked above, and `task_rows_check.mjs` (hermetic)
+  against 8765 passes 32/32, so a page reload shows the new order.
+* Restart the backend (8765) for the checklist order (`readiness.py` is loaded at start); the brief is read again for
+  every request. Uncommitted.
+
+### 7.52 Specs are equations over Probes (2026-09-21 evening, separate session, explicit user request)
+
+Request: "each spec should be equation of probes", in reply to a gap found while explaining how the three tabs reach
+Virtuoso. A Specs row named ONE probe (`measurement_id`), and the two scorers took different roads. The environment's
+reward looked the spec's NAME (`metric_id`) up in the simulation result. The workbench's pass/fail check went through
+the probe's `source_name`. Nothing tied the two together: pointing the OTA5 target `unity_gain_hz` at a probe that
+reads `bandwidth_3db_hz` passed validation with only an "unused measurement" warning. The reward would then judge the
+unity-gain frequency while pass/fail judged the bandwidth.
+
+Now each Specs row has an `equation` over Probe IDs, in place of `measurement_id`. The simplest equation is one Probe
+ID, and every starter row is of that kind. A formula works too, for example `m_supply_power_w / m_osc_frequency_hz`.
+The syntax is the whitelist evaluator the Probes' expressions already use (numbers with SI suffixes, `+ - * / **`,
+brackets, no calls). ONE value per spec goes everywhere: the reward, the goal input of the network, the independent
+feasibility check, the best-design choice and the tables.
+
+* `spec_equations.py` (new, workbench package; `src/analog_optimizer/` untouched, digest still `02127bc3...`):
+  * `parse` reads an equation's form (AST). It never evaluates, so `(m_a - m_b) / (m_c - m_d)` is judged by its form.
+    The Probes' expression check used a trial evaluation with every symbol at 1.0, which divided by zero on such
+    formulas and rejected them; it now uses `parse` too.
+  * `SpecPlan` (picklable, compiled with the task) gives the probe values and spec values.
+  * A spec is "result-backed" when its equation is the probe of the simulator result of the same name. The environment
+    finds that value in the result itself, exactly as before. Every other spec is "computed": `SpecPlan.wrap` makes the
+    lane's backend add its value to each simulation result under the spec's name (canonical unit, validity), and a
+    request asks the simulator for the raw results the formula reads instead of the spec's name. The engine takes the
+    added keys back out, so raw rows, probes and the independent check use the simulator's own results only.
+  * The synthetic factory wraps its backend (`plan` field). The real factories are wrapped by `EquationNativeFactory`
+    ONLY when a computed spec exists (`tasks._with_computed_specs`); otherwise the verified path is unchanged. The
+    wrapper keeps the worker's first-evaluation check against the recorded real baseline on the simulator's results
+    only: a formula's rounding would only make that check stricter than the measurement.
+* Result registry (the network input): a spec name the registry lacks adds one entry
+  (`compile.build_spec_schema`, version `<base>+spec-equations-v1`). The entry's reference magnitude comes from what
+  the spec computes: its formula evaluated on its inputs' registry references, else on the size of each probe's unit.
+  It never depends on thresholds, so changing a limit keeps saved models loadable (the checkpoint contract compares
+  the registry exactly). Adding, removing or renaming such a spec changes the network input. A registry stated in the
+  configuration is taken as given, and an unknown name there is still the `metric_not_in_registry` blocker. As a
+  consequence, a spec on a simulator result the default registry lacks (for example the OTA's `bandwidth_3db_hz`) is
+  no longer blocked; it adds an entry and an info line says so (`spec_adds_registry_entry`).
+* Validation: `equation_rejected`, `equation_without_probe`, `equation_unknown_probe` (errors);
+  `equation_unit_unchecked` (warning: a formula's unit cannot be checked; one probe's still is, `target_unit_mismatch`);
+  `spec_name_is_a_result` (a spec may carry a simulator result's name only when its equation IS that result's probe:
+  this closes the gap); `spec_name_is_a_probe` (a Probe ID as a spec name only when the equation is that probe: keeps
+  the metrics table's keys unique). `unused_measurement` now counts probes used inside formulas. `J` / `pJ` / `fJ`...
+  added to the unit registry (power / frequency = energy per cycle).
+* Tables: a result-backed or single-probe spec keeps the metrics row it always had (`measurement_id` = the probe, the
+  same fields). A formula's row has `measurement_id` null and `aggregation = equation`. Probes no spec shows whole get
+  rows of their own, as unused probes did. `profiles.record_reference` now reads only `aggregation_level = condition`
+  rows (a formula's row has no `measurement_id` either and would have been taken for a raw result).
+* Older configurations: `measurement_id` is read as the equation (a pydantic before-validator in the backend,
+  `migrateConfig` in the browser's saved copy and in "Import JSON"). The key keeps its position, so JSON-text row
+  comparisons still match the backend's starters. `config_hash` and `task_definition_hash` hash a one-probe equation
+  under the old key, so every earlier configuration keeps its hashes: runs still resume, checkpoints still load,
+  approvals and proposals still bind (tested against the old algorithm).
+* UI: the Specs table's second column is `equation` (schema-driven). A one-line fact above the table names the Probe
+  IDs an equation can use. The Agent tab's row facts show `equation`.
+* Pre-existing bug fixed on the way: the editors' **Add** gave every required field without a default the schema's
+  `default: null` (a Specs row got constraint = null and normalization_scale = null; a Probes row got analysis = null).
+  The whole configuration then failed validation with a schema error that no row showed. Now such a field gets the
+  first option / 1 / "". A new Specs row starts as the first probe, in its unit.
+* Agent: the brief (`run_readiness.md`) lists Probes before Specs in the gating order, as the checklist does since 7.51,
+  and says what an equation is and when a spec may carry a result's name. The run digest gives each target's
+  `equation`. The checklist's empty-Probes line is reworded.
+
+Verification:
+* `tests/workbench/test_wb_spec_equations.py` (17, new): parsing; failed operations invalid; old configurations with
+  both hashes equal to the pre-change algorithm; each validation code; registry entry sized by what the spec computes
+  and unchanged by its limits; `extend` / `request_names` / no-op `wrap`; `EquationNativeFactory` baseline check on raw
+  results; and a whole MOCK run in which `score_sq = m_score ** 2 >= 0.8` alone decides feasibility. There, every
+  evaluation's feasibility equals score^2 >= 0.8, the environment's success always agrees (no
+  `feasibility_disagreement`), the manifest's registry ends with `['score_sq', 'fixture', 1.0]`, and raw rows never
+  contain `score_sq`. Updated: `test_wb_schema_validation.py`, `test_wb_profiles.py`, `test_wb_real_starter.py`,
+  `fixtures/fake_cli.py`. Full `tests/workbench` on the final tree: 497 passed (the run before had 1 failure: a fake
+  metrics table without `aggregation_level`; fixed, with a formula row added to prove it is kept out of a baseline).
+* `tsc --noEmit` clean. Browser, on a scratch build (`vite build --outDir <Windows temp>`) served with `/api` passed to a
+  scratch backend on 8768 (settings: first an empty folder, then a copy of `configs/local/workbench`):
+  `task_rows_check.mjs` hermetic 34/34 and `--live` all pass (2 new checks: the equation column, the probe list);
+  `spec_equations_check.mjs` (new, 15 checks: an old saved row migrates in place, **Add**, a formula's info and
+  warning, unknown probe, function call, probe name, result name; only reads and validations pass through) all pass;
+  `testbench_probes_check.mjs` all pass (on the settings copy: it needs the connection profile); `agent_tab_check.mjs`
+  all pass.
+* Live: backend 8765 NOT restarted and live `frontend/dist` NOT rebuilt. ORDER MATTERS: restart 8765 first, then
+  rebuild `dist`. The new page saves `equation` rows, which the old backend's schema rejects (extra key, missing
+  `measurement_id`). The old page on a new backend works (rows are migrated server side), though its Specs table shows
+  an empty `equation` cell for an old saved row until the rebuild. Uncommitted.

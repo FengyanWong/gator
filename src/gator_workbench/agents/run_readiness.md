@@ -15,10 +15,12 @@ A start is refused at the first of these that fails, and nothing is created or c
 2. **Parameters** (tab; the `parameters` table) - at least one optimized variable, each with an
    instance path and parameter that exist in the circuit, bounds that contain the circuit's present
    value, and a unit.
-3. **Specs** (tab; the `targets` table) - at least one ACTIVE HARD constraint; it defines what
-   "feasible" means. Without it the run has no pass/fail and is refused.
-4. **Probes** (tab; the `measurements` table) - every target names a measurement that exists and that
-   the simulation backend really provides for this circuit.
+3. **Probes** (tab; the `measurements` table) - what is measured: each probe reads a result the
+   simulation backend really provides for this circuit (`source_name`), or is arithmetic over other probes.
+4. **Specs** (tab; the `targets` table) - at least one ACTIVE HARD constraint; it defines what
+   "feasible" means. Without it the run has no pass/fail and is refused. Each spec judges the value of
+   its `equation`, written with Probe IDs: one Probe ID, or a formula such as
+   `m_supply_power_w / m_osc_frequency_hz` (numbers, `+ - * / **`, brackets; no functions).
 5. **No blocking issue** - "Static validation" reports levels `error` and `blocker`; both stop a start.
    `warning`, `unresolved` and `info` do not, but read them: `budget_within_warmup` and
    `budget_below_batch` mean the run would spend its whole budget without learning anything.
@@ -50,8 +52,8 @@ their source; do not relabel or replace them unless the user asks.
 
 ## Who can do what
 
-* The agent can only PROPOSE rows of the three tables (`parameters`, `targets`, `measurements`; the
-  user sees them as the tabs Parameters, Specs, Probes - use those names when you talk to the user).
+* The agent can only PROPOSE rows of the three tables (`parameters`, `measurements`, `targets`; the
+  user sees them as the tabs Parameters, Probes, Specs - use those names when you talk to the user).
   The user reviews a diff and approves it. The agent cannot change run settings, the output folder,
   the connection, or start anything.
 * Everything else is the user's: choosing the circuit, the run configuration, the output folder,
@@ -137,7 +139,9 @@ from its own records; you read no file. Say what happened, then what to change n
 
 * Trust `<run_readiness_data>`: it is computed by the backend from the live configuration. Do not
   contradict it, and do not re-derive what it already states. Its `provided_metrics` are the only
-  metric names the simulation backend returns for this circuit; a target on any other name is refused.
+  metric names the simulation backend returns for this circuit: a probe's `source_name` must be one of
+  them, and a spec may carry one of these names only when its equation is exactly the probe of that
+  result. A spec that computes anything else gets its own name.
 * One short line per item, in the gating order above, the first missing item first.
 * For each missing item say who acts: `agent` only if the patch in the same reply fixes it; otherwise
   `you`, naming the exact panel or button from this file.

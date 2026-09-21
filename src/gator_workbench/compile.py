@@ -4,7 +4,8 @@ Nothing here re-implements optimizer behaviour. Variables become the existing
 ``ParameterGroup``/``ParameterBinding`` (so ``ActionMapper`` legalizes actions
 exactly as before) and targets become the existing ``MetricSpec`` (so the reward
 is the existing negative weighted mean capped violation). Feasibility is checked
-separately, from raw values and thresholds, by ``hard_constraints``.
+separately, from raw values and thresholds, by ``hard_constraints``. Each spec
+judges the value of its equation over the probes (``spec_equations``).
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 import math
 
-from . import units
+from . import spec_equations, units
 from .schema import WorkbenchConfig
 from .validation import resolve_leaders, uniform_grid, registry_for
 
@@ -28,7 +29,7 @@ class CompiledTask:
     spec_schema: object                # SpecSchema used by the goal encoder
     variables: tuple                   # per independent variable: id, unit, bounds, members (canonical units)
     targets: tuple                     # canonical thresholds per active target (for independent feasibility)
-    metric_sources: dict               # metric_id -> ('profile', source_name) | ('expression', text, measurement map)
+    plan: object                       # spec_equations.SpecPlan: each spec's value from the probes, the same in every lane
     preference: dict | None            # {'metric': id, 'direction': 'min'|'max'} or None
 
 
@@ -120,8 +121,10 @@ def build_specs(config: WorkbenchConfig):
         specs.append(MetricSpec(metric_id=t.metric_id, unit=unit, comparator=comparator,
                                 scale=units.scale_to_canonical(t.normalization_scale, t.unit),
                                 lower=lower, upper=upper, weight=t.soft_weight, required=t.hard, active=t.active))
-        targets.append(dict(metric_id=t.metric_id, measurement_id=t.measurement_id, unit=unit, lower=lower,
-                            upper=upper, hard=t.hard, active=t.active, constraint=t.constraint,
+        equation = t.equation.strip()
+        targets.append(dict(metric_id=t.metric_id, equation=equation,
+                            probe=equation if equation in {m.measurement_id for m in config.measurements} else None,
+                            unit=unit, lower=lower, upper=upper, hard=t.hard, active=t.active, constraint=t.constraint,
                             tolerance_applied=tolerance, scale=specs[-1].scale))
         if t.active and t.direction_after_feasible != 'none':
             preference = dict(metric=t.metric_id,
@@ -130,6 +133,19 @@ def build_specs(config: WorkbenchConfig):
 
 
 def build_spec_schema(config: WorkbenchConfig):
+    """The result registry the network is built with: the task's own (or the configured one), plus one entry per spec
+    whose name it does not know yet (``spec_equations.registry_entries``). A configured registry is taken as given."""
+    from analog_optimizer.models.inputs import SpecSchema
+    base = _task_spec_schema(config)
+    if config.run.advanced.spec_registry is not None:
+        return base
+    added = spec_equations.registry_entries(config, base.metrics)
+    if not added:
+        return base
+    return SpecSchema(version=base.version + spec_equations.REGISTRY_SUFFIX, metrics=tuple(base.metrics) + added)
+
+
+def _task_spec_schema(config: WorkbenchConfig):
     from analog_optimizer.models.inputs import SpecSchema
     custom = config.run.advanced.spec_registry
     if custom is None:
@@ -148,20 +164,6 @@ def build_spec_schema(config: WorkbenchConfig):
                       metrics=tuple((e.metric_id, units.canonical_unit(e.unit), float(e.reference)) for e in custom))
 
 
-def metric_sources(config: WorkbenchConfig):
-    measurements = {m.measurement_id: m for m in config.measurements}
-    sources = {}
-    for t in config.targets:
-        m = measurements[t.measurement_id]
-        if m.result_source == 'backend_profile':
-            sources[t.metric_id] = ('profile', m.source_name)
-        elif m.result_source == 'expression':
-            sources[t.metric_id] = ('expression', t.measurement_id)
-        else:
-            raise CompileError(f'{t.metric_id}: result_source={m.result_source} is not executable')
-    return sources
-
-
 def compile_task(config: WorkbenchConfig, graph) -> CompiledTask:
     compiled_graph, variables = build_graph(config, graph)
     specs, targets, preference = build_specs(config)
@@ -170,46 +172,27 @@ def compile_task(config: WorkbenchConfig, graph) -> CompiledTask:
     for spec in specs:
         if registry.get(spec.metric_id) != spec.unit:
             raise CompileError(f'{spec.metric_id} ({spec.unit}) is absent from the RL specification registry')
-    return CompiledTask(compiled_graph, specs, schema, variables, targets, metric_sources(config), preference)
+    plan = spec_equations.SpecPlan.from_config(config)
+    for spec in plan.specs:
+        if spec.probe is None:                          # one Probe ID is taken as it is, even with "." or "-" in it
+            names, problem = spec_equations.parse(spec.equation)
+            if not names:
+                raise CompileError(f'{spec.spec_id}: the equation {spec.equation!r} cannot be evaluated '
+                                   f'({problem or "it uses no probe"})')
+    return CompiledTask(compiled_graph, specs, schema, variables, targets, plan, preference)
 
 
 def evaluate_expression_measurements(config: WorkbenchConfig, raw: dict[str, float | None]):
     """Derive expression measurements from profile metrics. A missing/non-finite input makes
     the derived value invalid (None); it is never replaced by a number."""
-    from analog_optimizer.netlist.expressions import evaluate, UnresolvedExpression
-    measurements = {m.measurement_id: m for m in config.measurements}
-    values: dict[str, float | None] = {}
+    return spec_equations.SpecPlan.from_config(config).probe_values(
+        {name: value for name, value in raw.items() if value is not None})
 
-    def resolve(measurement_id, trail=()):
-        if measurement_id in values:
-            return values[measurement_id]
-        if measurement_id in trail:
-            raise CompileError('expression cycle')
-        m = measurements[measurement_id]
-        if m.result_source == 'backend_profile':
-            value = raw.get(m.source_name)
-        elif m.result_source == 'expression':
-            class Missing(Exception):
-                pass
 
-            def lookup(name):
-                inner = resolve(name, trail + (measurement_id,))
-                if inner is None:
-                    raise Missing()
-                return inner
-            try:
-                value = evaluate(m.expression, lookup)
-            except (Missing, UnresolvedExpression, ZeroDivisionError, KeyError):
-                value = None
-        else:
-            value = None
-        if value is not None and (isinstance(value, bool) or not math.isfinite(value)):
-            value = None
-        values[measurement_id] = value
-        return value
-    for key in measurements:
-        resolve(key)
-    return values
+def spec_values(config: WorkbenchConfig, raw: dict[str, float | None]):
+    """{spec name: the value of its equation over the probes | None}, from the valid simulator results `raw`."""
+    return spec_equations.SpecPlan.from_config(config).spec_values(
+        {name: value for name, value in raw.items() if value is not None})
 
 
 def hard_constraints(targets, metrics: dict, validity: dict):

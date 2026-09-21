@@ -14,11 +14,23 @@ export const emptyConfig = (): Json => ({
   research: {},
 });
 
+/** A Specs row saved before specs had equations named ONE probe in `measurement_id`: that probe is its equation (the
+ *  simplest one). The key keeps its place, so the row still equals the same row served by the backend now (rows are
+ *  compared as JSON text), and an `equation` given as well wins - the backend reads old rows the same way. */
+export function migrateConfig(config: Json): Json {
+  if (!config || !Array.isArray(config.targets)) return config;
+  const targets = config.targets.map((row: Json) => row && typeof row === 'object' && 'measurement_id' in row
+    ? Object.fromEntries(Object.entries(row).filter(([key]) => !(key === 'measurement_id' && 'equation' in row))
+        .map(([key, value]) => [key === 'measurement_id' ? 'equation' : key, value]))
+    : row);
+  return { ...config, targets };
+}
+
 /** Configuration state with undo/redo and local persistence (the saved copy lives in the browser;
  *  "Export JSON" writes a file, and a started run stores its own effective_config.json). */
 export function useConfig() {
   const [config, setConfigState] = useState<Json>(() => {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') ?? emptyConfig(); } catch { return emptyConfig(); }
+    try { return migrateConfig(JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')) ?? emptyConfig(); } catch { return emptyConfig(); }
   });
   const past = useRef<Json[]>([]);
   const future = useRef<Json[]>([]);

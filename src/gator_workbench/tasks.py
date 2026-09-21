@@ -153,12 +153,15 @@ class SyntheticEnvFactory:
     max_steps: int
     timeout_seconds: float
     stop_on_success: bool
+    plan: object = None               # spec_equations.SpecPlan: the specs computed from the probes are added to each result
 
     def __call__(self, lane):
         from analog_optimizer.backends.synthetic_sizing import SyntheticSizingBackend
         from analog_optimizer.envs.sizing import CircuitSizingEnv
         kinds = {g.parameter_kind for g in self.graph.parameter_groups if g.mutable}
         backend = SyntheticSizingBackend(self.graph, targets={k: self.targets[k] for k in kinds})
+        if self.plan is not None:
+            self.plan.wrap(backend)
         return CircuitSizingEnv(backend, self.graph, self.specs, Path(self.work_root) / f'worker-{lane}',
                                 max_steps=self.max_steps, timeout_seconds=self.timeout_seconds,
                                 stop_on_success=self.stop_on_success, expected_origin='synthetic')
@@ -168,7 +171,16 @@ def _synthetic_builder(compiled, work_root, run_settings):
     adv = run_settings.advanced
     return SyntheticEnvFactory(compiled.graph, compiled.specs, dict(MOCK_TARGETS), str(work_root),
                                adv.episode_length, adv.simulation_timeout_seconds,
-                               adv.episode_terminates_on_success)
+                               adv.episode_terminates_on_success, compiled.plan)
+
+
+def _with_computed_specs(factory, compiled):
+    """The verified real factory, unchanged when every spec is a simulator result itself; otherwise wrapped so that the
+    specs computed from the probes reach the reward (spec_equations.EquationNativeFactory)."""
+    if not compiled.plan.injected:
+        return factory
+    from .spec_equations import EquationNativeFactory
+    return EquationNativeFactory(factory, compiled.plan)
 
 
 def _netlist_runtime(task_key, netlist, parser_config, *, circuit_class, pdk_id, top=None, notes=()):
@@ -456,8 +468,8 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
             raise TaskBlocked('This profile fixes which widths may change, their ranges and their grid. The rows of the parameter '
                               'editor differ from what was registered; create a new profile to change them.')
         adv = run_settings.advanced
-        return NativeEnvironmentFactory(config, profile, compiled.specs, Path(work_root), adv.episode_length,
-                                        adv.simulation_timeout_seconds, reference)
+        return _with_computed_specs(NativeEnvironmentFactory(config, profile, compiled.specs, Path(work_root), adv.episode_length,
+                                                             adv.simulation_timeout_seconds, reference), compiled)
     structure, mapping = directory / profiles.FILES['structure'], directory / profiles.FILES['mapping']
     circuit = dict(circuit_class=entry['circuit_class'], pdk_id=entry.get('pdk_id') or 'gpdk045', dut_hierarchy=None,
                    netlist_sha256=_sha256(structure), parser_config_sha256=_sha256(mapping), netlist_file=str(structure),
@@ -519,8 +531,8 @@ def _real_runtime(task_key, name, profile_id=None, *, authorized=False):
             raise TaskBlocked('A real profile fixes its writable parameters and legal grid. The configured variables '
                               'differ from the verified profile; real action permissions are not widened from the UI.')
         adv = run_settings.advanced
-        return NativeEnvironmentFactory(config, profile, compiled.specs, Path(work_root), adv.episode_length,
-                                        adv.simulation_timeout_seconds, reference['metrics'])
+        return _with_computed_specs(NativeEnvironmentFactory(config, profile, compiled.specs, Path(work_root), adv.episode_length,
+                                                             adv.simulation_timeout_seconds, reference['metrics']), compiled)
     circuit = dict(circuit_class=info['circuit_class'], pdk_id='gpdk045', dut_hierarchy=None,
                    netlist_sha256=_sha256(root / info['structure']), parser_config_sha256=_sha256(root / info['mapping']),
                    netlist_file=str(root / info['structure']), parser_config_file=str(root / info['mapping']),
@@ -581,7 +593,7 @@ def real_starter_config(task_key: str) -> dict:
     a verified circuit (REAL_TARGETS_OF_RECORD), each row stating its source; a profile generated from a cell has none,
     its requirements stay the user's to state. Probes - one row per result that carries a target; for a generated profile
     one per result a target can be set on. Run settings are left alone: a real budget is never suggested."""
-    from . import profiles, recipes
+    from . import profiles
     name = task_key.partition(':')[2]
     if name in REAL_PROFILES:
         circuit_class, pdk_id = REAL_PROFILES[name]['circuit_class'], 'gpdk045'
@@ -593,32 +605,35 @@ def real_starter_config(task_key: str) -> dict:
         basis = (f'Pilot target of record ({file}: {" / ".join(keys)}): a goal near the measured baseline of this '
                  'circuit, not a product specification.')
         results = {spec['metric_id']: spec['unit'] for spec in specs}
+        probes = [dict(measurement_id=f'm_{metric}', analysis='tran' if oscillator else RESULT_ANALYSIS.get(metric, 'dc'),
+                       result_source='backend_profile', source_name=metric, unit=unit,
+                       notes='Computed by the circuit profile from the simulation results.')
+                  for metric, unit in results.items()]
     else:
         entry = profiles.list_profiles().get(name)
         if entry is None:
             raise KeyError(task_key)
-        from analog_optimizer.models.inputs import SpecSchema
         circuit_class, pdk_id = entry['circuit_class'], entry.get('pdk_id') or 'gpdk045'
-        graph, oscillator = profiles.load_profile(name).optimization_graph(), entry['recipe'] == recipes.RING
-        registry = ({e['metric_id']: e['unit'] for e in entry['spec_registry']} if entry.get('spec_registry')
-                    else {metric: unit for metric, unit, _ in SpecSchema().metrics})
-        results = {metric: registry[metric] for metric in recipes.provided_metrics(entry['recipe']) if metric in registry}
+        profile = profiles.load_profile(name)
+        graph = profile.optimization_graph()
+        # The Probes of the testbench the profile was made through: the rows reading the cell brought
+        # (profiles.testbench_probes), built by the same function - so after Create profile the editors still hold
+        # this task's own rows, and choosing another task treats them as nobody's work.
+        probes = profiles.probe_rows(entry['recipe'], profiles.probe_results(entry['recipe'], entry.get('spec_registry')),
+                                     profiles.design_signals(entry['recipe'], profile.design), entry.get('testbench_cell'))
         specs, basis = [], ''
     thresholds = dict(min=('>=', ('lower',)), max=('<=', ('upper',)), range=('interval', ('lower', 'upper')))
     targets = []
     for spec in specs:
         constraint, sides = thresholds[spec['comparator']]
-        targets.append(dict(metric_id=spec['metric_id'], measurement_id=f"m_{spec['metric_id']}", unit=spec['unit'],
+        targets.append(dict(metric_id=spec['metric_id'], equation=f"m_{spec['metric_id']}", unit=spec['unit'],
                             constraint=constraint, **{side: spec[side] for side in sides},
                             normalization_scale=spec['scale'], basis=basis))
     return dict(
         project=starter_project(task_key),
         circuit=dict(source='registered_task', task_id=task_key, circuit_class=circuit_class, pdk_id=pdk_id),
         parameters=_graph_parameter_rows(graph),
-        measurements=[dict(measurement_id=f'm_{metric}', analysis='tran' if oscillator else RESULT_ANALYSIS.get(metric, 'dc'),
-                           result_source='backend_profile', source_name=metric, unit=unit,
-                           notes='Computed by the circuit profile from the simulation results.')
-                      for metric, unit in results.items()],
+        measurements=probes,
         targets=targets)
 
 
@@ -657,6 +672,6 @@ def starter_config(task_key: str) -> dict:
         measurements=[dict(measurement_id='m_score', analysis='other', result_source='backend_profile',
                            source_name='score', unit='fixture',
                            notes='Analytic toy score from the MOCK backend; not a circuit measurement.')],
-        targets=[dict(metric_id='score', measurement_id='m_score', unit='fixture', constraint='>=', lower=0.95,
+        targets=[dict(metric_id='score', equation='m_score', unit='fixture', constraint='>=', lower=0.95,
                       normalization_scale=1.0, basis='Mock acceptance threshold for plumbing tests only.')],
         run=dict(max_evaluations=60, seed=17))

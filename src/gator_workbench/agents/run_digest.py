@@ -86,7 +86,8 @@ def build(*, status: dict, config: dict, evaluations: list, parameters: list, me
         name = target.get('metric_id')
         rows = [row for row in metrics if row.get('metric_name') == name and row.get('aggregation_level') in (None, 'aggregate')]
         judged = [row for row in rows if row.get('satisfied') is not None]
-        targets.append(dict(metric_id=name, constraint=target.get('constraint'), lower=_num(target.get('lower')), upper=_num(target.get('upper')),
+        targets.append(dict(metric_id=name, equation=target.get('equation') or target.get('measurement_id'),      # an older run named one probe
+                            constraint=target.get('constraint'), lower=_num(target.get('lower')), upper=_num(target.get('upper')),
                             target=_num(target.get('target')), unit=target.get('unit'), hard=target.get('hard', True), active=target.get('active', True),
                             reached=_stats([row.get('raw_value') for row in rows if row.get('valid')]),
                             at_best=_num((by_eval_metrics.get(best.get('evaluation_id')) or {}).get(name)) if best else None,

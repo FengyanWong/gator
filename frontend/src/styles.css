@@ -80,6 +80,15 @@ ul.checklist li { margin: 3px 0; padding-left: 22px; position: relative; } .chec
 .msg.error { background: #fdecea; border-color: #e2a19c; color: var(--bad); } .msg.error .who { color: var(--bad); }
 .msg.system { align-self: center; max-width: 80ch; border: none; background: none; padding: 0 8px; color: var(--muted); font-size: 11.5px; text-align: center; } .msg.system .who { display: inline; font-weight: 400; margin-right: 6px; } .msg.system .text { display: inline; } .msg.system .text p { display: inline; }
 .msg.pending { border-color: var(--accent); border-left: 3px solid var(--accent); color: var(--accent); } .msg.focused { box-shadow: 0 0 0 2px #bcd0ef; }
+/* A live answer (status record 7.48): the thinking summary scrolls in a small box of its own and the reply grows under it.
+   Afterwards the thinking stays with the reply, folded into one line. */
+.msg.pending .live-reply { color: var(--text); margin-top: 3px; } .msg.pending .live-status { margin-top: 2px; }
+.thinking-live, .thought-text { overflow: auto; margin: 3px 0; padding: 2px 8px; border-left: 2px solid #c8d3e6; background: #f5f7fb; color: var(--muted); font-size: .92em; line-height: 1.45; }
+.thinking-live { max-height: 9.5em; } .thought-text { max-height: 16em; text-align: left; }
+.thinking-live .thinking-head { position: sticky; top: -2px; background: #f5f7fb; font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.thinking-live p, .thought-text p { margin: 0 0 4px; } .thinking-live p:last-child, .thought-text p:last-child { margin-bottom: 0; }
+.live-steps { margin: 2px 0; padding-left: 16px; color: var(--muted); font-size: .92em; } .live-steps li { margin: 1px 0; word-break: break-word; }
+details.thought { margin: 1px 0 2px; color: var(--muted); } details.thought summary { cursor: pointer; font-size: 11px; }
 button.detach { width: 100%; margin-bottom: 4px; }
 /* The agent tab is one tab shape holding two buttons: its label and, where a browser tab has its close button, the pop-out control. */
 .tabs .tab-group { display: inline-flex; align-items: center; border: 1px solid var(--line); border-bottom: none; background: #fafbfc; } .tabs .tab-group:hover { border-color: var(--accent); }

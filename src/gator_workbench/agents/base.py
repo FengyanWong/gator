@@ -5,10 +5,12 @@ Safety properties enforced here rather than left to each provider:
   * argv is always a list and the prompt always travels on stdin - never a shell string;
   * permission/tool arguments come from the REQUEST KIND, never from user text;
   * arguments that bypass permissions are refused outright;
-  * the child inherits the environment unchanged. Protective variables are never deleted to
-    get around a nested-session restriction, and no credential is added or read;
+  * the child inherits the environment unchanged (a live request adds one display switch, see
+    claude_code.py). Protective variables are never deleted to get around a nested-session
+    restriction, and no credential is added or read;
   * cancel/timeout signal only this request's own process group - never Virtuoso, a training
-    worker or an unrelated agent session.
+    worker or an unrelated agent session. A request has NO time limit by default (status record
+    7.48): the page shows it working, and "Cancel request" stops it.
 """
 from __future__ import annotations
 
@@ -84,7 +86,7 @@ class AgentSettings:
     provider: str = 'disabled'
     model: str | None = None
     effort: str | None = None
-    timeout_seconds: float = 300.0
+    timeout_seconds: float | None = None          # None: no limit. The API never sets one (the user stops a request)
     permission_mode: str = 'dontAsk'
     allowed_tools: tuple = ()
     max_turns: int | None = None
@@ -92,8 +94,8 @@ class AgentSettings:
     stream: bool = True
 
     def validate(self):
-        if self.timeout_seconds <= 0 or self.timeout_seconds > 3600:
-            raise AgentError('invalid_request', 'timeout_seconds must be within (0, 3600]')
+        if self.timeout_seconds is not None and not 0 < self.timeout_seconds <= 3600:
+            raise AgentError('invalid_request', 'timeout_seconds must be within (0, 3600], or None for no limit')
         if self.permission_mode in FORBIDDEN_ARGUMENTS or self.permission_mode not in ('default', 'plan', 'dontAsk'):
             raise AgentError('invalid_request', f'permission_mode {self.permission_mode!r} is not allowed for proposals; '
                                                 'use default, plan or dontAsk. Permission bypass is never available.')
@@ -218,9 +220,11 @@ def _stop(process, grace=3.0):
         process.wait(timeout=grace)
 
 
-def run_cli(argv, *, stdin_text, cwd, timeout, request_id, registry=REGISTRY, env=None, max_output=32 * 1024 * 1024):
+def run_cli(argv, *, stdin_text, cwd, timeout, request_id, registry=REGISTRY, env=None, max_output=32 * 1024 * 1024,
+            on_line=None):
     """Run a CLI without a shell. Returns (returncode, stdout, stderr). Raises AgentError for
-    missing binary, timeout and cancellation."""
+    missing binary, timeout and cancellation. `timeout` None means no limit. With `on_line`, stdout
+    is read line by line WHILE the CLI runs and each line is handed over as it arrives."""
     assert_safe_arguments(argv)
     cwd = Path(cwd)
     if not cwd.is_dir():
@@ -235,12 +239,15 @@ def run_cli(argv, *, stdin_text, cwd, timeout, request_id, registry=REGISTRY, en
         raise AgentError('cli_missing', f'{argv[0]!r} is not executable by the backend process')
     registry.register(request_id, process)
     try:
-        try:
-            stdout, stderr = process.communicate(stdin_text.replace('\x00', ''), timeout=timeout)
-        except subprocess.TimeoutExpired:
-            _stop(process)
-            process.communicate()
-            raise AgentError('timeout', f'No result within {timeout:g} s; the request subprocess was stopped')
+        if on_line is not None:
+            stdout, stderr = _read_live(process, stdin_text.replace('\x00', ''), timeout, on_line, max_output)
+        else:
+            try:
+                stdout, stderr = process.communicate(stdin_text.replace('\x00', ''), timeout=timeout)
+            except subprocess.TimeoutExpired:
+                _stop(process)
+                process.communicate()
+                raise AgentError('timeout', f'No result within {timeout:g} s; the request subprocess was stopped')
         if registry.was_cancelled(request_id):
             raise AgentError('cancelled')
         if len(stdout) > max_output:
@@ -248,6 +255,48 @@ def run_cli(argv, *, stdin_text, cwd, timeout, request_id, registry=REGISTRY, en
         return process.returncode, stdout, stderr
     finally:
         registry.forget(request_id)
+
+
+def _read_live(process, stdin_text, timeout, on_line, max_output):
+    """stdout line by line while the process runs. stdin and stderr are served by threads of their own, so neither
+    pipe can fill up and stall the CLI. A failing `on_line` is ignored: it only feeds a display."""
+    errors = []
+
+    def feed():
+        try:
+            process.stdin.write(stdin_text)
+            process.stdin.close()
+        except (OSError, ValueError):             # the CLI exited early; its exit status tells why
+            pass
+    helpers = [threading.Thread(target=feed, daemon=True), threading.Thread(target=lambda: errors.append(process.stderr.read()), daemon=True)]
+    for helper in helpers:
+        helper.start()
+    expired, timer = threading.Event(), None
+    if timeout is not None:
+        timer = threading.Timer(timeout, lambda: (expired.set(), _stop(process)))
+        timer.daemon = True
+        timer.start()
+    lines, size = [], 0
+    try:
+        for line in process.stdout:
+            size += len(line)
+            if size > max_output:
+                _stop(process)
+                raise AgentError('incomplete_output', 'CLI output exceeded the size limit')
+            lines.append(line)
+            try:
+                on_line(line)
+            except Exception:
+                pass
+        process.wait()
+    finally:
+        if timer is not None:
+            timer.cancel()
+        for helper in helpers:
+            helper.join(timeout=5)
+    if expired.is_set():
+        raise AgentError('timeout', f'No result within {timeout:g} s; the request subprocess was stopped')
+    return ''.join(lines), ''.join(errors)
 
 
 class AgentProvider:
@@ -259,7 +308,9 @@ class AgentProvider:
     def available(self) -> dict:
         raise NotImplementedError
 
-    def propose(self, request: AgentRequest) -> AgentResult:
+    def propose(self, request: AgentRequest, on_event=None) -> AgentResult:
+        """`on_event`, when given, receives display-only progress (agents/live.py) while the agent works. A provider
+        that cannot report progress ignores it: the page then shows the whole reply when it is complete."""
         raise NotImplementedError
 
     def cancel(self, request_id) -> bool:

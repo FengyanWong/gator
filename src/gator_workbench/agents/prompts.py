@@ -18,11 +18,14 @@ MAX_SUMMARY_DEVICES = 400
 GUIDE_PATH = Path(__file__).with_name('run_readiness.md')     # the operator's brief: what a run needs before it can start
 MAX_GUIDE_CHARS = 12000
 
+# `reasoning` comes right after `kind`: the model writes the fields in this order (seen on real requests), and the page shows
+# the reply text while it is written (agents/live.py) - first, rather than after every row of the patch.
 PROPOSAL_SCHEMA = {
     'type': 'object', 'additionalProperties': False,
-    'required': ['kind', 'patch', 'reasoning', 'warnings', 'unresolved'],
+    'required': ['kind', 'reasoning', 'patch', 'warnings', 'unresolved'],
     'properties': {
         'kind': {'type': 'string'},
+        'reasoning': {'type': 'string', 'maxLength': 8000},
         'patch': {'type': 'array', 'maxItems': 500, 'items': {
             'type': 'object', 'additionalProperties': False, 'required': ['op', 'section', 'key'],
             'properties': {'op': {'enum': ['add', 'replace', 'remove']},
@@ -54,7 +57,6 @@ PROPOSAL_SCHEMA = {
             'properties': {'name': {'type': 'string', 'maxLength': 120}, 'source': {'type': 'string', 'maxLength': 600},
                            'url': {'type': 'string', 'maxLength': 300}, 'why': {'type': 'string', 'maxLength': 800},
                            'what_it_takes': {'type': 'string', 'maxLength': 800}}}},
-        'reasoning': {'type': 'string', 'maxLength': 8000},
         'warnings': {'type': 'array', 'items': {'type': 'string', 'maxLength': 1000}, 'maxItems': 100},
         'unresolved': {'type': 'array', 'items': {'type': 'string', 'maxLength': 1000}, 'maxItems': 100},
     },

@@ -395,19 +395,10 @@ def _check_measurements(config, report, *, provided_metrics):
 
 
 def _expression_symbols(expression):
-    from analog_optimizer.netlist.expressions import evaluate, UnresolvedExpression
-    names = []
-
-    def lookup(name):
-        names.append(name)
-        return 1.0
-    try:
-        evaluate(expression, lookup)
-    except ZeroDivisionError:
-        pass
-    except UnresolvedExpression as exc:
-        return None, str(exc)
-    return names, None
+    # Read off the formula, not by trial evaluation: (m_a - m_b) / (m_c - m_d) with every symbol at 1.0 divided by
+    # zero and was rejected as unsupported.
+    from .spec_equations import parse
+    return parse(expression)
 
 
 def _check_expression_measurements(config, report, ids):
@@ -441,7 +432,38 @@ def _check_expression_measurements(config, report, ids):
         visit(node, [])
 
 
-def _check_targets(config, report, measurement_ids, *, registry):
+def _check_equation(t, path, report, measurement_ids):
+    """A spec judges the value of its equation over the probes (spec_equations). Returns the probe when the equation
+    is exactly one Probe ID - the simplest equation, whose unit can be checked."""
+    from .spec_equations import parse
+    equation = t.equation.strip()
+    probe = measurement_ids.get(equation)
+    if probe is not None:
+        if units.known(t.unit) and units.known(probe.unit) and not units.compatible(t.unit, probe.unit):
+            report.add('error', 'target_unit_mismatch', path + '.unit',
+                       f'Spec unit {t.unit} is incompatible with the unit {probe.unit} of the Probe {equation}')
+        return probe
+    names, problem = parse(equation)
+    if names is None:
+        report.add('error', 'equation_rejected', path + '.equation',
+                   f'The equation cannot be used: {problem}. Allowed: Probe IDs, numbers, + - * / ** and parentheses.')
+    elif not names:
+        report.add('error', 'equation_without_probe', path + '.equation',
+                   'The equation uses no Probe: a spec must judge something the simulation measures.')
+    elif [n for n in names if n not in measurement_ids]:
+        unknown = [n for n in names if n not in measurement_ids]
+        dotted = [m for m in measurement_ids if '.' in m or '-' in m]
+        report.add('error', 'equation_unknown_probe', path + '.equation',
+                   f'No Probe called {", ".join(unknown)}. Probes: {", ".join(measurement_ids) or "none yet"}.'
+                   + (f' A Probe ID with "." or "-" ({", ".join(dotted)}) can only be a whole equation on its own.' if dotted else ''))
+    elif units.known(t.unit) and not units.is_affine(t.unit):
+        report.add('warning', 'equation_unit_unchecked', path + '.unit',
+                   f'The unit of a formula is not checked: {t.unit} must be what {equation} gives with every probe in its '
+                   'canonical unit (W, Hz, V, A, s...; W / Hz gives J).')
+    return None
+
+
+def _check_targets(config, report, measurement_ids, *, registry, extensible=True, provided_metrics=None):
     seen, preference, active_hard = set(), [], 0
     for i, t in enumerate(config.targets):
         path = f'targets[{i}]'
@@ -450,13 +472,18 @@ def _check_targets(config, report, measurement_ids, *, registry):
         seen.add(t.metric_id)
         if not units.known(t.unit):
             report.add('error', 'unknown_unit', path + '.unit', f'Unknown unit {t.unit!r}')
-        measurement = measurement_ids.get(t.measurement_id)
-        if measurement is None:
-            report.add('error', 'unknown_measurement', path + '.measurement_id',
-                       f'No measurement definition {t.measurement_id!r}')
-        elif units.known(t.unit) and units.known(measurement.unit) and not units.compatible(t.unit, measurement.unit):
-            report.add('error', 'target_unit_mismatch', path + '.unit',
-                       f'Target unit {t.unit} is incompatible with measurement unit {measurement.unit}')
+        probe = _check_equation(t, path, report, measurement_ids)
+        equation = t.equation.strip()
+        # A spec's name is where its value lives - in the simulation result, the network's registry and the tables -
+        # so it may only be the name of a probe or of a simulator result when the spec IS that probe / that result.
+        if t.metric_id in measurement_ids and equation != t.metric_id:
+            report.add('error', 'spec_name_is_a_probe', path + '.metric_id',
+                       f'{t.metric_id!r} is the ID of a Probe, but this spec computes {equation!r}. Give the spec its own name.')
+        result_backed = probe is not None and probe.result_source == 'backend_profile' and probe.source_name == t.metric_id
+        if provided_metrics is not None and t.metric_id in provided_metrics and not result_backed:
+            report.add('error', 'spec_name_is_a_result', path + '.metric_id',
+                       f'{t.metric_id!r} is the name of a result the simulation returns, but this spec computes {equation!r}. '
+                       f'Give the spec its own name, or make its equation the Probe that reads {t.metric_id}.')
         given = dict(lower=t.lower is not None, upper=t.upper is not None, target=t.target is not None)
         need = {'>=': ('lower',), '<=': ('upper',), 'interval': ('lower', 'upper'), 'target': ('target',)}[t.constraint]
         for name in need:
@@ -479,7 +506,12 @@ def _check_targets(config, report, measurement_ids, *, registry):
             report.add('error', 'affine_unit', path + '.unit', 'Offset units are not supported for targets')
         if registry is not None and units.known(t.unit) and not units.is_affine(t.unit):
             entry = registry.get(t.metric_id)
-            if entry is None:
+            if entry is None and extensible:
+                report.add('info', 'spec_adds_registry_entry', path + '.metric_id',
+                           f'{t.metric_id!r} is new to the result registry the network reads, so this run adds it there. '
+                           'Saved models made without this spec cannot be loaded into such a run, nor its models into one '
+                           'without it.')
+            elif entry is None:
                 report.add('blocker', 'metric_not_in_registry', path + '.metric_id',
                            f'{t.metric_id!r} is not in the RL specification registry {sorted(registry)}. Add it '
                            'under Run > Advanced > spec_registry (this changes checkpoint compatibility).')
@@ -494,12 +526,15 @@ def _check_targets(config, report, measurement_ids, *, registry):
     if active_hard == 0:
         report.add('error', 'no_hard_constraint', 'targets',
                    'At least one active hard constraint is required to define feasibility')
-    used = {t.measurement_id for t in config.targets}
+    used = set()
+    for t in config.targets:
+        equation = t.equation.strip()
+        used |= {equation} if equation in measurement_ids else set(_expression_symbols(equation)[0] or ())
     for i, m in enumerate(config.measurements):
         referenced = any(m.measurement_id in (_expression_symbols(o.expression)[0] or [])
                          for o in config.measurements if o.result_source == 'expression' and o.expression)
         if m.measurement_id not in used and not referenced:
-            report.add('warning', 'unused_measurement', f'measurements[{i}]', 'No target uses this measurement')
+            report.add('warning', 'unused_measurement', f'measurements[{i}]', 'No spec equation uses this probe')
 
 
 def _check_run(config, report):
@@ -601,7 +636,8 @@ def validate(config: WorkbenchConfig, *, graph=None, provided_metrics=None,
     report = Report()
     _check_parameters(config, report, graph)
     measurement_ids = _check_measurements(config, report, provided_metrics=provided_metrics)
-    _check_targets(config, report, measurement_ids, registry=registry_for(config))
+    _check_targets(config, report, measurement_ids, registry=registry_for(config),
+                   extensible=config.run.advanced.spec_registry is None, provided_metrics=provided_metrics)
     _check_run(config, report)
     _check_research(config, report, for_generalization=for_generalization)
     report.facts['circuit_checked'] = graph is not None

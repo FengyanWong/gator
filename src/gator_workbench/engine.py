@@ -31,7 +31,7 @@ from uuid import uuid4
 
 from . import best_design, checkpoints as ckpt, modes
 from .budget import BudgetLedger
-from .compile import compile_task, evaluate_expression_measurements, hard_constraints
+from .compile import compile_task, hard_constraints
 from .lanes import open_lanes
 from .layout import RunLayout, build_artifact_manifest, run_bytes
 from .schema import WorkbenchConfig, task_definition_hash
@@ -583,17 +583,21 @@ class RunEngine:
         reward = step[1] if step else None
         terminated, truncated = (bool(step[2]), bool(step[3])) if step else (False, True)
         info = step[4] if step else {}
-        raw_metrics = dict(record.get('metrics') or {})
-        raw_validity = dict(record.get('metric_validity') or {})
-        raw_units = dict(record.get('metric_units') or {})
+        # The lane's record also carries the computed specs (spec_equations: added to the simulation result so that the
+        # reward sees them). The simulator's own results are everything else; they alone feed the probes and raw rows.
+        plan, computed = self.compiled.plan, set(self.compiled.plan.injected)
+        raw_metrics = {k: v for k, v in (record.get('metrics') or {}).items() if k not in computed}
+        raw_validity = {k: v for k, v in (record.get('metric_validity') or {}).items() if k not in computed}
+        raw_units = {k: v for k, v in (record.get('metric_units') or {}).items() if k not in computed}
         status = record.get('status') or ('cancelled' if result.get('cancelled') else 'execution_error')
         if not result['ok'] and not result.get('cancelled'):
             status = 'execution_error'
-        usable = {k: (v if raw_validity.get(k) is True else None) for k, v in raw_metrics.items()}
-        derived = evaluate_expression_measurements(self.config, usable)
+        usable = {k: v for k, v in raw_metrics.items() if raw_validity.get(k) is True and v is not None}
+        derived = plan.probe_values(usable)
+        spec_values = plan.spec_values(probes=derived)
         metric_values, metric_valid = {}, {}
         for target in self.compiled.targets:
-            value = derived.get(target['measurement_id'])
+            value = spec_values.get(target['metric_id'])
             ok = value is not None and status == 'ok'
             metric_values[target['metric_id']], metric_valid[target['metric_id']] = (value if ok else None), ok
         valid, feasible, constraint_rows, violation = hard_constraints(self.compiled.targets, metric_values, metric_valid)
@@ -687,7 +691,8 @@ class RunEngine:
             replay_eligible=eligible, duplicate_of=record.get('duplicate_of'))
         bundle = dict(evaluation_id=evaluation_id, commit_seq=commit_seq, rows=dict(
             evaluations=[evaluation], parameters=self._parameter_rows(busy, record, evaluation_id),
-            metrics=self._metric_rows(evaluation_id, raw_metrics, raw_validity, raw_units, derived, constraint_rows, status),
+            metrics=self._metric_rows(evaluation_id, raw_metrics, raw_validity, raw_units, derived, spec_values,
+                                      constraint_rows, status),
             simulator_jobs=job_rows, learner_updates=update_rows, states=state_rows, transitions=transition_rows))
         self.dataset.commit(bundle)                              # <- durable acknowledgement
         if role is not None:
@@ -789,10 +794,12 @@ class RunEngine:
                                  lower=variable['lower'], upper=variable['upper'], step=variable['step']))
         return rows
 
-    def _metric_rows(self, evaluation_id, raw, validity, units_map, derived, constraints, status):
+    def _metric_rows(self, evaluation_id, raw, validity, units_map, derived, spec_values, constraints, status):
+        """Raw simulator results (condition rows), then one aggregate row per spec - the value of its equation, with its
+        thresholds - and one per probe that no spec shows whole. A spec whose equation is one probe is that probe's row
+        (measurement_id = the probe), exactly as before specs had equations; a formula's row has no single probe."""
         rows, by_metric = [], {c['metric_id']: c for c in constraints}
         measurements = {m.measurement_id: m for m in self.config.measurements}
-        targets = {t['measurement_id']: t for t in self.compiled.targets}
 
         def reason(value, ok):
             if ok:
@@ -809,20 +816,31 @@ class RunEngine:
                              failure_reason=reason(value if finite else None, ok and finite), threshold_lower=None,
                              threshold_upper=None, hard=None, satisfied=None, violation=None,
                              aggregation_level='condition', aggregation=None))
-        for measurement_id, value in derived.items():
-            target, definition = targets.get(measurement_id), measurements[measurement_id]
-            constraint = by_metric.get(target['metric_id']) if target else None
+        whole = set()
+        for target in self.compiled.targets:
+            value, probe = spec_values.get(target['metric_id']), target['probe']
+            definition = measurements.get(probe) if probe is not None else None
+            whole.add(probe)
+            constraint = by_metric.get(target['metric_id'])
             ok = value is not None and status == 'ok'
-            rows.append(dict(run_id=self.run_id, evaluation_id=evaluation_id, measurement_id=measurement_id,
-                             metric_name=target['metric_id'] if target else measurement_id,
-                             analysis=definition.analysis, condition='aggregate', raw_value=value if ok else None,
-                             unit=target['unit'] if target else definition.unit, valid=ok,
-                             failure_reason=reason(value, ok), threshold_lower=target['lower'] if target else None,
-                             threshold_upper=target['upper'] if target else None,
-                             hard=target['hard'] if target else None,
+            rows.append(dict(run_id=self.run_id, evaluation_id=evaluation_id, measurement_id=probe,
+                             metric_name=target['metric_id'], analysis=definition.analysis if definition else None,
+                             condition='aggregate', raw_value=value if ok else None, unit=target['unit'], valid=ok,
+                             failure_reason=reason(value, ok), threshold_lower=target['lower'],
+                             threshold_upper=target['upper'], hard=target['hard'],
                              satisfied=constraint['satisfied'] if constraint else None,
                              violation=constraint['normalized_violation'] if constraint else None,
-                             aggregation_level='aggregate', aggregation=definition.aggregation))
+                             aggregation_level='aggregate', aggregation=definition.aggregation if definition else 'equation'))
+        for measurement_id, value in derived.items():
+            if measurement_id in whole:
+                continue
+            definition = measurements[measurement_id]
+            ok = value is not None and status == 'ok'
+            rows.append(dict(run_id=self.run_id, evaluation_id=evaluation_id, measurement_id=measurement_id,
+                             metric_name=measurement_id, analysis=definition.analysis, condition='aggregate',
+                             raw_value=value if ok else None, unit=definition.unit, valid=ok,
+                             failure_reason=reason(value, ok), threshold_lower=None, threshold_upper=None, hard=None,
+                             satisfied=None, violation=None, aggregation_level='aggregate', aggregation=definition.aggregation))
         return rows
 
     def _job_rows(self, busy, lane, role, failed):

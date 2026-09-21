@@ -16,7 +16,7 @@ const NOTE_GROUPS: { key: string; title: string; css: string; text: (item: Json)
 // What identifies a selected row at a glance, per table (a row has twenty-odd fields; the editors show them all).
 const ROW_KEY: Record<string, string> = { parameters: 'variable_id', targets: 'metric_id', measurements: 'measurement_id' };
 const ROW_FACTS: Record<string, string[]> = { parameters: ['instance_path', 'parameter_name', 'lower', 'upper', 'unit', 'initial_value', 'binding_group'],
-  targets: ['constraint', 'lower', 'upper', 'target', 'unit', 'measurement_id', 'hard', 'active'], measurements: ['analysis', 'result_source', 'source_name', 'unit'] };
+  targets: ['equation', 'constraint', 'lower', 'upper', 'target', 'unit', 'hard', 'active'], measurements: ['analysis', 'result_source', 'source_name', 'unit'] };
 const brief = (v: unknown) => typeof v !== 'number' ? String(num(v)) : v !== 0 && (Math.abs(v) < 1e-3 || Math.abs(v) >= 1e6) ? v.toExponential(3).replace(/\.?0+e/, 'e') : String(+v.toPrecision(6));   // 1e-6 and 0.9, not 0.00000100000 and 0.900000
 const CUSTOM = '__custom__';          // value of the "Custom..." entry of the agent-model list; never sent to the backend
 const noteGroups = (m: Json) => NOTE_GROUPS.map(g => ({ ...g, items: (Array.isArray(m?.extra?.[g.key]) ? m.extra[g.key] : []) as Json[] })).filter(g => g.items.length > 0);
@@ -26,8 +26,24 @@ const MARK: Record<string, [string, string]> = { done: ['\u2714', 'ok'], missing
 const ASK_READINESS = 'What is still missing before this RL run can start? List it in order and fix what you can.';
 const ASK_RUN = 'What happened in this run, and what should I change next? Say what the numbers show, then suggest changes, each tied to a number of the run.';
 const ASK_SETTINGS = 'Review the settings of this run - run configuration, RL network, RL training, output - and suggest what to change, each with its source.';
-const WEB_TIMEOUT_SECONDS = 900;      // = agents/settings_review.py: reading publications takes minutes
-const getIn = (config: Json, path: string) => path.split('.').reduce((node: Json, part) => node?.[part], config) ?? null;
+// What a live request has shown so far (api.proposeLive; the backend's agents/live.py says what each event means).
+type Live = { model: string | null; thinking: string; steps: string[]; reply: string; writing: string | null; last: string | null; answerAt: number | null };
+const NO_LIVE: Live = { model: null, thinking: '', steps: [], reply: '', writing: null, last: null, answerAt: null };
+const WRITING: Record<string, string> = { reasoning: 'the reply', patch: 'the proposed rows', circuit_changes: 'the circuit changes', checklist: 'the checklist',
+  suggestions: 'the suggestions', encoder_ideas: 'the encoder ideas', warnings: 'the warnings', unresolved: 'the open questions' };
+const heard = (live: Live, e: Json): Live => {
+  const next = { ...live, last: e.type === 'model' ? live.last : e.type };
+  if (e.type === 'model') next.model = e.model;
+  else if (e.type === 'thinking') next.thinking += e.text ?? '';
+  else if (e.type === 'step') next.steps = [...live.steps, e.text];
+  else if (e.type === 'say') next.steps = e.new || !live.steps.length ? [...live.steps, e.text ?? ''] : [...live.steps.slice(0, -1), live.steps[live.steps.length - 1] + (e.text ?? '')];
+  else if (e.type === 'writing') { next.writing = e.field; next.answerAt ??= Date.now(); }      // the thinking is over: the answer is being written
+  else if (e.type === 'reply') next.reply += e.text ?? '';
+  else if (e.type === 'restart') { next.reply = ''; next.writing = null; }
+  return next;
+};
+const seconds = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`; };
+const getIn =(config: Json, path: string) => path.split('.').reduce((node: Json, part) => node?.[part], config) ?? null;
 const setIn = (config: Json, path: string, value: Json): Json => { const [head, ...rest] = path.split('.');
   return { ...config, [head]: rest.length ? setIn(config?.[head] ?? {}, rest.join('.'), value) : value }; };
 
@@ -84,6 +100,15 @@ function RichText({ text }: { text: string }) {
       : <p key={i}>{b.lines.map((l, j) => <Fragment key={j}>{j > 0 && <br />}{inline(l)}</Fragment>)}</p>)}</>;
 }
 
+// What a live answer showed besides its text, kept in the chat folded into one line: the thinking summary, and for a
+// request stopped with "Cancel request" the part of the reply that had arrived.
+function Thought({ extra }: { extra: Json }) {
+  if (!extra?.thinking && !extra?.partial_reply) return null;
+  return <>{extra.thinking && <details className="thought"><summary>Thinking{extra.thinking_seconds ? ` - ${seconds(extra.thinking_seconds * 1000)}` : ''}</summary>
+      <div className="thought-text"><RichText text={extra.thinking} /></div></details>}
+    {extra.partial_reply && <details className="thought"><summary>Reply so far</summary><div className="thought-text"><RichText text={extra.partial_reply} /></div></details>}</>;
+}
+
 // Stays mounted while another bottom tab is shown (`hidden`): unmounting would drop the chat, a pending
 // request's indicator and the proposal it returns, while the backend keeps working on that request.
 export function AgentTab({ config, setConfig, request, clearRequest, hidden, tabSlot, onDetached, runDir }:
@@ -98,6 +123,11 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
   const [proposal, setProposal] = useState<Json>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [waited, setWaited] = useState(0);          // whole seconds the pending request has been out
+  const [live, setLive] = useState<Live>(NO_LIVE);  // what the pending request has shown so far (thinking, steps, reply)
+  const liveNow = useRef<Live>(NO_LIVE);            // the same, updated on every event; drawn at most every 150 ms
+  const liveDraw = useRef<number | null>(null);
+  const thinkingBox = useRef<HTMLDivElement>(null);
+  const stick = useRef({ chat: true, thinking: true });       // follow new text only while the reader is at the bottom
   const chat = useRef<HTMLDivElement>(null);
   const [focus, setFocus] = useState<number | null>(null);    // chat line whose notes the side window shows; null = the latest reply
   const [customModel, setCustomModel] = useState(false);      // "Custom..." chosen: a model name outside the list is being typed
@@ -160,17 +190,30 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
     return () => clearInterval(timer);
   }, [busy]);
   useEffect(() => { if (chat.current) chat.current.scrollTop = chat.current.scrollHeight; }, [log, busy, hidden, popup]);
+  // A live answer grows: follow it, unless the reader has scrolled up to read something (then it stays where they are).
+  useEffect(() => {
+    if (thinkingBox.current && stick.current.thinking) thinkingBox.current.scrollTop = thinkingBox.current.scrollHeight;
+    if (chat.current && stick.current.chat) chat.current.scrollTop = chat.current.scrollHeight;
+  }, [live]);
+  const atBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+  const onProgress = (e: Json) => {
+    liveNow.current = heard(liveNow.current, e);
+    if (liveDraw.current === null) liveDraw.current = window.setTimeout(() => { liveDraw.current = null; setLive(liveNow.current); }, 150);
+  };
+  // What a live request leaves in the chat besides its answer: the thinking summary, folded into one line.
+  const thought = (l: Live, started: number) => l.thinking.trim() ? { thinking: l.thinking.trim(), thinking_seconds: Math.round(((l.answerAt ?? Date.now()) - started) / 1000) } : {};
   const runLabel = (runDir ?? '').split(/[\\/]/).filter(Boolean).pop() ?? '';       // the run folder's own name (the file has a `runName` helper further down)
   const body = () => ({ kind, prompt, config, selection, web: kind === 'settings_review' && online, run_dir: kind === 'run_review' ? runDir ?? null : null });
   // Only an ApiError is an answer from the backend; anything else means no answer arrived at all.
   // A bare "Not Found" / "Method Not Allowed" comes from the web framework, not from an endpoint: the running server has
   // no such route. The page is served from disk and is always current, the server only after a restart - say that.
   const olderServer = (e: any) => e instanceof ApiError && (e.status === 404 || e.status === 405) && typeof e.detail === 'string';
-  const fail = (e: any) => say('error', olderServer(e)
+  const fail = (e: any, keep?: Json) => say('error', olderServer(e)
     ? 'The workbench server that is running is older than this page and does not have this function yet. Restart it (Ctrl+C in its terminal, then start `serve` again) and press the button again. Nothing was sent to an agent.'
     : e instanceof ApiError
       ? `${e.detail?.code ?? 'error'}: ${e.message}${e.detail?.configuration_unchanged ? ' (your configuration is unchanged)' : ''}`
-      : `No answer from the backend (${e?.message ?? e}). Check that the workbench server is still running.`, e?.detail);
+      : `No answer from the backend (${e?.message ?? e}). Check that the workbench server is still running.`,
+    keep?.thinking ? { ...(e?.detail && typeof e.detail === 'object' ? e.detail : {}), ...keep } : e?.detail);
 
   const propose = async (ask?: { text: string; kind: string }) => {
     const text = (ask?.text ?? prompt).trim();
@@ -179,14 +222,21 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
     const request_id = crypto.randomUUID().replace(/-/g, '');
     const started = Date.now(), sent_with = using;          // what THIS request runs on, whatever is chosen later
     const web = (ask?.kind ?? kind) === 'settings_review' && online && settings?.provider === 'claude_code';
+    liveNow.current = NO_LIVE; setLive(NO_LIVE); stick.current = { chat: true, thinking: true };
     setBusy(request_id); setBusyOnline(web); say('user', text); if (!ask) setPrompt('');
-    try { const p = await api.propose({ ...body(), kind: ask?.kind ?? kind, web, run_dir: (ask?.kind ?? kind) === 'run_review' ? runDir ?? null : null, prompt: text, request_id }); if (p.kind !== 'settings_review' && !(p.kind === 'run_review' && !p.diff?.length)) setProposal(p);   // nothing to approve: no box, and an open proposal stays
-      say(p.origin, p.reasoning || '(no reasoning given)', { ...p, sent_with }); }
+    try { const p = await api.proposeLive({ ...body(), kind: ask?.kind ?? kind, web, run_dir: (ask?.kind ?? kind) === 'run_review' ? runDir ?? null : null, prompt: text, request_id }, onProgress);
+      if (p.kind !== 'settings_review' && !(p.kind === 'run_review' && !p.diff?.length)) setProposal(p);   // nothing to approve: no box, and an open proposal stays
+      say(p.origin, p.reasoning || '(no reasoning given)', { ...p, sent_with, ran_on: liveNow.current.model, ...thought(liveNow.current, started) }); }   // ran_on: the model the CLI named
     catch (e: any) {
-      if (e.detail?.code === 'cancelled') say('system', `Cancelled by you after ${Math.round((Date.now() - started) / 1000)} s. The request had been sent and the agent was still working on it; nothing was changed.`);
-      else fail(e);
+      const shown = liveNow.current;                            // what had arrived: kept in the chat, folded
+      if (e.detail?.code === 'cancelled') say('system', `Cancelled by you after ${Math.round((Date.now() - started) / 1000)} s. The request had been sent and the agent was still working on it; nothing was changed.`,
+        { ...thought(shown, started), ...(shown.reply.trim() ? { partial_reply: shown.reply.trim() } : {}) });
+      else fail(e, thought(shown, started));
       if (!ask) setPrompt(current => current || text);          // hand the text back for a retry unless something new was typed
-    } finally { setBusy(null); }
+    } finally {
+      if (liveDraw.current !== null) { clearTimeout(liveDraw.current); liveDraw.current = null; }
+      liveNow.current = NO_LIVE; setLive(NO_LIVE); setBusy(null);
+    }
   };
   // Free: the backend works it out from the live configuration. No model is called and nothing is probed.
   const whatIsMissing = () => api.agentReadiness(config).then(r => say('checklist', r.ready ? 'Nothing blocks a start.'
@@ -216,7 +266,7 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
   const save = (patch: Json) => {
     const next = { ...settings, ...patch };
     setSettings(next);
-    return api.saveAgentSettings({ provider: next.provider, model: next.model ?? null, effort: next.effort ?? null, timeout_seconds: next.timeout_seconds,
+    return api.saveAgentSettings({ provider: next.provider, model: next.model ?? null, effort: next.effort ?? null,        // no time limit: "Cancel request" stops a request
       permission_mode: next.permission_mode, allowed_tools: next.allowed_tools, max_turns: next.max_turns, stream: next.stream })
       .catch(fail).then(() => api.agentSettings().then(setSettings).catch(fail));          // always show what is actually saved
   };
@@ -264,11 +314,13 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
               <input type="checkbox" checked={online && settings?.provider === 'claude_code'} disabled={settings?.provider !== 'claude_code'} onChange={e => setOnline(e.target.checked)} />check publications online</label>
             <button disabled={!!busy || !using} onClick={() => propose({ text: ASK_SETTINGS, kind: 'settings_review' })}
               title={using ? `One agent request (${using}). It looks at the run configuration, the RL network, the RL training settings and the output settings - not at your circuit - and suggests values, each with its source. You apply them one by one.` : 'Select a provider first.'}>Review settings</button></span></div>
-        <div className="chat" ref={chat}>
-          {log.length === 0 && !busy && <p className="hint chat-empty">"What's missing?" lists what this run still needs - free, no agent. Or ask below for a draft of the Parameters, Specs or Probes tab. The agent only proposes: you review a diff before anything changes.</p>}
+        <div className="chat" ref={chat} onScroll={e => { stick.current.chat = atBottom(e.currentTarget); }}>
+          {log.length === 0 && !busy && <p className="hint chat-empty">"What's missing?" lists what this run still needs - free, no agent. Or ask below for a draft of the Parameters, Probes or Specs tab. The agent only proposes: you review a diff before anything changes.</p>}
           {log.map((m, i) => { const groups = noteGroups(m); return <div key={i} className={`msg ${isReply(m) && m.role !== 'error' ? 'reply' : m.role}${focus === i ? ' focused' : ''}`}>
-            <div className="who">{who(m.role)}{m.extra?.sent_with && <span className="when">{m.extra.sent_with}</span>} <span className="when">{m.at}</span></div>
+            <div className="who">{who(m.role)}{m.extra?.sent_with && <span className="when">{m.extra.sent_with}{m.extra.ran_on && ` - ran on ${m.extra.ran_on}`}</span>} <span className="when">{m.at}</span></div>
+            {m.role !== 'system' && <Thought extra={m.extra} />}
             <div className="text">{m.role === 'user' ? m.text : <RichText text={m.text} />}</div>
+            {m.role === 'system' && <Thought extra={m.extra} />}
             {m.role === 'checklist' && <><Checklist items={m.extra.items} />
               <div className="row">{m.extra.items.some((c: Json) => c.status === 'missing' && c.who === 'agent') && <>
                 <button className="primary" disabled={!!busy || !using} onClick={() => propose({ text: ASK_MINIMAL, kind: 'minimal_start' })}
@@ -279,9 +331,17 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
             {isReply(m) && m.extra?.checklist?.length > 0 && <Checklist items={m.extra.checklist} />}
             {isReply(m) && (m.extra?.kind === 'settings_review' || m.extra?.kind === 'run_review') && <Suggestions extra={m.extra} config={config} setConfig={setConfig} />}
             {groups.length > 0 && <button className="notes-link" title="Show these in the side window" onClick={() => setFocus(i === latest ? null : i)}>{groups.map(g => `${g.items.length} ${g.title.toLowerCase()}`).join(', ')}</button>}</div>; })}
-          {busy && <div className="msg pending"><div className="who">{who(settings?.provider ?? 'agent')}</div>
-            <div className="text">{busyOnline ? 'Sent. The agent is searching and reading publications online - this takes minutes...' : "Sent. Waiting for the agent's reply..."} <b>{waited} s</b></div>
-            <div className="hint">The answer arrives in one piece, so nothing shows until it is complete; the request is stopped after {busyOnline ? Math.max(settings?.timeout_seconds ?? 300, WEB_TIMEOUT_SECONDS) : settings?.timeout_seconds ?? 300} s.</div></div>}</div>
+          {/* The pending answer, drawn while it is written: the thinking summary (scrolls by itself), steps such as a web
+              search, then the reply text. On completion it is replaced by the reply, the thinking folded into one line. */}
+          {busy && <div className="msg pending"><div className="who">{who(settings?.provider ?? 'agent')}{live.model && <span className="when">{live.model}</span>}</div>
+            {live.thinking.trim() && <div className="thinking-live" ref={thinkingBox} onScroll={e => { stick.current.thinking = atBottom(e.currentTarget); }}>
+              <div className="thinking-head">Thinking</div><RichText text={live.thinking} /></div>}
+            {live.steps.filter(s => s.trim()).length > 0 && <ul className="live-steps">{live.steps.filter(s => s.trim()).map((s, i) => <li key={i}>{s}</li>)}</ul>}
+            {live.reply && <div className="text live-reply"><RichText text={live.reply} /></div>}
+            <div className="text live-status">{!live.last ? (busyOnline ? 'Sent. The agent is searching and reading publications online - this takes minutes...' : "Sent. Waiting for the agent's reply...")
+              : live.last === 'thinking' ? 'Thinking...' : live.last === 'step' ? 'Looking things up...' : live.last === 'say' ? 'Working...'
+              : live.last === 'restart' ? 'Writing the answer again...' : `Writing ${WRITING[live.writing ?? ''] ?? 'the answer'}...`} <b>{waited} s</b></div>
+            <div className="hint">No time limit. "Cancel request" below stops it; what has arrived stays in the chat.</div></div>}</div>
         {/* Left: the proposal under review and the message box. Right: the side window, as tall as both. */}
         <div className="compose"><div className="compose-main">
         {proposal && <div className="confirm"><h4>Proposal from {proposal.origin} - review the diff</h4><DiffView diff={proposal.diff} />

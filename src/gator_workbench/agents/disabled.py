@@ -18,7 +18,7 @@ class DisabledProvider(AgentProvider):
     def available(self):
         return dict(provider=self.name, available=True, executable=None, reason=None)
 
-    def propose(self, request: AgentRequest) -> AgentResult:
+    def propose(self, request: AgentRequest, on_event=None) -> AgentResult:
         raise AgentError('disabled')
 
     def export_task(self, request: AgentRequest) -> dict:

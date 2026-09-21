@@ -268,9 +268,14 @@ def test_a_finished_real_baseline_becomes_the_reference_once(tmp_path, monkeypat
     tables = dict(
         evaluations=[dict(evaluation_id='e0', phase='baseline', provenance='real', result_source='simulation', completed_at='2026-09-21T10:00:00'),
                      dict(evaluation_id='e1', phase='search', provenance='real', result_source='simulation', completed_at='2026-09-21T10:02:00')],
-        metrics=[dict(evaluation_id='e0', measurement_id=None, metric_name=k, raw_value=v, unit=recipes.RING_METRICS[k], valid=True) for k, v in values.items()]
-        + [dict(evaluation_id='e0', measurement_id='f_osc', metric_name='f_osc', raw_value=1.2092e9, unit='Hz', valid=True),      # a defined measurement: not raw
-           dict(evaluation_id='e1', measurement_id=None, metric_name='osc_frequency_hz', raw_value=9e8, unit='Hz', valid=True)])
+        metrics=[dict(evaluation_id='e0', measurement_id=None, metric_name=k, raw_value=v, unit=recipes.RING_METRICS[k], valid=True,
+                      aggregation_level='condition') for k, v in values.items()]
+        + [dict(evaluation_id='e0', measurement_id='f_osc', metric_name='f_osc', raw_value=1.2092e9, unit='Hz', valid=True,      # a defined measurement: not raw
+                aggregation_level='aggregate'),
+           dict(evaluation_id='e0', measurement_id=None, metric_name='energy_per_cycle', raw_value=1.62e-13, unit='J', valid=True,    # a spec's formula: not raw either
+                aggregation_level='aggregate'),
+           dict(evaluation_id='e1', measurement_id=None, metric_name='osc_frequency_hz', raw_value=9e8, unit='Hz', valid=True,
+                aggregation_level='condition')])
 
     class FakeReader:
         def __init__(self, data_dir):
@@ -308,8 +313,8 @@ def test_a_generated_profile_brings_the_result_registry_its_targets_need(tmp_pat
     from gator_workbench.validation import registry_for, validate
     read_cell(tmp_path)
     connection_file()
-    target = dict(metric_id='osc_frequency_hz', measurement_id='f_osc', unit='GHz', constraint='>=', lower=1.0, hard=True, normalization_scale=1.0)
-    power = dict(metric_id='supply_power_w', measurement_id='p_supply', unit='uW', constraint='<=', upper=400.0, hard=False,
+    target = dict(metric_id='osc_frequency_hz', equation='f_osc', unit='GHz', constraint='>=', lower=1.0, hard=True, normalization_scale=1.0)
+    power = dict(metric_id='supply_power_w', equation='p_supply', unit='uW', constraint='<=', upper=400.0, hard=False,
                  direction_after_feasible='minimize', normalization_scale=100.0)
     rows = dict(parameters=ROWS, run=dict(max_evaluations=5), targets=[target, power],
                 measurements=[measurement('f_osc', 'osc_frequency_hz'), dict(measurement('p_supply', 'supply_power_w'), unit='W')])
@@ -336,9 +341,14 @@ def test_a_generated_profile_brings_the_result_registry_its_targets_need(tmp_pat
     assert registry_for(explicit) == dict(osc_frequency_hz='Hz')
     other = schema.WorkbenchConfig.model_validate(dict(circuit=dict(source='registered_task', task_id='synthetic:opamp'), run=dict(max_evaluations=5)))
     assert 'gain_db_at_start' in registry_for(other) and 'osc_frequency_hz' not in registry_for(other)
-    unknown = dict(target, metric_id='osc_phase_noise', measurement_id='f_osc')
+    # a spec under a name the registry lacks is added to it (spec_equations); a configured registry takes it as given
+    unknown = dict(target, metric_id='osc_phase_noise', equation='f_osc')
     bad = registered.model_copy(update=dict(targets=[schema.PerformanceTarget(**unknown)]))
-    assert 'metric_not_in_registry' in [i.code for i in validate(bad, graph=runtime.base_graph, provided_metrics=set(runtime.provided_metrics)).issues]
+    found = validate(bad, graph=runtime.base_graph, provided_metrics=set(runtime.provided_metrics))
+    assert 'spec_adds_registry_entry' in [i.code for i in found.issues if i.level == 'info'] and not found.blocks_run
+    explicit_bad = explicit.model_copy(update=dict(targets=[schema.PerformanceTarget(**unknown)]))
+    assert 'metric_not_in_registry' in [i.code for i in validate(explicit_bad, graph=runtime.base_graph,
+                                                                 provided_metrics=set(runtime.provided_metrics)).issues if i.level == 'blocker']
 
 
 # ------------------------------------------------------------------------------------------------ one task per cell, and starting over

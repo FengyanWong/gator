@@ -41,7 +41,7 @@ def test_a_complete_mock_configuration_is_ready_and_needs_no_bridge(tmp_path):
     assert report['ready'] and report['next']['id'] == 'start' and items['start']['status'] == 'done'
     assert report['provided_metrics'] == ['power', 'score']                  # what the agent may write targets on
     assert items['connection']['status'] == 'not_applicable' and 'authorization' not in items
-    assert [i['id'] for i in report['items']][:4] == ['circuit', 'parameters', 'targets', 'measurements']     # the gating order
+    assert [i['id'] for i in report['items']][:4] == ['circuit', 'parameters', 'measurements', 'targets']     # the gating order = tab order
 
 
 def test_empty_tables_are_the_agents_to_fix_and_everything_else_is_the_users(tmp_path):

@@ -5,12 +5,20 @@ for this version. The provider therefore VERIFIES every option it wants to use a
 locally installed ``codex exec --help`` (a local, non-billable call) and reports
 ``unsupported_cli`` instead of guessing when an option is absent. It always asks for a
 read-only sandbox and never for an approval/sandbox bypass.
+
+A LIVE request (status record 7.50) adds ``--json``: the CLI then prints its events as JSON
+lines, which agents/live.py turns into what the page shows while Codex works. That option is
+taken from the Codex documentation ("Non-interactive mode"; its TypeScript SDK passes the
+older name ``--experimental-json``) and is used only when ``codex exec --help`` lists one of
+the two; otherwise the answer arrives in one piece, as before. Still the answer is the output
+file, and only when a CLI version writes none is it the last agent message of the stream.
 """
 from __future__ import annotations
 
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -18,9 +26,16 @@ import tempfile
 from ..security import redact
 from .base import AgentError, AgentProvider, AgentRequest, AgentResult, run_cli
 from .claude_code import AUTH_PATTERNS, MODEL_PATTERNS
+from .live import CodexTranslator
 from .prompts import PROPOSAL_SCHEMA, build_prompt
 
 WANTED_OPTIONS = ('--output-schema', '--output-last-message', '--sandbox')
+EVENT_OPTIONS = ('--json', '--experimental-json')      # events as JSON lines: the documented name first
+
+
+def listed(option, help_text) -> bool:
+    """`option` as a whole word of the help text: `--json` is not `--json-schema`."""
+    return re.search(rf'(?<![\w-]){re.escape(option)}(?![\w-])', help_text) is not None
 
 
 class CodexProvider(AgentProvider):
@@ -45,7 +60,9 @@ class CodexProvider(AgentProvider):
             raise AgentError('unsupported_cli', f'`codex exec --help` could not be run: {exc}')
         return done.stdout + done.stderr
 
-    def propose(self, request: AgentRequest) -> AgentResult:
+    def propose(self, request: AgentRequest, on_event=None) -> AgentResult:
+        """With `on_event`, the CLI's events are reported while it works, as far as `codex exec --help` lists an event
+        option (see the module text); the proposal comes from the answer either way."""
         request.validate()
         if request.web:
             raise AgentError('unsupported_cli', 'Online research is wired for the Claude Code provider only: the codex CLI was never '
@@ -58,11 +75,16 @@ class CodexProvider(AgentProvider):
         if missing:
             raise AgentError('unsupported_cli', f'The installed codex CLI does not list {missing} under `codex exec '
                                                 '--help`; structured proposals cannot be requested safely.')
+        events = next((option for option in EVENT_OPTIONS if listed(option, help_text)), None) if on_event else None
+        if on_event and not events:
+            on_event(dict(type='step', text='This version of the codex CLI lists no event option (--json) under `codex exec '
+                                            '--help`; the answer will arrive in one piece.'))
+        translator = CodexTranslator(on_event) if events else None
         scratch = Path(tempfile.mkdtemp(prefix='gator-agent-'))
         try:
             schema_file, answer_file = scratch / 'schema.json', scratch / 'answer.json'
             schema_file.write_text(json.dumps(PROPOSAL_SCHEMA))
-            argv = [executable, 'exec', '--sandbox', 'read-only', '--output-schema', str(schema_file),
+            argv = [executable, 'exec', *([events] if events else []), '--sandbox', 'read-only', '--output-schema', str(schema_file),
                     '--output-last-message', str(answer_file)]
             if '--skip-git-repo-check' in help_text:
                 argv.append('--skip-git-repo-check')            # the scratch directory is not a repository
@@ -75,7 +97,8 @@ class CodexProvider(AgentProvider):
                 argv += ['--config', f'model_reasoning_effort="{self.settings.effort}"']
             argv.append('-')                                       # prompt on stdin
             code, stdout, stderr = run_cli(argv, stdin_text=build_prompt(request), cwd=scratch,
-                                           timeout=self.settings.timeout_seconds, request_id=request.request_id)
+                                           timeout=self.settings.timeout_seconds, request_id=request.request_id,
+                                           on_line=translator.feed if translator else None)
             logs = [dict(type='stdout', text=redact(line, 500)) for line in stdout.splitlines()[-200:]]
             excerpt = redact(stderr.strip(), 2000)
             if code != 0:
@@ -84,10 +107,11 @@ class CodexProvider(AgentProvider):
                 if MODEL_PATTERNS.search(stderr + stdout):
                     raise AgentError('model_unavailable', excerpt)
                 raise AgentError('nonzero_exit', f'exit status {code}', exit_code=code, stderr=excerpt)
-            if not answer_file.is_file():
+            final = answer_file.read_text() if answer_file.is_file() else translator.last_message if translator else None
+            if final is None:
                 raise AgentError('no_structured_output', 'codex wrote no final message file')
             try:
-                structured = json.loads(answer_file.read_text())
+                structured = json.loads(final)
             except json.JSONDecodeError:
                 raise AgentError('incomplete_output', 'The final message is not valid JSON')
             if not isinstance(structured, dict):

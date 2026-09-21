@@ -41,16 +41,16 @@ const ota = (name, gain) => ({
   parameters: [parameter('input_pair_width', 'XU1/M1', { lower: 3.6e-6, upper: 4.4e-6, step: 5e-9, optimized: true, initial_value: 4e-6 }),
     parameter('input_pair_width__XU1_M2', 'XU1/M2', { binding_group: 'input_pair_width', ratio: 1, optimized: true })],
   measurements: OTA_RESULTS.map(r => probe(...r)),
-  targets: [{ metric_id: 'gain_db_at_start', measurement_id: 'm_gain_db_at_start', unit: 'dB', constraint: '>=', lower: gain, normalization_scale: 1, basis: BASIS },
-    { metric_id: 'unity_gain_hz', measurement_id: 'm_unity_gain_hz', unit: 'Hz', constraint: '>=', lower: 3540000, normalization_scale: 1e6, basis: BASIS },
-    { metric_id: 'supply_power_w', measurement_id: 'm_supply_power_w', unit: 'W', constraint: 'interval', lower: 0, upper: 2.1e-6, normalization_scale: 1e-6, basis: BASIS }] });
+  targets: [{ metric_id: 'gain_db_at_start', equation: 'm_gain_db_at_start', unit: 'dB', constraint: '>=', lower: gain, normalization_scale: 1, basis: BASIS },
+    { metric_id: 'unity_gain_hz', equation: 'm_unity_gain_hz', unit: 'Hz', constraint: '>=', lower: 3540000, normalization_scale: 1e6, basis: BASIS },
+    { metric_id: 'supply_power_w', equation: 'm_supply_power_w', unit: 'W', constraint: 'interval', lower: 0, upper: 2.1e-6, normalization_scale: 1e-6, basis: BASIS }] });
 const MOCK = {
   project: { name: 'mock-opamp', task_name: 'mock_opamp' },
   circuit: { source: 'registered_task', task_id: 'synthetic:opamp', circuit_class: 'opamp', pdk_id: 'synthetic-fixture' },
   parameters: [parameter('w_in', 'M1', { lower: 1e-6, upper: 8e-6, step: null, optimized: true }), parameter('w_in__M2', 'M2', { binding_group: 'w_in', ratio: 1 }),
     parameter('w_tail', 'M5', { lower: 1e-6, upper: 8e-6, step: null, optimized: true })],
   measurements: [probe('score', 'fixture', 'other')],
-  targets: [{ metric_id: 'score', measurement_id: 'm_score', unit: 'fixture', constraint: '>=', lower: 0.95, normalization_scale: 1, basis: 'FIXTURE: mock threshold' }],
+  targets: [{ metric_id: 'score', equation: 'm_score', unit: 'fixture', constraint: '>=', lower: 0.95, normalization_scale: 1, basis: 'FIXTURE: mock threshold' }],
   run: { max_evaluations: 60, seed: 17 } };
 const RING = { project: { name: 'ring-demo', task_name: 'ring_demo' }, circuit: { source: 'registered_task', task_id: 'real:ring_demo', circuit_class: 'vco', pdk_id: 'gpdk045' },
   parameters: [parameter('wn', 'XU1/MN1', { lower: 6e-7, upper: 1.6e-6, step: 5e-9, optimized: true, initial_value: 1e-6 })],
@@ -142,10 +142,14 @@ try {
   check('the rows arrive and the panel says so', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`), await note());
   const metrics = await column('metric_id');
   check('Specs shows the circuit\'s own targets, not the score', !metrics.includes('score') && metrics.includes('gain_db_at_start') && metrics.includes('unity_gain_hz') && metrics.includes('supply_power_w'), JSON.stringify(metrics));
+  // each spec is an equation over the probes; a starter's is the one probe of its own result (2026-09-21, status record 7.52)
+  check('each spec\'s equation is the probe of its result', JSON.stringify(await column('equation')) === JSON.stringify(metrics.map(m => `m_${m}`)), JSON.stringify(await column('equation')));
+  const probeLine = await evaluate(`${EDITORS}.querySelector('.spec-probes')?.textContent ?? ''`);
+  check('the Specs tab names the Probe IDs an equation can use', /equation/.test(probeLine) && metrics.every(m => probeLine.includes(`m_${m}`)), probeLine || '(no line)');
   if (LIVE) {
     check('LIVE: the six targets of record, with their numbers', metrics.length === 6 && (await column('lower')).includes('25.01') && (await column('upper')).includes('0.0000021'), `${JSON.stringify(await column('lower'))} ${JSON.stringify(await column('upper'))}`);
-    check('LIVE: five parameter rows and six probes', (await strip()) === 'Parameters (5) | Specs (6) | Probes (6)', await strip());
-  } else check('the three tabs hold this task\'s rows', (await strip()) === 'Parameters (2) | Specs (3) | Probes (3)', await strip());
+    check('LIVE: five parameter rows and six probes', (await strip()) === 'Parameters (5) | Probes (6) | Specs (6)', await strip());
+  } else check('the three tabs hold this task\'s rows', (await strip()) === 'Parameters (2) | Probes (3) | Specs (3)', await strip());
   const hard = await evaluate(`(() => { const at = [...${EDITORS}.querySelectorAll('table.editor thead th')].findIndex(h => h.textContent.trim() === 'hard');
     return [...${EDITORS}.querySelectorAll('table.editor tbody tr')].map(r => r.children[at].querySelector('input').checked); })()`);
   check('what a row does not state is shown as the backend will take it: hard = on, tolerance = 0', hard.length > 0 && hard.every(Boolean) && (await column('tolerance')).every(t => t === '0'), `${JSON.stringify(hard)} ${JSON.stringify(await column('tolerance'))}`);
@@ -193,11 +197,11 @@ try {
     // ---- a circuit without targets of record: nothing is invented -----------------------------------------------------
     await choose('Task', 'real:ring_demo');
     check('a circuit without targets of record says so', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('no targets of record')`), await note());
-    check('its parameters and probes are there, Specs is empty', (await strip()) === 'Parameters (1) | Specs (0) | Probes (2)', await strip());
+    check('its parameters and probes are there, Specs is empty', (await strip()) === 'Parameters (1) | Probes (2) | Specs (0)', await strip());
     // ---- a backend that was not restarted ----------------------------------------------------------------------------------
     await choose('Task', 'real:gpdk045_vco');
     check('an older backend is named as such, in the panel', await until(`(${PANEL}.querySelector('.task-rows.error')?.textContent ?? '').includes('older than the page')`), await note());
-    check('its rows are left as they were, the class label still follows', (await strip()) === 'Parameters (1) | Specs (0) | Probes (2)' && (await value('Circuit class')) === 'vco', await strip());
+    check('its rows are left as they were, the class label still follows', (await strip()) === 'Parameters (1) | Probes (2) | Specs (0)' && (await value('Circuit class')) === 'vco', await strip());
     await shot('task-rows-3-older-backend.png');
   }
   console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);

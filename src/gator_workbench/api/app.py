@@ -9,14 +9,17 @@
 """
 from __future__ import annotations
 
+import asyncio
 import io
+import json
 import mimetypes
 import os
 from pathlib import Path
+import threading
 from urllib.parse import quote
 import zipfile
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -34,6 +37,7 @@ from ..agents import diagnostics as agent_diagnostics
 from ..agents.prompts import circuit_summary
 from ..best_design import export_netlist
 from ..layout import RunLayout, environment_versions
+from ..native_cells import load_import as load_cell_import       # `native_cells` is a route name in create_app
 from ..paths import OutputRoots, PathNotAllowed, default_output_root, directory_bytes, repo_root, safe_child
 from ..preload import preload
 from ..security import redact
@@ -131,7 +135,7 @@ class AgentSettingsBody(Body):
     provider: str
     model: str | None = None
     effort: str | None = None
-    timeout_seconds: float = 300.0
+    timeout_seconds: float | None = None      # IGNORED: a request has no time limit (7.48). Accepted because older pages send it
     permission_mode: str = 'dontAsk'
     allowed_tools: list[str] = []
     max_turns: int | None = None
@@ -247,6 +251,54 @@ def file_snapshot(path: Path, chunk_size: int = 1 << 20):
     return size, chunks()
 
 
+KEEPALIVE_SECONDS = 10.0        # a live agent answer sends a comment line when it has nothing else: a page that left is noticed
+
+
+def sse(kind: str, data) -> str:
+    """One Server-Sent Event. json.dumps escapes every line break, so `data` is always a single line."""
+    return f"event: {kind}\ndata: {json.dumps(data, default=str, separators=(',', ':'))}\n\n"
+
+
+def live_answer(request, provider, finish):
+    """The agent's answer as Server-Sent Events (status record 7.48): `progress` while it works (agents/live.py), then ONE
+    `result` (the proposal, exactly as the JSON answer) or ONE `error` (exactly as the 409 detail). The agent runs on a
+    thread of its own. If the page goes away first, the request is cancelled: nobody would see the answer."""
+    async def events():
+        loop, inbox = asyncio.get_running_loop(), asyncio.Queue()
+
+        def post(kind, data):
+            try:
+                loop.call_soon_threadsafe(inbox.put_nowait, (kind, data))
+            except RuntimeError:                  # the event loop is gone: the server is stopping
+                pass
+
+        def work():
+            try:
+                post('result', finish(provider.propose(request, on_event=lambda event: post('progress', event))))
+            except AgentError as exc:
+                post('error', dict(exc.as_dict(), configuration_unchanged=True))
+            except Exception as exc:              # the JSON answer would be an HTTP 500; a stream must still end with a verdict
+                post('error', dict(code='internal_error', meaning='The workbench failed while handling the reply.',
+                                   detail=redact(f'{type(exc).__name__}: {exc}', 1000), configuration_unchanged=True))
+        threading.Thread(target=work, name=f'agent-{request.request_id[:8]}', daemon=True).start()
+        finished = False
+        try:
+            while True:
+                try:
+                    kind, data = await asyncio.wait_for(inbox.get(), KEEPALIVE_SECONDS)
+                except asyncio.TimeoutError:
+                    yield ': working\n\n'
+                    continue
+                yield sse(kind, data)
+                if kind != 'progress':
+                    finished = True
+                    return
+        finally:
+            if not finished:
+                agents.REGISTRY.cancel(request.request_id)
+    return StreamingResponse(events(), media_type='text/event-stream', headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no'})
+
+
 def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=True, monitor=None,
                auto_check_on_start=True, connection_stale_seconds=120.0, connector=None) -> FastAPI:
     # Endpoints run in a thread pool and import the optimizer lazily: two first imports at once corrupt
@@ -330,6 +382,9 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         # means "the CLI's default" rather than an error that would take the whole Agent tab down.
         if saved.get('effort') not in agent_catalog.efforts_for(saved['provider']):
             saved['effort'] = None
+        # A request has no time limit (status record 7.48): the page shows it working and "Cancel request" stops it.
+        # A limit kept in the file from before (300 s was the default) is ignored.
+        saved.pop('timeout_seconds', None)
         return AgentSettings(**saved).validate()
 
     # ------------------------------------------------------------------ meta / schema
@@ -405,6 +460,10 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                       profile_recipes=[dict(id=key, label=value['label']) for key, value in profiles.RECIPES.items()]) if circuit.source == 'virtuoso' else {}
         if runtime is None:
             return dict(loaded=False, **blocked, **native)
+        if circuit.source == 'virtuoso' and runtime.circuit.get('native_draft'):
+            # What the testbench this copy was read through can measure: the rows the Probes tab follows.
+            imported = load_cell_import(circuit.library, circuit.cell)
+            native['testbench_probes'] = imported and profiles.testbench_probes(imported, graph=runtime.base_graph)
         graph = runtime.base_graph
         tree = {}
         for device in graph.devices:
@@ -908,17 +967,19 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         settings = agent_settings()
         return dict(vars(settings), allowed_tools=list(settings.allowed_tools), availability=agents.availability(),
                     catalog=agent_catalog.for_api(),        # static table + one local file read: no CLI, no model call
-                    note='Agent model, effort, timeout and tools are independent of RL checkpoints, simulator '
-                         'concurrency and evaluation budgets.')
+                    note='Agent model, effort and tools are independent of RL checkpoints, simulator '
+                         'concurrency and evaluation budgets. A request has no time limit; "Cancel request" stops it.')
 
     @app.put('/api/agent/settings')
     def put_agent_settings(body: AgentSettingsBody):
         try:
-            settings = AgentSettings(**dict(body.model_dump(), allowed_tools=tuple(body.allowed_tools))).validate()
+            settings = AgentSettings(**dict(body.model_dump(exclude={'timeout_seconds'}), allowed_tools=tuple(body.allowed_tools))).validate()
             agents.make_provider(settings)
         except AgentError as exc:
             raise HTTPException(422, detail=exc.as_dict())
-        runs.save_settings(agent=dict(vars(settings), allowed_tools=list(settings.allowed_tools)))
+        saved = dict(vars(settings), allowed_tools=list(settings.allowed_tools))
+        saved.pop('timeout_seconds')
+        runs.save_settings(agent=saved)
         return dict(saved=True, provider=settings.provider)
 
     def run_readiness(config, runtime, blocked) -> dict:
@@ -1034,19 +1095,25 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         return request, circuit_hash
 
     @app.post('/api/agent/propose')
-    def propose(body: ProposeBody):
-        """Proposal only. Applying needs approval; circuit writes and simulations need their own authorization."""
+    def propose(body: ProposeBody, http: Request):
+        """Proposal only. Applying needs approval; circuit writes and simulations need their own authorization.
+        A request that accepts `text/event-stream` gets the answer LIVE (`live_answer`), any other gets it in one piece."""
         try:
             request, circuit_hash = _request(body)
             provider = agents.make_provider(agent_settings())
-            result = provider.propose(request)
-            proposal = proposals.create(request, result, circuit_hash=circuit_hash)
+
+            def finish(result):
+                proposal = proposals.create(request, result, circuit_hash=circuit_hash)
+                proposal['readiness_after'] = readiness_after(request, proposal)
+                check_suggestions(request, proposal)
+                _audit(proposal)
+                return proposal
+            if 'text/event-stream' in http.headers.get('accept', ''):
+                request.validate()               # a request that cannot be sent is refused as a plain 409, before any stream
+                return live_answer(request, provider, finish)
+            return finish(provider.propose(request))
         except AgentError as exc:
             raise HTTPException(409, detail=dict(exc.as_dict(), configuration_unchanged=True))
-        proposal['readiness_after'] = readiness_after(request, proposal)
-        check_suggestions(request, proposal)
-        _audit(proposal)
-        return proposal
 
     @app.post('/api/agent/readiness')
     def readiness(body: ConfigBody):

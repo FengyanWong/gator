@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import re
 
-TABLES = ('parameters', 'targets', 'measurements')
+TABLES = ('parameters', 'measurements', 'targets')                                  # checklist order = the editor tab order
 BLOCKING = ('error', 'blocker')
-TITLES = dict(parameters='Parameters', targets='Specs', measurements='Probes')      # = the editor tab names (frontend Editors.tsx)
+TITLES = dict(parameters='Parameters', measurements='Probes', targets='Specs')      # = the editor tab names (frontend Editors.tsx)
 LEARNING_WARNINGS = ('budget_within_warmup', 'budget_below_batch')
 ROW_KEYS = dict(parameters='variable_id', targets='metric_id', measurements='measurement_id')      # = schema.SECTION_KEYS
 ROW_PATH = re.compile(r'^(parameters|targets|measurements)\[(\d+)\]')
@@ -93,7 +93,7 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
         if found or empty:
             detail = say(found) if found else dict(
                 parameters='No optimized variable yet.', targets='No active hard constraint yet, so nothing defines "feasible".',
-                measurements='No measurement is defined; every target needs one.')[name]
+                measurements='No probe is defined; every spec is an equation over probes.')[name]
             action = ('State the requirement and where it comes from; the agent can then write the rows.' if name == 'targets'
                       else f'Fill in the "{TITLES[name]}" tab, or ask the agent to draft it from the circuit.')
             if registered:                  # a registered task brings its own rows: free, exact, and the first thing to try

@@ -17,6 +17,8 @@ _LINEAR = {
     'V': {'V': 1.0, 'mV': 1e-3, 'uV': 1e-6, 'µV': 1e-6, 'nV': 1e-9, 'kV': 1e3},
     'A': {'A': 1.0, 'mA': 1e-3, 'uA': 1e-6, 'µA': 1e-6, 'nA': 1e-9, 'pA': 1e-12},
     'W': {'W': 1.0, 'mW': 1e-3, 'uW': 1e-6, 'µW': 1e-6, 'nW': 1e-9, 'pW': 1e-12},
+    # Energy, e.g. the Specs equation "power / frequency" = energy per cycle.
+    'J': {'J': 1.0, 'mJ': 1e-3, 'uJ': 1e-6, 'µJ': 1e-6, 'nJ': 1e-9, 'pJ': 1e-12, 'fJ': 1e-15, 'aJ': 1e-18},
     'Hz': {'Hz': 1.0, 'kHz': 1e3, 'MHz': 1e6, 'GHz': 1e9, 'THz': 1e12},
     's': {'s': 1.0, 'ms': 1e-3, 'us': 1e-6, 'µs': 1e-6, 'ns': 1e-9, 'ps': 1e-12, 'fs': 1e-15},
     'deg': {'deg': 1.0, 'degree': 1.0, '°': 1.0},

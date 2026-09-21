@@ -100,9 +100,9 @@ try {
 
   // ---- tab opens, layout ----------------------------------------------------------------------------------
   const editorTabs = await evaluate(`[...document.querySelectorAll('section.editors .tabs button')].map(b => b.textContent.trim())`);
-  check('the three editor tabs are named Parameters, Specs and Probes', editorTabs.length === 3 && [/^Parameters \(\d+\)$/, /^Specs \(\d+\)$/, /^Probes \(\d+\)$/].every((name, i) => name.test(editorTabs[i])), editorTabs.join(' | '));
+  check('the three editor tabs are Parameters, Probes and Specs, in that order', editorTabs.length === 3 && [/^Parameters \(\d+\)$/, /^Probes \(\d+\)$/, /^Specs \(\d+\)$/].every((name, i) => name.test(editorTabs[i])), editorTabs.join(' | '));
   await clickTab('Agent'); await sleep(500);
-  check('the empty conversation names the editor tabs the same way', (await evaluate(`document.querySelector('.chat-empty')?.textContent ?? ''`)).includes('a draft of the Parameters, Specs or Probes tab'));
+  check('the empty conversation names the editor tabs the same way', (await evaluate(`document.querySelector('.chat-empty')?.textContent ?? ''`)).includes('a draft of the Parameters, Probes or Specs tab'));
   check('provider select shows the backend setting', (await evaluate(`document.querySelector('.agent-side select').value`)) === 'claude_code');
   const geo = await evaluate(`(() => { const r = s => { const b = document.querySelector(s).getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }; };
     return { chat: r('.chat'), box: r('.compose-main textarea'), main: r('.compose-main'), notes: r('.notes'), footer: r('footer') }; })()`);
@@ -394,7 +394,7 @@ try {
   const onlineCall = await nextPaused('/api/agent/propose');
   await sleep(1200);
   const waitingOnline = await evaluate(`document.querySelector('.msg.pending').innerText`);
-  check('with the box ticked the request asks for online research, and the waiting line says it takes minutes', JSON.parse(onlineCall.postData).web === true && waitingOnline.includes('reading publications online') && waitingOnline.includes('900 s'), waitingOnline.slice(0, 90));
+  check('with the box ticked the request asks for online research, and the waiting line says it takes minutes (with no time limit: 7.48)', JSON.parse(onlineCall.postData).web === true && waitingOnline.includes('reading publications online') && waitingOnline.includes('No time limit'), waitingOnline.slice(0, 90));
   await fulfil(onlineCall.requestId, 200, { proposal_id: 'fixture-7', proposal_hash: 'fixture', origin: 'fixture', kind: 'settings_review', reasoning: 'Nothing further.', warnings: [], unresolved: [], diff: [], patch: [], circuit_changes: [],
     suggestions: [], refused_suggestions: [], encoder_ideas: [], suggestions_together: { ok: true, problem: null } });
   await sleep(400);

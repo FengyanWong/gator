@@ -154,7 +154,7 @@ def test_design_variable_targets_are_kept_but_block_a_run(tmp_path):
     (dict(constraint='>=', lower=0.9, upper=1.0), 'unexpected_threshold'),
     (dict(constraint='interval', lower=1.0, upper=0.5), 'invalid_interval'),
     (dict(constraint='target', lower=None, target=0.9, tolerance=0.0), 'target_needs_tolerance'),
-    (dict(measurement_id='nope'), 'unknown_measurement'),
+    (dict(equation='nope'), 'equation_unknown_probe'),
     (dict(unit='dB'), 'target_unit_mismatch'),
     (dict(hard=False), 'no_hard_constraint'),
 ])
@@ -163,10 +163,15 @@ def test_target_errors(tmp_path, target, code):
     assert code in issues(report, 'error'), [i.as_dict() for i in report.issues]
 
 
-def test_unregistered_metric_is_a_visible_blocker(tmp_path):
+def test_unregistered_metric_is_added_to_the_registry_or_blocked_by_a_configured_one(tmp_path):
+    """A spec is an equation over the probes, under its own name: a name the result registry lacks gets an entry
+    (spec_equations.registry_entries). A registry stated in the configuration is taken as given."""
     def rename(raw):
         raw['targets'][0]['metric_id'] = 'my_noise'
     report, _ = check(make_config(tmp_path, mutate=rename))
+    assert 'spec_adds_registry_entry' in issues(report, 'info') and not report.blocks_run
+    report, _ = check(make_config(tmp_path, mutate=rename, advanced=dict(spec_registry=[dict(metric_id='score', unit='fixture',
+                                                                                             reference=1.0)])))
     assert 'metric_not_in_registry' in issues(report, 'blocker')
 
 
@@ -175,7 +180,7 @@ def test_only_one_post_feasibility_preference(tmp_path):
         raw['targets'][0]['direction_after_feasible'] = 'maximize'
         raw['measurements'].append(dict(measurement_id='m2', analysis='other', result_source='expression',
                                         expression='m_score*2', unit='fixture'))
-        raw['targets'].append(dict(metric_id='score2', measurement_id='m2', unit='fixture', constraint='>=', lower=0,
+        raw['targets'].append(dict(metric_id='score2', equation='m2', unit='fixture', constraint='>=', lower=0,
                                    normalization_scale=1, direction_after_feasible='minimize'))
     report, _ = check(make_config(tmp_path, mutate=two))
     assert 'multiple_preferences' in issues(report, 'error')

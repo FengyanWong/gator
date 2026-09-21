@@ -112,16 +112,16 @@ is never replaced), or it was started with "Model checkpoints" switched off. Bro
 | `real:gpdk045_*` tasks | The verified bridge profiles through the existing `NativeEnvironmentFactory`. Need virtuoso-bridge 0.8.0 importable by the backend interpreter, a connection profile, a passing connection gate and an explicit budget authorization. **Not exercised in this delivery** (see the status record). Nothing ever falls back to mock. |
 | Arbitrary native cellviews | Read-only browsing through the bridge. Optimizing one needs a verified circuit profile; writing a native schematic is not implemented (contract returned by the API). |
 
-### Choosing a registered task: whose rows Parameters, Specs and Probes show
+### Choosing a registered task: whose rows Parameters, Probes and Specs show
 
 The three tabs hold rows of the *configuration*, so they belong to a task. Choosing another task in **Circuit
 source -> Task** brings that task's rows:
 
-| Task | Parameters | Specs | Probes |
+| Task | Parameters | Probes | Specs |
 |---|---|---|---|
-| `synthetic:*` (MOCK) | the fixture's declared groups | one toy row, `score >= 0.95` (unit `fixture`): the analytic backend computes no gain, bandwidth or power, so there is nothing else to aim at | `m_score` |
-| `real:gpdk045_ota5`, `_ota7`, `_ldo`, `_vco` | exactly the rows the circuit's profile fixes (a real run accepts no others) | the circuit's **targets of record**: the frozen specification files of the real experiments (`configs/m6_real_cross_category.json`, partition `train`; `configs/gpdk045_ota7_transfer.json` for the OTA7). For the OTA5: gain >= 25.01 dB, unity-gain frequency >= 3.54 MHz, phase margin >= 90 deg, supply power <= 2.1 uW, output DC 0.2-0.8 V, exactly one unity-gain crossing. Every row states this source in `basis`. They are pilot goals near the measured baseline, **not product specifications**: edit them to your own requirements | one per target |
-| a profile created from your own cell | the rows the profile fixes | **none**: requirements are never inferred from a circuit. State yours, or press "Draft with agent..." | one per result its circuit type produces, ready to carry a target |
+| `synthetic:*` (MOCK) | the fixture's declared groups | `m_score` | one toy row, `score >= 0.95` (unit `fixture`): the analytic backend computes no gain, bandwidth or power, so there is nothing else to aim at |
+| `real:gpdk045_ota5`, `_ota7`, `_ldo`, `_vco` | exactly the rows the circuit's profile fixes (a real run accepts no others) | one per target | the circuit's **targets of record**: the frozen specification files of the real experiments (`configs/m6_real_cross_category.json`, partition `train`; `configs/gpdk045_ota7_transfer.json` for the OTA7). For the OTA5: gain >= 25.01 dB, unity-gain frequency >= 3.54 MHz, phase margin >= 90 deg, supply power <= 2.1 uW, output DC 0.2-0.8 V, exactly one unity-gain crossing. Every row states this source in `basis`. They are pilot goals near the measured baseline, **not product specifications**: edit them to your own requirements |
+| a profile created from your own cell | the rows the profile fixes | one per result its circuit type produces, ready to carry a target | **none**: requirements are never inferred from a circuit. State yours, or press "Draft with agent..." |
 
 * The **Circuit class / PDK id** labels follow the task at once, and so does a project name that a starter had given
   (`mock-opamp` -> `gpdk045-ota5`), so a real run is not filed under `runs/mock_opamp/`. A name you typed stays.
@@ -139,6 +139,47 @@ source -> Task** brings that task's rows:
 
 Browser check: `frontend/scripts/task_rows_check.mjs` (fixtures, safe on the live backend; `--live` reads the real
 starters from a restarted or scratch backend). Tests: `tests/workbench/test_wb_real_starter.py`.
+
+### Specs are equations over Probes (added 2026-09-21, user request)
+
+**Probes** say what is measured. **Specs** say what is required, and each one judges ONE value: its
+`equation`, written with Probe IDs. The simplest equation is one Probe ID (`m_unity_gain_hz`), and every
+starter row is of that kind. A formula works too: `m_supply_power_w / m_osc_frequency_hz` is the energy per
+cycle, in J. Allowed: Probe IDs, numbers (with SI suffixes such as `2u`), `+ - * / **` and brackets. There
+are no functions (`abs`, `log10`...) yet. A missing or invalid probe, or an operation that fails (for
+example a division by zero), makes the spec invalid; it never becomes a number, and an invalid hard spec
+means the evaluation is not feasible.
+
+That one value is what everything sees, under the spec's name (`metric_id`): the reward, the network's
+goal input, the independent pass/fail check, the best-design choice and the tables. This closes a gap found
+the same day: a spec named `unity_gain_hz` could point at a probe that read the 3 dB bandwidth. The reward
+then read the unity-gain frequency while pass/fail read the bandwidth, and validation let it through.
+
+* **Names.** A spec may carry the name of a result the simulation returns only when its equation is exactly
+  the probe of that result (`spec_name_is_a_result`), and the name of a Probe only when its equation is
+  that probe (`spec_name_is_a_probe`). Give a formula its own name, such as `energy_per_cycle`.
+* **Units.** When the equation is one probe, its unit is checked against the probe's. A formula's unit
+  cannot be checked (`equation_unit_unchecked`, a warning): the probes enter in their canonical units (W,
+  Hz, V, A, s), so `W / Hz` gives `J`. Energy units (`J`, `pJ`, `fJ`...) are accepted.
+* **The network's result registry.** A spec name the registry does not know adds one entry to it
+  (`spec_adds_registry_entry`, info). Its reference magnitude, which only scales the network input, is the
+  formula evaluated on the reference sizes of its inputs, so changing a limit keeps saved models loadable.
+  Adding, removing or renaming such a spec changes the network's input: models saved without that spec do
+  not load into the run, and its models do not load into one without it. A registry stated in the
+  configuration (`run.advanced.spec_registry`) is taken as given; there, an unknown name is still a blocker.
+* **Tables.** A spec whose equation is one probe keeps the metrics row it always had (`measurement_id` =
+  the probe). A formula's row has no `measurement_id` and `aggregation = equation`. Probes that no spec
+  shows whole get rows of their own. The simulator's own results (`aggregation_level = condition`) are
+  unchanged; recording a baseline reads only those.
+* **Real runs.** When every spec is a simulator result itself, the verified real factory runs exactly as
+  before. Otherwise `spec_equations.EquationNativeFactory` wraps it: the same environment and backend, and
+  the formulas' values are added to each simulation result inside the lane. The worker's first-evaluation
+  check against the recorded real baseline still compares the simulator's own results only.
+* **Older configurations** named one probe in `measurement_id`. They load with that probe as the equation,
+  in the backend and in the browser's saved copy, and their configuration and task hashes are unchanged,
+  so earlier runs still resume and their checkpoints still load.
+
+Code: `src/gator_workbench/spec_equations.py`; tests: `tests/workbench/test_wb_spec_equations.py`.
 
 ### Importing a Spectre netlist
 
@@ -187,12 +228,29 @@ to say.
   one.
 * This source is **browse only**: optimizing a native design needs one of the verified circuit
   profiles (the `real:gpdk045_*` registered tasks).
+* **Testbench cell**: a cell named `tb_<cell>` (the `tb_` prefix in any case, the cell name exact, with
+  a schematic) is chosen by itself when you pick the cell, or when the cell list arrives while the box
+  is empty ("Found by its name"); choose another one or (none) at any time. A testbench chosen by hand
+  stays when the next cell has no `tb_` of its own. Create profile needs one: a profile simulates the
+  testbench, not the bare cell.
+* **Probes follow the testbench**: once the cell was read through a testbench, the **Probes** tab gets
+  the results of the circuit type that testbench fits, each with its `signal` - where in THIS testbench
+  it is read: the output net (`OUT`), the ring nets, or the supply branch (`V0:p`, the current through
+  the supply source `V0`) - and Create profile's Circuit type follows. This happens only after your own
+  choice of library / cell / testbench or a Read press, never on page load, and only over rows that are
+  nobody's work: empty, brought by an earlier testbench, or still exactly the rows the last registered
+  task brought (that task's untouched targets then leave **Specs** with them). Rows you edited stay,
+  and the note offers **Use testbench probes**. Undo takes an exchange back. A testbench that fits no
+  circuit type brings nothing; the note says why. The rows describe the copy that was read: after
+  choosing another testbench, press **Read the cell again**. The circuit type decides how each result
+  is measured, so editing `signal` does not move it.
 * **Read this cell into the workbench** (first step towards a profile for your own cell; explicit
   press, read-only, some seconds): Virtuoso exports the netlist of the testbench cell (or of the cell
   when none is chosen) and the device sizes are read. The copy is kept under
   `configs/local/workbench/native_cells/<library>/<cell>/`, and the cell then loads from it without
-  contacting Virtuoso: you can look at it, fill the three editors (the centre tabs **Parameters** =
-  what may vary, **Specs** = the performance targets, **Probes** = how each one is measured), and
+  contacting Virtuoso: you can look at it, fill the three editors (the centre tabs, in this order:
+  **Parameters** = what may vary, **Probes** = what is measured and how, **Specs** = equations over
+  those probes and the limits they must meet), and
   **Ask the agent for suggestions** - the Agent tab opens with the request written out; its
   proposal, once approved there, fills the editors. Device types this project has not verified (for
   example the MIM invented model) are shown with unnamed pins. Such a cell still cannot run: Start stays disabled
@@ -585,8 +643,9 @@ transitions = TrajectoryLoader('<run>').transitions()             # optimizer Tr
 `ClaudeCodeProvider` (default when `claude` is on the backend PATH), `CodexProvider`,
 `DisabledProvider` (task-description export + structured-result import). Proposals only:
 prompt on stdin, argv array, no shell, no write/exec tools, no permission bypass; applying needs an
-approval bound to the proposal, configuration and circuit hashes. Agent model/effort/timeout are
-independent of RL checkpoints and simulation budgets, and agents are never in the SAC loop.
+approval bound to the proposal, configuration and circuit hashes. Agent model/effort are
+independent of RL checkpoints and simulation budgets, and agents are never in the SAC loop. A request
+has no time limit (since 2026-09-21): "Cancel request" stops it.
 
 Bridge skills exist in `~/virtuoso-bridge-lite/skills/` and the project's Codex-style
 `.agents/skills/`, but **not** in a Claude Code discovery location. `GET /api/agent/diagnostics`
@@ -600,11 +659,56 @@ window of its own, with larger type and the notes as a full-height column; nothi
 stays free for the other tabs. Back again: the same control, "Bring back into the workbench" inside that window,
 "Bring it back here" in the panel, or simply closing the window. The browser must allow pop-ups for this page.
 
+### Watching the answer being written (added 2026-09-21, user request)
+
+With the Claude Code provider an answer is no longer held back until it is complete. While the agent works, its
+bubble shows:
+
+- **Thinking**: a readable summary of the model's thinking, in a small box that follows the newest line. Scroll up in
+  it to read, and it stays where you are until you scroll back to the bottom. It is a summary the model service
+  writes, not the raw thoughts, and a question that needs little thought may show none;
+- steps such as "Searching the web: ..." or "Opening <address>" during an online settings review, and a line when the
+  model service is busy and the CLI retries;
+- the reply itself, growing a few words at a time, then "Writing the proposed rows...", "Writing the warnings...".
+
+When the answer is complete it replaces the bubble exactly as before (diff, suggestions, checklist, side window), and
+the thinking stays with it, folded into one line, "▸ Thinking - 1 min 20 s", one click away. The diff, the checked
+suggestions and "After you approve: ..." still appear only at the end, because the workbench works them out on the
+complete answer. The explanation is written before the rows now, so it can be read while the rows are produced.
+
+**There is no time limit any more.** It used to be 300 s (900 s with publications online), and an effort-max request
+can take longer. The seconds keep counting in the bubble. "Cancel request" stops the agent, and what had arrived
+stays in the chat under the cancel line, folded ("Thinking", "Reply so far"). Closing or reloading the page also stops
+the request, since nobody would see its answer.
+
+It costs nothing extra: the same request, and the thinking is billed the same whether it is shown or not. A workbench
+server started before this change answers in one piece (the page accepts both) and still stops a request after
+300 s: restart `serve` once.
+
+**With the Codex provider** (added the same evening) the bubble shows what Codex reports while it works, in the same
+places: each reasoning summary as its paragraph is done, commands it runs and web searches as steps, and the reply when
+the answer is complete. Codex reports whole steps, not words, so its reply appears in one piece at the end.
+Reasoning summaries are Codex's default; a `model_reasoning_summary = "none"` in your Codex configuration switches them
+off. This is built from the Codex documentation and has not been tried with a real `codex`, which was never
+installed here. It needs `--json` in `codex exec --help` (the SDK's older name `--experimental-json` also works);
+otherwise the answer arrives in one piece, as before, and the bubble says so. Online research stays Claude Code only.
+
+How it works: the page asks `POST /api/agent/propose` for a stream (`Accept: text/event-stream`, Server-Sent Events:
+`progress` events, then one `result` or one `error` with exactly the JSON answer or the 409 detail of a plain
+request). The backend reads the CLI's output line by line (`--include-partial-messages`, `--thinking-display
+summarized`, environment `CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING=1`; `agents/live.py`). The pieces are for
+display only: the proposal still comes from the CLI's final result and goes through the same checks. If a CLI version
+refuses one of these options, the request is repeated once without them (an unknown option fails before any model
+call) and the answer arrives in one piece. Codex: `codex exec --json` prints its events as JSON lines (thread / turn /
+item events carrying whole reasoning, command, web-search and message items), read by `CodexTranslator` in the same
+file. The proposal is still the output file (`--output-last-message`), or the last agent message of the stream if a
+CLI version wrote no file.
+
 ### What is missing before the run can start
 
 "What's missing?" (under the message box) is answered by the backend, free: no agent request,
-nothing probed. It lists, in the order a start is gated: circuit, Parameters, Specs, Probes (the three
-editor tabs), other blocking issues, run configuration, output folder and - for a real
+nothing probed. It lists, in the order a start is gated: circuit, Parameters, Probes, Specs (the three
+editor tabs, in tab order), other blocking issues, run configuration, output folder and - for a real
 circuit - the bridge connection (the LAST test result; it does not test again) and the budget authorization
 that only you can give. Each line says who acts. "Ask the agent to fix what it can" appears only when a
 line is the agent's (the three tables); it sends ONE request of kind `readiness`, and the reply carries its
@@ -663,7 +767,10 @@ load one, and a skill would not reach Codex or the exported task.
 ```
 
 Provider tests use a fake CLI fixture; connection tests use fake bridge clients and a fake probe
-process. No test starts a real agent session or contacts a real Virtuoso.
+process. No test starts a real agent session or contacts a real Virtuoso. The live answer is also
+checked against a recorded REAL stream of the `claude` CLI (`tests/workbench/fixtures/claude_live_recorded.ndjson`,
+see `test_wb_agent_live.py`), and in a browser by `frontend/scripts/agent_live_check.mjs` (hermetic by default;
+`--live` watches a scratch backend stream from the fake CLI; run lines in its header).
 
 The header shows blocking issues as a red button, "N blocking issue(s)": a press lists every one of
 them in full (level, code, field and editor row, message), including those that belong to no editor

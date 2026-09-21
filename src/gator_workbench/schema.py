@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from . import CONFIG_SCHEMA_VERSION
 
@@ -76,9 +77,15 @@ class OptimizationParameter(_Model):
 # --------------------------------------------------------------------------- targets
 class PerformanceTarget(_Model):
     metric_id: str = Field(min_length=1, max_length=120, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
-        description='Stable metric ID. Must exist in the RL specification registry with the same canonical unit.')
-    measurement_id: str = Field(min_length=1, max_length=120,
-        description='ID of the measurement definition that produces this metric.')
+        description='Name of this spec: the value its equation gives is recorded, scored and shown under this name. It '
+                    'may be the name of a result the simulation returns only when the equation is exactly the Probe of '
+                    'that result. A name the RL specification registry does not know adds an entry to it.')
+    equation: str = Field(min_length=1, max_length=512,
+        description='What this spec judges, as an equation over Probe IDs (the measurement_id of rows in the Probes tab): '
+                    'Probe IDs, numbers, + - * / ** and parentheses, e.g. m_supply_power_w / m_osc_frequency_hz. The '
+                    'simplest equation is one Probe ID. Probe values are in canonical units (W, Hz, V...), so W / Hz gives '
+                    'J. A missing or invalid probe, or a failed operation such as a division by zero, makes the spec '
+                    'invalid - never a number. Evaluated by a whitelist, never eval().')
     unit: str = Field(max_length=32, description='Unit of the thresholds, tolerance and normalization scale.')
     constraint: Literal['>=', '<=', 'interval', 'target'] = Field(
         description='>= lower; <= upper; interval [lower, upper]; target +/- tolerance.')
@@ -101,6 +108,16 @@ class PerformanceTarget(_Model):
     basis: str = Field('', max_length=1000,
         description='Where this requirement comes from (datasheet, user statement...). Agent suggestions must '
                     'state their basis; requirements are never inferred from the circuit alone.')
+
+    @model_validator(mode='before')
+    @classmethod
+    def _one_probe_before_equations(cls, data):
+        """A configuration written before specs had equations named ONE probe in `measurement_id`: that probe is the
+        equation (the simplest one). An `equation` given as well wins."""
+        if isinstance(data, dict) and 'measurement_id' in data:
+            data = {('equation' if key == 'measurement_id' else key): value for key, value in data.items()
+                    if not (key == 'measurement_id' and 'equation' in data)}
+        return data
 
 
 # --------------------------------------------------------------------------- measurements
@@ -358,10 +375,26 @@ def canonical_json(value) -> str:
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
 
 
+_ONE_PROBE = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]*$')
+
+
+def _hashed(data):
+    """What both hashes see. A spec whose equation is one Probe ID is hashed in the form every configuration had before
+    specs were equations (`measurement_id`), so a configuration written earlier keeps its hashes: its runs still
+    resume, its checkpoints still load, and approvals and proposals made for it still bind."""
+    targets = data.get('targets') if isinstance(data, dict) else None
+    if not isinstance(targets, list):
+        return data
+    return dict(data, targets=[
+        {('measurement_id' if key == 'equation' else key): value for key, value in row.items()}
+        if isinstance(row, dict) and 'measurement_id' not in row and isinstance(row.get('equation'), str)
+        and _ONE_PROBE.match(row['equation']) else row for row in targets])
+
+
 def config_hash(config: WorkbenchConfig | dict) -> str:
     """Hash used to bind approvals to an exact configuration version."""
     data = config.model_dump(mode='json') if isinstance(config, WorkbenchConfig) else config
-    return hashlib.sha256(canonical_json(data).encode('utf8')).hexdigest()
+    return hashlib.sha256(canonical_json(_hashed(data)).encode('utf8')).hexdigest()
 
 
 def task_definition_hash(config: WorkbenchConfig) -> str:
@@ -370,7 +403,7 @@ def task_definition_hash(config: WorkbenchConfig) -> str:
     Run/output/research settings are deliberately excluded: changing a budget or an
     output directory does not make it a different task; changing a threshold does.
     """
-    data = config.model_dump(mode='json')
+    data = _hashed(config.model_dump(mode='json'))
     return hashlib.sha256(canonical_json({k: data[k] for k in (
         'circuit', 'parameters', 'targets', 'measurements')}).encode('utf8')).hexdigest()
 

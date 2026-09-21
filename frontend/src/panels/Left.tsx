@@ -24,6 +24,14 @@ const backendPath = (text: string, posixBackend: boolean) => {
 };
 /** A dropdown must be able to show the configured value even when the list does not (yet) contain it. */
 const withCurrent = (names: string[], current?: string | null) => (current && !names.includes(current) ? [current, ...names] : names);
+/** The testbench a cell's NAME points to: `tb_<cell>` in the listed library (the prefix in any case, the cell name exact),
+ *  with a schematic. null when there is none. */
+const namedTestbench = (cells: Json, cell?: string | null): string | null => {
+  if (!cells || !cell) return null;
+  const found = (cells.cells ?? []).filter((c: Json) => c.has_schematic && /^tb_/i.test(c.name) && c.name.slice(3) === cell).map((c: Json) => c.name);
+  return found.find((name: string) => name === `tb_${cell}`) ?? found[0] ?? null;
+};
+const sameJson = (a: Json, b: Json) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
 /** "1.2G", "800M", "1.2e9" -> Hz. NaN when it is not a number. */
 const parseFrequency = (text: string) => {
   const match = /^\s*([0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\s*([kMG]?)(?:Hz)?\s*$/.exec(text);
@@ -58,29 +66,41 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   const edited = useRef(false);                     // set by this panel's own inputs: typing must not load a netlist per keystroke
   const pressed = useRef<string | null>(null);      // the reference a button press is already loading
   const request = useRef(0);                        // only the newest load may answer
-  const patch = (fields: Json) => { edited.current = true; setConfig(c => ({ ...c, circuit: { ...c.circuit, ...fields } })); };
+  const followNext = useRef(false);                 // the next load answers a choice of library / cell / testbench: Probes may follow it
+  const latest = useRef(config);                    // the configuration as it is NOW, for answers that arrive later
+  latest.current = config;
+  const patch = (fields: Json, follow = false) => {
+    edited.current = true;
+    if (follow) followNext.current = true;
+    setConfig(c => ({ ...c, circuit: { ...c.circuit, ...fields } }));
+  };
   const netlistReady = !!ref.netlist_path?.trim() && !!ref.parser_config_path?.trim();
   const root = meta?.repo_root ? `${meta.repo_root}/` : '';     // absolute, so the example does not depend on where the backend was started
   const example = { netlist_path: root + EXAMPLE_NETLIST.netlist_path, parser_config_path: root + EXAMPLE_NETLIST.parser_config_path };
 
   useEffect(() => { api.tasks().then(t => setTasks(t.tasks)).catch(e => setError(e.message)); }, []);
-  const load = async (reference: Json) => {
+  // follow: 'choice' (a library / cell / testbench was chosen) or 'press' (the cell was read): a Virtuoso draft that loads
+  // then brings the Probes of the testbench it was read through (followTestbench).
+  const load = async (reference: Json, follow: 'choice' | 'press' | null = null) => {
     const mine = ++request.current;
     setError(null); setLoading(true);
-    try { const loaded = await api.loadCircuit(reference); if (mine === request.current) setCircuit(loaded); }
+    try {
+      const loaded = await api.loadCircuit(reference);
+      if (mine === request.current) { setCircuit(loaded); if (follow) followTestbench(loaded, follow === 'press'); }
+    }
     catch (e: any) { if (mine === request.current) { setError(labelled(e.message)); setCircuit(null); } }
     finally { if (mine === request.current) setLoading(false); }
   };
   useEffect(() => {
-    const key = JSON.stringify(ref), typed = edited.current;
-    edited.current = false;
+    const key = JSON.stringify(ref), typed = edited.current, follow = followNext.current;
+    edited.current = false; followNext.current = false;
     if (pressed.current === key) { pressed.current = null; return; }
     // A netlist is loaded by its button (or Enter), never while its paths are being typed or still missing: asking the
     // backend then only produced "Blocked: needs netlist_path ..." the moment the source was chosen. Whatever was
     // loaded before no longer belongs to this reference, so it is cleared. A complete reference that arrives from
     // outside this panel (imported configuration, approved proposal) still loads by itself, like a registered task.
     if (ref.source === 'netlist' && (typed || !netlistReady)) { request.current++; setLoading(false); setError(null); setCircuit(null); return; }
-    load(ref);
+    load(ref, follow && ref.source === 'virtuoso' ? 'choice' : null);
   }, [JSON.stringify(ref)]);
   const loadNetlist = (fields: Json = {}) => {
     const posix = (meta?.repo_root ?? '/').startsWith('/');
@@ -122,8 +142,14 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     return nativeStep('cells', () => api.nativeCells(profileId!, ref.library), answer => {
       setCells(answer);
       // The technology library a design library is attached to IS its PDK: offered as the label, never over a typed one.
-      if (answer.technology_library) setConfig(c => ((c.circuit.pdk_id ?? 'unspecified') === 'unspecified'
-        ? { ...c, circuit: { ...c.circuit, pdk_id: answer.technology_library } } : c));
+      // An empty Testbench box takes the cell's `tb_<cell>`, as choosing the cell does - never over a chosen testbench.
+      setConfig(c => {
+        let circuit = c.circuit;
+        if (answer.technology_library && (circuit.pdk_id ?? 'unspecified') === 'unspecified') circuit = { ...circuit, pdk_id: answer.technology_library };
+        const named = !circuit.testbench_cell && circuit.library === answer.library ? namedTestbench(answer, circuit.cell) : null;
+        if (named) circuit = { ...circuit, testbench_cell: named };
+        return circuit === c.circuit ? c : { ...c, circuit };
+      });
     });
   }, [browsing, profileId, libraries, ref.library]);
   const chosenCell = cells && cells.library === ref.library ? cells.cells.find((c: Json) => c.name === ref.cell) : null;
@@ -195,10 +221,49 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   const [importing, setImporting] = useState(false);
   const importCell = async () => {
     setImporting(true); setNativeError(null);
-    try { await api.nativeImport(profileId!, ref.library, ref.cell, ref.testbench_cell ?? null); await load(ref); }
+    try { await api.nativeImport(profileId!, ref.library, ref.cell, ref.testbench_cell ?? null); await load(ref, 'press'); }
     catch (e: any) { nativeProblem('import', e); }
     finally { setImporting(false); }
   };
+
+  // Probes follow the testbench (user request 2026-09-21): a cell read THROUGH a testbench brings, in Probes, the results
+  // of the circuit type that testbench fits, each naming the testbench net or supply branch it is read from
+  // (profiles.testbench_probes - from the copy that was read, not from what the box shows now). Only after a choice of
+  // library / cell / testbench or a press of Read, never on page load; and only over rows that are nobody's work - empty,
+  // brought by an earlier testbench, or still exactly the rows the last registered task brought. That task's untouched
+  // targets leave Specs with them (they point at its probes). Rows someone edited stay, and the line offers the exchange.
+  // The Circuit type of Create profile follows the testbench too. A choice exchanges within its own Undo step; a press
+  // is a step of its own.
+  const [probeNote, setProbeNote] = useState<Json>(null);  // { state: brought | kept | none, found, clearedTask? }
+  const brought = useRef<string[]>([]);                     // Probes this panel brought from a testbench (JSON), this page session
+  const followCount = useRef(0);
+  const followTestbench = async (loaded: Json, press: boolean) => {
+    const mine = ++followCount.current;
+    const found = loaded?.loaded && loaded.native_draft && !loaded.profile_task ? loaded.testbench_probes : null;
+    if (!found) { setProbeNote(null); return; }
+    if (found.circuit_type) setRecipe(found.circuit_type);
+    if (!found.rows.length) { setProbeNote({ state: 'none', found }); return; }
+    if (sameJson(latest.current.measurements, found.rows)) { setProbeNote(null); return; }
+    const taskId = latest.current.circuit.task_id;
+    const starter = taskId ? await api.starter(taskId).catch(() => null) : null;
+    if (mine !== followCount.current) return;
+    const now = latest.current;
+    const untouched = !(now.measurements ?? []).length || brought.current.includes(JSON.stringify(now.measurements))
+      || (!!starter && sameJson(now.measurements, starter.measurements));
+    if (!untouched) { setProbeNote({ state: 'kept', found }); return; }
+    const staleTargets = !!starter && (now.targets ?? []).length > 0 && sameJson(now.targets, starter.targets);
+    brought.current.push(JSON.stringify(found.rows));
+    setConfig(c => ({ ...c, measurements: found.rows, ...(staleTargets ? { targets: [] } : {}) }), press);
+    setProbeNote({ state: 'brought', found, clearedTask: staleTargets ? taskId : null });
+  };
+  const takeTestbenchProbes = () => {
+    const found = probeNote.found;
+    brought.current.push(JSON.stringify(found.rows));
+    setConfig(c => ({ ...c, measurements: found.rows }));
+    setProbeNote({ state: 'brought', found });
+  };
+  const noteHere = probeNote && probeNote.found.library === ref.library && probeNote.found.cell === ref.cell ? probeNote : null;
+  const namedHere = namedTestbench(cells, ref.cell);
 
   // Choosing a task brings THAT task's rows (user report 2026-09-21: real:gpdk045_ota5 still showed the MOCK fixture's
   // "score" as its only spec, and "synthetic-fixture" as its PDK). The labels follow at once. The rows of the three editors
@@ -277,13 +342,13 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
             {tasks.map(t => <option key={t.task_key} value={t.task_key}>{t.task_key}{t.kind === 'mock' ? '  [MOCK]' : t.available ? '' : '  [blocked]'}</option>)}
           </select>
         </label>
-        {ref.task_id && <button onClick={useStarter} title="Replaces the rows of Parameters, Specs and Probes with this task's own. A MOCK fixture: its declared groups and the toy score. A real circuit: the parameters its profile fixes and its targets of record. Everything stays editable, and Undo takes it back.">Load starter configuration</button>}
+        {ref.task_id && <button onClick={useStarter} title="Replaces the rows of Parameters, Probes and Specs with this task's own. A MOCK fixture: its declared groups and the toy score. A real circuit: the parameters its profile fixes and its targets of record. Everything stays editable, and Undo takes it back.">Load starter configuration</button>}
         {taskRows?.task === ref.task_id && (
           taskRows.state === 'reading' ? <p className="hint task-rows">Reading this task's rows...</p>
           : taskRows.state === 'unavailable' ? <p className="error task-rows">{taskRows.text}</p>
-          : taskRows.state === 'kept' ? <p className="warn task-rows">Parameters, Specs and Probes still hold the rows you edited{taskRows.from ? <> for <code>{taskRows.from}</code></> : null}.
+          : taskRows.state === 'kept' ? <p className="warn task-rows">Parameters, Probes and Specs still hold the rows you edited{taskRows.from ? <> for <code>{taskRows.from}</code></> : null}.
               <b> Load starter configuration</b> replaces them with this task's.</p>
-          : sameRows(config, taskRows.starter) && <p className="hint task-rows">Parameters, Specs and Probes now show this task's rows
+          : sameRows(config, taskRows.starter) && <p className="hint task-rows">Parameters, Probes and Specs now show this task's rows
               {taskRows.starter.targets.length ? '' : ' - it has no targets of record, so Specs is yours to fill (its results are ready in Probes)'}. Undo brings the previous ones back.</p>)}
       </>)}
       {ref.source === 'netlist' && (<>
@@ -313,7 +378,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       {ref.source === 'virtuoso' && (<>
         {!profileId && <p className="hint">Press "Connection" above and choose a Virtuoso connection: the libraries are read from that Virtuoso.</p>}
         <label>Library
-          <select value={ref.library ?? ''} disabled={!libraries} onChange={e => patch({ library: e.target.value || null, cell: null, view: null, testbench_cell: null })}>
+          <select value={ref.library ?? ''} disabled={!libraries} onChange={e => patch({ library: e.target.value || null, cell: null, view: null, testbench_cell: null }, true)}>
             <option value="">{listing === 'libraries' ? 'Reading the libraries...' : libraries ? `(choose one of ${libraries.length})` : '(not listed)'}</option>
             {withCurrent(libraries ?? [], ref.library).map(l => <option key={l} value={l}>{l}</option>)}
           </select>
@@ -323,7 +388,12 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           <button disabled={!profileId || !ref.library || !ref.cell} onClick={() => { nativeStep('schematic', () => api.nativeRead(profileId!, ref.library, ref.cell), setNative); }}>Read native schematic</button>
         </>) : (<>
           <label title="Only a cell with a schematic view can be read.">Cell
-            <select value={ref.cell ?? ''} disabled={!cells} onChange={e => patch({ cell: e.target.value || null, view: e.target.value ? 'schematic' : null })}>
+            {/* A new cell takes its own tb_<cell>; without one, a testbench chosen by hand stays and the old cell's tb_ goes. */}
+            <select value={ref.cell ?? ''} disabled={!cells} onChange={e => {
+              const cell = e.target.value || null;
+              patch({ cell, view: cell ? 'schematic' : null,
+                testbench_cell: namedTestbench(cells, cell) ?? (ref.testbench_cell === namedHere ? null : ref.testbench_cell ?? null) }, true);
+            }}>
               <option value="">{!ref.library ? '(choose a library first)' : listing === 'cells' ? 'Reading the cells...' : cells ? `(choose one of ${cells.cells.length})` : '(not listed)'}</option>
               {withCurrent((cells?.cells ?? []).map((c: Json) => c.name), ref.cell).map(name => {
                 const readable = !cells || cells.cells.find((c: Json) => c.name === name)?.has_schematic !== false;
@@ -334,12 +404,13 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           {chosenCell && <details className="more hint"><summary>View: <b>schematic</b></summary>
             <p>The only view the reader opens, so there is nothing to choose.
               {chosenCell.views.length > 1 && ` This cell also has: ${chosenCell.views.filter((v: string) => v !== 'schematic').join(', ')}.`}</p></details>}
-          <label title="Optional. The cell that holds the test setup around the design, if it is a separate cell.">Testbench cell
-            <select value={ref.testbench_cell ?? ''} disabled={!cells} onChange={e => patch({ testbench_cell: e.target.value || null })}>
+          <label title="The cell that holds the test setup around the design (supply, stimulus, load). Needed to create a profile, and Probes are read from it. A cell named tb_ + the cell's name is chosen by itself.">Testbench cell
+            <select value={ref.testbench_cell ?? ''} disabled={!cells} onChange={e => patch({ testbench_cell: e.target.value || null }, true)}>
               <option value="">(none)</option>
               {withCurrent((cells?.cells ?? []).filter((c: Json) => c.has_schematic).map((c: Json) => c.name), ref.testbench_cell).map(name => <option key={name} value={name}>{name}</option>)}
             </select>
           </label>
+          {namedHere && ref.testbench_cell === namedHere && <p className="hint tb-named">Found by its name: <code>tb_</code> + the cell's name.</p>}
         </>)}
         <div className="row">
           <button disabled={!profileId || !!listing} onClick={() => setRefresh(n => n + 1)} title="Reads the libraries, the cells and the schematic again, e.g. after the link came up or the design changed in Virtuoso. Read-only and zero-cost.">Refresh</button>
@@ -405,10 +476,34 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
               <p>Next: ask the agent what this circuit is and which sizes, ranges and targets make sense. Its answer is a proposal in the
                 Agent tab; once you approve it there, the three editors are filled from it.</p>
             </details>
+            {(circuit.circuit?.testbench_cell ?? null) !== (ref.testbench_cell ?? null) && (
+              <p className="warn tb-stale">This copy was read {circuit.circuit?.testbench_cell ? <>through <code>{circuit.circuit.testbench_cell}</code></> : 'without a testbench'}.
+                Press <b>Read the cell again</b> to read it {ref.testbench_cell ? <>through <code>{ref.testbench_cell}</code></> : 'without one'}: Probes then follow it.</p>)}
             <div className="row">
               <button className="primary" onClick={() => onAgent('draft_config', [], DRAFT_PROMPT)} title="Opens the Agent tab with the request written out. Nothing is sent until you press Enter in its message box.">Ask the agent for suggestions</button>
               <button disabled={!profileId || importing || !!listing} onClick={importCell} title="After a change in Virtuoso, or to export through another testbench cell. Read-only.">{importing ? 'Reading...' : 'Read the cell again'}</button>
             </div>
+            {noteHere?.state === 'brought' && (() => {
+              const rows: Json[] = noteHere.found.rows, supply = rows.find(r => /:p$/.test(r.signal ?? ''))?.signal, net = rows.find(r => r.signal && !/[:\s]/.test(r.signal))?.signal;
+              return <>
+                <p className="hint tb-probes">Probes now show what the testbench <code>{noteHere.found.testbench_cell}</code> measures: {rows.length} results of the
+                  circuit type <b>{noteHere.found.circuit_type_label}</b>.{noteHere.clearedTask && <> The targets of <code>{noteHere.clearedTask}</code> were removed from
+                  Specs: they belonged to that task.</>} Undo brings the previous rows back.</p>
+                <details className="more hint"><summary>What the Probes rows say</summary>
+                  <p>Each row is a result the circuit type computes from the simulation. Its <i>signal</i> says where in this testbench it is read
+                    {net && <>: a net such as <code>{net}</code></>}{supply && <>, or <code>{supply}</code>, the current through the supply
+                    source <code>{supply.slice(0, -2)}</code></>}. The circuit type decides how a result is measured, so changing <i>signal</i> does
+                    not move it. Targets on these results go in Specs.</p></details>
+              </>;
+            })()}
+            {noteHere?.state === 'kept' && <div className="row tb-probes"><span className="warn">Probes hold rows you edited, not the ones of the
+              testbench <code>{noteHere.found.testbench_cell}</code>.</span>
+              <button onClick={takeTestbenchProbes} title="Replaces the rows of Probes with the results this testbench gives. Undo takes it back.">Use testbench probes</button></div>}
+            {noteHere?.state === 'none' && (<>
+              <p className="hint tb-probes">Probes were left as they were. {noteHere.found.reason}</p>
+              {Object.keys(noteHere.found.not_fitting ?? {}).length > 0 && <details className="more hint"><summary>Why no circuit type fits</summary>
+                <ul className="steps-list">{Object.entries(noteHere.found.not_fitting).map(([type, why]: [string, any]) => <li key={type}><b>{type}</b>: {why}</li>)}</ul></details>}
+            </>)}
             <p><b>Then create the profile.</b></p>
             <details className="more"><summary>What Create profile does</summary>
               <p>It takes what may vary from the parameter editor (only transistor widths can be changed in the real Virtuoso; ranges are

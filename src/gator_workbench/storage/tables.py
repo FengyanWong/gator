@@ -134,8 +134,9 @@ TABLES: dict[str, dict] = {
         purpose='Long format: one row per evaluation, test condition and metric; raw physical values.',
         columns=IDS + [
             C('evaluation_id', 'string', 'Evaluation.'),
-            C('measurement_id', 'string', 'Measurement definition.', null='raw backend metric without a definition'),
-            C('metric_name', 'string', 'Metric ID (or raw backend metric name).'),
+            C('measurement_id', 'string', 'Measurement definition (Probe); on a spec row, the probe that is its whole equation.',
+              null='raw backend metric (condition row), or a spec whose equation is a formula of several probes'),
+            C('metric_name', 'string', 'Spec name, Probe ID, or raw backend metric name.'),
             C('analysis', 'string', 'Analysis that produced it.', null='not declared'),
             C('condition', 'string', 'Corner/test condition ID.'),
             C('raw_value', 'float64', 'Physical value in the canonical unit.',
@@ -150,7 +151,8 @@ TABLES: dict[str, dict] = {
             C('violation', 'float64', 'Uncapped violation/scale.', null='no target or invalid measurement'),
             C('aggregation_level', 'string', 'condition = raw per-condition value; aggregate = value used for '
                                              'reward/feasibility.', enum=('condition', 'aggregate')),
-            C('aggregation', 'string', 'Rule that produced an aggregate row.', null='condition row'),
+            C('aggregation', 'string', 'Rule that produced an aggregate row (equation = a spec computed by its formula).',
+              null='condition row'),
         ]),
     'simulator_jobs': dict(
         primary_key=('job_id',), purpose='One row per actual simulation launch attempt, incl. failures/retries.',

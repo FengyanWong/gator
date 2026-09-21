@@ -1150,3 +1150,56 @@ run); `run_control_check.mjs` (7.18) and `model_chooser_check.mjs` (7.20) still 
 (about a minute), and with several jobs in parallel the idle lanes wait for the slowest one. A run started with
 "Model checkpoints" off cannot be saved at all. MOCK backend only: no real run was saved this way yet. Nothing
 under `src/analog_optimizer/` changed.
+
+### 7.26 Network structure of a saved model, as a table (2026-09-21 ~05:30, same session as 7.20 / 7.23, user: "go, build the structure table")
+
+**RESTART THE BACKEND FIRST** (one new read-only route; two more modules in the preload list).
+
+**Why a table.** The user asked whether the model can be visualized. The specification forbids plots and plotting
+libraries, so the first step is the one that needs neither: what the saved network consists of, layer by layer. A
+picture of the circuit graph with attention on it stays a separate decision of the user (it would relax that rule).
+
+**What changed.**
+* **`src/gator_workbench/model_structure.py` (new)**, `POST /api/runs/model/structure` (`run_dir`, `checkpoint_id`;
+  403 outside the allowed roots, 404 unknown save point, 409 when `model_weights.pt` does not match its recorded
+  checksum). Tensor-only: `model_weights.pt` is loaded with `weights_only=True` after the checksum matched. One row per
+  layer that owns tensors: section (Inputs / Block n / Read-out / Output), path, type, shape ("in -> out", "entries x
+  width", "over n"), parameters, share, a plain line on what the layer does (written from
+  `CircuitEncoder.forward`), for the actor and for one critic (both critics and both target copies are checked to have
+  the same tensors). Totals: trained = actor + 2 critics + 1 (entropy temperature); saved = trained + 2 target copies.
+* **Nothing is guessed.** Types and the never-used flag come from REBUILDING the network from the contract recorded in
+  the save point (feature schema, goal/spec schema, model config) and are reported only when the rebuilt network holds
+  exactly the saved tensors, names and shapes (`types_verified`); otherwise every tensor is still listed, without
+  types, and the reason is said. "Never used" is decided on the rebuilt module (`TransformerConv` with
+  `root_weight=False` still owns `lin_skip`), never on a name.
+* **Preload.** The new lazy imports (`analog_optimizer.models.encoders`, `.graph_transformer`, `torch_geometric.nn`)
+  were added to `preload.MODULES`; the guard of 7.11 (`test_wb_preload.py`) had caught them - reported by the parallel
+  "Connction Module" session from a full-suite run.
+* **Frontend**: `frontend/src/panels/ModelStructure.tsx` (new), in `RunPanel` under the facts of the chosen model. A
+  fold-out that reads nothing until it is opened, stays open while another save point or model is chosen (and then
+  re-reads), asks for the RESOLVED save point, and shows: the trained / saved totals in plain words, a note when
+  parameters are never used, one small section table per network (fits the 340 px panel) and **Full layer table**, a
+  native `<dialog>` 1180 px wide with every layer, the never-used row marked and a total row. Tables only: no canvas,
+  svg or image, no new dependency.
+
+**Found on the way.** For graph_transformer 16/2/1: 272 of the actor's 7,314 and of each critic's 8,369 parameters are
+`lin_skip` weights that are never read (816 of 24,053 trained) - the same effect `docs` already note for the equal-size
+ablations, now visible per model. And `encoder.binding_ratio` gets a gradient that is exactly ZERO on the MOCK opamp,
+because every group ratio there is 1 and the layer multiplies log(ratio): used, but without effect on such a circuit.
+It is deliberately NOT flagged (data-dependent, not structural); the test documents the difference.
+
+**Verified.** `tests/workbench/test_wb_model_structure.py` (9): the rows are exactly the saved tensors of a real MOCK
+save point, with types, shapes and sums; for ALL six encoders one real forward + backward pass of policy and critic
+on a real observation - the layers whose weights get no gradient object are exactly the flagged ones (`lin_skip` x
+blocks for graph_transformer, none elsewhere) and every layer has a section and a plain line; types are dropped when
+the rebuild fails or has another size; a changed weights file is refused; the route with 404 / 403 / 422.
+`frontend/scripts/model_structure_check.mjs` (headless Edge, 34 checks, 5 of them against the real route, 3 screenshots;
+FIXTURE data, every other writing request refused, safe against the live backend) was run against a throwaway
+backend on 8766 with a scratch build and REAL MOCK save points: the page's numbers equal the real route (24,053
+trained = 7,314 + 2 x 8,369 + 1; 25 + 27 layers, all typed and explained). `model_chooser_check.mjs` still passes;
+`tsc --noEmit` clean.
+
+**Limits, stated plainly.** It describes what is SAVED, not what the network does on a circuit: no activations, no
+attention, no comparison between save points. Counts are of the workbench's networks as built today; a save point
+written by another source version may come without types. MOCK save points only were read; a real one has the same
+file format. Nothing under `src/analog_optimizer/` changed.

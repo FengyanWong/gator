@@ -59,6 +59,7 @@ export const api = {
   model: (run_dir: string, checkpoint_id: string, config?: Json) => call('POST', '/api/runs/model', { run_dir, checkpoint_id, config }),
   defaultModel: (project: string) => call('GET', '/api/runs/default-model' + q({ project })),
   savedModels: (output_root?: string) => call('GET', '/api/runs/models' + q({ output_root })),
+  modelStructure: (run_dir: string, checkpoint_id: string) => call('POST', '/api/runs/model/structure', { run_dir, checkpoint_id }),
   start: (body: Json) => call('POST', '/api/runs/start', body),
   continueRun: (body: Json) => call('POST', '/api/runs/continue', body),
   command: (run_dir: string, command: string) => call('POST', '/api/runs/command', { run_dir, command }),

@@ -159,6 +159,11 @@ class ExportBody(Body):
     table: str | None = None
 
 
+class ModelStructureBody(Body):
+    run_dir: str
+    checkpoint_id: str = Field('latest', max_length=120)
+
+
 def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=True, monitor=None,
                auto_check_on_start=True, connection_stale_seconds=120.0, connector=None) -> FastAPI:
     # Endpoints run in a thread pool and import the optimizer lazily: two first imports at once corrupt
@@ -596,6 +601,20 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             return dict(models=ckpt.saved_models(runs.list_runs(roots, output_root, include_mock=include_mock)))
         except PathNotAllowed as exc:
             fail(403, exc)
+
+    @app.post('/api/runs/model/structure')
+    def model_structure_table(body: ModelStructureBody):
+        """Every layer of the chosen saved model with its type, shape and parameter count - a table, no plot.
+        Tensor-only read of `model_weights.pt` after its checksum matched; types only when the rebuilt network
+        holds exactly the saved tensors."""
+        from .. import model_structure
+        run_dir = run_path(body.run_dir)
+        try:
+            return model_structure.structure(ckpt.resolve_checkpoint(run_dir, body.checkpoint_id))
+        except FileNotFoundError as exc:
+            fail(404, exc)
+        except ValueError as exc:
+            fail(409, exc)
 
     def _start(config, body, *, baseline_only=False):
         allow_real = bool(body.authorize_real_simulation)

@@ -303,6 +303,23 @@ default, and when set it prunes older periodic saves only (never the latest, a p
 selected best policy). Models from outside the workbench (the M6 pilot checkpoints) cannot be chosen, and there
 is no upload: `training_state.pt` is a pickle and is only loaded from a trusted local output root.
 
+### Network structure of a saved model (added 2026-09-21, user request)
+
+Under the facts of the chosen model, the fold-out **Network structure** shows what the saved network consists of -
+as tables, in keeping with "no plots". Nothing is read until it is opened (`POST /api/runs/model/structure`,
+a tensor-only read of `model_weights.pt` after its checksum matched). The summary says how many parameters are
+trained (actor + 2 critics + the entropy temperature), that 2 target copies are saved as well, and gives one small
+table per network (Inputs / Block n / Read-out / Output). **Full layer table** opens a wide dialog with every layer:
+section, name, type, shape ("inputs -> outputs"), parameters, share, and one plain line on what the layer does.
+
+Two things are never guessed. Layer TYPES are shown only when the backend could rebuild the network from the
+settings recorded in the save point and found exactly the saved tensors (same names, same shapes); otherwise every
+tensor is still listed, without types. A layer is marked **never used** only when the forward pass never touches
+its weights - today that is `lin_skip` of PyG's `TransformerConv`, which the graph transformer allocates but switches
+off (`root_weight=False`): 272 of 7,314 actor parameters at 16/2/1. A test pins the flag against real gradients for
+all six encoders; a layer whose gradient is merely zero for the DATA at hand (`binding_ratio` when every ratio is 1)
+is used and is not flagged. Browser check: `frontend/scripts/model_structure_check.mjs`.
+
 ## Reload saved data
 
 ```python

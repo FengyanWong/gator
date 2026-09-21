@@ -6,7 +6,7 @@ code diff (`git status`, `git diff`) and the specification before continuing. Do
 redo completed modules from conversational memory. This is a development record, not a
 research output or analysis report.
 
-Last updated: 2026-09-20 (~21:25: section 7.7, per-encoder network settings from publications; ~21:35: section 7.8, Agent tab side window + browser check; ~21:50: section 7.9, connection panel; ~22:00: section 7.10, agent model / effort lists; ~22:00: section 7.11, validate 500 from a concurrent first import of torch_geometric; ~22:15: section 7.12, blocking-issues button in the header; ~22:40: section 7.13, netlist import form; ~22:30: section 7.14, detachable agent conversation; ~23:10: section 7.15, Virtuoso source dropdowns; 2026-09-21 early: section 7.16, start checklist + readiness request; 2026-09-21 ~01:15: section 7.17, read a Virtuoso cell into the workbench (profile creation, increment 1); ~03:30: section 7.19, Create profile -> registered real:<name> task (increment 2); ~04:40: section 7.21, no-simulation check of a generated profile + baseline reference).
+Last updated: 2026-09-20 (~21:25: section 7.7, per-encoder network settings from publications; ~21:35: section 7.8, Agent tab side window + browser check; ~21:50: section 7.9, connection panel; ~22:00: section 7.10, agent model / effort lists; ~22:00: section 7.11, validate 500 from a concurrent first import of torch_geometric; ~22:15: section 7.12, blocking-issues button in the header; ~22:40: section 7.13, netlist import form; ~22:30: section 7.14, detachable agent conversation; ~23:10: section 7.15, Virtuoso source dropdowns; 2026-09-21 early: section 7.16, start checklist + readiness request; 2026-09-21 ~01:15: section 7.17, read a Virtuoso cell into the workbench (profile creation, increment 1); ~03:40: section 7.18, header Start -> Pause -> Resume + Abort; ~03:30: section 7.19, Create profile -> registered real:<name> task (increment 2); ~04:40: section 7.21, no-simulation check of a generated profile + baseline reference).
 
 ## 1. Inspection facts (verified 2026-09-20, not assumed)
 
@@ -798,6 +798,100 @@ the user's budget authorization. Known limit carried forward: the adapter writes
 Open points for increment 2: `g45cmim` needs a verified mapping entry before a graph with it counts as complete;
 net roles (supply / input / output) are not set for a draft; the three editors must be turned into the profile's
 rule file.
+
+### 7.18 Header: one run button Start -> Pause -> Resume, and Abort next to it (2026-09-21 ~03:40, separate session, explicit user request)
+
+Request: "add pause and continue functionality for the current run. after start it becomes pause, press pause it
+becomes resume also add a abort button next to the start. I think it has nothing to do with the resume mode but it is
+similar." **Frontend only: no Python touched, no backend restart, a page refresh is enough.**
+
+Finding first: the backend could do all of it since stage 3; only the header could not. `pause` / `stop` / `cancel`
+through the control file, `POST /api/runs/continue`, and four small buttons in the Run status tab that the user had
+not found. About the user's guess: Resume IS the machinery of Mode = resume (a pause saves the full state and the
+worker EXITS; continuing adds a `resume` segment to the SAME run directory and a new worker restores network, replay
+memory, counters and budget) - but the Mode box is not involved: `/api/runs/continue` takes the run's own
+`effective_config.json`. Consequence, stated in the button's tooltip: edits made on the page while a run is paused
+are NOT used by Resume (a changed task could not continue the same run anyway).
+
+| Piece | Where |
+|---|---|
+| `useRunControl` (which run the header holds, its status, pending requests), `phaseOf`, `RunButtons`, `launchWithConsent`, `resumeRun` | new `frontend/src/panels/RunControl.tsx` (a separate file, as 7.12: several sessions edit `App.tsx` and the panels) |
+| Header: `<RunButtons>` replaces the Start button; `start` / `continueRun` rewritten on `launchWithConsent`; the baseline button is available only while the header is idle; the Run status tab's buttons report errors and tell the header | `frontend/src/App.tsx` |
+| `.run-main`, `.run-abort`, `.run-chip` (fixed widths: the header does not shift when a label changes) | `frontend/src/styles.css` |
+
+Behaviour, each point chosen on purpose:
+* **The main button** reads Start -> (Starting...) -> Pause -> (Pausing...) -> Resume -> (Resuming...) -> Pause ...;
+  the labels in brackets are disabled. "Pausing..." appears at the press, before the run has answered. Pause =
+  command `pause`: no new simulation is dispatched, the one in flight finishes and is recorded, checkpoint, worker
+  exits. Resume sends `continue` for the same directory with the budget unchanged and asks nothing for a MOCK run.
+* **Abort is the graceful `stop`, not the forced `cancel`.** Read from the code before deciding: on a forced cancel
+  the lane's `close` (which restores the schematic) queues behind the running simulation with a 10 s deadline, then
+  the lane process is terminated; a Spectre job already running on the server is never killed. On a real circuit a
+  forced abort can therefore leave the testbench with the candidate's sizes and an orphan remote job, and the
+  evaluation is charged but lost. So: Abort asks first (plain words, "use Pause to continue later"), sends `stop`,
+  and only while a pause or an abort is WAITING for the simulation in flight the second button reads **Force abort**
+  (= `cancel`, asked again with its cost, usable once). The engine ignores a `stop` that follows a `pause`, which is
+  the other reason the waiting states offer only the forced variant.
+* **Abort on a paused run sends nothing**: it lets go of the run ("Nothing is deleted ... can still be continued
+  later: Run status > Continue") and the button returns to Start. There is no backend operation that turns `paused`
+  into `stopped` without starting a worker, and none was added.
+* **The header holds ONE run, the "current run", which is not the run the bottom tabs show.** Reason: with one
+  shared selection, looking at an older run's data would have replaced Pause by Start (or by the Resume of that
+  older run) while a simulation is running - on the real backend a second start on the same testbench. The current
+  run is the one started / resumed from this page, remembered in `localStorage`
+  (`gator-workbench-current-run-v1`); a small text button in the header shows it ("running 12 / 60",
+  "paused at 35 / 20000 [MOCK]", "stopped 41 / ...") and brings it back under Run status when pressed.
+* **"Start" is never offered on a guess.** After a reload the button is disabled until the remembered run has
+  answered; with nothing remembered, until the run list (already read on page load) is in: a run that is live
+  although this browser does not remember it (CLI, another browser) is taken over. Single baseline simulation is
+  available only while the header is idle.
+* **Polling (the user's "no timers" preference, 7.9):** no new timer at rest. The header uses the status the page
+  already polls for the run in the bottom tabs when that is the same run; otherwise it polls its run itself, and only
+  while that run is live. A paused or ended run is asked once.
+* Two timing traps, both found by reading `run_status` and confirmed live: `status.json` says `paused` while the old
+  worker still writes its last files (alive), and it STILL says `paused` for 2-3 s after a Resume while the new
+  worker imports (alive again). The same pair of values means "almost paused" once and "running again" the other
+  time; the hook tells them apart by knowing that this page has just launched a worker, and ignores answers asked
+  for before the launch. Without that the button flickered Resume -> Pausing... -> Pause.
+* Pause asks BEFORE, not after, when the run's own saved configuration has checkpoints or replay snapshots switched
+  off ("cannot be resumed after a pause ... Pause anyway?"); it reads `effective_config.json` through the existing
+  download route.
+* Real runs: Resume asks for the budget again ("up to N more candidate evaluation(s)? (M of T are used.)").
+  **Fixed on the way:** "Continue" in the Run status tab sent `authorize_real_simulation` WITHOUT asking whenever the
+  circuit loaded in the panel was real, and Cancel in its budget prompt continued the run anyway. Both buttons now go
+  through `resumeRun`; realness is taken from the RUN's status, not from the circuit panel. Start's three backend
+  questions (real budget, model from another task, unknown connection layers) are now answered in a loop, so two of
+  them in a row no longer end in an error banner.
+
+Verification (no Python changed, so no pytest run):
+* `npm run build` (strict `tsc --noEmit` + `vite build`) passes, 258 kB JS (includes 7.19 / 7.20 of the other sessions).
+* `frontend/scripts/run_control_check.mjs` (new; hermetic like 7.12: every `/api/runs/*` call and the validation are
+  answered by a small simulated run labelled FIXTURE, other writes refused, so it is safe next to a live run): **60
+  checks + 7 screenshots, all pass** (the final version twice in a row). It pins: labels and order with nothing in between (a
+  `MutationObserver` records every label the button ever shows), Abort directly right of the main button, one
+  request per press, no question for a MOCK pause / resume, the three confirmation texts, Force abort only while
+  waiting and only once, no header polling at rest, the live run keeps Pause with the bottom tabs on another / no
+  run, reload and take-over never show an enabled Start, the no-replay-snapshots warning, real-run authorization
+  sent only after a yes, a backend refusal shown with its reason, the Run status tab's own buttons still work and
+  the header follows them. Its first run failed once on a fixed 1.8 s wait in the check itself (replaced by a
+  condition); no product defect.
+* `frontend/scripts/run_control_live_check.mjs` (new): the same presses with NOTHING intercepted, against a scratch
+  backend (port 8769, own settings directory and output root in the session scratchpad, stopped and deleted
+  afterwards) and the synthetic MOCK task - a real detached worker. **23 checks, all pass** (run twice; the whole-sequence check was
+  added for the second run): the backend
+  agreed at every step (`paused` + `full_state`, nothing charged while paused, `entry: resume` with counters kept,
+  `stopped` / `user_stop`, event log `pause > ended:paused > resumed > stop > ended:stopped`), the button showed
+  `Start > Starting... > Pause > Pausing... > Resume > Resuming... > Pause > Aborting... > Start` and nothing else,
+  and a Pause pressed while the worker was still importing was not lost (paused at 0 evaluations, `full_state`,
+  resumed). The script refuses port 8765. `blocking_issues_check.mjs` re-run: 26 pass.
+* NOT verified: anything on the REAL backend (no real simulation was started: that budget is the user's). There a
+  pause or an abort waits for the rest of ONE real simulation, which the labels and the text button say. Force abort
+  was exercised with fixtures only (a MOCK evaluation is too short to be caught in flight).
+
+Not done: the Run status tab keeps its four buttons and wording ("Pause and save", "Stop and save", "Force cancel",
+"Continue" with the new-budget question) - they act on the run shown there; a paused run that was let go stays
+`paused` on disk; no backend guard against two live runs on one real testbench (the header avoids offering it, the
+API would still accept it). Uncommitted.
 
 ### 7.19 Profile from a Virtuoso cell, increment 2 of 3: Create profile -> a registered `real:<name>` task (2026-09-21 ~03:30, same session as 7.17, user: "go on with stage 2")
 

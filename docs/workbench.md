@@ -49,6 +49,42 @@ PYTHONPATH=src python -m gator_workbench.cli aggregates outputs/mock/<experiment
 PYTHONPATH=src python -m gator_workbench.cli check     <profile-id> [--scope full]
 ```
 
+## Start, Pause, Resume, Abort (added 2026-09-21, user request)
+
+The header has one main run button and **Abort** next to it. The main button changes with the run:
+
+| It reads | Pressing it | What happens in the backend |
+|---|---|---|
+| **Start** | starts a new run with the configuration on the page | new run directory, detached worker |
+| **Pause** | pauses the run | no new simulation is started, the one in flight finishes and is recorded, everything is saved (checkpoint with the full training state), the worker exits |
+| **Resume** | continues the paused run | the SAME run directory gets a new segment; network, replay memory, counters and budget are restored and the run goes on where it stopped |
+
+`Starting...`, `Pausing...`, `Resuming...`, `Aborting...` are the waiting states in between. On a real circuit
+`Pausing...` lasts as long as the rest of the simulation that is running.
+
+* **Resume and "Mode = resume" are the same machinery, used differently.** Resume is the one-press way for the run in
+  the header and does not touch the Mode box. It continues with the settings the run was STARTED with (its own
+  `effective_config.json`); edits made on the page while it was paused are not used. Mode = resume + "RL model to
+  load" is for picking up an older run, and lets the budget and a few run settings change.
+* **Abort** ends the run for good, but gently: it asks first, then lets the simulation in flight finish, saves
+  everything and ends the run (`stopped`). Only while a pause or an abort is waiting for that simulation the button
+  reads **Force abort**: it waits for nothing, the evaluation in flight is recorded as cancelled and stays charged,
+  and on a real circuit a Spectre job already running on the server is not stopped and the schematic can be left
+  with the sizes that were being tried. It is for a run that is stuck.
+* **Abort on a paused run** deletes nothing and sends nothing: the header lets go of the run and returns to Start.
+  The run stays paused on disk and can still be continued from Run status > Continue.
+* The header controls ONE run - the one started or resumed from this page, remembered across a reload - and shows
+  it as a small text button ("running 12 / 60"; press it to see the run under Run status). It is not the run chosen
+  in the list of the bottom tabs: looking at an older run's data never takes Pause and Abort away from a live run.
+  While a run is active or paused in the header, "Single baseline simulation" is not available.
+* A real run asks for the budget again at Resume (what is left of it). A run that was started with checkpoints or
+  replay snapshots switched off cannot come back from a pause; Pause says so before it pauses.
+* The Run status tab keeps its own buttons (Pause and save, Stop and save, Force cancel, Continue with a new total
+  budget). They act on the run shown there.
+
+Browser checks: `frontend/scripts/run_control_check.mjs` (fixtures only, safe next to a live run) and
+`frontend/scripts/run_control_live_check.mjs` (real MOCK worker; needs a scratch backend, refuses port 8765).
+
 ## What is real and what is mock
 
 | Path | Status |

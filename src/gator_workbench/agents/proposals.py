@@ -24,6 +24,9 @@ from ..storage.dataset import utcnow
 from .base import AgentError, AgentRequest, AgentResult, SECTIONS_BY_KIND
 
 
+CHECKLIST_STATES = ('done', 'missing', 'warning', 'unknown', 'not_applicable')
+
+
 def _hash(value) -> str:
     return hashlib.sha256(canonical_json(value).encode('utf8')).hexdigest()
 
@@ -38,7 +41,7 @@ def normalize(request: AgentRequest, result: AgentResult):
     """Validate the structured output against scope and row schemas. Returns the clean patch."""
     output = result.structured_output
     problems = []
-    allowed_top = {'kind', 'patch', 'circuit_changes', 'reasoning', 'warnings', 'unresolved'}
+    allowed_top = {'kind', 'patch', 'circuit_changes', 'reasoning', 'warnings', 'unresolved', 'checklist'}
     extra = set(output) - allowed_top
     if extra:
         problems.append(f'Unexpected top-level keys {sorted(extra)} (a proposal cannot carry settings or instructions)')
@@ -83,7 +86,13 @@ def normalize(request: AgentRequest, result: AgentResult):
         raise ProposalRejected('Only a circuit_modification request may propose circuit changes',
                                ['circuit_changes present in a configuration request'])
     text = lambda name: [str(item)[:1000] for item in (output.get(name) or []) if isinstance(item, (str, int, float))]
-    return dict(patch=clean, circuit_changes=changes if isinstance(changes, list) else [],
+    # Advisory text only: it changes nothing and is not part of what an approval is bound to. Malformed entries are dropped.
+    checklist = [dict(item=str(entry.get('item') or '')[:200], status=entry.get('status'), who=entry.get('who'),
+                      action=str(entry.get('action') or '')[:600], basis=str(entry.get('basis') or '')[:600])
+                 for entry in (output.get('checklist') if isinstance(output.get('checklist'), list) else [])[:40]
+                 if isinstance(entry, dict) and entry.get('status') in CHECKLIST_STATES and entry.get('who') in ('you', 'agent')
+                 and str(entry.get('item') or '').strip()]
+    return dict(patch=clean, circuit_changes=changes if isinstance(changes, list) else [], checklist=checklist,
                 reasoning=str(output.get('reasoning') or '')[:8000], warnings=text('warnings'), unresolved=text('unresolved'))
 
 
@@ -154,7 +163,8 @@ class ProposalStore:
                                                                 circuit_changes=normalized['circuit_changes'])),
             patch=normalized['patch'], circuit_changes=normalized['circuit_changes'],
             diff=structured_diff(request.config, preview), reasoning=normalized['reasoning'],
-            warnings=normalized['warnings'], unresolved=normalized['unresolved'], selection=request.selection,
+            warnings=normalized['warnings'], unresolved=normalized['unresolved'], checklist=normalized['checklist'],
+            selection=request.selection,
             logs=result.logs, audit=result.audit, approval=None,
             authorizes='nothing: applying needs an explicit approval bound to this exact proposal, configuration and '
                        'circuit; circuit writes and simulations need their own separate authorization')

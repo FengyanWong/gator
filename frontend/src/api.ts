@@ -5,7 +5,8 @@ export type Json = any;
 
 export class ApiError extends Error {
   constructor(public status: number, public detail: Json) {
-    super(typeof detail?.message === 'string' ? detail.message : `HTTP ${status}`);
+    // Agent errors carry {code, meaning, detail} rather than {message}; a plain HTTPException carries a string.
+    super([detail?.message, detail?.detail, detail?.meaning, detail].find(v => typeof v === 'string' && v) ?? `HTTP ${status}`);
   }
 }
 
@@ -29,11 +30,16 @@ const q = (params: Record<string, string | number | boolean | undefined | null>)
 export const api = {
   meta: () => call('GET', '/api/meta'),
   schema: () => call('GET', '/api/schema'),
+  networkSettings: () => call('GET', '/api/network-settings'),
+  saveNetworkSettings: (encoder: string, body: Json) => call('PUT', '/api/network-settings/' + encodeURIComponent(encoder), body),
+  resetNetworkSettings: (encoder: string, to: string) => call('POST', '/api/network-settings/' + encodeURIComponent(encoder) + '/reset', { to }),
   tasks: () => call('GET', '/api/tasks'),
   starter: (taskKey: string) => call('GET', '/api/tasks/starter' + q({ task_key: taskKey })),
   loadCircuit: (circuit: Json) => call('POST', '/api/circuit/load', { circuit }),
   modifyCircuit: (body: Json) => call('POST', '/api/circuit/modify', body),
   nativeLibraries: (profile_id: string) => call('POST', '/api/virtuoso/libraries', { profile_id }),
+  nativeCells: (profile_id: string, library: string) => call('POST', '/api/virtuoso/cells', { profile_id, library }),
+  nativeImport: (profile_id: string, library: string, cell: string, testbench: string | null) => call('POST', '/api/virtuoso/import', { profile_id, library, cell, testbench }),
   nativeRead: (profile_id: string, library: string, cell: string) => call('POST', '/api/virtuoso/read', { profile_id, library, cell }),
   validate: (config: Json) => call('POST', '/api/config/validate', { config }),
   diff: (before: Json, after: Json) => call('POST', '/api/config/diff', { before, after }),
@@ -42,6 +48,9 @@ export const api = {
   connectionProfiles: () => call('GET', '/api/connection/profiles'),
   connectionStatus: (profile_id: string) => call('GET', '/api/connection/status' + q({ profile_id })),
   connectionCheck: (profile_id: string, scope: string, trigger = 'user') => call('POST', '/api/connection/check', { profile_id, scope, trigger }),
+  connectionSetup: () => call('GET', '/api/connection/setup'),
+  connectionCreateProfile: (profile_id: string) => call('POST', '/api/connection/profile', { profile_id }),
+  connectionConnect: (profile_id: string) => call('POST', '/api/connection/connect', { profile_id }),
   runs: (output_root?: string) => call('GET', '/api/runs' + q({ output_root })),
   suggestMode: (config: Json, source_run_dir?: string | null) => call('POST', '/api/runs/suggest-mode', { config, source_run_dir }),
   model: (run_dir: string, checkpoint_id: string, config?: Json) => call('POST', '/api/runs/model', { run_dir, checkpoint_id, config }),
@@ -59,6 +68,7 @@ export const api = {
   agentSettings: () => call('GET', '/api/agent/settings'),
   saveAgentSettings: (body: Json) => call('PUT', '/api/agent/settings', body),
   agentDiagnostics: () => call('GET', '/api/agent/diagnostics'),
+  agentReadiness: (config: Json) => call('POST', '/api/agent/readiness', { config }),      // free: no model is called, nothing is probed
   propose: (body: Json) => call('POST', '/api/agent/propose', body),
   cancelAgent: (request_id: string) => call('POST', '/api/agent/cancel', { request_id }),
   exportTask: (body: Json) => call('POST', '/api/agent/export-task', body),

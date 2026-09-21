@@ -33,7 +33,11 @@ def main(argv=None):
     config = WorkbenchConfig.model_validate(read_json(layout.effective_config))
     manifest = read_json(layout.manifest)
     try:
-        task = load_task(config.circuit, allow_real=args.allow_real)
+        # The profile the gate checked is the profile the run uses - never silently the active one.
+        task = load_task(config.circuit, allow_real=args.allow_real, profile_id=config.run.connection_profile_id)
+        if not task.mock and not args.allow_real:
+            from .tasks import REAL_AUTHORIZATION_REQUIRED
+            raise TaskBlocked(REAL_AUTHORIZATION_REQUIRED)
     except TaskBlocked as exc:
         write_json(layout.status, dict(state='failed', run_id=manifest['run_id'], error=str(exc),
                                        blocker=str(exc), interface_contract=exc.contract, paths=layout.subpaths()))

@@ -1,13 +1,31 @@
-import { useEffect, useState } from 'react';
-import { api, bytes, copy, Json } from '../api';
+import { useEffect, useRef, useState } from 'react';
+import { api, bytes, copy, Json, num } from '../api';
 
-const Num = ({ label, value, onChange, title, nullable }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; nullable?: boolean }) => (
-  <label title={title}>{label}<input className="numeric" value={value ?? ''} placeholder={nullable ? 'none' : ''}
-    onChange={e => { const t = e.target.value.trim(); onChange(t === '' ? (nullable ? null : 0) : Number.isFinite(Number(t)) ? Number(t) : value); }} /></label>);
+function Num({ label, value, onChange, title, nullable, disabled, note }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; nullable?: boolean; disabled?: boolean; note?: string }) {
+  // The typed text is kept while the box has focus: "0." and "3e-" are steps towards 0.005 and 3e-4, not values.
+  // It is dropped as soon as the value changes from outside (reset button, undo, another encoder), focus or not.
+  const [text, setText] = useState<string | null>(null);
+  const typed = text === null ? undefined : text.trim() === '' ? (nullable ? null : 0) : Number(text);
+  const stale = text !== null && (typed === null || Number.isFinite(typed)) && typed !== (value ?? null);
+  useEffect(() => { if (stale) setText(null); }, [stale]);
+  return (
+    <label title={title} className={disabled ? 'disabled' : undefined}><span>{label}{note && <span className="hint"> - {note}</span>}</span>
+      <input className="numeric" value={(stale ? null : text) ?? value ?? ''} placeholder={nullable ? 'none' : ''} disabled={disabled} onBlur={() => setText(null)}
+        onChange={e => { setText(e.target.value); const t = e.target.value.trim();
+          if (t === '') onChange(nullable ? null : 0); else if (Number.isFinite(Number(t))) onChange(Number(t)); }} /></label>);
+}
+
+// Settings stored per encoder in the backend (src/gator_workbench/network_presets.py). The lists are
+// only a fallback for the moment before the backend answers; the backend's own lists are used afterwards.
+const NETWORK_FIELDS = ['hidden_dim', 'heads', 'layers'];
+const ADVANCED_FIELDS = ['learning_rate', 'gamma', 'tau', 'initial_alpha', 'target_entropy_per_action', 'max_grad_norm',
+  'batch_size', 'warmup_transitions', 'update_every', 'updates_per_transition', 'replay_capacity', 'episode_length'];
+const pick = (source: Json, fields: string[]): Json =>
+  Object.fromEntries(fields.filter(f => source?.[f] !== undefined && source?.[f] !== null).map(f => [f, source[f]]));
 const Check = ({ label, value, onChange, title }: { label: string; value: boolean; onChange: (v: boolean) => void; title?: string }) => (
   <label className="check" title={title}><input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} />{label}</label>);
 
-export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; setConfig: (f: (c: Json) => Json) => void; runs: Json[]; circuit: Json }) {
+export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json }) {
   const run = config.run;
   const set = (fields: Json) => setConfig(c => ({ ...c, run: { ...c.run, ...fields } }));
   const setAdv = (fields: Json) => setConfig(c => ({ ...c, run: { ...c.run, advanced: { ...(c.run.advanced ?? {}), ...fields } } }));
@@ -18,6 +36,80 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
   const adv = run.advanced ?? {};
   const net = run.network ?? {};
 
+  // Per-encoder settings live in the backend: choosing an encoder READS its settings, editing a value WRITES them back
+  // for that encoder. The configuration always carries explicit values, so what is shown is what runs.
+  const [netSettings, setNetSettings] = useState<Json>(null);
+  const [netMessage, setNetMessage] = useState<{ level: string; text: string } | null>(null);
+  const pending = useRef<{ encoder: string; body: Json } | null>(null);
+  const timer = useRef<number | undefined>(undefined);
+  const netFields: string[] = netSettings?.network_fields ?? NETWORK_FIELDS;
+  const advFields: string[] = netSettings?.advanced_fields ?? ADVANCED_FIELDS;
+  const encoder: string = net.encoder_type ?? netSettings?.default_encoder ?? 'graph_transformer';
+  const entry: Json = netSettings?.settings?.[encoder] ?? null;
+  const usesHeads: boolean = entry ? !!entry.uses_heads : ['graph_transformer', 'gat'].includes(encoder);
+  const remember = (e: Json) => setNetSettings((s: Json) => s && ({ ...s, settings: { ...s.settings, [e.encoder_type]: e } }));
+  const applyEntry = (e: Json, record = true) => setConfig(c => ({ ...c, run: { ...c.run,
+    network: { encoder_type: e.encoder_type, ...e.network }, advanced: { ...(c.run.advanced ?? {}), ...e.advanced } } }), record);
+  const flush = (): Promise<void> => {
+    window.clearTimeout(timer.current);
+    const job = pending.current; pending.current = null;
+    if (!job) return Promise.resolve();
+    return api.saveNetworkSettings(job.encoder, job.body)
+      .then(e => { remember(e); setNetMessage({ level: 'ok', text: `Saved in the backend as the ${e.encoder_type} setting.` }); })
+      .catch(e => setNetMessage({ level: 'error', text: `Not saved in the backend: ${e.message}` }));
+  };
+  const queueSave = (network: Json, advanced: Json) => {
+    // The complete value set is sent, so hidden and heads are judged together (one at a time could never pass).
+    pending.current = { encoder, body: { network: pick(network, netFields), advanced: pick(advanced, advFields) } };
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(flush, 700);
+  };
+  const editNet = (fields: Json) => { setNet(fields); queueSave({ ...net, ...fields }, adv); };
+  const editAdv = (fields: Json) => { setAdv(fields); queueSave(net, { ...adv, ...fields }); };
+  const chooseEncoder = (name: string) => {
+    setNetMessage(null);
+    const cached = netSettings?.settings?.[name];
+    if (cached) applyEntry(cached); else setNet({ encoder_type: name });
+    // An unsaved edit still belongs to the previous encoder; then read the backend again (another tab may have changed it).
+    flush().then(() => api.networkSettings()).then(s => {
+      setNetSettings(s);
+      const fresh = s.settings?.[name];
+      if (fresh && JSON.stringify([fresh.network, fresh.advanced]) !== JSON.stringify([cached?.network, cached?.advanced])) applyEntry(fresh, false);
+    }).catch(() => undefined);
+  };
+  const reset = (to: string) => {
+    pending.current = null; window.clearTimeout(timer.current);
+    api.resetNetworkSettings(encoder, to).then(e => {
+      remember(e); applyEntry(e);
+      setNetMessage({ level: 'ok', text: to === 'publication' ? `${encoder}: publication preset restored in the backend.` : `${encoder}: GATOR baseline stored in the backend.` });
+    }).catch(e => setNetMessage({ level: 'error', text: e.message }));
+  };
+  useEffect(() => {
+    api.networkSettings().then(setNetSettings).catch(e => setNetMessage({ level: 'error', text: `Backend network settings unavailable (${e.message}).` }));
+    return () => { flush(); };
+  }, []);
+  // A configuration that leaves a value out would silently run the schema default. Fill it from the backend instead.
+  useEffect(() => {
+    if (!entry) return;
+    const missingNet = netFields.filter(f => net[f] === undefined || net[f] === null);
+    const missingAdv = advFields.filter(f => adv[f] === undefined || adv[f] === null);
+    if (net.encoder_type && !missingNet.length && !missingAdv.length) return;
+    setConfig(c => ({ ...c, run: { ...c.run,
+      network: { ...(c.run.network ?? {}), ...pick(entry.network, missingNet), encoder_type: encoder },
+      advanced: { ...(c.run.advanced ?? {}), ...pick(entry.advanced, missingAdv) } } }), false);
+  }, [entry, JSON.stringify(net), JSON.stringify(adv)]);
+  const differs = !!entry && !pending.current && (netFields.some(f => net[f] !== undefined && net[f] !== entry.network[f])
+    || advFields.some(f => adv[f] !== undefined && adv[f] !== entry.advanced[f]));
+  const originLabel = entry && ({ publication: 'publication preset', gator_baseline: 'GATOR baseline', custom: 'edited, saved in the backend' } as Json)[entry.origin];
+  const budget: number = run.max_evaluations;
+  const starved = run.mode !== 'frozen' && typeof budget === 'number' && (budget <= (adv.warmup_transitions ?? 0) || budget < (adv.batch_size ?? 0) + 1);
+  // A checkpoint only loads into the network it was trained with.
+  const savedModel: Json = run.mode !== 'scratch' ? model?.description?.contract?.model_config : null;
+  const savedSac: Json = model?.description?.contract?.sac_config;
+  const archDiffers = !!savedModel && (savedModel.encoder_type !== encoder || netFields.some(f => savedModel[f] !== net[f]));
+  const matchCheckpoint = () => setConfig(c => ({ ...c, run: { ...c.run,
+    network: { encoder_type: savedModel.encoder_type, ...pick(savedModel, netFields) }, advanced: { ...(c.run.advanced ?? {}), ...pick(savedSac, advFields) } } }));
+
   // Default the RL model to the last model used by this project, and its `latest` checkpoint (not `best`).
   useEffect(() => {
     if (source.run_dir) return;
@@ -27,7 +119,7 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
     setModel(null); setError(null);
     if (!source.run_dir) return;
     api.model(source.run_dir, source.checkpoint_id ?? 'latest', config).then(setModel).catch(e => setError(e.message));
-  }, [source.run_dir, source.checkpoint_id, run.mode, JSON.stringify(net), JSON.stringify(config.targets), JSON.stringify(config.parameters)]);
+  }, [source.run_dir, source.checkpoint_id, run.mode, JSON.stringify(net), JSON.stringify(adv), JSON.stringify(config.targets), JSON.stringify(config.parameters)]);
 
   return (
     <section className="panel">
@@ -48,10 +140,32 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
       <Num label="Random seed (target task)" value={run.seed} onChange={v => set({ seed: v })} title="Seed of THIS run. The source model's pretraining seed is recorded separately." />
       <Check label="Stop at the first feasible design" value={run.stop_at_first_feasible} onChange={v => set({ stop_at_first_feasible: v })} />
       <h3>RL network</h3>
-      <p className="hint">Independent of the agent language model. "No weights" means scratch, but an architecture is still required.</p>
-      <label>Encoder<select value={net.encoder_type ?? 'graph_transformer'} onChange={e => setNet({ encoder_type: e.target.value })}>
-        {['graph_transformer', 'mlp', 'rgcn', 'gat', 'port_gnn', 'gcn'].map(m => <option key={m}>{m}</option>)}</select></label>
-      <div className="row"><Num label="hidden" value={net.hidden_dim ?? 32} onChange={v => setNet({ hidden_dim: v })} /><Num label="heads" value={net.heads ?? 4} onChange={v => setNet({ heads: v })} /><Num label="layers" value={net.layers ?? 2} onChange={v => setNet({ layers: v })} /></div>
+      <p className="hint">Independent of the agent language model. "No weights" means scratch, but an architecture is still required.
+        Every encoder keeps its own settings in the backend: choosing one loads them, editing a value (here or under Advanced) saves it for that encoder.</p>
+      <label>Encoder<select value={encoder} onChange={e => chooseEncoder(e.target.value)}>
+        {(netSettings?.encoders ?? ['graph_transformer', 'mlp', 'rgcn', 'gat', 'port_gnn', 'gcn']).map((m: string) => <option key={m}>{m}</option>)}</select></label>
+      <div className="row"><Num label="hidden" value={net.hidden_dim ?? entry?.network?.hidden_dim ?? 32} onChange={v => editNet({ hidden_dim: v })} />
+        <Num label="heads" value={net.heads ?? entry?.network?.heads ?? 4} onChange={v => editNet({ heads: v })} disabled={!usesHeads} note={usesHeads ? undefined : 'ignored by this encoder'}
+          title={usesHeads ? 'Attention heads. hidden must be divisible by heads.' : 'Only graph_transformer and gat have attention heads. The number is still written into the checkpoint, so it is kept fixed here.'} />
+        <Num label="layers" value={net.layers ?? entry?.network?.layers ?? 2} onChange={v => editNet({ layers: v })} /></div>
+      {entry && <><p className="hint in-use">In use: <b>{originLabel}</b></p>
+        <div className="row pair">
+          <button disabled={entry.origin === 'publication' && !differs} onClick={() => reset('publication')} title="Forget the saved values of this encoder and return to the values taken from publications.">Publication preset</button>
+          <button disabled={entry.origin === 'gator_baseline' && !differs} onClick={() => reset('gator_baseline')} title="The equal-size setting of all existing GATOR evidence and checkpoints. Suited to short runs.">GATOR baseline</button></div></>}
+      {differs && <p className="warn">These values differ from the backend's saved {encoder} setting.
+        <button onClick={() => applyEntry(entry)}>Load backend values</button> <button onClick={() => { queueSave(net, adv); flush(); }}>Save these to the backend</button></p>}
+      {entry?.problem && <p className="warn">{entry.problem}</p>}
+      {netMessage && <p className={netMessage.level === 'error' ? 'error' : 'hint'}>{netMessage.text}</p>}
+      {starved && <p className="warn">Budget {budget} with warm-up {adv.warmup_transitions} and batch size {adv.batch_size}: {budget <= (adv.warmup_transitions ?? 0) ? 'every evaluation is a random warm-up action, so the policy never acts' : 'one batch is never filled, so the network never learns'}.
+        Published settings assume thousands of simulations. Lower them under Advanced, raise the budget, or use the GATOR baseline.</p>}
+      {entry && <details><summary>Where the {encoder} values come from</summary>
+        <p className="hint">{entry.summary}</p>
+        <table className="grid small"><thead><tr><th>Setting</th><th>Preset</th><th>Basis</th><th>Source and note</th></tr></thead><tbody>
+          {[...netFields, ...advFields].map(f => { const p = entry.provenance?.[f]; const ref = p?.source ? netSettings.references?.[p.source] : null; return (
+            <tr key={f}><td>{f}</td><td className="numeric">{num(p?.value)}</td><td>{p?.basis}{p?.match === 'closest' ? ', closest network' : ''}</td>
+              <td>{ref && <a href={ref.url} target="_blank" rel="noreferrer">{ref.short}</a>} {p?.note}</td></tr>); })}
+        </tbody></table>
+        <p className="hint">{netSettings.scale_note}</p></details>}
       {run.mode !== 'scratch' && (<>
         <h3>RL model to load</h3>
         <label>Source run<select value={source.run_dir ?? ''} onChange={e => set({ model_source: { ...source, run_dir: e.target.value || null } })}>
@@ -59,6 +173,8 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
         <label title="latest = most recently SAFELY saved state (default). It is not automatically the best policy.">Checkpoint
           <select value={source.checkpoint_id ?? 'latest'} onChange={e => set({ model_source: { ...source, checkpoint_id: e.target.value } })}><option>latest</option><option>best_policy</option></select></label>
         {error && <p className="error">{error}</p>}
+        {archDiffers && <p className="warn">This checkpoint was trained with {savedModel.encoder_type}, hidden {savedModel.hidden_dim}, heads {savedModel.heads}, layers {savedModel.layers}.
+          Its weights cannot be loaded into a different network. <button onClick={matchCheckpoint}>Use the checkpoint's network</button></p>}
         {model?.description && <table className="grid small"><tbody>
           <tr><td>Source task</td><td>{model.description.source_task_id}</td></tr>
           <tr><td>Saved (UTC)</td><td>{model.description.created_utc}</td></tr>
@@ -72,14 +188,20 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
         {run.mode === 'frozen' && <label>Frozen actions<select value={run.frozen_action ?? 'deterministic'} onChange={e => set({ frozen_action: e.target.value })}><option>deterministic</option><option>sampled</option></select></label>}
         {run.mode === 'fine_tune' && <Check label="Continual learning (inherit weights fine-tuned on a previous test task)" value={run.continual_learning} onChange={v => set({ continual_learning: v })} />}
       </>)}
-      <details><summary>Advanced (defaults preserve the existing algorithm)</summary>
-        <Num label="Learning rate" value={adv.learning_rate ?? 3e-4} onChange={v => setAdv({ learning_rate: v })} />
-        <Num label="Batch size" value={adv.batch_size ?? 8} onChange={v => setAdv({ batch_size: v })} />
-        <Num label="Warm-up transitions" value={adv.warmup_transitions ?? 8} onChange={v => setAdv({ warmup_transitions: v })} />
-        <Num label="Update every N transitions" value={adv.update_every ?? 1} onChange={v => setAdv({ update_every: v })} />
-        <Num label="Updates per transition (UTD)" value={adv.updates_per_transition ?? 1} onChange={v => setAdv({ updates_per_transition: v })} />
-        <Num label="Episode length" value={adv.episode_length ?? 4} onChange={v => setAdv({ episode_length: v })} />
-        <Num label="Replay capacity" value={adv.replay_capacity ?? 10000} onChange={v => setAdv({ replay_capacity: v })} />
+      <details><summary>Advanced (stored per encoder, like the network sizes)</summary>
+        <p className="hint">These belong to the selected encoder's backend setting. The algorithm stays soft actor-critic; only its numbers change.</p>
+        <Num label="Learning rate" value={adv.learning_rate ?? entry?.advanced?.learning_rate ?? 3e-4} onChange={v => editAdv({ learning_rate: v })} />
+        <Num label="Batch size" value={adv.batch_size ?? entry?.advanced?.batch_size ?? 8} onChange={v => editAdv({ batch_size: v })} title="A learner update needs this many stored transitions." />
+        <Num label="Warm-up transitions" value={adv.warmup_transitions ?? entry?.advanced?.warmup_transitions ?? 8} onChange={v => editAdv({ warmup_transitions: v })} title="Random actions until this many transitions are stored. They count against the budget." />
+        <Num label="Update every N transitions" value={adv.update_every ?? entry?.advanced?.update_every ?? 1} onChange={v => editAdv({ update_every: v })} />
+        <Num label="Updates per transition (UTD)" value={adv.updates_per_transition ?? entry?.advanced?.updates_per_transition ?? 1} onChange={v => editAdv({ updates_per_transition: v })} />
+        <Num label="Episode length" value={adv.episode_length ?? entry?.advanced?.episode_length ?? 4} onChange={v => editAdv({ episode_length: v })} />
+        <Num label="Replay capacity" value={adv.replay_capacity ?? entry?.advanced?.replay_capacity ?? 10000} onChange={v => editAdv({ replay_capacity: v })} />
+        <div className="row"><Num label="Discount gamma" value={adv.gamma ?? entry?.advanced?.gamma ?? 0.99} onChange={v => editAdv({ gamma: v })} />
+          <Num label="Target mixing tau" value={adv.tau ?? entry?.advanced?.tau ?? 0.005} onChange={v => editAdv({ tau: v })} /></div>
+        <div className="row"><Num label="Initial alpha" value={adv.initial_alpha ?? entry?.advanced?.initial_alpha ?? 0.2} onChange={v => editAdv({ initial_alpha: v })} title="Starting entropy temperature of soft actor-critic. It is learned afterwards." />
+          <Num label="Target entropy / action" value={adv.target_entropy_per_action ?? entry?.advanced?.target_entropy_per_action ?? 1} onChange={v => editAdv({ target_entropy_per_action: v })} />
+          <Num label="Max grad norm" value={adv.max_grad_norm ?? entry?.advanced?.max_grad_norm ?? 10} onChange={v => editAdv({ max_grad_norm: v })} /></div>
         <Check label="Freeze encoder (fine_tune)" value={adv.freeze_encoder} onChange={v => setAdv({ freeze_encoder: v })} />
         <Check label="Encoder-only transfer (fine_tune)" value={adv.encoder_only_transfer} onChange={v => setAdv({ encoder_only_transfer: v })} />
         <Check label="Reset critic (fine_tune)" value={adv.reset_critic} onChange={v => setAdv({ reset_critic: v })} />

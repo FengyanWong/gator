@@ -18,13 +18,18 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .. import __version__, aggregates, agents, bridge_read, checkpoints as ckpt, connection, runs, schema, tasks, units
+from .. import (__version__, aggregates, agents, bridge_connect, bridge_read, checkpoints as ckpt, connection, runs, schema,
+                tasks, units)
+from .. import network_presets
 from ..agents import AgentError, AgentRequest, AgentSettings, ProposalRejected, ProposalStore
+from ..agents import catalog as agent_catalog
+from ..agents import readiness as agent_readiness
 from ..agents import diagnostics as agent_diagnostics
 from ..agents.prompts import circuit_summary
 from ..best_design import export_netlist
 from ..layout import RunLayout, environment_versions
 from ..paths import OutputRoots, PathNotAllowed, default_output_root, directory_bytes, repo_root, safe_child
+from ..preload import preload
 from ..security import redact
 from ..storage.atomic import read_json, read_jsonl
 from ..storage.dataset import DatasetReader, map_to_dict, utcnow
@@ -75,10 +80,24 @@ class ConnectionBody(Body):
     trigger: str = Field('user', pattern='^(user|auto)$')      # auto = profile change in the UI: cheap layers only
 
 
+class ConnectBody(Body):
+    profile_id: str = Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')      # an identifier: never a host, port or command
+
+
+class NetworkSettingsBody(Body):
+    network: dict | None = None         # hidden_dim / heads / layers
+    advanced: dict | None = None        # the SAC numbers stored per encoder; any other key is rejected
+
+
+class NetworkResetBody(Body):
+    to: str = Field('publication', pattern='^(publication|gator_baseline)$')
+
+
 class NativeReadBody(Body):
     profile_id: str = Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
     library: str | None = None
     cell: str | None = None
+    testbench: str | None = None        # import only: the cell whose netlist is exported (the testbench around `cell`)
 
 
 class AgentSettingsBody(Body):
@@ -128,7 +147,10 @@ class ExportBody(Body):
 
 
 def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=True, monitor=None,
-               auto_check_on_start=True, connection_stale_seconds=120.0) -> FastAPI:
+               auto_check_on_start=True, connection_stale_seconds=120.0, connector=None) -> FastAPI:
+    # Endpoints run in a thread pool and import the optimizer lazily: two first imports at once corrupt
+    # torch_geometric for the life of the process. Import it here, before any thread or request exists.
+    preload()
     app = FastAPI(title='GATOR workbench', version=__version__, docs_url='/api/docs', openapi_url='/api/openapi.json')
     roots = OutputRoots(extra_output_roots)
     input_roots = [repo_root().resolve()] + [Path(p).expanduser().resolve() for p in extra_input_roots]
@@ -143,7 +165,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     # After `connection_stale_seconds` a result is shown as `unknown` with its age, never as a current `ok`.
     monitor = monitor or connection.ConnectionMonitor(active_run_lookup=active_run,
                                                       stale_after_seconds=float(connection_stale_seconds))
-    app.state.roots, app.state.monitor, app.state.proposals = roots, monitor, proposals
+    connector = connector or bridge_connect.BridgeConnector()
+    app.state.roots, app.state.monitor, app.state.proposals, app.state.connector = roots, monitor, proposals, connector
 
     def auto_check():
         """Once at backend start: the CHEAP layers of the active profile (package, profile, tunnel state).
@@ -202,6 +225,10 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         saved = runs.load_settings().get('agent') or {}
         saved['provider'] = agents.default_provider_name(saved.get('provider'))
         saved['allowed_tools'] = tuple(saved.get('allowed_tools') or ())
+        # The two CLIs take different effort levels. A level kept from the other provider (or a hand-edited file)
+        # means "the CLI's default" rather than an error that would take the whole Agent tab down.
+        if saved.get('effort') not in agent_catalog.efforts_for(saved['provider']):
+            saved['effort'] = None
         return AgentSettings(**saved).validate()
 
     # ------------------------------------------------------------------ meta / schema
@@ -221,6 +248,29 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                     editors={name: schema.editor_columns(name) for name in schema.SECTIONS},
                     section_keys=schema.SECTION_KEYS, units=sorted(units._LOOKUP), run_modes=schema.RUN_MODES,
                     encoder_types=schema.ENCODER_TYPES, tables=list(TABLES), data_dictionary=data_dictionary())
+
+    # ------------------------------------------------------------------ per-encoder network settings
+    @app.get('/api/network-settings')
+    def network_settings():
+        """What choosing an encoder loads: the operator's saved values, else the publication preset."""
+        return network_presets.describe()
+
+    @app.put('/api/network-settings/{encoder}')
+    def save_network_settings(encoder: str, body: NetworkSettingsBody):
+        """Editing a value in the panel stores it for THAT encoder. The whole value set is validated."""
+        try:
+            return network_presets.save(encoder, body.network, body.advanced)
+        except KeyError:
+            fail(404, f'Unknown encoder: {encoder}')
+        except network_presets.InvalidNetworkSettings as exc:
+            fail(422, exc)
+
+    @app.post('/api/network-settings/{encoder}/reset')
+    def reset_network_settings(encoder: str, body: NetworkResetBody):
+        try:
+            return network_presets.reset(encoder, body.to)
+        except KeyError:
+            fail(404, f'Unknown encoder: {encoder}')
 
     @app.get('/api/tasks')
     def get_tasks():
@@ -256,7 +306,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                     hierarchy=tree, summary=circuit_summary(graph, circuit=runtime.circuit), complete=graph.complete,
                     diagnostics=[dict(code=d.code, severity=d.severity, message=d.message) for d in graph.diagnostics],
                     analysis_context=graph.metadata.get('analysis_context'), notes=runtime.notes,
-                    evaluation_backend=runtime.circuit.get('evaluation_backend'), max_concurrency=runtime.max_concurrency)
+                    evaluation_backend=runtime.circuit.get('evaluation_backend'), max_concurrency=runtime.max_concurrency,
+                    native_draft=bool(runtime.circuit.get('native_draft')))
 
     @app.post('/api/circuit/modify')
     def circuit_modify(body: CircuitChangeBody):
@@ -311,13 +362,26 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     def native_libraries(body: NativeReadBody):
         return _native(body, 'libraries')
 
+    @app.post('/api/virtuoso/cells')
+    def native_cells(body: NativeReadBody):
+        """The cells of one library with their views, and the library's technology library. Read-only."""
+        return _native(body, 'cells')
+
     @app.post('/api/virtuoso/read')
     def native_read(body: NativeReadBody):
         return _native(body, 'read_schematic')
 
+    @app.post('/api/virtuoso/import')
+    def native_import(body: NativeReadBody):
+        """Explicit click: read a cell INTO the workbench - Virtuoso's netlist export of the testbench (or of the
+        cell) plus the parameter readback, kept locally (`native_cells`). Gated and read-only; zero cost. The cell
+        can then be shown, edited against, validated and summarized for the agent. It cannot run: no profile."""
+        return _native(body, 'import_cell')
+
     def _native(body, op):
         try:
-            return bridge_read.read(monitor, body.profile_id, op, library=body.library, cell=body.cell)
+            return bridge_read.read(monitor, body.profile_id, op, library=body.library, cell=body.cell,
+                                    testbench=body.testbench if op == 'import_cell' else None)
         except PermissionError as exc:
             raise HTTPException(409, detail=dict(message=str(exc), gate=getattr(exc, 'gate', None)))
         except (KeyError, ValueError) as exc:
@@ -330,8 +394,13 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     def config_validate(body: ConfigBody):
         config = parse_config(body.config)
         runtime, blocked = load_runtime(config)
+        draft = runtime is not None and bool(runtime.circuit.get('native_draft'))
+        # A cell read from Virtuoso has no profile yet: which metrics it will provide is unknown (not checked),
+        # and it must never look startable.
         report = validate(config, graph=None if runtime is None else runtime.base_graph,
-                          provided_metrics=None if runtime is None else set(runtime.provided_metrics))
+                          provided_metrics=None if runtime is None or draft else set(runtime.provided_metrics))
+        if draft:
+            report.add('blocker', 'circuit_profile_missing', 'circuit', tasks.NATIVE_DRAFT_NOT_EXECUTABLE)
         return dict(report.as_dict(), config_hash=schema.config_hash(config),
                     task_definition_hash=schema.task_definition_hash(config), circuit_blocker=blocked,
                     mock=None if runtime is None else runtime.mock)
@@ -364,16 +433,46 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
 
     @app.get('/api/connection/status')
     def connection_status(profile_id: str = Query(pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')):
-        return monitor.status(profile_id)
+        return bridge_connect.describe(monitor.status(profile_id))
 
     @app.post('/api/connection/check')
     def connection_check(body: ConnectionBody):
         """Read-only and zero-cost; never a baseline simulation. trigger=auto (profile change) is limited
-        to the cheap layers by the monitor itself."""
+        to the cheap layers by the monitor itself. The answer carries a one-sentence `summary` and, once the
+        tunnel layer is known, the `ciw` line to load in Virtuoso."""
         try:
-            return monitor.check(body.profile_id, scope=body.scope, trigger=body.trigger)
+            return bridge_connect.describe(monitor.check(body.profile_id, scope=body.scope, trigger=body.trigger))
         except ValueError as exc:
             fail(422, exc)
+
+    @app.get('/api/connection/setup')
+    def connection_setup():
+        """What "Create profile" would use: the bridge setup found on THIS host. Locates files; reads none."""
+        return bridge_connect.detect_setup()
+
+    @app.post('/api/connection/profile')
+    def connection_create_profile(body: ConnectBody):
+        """Explicit click. The browser names the new profile; every path comes from this host. An existing
+        connection file is operator-owned and is never overwritten."""
+        try:
+            created = bridge_connect.create_profile(body.profile_id)
+        except FileExistsError as exc:
+            fail(409, exc, code='connection_file_exists')
+        except bridge_connect.SetupNotFound as exc:
+            fail(409, exc, code=exc.reason_code)
+        return dict(created, profiles=connection.public_profiles())
+
+    @app.post('/api/connection/connect')
+    def connection_connect(body: ConnectBody):
+        """Explicit click: start the SSH tunnel of a configured profile (as `virtuoso-bridge start` does) and
+        report the line to load in the CIW. A running tunnel is left untouched; nothing is ever stopped or
+        restarted. Followed by the CHEAP check (no Virtuoso contact) so the indicator shows the new state."""
+        try:
+            connection.resolve_profile_id(body.profile_id)
+        except KeyError:
+            fail(404, 'Unknown connection profile', code='profile_not_configured')
+        result = connector.connect(body.profile_id)
+        return dict(connect=result, status=bridge_connect.describe(monitor.check(body.profile_id, scope='cheap', trigger='user')))
 
     # ------------------------------------------------------------------ runs
     @app.get('/api/runs')
@@ -570,6 +669,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     def get_agent_settings():
         settings = agent_settings()
         return dict(vars(settings), allowed_tools=list(settings.allowed_tools), availability=agents.availability(),
+                    catalog=agent_catalog.for_api(),        # static table + one local file read: no CLI, no model call
                     note='Agent model, effort, timeout and tools are independent of RL checkpoints, simulator '
                          'concurrency and evaluation budgets.')
 
@@ -583,13 +683,31 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         runs.save_settings(agent=dict(vars(settings), allowed_tools=list(settings.allowed_tools)))
         return dict(saved=True, provider=settings.provider)
 
+    def run_readiness(config, runtime, blocked) -> dict:
+        """The start checklist. Free: static validation, the output-root check and the monitor's CACHED connection
+        status - no bridge contact, no simulator, no agent. A fresh connection test stays the user's button."""
+        report = validate(config, graph=None if runtime is None else runtime.base_graph,
+                          provided_metrics=None if runtime is None else set(runtime.provided_metrics)).as_dict()
+        profile_id = config.run.connection_profile_id
+        try:
+            link = monitor.status(profile_id) if profile_id and runtime is not None and not runtime.mock else None
+        except (KeyError, ValueError):
+            link = None
+        try:
+            output = roots.check(config.output.output_root or runs.remembered_output_root(), create=False, verify_windows=False)
+        except Exception:                                  # a checklist must never fail because one line cannot be filled in
+            output = None
+        return agent_readiness.build(config.model_dump(mode='json'), task=runtime, task_blocker=(blocked or {}).get('blocker'),
+                                     validation=report, connection=link, output=output)
+
     def _request(body) -> tuple:
         config = parse_config(body.config)
-        runtime, _ = load_runtime(config)
+        runtime, blocked = load_runtime(config)
         summary = None if runtime is None else circuit_summary(runtime.base_graph, circuit=runtime.circuit)
         circuit_hash = None if runtime is None else runtime.circuit.get('netlist_sha256')
         request = AgentRequest(kind=body.kind, user_prompt=body.prompt, config=config.model_dump(mode='json'),
-                               circuit_summary=summary, selection=body.selection)
+                               circuit_summary=summary, selection=body.selection,
+                               readiness=run_readiness(config, runtime, blocked))
         if body.request_id:
             request.request_id = body.request_id
         return request, circuit_hash
@@ -606,6 +724,13 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             raise HTTPException(409, detail=dict(exc.as_dict(), configuration_unchanged=True))
         _audit(proposal)
         return proposal
+
+    @app.post('/api/agent/readiness')
+    def readiness(body: ConfigBody):
+        """What is still missing before this run can start. Computed here: no agent is called and nothing is probed."""
+        config = parse_config(body.config)
+        runtime, blocked = load_runtime(config)
+        return run_readiness(config, runtime, blocked)
 
     @app.post('/api/agent/cancel')
     def cancel(body: dict):

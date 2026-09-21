@@ -16,6 +16,12 @@ is named. The check OBSERVES and never repairs:
 This module lives outside ``analog_optimizer`` because that package's source digest gates
 checkpoint loading and the experiment audits.
 
+The one action that DOES start a tunnel - the user's explicit "Connect SSH" click - lives in
+``bridge_connect.py``, deliberately apart from this module: nothing here can start anything, and
+``test_the_probe_only_observes`` keeps it that way. To let the panel show the line to load in the
+CIW, the tunnel layer reports the ``setup_path`` the bridge saved in its own state file (a path on
+the Virtuoso host; read locally, no network contact).
+
 Capabilities used, reconfirmed against the local virtuoso-bridge 0.8.0 source on 2026-09-20:
 ``importlib.metadata.version('virtuoso-bridge')``, ``env.set_runtime_env_file``,
 ``profile.resolve_profile``, ``remote_host_roles_from_os``, ``SSHClient.read_state`` /
@@ -69,10 +75,11 @@ NEXT_STEPS = {
     'profile_incomplete': 'Complete the missing settings in the bridge .env file of this profile.',
     'implicit_profile_binding': 'The bridge resolves a different profile than the one configured. Set "profile" '
                                 'explicitly (or run `virtuoso-bridge profile clear`) so runs never bind implicitly.',
-    'tunnel_not_running': 'Start the tunnel yourself in a terminal:  virtuoso-bridge start{profile_arg}   '
-                          '(this application never starts, restarts or stops it).',
-    'no_response': 'Virtuoso is not running, or the bridge setup file is not loaded in the CIW. In the CIW run the '
-                   'load("...virtuoso_setup.il") line printed by `virtuoso-bridge start{profile_arg}`.',
+    'tunnel_not_running': 'Click "Connect SSH" in this panel, or run in a terminal:  virtuoso-bridge start{profile_arg}   '
+                          '(a check never starts the tunnel; only that explicit click or command does).',
+    'no_response': 'Virtuoso is not running, or the bridge setup file is not loaded in the CIW. Paste the load("...") '
+                   'line shown in this panel into the CIW, then test again. If the CIW says "already running", run '
+                   'RBStop() there first and load it again.',
     'auth_failed': 'The daemon rejected the token. Restart the bridge from your terminal: virtuoso-bridge restart{profile_arg}',
     'daemon_user_mismatch': 'The port answers for another user\'s daemon. Use your own Virtuoso session/profile.',
     'conflicting_ade_windows': 'Close the listed ADE/Maestro/Explorer windows; the adapter refuses to run while they are open.',
@@ -267,14 +274,15 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
         state, running = bridge.tunnel_state(profile)
     except Exception as exc:
         return fail('tunnel', 'unknown', 'tunnel_state_unreadable', f'{type(exc).__name__}: {exc}')
+    setup_path = (state or {}).get('setup_path') or None      # the file to load in the CIW, as the bridge saved it
     if local or (state or {}).get('mode') == 'local':
-        results['tunnel'] = layer('tunnel', 'not_applicable', 'local_mode')
+        results['tunnel'] = layer('tunnel', 'not_applicable', 'local_mode', setup_path=setup_path)
         if not state:
             return fail('daemon', 'failed', 'no_response', 'local mode, but the bridge has no state: it was not started')
     elif not running:
         return fail('tunnel', 'failed', 'tunnel_not_running', 'no tunnel is running for this profile')
     else:
-        results['tunnel'] = layer('tunnel', 'ok')
+        results['tunnel'] = layer('tunnel', 'ok', setup_path=setup_path)
     if 'daemon' not in wanted:
         return list(results.values())
     # 4 -- daemon / Virtuoso CIW: one trivial read-only round trip

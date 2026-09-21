@@ -65,6 +65,11 @@ class CodexProvider(AgentProvider):
                 argv.append('--skip-git-repo-check')            # the scratch directory is not a repository
             if self.settings.model:
                 argv += ['--model', self.settings.model]
+            if self.settings.effort:                               # codex has no effort flag: it is a config override
+                if '--config' not in help_text:
+                    raise AgentError('unsupported_cli', 'The installed codex CLI does not list `--config` under `codex '
+                                                        'exec --help`, so the reasoning effort cannot be set; clear it.')
+                argv += ['--config', f'model_reasoning_effort="{self.settings.effort}"']
             argv.append('-')                                       # prompt on stdin
             code, stdout, stderr = run_cli(argv, stdin_text=build_prompt(request), cwd=scratch,
                                            timeout=self.settings.timeout_seconds, request_id=request.request_id)

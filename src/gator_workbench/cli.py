@@ -25,6 +25,9 @@ def main(argv=None):
     serve.add_argument('--allow-input-root', action='append', default=[], help='additional allowed netlist INPUT root')
     serve.add_argument('--connection-stale-seconds', type=float, default=120.0,
                        help='age after which a connection check result is shown as unknown (default 120)')
+    serve.add_argument('--connection-check-on-start', action='store_true',
+                       help='run one cheap connection check of the active profile at start (default: off - a check '
+                            'runs only on a button press in the panel, and at the gate before a real action)')
     validate = sub.add_parser('validate', help='validate a configuration file')
     validate.add_argument('config', type=Path)
     run = sub.add_parser('run', help='prepare and execute one run in the foreground')
@@ -48,7 +51,8 @@ def main(argv=None):
             print(f'WARNING: listening on {args.host} exposes run control beyond this machine. There is no '
                   'authentication layer; use only on a trusted network.', file=sys.stderr)
         app = create_app(extra_output_roots=args.allow_root, extra_input_roots=args.allow_input_root,
-                         connection_stale_seconds=args.connection_stale_seconds)
+                         connection_stale_seconds=args.connection_stale_seconds,
+                         auto_check_on_start=args.connection_check_on_start)
         print(f'GATOR workbench: http://{args.host}:{args.port}   (API docs: /api/docs)', flush=True)
         uvicorn.run(app, host=args.host, port=args.port, log_level='info')
         return 0

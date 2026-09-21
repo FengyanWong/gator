@@ -28,6 +28,7 @@ import tempfile
 
 from ..security import redact
 from .base import (AgentError, AgentProvider, AgentRequest, AgentResult, WRITE_OR_EXEC_TOOLS, run_cli)
+from .catalog import supports_effort
 from .prompts import build_prompt, proposal_schema_json
 
 AUTH_PATTERNS = re.compile(r'(?i)(invalid api key|please run /login|not logged in|authentication[_ ]error|'
@@ -71,7 +72,7 @@ class ClaudeCodeProvider(AgentProvider):
             argv += ['--allowedTools', ','.join(s.allowed_tools)]
         if s.model:
             argv += ['--model', s.model]
-        if s.effort:
+        if s.effort and supports_effort(self.name, s.model):      # e.g. Haiku takes no effort: nothing to pass
             argv += ['--effort', s.effort]
         if s.max_turns:
             argv += ['--max-turns', str(int(s.max_turns))]

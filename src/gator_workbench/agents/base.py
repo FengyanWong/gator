@@ -21,11 +21,14 @@ import threading
 import time
 from uuid import uuid4
 
-REQUEST_KINDS = ('draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'circuit_modification')
+from .catalog import efforts_for
+
+REQUEST_KINDS = ('draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'circuit_modification', 'readiness')
 SECTIONS_BY_KIND = {
     'draft_config': ('parameters', 'targets', 'measurements'), 'parameters': ('parameters',),
     'targets': ('targets',), 'measurements': ('measurements',),
     'modify_fields': ('parameters', 'targets', 'measurements'), 'circuit_modification': (),
+    'readiness': ('parameters', 'targets', 'measurements'),      # "what is missing to start?": a checklist, plus rows it can fix
 }
 # Arguments that would remove the permission boundary. Refused even if configured.
 FORBIDDEN_ARGUMENTS = ('--dangerously-skip-permissions', '--allow-dangerously-skip-permissions',
@@ -87,8 +90,9 @@ class AgentSettings:
         extra = [t for t in self.allowed_tools if t not in READ_ONLY_TOOLS]
         if extra:
             raise AgentError('invalid_request', f'Only read-only tools {READ_ONLY_TOOLS} may be granted; refused: {extra}')
-        if self.effort is not None and self.effort not in ('low', 'medium', 'high', 'xhigh', 'max'):
-            raise AgentError('invalid_request', f'Unknown effort {self.effort!r}')
+        if self.effort is not None and self.effort not in efforts_for(self.provider):      # the two CLIs differ
+            raise AgentError('invalid_request', f'Unknown effort {self.effort!r} for provider {self.provider!r}; '
+                                                f'it accepts {efforts_for(self.provider)}')
         for value in (self.model, self.cli_path):
             if value is not None and (not isinstance(value, str) or any(c in value for c in '\x00\n\r')):
                 raise AgentError('invalid_request', 'model and cli_path must be single-line strings')
@@ -104,6 +108,7 @@ class AgentRequest:
     config: dict                       # current configuration (JSON)
     circuit_summary: dict | None       # authorized engineering summary only
     selection: list = field(default_factory=list)   # modify_fields: [{section, key, fields}]
+    readiness: dict | None = None      # backend-computed start checklist (agents/readiness.py): words only, given as DATA
     requires_bridge_skill: bool = False
     request_id: str = field(default_factory=lambda: uuid4().hex)
 

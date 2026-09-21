@@ -28,8 +28,10 @@ def main():
         return 0
     if name == 'codex' and argv[:2] == ['exec', '--help']:
         hidden = os.environ.get('FAKE_CLI_SCENARIO') == 'old_codex'
+        no_config = hidden or os.environ.get('FAKE_CLI_SCENARIO') == 'codex_without_config'
         print('Usage: codex exec [OPTIONS] [PROMPT]\n  --sandbox <MODE>\n  --model <MODEL>\n  --skip-git-repo-check'
-              + ('' if hidden else '\n  --output-schema <FILE>\n  --output-last-message <FILE>'))
+              + ('' if hidden else '\n  --output-schema <FILE>\n  --output-last-message <FILE>')
+              + ('' if no_config else '\n  -c, --config <key=value>'))
         return 0
     stdin = sys.stdin.read()
     scenario = os.environ.get('FAKE_CLI_SCENARIO', 'success')

@@ -1,0 +1,225 @@
+// Browser check of "Circuit source = Virtuoso library / cell / view" in the Project panel (no frontend test runner).
+// Same approach as agent_tab_check.mjs: a throwaway headless Edge over the DevTools protocol against the RUNNING
+// workbench (default http://127.0.0.1:8765/). EVERY request to /api/virtuoso/* is intercepted, logged and answered
+// with a canned FIXTURE answer, so Virtuoso is never contacted and the check does not depend on the backend version.
+// What it pins (user request 2026-09-20): the libraries list themselves when the source is chosen (no button), a
+// library lists its cells, a cell reads its schematic, one request per step and in that order; no view is asked
+// for; the PDK id is offered from the technology library; a blocked gate and an older backend are readable.
+// Needs a configured connection profile (the panel selects the active one; reading the profiles probes nothing).
+// Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
+//   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/virtuoso_source_check.mjs)" [screenshot-dir]
+// Exit code 1 if any check fails.
+import { spawn } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const PORT = 9381, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:8765/';
+const out = process.argv[2] ?? tmpdir();
+const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-virt-'));
+const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
+  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let failures = 0; const consoleErrors = [];
+const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+
+// ---- canned answers ------------------------------------------------------------------------------------------
+const LIBRARIES = ['FIXTURE_DESIGNS', 'FIXTURE_OTHER', 'analogLib'];
+const CELLS = {
+  FIXTURE_DESIGNS: { technology_library: 'gpdk045', cells: [
+    { name: 'ota5_v1', views: ['maestro', 'schematic', 'symbol'], has_schematic: true },
+    { name: 'ota5_tb', views: ['schematic'], has_schematic: true },
+    { name: 'symbol_only', views: ['symbol'], has_schematic: false }] },
+  FIXTURE_OTHER: { technology_library: 'otherTech', cells: [{ name: 'inv', views: ['schematic', 'symbol'], has_schematic: true }] },
+};
+const schematic = (library, cell) => ({ source: 'virtuoso', library, cell, origin: 'FIXTURE', instance_count: 2, nets: ['in', 'out'],
+  instances: ['M0', 'M1'].map(name => ({ instance_path: name, master: { library: 'gpdk045', cell: 'nmos1v', view: 'symbol' }, terminals: [], parameters: { w: { raw: '1u' } } })),
+  requires_confirmation: ['FIXTURE'], note: 'FIXTURE' });
+const draft = (library, cell) => ({ loaded: true, task_key: `virtuoso:${library}/${cell}`, mock: false, native_draft: true, complete: true, diagnostics: [],
+  circuit: { library, cell, native_draft: true }, hierarchy: { XU1: { M1: {}, M2: {} }, V0: {} }, analysis_context: null, evaluation_backend: null, max_concurrency: 1,
+  summary: { device_count: 3, unknown_devices: [], devices: [{ instance_path: 'XU1/M1', kind: 'nmos', parameters: { w: { value: 4e-6 } } }] },
+  notes: ['FIXTURE: read from Virtuoso (canned answer).'] });
+const gateBlocked = { message: 'The connection gate blocked reading the native design', gate: { allowed: false, status: 'blocked', blocking: ['tunnel'], uncertain: [] } };
+
+try {
+  let target;
+  for (let i = 0; i < 75 && !target; i++) {
+    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
+    if (!target) await sleep(200);
+  }
+  if (!target) throw new Error('Edge did not open a debugging port');
+  const ws = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
+  let nextId = 0; const pending = new Map(); const calls = []; let mode = 'ok'; let inFlight = 0, overlap = false;
+  const imported = new Set(); let agentRequests = 0;
+  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
+  const fulfil = (requestId, status, obj) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
+    responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
+  const answer = async ({ requestId, request }) => {
+    const pathname = new URL(request.url).pathname;
+    if (pathname === '/api/agent/propose') { agentRequests++; return fulfil(requestId, 418, { detail: { message: 'FIXTURE: no agent request is expected' } }); }
+    if (pathname === '/api/circuit/load') {                                          // an imported cell loads from the backend's local copy
+      const circuit = JSON.parse(request.postData ?? '{}').circuit ?? {};
+      return circuit.source === 'virtuoso' && imported.has(`${circuit.library}/${circuit.cell}`)
+        ? fulfil(requestId, 200, draft(circuit.library, circuit.cell)) : send('Fetch.continueRequest', { requestId });
+    }
+    const op = pathname.replace('/api/virtuoso/', ''), body = JSON.parse(request.postData ?? '{}');
+    calls.push({ op, ...body });
+    if (inFlight++) overlap = true;                                                  // two bridge calls at once must not happen
+    await sleep(250);                                                                // a little latency, so an overlap would show
+    inFlight--;
+    if (mode === 'blocked') return fulfil(requestId, 409, { detail: gateBlocked });
+    if (op === 'libraries') return fulfil(requestId, 200, { libraries: LIBRARIES });
+    if (op === 'cells') return mode === 'outdated' ? fulfil(requestId, 404, { detail: 'Not Found' })
+      : fulfil(requestId, 200, { library: body.library, truncated: false, ...(CELLS[body.library] ?? { technology_library: null, cells: [] }) });
+    if (op === 'read') return fulfil(requestId, 200, schematic(body.library, body.cell));
+    if (op === 'import') { imported.add(`${body.library}/${body.cell}`); return fulfil(requestId, 200, { library: body.library, cell: body.cell, testbench_cell: body.testbench, device_count: 3 }); }
+    return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${op} is not expected` } });
+  };
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
+    else if (m.method === 'Fetch.requestPaused') answer(m.params).catch(() => { /* page went away */ });
+    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
+    else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push(m.params.args.map(a => a.value ?? a.description).join(' '));
+  };
+  const evaluate = async expression => {
+    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
+    return r.result.value;
+  };
+  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Circuit source'))`;
+  const LABEL = label => `[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)})`;
+  const FIELD = label => `${LABEL(label)}?.querySelector('input, select')`;
+  const BUTTON = text => `[...${PANEL}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
+  const text = () => evaluate(`${PANEL}.textContent`);
+  const value = label => evaluate(`${FIELD(label)}.value`);
+  const options = label => evaluate(`[...${FIELD(label)}.options].map(o => ({ value: o.value, text: o.textContent.trim(), disabled: o.disabled }))`);
+  const choose = (label, v) => evaluate(`(() => { const s = ${FIELD(label)}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(v)});
+    s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  const type = async (label, textToType) => { await evaluate(`(() => { const i = ${FIELD(label)}; i.focus(); i.select(); })()`); await send('Input.insertText', { text: textToType }); };
+  const ops = (from = 0) => calls.slice(from).map(c => [c.op, c.library, c.cell, c.testbench].filter(Boolean).join(' '));
+  const quiet = async (ms = 1500) => { let seen = -1; while (seen !== calls.length || inFlight) { seen = calls.length; await sleep(ms); } };
+  const shot = async name => {
+    const H3 = `[...${PANEL}.querySelectorAll('h3')].find(h => h.textContent.trim() === 'Circuit source')`;
+    await evaluate(`${H3}.scrollIntoView({ block: 'start' })`); await sleep(200);
+    const clip = await evaluate(`(() => { const a = document.querySelector('.left').getBoundingClientRect(), h = ${H3}.getBoundingClientRect();
+      return { x: a.x, y: Math.max(a.y, h.y - 6), width: a.width, height: a.bottom - Math.max(a.y, h.y - 6), scale: 2 }; })()`);
+    const { data } = await send('Page.captureScreenshot', { format: 'png', clip });
+    writeFileSync(path.join(out, name), Buffer.from(data, 'base64'));
+  };
+
+  await send('Page.enable'); await send('Runtime.enable');
+  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
+  await send('Fetch.enable', { patterns: ['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose'].map(urlPattern => ({ urlPattern, requestStage: 'Request' })) });
+  await send('Page.navigate', { url: APP });
+  for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
+  for (let i = 0; i < 60 && !(await evaluate(`[...document.querySelectorAll('.left .panel select')].some(s => s.value === 'lab' || (s.options.length > 1 && s.value))`)); i++) await sleep(100);
+  await sleep(800);
+  check('nothing is read from Virtuoso while another source is chosen', calls.length === 0, ops().join(' | '));
+
+  // ---- choosing the source lists the libraries: no button ------------------------------------------------------
+  await choose('Source', 'virtuoso'); await quiet();
+  check('choosing the source lists the libraries by itself, once', JSON.stringify(ops()) === JSON.stringify(['libraries']), ops().join(' | '));
+  check('there is no "List libraries" button any more', !(await evaluate(`!!(${BUTTON('List libraries')})`)));
+  check('the Library dropdown offers what Virtuoso answered', JSON.stringify((await options('Library')).slice(1).map(o => o.value)) === JSON.stringify(LIBRARIES), JSON.stringify(await options('Library')));
+  check('the Cell dropdown waits for a library', await evaluate(`${FIELD('Cell')}.disabled`) && (await options('Cell'))[0].text === '(choose a library first)');
+  check('no view is asked for', !(await evaluate(`!!(${LABEL('View')})`)));
+  check('this source reads "Browse only", not "Blocked"', (await text()).includes('Browse only:') && !(await text()).includes('Blocked:'));
+  await shot('virtuoso-1-libraries.png');
+
+  // ---- a library lists its cells ----------------------------------------------------------------------------------
+  let mark = calls.length;
+  await choose('Library', 'FIXTURE_DESIGNS'); await quiet();
+  check('choosing a library lists its cells, once', JSON.stringify(ops(mark)) === JSON.stringify(['cells FIXTURE_DESIGNS']), ops(mark).join(' | '));
+  const cellOptions = await options('Cell');
+  check('the Cell dropdown lists them; a cell without a schematic cannot be chosen', cellOptions.length === 4 && cellOptions.find(o => o.value === 'symbol_only')?.disabled === true
+    && cellOptions.find(o => o.value === 'symbol_only').text.includes('no schematic view') && cellOptions.find(o => o.value === 'ota5_v1')?.disabled === false, JSON.stringify(cellOptions));
+  check('the PDK id is offered from the technology library', (await value('PDK id')) === 'gpdk045', await value('PDK id'));
+  check('the testbench dropdown offers the cells that have a schematic', JSON.stringify((await options('Testbench cell')).map(o => o.value)) === JSON.stringify(['', 'ota5_v1', 'ota5_tb']), JSON.stringify(await options('Testbench cell')));
+
+  // ---- a cell reads its schematic ------------------------------------------------------------------------------------
+  mark = calls.length;
+  await choose('Cell', 'ota5_v1'); await quiet();
+  check('choosing a cell reads its schematic, once', JSON.stringify(ops(mark)) === JSON.stringify(['read FIXTURE_DESIGNS ota5_v1']), ops(mark).join(' | '));
+  check('the schematic is shown as read', (await text()).includes('Native schematic FIXTURE_DESIGNS/ota5_v1 (2 instances'));
+  check('the panel says which view is read and which others exist', (await text()).includes('View: schematic') && (await text()).includes('maestro, symbol'));
+  await shot('virtuoso-2-cell-read.png');
+
+  // ---- reading the cell INTO the workbench: an explicit press; then the agent hand-off -----------------------------------
+  check('a chosen cell offers "Read this cell into the workbench"', !(await evaluate(`${BUTTON('Read this cell into the workbench')}.disabled`)) && (await text()).includes('To start a profile for this cell'));
+  mark = calls.length;
+  await evaluate(`${BUTTON('Read this cell into the workbench')}.click()`); await quiet();
+  check('the press imports the cell once (no testbench chosen)', JSON.stringify(ops(mark)) === JSON.stringify(['import FIXTURE_DESIGNS ota5_v1']), ops(mark).join(' | '));
+  check('the cell is then loaded from the local copy and shown as a draft', (await text()).includes('Read from Virtuoso. Not optimizable yet') && (await text()).includes('Hierarchy (3 instances)')
+    && !(await text()).includes('REAL evaluation backend') && !(await text()).includes('Browse only'));
+  await choose('Testbench cell', 'ota5_tb'); await sleep(600);
+  mark = calls.length;
+  await evaluate(`${BUTTON('Read the cell again')}.click()`); await quiet();
+  check('"Read the cell again" exports through the chosen testbench', JSON.stringify(ops(mark)) === JSON.stringify(['import FIXTURE_DESIGNS ota5_v1 ota5_tb']), ops(mark).join(' | '));
+  await shot('virtuoso-2b-draft.png');
+  await evaluate(`${BUTTON('Ask the agent for suggestions')}.click()`); await sleep(800);
+  const box = await evaluate(`document.querySelector('footer textarea')?.value ?? ''`);
+  check('"Ask the agent" opens the Agent tab with the request written out', box.includes('which device sizes to vary') && box.includes('what it is'), box.slice(0, 80));
+  check('nothing was sent to the agent by itself', agentRequests === 0, `${agentRequests} request(s)`);
+
+  // ---- another library: the cell is forgotten, a typed PDK id is kept -----------------------------------------------
+  await type('PDK id', 'my_pdk'); await sleep(300);
+  mark = calls.length;
+  await choose('Library', 'FIXTURE_OTHER'); await quiet();
+  check('another library lists its own cells and reads nothing yet', JSON.stringify(ops(mark)) === JSON.stringify(['cells FIXTURE_OTHER']), ops(mark).join(' | '));
+  check('the cell of the old library is forgotten and its schematic is gone', (await value('Cell')) === '' && !(await text()).includes('Native schematic'));
+  check('a typed PDK id is not overwritten', (await value('PDK id')) === 'my_pdk', await value('PDK id'));
+
+  // ---- Refresh repeats the chain, one call after the other -------------------------------------------------------------
+  await choose('Cell', 'inv'); await quiet();
+  mark = calls.length; overlap = false;
+  await evaluate(`${BUTTON('Refresh')}.click()`); await quiet();
+  check('Refresh reads libraries, cells and schematic again, in that order', JSON.stringify(ops(mark)) === JSON.stringify(['libraries', 'cells FIXTURE_OTHER', 'read FIXTURE_OTHER inv']), ops(mark).join(' | '));
+  check('never two bridge calls at once', !overlap);
+
+  // ---- the link is down: readable, and Refresh recovers ------------------------------------------------------------------
+  mode = 'blocked'; mark = calls.length;
+  await evaluate(`${BUTTON('Refresh')}.click()`); await quiet();
+  check('a blocked gate stops the chain at the first step', JSON.stringify(ops(mark)) === JSON.stringify(['libraries']), ops(mark).join(' | '));
+  check('and says what to do', (await text()).includes('Virtuoso cannot be reached (tunnel)') && (await text()).includes('connection panel'));
+  check('the configured library stays visible while nothing can be listed', (await value('Library')) === 'FIXTURE_OTHER');
+  await shot('virtuoso-3-link-down.png');
+  mode = 'ok'; mark = calls.length;
+  await evaluate(`${BUTTON('Refresh')}.click()`); await quiet();
+  check('after the link is back, Refresh recovers everything', ops(mark).length === 3 && (await text()).includes('Native schematic FIXTURE_OTHER/inv') && !(await text()).includes('cannot be reached'), ops(mark).join(' | '));
+
+  // ---- an older backend (no /api/virtuoso/cells): the cell can still be typed ----------------------------------------------
+  mode = 'outdated'; mark = calls.length;
+  await evaluate(`${BUTTON('Refresh')}.click()`); await quiet();
+  check('an older backend is named as the reason', (await text()).includes('older than the page'));
+  check('the cell can then be typed and read with a button', (await evaluate(`${FIELD('Cell')}.tagName`)) === 'INPUT' && !!(await evaluate(`!!(${BUTTON('Read native schematic')})`)));
+  mark = calls.length;
+  await evaluate(`${BUTTON('Read native schematic')}.click()`); await quiet();
+  check('that button reads once', JSON.stringify(ops(mark)) === JSON.stringify(['read FIXTURE_OTHER inv']) && (await text()).includes('Native schematic FIXTURE_OTHER/inv'), ops(mark).join(' | '));
+
+  // ---- the two labels explain themselves -----------------------------------------------------------------------------------------
+  check('Circuit class and PDK id are explained', !!(await evaluate(`!!(${LABEL('Circuit class')})`)) && (await text()).includes('labels saved with every run')
+    && (await evaluate(`${LABEL('PDK id')}.title`)).includes('process design kit'));
+
+  // ---- the limit is explained in plain words and leads to the circuits that CAN be optimized ---------------------------------------
+  check('the limit is a neutral note in plain words, not a red box', (await evaluate(`!!${PANEL}.querySelector('.note') && !${PANEL}.querySelector('.blocker')`))
+    && (await text()).includes('cannot optimize it yet') && (await text()).includes('circuit profile'));
+  const offered = (await evaluate(`[...${PANEL}.querySelectorAll('.note button')].map(b => b.textContent)`)).filter(name => name.startsWith('real:'));
+  check('it offers the circuits that have a profile', offered.length >= 1, offered.join(', '));
+  await evaluate(`${PANEL}.querySelector('.note button').click()`); await sleep(1500);
+  check('one click switches to that registered task', (await value('Source')) === 'registered_task' && (await value('Task')) === offered[0], `${await value('Source')} / ${await value('Task')}`);
+
+  check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
+  ws.close();
+} catch (error) {
+  failures++; console.log('ERROR ' + (error?.stack ?? error));
+  if (consoleErrors.length) console.log('page errors: ' + consoleErrors.join(' | ').slice(0, 600));
+} finally {
+  edge.kill();
+  await sleep(500);
+  try { rmSync(profile, { recursive: true, force: true }); } catch { /* Edge may still hold a file; the temp dir is harmless */ }
+}
+console.log(failures ? `${failures} check(s) FAILED` : 'all checks passed');
+process.exit(failures ? 1 : 0);

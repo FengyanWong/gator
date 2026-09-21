@@ -102,6 +102,17 @@ def test_netlist_import_is_limited_to_operator_allowed_input_roots(client, tmp_p
         assert response.status_code == 403, path
 
 
+def test_an_incomplete_netlist_reference_names_the_file_that_is_missing(client):
+    """User report 2026-09-20: the old text named both schema fields whatever was missing."""
+    netlist, mapping = str(REPO / 'tests/fixtures/synthetic/ldo.scs'), str(REPO / 'configs/ldo.json')
+    for given, named, silent in ((dict(netlist_path=netlist), 'parser_config_path', 'netlist_path'),
+                                 (dict(parser_config_path=mapping), 'netlist_path', 'parser_config_path')):
+        answer = client.post('/api/circuit/load', json=dict(circuit=dict(source='netlist', **given))).json()
+        assert not answer['loaded'] and named in answer['blocker'] and silent not in answer['blocker'], answer['blocker']
+    both = client.post('/api/circuit/load', json=dict(circuit=dict(source='netlist'))).json()['blocker']
+    assert 'netlist_path' in both and 'parser_config_path' in both and 'never guessed' in both
+
+
 def test_circuit_modification_is_diff_then_confirmed_working_copy(client, tmp_path):
     circuit = dict(source='netlist', netlist_path=str(REPO / 'tests/fixtures/synthetic/opamp.scs'),
                    parser_config_path=str(REPO / 'configs/opamp.json'))
@@ -242,6 +253,28 @@ def test_native_reads_are_gated_and_a_real_snapshot_is_summarised(tmp_path):
         bridge_read.read(probe(tmp_path), 'lab', 'read_schematic', library='lib; rm -rf /', cell='c')
 
 
+def test_cells_of_a_library_are_listed_with_their_views(tmp_path):
+    """The Library -> Cell dropdowns (user request 2026-09-20). Fake reader process; no Virtuoso."""
+    parsed = bridge_read.parse_cells('ota5_v1|views=symbol schematic maestro \nR_only|views=symbol \n\n'
+                                     'bad name|views=schematic \nx|views=sch;ematic layout \n')
+    assert parsed == [dict(name='ota5_v1', views=['maestro', 'schematic', 'symbol'], has_schematic=True),
+                      dict(name='R_only', views=['symbol'], has_schematic=False),
+                      dict(name='x', views=['layout'], has_schematic=False)]        # names that are not plain Cadence names are dropped
+    assert 'ddGetObj("%s")' in bridge_read.CELLS_SKILL                               # read-only dd calls, as in the bridge's example
+    assert not any(call in bridge_read.CELLS_SKILL for call in ('dbOpen', 'dbSave', 'ddDelete', 'hiOpen', 'geOpen'))
+    fake = tmp_path / 'reader.py'
+    fake.write_text('import json, sys\nprint(json.dumps(dict(argv=sys.argv[1:], cells=[], truncated=False)))\n')
+    listed = bridge_read.read(probe(tmp_path), 'lab', 'cells', library='GATOR_TESTS', command=[sys.executable, str(fake)])
+    assert listed['argv'] == ['--profile-id', 'lab', '--op', 'cells', '--library', 'GATOR_TESTS']
+    for bad in (None, 'a"b', 'lib) ddDeleteObj(x'):                                   # nothing but a plain name reaches the SKILL text
+        with pytest.raises(ValueError):
+            bridge_read.read(probe(tmp_path), 'lab', 'cells', library=bad, command=[sys.executable, str(fake)])
+    down = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False,
+                                 monitor=probe(tmp_path, tunnel='failed', daemon='not_checked')))
+    blocked = down.post('/api/virtuoso/cells', json=dict(profile_id='lab', library='GATOR_TESTS'))
+    assert blocked.status_code == 409 and blocked.json()['detail']['gate']['blocking'] == ['tunnel']
+
+
 # ------------------------------------------------------------------------------- agent endpoints
 @pytest.fixture
 def fake_claude(tmp_path, monkeypatch):
@@ -323,3 +356,13 @@ def test_staleness_limit_is_configurable(tmp_path):
     app = create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False,
                      connection_stale_seconds=7.5)
     assert app.state.monitor.stale_after_seconds == 7.5
+
+
+def test_serve_checks_the_connection_at_start_only_when_asked(monkeypatch):
+    """User request 2026-09-20: a check runs on a button press, so `serve` starts none unless the flag is given."""
+    from gator_workbench import cli
+    seen = []
+    monkeypatch.setattr('gator_workbench.api.create_app', lambda **kwargs: seen.append(kwargs) or object())
+    monkeypatch.setattr('uvicorn.run', lambda *args, **kwargs: None)
+    assert cli.main(['serve']) == 0 and cli.main(['serve', '--connection-check-on-start']) == 0
+    assert [kwargs['auto_check_on_start'] for kwargs in seen] == [False, True]

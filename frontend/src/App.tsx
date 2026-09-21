@@ -3,6 +3,7 @@ import { api, Json } from './api';
 import { useConfig, usePolling } from './store';
 import { CircuitPanel, ConnectionPanel } from './panels/Left';
 import { Editors } from './panels/Editors';
+import { ValidationStatus } from './panels/Issues';
 import { OutputPanel, ResearchPanel, RunPanel } from './panels/Right';
 import { AgentTab, DataTab, FilesTab, LogsTab, StatusTab } from './panels/Bottom';
 
@@ -21,7 +22,7 @@ export function App() {
   const [runs, setRuns] = useState<Json[]>([]);
   const [runDir, setRunDir] = useState<string | null>(null);
   const [tab, setTab] = useState<BottomTab>('status');
-  const [agentRequest, setAgentRequest] = useState<{ kind: string; selection: Json[] } | null>(null);
+  const [agentRequest, setAgentRequest] = useState<{ kind: string; selection: Json[]; prompt?: string } | null>(null);
   const [message, setMessage] = useState<Json>(null);
   const [fatal, setFatal] = useState<string | null>(null);
   const profileId: string | null = config.run.connection_profile_id ?? null;
@@ -49,9 +50,10 @@ export function App() {
   const start = async (baseline_only: boolean) => {
     setMessage(null);
     const body: Json = { config, baseline_only };
+    const budget = baseline_only ? 1 : config.run.max_evaluations;
+    const authorize = () => window.confirm(`This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?`);
     if (isReal) {
-      const budget = baseline_only ? 1 : config.run.max_evaluations;
-      if (!window.confirm(`This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?`)) return;
+      if (!authorize()) return;
       body.authorize_real_simulation = true;
     }
     try {
@@ -60,6 +62,12 @@ export function App() {
       setMessage({ level: started.mock ? 'mock' : 'info', text: `${started.mock ? started.mock_notice + ' ' : ''}Run directory: ${started.run_dir}` });
     } catch (e: any) {
       const detail = e.detail ?? {};
+      // A real task started before its circuit was loaded in the panel: the backend refused (nothing was created).
+      // Ask for the same explicit authorization, then try again.
+      if (detail.code === 'real_authorization_required' && !body.authorize_real_simulation) {
+        if (!authorize()) return;
+        try { const started = await api.start({ ...body, authorize_real_simulation: true }); setRunDir(started.run_dir); setTab('status'); refreshRuns(); setMessage({ level: 'info', text: `Run directory: ${started.run_dir}` }); return; } catch (again: any) { setMessage({ level: 'error', text: `${again.detail?.code ?? 'rejected'}: ${again.message}`, detail: again.detail }); return; }
+      }
       if (detail.code === 'confirm_transfer' && window.confirm(`${detail.report?.reason}\n\nLoad this model for a NEW task (fine_tune creates a new run with a parent)?`)) {
         try { const started = await api.start({ ...body, confirm_transfer: true }); setRunDir(started.run_dir); refreshRuns(); return; } catch (again: any) { setMessage({ level: 'error', text: again.message, detail: again.detail }); return; }
       }
@@ -78,13 +86,12 @@ export function App() {
 
   if (fatal) return <p className="error">Backend not reachable: {fatal}</p>;
   if (!schema) return <p>Loading schema...</p>;
-  const blocking = (validation?.issues ?? []).filter((i: Json) => i.level === 'error' || i.level === 'blocker');
   return (
     <div className="layout">
       <header>
         <b>GATOR workbench</b><span className="hint"> {meta?.version} | {meta?.environment?.environment} | data-only outputs (no plots)</span>
         <span className="spacer" />
-        <span className={validation?.blocks_run ? 'error' : 'ok'}>{validation ? (validation.blocks_run ? `${blocking.length} blocking issue(s)` : 'configuration valid') : 'validating...'}</span>
+        <ValidationStatus validation={validation} config={config} schema={schema} />
         <button onClick={() => api.validate(config).then(setValidation)}>Static validation</button>
         <button disabled={!!validation?.blocks_run} onClick={() => start(true)} title="ONE costed evaluation of the initial design. It is a preflight record, not free.">Single baseline simulation</button>
         <button className="primary" disabled={!!validation?.blocks_run} onClick={() => start(false)}>Start</button>
@@ -93,7 +100,8 @@ export function App() {
         {message.detail?.report && <details><summary>details</summary><pre>{JSON.stringify(message.detail.report, null, 1)}</pre></details>}</div>}
       <aside className="left">
         <ConnectionPanel profileId={profileId} setProfileId={id => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }))} />
-        <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId} />
+        <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId} meta={meta}
+          onAgent={(kind, selection, prompt) => { setAgentRequest({ kind, selection, prompt }); setTab('agent'); }} />
       </aside>
       <main>
         <Editors schema={schema} config={config} setConfig={setConfig} undo={store.undo} redo={store.redo} canUndo={store.canUndo} canRedo={store.canRedo}
@@ -114,7 +122,7 @@ export function App() {
             {runs.map(r => <option key={r.run_dir} value={r.run_dir}>{r.created_utc?.slice(0, 19)} | {r.task_id} | {r.mode} seed{r.seed} | {r.state}{r.mock ? ' [MOCK]' : ''}</option>)}</select>
         </div>
         <div className="bottom-body">
-          {tab === 'agent' && <AgentTab config={config} setConfig={setConfig} request={agentRequest} clearRequest={() => setAgentRequest(null)} />}
+          <AgentTab hidden={tab !== 'agent'} config={config} setConfig={setConfig} request={agentRequest} clearRequest={() => setAgentRequest(null)} />
           {tab === 'status' && <StatusTab status={status} onCommand={c => runDir && api.command(runDir, c)} onContinue={continueRun} />}
           {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
           {tab === 'data' && <DataTab runDir={runDir} />}

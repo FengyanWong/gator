@@ -526,6 +526,10 @@ def _check_run(config, report):
     if run.mode != 'frozen' and run.max_evaluations < adv.batch_size + 1:
         report.add('warning', 'budget_below_batch', 'run.max_evaluations',
                    'The budget cannot fill one batch; no learner update will occur')
+    if run.mode != 'frozen' and run.max_evaluations <= adv.warmup_transitions:
+        report.add('warning', 'budget_within_warmup', 'run.advanced.warmup_transitions',
+                   'The whole budget is random warm-up exploration; the policy never chooses an action. Published '
+                   'settings assume thousands of simulations: lower the warm-up or raise the budget')
     if run.mode == 'frozen':
         report.add('info', 'frozen_no_updates', 'run.mode',
                    'frozen: no weight, temperature or normalization updates; no learner_updates rows are written')

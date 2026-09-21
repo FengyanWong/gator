@@ -34,6 +34,8 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -41,10 +43,10 @@ import tempfile
 import threading
 import time
 
-from . import connection
+from . import connection, ngspice_link
 from .paths import local_settings_dir, repo_root
 from .security import redact
-from .storage.atomic import JsonlAppender, write_json
+from .storage.atomic import JsonlAppender, read_json, write_json
 from .storage.dataset import utcnow
 
 DEFAULT_PROFILE_ID = 'lab'
@@ -57,6 +59,7 @@ NEXT_STEPS = dict(connection.NEXT_STEPS, **{
     'connect_timeout': 'Connecting did not finish in time. Check the network/VPN to the target host, then try again.',
     'setup_path_unknown': 'The bridge state holds no setup-file path (a tunnel started outside the bridge?). Run in a '
                           'terminal:  virtuoso-bridge status{profile_arg}   - it prints the load("...") line.',
+    'nothing_to_connect': 'An ngspice connection has nothing to start or to load: press "Test connection".',
 })
 
 
@@ -99,6 +102,54 @@ _TESTED = {'cheap': 'Bridge package, profile and SSH tunnel are OK. The Virtuoso
                     '"Test connection".',
            'interactive': 'Connected: the SSH tunnel is up, the Virtuoso CIW answered and the session is ready.',
            'full': 'Connected: SSH tunnel, Virtuoso CIW, session, Spectre and a free license seat are all OK.'}
+# Virtuoso on the backend's own machine: the same layers, but there is no SSH to talk about.
+_LOCAL_LAYER_TEXT = dict(_LAYER_TEXT, daemon='The bridge is set up on this machine, but the Virtuoso CIW does not answer - load '
+                                             'the command below in the CIW, then test again')
+_LOCAL_REASON_TEXT = dict(_REASON_TEXT, **{
+    'local_bridge_not_set_up': 'The bridge is not set up on this machine yet - click "Set up local bridge"',
+    'auth_failed': 'The daemon in the CIW rejected the token',
+    'daemon_user_mismatch': "The port answers for ANOTHER user's Virtuoso daemon"})
+_LOCAL_TESTED = {'cheap': 'Bridge package and profile are OK (Virtuoso on this machine needs no SSH tunnel). The Virtuoso CIW '
+                          'has NOT been contacted yet - click "Test connection".',
+                 'interactive': 'Connected: the Virtuoso CIW on this machine answered and the session is ready.',
+                 'full': 'Connected: Virtuoso CIW on this machine, session, Spectre and a free license seat are all OK.'}
+_SHARED_REASON_TEXT = {
+    'unknown_kind': 'The connection profile names a kind of connection this workbench does not know',
+    'kind_mismatch': 'The connection profile and the bridge env file disagree about where Virtuoso runs'}
+_NGSPICE_LAYER_TEXT = {
+    'connection_profile': 'The connection profile is not usable',
+    'ssh': 'The ngspice machine cannot be reached over SSH',
+    'ngspice': 'The ngspice program was not found',
+    'trial_run': 'ngspice was found, but it did not solve the built-in test circuit',
+}
+_NGSPICE_REASON_TEXT = {
+    'probe_timeout': 'The test did not answer in time',
+    'unparseable_probe_output': 'The test process gave no readable result',
+    'ssh_client_missing': 'The backend machine has no `ssh` program',
+    'ngspice_version_unreadable': 'A program answered, but not like ngspice'}
+
+
+def _transport(result) -> str:
+    """'local' or 'ssh'. What the check itself found out beats the declared kind (a profile without a kind may still
+    be local); a declared kind that disagrees never gets this far - it fails layer 2."""
+    layers = result.get('layers') or []
+    profile = next((item for item in layers if item.get('layer') == 'connection_profile'), None)
+    mode = ((profile or {}).get('details') or {}).get('mode')
+    if mode in ('local', 'remote'):
+        return 'local' if mode == 'local' else 'ssh'
+    if any(item.get('reason_code') == 'local_mode' for item in layers):
+        return 'local'
+    return connection.KINDS.get(result.get('kind'), connection.KINDS[connection.DEFAULT_KIND])['transport']
+
+
+def _ngspice_tested(result, transport) -> str:
+    found = next((item for item in result.get('layers') or [] if item.get('layer') == 'ngspice'), None)
+    version = ((found or {}).get('details') or {}).get('version')
+    where = 'on this machine' if transport == 'local' else 'on the remote machine'
+    if result.get('scope') == 'cheap':
+        return 'The profile is complete. ngspice has NOT been contacted yet - click "Test connection".'
+    return (f"Connected: {'SSH works, and ' if transport == 'ssh' else ''}ngspice{f' {version}' if version else ''} {where} "
+            'answered and solved the built-in test circuit.')
 
 
 def summarize(result) -> dict:
@@ -109,21 +160,35 @@ def summarize(result) -> dict:
     if result.get('stale'):
         return dict(level='unknown', headline='The last test is too old to trust - test again.', broken_layer=None,
                     next_step=None)
+    ngspice = connection.family_of(result.get('kind')) == 'ngspice'
+    transport = _transport(result)
     broken = next((item for item in layers if item.get('state') in ('failed', 'not_ready', 'busy', 'unknown')), None)
     if broken is None:
         scope = result.get('scope', 'interactive')
-        return dict(level='ok' if scope != 'cheap' else 'partial', headline=_TESTED.get(scope, _TESTED['interactive']),
-                    broken_layer=None, next_step=None)
-    headline = _REASON_TEXT.get(broken.get('reason_code')) or _LAYER_TEXT.get(broken['layer'], broken['layer'])
+        tested = _LOCAL_TESTED if transport == 'local' else _TESTED
+        return dict(level='ok' if scope != 'cheap' else 'partial', broken_layer=None, next_step=None,
+                    headline=_ngspice_tested(result, transport) if ngspice else tested.get(scope, tested['interactive']))
+    if ngspice:
+        by_reason, by_layer = _NGSPICE_REASON_TEXT, _NGSPICE_LAYER_TEXT
+    else:
+        by_reason, by_layer = (_LOCAL_REASON_TEXT, _LOCAL_LAYER_TEXT) if transport == 'local' else (_REASON_TEXT, _LAYER_TEXT)
+    reason = broken.get('reason_code')
+    headline = _SHARED_REASON_TEXT.get(reason) or by_reason.get(reason) or by_layer.get(broken['layer'], broken['layer'])
+    if ngspice and broken['layer'] == 'ngspice' and reason == 'ngspice_not_found':
+        headline += ' on this machine' if transport == 'local' else ' on the remote machine'
     level = dict(failed='error', not_ready='warn', busy='warn').get(broken['state'], 'unknown')
-    return dict(level=level, headline=f'{headline}.', broken_layer=broken['layer'], reason_code=broken.get('reason_code'),
+    return dict(level=level, headline=f'{headline}.', broken_layer=broken['layer'], reason_code=reason,
                 next_step=(broken.get('details') or {}).get('next_step'))
 
 
 def describe(result) -> dict:
-    """A check/status result as the panel shows it: + `summary` and + `ciw` (from the tunnel layer)."""
+    """A check/status result as the panel shows it: + `summary`, + `ciw` (from the tunnel layer; Virtuoso only) and
+    + what kind of connection it is, in the words the panel uses."""
     tunnel = next((item for item in result.get('layers') or [] if item.get('layer') == 'tunnel'), None)
-    return dict(result, summary=summarize(result), ciw=ciw_lines(((tunnel or {}).get('details') or {}).get('setup_path')))
+    kind = result.get('kind')
+    info = connection.KINDS.get(kind, {})
+    return dict(result, summary=summarize(result), ciw=ciw_lines(((tunnel or {}).get('details') or {}).get('setup_path')),
+                family=info.get('family'), transport=_transport(result) if info else None, kind_label=info.get('label'))
 
 
 # ---------------------------------------------------------------------------- profile creation
@@ -155,34 +220,120 @@ def detect_setup(home=None) -> dict:
     if not importable and site_packages is None:
         problems.append(dict(reason_code='bridge_not_found', message='virtuoso-bridge is neither importable by the backend '
                              f'interpreter ({sys.executable}) nor installed under {home}/virtuoso-bridge-lite/.venv.'))
-    return dict(env_file=str(env_file), env_file_exists=env_file.is_file(), bridge_importable=importable,
-                bridge_site_packages=None if site_packages is None else str(site_packages),
-                connection_file=str(connection.connection_file()), connection_file_exists=connection.connection_file().is_file(),
-                problems=problems, can_create=not problems and not connection.connection_file().is_file())
+    found = dict(env_file=str(env_file), env_file_exists=env_file.is_file(), bridge_importable=importable,
+                 bridge_site_packages=None if site_packages is None else str(site_packages),
+                 connection_file=str(connection.connection_file()), connection_file_exists=connection.connection_file().is_file(),
+                 problems=problems, can_create=not problems)
+    return dict(found, kinds=_kind_setups(found, home))
+
+
+def _kind_setups(bridge, home) -> list:
+    """Per kind of connection: what was found on this host, what is missing, and whether "Create" can work.
+    Locates programs and reads NAMES only (the Host names of ~/.ssh/config); contacts nothing."""
+    bridge_checks = [dict(ok=bridge['env_file_exists'], text=f"bridge env file {bridge['env_file']}"),
+                     dict(ok=bridge['bridge_importable'] or bool(bridge['bridge_site_packages']),
+                          text='virtuoso-bridge is importable by the backend' if bridge['bridge_importable']
+                          else f"bridge package in {bridge['bridge_site_packages']}" if bridge['bridge_site_packages']
+                          else 'virtuoso-bridge package')]
+    program = shutil.which('ngspice')
+    ssh_program = shutil.which('ssh')
+    hosts = ngspice_link.ssh_config_hosts(home)
+    setups = {
+        'virtuoso_ssh': dict(checks=bridge_checks, problems=bridge['problems'], can_create=bridge['can_create'],
+                             note='Which machine it is stays in the bridge env file; the first Connect verifies that it is '
+                                  'NOT this machine.'),
+        'virtuoso_local': dict(checks=bridge_checks, problems=bridge['problems'], can_create=bridge['can_create'],
+                               note='For Virtuoso on this machine the bridge env file must say VB_REMOTE_HOST=localhost; the '
+                                    'first "Set up local bridge" verifies it and starts nothing if it names another machine.'),
+        'ngspice_local': dict(
+            checks=[dict(ok=bool(program), text=f'ngspice program {program}' if program else 'ngspice program on the PATH of the backend')],
+            problems=[] if program else [dict(reason_code='ngspice_not_found', message=ngspice_link.NEXT_STEPS['ngspice_not_found'] + ' The connection can be created now and tested after that.')],
+            can_create=True, note='Uses the program `ngspice` found on the PATH when it is tested, or "ngspice_bin" if you add '
+                                  'that to the profile by hand.'),
+        'ngspice_ssh': dict(
+            checks=[dict(ok=bool(ssh_program), text=f'ssh program {ssh_program}' if ssh_program else 'ssh program on the PATH of the backend'),
+                    dict(ok=bool(hosts), text=f"{len(hosts)} Host name(s) in ~/.ssh/config" if hosts else 'a Host entry in ~/.ssh/config')],
+            problems=([] if ssh_program else [dict(reason_code='ssh_client_missing', message=ngspice_link.NEXT_STEPS['ssh_client_missing'])])
+            + ([] if hosts else [dict(reason_code='no_ssh_host', message='The browser may only pick a machine that is already '
+                                      'named on this host. Add one to ~/.ssh/config, for example:  Host simhost / HostName <address> / '
+                                      'User <you>  (one setting per line), make sure  ssh simhost true  works without a password, '
+                                      'then press Refresh.')]),
+            can_create=bool(ssh_program and hosts), ssh_hosts=hosts,
+            note='The machine is chosen by its Host name in ~/.ssh/config; its address, user, port and key stay in that file.'),
+    }
+    return [dict(kind=kind, label=info['label'], family=info['family'], transport=info['transport'], summary=info['summary'],
+                 **setups[kind]) for kind, info in connection.KINDS.items()]
 
 
 _CREATE_LOCK = threading.Lock()
+BRIDGE_PROFILE = re.compile(r'^[A-Za-z0-9_]{1,32}$')          # the suffix of the VB_*_<profile> variables of the bridge env file
 
 
-def create_profile(profile_id=DEFAULT_PROFILE_ID, *, home=None) -> dict:
-    """Write the connection file for the bridge setup detected on this host. Never overwrites."""
+class ProfileExists(FileExistsError):
+    pass
+
+
+def create_profile(profile_id=DEFAULT_PROFILE_ID, *, kind=connection.DEFAULT_KIND, ssh_host=None, bridge_profile=None,
+                   home=None) -> dict:
+    """Add ONE connection profile, built from what is found on this host, to the connection file (created if
+    absent). Existing profiles are operator-owned and are never changed: an identifier that exists is refused,
+    every other key of the file is written back as it was, `active` is only set when the file had none, and the
+    previous file is kept as a timestamped copy next to it. A file that cannot be read is never replaced."""
     if not isinstance(profile_id, str) or not connection.PROFILE_ID.match(profile_id):
         raise ValueError('profile_id must be a short identifier (letters, digits, "_", "." or "-")')
+    if kind not in connection.KINDS:
+        raise ValueError(f'kind must be one of {sorted(connection.KINDS)}')
+    family = connection.KINDS[kind]['family']
+    if bridge_profile is not None and (family != 'virtuoso' or not isinstance(bridge_profile, str)
+                                       or not BRIDGE_PROFILE.match(bridge_profile)):
+        raise ValueError('bridge_profile is the name of a profile in the bridge env file (letters, digits, "_"); Virtuoso only')
+    if (ssh_host is not None) != (kind == 'ngspice_ssh'):
+        raise ValueError('ssh_host is required for "ngspice over SSH" and accepted for nothing else')
     with _CREATE_LOCK:
         target = connection.connection_file()
+        existing = None
         if target.exists():
-            raise FileExistsError(f'{target} already exists. It is operator-owned and is never overwritten; edit it by hand.')
+            try:
+                existing = read_json(target, default=None)
+            except (OSError, ValueError):                # not JSON at all
+                existing = None
+            if not isinstance(existing, dict) or not isinstance(existing.get('profiles'), dict):
+                raise FileExistsError(f'{target} exists but is not a readable connection file. It is never replaced: '
+                                      'repair or move it by hand.')
+            if profile_id in existing['profiles']:
+                raise ProfileExists(f'A connection named {profile_id!r} already exists in {target}. Existing connections are '
+                                    'never changed from the browser: pick another name, or edit the file by hand.')
         found = detect_setup(home)
-        if found['problems']:
-            raise SetupNotFound(found['problems'][0]['reason_code'], ' '.join(p['message'] for p in found['problems']))
-        profile = dict(env_file=found['env_file'], profile=None)      # profile null = the bridge's default profile, explicitly
-        if found['bridge_site_packages']:
-            profile['bridge_site_packages'] = found['bridge_site_packages']
+        setup = next(item for item in found['kinds'] if item['kind'] == kind)
+        if family == 'virtuoso':
+            if found['problems']:
+                raise SetupNotFound(found['problems'][0]['reason_code'], ' '.join(p['message'] for p in found['problems']))
+            profile = dict(kind=kind, env_file=found['env_file'], profile=bridge_profile)   # null = the bridge's default profile, explicitly
+            if found['bridge_site_packages']:
+                profile['bridge_site_packages'] = found['bridge_site_packages']
+        elif kind == 'ngspice_ssh':
+            # Only a machine this HOST already names: the browser can point the backend at nothing new.
+            if not isinstance(ssh_host, str) or ssh_host not in setup['ssh_hosts']:
+                raise SetupNotFound('ssh_host_not_configured', 'ssh_host must be one of the Host names in ~/.ssh/config of the '
+                                    'backend user. ' + (setup['problems'][-1]['message'] if setup['problems'] else ''))
+            profile = dict(kind=kind, ssh_host=ssh_host)
+        else:
+            profile = dict(kind=kind)                    # `ngspice` from the PATH at test time; "ngspice_bin" is a hand edit
+        document = dict(existing) if existing else dict(active=profile_id, profiles={})
+        document['profiles'] = dict(document['profiles'], **{profile_id: profile})
+        if document.get('active') not in document['profiles']:
+            document['active'] = profile_id
+        backup = None
+        if existing is not None:
+            backup = target.with_name(f"{target.name}.before-{utcnow().strftime('%Y%m%dT%H%M%SZ')}-{profile_id}")
+            shutil.copy2(target, backup)
         target.parent.mkdir(parents=True, exist_ok=True)
-        write_json(target, dict(active=profile_id, profiles={profile_id: profile}))
-    return dict(created=True, profile_id=profile_id, connection_file=str(target), settings_present=sorted(profile),
-                note='Enough for connecting and testing. Real-simulation tasks also need library, creation_receipt, '
-                     'model_file and reference_measurements in this file (docs/workbench.md).')
+        write_json(target, document)
+    note = ('Enough for connecting and testing. Real-simulation tasks also need library, creation_receipt, model_file and '
+            'reference_measurements in this file (docs/workbench.md).' if family == 'virtuoso' else
+            'Enough for testing. Running circuits on ngspice is not built yet; real runs need a Virtuoso connection.')
+    return dict(created=True, profile_id=profile_id, kind=kind, connection_file=str(target), settings_present=sorted(profile),
+                backup=None if backup is None else str(backup), note=note)
 
 
 # ---------------------------------------------------------------------------- the connect process
@@ -235,6 +386,9 @@ def perform_connect(bridge_factory, settings, *, settle_seconds=1.0, profile_err
     if not roles.get('daemon_host'):
         return failed('profile_incomplete', "missing settings: ['daemon_host']")
     local = bridge.is_local(roles.get('daemon_host'))
+    disagreement = connection.kind_problem(settings, local)
+    if disagreement:                                     # "this machine" must never open a tunnel to another one
+        return failed(*disagreement)
     try:
         state, running = bridge.tunnel_state(profile)
     except Exception as exc:
@@ -275,7 +429,13 @@ def _connect_main(argv=None):
     except (KeyError, ValueError) as exc:
         name = 'connection_file_missing' if not connection.connection_file().is_file() else 'profile_not_configured'
         profile_error = (name, f'profile {args.profile_id!r}: {exc}')
-    print(json.dumps(perform_connect(TunnelBridge, settings, profile_error=profile_error)), flush=True)
+    if settings is not None and connection.profile_kind(settings) is None:
+        outcome = _outcome(False, 'failed', *connection.kind_problem(settings, local=False))
+    elif settings is not None and connection.family_of(connection.profile_kind(settings)) == 'ngspice':
+        outcome = _outcome(False, 'failed', 'nothing_to_connect', 'an ngspice connection has no tunnel or daemon')
+    else:
+        outcome = perform_connect(TunnelBridge, settings, profile_error=profile_error)
+    print(json.dumps(outcome), flush=True)
     return 0
 
 

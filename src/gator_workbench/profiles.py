@@ -72,6 +72,28 @@ def profile_for_cell(library, cell) -> dict | None:
     return next((entry for entry in list_profiles().values() if entry['library'] == library and entry['core_cell'] == cell), None)
 
 
+def task_for_cell(library, cell) -> dict | None:
+    """The registered task a Virtuoso cell already belongs to, or None: the profile generated from it, or one of the
+    verified built-in circuits. A built-in names its cell in its design file and its library in a Virtuoso connection
+    (``bridge_connection.json``), so a cell of the same name in any other library is another cell. Local reads only."""
+    generated = profile_for_cell(library, cell)
+    if generated:
+        return dict(task_key=generated['task_key'], name=generated['name'], generated=True)
+    from .connection import load_profiles
+    from .tasks import REAL_PROFILES
+    if not library or not cell or library not in {settings.get('library') for settings in load_profiles()['profiles'].values()
+                                                  if isinstance(settings, dict)}:
+        return None
+    for name, info in REAL_PROFILES.items():
+        try:
+            design = json.loads((repo_root() / info['design']).read_text())
+        except (OSError, ValueError):
+            continue
+        if design.get('core_cell') == cell:
+            return dict(task_key=f'real:{name}', name=name, generated=False)
+    return None
+
+
 def load_profile(name):
     """The profile object for the real backend. Every check of the verified classes runs in its constructor."""
     entry = list_profiles().get(name)
@@ -242,8 +264,10 @@ def create_profile(name, config, *, recipe, expected_frequency_hz=None) -> dict:
         raise ProfileError('Read the cell into the workbench first (Circuit source: Virtuoso library / cell / view)')
     if not imported.get('testbench_cell'):
         raise ProfileError('Choose the testbench cell and read the cell again: a profile simulates the testbench, not the bare cell')
-    if profile_for_cell(imported['library'], imported['cell']):
-        raise ProfileError(f'{imported["library"]}/{imported["cell"]} already has the profile real:{profile_for_cell(imported["library"], imported["cell"])["name"]}')
+    existing = task_for_cell(imported['library'], imported['cell'])
+    if existing:
+        raise ProfileError(f'{imported["library"]}/{imported["cell"]} already has the registered task {existing["task_key"]}'
+                           + ('' if existing['generated'] else ' (a verified built-in circuit): choose it under Source: Registered task'))
     text = Path(imported['netlist_path']).read_text()
     mapping, unverified = native_cells.build_mapping(text, circuit_id=name)
     if unverified:
@@ -395,3 +419,45 @@ def latest_baseline_run(name, run_dirs):
         if (config.get('circuit') or {}).get('task_id') == f'real:{name}':
             return str(run_dir)
     return None
+
+
+# ---------------------------------------------------------------------------------- starting over
+TRASH = '.deleted'                                  # under the profile store; `list_profiles` never looks inside
+WORKING_STATES = ('starting', 'running', 'pausing', 'stopping')     # a worker holds the run (`runs.run_status`)
+
+
+def working_run_of(name, run_rows):
+    """The run of real:<name> a worker is on right now, among the rows of `runs.list_runs`, or None."""
+    for row in run_rows:
+        if row.get('state') not in WORKING_STATES or row.get('mock'):
+            continue
+        try:
+            manifest = json.loads((Path(row['run_dir']) / 'run_manifest.json').read_text())
+        except (OSError, ValueError):
+            continue
+        if (manifest.get('circuit') or {}).get('task_key') == f'real:{name}':
+            return row
+    return None
+
+
+def delete_profile(name, *, run_rows=()) -> dict:
+    """Take a GENERATED profile out of the registered tasks, so its cell can get a new one (its name is free again).
+
+    Its folder is moved to ``profiles/.deleted/<name>.<utc>/``, not erased: a recorded baseline cost a real
+    simulation, and the runs made with the profile refer to these files. The copy of the cell that was read from
+    Virtuoso stays where it is. Refused while a worker is on a run of the task. Runs that were made keep their data;
+    a paused one can no longer be resumed. The verified built-in circuits are not in this store and cannot be deleted."""
+    from .tasks import REAL_PROFILES
+    entry = list_profiles().get(name)
+    if entry is None:
+        raise ProfileError(f'real:{name} is a verified built-in circuit, not a generated profile: it cannot be deleted'
+                           if name in REAL_PROFILES else f'Unknown generated profile {name!r}')
+    working = working_run_of(name, run_rows)
+    if working is not None:
+        raise ProfileError(f'Run {working.get("run_id") or working["run_dir"]} of real:{name} is working right now: abort it or let it finish first')
+    directory = Path(entry['directory'])
+    kept = directory.parent / TRASH / f'{name}.{utcnow().strftime("%Y%m%dT%H%M%S%fZ")}'
+    kept.parent.mkdir(parents=True, exist_ok=True)
+    directory.rename(kept)
+    return dict(deleted=entry['task_key'], name=name, library=entry['library'], cell=entry['core_cell'],
+                testbench_cell=entry.get('testbench_cell'), baseline_recorded=(kept / FILES['reference']).is_file(), kept_copy=str(kept))

@@ -160,8 +160,10 @@ def test_missing_env_file(settings):
 def test_local_mode_has_no_tunnel(settings):
     layers, _ = check(settings, local=True, state=dict(mode='local', port=65432), running=True)
     assert states(layers)['tunnel'] == 'not_applicable' and states(layers)['daemon'] == 'ok'
-    layers, _ = check(settings, local=True, state=None, running=False)       # local mode, bridge never started
-    assert states(layers)['tunnel'] == 'not_applicable' and reasons(layers)['daemon'] == 'no_response'
+    layers, _ = check(settings, local=True, state=None, running=False)       # local mode, bridge never set up
+    assert states(layers)['tunnel'] == 'not_applicable' and reasons(layers)['daemon'] == 'local_bridge_not_set_up'
+    broken = next(item for item in layers if item['layer'] == 'daemon')      # its own next step: not "load the line" (there is none yet)
+    assert broken['state'] == 'failed' and 'Set up local bridge' in broken['details']['next_step']
 
 
 def test_readiness_is_separate_from_connectivity(settings):

@@ -1,6 +1,6 @@
 import { Fragment, ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, ApiError, bytes, copy, downloadPackage, Json, num, saveJson } from '../api';
+import { api, ApiError, bytes, copy, download, downloadPackage, Json, num, saveJson } from '../api';
 import { usePolling } from '../store';
 import { DiffView } from './Editors';
 
@@ -24,6 +24,7 @@ const WHO: Record<string, string> = { user: 'You', system: 'Workbench', checklis
 const MARK: Record<string, [string, string]> = { done: ['\u2714', 'ok'], missing: ['\u2718', 'error'], warning: ['!', 'warn'], unknown: ['?', 'hint'],
   not_applicable: ['\u2013', 'hint'], at_start: ['\u25B6', 'hint'] };
 const ASK_READINESS = 'What is still missing before this RL run can start? List it in order and fix what you can.';
+const ASK_RUN = 'What happened in this run, and what should I change next? Say what the numbers show, then suggest changes, each tied to a number of the run.';
 const ASK_SETTINGS = 'Review the settings of this run - run configuration, RL network, RL training, output - and suggest what to change, each with its source.';
 const WEB_TIMEOUT_SECONDS = 900;      // = agents/settings_review.py: reading publications takes minutes
 const getIn = (config: Json, path: string) => path.split('.').reduce((node: Json, part) => node?.[part], config) ?? null;
@@ -85,9 +86,9 @@ function RichText({ text }: { text: string }) {
 
 // Stays mounted while another bottom tab is shown (`hidden`): unmounting would drop the chat, a pending
 // request's indicator and the proposal it returns, while the backend keeps working on that request.
-export function AgentTab({ config, setConfig, request, clearRequest, hidden, tabSlot, onDetached }:
+export function AgentTab({ config, setConfig, request, clearRequest, hidden, tabSlot, onDetached, runDir }:
   { config: Json; setConfig: (c: Json) => void; request: { kind: string; selection: Json[]; prompt?: string } | null; clearRequest: () => void; hidden?: boolean;
-    tabSlot?: HTMLElement | null; onDetached?: (detached: boolean) => void }) {
+    tabSlot?: HTMLElement | null; onDetached?: (detached: boolean) => void; runDir?: string | null }) {
   const [settings, setSettings] = useState<Json>(null);
   const [diagnostics, setDiagnostics] = useState<Json>(null);
   const [prompt, setPrompt] = useState('');
@@ -159,7 +160,8 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
     return () => clearInterval(timer);
   }, [busy]);
   useEffect(() => { if (chat.current) chat.current.scrollTop = chat.current.scrollHeight; }, [log, busy, hidden, popup]);
-  const body = () => ({ kind, prompt, config, selection, web: kind === 'settings_review' && online });
+  const runLabel = (runDir ?? '').split(/[\\/]/).filter(Boolean).pop() ?? '';       // the run folder's own name (the file has a `runName` helper further down)
+  const body = () => ({ kind, prompt, config, selection, web: kind === 'settings_review' && online, run_dir: kind === 'run_review' ? runDir ?? null : null });
   // Only an ApiError is an answer from the backend; anything else means no answer arrived at all.
   // A bare "Not Found" / "Method Not Allowed" comes from the web framework, not from an endpoint: the running server has
   // no such route. The page is served from disk and is always current, the server only after a restart - say that.
@@ -178,7 +180,7 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
     const started = Date.now(), sent_with = using;          // what THIS request runs on, whatever is chosen later
     const web = (ask?.kind ?? kind) === 'settings_review' && online && settings?.provider === 'claude_code';
     setBusy(request_id); setBusyOnline(web); say('user', text); if (!ask) setPrompt('');
-    try { const p = await api.propose({ ...body(), kind: ask?.kind ?? kind, web, prompt: text, request_id }); if (p.kind !== 'settings_review') setProposal(p);   // a settings review patches nothing: no diff to approve, and an open proposal stays
+    try { const p = await api.propose({ ...body(), kind: ask?.kind ?? kind, web, run_dir: (ask?.kind ?? kind) === 'run_review' ? runDir ?? null : null, prompt: text, request_id }); if (p.kind !== 'settings_review' && !(p.kind === 'run_review' && !p.diff?.length)) setProposal(p);   // nothing to approve: no box, and an open proposal stays
       say(p.origin, p.reasoning || '(no reasoning given)', { ...p, sent_with }); }
     catch (e: any) {
       if (e.detail?.code === 'cancelled') say('system', `Cancelled by you after ${Math.round((Date.now() - started) / 1000)} s. The request had been sent and the agent was still working on it; nothing was changed.`);
@@ -263,7 +265,7 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
             <button disabled={!!busy || !using} onClick={() => propose({ text: ASK_SETTINGS, kind: 'settings_review' })}
               title={using ? `One agent request (${using}). It looks at the run configuration, the RL network, the RL training settings and the output settings - not at your circuit - and suggests values, each with its source. You apply them one by one.` : 'Select a provider first.'}>Review settings</button></span></div>
         <div className="chat" ref={chat}>
-          {log.length === 0 && !busy && <p className="hint chat-empty">"What's missing to start?" lists what this run still needs - free, no agent. Or ask below for a draft of the Parameters, Specs or Probes tab. The agent only proposes: you review a diff before anything changes.</p>}
+          {log.length === 0 && !busy && <p className="hint chat-empty">"What's missing?" lists what this run still needs - free, no agent. Or ask below for a draft of the Parameters, Specs or Probes tab. The agent only proposes: you review a diff before anything changes.</p>}
           {log.map((m, i) => { const groups = noteGroups(m); return <div key={i} className={`msg ${isReply(m) && m.role !== 'error' ? 'reply' : m.role}${focus === i ? ' focused' : ''}`}>
             <div className="who">{who(m.role)}{m.extra?.sent_with && <span className="when">{m.extra.sent_with}</span>} <span className="when">{m.at}</span></div>
             <div className="text">{m.role === 'user' ? m.text : <RichText text={m.text} />}</div>
@@ -275,7 +277,7 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
                   title={using ? `One agent request (${using}). It assumes nothing: it writes only the rows you gave every number for, and asks for the rest.` : 'Select a provider first.'}>Fix only what needs no assumption</button></>}
                 <span className="hint">{m.extra.note}</span></div></>}
             {isReply(m) && m.extra?.checklist?.length > 0 && <Checklist items={m.extra.checklist} />}
-            {isReply(m) && m.extra?.kind === 'settings_review' && <Suggestions extra={m.extra} config={config} setConfig={setConfig} />}
+            {isReply(m) && (m.extra?.kind === 'settings_review' || m.extra?.kind === 'run_review') && <Suggestions extra={m.extra} config={config} setConfig={setConfig} />}
             {groups.length > 0 && <button className="notes-link" title="Show these in the side window" onClick={() => setFocus(i === latest ? null : i)}>{groups.map(g => `${g.items.length} ${g.title.toLowerCase()}`).join(', ')}</button>}</div>; })}
           {busy && <div className="msg pending"><div className="who">{who(settings?.provider ?? 'agent')}</div>
             <div className="text">{busyOnline ? 'Sent. The agent is searching and reading publications online - this takes minutes...' : "Sent. Waiting for the agent's reply..."} <b>{waited} s</b></div>
@@ -304,12 +306,14 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); propose(); } }}
           placeholder="Describe what you need. State where each requirement comes from; the agent may not invent requirements." />
         <div className="row">
-          <select title="What the agent may change" value={kind} onChange={e => setKind(e.target.value)}>{['draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'circuit_modification', 'readiness', 'minimal_start', 'settings_review'].map(k => <option key={k}>{k}</option>)}</select>
+          <select title="What the agent may change" value={kind} onChange={e => setKind(e.target.value)}>{['draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'circuit_modification', 'readiness', 'minimal_start', 'settings_review', 'run_review'].map(k => <option key={k}>{k}</option>)}</select>
           {kind === 'modify_fields' && <button className="notes-link" aria-expanded={showSelection} onClick={() => setShowSelection(open => !open)}
             title="The rows this request may change. They are chosen in the editors with 'Modify selected with agent...'.">{selection.length} selected row(s)</button>}
           {busy && <button onClick={cancel}>Cancel request</button>}
           <button disabled={!prompt.trim()} onClick={() => api.exportTask(body()).then(t => saveJson('agent_task.json', t)).catch(fail)}>Export task description</button>
-          <button className="missing" onClick={whatIsMissing} title="Worked out by the workbench itself from the current configuration: free, no agent request.">What's missing to start?</button>
+          <button className="missing" onClick={whatIsMissing} title="Worked out by the workbench itself from the current configuration: free, no agent request.">What's missing?</button>
+          <button disabled={!!busy || !using || !runDir} onClick={() => propose({ text: `${ASK_RUN} (run ${runLabel})`, kind: 'run_review' })}
+            title={!runDir ? 'Choose a run with "Runs..." first.' : using ? `One agent request (${using}). The workbench condenses what run ${runLabel} produced - outcome, budget, each target against the best design, where the search went, failures - and the agent explains it and suggests what to change. It reads no file.` : 'Select a provider first.'}>Review results</button>
         </div>
         {kind === 'modify_fields' && showSelection && <div className="selection-info" ref={el => el?.scrollIntoView({ block: 'nearest' })}>{selection.length === 0
           ? <p className="hint">No row is selected. Tick rows in one of the editors above and press "Modify selected with agent...".</p>
@@ -350,6 +354,8 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
     </div></>);
 }
 
+const runName = (runDir: string) => runDir.split(/[\\/]/).filter(Boolean).pop() ?? 'run';    // the run folder's own name, unique per run
+
 export function StatusTab({ status, onCommand, onContinue }: { status: Json; onCommand: (c: string) => void; onContinue: () => void }) {
   if (!status) return <p className="hint">No run selected.</p>;
   const b = status.budget, best = status.best_design, first = status.first_feasible, conn = status.connection;
@@ -380,6 +386,8 @@ export function StatusTab({ status, onCommand, onContinue }: { status: Json; onC
       <button disabled={!status.worker_alive} onClick={() => onCommand('stop')}>Stop and save</button>
       <button disabled={!status.worker_alive} onClick={() => onCommand('cancel')} title="Forced: unfinished evaluations are recorded as cancelled and stay charged.">Force cancel</button>
       <button disabled={status.worker_alive || !['paused', 'stopped', 'interrupted'].includes(status.state)} onClick={onContinue}>Continue</button>
+      <button onClick={() => saveJson(`${runName(status.run_dir)}__status.json`, { exported_utc: new Date().toISOString(), ...status })}
+        title="Everything this tab shows, as it is right now, in one JSON file: state, budget, best design, connection, the run's manifest and summary.">Export status (JSON)</button>
     </div>
   </div>);
 }
@@ -388,14 +396,23 @@ export function DataTab({ runDir }: { runDir: string | null }) {
   const [table, setTable] = useState('evaluations');
   const [data, setData] = useState<Json>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   useEffect(() => { if (runDir) api.table(runDir, table).then(setData).catch(e => setNote(e.message)); else setData(null); }, [runDir, table]);
   if (!runDir) return <p className="hint">No run selected.</p>;
+  // An export writes the file(s) on the backend's disk AND hands the browser a copy: nobody has to look the file up afterwards.
+  const exporting = (what: string, work: () => Promise<string>) => { setBusy(what); setNote(null); work().then(setNote, e => setNote(e.message)).finally(() => setBusy(null)); };
+  const exportCsv = () => exporting('csv', async () => {
+    const written = await api.exportCsv(runDir, table);
+    return `Downloaded ${await download(api.downloadUrl(runDir, written.relative), `${table}.csv`)}. Also kept in the run folder: ${written.relative}`; });
+  const exportResearch = () => exporting('research', async () => {
+    const written = await api.exportAggregates(runDir);
+    return `Downloaded ${await download(api.aggregatesUrl(runDir), 'aggregates.zip')} (${Object.keys(written.files).length} tables). Also kept in ${written.experiment_dir}/aggregates`; });
   return (<div>
     <div className="row"><select value={table} onChange={e => setTable(e.target.value)}>{TABLES.map(t => <option key={t}>{t}</option>)}</select>
       <button onClick={() => api.table(runDir, table).then(setData)}>Refresh</button>
-      <button onClick={() => api.exportCsv(runDir, table).then(r => setNote(`CSV written: ${r.path}`)).catch(e => setNote(e.message))}>Export detailed CSV</button>
-      <button onClick={() => api.exportAggregates(runDir).then(r => setNote(`Aggregates: ${r.experiment_dir}/aggregates`)).catch(e => setNote(e.message))}>Export research CSVs</button>
-      <span className="hint">{data ? `${data.total_rows} rows (snapshot at commit ${data.cutoff_commit_seq}); last ${data.rows.length} shown` : ''} {note}</span></div>
+      <button disabled={!!busy} onClick={exportCsv} title="The whole table, every row and not only the ones shown here. Written to the run folder (exports/) and downloaded.">{busy === 'csv' ? 'Exporting...' : 'Export detailed CSV'}</button>
+      <button disabled={!!busy} onClick={exportResearch} title="The summary tables over every run of this experiment: run summary, success per budget, paired runs, transfer summary, cumulative cost. Written to the experiment's aggregates folder and downloaded as one zip.">{busy === 'research' ? 'Exporting...' : 'Export research CSVs'}</button>
+      <span className="hint">{data ? `${data.total_rows} rows (snapshot at commit ${data.cutoff_commit_seq}); last ${data.rows.length} shown.` : ''} {note}</span></div>
     {data && <div className="scroll"><table className="grid small"><thead><tr>{data.columns.map((c: string) => <th key={c}>{c}</th>)}</tr></thead>
       <tbody>{data.rows.map((r: Json, i: number) => <tr key={i}>{data.columns.map((c: string) => <td key={c}>{typeof r[c] === 'object' && r[c] !== null ? JSON.stringify(r[c]) : num(r[c])}</td>)}</tr>)}</tbody></table></div>}
   </div>);
@@ -403,20 +420,31 @@ export function DataTab({ runDir }: { runDir: string | null }) {
 
 export function FilesTab({ runDir }: { runDir: string | null }) {
   const [files, setFiles] = useState<Json>(null);
+  const [note, setNote] = useState<string | null>(null);
   const refresh = () => runDir && api.files(runDir).then(setFiles);
-  useEffect(() => { refresh(); }, [runDir]);
+  useEffect(() => { refresh(); setNote(null); }, [runDir]);
   if (!runDir) return <p className="hint">No run selected.</p>;
-  return (<div><div className="row"><button onClick={refresh}>Refresh</button><button onClick={() => downloadPackage(runDir)}>Download data-only package (.zip)</button>
-    <button onClick={() => copy(runDir)}>Copy run path</button><span className="hint">{files && `${files.files.length} files, ${bytes(files.total_bytes)}`} "Open local folder" is not offered: no desktop integration is available from a browser.</span></div>
+  const pack = () => { setNote('Packing...'); downloadPackage(runDir).then(name => setNote(`Downloaded ${name}.`), e => setNote(e.message)); };
+  return (<div><div className="row"><button onClick={refresh}>Refresh</button><button disabled={note === 'Packing...'} onClick={pack}>Download data-only package (.zip)</button>
+    <button onClick={() => copy(runDir)}>Copy run path</button><span className="hint">{files && `${files.files.length} files, ${bytes(files.total_bytes)}.`} {note} "Open local folder" is not offered: no desktop integration is available from a browser.</span></div>
     <div className="scroll"><table className="grid small"><thead><tr><th>File</th><th>Size</th><th>Modified (UTC)</th><th></th></tr></thead>
       <tbody>{files?.files.map((f: Json) => <tr key={f.path}><td>{f.path}</td><td>{bytes(f.bytes)}</td><td>{f.modified_utc.slice(0, 19)}</td><td><a href={api.downloadUrl(runDir, f.path)}>download</a></td></tr>)}</tbody></table></div></div>);
 }
 
 export function LogsTab({ runDir, alive }: { runDir: string | null; alive: boolean }) {
   const [kind, setKind] = useState('events');
+  const [note, setNote] = useState<string | null>(null);
   const { value } = usePolling(() => api.logs(runDir!, kind), alive ? 2000 : 60000, !!runDir, [runDir, kind]);
+  useEffect(() => setNote(null), [runDir, kind]);
   if (!runDir) return <p className="hint">No run selected.</p>;
-  return (<div><div className="row"><select value={kind} onChange={e => setKind(e.target.value)}><option>events</option><option>errors</option></select></div>
+  // The list below is only the newest 200 entries; the file is the whole log, one JSON record per line. A healthy run has an
+  // errors file with nothing in it: that is said, not saved as an empty file.
+  const nothing = `Nothing to download: this run has logged no ${kind} so far.`;
+  const save = () => value?.kind === kind && !value.entries.length ? setNote(nothing)
+    : download(api.downloadUrl(runDir, `logs/${kind}.jsonl`), `${kind}.jsonl`).then(name => setNote(`Downloaded ${name}.`), e => setNote(e.status === 404 ? nothing : e.message));
+  return (<div><div className="row"><select value={kind} onChange={e => setKind(e.target.value)}><option>events</option><option>errors</option></select>
+    <button onClick={save} title="The whole log file of this run, not only the newest 200 entries listed here. One JSON record per line.">Download full log ({kind}.jsonl)</button>
+    <span className="hint">{note ?? 'Newest first, the newest 200 entries at most.'}</span></div>
     <div className="scroll log">{(value?.entries ?? []).slice().reverse().map((e: Json, i: number) => <div key={i} className={kind === 'errors' ? 'error' : ''}>
       <b>{(e.time_utc ?? '').slice(11, 19)} {e.event ?? e.error}</b> {JSON.stringify(Object.fromEntries(Object.entries(e).filter(([k]) => !['time_utc', 'event', 'error', 'run_id', 'traceback'].includes(k))))}</div>)}</div></div>);
 }

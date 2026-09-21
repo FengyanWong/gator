@@ -586,6 +586,10 @@ def registry_for(config):
         generated = task_spec_registry(config.circuit)       # a generated profile brings the results of its circuit type
         if generated is not None:
             return {entry['metric_id']: entry['unit'] for entry in generated}
+        from .tasks import verified_spec_registry
+        of_record = verified_spec_registry(config.circuit)   # the verified LDO and VCO: the registry of their real experiment
+        if of_record is not None:
+            return {entry['metric_id']: entry['unit'] for entry in of_record[1]}
         return default_registry()
     return {entry.metric_id: entry.unit for entry in custom}
 

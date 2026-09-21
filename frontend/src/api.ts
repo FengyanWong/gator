@@ -43,6 +43,7 @@ export const api = {
   createProfile: (config: Json, name: string, recipe: string, expected_frequency_hz: number | null) => call('POST', '/api/virtuoso/profile', { config, name, recipe, expected_frequency_hz }),
   profilePreflight: (name: string, profile_id: string) => call('POST', '/api/virtuoso/profile/preflight', { name, profile_id }),
   profileReference: (name: string) => call('POST', '/api/virtuoso/profile/reference', { name }),
+  deleteProfile: (name: string) => call('POST', '/api/virtuoso/profile/delete', { name }),
   nativeRead: (profile_id: string, library: string, cell: string) => call('POST', '/api/virtuoso/read', { profile_id, library, cell }),
   validate: (config: Json) => call('POST', '/api/config/validate', { config }),
   diff: (before: Json, after: Json) => call('POST', '/api/config/diff', { before, after }),
@@ -52,7 +53,8 @@ export const api = {
   connectionStatus: (profile_id: string) => call('GET', '/api/connection/status' + q({ profile_id })),
   connectionCheck: (profile_id: string, scope: string, trigger = 'user') => call('POST', '/api/connection/check', { profile_id, scope, trigger }),
   connectionSetup: () => call('GET', '/api/connection/setup'),
-  connectionCreateProfile: (profile_id: string) => call('POST', '/api/connection/profile', { profile_id }),
+  // { profile_id, kind, ssh_host?, bridge_profile? } - names only: never an address, a path or a command
+  connectionCreateProfile: (body: Json) => call('POST', '/api/connection/profile', body),
   connectionConnect: (profile_id: string) => call('POST', '/api/connection/connect', { profile_id }),
   runs: (output_root?: string) => call('GET', '/api/runs' + q({ output_root })),
   suggestMode: (config: Json, source_run_dir?: string | null) => call('POST', '/api/runs/suggest-mode', { config, source_run_dir }),
@@ -60,6 +62,7 @@ export const api = {
   defaultModel: (project: string) => call('GET', '/api/runs/default-model' + q({ project })),
   savedModels: (output_root?: string) => call('GET', '/api/runs/models' + q({ output_root })),
   modelStructure: (run_dir: string, checkpoint_id: string) => call('POST', '/api/runs/model/structure', { run_dir, checkpoint_id }),
+  modelGraphView: (run_dir: string, checkpoint_id: string, evaluation: number | null) => call('POST', '/api/runs/model/graph-view', { run_dir, checkpoint_id, evaluation }),
   start: (body: Json) => call('POST', '/api/runs/start', body),
   continueRun: (body: Json) => call('POST', '/api/runs/continue', body),
   command: (run_dir: string, command: string) => call('POST', '/api/runs/command', { run_dir, command }),
@@ -70,6 +73,7 @@ export const api = {
   exportCsv: (run_dir: string, table: string) => call('POST', '/api/runs/export-csv', { run_dir, table }),
   exportAggregates: (run_dir: string) => call('POST', '/api/aggregates/export', { run_dir }),
   downloadUrl: (run_dir: string, path: string) => '/api/runs/download' + q({ run_dir, path }),
+  aggregatesUrl: (run_dir: string) => '/api/aggregates/download' + q({ run_dir }),          // the experiment's research CSVs, one zip
   agentSettings: () => call('GET', '/api/agent/settings'),
   saveAgentSettings: (body: Json) => call('PUT', '/api/agent/settings', body),
   agentDiagnostics: () => call('GET', '/api/agent/diagnostics'),
@@ -83,23 +87,29 @@ export const api = {
   reject: (proposal_id: string) => call('POST', '/api/agent/reject', { proposal_id }),
 };
 
-export async function downloadPackage(run_dir: string) {
-  const response = await fetch('/api/runs/export-package', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ run_dir }),
-  });
-  if (!response.ok) throw new ApiError(response.status, await response.json().catch(() => ({})));
-  const url = URL.createObjectURL(await response.blob());
-  const link = document.createElement('a');
-  link.href = url; link.download = 'run__data.zip'; link.click();
-  URL.revokeObjectURL(url);
-}
-
-export function saveJson(name: string, value: Json) {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
+function save(name: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url; link.download = name; link.click();
   URL.revokeObjectURL(url);
 }
+
+/** Fetch a backend download and save it under the name the backend gives it (Content-Disposition); returns that name.
+ *  A plain link would leave the workbench for a page of JSON when the file is missing: this throws the message instead. */
+export async function download(url: string, fallbackName: string, init?: RequestInit): Promise<string> {
+  const response = await fetch(url, init);
+  if (!response.ok) { const data = await response.json().catch(() => null); throw new ApiError(response.status, data?.detail ?? data); }
+  const header = response.headers.get('Content-Disposition') ?? '';
+  const encoded = /filename\*=utf-8''([^;]+)/i.exec(header)?.[1];
+  const name = (encoded ? decodeURIComponent(encoded) : /filename="([^"]+)"/i.exec(header)?.[1]) || fallbackName;
+  save(name, await response.blob());
+  return name;
+}
+
+export const downloadPackage = (run_dir: string) => download('/api/runs/export-package', 'run__data.zip',
+  { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ run_dir }) });
+
+export const saveJson = (name: string, value: Json) => save(name, new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
 
 export const copy = (text: string) => navigator.clipboard?.writeText(text);
 export const bytes = (n?: number | null) => n == null ? '-' : n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KiB`

@@ -206,7 +206,7 @@ export function RunButtons({ control, blocked, onStart, onResumed, onMessage, on
   const abort = () => {
     if (phase === 'paused') {
       if (!window.confirm('Let go of this paused run?\n\nNothing is deleted: its data and its saved state stay in the run directory, and it can still be continued '
-        + 'later (select it in the run list, then Run status > Continue).\n\nThe main button goes back to Start, for a new run.')) return;
+        + 'later (press "Runs..." at the bottom, double click the run, then Run status > Continue).\n\nThe main button goes back to Start, for a new run.')) return;
       control.release();
       onMessage({ level: 'info', text: `Left paused, nothing deleted: ${dir}` });
     } else if (phase === 'running') {

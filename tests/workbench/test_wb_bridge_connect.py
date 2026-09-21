@@ -236,13 +236,18 @@ def test_a_profile_is_created_from_what_is_on_this_host_and_never_overwritten(fa
     assert found['can_create'] and found['env_file_exists'] and found['bridge_site_packages'] == str(site)
     assert 'super-secret-value' not in json.dumps(found) and 'eda-host' not in json.dumps(found)   # located, never read
     created = bridge_connect.create_profile('lab')
-    assert created['created'] and created['settings_present'] == ['bridge_site_packages', 'env_file', 'profile']
-    assert connection.resolve_profile_id('lab') == dict(env_file=str(home / '.virtuoso-bridge' / '.env'), profile=None,
-                                                        bridge_site_packages=str(site))
-    assert connection.load_profiles()['active'] == 'lab' and not bridge_connect.detect_setup()['can_create']
+    assert created['created'] and created['settings_present'] == ['bridge_site_packages', 'env_file', 'kind', 'profile']
+    assert created['backup'] is None                                         # there was no file to keep a copy of
+    assert connection.resolve_profile_id('lab') == dict(kind='virtuoso_ssh', env_file=str(home / '.virtuoso-bridge' / '.env'),
+                                                        profile=None, bridge_site_packages=str(site))
+    assert connection.load_profiles()['active'] == 'lab'
+    # An EXISTING connection is operator-owned and is never changed from the browser (the kinds of 2026-09-21 made
+    # adding a second one possible; that is pinned in test_wb_connection_kinds.py).
     before = connection.connection_file().read_text()
     with pytest.raises(FileExistsError):
-        bridge_connect.create_profile('other')
+        bridge_connect.create_profile('lab')
+    with pytest.raises(bridge_connect.ProfileExists):
+        bridge_connect.create_profile('lab', kind='ngspice_local')
     assert connection.connection_file().read_text() == before
 
 
@@ -274,7 +279,7 @@ def test_api_create_profile_connect_and_test(fake_home, tmp_path):
     created = http.post('/api/connection/profile', json=dict(profile_id='lab')).json()
     assert created['created'] and [p['profile_id'] for p in created['profiles']['profiles']] == ['lab']
     again = http.post('/api/connection/profile', json=dict(profile_id='lab'))
-    assert again.status_code == 409 and again.json()['detail']['code'] == 'connection_file_exists'
+    assert again.status_code == 409 and again.json()['detail']['code'] == 'profile_exists'
     connected = http.post('/api/connection/connect', json=dict(profile_id='lab')).json()
     assert connected['connect']['ok'] and connected['connect']['details']['ciw']['load'] == f'load("{SETUP}")'
     assert connected['status']['scope'] == 'cheap' and connected['status']['summary']['level'] == 'partial'

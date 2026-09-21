@@ -74,6 +74,7 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
     # 2-4. the three tables: the only part an agent proposal can change
     rows = {name: len(config.get(name) or []) for name in TABLES}
     hard = [t for t in (config.get('targets') or []) if t.get('hard') and t.get('active', True)]
+    registered = (config.get('circuit') or {}).get('source') == 'registered_task'
     fixed = (profile or {}).get('rows') or []
     uncompiled = (profile or {}).get('error') if fixed and rows['parameters'] else None
     mismatch = bool(fixed) and rows['parameters'] > 0 and (profile.get('matches') is False or bool(uncompiled))
@@ -85,7 +86,8 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
                                   else 'The configured variables differ from them, so the run would be refused the moment it starts.'
                                   if mismatch else 'None is configured yet.'))
             items.append(_item(name, TITLES[name], 'missing', 'agent', detail,
-                               'Use exactly the rows of `required_parameter_rows`: "Make it startable with the fewest changes" copies them.'))
+                               'Press "Load starter configuration" in the Project panel (left): it brings exactly these rows, free. '
+                               '"Make it startable with the fewest changes" copies them too.'))
             continue
         empty = dict(parameters=not rows['parameters'], targets=not hard, measurements=not rows['measurements'])[name]
         if found or empty:
@@ -94,6 +96,8 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
                 measurements='No measurement is defined; every target needs one.')[name]
             action = ('State the requirement and where it comes from; the agent can then write the rows.' if name == 'targets'
                       else f'Fill in the "{TITLES[name]}" tab, or ask the agent to draft it from the circuit.')
+            if registered:                  # a registered task brings its own rows: free, exact, and the first thing to try
+                action = 'Press "Load starter configuration" in the Project panel (left) for this task\'s own rows. Or: ' + action
             items.append(_item(name, TITLES[name], 'missing', 'agent', detail, action))
         else:
             count = len(hard) if name == 'targets' else rows[name]

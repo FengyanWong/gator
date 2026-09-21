@@ -98,7 +98,10 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
             const found = rowIssues(index);
             return <tr key={index} className={found.some((i: Json) => i.level === 'error' || i.level === 'blocker') ? 'has-error' : ''}>
               <td><input type="checkbox" checked={!!selected[row[keyField]]} onChange={e => setSelected(s => ({ ...s, [row[keyField]]: e.target.checked }))} /></td>
-              {columns.map(c => <td key={c.name}><Cell column={c} value={row[c.name]} onChange={v => update(index, c.name, v)} /></td>)}
+              {/* A field the row does not STATE is shown with the value the backend uses for it (hard = on, tolerance = 0 ...): a
+                  starter row's absent `hard` used to look unchecked although the target is hard. A box the user cleared is null,
+                  not absent, and stays empty. */}
+              {columns.map(c => <td key={c.name}><Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)} /></td>)}
               <td className="issues">{found.map((i: Json, n: number) => <div key={n} className={`issue ${i.level}`} title={i.message}>{i.level}: {i.code}</div>)}</td>
             </tr>; })}</tbody>
         </table>

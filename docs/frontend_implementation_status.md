@@ -6,7 +6,7 @@ code diff (`git status`, `git diff`) and the specification before continuing. Do
 redo completed modules from conversational memory. This is a development record, not a
 research output or analysis report.
 
-Last updated: 2026-09-20 (~21:25: section 7.7, per-encoder network settings from publications; ~21:35: section 7.8, Agent tab side window + browser check; ~21:50: section 7.9, connection panel; ~22:00: section 7.10, agent model / effort lists; ~22:00: section 7.11, validate 500 from a concurrent first import of torch_geometric; ~22:15: section 7.12, blocking-issues button in the header; ~22:40: section 7.13, netlist import form; ~22:30: section 7.14, detachable agent conversation; ~23:10: section 7.15, Virtuoso source dropdowns; 2026-09-21 early: section 7.16, start checklist + readiness request; 2026-09-21 ~01:15: section 7.17, read a Virtuoso cell into the workbench (profile creation, increment 1); ~03:40: section 7.18, header Start -> Pause -> Resume + Abort; ~03:30: section 7.19, Create profile -> registered real:<name> task (increment 2); ~04:40: section 7.21, no-simulation check of a generated profile + baseline reference; ~06:00: section 7.22, result registry of generated profiles + measurement replayed on real result files).
+Last updated: 2026-09-20 (~21:25: section 7.7, per-encoder network settings from publications; ~21:35: section 7.8, Agent tab side window + browser check; ~21:50: section 7.9, connection panel; ~22:00: section 7.10, agent model / effort lists; ~22:00: section 7.11, validate 500 from a concurrent first import of torch_geometric; ~22:15: section 7.12, blocking-issues button in the header; ~22:40: section 7.13, netlist import form; ~22:30: section 7.14, detachable agent conversation; ~23:10: section 7.15, Virtuoso source dropdowns; 2026-09-21 early: section 7.16, start checklist + readiness request; 2026-09-21 ~01:15: section 7.17, read a Virtuoso cell into the workbench (profile creation, increment 1); ~03:40: section 7.18, header Start -> Pause -> Resume + Abort; ~03:30: section 7.19, Create profile -> registered real:<name> task (increment 2); ~04:40: section 7.21, no-simulation check of a generated profile + baseline reference; ~06:00: section 7.22, result registry of generated profiles + measurement replayed on real result files; ~05:20: section 7.24, FIRST REAL SIMULATION through the workbench (generated profile baseline) + the preparation-service bug; 2026-09-21: section 7.25, fewest-changes start + profile check; section 7.27, detach control on the agent tab).
 
 ## 1. Inspection facts (verified 2026-09-20, not assumed)
 
@@ -1151,6 +1151,53 @@ run); `run_control_check.mjs` (7.18) and `model_chooser_check.mjs` (7.20) still 
 "Model checkpoints" off cannot be saved at all. MOCK backend only: no real run was saved this way yet. Nothing
 under `src/analog_optimizer/` changed.
 
+### 7.24 FIRST REAL SIMULATION through the workbench: a generated profile's baseline - and the bug that had made every real task unrunnable (2026-09-21 ~05:20 local, same session as 7.17-7.22)
+
+Budget: the user authorized **exactly one** real Spectre evaluation (asked explicitly; a bare "go on" had been
+refused three times). Spent: **1 evaluation, 1 simulator launch, 0 retries.**
+
+* **Bug found by the first attempt, fixed, tested: no real task could ever run from the workbench.** A real lane's
+  backend (`NativeCandidateBackend`) needs the optimizer's preparation service - the ONE owner of the Virtuoso
+  session - which `NativeEnvironmentFactory.preparation_context` starts and which the optimizer's own training
+  loop enters before it opens a lane. `engine.py` called `open_lanes(factory, ...)` directly, so the first lane
+  died in `connect()` with `'NoneType' object has no attribute 'baseline'`. This concerns ALL real tasks, the four
+  verified ones included ("real backend wired" in section 3 was never exercised). The attempt failed BEFORE
+  anything touched Virtuoso or Spectre: ledger `charged 0, launches 0`. Fix: `RunEngine._prepare` enters
+  `factory.preparation_context(WorkerLimits(), report)` when the factory has one (exactly as
+  `training/parallel.py` does) and `_finalize` closes it AFTER the lanes, reporting a restoration state other than
+  `restored` as a problem. `tests/workbench/test_wb_engine_preparation.py` (new, 3): the context brackets the lanes;
+  an unrestored schematic is reported; a factory without the context runs as before.
+* **Correction of a statement made to the user.** "A baseline writes nothing to the cell" was WRONG: every
+  candidate, the baseline included, goes through `preparation.prepare` -> `set_parameters` -> `set_gpdk_mos`, which
+  opens the core cellview for edit, re-applies the widths through the PDK callbacks, runs `schCheck` and `dbSave`;
+  at the end the owner writes the initial widths back. For the four verified profiles that is by design (their
+  cells were created for this). **A generated profile writes into the user's ORIGINAL cell.** The user was asked
+  again with the corrected facts and chose to run on the original cell. Working-copy mode (profile creation copies
+  cell + testbench and runs touch only the copies, as the spec's "never overwrite the original design" asks) is
+  NOT built; it is the main open design point of generated profiles.
+* **The run** (throw-away profile `ring_osc_trial` of `GPDK045_RINGOSC/ring_osc_3stage` in a scratch settings
+  folder; `max_evaluations = 1`, `max_spectre_launches = 1`, `max_retries = 0`; `cli run --authorize-real
+  --acknowledge-unknown-connection`): **completed in 17 s.** Baseline evaluation real / simulation / valid / 1
+  attempt, 7.1 s execution: `osc_frequency_hz` 1.2091976e9 (the user's standalone run: 1.209225e9),
+  `supply_power_w` 1.9632e-4, `supply_current_a` 1.9632e-4, swing 0.99917 V, duty 0.50790, period spread 1.3e-6,
+  window drift 7.7e-8, startup 7.2e-9 s. Both targets (>= 1 GHz hard, <= 400 uW soft) satisfied; event
+  `first_feasible`. Events: `preparation_service_started`, `segment_started`, `first_feasible`, `segment_ended`.
+* **Safety, checked around it:** before the run only the CIW log window was open (the cell was in no window); a
+  full readback of the cell before and after is IDENTICAL (masters, nets, every CDF parameter, positions); the
+  adapter's session journal ends with `restoration.json: restored`.
+* **`record_reference` on REAL tables:** the baseline became the trial profile's reference
+  (`reference_measurements.json`, `origin: real`), and the task then lists as `verified`.
+* **Connection gate, first real use of layers 6-7:** `spectre` ok; `spectre_license` is `unknown /
+  license_not_checkable` on this host ("lmstat missing or no matching feature listed"), so every real start needs
+  the explicit acknowledgement of the unknown layer (the UI asks; the CLI has `--acknowledge-unknown-connection`).
+* Evidence (git-ignored): `artifacts/local/generated-profile-first-baseline/` - both run directories (the failed
+  first attempt and the run), the trial profile, the configuration, the before/after readbacks, a README.
+
+With this, the chain "cell in Virtuoso -> read into the workbench -> Create profile -> check without simulating
+-> real baseline -> recorded reference" has run end to end once, for one circuit type (free-running ring
+oscillator). Not done: an optimization run (more than one evaluation, i.e. widths that actually change) of a
+generated profile; the op-amp recipe on a real cell; working-copy mode.
+
 ### 7.25 Agent: "Make it startable with the fewest changes" + a truthful start check for verified real circuits (2026-09-21, same session as 7.16, explicit user request)
 
 Request: "can the agent help modify everything as few as possible for the whole run to be able to start?" Until now the
@@ -1285,6 +1332,310 @@ seeds the page with the `synthetic:opamp` starter (through `Page.addScriptToEval
 ticked in the editors and brought over with "Modify selected with agent..." as a user would. Page refresh only.
 Uncommitted.
 
+### 7.30 Project panel: long explanations folded into "details" lines; "Native schematic" closed by default (2026-09-21 ~14:00, separate session, explicit user request)
+
+User request: "hide the long comments or assisting texts into a collapsing notation text just like the Hierarchy
+module instances and parameters and native schematic", and "the native schematic sector is expanded by default,
+change that to collapsed by default". Frontend only (`Left.tsx` `CircuitPanel`, two lines at the end of `styles.css`).
+The column is 300 px wide, so every sentence ran over three to five lines and the fields and buttons were pushed out
+of view; the Virtuoso browse state is now 912 px tall folded against 1324 px with everything unfolded.
+
+* **The rule:** an explanation becomes a closed `<details className="more">` line - the same notation as "Instances and
+  parameters" - directly under the sentence it explains. Headlines, warnings, errors, results and every button stay in
+  view; nothing was deleted, only folded. Deliberately left in view: the MOCK / REAL backend banner (the REAL one is
+  the cost statement), "Profile ... created", the missing-baseline warning, all `error` / `blocker` texts.
+* **The nine lines:** "Which two files, and where they may be" (netlist source; one short line stays: "Two files are
+  needed: fill in both paths, then press Load netlist."), "View: schematic" (why there is no view to choose), "What
+  circuit class and PDK id are for", "Why: it has no circuit profile yet" and "What reading the cell does" (browse-only
+  note; "N circuits have a profile today" + the task buttons + "Read this cell into the workbench" stay), "What you can
+  do with it now" and "What Create profile does" (draft note; both buttons and the profile form stay), "What the check
+  does" (generated profile; both buttons stay), and the backend's `circuit.notes` as one line "N note(s) on this
+  circuit".
+* **Native schematic** is closed by default. It is controlled (`nativeOpen`, the `ModelStructure.tsx` idiom) because a
+  new cell or Refresh re-mounts it: once the user opens it, it stays open from cell to cell, and stays closed once
+  closed. The folded help lines are plain uncontrolled `<details>`: a line keeps its state while it is on screen.
+* `styles.css`: `details.more` (small margins, content indented under its line) and a pointer cursor for every
+  `summary` of the left column.
+
+Verification: `tsc --noEmit` and `vite build` pass. New `frontend/scripts/project_help_check.mjs` (headless Edge,
+port 9393, 35 checks, 5 full-height screenshots): "folded" means the words are in the page but `checkVisibility()` is
+false, "in view" means it is true - `textContent`, which the two older checks read, cannot tell the difference. It is
+hermetic and safe against the live backend: every `/api/virtuoso/*` call is a canned FIXTURE, GETs, the circuit load of
+a registered task and static validation pass through, every other writing request is refused (the page's own
+`POST /api/output/check` is the only one and is reported as INFO). The connection profile is seeded into the
+temporary browser profile's configuration (`run.connection_profile_id`), so the check does not depend on the
+connection UI, which a parallel session was rebuilding at the time. It passed against a scratch build served by
+`vite preview` on a side port (API proxied to 8765; the build must sit on a Windows path, a `\\wsl.localhost` out-dir is
+served empty) and against the live page. `circuit_source_check.mjs` 21 of 21; `virtuoso_source_check.mjs` 47 of 48 -
+the one failure ("and says what to do") expects the words 'connection panel', which the parallel connection refactor
+reworded to 'Connection window'; that session was told. Page refresh only, no backend restart. Uncommitted.
+
+### 7.31 Exports of the four run tabs: five gaps closed (2026-09-21 ~14:00, separate session, user: "close all five gaps")
+
+The user asked whether Run status, Logs, Data tables and Output files can export. Answer of record before this
+change: Data tables and Output files could, Run status and Logs could not, and three of the existing exports were
+awkward. The five gaps, all closed:
+
+1. **Logs had no download.** New button "Download full log (events.jsonl)" (or `errors.jsonl`, following the
+   selector) next to the list, and a hint that the list is only the newest 200 entries. A healthy run keeps an
+   EMPTY `errors.jsonl`: the tab then says "Nothing to download: this run has logged no errors so far." instead of
+   saving an empty file (decided from the entries the tab already holds, checked to be of the selected kind; a 404
+   reads the same).
+2. **Run status had no export.** New button "Export status (JSON)" at the end of the tab's button row: the status
+   object the tab is drawn from (state, budget, best design, connection, manifest, summary) plus `exported_utc`, saved
+   as `<run folder>__status.json`. Frontend only, no request.
+3. **"Export detailed CSV" only wrote a file on the backend's disk** and showed its path; the user had to go to
+   Output files, Refresh and download it. It now does both: writes `exports/<table>__seq<N>.csv` (+ `.meta.json`) as
+   before and hands the browser the same file at once. The note reads "Downloaded ... Also kept in the run folder: ...".
+4. **"Export research CSVs" could not be reached from the browser at all**: the aggregates lie in
+   `<experiment>/aggregates`, ABOVE the run directory, where `/api/runs/download` (rightly) cannot reach. New route
+   `GET /api/aggregates/download?run_dir=...`: one zip `<experiment>__aggregates.zip` of exactly the files the exporter
+   writes (`<table>.csv` + `<table>.meta.json` for the six tables of `aggregates.COLUMNS`; a stray file in that folder
+   is not packed, a symlink neither), 404 "No research CSVs have been exported for this experiment yet" before the
+   first export. The button writes (existing `POST /api/aggregates/export`) and then downloads.
+5. **Every data-only package was saved as `run__data.zip`**: the frontend hard-coded the name and so discarded the
+   backend's `<run folder>__data.zip`. All downloads now go through one helper, `download()` in `api.ts`, which saves
+   under the name of the backend's Content-Disposition (plain and RFC 5987 `filename*=` form), throws the backend's
+   readable message on an error (the old `downloadPackage` lost it and its caller did not catch at all) and returns the
+   name for the tab's note. The per-file `download` links of Output files stay plain links on purpose: they stream to
+   disk, and a saved model can be hundreds of MB, which a fetch-into-memory download should not hold.
+
+**A defect found on the way and fixed: a file that grows while it is downloaded.** `/api/runs/download` answered with
+starlette's `FileResponse`, which announces the size first and then reads to the end of the file. A live run appends
+to `logs/events.jsonl` all the time, so the body no longer matched the announced length and the transfer broke -
+exactly the case the new Logs button is for. New `file_snapshot()` in `api/app.py`: the size is taken once from the
+open file, exactly that many bytes are sent, and a `.jsonl` is cut back to its last complete line (the project's own
+rule: a torn tail is not part of the record, see `read_jsonl`). Measured over real HTTP (uvicorn) against a log that
+was being appended to ~2000 times per second: new route 922 of 922 downloads complete, none ending mid-line;
+`FileResponse` on the same file 0 of 52 (`IncompleteRead`). What was given up: ETag / Last-Modified / Range support of
+`FileResponse`, none of which the workbench uses. `attachment()` next to it builds the Content-Disposition for all
+three download answers' names (non-ASCII experiment names included).
+
+Files: `src/gator_workbench/api/app.py` (`attachment`, `file_snapshot`, the download route, the new aggregates
+route; the `FileResponse` import went), `frontend/src/api.ts` (`save`, `download`, `aggregatesUrl`;
+`downloadPackage` / `saveJson` are now one-liners over them), `frontend/src/panels/Bottom.tsx` (`StatusTab`,
+`DataTab`, `FilesTab`, `LogsTab`, `runName`; the Agent tab above them is another session's and was not touched),
+`tests/workbench/test_wb_api.py`, `docs/workbench.md` ("Getting a run's data out of the browser"). Nothing under
+`src/analog_optimizer/`. Nothing happens on its own: every export is a button press; the exports show "Exporting..." /
+"Packing..." and cannot be pressed twice.
+
+Verification: `tests/workbench/test_wb_api.py` - two new tests (`test_a_download_is_the_file_as_it_was_when_the_
+download_started`: snapshot taken, file appended to, body still the earlier complete lines; torn tail longer than one
+64 KiB scan block; no complete line = empty body; a non-JSONL is not cut; missing file 404; the `filename*=` form;
+`test_research_csvs_are_downloadable_as_one_zip`: 404 before the export, 12 members after it, a stray file left
+out, the experiment's name in the header, 403 outside the roots) and three assertions added to the existing run test
+(the exported CSV comes back through the download route with its header row; the package is named after its run).
+Full workbench suite: 428 passed. `tsc --noEmit` and `vite build` pass; `save_now_check.mjs` and `run_control_check.mjs` (same Run status tab) still pass. New `frontend/scripts/export_check.mjs` (headless Edge, port 9391, 22
+checks, 4 screenshots): NOT hermetic on purpose - it starts one 12-evaluation synthetic MOCK run on a SCRATCH backend
+(it refuses port 8765), presses every export button with a real user gesture, and reads the files the browser SAVED
+back from its download folder (`Browser.setDownloadBehavior`): names, the status JSON's content, one JSON object per
+log line and as many lines as the API lists, header + every row in the CSV, the 12 members of the aggregates zip (zip
+names read from the central directory; node has no zip reader), the package's name and members, "Nothing to download"
+with no file saved and the page still the workbench. It caught two things type-checking could not: the empty
+`errors.jsonl` of a healthy run (gap 1 above), and that the hidden-but-mounted Agent tab owns the first `<select>` /
+`.hint` of `.bottom-body` - the check finds everything from the visible tab's own button.
+Live page: `frontend/dist` rebuilt, a page reload shows the buttons. **The backend on 8765 must be restarted** for the
+research-CSV download (new route; until then that button says "Not Found" after writing the files) and for the
+growing-file fix; the other four work against the old backend. Uncommitted.
+
+### 7.32 "Connection": one button that opens a window; four kinds of connection - Virtuoso over SSH / on this machine, ngspice on this machine / over SSH (2026-09-21 ~14:15, separate session, explicit user request)
+
+User: "Change the virtuoso bridge connection to connection. Consider the possibility of connecting virtuoso locally and
+connecting ngspice input locally or on ngspice ssh", then: "reduce the connection block to one button. Pressing it open
+the current connection block as a new window".
+
+**What changed for the user.** The block of the left column is ONE button, "Connection": first line the name and the
+state of the last test, second line the connection in use and its kind ("lab - Virtuoso over SSH"). Pressing it opens the
+connection window (a browser window of its own, drawn through a React portal - the mechanism of the detached Agent
+conversation, 7.14 - so all state stays in the always-mounted button component and nothing is synchronised between
+windows). Pressing again brings the window to the front; closing it loses nothing; a page reload closes it. The window
+holds what the panel held, worded after the KIND of the chosen connection, plus "Add a connection...".
+
+**Kinds** (`"kind"` of a profile in `bridge_connection.json`; absent = `virtuoso_ssh`, so existing files are untouched
+and keep working):
+
+| kind | layers | steps |
+|---|---|---|
+| `virtuoso_ssh` | the seven of section 2.1 | 1 Connect SSH, 2 CIW line, 3 Test |
+| `virtuoso_local` | the same seven, `tunnel` = `not_applicable` | 1 Set up local bridge, 2 CIW line, 3 Test |
+| `ngspice_local` | `connection_profile`, `ssh` (n/a), `ngspice`, `trial_run` | Test |
+| `ngspice_ssh` | the same four | Test |
+
+* **Virtuoso on this machine was already half there** (the bridge's local mode; `run_layers` and `perform_connect` handled
+  it since 7.3) but the UI and every sentence said SSH. Now: a declared kind must agree with the bridge env file
+  (`connection.kind_problem` -> `kind_mismatch` at layer 2 and in the connect process BEFORE anything is started: a profile
+  that says "this machine" can never open a tunnel to another one); a profile without a kind is not second-guessed and
+  the window words itself after what the test found (`describe()` -> `transport`). A local bridge that was never set up
+  is `local_bridge_not_set_up` ("click Set up local bridge"), no longer `no_response` ("load the line" - there is none
+  yet). `summarize` has local sentences without the word SSH.
+* **ngspice** lives in the new `ngspice_link.py`, so `connection.py` keeps the guarantees its test pins. Same contract:
+  dependency order, the broken link named, downstream `not_checked`, observe only. The `trial_run` layer solves ONE fixed
+  divider (v(out) = 0.5 V) - to ngspice what the `1+1` round trip is to the CIW; never a user circuit, no budget, no
+  license; local run in a temporary folder, remote run through `mktemp` + `rm` in one fixed command. `ssh_host` /
+  `ngspice_bin` come from the operator's file only, must match a strict pattern before anything runs (an ssh OPTION such
+  as `-oProxyCommand=...` in place of a host is refused at layer 1), travel as argv entries after `--`, and are scrubbed
+  from ssh's own error lines. BatchMode; no ControlMaster, nothing left running.
+* **Monitor and gate work per family** (`FAMILY_LAYERS` / `FAMILY_SCOPES` / `FAMILY_ACTIONS`): never-checked, stale,
+  timeout and unparseable results carry the layers of the profile's own family; a result of another kind is not shown
+  for a rewritten profile; an unknown kind is named by the probe without probing anything. **An ngspice connection can
+  only be tested today** - there is no ngspice evaluation backend - so the gate refuses `real_simulation`,
+  `read_cellview` and `write_cellview` on it WITHOUT a probe (`blocking: ["connection_kind"]` + the sentence to show; the
+  refusal is logged), `tasks.real_backend_blocker` / `generated_backend_blocker` name the wrong kind instead of listing
+  missing Virtuoso settings, `POST /api/connection/connect` answers `409 nothing_to_connect`, and the window says it in a
+  neutral note. The switch for the later increment is one line: `FAMILY_ACTIONS['ngspice']['real_simulation']`.
+* **Add a connection.** `detect_setup()` reports per kind what is on the backend machine (bridge env file + package,
+  `ngspice`, `ssh`, the Host NAMES of `~/.ssh/config` - names only). `POST /api/connection/profile` takes
+  `{profile_id, kind, ssh_host?, bridge_profile?}`; `ssh_host` must be one of those Host names, so section 2.1's "no host
+  from the browser" still holds (an address, port, path or command is a 422; a well-formed name that is not in the file a
+  409). **Deliberately relaxed promise:** the connection file was "never overwritten" (7.3); now a connection can be
+  ADDED. Existing connections are never changed or removed, all other keys and `active` are written back as they were,
+  the previous file is kept as `bridge_connection.json.before-<UTC>-<name>`, an existing name is `409 profile_exists`, a
+  file that cannot be read is never replaced. The user's real `lab` file was not touched by any of this work.
+
+**Files.** New: `src/gator_workbench/ngspice_link.py`, `frontend/src/panels/Connection.tsx`,
+`tests/workbench/test_wb_connection_kinds.py`. Changed: `connection.py`, `bridge_connect.py`, `api/app.py` (body
+`CreateConnectionBody`, the three routes), `tasks.py` (two blockers), `agents/readiness.py` + `agents/run_readiness.md`
+(the checklist item is called "Connection"), `frontend/src/App.tsx`, `frontend/src/api.ts`, `frontend/src/panels/Left.tsx`
+(the panel moved out; three messages now point at the Connection window; a gate blocked by `connection_kind` shows the
+backend's sentence), `frontend/src/styles.css`, `frontend/scripts/connection_panel_check.mjs` (rewritten),
+`frontend/scripts/virtuoso_source_check.mjs` + `agent_tab_check.mjs` (two expectations / one fixture label),
+`tests/workbench/test_wb_connection.py` + `test_wb_bridge_connect.py` (the three assertions whose behaviour changed on
+purpose), `docs/workbench.md`. Zero edits under `src/analog_optimizer/`.
+
+**Verification.** Fixture tests: `test_wb_connection_kinds.py` (kinds, mismatch, local wording, every broken ngspice
+link, hostile settings, monitor/gate per family, creation, API) with the two older connection files, all passing.
+REAL, reported apart from fixtures: (a) `ngspice_link` against a real **ngspice-36** - an Ubuntu package unpacked into
+the session scratchpad, NOT installed on this machine - all four layers ok, and the remote command line executed under
+a real `sh` with that ngspice (no temp file left behind); (b) this host as it is: `ngspice_not_found`, and an ssh target
+that does not resolve: `ssh_failed` with the host scrubbed; (c) browser: `connection_panel_check.mjs` against a scratch
+backend on another port with its own settings folder - one button, the window, the four kinds, names-only creation, no
+request on page load / on opening the window / in two 17 s quiet periods, one check per press - plus its LIVE section:
+real routes, real probe process, real ngspice-36 -> "Connected: ngspice 36 on this machine answered and solved the
+built-in test circuit". NOT verified for real: `ngspice_ssh` over an actual SSH connection (this host has no
+`~/.ssh/config` and nothing was contacted), and `virtuoso_local` against a Virtuoso on this machine (there is none; the
+user's link is remote) - both rest on fakes plus the real pieces named above.
+
+**Open.** An ngspice evaluation backend (decks, parameter substitution, measurements, budget rows) is a separate
+increment and needs a user decision first: the GPDK045 models are Spectre-format files, so ngspice needs circuits whose
+models it can read. Editing/removing a connection is still a hand edit. The pop-out code is now in two places
+(`Bottom.tsx`, `Connection.tsx`); `Bottom.tsx` carried another session's uncommitted work, so it was not refactored into
+a shared helper. Live page: `frontend/dist` rebuilt. **The backend on 8765 must be restarted** for the kinds (until then
+the window works as Virtuoso over SSH with the old routes and says so under "Add a connection..."). Uncommitted.
+
+### 7.33 Circuit graph view - the ONE on-screen picture - and a red Abort button (2026-09-21 afternoon, same session as 7.20 / 7.23 / 7.26, user: "go, make the abort button red and build the circuit graph view")
+
+**RESTART THE BACKEND FIRST** (one new read-only route).
+
+**A user decision that relaxes the specification, recorded as such.** The specification says "Do not introduce
+plotting libraries ... Do not plot." The user was told exactly that (7.26: the graph picture "stays a separate
+decision of the user") and decided: build it. Scope of the exception, kept narrow on purpose: ONE diagnostic picture,
+ON SCREEN only. Nothing drawn is written into a run folder, an export or a report (the API test compares every file
+of the run before and after); the OUTPUTS stay data-only and the page header still says so truthfully. No charting
+library: cytoscape 3.34.3 draws node-link graphs (MIT, exact pin, no transitive dependencies, frontend only). It is a
+separate 444 KB file that the browser fetches when the view is opened; the page itself does not grow by it.
+`frontend/package.json` and the first paragraph of `docs/workbench.md` no longer claim "no library": they state the
+exception.
+
+**What it shows.** Devices as boxes, nets as circles (supply on top, ground at the bottom), every connection as a line
+labelled with its terminal. Line thickness = attention on that connection for the chosen block / head / direction;
+a device whose size the policy sets has a blue border and reads "w 1.768 um -> 3.115 um" (now -> proposed). Tables
+beside it: sizes now / proposed by this save point / really tried by the run; the connections of a clicked device
+with attention and uniform share; the metrics of that state.
+
+**Where the numbers come from - nothing is simulated.** `src/gator_workbench/graph_view.py` (new),
+`POST /api/runs/model/graph-view` (`run_dir`, `checkpoint_id`, `evaluation`): the chosen save point (tensor-only read
+after the checksum matched; network rebuilt from the recorded contract and required to hold exactly the saved
+tensors, as in 7.26) is REPLAYED on a state its own run ARCHIVED - the exact observation before evaluation N,
+rebuilt by `TrajectoryLoader`. One forward pass of the actor on the CPU. So it costs no budget and works for MOCK and
+REAL runs alike; a run without a transition archive is refused in plain words (409). Default N = the last evaluation
+the save point had seen.
+* **Attention without touching `src/analog_optimizer/`**: a forward hook on each `TransformerConv` / `GATConv` repeats
+  that layer's own computation on its own inputs with `return_attention_weights=True` (dropout 0: deterministic). The
+  network's directed edge list is folded back onto physical connections by (device, net, terminal role, ordinal), both
+  directions kept: "what the device takes from the net" and "what the net takes from the device".
+* **Honest reading, built in.** Attention is a softmax PER RECEIVING NODE, so a node with one connection always reads
+  1.0: such lines are drawn thin and dashed, and every value is shown with its uniform share 1/k. The text next to the
+  picture says that attention shows where the network looked, not why it chose an action - a debugging aid, not
+  evidence. Nothing here supports or weakens any claim about graph transformers.
+* **Frontend**: `frontend/src/panels/CircuitGraphView.tsx` (new), a button under the structure fold-out, a large native
+  `<dialog>`. Nothing is asked and cytoscape is not loaded until it is opened; another block / head / direction or
+  hiding the bulk ties repaints without a request; another evaluation (box + Show, `<`, `>`) is one request. Layout:
+  breadth-first from the supply nets, then ground moved below everything; "Spread out" (force-directed from the current
+  positions) and dragging for the rest. SI prefixes only for physical units (the MOCK score is not "855 mfixture").
+* **Findable in every Mode (user: "where is the circuit graph view").** The button sat inside the block that only
+  exists when Mode loads a model, so in `scratch` - the default - it was invisible. Now `scratch` shows **Look at a saved
+  model**: the same chooser, headed "Saved models (look only)", with the structure fold-out and the graph view for the
+  chosen model. The selection lives in the component, NOT in the configuration (a `model_source` in scratch would be the
+  validation warning `source_ignored_in_scratch`); "Done looking" puts it away. Pinned in `model_chooser_check.mjs`
+  (nothing read before the press, Mode and configuration unchanged) and `graph_view_check.mjs` (scratch -> look -> view).
+* **Fixed on the way (user report: every chosen save point answered "CompileError: mp1_w: bounds are required").**
+  `/api/runs/model` also compares the model with the configuration ON THE PAGE, and compiled that configuration without
+  catching `CompileError`: an optimized parameter row without bounds became a 500 that hid the model's facts as well - for
+  EVERY save point, because the fault was never the model. Now the facts are always returned; an uncompilable
+  configuration gives `compatibility_unchecked = {title, what, note, technical}` instead of `compatibility`. The page shows
+  it as a neutral note in plain words (which row, what to fill in, that the saved model is unaffected), with the developer
+  text under "Technical details". `test_wb_model_chooser.py::test_an_incomplete_configuration_never_hides_the_saved_model`
+  reproduces the report; three checks in `model_chooser_check.mjs`; reproduced over HTTP before / after (500 -> 200).
+* **Arrangement: a node-link graph with circuit hints - NOT a schematic (three user messages, in order: "is the structure
+  generated directly from the package? not very beautiful"; "hard code or agent judgement?"; "No don't generate schematic,
+  rewind the code. I want readable graph neural network style like the cytoscape original but with some hints from the
+  circuit information").** The first version used the package's `breadthfirst` layout: long diagonals, crossings, inputs
+  dangling at the bottom. A schematic-style attempt (SVG symbols, supply / ground rails, right-angle wires through invisible
+  pin and tap nodes) was built, shown and REWOUND on the user's word: the view shows the graph the NETWORK sees, and a
+  schematic is a different picture. What stayed is the placement, as hints only: `frontend/src/panels/circuitLayout.ts`
+  `hintedLayout()` - HARD-CODED rules, no agent, no model call, deterministic - supply on top, ground at the bottom, heights
+  = place on the DC current path (not through gates, bulk ties, rails or capacitors), gate-only nets beside the devices
+  they drive, their sources next to them, supply sources at the side, capacitors on a shelf near their net, inverter pairs
+  (two shared nets) above each other, barycentre sweeps, collision checks, and no link through a foreign node (the node
+  with the fewest links steps aside). Drawing: one node per device / net, straight `bezier` links, shape = family
+  (rounded box / barrel / cut corners / circle), colour = kind or net role, a dot where a link enters a gate and a bar
+  where it enters a bulk, bulk ties hidden at first, a legend beside the picture. Judged on screenshots of the MOCK OTA,
+  two-stage op-amp, LDO and a 3-stage ring oscillator; `graph_view_check.mjs` pins: exactly one node per device / net and
+  one link per connection (no helper nodes, no SVG), straight links, the shape / colour / mark hints, PMOS above NMOS, an
+  inverter pair aligned with its output between, a gate-only net beside its devices, no link through a foreign node. The
+  check's fixture first carried invented terminal roles, which let the gate-mark check pass vacuously and hid a real
+  link-through-node case - it now uses real roles. Limits: a drawing rule, not electrical analysis; hub nets (supply,
+  ground) still draw long links in a large circuit; drag, "Spread out" and hiding bulk ties help.
+* **Toolbar on one line, and a close cross (user, with a screenshot: "the show button and left right arrow are not aligned
+  with other boxes. change the close button to a closing cross button in browser style").** A labelled box carries the
+  global 4 px `label` margin and a bare button does not, so Show, `<`, `>` and the layout buttons stood 4 px low. In
+  `.graph-tools` every input, select and button is now 26 px high on one bottom edge and the tick box is centred on that
+  line (pinned to < 1 px in `graph_view_check.mjs`). "Close" is a frameless `x` at the top right of BOTH dialogs (graph
+  view and layer table; `button.dialog-close`, `aria-label="Close"`, red when pointed at, Esc still closes).
+* **"No link through a node" is judged by the node's BOX.** The same screenshot showed a thick link clipping the corner
+  of a device box: the rule measured the distance to a node's CENTRE, and a device box is wide. `through()` in
+  `circuitLayout.ts` now clips the link against the box (Liang-Barsky); supply and ground are placed BEFORE what hangs
+  on a shelf, and a supply source is placed with the same test, so their links are avoided too. Measured on the four
+  circuit drawings (OTA, two-stage, LDO, ring oscillator): 0 overlapping nodes, 0 links through a foreign box (before:
+  2 in the ring oscillator, then 1 in the two-stage op-amp). The check tests the DRAWN boxes. Cost: loosely attached
+  parts (the ring's load capacitors) end up further from their net than one would draw them by hand; they can be dragged.
+* **Abort is red**: solid `--bad` background, white text, faded while there is nothing to abort (`styles.css` only).
+* **When it runs, and what it costs (measured, user question "is it frequent and resource consuming?").** Only on a
+  press: opening the view is one request, another evaluation is one request; block / head / direction / bulk ties are
+  repainted in the browser. Never on a timer, never on page load, never by a training run (the worker does not know the
+  view exists). One request in a warm backend: 0.3-0.5 s and +5 MiB for the user's model on the slow `D:` drive (a few
+  small files; the forward pass itself is milliseconds), answer 20 KiB. The first version re-read the WHOLE archive per
+  request: 1.2 s and +40 MiB on a 2,900-evaluation run. Now only the column of evaluation numbers is read in full and
+  the chosen transition and its state are single-row parquet reads: 0.09 s on that run, no longer growing with its
+  length. Nothing is cached or kept between requests; closing the view destroys the drawing. There is no separate on/off
+  switch because nothing happens unless the button is pressed.
+
+**Verified.** `tests/workbench/test_wb_graph_view.py` (6): nodes and connections are exactly the task's graph; for both
+blocks and both heads the attention arriving at EVERY device and EVERY net sums to 1 and the uniform share is 1/k - the
+proof that the edge mapping is right; the policy's proposal is identical with and without the hooks, the hooks are
+removed again, the recorded action is the run's own; for EVERY archived evaluation the sizes shown are the archive's;
+an encoder without attention; no archive / a changed weights file refused; the route (200 / 409 / 404 / 403 / 422)
+and **no file of the run changes**. `frontend/scripts/graph_view_check.mjs` (headless Edge, FIXTURE data, safe
+against the live backend, 3 screenshots) against a throwaway backend on 8766 with a scratch build and REAL MOCK
+runs: the last section draws the first real model (5-transistor OTA: 7 devices + 7 nets, 22 connections) and
+compares every line's attention with the real route. The preload guard passes; `tsc --noEmit` clean.
+
+**Limits, stated plainly.** It replays the model on its OWN run's states: it does not show what the model would do
+on another circuit (that state would need a simulation). Only the actor is shown, not the critics. The layout is
+automatic and knows nothing of the user's schematic; on a large circuit it will need dragging. Attention maps of a
+policy trained for tens of evaluations mostly show initialization. MOCK runs only were drawn; a real run uses the same
+archive format. Nothing under `src/analog_optimizer/` changed.
+
 ### 7.34 Editor tabs renamed: Parameters, Specs, Probes (2026-09-21 ~14:10, separate session, explicit user request)
 
 Request: "Change Tab names as follows, optimization parameters to Parameters, performance targets to Specs,
@@ -1313,6 +1664,40 @@ its canned checklist data follows the backend's titles. Real backend, free endpo
 Live page: `frontend/dist` already holds the change (a parallel session's build at 14:04 picked it up from the shared
 working tree), so a page reload shows the tabs. **The backend on 8765 must be restarted** for the checklist titles
 (`readiness.py` is loaded at start); the brief is read again for every request and needs nothing. Uncommitted.
+
+### 7.35 Project panel: the whole Hierarchy block is one closed line (2026-09-21 ~14:15, same session as 7.30, explicit user request)
+
+User request: a screenshot of the block - the heading "Hierarchy (10 instances)", its tree, "Instances and parameters"
+and "Native schematic ..." - with the words "hide this part". Read as in 7.30 (fold, do not delete): the block is now
+ONE closed line, "Hierarchy (N instances)", and everything in the screenshot is inside it. Frontend only (`Left.tsx`
+`CircuitPanel`, one more line at the end of `styles.css`).
+
+* `<details className="section">` with the `<h3>` inside its `<summary>` (`display: inline`), so the fold line keeps the
+  look of the panel's other headings. Inside: the tree, "Instances and parameters" and "Native schematic", in the old
+  order and each still its own closed line. Opened, the block looks exactly as it did before.
+* **Left outside, in view:** the warning "Unmapped devices need confirmation" and the "N diagnostics" line. They appear
+  only when there is something to say, and a fold must not swallow that.
+* **Native schematic has two places.** With a circuit loaded it is a line of the Hierarchy block; while none is loaded
+  (browse only) there is no such block and it stands alone at the end of the panel, as in 7.30. One JSX value
+  (`nativeSchematic`) rendered in either place; its open state is `nativeOpen`, so moving between the two loses nothing.
+* **Controlled like Native schematic** (`hierarchyOpen`): closed by default, and it stays as the user left it across
+  circuits - the block un-mounts whenever no circuit is loaded, which would otherwise close it again. React's
+  `onToggle` BUBBLES from an inner `<details>` although the DOM event does not; the handler therefore reads
+  `e.currentTarget.open` (the block's own state), never `e.target`.
+
+Verification: `tsc --noEmit` and `vite build` pass. `project_help_check.mjs` now has 42 checks and 7 screenshots: the
+block is one closed line that still looks like a heading, the tree and "Instances and parameters" are folded inside
+it, a click opens it, opening the inner line leaves the block open (the bubbling case above), the state survives two
+circuit changes with an un-mount in between, in the draft state "Native schematic" is inside the block and folds with
+it, and browse-only has no block. Passed against a scratch build on the side port and against the live page
+(a parallel session's 14:12 build already contained the change). `circuit_source_check.mjs` 21 of 21 and
+`virtuoso_source_check.mjs` 48 of 48 on the live page - the failure noted in 7.30 was fixed by the connection
+session. Page refresh only, no backend restart. Uncommitted.
+
+Later the same day: 7.40 removed the row of `real:*` shortcut buttons from the browse-only note (user request), which
+left one assertion of `project_help_check.mjs` stale ("... stay in view as buttons", reported by the 7.44 session). The
+check now pins the new behaviour instead - no such buttons, and the sentence that points to "Source: Registered
+task" is folded under "Why: ..." with the rest of that explanation. 42 of 42 on the live page again.
 
 ### 7.36 Agent: "Review settings" over the whole workbench, optionally with publications read online (2026-09-21, same session as 7.25, explicit user request)
 
@@ -1350,3 +1735,377 @@ the message box, right after "Export task description". "Review settings" took i
 above the conversation, with its option "check publications online" in front of it. No behaviour changed.
 `npm run build` passes; `agent_tab_check.mjs` 88 checks, all pass on a scratch backend (one new check for the two
 positions). Page refresh only. Uncommitted.
+
+### 7.38 Bottom tab strip: the drop-down list of runs became a "Runs..." button that opens the run window - finish time, duration and every fact of each run (2026-09-21 ~14:40, two sessions, explicit user requests)
+
+User request (session "Run selection window redesign"): "In the frontend bottom change the select run collapsing menu
+to a button to open a new windows for different run list with finished time and duration information", then "and with
+all the run information". After the first build the user asked the session "Run status logs export functionality"
+(14:28) for three changes, which that session made in the same files: the button reads only "Runs..." with the run's
+description to its LEFT, no "Show" column - a double click shows a run -, and "Show no run" is called "Clear". What
+follows is the final state.
+
+**Frontend** (`frontend/src/panels/RunList.tsx` new, three lines of `App.tsx`, one block in `styles.css`):
+
+* The `<select>` at the right end of the bottom tab strip is gone. In its place: plain text naming the run the bottom
+  tabs show (start time | task | mode seed | state [MOCK]; "No run selected") and, right of it, ONE button,
+  **Runs...**. Pressing it reads the run list and opens the **run window**: a browser window of its own
+  (`window.open` + a React portal, the mechanism of the connection window and the detached Agent conversation, so
+  all state stays in the one page and nothing is synchronised between windows). Pressing it again brings the window
+  to the front; leaving the page closes it. While it is open the button carries the class `open` - not `active`,
+  which in this strip means "the chosen tab" (`footer .tabs > button.active` is used by the browser checks).
+* The window is one table, newest run first: Started, Finished, Duration, State (+ stop reason), Task, Mode, Seed,
+  Evaluations (`25 / 60`), First feasible, Experiment, Data (MOCK / real), Can continue. **A double click on a row**
+  shows that run in the bottom tabs (not when it lands on the row's Details button; the word the double click
+  selected is let go); the row is marked blue with a bar at its left edge and `aria-current`. **Clear** shows no
+  run. The window stays open. **Details** opens everything else under the row, read at that moment from the
+  existing `GET /api/runs/status`: folder (a click copies, through the WINDOW's clipboard), ids, created / worker
+  began / came to rest / last sign of life, working time, pause time, summed simulator job time, stop reason,
+  error, budget, launches, learner updates, first feasibility, best design and its variables, model loaded and last
+  save, saved state, parallel simulations, connection, bytes written, and one line per SEGMENT. Empty facts are
+  left out. Column titles sort (empty cells always last); a filter box narrows by any word of a row.
+* **Wording of "Finished"**, because "finished" is not one thing: a run at rest shows the end of its last segment; a
+  PAUSED run shows it with "(paused)" so that it is not taken for finished; a working run reads "still running" and
+  its duration "... so far"; a run whose worker died wrote no end and reads "last seen <its last heartbeat>"; a run
+  that never began shows dashes, not zeros. All times are local time, written `2026-09-21 14:03:22` (sorts by eye).
+* **Duration = working time**, the project's own definition (`summary.durations`): the pauses between segments are
+  not part of it; the cell's tooltip and the details name them. End minus start would make a run that sat paused
+  overnight look like a twelve-hour run.
+* **Nothing updates by itself** (user preference, 7.9): the list is read on the button press and by "Refresh list",
+  the details when they are opened; the window prints when the list last arrived. No timer, no poll.
+* Compact (user preference, 7.30): the column explanations are one closed "What the columns mean" line.
+* An older server lists runs without times: the cells read "-" and ONE line says in plain words that the server has
+  to be restarted. A blocked pop-up is said next to the button.
+* The header's "let go of this paused run?" question pointed to "the run list"; it now says: press "Runs..." at the
+  bottom, double click the run, then Run status > Continue (`RunControl.tsx`, wording only).
+* Pitfall for the next pop-up: a window opened as `about:blank` is in QUIRKS mode, where a `<table>` does not
+  inherit the font and falls back to 16px. `.run-window table { font: inherit; }` fixes it for this window; the
+  connection window's "Details" table has the same quirk.
+
+**Backend** (`src/gator_workbench/runs.py`; nothing under `src/analog_optimizer/` is touched):
+
+* `run_timing(manifest, status)` and new keys in every row of `list_runs` / `GET /api/runs`: `started_utc`,
+  `ended_utc`, `last_seen_utc`, `active_seconds`, `paused_seconds`, `segments` (seven facts per segment; the load
+  policy stays in the manifest), plus `task_name`, `stop_reason`, `error`, `max_evaluations`. All of it comes from the
+  three small files `list_runs` was already reading for each run, so the list costs no extra file access.
+* `ended_utc` is the end of the LAST segment, `None` while a worker is on the run. `active_seconds` is
+  `summary.durations(manifest)`; for an open segment (working, or the worker died) it is the worker's own running
+  total from `status.json`; `None` for a run whose worker never began.
+* `evaluations` of a row now prefers the live ledger (`status.json` budget) over the summary: a run that was working
+  listed `None`, and one resumed after a pause the count at the pause.
+* Existing keys are unchanged; `saved_models` spreads the rows, so `/api/runs/models` carries the new keys too.
+
+**Verification.** `tests/workbench/test_wb_run_list.py`, 8 tests: one go, pause not counted, open segment, never
+begun, a dead worker listed as `interrupted` with its last heartbeat (fabricated run folder), a finished MOCK run
+equal to its manifest, the API serving the same rows, and a real DETACHED MOCK run listed while it works, after a
+pause and after it continued (two segments, the pause not in the working time, the live evaluation count).
+The whole `tests/workbench` suite (429 tests collected, run with `-x`) reached 100 % without a failure, with every
+session's uncommitted work in the tree. `tsc --noEmit` and `vite build` pass. Browser: `frontend/scripts/run_list_check.mjs`, 60 checks on the live page
+(headless Edge, the window as a second DevTools target found by its title, real double clicks through
+`Input.dispatchMouseEvent`; every `/api/runs*` request answered by FIXTURE runs of every kind - finished,
+paused-and-continued, paused, dead worker, never begun, failed real, working - so it is safe on the live backend).
+`run_control_check.mjs` used the old `<select>` to put the bottom tabs on no run; it now opens the run window and
+presses "Clear" there: 60 of 60. End to end WITHOUT fixtures: a scratch backend on 8769 with the new `runs.py` and
+the new page showed the one real run under `outputs/` with its finish time, 17.8 s and full details - and exposed
+that the real `best_design.variables` is a LIST of `{variable_id, value, unit}` while the fixture had a map (the
+details printed `[object Object]`). Fixed (`input_pair_width=2.34558e-6 m`), and the fixture now has the real shape.
+The live `frontend/dist` is rebuilt; the user's backend on 8765 was NOT restarted: until it is, the window shows its
+"older server" line instead of finish times and durations. Uncommitted.
+
+### 7.39 Agent: "Review run results" - the agent is given a digest of a run's output (2026-09-21, same session as 7.36, explicit user request)
+
+Request: "can the agent tab agent read output results?" It could not: it saw the circuit, the three tables, the start
+checklist and, for a settings review, the settings - never what a run produced. It still reads no file.
+
+| Piece | Where |
+|---|---|
+| The digest of ONE run, built by the backend from the run's own records (status, effective configuration, the `evaluations` / `parameters` / `metrics` / `learner_updates` tables, the error log): outcome and budget; first feasibility; every target against what was reached and against the best design (incl. invalid measurements and why); per optimized variable the range tried, the value at the best design and the share of evaluations within 2 % of a bound; failures by status and type with the typical diagnostics; how the evaluations were chosen, learner updates and first-third / last-third trends (`null` under 9 points); a ~20-point best-so-far curve; the 8 best and 5 last evaluations; caveats (MOCK, one run = an anecdote, still running). The best design is the RUN'S OWN choice (`status.best_design`). Bounded (~1.9 k tokens for the 60-evaluation example run), plain JSON, never a NaN | new `src/gator_workbench/agents/run_digest.py` (`build` on plain rows, `load` for a run directory) |
+| Request kind `run_review` (needs a run, never online): `reasoning` explains the run, changes come as `suggestions` for settings (same check-on-a-copy as 7.36, `source` = a number of the run) and/or as a `patch` of the three tables. `ProposeBody.run_dir` goes through `run_path` (allowed roots, must be a run directory) | `agents/base.py`, `agents/prompts.py`, `agents/proposals.py`, `api/app.py` |
+| Brief: section "Reviewing a run" (plain language first; a fixed diagnosis order - failed simulations, invalid measurements, a learner that never started, a search hitting a bound, a target nothing came near; every statement names its number; no conclusion about an encoder, transfer or an algorithm from one run; a MOCK score is not a circuit quantity). **The brief is now cut per request kind** (`GUIDE_SECTIONS`): the two general sections always, a kind's own section only for that kind - it had grown to ~10 k characters paid on every request; a request now carries 3.5-6.5 k | `agents/run_readiness.md`, `agents/prompts.py` |
+| UI: "Review run results" in the row under the message box, after "What's missing to start?"; disabled until a run is chosen with "Runs..." (it says so), names the run in its tooltip and in the request. The reply shows the explanation (lists / code formatted) and the suggestions table; a proposal box opens only when there is a diff. `run_review` is also a selectable kind | `frontend/src/panels/Bottom.tsx`, `App.tsx` (passes `runDir`) |
+
+Verification: `test_wb_agent_run_review.py` 4 tests (digest on plain rows, too-little-data, the request, and a REAL MOCK run
+executed in the test, condensed and handed to the fake CLI over HTTP; a run outside the allowed roots is refused); full
+`pytest tests/workbench -q` **434 passed, 0 failed** (6 m 18 s). Browser check `agent_tab_check.mjs` 92 checks, all pass
+on a scratch backend (button disabled without a run; with a canned run one request of kind `run_review` naming it;
+explanation + suggestion; no proposal box without a diff). The script now answers the page's own repeated requests
+(`/api/runs/status`) automatically. **One real request** (scratch backend, `sonnet` / `medium`) on the example run
+`outputs/mock/delivery_example__aa693365859f/...`: HTTP 200 in 40 s, $0.22, 2 turns; it followed the diagnosis order, named
+its numbers, said MOCK and "one seed is an anecdote", noticed by itself that the reported best design is the FIRST
+feasible one (score 0.952 at evaluation 6) and not the highest-scoring (0.9958 at 57) because nothing ranks feasible
+designs, and suggested no change. NOT verified: a run of a real circuit, a run with failures. Python changed: the
+backend needs a restart. Uncommitted.
+
+### 7.40 Virtuoso source: the browse-only note no longer suggests the existing real tasks (2026-09-22, same session as 7.15 / 7.17-7.24, explicit user request)
+
+Request (with a screenshot of the block): "if I work with previous tasks I would choose registered tasks. Maybe
+don't show this part as suggestions?" Frontend only; refresh the page.
+
+* `Left.tsx` `CircuitPanel`: the sentence "N circuits have a profile today. Click one to work with it:" and its row
+  of `real:*` buttons (added in the 7.15 follow-up) are gone from the note shown for a Virtuoso cell without a
+  profile. The note now goes straight from "Browse only ..." to "To start a profile for this cell ...". Nothing is
+  lost: the existing profiles are under Source: Registered task (one folded sentence in the "Why" details says
+  so), and the backend's sentence under "Technical details" still names them.
+* `virtuoso_source_check.mjs`: the two checks that pressed such a button now assert that the note offers NO
+  `real:*` button and still offers "Read this cell into the workbench". All checks pass; `npm run build` passes.
+
+### 7.41 Output settings: "Copy path" as text on the "Output root" line; the waveform storage limit typed with a unit (2026-09-21 ~16:05, separate session, explicit user request)
+
+Request: "move the copy path button to the right of same line of output root and make it plain text no button
+style. make the waveform storage limit box with unit choice". Frontend only (`Right.tsx` `OutputPanel`,
+`styles.css`); refresh the page, no backend restart. The configuration format did not change.
+
+* **Copy path.** It left the row of buttons under the path box ("Browse allowed roots..." and "Test writability"
+  remain there) and sits at the right end of the caption line: `Output root ................ Copy path`. It is text
+  in the accent colour (`button.text-link`: no border, no background, no padding; underlined under the mouse,
+  darker while pressed), still a `<button>` for the keyboard, and copies the same path as before. It is a SIBLING of
+  the caption's `<label htmlFor="output-root">`, not a child: a button inside a label becomes the control that a
+  click on the label's text activates, so "Output root" would have copied instead of putting the cursor in the box.
+* **Waveform storage limit.** A number box plus a unit list: bytes, KiB, MiB, GiB, TiB - the binary units the
+  panel already uses for "Free space", so the two can be compared. New `ByteSize` next to `Num` in `Right.tsx`.
+  The configuration still holds `output.waveform_storage_limit_bytes` as WHOLE bytes (the schema field is an `int`;
+  1.3 GiB is saved as 1395864371 and still reads 1.3); the unit is only how the number is typed and shown, and the
+  tooltip names the exact bytes. Choosing another unit KEEPS THE NUMBER and changes what it means (2 GiB -> 2 MiB):
+  that way "type 500, then choose MiB" and "choose MiB, then type 500" both end at 500 MiB, which converting the
+  display (2 GiB -> 2048 MiB) would not. A value that did not come from the box (loaded configuration, Undo) is
+  shown in the largest unit that gives it back exactly with at most 3 decimals - 2147483648 -> "2 GiB",
+  524288000 -> "500 MiB", 1500000000 -> "1464843.75 KiB" - so what is shown is never a rounded version of what
+  is saved. Half-typed text ("0.") is kept while the box has focus, as in `Num`; letters change nothing.
+* **Fault found on the way, fixed in both boxes that had it.** `value={x ?? default}` cannot tell "field absent"
+  from `null`, and for these two fields `null` is a real setting (the schema has `Optional[int]`): emptying the box
+  saved `null` - no limit / no evaluation-based checkpoints - while the box jumped back to the default, so the
+  screen said "2147483648" or "50" and the run would have had neither. Confirmed in the browser before the fix
+  (`{"box":"50","saved":null}`). Both boxes now show the default only when the field is absent; an emptied box
+  stays empty, and the limit box says what that means (placeholder "no limit"). "Checkpoint every N evaluations"
+  was the only other clearable box with a default.
+
+Verification: `tsc --noEmit` and `vite build` pass. New `frontend/scripts/output_panel_check.mjs`, 36 checks, all
+pass (headless Edge; hermetic like `blocking_issues_check.mjs`, so it is safe on the live backend: `POST
+/api/output/check` and the validation are answered by FIXTURES, GETs pass, every other writing request is refused;
+the clipboard is replaced by a recorder in the page; saved values are read back from the page's own stored
+configuration): position and look of "Copy path", that it copies, that the caption still focuses the box, that
+opening the page only looks at the root (`create: false`); units both ways round, rounding to whole bytes, empty =
+`null` and stays empty, letters, Undo, an odd loaded value, an absent field. `network_panel_check.mjs` still
+passes. Run on a private build first (`vite build --outDir <Windows temp>` + `vite preview` on 5174); the live
+`frontend/dist` was then rebuilt and has the same content hash as the build that was checked. Uncommitted.
+
+### 7.42 Agent tab: two shorter button captions (2026-09-21, same session as 7.39, explicit user request)
+
+"What's missing to start?" is now "What's missing?" and "Review run results" is "Review results" (button text, the empty-
+conversation hint, the brief's "Asked for with ...", `workbench.md`). Nothing else changed. `npm run build` passes;
+`agent_tab_check.mjs` 92 checks, all pass on a scratch backend; the three agent test files that read the brief: 28 passed.
+One run of the check hung at "Bring back" inside the detached window: the click closes the very window whose DevTools
+session would acknowledge it, so the script waited for ever. Fixed in the script (a closing session rejects what is still
+waiting; that click no longer waits for its own acknowledgement); the stuck node + headless Edge were stopped by their
+command line (`remote-debugging-port=9377`) and their temporary profiles removed. Page refresh only. Uncommitted.
+
+### 7.43 Run panel: no block for a NEW network while a saved model is loaded; the network comes with the model (2026-09-21 evening, same session as 7.20 / 7.23 / 7.26 / 7.33, explicit user request)
+
+Request: "When the mode selection is not scratch, dont show the RL NETWORK part for new encoder settings. Only the list
+of existing model encoders". Frontend only (`Right.tsx`, `ModelChooser.tsx`); no backend change, no restart for this.
+
+* **Shown in `scratch` only:** the whole "RL network" block - heading, Encoder list, hidden / heads / layers, "In use" with
+  the two preset buttons, the "differs from the backend's saved setting" line, the preset problem, "Where the values come
+  from". In `resume`, `fine_tune` and `frozen` the panel goes from the run settings straight to "RL model to load"; every
+  card there names the model's network, now in bold (`b.model-net`) - that is the list of existing model encoders.
+* **The network follows the chosen model.** Backend fact: `check_compatibility` marks another `model_config` as
+  incompatible in all three Modes, so there is nothing to choose. `run.network` takes the chosen model's network by itself
+  once its description arrives (an unrecorded `setConfig`, like the fill-in of missing values; the act is the choice of the
+  model). The model's facts start with a new row "Network ... - this run uses it as it is". Gone: the warning "This
+  checkpoint was trained with ..." with the button "Use the checkpoint's network", the "other network" tag, the chooser's
+  `network` prop. A compatibility answer that was computed with the network being replaced is not shown (no red "NOT
+  compatible" for one frame).
+* **Only the network follows.** The old button also overwrote the numbers under "Advanced" with the checkpoint's; that is
+  no longer done. A difference there is allowed for `fine_tune` / `frozen`, and a real `resume` uses the run's own saved
+  configuration anyway (`_prepare_resume_locked` takes only `RESUMABLE_RUN_FIELDS` from the page). An "Advanced" edit made
+  while a model is loaded stores the sizes ALREADY stored for that encoder, not the loaded model's sizes, as the
+  per-encoder backend setting.
+* **Not silent when it comes from elsewhere.** A network that arrives while the same model stays loaded (an imported
+  configuration, an applied `run.network.*` suggestion of "Review settings") is taken back as well, and a warn line says
+  so: "The network stays gat 16/2/1: this run loads a saved model ... A new network needs Mode scratch." Known limit:
+  "Review settings" can still list such a suggestion as applicable in a loading Mode (its trial validates the configuration,
+  not the chosen model; the brief already tells the agent to warn). Those files belong to another session and were not touched.
+* The "budget is starved" warning stays in every Mode; while a model is loaded it no longer points at the hidden
+  "GATOR baseline" button. Back in `scratch` the block returns with the network last in use, and the existing "differs from
+  the backend's saved setting" line offers the stored values back.
+
+Verified in a real browser on a scratch backend (8766) with a scratch build: `model_chooser_check.mjs` 62 checks (new: block
+present in scratch and absent in fine_tune, "Advanced" stays, the chooser's note, every card names its network, no "other
+network" tag, the "Network" row, the configuration follows without a button - gat, then back to graph_transformer - and the
+backend is asked again with the followed network, a WHOLE imported configuration with another network is taken back and said,
+the block is back in scratch showing rgcn), `network_panel_check.mjs` 16, `model_structure_check.mjs` 34,
+`graph_view_check.mjs` 59: all pass on the final build. `tsc --noEmit` clean. The live `frontend/dist` was rebuilt
+afterwards. Page refresh only. Uncommitted.
+
+### 7.44 Choosing a real task brings ITS rows: targets of record instead of the MOCK "score" (2026-09-21 ~16:45, separate session, user report)
+
+Report (with a screenshot): "after choosing real ota5 it still gives score metric as spec target". The screenshot showed
+more than that: Task `real:gpdk045_ota5`, Specs = `score >= 0.95` (unit `fixture`), and PDK id `synthetic-fixture`.
+Cause: the rows of Parameters / Specs / Probes are part of the CONFIGURATION, and the Task drop-down changed nothing but
+`circuit.task_id`. Whatever "Load starter configuration" had put there for the MOCK task stayed - rows, labels and the
+project name `mock_opamp`, under which a real run would have been filed (`runs/<task_name>/`). And a real task had no
+starter at all: `GET /api/tasks/starter` answered 404 for anything but `synthetic:*`, the button was hidden.
+
+* **Backend: a real task has starting rows** (`tasks.real_starter_config`, served by the same `GET /api/tasks/starter`).
+  Local files only - no connection, no bridge, no simulation (the verified profile object is built from its repository
+  files by the new `_verified_profile`, which `_real_runtime` now uses too). Parameters: the rows the profile fixes
+  (`_graph_parameter_rows`, the body of `profile_parameter_rows`; a follower now carries its group's `optimized` flag -
+  a frozen group used to raise `follower_flag_ignored`). Specs: the circuit's TARGETS OF RECORD
+  (`REAL_TARGETS_OF_RECORD`): `configs/m6_real_cross_category.json` classes / opamp | ldo | vco / specs / `train` - the
+  partition a run from scratch belongs to - and `configs/gpdk045_ota7_transfer.json` for the OTA7. `min` / `max` /
+  `range` become `>=` / `<=` / `interval`, `scale` becomes `normalization_scale`, and every row says in `basis` which file
+  it comes from and that it is a pilot goal near the measured baseline, not a product specification. Probes: one per
+  target, labelled with the analysis that produces the result (`RESULT_ANALYSIS`; an oscillator: all `tran`). No `run`
+  key: a real budget is never suggested. Project `gpdk045-ota5` / `gpdk045_ota5`, labels `opamp` / `gpdk045`.
+  A profile GENERATED from a cell gets its parameters and a probe per result its registry knows, and NO target:
+  requirements are never inferred from a circuit. `synthetic:*` starters are byte-for-byte what they were (many checks
+  seed themselves from them). A generated profile that no longer passes its own checks answers 409 with the reason.
+* **Backend: the LDO and VCO could not be given a target at all.** Their results are not in the default result registry
+  (`score` + six op-amp results) and the UI has no registry editor; two of the LDO's units (`V/V`, `V/A`) were unknown to
+  `units.py`. `real:gpdk045_ldo` and `real:gpdk045_vco` now bring the registry of record of the real cross-category
+  experiment (`tasks.verified_spec_registry`, consulted by `validation.registry_for` and `compile.build_spec_schema`
+  after the generated-profile registry, before the default; compiled under its own version
+  `m6-physical-spec-input-v1`, 23 results - identical to the experiment's schema). The OTA tasks deliberately stay on the
+  default registry, so their models remain interchangeable with the MOCK tasks' and with earlier workbench runs. A
+  registry stated in the configuration still wins. `units.py`: `V/V` (`mV/V`) and `V/A` (`mV/mA`, `mV/A`), kept apart
+  from ohm. `/api/tasks` rows carry `pdk_id`.
+* **Frontend** (`Left.tsx` `CircuitPanel`): the Task drop-down calls `chooseTask`. The class / PDK labels follow in the
+  same change as the task (from the task list, so the circuit is loaded once, not twice). The starters of the task
+  before and of the new task are fetched; the three editors are exchanged ONLY while their rows are nobody's work -
+  all empty, or still exactly what the task before had brought (JSON-equal). Edited rows stay, and one `warn` line
+  says so and names the button. A project name nobody typed follows - the untouched default, or a name some task's
+  starter gives (`/api/tasks` rows carry `starter_project`, from the one helper `tasks.starter_project` both starters
+  use); a typed one stays, on the button too (it used to be overwritten there). The exchange is written without a
+  history step of its own (`setConfig(..., false)`), so ONE Undo takes back the task choice and everything it
+  brought, and Redo returns it. Run settings are never touched. "Load starter configuration" is now there for every
+  registered task; it replaces the rows and labels a starter states (and, for a MOCK task, budget and seed as
+  before). One hint line reports what happened and disappears with the first edit. A backend that was not restarted answers 404 for a
+  real task: the panel says "older than the page ... restart it", and nothing is exchanged. Nothing happens on page
+  load, on an imported configuration or on an approved proposal - only on the explicit choice in the drop-down.
+* **Fault found on the screenshot of the result, fixed in the editor** (`Editors.tsx`, one expression): a field a row
+  does not STATE was drawn as empty / unchecked, so the six real targets looked "not hard" although `hard` defaults to
+  on (the MOCK starter's row had always looked that way too). An absent field is now shown with the schema default the
+  backend will use (`hard` on, `tolerance` 0, `optimized` on ...). Only `undefined` is treated so: a box the user
+  cleared is `null` and stays empty (the trap of 7.41).
+
+Verification. `tests/workbench/test_wb_real_starter.py`, 10 tests: for each of the four verified circuits the starter
+validates against the profile's own graph with no error, blocker OR warning, its parameter rows compile to exactly the
+profile's `graph_contract`, and its compiled `MetricSpec`s equal the specs of record field by field; analysis labels;
+the two registries and their precedence; the two units; the MOCK starter unchanged; a generated ring-oscillator profile
+(created in the test from the fixture cell) gets 8 probes, no target, and `no_hard_constraint` as the one thing left to
+the user; the API route and `pdk_id`. Whole `tests/workbench` suite on the final code: 446 passed, 1 failed -
+`test_wb_profiles.py::test_a_generated_profile_is_deleted_by_moving_it_aside`, another session's NEW test, reached while
+that session was still writing its delete-profile feature; re-run alone a few minutes later it passes, and the run
+before it (without that test) had passed completely. `tsc --noEmit` clean at the time of the build. New `frontend/scripts/task_rows_check.mjs` (headless Edge): HERMETIC by default - task list, starters, circuit
+loads and validations are FIXTURES, other GETs pass, writing requests are refused, so it is safe on the live backend
+and independent of its version (32 checks: the reported case, labels, names, one load, ONE Undo / Redo, edited rows
+kept + the button, a typed name kept by the drop-down and by the button, a circuit without targets of record, an older
+backend, `hard` shown on); with `--live` the same steps read the REAL starters from a restarted or scratch backend and
+check the numbers of record (25.01 dB, 2.1 uW, 53.3 dB for the OTA7; 29 checks). Both modes pass, the live one against a
+scratch backend on 8767 with a copy of the connection file (8766 was another session's scratch server; it was only ever
+sent GETs by mistake and not touched). Run on a private build first (`vite build --outDir <Windows temp>`, served by a
+throwaway node static server that passes `/api` on, because `vite preview` is pinned to 8765); the live `frontend/dist`
+was then rebuilt (16:43), the hermetic mode passes on the LIVE page of 8765 (32 checks) and the live mode on that same
+build against the scratch backend (29). Neighbours on the private build: `circuit_source_check` 21,
+`blocking_issues_check` 26, `virtuoso_source_check` 48, `agent_tab_check` 92, `run_control_check` 60 - all pass.
+`project_help_check` had ONE stale failure that predates this change (line 176 still expected the `real:*` shortcut
+buttons that 7.40 removed); its owning session was told and fixed it the same hour (42 of 42). The agent session was
+told as well and made "Load starter configuration" the first advice of its checklist and brief (its own files). The
+scratch servers were stopped and the temporary Windows folders removed.
+
+Limits, said plainly. The targets of record are PILOT goals a hair above each measured baseline (OTA5: 25.0009 dB
+measured, 25.01 dB asked) - they show what a real target row looks like and make the task startable; they are not what
+a designer would ask of the circuit, and nothing here pretends otherwise. No real simulation was run. A `BACKEND
+RESTART` on 8765 is needed for the real starters, the LDO / VCO registry and `pdk_id` (until then the page says so);
+the editor fix and the labels need a page refresh only. Uncommitted.
+
+### 7.45 Right column: "Run configuration" and "Output settings" fold into one line (2026-09-21 evening, same session as 7.43, explicit user request)
+
+Request: "Make the run configuration module and output settings module able to collapse from expanded". Frontend only
+(`Right.tsx`, `styles.css`); page refresh only.
+
+* One small component, `Module`, wraps both panels: the heading is the fold line (the existing `details.section` look of
+  the Project panel's Hierarchy block, heading text unchanged so every check that finds a panel by its `h3` still does).
+  **Open at first** - the request says "from expanded", and these are the settings a run needs; the rule "new collapsibles
+  start closed" was about long help, not about a whole module. The choice is kept in this browser
+  (`localStorage` `gator-workbench-module-run` / `-output`, wrapped in try/catch; a private window just does not remember).
+  The third panel, "Research experiments", already was a fold; it was not touched.
+* It is a `<details>`: a folded module stays MOUNTED. Everything in the run panel keeps working while folded (the network
+  still follows a chosen model - 7.43 -, the per-encoder settings are still read and saved, the output root is still looked at).
+* Folded, the line says the main values on a second row: `fine_tune - 200 evaluations - gat 16/2/1`, and
+  `<experiment name> - .../<last two folders of the output root>` (one line, ellipsis, full text as tooltip).
+* **An error or a warning is never just hidden.** While folded, the line carries a mark "error inside" (red) or "warning
+  inside" (amber) when the module's content holds an `.error` / `.warn` element. It is watched with a `MutationObserver` on
+  the content, not per render: parts inside keep their own state (model list, graph view) and can raise an error without
+  the panel rendering again - so the mark also appears when the problem arises while the module is folded. Blunt limit:
+  the mark says THAT something asks for attention, not what; "warn" covers mild notes too (for example "these values differ
+  from the backend's saved setting").
+
+Verified in a real browser on a scratch backend (8766) with a scratch build: new `frontend/scripts/module_fold_check.mjs`,
+29 checks (fixtures only, safe against the live backend): both start open, a real mouse click on the heading folds one and
+leaves the other, 1014 px -> 54 px, the summary line and that it follows the configuration while folded, still mounted,
+remembered across a reload, the warning mark (a budget of 1) and that it goes away, an error that appears WHILE folded is
+marked at once, the two colours, unfolded the error itself is in view, Enter on the fold line, no side scroll. The checks
+that touch the right column still pass on the same build: `output_panel_check` 36, `network_panel_check` 16,
+`model_chooser_check` 62, `model_structure_check` 34, `graph_view_check` 59, `run_control_check` 60, `run_list_check` 60,
+`agent_tab_check` 92. `tsc --noEmit` clean.
+
+Trap met while rebuilding the live `frontend/dist`: another session was in the middle of an edit of `Left.tsx` (a name used
+before it was defined). `vite build` does not type-check, so that first live build carried a bare `taskNote` - a
+ReferenceError as soon as a Virtuoso source is shown. It was replaced within a minute, once `tsc` was clean again, and the
+LIVE page (8765) was then verified with the two fixture-only checks (`module_fold_check` 29, `model_chooser_check` 62: all
+pass). Rule for every session: `tsc --noEmit` immediately before a live build, and no live build on a failing tree - the
+scratch build is for that. Uncommitted.
+
+### 7.46 Agent brief and start checklist: "Load starter configuration" comes first (2026-09-21, same session as 7.39; prompted by the session of 7.44)
+
+The session of 7.44 reported that every registered task now has starter rows and a visible "Load starter configuration"
+button. Checked before relying on it: for ota5 / ota7 / ldo / vco the starter's parameter rows equal
+`tasks.profile_parameter_rows()` and compile to a `graph_contract` identical to the verified profile; the targets carry
+their stated source ("Pilot target of record ..."). Then, in this session's own files only:
+
+* `agents/run_readiness.md`: a general section (sent with every request kind) - when the tables are empty or hold rows
+  of another task, advise that button first: it costs no request and cannot be wrong; draft rows only for what it cannot
+  give; targets of record are not provisional and are not relabelled or replaced unless the user asks.
+* `agents/readiness.py`: for a registered task the free checklist's action for missing rows, and for variables that
+  differ from a verified profile, now starts with 'Press "Load starter configuration" in the Project panel (left)'. An
+  imported netlist keeps the old text (it has no starter).
+* `test_wb_agent_readiness.py`: three assertions. Agent test files: 28 passed. Python changed (one text): restart the
+  backend. Uncommitted.
+
+### 7.47 One cell, one task: a cell that already has a registered task says so; "Delete profile" (2026-09-21 evening, same session as 7.15 / 7.17-7.24 / 7.40, explicit user request)
+
+User: "Close the gap to be able to say this cell has a registered task and add the delete profile functionality."
+The gap: "one profile per cell" only looked at GENERATED profiles. `vco_m6_v1`, the cell of the verified built-in
+`real:gpdk045_vco`, was offered the Create profile form (user screenshot); once a circuit type fits such a cell, a second
+profile would write into a cell the experiments of record depend on. And a generated profile could only be redone by
+deleting its folder by hand.
+
+* `profiles.task_for_cell(library, cell)`: the generated profile of the cell, else the built-in whose design file names
+  it as `core_cell` - only when `library` is one a Virtuoso connection states (`bridge_connection.json`), so a copy of
+  the cell in another library is another cell. Local reads only. `create_profile` refuses such a cell ("already has the
+  registered task real:gpdk045_vco (a verified built-in circuit): choose it under Source: Registered task").
+  `/api/circuit/load` answers `profile_task` from it plus `profile_task_generated` - also for a cell that was NOT read
+  into the workbench, where the note used to say "Browse only ... cannot optimize it yet".
+* `profiles.delete_profile(name, run_rows=)` + `POST /api/virtuoso/profile/delete`: the folder is MOVED to
+  `profiles/.deleted/<name>.<utc>/` (a recorded baseline cost a real simulation; runs refer to these files), so the name
+  and the cell are free again. Refused while a worker is on a run of the task (`working_run_of`: a row of
+  `runs.list_runs` in starting / running / pausing / stopping whose manifest names the task), for an unknown name and
+  for the four built-in circuits (they are not in this store). Contacts nothing. The copy of the cell that was read
+  from Virtuoso stays, so the form can go straight back to it.
+* `Left.tsx`: ONE note for both states of such a cell (read in or not): "This cell already has a registered task:
+  `real:<name>` (a verified built-in circuit)" + a short **Open** button - the task name is text beside it; it is about
+  THIS cell, unlike the list of tasks removed in 7.40 - and a folded "What this means". No "Read this cell" and no
+  profile form there. Open does what choosing the task does (`chooseTask`, one history step). The generated task's
+  block ends with a separated line: what it is for as text, then **Delete profile** (`window.confirm`, like the run
+  buttons; it names the baseline if one is recorded). Afterwards: the task list is re-read, the form returns to the
+  profile's cell (Source: Virtuoso, its library / cell / testbench), one green line says what happened, the path of the
+  kept files is a folded line, and Create profile is offered again. "Profile ... created" is now tied to its own task.
+* Tests: `test_wb_profiles.py` 22 passed (3 new: built-in cell lookup + refusal, deletion by moving aside incl. the
+  working-run refusal and re-creation, the API incl. 422 for bad names). `virtuoso_source_check.mjs`: 66 checks
+  (fixtures + planned confirm answers; "Cancel" deletes nothing, a refusal keeps the task), run against a temp build
+  on 5174 with the live backend behind it. `tsc` clean. Whole `tests/workbench`: 447 collected, no failure (`-x` run).
+  Against the real local settings: `GATOR_TESTS/vco_m6_v1` -> `real:gpdk045_vco`, likewise ota5 / ota7 / ldo; a
+  testbench cell and the ring oscillator -> none. Live `dist` rebuilt.
+* Python changed (new endpoint, wider lookup): restart the backend; until then the page says "This backend is older
+  than the page" on Delete profile. Uncommitted.

@@ -49,7 +49,7 @@ export function ModelStructure({ runDir, checkpointId, label }: { runDir: string
         <dialog ref={dialog} className="structure-dialog" onClick={e => { if (e.target === dialog.current) dialog.current?.close(); }}>
           <div className="row"><h3>Network structure{label ? ` - ${label.replace(/:[0-9a-f]{16}$/, '')}` : ''}</h3><span className="spacer" />
             <span className="hint">{table.network.encoder_type} {table.network.hidden_dim}/{table.network.heads}/{table.network.layers} - save point {table.checkpoint_id}</span>
-            <button onClick={() => dialog.current?.close()}>Close</button></div>
+            <button className="dialog-close" aria-label="Close" title="Close (Esc)" onClick={() => dialog.current?.close()}>{'\u00d7'}</button></div>
           <div className="structure-scroll">
             {table.parts.map((part: Json) => (<div key={part.part}>
               <h4>{part.title}: {n(part.parameters)} parameters{part.unused_parameters > 0 ? `, ${n(part.unused_parameters)} of them never used` : ''}</h4>

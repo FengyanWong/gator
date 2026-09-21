@@ -113,3 +113,27 @@ def test_pruning_never_removes_the_selected_best_policy(tmp_path):
     removed = store._prune(names[-1])
     assert removed == [names[1]]                                                     # the oldest UNSELECTED periodic save
     assert sorted(p.name for p in store.root.glob('ckpt-*')) == [names[0], names[2], names[3]]
+
+
+def test_an_incomplete_configuration_never_hides_the_saved_model(trained):
+    """User report 2026-09-21: every chosen save point answered "CompileError: mp1_w: bounds are required" - a 500,
+    because the configuration ON THE PAGE had an optimized row without bounds. The model's facts have nothing to do
+    with that: they are still returned, and what is missing is said in plain words."""
+    root, layout = trained
+    client = TestClient(create_app(extra_output_roots=[str(root)], serve_frontend=False))
+    raw = make_config(root).model_dump(mode='json')
+    row = raw['parameters'][0]
+    row['lower'] = row['upper'] = None
+    response = client.post('/api/runs/model', json=dict(run_dir=str(layout.run_dir), checkpoint_id='latest', config=raw))
+    assert response.status_code == 200
+    answer = response.json()
+    assert answer['description']['checkpoint_id'] and answer['description']['file_problems'] == []       # the model is all there
+    assert 'compatibility' not in answer
+    said = answer['compatibility_unchecked']
+    assert row['variable_id'] in said['what'] and 'no lower and no upper bound' in said['what'] and 'Parameters table' in said['what']
+    assert 'says nothing about the saved model' in said['note'] and said['technical'] == f"CompileError: {row['variable_id']}: bounds are required"
+    assert 'CompileError' not in said['title'] + said['what'] + said['note']                           # developer words stay folded away
+    # With the bounds back the comparison is made as before.
+    complete = client.post('/api/runs/model', json=dict(run_dir=str(layout.run_dir), checkpoint_id='latest',
+                                                        config=make_config(root).model_dump(mode='json'))).json()
+    assert 'compatibility_unchecked' not in complete and complete['compatibility']['checks']

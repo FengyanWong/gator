@@ -26,6 +26,7 @@ from .paths import OutputRoots, default_output_root, is_mock_path, local_setting
 from .schema import WorkbenchConfig, canonical_json, config_hash, task_definition_hash
 from .storage.atomic import read_json, write_json
 from .storage.dataset import utcnow, write_data_dictionary
+from .summary import durations
 from .tasks import TaskBlocked, load_task
 from .validation import validate
 
@@ -508,6 +509,27 @@ def run_status(run_dir) -> dict:
     return dict(status, worker_alive=alive, run_dir=str(layout.run_dir))
 
 
+SEGMENT_FACTS = ('segment', 'entry', 'started_utc', 'ended_utc', 'end_state', 'stop_reason', 'active_seconds')
+
+
+def run_timing(manifest, status) -> dict:
+    """When a run began to work, when it came to rest and how long it worked: the time columns of the run list.
+
+    ``ended_utc`` is the end of the LAST segment, so it is set for a run that completed, stopped, failed or is
+    paused, and None while a worker is on it. A worker that died wrote no end: ``last_seen_utc``, its last status
+    heartbeat, is all that is known then. ``active_seconds`` is working time as in run_summary.json - the pauses
+    between segments (``paused_seconds``) are not part of it - and None for a run whose worker never began."""
+    segments = manifest.get('segments') or []
+    started = next((s['started_utc'] for s in segments if s.get('started_utc')), None)
+    ended = segments[-1].get('ended_utc') if segments else None
+    active, paused = durations(manifest)
+    if not ended and status.get('active_seconds') is not None:
+        active = status['active_seconds']           # an open segment has no time of its own yet: the worker's running total
+    return dict(started_utc=started, ended_utc=ended, last_seen_utc=status.get('heartbeat_utc'),
+                active_seconds=active if started else None, paused_seconds=paused,
+                segments=[{fact: s.get(fact) for fact in SEGMENT_FACTS} for s in segments])
+
+
 def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True):
     root = roots.resolve(output_root or remembered_output_root())
     runs = []
@@ -516,13 +538,18 @@ def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True):
             continue
         for run_dir in find_runs(data_root):
             info = read_run(run_dir)
-            manifest, summary = info['manifest'], info['summary']
+            manifest, summary, status = info['manifest'], info['summary'], run_status(run_dir)
+            budget = status.get('budget') or {}     # current while a worker is on the run; the summary is written when it rests
             runs.append(dict(run_dir=str(run_dir), run_id=manifest.get('run_id'), task_id=manifest.get('task_id'),
                              task_definition_hash=manifest.get('task_definition_hash'), mode=manifest.get('mode'),
                              mock=manifest.get('mock'), seed=(manifest.get('seeds') or {}).get('target_seed'),
-                             created_utc=manifest.get('created_utc'), state=run_status(run_dir).get('state'),
+                             created_utc=manifest.get('created_utc'), state=status.get('state'),
                              experiment=f"{manifest.get('experiment_name')}__{manifest.get('experiment_id')}",
-                             evaluations=(summary.get('totals') or {}).get('candidate_evaluations_charged'),
+                             evaluations=budget.get('charged', (summary.get('totals') or {}).get('candidate_evaluations_charged')),
                              first_feasible_eval_count=summary.get('first_feasible_eval_count'),
-                             resumability=(summary.get('output') or {}).get('resumability')))
+                             resumability=(summary.get('output') or {}).get('resumability'),
+                             # The run window (frontend RunList.tsx): what a run was, how it ended and how long it took.
+                             task_name=manifest.get('task_name'), stop_reason=status.get('stop_reason'), error=status.get('error'),
+                             max_evaluations=(manifest.get('budgets') or {}).get('max_evaluations'),
+                             **run_timing(manifest, status)))
     return sorted(runs, key=lambda r: r['created_utc'] or '', reverse=True)

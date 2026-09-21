@@ -24,7 +24,7 @@ from uuid import uuid4
 from .catalog import efforts_for
 
 REQUEST_KINDS = ('draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'circuit_modification', 'readiness',
-                 'minimal_start', 'settings_review')
+                 'minimal_start', 'settings_review', 'run_review')
 SECTIONS_BY_KIND = {
     'draft_config': ('parameters', 'targets', 'measurements'), 'parameters': ('parameters',),
     'targets': ('targets',), 'measurements': ('measurements',),
@@ -36,6 +36,9 @@ SECTIONS_BY_KIND = {
     # Suggestions for the SETTINGS of the whole workbench (agents/settings_review.py). It patches no table: the user applies
     # a suggestion with a click, like typing the value into its panel. The only kind that may be allowed to read the web.
     'settings_review': (),
+    # What a run produced (agents/run_digest.py, given as DATA - the agent reads no file): an explanation, and what to change next
+    # as rows of the three tables and/or as settings suggestions. Never online.
+    'run_review': ('parameters', 'targets', 'measurements'),
 }
 # Arguments that would remove the permission boundary. Refused even if configured.
 FORBIDDEN_ARGUMENTS = ('--dangerously-skip-permissions', '--allow-dangerously-skip-permissions',
@@ -117,6 +120,7 @@ class AgentRequest:
     selection: list = field(default_factory=list)   # modify_fields: [{section, key, fields}]
     readiness: dict | None = None      # backend-computed start checklist (agents/readiness.py): words only, given as DATA
     review: dict | None = None         # settings_review only: settings, cited presets and a task digest without design data
+    results: dict | None = None        # run_review only: the digest of ONE run's output, built by the backend
     web: bool = False                  # settings_review only, per request: may search the web and open publication pages
     web_domains: tuple = ()            # hosts WebFetch may open when `web` is set (operator-defined, never from a request)
     requires_bridge_skill: bool = False
@@ -131,6 +135,8 @@ class AgentRequest:
             raise AgentError('invalid_request', 'The prompt is too long (20000 characters maximum)')
         if self.web and self.kind != 'settings_review':
             raise AgentError('invalid_request', 'Only a settings_review request may use online research')
+        if self.kind == 'run_review' and not self.results:
+            raise AgentError('invalid_request', 'A run_review needs a run: choose one with "Runs..." first')
         if self.kind == 'modify_fields' and not self.selection:
             raise AgentError('invalid_request', 'modify_fields needs a selection of rows/fields')
         return self

@@ -169,6 +169,7 @@ class RunEngine:
         self.dispatch_log = JsonlAppender(self.layout.data / '_journal' / 'dispatch.jsonl')
         final_state = 'failed'
         self.lanes, self.dataset = [], None
+        self._preparation, self.preparation_report = None, None
         try:
             self._write_status('starting')
             self._prepare()
@@ -261,6 +262,17 @@ class RunEngine:
         self._record_load_policy()
         count = min(run.concurrency, self.task.max_concurrency)
         factory = self._lane_factory or self.task.env_factory_builder(self.compiled, self.layout.work, run)
+        # A real (native) factory needs ONE owner of the Virtuoso session, alive from before the first lane opens until
+        # after the last one closed: the optimizer's preparation service. Entered here exactly as its own training loop
+        # does (training/parallel.py); without it a real lane cannot even connect. Closed in _finalize, after the lanes.
+        prepare_context = getattr(factory, 'preparation_context', None)
+        if callable(prepare_context):
+            from contextlib import ExitStack
+            from analog_optimizer.training.workers import WorkerLimits
+            self.preparation_report = {}
+            self._preparation = ExitStack()
+            factory = self._preparation.enter_context(prepare_context(WorkerLimits(), self.preparation_report))
+            self._event('preparation_service_started', session=(self.preparation_report.get('preparation') or {}).get('session_dir'))
         self.lanes = open_lanes(factory, count, use_processes=self.use_processes)
         self.lane_state = {lane.lane_id: dict(observation=None, needs_reset=True, busy=None, finished=False,
                                               episode_id=None) for lane in self.lanes}
@@ -987,6 +999,15 @@ class RunEngine:
                     problems.append(f"lane {lane.lane_id}: environment restoration state {outcome.get('state')}")
             except BaseException as exc:
                 problems.append(f'lane {lane.lane_id}: {type(exc).__name__}: {exc}')
+        if self._preparation is not None:                # after every lane: the owner restores the schematic and lets go
+            try:
+                self._preparation.close()
+                restoration = (self.preparation_report or {}).get('preparation_restoration') or {}
+                if restoration.get('state') != 'restored':
+                    problems.append(f"preparation service: restoration state {restoration.get('state')}")
+            except BaseException as exc:
+                problems.append(f'preparation service: {type(exc).__name__}: {exc}')
+            self._preparation = None
         checkpoint = None
         persistence_ok = self.dataset is not None and self.dataset.failed is None
         if persistence_ok and hasattr(self, 'ledger'):

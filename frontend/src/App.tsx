@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, Json } from './api';
 import { useConfig, usePolling } from './store';
-import { CircuitPanel, ConnectionPanel } from './panels/Left';
+import { CircuitPanel } from './panels/Left';
+import { ConnectionButton } from './panels/Connection';
 import { Editors } from './panels/Editors';
 import { ValidationStatus } from './panels/Issues';
 import { LIVE_STATES, RunButtons, launchWithConsent, resumeRun, useRunControl } from './panels/RunControl';
+import { RunListButton } from './panels/RunList';
 import { OutputPanel, ResearchPanel, RunPanel } from './panels/Right';
 import { AgentTab, DataTab, FilesTab, LogsTab, StatusTab } from './panels/Bottom';
 
@@ -116,7 +118,7 @@ export function App() {
       {message && <div className={`banner ${message.level}`} onClick={() => setMessage(null)}>{message.text}
         {message.detail?.report && <details><summary>details</summary><pre>{JSON.stringify(message.detail.report, null, 1)}</pre></details>}</div>}
       <aside className="left">
-        <ConnectionPanel profileId={profileId} setProfileId={id => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }))} />
+        <ConnectionButton profileId={profileId} setProfileId={id => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }))} />
         <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId} meta={meta}
           onAgent={(kind, selection, prompt) => { setAgentRequest({ kind, selection, prompt }); setTab('agent'); }} />
       </aside>
@@ -138,13 +140,11 @@ export function App() {
           {(['status', 'logs', 'data', 'files'] as Exclude<BottomTab, 'agent'>[]).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => setTab(t)}>
             {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files' }[t]}</button>)}
           <span className="spacer" />
-          <select value={runDir ?? ''} onChange={e => setRunDir(e.target.value || null)} onFocus={refreshRuns}>
-            <option value="">(select a run)</option>
-            {runs.map(r => <option key={r.run_dir} value={r.run_dir}>{r.created_utc?.slice(0, 19)} | {r.task_id} | {r.mode} seed{r.seed} | {r.state}{r.mock ? ' [MOCK]' : ''}</option>)}</select>
+          <RunListButton runs={runs} runDir={runDir} onChoose={setRunDir} onRefresh={refreshRuns} />
         </div>
         <div className="bottom-body">
           <AgentTab hidden={tab !== 'agent'} config={config} setConfig={setConfig} request={agentRequest} clearRequest={() => setAgentRequest(null)}
-            tabSlot={agentTabSlot} onDetached={setAgentDetached} />
+            tabSlot={agentTabSlot} onDetached={setAgentDetached} runDir={runDir} />
           {tab === 'status' && <StatusTab status={status} onCommand={sendCommand} onContinue={continueRun} />}
           {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
           {tab === 'data' && <DataTab runDir={runDir} />}

@@ -117,14 +117,20 @@ def _same_tensors(module, state):
     return list(built) == list(state) and all(tuple(built[k].shape) == tuple(state[k].shape) for k in state)
 
 
-def structure(directory) -> dict:
-    """The saved model in `directory` (one checkpoint) as layer tables. Verifies the weights file first."""
+def load_verified(directory):
+    """(metadata, tensors) of one checkpoint. `model_weights.pt` is read - tensor-only - only after its SHA-256
+    matched the one recorded in metadata.json."""
     directory = Path(directory)
     meta = ckpt.read_metadata(directory)
     recorded = (meta.get('files') or {}).get('model_weights.pt')
     if not recorded or sha256_file(directory / 'model_weights.pt') != recorded['sha256']:
         raise ValueError('model_weights.pt is missing or does not match the checksum recorded in metadata.json')
-    weights = ckpt.load_weights(directory)
+    return meta, ckpt.load_weights(directory)
+
+
+def structure(directory) -> dict:
+    """The saved model in `directory` (one checkpoint) as layer tables. Verifies the weights file first."""
+    meta, weights = load_verified(directory)
     critics = weights['critics']
     first = {k[2:]: v for k, v in critics.items() if k.startswith('0.')}
     second = {k[2:]: v for k, v in critics.items() if k.startswith('1.')}

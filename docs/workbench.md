@@ -5,7 +5,10 @@ optimization problems by hand or with agent assistance, runs the existing SAC ba
 saves the raw data and model state needed for research analysis.
 
 It produces **data, configurations, models, netlists and logs only**: no plots, images, PDFs,
-spreadsheets or analysis reports, and no plotting library is installed or imported.
+spreadsheets or analysis reports are ever written, and the backend installs and imports no plotting library.
+One exception ON SCREEN, by user decision of 2026-09-21: the **circuit graph view** (see "Circuit graph view"
+below), drawn in the browser with cytoscape (MIT, frontend only, loaded when the view is opened). It is a
+diagnostic picture; nothing drawn is written into a run folder or an export, so the outputs stay data-only.
 
 All code lives in `src/gator_workbench/` and `frontend/`. **Nothing under
 `src/analog_optimizer/` is modified**, because `training/sac.py::source_digest()` hashes that
@@ -109,6 +112,34 @@ is never replaced), or it was started with "Model checkpoints" switched off. Bro
 | `real:gpdk045_*` tasks | The verified bridge profiles through the existing `NativeEnvironmentFactory`. Need virtuoso-bridge 0.8.0 importable by the backend interpreter, a connection profile, a passing connection gate and an explicit budget authorization. **Not exercised in this delivery** (see the status record). Nothing ever falls back to mock. |
 | Arbitrary native cellviews | Read-only browsing through the bridge. Optimizing one needs a verified circuit profile; writing a native schematic is not implemented (contract returned by the API). |
 
+### Choosing a registered task: whose rows Parameters, Specs and Probes show
+
+The three tabs hold rows of the *configuration*, so they belong to a task. Choosing another task in **Circuit
+source -> Task** brings that task's rows:
+
+| Task | Parameters | Specs | Probes |
+|---|---|---|---|
+| `synthetic:*` (MOCK) | the fixture's declared groups | one toy row, `score >= 0.95` (unit `fixture`): the analytic backend computes no gain, bandwidth or power, so there is nothing else to aim at | `m_score` |
+| `real:gpdk045_ota5`, `_ota7`, `_ldo`, `_vco` | exactly the rows the circuit's profile fixes (a real run accepts no others) | the circuit's **targets of record**: the frozen specification files of the real experiments (`configs/m6_real_cross_category.json`, partition `train`; `configs/gpdk045_ota7_transfer.json` for the OTA7). For the OTA5: gain >= 25.01 dB, unity-gain frequency >= 3.54 MHz, phase margin >= 90 deg, supply power <= 2.1 uW, output DC 0.2-0.8 V, exactly one unity-gain crossing. Every row states this source in `basis`. They are pilot goals near the measured baseline, **not product specifications**: edit them to your own requirements | one per target |
+| a profile created from your own cell | the rows the profile fixes | **none**: requirements are never inferred from a circuit. State yours, or press "Draft with agent..." | one per result its circuit type produces, ready to carry a target |
+
+* The **Circuit class / PDK id** labels follow the task at once, and so does a project name that a starter had given
+  (`mock-opamp` -> `gpdk045-ota5`), so a real run is not filed under `runs/mock_opamp/`. A name you typed stays.
+* Rows are exchanged only while they are nobody's work: empty, or still exactly what the task before had brought.
+  **Rows you edited stay**; the panel says so, and **Load starter configuration** (there for every task) exchanges
+  them when you want it. One **Undo** takes back a task choice together with everything it brought.
+* Run settings are never touched by a task choice, and a real budget is never suggested.
+* The LDO and VCO results are not in the optimizer's default result registry, and the UI has no editor for it. These
+  two tasks therefore bring the registry of record of the real cross-category experiment (`m6-physical-spec-input-v1`,
+  23 results), as a profile created from a cell brings its own. The OTA tasks keep the default registry, so their
+  models stay interchangeable with the MOCK tasks' and with earlier runs. A registry stated in the configuration
+  (`run.advanced.spec_registry`) still wins. Units `V/V` and `V/A` (line / load regulation) are accepted.
+* In the three editors a field a row does not state is shown with the value the backend uses for it (`hard` on,
+  `tolerance` 0, ...), not as an empty or unchecked box.
+
+Browser check: `frontend/scripts/task_rows_check.mjs` (fixtures, safe on the live backend; `--live` reads the real
+starters from a restarted or scratch backend). Tests: `tests/workbench/test_wb_real_starter.py`.
+
 ### Importing a Spectre netlist
 
 Project panel, **Circuit source -> Import Spectre netlist**. Two files are needed, both read on the
@@ -132,6 +163,19 @@ a link that is up). There is nothing to press: choosing the source lists the lib
 library lists its cells, choosing a cell reads its schematic. Each step is a gated, read-only,
 zero-cost bridge call and waits for the one before it. **Refresh** repeats the chain, for example
 after the link came up or the design changed in Virtuoso.
+
+The Project panel keeps its explanations folded: a line with a small triangle ("What circuit class
+and PDK id are for", "Why: it has no circuit profile yet", "What the check does", "2 notes on this
+circuit", ...) opens on a click. Headlines, warnings and buttons are always in view.
+
+The **Hierarchy** block at the end of the panel is folded the same way: one closed line, "Hierarchy
+(N instances)". A click shows the instance tree and, under it, two more closed lines: **Instances
+and parameters** (the sizes as the workbench uses them) and **Native schematic** (what was read
+straight from Virtuoso, as read). While no circuit is loaded - the browse-only case - there is no
+Hierarchy block and Native schematic stands alone. Hierarchy and Native schematic stay as you left
+them, open or closed, from circuit to circuit. A warning about unmapped devices and the "N
+diagnostics" line are not folded away: they appear under the Hierarchy line when there is something
+to say.
 
 * No view is asked for: the bridge reader always opens the view named `schematic` (read-only, and
   closes it again). A cell without a schematic view is listed but cannot be chosen; the panel shows
@@ -159,16 +203,29 @@ after the link came up or the design changed in Virtuoso.
   single-finger, m = 1 transistors directly inside the cell**, linear ranges that contain the present
   width; ranges are snapped onto Virtuoso's 5 nm width grid and the editor then shows them exactly as
   registered. Anything else is refused with the reason. The cell becomes the task `real:<name>` under
-  **Registered task** (files in `configs/local/workbench/profiles/<name>/`; delete that folder to redo
-  it) and stops being browse-only.
+  **Registered task** (files in `configs/local/workbench/profiles/<name>/`) and stops being browse-only.
+  **One cell, one task.** A cell that already has a registered task - the profile made from it, or one of
+  the four verified built-in circuits (`real:gpdk045_vco` for `vco_m6_v1`, ...; the library is the one
+  the Virtuoso connection states) - shows "This cell already has a registered task: `real:<name>`" with
+  an **Open** button instead of the profile form, and Create profile refuses it.
+  **Delete profile** (last line of a generated task's block; asks once more): a profile is never edited,
+  so this is how to start over with other sizes or another circuit type. The task leaves the list and
+  the form returns to the cell, where Create profile is offered again; the name is free again. Nothing
+  is erased: the folder moves to `configs/local/workbench/profiles/.deleted/<name>.<time>/`, its
+  recorded baseline included (a new profile needs a new real baseline). Runs already made keep their
+  data, but a paused one can no longer be resumed. Refused while a run of the task is working, and for
+  the built-in circuits.
   Circuit types: *Ring oscillator (free-running)* - a transient from declared start voltages, metrics
   `osc_frequency_hz`, `supply_power_w`, `supply_current_a`, swing, duty cycle, period spread, startup;
   *Op-amp / OTA (AC gain)* - only for a testbench that follows the verified OTA's net names.
   Targets of a generated task use the result names as `metric_id` (`osc_frequency_hz`, ...): the profile
   registers exactly these results for the optimizer's goal input, so nothing has to be added under
   `run.advanced.spec_registry`.
-  A generated profile passes every offline check of the four verified profiles, **but it has never been
-  simulated**. In this order:
+  **A real run writes into the cell the profile was made from** (every evaluation, the baseline included,
+  re-applies the widths through the PDK callbacks, checks and saves the cellview; the original widths are written
+  back when the run ends). Keep that cell closed in Virtuoso during a run. A working-copy mode does not exist yet.
+  First real simulation of a generated profile: 2026-09-21, one authorized baseline of the 3-stage ring
+  oscillator, 1.2092 GHz, cell identical before and after (status record 7.24). In this order:
   1. **Check against Virtuoso (no simulation)** - everything a real evaluation does before Spectre
      starts (connect through the run adapter, export, compare with the record, write the deck). Free,
      read-only; needs the link up and no ADE/Maestro window open on the design.
@@ -252,7 +309,77 @@ What did NOT change: a check still never starts anything (`connection.py` cannot
 it); nothing ever stops or restarts a tunnel, the daemon or Virtuoso. The starting code lives apart in
 `bridge_connect.py`. Connect attempts are logged to `configs/local/workbench/connection_actions.jsonl`.
 Endpoints: `GET /api/connection/setup`, `POST /api/connection/profile`, `POST /api/connection/connect`
-(each body is `{"profile_id": ...}` and nothing else).
+(the body of `connect` is `{"profile_id": ...}` and nothing else; `profile` is described below).
+
+### "Connection": one button, a window, four kinds of connection (2026-09-21, user request)
+
+The block is no longer called "Virtuoso bridge connection" and no longer fills the left column: it
+is **one button, "Connection"**, which names the connection in use, its kind and the state of the
+last test. Pressing it opens the **connection window** - a browser window of its own that holds
+everything described above (allow pop-ups for the page if the browser blocks it; the button then
+says so). Opening the window checks nothing; every rule above about button presses still holds.
+Closing the window loses nothing, and the button opens it again.
+
+A profile now says WHAT it connects to and HOW, with `"kind"`:
+
+| `kind` | What it is | Steps in the window |
+|---|---|---|
+| `virtuoso_ssh` (the default when `kind` is absent) | Virtuoso + Spectre on another machine, through the bridge's SSH tunnel | 1 Connect SSH, 2 load the line in the CIW, 3 Test |
+| `virtuoso_local` | Virtuoso + Spectre on the **same machine as the workbench backend**: the bridge's local mode, no SSH, no tunnel | 1 Set up local bridge, 2 load the line in the CIW, 3 Test |
+| `ngspice_local` | the `ngspice` program on the backend's own machine | Test |
+| `ngspice_ssh` | `ngspice` on another machine, run through `ssh` | Test |
+
+```json
+{"active": "lab",
+ "profiles": {"lab":  {"kind": "virtuoso_ssh", "env_file": "...", "profile": null, "...": "..."},
+              "here": {"kind": "virtuoso_local", "env_file": "/home/me/.virtuoso-bridge/.env", "profile": "local"},
+              "sim":  {"kind": "ngspice_local", "ngspice_bin": "/opt/ngspice/bin/ngspice"},
+              "far":  {"kind": "ngspice_ssh", "ssh_host": "simhost"}}}
+```
+
+* **Virtuoso on this machine.** Where Virtuoso runs is decided by the bridge env file, as before
+  (`VB_REMOTE_HOST=localhost`, or `VB_REMOTE_HOST_<name>=localhost` for a named bridge profile, means
+  this machine). A DECLARED kind must agree with it: if the profile says "this machine" and the env
+  file names another one (or the reverse), both the test and the set-up button stop at the profile
+  layer with `kind_mismatch` and start nothing - "this machine" can never open a tunnel somewhere
+  else. A profile without `kind` is not second-guessed; the window then words itself after what the
+  test found. A local bridge that was never set up is reported as such (`local_bridge_not_set_up`,
+  "click Set up local bridge"), no longer as a CIW that does not answer.
+* **ngspice.** Four layers: `connection_profile` -> `ssh` (`not_applicable` on this machine) ->
+  `ngspice` (the program is found and answers `--version`) -> `trial_run` (it really solves ONE fixed
+  three-element divider written by the workbench: v(out) = 0.5 V). That trial is to ngspice what the
+  `1+1` SKILL round trip is to the CIW; it is never one of your circuits, costs no budget and needs no
+  license. Nothing is installed, started or left running; over SSH the deck goes to a `mktemp` file
+  that the same command removes. `ngspice_bin` (optional) is a program name or path; `ssh_host` is a
+  Host name from `~/.ssh/config` (recommended: port, user, key and jump host stay in that file) or
+  `user@host`. Both are checked against a strict pattern before anything runs, are passed as argv
+  entries (`ssh -o BatchMode=yes -o ConnectTimeout=8 -- <host> <fixed command>`, no local shell) and
+  never appear in a result or a log. SSH is batch mode: key-based login and an accepted host key.
+* **What an ngspice connection can do today: be tested.** There is no ngspice evaluation backend yet,
+  so the gate refuses real runs and Virtuoso reads on it without probing (`blocking:
+  ["connection_kind"]`, with the sentence to show), and a real circuit names the wrong kind instead of
+  listing missing Virtuoso settings. Building that backend is a separate increment; the one place to
+  switch it on is `connection.FAMILY_ACTIONS`. Note that the GPDK045 models are Spectre-format files:
+  ngspice will need circuits with models it can read.
+* **Add a connection** (in the window). `GET /api/connection/setup` reports, per kind, what was found
+  on the backend machine (bridge env file and package; the `ngspice` and `ssh` programs; the Host
+  NAMES of `~/.ssh/config` - names only, the rest of that file is never read out).
+  `POST /api/connection/profile` takes `{"profile_id", "kind", "ssh_host"?, "bridge_profile"?}` -
+  names only. `ssh_host` must be one of those Host names, so the browser can never point the backend
+  at a machine this host does not already name; an address, a port, a path or a command is rejected
+  (422). **Changed promise:** the connection file used to be "never overwritten"; now a new connection
+  can be ADDED to it. Connections that exist are never changed or removed, every other key is written
+  back as it was, `active` is kept, the previous file is kept next to it as
+  `bridge_connection.json.before-<UTC>-<name>`, an existing name is refused (`profile_exists`) and a
+  file that cannot be read is never replaced. Editing or removing a connection stays a hand edit.
+* `POST /api/connection/connect` answers `409 nothing_to_connect` for an ngspice connection.
+
+Code: kinds, per-family layers, monitor and gate in `connection.py`; the ngspice layers in
+`ngspice_link.py` (kept apart so that what `connection.py` may do stays pinned by its own test);
+creation and the sentences in `bridge_connect.py`; the button and the window in
+`frontend/src/panels/Connection.tsx`. Tests: `tests/workbench/test_wb_connection_kinds.py`; browser
+check `frontend/scripts/connection_panel_check.mjs` (fixtures; `GATOR_CONNECTION_LIVE=1` adds a live
+section for a scratch backend only).
 
 ## Output layout
 
@@ -291,18 +418,92 @@ rule, otherwise explicitly `not_selected`) / `best_design` (a circuit parameter 
 And: first-feasibility cost vs. final run cost; the complete `transitions` archive vs. the finite
 replay snapshot; an agent conversation `--resume` vs. an RL training `resume`.
 
+### The run window: which run the bottom tabs show (added 2026-09-21, user request)
+
+At the right end of the bottom tab strip there is one button, **Runs...**. It replaced the drop-down list of runs. To
+its left, as plain text, stands the run that Run status, Logs, Data tables and Output files are showing (start time |
+task | mode and seed | state; "No run selected" when there is none). Pressing the button opens the **run window**, a
+browser window of its own that can stay open next to the workbench (allow pop-ups for the page if the browser blocks
+it). The window lists every run under the output folder, newest first, one row per run:
+
+| Column | What it says |
+|---|---|
+| Started | When the run was created. All times are the local time of this computer. |
+| Finished | When the run came to rest: completed, stopped, failed. A paused run shows the time with "(paused)"; a run that is working reads "still running"; a run whose worker died wrote no end, so it reads "last seen ..." (its last sign of life). |
+| Duration | How long the run was actually WORKING. The time it sat paused is not counted (the cell's tooltip and the details name it); a working run reads "... so far". |
+| State | The state, and under it why the run stopped (`budget_exhausted`, `user_pause`, ...). |
+| Task, Mode, Seed, Experiment | What the run was. |
+| Evaluations | Candidate designs simulated, of the budget: `25 / 60`. |
+| First feasible | The number of evaluations spent when the first design met every target; "none" if no design has. |
+| Data | MOCK (synthetic backend, not a circuit result) or real. |
+| Can continue | yes (full saved state), model only (usable for fine_tune / frozen), no. |
+
+* **A double click on a row** puts that run into the bottom tabs; the row is marked (blue, with a bar at its left
+  edge) and the window stays open. **Clear** empties the tabs again. Neither stops, changes or deletes anything. The
+  header's Start / Pause / Abort keep acting on their own run, whatever is shown here.
+* **Details** opens everything else the run recorded, under its row: run folder (click to copy) and ids, created /
+  worker began / came to rest, working time, time paused, summed simulator job time, stop reason and error, budget
+  and Spectre launches, learner updates, first feasibility, best design with its variables, the model it loaded and
+  its last save, what can be restored, parallel simulations, connection, bytes written - and one line per
+  **segment** (each Start or Resume: when it began and ended, how it ended, how long it worked).
+* A press on a column title sorts by it (again: the other way; rows without a value stay last). The filter box
+  narrows the list by any word of a row: task, mode, state, `mock` / `real`, a date.
+* **Nothing in the window updates by itself.** The list is read when the button is pressed and by **Refresh list**
+  (the window says when it was read); a run's details are read when they are opened. A working run therefore shows
+  its state and duration as of that time.
+* The times come from the run's own files (`run_manifest.json` segments, `status.json`); `GET /api/runs` carries them
+  as `started_utc`, `ended_utc`, `last_seen_utc`, `active_seconds`, `paused_seconds`, `segments`. A workbench server
+  started before this was added lists runs without them: the window says so and asks for a restart of `serve`.
+
+Browser check: `frontend/scripts/run_list_check.mjs` (every run request answered by FIXTURE runs; safe against the
+live backend). Backend test: `tests/workbench/test_wb_run_list.py`.
+
+### Getting a run's data out of the browser (added 2026-09-21, user request)
+
+Each of the four run tabs at the bottom has its own export. Every one of them is a button press; the browser saves
+the file into its normal download folder, under a name that says which run (or experiment) it came from.
+
+| Tab | Button | What the browser saves |
+|---|---|---|
+| Run status | **Export status (JSON)** | `<run folder>__status.json`: everything the tab shows at that moment (state, budget, best design, connection, the run's manifest and summary) plus `exported_utc`. |
+| Logs | **Download full log (events.jsonl / errors.jsonl)** | The whole log file, one JSON record per line. The list on screen is only the newest 200 entries. A healthy run has an empty errors log: the tab then says "Nothing to download" instead of saving an empty file. |
+| Data tables | **Export detailed CSV** | `<table>__seq<N>.csv`: the WHOLE selected table, not only the rows shown. The same file (with a `.meta.json` description) stays in the run folder under `exports/`. |
+| Data tables | **Export research CSVs** | `<experiment>__aggregates.zip`: the six summary tables over every run of the experiment, each with its `.meta.json`. The files themselves stay in `<experiment>/aggregates/`. |
+| Output files | **Download data-only package (.zip)** | `<run folder>__data.zip` (JSON, Parquet, CSV, JSONL, netlists; no waveforms, work files or models). Every single file also has its own **download** link. |
+
+A log can be downloaded while the run is still writing it: the download is the file as it was at the moment of the
+press, cut at the last complete line. Parquet stays the source of truth; every CSV is a derived copy.
+Browser check: `frontend/scripts/export_check.mjs` (real MOCK run; needs a scratch backend, refuses port 8765).
+
+### Folding the right column's modules (added 2026-09-21, user request)
+
+"Run configuration" and "Output settings" fold into one line with a click on their heading (the "Research
+experiments" panel below them already did). Both start open; the choice is kept in this browser. A folded module is
+only put out of view, not switched off: its settings stay in force and keep working. Its line says the main values
+(Mode, evaluation budget and network; experiment name and the end of the output root), and carries a mark - "warning
+inside" or "error inside" - while something in it asks for attention, also when that appears while it is folded.
+Browser check: `frontend/scripts/module_fold_check.mjs` (fixtures only; safe against the live backend).
+
 ### Choosing which saved model to load (added 2026-09-21, user request)
 
 A **run** is one training session (one press of Start) with its own folder; the models it saved are its
 **save points** (`checkpoints/<id>/`). With Mode `resume`, `fine_tune` or `frozen`, the run panel's "RL model to
-load" block lists every run that holds a model as a card (task, circuit, network, evaluations of training, last
-save; tags `MOCK`, `other network`, `weights only`) and then offers every save point of the chosen run: "Latest
+load" block lists every run that holds a model as a card (task, circuit, **network**, evaluations of training, last
+save; tags `MOCK`, `weights only`) and then offers every save point of the chosen run: "Latest
 save" (follows the run) or a dated one (always the same model). Runs without a save point are not listed. The list
 is `GET /api/runs/models`: small metadata files only, read when the block opens, when a run starts and on
 "Refresh list" - never on a timer. Nothing is deleted automatically: `output.keep_last_checkpoints` is empty by
 default, and when set it prunes older periodic saves only (never the latest, a pause / stop / final save or a
 selected best policy). Models from outside the workbench (the M6 pilot checkpoints) cannot be chosen, and there
 is no upload: `training_state.pt` is a pickle and is only loaded from a trusted local output root.
+
+**The network comes with the model (2026-09-21, user request).** The "RL network" block - encoder list, sizes,
+presets - sets up a NEW network and is shown in Mode `scratch` only. In `resume`, `fine_tune` and `frozen` it is not
+shown: a saved model only loads into the network it was trained with (the backend refuses any other one in all three
+Modes), so the configuration takes the network of the chosen model by itself and the model's facts start with a
+"Network" row. Only the network follows; the training numbers under "Advanced" stay yours. A network that arrives
+from elsewhere while a model is loaded (an imported configuration, an applied agent suggestion) is taken back too,
+and the panel says so. Back in `scratch` the block returns and shows the network that was last in use.
 
 ### Network structure of a saved model (added 2026-09-21, user request)
 
@@ -320,6 +521,55 @@ its weights - today that is `lin_skip` of PyG's `TransformerConv`, which the gra
 off (`root_weight=False`): 272 of 7,314 actor parameters at 16/2/1. A test pins the flag against real gradients for
 all six encoders; a layer whose gradient is merely zero for the DATA at hand (`binding_ratio` when every ratio is 1)
 is used and is not flagged. Browser check: `frontend/scripts/model_structure_check.mjs`.
+
+### Circuit graph view (added 2026-09-21, user decision: one on-screen diagnostic picture)
+
+**Where it is.** Run panel (right) > "RL model to load". With Mode `resume` / `fine_tune` / `frozen`: pick a model, and
+under its facts are the "Network structure" fold-out and the **Circuit graph view** button. With Mode `scratch` (the
+default) the same block has **Look at a saved model**: it lists the saved models for LOOKING only - structure table and
+graph view - and changes nothing about the run (the selection is kept outside the configuration; Mode stays scratch).
+
+**Circuit graph view** (button under the structure fold-out) draws the GRAPH THE NETWORK SEES, as a node-link picture:
+one node per device (rounded box = transistor, barrel = R / C / L, cut corners = source; coloured by kind) and one per
+net (circle; supply, ground, input, output tinted), one straight link per connection, labelled with its terminal. It is
+deliberately NOT a schematic - no symbols, no rails, no routed wires (user decision 2026-09-21, after a schematic-style
+attempt: "graph neural network style like the cytoscape original but with some hints from the circuit information").
+
+**The circuit only gives hints, by hard-coded rules - no agent, no model call, the same circuit always gives the same
+picture** (`frontend/src/panels/circuitLayout.ts`; the drawing package only draws, its own layouts know nothing about
+circuits and gave long diagonals and crossings): supply at the top and ground at the bottom; a net's height is its
+place on the DC current path between them (device steps from the supply / steps from supply + ground; never through a
+gate, a bulk tie, a rail or a capacitor), a device stands between the nets it conducts between; nets that only drive
+gates stand beside the devices they drive, a source feeding such a net next to it, a supply source at the side, a
+capacitor on a shelf near the net it loads; two devices that share two nets (an inverter) stand above each other;
+left-to-right order by barycentre sweeps; nothing is put where something stands, and no link may run through a node
+it does not belong to (the loosest node steps aside). A link that enters a device at its gate ends in a dot there, one
+at its bulk in a bar. Bulk ties are hidden at first (tick "Bulk connections"; the tables list them anyway). A graph
+without a supply AND a ground net has no hints: the package's layered layout is used and the view says so. "Layered"
+and "Spread out" remain as buttons; nodes can be dragged.
+
+**Line thickness is the attention** on that connection for the
+chosen block, head and direction ("what a device takes from its nets" or "what a net takes from its devices");
+a device whose size the policy sets has a blue border and reads `w 1.768 um -> 3.115 um` = now -> proposed.
+Beside the picture, as tables: the sizes now / proposed by the policy / really tried by the run, the connections of
+a clicked device with their attention and the uniform share, and what was measured in that state.
+
+Where the numbers come from: the chosen save point is REPLAYED on a state its own run archived (the observation
+the network saw before evaluation N, from the complete transition archive) - `POST /api/runs/model/graph-view`,
+one forward pass on the CPU. **Nothing is simulated and nothing is written**, so it costs no budget and works for
+MOCK and real runs alike. The evaluation can be chosen (box + Show, `<`, `>`); by default it is the last one the
+save point had seen. Attention is read by forward hooks on the attention layers, without any change under
+`src/analog_optimizer/`; a test compares the policy's output with and without the hooks.
+
+How to read it - and how not to: attention is normalized per RECEIVING node (over all connections arriving at one
+node a head's values sum to 1), so a node with a single connection always shows 1.0; such lines are drawn thin and
+dashed, and every value comes with the uniform share 1/k. Attention shows where the network looked, not why it
+chose an action: **a debugging aid, not evidence** of anything about graph transformers. Encoders without attention
+(`rgcn`, `gcn`, `mlp`, `port_gnn`) show the circuit and the proposed sizes only. Bulk ties can be hidden to tidy the
+picture (the numbers do not change); nodes can be dragged, "Spread out" and "Fit" rearrange. A run that kept no
+transition archive cannot be shown. The drawing library (cytoscape 3.34.3, MIT, no further dependencies) is a
+separate file that the browser fetches only when the view is opened. Browser check:
+`frontend/scripts/graph_view_check.mjs`.
 
 ## Reload saved data
 
@@ -352,7 +602,7 @@ stays free for the other tabs. Back again: the same control, "Bring back into th
 
 ### What is missing before the run can start
 
-"What's missing to start?" (above the conversation) is answered by the backend, free: no agent request,
+"What's missing?" (under the message box) is answered by the backend, free: no agent request,
 nothing probed. It lists, in the order a start is gated: circuit, Parameters, Specs, Probes (the three
 editor tabs), other blocking issues, run configuration, output folder and - for a real
 circuit - the bridge connection (the LAST test result; it does not test again) and the budget authorization
@@ -388,6 +638,16 @@ what it opened, with a quote. A published value is a starting point with a citat
 on your circuit. If a publication uses a network that does not exist here, it is listed as an idea: adding an
 encoder is a change of the optimizer's code that a development session has to make, and it changes the fingerprint
 that every saved model and the recorded audits are checked against.
+
+### Letting the agent read a run's results
+
+"Review results" (under the message box; choose the run with "Runs..." first) asks the agent what happened in
+that run and what to change next. The agent reads no file: the workbench condenses the run's own records - outcome and
+budget, when the first feasible design came, every target against the best design, where the search spent its
+evaluations and whether it kept hitting a bound, what failed and why, whether the learner moved - and hands that over
+as data. The reply explains the run in plain language with the numbers it rests on. Changes come as rows you apply one
+by one (settings) or as a diff to approve (the three tables). It is told not to draw conclusions about an encoder,
+transfer or an algorithm from one run, and that the score of a MOCK run is not a circuit quantity.
 
 The agent's brief on what a run needs is a plain file, `src/gator_workbench/agents/run_readiness.md`. It is
 added to every agent request of every provider and to the exported task description, and it is read again

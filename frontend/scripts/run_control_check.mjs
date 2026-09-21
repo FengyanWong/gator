@@ -191,9 +191,22 @@ try {
   await shot('run-4-paused.png');
 
   // ---- 4. a paused run is left alone; a live run keeps its Pause whatever the bottom tabs show ------------------------------
-  const SELECT = `document.querySelector('footer .tabs select')`;
-  const view = value => evaluate(`(() => { const s = ${SELECT}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)}); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
-  await view('');                                                                  // "(select a run)": the bottom tabs show no run
+  // The bottom tabs are put on no run the way a user does it: the run button of the tab strip opens the run window
+  // (RunList.tsx, a page of its own with its own DevTools session), and "Clear" (it shows no run) is pressed there.
+  const showNoRun = async () => {
+    await send('Runtime.evaluate', { expression: `document.querySelector('footer .tabs button.run-list-button').click()`, userGesture: true });   // a click that may open a window
+    let page;
+    for (let i = 0; i < 50 && !page; i++) { page = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page' && t.title === 'GATOR - runs'); if (!page) await sleep(100); }
+    if (!page) throw new Error('the run window did not open');
+    const socket = new WebSocket(page.webSocketDebuggerUrl); await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
+    const pressed = new Promise(resolve => { socket.onmessage = ev => { const m = JSON.parse(ev.data); if (m.id === 1) resolve(m.result?.result?.value); }; });
+    socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { returnByValue: true, awaitPromise: true, expression: `new Promise(done => { let tries = 0; const tick = () => {
+      const b = [...document.querySelectorAll('.run-window .row button')].find(b => b.textContent.trim() === 'Clear' && !b.disabled); if (b) { b.click(); done(true); } else if (++tries > 50) done(false); else setTimeout(tick, 100); }; tick(); })` } }));
+    const ok = await pressed; socket.close();
+    await send('Target.closeTarget', { targetId: page.id });
+    if (!ok) throw new Error('"Clear" was not available in the run window');
+  };
+  await showNoRun();                                                               // the bottom tabs show no run
   await sleep(1800); const atRest = statusRequests; await sleep(4000);
   check('a paused run is not polled by the header (no timer at rest)', statusRequests === atRest, `${statusRequests - atRest} request(s) in 4 s`);
   check('the header still holds it: "Resume"', (await look()).main === 'Resume');
@@ -211,7 +224,7 @@ try {
   check('after Resume the button reads "Pause" again', await mainReads('Pause') && (await look()).mainOff === false);
   labels = (await seen()).map(s => s[0]);
   check('it never fell back to "Resume" or "Pausing..." while the new worker was starting', labels.slice(5).join(' > ') === 'Resuming... > Pause', labels.slice(5).join(' > '));
-  await view('');                                                                  // Resume brought the run back under Run status; look away again
+  await showNoRun();                                                               // Resume brought the run back under Run status; look away again
   await sleep(300); const liveBefore = statusRequests; await sleep(3500);
   check('with the bottom tabs on no run, the live run is polled by the header and keeps its Pause', statusRequests > liveBefore && (await look()).main === 'Pause', `${statusRequests - liveBefore} request(s) in 3.5 s`);
   check('the header follows its progress', /^running \d+ \/ 60 \[MOCK\]$/.test((await look()).chip ?? ''), (await look()).chip ?? '');

@@ -168,8 +168,8 @@ try {
   check('the actor ends in 2 outputs per group, the critic in 1 number', rows[0][rows[0].length - 2].cells[4] === '16 -> 2' && rows[1][rows[1].length - 2].cells[4] === '16 -> 1');
   check('TABLES ONLY: no canvas, svg or image in the fold-out or the dialog', (await evaluate(`${FOLD}.querySelectorAll('canvas, svg, img').length + ${DIALOG}.querySelectorAll('canvas, svg, img').length`)) === 0);
   await shot('structure-2-dialog.png', DIALOG);
-  await evaluate(`[...${DIALOG}.querySelectorAll('button')].find(b => b.textContent === 'Close').click()`);
-  check('"Close" closes it', await until(`!${DIALOG}.open`, 30));
+  await evaluate(`${DIALOG}.querySelector('button.dialog-close').click()`);
+  check('the close cross closes it', await until(`!${DIALOG}.open`, 30));
 
   // ---- another save point re-reads it; a model without never-used weights says nothing about them -------------------------------------
   mode = { withUnused: false, scale: 2 };

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import { api, bytes, copy, Json, num } from '../api';
 import { ModelChooser } from './ModelChooser';
+import { CircuitGraphView } from './CircuitGraphView';
 import { ModelStructure } from './ModelStructure';
 
 function Num({ label, value, onChange, title, nullable, disabled, note }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; nullable?: boolean; disabled?: boolean; note?: string }) {
@@ -15,6 +16,73 @@ function Num({ label, value, onChange, title, nullable, disabled, note }: { labe
       <input className="numeric" value={(stale ? null : text) ?? value ?? ''} placeholder={nullable ? 'none' : ''} disabled={disabled} onBlur={() => setText(null)}
         onChange={e => { setText(e.target.value); const t = e.target.value.trim();
           if (t === '') onChange(nullable ? null : 0); else if (Number.isFinite(Number(t))) onChange(Number(t)); }} /></label>);
+}
+
+// A size that the configuration keeps in whole bytes, typed as a number plus a unit. The unit is only how the number is
+// typed and shown: choosing another unit keeps the number and changes what it means (2 GiB -> 2 MiB), so "type, then
+// choose the unit" and "choose the unit, then type" both end at the same size.
+const BYTE_UNITS: [string, number][] = [['bytes', 1], ['KiB', 1024], ['MiB', 1024 ** 2], ['GiB', 1024 ** 3], ['TiB', 1024 ** 4]];
+const unitSize = (name: string) => BYTE_UNITS.find(([unit]) => unit === name)?.[1] ?? 1;
+// The shortest decimal number that gives back exactly these bytes in that unit; undefined when `places` decimals cannot.
+const inUnit = (n: number, size: number, places: number): number | undefined => {
+  for (let p = 0; p <= places; p++) { const shown = Number((n / size).toFixed(p)); if (Math.round(shown * size) === n) return shown; }
+  return undefined;
+};
+const bestUnit = (n: Json): string => typeof n !== 'number' ? 'GiB'
+  : ([...BYTE_UNITS].reverse().find(([, size]) => n >= size && inUnit(n, size, 3) !== undefined) ?? BYTE_UNITS[0])[0];
+
+function ByteSize({ label, value, onChange, title, empty }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; empty: string }) {
+  const [unit, setUnit] = useState(() => bestUnit(value));
+  const [text, setText] = useState<string | null>(null);                          // kept while typing, as in Num
+  const sent = useRef<Json>(value);
+  const size = unitSize(unit);
+  const toBytes = (t: string, s: number): Json => t.trim() === '' ? null : Math.round(Number(t) * s);
+  const typed = text === null ? undefined : toBytes(text, size);
+  const stale = text !== null && (typed === null || Number.isFinite(typed)) && typed !== (value ?? null);
+  useEffect(() => { if (stale) setText(null); }, [stale]);
+  // A value that did not come from this box (loaded configuration, undo) is shown in the unit that reads best.
+  useEffect(() => { if (value !== sent.current) { sent.current = value; if (typeof value === 'number') setUnit(bestUnit(value)); } }, [value]);
+  const shown = typeof value === 'number' ? String(inUnit(value, size, 6) ?? Number((value / size).toFixed(3))) : '';
+  const send = (b: Json) => { if (b === null || Number.isFinite(b)) { sent.current = b; onChange(b); } };
+  const box = (stale ? null : text) ?? shown;
+  return (
+    <label title={`${title ? title + ' ' : ''}${typeof value === 'number' ? `Saved as ${value} bytes.` : `Empty = ${empty}.`}`}><span>{label}</span>
+      <span className="with-unit">
+        <input className="numeric" value={box} placeholder={empty} onBlur={() => setText(null)}
+          onChange={e => { setText(e.target.value); send(toBytes(e.target.value, size)); }} />
+        <select aria-label={`${label}: unit`} value={unit} onChange={e => { setUnit(e.target.value); if (box.trim() !== '') send(toBytes(box, unitSize(e.target.value))); }}>
+          {BYTE_UNITS.map(([name]) => <option key={name}>{name}</option>)}</select></span></label>);
+}
+
+// A whole module of the right column folded under its own heading (user request 2026-09-21). It starts OPEN; the
+// viewer's choice is kept in this browser. It is a <details>, so the content stays mounted while folded: nothing inside
+// stops working (the network still follows a chosen model, the output root is still looked at). Folded, the line says the
+// module's main values, and whether something inside asks for attention - an error or a warning is never just hidden.
+function Module({ id, title, summary, children }: { id: string; title: string; summary: string; children: ReactNode }) {
+  const key = `gator-workbench-module-${id}`;
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(key) !== 'closed'; } catch { return true; } });
+  const [inside, setInside] = useState<'error' | 'warn' | null>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const toggle = (now: boolean) => { setOpen(now); try { localStorage.setItem(key, now ? 'open' : 'closed'); } catch { /* private window: not remembered */ } };
+  // Watched in the page itself, not per render: parts inside keep their own state (the model list, the graph view) and
+  // can show an error without this component rendering again.
+  useEffect(() => {
+    const node = body.current; if (!node) return;
+    const look = () => setInside(node.querySelector('.error') ? 'error' : node.querySelector('.warn') ? 'warn' : null);
+    look();
+    const observer = new MutationObserver(look);
+    observer.observe(node, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <section className="panel">
+      <details className="section module" open={open} onToggle={e => { if (e.target === e.currentTarget) toggle(e.currentTarget.open); }}>
+        <summary title={open ? 'Fold this module into one line' : 'Unfold this module'}><h3>{title}</h3>
+          {!open && inside && <span className={`module-attention ${inside}`}>{inside === 'error' ? 'error inside' : 'warning inside'}</span>}
+          {!open && <span className="hint module-summary" title={summary}>{summary}</span>}</summary>
+        <div className="module-body" ref={body}>{children}</div>
+      </details>
+    </section>);
 }
 
 // Settings stored per encoder in the backend (src/gator_workbench/network_presets.py). The lists are
@@ -34,6 +102,10 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
   const setNet = (fields: Json) => setConfig(c => ({ ...c, run: { ...c.run, network: { ...(c.run.network ?? {}), ...fields } } }));
   const source = run.model_source ?? {};
   const [model, setModel] = useState<Json>(null);
+  // Looking at a saved model (structure table, circuit graph view) must not need a Mode that loads it: in scratch the
+  // selection is kept HERE, outside the configuration (a model_source in scratch would be a validation warning).
+  const [looking, setLooking] = useState(false);
+  const [look, setLook] = useState<{ run_dir: string | null; checkpoint_id: string }>({ run_dir: null, checkpoint_id: 'latest' });
   const [error, setError] = useState<string | null>(null);
   const adv = run.advanced ?? {};
   const net = run.network ?? {};
@@ -67,7 +139,9 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
     timer.current = window.setTimeout(flush, 700);
   };
   const editNet = (fields: Json) => { setNet(fields); queueSave({ ...net, ...fields }, adv); };
-  const editAdv = (fields: Json) => { setAdv(fields); queueSave(net, { ...adv, ...fields }); };
+  // While a saved model is loaded, `net` is THAT model's network (see `loads` below): an Advanced edit then keeps the
+  // sizes already stored for the encoder instead of storing the loaded model's sizes as the setting for new networks.
+  const editAdv = (fields: Json) => { setAdv(fields); queueSave(run.mode !== 'scratch' && entry ? entry.network : net, { ...adv, ...fields }); };
   const chooseEncoder = (name: string) => {
     setNetMessage(null);
     const cached = netSettings?.settings?.[name];
@@ -105,12 +179,26 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
   const originLabel = entry && ({ publication: 'publication preset', gator_baseline: 'GATOR baseline', custom: 'edited, saved in the backend' } as Json)[entry.origin];
   const budget: number = run.max_evaluations;
   const starved = run.mode !== 'frozen' && typeof budget === 'number' && (budget <= (adv.warmup_transitions ?? 0) || budget < (adv.batch_size ?? 0) + 1);
-  // A checkpoint only loads into the network it was trained with.
-  const savedModel: Json = run.mode !== 'scratch' ? model?.description?.contract?.model_config : null;
-  const savedSac: Json = model?.description?.contract?.sac_config;
-  const archDiffers = !!savedModel && (savedModel.encoder_type !== encoder || netFields.some(f => savedModel[f] !== net[f]));
-  const matchCheckpoint = () => setConfig(c => ({ ...c, run: { ...c.run,
-    network: { encoder_type: savedModel.encoder_type, ...pick(savedModel, netFields) }, advanced: { ...(c.run.advanced ?? {}), ...pick(savedSac, advFields) } } }));
+  // resume / fine_tune / frozen LOAD a saved model, and its weights only fit the network they were trained with (the
+  // backend refuses any other network in all three). So there is nothing to set up then: the block for a NEW network
+  // is shown in scratch only, and otherwise the configuration takes the network of the chosen model - the act is the
+  // choice of that model. Only the network follows; the training numbers under Advanced stay the user's.
+  const loads = run.mode !== 'scratch';
+  const savedModel: Json = loads ? model?.description?.contract?.model_config : null;
+  const savedNet: Json = savedModel?.encoder_type ? { encoder_type: savedModel.encoder_type, ...pick(savedModel, netFields) } : null;
+  const archDiffers = !!savedNet && Object.keys(savedNet).some(f => savedNet[f] !== (f === 'encoder_type' ? encoder : net[f]));
+  const followed = useRef<string | null>(null);
+  useEffect(() => {
+    if (!loads) { followed.current = null; return; }
+    if (!archDiffers) return;
+    // The SAME model a second time = something else changed the network meanwhile (an applied agent suggestion, an
+    // opened configuration). It is taken back as well, but said: a silent revert would read as a button that does nothing.
+    const key = JSON.stringify([source.run_dir, model?.description?.checkpoint_id, savedNet]);
+    if (followed.current === key) setNetMessage({ level: 'warn', text: `The network stays ${savedNet.encoder_type} ${savedModel.hidden_dim}/${savedModel.heads}/${savedModel.layers}: this run loads a saved model, and a saved model only loads into the network it was trained with. A new network needs Mode scratch.` });
+    followed.current = key;
+    setConfig(c => ({ ...c, run: { ...c.run, network: { ...(c.run.network ?? {}), ...savedNet } } }), false);
+  }, [loads, archDiffers, JSON.stringify(savedNet)]);
+  useEffect(() => setNetMessage(m => m?.level === 'warn' ? null : m), [source.run_dir, source.checkpoint_id, run.mode]);
 
   // Default the RL model to the last model used by this project, and its `latest` checkpoint (not `best`).
   useEffect(() => {
@@ -123,9 +211,10 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
     api.model(source.run_dir, source.checkpoint_id ?? 'latest', config).then(setModel).catch(e => setError(e.message));
   }, [source.run_dir, source.checkpoint_id, run.mode, JSON.stringify(net), JSON.stringify(adv), JSON.stringify(config.targets), JSON.stringify(config.parameters)]);
 
+  const folded = [run.mode, typeof budget === 'number' ? `${budget} evaluations` : null,
+    `${encoder} ${net.hidden_dim ?? '?'}/${net.heads ?? '?'}/${net.layers ?? '?'}`].filter(Boolean).join(' - ');
   return (
-    <section className="panel">
-      <h3>Run configuration</h3>
+    <Module id="run" title="Run configuration" summary={folded}>
       <label title="scratch: random init, new run. resume: same task, same run, full state. fine_tune: compatible weights, new task, new run with a parent. frozen: no updates at all.">Mode
         <select value={run.mode} onChange={e => set({ mode: e.target.value })}>
           {['scratch', 'resume', 'fine_tune', 'frozen'].map(m => <option key={m} value={m}>{m}</option>)}</select></label>
@@ -141,6 +230,7 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
       <Num label="Wall-time limit (s)" nullable value={run.max_wall_seconds} onChange={v => set({ max_wall_seconds: v })} />
       <Num label="Random seed (target task)" value={run.seed} onChange={v => set({ seed: v })} title="Seed of THIS run. The source model's pretraining seed is recorded separately." />
       <Check label="Stop at the first feasible design" value={run.stop_at_first_feasible} onChange={v => set({ stop_at_first_feasible: v })} />
+      {!loads && <>
       <h3>RL network</h3>
       <p className="hint">Independent of the agent language model. "No weights" means scratch, but an architecture is still required.
         Every encoder keeps its own settings in the backend: choosing one loads them, editing a value (here or under Advanced) saves it for that encoder.</p>
@@ -156,11 +246,11 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
           <button disabled={entry.origin === 'gator_baseline' && !differs} onClick={() => reset('gator_baseline')} title="The equal-size setting of all existing GATOR evidence and checkpoints. Suited to short runs.">GATOR baseline</button></div></>}
       {differs && <p className="warn">These values differ from the backend's saved {encoder} setting.
         <button onClick={() => applyEntry(entry)}>Load backend values</button> <button onClick={() => { queueSave(net, adv); flush(); }}>Save these to the backend</button></p>}
-      {entry?.problem && <p className="warn">{entry.problem}</p>}
-      {netMessage && <p className={netMessage.level === 'error' ? 'error' : 'hint'}>{netMessage.text}</p>}
+      {entry?.problem && <p className="warn">{entry.problem}</p>}</>}
+      {netMessage && <p className={`net-message ${netMessage.level === 'error' ? 'error' : netMessage.level === 'warn' ? 'warn' : 'hint'}`}>{netMessage.text}</p>}
       {starved && <p className="warn">Budget {budget} with warm-up {adv.warmup_transitions} and batch size {adv.batch_size}: {budget <= (adv.warmup_transitions ?? 0) ? 'every evaluation is a random warm-up action, so the policy never acts' : 'one batch is never filled, so the network never learns'}.
-        Published settings assume thousands of simulations. Lower them under Advanced, raise the budget, or use the GATOR baseline.</p>}
-      {entry && <details><summary>Where the {encoder} values come from</summary>
+        Published settings assume thousands of simulations. Lower them under Advanced{loads ? ' or raise the budget' : ', raise the budget, or use the GATOR baseline'}.</p>}
+      {!loads && entry && <details><summary>Where the {encoder} values come from</summary>
         <p className="hint">{entry.summary}</p>
         <table className="grid small"><thead><tr><th>Setting</th><th>Preset</th><th>Basis</th><th>Source and note</th></tr></thead><tbody>
           {[...netFields, ...advFields].map(f => { const p = entry.provenance?.[f]; const ref = p?.source ? netSettings.references?.[p.source] : null; return (
@@ -168,13 +258,21 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
               <td>{ref && <a href={ref.url} target="_blank" rel="noreferrer">{ref.short}</a>} {p?.note}</td></tr>); })}
         </tbody></table>
         <p className="hint">{netSettings.scale_note}</p></details>}
-      <ModelChooser mode={run.mode} source={source} runs={runs} outputRoot={config.output?.output_root} network={{ encoder_type: encoder, ...pick(net, netFields) }}
+      <ModelChooser mode={run.mode} source={source} runs={runs} outputRoot={config.output?.output_root}
         onChoose={(run_dir, checkpoint_id) => set({ model_source: { ...source, run_dir, checkpoint_id } })} />
-      {run.mode !== 'scratch' && (<>
+      {run.mode === 'scratch' && (!looking
+        ? <div className="row"><button className="look-open" onClick={() => setLooking(true)} title="See the network structure and the circuit graph view of any saved model. Nothing about the run changes: Mode stays scratch.">Look at a saved model</button></div>
+        : <>
+          <ModelChooser lookOnly mode="look" source={look} runs={runs} outputRoot={config.output?.output_root}
+            onChoose={(run_dir, checkpoint_id) => setLook({ run_dir, checkpoint_id })} />
+          {look.run_dir && <ModelStructure runDir={look.run_dir} checkpointId={look.checkpoint_id} />}
+          {look.run_dir && <CircuitGraphView runDir={look.run_dir} checkpointId={look.checkpoint_id} />}
+          <div className="row"><button className="look-close" onClick={() => { setLooking(false); setLook({ run_dir: null, checkpoint_id: 'latest' }); }}>Done looking</button></div></>)}
+      {loads && (<>
         {error && <p className="error">{error}</p>}
-        {archDiffers && <p className="warn">This checkpoint was trained with {savedModel.encoder_type}, hidden {savedModel.hidden_dim}, heads {savedModel.heads}, layers {savedModel.layers}.
-          Its weights cannot be loaded into a different network. <button onClick={matchCheckpoint}>Use the checkpoint's network</button></p>}
         {model?.description && <table className="grid small model-facts"><tbody>
+          {savedNet && <tr className="model-network"><td>Network</td><td><b>{savedNet.encoder_type}</b>, hidden {savedModel.hidden_dim}, heads {savedModel.heads}{archDiffers || usesHeads ? '' : ' (ignored by this encoder)'}, layers {savedModel.layers}
+            <span className="hint"> - this run uses it as it is: a saved model only loads into the network it was trained with.</span></td></tr>}
           <tr><td>Trained on</td><td>{model.description.source_task_id}</td></tr>
           <tr><td>Saved (UTC)</td><td>{model.description.created_utc}</td></tr>
           <tr><td>Schema</td><td>{model.description.metadata_version}</td></tr>
@@ -183,7 +281,11 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
           <tr><td>Folder</td><td className="path" title="Click to copy" onClick={() => copy(model.description.path)}>{model.description.path}</td></tr>
         </tbody></table>}
         {source.run_dir && <ModelStructure runDir={source.run_dir} checkpointId={model?.description?.checkpoint_id ?? null} label={model?.description?.source_task_id} />}
-        {model?.compatibility && <details open={!model.compatibility.compatible}><summary className={model.compatibility.compatible ? '' : 'error'}>Compatibility for {model.compatibility.mode}: {model.compatibility.compatible ? 'compatible' : 'NOT compatible - there is no fallback to scratch'}</summary>
+        {source.run_dir && <CircuitGraphView runDir={source.run_dir} checkpointId={model?.description?.checkpoint_id ?? null} label={model?.description?.source_task_id} />}
+        {model?.compatibility_unchecked && <div className="note compat-unchecked"><p><b>{model.compatibility_unchecked.title}</b></p>
+          <p>{model.compatibility_unchecked.what}</p><p className="hint">{model.compatibility_unchecked.note}</p>
+          <details><summary>Technical details</summary><pre className="small">{model.compatibility_unchecked.technical}</pre></details></div>}
+        {model?.compatibility && !archDiffers && <details open={!model.compatibility.compatible}><summary className={model.compatibility.compatible ? '' : 'error'}>Compatibility for {model.compatibility.mode}: {model.compatibility.compatible ? 'compatible' : 'NOT compatible - there is no fallback to scratch'}</summary>
           <ul>{model.compatibility.checks.map((c: Json) => <li key={c.component} className={`issue ${c.status === 'ok' ? 'info' : c.status === 'warning' ? 'warning' : 'error'}`}>{c.component}: {c.status} - {c.detail}</li>)}</ul></details>}
         {run.mode === 'frozen' && <label>Frozen actions<select value={run.frozen_action ?? 'deterministic'} onChange={e => set({ frozen_action: e.target.value })}><option>deterministic</option><option>sampled</option></select></label>}
         {run.mode === 'fine_tune' && <Check label="Continual learning (inherit weights fine-tuned on a previous test task)" value={run.continual_learning} onChange={v => set({ continual_learning: v })} />}
@@ -207,7 +309,7 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
         <Check label="Reset critic (fine_tune)" value={adv.reset_critic} onChange={v => setAdv({ reset_critic: v })} />
         <Num label="Pause after N consecutive infrastructure failures" value={run.max_consecutive_infrastructure_failures ?? 3} onChange={v => set({ max_consecutive_infrastructure_failures: v })} />
       </details>
-    </section>
+    </Module>
   );
 }
 
@@ -220,13 +322,15 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
   const locked = !!activeRun?.worker_alive;
   useEffect(() => { if (root) api.checkOutput(root).then(setCheck).catch(() => setCheck(null)); }, [root]);
   const paths = activeRun?.paths;
+  const tail = String(root).split(/[\\/]/).filter(Boolean).slice(-2).join('/');
   return (
-    <section className="panel">
-      <h3>Output settings</h3>
-      <label title="A backend directory inside an allowed root. Not a browser upload folder.">Output root
-        <input value={root} disabled={locked} onChange={e => set({ output_root: e.target.value })} /></label>
+    <Module id="output" title="Output settings" summary={[out.experiment_name, tail ? `.../${tail}` : 'no output root'].filter(Boolean).join(' - ')}>
+      {/* "Copy path" is a sibling of the label, not inside it: a button inside would become what the label's text clicks. */}
+      <div className="field-head"><label htmlFor="output-root" title="A backend directory inside an allowed root. Not a browser upload folder.">Output root</label>
+        <button className="text-link" title="Copy the output root to the clipboard" onClick={() => copy(root)}>Copy path</button></div>
+      <input id="output-root" value={root} disabled={locked} onChange={e => set({ output_root: e.target.value })} />
       <div className="row"><button disabled={locked} onClick={() => api.browse().then(setBrowse)}>Browse allowed roots...</button>
-        <button onClick={() => root && api.checkOutput(root, true).then(setCheck)}>Test writability</button><button onClick={() => copy(root)}>Copy path</button></div>
+        <button onClick={() => root && api.checkOutput(root, true).then(setCheck)}>Test writability</button></div>
       {locked && <p className="hint">The run directory is locked while a run is active. A resumed run writes back to its original directory.</p>}
       {browse && <ul className="tree">{browse.parent && <li onClick={() => api.browse(browse.parent).then(setBrowse)}>..</li>}
         {browse.entries.map((e: Json) => <li key={e.path}><span onClick={() => api.browse(e.path).then(setBrowse)}>{e.name}</span> <button onClick={() => { set({ output_root: e.path }); setBrowse(null); }}>select</button></li>)}</ul>}
@@ -253,14 +357,16 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
       {out.save_replay_snapshots === false && <p className="warn">Without replay snapshots checkpoints are weights_only: a full training-state resume of this run will NOT be possible.</p>}
       <Check label="Complete transition archive (independent of replay snapshots)" value={out.save_transition_archive ?? true} onChange={v => set({ save_transition_archive: v })} />
       <Check label="Experiment summary CSVs" value={out.export_summary_csv ?? true} onChange={v => set({ export_summary_csv: v })} />
-      <div className="row"><Num label="Checkpoint every N evaluations" nullable value={out.checkpoint_every_evaluations ?? 50} onChange={v => set({ checkpoint_every_evaluations: v })} />
+      <div className="row"><Num label="Checkpoint every N evaluations" nullable value={out.checkpoint_every_evaluations === undefined ? 50 : out.checkpoint_every_evaluations} onChange={v => set({ checkpoint_every_evaluations: v })} />
         <Num label="or every S seconds" nullable value={out.checkpoint_every_seconds} onChange={v => set({ checkpoint_every_seconds: v })} /></div>
       <label title="Raw PSF only; nothing is rendered. Applies to raw outputs that actually exist.">Raw waveform retention
         <select value={out.waveform_retention ?? 'best_and_failures'} onChange={e => set({ waveform_retention: e.target.value })}><option>none</option><option>best_and_failures</option><option>all</option></select></label>
-      <Num label="Waveform storage limit (bytes)" nullable value={out.waveform_storage_limit_bytes ?? 2147483648} onChange={v => set({ waveform_storage_limit_bytes: v })}
+      {/* null is a real setting here (no limit); only a configuration without the field shows the backend's default. */}
+      <ByteSize label="Waveform storage limit" empty="no limit" value={out.waveform_storage_limit_bytes === undefined ? 2147483648 : out.waveform_storage_limit_bytes}
+        onChange={v => set({ waveform_storage_limit_bytes: v })}
         title="Oldest retained failures are removed first. The best design, models and primary data are never deleted automatically." />
       <p className="hint">Pausing, stopping and normal completion always save safely. Detailed CSV copies are exported on demand; raw tables are Parquet.</p>
-    </section>
+    </Module>
   );
 }
 

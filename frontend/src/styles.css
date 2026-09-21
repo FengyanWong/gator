@@ -26,7 +26,7 @@ button { border: 1px solid var(--line); background: #fafbfc; padding: 3px 9px; c
 button:hover:not(:disabled) { border-color: var(--accent); } button:disabled { opacity: .45; cursor: not-allowed; }
 button.primary { background: var(--accent); color: #fff; border-color: var(--accent); } button.active { background: #e6eefb; border-color: var(--accent); }
 .row { display: flex; gap: 6px; align-items: flex-end; flex-wrap: wrap; margin: 4px 0; } .spacer { flex: 1; }
-.tabs { display: flex; gap: 2px; align-items: center; border-bottom: 1px solid var(--line); padding: 4px 6px 0; } .tabs button { border-bottom: none; } .tabs select { width: 420px; margin-bottom: 3px; }
+.tabs { display: flex; gap: 2px; align-items: center; border-bottom: 1px solid var(--line); padding: 4px 6px 0; } .tabs button { border-bottom: none; }
 .toolbar { display: flex; gap: 4px; align-items: center; padding: 6px 0; flex-wrap: wrap; }
 .scroll { overflow: auto; flex: 1; min-height: 0; max-width: 100%; }
 table.grid { border-collapse: collapse; width: 100%; } table.grid th, table.grid td { border: 1px solid var(--line); padding: 2px 5px; text-align: left; vertical-align: top; white-space: nowrap; }
@@ -40,6 +40,8 @@ td.issues { min-width: 170px; white-space: normal !important; }
 .blocker { border: 1px solid var(--bad); background: #fdecea; padding: 6px; margin: 6px 0; }
 /* A limit explained, not a fault: neutral, unlike .blocker. */
 .note { border: 1px solid var(--line); border-left: 3px solid var(--accent); background: #eef3fb; padding: 6px 8px; margin: 6px 0; } .note p { margin: 4px 0; } .note ul { margin: 2px 0 4px; padding-left: 18px; }
+/* Delete profile: the last line of a generated profile's block - what it is for as text, the short button at its right end. */
+.row.start-over { align-items: center; border-top: 1px solid var(--line); margin-top: 8px; padding-top: 6px; } .row.start-over .hint { flex: 1 1 150px; } .row.start-over button { flex: none; }
 pre { white-space: pre-wrap; word-break: break-word; margin: 4px 0; font-size: 11px; } pre.small { max-height: 180px; overflow: auto; }
 .badge { display: inline-block; padding: 1px 7px; border: 1px solid var(--line); font-size: 11px; font-weight: 600; }
 .state-ok { background: #e2f4e7; color: var(--ok); border-color: #9fd0ad; } .state-failed { background: #fdecea; color: var(--bad); border-color: #e2a19c; }
@@ -105,10 +107,25 @@ button.notes-link { border: none; background: none; padding: 0 3px; color: var(-
 .status-line { margin: 4px 0; padding: 5px 7px; border: 1px solid var(--line); border-left-width: 4px; font-size: 12px; }
 .status-line.level-ok { border-color: #9fd0ad; background: #e2f4e7; color: var(--ok); } .status-line.level-error { border-color: #e2a19c; background: #fdecea; color: var(--bad); }
 .status-line.level-warn, .status-line.level-partial { border-color: #e0bd6e; background: #fff1d6; color: var(--warn); } .status-line.level-unknown { background: #ececf0; color: #505868; }
+/* The connection block of the left column is ONE button; pressing it opens the connection window (drawn through a portal). */
+.connection-launcher { padding: 6px; } button.connection-button { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 1px 7px; padding: 5px 9px; text-align: left; }
+/* Two lines: the name and the state of the last test, and under them which connection is in use and what kind it is. */
+.connection-button-name { font-weight: 600; flex: 1; } .connection-button .badge { order: 1; }
+.connection-button-what { order: 2; flex: 0 0 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 11.5px; }
+.connection-launcher .error { margin: 5px 2px 0; }
+#connection-root { min-height: 100vh; background: var(--panel); }
+.connection-window { max-width: 760px; margin: 0 auto; padding: 14px 18px 24px; font-size: 13.5px; } .connection-window h2 { margin: 0 0 8px; font-size: 17px; }
+.connection-window .hint, .connection-window label, .connection-window .steps-list { font-size: 12.5px; } .connection-window .step { margin-top: 10px; padding-top: 8px; } .connection-window .step-head { font-size: 13.5px; }
+.connection-window .step-no { width: 18px; height: 18px; line-height: 18px; font-size: 11.5px; } .connection-window .command code { font-size: 12.5px; } .connection-window .status-line { font-size: 13px; }
+.connection-window .row > label { flex: 1; } .connection-window .row > button { flex: none; } .connection-window p { margin: 5px 0; } .connection-window .connection-add { background: #f7f8fa; padding: 8px 10px; border: 1px solid var(--line); }
 .real { background: #e8f0fd; border: 1px solid var(--accent); padding: 4px 8px; font-weight: 600; }
 label.disabled { opacity: .6; } input:disabled { background: #eceef1; color: var(--muted); cursor: not-allowed; }
 td.numeric { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap !important; } details a { color: var(--accent); }
 .row.pair > button { flex: 1 1 0; min-width: 0; } p.in-use { margin: 6px 0 0; }
+/* A field whose caption line carries an action at its right end, shown as text (Output root ... Copy path); a number box with a unit list. */
+.field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 4px 0 2px; } .field-head label { flex: none; margin: 0; }
+button.text-link { border: none; background: none; padding: 0; color: var(--accent); font-size: 11.5px; } button.text-link:hover:not(:disabled) { text-decoration: underline; } button.text-link:active { color: var(--text); }
+.with-unit { display: flex; gap: 4px; } .with-unit input { flex: 1; } .with-unit select { flex: none; width: auto; }
 /* Saved-model chooser (run panel): one card per run that holds a model. Cards wrap their text: the right panel is narrow. */
 .model-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; margin: 4px 0; }
 button.model-card { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left; white-space: normal; padding: 5px 8px; font-size: 11.5px; overflow-wrap: anywhere; }
@@ -122,8 +139,45 @@ dialog.structure-dialog { width: min(1180px, 94vw); max-height: 88vh; padding: 1
 dialog.structure-dialog::backdrop { background: rgba(20, 28, 40, .35); } dialog.structure-dialog h3 { margin: 0; } .structure-scroll { overflow: auto; max-height: 74vh; }
 table.structure-layers td { white-space: normal; word-break: normal; } table.structure-layers td.path, table.structure-layers td.numeric, table.structure-layers td.keep { white-space: nowrap !important; cursor: default; }
 table.structure-layers tr.unused td { background: #fff6dc; } table.structure-layers tr.total td { font-weight: 600; background: #eef0f3; } table.structure-layers th { cursor: default; }
+/* Circuit graph view (user decision 2026-09-21: one on-screen diagnostic picture): a large dialog, the drawing left, tables right. */
+dialog.graph-dialog { width: 96vw; height: 92vh; max-width: none; max-height: none; padding: 12px 14px; border: 1px solid var(--line); color: var(--text); font: inherit; }
+dialog.graph-dialog::backdrop { background: rgba(20, 28, 40, .35); } dialog.graph-dialog h3 { margin: 0; } .graph-tools .graph-step input { width: 74px; }
+/* One line: a labelled box carries a 4 px margin that a bare button does not, which left Show, the arrows and the layout buttons 4 px low. Here every control is 26 px high and stands on the same bottom edge. */
+.graph-tools { align-items: flex-end; } .graph-tools label { flex: 0 0 auto; margin: 0; } .graph-tools input, .graph-tools select, .graph-tools button { height: 26px; }
+.graph-tools label.check { min-height: 26px; } .graph-tools label.check input { height: auto; }
+/* The close cross of a dialog, as a browser window has it: top right, no frame, red when pointed at. */
+button.dialog-close { border: none; background: none; width: 36px; height: 26px; padding: 0; font-size: 20px; line-height: 1; color: var(--muted); border-radius: 3px; }
+button.dialog-close:hover:not(:disabled) { background: #e81123; color: #fff; border: none; }
+.graph-body { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 10px; height: calc(92vh - 118px); } .graph-canvas { border: 1px solid var(--line); background: #fff; min-height: 0; }
+.graph-side { overflow: auto; min-height: 0; } .graph-side h4 { margin: 10px 0 4px; } .graph-side table.grid th { position: static; cursor: default; } .graph-side td.numeric { white-space: nowrap !important; }
 /* Header run buttons: one main button (Start -> Pause -> Resume) and Abort. Fixed widths, so the header does not shift when a label changes. */
 button.run-main { min-width: 96px; font-weight: 600; } button.run-abort { min-width: 96px; } button.run-save { min-width: 84px; }
-button.run-abort:not(:disabled) { color: var(--bad); border-color: var(--bad); } button.run-abort:hover:not(:disabled) { background: #fdecea; border-color: var(--bad); }
+/* Abort is RED (user request 2026-09-21): solid, like the main button is solid blue; faded while there is nothing to abort. */
+button.run-abort { background: var(--bad); color: #fff; border-color: var(--bad); font-weight: 600; } button.run-abort:hover:not(:disabled) { background: #8f1d17; border-color: #8f1d17; }
 button.run-chip { border: none; background: none; padding: 0 2px; color: var(--muted); font-variant-numeric: tabular-nums; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
 button.run-chip.running, button.run-chip.starting, button.run-chip.resuming { color: var(--ok); } button.run-chip.pausing, button.run-chip.paused, button.run-chip.aborting { color: var(--warn); }
+/* Which run the bottom tabs show: ONE button at the right end of the tab strip (a full button, not a tab). It only reads "Runs..." and opens the run window;
+   the run that is shown is named as plain text to its LEFT (user request 2026-09-21), cut with "..." when the strip is too narrow for all of it. */
+.tabs button.run-list-button { flex: none; font-weight: 600; margin-bottom: 3px; border-bottom: 1px solid var(--line); } .tabs button.run-list-button:hover { border-color: var(--accent); } .tabs button.run-list-button.open { background: #e6eefb; border-color: var(--accent); }  /* `open`, not `active`: that class marks the chosen TAB of this strip */
+.tabs .run-list-current { min-width: 0; max-width: 62%; margin: 0 8px 3px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; } .run-list-blocked { margin-right: 8px; }
+/* The run window (drawn through a portal): every run as one table row. The table scrolls under its sticky titles; a run's details open as a row of their own. */
+#runs-root { height: 100vh; background: var(--panel); } .run-window { height: 100%; display: flex; flex-direction: column; padding: 12px 16px 10px; font-size: 13px; }
+.run-window h2 { margin: 0 0 4px; font-size: 17px; } .run-window p { margin: 4px 0; } .run-window .hint { font-size: 12.5px; } .run-window details > summary { cursor: pointer; }
+.run-window .row { align-items: center; } input.run-filter { width: 330px; } .run-count { flex: 1; }
+.run-window table { font: inherit; }  /* the window starts as about:blank = quirks mode, where a table does not inherit the font and falls back to 16px */
+table.run-table td { vertical-align: middle; font-variant-numeric: tabular-nums; } table.run-table th.sortable { cursor: pointer; user-select: none; } table.run-table th.plain { cursor: default; } .sort-mark { color: var(--accent); }
+table.run-table tr.current > td { background: #e6eefb; } table.run-table tbody tr:not(.run-details-row):hover > td { background: #f3f7fe; } table.run-table tr.current:hover > td { background: #dbe7fa; }
+/* A double click on a row shows that run (there is no "Show" column): the row of the run that is shown carries a bar at its left edge besides its colour. */
+table.run-table tbody tr:not(.run-details-row) { cursor: default; } table.run-table tr.current > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+table.run-table td .hint { font-size: 11px; } tr.run-details-row > td { background: #fafbfc; padding: 6px 10px 10px 34px; white-space: normal; }
+.run-details { max-width: 1100px; } .run-details h4 { margin: 10px 0 3px; } .run-details table.grid th { position: static; cursor: default; } table.run-segments { width: auto; }
+table.grid.small.run-facts td:first-child { white-space: nowrap; word-break: normal; width: 1%; color: var(--muted); }
+/* Project panel: explanations are closed until asked for (details.more), so the narrow column shows the fields and buttons first. */
+.left details > summary { cursor: pointer; } details.more { margin: 4px 0; } details.more > :not(summary) { margin: 3px 0 3px 13px; }
+/* A whole block of the panel folded under its own heading (Hierarchy): the h3 is the fold line and keeps the look of the other headings. */
+details.section { margin-top: 10px; } details.section > summary > h3 { display: inline; margin: 0; }
+/* A whole module of the right column (Run configuration, Output settings) folds the same way. Folded, its line carries the
+   main values on a second row, and a mark when an error or a warning waits inside. */
+details.section.module { margin-top: 0; } details.module > summary { cursor: pointer; } details.module[open] > summary { margin-bottom: 4px; }
+.module-summary { display: block; margin: 2px 0 0 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.module-attention { margin-left: 8px; padding: 0 5px; border-radius: 3px; font-size: 10.5px; font-weight: 600; color: #fff; background: var(--warn); } .module-attention.error { background: var(--bad); }

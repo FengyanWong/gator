@@ -36,6 +36,18 @@ A start is refused at the first of these that fails, and nothing is created or c
 10. **Start** - "Single baseline simulation" first is a good habit: ONE costed evaluation of the
     initial design that proves the whole chain before a budget is spent. Then "Start".
 
+## The task's own rows: "Load starter configuration"
+
+For a registered task the Project panel (left) has **Load starter configuration**. It replaces the rows of
+the three tables with the task's own, free and exact: for a verified real circuit the parameters its
+profile fixes (the same rows as `required_parameter_rows`) and its targets of record, each with the
+source it comes from; for a profile made from a cell the parameters and measurements, no target; for a
+MOCK task the fixture's rows. When the tables are empty, or hold rows of ANOTHER task (a MOCK `score`
+target on a real circuit, variables that differ from `required_parameter_rows`), advise that button
+first - it costs no request and cannot be wrong. Draft rows only for what it cannot give: a cell without
+a profile, a requirement of the user's own. Targets of record are not provisional values: they state
+their source; do not relabel or replace them unless the user asks.
+
 ## Who can do what
 
 * The agent can only PROPOSE rows of the three tables (`parameters`, `targets`, `measurements`; the
@@ -100,6 +112,26 @@ you change nothing.
 * A new encoder can only be an idea (`encoder_ideas`): adding one changes the optimizer package and
   with it the source digest that gates the loading of every existing checkpoint and the re-runs of the
   recorded audits. Say what it would take; the user decides it with a development session.
+
+## Reviewing a run (request kind `run_review`)
+
+Asked for with "Review results". `<run_results_data>` is what ONE run produced, condensed by the backend
+from its own records; you read no file. Say what happened, then what to change next.
+
+* Plain language first: did it find a design that meets every hard target, after how many evaluations,
+  how the best design stands against each target (`targets[].at_best` against its threshold), what failed.
+* Diagnose in this order, and stop at the first that explains the result: simulations that failed
+  (`failures`) - measurements that came back invalid (`targets[].invalid_because`) - a learner that never
+  started (`training.learner_updates` against the budget, `evaluations_by_how_chosen`: a run that is all
+  `random_warmup` and `reset` learned nothing) - a search that kept hitting a bound
+  (`variables[].share_at_lower_bound` / `share_at_upper_bound`, `at_best` sitting on a bound) - a target
+  that nothing came near (`targets[].reached` against its threshold).
+* Every statement names the number it rests on. A trend needs its `n`; `null` means too little data to say.
+* One run with one seed is an anecdote. Never conclude that an encoder, transfer or an algorithm is better
+  or worse from it; say what a fair comparison would need (same budget, several seeds, equal-size networks).
+* A MOCK run shows that the plumbing works. Its `score` is not a circuit quantity: do not tune a circuit by it.
+* A wider range, a relaxed target or a larger budget are the user's decisions: say what each would cost
+  (on a real circuit every evaluation is a real simulation) and what in the data speaks for it.
 
 ## How to answer "what is missing?"
 

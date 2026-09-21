@@ -136,7 +136,12 @@ def build_spec_schema(config: WorkbenchConfig):
         from .profiles import task_spec_registry
         generated = task_spec_registry(config.circuit)       # see validation.registry_for: the same fallback, the same order
         if generated is None:
-            return SpecSchema()
+            from .tasks import verified_spec_registry
+            of_record = verified_spec_registry(config.circuit)
+            if of_record is None:
+                return SpecSchema()
+            version, entries = of_record                      # identical to the experiment's own schema, so it keeps its name
+            return SpecSchema(version=version, metrics=tuple((e['metric_id'], e['unit'], float(e['reference'])) for e in entries))
         return SpecSchema(version='spec-input-generated-profile-v1',
                           metrics=tuple((e['metric_id'], units.canonical_unit(e['unit']), float(e['reference'])) for e in generated))
     return SpecSchema(version='spec-input-custom-v1',

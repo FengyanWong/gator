@@ -30,6 +30,7 @@ const CELLS = {
   FIXTURE_DESIGNS: { technology_library: 'gpdk045', cells: [
     { name: 'ota5_v1', views: ['maestro', 'schematic', 'symbol'], has_schematic: true },
     { name: 'ota5_tb', views: ['schematic'], has_schematic: true },
+    { name: 'vco_fixture', views: ['schematic', 'symbol'], has_schematic: true },           // stands for the cell of a verified built-in circuit
     { name: 'symbol_only', views: ['symbol'], has_schematic: false }] },
   FIXTURE_OTHER: { technology_library: 'otherTech', cells: [{ name: 'inv', views: ['schematic', 'symbol'], has_schematic: true }] },
 };
@@ -37,8 +38,8 @@ const schematic = (library, cell) => ({ source: 'virtuoso', library, cell, origi
   instances: ['M0', 'M1'].map(name => ({ instance_path: name, master: { library: 'gpdk045', cell: 'nmos1v', view: 'symbol' }, terminals: [], parameters: { w: { raw: '1u' } } })),
   requires_confirmation: ['FIXTURE'], note: 'FIXTURE' });
 const draft = (library, cell) => ({ loaded: true, task_key: `virtuoso:${library}/${cell}`, mock: false, native_draft: true, complete: true, diagnostics: [],
-  profile_task: created.has(`${library}/${cell}`) ? `real:${cell}` : null,
-  profile_recipes: [{ id: 'ring_oscillator', label: 'Ring oscillator (free-running)' }, { id: 'opamp_ac', label: 'Op-amp / OTA (AC gain)' }],
+  profile_task: created.has(`${library}/${cell}`) ? `real:${cell}` : null, profile_task_generated: created.has(`${library}/${cell}`) ? true : null,
+  profile_recipes: RECIPES,
   circuit: { library, cell, native_draft: true }, hierarchy: { XU1: { M1: {}, M2: {} }, V0: {} }, analysis_context: null, evaluation_backend: null, max_concurrency: 1,
   summary: { device_count: 3, unknown_devices: [], devices: [{ instance_path: 'XU1/M1', kind: 'nmos', parameters: { w: { value: 4e-6 } } }] },
   notes: ['FIXTURE: read from Virtuoso (canned answer).'] });
@@ -48,6 +49,9 @@ const ROWS = [{ variable_id: 'wn_fixture', instance_path: 'XU1/M1', parameter_na
 const generated = task => ({ loaded: true, task_key: task, mock: false, native_draft: false, generated_profile: true, baseline_recorded: false, complete: true,
   diagnostics: [], circuit: {}, hierarchy: { XU1: { M1: {} } }, analysis_context: null, evaluation_backend: 'FIXTURE', max_concurrency: 4,
   summary: { device_count: 1, unknown_devices: [], devices: [] }, notes: ['FIXTURE: generated profile.'] });
+const RECIPES = [{ id: 'ring_oscillator', label: 'Ring oscillator (free-running)' }, { id: 'opamp_ac', label: 'Op-amp / OTA (AC gain)' }];
+const builtInCell = { loaded: false, blocker: 'FIXTURE: a native cellview needs a verified circuit profile', interface_contract: null,
+  profile_task: 'real:gpdk045_vco', profile_task_generated: false, profile_recipes: RECIPES };
 const gateBlocked = { message: 'The connection gate blocked reading the native design', gate: { allowed: false, status: 'blocked', blocking: ['tunnel'], uncertain: [] } };
 
 try {
@@ -60,7 +64,8 @@ try {
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
   let nextId = 0; const pending = new Map(); const calls = []; let mode = 'ok'; let inFlight = 0, overlap = false;
-  const imported = new Set(); let agentRequests = 0; let baselineExists = false;
+  const imported = new Set(); let agentRequests = 0; let baselineExists = false; let baselineRecorded = false; let deleteRefused = true;
+  const dialogs = []; const answers = [];                                           // confirm(): answered as planned; an unplanned one is refused and reported
   const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
   const fulfil = (requestId, status, obj) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
     responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
@@ -71,9 +76,16 @@ try {
       const real = await (await fetch(new URL('api/tasks', APP))).json();
       return fulfil(requestId, 200, { ...real, tasks: [...real.tasks, ...[...created].map(key => ({ task_key: `real:${key.split('/')[1]}`, kind: 'real', available: true, generated: true }))] });
     }
+    if (pathname === '/api/tasks/starter') {                                         // a profile created in this check brings the rows it registered
+      const task = new URL(request.url).searchParams.get('task_key');
+      return [...created].some(key => task === `real:${key.split('/')[1]}`)
+        ? fulfil(requestId, 200, { project: { name: 'fixture-profile', task_name: task.replace('real:', '') }, parameters: ROWS, targets: [], measurements: [], run: {} })
+        : send('Fetch.continueRequest', { requestId });
+    }
     if (pathname === '/api/circuit/load') {                                          // an imported cell loads from the backend's local copy
       const circuit = JSON.parse(request.postData ?? '{}').circuit ?? {};
-      if (circuit.source === 'registered_task' && [...created].some(key => circuit.task_id === `real:${key.split('/')[1]}`)) return fulfil(requestId, 200, generated(circuit.task_id));
+      if (circuit.source === 'registered_task' && [...created].some(key => circuit.task_id === `real:${key.split('/')[1]}`)) return fulfil(requestId, 200, { ...generated(circuit.task_id), baseline_recorded: baselineRecorded });
+      if (circuit.source === 'virtuoso' && circuit.cell === 'vco_fixture') return fulfil(requestId, 200, builtInCell);
       return circuit.source === 'virtuoso' && imported.has(`${circuit.library}/${circuit.cell}`)
         ? fulfil(requestId, 200, draft(circuit.library, circuit.cell)) : send('Fetch.continueRequest', { requestId });
     }
@@ -91,7 +103,14 @@ try {
       steps: ['profile', 'connect', 'export', 'deck'].map(step => ({ step, ok: true, detail: `FIXTURE: ${step} passed` })) });
     if (op === 'profile/reference') {
       if (!baselineExists) return fulfil(requestId, 409, { detail: { message: 'No run of real:ota5_v1 was found under the output root. Run "Single baseline simulation" first.', code: 'no_baseline_run' } });
+      baselineRecorded = true;
       return fulfil(requestId, 200, { origin: 'real', run_id: 'fixture-run-1', metrics: { osc_frequency_hz: 1.2e9 } });
+    }
+    if (op === 'profile/delete') {
+      if (deleteRefused) return fulfil(requestId, 409, { detail: { message: `Run fixture-run-2 of real:${body.name} is working right now: abort it or let it finish first`, code: 'delete_refused' } });
+      created.delete(`FIXTURE_DESIGNS/${body.name}`); baselineRecorded = false;
+      return fulfil(requestId, 200, { deleted: `real:${body.name}`, name: body.name, library: 'FIXTURE_DESIGNS', cell: body.name, testbench_cell: 'ota5_tb', baseline_recorded: true,
+        kept_copy: `/fixture/profiles/.deleted/${body.name}.20260921T000000Z` });
     }
     if (op === 'profile') {
       if (body.name === 'refuse_me') return fulfil(requestId, 409, { detail: { message: 'FIXTURE: the real backend can only change transistor widths', code: 'profile_refused' } });
@@ -106,6 +125,11 @@ try {
     const m = JSON.parse(ev.data);
     if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
     else if (m.method === 'Fetch.requestPaused') answer(m.params).catch(() => { /* page went away */ });
+    else if (m.method === 'Page.javascriptDialogOpening') {
+      const accept = answers.length ? answers.shift() : null;
+      dialogs.push({ message: m.params.message, planned: accept !== null });
+      send('Page.handleJavaScriptDialog', { accept: !!accept }).catch(() => undefined);
+    }
     else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
     else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push(m.params.args.map(a => a.value ?? a.description).join(' '));
   };
@@ -126,9 +150,9 @@ try {
   const type = async (label, textToType) => { await evaluate(`(() => { const i = ${FIELD(label)}; i.focus(); i.select(); })()`); await send('Input.insertText', { text: textToType }); };
   const ops = (from = 0) => calls.slice(from).map(c => [c.op, c.library, c.cell, c.testbench, c.name, c.recipe, c.expected_frequency_hz].filter(Boolean).join(' '));
   const quiet = async (ms = 1500) => { let seen = -1; while (seen !== calls.length || inFlight) { seen = calls.length; await sleep(ms); } };
-  const shot = async name => {
+  const shot = async (name, bottom = null) => {                                     // `bottom`: an element to bring to the lower edge instead of the heading to the top
     const H3 = `[...${PANEL}.querySelectorAll('h3')].find(h => h.textContent.trim() === 'Circuit source')`;
-    await evaluate(`${H3}.scrollIntoView({ block: 'start' })`); await sleep(200);
+    await evaluate(bottom ? `${bottom}.scrollIntoView({ block: 'end' })` : `${H3}.scrollIntoView({ block: 'start' })`); await sleep(200);
     const clip = await evaluate(`(() => { const a = document.querySelector('.left').getBoundingClientRect(), h = ${H3}.getBoundingClientRect();
       return { x: a.x, y: Math.max(a.y, h.y - 6), width: a.width, height: a.bottom - Math.max(a.y, h.y - 6), scale: 2 }; })()`);
     const { data } = await send('Page.captureScreenshot', { format: 'png', clip });
@@ -137,10 +161,11 @@ try {
 
   await send('Page.enable'); await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Fetch.enable', { patterns: ['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose', '*/api/tasks'].map(urlPattern => ({ urlPattern, requestStage: 'Request' })) });
+  await send('Fetch.enable', { patterns: ['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose', '*/api/tasks', '*/api/tasks/starter*'].map(urlPattern => ({ urlPattern, requestStage: 'Request' })) });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
-  for (let i = 0; i < 60 && !(await evaluate(`[...document.querySelectorAll('.left .panel select')].some(s => s.value === 'lab' || (s.options.length > 1 && s.value))`)); i++) await sleep(100);
+  // The connection in use is named on the one "Connection" button of the left column (its window is not needed here).
+  for (let i = 0; i < 60 && !(await evaluate(`/\\S/.test(document.querySelector('.left button.connection-button .connection-button-what')?.textContent.replace(/none (selected|set up yet)/, '') ?? '')`)); i++) await sleep(100);
   await sleep(800);
   check('nothing is read from Virtuoso while another source is chosen', calls.length === 0, ops().join(' | '));
 
@@ -159,10 +184,10 @@ try {
   await choose('Library', 'FIXTURE_DESIGNS'); await quiet();
   check('choosing a library lists its cells, once', JSON.stringify(ops(mark)) === JSON.stringify(['cells FIXTURE_DESIGNS']), ops(mark).join(' | '));
   const cellOptions = await options('Cell');
-  check('the Cell dropdown lists them; a cell without a schematic cannot be chosen', cellOptions.length === 4 && cellOptions.find(o => o.value === 'symbol_only')?.disabled === true
+  check('the Cell dropdown lists them; a cell without a schematic cannot be chosen', cellOptions.length === 5 && cellOptions.find(o => o.value === 'symbol_only')?.disabled === true
     && cellOptions.find(o => o.value === 'symbol_only').text.includes('no schematic view') && cellOptions.find(o => o.value === 'ota5_v1')?.disabled === false, JSON.stringify(cellOptions));
   check('the PDK id is offered from the technology library', (await value('PDK id')) === 'gpdk045', await value('PDK id'));
-  check('the testbench dropdown offers the cells that have a schematic', JSON.stringify((await options('Testbench cell')).map(o => o.value)) === JSON.stringify(['', 'ota5_v1', 'ota5_tb']), JSON.stringify(await options('Testbench cell')));
+  check('the testbench dropdown offers the cells that have a schematic', JSON.stringify((await options('Testbench cell')).map(o => o.value)) === JSON.stringify(['', 'ota5_v1', 'ota5_tb', 'vco_fixture']), JSON.stringify(await options('Testbench cell')));
 
   // ---- a cell reads its schematic ------------------------------------------------------------------------------------
   mark = calls.length;
@@ -217,9 +242,56 @@ try {
   baselineExists = true;
   await evaluate(`${BUTTON('Record the baseline run as reference')}.click()`); await quiet();
   check('with one, the baseline is recorded and said so', (await text()).includes('Baseline recorded from run fixture-run-1'));
+  // ---- a cell that already has a registered task says so: no second profile, one short "Open" -----------------------------
   mark = calls.length;
   await choose('Source', 'virtuoso'); await quiet();
-  check('the cell is no longer browse-only: the form points to its task', (await text()).includes('already has the profile real:ota5_v1') && !!(await evaluate(`!!(${BUTTON('Open real:ota5_v1')})`)), ops(mark).join(' | '));
+  let shown = await text();
+  check('the cell is no longer browse-only: the form names its task', shown.includes('This cell already has a registered task: real:ota5_v1') && !shown.includes('built-in')
+    && !shown.includes('Not optimizable yet') && !shown.includes('Browse only'), ops(mark).join(' | '));
+  check('no second profile is offered for it', !(await evaluate(`!!(${BUTTON('Create profile')})`)) && !(await evaluate(`!!(${BUTTON('Read the cell again')})`)));
+  check('the button is short; the task name is text beside it', JSON.stringify(await evaluate(`[...${PANEL}.querySelectorAll('.note button')].map(b => b.textContent.trim())`)) === JSON.stringify(['Open']));
+  await shot('virtuoso-2d-cell-has-task.png');
+  await choose('Cell', 'vco_fixture'); await quiet();
+  shown = await text();
+  check('the cell of a verified built-in circuit names that task', shown.includes('This cell already has a registered task: real:gpdk045_vco (a verified built-in circuit)')
+    && !shown.includes('Browse only') && !shown.includes('cannot optimize it yet'));
+  check('it is not offered for reading or for a profile', !(await evaluate(`!!(${BUTTON('Read this cell into the workbench')})`)) && !(await evaluate(`!!(${BUTTON('Create profile')})`)));
+  check('what that means is one folded line', await evaluate(`(() => { const d = [...${PANEL}.querySelectorAll('.note details')].find(x => x.querySelector('summary').textContent === 'What this means');
+    return !!d && !d.open && d.textContent.includes('A cell has one task'); })()`));
+  await shot('virtuoso-2e-built-in-cell.png');
+  await evaluate(`${BUTTON('Open')}.click()`); await quiet();
+  check('"Open" chooses the task under Source: Registered task', (await value('Source')) === 'registered_task' && (await value('Task')) === 'real:gpdk045_vco', `${await value('Source')} / ${await value('Task')}`);
+  check('a built-in circuit has no Delete profile', !(await evaluate(`!!(${BUTTON('Delete profile')})`)));
+
+  // ---- Delete profile: asked once more, refused while a run works, then back at the cell with Create profile ----------------
+  await choose('Source', 'virtuoso'); await quiet();
+  await choose('Cell', 'ota5_v1'); await quiet();
+  await evaluate(`${BUTTON('Open')}.click()`); await quiet();
+  check('the generated profile is opened from its cell', (await value('Source')) === 'registered_task' && (await value('Task')) === 'real:ota5_v1', `${await value('Source')} / ${await value('Task')}`);
+  check('its block ends with "Delete profile", explained beside the button', !!(await evaluate(`!!(${BUTTON('Delete profile')})`)) && (await text()).includes('A profile is never edited.'));
+  await shot('virtuoso-2f-delete-offered.png', BUTTON('Delete profile'));
+  mark = calls.length; answers.push(false);
+  await evaluate(`${BUTTON('Delete profile')}.click()`); await quiet(800);
+  const asked = dialogs[dialogs.length - 1]?.message ?? '';
+  check('the press asks once more and says what goes', asked.includes('Delete the profile real:ota5_v1?') && asked.includes('can no longer be resumed') && asked.includes('copy of the profile')
+    && asked.includes('recorded baseline goes with it'), asked.slice(0, 120));
+  check('"Cancel" deletes nothing', ops(mark).length === 0 && (await value('Task')) === 'real:ota5_v1', ops(mark).join(' | '));
+  answers.push(true);
+  await evaluate(`${BUTTON('Delete profile')}.click()`); await quiet();
+  check('a refusal is shown in its own words and the task stays', JSON.stringify(ops(mark)) === JSON.stringify(['profile/delete ota5_v1']) && (await text()).includes('is working right now')
+    && (await value('Task')) === 'real:ota5_v1', ops(mark).join(' | '));
+  deleteRefused = false; mark = calls.length; answers.push(true);
+  await evaluate(`${BUTTON('Delete profile')}.click()`); await quiet();
+  shown = await text();
+  check('deleting is one request', JSON.stringify(ops(mark).filter(o => o.startsWith('profile'))) === JSON.stringify(['profile/delete ota5_v1']), ops(mark).join(' | '));
+  check('the form goes back to the cell the profile was made from', (await value('Source')) === 'virtuoso' && (await value('Library')) === 'FIXTURE_DESIGNS' && (await value('Cell')) === 'ota5_v1'
+    && (await value('Testbench cell')) === 'ota5_tb', `${await value('Source')} / ${await value('Library')} / ${await value('Cell')} / ${await value('Testbench cell')}`);
+  check('it says what happened; where the files went is one folded line', shown.includes('Profile real:ota5_v1 deleted. This cell can get a new one.')
+    && await evaluate(`(() => { const d = [...${PANEL}.querySelectorAll('details')].find(x => x.querySelector('summary').textContent === 'Where its files went');
+      return !!d && !d.open && d.textContent.includes('/fixture/profiles/.deleted/ota5_v1'); })()`));
+  check('the cell offers Create profile again', !!(await evaluate(`!!(${BUTTON('Create profile')})`)) && shown.includes('Not optimizable yet') && !shown.includes('already has a registered task'));
+  check('the task left the Registered task list', !(await evaluate(`(async () => (await (await fetch('/api/tasks')).json()).tasks.some(t => t.task_key === 'real:ota5_v1'))()`)));
+  await shot('virtuoso-2g-profile-deleted.png');
 
   // ---- another library: the cell is forgotten, a typed PDK id is kept -----------------------------------------------
   await type('PDK id', 'my_pdk'); await sleep(300);
@@ -240,7 +312,7 @@ try {
   mode = 'blocked'; mark = calls.length;
   await evaluate(`${BUTTON('Refresh')}.click()`); await quiet();
   check('a blocked gate stops the chain at the first step', JSON.stringify(ops(mark)) === JSON.stringify(['libraries']), ops(mark).join(' | '));
-  check('and says what to do', (await text()).includes('Virtuoso cannot be reached (tunnel)') && (await text()).includes('connection panel'));
+  check('and says what to do', (await text()).includes('Virtuoso cannot be reached (tunnel)') && (await text()).includes('Connection window'));
   check('the configured library stays visible while nothing can be listed', (await value('Library')) === 'FIXTURE_OTHER');
   await shot('virtuoso-3-link-down.png');
   mode = 'ok'; mark = calls.length;
@@ -260,14 +332,15 @@ try {
   check('Circuit class and PDK id are explained', !!(await evaluate(`!!(${LABEL('Circuit class')})`)) && (await text()).includes('labels saved with every run')
     && (await evaluate(`${LABEL('PDK id')}.title`)).includes('process design kit'));
 
-  // ---- the limit is explained in plain words and leads to the circuits that CAN be optimized ---------------------------------------
+  // ---- the limit is explained in plain words; circuits that already have a profile are NOT suggested here (user, 2026-09-22:
+  //      "if I work with previous tasks I would choose registered tasks") -----------------------------------------------------------
   check('the limit is a neutral note in plain words, not a red box', (await evaluate(`!!${PANEL}.querySelector('.note') && !${PANEL}.querySelector('.blocker')`))
     && (await text()).includes('cannot optimize it yet') && (await text()).includes('circuit profile'));
   const offered = (await evaluate(`[...${PANEL}.querySelectorAll('.note button')].map(b => b.textContent)`)).filter(name => name.startsWith('real:'));
-  check('it offers the circuits that have a profile', offered.length >= 1, offered.join(', '));
-  await evaluate(`${PANEL}.querySelector('.note button').click()`); await sleep(1500);
-  check('one click switches to that registered task', (await value('Source')) === 'registered_task' && (await value('Task')) === offered[0], `${await value('Source')} / ${await value('Task')}`);
+  check('the note does not suggest the existing real:* tasks', offered.length === 0 && !(await text()).includes('have a profile today'), offered.join(', '));
+  check('it still offers the way forward for THIS cell', !!(await evaluate(`!!(${BUTTON('Read this cell into the workbench')})`)));
 
+  check('every question on screen was planned by this check', dialogs.every(d => d.planned), JSON.stringify(dialogs.filter(d => !d.planned)));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
   ws.close();
 } catch (error) {

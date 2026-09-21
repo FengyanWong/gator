@@ -44,10 +44,15 @@ try {
   if (!target) throw new Error('Edge did not open a debugging port');
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const paused = []; const consoleErrors = [];
+  let nextId = 0; const pending = new Map(); const paused = []; const consoleErrors = []; const autoAnswer = [];
   ws.onmessage = ev => {
     const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
+    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); if (p) m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }   // an auto-answer waits for no reply
+    else if (m.method === 'Fetch.requestPaused' && autoAnswer.some(a => m.params.request.url.includes(a.match))) {
+      const hit = autoAnswer.find(a => m.params.request.url.includes(a.match));
+      ws.send(JSON.stringify({ id: ++nextId, method: 'Fetch.fulfillRequest', params: { requestId: m.params.requestId, responseCode: 200,
+        responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(hit.body)).toString('base64') } }));
+    }
     else if (m.method === 'Fetch.requestPaused') paused.push({ requestId: m.params.requestId, url: m.params.request.url, postData: m.params.request.postData });
     else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
     else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push(m.params.args.map(a => a.value ?? a.description).join(' '));
@@ -85,7 +90,7 @@ try {
 
   await send('Page.enable'); await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/agent/propose', requestStage: 'Request' }, { urlPattern: '*/api/agent/cancel', requestStage: 'Request' }, { urlPattern: '*/api/agent/readiness', requestStage: 'Request' }] });
+  await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/agent/propose', requestStage: 'Request' }, { urlPattern: '*/api/agent/cancel', requestStage: 'Request' }, { urlPattern: '*/api/agent/readiness', requestStage: 'Request' }, { urlPattern: '*/api/runs/status*', requestStage: 'Request' }] });
   const starter = await (await fetch(`${APP}api/tasks/starter?task_key=synthetic:opamp`)).json();
   const seeded = { schema_version: 'gator-workbench-config-v1', ...(starter.config ?? starter), output: { experiment_name: 'experiment' }, research: {} };   // the page needs `output`
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(seeded))});` });
@@ -282,14 +287,14 @@ try {
   const missingButton = `[...document.querySelectorAll('.compose-main > .row button')].find(b => b.textContent.startsWith("What's missing"))`;
   const places = await evaluate(`(() => { const row = [...document.querySelectorAll('.compose-main > .row button')].map(b => b.textContent), top = [...document.querySelectorAll('.agent-using button')].map(b => b.textContent);
     const line = document.querySelector('.agent-using').getBoundingClientRect(), review = [...document.querySelectorAll('.agent-using button')].at(-1).getBoundingClientRect(); return { row, top, reviewAtRightEnd: Math.abs(line.right - review.right) <= 2 }; })()`);
-  check('"What\'s missing to start?" stands next to "Export task description"; "Review settings" closes the line above the conversation', places.row.indexOf("What's missing to start?") === places.row.indexOf('Export task description') + 1
+  check('"What\'s missing?" stands next to "Export task description"; "Review settings" closes the line above the conversation', places.row.indexOf("What's missing?") === places.row.indexOf('Export task description') + 1
     && places.top.join('|') === 'Review settings' && places.reviewAtRightEnd, JSON.stringify(places));
   await evaluate(`${missingButton}.click()`);
   const realCall = await nextPaused('/api/agent/readiness');
   await send('Fetch.continueRequest', { requestId: realCall.requestId });            // the real backend answers: it is free
   await sleep(1500);
   const card = await evaluate(`(() => { const c = [...document.querySelectorAll('.msg.checklist')].at(-1); return c ? { items: c.querySelectorAll('ul.checklist li').length, text: c.innerText } : null; })()`);
-  check('"What\'s missing to start?" is answered by the backend itself, as a checklist', !!card && card.items >= 6 && card.text.includes('Circuit') && card.text.includes('No model was called'), card ? `${card.items} items` : 'no card');
+  check('"What\'s missing?" is answered by the backend itself, as a checklist', !!card && card.items >= 6 && card.text.includes('Circuit') && card.text.includes('No model was called'), card ? `${card.items} items` : 'no card');
   check('... without any agent request', paused.filter(p => p.url.endsWith('/api/agent/propose')).length === 0);
   await evaluate(`${missingButton}.click()`);
   const oldServer = await nextPaused('/api/agent/readiness');                 // a server started before this function existed
@@ -403,6 +408,7 @@ try {
     let id = 0; const waiting = new Map();
     socket.onmessage = ev => { const m = JSON.parse(ev.data); if (m.id) { const w = waiting.get(m.id); waiting.delete(m.id); m.error ? w.reject(new Error(JSON.stringify(m.error))) : w.resolve(m.result); }
       else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push('detached: ' + (m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text)); };
+    socket.onclose = () => { for (const w of waiting.values()) w.reject(new Error('the detached window went away')); waiting.clear(); };
     const call = (method, params = {}) => new Promise((resolve, reject) => { const n = ++id; waiting.set(n, { resolve, reject }); socket.send(JSON.stringify({ id: n, method, params })); });
     await call('Runtime.enable');
     const run = async (expression, userGesture = false) => { const r = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, userGesture }); if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text); return r.result.value; };
@@ -441,7 +447,7 @@ try {
   await sleep(500);
   const answered = await far.run(`({ lines: document.querySelectorAll('.chat .msg').length, last: document.querySelector('.chat .msg:last-of-type .text').textContent, notes: document.querySelector('.notes').innerText })`);
   check('the reply and its notes arrive in the detached window', answered.lines === linesBefore + 2 && answered.last === 'Answer shown in the detached window.' && answered.notes.includes('Warnings (1)'));
-  await far.run(`document.querySelector('button.detach').click()`, true);
+  await Promise.race([far.run(`document.querySelector('button.detach').click()`, true).catch(() => {}), sleep(2000)]);      // the click closes the very window that would answer
   await popupTarget(false); far.close(); await sleep(400);
   await clickTab('Agent'); await sleep(300);
   check('"Bring back" closes the window and the conversation is in the tab again, complete', (await chatLines()).length === linesBefore + 2 && !(await evaluate(`!!document.querySelector('.agent-away')`)));
@@ -465,6 +471,34 @@ try {
     && (await evaluate(`document.querySelector('.tabs .tab-detach').getAttribute('aria-label')`)).startsWith('Detach'));
   await shot('8b-tab.png', 'footer .tabs');
   await shot('8-bubbles.png');
+  // ---- the results of a run: nothing to review without a run, then a canned run selected ---------------------------------
+  const reviewRun = `[...document.querySelectorAll('.compose-main > .row button')].find(b => b.textContent === 'Review results')`;
+  const idle = await evaluate(`({ disabled: ${reviewRun}.disabled, why: ${reviewRun}.title, after: ${reviewRun}.previousElementSibling.textContent })`);
+  check('"Review results" stands after "What\'s missing?" and waits for a run to be chosen', idle.disabled && idle.why.includes('Runs...') && idle.after === "What's missing?", JSON.stringify(idle));
+  const fakeRun = 'D:/gator/outputs/mock/check__abc/runs/mock_opamp/scratch__seed7__0123456789ab';
+  autoAnswer.push({ match: '/api/runs/status', body: { run_dir: fakeRun, state: 'completed', stop_reason: 'budget_exhausted', worker_alive: false, mode: 'scratch', concurrency: 1, learner_updates: 40,
+    manifest: { mock: true, mock_notice: 'MOCK' }, budget: { charged: 60, max_evaluations: 60, in_flight: 0, completed: 60, failed: 0, remaining: 0, launches: 60, retries: 0, cache_hits: 0 }, active_workers: [] } });
+  await evaluate(`localStorage.setItem('gator-workbench-current-run-v1', ${JSON.stringify(fakeRun)})`);
+  await send('Page.reload');
+  for (let i = 0; i < 100 && !(await evaluate(`!!document.querySelector('footer .tabs button')`).catch(() => false)); i++) await sleep(100);
+  await sleep(1200); await clickTab('Agent'); await sleep(500);
+  check('with a run chosen the button is ready and names that run', (await evaluate(`!${reviewRun}.disabled && ${reviewRun}.title.includes('scratch__seed7__0123456789ab')`)));
+  await evaluate(`${reviewRun}.click()`);
+  const runCall = await nextPaused('/api/agent/propose');
+  const runBody = JSON.parse(runCall.postData);
+  check('it is ONE request of kind `run_review` for that run - never online', runBody.kind === 'run_review' && runBody.run_dir === fakeRun && runBody.web === false && runBody.prompt.includes('(run scratch__seed7__0123456789ab)'), JSON.stringify({ kind: runBody.kind, web: runBody.web }));
+  await fulfil(runCall.requestId, 200, { proposal_id: 'fixture-8', proposal_hash: 'fixture', origin: 'fixture', kind: 'run_review', warnings: [], unresolved: [], diff: [], patch: [], circuit_changes: [],
+    reasoning: 'The run found a feasible design after 6 of 60 evaluations.\n\n- 13 of 60 evaluations met the target (`score` >= 0.95)\n- 39 were chosen by the policy, 40 learner updates ran\n\nIt is a MOCK run: this shows the plumbing, not a circuit.',
+    suggestions: [{ path: 'run.stop_at_first_feasible', value: true, now: false, panel: 'Run configuration', changes: true, applicable: true, problem: null, alone: null,
+      reason: 'The first feasible design came at evaluation 6; the other 54 added nothing to it.', source: 'first_feasible.first_feasible_eval_count = 6, budget.charged = 60', url: '', quote: '' }],
+    refused_suggestions: [], encoder_ideas: [], suggestions_together: { ok: true, problem: null }, readiness_after: null });
+  await sleep(500);
+  const reviewed = await evaluate(`(() => { const r = [...document.querySelectorAll('.msg.reply')].at(-1); return { text: r.querySelector('.text').innerText, bullets: r.querySelectorAll('.text li').length,
+    rows: r.querySelectorAll('.suggestions tbody tr').length, source: r.querySelector('.suggestions tbody')?.innerText ?? '', box: !!document.querySelector('.confirm') }; })()`);
+  check('the reply explains the run and ties its suggestion to a number of the run; with nothing to approve no proposal box opens', reviewed.text.includes('feasible design after 6 of 60') && reviewed.bullets === 2
+    && reviewed.rows === 1 && reviewed.source.includes('first_feasible_eval_count = 6') && !reviewed.box, JSON.stringify(reviewed).slice(0, 200));
+  await shot('9-run-review.png');
+  await evaluate(`localStorage.removeItem('gator-workbench-current-run-v1')`);
   check('no console errors or exceptions', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
   await send('Browser.close').catch(() => {});
 } catch (e) {

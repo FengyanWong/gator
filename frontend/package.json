@@ -3,13 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Local engineering workbench UI. Tables, numbers, status and file lists only: no charting library by design.",
+  "description": "Local engineering workbench UI. Tables, numbers, status and file lists; no charting library. ONE on-screen diagnostic picture by user decision (2026-09-21): the circuit graph view, drawn with cytoscape, loaded only when it is opened. Nothing drawn is ever written to a run's outputs.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "cytoscape": "3.34.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

@@ -29,6 +29,10 @@ _LINEAR = {
     'Vrms': {'Vrms': 1.0, 'mVrms': 1e-3, 'uVrms': 1e-6, 'µVrms': 1e-6},
     'V/s': {'V/s': 1.0, 'V/us': 1e6, 'V/µs': 1e6, 'V/ns': 1e9},
     'Hz/V': {'Hz/V': 1.0, 'MHz/V': 1e6, 'GHz/V': 1e9},
+    # Line and load regulation of a regulator, as the verified LDO profile reports them. V/A is kept apart from ohm:
+    # it is a regulation figure, and the result registry of record spells it this way.
+    'V/V': {'V/V': 1.0, 'mV/V': 1e-3},
+    'V/A': {'V/A': 1.0, 'mV/mA': 1.0, 'mV/A': 1e-3},
     '%': {'%': 1.0},
     'count': {'count': 1.0},
     '1': {'1': 1.0, 'ratio': 1.0, 'unitless': 1.0, '': 1.0},

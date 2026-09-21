@@ -163,8 +163,10 @@ feature, mean-aggregated, no attention). Everything here is marked "closest netw
   349,540 and 6,336 of the baseline's 105,476.
 * **Checkpoints.** A checkpoint only loads into the network it was trained with, and the whole
   `model_config` (including the ignored `heads`) is compared. All existing checkpoints are 32 / 4 / 2.
-  When a selected source checkpoint differs from the panel's network, the panel now says so and offers
-  "Use the checkpoint's network".
+  Since 2026-09-21 the panel shows the network block in Mode `scratch` only: in `resume`, `fine_tune` and
+  `frozen` the configuration takes the chosen model's network by itself (the earlier warning with the button
+  "Use the checkpoint's network" is gone). Only the network follows, not the numbers under "Advanced"; an
+  "Advanced" edit made while a model is loaded keeps the sizes already stored for that encoder.
 
 ## Behaviour details
 

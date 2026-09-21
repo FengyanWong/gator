@@ -5,10 +5,13 @@
 // pass through; every other writing request is refused here, so this check can start, save or probe nothing on the
 // backend it runs against. The browser profile is new and temporary: the user's saved configuration is not touched.
 // What it pins (user request 2026-09-21, "can you choose which model to load?" / "what is a source run"):
-// nothing is read while Mode is scratch; one card per run that holds a model, in plain words; MOCK / other network /
-// weights only tags; choosing a card selects its LATEST save; every save point can be chosen and is the one the backend
+// nothing is read while Mode is scratch; one card per run that holds a model, in plain words; MOCK / weights only
+// tags; choosing a card selects its LATEST save; every save point can be chosen and is the one the backend
 // is asked about; a best policy is offered only where one exists; a stale selection is said and can be cleared; the
 // filter; one request per "Refresh list" and no timer; the cards fit the narrow panel.
+// User request 2026-09-21 ("when the mode selection is not scratch, dont show the RL NETWORK part for new encoder
+// settings. Only the list of existing model encoders"): the "RL network" block is shown in scratch only; in a Mode that
+// loads a model the configuration takes the chosen model's network by itself, and nothing is written to the backend.
 // Last section, against the REAL route of the backend it runs on: the cards equal GET /api/runs/models (skipped with a
 // note when that backend is older than the route and has to be restarted).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 20 s):
@@ -33,7 +36,7 @@ let failures = 0;
 const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
 
 // ---- canned answers ------------------------------------------------------------------------------------------
-const NET = { encoder_type: 'graph_transformer', hidden_dim: 16, heads: 2, layers: 1 }, GAT = { ...NET, encoder_type: 'gat' };
+const NET = { encoder_type: 'graph_transformer', hidden_dim: 16, heads: 2, layers: 1 }, GAT = { ...NET, encoder_type: 'gat' }, RGCN = { ...NET, encoder_type: 'rgcn' };
 const point = (tag, evaluations, kind, minute, extra = {}) => ({ checkpoint_id: `ckpt-${String(evaluations).padStart(8, '0')}-${tag}`, kind,
   created_utc: `2026-09-21T10:${String(minute).padStart(2, '0')}:00+00:00`, mode: 'scratch', evaluations, learner_updates: Math.max(0, evaluations - 4),
   replay_size: evaluations, restoration_capability: 'full_state', missing_components: [], network: NET, is_latest: false, is_best_policy: false, ...extra });
@@ -48,7 +51,7 @@ const model = (name, circuit, points, extra = {}) => { const newest = points.fin
 const A = model('FIXTURE_opamp_gt', 'synthetic:opamp', [point('a1', 6, 'periodic', 1), point('a2', 12, 'periodic', 2), point('a3', 18, 'periodic', 3), point('a4', 20, 'final', 4, { is_latest: true })]);
 const B = model('FIXTURE_ldo_gat', 'synthetic:ldo', [point('b1', 8, 'stop', 5, { is_latest: true, network: GAT })]);
 const C = model('FIXTURE_weights_only', 'synthetic:vco', [point('c1', 10, 'pause', 6, { is_latest: true, restoration_capability: 'weights_only', missing_components: ['replay_snapshot (disabled in output settings)'] })]);
-const D = model('FIXTURE_real_ota5', 'real:gpdk045_ota5', [point('d1', 30, 'periodic', 7, { is_best_policy: true }), point('d2', 40, 'final', 8, { is_latest: true })], { mock: false });
+const D = model('FIXTURE_real_ota5', 'real:gpdk045_ota5', [point('d1', 30, 'periodic', 7, { is_best_policy: true, network: RGCN }), point('d2', 40, 'final', 8, { is_latest: true, network: RGCN })], { mock: false });
 const FILLERS = ['e', 'f', 'g'].map((t, n) => model(`FIXTURE_filler_${t}`, 'synthetic:opamp', [point(`${t}1`, 5 + n, 'final', 9 + n, { is_latest: true })]));
 const MODELS = [A, B, C, D, ...FILLERS].sort((x, y) => (x.saved_utc < y.saved_utc ? 1 : -1));            // newest save first, as the backend sends it
 const describe = (run_dir, checkpoint_id) => {
@@ -84,11 +87,14 @@ try {
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
     if (name === '/api/runs/models') { lists++; return canned ? fulfil(requestId, 200, { models: served }) : send('Fetch.continueRequest', { requestId }); }
     if (name === '/api/runs/model') {
-      const body = JSON.parse(request.postData ?? '{}'); asked.push({ run_dir: body.run_dir, checkpoint_id: body.checkpoint_id });
+      const body = JSON.parse(request.postData ?? '{}'); asked.push({ run_dir: body.run_dir, checkpoint_id: body.checkpoint_id, network: body.config?.run?.network ?? null });
       const found = describe(body.run_dir, body.checkpoint_id);
+      if (found && body.run_dir === C.run_dir) { delete found.compatibility; found.compatibility_unchecked = { title: 'FIXTURE: Not compared with your configuration yet: the configuration on this page is incomplete.',
+        what: 'FIXTURE: Parameter row "mp1_w" is set to be optimized but has no lower and no upper bound. Fill in both bounds in the Parameters table.',
+        note: 'FIXTURE: This says nothing about the saved model.', technical: 'CompileError: mp1_w: bounds are required' }; }
       return found ? fulfil(requestId, 200, found) : fulfil(requestId, 404, { detail: { message: 'FIXTURE: no such checkpoint' } });
     }
-    if (request.method === 'GET') return send('Fetch.continueRequest', { requestId });
+    if (request.method === 'GET' || name === '/api/config/diff') return send('Fetch.continueRequest', { requestId });     // the diff is a pure comparison: nothing is written
     refused.push(`${request.method} ${name}`);
     return fulfil(requestId, 418, { detail: { message: 'FIXTURE: this check lets no writing request through' } });
   };
@@ -117,6 +123,15 @@ try {
   const blockText = () => evaluate(`(() => { const h = [...${RIGHT}.querySelectorAll('h3')].find(x => x.textContent === 'RL model to load'); let t = '', n = h?.nextElementSibling;
     while (n && n.tagName !== 'H3' && n.tagName !== 'DETAILS') { t += ' ' + n.innerText; n = n.nextElementSibling; } return t; })()`);
   const lastAsked = () => asked[asked.length - 1] ?? {};
+  const lastConfigNet = () => lastAsked().network ?? null;
+  // The block for a NEW network: its heading, the Encoder list, the size boxes and the preset buttons.
+  const newNetwork = () => evaluate(`({ heading: [...${RIGHT}.querySelectorAll('h3')].some(h => h.textContent.trim() === 'RL network'), encoder: !!(${labelled('Encoder')}),
+    sizes: ['hidden', 'heads', 'layers'].filter(t => [...${RIGHT}.querySelectorAll('label')].some(l => l.firstChild?.textContent?.trim().split(' - ')[0] === t && l.checkVisibility())).length,
+    presets: ['Publication preset', 'GATOR baseline'].filter(t => [...${RIGHT}.querySelectorAll('button')].some(b => b.textContent.trim() === t)).length,
+    origin: [...${RIGHT}.querySelectorAll('summary')].some(x => /^Where the .+ values come from$/.test(x.textContent.trim())),
+    advanced: [...${RIGHT}.querySelectorAll('summary')].some(x => /^Advanced/.test(x.textContent.trim())) })`);
+  const storedNetwork = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')?.run?.network ?? null`);
+  const sameNet = (a, b) => !!a && ['encoder_type', 'hidden_dim', 'heads', 'layers'].every(f => a[f] === b[f]);
   const shot = async name => {
     const clip = await evaluate(`(() => { const r = ${RIGHT}.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: Math.min(1050, r.height), scale: 1.5 }; })()`);
     const { data } = await send('Page.captureScreenshot', { format: 'png', clip });
@@ -139,11 +154,33 @@ try {
   const none = await blockText();
   check('in scratch mode the block says that no model is loaded, and how to load one', /None\. Mode is scratch/.test(none) && /fine_tune/.test(none) && /frozen/.test(none) && /resume/.test(none), none.slice(0, 120));
   check('in scratch mode the list of saved models is not read', lists === 0, `${lists} request(s)`);
+  const inScratch = await newNetwork();
+  check('in scratch mode the block for a NEW network is there: heading, Encoder list, sizes, preset buttons', inScratch.heading && inScratch.encoder && inScratch.sizes === 3 && inScratch.advanced, JSON.stringify(inScratch));
   check('the old "Source run" / "Checkpoint" pickers are gone', !(await evaluate(`!!(${labelled('Source run')}) || !!(${labelled('Checkpoint')})`)));
 
+  // ---- LOOKING at a saved model needs no Mode that loads it, and changes nothing about the run ----------------------------
+  const LOOK = `${RIGHT}.querySelector('button.look-open')`;
+  check('in scratch mode there is a "Look at a saved model" button, and still nothing was read', (await evaluate(`${LOOK}?.textContent`)) === 'Look at a saved model' && lists === 0);
+  await evaluate(`${LOOK}.click()`);
+  check('pressing it reads the list once and says that it is look-only', (await until(`${RIGHT}.querySelectorAll('button.model-card').length === ${MODELS.length}`, 50)) && lists === 1
+    && /Saved models \(look only\)/i.test(await evaluate(`${RIGHT}.innerText`)) && /Looking only: nothing here changes the run/.test(await evaluate(`${RIGHT}.innerText`)), `${lists} request(s)`);
+  await evaluate(`${card(A.task_name)}.click()`);
+  check('a chosen model offers its structure table and its circuit graph view', await until(`!!${RIGHT}.querySelector('details.structure') && !!${RIGHT}.querySelector('button.graph-open') && !${RIGHT}.querySelector('button.graph-open').disabled`, 40));
+  await sleep(1100);
+  check('... and NOTHING about the run changed: Mode is still scratch, no model is put into the configuration',
+    (await evaluate(`${labelled('Mode')}.value`)) === 'scratch' && ((await stored())?.run_dir ?? null) === null && asked.length === 0, JSON.stringify(await stored()));
+  await evaluate(`${RIGHT}.querySelector('button.look-close').click()`);
+  check('"Done looking" puts it away', await until(`!${RIGHT}.querySelector('button.model-card') && !!(${LOOK})`, 30));
+
   // ---- a mode that loads a model: one card per run that holds one ---------------------------------------------------
+  const listsBefore = lists;
   await setSelect(labelled('Mode'), 'fine_tune');
-  check('choosing fine_tune reads the list once', (await until(`${RIGHT}.querySelectorAll('button.model-card').length > 0`, 50)) && lists === 1, `${lists} request(s)`);
+  check('choosing fine_tune reads the list once', (await until(`${RIGHT}.querySelectorAll('button.model-card').length > 0`, 50)) && lists === listsBefore + 1, `${lists - listsBefore} request(s)`);
+  const inFineTune = await newNetwork();
+  check('in fine_tune the block for a NEW network is NOT shown: no heading, no Encoder list, no sizes, no preset buttons, no "where the values come from"',
+    !inFineTune.heading && !inFineTune.encoder && inFineTune.sizes === 0 && inFineTune.presets === 0 && !inFineTune.origin, JSON.stringify(inFineTune));
+  check('... the Advanced numbers stay (they belong to the run, and hold the fine_tune switches)', inFineTune.advanced);
+  check('... and the chooser says that the run uses the chosen model\'s network', /The run uses that model's network, shown on its card/.test(await blockText()));
   let shown = await cards();
   check('one card per saved model, most recently saved first', shown.length === MODELS.length && shown.map(c => c.title).join() === MODELS.map(m => m.task_name).join(), shown.map(c => c.title).join());
   check('the block explains what a run and a saved model are', /A run is one training session \(one press of Start\)/.test(await blockText()));
@@ -154,7 +191,9 @@ try {
     && /^last saved .+ - run completed \(scratch, seed 1\)$/.test(byName(A.task_name).lines[2]), JSON.stringify(byName(A.task_name).lines));
   check('one save point is singular', byName(B.task_name).lines[1] === '8 evaluations of training - 1 save point', byName(B.task_name).lines[1]);
   check('MOCK models are tagged, the real one is not', byName(A.task_name).tags.includes('MOCK') && !byName(D.task_name).tags.includes('MOCK'), JSON.stringify([byName(A.task_name).tags, byName(D.task_name).tags]));
-  check('a model trained with another network is tagged "other network", a matching one is not', byName(B.task_name).tags.includes('other network') && !byName(A.task_name).tags.includes('other network'));
+  check('every card names ITS network (the list of existing model encoders); no card is tagged "other network" any more',
+    byName(B.task_name).lines[0] === 'synthetic:ldo - gat 16/2/1' && shown.every(c => !c.tags.includes('other network'))
+    && (await evaluate(`[...${RIGHT}.querySelectorAll('button.model-card b.model-net')].map(b => b.textContent).join('|')`)) === MODELS.map(m => `${m.network.encoder_type} 16/2/1`).join('|'));
   check('a model saved without its replay is tagged "weights only"', byName(C.task_name).tags.includes('weights only') && !byName(A.task_name).tags.includes('weights only'));
   check('no card is selected yet and no save point is offered', shown.every(c => !c.active) && (await options()).length === 0);
   check('every card fits the narrow panel (text wraps, nothing is cut off)', shown.every(c => c.fits) && !(await evaluate(`${RIGHT}.scrollWidth > ${RIGHT}.clientWidth + 1`)), JSON.stringify(shown.filter(c => !c.fits).map(c => c.title)));
@@ -185,11 +224,42 @@ try {
   await evaluate(`${card(B.task_name)}.click()`);
   check('choosing another model starts at its latest save', await (async () => { for (let i = 0; i < 40 && lastAsked().run_dir !== B.run_dir; i++) await sleep(100); return lastAsked().checkpoint_id === 'latest'; })()
     && (await evaluate(`${RIGHT}.querySelector('select.model-point').value`)) === 'latest', JSON.stringify(lastAsked()));
-  check('the run panel warns that this model needs its own network', await until(`/This checkpoint was trained with gat/.test(${RIGHT}.innerText)`, 40));
-  await evaluate(`${button("Use the checkpoint's network")}.click()`); await sleep(500);
-  shown = await cards();
-  check('after "Use the checkpoint\'s network" the tags follow: gat fits, graph_transformer is the other network',
-    !shown.find(c => c.title === B.task_name).tags.includes('other network') && shown.find(c => c.title === A.task_name).tags.includes('other network'));
+  check('the chosen model\'s network is named with its facts, as the network this run uses', await until(`/^Network\\s+gat, hidden 16, heads 2, layers 1 - this run uses it as it is/.test(${RIGHT}.querySelector('tr.model-network')?.innerText ?? '')`, 40),
+    await evaluate(`${RIGHT}.querySelector('tr.model-network')?.innerText ?? 'no row'`));
+  await sleep(1100);
+  check('... and the configuration took it by itself: gat, without a button', sameNet(await storedNetwork(), GAT) && !(await evaluate(`!!(${button("Use the checkpoint's network")})`))
+    && !(await evaluate(`/This checkpoint was trained with/.test(${RIGHT}.innerText)`)), JSON.stringify(await storedNetwork()));
+  check('... the backend was asked again with that network, so the compatibility shown is the one of the run', await (async () => { for (let i = 0; i < 40 && lastConfigNet()?.encoder_type !== 'gat'; i++) await sleep(100);
+    return lastConfigNet()?.encoder_type === 'gat' && lastAsked().run_dir === B.run_dir; })(), JSON.stringify(lastConfigNet()));
+  await evaluate(`${card(A.task_name)}.click()`);
+  check('choosing a graph_transformer model takes the network back to graph_transformer', await (async () => { for (let i = 0; i < 40 && !sameNet(await storedNetwork(), NET); i++) await sleep(100); return sameNet(await storedNetwork(), NET); })(), JSON.stringify(await storedNetwork()));
+  await evaluate(`${card(B.task_name)}.click()`);
+  await until(`/^Network\\s+gat/.test(${RIGHT}.querySelector('tr.model-network')?.innerText ?? '')`, 40); await sleep(1100);
+  // A network that arrives from ELSEWHERE while the model is loaded (an imported configuration, an applied agent
+  // suggestion) is taken back as well - and that is said, because a silent revert reads as a button that does nothing.
+  check('no note about the network so far: following a newly chosen model needs no words', !(await evaluate(`!!${RIGHT}.querySelector('.net-message.warn')`)));
+  const imported = path.join(profile, 'import.config.json');
+  const onPage = JSON.parse(await evaluate(`localStorage.getItem('gator-workbench-config-v1')`));
+  // `schema_version` makes "Import JSON..." take the WHOLE configuration (without it only the rows of the open tab are taken).
+  writeFileSync(imported, JSON.stringify({ ...onPage, schema_version: 'gator-workbench-config-v1', run: { ...onPage.run, network: NET } }));
+  const { root } = await send('DOM.getDocument', { depth: 1 });
+  const { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: '.editors input[type=file]' });
+  await send('DOM.setFileInputFiles', { nodeId, files: [imported] });
+  const APPLY = `[...document.querySelectorAll('.editors .confirm button')].find(b => b.textContent.trim() === 'Apply')`;
+  check('(set-up) a configuration with another network is imported through "Import JSON..."', await until(`!!(${APPLY})`, 60), await evaluate(`document.querySelector('.editors .confirm')?.innerText.slice(0, 200) ?? 'no confirmation'`));
+  await evaluate(`${APPLY}.click()`);
+  check('a network from elsewhere is taken back while the model is loaded, and that is SAID', await until(`/The network stays gat 16\\/2\\/1: this run loads a saved model/.test(${RIGHT}.querySelector('.net-message.warn')?.textContent ?? '')`, 60),
+    await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? 'no message'`));
+  await sleep(1100);
+  check('... the configuration holds the model\'s network again', sameNet(await storedNetwork(), GAT), JSON.stringify(await storedNetwork()));
+
+  // ---- an incomplete configuration on the page never hides the saved model (user report: "CompileError: mp1_w: bounds are required") ------------
+  await evaluate(`${card(C.task_name)}.click()`);
+  check('an incomplete configuration is said in plain words, as a calm note - not as a red error', await until(`!!${RIGHT}.querySelector('.compat-unchecked')`, 40)
+    && /Parameter row "mp1_w" is set to be optimized but has no lower and no upper bound/.test(await evaluate(`${RIGHT}.querySelector('.compat-unchecked').innerText`))
+    && !(await evaluate(`[...${RIGHT}.querySelectorAll('p.error')].some(p => /CompileError|bounds are required/.test(p.textContent))`)));
+  check('... the saved model is still shown in full below the chooser', await until(`/10 evaluations, 6 updates/.test(${RIGHT}.innerText) && !!${RIGHT}.querySelector('details.structure') && !!${RIGHT}.querySelector('button.graph-open')`, 40));
+  check('... and the developer text is folded away under "Technical details"', await evaluate(`(() => { const d = ${RIGHT}.querySelector('.compat-unchecked details'); return !d.open && d.querySelector('summary').textContent === 'Technical details' && /CompileError: mp1_w/.test(d.textContent); })()`));
 
   // ---- a best policy only where one exists ---------------------------------------------------------------------------------------
   await evaluate(`${card(D.task_name)}.click()`); await until(`${card(D.task_name)}.getAttribute('aria-checked') === 'true'`, 30);
@@ -230,6 +300,9 @@ try {
   const beforeScratch = lists;
   await setSelect(labelled('Mode'), 'scratch'); await sleep(500);
   check('back in scratch the chooser closes and reads nothing', /None\. Mode is scratch/.test(await blockText()) && lists === beforeScratch);
+  const again = await newNetwork();
+  check('... and the block for a NEW network is back, showing the network that was last in use (rgcn, from the last chosen model)', again.heading && again.encoder && again.sizes === 3
+    && (await evaluate(`${labelled('Encoder')}.value`)) === 'rgcn', JSON.stringify([again, await evaluate(`${labelled('Encoder')}?.value`)]));
 
   // ---- the REAL route of this backend -------------------------------------------------------------------------------------------------
   const real = await fetch(new URL('api/runs/models' + (ROOT ? `?output_root=${encodeURIComponent(ROOT)}` : ''), APP));

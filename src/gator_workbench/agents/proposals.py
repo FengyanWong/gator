@@ -100,7 +100,8 @@ def normalize(request: AgentRequest, result: AgentResult):
                  if isinstance(entry, dict) and entry.get('status') in CHECKLIST_STATES and entry.get('who') in ('you', 'agent')
                  and str(entry.get('item') or '').strip()]
     # Suggestions for settings exist for a settings_review only; from any other request they are dropped, not obeyed.
-    review = settings_review.normalize(output) if request.kind == 'settings_review' else dict(suggestions=[], refused=[], encoder_ideas=[])
+    review = (settings_review.normalize(output) if request.kind in ('settings_review', 'run_review')
+              else dict(suggestions=[], refused=[], encoder_ideas=[]))
     return dict(patch=clean, circuit_changes=changes if isinstance(changes, list) else [], checklist=checklist, review=review,
                 reasoning=str(output.get('reasoning') or '')[:8000], warnings=text('warnings'), unresolved=text('unresolved'))
 

@@ -10,11 +10,14 @@
 from __future__ import annotations
 
 import io
+import mimetypes
+import os
 from pathlib import Path
+from urllib.parse import quote
 import zipfile
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -25,6 +28,7 @@ from ..agents import AgentError, AgentRequest, AgentSettings, ProposalRejected, 
 from ..agents import catalog as agent_catalog
 from ..agents import proposals as agent_proposals
 from ..agents import readiness as agent_readiness
+from ..agents import run_digest as agent_run_digest
 from ..agents import settings_review as agent_review
 from ..agents import diagnostics as agent_diagnostics
 from ..agents.prompts import circuit_summary
@@ -86,6 +90,14 @@ class ConnectBody(Body):
     profile_id: str = Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')      # an identifier: never a host, port or command
 
 
+class CreateConnectionBody(ConnectBody):
+    """Identifiers only. `ssh_host` is a Host NAME that ~/.ssh/config of the backend user already holds (checked
+    against that file by the backend); `bridge_profile` is a profile name of the bridge env file. Never an address."""
+    kind: str = Field('virtuoso_ssh', pattern='^(virtuoso_ssh|virtuoso_local|ngspice_local|ngspice_ssh)$')
+    ssh_host: str | None = Field(None, pattern=r'^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,63}$')
+    bridge_profile: str | None = Field(None, pattern=r'^[A-Za-z0-9_]{1,32}$')
+
+
 class NetworkSettingsBody(Body):
     network: dict | None = None         # hidden_dim / heads / layers
     advanced: dict | None = None        # the SAC numbers stored per encoder; any other key is rejected
@@ -133,6 +145,7 @@ class ProposeBody(Body):
     selection: list[dict] = []
     request_id: str | None = None
     web: bool = False                  # settings_review only: this ONE request may search the web and open publication sites
+    run_dir: str | None = None         # run_review only: the run whose output the agent is given a digest of
 
 
 class ImportBody(ProposeBody):
@@ -165,6 +178,73 @@ class ExportBody(Body):
 class ModelStructureBody(Body):
     run_dir: str
     checkpoint_id: str = Field('latest', max_length=120)
+
+
+class GraphViewBody(ModelStructureBody):
+    evaluation: int | None = Field(None, ge=1)      # which archived evaluation of that run; empty = the last one the save point had seen
+
+
+def compatibility_unchecked(exc) -> dict:
+    """The configuration on the page does not compile, so a saved model cannot be compared with it YET. Said in plain
+    words for the "RL model to load" block; the developer text stays available under "Technical details"."""
+    import re
+    text = str(exc)
+    row = re.fullmatch(r'(.+): bounds are required', text)
+    unresolved = re.fullmatch(r'(.+): (.+) is unresolved', text)
+    if row:
+        what = (f'Parameter row "{row.group(1)}" is set to be optimized but has no lower and no upper bound. Fill in both '
+                'bounds in the Parameters table, or untick "optimize" for that row.')
+    elif unresolved:
+        what = (f'Parameter row "{unresolved.group(1)}" points at {unresolved.group(2)}, and the loaded circuit has no usable '
+                'value there. Correct the instance or parameter name of that row in the Parameters table.')
+    else:
+        what = 'The Parameters / Targets tables on this page cannot be turned into a task yet.'
+    return dict(title='Not compared with your configuration yet: the configuration on this page is incomplete.', what=what,
+                note='This says nothing about the saved model. Its facts, its network structure and its circuit graph view '
+                     'are unaffected; the comparison appears as soon as the configuration is complete. The blocking '
+                     'issues in the header list the same problem.',
+                technical=redact(f'{type(exc).__name__}: {text}', 500))
+
+
+def attachment(name: str) -> dict:
+    """Content-Disposition of a download. The browser saves the file under this name."""
+    encoded = quote(name)
+    return {'Content-Disposition': f'attachment; filename="{name}"' if encoded == name
+            else f"attachment; filename*=utf-8''{encoded}"}
+
+
+def file_snapshot(path: Path, chunk_size: int = 1 << 20):
+    """(size, chunks): exactly the bytes `path` holds now, however much is appended while they are sent.
+
+    A live run keeps appending to its logs. FileResponse announces the size first and then reads to the end of the
+    file, so a file that grew in between breaks the transfer. A JSONL snapshot ends on its last complete line."""
+    stream = Path(path).open('rb')
+    try:
+        size = os.fstat(stream.fileno()).st_size
+        if Path(path).suffix == '.jsonl':
+            while size:                                 # a torn last line is not part of the record (see read_jsonl)
+                start = max(0, size - 65536)
+                stream.seek(start)
+                newline = stream.read(size - start).rfind(b'\n')
+                if newline >= 0 or not start:
+                    size = start + newline + 1
+                    break
+                size = start
+            stream.seek(0)
+    except BaseException:
+        stream.close()
+        raise
+
+    def chunks():
+        with stream:
+            remaining = size
+            while remaining:
+                block = stream.read(min(chunk_size, remaining))
+                if not block:
+                    break
+                remaining -= len(block)
+                yield block
+    return size, chunks()
 
 
 def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=True, monitor=None,
@@ -299,10 +379,14 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
 
     @app.get('/api/tasks/starter')
     def starter(task_key: str):
+        """The rows the three editors start from for a registered task. A real task: its profile's parameters and, for a
+        verified circuit, its targets of record - read from local files, no connection and no simulation."""
         try:
             return tasks.starter_config(task_key)
         except KeyError:
             fail(404, 'No starter configuration for this task')
+        except Exception as exc:                           # a generated profile whose files no longer pass their own checks
+            fail(409, redact(f'The starting rows of {task_key} cannot be built: {type(exc).__name__}: {exc}', 600))
 
     # ------------------------------------------------------------------ circuit
     @app.post('/api/circuit/load')
@@ -314,9 +398,10 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         authorize_circuit(circuit)
         shell = schema.WorkbenchConfig.model_validate(dict(circuit=circuit.model_dump(), run=dict(max_evaluations=1)))
         runtime, blocked = load_runtime(shell)
-        # A Virtuoso cell that already has a generated profile is no longer "browse only": the form points to its task.
-        existing = profiles.profile_for_cell(circuit.library, circuit.cell) if circuit.source == 'virtuoso' and circuit.library and circuit.cell else None
-        native = dict(profile_task=existing and existing['task_key'],
+        # A Virtuoso cell that already has a registered task - a profile generated from it, or one of the verified
+        # built-in circuits - is not "browse only", and gets no second profile: the form points to its task.
+        existing = profiles.task_for_cell(circuit.library, circuit.cell) if circuit.source == 'virtuoso' and circuit.library and circuit.cell else None
+        native = dict(profile_task=existing and existing['task_key'], profile_task_generated=existing and existing['generated'],
                       profile_recipes=[dict(id=key, label=value['label']) for key, value in profiles.RECIPES.items()]) if circuit.source == 'virtuoso' else {}
         if runtime is None:
             return dict(loaded=False, **blocked, **native)
@@ -446,6 +531,16 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         except profiles.ProfileError as exc:
             fail(409, exc, code='reference_refused')
 
+    @app.post('/api/virtuoso/profile/delete')
+    def native_profile_delete(body: ProfileActionBody):
+        """Explicit click (the page asks once more): take a generated profile out of the registered tasks, so its cell
+        can get a new one. Contacts nothing. The folder is kept aside, the runs that were made keep their data; refused
+        while a worker is on a run of the task, and for the verified built-in circuits."""
+        try:
+            return profiles.delete_profile(body.name, run_rows=runs.list_runs(roots, include_mock=False))
+        except profiles.ProfileError as exc:
+            fail(409, exc, code='delete_refused')
+
     def _native(body, op):
         try:
             return bridge_read.read(monitor, body.profile_id, op, library=body.library, cell=body.cell,
@@ -515,30 +610,40 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
 
     @app.get('/api/connection/setup')
     def connection_setup():
-        """What "Create profile" would use: the bridge setup found on THIS host. Locates files; reads none."""
+        """What "Create connection" would use, per kind of connection: the bridge setup, the ngspice and ssh programs
+        and the Host NAMES of ~/.ssh/config found on THIS host. Locates and names; contacts nothing."""
         return bridge_connect.detect_setup()
 
     @app.post('/api/connection/profile')
-    def connection_create_profile(body: ConnectBody):
-        """Explicit click. The browser names the new profile; every path comes from this host. An existing
-        connection file is operator-owned and is never overwritten."""
+    def connection_create_profile(body: CreateConnectionBody):
+        """Explicit click. The browser names the new connection and its kind; every path comes from this host and
+        an ssh machine only by a Host name this host already holds. Existing connections are operator-owned and are
+        never changed: a new one is added next to them, the previous file is kept as a copy."""
         try:
-            created = bridge_connect.create_profile(body.profile_id)
+            created = bridge_connect.create_profile(body.profile_id, kind=body.kind, ssh_host=body.ssh_host,
+                                                    bridge_profile=body.bridge_profile)
+        except bridge_connect.ProfileExists as exc:
+            fail(409, exc, code='profile_exists')
         except FileExistsError as exc:
-            fail(409, exc, code='connection_file_exists')
+            fail(409, exc, code='connection_file_unreadable')
         except bridge_connect.SetupNotFound as exc:
             fail(409, exc, code=exc.reason_code)
+        except ValueError as exc:
+            fail(422, exc)
         return dict(created, profiles=connection.public_profiles())
 
     @app.post('/api/connection/connect')
     def connection_connect(body: ConnectBody):
-        """Explicit click: start the SSH tunnel of a configured profile (as `virtuoso-bridge start` does) and
-        report the line to load in the CIW. A running tunnel is left untouched; nothing is ever stopped or
-        restarted. Followed by the CHEAP check (no Virtuoso contact) so the indicator shows the new state."""
+        """Explicit click: start the SSH tunnel of a configured Virtuoso profile (as `virtuoso-bridge start` does; for
+        Virtuoso on this machine it sets the local bridge up instead) and report the line to load in the CIW. A
+        running tunnel is left untouched; nothing is ever stopped or restarted. Followed by the CHEAP check (no
+        Virtuoso contact) so the indicator shows the new state. An ngspice connection has nothing to start."""
         try:
-            connection.resolve_profile_id(body.profile_id)
+            settings = connection.resolve_profile_id(body.profile_id)
         except KeyError:
             fail(404, 'Unknown connection profile', code='profile_not_configured')
+        if connection.family_of(connection.profile_kind(settings)) == 'ngspice':
+            fail(409, bridge_connect.NEXT_STEPS['nothing_to_connect'], code='nothing_to_connect')
         result = connector.connect(body.profile_id)
         return dict(connect=result, status=bridge_connect.describe(monitor.check(body.profile_id, scope='cheap', trigger='user')))
 
@@ -572,19 +677,26 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             config = parse_config(body['config'])
             runtime, blocked = load_runtime(config)
             if runtime is not None:
-                from ..compile import compile_task
+                from ..compile import CompileError, compile_task
                 from ..engine import learner_experiment
                 from .. import modes
                 config = runs.with_circuit_content(config, runtime)
                 task_hash = schema.task_definition_hash(config)
-                compiled = compile_task(config, runtime.base_graph)
-                contract = modes.current_contract(learner_experiment(config, runtime, task_hash),
-                                                  modes.model_config_from(config.run.network),
-                                                  modes.sac_config_from(config.run.advanced), compiled.spec_schema)
-                meta_ = ckpt.read_metadata(description['path'])
-                mode = config.run.mode if config.run.mode != 'scratch' else 'fine_tune'
-                result['compatibility'] = ckpt.check_compatibility(meta_, mode=mode, task_definition_hash=task_hash,
-                                                                   contract=contract)
+                try:
+                    compiled = compile_task(config, runtime.base_graph)
+                except CompileError as exc:
+                    # The configuration ON THE PAGE is not complete yet. That is no fault of the saved model: its
+                    # facts are still returned, and the page says in plain words what is missing (it used to be a
+                    # 500 "CompileError: mp1_w: bounds are required" that hid the model as well).
+                    result['compatibility_unchecked'] = compatibility_unchecked(exc)
+                else:
+                    contract = modes.current_contract(learner_experiment(config, runtime, task_hash),
+                                                      modes.model_config_from(config.run.network),
+                                                      modes.sac_config_from(config.run.advanced), compiled.spec_schema)
+                    meta_ = ckpt.read_metadata(description['path'])
+                    mode = config.run.mode if config.run.mode != 'scratch' else 'fine_tune'
+                    result['compatibility'] = ckpt.check_compatibility(meta_, mode=mode, task_definition_hash=task_hash,
+                                                                       contract=contract)
                 result['suggestion'] = runs.suggest_mode(config, run_dir)
         return result
 
@@ -617,6 +729,20 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         except FileNotFoundError as exc:
             fail(404, exc)
         except ValueError as exc:
+            fail(409, exc)
+
+    @app.post('/api/runs/model/graph-view')
+    def model_graph_view(body: GraphViewBody):
+        """The data of the circuit graph view: the chosen save point replayed on a state its own run ARCHIVED -
+        the circuit, the attention on every connection, the size the policy proposes per group. One forward pass on
+        the CPU; nothing is simulated and nothing is written. The picture is drawn in the browser only."""
+        from .. import graph_view
+        run_dir = run_path(body.run_dir)
+        try:
+            return graph_view.graph_view(run_dir, body.checkpoint_id, evaluation=body.evaluation)
+        except FileNotFoundError as exc:
+            fail(404, exc)
+        except ValueError as exc:                  # GraphViewUnavailable included: said in plain words
             fail(409, exc)
 
     def _start(config, body, *, baseline_only=False):
@@ -724,7 +850,9 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             fail(403, exc)
         if not target.is_file():
             fail(404, 'No such file')
-        return FileResponse(target, filename=target.name)
+        size, chunks = file_snapshot(target)             # a live run's logs grow while they are downloaded
+        return StreamingResponse(chunks, media_type=mimetypes.guess_type(target.name)[0] or 'application/octet-stream',
+                                 headers={'Content-Length': str(size), **attachment(target.name)})
 
     @app.post('/api/runs/export-csv')
     def export_csv(body: ExportBody):
@@ -753,6 +881,22 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         run_dir = run_path(body.get('run_dir'))
         experiment = RunLayout(run_dir).experiment_dir
         return dict(experiment_dir=str(experiment), files=aggregates.export_aggregates(experiment))
+
+    @app.get('/api/aggregates/download')
+    def download_aggregates(run_dir: str):
+        """The research CSVs of this run's experiment as one zip: they lie above the run directory, where the per-file
+        download cannot reach. Only what the exporter writes (<table>.csv + <table>.meta.json), as it is on disk now."""
+        experiment = RunLayout(run_path(run_dir)).experiment_dir
+        members = [experiment / 'aggregates' / f'{table}{suffix}' for table in aggregates.COLUMNS for suffix in ('.csv', '.meta.json')]
+        members = [m for m in members if m.is_file() and not m.is_symlink()]
+        if not members:
+            fail(404, 'No research CSVs have been exported for this experiment yet')
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+            for item in members:
+                archive.write(item, item.name)
+        buffer.seek(0)
+        return StreamingResponse(buffer, media_type='application/zip', headers=attachment(f'{experiment.name}__aggregates.zip'))
 
     # ------------------------------------------------------------------ agent assistance
     @app.get('/api/agent/diagnostics')
@@ -812,7 +956,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     def check_suggestions(request, proposal):
         """Every suggested setting is tried on a COPY of the configuration - schema, then static validation with the loaded
         circuit - so the user sees which rows are legal before applying one. Nothing is applied here."""
-        if request.kind != 'settings_review':
+        if request.kind not in ('settings_review', 'run_review'):
             return
         runtime, _ = load_runtime(parse_config(request.config))
 
@@ -875,8 +1019,15 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             review = dict(task=agent_review.task_digest(raw, summary), settings=agent_review.settings_data(raw),
                           publication_presets=agent_review.publication_presets(), run_readiness=agent_review.readiness_digest(ready))
             summary = None
+        results = None
+        if body.kind == 'run_review':
+            if not body.run_dir:
+                raise AgentError('invalid_request', 'A run_review needs a run: choose one with "Runs..." first')
+            # The agent reads no file: the backend condenses the run's own records. `run_path` keeps it inside the allowed roots.
+            results = agent_run_digest.load(run_path(body.run_dir))
+            review = dict(settings=agent_review.settings_data(config.model_dump(mode='json')))      # so a suggestion names a real setting
         request = AgentRequest(kind=body.kind, user_prompt=body.prompt, config=config.model_dump(mode='json'),
-                               circuit_summary=summary, selection=body.selection, readiness=ready, review=review,
+                               circuit_summary=summary, selection=body.selection, readiness=ready, review=review, results=results,
                                web=bool(body.web), web_domains=agent_review.domains(runs.load_settings().get('agent_web_domains')))
         if body.request_id:
             request.request_id = body.request_id

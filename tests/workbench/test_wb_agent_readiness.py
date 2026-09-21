@@ -58,6 +58,9 @@ def test_empty_tables_are_the_agents_to_fix_and_everything_else_is_the_users(tmp
     assert items['validation']['who'] == 'you' and 'fine_tune needs a model' in items['validation']['detail']
     assert items['output']['status'] == 'done' and 'created when the run starts' in items['output']['detail']
     assert items['start']['status'] == 'missing'
+    assert items['parameters']['action'].startswith('Press "Load starter configuration"')            # a registered task brings its own rows
+    typed = readiness.build(dict(config, circuit=dict(source='netlist')), task=task(), validation=dict(blocks_run=True, issues=found, facts={}))
+    assert by_id(typed)['parameters']['action'].startswith('Fill in')                                  # an imported netlist has no starter
 
 
 def test_an_inactive_or_soft_target_does_not_define_feasibility(tmp_path):
@@ -261,6 +264,7 @@ def test_a_real_profile_accepts_only_its_own_variables_and_the_checklist_says_so
     assert not differs['ready'] and by_id(differs)['parameters']['status'] == 'missing'
     assert 'refused the moment it starts' in by_id(differs)['parameters']['detail'] and differs['changeable_rows']['parameters'] == '*'
     assert differs['required_parameter_rows'] == fixed
+    assert by_id(differs)['parameters']['action'].startswith('Press "Load starter configuration"')      # free and exact: before any agent request
     same = readiness.build(real, profile=dict(rows=fixed, matches=True, error=None), **kw)
     assert same['ready'] and by_id(same)['parameters']['status'] == 'done' and same['changeable_rows']['parameters'] == []
     stuck = readiness.build(real, profile=dict(rows=fixed, matches=None, error='CompileError: no such device'), **kw)

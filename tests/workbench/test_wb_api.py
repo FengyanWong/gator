@@ -14,7 +14,9 @@ from fastapi.testclient import TestClient
 
 from gator_workbench import bridge_read, tasks
 from gator_workbench.api import create_app
+from gator_workbench.api.app import attachment, file_snapshot
 from gator_workbench.connection import ConnectionMonitor, LAYERS
+from gator_workbench.storage.tables import TABLES
 from helpers import make_config
 
 REPO = Path(__file__).resolve().parents[2]
@@ -180,7 +182,11 @@ def test_start_pause_continue_stop_and_data_access(client, tmp_path):
     assert [e['event'] for e in events if e['event'] in ('control', 'resumed')] == ['control', 'resumed']
     exported = client.post('/api/runs/export-csv', json=dict(run_dir=run_dir, table='metrics')).json()
     assert exported['relative'].startswith('exports/metrics__seq')
+    csv_file = client.get('/api/runs/download', params=dict(run_dir=run_dir, path=exported['relative']))   # what the button then saves
+    assert csv_file.headers['content-disposition'] == f'attachment; filename="{Path(exported["path"]).name}"'
+    assert csv_file.text.splitlines()[0] == ','.join(c.name for c in TABLES['metrics']['columns'])
     package = client.post('/api/runs/export-package', json=dict(run_dir=run_dir))
+    assert package.headers['content-disposition'] == f'attachment; filename="{Path(run_dir).name}__data.zip"'   # named after its run
     members = zipfile.ZipFile(io.BytesIO(package.content)).namelist()
     assert 'run_summary.json' in members and any(m.endswith('.parquet') for m in members)
     assert not any(m.startswith(('work/', 'waveforms/', 'checkpoints/')) or m.lower().endswith(('.png', '.pdf', '.svg', '.html'))
@@ -192,6 +198,50 @@ def test_start_pause_continue_stop_and_data_access(client, tmp_path):
     model = client.post('/api/runs/model', json=dict(run_dir=run_dir, config=raw)).json()
     assert model['description']['restoration_capability'] == 'full_state' and model['suggestion']['mode'] == 'resume'
     assert model['description']['path'].startswith(run_dir) and model['description']['counters']['evaluations_committed'] == done + 6
+
+
+def fabricated_run(tmp_path):
+    """A run directory as far as the download routes care: inside an allowed root, with a manifest."""
+    run = tmp_path / 'exp__0123456789ab' / 'runs' / 'task' / 'scratch__seed0__abcdef012345'
+    (run / 'logs').mkdir(parents=True)
+    (run / 'run_manifest.json').write_text(json.dumps(dict(run_id='abcdef012345', mock=True)))
+    return run
+
+
+def test_a_download_is_the_file_as_it_was_when_the_download_started(client, tmp_path):
+    """The Logs tab downloads the log of a run that is still writing it."""
+    run = fabricated_run(tmp_path)
+    log, params = run / 'logs' / 'events.jsonl', dict(run_dir=str(run), path='logs/events.jsonl')
+    complete = b''.join(json.dumps(dict(event='e', n=n)).encode() + b'\n' for n in range(3))
+    log.write_bytes(complete + b'{"event":"torn' + b'x' * 100_000)       # a last line that is still being written
+    size, chunks = file_snapshot(log)
+    with log.open('ab') as stream:                                        # ...and the run logs on during the transfer
+        stream.write(b'"}\n{"event":"later"}\n')
+    assert size == len(complete) and b''.join(chunks) == complete         # neither the torn line nor the later ones
+    log.write_bytes(complete + b'{"event":"torn')
+    sent = client.get('/api/runs/download', params=params)
+    assert sent.content == complete and sent.headers['content-length'] == str(len(complete))
+    assert sent.headers['content-disposition'] == 'attachment; filename="events.jsonl"'
+    log.write_bytes(b'{"event":"torn')                                    # no complete line yet: an empty file, not an error
+    assert client.get('/api/runs/download', params=params).content == b''
+    (run / 'notes.txt').write_bytes(b'no newline at the end')              # only a JSONL is cut back to whole lines
+    assert client.get('/api/runs/download', params=dict(params, path='notes.txt')).content == b'no newline at the end'
+    assert client.get('/api/runs/download', params=dict(params, path='logs/errors.jsonl')).status_code == 404   # nothing logged
+    assert attachment('résumé.csv') == {'Content-Disposition': "attachment; filename*=utf-8''r%C3%A9sum%C3%A9.csv"}
+
+
+def test_research_csvs_are_downloadable_as_one_zip(client, tmp_path):
+    """They lie in <experiment>/aggregates, above the run directory, where the per-file download cannot reach."""
+    params = dict(run_dir=str(fabricated_run(tmp_path)))
+    nothing = client.get('/api/aggregates/download', params=params)
+    assert nothing.status_code == 404 and 'exported' in nothing.json()['detail']['message']
+    written = client.post('/api/aggregates/export', json=params).json()
+    (Path(written['experiment_dir']) / 'aggregates' / 'notes.txt').write_text('not an export')
+    package = client.get('/api/aggregates/download', params=params)
+    assert package.headers['content-disposition'] == 'attachment; filename="exp__0123456789ab__aggregates.zip"'
+    members = zipfile.ZipFile(io.BytesIO(package.content)).namelist()
+    assert sorted(members) == sorted(f'{table}{suffix}' for table in written['files'] for suffix in ('.csv', '.meta.json'))
+    assert len(members) == 12 and client.get('/api/aggregates/download', params=dict(run_dir='/etc')).status_code == 403
 
 
 def test_single_baseline_simulation_is_a_costed_preflight_record(client, tmp_path):

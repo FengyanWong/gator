@@ -1,152 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, copy, Json } from '../api';
+import { api, Json } from '../api';
 
-const STATE_LABEL: Record<string, string> = {
-  ok: 'OK', failed: 'FAILED', not_ready: 'NOT READY', not_applicable: 'n/a', not_checked: 'not checked', busy: 'BUSY', unknown: 'UNKNOWN',
-};
+/** The connection block lives in Connection.tsx: one button in this column that opens the connection window. */
 
-/** A fixed clock time instead of a running "N s ago": nothing re-renders this panel on a timer, so an age would freeze. */
-const testedAt = (iso: string) => {
-  const at = new Date(iso);
-  return at.toDateString() === new Date().toDateString() ? at.toLocaleTimeString() : at.toLocaleString();
-};
-
-/** Section 2.1 plus the explicit connect flow: 1 Connect SSH -> 2 load the command in the CIW -> 3 Test connection.
- *  A TEST only observes and never starts anything. The tunnel is started by the "Connect SSH" click alone - never on
- *  page load or on a timer - and nothing here ever stops or restarts a tunnel, the daemon or Virtuoso.
- *  The panel itself checks nothing on its own either: it reads the backend's last result once and probes only on a
- *  button press, so a shown result is the one of the last press (with its clock time) until the next press. */
-export function ConnectionPanel({ profileId, setProfileId }: { profileId: string | null; setProfileId: (id: string | null) => void }) {
-  const [profiles, setProfiles] = useState<Json>(null);
-  const [setup, setSetup] = useState<Json>(null);
-  const [status, setStatus] = useState<Json>(null);
-  const [connected, setConnected] = useState<Json>(null);
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
-
-  const loadProfiles = () => api.connectionProfiles().then(p => {
-    setProfiles(p); if (!profileId && p.active) setProfileId(p.active);
-    if (p.profiles.length === 0) api.connectionSetup().then(setSetup).catch(e => setError(e.message));   // locates files; reads none
-  }).catch(e => setError(e.message));
-  useEffect(() => { loadProfiles(); }, []);
-  useEffect(() => {
-    setConnected(null);
-    if (!profileId) { setStatus(null); return; }
-    // Profile change / page load: show the last result the backend remembers. This READS the cache and probes nothing.
-    // A check runs only on a button press below (user request 2026-09-20): no automatic check, no timer.
-    let live = true;
-    api.connectionStatus(profileId).then(s => { if (live) setStatus(s); }).catch(e => { if (live) setError(e.message); });
-    return () => { live = false; };
-  }, [profileId]);
-
-  const run = async (name: string, action: () => Promise<void>) => {
-    setBusy(name); setError(null);
-    try { await action(); } catch (e: any) { setError(e.message); } finally { setBusy(null); }
-  };
-  const createProfile = () => run('profile', async () => { const made = await api.connectionCreateProfile('lab'); setProfiles(made.profiles); setProfileId(made.profile_id); });
-  const connect = () => run('connect', async () => { const answer = await api.connectionConnect(profileId!); setConnected(answer.connect); setStatus(answer.status); });
-  const check = (scope: string) => run(scope, async () => { setStatus(await api.connectionCheck(profileId!, scope)); });
-  const copyText = (key: string, text: string) => { copy(text); setCopied(key); setTimeout(() => setCopied(c => (c === key ? null : c)), 1500); };
-
-  const overall = status?.overall ?? 'unknown';
-  const summary = status?.summary;
-  const ciw = connected?.details?.ciw ?? status?.ciw ?? null;
-  const tunnelUp = status?.layers?.some((l: Json) => l.layer === 'tunnel' && (l.state === 'ok' || l.state === 'not_applicable'));
-  return (
-    <section className="panel">
-      <h3>Virtuoso bridge connection</h3>
-      {profiles && profiles.profiles.length === 0 ? (
-        <div>
-          <p className="hint">No connection profile is configured yet ({profiles.connection_file}). Netlist import, manual editing,
-            JSON import/export, data export and mock runs work without it.</p>
-          {setup && <ul className="steps-list">
-            <li className={setup.env_file_exists ? 'ok' : 'error'}>{setup.env_file_exists ? 'found' : 'missing'}: bridge env file {setup.env_file}</li>
-            <li className={setup.bridge_importable || setup.bridge_site_packages ? 'ok' : 'error'}>
-              {setup.bridge_importable ? 'virtuoso-bridge is importable by the backend' : setup.bridge_site_packages ? `found: bridge package in ${setup.bridge_site_packages}` : 'missing: virtuoso-bridge package'}</li>
-            {setup.problems.map((p: Json) => <li key={p.reason_code} className="hint">{p.message}</li>)}
-          </ul>}
-          <button disabled={!setup?.can_create || !!busy} onClick={createProfile}
-            title="Writes the connection file from the bridge setup found on this machine. The target host stays in the bridge env file; the browser sends only the profile name.">
-            {busy === 'profile' ? 'Creating...' : 'Create profile "lab" from this bridge setup'}</button>
-        </div>
-      ) : (
-        <label>Profile
-          <select value={profileId ?? ''} onChange={e => setProfileId(e.target.value || null)}>
-            <option value="">(none)</option>
-            {profiles?.profiles.map((p: Json) => <option key={p.profile_id} value={p.profile_id}>{p.profile_id}</option>)}
-          </select>
-        </label>
-      )}
-      <div className="row">
-        <span className={`badge state-${overall}`} title="Overall state of the last test">{STATE_LABEL[overall] ?? overall}</span>
-        <span className="hint">{status?.checked_utc ? `tested at ${testedAt(status.checked_utc)}${status.stale ? ' - too old to trust, shown as unknown' : ''}` : 'never tested'}</span>
-      </div>
-
-      <div className="step">
-        <div className="step-head"><span className="step-no">1</span> Connect to the target over SSH</div>
-        <div className="row">
-          <button disabled={!profileId || !!busy} onClick={connect}
-            title="Starts the SSH tunnel of this profile, exactly like `virtuoso-bridge start`. A tunnel that is already running is left untouched. Nothing is ever stopped or restarted.">
-            {busy === 'connect' ? 'Connecting... (can take a minute)' : tunnelUp ? 'Connect SSH (already up)' : 'Connect SSH'}</button>
-        </div>
-        {connected && <p className={connected.ok ? 'ok' : 'error'}>
-          {connected.ok ? (connected.action === 'already_running' ? 'SSH tunnel was already running - left untouched.' : `SSH tunnel started (${connected.duration_seconds} s).`)
-            : `Connect failed: ${connected.reason_code}${connected.diagnostic ? ` - ${connected.diagnostic}` : ''}`}
-          {connected.details?.next_step && <span className="hint"> Next step: {connected.details.next_step}</span>}</p>}
-      </div>
-
-      <div className="step">
-        <div className="step-head"><span className="step-no">2</span> Load the bridge in the Virtuoso CIW</div>
-        {ciw ? (
-          <div>
-            <p className="hint">Paste this line into the CIW input line of your running Virtuoso, press Enter, then test below.</p>
-            <div className="command"><code>{ciw.load}</code><button onClick={() => copyText('load', ciw.load)}>{copied === 'load' ? 'Copied' : 'Copy'}</button></div>
-            <details><summary className="hint">CIW says "already running", or other trouble</summary>
-              <p className="hint">Replace a running daemon (two lines):</p>
-              <div className="command"><code>{ciw.replace_running_daemon.join('\n')}</code>
-                <button onClick={() => copyText('replace', ciw.replace_running_daemon.join('\n'))}>{copied === 'replace' ? 'Copied' : 'Copy'}</button></div>
-              <ul className="steps-list">{ciw.notes.map((n: string) => <li key={n} className="hint">{n}</li>)}</ul>
-            </details>
-          </div>
-        ) : <p className="hint">The command appears here once the SSH tunnel is up (step 1): the bridge reports the setup file it placed on the Virtuoso host.</p>}
-      </div>
-
-      <div className="step">
-        <div className="step-head"><span className="step-no">3</span> Test the connection</div>
-        <div className="row">
-          <button disabled={!profileId || !!busy} onClick={() => check('interactive')} title="Read-only and zero-cost: one trivial SKILL round trip. No simulation, no budget, no data rows. It never starts anything.">
-            {busy === 'interactive' ? 'Testing...' : 'Test connection'}</button>
-          <button disabled={!profileId || !!busy} onClick={() => check('full')} title="Adds Spectre and a license SNAPSHOT (can be slow)">{busy === 'full' ? 'Testing...' : '+ Spectre / license'}</button>
-          <button onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Details'}</button>
-        </div>
-        {summary && <div className={`status-line level-${summary.level}`}>
-          <strong>{summary.headline}</strong>
-          {summary.next_step && <div className="hint">Next step: {summary.next_step}</div>}
-        </div>}
-      </div>
-      {error && <p className="error">{error}</p>}
-      {open && status && (
-        <table className="grid small">
-          <thead><tr><th>Layer</th><th>State</th><th>Reason</th></tr></thead>
-          <tbody>
-            {status.layers.map((l: Json) => (
-              <tr key={l.layer} title={l.diagnostic ?? ''}>
-                <td>{l.layer}</td><td><span className={`badge state-${l.state}`}>{STATE_LABEL[l.state] ?? l.state}</span></td>
-                <td>{l.reason_code ?? ''}{l.diagnostic && <div className="hint">{l.diagnostic}</div>}
-                  {l.details?.next_step && <div className="hint">Next step: {l.details.next_step}</div>}
-                  {l.details?.note && <div className="hint">{l.details.note}</div>}</td>
-              </tr>))}
-          </tbody>
-          <tfoot><tr><td colSpan={3} className="hint">Last test took {status.duration_seconds ?? '-'} s. A test observes and never
-            starts, restarts or stops the tunnel, the daemon or Virtuoso. It is not the costed baseline simulation.
-            {status.run_active && ` A run is active; last successful bridge interaction: ${status.last_successful_bridge_interaction_utc ?? 'none yet'}.`}</td></tr></tfoot>
-        </table>
-      )}
-    </section>
-  );
-}
+/** A gate refusal in the words of this column. A connection of the wrong KIND (ngspice asked for a Virtuoso cell) is not
+ *  a link that is down: the backend's own sentence says what to choose instead. */
+const gateText = (gate: Json) => gate.blocking?.includes('connection_kind') ? (gate.next_steps?.[0] ?? 'This kind of connection cannot do that.')
+  : `Virtuoso cannot be reached (${[...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') || gate.status}). Bring the link up in the Connection window (the "Connection" button above), then try again.`;
 
 function Tree({ node, path = '' }: { node: Json; path?: string }) {
   const keys = Object.keys(node);
@@ -175,12 +35,19 @@ const EXAMPLE_NETLIST = { netlist_path: 'tests/fixtures/synthetic/opamp.scs', pa
 const DRAFT_PROMPT = 'Read this circuit and say in two or three sentences what it is and how it works. Then propose: which device sizes to vary, '
   + 'which of them must move together (matched or identical devices), a sensible range for each, and targets with the measurements they need.';
 
+/** The three editors, by their configuration keys: Parameters, Specs, Probes. */
+const ROW_SECTIONS = ['parameters', 'targets', 'measurements'];
+const sameRows = (config: Json, starter: Json) => ROW_SECTIONS.every(s => JSON.stringify(config[s] ?? []) === JSON.stringify(starter[s] ?? []));
+const noRows = (config: Json) => ROW_SECTIONS.every(s => !(config[s] ?? []).length);
+
 export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, meta, onAgent }:
-  { config: Json; setConfig: (f: (c: Json) => Json) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null; meta: Json;
+  { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null; meta: Json;
     onAgent: (kind: string, selection: Json[], prompt?: string) => void }) {
   const [tasks, setTasks] = useState<Json[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [native, setNative] = useState<Json>(null);
+  const [nativeOpen, setNativeOpen] = useState(false);                    // closed until asked for; the choice then lasts across cells and Refresh
+  const [hierarchyOpen, setHierarchyOpen] = useState(false);              // the whole Hierarchy block is one closed line; same rule
   const [libraries, setLibraries] = useState<string[] | null>(null);      // null = not listed (yet)
   const [cells, setCells] = useState<Json>(null);                         // { library, technology_library, cells: [{ name, views, has_schematic }] }
   const [listing, setListing] = useState<string | null>(null);            // what is being fetched from Virtuoso right now
@@ -233,9 +100,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   const browsing = ref.source === 'virtuoso' && !!profileId;
   const nativeProblem = (step: string, e: any) => {
     const gate = e.detail?.gate, outdated = e.status === 404 || e.status === 405;
-    const layers = gate ? [...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') : '';
     setNativeError({ step, outdated, text: outdated ? 'This backend is older than the page and cannot do this yet: restart it (gator_workbench.cli serve).'
-      : gate ? `Virtuoso cannot be reached (${layers || gate.status}). Bring the link up in the connection panel above, then try again.` : e.message });
+      : gate ? gateText(gate) : e.message });
   };
   const nativeStep = (step: string, call: () => Promise<Json>, done: (answer: Json) => void) => {
     let live = true;
@@ -281,7 +147,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     setCreating(true); setNativeError(null);
     try {
       const made = await api.createProfile(config, profileName || suggestedName, recipe, recipe === 'ring_oscillator' ? parseFrequency(frequency) : null);
-      setCreated(made);
+      setCreated(made); setDeleted(null);
       api.tasks().then(t => setTasks(t.tasks)).catch(() => undefined);
       setConfig(c => ({ ...c, parameters: made.parameters, circuit: { ...c.circuit, source: 'registered_task', task_id: made.task_key, circuit_class: made.circuit_class, pdk_id: made.pdk_id } }));
     } catch (e: any) { setNativeError({ step: 'profile', text: e.message }); }
@@ -299,9 +165,9 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     setProfileBusy(what); setProfileMessage(null);
     try { await action(); }
     catch (e: any) {
-      const gate = e.detail?.gate, layers = gate ? [...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') : '';
+      const gate = e.detail?.gate;
       setProfileMessage({ level: 'error', text: e.status === 404 || e.status === 405 ? 'This backend is older than the page and cannot do this yet: restart it (gator_workbench.cli serve).'
-        : gate ? `Virtuoso cannot be reached (${layers || gate.status}). Bring the link up in the connection panel above, then try again.` : e.message });
+        : gate ? gateText(gate) : e.message });
     } finally { setProfileBusy(null); }
   };
   const checkProfile = () => profileAction('check', async () => { setPreflight(await api.profilePreflight(generatedName!, profileId!)); });
@@ -310,6 +176,22 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     setProfileMessage({ level: 'ok', text: `Baseline recorded from run ${recorded.run_id ?? recorded.run_dir}. Every later run compares its first evaluation with it.` });
     await load(ref);
   });
+  // Delete profile: the way to start over (another circuit type, other sizes to vary - a profile is never edited). Asked
+  // once more, because the task leaves the list. The backend keeps the files aside and refuses while a run of the task
+  // is working. The form then goes back to the cell the profile was made from, where Create profile is offered again.
+  const [deleted, setDeleted] = useState<Json>(null);
+  const deleteProfile = () => {
+    if (!window.confirm(`Delete the profile real:${generatedName}?\n\nIt leaves the Registered task list, and its cell can get a new profile. Runs already made `
+      + 'with it keep their data, but a paused one can no longer be resumed. A copy of the profile\'s files is kept on the backend machine.'
+      + (circuit?.baseline_recorded ? '\n\nIts recorded baseline goes with it: a new profile needs a new real baseline simulation.' : ''))) return;
+    profileAction('delete', async () => {
+      const gone = await api.deleteProfile(generatedName!);
+      setDeleted(gone); setCreated(null);
+      api.tasks().then(t => setTasks(t.tasks)).catch(() => undefined);
+      setConfig(c => ({ ...c, circuit: { ...c.circuit, source: 'virtuoso', task_id: null, library: gone.library, cell: gone.cell, view: 'schematic', testbench_cell: gone.testbench_cell ?? null } }));
+    });
+  };
+  const deletedHere = deleted && deleted.library === ref.library && deleted.cell === ref.cell ? deleted : null;
   const [importing, setImporting] = useState(false);
   const importCell = async () => {
     setImporting(true); setNativeError(null);
@@ -318,10 +200,64 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     finally { setImporting(false); }
   };
 
-  const useStarter = async () => {
-    try { const starter = await api.starter(ref.task_id); setConfig(c => ({ ...c, ...starter, run: { ...c.run, ...starter.run }, output: c.output, research: c.research })); }
-    catch (e: any) { setError(e.message); }
+  // Choosing a task brings THAT task's rows (user report 2026-09-21: real:gpdk045_ota5 still showed the MOCK fixture's
+  // "score" as its only spec, and "synthetic-fixture" as its PDK). The labels follow at once. The rows of the three editors
+  // are exchanged only while they are nobody's work - empty, or still exactly what the task before had brought; rows that
+  // were edited stay, and the button offers the exchange. A project name nobody typed - the untouched default, or what some
+  // task's starter gives (mock-opamp ...) - follows too, so a real run is not filed under mock_*; a typed name stays, on
+  // the button as well. The exchange is not a history step of its own: one Undo takes back the task choice and everything
+  // it brought.
+  const [taskRows, setTaskRows] = useState<Json>(null);      // what the last task choice did to the editors: { task, state, ... }
+  const following = useRef(0);                               // only the newest choice may answer
+  const starterNamed = (p: Json) => (p.name === 'gator-project' && p.task_name === 'task')
+    || tasks.some(t => t.starter_project?.name === p.name && t.starter_project?.task_name === p.task_name);
+  const starterProblem = (e: any, taskId: string) => (e.status === 404 && taskId.startsWith('real:')
+    ? 'This backend is older than the page and has no starting rows for a real task yet: restart it (gator_workbench.cli serve).' : e.message);
+  const chooseTask = async (taskId: string, more: Json = {}) => {
+    const before = config, mine = ++following.current;
+    const listed = tasks.find(t => t.task_key === taskId);
+    patch({ ...more, task_id: taskId, ...(listed?.circuit_class ? { circuit_class: listed.circuit_class } : {}), ...(listed?.pdk_id ? { pdk_id: listed.pdk_id } : {}) });
+    setTaskRows({ task: taskId, state: 'reading' });
+    const [previous, starter] = await Promise.all([
+      before.circuit.task_id ? api.starter(before.circuit.task_id).catch(() => null) : null,
+      api.starter(taskId).catch((e: any) => ({ problem: starterProblem(e, taskId) }))]);
+    if (mine !== following.current) return;
+    if (starter.problem) { setTaskRows({ task: taskId, state: 'unavailable', text: starter.problem }); return; }
+    const untouched = noRows(before) || (!!previous && sameRows(before, previous));
+    setConfig(c => (c.circuit.task_id !== taskId ? c : {
+      ...c, project: starterNamed(c.project) ? { ...c.project, ...starter.project } : c.project,
+      ...(untouched ? { parameters: starter.parameters, targets: starter.targets, measurements: starter.measurements } : {}) }), false);
+    setTaskRows({ task: taskId, state: untouched ? 'brought' : 'kept', starter, from: before.circuit.task_id });
   };
+  const useStarter = async () => {
+    const taskId = ref.task_id;
+    following.current++;
+    try {
+      const starter = await api.starter(taskId);
+      setConfig(c => ({ ...c, ...starter, project: starterNamed(c.project) ? { ...c.project, ...starter.project } : c.project,
+        run: { ...c.run, ...starter.run }, output: c.output, research: c.research }));
+      setTaskRows({ task: taskId, state: 'brought', starter });
+    } catch (e: any) { setError(starterProblem(e, taskId ?? '')); }
+  };
+  // A cell that already has a registered task - the profile made from it, or one of the verified built-in circuits -
+  // gets no second profile: the note names the task. One short button, because it is about THIS cell (not a list of
+  // tasks); it does what choosing the task under Source: Registered task does.
+  const builtIn = circuit?.profile_task_generated === false;
+  const taskNote = circuit?.profile_task && ref.source === 'virtuoso' ? (
+    <div className="note">
+      <p><b>This cell already has a registered task:</b> <code>{circuit.profile_task}</code>{builtIn ? ' (a verified built-in circuit)' : ''}{' '}
+        <button onClick={() => chooseTask(circuit.profile_task, { source: 'registered_task' })} title="Source: Registered task, with this task chosen.">Open</button></p>
+      <details className="more"><summary>What this means</summary>
+        <p>The workbench can already optimize this cell - through that task, under Source: Registered task. A cell has one task, so no
+          second profile is created for it here.{builtIn ? '' : ' To start over with other sizes or another circuit type, open the task and press Delete profile.'}</p></details>
+    </div>) : null;
+  // What was read straight from Virtuoso. It is a line of the Hierarchy block; while no circuit is loaded (browse only)
+  // there is no such block and it stands alone at the end of the panel.
+  const nativeSchematic = native && (
+    <details open={nativeOpen} onToggle={e => setNativeOpen(e.currentTarget.open)}><summary>Native schematic {native.library}/{native.cell} ({native.instance_count} instances, as read)</summary>
+      <p className="warn">Requires confirmation: {native.requires_confirmation.join('; ')}</p>
+      <table className="grid small"><tbody>{native.instances.map((i: Json) => <tr key={i.instance_path}><td>{i.instance_path}</td><td>{i.master.library}/{i.master.cell}</td>
+        <td>{Object.entries(i.parameters).map(([k, v]: [string, any]) => `${k}=${v.raw}`).join('  ')}</td></tr>)}</tbody></table></details>);
   return (
     <section className="panel">
       <h3>Project</h3>
@@ -337,11 +273,18 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       </label>
       {ref.source === 'registered_task' && (<>
         <label>Task
-          <select value={ref.task_id ?? ''} onChange={e => patch({ task_id: e.target.value })}>
+          <select value={ref.task_id ?? ''} onChange={e => chooseTask(e.target.value)}>
             {tasks.map(t => <option key={t.task_key} value={t.task_key}>{t.task_key}{t.kind === 'mock' ? '  [MOCK]' : t.available ? '' : '  [blocked]'}</option>)}
           </select>
         </label>
-        {ref.task_id?.startsWith('synthetic:') && <button onClick={useStarter} title="Fills the three editors from the fixture's declared groups. Everything stays editable.">Load starter configuration</button>}
+        {ref.task_id && <button onClick={useStarter} title="Replaces the rows of Parameters, Specs and Probes with this task's own. A MOCK fixture: its declared groups and the toy score. A real circuit: the parameters its profile fixes and its targets of record. Everything stays editable, and Undo takes it back.">Load starter configuration</button>}
+        {taskRows?.task === ref.task_id && (
+          taskRows.state === 'reading' ? <p className="hint task-rows">Reading this task's rows...</p>
+          : taskRows.state === 'unavailable' ? <p className="error task-rows">{taskRows.text}</p>
+          : taskRows.state === 'kept' ? <p className="warn task-rows">Parameters, Specs and Probes still hold the rows you edited{taskRows.from ? <> for <code>{taskRows.from}</code></> : null}.
+              <b> Load starter configuration</b> replaces them with this task's.</p>
+          : sameRows(config, taskRows.starter) && <p className="hint task-rows">Parameters, Specs and Probes now show this task's rows
+              {taskRows.starter.targets.length ? '' : ' - it has no targets of record, so Specs is yours to fill (its results are ready in Probes)'}. Undo brings the previous ones back.</p>)}
       </>)}
       {ref.source === 'netlist' && (<>
         <label title="Backend-side path inside an allowed input root. Not a browser upload folder.">Netlist path
@@ -352,9 +295,10 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           <button disabled={!netlistReady || loading} onClick={() => loadNetlist()} title="Reads and parses the two files on the backend machine. Nothing is simulated.">{loading ? 'Loading...' : 'Load netlist'}</button>
           <button disabled={loading} onClick={() => loadNetlist(example)} title="Fills in the project's small op-amp fixture and its mapping, and loads it.">Try the example</button>
         </div>
-        {!netlistReady ? (
-          <div className="hint">
-            <p>Two files are needed. Both are read on the computer that runs the workbench - nothing is uploaded from the browser:</p>
+        {!netlistReady ? (<>
+          <p className="hint">Two files are needed: fill in both paths, then press <b>Load netlist</b>.</p>
+          <details className="more hint"><summary>Which two files, and where they may be</summary>
+            <p>Both are read on the computer that runs the workbench - nothing is uploaded from the browser:</p>
             <ul className="steps-list">
               <li><b>Netlist path</b> - the Spectre netlist (.scs).</li>
               <li><b>Device mapping (JSON)</b> - says, for each device type in the netlist, which pin is which and what its parameters mean.
@@ -362,12 +306,12 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
             </ul>
             <p>Both must be inside {(meta?.allowed_input_roots ?? []).map((r: string) => <code key={r}>{r} </code>)}
               (another folder: start the backend with <code>--allow-input-root DIR</code>). A Windows path such as <code>D:\gator\my.scs</code> is
-              converted for you. Fill in both, then press <b>Load netlist</b>.</p>
-          </div>
-        ) : !circuit && !error && !loading && <p className="hint">Not loaded yet - press <b>Load netlist</b> (or Enter).</p>}
+              converted for you.</p>
+          </details>
+        </>) : !circuit && !error && !loading && <p className="hint">Not loaded yet - press <b>Load netlist</b> (or Enter).</p>}
       </>)}
       {ref.source === 'virtuoso' && (<>
-        {!profileId && <p className="hint">Choose a connection profile in the panel above: the libraries are read from that Virtuoso.</p>}
+        {!profileId && <p className="hint">Press "Connection" above and choose a Virtuoso connection: the libraries are read from that Virtuoso.</p>}
         <label>Library
           <select value={ref.library ?? ''} disabled={!libraries} onChange={e => patch({ library: e.target.value || null, cell: null, view: null, testbench_cell: null })}>
             <option value="">{listing === 'libraries' ? 'Reading the libraries...' : libraries ? `(choose one of ${libraries.length})` : '(not listed)'}</option>
@@ -387,8 +331,9 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
               })}
             </select>
           </label>
-          {chosenCell && <p className="hint">View: <b>schematic</b> - the only view the reader opens, so there is nothing to choose.
-            {chosenCell.views.length > 1 && ` This cell also has: ${chosenCell.views.filter((v: string) => v !== 'schematic').join(', ')}.`}</p>}
+          {chosenCell && <details className="more hint"><summary>View: <b>schematic</b></summary>
+            <p>The only view the reader opens, so there is nothing to choose.
+              {chosenCell.views.length > 1 && ` This cell also has: ${chosenCell.views.filter((v: string) => v !== 'schematic').join(', ')}.`}</p></details>}
           <label title="Optional. The cell that holds the test setup around the design, if it is a separate cell.">Testbench cell
             <select value={ref.testbench_cell ?? ''} disabled={!cells} onChange={e => patch({ testbench_cell: e.target.value || null })}>
               <option value="">(none)</option>
@@ -411,25 +356,35 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
         <label title="Which process design kit (technology) the circuit is built in, e.g. gpdk045. Written into the run records so a result can be traced to its technology. PDK files are never copied.">PDK id
           <input value={ref.pdk_id ?? ''} onChange={e => patch({ pdk_id: e.target.value || 'unspecified' })} /></label>
       </div>
-      <p className="hint">Circuit class and PDK id are labels saved with every run. They do not change the simulation or the optimization;
-        "unspecified" is fine for a single run.{ref.source === 'virtuoso' && ' The PDK id is filled in from the library\'s technology library.'}</p>
+      <details className="more hint"><summary>What circuit class and PDK id are for</summary>
+        <p>Circuit class and PDK id are labels saved with every run. They do not change the simulation or the optimization;
+          "unspecified" is fine for a single run.{ref.source === 'virtuoso' && ' The PDK id is filled in from the library\'s technology library.'}</p></details>
       {error && <p className="error">{error}</p>}
-      {circuit && !circuit.loaded && ref.source === 'virtuoso' && (
-        // Not a fault and nothing to fix in this form: said in plain words, with the way to the circuits that do work.
+      {deletedHere && ref.source === 'virtuoso' && !circuit?.profile_task && (<>
+        <p className="ok">Profile <code>{deletedHere.deleted}</code> deleted. This cell can get a new one.</p>
+        <details className="more hint"><summary>Where its files went</summary>
+          <p>Nothing was erased. They are kept on the backend machine in <code>{deletedHere.kept_copy}</code>.</p></details>
+      </>)}
+      {circuit && ref.source === 'virtuoso' && taskNote}
+      {circuit && !circuit.loaded && ref.source === 'virtuoso' && !taskNote && (
+        // Not a fault and nothing to fix in this form: said in plain words. No list of the circuits that already have a
+        // profile here (user, 2026-09-22): whoever wants one of those picks it under Source: Registered task.
         <div className="note">
           <p><b>Browse only: you can look at this cell here, but the workbench cannot optimize it yet.</b></p>
-          <p>To optimize a circuit in the real Virtuoso, the workbench needs a <i>circuit profile</i> - a checked description of three things:</p>
-          <ul className="steps-list">
-            <li>which device sizes it may change, within which limits and in which steps (Virtuoso rounds what is typed, so this is tested for each circuit);</li>
-            <li>which testbench simulates the circuit, and under which conditions;</li>
-            <li>how the results - gain, frequency, current ... - are read from the simulation.</li>
-          </ul>
-          <p>{tasks.filter(t => t.kind === 'real').length} circuits have one today. Click one to work with it:</p>
-          <div className="row">{tasks.filter(t => t.kind === 'real').map(t =>
-            <button key={t.task_key} title={t.available ? t.description : t.blocker} onClick={() => patch({ source: 'registered_task', task_id: t.task_key })}>{t.task_key}</button>)}</div>
-          <p><b>To start a profile for this cell</b>, read it into the workbench: Virtuoso exports its netlist
-            {ref.testbench_cell ? <> (through the testbench <code>{ref.testbench_cell}</code>)</> : <> (choose its <b>Testbench cell</b> above first, if it has one)</>} and
-            the device sizes are read. Read-only, no simulation, some seconds. The agent can then tell you what the circuit is and suggest what to vary.</p>
+          <details className="more"><summary>Why: it has no <i>circuit profile</i> yet</summary>
+            <p>To optimize a circuit in the real Virtuoso, the workbench needs a circuit profile - a checked description of three things:</p>
+            <ul className="steps-list">
+              <li>which device sizes it may change, within which limits and in which steps (Virtuoso rounds what is typed, so this is tested for each circuit);</li>
+              <li>which testbench simulates the circuit, and under which conditions;</li>
+              <li>how the results - gain, frequency, current ... - are read from the simulation.</li>
+            </ul>
+            <p>Circuits that already have one are under Source: Registered task.</p>
+          </details>
+          <p><b>To start a profile for this cell</b>, read it into the workbench
+            {ref.testbench_cell ? <> through the testbench <code>{ref.testbench_cell}</code>.</> : <> (choose its <b>Testbench cell</b> above first, if it has one).</>}</p>
+          <details className="more"><summary>What reading the cell does</summary>
+            <p>Virtuoso exports the netlist and the device sizes are read. Read-only, no simulation, some seconds. The agent can then tell you
+              what the circuit is and suggest what to vary.</p></details>
           <div className="row"><button className="primary" disabled={!profileId || !chosenCell?.has_schematic || importing || !!listing} onClick={importCell}>
             {importing ? 'Reading the cell from Virtuoso...' : 'Read this cell into the workbench'}</button></div>
           <details><summary>Technical details</summary><p>{circuit.blocker}</p>
@@ -441,45 +396,47 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
         {circuit.mock && <p className="mock">MOCK evaluation backend: {circuit.evaluation_backend}</p>}
         {circuit.mock === false && !circuit.native_draft && <p className="real">REAL evaluation backend: {circuit.evaluation_backend ?? 'Virtuoso + Spectre'}. Every
           evaluation is a costed simulation; Start asks you to authorize the budget first.</p>}
-        {circuit.native_draft && (
+        {circuit.native_draft && !taskNote && (
           <div className="note">
-            <p><b>Read from Virtuoso. Not optimizable yet: it has no circuit profile.</b> The workbench now holds its own copy of this cell,
-              so you can look at it, fill the three editors and let the agent help. Start stays disabled.</p>
-            <p>Next: ask the agent what this circuit is and which sizes, ranges and targets make sense. Its answer is a proposal in the
-              Agent tab; once you approve it there, the three editors are filled from it.</p>
+            <p><b>Read from Virtuoso. Not optimizable yet: it has no circuit profile.</b></p>
+            <details className="more"><summary>What you can do with it now</summary>
+              <p>The workbench now holds its own copy of this cell, so you can look at it, fill the three editors and let the agent help.
+                Start stays disabled.</p>
+              <p>Next: ask the agent what this circuit is and which sizes, ranges and targets make sense. Its answer is a proposal in the
+                Agent tab; once you approve it there, the three editors are filled from it.</p>
+            </details>
             <div className="row">
               <button className="primary" onClick={() => onAgent('draft_config', [], DRAFT_PROMPT)} title="Opens the Agent tab with the request written out. Nothing is sent until you press Enter in its message box.">Ask the agent for suggestions</button>
               <button disabled={!profileId || importing || !!listing} onClick={importCell} title="After a change in Virtuoso, or to export through another testbench cell. Read-only.">{importing ? 'Reading...' : 'Read the cell again'}</button>
             </div>
-            {circuit.profile_task ? (
-              <p><b>This cell already has the profile <code>{circuit.profile_task}</code>.</b>{' '}
-                <button onClick={() => patch({ source: 'registered_task', task_id: circuit.profile_task })}>Open {circuit.profile_task}</button></p>
-            ) : (<>
-              <p><b>Then create the profile.</b> It takes what may vary from the parameter editor (only transistor widths can be changed
-                in the real Virtuoso; ranges are snapped onto its 5 nm width grid) and registers the cell as a task. No simulation runs:
-                the first real one is the new task's <b>Single baseline simulation</b>, which asks for your budget.</p>
-              <div className="row">
-                <label title="Lowercase letters, digits and _. It becomes the task real:<name>.">Profile name
-                  <input value={profileName} placeholder={suggestedName} onChange={e => setProfileName(e.target.value)} /></label>
-                <label title="Decides which analysis runs and how results become numbers.">Circuit type
-                  <select value={recipe} onChange={e => setRecipe(e.target.value)}>
-                    {(circuit.profile_recipes ?? []).map((r: Json) => <option key={r.id} value={r.id}>{r.label}</option>)}</select></label>
-              </div>
-              {recipe === 'ring_oscillator' && <label title="Rough is enough: it only sizes the transient simulation (60 periods long, measured after 20).">Expected oscillation frequency
-                <input value={frequency} placeholder="e.g. 1.2G" onChange={e => setFrequency(e.target.value)} /></label>}
-              <div className="row"><button className="primary" onClick={createProfile}
-                disabled={creating || !(profileName || suggestedName) || (recipe === 'ring_oscillator' && !(parseFrequency(frequency) > 0))}>
-                {creating ? 'Creating...' : 'Create profile'}</button></div>
-            </>)}
+            <p><b>Then create the profile.</b></p>
+            <details className="more"><summary>What Create profile does</summary>
+              <p>It takes what may vary from the parameter editor (only transistor widths can be changed in the real Virtuoso; ranges are
+                snapped onto its 5 nm width grid) and registers the cell as a task. No simulation runs: the first real one is the new
+                task's <b>Single baseline simulation</b>, which asks for your budget.</p></details>
+            <div className="row">
+              <label title="Lowercase letters, digits and _. It becomes the task real:<name>.">Profile name
+                <input value={profileName} placeholder={suggestedName} onChange={e => setProfileName(e.target.value)} /></label>
+              <label title="Decides which analysis runs and how results become numbers.">Circuit type
+                <select value={recipe} onChange={e => setRecipe(e.target.value)}>
+                  {(circuit.profile_recipes ?? []).map((r: Json) => <option key={r.id} value={r.id}>{r.label}</option>)}</select></label>
+            </div>
+            {recipe === 'ring_oscillator' && <label title="Rough is enough: it only sizes the transient simulation (60 periods long, measured after 20).">Expected oscillation frequency
+              <input value={frequency} placeholder="e.g. 1.2G" onChange={e => setFrequency(e.target.value)} /></label>}
+            <div className="row"><button className="primary" onClick={createProfile}
+              disabled={creating || !(profileName || suggestedName) || (recipe === 'ring_oscillator' && !(parseFrequency(frequency) > 0))}>
+              {creating ? 'Creating...' : 'Create profile'}</button></div>
           </div>)}
-        {created && circuit.generated_profile && <div className="note"><p><b>Profile {created.task_key} created.</b> The parameter editor now shows the
+        {created && circuit.generated_profile && created.task_key === ref.task_id && <div className="note"><p><b>Profile {created.task_key} created.</b> The parameter editor now shows the
           ranges exactly as registered. Nothing has been simulated yet.</p></div>}
         {circuit.generated_profile && !circuit.baseline_recorded && <p className="warn">Generated profile without a real baseline: begin with
           <b> Single baseline simulation</b> (one real Spectre run, asks for your budget) before an optimization run.</p>}
         {generatedName && (
           <div className="note">
-            <p><b>Before the first costed run:</b> check this profile against the cell in Virtuoso. It does everything a real evaluation does
-              before Spectre starts - connect, export the netlist, compare it with the record, write the simulation deck - and simulates nothing.</p>
+            <p><b>Before the first costed run:</b> check this profile against the cell in Virtuoso.</p>
+            <details className="more"><summary>What the check does</summary>
+              <p>It does everything a real evaluation does before Spectre starts - connect, export the netlist, compare it with the record,
+                write the simulation deck - and simulates nothing.</p></details>
             <div className="row">
               <button disabled={!profileId || !!profileBusy} onClick={checkProfile} title="Read-only and zero-cost. Needs the link up and no ADE/Maestro window open on the design.">
                 {profileBusy === 'check' ? 'Checking...' : 'Check against Virtuoso (no simulation)'}</button>
@@ -492,22 +449,26 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
               <li className={preflight.ok ? 'ok' : 'error'}><b>{preflight.ok ? 'The profile matches the live cell. Nothing was simulated.' : 'Not ready for a real run: see the failed step.'}</b></li>
             </ul>}
             {profileMessage && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
+            <div className="row start-over"><span className="hint">A profile is never edited. To change what may vary or the circuit type, start over:</span>
+              <button disabled={!!profileBusy} onClick={deleteProfile} title="Asks once more. The task leaves the Registered task list; its files are kept aside, and runs already made keep their data.">
+                {profileBusy === 'delete' ? 'Deleting...' : 'Delete profile'}</button></div>
           </div>)}
-        {circuit.notes?.map((n: string) => <p key={n} className="hint">{n}</p>)}
-        <h3>Hierarchy ({circuit.summary.device_count} instances)</h3>
-        <Tree node={circuit.hierarchy} />
+        {circuit.notes?.length > 0 && <details className="more hint"><summary>{circuit.notes.length === 1 ? '1 note' : `${circuit.notes.length} notes`} on this circuit</summary>
+          {circuit.notes.map((n: string) => <p key={n}>{n}</p>)}</details>}
+        <details className="section" open={hierarchyOpen} onToggle={e => setHierarchyOpen(e.currentTarget.open)}>
+          <summary><h3>Hierarchy ({circuit.summary.device_count} instances)</h3></summary>
+          <Tree node={circuit.hierarchy} />
+          <details><summary>Instances and parameters</summary>
+            <table className="grid small"><thead><tr><th>Instance</th><th>Kind</th><th>Parameters (canonical units)</th></tr></thead>
+              <tbody>{circuit.summary.devices.map((d: Json) => <tr key={d.instance_path}><td>{d.instance_path}</td><td>{d.kind}</td>
+                <td>{Object.entries(d.parameters).map(([k, v]: [string, any]) => `${k}=${v.value ?? v.expression ?? '?'}`).join('  ')}</td></tr>)}</tbody></table>
+          </details>
+          {nativeSchematic}
+        </details>
         {circuit.summary.unknown_devices.length > 0 && <p className="warn">Unmapped devices need confirmation: {circuit.summary.unknown_devices.join(', ')}</p>}
         {circuit.diagnostics.length > 0 && <details><summary>{circuit.diagnostics.length} diagnostics</summary><ul>{circuit.diagnostics.map((d: Json, i: number) => <li key={i} className={d.severity}>{d.code}: {d.message}</li>)}</ul></details>}
-        <details><summary>Instances and parameters</summary>
-          <table className="grid small"><thead><tr><th>Instance</th><th>Kind</th><th>Parameters (canonical units)</th></tr></thead>
-            <tbody>{circuit.summary.devices.map((d: Json) => <tr key={d.instance_path}><td>{d.instance_path}</td><td>{d.kind}</td>
-              <td>{Object.entries(d.parameters).map(([k, v]: [string, any]) => `${k}=${v.value ?? v.expression ?? '?'}`).join('  ')}</td></tr>)}</tbody></table>
-        </details>
       </>)}
-      {native && <details open><summary>Native schematic {native.library}/{native.cell} ({native.instance_count} instances, as read)</summary>
-        <p className="warn">Requires confirmation: {native.requires_confirmation.join('; ')}</p>
-        <table className="grid small"><tbody>{native.instances.map((i: Json) => <tr key={i.instance_path}><td>{i.instance_path}</td><td>{i.master.library}/{i.master.cell}</td>
-          <td>{Object.entries(i.parameters).map(([k, v]: [string, any]) => `${k}=${v.raw}`).join('  ')}</td></tr>)}</tbody></table></details>}
+      {!circuit?.loaded && nativeSchematic}
     </section>
   );
 }

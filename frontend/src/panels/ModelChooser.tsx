@@ -4,6 +4,8 @@ import { api, copy, Json } from '../api';
 // Which saved RL model a resume / fine_tune / frozen run loads. Plain words on purpose: a "run" is one training
 // session (one press of Start), the models it saved live in its own folder, and every save is a "save point".
 // The list comes from /api/runs/models (small metadata files only); the chosen model is verified by /api/runs/model.
+// Every card names the model's network: in these Modes the run panel shows no block for a NEW network, the run uses the
+// network of the chosen model (Right.tsx, `loads`).
 const KIND: Record<string, string> = { periodic: 'automatic save', manual: 'saved with "Save now"', pause: 'saved at pause', stop: 'saved at stop',
   final: 'saved at the end of the run', safety: 'safety save' };
 const when = (utc?: string | null) => { const d = utc ? new Date(utc) : null;
@@ -12,9 +14,9 @@ const netLabel = (n: Json) => n?.encoder_type ? `${n.encoder_type} ${n.hidden_di
 const pointLabel = (p: Json) => `${p.evaluations ?? '?'} evaluations - ${when(p.created_utc)} - ${KIND[p.kind] ?? p.kind}${p.restoration_capability !== 'full_state' ? ' - weights only' : ''}`;
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-export function ModelChooser({ mode, source, onChoose, runs, outputRoot, network }: {
+export function ModelChooser({ mode, source, onChoose, runs, outputRoot, lookOnly }: {
   mode: string; source: Json; onChoose: (run_dir: string | null, checkpoint_id: string) => void;
-  runs: Json[]; outputRoot?: string | null; network: Json }) {
+  runs: Json[]; outputRoot?: string | null; lookOnly?: boolean }) {
   const [models, setModels] = useState<Json[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -43,16 +45,17 @@ export function ModelChooser({ mode, source, onChoose, runs, outputRoot, network
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
   const text = (m: Json) => [m.task_name, m.task_id, m.circuit_task, m.circuit_class, netLabel(m.network), m.mode, m.state, m.mock ? 'mock' : 'real', `seed${m.seed}`].join(' ').toLowerCase();
   const shown = (models ?? []).filter(m => m.run_dir === source.run_dir || words.every(w => text(m).includes(w)));
-  const otherNetwork = (m: Json) => !!m.network?.encoder_type && ['encoder_type', 'hidden_dim', 'heads', 'layers'].some(f => network?.[f] !== undefined && m.network[f] !== network[f]);
   const chosen: string = source.checkpoint_id ?? 'latest';
   const newest: Json = current?.checkpoints.find((p: Json) => p.is_latest) ?? current?.checkpoints[current.checkpoints.length - 1];
   const best: Json = current?.checkpoints.find((p: Json) => p.is_best_policy);
   const known = chosen === 'latest' || (chosen === 'best_policy' ? !!best : !!current?.checkpoints.some((p: Json) => p.checkpoint_id === chosen));
 
   return (<>
-    <h3>RL model to load</h3>
-    <p className="hint">A saved model is the trained RL network that a run wrote to disk. A <b>run</b> is one training session (one press of Start);
-      it keeps its models in its own folder. Pick a run's model, then one of its save points.</p>
+    <h3>{lookOnly ? 'Saved models (look only)' : 'RL model to load'}</h3>
+    {lookOnly ? <p className="hint look-note"><b>Looking only: nothing here changes the run.</b> Mode stays scratch and no model is loaded. Pick a saved model to see its network structure and its circuit graph view.</p>
+      : <p className="hint">A saved model is the trained RL network that a run wrote to disk. A <b>run</b> is one training session (one press of Start);
+      it keeps its models in its own folder. Pick a run's model, then one of its save points.
+      <span className="model-net-note"> The run uses <b>that model's network</b>, shown on its card - no new network is set up here.</span></p>}
     <div className="row"><button onClick={load} disabled={loading}>Refresh list</button>
       <span className="hint model-count">{loading ? 'Reading the saved models...' : models ? `${plural(models.length, 'saved model')} under the output folder` : ''}</span></div>
     {error && <p className="error">The list of saved models could not be read: {error}</p>}
@@ -66,9 +69,8 @@ export function ModelChooser({ mode, source, onChoose, runs, outputRoot, network
         <button key={m.run_dir} role="radio" aria-checked={active} className={`model-card${active ? ' active' : ''}`} title={m.run_dir}
           onClick={() => { if (!active) onChoose(m.run_dir, 'latest'); }}>
           <span className="model-title"><b>{m.task_name ?? m.task_id}</b>{m.mock && <span className="badge model-tag mock-tag">MOCK</span>}
-            {otherNetwork(m) && <span className="badge model-tag" title="Trained with another network than the one set above. Its weights only load into its own network: after choosing it, use the button 'Use the checkpoint's network'.">other network</span>}
             {m.restoration_capability !== 'full_state' && <span className="badge model-tag" title="Saved without the replay snapshot: usable for fine_tune and frozen, but its run cannot be resumed.">weights only</span>}</span>
-          <span>{m.circuit_task ?? m.circuit_class ?? 'unknown circuit'} - {netLabel(m.network)}</span>
+          <span>{m.circuit_task ?? m.circuit_class ?? 'unknown circuit'} - <b className="model-net">{netLabel(m.network)}</b></span>
           <span>{m.trained_evaluations ?? '?'} evaluations of training - {plural(m.checkpoints.length, 'save point')}</span>
           <span className="hint">last saved {when(m.saved_utc)} - run {m.state ?? 'unknown'} ({m.mode}, seed {m.seed})</span>
         </button>); })}</div>}

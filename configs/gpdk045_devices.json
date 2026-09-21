@@ -1,0 +1,31 @@
+{
+  "mapping_version": "gpdk045-v6.0-devices-20260921",
+  "purpose": "Device models verified AFTER the four circuit mappings, for cells read from Virtuoso (gator_workbench.native_cells collects the `models` of every configs/gpdk045_*.json). Not a parser configuration of its own.",
+  "evidence": {
+    "g45cmim": [
+      "PDK model file, read on the simulator host 2026-09-21: models/spectre/gpdk045_mimcap.scs line 89 `inline subckt g45cmim (n1 n2 body)`, parameters `w l` (the third terminal is the substrate).",
+      "Control for the method, same read: gpdk045_mos.scs line 979 `inline subckt g45n1svt ( d g s b )` = the order already verified for g45n1svt.",
+      "Real Virtuoso netlist export of GPDK045_RINGOSC/ring_osc_3stage: `C3 (OUT VSS VSS) g45cmim w=4.49u l=4.49u m=2`, with the CDF readback of the same instance `terms: {PLUS: OUT, MINUS: VSS, B: VSS}` - the first terminal is PLUS."
+    ]
+  },
+  "models": {
+    "g45cmim": {
+      "kind": "capacitor",
+      "terminals": [
+        "PLUS",
+        "MINUS",
+        "B"
+      ],
+      "roles": [
+        "positive",
+        "negative",
+        "bulk"
+      ],
+      "parameters": {
+        "w": "w",
+        "l": "l",
+        "m": "m"
+      }
+    }
+  }
+}

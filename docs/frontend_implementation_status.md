@@ -6,7 +6,7 @@ code diff (`git status`, `git diff`) and the specification before continuing. Do
 redo completed modules from conversational memory. This is a development record, not a
 research output or analysis report.
 
-Last updated: 2026-09-20 (~21:25: section 7.7, per-encoder network settings from publications; ~21:35: section 7.8, Agent tab side window + browser check; ~21:50: section 7.9, connection panel; ~22:00: section 7.10, agent model / effort lists; ~22:00: section 7.11, validate 500 from a concurrent first import of torch_geometric; ~22:15: section 7.12, blocking-issues button in the header; ~22:40: section 7.13, netlist import form; ~22:30: section 7.14, detachable agent conversation; ~23:10: section 7.15, Virtuoso source dropdowns; 2026-09-21 early: section 7.16, start checklist + readiness request; 2026-09-21 ~01:15: section 7.17, read a Virtuoso cell into the workbench (profile creation, increment 1)).
+Last updated: 2026-09-20 (~21:25: section 7.7, per-encoder network settings from publications; ~21:35: section 7.8, Agent tab side window + browser check; ~21:50: section 7.9, connection panel; ~22:00: section 7.10, agent model / effort lists; ~22:00: section 7.11, validate 500 from a concurrent first import of torch_geometric; ~22:15: section 7.12, blocking-issues button in the header; ~22:40: section 7.13, netlist import form; ~22:30: section 7.14, detachable agent conversation; ~23:10: section 7.15, Virtuoso source dropdowns; 2026-09-21 early: section 7.16, start checklist + readiness request; 2026-09-21 ~01:15: section 7.17, read a Virtuoso cell into the workbench (profile creation, increment 1); ~03:30: section 7.19, Create profile -> registered real:<name> task (increment 2); ~04:40: section 7.21, no-simulation check of a generated profile + baseline reference).
 
 ## 1. Inspection facts (verified 2026-09-20, not assumed)
 
@@ -799,6 +799,79 @@ Open points for increment 2: `g45cmim` needs a verified mapping entry before a g
 net roles (supply / input / output) are not set for a draft; the three editors must be turned into the profile's
 rule file.
 
+### 7.19 Profile from a Virtuoso cell, increment 2 of 3: Create profile -> a registered `real:<name>` task (2026-09-21 ~03:30, same session as 7.17, user: "go on with stage 2")
+
+**RESTART THE BACKEND FIRST** (new Python modules, a new endpoint). Section 7.18 is left to the parallel
+"pause/resume controls" session, which announced it.
+
+* **`generic_profile.py` (new) - one file-driven profile class instead of one hand-written class per circuit.**
+  `GenericMosWidthProfile` subclasses the verified `Gpdk045OtaProfile` from OUTSIDE the protected package
+  (nothing under `src/analog_optimizer/` changed; the real-run code is duck-typed on the profile object) and
+  reads from `rules.json` what the four hand-written classes hard-code: the core instance, which MOS widths are
+  writable and inside which bounds, the transistor set, the instances that must never change. The checks repeat
+  `Gpdk045TwoStageProfile` line for line; group members keep their ratio; a group step must keep every member on the
+  5 nm grid (the verified 1 : 0.25 pair needs 20 nm). Limits, because they are the limits of what was verified: MOS
+  widths only (`set_gpdk_mos` is the adapter's single write path and forces fingers = m = 1, so a writable
+  transistor recorded otherwise is refused), the 5 nm grid, nominal condition only, GPDK045 only.
+* **Offline proof** - `tests/workbench/test_wb_generic_profile.py`: each of the four verified circuits is
+  regenerated as a rule file over its RECORDED artefacts, and both forms are asked the same questions. They agree
+  on every sampled assignment (corners and centre of the action space, off-grid, out of bounds, broken matching /
+  ratio, missing / extra key, NaN, bool), on ten tampered readbacks (fixed parameter, frozen width, stale finger
+  width, zero geometry, fingers, terminal net, master, missing / extra instance, fixed capacitor / resistor), on a
+  width transition with fresh vs. stale derived geometry, on the export check, on `graph_contract`, and the
+  generated form pickles (workers receive it pickled) and hashes (`profile_contract`). Rules the backend cannot
+  honour are refused.
+* **`recipes.py` (new)** - measurement recipes belong to a circuit TYPE. `opamp_ac` = the adapter's own deck and
+  `measurements.opamp.analyze` (needs the verified OTA testbench conventions). `ring_oscillator` is new, for a
+  free-running ring: the verified VCO recipe sweeps a control source such a cell does not have. It reuses the VCO's
+  verified waveform contract (`measurements.vco.oscillation_metrics`, fixed values) and mirrors its deck and result
+  handling: `dcOp`, `ic` on the stage nets, one conservative transient, metrics `osc_frequency_hz`,
+  `supply_power_w`, `supply_current_a`, swing, duty, period spread, window drift, startup. The window comes from a
+  ROUGH expected frequency (60 periods long, measured after 20, 100 points per period) so the contract still holds
+  between about 0.6x and 1.5x. One-off check on REAL data: on the waveform of the user's standalone ring-oscillator
+  run the measurement returns 1.209225e9 Hz, exactly the recorded value (that run is only 12 periods long, so the
+  contract had to be relaxed to 3 cycles for this check; a generated profile simulates 60).
+* **`configs/gpdk045_devices.json` (new) - the MIM capacitor `g45cmim` is a verified model now**, with its
+  evidence: the PDK model file on the simulator host (`gpdk045_mimcap.scs:89 inline subckt g45cmim (n1 n2 body)`;
+  control: `g45n1svt ( d g s b )` = the order already verified), plus the real export and readback of the same
+  instance. A CDF `simInfo` query was tried first and abandoned: it failed even for the transistors, and SKILL is
+  not written from memory here.
+* **`profiles.py` (new) - Create profile.** Input: the local copy of the cell (7.17) + the rows of the parameter
+  editor + circuit type (+ rough frequency). Output under `configs/local/workbench/profiles/<name>/`: `design.json`,
+  `mapping.json` (verified models, net roles, the parameter groups exactly as compiled from the rows),
+  `structure.scs`, `readback.cdf.json`, `rules.json`, `creation.json` (the receipt the adapter checks at connect),
+  `profile.json`. Refused in plain words: anything but transistor widths of the core cell, log scale, missing bounds,
+  a range that misses the present width, a step off the grid, multi-finger / m > 1, an unverified device, no
+  testbench, a second profile for the same cell, an unknown type, an old copy of the cell. The ring recipe reads the
+  supply (the one DC source), the ring order (gate -> drain chain, output first) and alternating start voltages off
+  the netlist - for the user's cell `ic OUT=0 XU1.N1=1 XU1.N2=0`, the line their standalone run used. The rows come
+  back ADJUSTED (bounds snapped inward onto the grid, step filled in, followers without clamps): a real run requires
+  `graph_contract(configured) == graph_contract(profile)`. The finished folder must pass the profile's constructor
+  (every check of the verified classes against the recorded files) or nothing is kept.
+* **Registration (`tasks.py`)**: generated profiles are listed as `real:<name>` (`generated`, `verified`), load
+  describe-only, execute only with the explicit authorization, use the cell's OWN library and the receipt of their
+  folder, and need only `env_file` + `model_file` of the connection profile. No real baseline yet ->
+  `reference_metrics=None` (the factory's comparison is optional); a recorded
+  `reference_measurements.json` (`origin: real`) is picked up. A changed row is refused at run time. `POST
+  /api/virtuoso/profile`; `circuit/load` answers `profile_task` / `profile_recipes`, so a cell with a profile is no
+  longer browse-only. Bug fixed on the way: the reader now records `include_positions=True` like the adapter's
+  `_read_snapshot` - without it instances have no `view` and no generated profile could pass `validate_readback`.
+* **Frontend**: the draft note gained name / circuit type / expected frequency ("1.2G") and **Create profile**; on
+  success the editor rows are replaced by the registered ones, the source switches to the new registered task, a
+  note says nothing was simulated, and a warning asks for "Single baseline simulation" first. A cell that already
+  has a profile shows "Open real:<name>".
+* Tests: `test_wb_generic_profile.py` (5), `test_wb_profiles.py` (14; fixture = the recorded REAL export and
+  readbacks of the user's ring oscillator, `tests/workbench/fixtures/ring_osc/`), `test_wb_native_cells.py`
+  adapted (an invented model name plays the unverified device). The environment factory of the REAL backend is
+  assembled from the generated profile offline. `virtuoso_source_check.mjs` covers refusal, creation, the opened
+  task, the replaced rows and "already has the profile". Verified REAL (read-only, zero-cost): the ring oscillator
+  was read again with the corrected reader (all models verified, `view` present), and the PDK model header was read.
+
+**NOT done, and not claimable: no generated profile has run a real simulation.** Increment 3 = the user's
+budget-authorized "Single baseline simulation" of their new task, then recording that result as the profile's
+reference. The user's real profile was deliberately NOT created here: its rows should be the ones they approve
+from the agent. To redo a profile, delete its folder under `configs/local/workbench/profiles/`.
+
 ### 7.20 Choosing which saved RL model to load (2026-09-21 morning, separate session, user: "can you choose which model to load?" / "what is a source run")
 
 **RESTART THE BACKEND FIRST** (one new read-only route). Until then the block reads "The list of saved models
@@ -855,3 +928,51 @@ read-only import). There is no browser upload of a model and none is planned: `t
 is only ever loaded from a trusted local output root. The `other network` tag compares encoder / hidden / heads /
 layers only; the compatibility report after selection remains the authority. No real (non-MOCK) model was loaded
 by any of this.
+
+### 7.21 Profile from a Virtuoso cell, increment 3a: everything up to the first costed run (2026-09-21 ~04:40, same session as 7.17 / 7.19, user: "go on")
+
+"go on" does not authorize real simulator budget (project rule), so this increment is what stage 3 needs EXCEPT the
+costed run itself. **RESTART THE BACKEND FIRST** (new module, two endpoints).
+
+* **`profile_preflight.py` (new) - "Check against Virtuoso (no simulation)".** Everything the first real evaluation
+  does before Spectre starts: the run adapter `connect()`s (creation receipt, existing tunnel, no ADE/Maestro
+  window, the live cell == the recorded sizes), `generate_netlist()` exports the testbench, compares topology and
+  every parameter with the record and writes the deck; then `close()`. Nothing is written to the cell (so nothing is
+  restored), no simulator starts, no budget. Short-lived process; it takes the project's session lock
+  (`artifacts/local/bridge-state/session.lock`), so it and a real run exclude each other; gate = the layer set of
+  `write_cellview` (1-5). A failure is reported as the step that failed, never raised. `POST
+  /api/virtuoso/profile/preflight {name, profile_id}`; results kept under `<profile>/preflight/<time>/`.
+  **Run for REAL (read-only, zero-cost, no run active)** on a throw-away profile of the user's ring oscillator in
+  a scratch settings folder: profile / connect / export / deck all passed in 1.5 s - the first time a GENERATED
+  profile went through the real run adapter against the live cell. The deck is complete (`include
+  .../gpdk045.scs section=tt`, the exported structure, `ic OUT=0 XU1.N1=1 XU1.N2=0`, `save VDD OUT XU1.N1 XU1.N2
+  V0:p`, `tranNom tran stop=5e-08 maxstep=8.33333e-12 errpreset=conservative`). Not covered by it: Spectre itself,
+  the license, the result files and the measurement on them.
+* **`profiles.record_reference` - the finished baseline becomes the reference.** Read from the run's OWN tables:
+  the raw backend metrics (`measurement_id` null) of the evaluation with phase `baseline`, only if it is real, came
+  from a simulation, and every metric of the recipe is present and valid; the run must be one of `real:<name>`.
+  Written to `<profile>/reference_measurements.json` (`origin: real`), after which `_generated_runtime` passes it
+  to `NativeEnvironmentFactory` like the references of the four verified profiles, and the task lists as
+  `verified`. Never replaced once recorded. `POST /api/virtuoso/profile/reference {name, run_dir?}` (without
+  `run_dir`: the newest run of the task under the output root). Tested against crafted table rows; **never run on
+  a real baseline, because none exists yet.**
+* **The agent is told what a real backend measures and writes** (`api/app.py::_request`, no change in `agents/`):
+  a draft's circuit data carries `results_by_circuit_type` and the limits (transistor widths only, single finger,
+  m = 1, 5 nm grid, linear range containing the present width, leaders / followers for matched devices); a
+  registered real task carries `results_provided`. Before this, the agent had to invent metric names and a profile
+  made from its proposal failed validation. `create_profile` also refuses a measurement whose `source_name` the
+  chosen circuit type does not produce, listing what it does.
+* `tasks.generated_bridge_config` is the one place that builds the bridge configuration of a generated profile
+  (runtime and preflight share it). `preload.MODULES` gained the four optimizer modules the new files import
+  lazily (the guard of 7.11 caught it).
+* Frontend: a generated task shows **Check against Virtuoso (no simulation)** with its four steps and the verdict,
+  and - until a baseline is recorded - **Record the baseline run as reference**. `virtuoso_source_check.mjs`: 48
+  checks pass (both buttons, the "run the baseline first" refusal, the recorded message).
+* Tests: `test_wb_profiles.py` now 18 (measurement sources, agent hints on a draft and on a registered task, the
+  check's gate / failed step / offline adapter refusal, the reference from a baseline and its four refusals).
+
+**Still open, and only the user can open it:** one budget-authorized **Single baseline simulation** of their own
+`real:<name>` task. Expected then: a transient of 60 expected periods, metrics `osc_frequency_hz` etc.; afterwards
+"Record the baseline run as reference". If the measurement contract refuses the waveform (no sustained full-swing
+oscillation in the window, or a frequency far from the expected one) the evaluation fails as a measurement error -
+by design, never a made-up number.

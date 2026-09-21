@@ -164,6 +164,11 @@ const backendPath = (text: string, posixBackend: boolean) => {
 };
 /** A dropdown must be able to show the configured value even when the list does not (yet) contain it. */
 const withCurrent = (names: string[], current?: string | null) => (current && !names.includes(current) ? [current, ...names] : names);
+/** "1.2G", "800M", "1.2e9" -> Hz. NaN when it is not a number. */
+const parseFrequency = (text: string) => {
+  const match = /^\s*([0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\s*([kMG]?)(?:Hz)?\s*$/.exec(text);
+  return match ? Number(match[1]) * ({ '': 1, k: 1e3, M: 1e6, G: 1e9 } as Record<string, number>)[match[2]] : NaN;
+};
 const EXAMPLE_NETLIST = { netlist_path: 'tests/fixtures/synthetic/opamp.scs', parser_config_path: 'configs/opamp.json' };
 
 /** What the Agent tab is asked once a cell was read from Virtuoso. Shown in the message box first: editable, never sent by itself. */
@@ -264,6 +269,47 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // Reading a cell INTO the workbench is an explicit press: Virtuoso exports the netlist of the testbench (or of the cell)
   // and the sizes are read back - read-only, zero-cost, some seconds. The backend keeps the copy; the circuit then loads
   // from it like any other, so the editors, the validation and the agent can work on it. It still cannot run.
+  // Create profile: the cell that was read + the rows of the three editors become the task real:<name>. Nothing is
+  // contacted; whatever the real backend cannot do comes back as a plain reason. The rows return snapped onto the width grid.
+  const [profileName, setProfileName] = useState('');
+  const [recipe, setRecipe] = useState('ring_oscillator');
+  const [frequency, setFrequency] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [created, setCreated] = useState<Json>(null);
+  const suggestedName = (ref.cell ?? '').toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^[^a-z]+/, '').slice(0, 40);
+  const createProfile = async () => {
+    setCreating(true); setNativeError(null);
+    try {
+      const made = await api.createProfile(config, profileName || suggestedName, recipe, recipe === 'ring_oscillator' ? parseFrequency(frequency) : null);
+      setCreated(made);
+      api.tasks().then(t => setTasks(t.tasks)).catch(() => undefined);
+      setConfig(c => ({ ...c, parameters: made.parameters, circuit: { ...c.circuit, source: 'registered_task', task_id: made.task_key, circuit_class: made.circuit_class, pdk_id: made.pdk_id } }));
+    } catch (e: any) { setNativeError({ step: 'profile', text: e.message }); }
+    finally { setCreating(false); }
+  };
+  // A generated profile, before its first costed run: check it against the live cell WITHOUT simulating (the run adapter
+  // connects, Virtuoso exports, the export is compared, the deck is written), and afterwards record the finished baseline
+  // as the profile's reference. Both are explicit presses; neither starts a simulation.
+  const [preflight, setPreflight] = useState<Json>(null);
+  const [profileBusy, setProfileBusy] = useState<string | null>(null);
+  const [profileMessage, setProfileMessage] = useState<Json>(null);
+  const generatedName = ref.source === 'registered_task' && circuit?.generated_profile ? String(ref.task_id ?? '').replace(/^real:/, '') : null;
+  useEffect(() => { setPreflight(null); setProfileMessage(null); }, [generatedName]);
+  const profileAction = async (what: string, action: () => Promise<void>) => {
+    setProfileBusy(what); setProfileMessage(null);
+    try { await action(); }
+    catch (e: any) {
+      const gate = e.detail?.gate, layers = gate ? [...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') : '';
+      setProfileMessage({ level: 'error', text: e.status === 404 || e.status === 405 ? 'This backend is older than the page and cannot do this yet: restart it (gator_workbench.cli serve).'
+        : gate ? `Virtuoso cannot be reached (${layers || gate.status}). Bring the link up in the connection panel above, then try again.` : e.message });
+    } finally { setProfileBusy(null); }
+  };
+  const checkProfile = () => profileAction('check', async () => { setPreflight(await api.profilePreflight(generatedName!, profileId!)); });
+  const recordReference = () => profileAction('reference', async () => {
+    const recorded = await api.profileReference(generatedName!);
+    setProfileMessage({ level: 'ok', text: `Baseline recorded from run ${recorded.run_id ?? recorded.run_dir}. Every later run compares its first evaluation with it.` });
+    await load(ref);
+  });
   const [importing, setImporting] = useState(false);
   const importCell = async () => {
     setImporting(true); setNativeError(null);
@@ -405,7 +451,47 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
               <button className="primary" onClick={() => onAgent('draft_config', [], DRAFT_PROMPT)} title="Opens the Agent tab with the request written out. Nothing is sent until you press Send there.">Ask the agent for suggestions</button>
               <button disabled={!profileId || importing || !!listing} onClick={importCell} title="After a change in Virtuoso, or to export through another testbench cell. Read-only.">{importing ? 'Reading...' : 'Read the cell again'}</button>
             </div>
-            <p className="hint">Creating the profile from the filled editors is the next step of this feature and is not built yet.</p>
+            {circuit.profile_task ? (
+              <p><b>This cell already has the profile <code>{circuit.profile_task}</code>.</b>{' '}
+                <button onClick={() => patch({ source: 'registered_task', task_id: circuit.profile_task })}>Open {circuit.profile_task}</button></p>
+            ) : (<>
+              <p><b>Then create the profile.</b> It takes what may vary from the parameter editor (only transistor widths can be changed
+                in the real Virtuoso; ranges are snapped onto its 5 nm width grid) and registers the cell as a task. No simulation runs:
+                the first real one is the new task's <b>Single baseline simulation</b>, which asks for your budget.</p>
+              <div className="row">
+                <label title="Lowercase letters, digits and _. It becomes the task real:<name>.">Profile name
+                  <input value={profileName} placeholder={suggestedName} onChange={e => setProfileName(e.target.value)} /></label>
+                <label title="Decides which analysis runs and how results become numbers.">Circuit type
+                  <select value={recipe} onChange={e => setRecipe(e.target.value)}>
+                    {(circuit.profile_recipes ?? []).map((r: Json) => <option key={r.id} value={r.id}>{r.label}</option>)}</select></label>
+              </div>
+              {recipe === 'ring_oscillator' && <label title="Rough is enough: it only sizes the transient simulation (60 periods long, measured after 20).">Expected oscillation frequency
+                <input value={frequency} placeholder="e.g. 1.2G" onChange={e => setFrequency(e.target.value)} /></label>}
+              <div className="row"><button className="primary" onClick={createProfile}
+                disabled={creating || !(profileName || suggestedName) || (recipe === 'ring_oscillator' && !(parseFrequency(frequency) > 0))}>
+                {creating ? 'Creating...' : 'Create profile'}</button></div>
+            </>)}
+          </div>)}
+        {created && circuit.generated_profile && <div className="note"><p><b>Profile {created.task_key} created.</b> The parameter editor now shows the
+          ranges exactly as registered. Nothing has been simulated yet.</p></div>}
+        {circuit.generated_profile && !circuit.baseline_recorded && <p className="warn">Generated profile without a real baseline: begin with
+          <b> Single baseline simulation</b> (one real Spectre run, asks for your budget) before an optimization run.</p>}
+        {generatedName && (
+          <div className="note">
+            <p><b>Before the first costed run:</b> check this profile against the cell in Virtuoso. It does everything a real evaluation does
+              before Spectre starts - connect, export the netlist, compare it with the record, write the simulation deck - and simulates nothing.</p>
+            <div className="row">
+              <button disabled={!profileId || !!profileBusy} onClick={checkProfile} title="Read-only and zero-cost. Needs the link up and no ADE/Maestro window open on the design.">
+                {profileBusy === 'check' ? 'Checking...' : 'Check against Virtuoso (no simulation)'}</button>
+              {!circuit.baseline_recorded && <button disabled={!!profileBusy} onClick={recordReference}
+                title="After a finished Single baseline simulation of this task: its result becomes the reference that every later run is compared with. Recorded once, never replaced.">
+                {profileBusy === 'reference' ? 'Recording...' : 'Record the baseline run as reference'}</button>}
+            </div>
+            {preflight && <ul className="steps-list">
+              {preflight.steps.map((s: Json) => <li key={s.step} className={s.ok ? 'ok' : 'error'}><b>{s.ok ? 'passed' : 'FAILED'}: {s.step}</b> - {s.detail}</li>)}
+              <li className={preflight.ok ? 'ok' : 'error'}><b>{preflight.ok ? 'The profile matches the live cell. Nothing was simulated.' : 'Not ready for a real run: see the failed step.'}</b></li>
+            </ul>}
+            {profileMessage && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
           </div>)}
         {circuit.notes?.map((n: string) => <p key={n} className="hint">{n}</p>)}
         <h3>Hierarchy ({circuit.summary.device_count} instances)</h3>

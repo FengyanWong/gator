@@ -14,7 +14,7 @@ from test_wb_api import probe
 
 REPO = Path(__file__).resolve().parents[2]
 EXPORT = (REPO / 'examples/circuits/gpdk045_ota5.scs').read_text()            # a recorded REAL Virtuoso export
-UNVERIFIED = EXPORT.rstrip('\n') + '\nC9 (VOUT 0 0) g45cmim w=4.49u l=4.49u m=2\n'      # + a device type nobody verified
+UNVERIFIED = EXPORT.rstrip('\n') + '\nC9 (VOUT 0 0) pdk_mystery_dev w=4.49u l=4.49u m=2\n'      # + a device type nobody verified
 
 
 def fake_reader(tmp_path, netlist=EXPORT, fail=False):
@@ -47,7 +47,7 @@ def test_the_mapping_of_a_draft_holds_only_models_this_project_verified():
     assert mapping['models']['g45n1svt']['terminals'] == ['D', 'G', 'S', 'B']       # from configs/gpdk045_*.json, not from memory
     assert mapping['net_roles'] == {'0': ['ground']} and mapping['parameter_groups'] == []   # nothing else is guessed
     mapping, unverified = native_cells.build_mapping(UNVERIFIED)
-    assert unverified == ['g45cmim'] and 'g45cmim' not in mapping['models']
+    assert unverified == ['pdk_mystery_dev'] and 'pdk_mystery_dev' not in mapping['models']
 
 
 def test_an_imported_cell_loads_from_its_local_copy_and_can_never_execute(tmp_path):
@@ -55,14 +55,14 @@ def test_an_imported_cell_loads_from_its_local_copy_and_can_never_execute(tmp_pa
         tasks.load_task(reference())
     meta = bridge_read.read(probe(tmp_path), 'lab', 'import_cell', library='GATOR_TESTS', cell='ota5_v1',
                             testbench='tb_ota5_ac_v1', command=fake_reader(tmp_path, UNVERIFIED))
-    assert meta['device_count'] == 11 and meta['unverified_models'] == ['g45cmim'] and meta['exported_cell'] == 'tb_ota5_ac_v1'
+    assert meta['device_count'] == 11 and meta['unverified_models'] == ['pdk_mystery_dev'] and meta['exported_cell'] == 'tb_ota5_ac_v1'
     assert not list(native_cells.store_root().glob('.incoming-*'))
     runtime = tasks.load_task(reference(pdk_id='unspecified'))                    # no bridge, no gate: the local copy
     assert runtime.task_key == 'virtuoso:GATOR_TESTS/ota5_v1' and not runtime.mock and not runtime.authorized
     assert runtime.circuit['native_draft'] and runtime.circuit['pdk_id'] == 'gpdk045' and runtime.provided_metrics == ()
     kinds = {device.id: device.kind for device in runtime.base_graph.devices}
     assert kinds['XU1/M1'] == 'nmos' and kinds['XU1/M3'] == 'pmos' and kinds['C9'] == 'unknown'
-    assert any('g45cmim' in note for note in runtime.notes)
+    assert any('pdk_mystery_dev' in note for note in runtime.notes)
     for attempt in (lambda: tasks.load_task(reference(), allow_real=True),          # a run start
                     lambda: runtime.env_factory_builder(None, tmp_path, None)):     # and the builder itself
         with pytest.raises(tasks.TaskBlocked, match='no circuit profile yet'):

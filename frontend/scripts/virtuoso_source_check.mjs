@@ -37,9 +37,17 @@ const schematic = (library, cell) => ({ source: 'virtuoso', library, cell, origi
   instances: ['M0', 'M1'].map(name => ({ instance_path: name, master: { library: 'gpdk045', cell: 'nmos1v', view: 'symbol' }, terminals: [], parameters: { w: { raw: '1u' } } })),
   requires_confirmation: ['FIXTURE'], note: 'FIXTURE' });
 const draft = (library, cell) => ({ loaded: true, task_key: `virtuoso:${library}/${cell}`, mock: false, native_draft: true, complete: true, diagnostics: [],
+  profile_task: created.has(`${library}/${cell}`) ? `real:${cell}` : null,
+  profile_recipes: [{ id: 'ring_oscillator', label: 'Ring oscillator (free-running)' }, { id: 'opamp_ac', label: 'Op-amp / OTA (AC gain)' }],
   circuit: { library, cell, native_draft: true }, hierarchy: { XU1: { M1: {}, M2: {} }, V0: {} }, analysis_context: null, evaluation_backend: null, max_concurrency: 1,
   summary: { device_count: 3, unknown_devices: [], devices: [{ instance_path: 'XU1/M1', kind: 'nmos', parameters: { w: { value: 4e-6 } } }] },
   notes: ['FIXTURE: read from Virtuoso (canned answer).'] });
+const created = new Set();                                                          // "library/cell" of profiles created in this check
+const ROWS = [{ variable_id: 'wn_fixture', instance_path: 'XU1/M1', parameter_name: 'w', unit: 'um', optimized: true, lower: 0.6, upper: 1.6, step: 0.005,
+  target_kind: 'instance_parameter', value_type: 'continuous', scale: 'linear', relation: 'ratio', ratio: 1, name: '', notes: '' }];
+const generated = task => ({ loaded: true, task_key: task, mock: false, native_draft: false, generated_profile: true, baseline_recorded: false, complete: true,
+  diagnostics: [], circuit: {}, hierarchy: { XU1: { M1: {} } }, analysis_context: null, evaluation_backend: 'FIXTURE', max_concurrency: 4,
+  summary: { device_count: 1, unknown_devices: [], devices: [] }, notes: ['FIXTURE: generated profile.'] });
 const gateBlocked = { message: 'The connection gate blocked reading the native design', gate: { allowed: false, status: 'blocked', blocking: ['tunnel'], uncertain: [] } };
 
 try {
@@ -52,15 +60,20 @@ try {
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
   let nextId = 0; const pending = new Map(); const calls = []; let mode = 'ok'; let inFlight = 0, overlap = false;
-  const imported = new Set(); let agentRequests = 0;
+  const imported = new Set(); let agentRequests = 0; let baselineExists = false;
   const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
   const fulfil = (requestId, status, obj) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
     responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
   const answer = async ({ requestId, request }) => {
     const pathname = new URL(request.url).pathname;
     if (pathname === '/api/agent/propose') { agentRequests++; return fulfil(requestId, 418, { detail: { message: 'FIXTURE: no agent request is expected' } }); }
+    if (pathname === '/api/tasks') {                                                 // the real list + the profiles created in this check
+      const real = await (await fetch(new URL('api/tasks', APP))).json();
+      return fulfil(requestId, 200, { ...real, tasks: [...real.tasks, ...[...created].map(key => ({ task_key: `real:${key.split('/')[1]}`, kind: 'real', available: true, generated: true }))] });
+    }
     if (pathname === '/api/circuit/load') {                                          // an imported cell loads from the backend's local copy
       const circuit = JSON.parse(request.postData ?? '{}').circuit ?? {};
+      if (circuit.source === 'registered_task' && [...created].some(key => circuit.task_id === `real:${key.split('/')[1]}`)) return fulfil(requestId, 200, generated(circuit.task_id));
       return circuit.source === 'virtuoso' && imported.has(`${circuit.library}/${circuit.cell}`)
         ? fulfil(requestId, 200, draft(circuit.library, circuit.cell)) : send('Fetch.continueRequest', { requestId });
     }
@@ -74,6 +87,18 @@ try {
     if (op === 'cells') return mode === 'outdated' ? fulfil(requestId, 404, { detail: 'Not Found' })
       : fulfil(requestId, 200, { library: body.library, truncated: false, ...(CELLS[body.library] ?? { technology_library: null, cells: [] }) });
     if (op === 'read') return fulfil(requestId, 200, schematic(body.library, body.cell));
+    if (op === 'profile/preflight') return fulfil(requestId, 200, { profile_preflight: true, name: body.name, ok: true, simulated: false, deck: '/fixture/ring_osc.scs',
+      steps: ['profile', 'connect', 'export', 'deck'].map(step => ({ step, ok: true, detail: `FIXTURE: ${step} passed` })) });
+    if (op === 'profile/reference') {
+      if (!baselineExists) return fulfil(requestId, 409, { detail: { message: 'No run of real:ota5_v1 was found under the output root. Run "Single baseline simulation" first.', code: 'no_baseline_run' } });
+      return fulfil(requestId, 200, { origin: 'real', run_id: 'fixture-run-1', metrics: { osc_frequency_hz: 1.2e9 } });
+    }
+    if (op === 'profile') {
+      if (body.name === 'refuse_me') return fulfil(requestId, 409, { detail: { message: 'FIXTURE: the real backend can only change transistor widths', code: 'profile_refused' } });
+      const circuit = body.config.circuit;
+      created.add(`${circuit.library}/${circuit.cell}`);
+      return fulfil(requestId, 200, { task_key: `real:${body.name}`, name: body.name, recipe: body.recipe, circuit_class: 'vco', pdk_id: 'gpdk045', parameters: ROWS });
+    }
     if (op === 'import') { imported.add(`${body.library}/${body.cell}`); return fulfil(requestId, 200, { library: body.library, cell: body.cell, testbench_cell: body.testbench, device_count: 3 }); }
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${op} is not expected` } });
   };
@@ -99,7 +124,7 @@ try {
   const choose = (label, v) => evaluate(`(() => { const s = ${FIELD(label)}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(v)});
     s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   const type = async (label, textToType) => { await evaluate(`(() => { const i = ${FIELD(label)}; i.focus(); i.select(); })()`); await send('Input.insertText', { text: textToType }); };
-  const ops = (from = 0) => calls.slice(from).map(c => [c.op, c.library, c.cell, c.testbench].filter(Boolean).join(' '));
+  const ops = (from = 0) => calls.slice(from).map(c => [c.op, c.library, c.cell, c.testbench, c.name, c.recipe, c.expected_frequency_hz].filter(Boolean).join(' '));
   const quiet = async (ms = 1500) => { let seen = -1; while (seen !== calls.length || inFlight) { seen = calls.length; await sleep(ms); } };
   const shot = async name => {
     const H3 = `[...${PANEL}.querySelectorAll('h3')].find(h => h.textContent.trim() === 'Circuit source')`;
@@ -112,7 +137,7 @@ try {
 
   await send('Page.enable'); await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Fetch.enable', { patterns: ['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose'].map(urlPattern => ({ urlPattern, requestStage: 'Request' })) });
+  await send('Fetch.enable', { patterns: ['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose', '*/api/tasks'].map(urlPattern => ({ urlPattern, requestStage: 'Request' })) });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   for (let i = 0; i < 60 && !(await evaluate(`[...document.querySelectorAll('.left .panel select')].some(s => s.value === 'lab' || (s.options.length > 1 && s.value))`)); i++) await sleep(100);
@@ -163,6 +188,38 @@ try {
   const box = await evaluate(`document.querySelector('footer textarea')?.value ?? ''`);
   check('"Ask the agent" opens the Agent tab with the request written out', box.includes('which device sizes to vary') && box.includes('what it is'), box.slice(0, 80));
   check('nothing was sent to the agent by itself', agentRequests === 0, `${agentRequests} request(s)`);
+
+  // ---- Create profile: refused in words, then registered; the cell stops being browse-only ------------------------------
+  check('"Create profile" waits for the expected frequency', await evaluate(`${BUTTON('Create profile')}.disabled`));
+  await type('Expected oscillation frequency', '1.2G'); await sleep(300);
+  await type('Profile name', 'refuse_me'); await sleep(300);
+  mark = calls.length;
+  await evaluate(`${BUTTON('Create profile')}.click()`); await quiet();
+  check('a refusal is shown in its own words and nothing changes', JSON.stringify(ops(mark)) === JSON.stringify(['profile refuse_me ring_oscillator 1200000000'])
+    && (await text()).includes('can only change transistor widths') && (await value('Source')) === 'virtuoso', ops(mark).join(' | '));
+  await evaluate(`(() => { const i = ${FIELD('Profile name')}; i.focus(); i.select(); })()`); await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 }); await sleep(300);
+  mark = calls.length;
+  await evaluate(`${BUTTON('Create profile')}.click()`); await quiet();
+  check('an empty name falls back to the cell name; the type and 1.2G = 1.2e9 Hz are sent', JSON.stringify(ops(mark)) === JSON.stringify(['profile ota5_v1 ring_oscillator 1200000000']), ops(mark).join(' | '));
+  check('the new task is opened as a registered task', (await value('Source')) === 'registered_task' && (await value('Task')) === 'real:ota5_v1', `${await value('Source')} / ${await value('Task')}`);
+  check('it says what happened and what comes first', (await text()).includes('Profile real:ota5_v1 created') && (await text()).includes('Single baseline simulation'));
+  check('the parameter editor shows the rows as registered', await evaluate(`document.querySelector('main').innerHTML.includes('wn_fixture')`));
+  await shot('virtuoso-2c-profile-created.png');
+  // ---- before the first costed run: the no-simulation check, and recording a finished baseline ---------------------------
+  mark = calls.length;
+  await evaluate(`${BUTTON('Check against Virtuoso (no simulation)')}.click()`); await quiet();
+  check('the check is one request for this profile and this connection', JSON.stringify(calls.slice(mark).map(c => [c.op, c.name, c.profile_id])) === JSON.stringify([['profile/preflight', 'ota5_v1', 'lab']]), JSON.stringify(calls.slice(mark)));
+  const shownCheck = await text();
+  check('its four steps and the verdict are shown', ['passed: profile', 'passed: connect', 'passed: export', 'passed: deck', 'The profile matches the live cell. Nothing was simulated.'].every(t => shownCheck.includes(t)));
+  await evaluate(`${BUTTON('Record the baseline run as reference')}.click()`); await quiet();
+  check('without a baseline run, recording says what to do first', (await text()).includes('Run "Single baseline simulation" first'));
+  baselineExists = true;
+  await evaluate(`${BUTTON('Record the baseline run as reference')}.click()`); await quiet();
+  check('with one, the baseline is recorded and said so', (await text()).includes('Baseline recorded from run fixture-run-1'));
+  mark = calls.length;
+  await choose('Source', 'virtuoso'); await quiet();
+  check('the cell is no longer browse-only: the form points to its task', (await text()).includes('already has the profile real:ota5_v1') && !!(await evaluate(`!!(${BUTTON('Open real:ota5_v1')})`)), ops(mark).join(' | '));
 
   // ---- another library: the cell is forgotten, a typed PDK id is kept -----------------------------------------------
   await type('PDK id', 'my_pdk'); await sleep(300);

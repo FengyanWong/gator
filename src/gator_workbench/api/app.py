@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .. import (__version__, aggregates, agents, bridge_connect, bridge_read, checkpoints as ckpt, connection, runs, schema,
                 tasks, units)
-from .. import network_presets
+from .. import network_presets, profile_preflight, profiles, recipes
 from ..agents import AgentError, AgentRequest, AgentSettings, ProposalRejected, ProposalStore
 from ..agents import catalog as agent_catalog
 from ..agents import readiness as agent_readiness
@@ -98,6 +98,19 @@ class NativeReadBody(Body):
     library: str | None = None
     cell: str | None = None
     testbench: str | None = None        # import only: the cell whose netlist is exported (the testbench around `cell`)
+
+
+class CreateProfileBody(Body):
+    config: dict
+    name: str = Field(pattern=r'^[a-z][a-z0-9_]{1,39}$')
+    recipe: str = Field(pattern=r'^[a-z_]{1,40}$')
+    expected_frequency_hz: float | None = Field(None, gt=0)
+
+
+class ProfileActionBody(Body):
+    name: str = Field(pattern=r'^[a-z][a-z0-9_]{1,39}$')
+    profile_id: str | None = Field(None, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
+    run_dir: str | None = None
 
 
 class AgentSettingsBody(Body):
@@ -293,8 +306,12 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         authorize_circuit(circuit)
         shell = schema.WorkbenchConfig.model_validate(dict(circuit=circuit.model_dump(), run=dict(max_evaluations=1)))
         runtime, blocked = load_runtime(shell)
+        # A Virtuoso cell that already has a generated profile is no longer "browse only": the form points to its task.
+        existing = profiles.profile_for_cell(circuit.library, circuit.cell) if circuit.source == 'virtuoso' and circuit.library and circuit.cell else None
+        native = dict(profile_task=existing and existing['task_key'],
+                      profile_recipes=[dict(id=key, label=value['label']) for key, value in profiles.RECIPES.items()]) if circuit.source == 'virtuoso' else {}
         if runtime is None:
-            return dict(loaded=False, **blocked)
+            return dict(loaded=False, **blocked, **native)
         graph = runtime.base_graph
         tree = {}
         for device in graph.devices:
@@ -307,7 +324,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                     diagnostics=[dict(code=d.code, severity=d.severity, message=d.message) for d in graph.diagnostics],
                     analysis_context=graph.metadata.get('analysis_context'), notes=runtime.notes,
                     evaluation_backend=runtime.circuit.get('evaluation_backend'), max_concurrency=runtime.max_concurrency,
-                    native_draft=bool(runtime.circuit.get('native_draft')))
+                    native_draft=bool(runtime.circuit.get('native_draft')), generated_profile=bool(runtime.circuit.get('generated_profile')),
+                    baseline_recorded=runtime.circuit.get('baseline_recorded'), **native)
 
     @app.post('/api/circuit/modify')
     def circuit_modify(body: CircuitChangeBody):
@@ -377,6 +395,48 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         cell) plus the parameter readback, kept locally (`native_cells`). Gated and read-only; zero cost. The cell
         can then be shown, edited against, validated and summarized for the agent. It cannot run: no profile."""
         return _native(body, 'import_cell')
+
+    @app.post('/api/virtuoso/profile')
+    def native_create_profile(body: CreateProfileBody):
+        """Explicit click: turn the cell that was read into the workbench + the rows of the three editors into a
+        circuit profile and register it as `real:<name>`. Contacts nothing (no Virtuoso, no simulation). Whatever the
+        verified real backend cannot do is refused with the reason. Returns the rows ADJUSTED onto the width grid: a
+        real run requires the configured variables to be exactly the registered ones."""
+        config = parse_config(body.config)
+        try:
+            return profiles.create_profile(body.name, config, recipe=body.recipe, expected_frequency_hz=body.expected_frequency_hz)
+        except profiles.ProfileError as exc:
+            fail(409, exc, code='profile_refused')
+
+    @app.post('/api/virtuoso/profile/preflight')
+    def native_profile_preflight(body: ProfileActionBody):
+        """Explicit click: check a generated profile against the LIVE cell without simulating - the run adapter
+        connects, Virtuoso exports, the export is compared with the record, the deck is written. Read-only, zero
+        cost, gated. It takes the session lock of a real run, so the two exclude each other."""
+        if not body.profile_id:
+            fail(422, 'A connection profile is required')
+        try:
+            return profile_preflight.preflight(monitor, body.name, body.profile_id)
+        except PermissionError as exc:
+            raise HTTPException(409, detail=dict(message=str(exc), gate=getattr(exc, 'gate', None)))
+        except KeyError:
+            fail(404, 'Unknown generated profile')
+        except Exception as exc:
+            fail(502, exc)
+
+    @app.post('/api/virtuoso/profile/reference')
+    def native_profile_reference(body: ProfileActionBody):
+        """Explicit click: the real baseline of a finished run of this task becomes the profile's reference (read
+        from the run's own tables; never replaced once recorded). Without `run_dir`: the newest run of the task."""
+        try:
+            run_dir = run_path(body.run_dir) if body.run_dir else profiles.latest_baseline_run(
+                body.name, [r['run_dir'] for r in runs.list_runs(roots, include_mock=False)])
+            if run_dir is None:
+                fail(409, f'No run of real:{body.name} was found under the output root. Run "Single baseline simulation" first.',
+                     code='no_baseline_run')
+            return profiles.record_reference(body.name, run_dir)
+        except profiles.ProfileError as exc:
+            fail(409, exc, code='reference_refused')
 
     def _native(body, op):
         try:
@@ -713,6 +773,19 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         config = parse_config(body.config)
         runtime, blocked = load_runtime(config)
         summary = None if runtime is None else circuit_summary(runtime.base_graph, circuit=runtime.circuit)
+        if summary is not None and not runtime.mock:
+            # A real backend produces a fixed set of results per circuit type, and writes transistor widths only. Said to
+            # the agent, so its measurement rows name results that exist and its variables are ones that can be written.
+            if runtime.circuit.get('native_draft'):
+                summary['results_by_circuit_type'] = {key: list(recipes.provided_metrics(key)) for key in profiles.RECIPES}
+                summary['real_backend_limits'] = (
+                    'This cell has no circuit profile yet. When one is created from your proposal: a measurement with '
+                    'result_source "backend_profile" must use a source_name from results_by_circuit_type for the fitting circuit '
+                    'type; only transistor widths can be optimized (parameter "w" of an nmos/pmos directly inside the core cell, '
+                    'single finger, m = 1), on a 5 nm grid with a linear range that contains the present width. Identical or '
+                    'matched transistors should follow one leader through binding_group with ratio 1.')
+            else:
+                summary['results_provided'] = list(runtime.provided_metrics)
         circuit_hash = None if runtime is None else runtime.circuit.get('netlist_sha256')
         request = AgentRequest(kind=body.kind, user_prompt=body.prompt, config=config.model_dump(mode='json'),
                                circuit_summary=summary, selection=body.selection,

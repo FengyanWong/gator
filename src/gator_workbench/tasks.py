@@ -172,6 +172,14 @@ def list_tasks():
         tasks.append(dict(task_key=f'real:{name}', kind='real', circuit_class=info['circuit_class'],
                           available=blocker is None, blocker=blocker,
                           description='Verified GPDK045 bridge profile (Virtuoso + Spectre).'))
+    from . import profiles
+    for name, entry in profiles.list_profiles().items():         # created from a cell read out of Virtuoso
+        blocker = generated_backend_blocker(None)
+        tasks.append(dict(task_key=f'real:{name}', kind='real', circuit_class=entry['circuit_class'], generated=True,
+                          available=blocker is None, blocker=blocker, library=entry['library'], cell=entry['core_cell'],
+                          verified=profiles.reference_metrics(name) is not None,
+                          description=f"Profile generated from {entry['library']}/{entry['core_cell']} (Virtuoso + Spectre). "
+                                      + ('' if profiles.reference_metrics(name) else 'No real baseline recorded yet.')))
     return tasks
 
 
@@ -263,6 +271,13 @@ def load_task(circuit, *, allow_real=False, profile_id=None) -> TaskRuntime:
             return _netlist_runtime(key, root / info['netlist'], root / info['config'],
                                     circuit_class=info['circuit_class'], pdk_id='synthetic-fixture',
                                     top=circuit.dut_hierarchy)
+        if kind == 'real' and name not in REAL_PROFILES:
+            from . import profiles
+            if name in profiles.list_profiles():
+                blocker = generated_backend_blocker(profile_id)
+                if blocker:
+                    raise TaskBlocked(blocker, contract=REAL_INTERFACE_CONTRACT)
+                return _generated_runtime(key, name, profile_id, authorized=bool(allow_real))
         if kind == 'real' and name in REAL_PROFILES:
             blocker = real_backend_blocker(profile_id, name)
             if blocker:
@@ -326,6 +341,87 @@ def _native_draft_runtime(imported, circuit):
     return TaskRuntime(f"virtuoso:{imported['library']}/{imported['cell']}", 'real', graph, (), info,
                        Path(imported['netlist_path']).read_text(), imported['netlist_path'], imported['mapping_path'],
                        builder, max_concurrency=1, notes=notes, authorized=False)
+
+
+def generated_backend_blocker(profile_id=None):
+    """Why a GENERATED profile cannot execute here, or None. Its receipt and (later) its baseline live in its own
+    folder, so of the connection profile it needs only the link and the model file."""
+    loaded, settings = _profile_settings(profile_id)
+    if not loaded['exists'] or not loaded['profiles']:
+        return (f"No bridge connection profile is configured ({loaded['file']}). The backend never guesses hosts, "
+                'libraries, accounts or model paths.')
+    if settings is None:
+        return f'Connection profile {profile_id!r} is not configured.'
+    if settings.get('bridge_site_packages'):
+        import site
+        site.addsitedir(str(Path(settings['bridge_site_packages']).resolve()))
+    if not bridge_importable():
+        return (f'virtuoso_bridge is not importable by the backend interpreter ({sys.executable}). Set '
+                '"bridge_site_packages" for the profile in configs/local/workbench/bridge_connection.json.')
+    missing = [k for k in ('env_file', 'model_file') if not settings.get(k)]
+    return f'The connection profile lacks {missing}, which a real run needs.' if missing else None
+
+
+def generated_bridge_config(name, profile_id=None):
+    """(BridgeConfig, profile object, registry entry) of a generated profile: the link and the model file of the
+    connection profile, the cell's OWN library, the receipt of the profile's folder. Local files only."""
+    import site
+    from . import profiles
+    blocker = generated_backend_blocker(profile_id)
+    if blocker:
+        raise TaskBlocked(blocker, contract=REAL_INTERFACE_CONTRACT)
+    entry = profiles.list_profiles().get(name)
+    if entry is None:
+        raise TaskBlocked(f'Unknown generated profile {name!r}')
+    connection = _profile_settings(profile_id)[1]
+    if connection.get('bridge_site_packages'):
+        site.addsitedir(str(Path(connection['bridge_site_packages']).resolve()))
+    from analog_optimizer.backends.virtuoso_bridge import BridgeConfig
+    directory = Path(entry['directory'])
+    try:
+        profile = profiles.load_profile(name)
+    except Exception as exc:
+        raise TaskBlocked(f'The generated profile real:{name} no longer passes its own checks: {exc}')
+    config = BridgeConfig(Path(connection['env_file']).resolve(), entry['library'], (directory / profiles.FILES['receipt']).resolve(),
+                          (repo_root() / 'artifacts/local/bridge-state').resolve(), connection['model_file'],
+                          profile=connection.get('profile'))
+    return config, profile, entry
+
+
+def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
+    """A profile created from a cell read out of Virtuoso (`profiles`): the file-driven class, the cell's OWN
+    library, the receipt of its folder. Until a real baseline is recorded there is nothing to compare a worker's
+    first evaluation with, so none is passed (the factory's comparison is optional)."""
+    from . import profiles, recipes
+    config, profile, entry = generated_bridge_config(name, profile_id)
+    directory = Path(entry['directory'])
+    reference = profiles.reference_metrics(name)
+    graph = profile.optimization_graph()
+
+    def builder(compiled, work_root, run_settings):
+        if not authorized:
+            raise TaskBlocked(REAL_AUTHORIZATION_REQUIRED, contract=REAL_INTERFACE_CONTRACT)
+        from analog_optimizer.training.parallel import NativeEnvironmentFactory
+        from analog_optimizer.envs.sizing import graph_contract
+        if graph_contract(compiled.graph) != graph_contract(graph):
+            raise TaskBlocked('This profile fixes which widths may change, their ranges and their grid. The rows of the parameter '
+                              'editor differ from what was registered; create a new profile to change them.')
+        adv = run_settings.advanced
+        return NativeEnvironmentFactory(config, profile, compiled.specs, Path(work_root), adv.episode_length,
+                                        adv.simulation_timeout_seconds, reference)
+    structure, mapping = directory / profiles.FILES['structure'], directory / profiles.FILES['mapping']
+    circuit = dict(circuit_class=entry['circuit_class'], pdk_id=entry.get('pdk_id') or 'gpdk045', dut_hierarchy=None,
+                   netlist_sha256=_sha256(structure), parser_config_sha256=_sha256(mapping), netlist_file=str(structure),
+                   parser_config_file=str(mapping), topology_id=f'profile:{name}', complete=True, generated_profile=True,
+                   baseline_recorded=reference is not None, evaluation_backend='virtuoso_bridge + Spectre (REAL)')
+    notes = ['Generated profile: it passes every offline check of the verified profiles, but '
+             + ('its first real simulation has not been run yet - start with "Single baseline simulation".' if reference is None
+                else 'only its recorded baseline has been simulated for real.')]
+    if not authorized:
+        notes.append('Loaded for viewing and validation only. Running it needs your explicit authorization of a real '
+                     'simulation budget (asked when you press Start).')
+    return TaskRuntime(task_key, 'real', graph, recipes.provided_metrics(entry['recipe']), circuit, structure.read_text(),
+                       str(structure), str(mapping), builder, max_concurrency=4, authorized=bool(authorized), notes=notes)
 
 
 def _real_runtime(task_key, name, profile_id=None, *, authorized=False):

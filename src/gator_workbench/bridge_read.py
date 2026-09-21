@@ -115,7 +115,9 @@ def _main(argv=None):
             info = client.library.get(args.library)
             with (out / 'bridge.log').open('w') as log, redirect_stdout(log), redirect_stderr(log):
                 exported = client.schematic.export_netlist(args.library, args.testbench or args.cell, out / 'package', timeout=120)
-                readbacks = {'core_readback.json': client.schematic.read(args.library, args.cell, include_positions=False, param_filters=None)}
+                # include_positions=True as in the run adapter's _read_snapshot: it is what adds `view` to every instance,
+                # and a profile's reference readback must have the shape the adapter compares at run time.
+                readbacks = {'core_readback.json': client.schematic.read(args.library, args.cell, include_positions=True, param_filters=None)}
                 if args.testbench:
                     readbacks['testbench_readback.json'] = client.schematic.read(args.library, args.testbench,
                                                                                  include_positions=False, param_filters=None)

@@ -98,10 +98,31 @@ after the link came up or the design changed in Virtuoso.
   contacting Virtuoso: you can look at it, fill the three editors, and **Ask the agent for
   suggestions** - the Agent tab opens with the request written out; its proposal, once approved
   there, fills the editors. Device types this project has not verified (for example the MIM
-  capacitor `g45cmim`) are shown with unnamed pins. Such a cell still cannot run: Start stays
-  disabled (`circuit_profile_missing`) until the profile is created - that step is not built yet.
+  invented model) are shown with unnamed pins. Such a cell still cannot run: Start stays disabled
+  (`circuit_profile_missing`) until its profile is created.
+* **Create profile** (in the same note; contacts nothing, simulates nothing): give a name, the circuit
+  type and - for a ring oscillator - a rough expected frequency ("1.2G"). The rows of the parameter
+  editor say what may vary. Only what the verified real backend can do is accepted: **widths of
+  single-finger, m = 1 transistors directly inside the cell**, linear ranges that contain the present
+  width; ranges are snapped onto Virtuoso's 5 nm width grid and the editor then shows them exactly as
+  registered. Anything else is refused with the reason. The cell becomes the task `real:<name>` under
+  **Registered task** (files in `configs/local/workbench/profiles/<name>/`; delete that folder to redo
+  it) and stops being browse-only.
+  Circuit types: *Ring oscillator (free-running)* - a transient from declared start voltages, metrics
+  `osc_frequency_hz`, `supply_power_w`, `supply_current_a`, swing, duty cycle, period spread, startup;
+  *Op-amp / OTA (AC gain)* - only for a testbench that follows the verified OTA's net names.
+  A generated profile passes every offline check of the four verified profiles, **but it has never been
+  simulated**. In this order:
+  1. **Check against Virtuoso (no simulation)** - everything a real evaluation does before Spectre
+     starts (connect through the run adapter, export, compare with the record, write the deck). Free,
+     read-only; needs the link up and no ADE/Maestro window open on the design.
+  2. **Single baseline simulation** in the header - one real Spectre run; asks for your budget.
+  3. **Record the baseline run as reference** - from then on every run compares its first evaluation
+     with that result, as the four verified profiles do. Recorded once, never replaced.
 
-`POST /api/virtuoso/libraries | cells | read | import`, body `{"profile_id", "library"?, "cell"?, "testbench"?}`.
+`POST /api/virtuoso/libraries | cells | read | import`, body `{"profile_id", "library"?, "cell"?, "testbench"?}`;
+`POST /api/virtuoso/profile`, body `{"config", "name", "recipe", "expected_frequency_hz"?}`;
+`POST /api/virtuoso/profile/preflight` `{"name", "profile_id"}`; `POST /api/virtuoso/profile/reference` `{"name", "run_dir"?}`.
 
 ## Connection profiles (section 2.1)
 

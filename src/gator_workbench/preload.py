@@ -27,18 +27,22 @@ GUARDED_PACKAGES = ('analog_optimizer', 'torch', 'torch_geometric', 'numpy', 'py
 
 MODULES = (
     'numpy', 'pyarrow', 'pyarrow.parquet', 'torch', 'torch_geometric',
+    'analog_optimizer.backends.spectre_validation',   # generated profiles (recipes.py)
     'analog_optimizer.backends.synthetic_sizing',
     'analog_optimizer.backends.virtuoso_bridge',      # the adapter only; it does not import `virtuoso_bridge`
     'analog_optimizer.envs.sizing',
     'analog_optimizer.evaluation.benchmark',
     'analog_optimizer.graph.circuit_graph',
     'analog_optimizer.graph.pyg_converter',
+    'analog_optimizer.measurements.ldo',              # generated profiles (recipes.py)
     'analog_optimizer.measurements.specs',
+    'analog_optimizer.measurements.vco',              # generated profiles (recipes.py)
     'analog_optimizer.models',
     'analog_optimizer.models.inputs',
     'analog_optimizer.netlist.config',
     'analog_optimizer.netlist.expressions',
     'analog_optimizer.netlist.spectre_parser',
+    'analog_optimizer.parameters.actions',            # generated profiles (generic_profile.py)
     'analog_optimizer.recording',
     'analog_optimizer.training.parallel',
     'analog_optimizer.training.replay',

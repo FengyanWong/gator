@@ -798,3 +798,60 @@ the user's budget authorization. Known limit carried forward: the adapter writes
 Open points for increment 2: `g45cmim` needs a verified mapping entry before a graph with it counts as complete;
 net roles (supply / input / output) are not set for a draft; the three editors must be turned into the profile's
 rule file.
+
+### 7.20 Choosing which saved RL model to load (2026-09-21 morning, separate session, user: "can you choose which model to load?" / "what is a source run")
+
+**RESTART THE BACKEND FIRST** (one new read-only route). Until then the block reads "The list of saved models
+could not be read".
+
+**What was wrong.** Saving and loading already existed (automatic checkpoints, "Pause and save" / "Stop and
+save", "RL model to load" with a compatibility report), but choosing was poor: the block was hidden while Mode
+was `scratch`; "Source run" listed EVERY run as `task_id | mode seedN | state`, including runs that hold no model
+(selecting one answered 404); "Checkpoint" offered only `latest` and `best_policy` although the backend accepts
+any checkpoint id - and `best_policy` can never resolve today, because nothing in the workbench calls
+`select_best_policy`. The user did not know what a "source run" is.
+
+**What changed.**
+* **Backend** (`checkpoints.py`; nothing under `src/analog_optimizer/`): `list_checkpoints(run_dir)` = every
+  complete save point of a run, oldest first, from the small `metadata.json` files only (nothing is hashed, no
+  tensor is loaded; a directory without readable metadata is never offered). `saved_models(run_entries)` = the
+  rows of `runs.list_runs` that hold at least one save point, most recently saved first, with task name, circuit,
+  network, evaluations, capability and all save points. New read-only route `GET /api/runs/models`
+  (`output_root`, `include_mock`; same path restriction as `/api/runs`). The selected model is still described and
+  checksum-verified by `/api/runs/model`, unchanged.
+* **Frontend**: new `frontend/src/panels/ModelChooser.tsx`, used by `RunPanel` in place of the two selects. One card
+  per run that holds a model (task name, circuit, network `encoder hidden/heads/layers`, evaluations of training,
+  number of save points, last save in LOCAL time, run state; tags `MOCK` / `other network` / `weights only`), then a
+  "Save point" select: "Latest save (default)", "Best policy" only where one was selected, and every save point as
+  "N evaluations - time - automatic save | saved at pause | saved at stop | saved at the end of the run". The block
+  says in plain words what a run and a saved model are; in `scratch` it stays visible and says that no model is
+  loaded and which Mode loads one. A selection that is not in the list (other output folder, save points gone) is
+  said, with its folder and "Clear the selection". A filter box appears above 5 models. The facts table under it
+  reads "Trained on / Saved (UTC) / Schema / Training / Restorable / Folder" and no longer breaks its labels
+  mid-word.
+* **Nothing on a timer.** The list is read when the block opens (Mode leaves `scratch`), when the application
+  refreshes its run list (a run started / continued, output folder changed) and on "Refresh list". It is a read
+  of local files; no connection, tunnel or simulator is touched.
+* **Pruning fix.** `output.keep_last_checkpoints` promises "latest, final and best are kept", but `_prune` would
+  have removed a best policy that is a periodic save. It now skips the selected best policy. Latent only: the
+  setting is empty by default (no model is ever deleted automatically), no panel exposes it, and no best policy is
+  ever selected yet.
+
+**Verified.** `tests/workbench/test_wb_model_chooser.py` (5): the list is built without hashing a file; a frozen
+run started from the OLDEST save point records that id and ends with exactly that save point's weight digest
+(which differs from `latest`), i.e. the chosen model is the one that gets loaded; a run without a model, a
+`.staging-` directory and a save point with unreadable metadata are never offered; the route, its 403 outside the
+allowed roots and `include_mock=false`; pruning keeps the selected best policy.
+`frontend/scripts/model_chooser_check.mjs` (headless Edge, 42 checks, 4 screenshots; the chooser's routes are
+answered by FIXTURE data and every other writing request is refused, so it is safe against the live backend;
+`GATOR_WORKBENCH_OUTPUT_ROOT` optionally names the folder for its last section) was run against a throwaway
+backend on port 8766 that served a scratch build and three REAL MOCK runs with saved models: the last section
+compares the cards with the real `GET /api/runs/models` (3 of 3; the run without a model is absent).
+`tsc --noEmit` clean.
+
+**Limits, stated plainly.** Only runs created by the workbench are listed: the M6 pilot checkpoints are bare
+`SACLearner.save` files in another layout and still cannot be chosen (adopting them would be a separate,
+read-only import). There is no browser upload of a model and none is planned: `training_state.pt` is a pickle and
+is only ever loaded from a trusted local output root. The `other network` tag compares encoder / hidden / heads /
+layers only; the compatibility report after selection remains the authority. No real (non-MOCK) model was loaded
+by any of this.

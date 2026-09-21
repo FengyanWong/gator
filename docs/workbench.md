@@ -214,6 +214,19 @@ rule, otherwise explicitly `not_selected`) / `best_design` (a circuit parameter 
 And: first-feasibility cost vs. final run cost; the complete `transitions` archive vs. the finite
 replay snapshot; an agent conversation `--resume` vs. an RL training `resume`.
 
+### Choosing which saved model to load (added 2026-09-21, user request)
+
+A **run** is one training session (one press of Start) with its own folder; the models it saved are its
+**save points** (`checkpoints/<id>/`). With Mode `resume`, `fine_tune` or `frozen`, the run panel's "RL model to
+load" block lists every run that holds a model as a card (task, circuit, network, evaluations of training, last
+save; tags `MOCK`, `other network`, `weights only`) and then offers every save point of the chosen run: "Latest
+save" (follows the run) or a dated one (always the same model). Runs without a save point are not listed. The list
+is `GET /api/runs/models`: small metadata files only, read when the block opens, when a run starts and on
+"Refresh list" - never on a timer. Nothing is deleted automatically: `output.keep_last_checkpoints` is empty by
+default, and when set it prunes older periodic saves only (never the latest, a pause / stop / final save or a
+selected best policy). Models from outside the workbench (the M6 pilot checkpoints) cannot be chosen, and there
+is no upload: `training_state.pt` is a pickle and is only loaded from a trusted local output root.
+
 ## Reload saved data
 
 ```python

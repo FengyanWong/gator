@@ -175,9 +175,11 @@ class CheckpointStore:
         if self.keep_last is None:
             return []
         periodic = []
+        # The selected best policy is a model somebody chose on purpose: pruning never removes it.
+        best = (read_json(self.root / 'best_policy.json', default=None) or {}).get('selected')
         for directory in sorted(self.root.glob('ckpt-*')):
             meta = read_json(directory / 'metadata.json', default={})
-            if meta.get('kind') == 'periodic' and directory.name != keep_id:
+            if meta.get('kind') == 'periodic' and directory.name not in (keep_id, best):
                 periodic.append(directory)
         removed = []
         for directory in periodic[:max(0, len(periodic) - (self.keep_last - 1))]:
@@ -311,3 +313,61 @@ def describe(run_dir, checkpoint_id='latest') -> dict:
                 counters=meta['counters'], restoration_capability=meta['restoration_capability'],
                 restorable_components=meta['restorable_components'], missing_components=meta['missing_components'],
                 contract=meta['contract'], file_problems=verify_files(directory))
+
+
+# ---------------------------------------------------------------------- choosing a model
+def list_checkpoints(run_dir) -> dict:
+    """Every complete save point of one run, oldest first, for the model chooser.
+
+    Reads the small ``metadata.json`` files only: nothing is hashed and no tensor is loaded
+    (``describe`` does that for the ONE model that is finally selected). A directory without
+    readable metadata (staging, damaged) is never offered."""
+    root = Path(run_dir) / 'checkpoints'
+
+    def optional(path):
+        try:
+            value = read_json(path, default=None)
+        except (OSError, ValueError):
+            return {}
+        return value if isinstance(value, dict) else {}
+    latest, best = optional(root / 'latest.json').get('checkpoint_id'), optional(root / 'best_policy.json')
+    points = []
+    for directory in root.glob('ckpt-*'):
+        meta = optional(directory / 'metadata.json')
+        if meta.get('checkpoint_id') != directory.name:
+            continue
+        counters, network = meta.get('counters') or {}, (meta.get('contract') or {}).get('model_config') or {}
+        points.append(dict(
+            checkpoint_id=directory.name, kind=meta.get('kind'), created_utc=meta.get('created_utc'),
+            mode=meta.get('mode'), evaluations=counters.get('evaluations_committed'),
+            learner_updates=counters.get('learner_updates'), replay_size=counters.get('replay_size'),
+            restoration_capability=meta.get('restoration_capability'),
+            missing_components=meta.get('missing_components') or [],
+            network={key: network.get(key) for key in ('encoder_type', 'hidden_dim', 'heads', 'layers')},
+            is_latest=directory.name == latest, is_best_policy=directory.name == best.get('selected')))
+    points.sort(key=lambda point: (point['created_utc'] or '', point['checkpoint_id']))
+    return dict(run_dir=str(run_dir), latest=latest if any(p['is_latest'] for p in points) else None,
+                best_policy=dict(selected=best.get('selected') if any(p['is_best_policy'] for p in points) else None,
+                                 status=best.get('status'), reason=best.get('reason'), score=best.get('score')),
+                checkpoints=points)
+
+
+def saved_models(run_entries) -> list[dict]:
+    """The model chooser's list: every listed run that holds at least one complete save point, most
+    recently saved first. ``run_entries`` are the rows of ``runs.list_runs``. A run without a save
+    point has no model to load, so it is left out instead of failing when it is selected."""
+    models = []
+    for entry in run_entries:
+        listing = list_checkpoints(entry['run_dir'])
+        if not listing['checkpoints']:
+            continue
+        newest = next((p for p in listing['checkpoints'] if p['is_latest']), listing['checkpoints'][-1])
+        manifest = read_json(Path(entry['run_dir']) / 'run_manifest.json', default=None) or {}
+        circuit = manifest.get('circuit') or {}
+        models.append(dict(
+            entry, task_name=manifest.get('task_name'), circuit_task=circuit.get('task_key'),
+            circuit_class=circuit.get('circuit_class'), latest=listing['latest'], best_policy=listing['best_policy'],
+            checkpoints=listing['checkpoints'], network=newest['network'], saved_utc=newest['created_utc'],
+            trained_evaluations=newest['evaluations'], learner_updates=newest['learner_updates'],
+            restoration_capability=newest['restoration_capability']))
+    return sorted(models, key=lambda model: model['saved_utc'] or '', reverse=True)

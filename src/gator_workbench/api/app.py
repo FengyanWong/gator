@@ -528,6 +528,15 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             return dict(run_dir=None, checkpoint_id='latest', reason='No previous model for this project.')
         return dict(run_dir=last, checkpoint_id='latest', description=ckpt.describe(last, 'latest'))
 
+    @app.get('/api/runs/models')
+    def saved_models(output_root: str | None = None, include_mock: bool = True):
+        """The model chooser's list: every run that holds a saved RL model, with all of its save points.
+        Small metadata files only; the selected model is verified by `/api/runs/model` as before."""
+        try:
+            return dict(models=ckpt.saved_models(runs.list_runs(roots, output_root, include_mock=include_mock)))
+        except PathNotAllowed as exc:
+            fail(403, exc)
+
     def _start(config, body, *, baseline_only=False):
         allow_real = bool(body.authorize_real_simulation)
         if baseline_only:

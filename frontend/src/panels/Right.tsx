@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, bytes, copy, Json, num } from '../api';
+import { ModelChooser } from './ModelChooser';
 
 function Num({ label, value, onChange, title, nullable, disabled, note }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; nullable?: boolean; disabled?: boolean; note?: string }) {
   // The typed text is kept while the box has focus: "0." and "3e-" are steps towards 0.005 and 3e-4, not values.
@@ -166,22 +167,19 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
               <td>{ref && <a href={ref.url} target="_blank" rel="noreferrer">{ref.short}</a>} {p?.note}</td></tr>); })}
         </tbody></table>
         <p className="hint">{netSettings.scale_note}</p></details>}
+      <ModelChooser mode={run.mode} source={source} runs={runs} outputRoot={config.output?.output_root} network={{ encoder_type: encoder, ...pick(net, netFields) }}
+        onChoose={(run_dir, checkpoint_id) => set({ model_source: { ...source, run_dir, checkpoint_id } })} />
       {run.mode !== 'scratch' && (<>
-        <h3>RL model to load</h3>
-        <label>Source run<select value={source.run_dir ?? ''} onChange={e => set({ model_source: { ...source, run_dir: e.target.value || null } })}>
-          <option value="">(none)</option>{runs.map(r => <option key={r.run_dir} value={r.run_dir}>{r.task_id} | {r.mode} seed{r.seed} | {r.state}{r.mock ? ' [MOCK]' : ''}</option>)}</select></label>
-        <label title="latest = most recently SAFELY saved state (default). It is not automatically the best policy.">Checkpoint
-          <select value={source.checkpoint_id ?? 'latest'} onChange={e => set({ model_source: { ...source, checkpoint_id: e.target.value } })}><option>latest</option><option>best_policy</option></select></label>
         {error && <p className="error">{error}</p>}
         {archDiffers && <p className="warn">This checkpoint was trained with {savedModel.encoder_type}, hidden {savedModel.hidden_dim}, heads {savedModel.heads}, layers {savedModel.layers}.
           Its weights cannot be loaded into a different network. <button onClick={matchCheckpoint}>Use the checkpoint's network</button></p>}
-        {model?.description && <table className="grid small"><tbody>
-          <tr><td>Source task</td><td>{model.description.source_task_id}</td></tr>
+        {model?.description && <table className="grid small model-facts"><tbody>
+          <tr><td>Trained on</td><td>{model.description.source_task_id}</td></tr>
           <tr><td>Saved (UTC)</td><td>{model.description.created_utc}</td></tr>
           <tr><td>Schema</td><td>{model.description.metadata_version}</td></tr>
-          <tr><td>Counters</td><td>{model.description.counters.evaluations_committed} evaluations, {model.description.counters.learner_updates} updates, replay {model.description.counters.replay_size}</td></tr>
+          <tr><td>Training</td><td>{model.description.counters.evaluations_committed} evaluations, {model.description.counters.learner_updates} updates, replay {model.description.counters.replay_size}</td></tr>
           <tr><td>Restorable</td><td><b>{model.description.restoration_capability}</b>{model.description.missing_components.length ? ` - missing: ${model.description.missing_components.join(', ')}` : ''}</td></tr>
-          <tr><td>File path</td><td className="path" onClick={() => copy(model.description.path)}>{model.description.path}</td></tr>
+          <tr><td>Folder</td><td className="path" title="Click to copy" onClick={() => copy(model.description.path)}>{model.description.path}</td></tr>
         </tbody></table>}
         {model?.compatibility && <details open={!model.compatibility.compatible}><summary className={model.compatibility.compatible ? '' : 'error'}>Compatibility for {model.compatibility.mode}: {model.compatibility.compatible ? 'compatible' : 'NOT compatible - there is no fallback to scratch'}</summary>
           <ul>{model.compatibility.checks.map((c: Json) => <li key={c.component} className={`issue ${c.status === 'ok' ? 'info' : c.status === 'warning' ? 'warning' : 'error'}`}>{c.component}: {c.status} - {c.detail}</li>)}</ul></details>}

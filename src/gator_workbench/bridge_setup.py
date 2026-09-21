@@ -1,0 +1,429 @@
+"""Writes into Virtuoso for the task flow, in a short-lived process - never into the cell the user drew.
+
+Two kinds of write, both into the working copy only. The WORKING COPY itself (`working_copy.py`): the testbench and every cell of the same library
+under it are copied into a library of the workbench's own (``<library>_GATOR``, next to the user's libraries in
+Virtuoso's working directory, bound to the same technology library), and the copied testbench is re-pointed at the
+copied cells. And the MAESTRO SETUP of the copy's testbench (`virtuoso_setup.py`): one test, its model file, analyses,
+outputs, specs and design variables (``maeOpenSetup`` in a background session, ``maeCreateTest``, ``maeSetEnvOption``,
+``maeSetAnalysis``, ``maeDeleteOutput`` / ``maeAddOutput``, ``maeSetSpec``, ``maeSetVar`` / ``maeDeleteVar``,
+``maeSaveSetup``, always closed with ``maeCloseSession ?forceClose t``), read back with ``maeGetSetup``,
+``maeGetEnabledAnalysis``, ``maeGetAnalysis``, ``maeGetTestOutputs``, ``maeGetVar``, ``maeGetEnvOption`` and
+``axlGetSpecData``. Only functions whose syntax was read from the Cadence documentation of the installation itself
+(``client.find_skill``) are used: ``dbOpenCellViewByType``, ``dbCopyCellView``, ``dbSetInstHeaderMasterName``,
+``schCheck``, ``dbSave``, ``dbClose``, ``getWorkingDir`` - and the bridge's own ``library.create`` (``ddCreateLib`` +
+``techBindTechFile``, read back) and ``schematic.export_netlist``.
+
+Cellviews are opened by library and cell name, never through a window, so what has the focus does not matter. The
+process takes the project's Virtuoso session lock (the one every real run and the no-simulation check take), so a
+write never interleaves with a simulation's own edits. Every name has passed ``NAME`` before it is put into SKILL.
+"""
+from __future__ import annotations
+
+import fcntl
+import hashlib
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+from pathlib import Path
+
+from .connection import RealBridge, resolve_profile_id, worker_environment
+from .paths import repo_root
+from .security import redact
+
+NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
+COPIED_VIEWS = ('schematic', 'symbol')
+SUFFIX = '_GATOR'
+LOCK = Path('artifacts/local/bridge-state/session.lock')
+
+# The cells of `library` under the testbench, and each one's views: `cell|views=a b|cdf=t` lines. Read-only - cellviews
+# opened "r" and closed again; a cellview the user has open in a window stays open (dbClose drops only this reference).
+HIERARCHY_SKILL = '''
+let((lib todo seen out cell cv views)
+  lib = "%(library)s"
+  todo = list("%(testbench)s")
+  out = ""
+  while(todo
+    cell = car(todo)
+    todo = cdr(todo)
+    unless(member(cell seen)
+      seen = cons(cell seen)
+      views = ""
+      foreach(v ddGetObj(lib cell)~>views views = strcat(views v~>name " "))
+      out = strcat(out sprintf(nil "%%s|views=%%s|cdf=%%L\\n" cell views
+                               and(isCallable('cdfGetBaseCellCDF) cdfGetBaseCellCDF(ddGetObj(lib cell)) t)))
+      when(ddGetObj(lib cell "schematic")
+        cv = dbOpenCellViewByType(lib cell "schematic" nil "r")
+        when(cv
+          foreach(ih cv~>instHeaders
+            when(ih~>libName == lib && !member(ih~>cellName seen)
+              todo = cons(ih~>cellName todo)))
+          dbClose(cv)))))
+  out)
+'''
+# One view of one cell into the copy library. g_overwrite is t only for a cellview a failed earlier attempt of the
+# same copy wrote (the caller lists them); anything else already there makes the whole copy stop before writing.
+COPY_VIEW_SKILL = '''
+let((src dst)
+  src = dbOpenCellViewByType("%(library)s" "%(cell)s" "%(view)s" nil "r")
+  unless(src error("cannot open %(library)s/%(cell)s/%(view)s"))
+  dst = dbCopyCellView(src "%(copy_library)s" "%(cell)s" "%(view)s" nil nil %(overwrite)s)
+  dbClose(src)
+  unless(dst error("dbCopyCellView refused %(copy_library)s/%(cell)s/%(view)s"))
+  dbClose(dst)
+  t)
+'''
+# Which of the cellviews about to be written already exist in the copy library: "cell/view " words.
+EXISTING_SKILL = '''
+let((out)
+  out = ""
+  foreach(pair list(%(pairs)s)
+    when(ddGetObj("%(copy_library)s" car(pair) cadr(pair))
+      out = strcat(out car(pair) "/" cadr(pair) " ")))
+  out)
+'''
+# Re-point every instance of a copied cell in one copied schematic at the copy, then check and save it. Answers
+# "remastered|<header count>|<schCheck result>".
+REMASTER_SKILL = '''
+let((cv n checked)
+  cv = dbOpenCellViewByType("%(copy_library)s" "%(cell)s" "schematic" nil "a")
+  unless(cv error("cannot open %(copy_library)s/%(cell)s/schematic for editing"))
+  n = 0
+  foreach(ih cv~>instHeaders
+    when(ih~>libName == "%(library)s" && member(ih~>cellName list(%(copied)s))
+      dbSetInstHeaderMasterName(ih "%(copy_library)s" ih~>cellName ih~>viewName)
+      n = n + 1))
+  checked = schCheck(cv)
+  dbSave(cv)
+  dbClose(cv)
+  sprintf(nil "remastered|%%d|%%L" n checked))
+'''
+
+
+def parse_hierarchy(decoded):
+    """`cell|views=a b|cdf=t` lines -> [{cell, views, has_cdf}] in discovery order (testbench first)."""
+    cells = []
+    for row in filter(None, (line.strip() for line in (decoded or '').splitlines())):
+        name, _, rest = row.partition('|views=')
+        views, _, cdf = rest.partition('|cdf=')
+        if NAME.match(name):
+            cells.append(dict(cell=name, views=sorted(v for v in views.split() if NAME.match(v)), has_cdf=cdf.strip() not in ('', 'nil')))
+    return cells
+
+
+def fingerprint(snapshot) -> str:
+    return hashlib.sha256(json.dumps(snapshot, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _skill(client, text, what, timeout=60):
+    from virtuoso_bridge import decode_skill_output
+    result = client.execute_skill(text, timeout=timeout)
+    if not result.ok or result.errors:
+        raise RuntimeError(f'{what}: ' + ('; '.join(result.errors) or 'SKILL call failed'))
+    return decode_skill_output(result.output)
+
+
+def _originals(client, library, cells):
+    """Read-only fingerprints of the original schematics: compared before and after, they prove the copy wrote
+    nothing into the user's cells."""
+    return {c['cell']: fingerprint(client.schematic.read(library, c['cell'], include_positions=True, param_filters=None))
+            for c in cells if 'schematic' in c['views']}
+
+
+def make_copy(client, *, library, cell, testbench, copy_library, reuse_library, overwrite, out):
+    """Copy the testbench and its library's cells under it into `copy_library`. `progress.json` in `out` is rewritten
+    after every step, so a copy that stops half-way still says which library it created and what it wrote."""
+    progress = dict(created_library=False, copied=[])
+
+    def note(**changes):
+        progress.update(changes)
+        (out / 'progress.json').write_text(json.dumps(progress, indent=1))
+
+    info = client.library.get(library)
+    working_dir = _skill(client, 'getWorkingDir()', 'reading the working directory').strip().strip('"')
+    cells = parse_hierarchy(_skill(client, HIERARCHY_SKILL % dict(library=library, testbench=testbench), 'reading the hierarchy'))
+    if not cells or cells[0]['cell'] != testbench or cell not in {c['cell'] for c in cells}:
+        raise RuntimeError(f'{cell} is not under the testbench {testbench} in {library}')
+    unusable = [c['cell'] for c in cells if not set(COPIED_VIEWS) & set(c['views'])]
+    with_cdf = [c['cell'] for c in cells if c['has_cdf']]
+    if unusable or with_cdf:
+        raise RuntimeError('Cannot copy this hierarchy yet: '
+                           + '; '.join(filter(None, [unusable and f'no schematic or symbol view: {", ".join(unusable)}',
+                                                      with_cdf and f'cells with parameters of their own (CDF) are not copied yet: {", ".join(with_cdf)}'])))
+    targets = [(c['cell'], view) for c in cells for view in COPIED_VIEWS if view in c['views']]
+    before = _originals(client, library, cells)
+    existing = set(client.library.list())
+    cds_lib = f'{working_dir}/cds.lib'
+    if copy_library in existing:
+        if not reuse_library:
+            raise RuntimeError(f'A library called {copy_library} already exists and was not made by the workbench: nothing was written')
+        pairs = ' '.join(f'list("{c}" "{v}")' for c, v in targets)
+        present = set(_skill(client, EXISTING_SKILL % dict(pairs=pairs, copy_library=copy_library), 'looking into the copy library').strip().strip('"').split())
+        foreign = sorted(present - set(overwrite))
+        if foreign:
+            raise RuntimeError(f'{copy_library} already holds {", ".join(foreign)} (another copy uses them): nothing was written')
+        copy_info = client.library.get(copy_library)
+    else:
+        if not client.download_file(cds_lib, out / 'cds.lib.before').ok:
+            raise RuntimeError(f'Could not back up {cds_lib} before adding a library: nothing was written')
+        copy_info = client.library.create(copy_library, f'{working_dir}/{copy_library}', technology_library=info.technology_library)
+        note(created_library=True, copy_path=copy_info.path, copy_technology_library=copy_info.technology_library)
+        client.download_file(cds_lib, out / 'cds.lib.after')
+    for name, view in targets:
+        _skill(client, COPY_VIEW_SKILL % dict(library=library, cell=name, view=view, copy_library=copy_library,
+                                              overwrite='t' if f'{name}/{view}' in overwrite else 'nil'),
+               f'copying {name}/{view}')
+        note(copied=progress['copied'] + [f'{name}/{view}'])
+    names = ' '.join(f'"{c["cell"]}"' for c in cells)
+    remastered = {}
+    for item in cells:
+        if 'schematic' in item['views']:
+            answer = _skill(client, REMASTER_SKILL % dict(library=library, cell=item['cell'], copy_library=copy_library, copied=names),
+                            f're-pointing {item["cell"]}').strip().strip('"')
+            _, count, checked = answer.split('|', 2)
+            remastered[item['cell']] = dict(headers=int(count), sch_check=checked)
+    exported = client.schematic.export_netlist(copy_library, testbench, out / 'package', timeout=180)
+    structure = Path(exported['input_file']).parent / 'netlist'
+    (out / 'netlist.scs').write_text(structure.read_text())
+    after = _originals(client, library, cells)
+    return dict(library=library, cell=cell, testbench=testbench, copy_library=copy_library, copy_path=copy_info.path,
+                technology_library=info.technology_library, copy_technology_library=copy_info.technology_library,
+                working_dir=working_dir, created_library=progress['created_library'], cds_lib=cds_lib, cells=cells,
+                copied=[dict(cell=c, view=v) for c, v in (item.split('/') for item in progress['copied'])],
+                remastered=remastered, originals_before=before, originals_after=after)
+
+
+# ---------------------------------------------------------------------------------- Maestro setup of the copy
+def _q(text):
+    """A Python string as a SKILL string literal."""
+    return '"' + str(text).replace('\\', '\\\\').replace('"', '\\"') + '"'
+
+
+def _alist(options):
+    return '`(' + ' '.join(f'({_q(k)} {_q(v)})' for k, v in options.items()) + ')'
+
+
+def _session_open(client, library, testbench, mode='a'):
+    raw = _skill(client, f'maeOpenSetup({_q(library)} {_q(testbench)} "maestro" ?mode {_q(mode)})', 'opening the Maestro setup').strip().strip('"')
+    if not raw or raw in ('nil', 't'):
+        raise RuntimeError(f'maeOpenSetup failed for {library}/{testbench}')
+    return raw
+
+
+def _session_close(client, session):
+    client.execute_skill(f'maeCloseSession(?session {_q(session)} ?forceClose t)', timeout=60)
+
+
+def _list(decoded):
+    """A decoded SKILL list of strings: ("a" "b") -> ['a', 'b']; nil -> []."""
+    return re.findall(r'"((?:[^"\\]|\\.)*)"', decoded or '')
+
+
+def read_maestro(client, library, testbench, *, test):
+    """What the copy's Maestro view holds for the workbench's test. A view that does not exist yet answers empty."""
+    exists = _skill(client, f'if(ddGetObj({_q(library)} {_q(testbench)} "maestro") "yes" "no")', 'looking for the Maestro view').strip().strip('"') == 'yes'
+    answer = dict(exists=exists, tests=[], test=None, model_files=[], analyses={}, variables={}, outputs=[], specs=[], raw_specs={})
+    if not exists:
+        return answer
+    session = _session_open(client, library, testbench, mode='r')
+    s = f' ?session {_q(session)}'
+    try:
+        answer['tests'] = _list(_skill(client, f'maeGetSetup(?typeName "tests"{s})', 'reading the tests'))
+        if test not in answer['tests']:
+            return answer
+        answer['test'] = test
+        files = _skill(client, f'maeGetEnvOption({_q(test)} ?option "modelFiles"{s})', 'reading the model files')
+        answer['model_files'] = [list(pair) for pair in re.findall(r'\(\s*"([^"]*)"\s+"([^"]*)"\s*\)', files or '')]
+        for name in _list(_skill(client, f'maeGetEnabledAnalysis({_q(test)}{s})', 'reading the analyses')):
+            options = _skill(client, f'maeGetAnalysis({_q(test)} {_q(name)}{s})', f'reading the {name} options')
+            answer['analyses'][name] = {k: v for k, v in re.findall(r'\(\s*"([^"]*)"\s+"([^"]*)"\s*\)', options or '')}
+        for name in _list(_skill(client, f'maeGetSetup(?typeName "variables"{s})', 'reading the variables')):
+            answer['variables'][name] = _skill(client, f'maeGetVar({_q(name)}{s})', f'reading {name}').strip().strip('"')
+        listed = _skill(client, f'let((out) out = "" foreach(o maeGetTestOutputs({_q(test)}{s}) out = strcat(out o~>name "\\t" '
+                                f'cond((stringp(o~>expression) o~>expression) (o~>expression sprintf(nil "%L" o~>expression)) (t "")) "\\n")) out)',
+                                'reading the outputs')
+        for line in (listed or '').strip().strip('"').replace('\\n', '\n').replace('\\t', '\t').splitlines():
+            name, _, expression = line.partition('\t')
+            if name:
+                answer['outputs'].append(dict(name=name, expression=expression.replace('\\"', '"')))
+        for output in answer['outputs']:
+            raw = _skill(client, f'axlGetSpecData(axlGetMainSetupDB({_q(session)}) {_q(output["name"])} {_q(test)})',
+                         f'reading the spec on {output["name"]}')
+            answer['raw_specs'][output['name']] = raw
+            spec = parse_spec(raw)
+            if spec:
+                answer['specs'].append(dict(output=output['name'], **spec))
+    finally:
+        _session_close(client, session)
+    return answer
+
+
+def parse_spec(raw):
+    """{op, value} from axlGetSpecData's answer, or None. The live IC23.1 answers ("gt" "1e+09") and
+    ("range" "0.9" "1.1") (read 2026-09-21); any other kind is kept, marked unsupported."""
+    items = _list(raw)
+    if not items:
+        return None
+    op, values = items[0], items[1:]
+    if op in ('gt', 'lt') and len(values) == 1:
+        return dict(op=op, value=values[0])
+    if op == 'range' and len(values) == 2:
+        return dict(op=op, value=values)
+    return dict(op='unsupported', value=' '.join(items)[:200])
+
+
+def write_maestro(client, library, testbench, setup):
+    """Make the copy's Maestro test say exactly what `setup` says (outputs are removed and added again, so each one
+    keeps no stale spec), save, close. Other tests in the view are left alone."""
+    test = setup['test']
+    session = _session_open(client, library, testbench, mode='a')
+    s = f' ?session {_q(session)}'
+    try:
+        created = test not in _list(_skill(client, f'maeGetSetup(?typeName "tests"{s})', 'reading the tests'))
+        if created:
+            _skill(client, f'maeCreateTest({_q(test)} ?lib {_q(library)} ?cell {_q(testbench)} ?view "schematic" ?simulator "spectre"{s})',
+                   'creating the test')
+        if setup['model_files'] and (created or not setup.get('keep_model_files')):
+            files = ' '.join(f'({_q(f)} {_q(section)})' for f, section in setup['model_files'])
+            _skill(client, f'maeSetEnvOption({_q(test)} ?options `(("modelFiles" ({files}))){s})', 'setting the model files')
+        for name in _list(_skill(client, f'maeGetEnabledAnalysis({_q(test)}{s})', 'reading the analyses')) if setup['analyses'] is not None else ():
+            if name not in setup['analyses']:
+                _skill(client, f'maeSetAnalysis({_q(test)} {_q(name)} ?enable nil{s})', f'switching {name} off')
+        for name, options in (setup['analyses'] or {}).items():
+            _skill(client, f'maeSetAnalysis({_q(test)} {_q(name)} ?enable t' + (f' ?options {_alist(options)}' if options else '') + f'{s})',
+                   f'setting the {name} analysis')
+        existing = _skill(client, f'let((out) out = "" foreach(o maeGetTestOutputs({_q(test)}{s}) out = strcat(out o~>name "\\n")) out)', 'reading the outputs')
+        for name in filter(None, (existing or '').strip().strip('"').replace('\\n', '\n').splitlines()):
+            _skill(client, f'maeDeleteOutput({_q(name)} {_q(test)}{s})', f'removing output {name}')
+        for output in setup['outputs']:
+            _skill(client, f'maeAddOutput({_q(output["name"])} {_q(test)} ?outputType "point" ?expr {_q(output["expression"])}{s})',
+                   f'adding output {output["name"]}')
+        for spec in setup['specs']:
+            value = ('list(' + ' '.join(_q(v) for v in spec['value']) + ')') if isinstance(spec['value'], list) else _q(spec['value'])
+            _skill(client, f'maeSetSpec({_q(spec["output"])} {_q(test)} ?{spec["op"]} {value}{s})', f'setting the spec on {spec["output"]}')
+        for name in _list(_skill(client, f'maeGetSetup(?typeName "variables"{s})', 'reading the variables')):
+            if name not in setup['variables']:
+                _skill(client, f'maeDeleteVar({_q(name)}{s})', f'removing variable {name}')
+        for name, value in setup['variables'].items():
+            _skill(client, f'maeSetVar({_q(name)} {_q(value)}{s})', f'setting variable {name}')
+        _skill(client, f'maeSaveSetup(?lib {_q(library)} ?cell {_q(testbench)} ?view "maestro"{s})', 'saving the Maestro setup')
+    finally:
+        _session_close(client, session)
+
+
+def write_bindings(client, library, bindings, restore):
+    """Set instance parameters of the copy to variable names (`bindings`), or back to the value the original has
+    (`restore`: [(cell, instance, parameter, value)]). One open/check/save per cell."""
+    by_cell = {}
+    for b in bindings:
+        by_cell.setdefault(b['cell'], []).append((b['instance'], b['parameter'], b['variable']))
+    for cell, instance, parameter, value in restore:
+        by_cell.setdefault(cell, []).append((instance, parameter, value))
+    for cell, items in by_cell.items():
+        sets = ' '.join(f'cdfFindParamByName(cdfGetInstCDF(dbFindAnyInstByName(cv {_q(i)})) {_q(p)})~>value = {_q(v)}' for i, p, v in items)
+        _skill(client, f'let((cv) cv = dbOpenCellViewByType({_q(library)} {_q(cell)} "schematic" nil "a") '
+                       f'unless(cv error("cannot open {library}/{cell} for editing")) {sets} schCheck(cv) dbSave(cv) dbClose(cv) t)',
+               f'setting variables on {cell}')
+
+
+def read_bindings(client, library, cells, variables):
+    """Instance parameters of the copied schematics whose value is exactly a design variable's name."""
+    if not variables:
+        return []
+    names = ' '.join(_q(v) for v in variables)
+    found = []
+    for cell in cells:
+        raw = _skill(client, f'let((cv out) out = "" cv = dbOpenCellViewByType({_q(library)} {_q(cell)} "schematic" nil "r") '
+                             f'when(cv foreach(inst cv~>instances foreach(p cdfGetInstCDF(inst)~>parameters '
+                             f'when(stringp(p~>value) && member(p~>value list({names})) '
+                             f'out = strcat(out inst~>name "\\t" p~>name "\\t" p~>value "\\n")))) dbClose(cv)) out)',
+                     f'reading the variables set on {cell}')
+        for line in (raw or '').strip().strip('"').replace('\\n', '\n').replace('\\t', '\t').splitlines():
+            parts = line.split('\t')
+            if len(parts) == 3:
+                found.append(dict(cell=cell, instance=parts[0], parameter=parts[1], variable=parts[2]))
+    return found
+
+
+def setup_op(client, op, *, library, testbench, cells, setup=None, restore=(), test):
+    if op == 'write_setup':
+        write_maestro(client, library, testbench, setup)
+        write_bindings(client, library, setup['bindings'], restore)
+    answer = read_maestro(client, library, testbench, test=test)
+    answer['bindings'] = read_bindings(client, library, cells, list(answer['variables']))
+    return answer
+
+
+def _main(argv=None):
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--profile-id', required=True)
+    parser.add_argument('--op', choices=('make_copy', 'read_setup', 'write_setup'), required=True)
+    parser.add_argument('--library', required=True)
+    parser.add_argument('--cell', required=True)
+    parser.add_argument('--testbench', required=True)
+    parser.add_argument('--copy-library', required=True)
+    parser.add_argument('--request', help='JSON file: setup to write, cells, restore list, test name (setup ops)')
+    parser.add_argument('--reuse-library', action='store_true')
+    parser.add_argument('--overwrite', default='[]', help='JSON list of cell/view a failed earlier attempt wrote')
+    parser.add_argument('--output', required=True)
+    args = parser.parse_args(argv)
+    for value in (args.library, args.cell, args.testbench, args.copy_library):
+        if not NAME.match(value):
+            raise SystemExit('library and cell names must be plain Cadence names')
+    out = Path(args.output)
+    lock_path = repo_root() / LOCK
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open('a+') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise SystemExit('A real run or a check is using Virtuoso right now: try again when it has finished')
+        settings = resolve_profile_id(args.profile_id)
+        bridge = RealBridge(settings)
+        bridge.version()
+        bridge.bind_env(settings['env_file'])
+        client = bridge.client(settings.get('profile') or None, 60)
+        try:
+            from contextlib import redirect_stderr, redirect_stdout
+            with (out / 'bridge.log').open('w') as log, redirect_stdout(log), redirect_stderr(log):
+                if args.op == 'make_copy':
+                    answer = make_copy(client, library=args.library, cell=args.cell, testbench=args.testbench,
+                                       copy_library=args.copy_library, reuse_library=args.reuse_library,
+                                       overwrite=set(json.loads(args.overwrite)), out=out)
+                else:
+                    request = json.loads(Path(args.request).read_text())
+                    answer = setup_op(client, args.op, library=args.copy_library, testbench=args.testbench, cells=request['cells'],
+                                      setup=request.get('setup'), restore=[tuple(r) for r in request.get('restore', [])],
+                                      test=request['test'])
+        finally:
+            client.close()
+    print(json.dumps(answer, default=str))
+    return 0
+
+
+def run(profile_id, op, *, args, output, timeout=600.0, command=None):
+    """Run one write process; returns its JSON answer. The caller has passed the connection gate."""
+    argv = (command or [sys.executable, '-m', 'gator_workbench.bridge_setup']) + ['--profile-id', profile_id, '--op', op,
+                                                                                 '--output', str(output)] + list(args)
+    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                               shell=False, env=worker_environment(), cwd=str(repo_root()), start_new_session=True)
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        process.communicate()
+        raise TimeoutError('The Virtuoso write did not finish in time; look at the copy before trying again')
+    if process.returncode != 0:
+        lines = [line for line in stderr.strip().splitlines() if line.strip()]
+        raise RuntimeError(redact(lines[-1] if lines else 'the Virtuoso write failed', 600))
+    return json.loads(stdout.strip().splitlines()[-1])
+
+
+if __name__ == '__main__':
+    raise SystemExit(_main())

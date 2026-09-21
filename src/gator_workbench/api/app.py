@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .. import (__version__, aggregates, agents, bridge_connect, bridge_read, checkpoints as ckpt, connection, runs, schema,
                 tasks, units)
-from .. import network_presets, profile_preflight, profiles, recipes
+from .. import network_presets, profile_preflight, profiles, recipes, virtuoso_setup, working_copy
 from ..agents import AgentError, AgentRequest, AgentSettings, ProposalRejected, ProposalStore
 from ..agents import catalog as agent_catalog
 from ..agents import proposals as agent_proposals
@@ -123,6 +123,20 @@ class CreateProfileBody(Body):
     name: str = Field(pattern=r'^[a-z][a-z0-9_]{1,39}$')
     recipe: str = Field(pattern=r'^[a-z_]{1,40}$')
     expected_frequency_hz: float | None = Field(None, gt=0)
+
+
+class CopyBody(Body):
+    profile_id: str | None = Field(None, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
+    library: str = Field(pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
+    cell: str = Field(pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
+
+
+class SetupBody(CopyBody):
+    config: dict | None = None          # read: the editors' rows, to say how they differ; write: the rows to write
+    setup: dict | None = None           # write: a whole setup instead of the rows (the agent's approved proposal)
+    analyses: dict | None = None        # write from rows: the analyses to set; None keeps what the copy has
+    variables: dict | None = None
+    bindings: list[dict] | None = None
 
 
 class ProfileActionBody(Body):
@@ -457,7 +471,9 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         # built-in circuits - is not "browse only", and gets no second profile: the form points to its task.
         existing = profiles.task_for_cell(circuit.library, circuit.cell) if circuit.source == 'virtuoso' and circuit.library and circuit.cell else None
         native = dict(profile_task=existing and existing['task_key'], profile_task_generated=existing and existing['generated'],
-                      profile_recipes=[dict(id=key, label=value['label']) for key, value in profiles.RECIPES.items()]) if circuit.source == 'virtuoso' else {}
+                      profile_recipes=[dict(id=key, label=value['label']) for key, value in profiles.RECIPES.items()],
+                      working_copy=working_copy.load(circuit.library, circuit.cell) if circuit.library and circuit.cell else None
+                      ) if circuit.source == 'virtuoso' else {}
         if runtime is None:
             return dict(loaded=False, **blocked, **native)
         if circuit.source == 'virtuoso' and runtime.circuit.get('native_draft'):
@@ -599,6 +615,61 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             return profiles.delete_profile(body.name, run_rows=runs.list_runs(roots, include_mock=False))
         except profiles.ProfileError as exc:
             fail(409, exc, code='delete_refused')
+
+    # ------------------------------------------------------------------ working copy + its Maestro setup
+    def _virtuoso_write(action):
+        try:
+            return action()
+        except PermissionError as exc:
+            raise HTTPException(409, detail=dict(message=str(exc), gate=getattr(exc, 'gate', None)))
+        except (working_copy.CopyError, virtuoso_setup.SetupError) as exc:
+            fail(409, exc, code='refused')
+        except (KeyError, ValueError) as exc:
+            fail(422, exc)
+        except Exception as exc:
+            fail(502, exc)
+
+    @app.post('/api/virtuoso/copy')
+    def virtuoso_copy(body: CopyBody):
+        """Explicit click: copy the cell that was read (with its testbench) into the workbench's own library
+        `<library>_GATOR` - the first write into Virtuoso. Gated, takes the session lock, backs up cds.lib, never touches
+        the user's cells and checks that: the copy netlists like the original and the originals read back unchanged."""
+        if not body.profile_id:
+            fail(422, 'A connection profile is required')
+        return _virtuoso_write(lambda: working_copy.make(monitor, body.profile_id, body.library, body.cell))
+
+    @app.post('/api/virtuoso/setup/read')
+    def virtuoso_setup_read(body: SetupBody):
+        """Explicit click: what the working copy's Maestro view holds (test, analyses, outputs, specs, variables and the
+        instance parameters set to them) and the rows it stands for. With `config`: how the editors differ from it.
+        Read-only, zero cost."""
+        if not body.profile_id:
+            fail(422, 'A connection profile is required')
+
+        def read():
+            found = working_copy.read_setup(monitor, body.profile_id, body.library, body.cell)
+            if body.config is not None and found.get('test'):
+                config = parse_config(body.config)
+                ours = virtuoso_setup.from_rows(config, model_files=found['model_files'], analyses=found['analyses'],
+                                                variables=found['variables'], bindings=found['bindings'])
+                found['editor_differences'] = virtuoso_setup.differences(ours, found)
+            return found
+        return _virtuoso_write(read)
+
+    @app.post('/api/virtuoso/setup/write')
+    def virtuoso_setup_write(body: SetupBody):
+        """Explicit click: make the working copy's Maestro test say what the editors' rows say (Probes of source
+        ade_output, the Specs on exactly one of them) - or `setup`, an approved proposal - then read it back and
+        compare. Writes only into the copy; zero cost."""
+        if not body.profile_id:
+            fail(422, 'A connection profile is required')
+        if body.setup is None and body.config is None:
+            fail(422, 'Nothing to write: send the rows (config) or a setup')
+        setup = body.setup if body.setup is not None else virtuoso_setup.from_rows(
+            parse_config(body.config), analyses=body.analyses, variables=body.variables, bindings=body.bindings or ())
+        if body.setup is None and body.analyses is None:
+            setup = dict(setup, analyses=None)                  # keep the copy's analyses as they are
+        return _virtuoso_write(lambda: working_copy.write_setup(monitor, body.profile_id, body.library, body.cell, setup))
 
     def _native(body, op):
         try:

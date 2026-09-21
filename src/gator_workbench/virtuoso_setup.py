@@ -1,0 +1,286 @@
+"""The Virtuoso side of a task: what the working copy's Maestro view holds, and how it maps onto the editors' rows.
+
+One Maestro test (``GATOR``) on the working copy's testbench holds what the simulation needs and measures:
+
+* ``model_files`` - the model file and section (``maeSetEnvOption`` ``modelFiles``);
+* ``analyses`` - the enabled analyses and the options the workbench set (``maeSetAnalysis``);
+* ``outputs`` - named Cadence calculator expressions on testbench nets and branches (``maeAddOutput``): the Probes;
+* ``specs`` - a limit on an output (``maeSetSpec`` ``?gt`` / ``?lt`` / ``?range``): the starting Specs rows;
+* ``variables`` + ``bindings`` - Maestro design variables and the instance parameters set to them. Only parameters
+  whose PDK computes nothing from them may be bound: on the live GPDK045 (2026-09-21) a transistor width set to a
+  variable left the 12 side values the PDK derives from it (as, ad, ps, pd, nrd, nrs, sa, sb, sd, sca, scb, scc) at
+  their old numbers, so transistor sizes keep the verified path of writing the number through the PDK callbacks.
+
+Mapping onto the rows: an output is a Probes row with ``result_source = ade_output``, its name in ``source_name`` and
+its expression in ``signal``; a spec is a Specs row whose equation is that one probe; a variable is the Parameters
+row(s) of the instances bound to it. What only the optimizer uses (ranges, weights, hard/soft, scales, units) lives in
+the workbench alone and is never compared with Virtuoso.
+
+An expression runs inside the user's Virtuoso session when it is measured, so it must pass ``check_expression``: calls
+of listed calculator functions, strings, numbers, design variable names, arithmetic and ``?keyword`` arguments -
+nothing else is accepted, and nothing is evaluated here.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+
+TEST = 'GATOR'
+MAX_EXPRESSION = 300                                   # schema.MeasurementDefinition.signal
+# Cadence calculator functions an output may call. Anything else is refused, never evaluated.
+FUNCTIONS = frozenset('''
+VT VF VS VDC VN VN2 IT IF IS IDC OP OPT VAR getData value ymax ymin xmax xmin average rms peakToPeak frequency
+cross delay riseTime fallTime slewRate settlingTime overshoot bandwidth gainMargin phaseMargin gainBwProd
+unityGainFreq lshift clip dB10 dB20 db mag phase phaseDeg phaseRad real imag abs sqrt exp log log10 integ deriv
+pow min max leafValue calcVal iinteg dutyCycle pavg psd spectralPower thd harmonic harmonicFreq ipn ipnVRI
+compression compressionVRI stddev
+'''.split())
+NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$')
+TOKEN = re.compile(r'''\s*(?:(?P<string>"(?:[^"\\]|\\.)*")|(?P<number>(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?[a-zA-Z]?)
+                       |(?P<key>\?[A-Za-z_]\w*)|(?P<name>[A-Za-z_]\w*)|(?P<op>[-+*/(),])|(?P<bad>\S))''', re.X)
+ANALYSIS_OF = {'VT': 'tran', 'IT': 'tran', 'VF': 'ac', 'IF': 'ac', 'VDC': 'dc', 'IDC': 'dc', 'OP': 'dc', 'VN': 'noise', 'VN2': 'noise'}
+# A unit SUGGESTED from the outermost function of an expression; a Probes row always says it is a suggestion.
+UNIT_OF = {'frequency': 'Hz', 'bandwidth': 'Hz', 'unityGainFreq': 'Hz', 'gainBwProd': 'Hz', 'harmonicFreq': 'Hz',
+           'riseTime': 's', 'fallTime': 's', 'delay': 's', 'settlingTime': 's', 'slewRate': 'V/s', 'phaseMargin': 'deg',
+           'gainMargin': 'dB', 'dB20': 'dB', 'dB10': 'dB', 'db': 'dB', 'phaseDeg': 'deg', 'dutyCycle': '%'}
+SPEC_OPS = {'gt': '>=', 'lt': '<=', 'range': 'interval'}
+
+
+class SetupError(ValueError):
+    """Why a setup cannot be written or used, in words the form can show."""
+
+
+def check_expression(expression, variables=()) -> list[str]:
+    """Problems of one output expression (empty = acceptable). Tokenizes; never evaluates."""
+    if not isinstance(expression, str) or not expression.strip():
+        return ['The expression is empty']
+    if len(expression) > MAX_EXPRESSION:
+        return [f'The expression is longer than {MAX_EXPRESSION} characters']
+    problems, tokens, depth = [], [], 0
+    for match in TOKEN.finditer(expression):
+        kind = match.lastgroup
+        if kind == 'bad':
+            problems.append(f'{match.group(kind)!r} is not allowed in an expression')
+        tokens.append((kind, match.group(kind)))
+    for index, (kind, text) in enumerate(tokens):
+        following = tokens[index + 1][1] if index + 1 < len(tokens) else None
+        if kind == 'name':
+            if following == '(':
+                if text not in FUNCTIONS:
+                    problems.append(f'{text}() is not a calculator function the workbench accepts')
+            elif text not in ('t', 'nil') and text not in variables:
+                problems.append(f'{text} is neither a design variable of this setup nor a function call')
+        elif text == '(':
+            depth += 1
+        elif text == ')':
+            depth -= 1
+            if depth < 0:
+                problems.append('Unbalanced brackets')
+                break
+    if depth > 0:
+        problems.append('Unbalanced brackets')
+    return list(dict.fromkeys(problems))
+
+
+def outermost_function(expression):
+    match = re.match(r'\s*([A-Za-z_]\w*)\s*\(', expression or '')
+    return match.group(1) if match else None
+
+
+def analysis_of(expression):
+    """The analysis an expression reads, from the signal accessors it calls; 'other' when mixed or unknown."""
+    found = {ANALYSIS_OF[name] for name in re.findall(r'([A-Za-z_]\w*)\s*\(', expression or '') if name in ANALYSIS_OF}
+    return found.pop() if len(found) == 1 else 'other'
+
+
+def suggested_unit(expression):
+    outer = outermost_function(expression)
+    if outer in UNIT_OF:
+        return UNIT_OF[outer]
+    inner = set(re.findall(r'([A-Za-z_]\w*)\s*\(', expression or ''))
+    if inner & {'VT', 'VF', 'VS', 'VDC'} and not inner & {'IT', 'IF', 'IS', 'IDC'}:
+        return 'V'
+    if inner & {'IT', 'IF', 'IS', 'IDC'} and not inner & {'VT', 'VF', 'VS', 'VDC'}:
+        return 'A'
+    return '1'
+
+
+# ---------------------------------------------------------------------------------- the setup itself
+def canonical(value) -> str:
+    """A value as it is compared: a number in one spelling ("1G", "1e+09" and "1000000000" are the same limit),
+    anything else as written."""
+    try:
+        return format(_plain(value), '.12g')
+    except (SetupError, ValueError):
+        return ' '.join(str(value).split())
+
+
+def normalize(setup) -> dict:
+    """The comparable form of a setup: names sorted, numbers in one spelling, analyses reduced to the options stated."""
+    setup = setup or {}
+    return dict(
+        test=setup.get('test') or TEST,
+        model_files=sorted([str(f), str(s)] for f, s in setup.get('model_files') or []),
+        analyses={name: {str(k): canonical(v) for k, v in (options or {}).items()} for name, options in sorted((setup.get('analyses') or {}).items())},
+        variables={str(k): canonical(v) for k, v in sorted((setup.get('variables') or {}).items())},
+        bindings=sorted((dict(cell=b['cell'], instance=b['instance'], parameter=b['parameter'], variable=b['variable'])
+                         for b in setup.get('bindings') or []), key=lambda b: (b['cell'], b['instance'], b['parameter'])),
+        outputs=[dict(name=o['name'], expression=' '.join(str(o['expression']).split())) for o in setup.get('outputs') or []],
+        specs=sorted((dict(output=s['output'], op=s['op'], value=[canonical(v) for v in s['value']] if isinstance(s['value'], (list, tuple)) else canonical(s['value']))
+                      for s in setup.get('specs') or []), key=lambda s: s['output']))
+
+
+def fingerprint(setup) -> str:
+    return hashlib.sha256(json.dumps(normalize(setup), sort_keys=True).encode()).hexdigest()
+
+
+def validate(setup, *, bindable=None) -> list[str]:
+    """Problems of a setup before anything is written (empty = it may be written)."""
+    s, problems = normalize(setup), []
+    if not NAME.match(s['test']):
+        problems.append(f'Test name {s["test"]!r} is not a plain name')
+    names = [o['name'] for o in s['outputs']]
+    for name in names:
+        if not NAME.match(name):
+            problems.append(f'Output name {name!r} must be letters, digits and "_"')
+    if len(set(names)) != len(names):
+        problems.append('Two outputs have the same name')
+    for output in s['outputs']:
+        problems += [f'{output["name"]}: {p}' for p in check_expression(output['expression'], s['variables'])]
+    for spec in s['specs']:
+        if spec['output'] not in names:
+            problems.append(f'A spec names the output {spec["output"]!r}, which the setup does not have')
+        if spec['op'] not in SPEC_OPS:
+            problems.append(f'{spec["output"]}: spec kind {spec["op"]!r} is not one of {", ".join(SPEC_OPS)}')
+        elif (spec['op'] == 'range') != isinstance(spec['value'], list):
+            problems.append(f'{spec["output"]}: a range spec needs two values, the others one')
+    for name in s['variables']:
+        if not NAME.match(name):
+            problems.append(f'Variable name {name!r} must be letters, digits and "_"')
+    for binding in s['bindings']:
+        if binding['variable'] not in s['variables']:
+            problems.append(f'{binding["instance"]}.{binding["parameter"]} is bound to {binding["variable"]}, which is not a variable of the setup')
+        if bindable is not None:
+            key = (binding['cell'], binding['instance'])
+            if key not in bindable:
+                problems.append(f'{binding["instance"]} in {binding["cell"]} cannot be set by a variable: only analogLib resistors, '
+                                'capacitors, inductors and sources can (a PDK device derives other values from its parameters or '
+                                'clamps them; transistor sizes are written as numbers instead)')
+            elif binding['parameter'] not in bindable[key]:
+                problems.append(f'{binding["instance"]} has no parameter {binding["parameter"]!r} (it has: {", ".join(sorted(bindable[key]))})')
+    for name, options in s['analyses'].items():
+        if not NAME.match(name):
+            problems.append(f'Analysis name {name!r} is not a plain name')
+    return problems
+
+
+def differences(expected, found) -> list[str]:
+    """What the Virtuoso side (`found`, read back) says differently from `expected`, as plain sentences. Analysis
+    options Maestro adds by itself are not differences: only the options `expected` states are compared."""
+    e, f, out = normalize(expected), normalize(found), []
+    if e['model_files'] != f['model_files']:
+        out.append(f'Model files: the task says {e["model_files"]}, Virtuoso has {f["model_files"]}')
+    for name in sorted(set(e['analyses']) | set(f['analyses'])):
+        if name not in f['analyses']:
+            out.append(f'Analysis {name} is not enabled in Virtuoso')
+        elif name not in e['analyses']:
+            out.append(f'Virtuoso also runs a {name} analysis')
+        else:
+            for key, value in e['analyses'][name].items():
+                if f['analyses'][name].get(key) != value:
+                    out.append(f'{name} {key}: the task says {value}, Virtuoso has {f["analyses"][name].get(key)}')
+    for label, left, right in (('variable', e['variables'], f['variables']),):
+        for name in sorted(set(left) | set(right)):
+            if left.get(name) != right.get(name):
+                out.append(f'Design {label} {name}: the task says {left.get(name, "(none)")}, Virtuoso has {right.get(name, "(none)")}')
+    key = lambda b: (b['cell'], b['instance'], b['parameter'])
+    eb, fb = {key(b): b['variable'] for b in e['bindings']}, {key(b): b['variable'] for b in f['bindings']}
+    for k in sorted(set(eb) | set(fb)):
+        if eb.get(k) != fb.get(k):
+            out.append(f'{k[1]}.{k[2]} in {k[0]}: the task binds it to {eb.get(k, "(nothing)")}, Virtuoso to {fb.get(k, "(nothing)")}')
+    eo, fo = {o['name']: o['expression'] for o in e['outputs']}, {o['name']: o['expression'] for o in f['outputs']}
+    for name in sorted(set(eo) | set(fo)):
+        if eo.get(name) != fo.get(name):
+            out.append(f'Output {name}: the task says {eo.get(name, "(none)")}, Virtuoso has {fo.get(name, "(none)")}')
+    es, fs = {s['output']: (s['op'], s['value']) for s in e['specs']}, {s['output']: (s['op'], s['value']) for s in f['specs']}
+    for name in sorted(set(es) | set(fs)):
+        if es.get(name) != fs.get(name):
+            out.append(f'Spec on {name}: the task says {es.get(name, "(none)")}, Virtuoso has {fs.get(name, "(none)")}')
+    return out
+
+
+# ---------------------------------------------------------------------------------- rows <-> setup
+def probe_id(output_name) -> str:
+    return f'm_{output_name}'
+
+
+def from_rows(config, *, test=TEST, model_files=(), analyses=None, variables=None, bindings=()) -> dict:
+    """The setup a configuration's rows ask for: every `ade_output` Probes row is an output (its `signal` holds the
+    expression), every active Specs row whose equation is exactly one such probe is that output's spec. Specs over
+    several probes, and every optimizer-only field, stay in the workbench."""
+    measurements = [m for m in config.measurements if m.result_source == 'ade_output']
+    by_probe = {m.measurement_id: m for m in measurements}
+    outputs = [dict(name=m.source_name, expression=m.signal or '') for m in measurements]
+    specs = []
+    for target in config.targets:
+        probe = by_probe.get((target.equation or '').strip())
+        if probe is None or not target.active:
+            continue
+        if target.constraint == '>=' and target.lower is not None:
+            specs.append(dict(output=probe.source_name, op='gt', value=_number_text(target.lower, target.unit)))
+        elif target.constraint == '<=' and target.upper is not None:
+            specs.append(dict(output=probe.source_name, op='lt', value=_number_text(target.upper, target.unit)))
+        elif target.constraint == 'interval' and target.lower is not None and target.upper is not None:
+            specs.append(dict(output=probe.source_name, op='range',
+                              value=[_number_text(target.lower, target.unit), _number_text(target.upper, target.unit)]))
+    return dict(test=test, model_files=[list(m) for m in model_files], analyses=dict(analyses or {}),
+                variables=dict(variables or {}), bindings=list(bindings), outputs=outputs, specs=specs)
+
+
+def _number_text(value, unit):
+    """A limit as Maestro gets it: in the probe's canonical unit, as a plain number (Maestro has no units)."""
+    from . import units
+    try:
+        return format(units.to_canonical(float(value), unit), '.12g')
+    except Exception:
+        return format(float(value), '.12g')
+
+
+def to_rows(setup) -> dict:
+    """Probes and Specs rows that say what the setup says. Units are SUGGESTED from each expression and marked so;
+    what only the optimizer uses gets the schema's defaults (and a normalization scale from the limit)."""
+    s = normalize(setup)
+    probes, specs = [], []
+    for output in s['outputs']:
+        unit = suggested_unit(output['expression'])
+        probes.append(dict(measurement_id=probe_id(output['name']), analysis=analysis_of(output['expression']),
+                           result_source='ade_output', source_name=output['name'], signal=output['expression'], unit=unit,
+                           notes=f'Maestro output {output["name"]} of the working copy (test {s["test"]}). '
+                                 f'Unit {unit!r} suggested from the expression - check it.'))
+    units_of = {p['source_name']: p['unit'] for p in probes}
+    for spec in s['specs']:
+        values = [float(_plain(v)) for v in (spec['value'] if isinstance(spec['value'], list) else [spec['value']])]
+        row = dict(metric_id=spec['output'], equation=probe_id(spec['output']), unit=units_of.get(spec['output'], '1'),
+                   constraint=SPEC_OPS[spec['op']], normalization_scale=max(abs(v) for v in values) or 1.0,
+                   basis=f'Maestro spec on {spec["output"]} in the working copy (test {s["test"]}).')
+        if spec['op'] == 'gt':
+            row['lower'] = values[0]
+        elif spec['op'] == 'lt':
+            row['upper'] = values[0]
+        else:
+            row['lower'], row['upper'] = sorted(values)
+        specs.append(row)
+    return dict(measurements=probes, targets=specs)
+
+
+SUFFIX = dict(T=1e12, G=1e9, M=1e6, K=1e3, k=1e3, m=1e-3, u=1e-6, n=1e-9, p=1e-12, f=1e-15, a=1e-18)
+
+
+def _plain(text) -> float:
+    """A Cadence number ("1G", "50n", "2.5e-9") as a float."""
+    text = str(text).strip()
+    match = re.fullmatch(r'([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)([TGMKkmunpfa]?)', text)
+    if not match:
+        raise SetupError(f'{text!r} is not a number Maestro would write')
+    return float(match.group(1)) * SUFFIX.get(match.group(2), 1.0)

@@ -629,6 +629,60 @@ transition archive cannot be shown. The drawing library (cytoscape 3.34.3, MIT, 
 separate file that the browser fetches only when the view is opened. Browser check:
 `frontend/scripts/graph_view_check.mjs`.
 
+### The Virtuoso side of a task: working copy and Maestro setup (added 2026-09-21, user request)
+
+The first part of the task flow the user asked for on 2026-09-21 (cell + testbench -> the agent sets up parameters,
+probes and specs IN Virtuoso -> read back -> edited anywhere -> "Save task"). It lives in the note "Read from Virtuoso"
+of the Project panel, under the buttons of a cell read into the workbench, and every step is a button.
+
+**Make a working copy.** The task flow writes only into copies. The button copies the testbench the cell was read through
+and every cell of the same library under it into `<library>_GATOR` - a library the workbench adds itself, in Virtuoso's
+working directory next to the user's libraries, bound to the same technology library - and points the copied testbench at
+the copied cells. Cell and instance names stay the same, so every Parameters row and every probe names the same instance
+path in the copy. It is the first write into Virtuoso: gated (`write_cellview`), under the project's Virtuoso session lock
+(a real run and the copy exclude each other), `cds.lib` downloaded before a library is added (and after: the one added
+`DEFINE` line is on record). Only functions whose syntax was read from the Cadence documentation of the installation
+itself are used (`dbCopyCellView`, `dbSetInstHeaderMasterName`, `schCheck`, `dbSave`, and the bridge's `library.create`).
+The copy is accepted only when the copy's netlist has the same statements as the original's in every block (their order
+does not matter to Spectre - re-pointing an instance moves it in Virtuoso's database), every copied cell in it comes from
+the copy library, and the original schematics read back identical before and after. A library of that name the
+workbench did not make is never written into; a copy that stopped half-way is finished by the next press, which may
+overwrite only what the failed attempt wrote. Records: `configs/local/workbench/working_copies/<library>/<cell>/`
+(`copy.json`, the copy's netlist, the `cds.lib` before/after, the bridge log) and `working_copies/libraries.json`.
+Not copied yet: cells with a CDF of their own (parameterized hierarchical cells) - the button says so instead.
+
+**Read setup / Use in editors / Write to Virtuoso.** One Maestro test, `GATOR`, on the copy's testbench holds what the
+simulation needs and measures: the model file (the connection's, section `tt`), the analyses, the outputs (Cadence
+calculator expressions on testbench nets and branches) and a spec per output (`>`, `<` or a range), plus design variables
+and the instance parameters set to them. A Maestro output is a Probes row with source `ade_output` (the output name in
+*source_name*, the expression in *signal*); a Maestro spec is the Specs row whose equation is that one probe. **Read
+setup** shows a one-line summary and, folded, how the editors differ from the copy. **Use in editors** takes the outputs
+and specs over (units are suggested from the expression and marked so; a unit or an optimizer setting already chosen on a
+row of the same name stays, and a limit - Maestro keeps plain numbers in base units - is converted into that unit; one
+Undo reverts it). **Write to Virtuoso** makes the copy's test say what the editors say (the analyses of the copy are
+kept), reads it back and says whether the copy now matches. A spec over several probes, and every optimizer-only field
+(scale, weight, hard/soft, keep improving, ranges), stays in the workbench. Nothing is synchronized on its own.
+
+**What may be a Maestro variable.** Only values of analogLib's own resistor, capacitor, inductor and sources. A PDK
+device derives other values from its parameters or clamps them: on the live GPDK045 a transistor width set to a variable
+left the 12 side values the PDK computes from it (as, ad, ps, pd, nrd, nrs, sa, sb, sd, sca, scb, scc) at their old
+numbers, which would simulate a different transistor. Transistor sizes therefore keep the verified path of writing the
+number through the PDK callbacks - into the copy.
+
+**Expressions** run inside the user's Virtuoso session when they are measured, so an output must pass an allowed list:
+calls of listed calculator functions (`VT`, `VF`, `IT`, `frequency`, `bandwidth`, `phaseMargin`, `ymax` ...), strings,
+numbers, the setup's variable names, arithmetic and `?keyword` arguments; anything else (`system(...)`, `;`, backquotes)
+is refused before anything is written. Nothing is evaluated by the workbench itself.
+
+Not built yet (the rest of the flow): the task file and **Save task** / **Save task as** (they replace Create profile),
+the agent's proposal of a whole setup, and the run path that measures Maestro outputs (Maestro's netlist once, Spectre
+per evaluation, OCEAN on that run's results; proven once against one Maestro run). Until then `ade_output` probes and
+design variables stay blocked for runs by static validation.
+
+Tests: `tests/workbench/test_wb_working_copy.py`, `tests/workbench/test_wb_virtuoso_setup.py` (fake write process; the
+answer shapes are the live installation's). Browser check: `frontend/scripts/working_copy_check.mjs` (hermetic, fixtures
+only, safe against the live backend).
+
 ## Reload saved data
 
 ```python

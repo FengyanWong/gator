@@ -1,0 +1,219 @@
+// Browser check of the Virtuoso task flow's first half in the Project panel: the WORKING COPY block and the Maestro setup of
+// that copy (WorkingCopy.tsx). Same approach as virtuoso_source_check.mjs: a throwaway headless Edge over the DevTools
+// protocol against a workbench page (default http://127.0.0.1:8765/; point GATOR_WORKBENCH_URL at a preview of a
+// temporary build to check a page that is not live yet). EVERY /api/virtuoso/* and /api/circuit/load request is answered
+// with a canned FIXTURE, so Virtuoso is never contacted and nothing is written anywhere; the configuration lives in the
+// throwaway browser profile. What it pins (user request 2026-09-21, "start building the mentioned flow"):
+//   - no copy yet: one short "Make a working copy" button, the explanation folded; pressing it asks the backend once;
+//   - a copy: its library named, "Read setup" / "Write to Virtuoso" only on a press, nothing on load;
+//   - a read setup: summary line, how the editors differ, "Use in editors" fills Probes/Specs keeping the user's unit and
+//     optimizer settings, one Undo step; then the editors match; a write reads back and says so;
+//   - writing with no Maestro probe asks first; a blocked gate and an older backend read plainly.
+// Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
+//   GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/working_copy_check.mjs)" [screenshot-dir]
+// Exit code 1 if any check fails.
+import { spawn } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const PORT = 9395, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:8765/';
+const out = process.argv[2] ?? tmpdir();
+const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-copy-'));
+const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
+  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let failures = 0; const consoleErrors = [];
+const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+
+// ---- canned answers ------------------------------------------------------------------------------------------
+const LIB = 'GPDK045_RINGOSC', CELL = 'ring_osc_3stage', TB = 'tb_ring_osc_3stage', COPY = 'GPDK045_RINGOSC_GATOR';
+const RECORD = { format: 'gator-working-copy-1', verified: true, problems: [], original: { library: LIB, cell: CELL, testbench: TB },
+  copy: { library: COPY, cell: CELL, testbench: TB, path: `/home/fixture/${COPY}` }, originals_unchanged: true, netlist_equal: true };
+let copied = false;
+const draft = () => ({ loaded: true, task_key: `virtuoso:${LIB}/${CELL}`, mock: false, native_draft: true, complete: true, diagnostics: [],
+  profile_task: null, profile_task_generated: null, profile_recipes: [], working_copy: copied ? RECORD : null,
+  circuit: { library: LIB, cell: CELL, native_draft: true, testbench_cell: TB }, hierarchy: { XU1: { MN1: {} }, V0: {} },
+  analysis_context: null, evaluation_backend: null, max_concurrency: 1, testbench_probes: null,
+  summary: { device_count: 2, unknown_devices: [], devices: [{ instance_path: 'XU1/MN1', kind: 'nmos', parameters: { w: { value: 1e-6 } } }] },
+  notes: ['FIXTURE: read from Virtuoso (canned answer).'] });
+const SETUP_ROWS = {
+  measurements: [
+    { measurement_id: 'm_freq', analysis: 'tran', result_source: 'ade_output', source_name: 'freq', signal: 'frequency(VT("/OUT"))', unit: 'Hz', notes: 'FIXTURE suggested' },
+    { measurement_id: 'm_vmax', analysis: 'tran', result_source: 'ade_output', source_name: 'vmax', signal: 'ymax(VT("/OUT"))', unit: 'V', notes: 'FIXTURE suggested' }],
+  targets: [
+    { metric_id: 'freq', equation: 'm_freq', unit: 'Hz', constraint: '>=', lower: 1e9, normalization_scale: 1e9, basis: 'FIXTURE' },
+    { metric_id: 'vmax', equation: 'm_vmax', unit: 'V', constraint: 'interval', lower: 0.9, upper: 1.1, normalization_scale: 1.1, basis: 'FIXTURE' }] };
+const setupAnswer = config => {
+  const ade = (config?.measurements ?? []).filter(m => m.result_source === 'ade_output').map(m => m.source_name).sort();
+  return { exists: true, tests: ['GATOR'], test: 'GATOR', model_files: [['/pdk/gpdk045.scs', 'tt']], analyses: { tran: { stop: '50n' } },
+    variables: { VSUP: '1.0' }, bindings: [], outputs: [{ name: 'freq', expression: 'frequency(VT("/OUT"))' }, { name: 'vmax', expression: 'ymax(VT("/OUT"))' }],
+    specs: [{ output: 'freq', op: 'gt', value: '1e+09' }, { output: 'vmax', op: 'range', value: ['0.9', '1.1'] }], fingerprint: 'f'.repeat(64),
+    rows: SETUP_ROWS, editor_differences: JSON.stringify(ade) === JSON.stringify(['freq', 'vmax']) ? [] : ['Output freq: the task says (none), Virtuoso has frequency(VT("/OUT"))',
+      'Output vmax: the task says (none), Virtuoso has ymax(VT("/OUT"))'] };
+};
+const gateBlocked = { message: 'The connection gate blocked reading the Maestro setup', gate: { allowed: false, status: 'blocked', blocking: ['tunnel'], uncertain: [] } };
+
+try {
+  let target;
+  for (let i = 0; i < 75 && !target; i++) {
+    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
+    if (!target) await sleep(200);
+  }
+  if (!target) throw new Error('Edge did not open a debugging port');
+  const ws = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
+  let nextId = 0; const pending = new Map(); const calls = []; let mode = 'ok';
+  const dialogs = []; const answers = [];
+  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
+  const fulfil = (requestId, status, obj) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
+    responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
+  const answer = async ({ requestId, request }) => {
+    const pathname = new URL(request.url).pathname, body = JSON.parse(request.postData ?? '{}');
+    if (pathname === '/api/circuit/load') {
+      return body.circuit?.source === 'virtuoso' ? fulfil(requestId, 200, draft()) : send('Fetch.continueRequest', { requestId });
+    }
+    const op = pathname.replace('/api/virtuoso/', '');
+    calls.push({ op, ...body });
+    await sleep(150);
+    if (op === 'libraries') return fulfil(requestId, 200, { libraries: [LIB, 'analogLib'] });
+    if (op === 'cells') return fulfil(requestId, 200, { library: body.library, truncated: false, technology_library: 'gpdk045', cells: [
+      { name: CELL, views: ['schematic', 'symbol'], has_schematic: true }, { name: TB, views: ['schematic'], has_schematic: true }] });
+    if (op === 'read') return fulfil(requestId, 200, { source: 'virtuoso', library: body.library, cell: body.cell, origin: 'FIXTURE', instance_count: 1, nets: ['OUT'],
+      instances: [{ instance_path: 'MN1', master: { library: 'gpdk045', cell: 'nmos1v', view: 'symbol' }, terminals: [], parameters: {} }], requires_confirmation: [], note: 'FIXTURE' });
+    if (mode === 'blocked') return fulfil(requestId, 409, { detail: gateBlocked });
+    if (mode === 'outdated') return fulfil(requestId, 404, { detail: 'Not Found' });
+    if (op === 'copy') { copied = true; return fulfil(requestId, 200, { ...RECORD, already: false, directory: '/fixture' }); }
+    if (op === 'setup/read') return fulfil(requestId, 200, setupAnswer(body.config));
+    if (op === 'setup/write') return fulfil(requestId, 200, { ...setupAnswer(body.config), written: {}, differences: [], matches: true });
+    return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${op} is not expected` } });
+  };
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
+    else if (m.method === 'Fetch.requestPaused') answer(m.params).catch(() => { /* page went away */ });
+    else if (m.method === 'Page.javascriptDialogOpening') {
+      const accept = answers.length ? answers.shift() : null;
+      dialogs.push({ message: m.params.message, planned: accept !== null });
+      send('Page.handleJavaScriptDialog', { accept: !!accept }).catch(() => undefined);
+    }
+    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
+    else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push(m.params.args.map(a => a.value ?? a.description).join(' '));
+  };
+  const evaluate = async expression => {
+    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
+    return r.result.value;
+  };
+  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Circuit source'))`;
+  const BLOCK = `${PANEL}?.querySelector('.working-copy')`;
+  const BUTTON = text => `[...(${BLOCK}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
+  const blockText = () => evaluate(`${BLOCK}?.textContent ?? ''`);
+  const visible = selector => evaluate(`(() => { const e = ${selector}; return !!e && e.checkVisibility(); })()`);
+  const press = async label => { await evaluate(`${BUTTON(label)}.click()`); };
+  const stored = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')`);
+  const settle = async (ms = 900) => { await sleep(ms); };
+  const shot = async name => {
+    await evaluate(`${BLOCK}.scrollIntoView({ block: 'center' })`); await sleep(200);
+    const clip = await evaluate(`(() => { const a = document.querySelector('.left').getBoundingClientRect(), b = ${BLOCK}.getBoundingClientRect();
+      return { x: a.x, y: Math.max(a.y, b.y - 40), width: a.width, height: Math.min(a.bottom, b.bottom + 20) - Math.max(a.y, b.y - 40), scale: 2 }; })()`);
+    const { data } = await send('Page.captureScreenshot', { format: 'png', clip });
+    writeFileSync(path.join(out, name), Buffer.from(data, 'base64'));
+  };
+
+  await send('Page.enable'); await send('Runtime.enable');
+  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
+  await send('Fetch.enable', { patterns: ['*/api/virtuoso/*', '*/api/circuit/load'].map(urlPattern => ({ urlPattern, requestStage: 'Request' })) });
+  // A configuration that already holds a Probes row and a Specs row of the user's own for "freq": their unit and optimizer
+  // settings must survive "Use in editors". Started from the live starter configuration, so it passes the schema.
+  await send('Page.navigate', { url: APP });
+  for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
+  for (let i = 0; i < 50 && !(await stored()); i++) await sleep(100);
+  const starter = await stored();                                   // the page's own configuration: every field the page needs
+  const seeded = { ...starter, circuit: { ...starter.circuit, source: 'virtuoso', task_id: null, library: LIB, cell: CELL, view: 'schematic', testbench_cell: TB, pdk_id: 'gpdk045' },
+    measurements: [...starter.measurements, { measurement_id: 'm_freq', analysis: 'tran', result_source: 'ade_output', source_name: 'freq',
+      signal: 'frequency(VT("/OUT"))', unit: 'GHz', notes: 'mine' }],
+    targets: [...starter.targets, { metric_id: 'freq', equation: 'm_freq', unit: 'GHz', constraint: '>=', lower: 0.5, normalization_scale: 0.5, hard: false, soft_weight: 3 }] };
+  await evaluate(`localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(seeded))})`);
+  await send('Page.reload');
+  for (let i = 0; i < 100 && !(await evaluate(`!!(${BLOCK})`)); i++) await sleep(100);
+  await settle(1500);
+  if (!(await evaluate(`!!(${BLOCK})`))) console.log('DEBUG panel: ' + (await evaluate(`${PANEL}?.textContent.slice(0, 900) ?? 'no panel'`))
+    + '\nDEBUG stored circuit: ' + JSON.stringify((await stored())?.circuit) + '\nDEBUG calls: ' + calls.map(c => c.op).join(' ') + '\nDEBUG errors: ' + consoleErrors.join(' | ').slice(0, 1500));
+  const loadedOps = calls.map(c => c.op);
+  check('nothing is copied, read or written on load', !loadedOps.some(op => ['copy', 'setup/read', 'setup/write'].includes(op)), loadedOps.join(' | '));
+
+  // ---- no copy yet ----------------------------------------------------------------------------------------------
+  check('without a copy: one short "Make a working copy" button', await evaluate(`!!(${BUTTON('Make a working copy')})`) && !(await evaluate(`!!(${BUTTON('Read setup')})`)));
+  check('the button says what it is about beside it, the details are folded', (await blockText()).includes('never in your cells')
+    && !(await visible(`[...${BLOCK}.querySelectorAll('details p')].find(p => p.textContent.includes('cds.lib'))`)));
+  await shot('working-copy-1-none.png');
+  let mark = calls.length;
+  await press('Make a working copy'); await settle(1500);
+  check('pressing it asks the backend once, for this cell', JSON.stringify(calls.slice(mark).map(c => [c.op, c.library, c.cell].join(' '))) === JSON.stringify([`copy ${LIB} ${CELL}`]),
+    JSON.stringify(calls.slice(mark)));
+  check('the copy is named and said to be checked', (await blockText()).includes(`Working copy: ${COPY}/${TB}`) && (await blockText()).includes('netlists like your cell'), await blockText());
+  check('then two buttons: Read setup and Write to Virtuoso', await evaluate(`!!(${BUTTON('Read setup')}) && !!(${BUTTON('Write to Virtuoso')})`));
+  check('reading the setup still waits for a press', !calls.some(c => c.op === 'setup/read'));
+
+  // ---- reading the copy's Maestro setup -----------------------------------------------------------------------------
+  mark = calls.length;
+  await press('Read setup'); await settle();
+  check('Read setup sends the editors along, once', calls.slice(mark).length === 1 && calls[mark].op === 'setup/read' && Array.isArray(calls[mark].config?.measurements));
+  check('the setup is summarized in one line', (await blockText()).includes('Test GATOR: 2 outputs, 2 specs, 1 variable, analyses: tran'), await blockText());
+  check('the editors are said to differ, the list folded', (await blockText()).includes('The editors differ from the copy in 2 places')
+    && !(await visible(`[...${BLOCK}.querySelectorAll('li')].find(li => li.textContent.startsWith('Output vmax'))`)));
+  await shot('working-copy-2-read.png');
+  await press('Use in editors'); await settle();
+  const config = await stored();
+  const probe = config.measurements.find(m => m.measurement_id === 'm_freq'), vmax = config.measurements.find(m => m.measurement_id === 'm_vmax');
+  const spec = config.targets.find(t => t.metric_id === 'freq');
+  check('Use in editors brings the copy\'s outputs as Probes rows', !!vmax && vmax.result_source === 'ade_output' && vmax.signal === 'ymax(VT("/OUT"))', JSON.stringify(vmax));
+  check('your unit on a probe of the same name stays', probe?.unit === 'GHz' && probe?.notes === 'mine', JSON.stringify(probe));
+  check('your optimizer settings on the spec stay; the copy\'s limit (1e9 Hz) arrives in your unit (1 GHz)', spec?.hard === false && spec?.soft_weight === 3
+    && spec?.unit === 'GHz' && Math.abs(spec?.lower - 1) < 1e-12 && spec?.normalization_scale === 0.5, JSON.stringify(spec));
+  const vmaxSpec = config.targets.find(t => t.metric_id === 'vmax');
+  check('a spec on a probe in the base unit keeps the copy\'s numbers', vmaxSpec?.unit === 'V' && vmaxSpec?.lower === 0.9 && vmaxSpec?.upper === 1.1, JSON.stringify(vmaxSpec));
+  check('the other rows are left alone', config.measurements.length === starter.measurements.length + 2
+    && starter.targets.every(t => config.targets.some(u => u.metric_id === t.metric_id)), JSON.stringify(config.targets.map(t => t.metric_id)));
+  check('the page says Undo brings the previous rows back', (await blockText()).includes('Undo brings the previous rows back'));
+  mark = calls.length;
+  await press('Read setup'); await settle();
+  check('read again: the editors match the copy', (await blockText()).includes('The editors match the copy.'), await blockText());
+  await press('Write to Virtuoso'); await settle();
+  check('Write to Virtuoso sends the rows once and reports the read-back', calls.slice(mark).map(c => c.op).join(' ') === 'setup/read setup/write'
+    && (await blockText()).includes('Written and read back: the copy now says what the editors say.'), await blockText());
+  await shot('working-copy-3-written.png');
+
+  // ---- writing with no Maestro probe asks first --------------------------------------------------------------------------
+  await evaluate(`(() => { const c = JSON.parse(localStorage.getItem('gator-workbench-config-v1'));
+    c.measurements = c.measurements.filter(m => m.result_source !== 'ade_output'); localStorage.setItem('gator-workbench-config-v1', JSON.stringify(c)); })()`);
+  await send('Page.reload');
+  for (let i = 0; i < 100 && !(await evaluate(`!!(${BUTTON('Write to Virtuoso')})`)); i++) await sleep(100);
+  await settle(1200);
+  mark = calls.length; answers.push(false);
+  await press('Write to Virtuoso'); await settle();
+  check('with no Maestro probe in the editors, writing asks first; No writes nothing', dialogs.at(-1)?.planned && dialogs.at(-1).message.includes('no Maestro probes')
+    && !calls.slice(mark).some(c => c.op === 'setup/write'), JSON.stringify(dialogs.at(-1)));
+
+  // ---- a blocked link and an older backend read plainly ---------------------------------------------------------------------
+  mode = 'blocked';
+  await press('Read setup'); await settle();
+  check('a blocked gate says Virtuoso cannot be reached and what to do', (await blockText()).includes('Virtuoso cannot be reached (tunnel)') && (await blockText()).includes('Connection window'), await blockText());
+  mode = 'outdated';
+  await press('Read setup'); await settle();
+  check('an older backend says to restart it', (await blockText()).includes('This backend is older than the page'), await blockText());
+  check('no unplanned dialog', dialogs.every(d => d.planned), JSON.stringify(dialogs));
+  check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
+  ws.close();
+} catch (error) {
+  failures++;
+  console.log('FAIL  the check itself stopped: ' + (error?.stack ?? error));
+} finally {
+  edge.kill();
+  await sleep(500);
+  try { rmSync(profile, { recursive: true, force: true }); } catch { /* Edge may still hold a file */ }
+  console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
+  process.exit(failures ? 1 : 0);
+}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, Json } from '../api';
+import { WorkingCopy } from './WorkingCopy';
 
 /** The connection block lives in Connection.tsx: one button in this column that opens the connection window. */
 
@@ -483,6 +484,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
               <button className="primary" onClick={() => onAgent('draft_config', [], DRAFT_PROMPT)} title="Opens the Agent tab with the request written out. Nothing is sent until you press Enter in its message box.">Ask the agent for suggestions</button>
               <button disabled={!profileId || importing || !!listing} onClick={importCell} title="After a change in Virtuoso, or to export through another testbench cell. Read-only.">{importing ? 'Reading...' : 'Read the cell again'}</button>
             </div>
+            <WorkingCopy profileId={profileId} library={ref.library} cell={ref.cell} testbench={circuit.circuit?.testbench_cell ?? null}
+              record={circuit.working_copy} config={config} setConfig={setConfig} onCopied={() => load(ref)} />
             {noteHere?.state === 'brought' && (() => {
               const rows: Json[] = noteHere.found.rows, supply = rows.find(r => /:p$/.test(r.signal ?? ''))?.signal, net = rows.find(r => r.signal && !/[:\s]/.test(r.signal))?.signal;
               return <>

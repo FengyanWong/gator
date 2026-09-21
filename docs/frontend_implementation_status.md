@@ -2427,3 +2427,96 @@ Verification:
   rebuild `dist`. The new page saves `equation` rows, which the old backend's schema rejects (extra key, missing
   `measurement_id`). The old page on a new backend works (rows are migrated server side), though its Specs table shows
   an empty `equation` cell for an old saved row until the rebuild. Uncommitted.
+
+### 7.55 Virtuoso task flow, part 1: the working copy and the Maestro setup of the copy (2026-09-21 late evening, separate session, explicit user request)
+
+Request: after a feasibility check of the user's flow plan (pick cell + testbench -> read -> the agent sets up parameters,
+probes and specs ON the Virtuoso side -> read back, editable in the workbench by user or agent -> a manual "Save task" ->
+"frontend, backend and Virtuoso side consistency"), "start building the mentioned flow; delete existing repetitive
+similar functionalities with my approval" - taking the chat of the session "Parameters, specs, and probes linking in
+Virtuoso" into account (Maestro limits fill the Specs rows; a workbench edit is written back; the Specs tab keeps the
+optimizer's own columns; measuring in the one shared Virtuoso session queues the 4 lanes). Decisions asked with
+AskUserQuestion: all four proposed removals approved ONCE THEIR REPLACEMENT WORKS (Create profile form -> Save task;
+circuit types + auto probes -> Maestro outputs, after the new run path; "Ask the agent for suggestions" -> the agent's
+setup request; "Check against Virtuoso" -> the new consistency check) - none is removed yet, no replacement is finished;
+the first Virtuoso write approved exactly as asked (a new library `GPDK045_RINGOSC_GATOR`, gpdk045, under `/home/minlei`,
+copying `ring_osc_3stage` + `tb_ring_osc_3stage`); saving a task again "won't generate a new task, but add task save as"
+(the same task is updated; "Save task as" makes another) - for part 3.
+
+Facts established on the live installation (read-only unless said, zero simulations): Virtuoso `IC23.1-64b.ISR3.27`;
+every mae*/OCEAN/copy function the flow needs is callable; exact syntax read from the installation's own Cadence docs
+with the bridge's `find_skill` (`ccpCopy`, `dbCopyCellView`, `dbSetInstHeaderMasterName`, `maeSetSpec` (`?gt ?lt ?range
+?minimum ?maximum ?tolerance ?weight`), `maeGetTestOutputs`, `maeOpenSetup` (creates a missing view), `maeCloseSession`,
+`maeCreateNetlistForCorner`, `maeGetSetup`, `maeSaveSetup`, `maeDeleteOutput`, `maeDeleteVar`, `axlGetSpecData` ...).
+An exploration IN THE COPY ONLY (restored afterwards: width back, probe view deleted, copy netlist = original again):
+(1) a GPDK045 transistor width set to a Maestro variable leaves the 12 side values the PDK derives from it (as, ad, ps,
+pd, nrd, nrs, sa, sb, sd, sca, scb, scc) at their old numbers (`w=(W_N) ... as=140f ad=140f`) - transistor sizes can NOT
+be design variables; they keep the verified write-the-number-through-the-callbacks path; (2) a Maestro setup (test,
+model file, tran options, point outputs, specs, variables) is written and read back in a background session with no
+window; the output struct has no spec field - specs read back with `axlGetSpecData(axlGetMainSetupDB(session) output
+test)` as `("gt" "1e+09")` / `("range" "0.9" "1.1")`; `?range` wants a SKILL list, not a string; the nominal corner is
+`Nominal`; `maeCreateNetlistForCorner` writes a complete runnable deck (`parameters temperature=27 W_N=1e-06`, the model
+include with `section=tt`, the circuit, `simulatorOptions`, `tran ...`, `saveOptions save=allpub`) - the deck of the
+planned run path.
+
+Built:
+* `src/gator_workbench/bridge_setup.py` (new): the write process (short-lived, like `bridge_read`; takes
+  `artifacts/local/bridge-state/session.lock` - the lock every real run and the no-simulation check take - so it never
+  interleaves with a simulation's own edits; cellviews opened by library/cell, never through a window). Op `make_copy`:
+  hierarchy of the testbench's library under it (read-only), refusal for cells without schematic/symbol or with a CDF of
+  their own (parameterized cells: not copied yet), fingerprints of the original schematics BEFORE, `cds.lib` downloaded
+  before and after `library.create`, `dbCopyCellView` per view (never over an existing cellview unless a failed attempt
+  of the same copy wrote it), `dbSetInstHeaderMasterName` + `schCheck` + `dbSave` per copied schematic, netlist export
+  of the copied testbench, fingerprints AFTER; `progress.json` after every step. Ops `read_setup` / `write_setup`: the
+  copy's Maestro test `GATOR` (background session, always `maeCloseSession ?forceClose t`), outputs deleted and added
+  again so no stale spec survives, other tests left alone; instance parameters set to variable names via
+  `cdfFindParamByName(...)~>value` and put back to the ORIGINAL value when no longer bound.
+* `src/gator_workbench/working_copy.py` (new): records (`configs/local/workbench/working_copies/<lib>/<cell>/copy.json`,
+  `libraries.json` = the only libraries the workbench writes into), the gate (`write_cellview` / `read_cellview`), the
+  acceptance checks (per-block statement sets of the two netlists, continuation lines joined - statement order means
+  nothing to Spectre; every copied cell from the copy library in the netlister's `// Library name:` comments; originals
+  unchanged; technology binding equal), `reverify` (the verdict again from the stored files, no Virtuoso), a failed
+  attempt keeps its library as the workbench's and lists what it wrote; `read_setup` / `write_setup` with the bindable
+  set = analogLib `res/cap/ind/vdc/idc/vsource/isource` instances of the testbench and the cell (CDF names from the
+  import's readbacks: `V0.vdc`, not the netlist's `dc`), the default model file = the connection's in section `tt`, and
+  what was left to the copy (analyses not sent, model files not chosen) compared with what the copy has.
+* `src/gator_workbench/virtuoso_setup.py` (new): the setup model, `check_expression` (tokenizer; calls of an allowed
+  list of calculator functions, strings, numbers, the setup's variables, arithmetic, `?keyword` - `system()`, `;`,
+  backquotes refused; nothing evaluated), `normalize` (numbers in one spelling: `1G` = `1e+09` = `1000000000`),
+  `fingerprint`, `validate`, `differences` (plain sentences; analysis options Maestro adds by itself are not
+  differences), `from_rows` (ade_output probes -> outputs with the expression in `signal`; active Specs rows whose
+  equation is exactly one such probe -> gt / lt / range in canonical units; a formula over several probes and every
+  optimizer-only field stay in the workbench), `to_rows` (unit and analysis SUGGESTED from the expression and marked).
+* API (`api/app.py`): `POST /api/virtuoso/copy`, `POST /api/virtuoso/setup/read` (with `config`: `editor_differences`),
+  `POST /api/virtuoso/setup/write` (the rows, or a whole `setup` = the agent's approved proposal later; without
+  `analyses` the copy's are kept); `/api/circuit/load` carries `working_copy` (local record) for Virtuoso sources.
+* Frontend: `frontend/src/panels/WorkingCopy.tsx` (new) in the "Read from Virtuoso" note of `Left.tsx`: "Make a working
+  copy" (explanation folded), then the copy named + "Read setup" / "Write to Virtuoso", a one-line summary of the copy's
+  test, "The editors match the copy" / "differ in N places" (list folded), "Use in editors" (keeps a unit / optimizer
+  setting chosen on a row of the same name and converts the copy's base-unit limit into that unit by SI prefix - found
+  by the browser check: 1e9 Hz had first landed as 1e9 GHz; one Undo step), writing with no Maestro probe asks first;
+  nothing on load. `api.ts`: `workingCopy`, `setupRead`, `setupWrite` (next to the other Virtuoso calls).
+
+Live (the approved first write, 2026-09-21 ~22:55-23:05): `GPDK045_RINGOSC_GATOR` created at
+`/home/minlei/GPDK045_RINGOSC_GATOR` (gpdk045; `cds.lib` +1 line `DEFINE GPDK045_RINGOSC_GATOR
+/home/minlei/GPDK045_RINGOSC_GATOR`, backup kept), 3 cellviews copied, testbench re-pointed (1 header, `schCheck` 0/0),
+originals unchanged, 3 s. The first verdict said "does not netlist like the original" only because `XU1` now comes after
+`V0` - the comparison was made order-insensitive per block and the stored copy re-verified: VERIFIED. Then a sample setup
+(tran 50n, outputs `frequency(VT("/OUT"))` / `ymax(VT("/OUT"))`, specs `> 1e+09` / range 0.9..1.1, variable `VSUP` on
+`V0.vdc`) written in 12.3 s, read back in 6.4 s: no difference, same fingerprint, rows as expected; then an empty setup
+(put `V0.vdc` back to `1.0` through the restore path) and the probe Maestro view deleted: the copy is again exactly the
+original (netlist compared). No simulation anywhere.
+
+Verification: `tests/workbench/test_wb_working_copy.py` (8) and `test_wb_virtuoso_setup.py` (10, incl. the routes) pass;
+full `tests/workbench` on the shared tree (with the peers' uncommitted 7.53 / 7.54): 529 collected, all passed (`-x`, exit 0). `tsc --noEmit` clean. Browser: `frontend/scripts/working_copy_check.mjs` (new,
+hermetic, fixtures for every `/api/virtuoso/*` and `/api/circuit/load`, seeded from the page's own saved configuration)
+23/23 on a scratch build served on 5176 with `/api` passed to the live 8765 (not restarted); on the same build
+`virtuoso_source_check.mjs` and `testbench_probes_check.mjs` (the checks of the note the block sits in) all pass. The live `frontend/dist` was
+NOT rebuilt by this session; the backend needs a restart for the new routes. `src/analog_optimizer/` untouched.
+
+Not built yet (parts 2-5): the task file + its pop-up editor + "Save task" / "Save task as" (replacing Create profile),
+the agent's whole-setup proposal (replacing "Ask the agent for suggestions" for read cells), the pre-run consistency
+check (replacing "Check against Virtuoso"), the run path that measures `ade_output` probes (Maestro netlist once,
+Spectre per evaluation with transistor sizes written into the COPY, OCEAN on that run's results; one Maestro run to
+prove equality - needs the user's budget) and then the removal of the two fixed circuit types. Until then static
+validation keeps `ade_output` probes and design variables blocked for runs.

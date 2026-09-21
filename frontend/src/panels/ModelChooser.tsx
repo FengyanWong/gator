@@ -4,7 +4,7 @@ import { api, copy, Json } from '../api';
 // Which saved RL model a resume / fine_tune / frozen run loads. Plain words on purpose: a "run" is one training
 // session (one press of Start), the models it saved live in its own folder, and every save is a "save point".
 // The list comes from /api/runs/models (small metadata files only); the chosen model is verified by /api/runs/model.
-const KIND: Record<string, string> = { periodic: 'automatic save', pause: 'saved at pause', stop: 'saved at stop',
+const KIND: Record<string, string> = { periodic: 'automatic save', manual: 'saved with "Save now"', pause: 'saved at pause', stop: 'saved at stop',
   final: 'saved at the end of the run', safety: 'safety save' };
 const when = (utc?: string | null) => { const d = utc ? new Date(utc) : null;
   return d && !Number.isNaN(d.getTime()) ? d.toLocaleString(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'unknown time'; };

@@ -295,11 +295,16 @@ export function StatusTab({ status, onCommand, onContinue }: { status: Json; onC
       <tr><td>Best design</td><td>{best ? `${best.feasible ? 'FEASIBLE' : 'infeasible'}  ${Object.entries(best.metrics).map(([k, v]) => `${k}=${num(v)}`).join(' ')}  violation ${num(best.violation)}` : 'none'}</td></tr>
       <tr><td>Connection</td><td><span className={`badge state-${conn?.overall}`}>{conn?.overall}</span>{conn?.age_seconds != null && ` ${Math.round(conn.age_seconds)} s old`}</td></tr>
       <tr><td>Persistence</td><td className={status.persistence?.failed ? 'error' : ''}>{status.persistence ? `commit ${status.persistence.last_commit_seq}, flushed ${status.persistence.flushed_seq}, ${bytes(status.persistence.bytes_written)} table data; last save ${status.persistence.last_successful_save ?? '-'}` : '-'} {status.persistence?.failed ?? ''}</td></tr>
-      <tr><td>Last checkpoint</td><td>{status.last_checkpoint_utc ?? '-'}</td></tr>
+      <tr><td>Last checkpoint</td><td>{status.last_checkpoint_utc ?? '-'}
+        {status.manual_save && <span className={status.manual_save.state === 'saved' ? 'ok' : 'warn'}> - Save now: {status.manual_save.state === 'saved'
+          ? `saved at ${status.manual_save.evaluations} evaluations (${status.manual_save.checkpoint_id})`
+          : 'requested, waiting for the simulation in flight to finish'}</span>}</td></tr>
       <tr><td>Run directory</td><td className="path" onClick={() => copy(status.run_dir)}>{status.run_dir}</td></tr>
       {status.error && <tr><td>Error</td><td className="error">{status.error}</td></tr>}
     </tbody></table>
     <div className="row">
+      <button disabled={!status.worker_alive || ['pausing', 'stopping'].includes(status.state) || status.manual_save?.state === 'waiting'} onClick={() => onCommand('checkpoint')}
+        title="Save the model now without pausing. The simulation in flight finishes first, the model is written as a new save point, and the run goes on by itself.">Save now</button>
       <button disabled={!status.worker_alive} onClick={() => onCommand('pause')}>Pause and save</button>
       <button disabled={!status.worker_alive} onClick={() => onCommand('stop')}>Stop and save</button>
       <button disabled={!status.worker_alive} onClick={() => onCommand('cancel')} title="Forced: unfinished evaluations are recorded as cancelled and stay charged.">Force cancel</button>

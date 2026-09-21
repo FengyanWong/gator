@@ -59,7 +59,7 @@ class StartBody(Body):
 
 class CommandBody(Body):
     run_dir: str
-    command: str = Field(pattern='^(pause|stop|cancel)$')
+    command: str = Field(pattern='^(pause|stop|cancel|checkpoint)$')       # checkpoint = "Save now": save and go on
 
 
 class ContinueBody(Body):
@@ -637,7 +637,10 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
 
     @app.post('/api/runs/command')
     def command(body: CommandBody):
-        return runs.send_command(run_path(body.run_dir), body.command)
+        try:
+            return runs.send_command(run_path(body.run_dir), body.command)
+        except runs.RunRejected as exc:            # "Save now" on a run that cannot or need not save: said, not done
+            raise HTTPException(409, detail=dict(message=redact(str(exc), 2000), code=exc.code))
 
     @app.get('/api/runs/status')
     def status(run_dir: str):

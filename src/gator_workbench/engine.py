@@ -269,6 +269,9 @@ class RunEngine:
                 raise RuntimeError('Lane origin differs from the task origin')
         self.last_checkpoint_time = self._clock()
         self.checkpoint_due = False
+        # "Save now" (command `checkpoint`): the next due save is of kind `manual`, and the request is answered in
+        # status.json so that the page knows when ITS request has been written.
+        self.checkpoint_kind, self.manual_save = 'periodic', None
 
     def _record_load_policy(self):
         segment = self.manifest['segments'][-1]
@@ -369,7 +372,7 @@ class RunEngine:
             self._check_limits()
             busy = [l for l in self.lanes if self.lane_state[l.lane_id]['busy']]
             if self.checkpoint_due and not busy and self.stop_reason is None:
-                self._checkpoint('periodic')
+                self._checkpoint(self.checkpoint_kind)
             if self.stop_reason is None and not self.checkpoint_due:
                 for lane in self.lanes:
                     state = self.lane_state[lane.lane_id]
@@ -408,6 +411,14 @@ class RunEngine:
         elif name == 'cancel':
             self.requested, self.stop_reason, self.forced = 'cancel', 'user_cancel', True
             self._event('control', command='cancel', note='forced cancellation')
+        elif name == 'checkpoint' and self.stop_reason is None and self.config.output.save_checkpoints:
+            # "Save now": taken like a periodic save, at the next boundary with nothing in flight (dispatch waits
+            # for it), then the run goes on. A run that is already stopping saves by itself.
+            self.checkpoint_due, self.checkpoint_kind = True, 'manual'
+            self.manual_save = dict(id=command.get('id'), state='waiting', requested_utc=command.get('issued_utc'),
+                                    checkpoint_id=None, saved_utc=None, evaluations=None)
+            self._event('control', command='checkpoint', note='save requested; taken at the next boundary with nothing in flight')
+            self._write_status('running')
 
     def _check_limits(self):
         if self.stop_reason is not None:
@@ -955,9 +966,15 @@ class RunEngine:
             effective_experiment=self.experiment, frozen=self.frozen)
         self.dataset.compact_journal()
         self.counters['last_checkpoint_commit'] = self.dataset.last_seq
-        self.last_checkpoint_time, self.checkpoint_due = self._clock(), False
+        self.last_checkpoint_time, self.checkpoint_due, self.checkpoint_kind = self._clock(), False, 'periodic'
         self._event('checkpoint_saved', checkpoint_id=metadata['checkpoint_id'], kind=kind,
                     capability=metadata['restoration_capability'], commit_seq=self.dataset.last_seq)
+        if self.manual_save and self.manual_save['state'] == 'waiting':
+            # ANY save written after the request holds what the user asked to keep (a pause that overtook it, too).
+            self.manual_save = dict(self.manual_save, state='saved', checkpoint_id=metadata['checkpoint_id'],
+                                    saved_utc=metadata['created_utc'], evaluations=self.dataset.last_seq)
+            if self.stop_reason is None:                # a run on its way down writes its final status right after
+                self._write_status('running')
         return metadata
 
     # ------------------------------------------------------------------ finalize
@@ -1081,5 +1098,6 @@ class RunEngine:
             persistence=None if dataset is None else dataset.status(),
             last_checkpoint_utc=(None if not getattr(self, 'checkpoints', None) or not self.checkpoints.last_saved_at
                                  else iso(self.checkpoints.last_saved_at)),
+            manual_save=getattr(self, 'manual_save', None),
             paths=self.layout.subpaths(), bytes_written=run_bytes(self.layout) if state in TERMINAL_STATES else None,
             active_seconds=self._active_seconds() if hasattr(self, 'counters') else 0.0))

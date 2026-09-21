@@ -85,6 +85,22 @@ The header has one main run button and **Abort** next to it. The main button cha
 Browser checks: `frontend/scripts/run_control_check.mjs` (fixtures only, safe next to a live run) and
 `frontend/scripts/run_control_live_check.mjs` (real MOCK worker; needs a scratch backend, refuses port 8765).
 
+### Save now (added 2026-09-21, user request)
+
+**Save now** (header, left of the main button; also in the Run status tab) saves the model of the RUNNING run
+without pausing it. It is the run command `checkpoint`: the worker starts no new simulation, lets the one in
+flight finish (with several in parallel: all of them), writes a complete save point exactly like an automatic one
+(full training state, kind `manual`) and goes on by itself. Nothing is charged and nothing is lost; on a real
+circuit the wait is at most the rest of the simulation that is running. The button reads "Saving..." until the run
+itself reports that request as written (`manual_save` in `status.json`), then the line under the header says at how
+many evaluations and under which id. The save point appears under "RL model to load" as `saved with "Save now"`,
+and pruning (`output.keep_last_checkpoints`) never removes it.
+
+It is refused, in plain words, when nothing would come of it: the run is not running (a paused or ended run has
+already saved everything), it is already pausing / stopping (that saves by itself; a pending pause, stop or cancel
+is never replaced), or it was started with "Model checkpoints" switched off. Browser check:
+`frontend/scripts/save_now_check.mjs` (fixtures only, safe next to a live run).
+
 ## What is real and what is mock
 
 | Path | Status |

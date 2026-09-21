@@ -223,6 +223,27 @@ export function RunButtons({ control, blocked, onStart, onResumed, onMessage, on
     }
   };
 
+  // "Save now" = command `checkpoint` (user request 2026-09-21): the RUNNING worker writes a save point at its next safe
+  // boundary (the simulation in flight finishes first) and goes on. No pause, so `pending` and the phase stay untouched.
+  // `saving` holds the id of the request this page waits for; the run answers in status.manual_save.
+  const [saving, setSaving] = useState<string | null>(null);
+  const saveNow = () => {
+    setSaving('sent');
+    api.command(dir!, 'checkpoint').then(record => {
+      setSaving(record.id);
+      onMessage({ level: 'info', text: 'Save requested: the model is saved as soon as the simulation in flight has finished. The run goes on by itself.' });
+      return control.refresh();
+    }).catch(e => { setSaving(null); fail(e); });
+  };
+  useEffect(() => {
+    if (!saving || saving === 'sent') return;
+    const answer = status?.manual_save;
+    if (answer?.id === saving && answer.state === 'saved') {
+      setSaving(null);
+      onMessage({ level: 'info', text: `Saved at ${answer.evaluations} evaluations as save point ${answer.checkpoint_id}. The run goes on.` });
+    } else if (phase !== 'running') setSaving(null);             // paused, aborted or ended meanwhile: that saves everything anyway
+  }, [status, phase, saving]);
+
   // The line under the header said "Pausing: ..." / "Aborting: ..."; say so when it has happened.
   const before = useRef(phase);
   useEffect(() => {
@@ -236,6 +257,10 @@ export function RunButtons({ control, blocked, onStart, onResumed, onMessage, on
   const note = describe(status, phase, forced);
   return (<>
     {dir && note && <button className={`run-chip ${phase}`} onClick={() => onShow(dir)} title={`The current run: ${dir}\nPress to show it under Run status.`}>{note}</button>}
+    <button className="run-save" disabled={phase !== 'running' || !!saving} onClick={saveNow}
+      title={phase === 'running' ? 'Save the model now, without pausing: the simulation in flight finishes first (with several in parallel, all of them), the model is written as a new save point, '
+        + 'and the run goes on by itself. The save point can be chosen later under "RL model to load".'
+        : 'Only while a run is running. A paused or ended run has already saved everything.'}>{saving ? 'Saving...' : 'Save now'}</button>
     <button className="primary run-main" disabled={!main || (phase === 'idle' && blocked)} onClick={main} title={TITLES[phase]}>{LABELS[phase]}</button>
     <button className="run-abort" disabled={!(phase === 'running' || phase === 'paused' || (waiting && !forced))} onClick={abort}
       title={phase === 'paused' ? 'Let go of the paused run: nothing is deleted, the main button goes back to Start.'

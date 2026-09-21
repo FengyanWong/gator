@@ -102,7 +102,7 @@ button.model-card.active { border-left: 3px solid var(--accent); } .model-title 
 input.model-filter { width: 100%; margin: 2px 0; } select.model-point { max-width: 100%; }
 table.grid.small.model-facts td:first-child { white-space: nowrap; word-break: normal; width: 1%; color: var(--muted); }
 /* Header run buttons: one main button (Start -> Pause -> Resume) and Abort. Fixed widths, so the header does not shift when a label changes. */
-button.run-main { min-width: 96px; font-weight: 600; } button.run-abort { min-width: 96px; }
+button.run-main { min-width: 96px; font-weight: 600; } button.run-abort { min-width: 96px; } button.run-save { min-width: 84px; }
 button.run-abort:not(:disabled) { color: var(--bad); border-color: var(--bad); } button.run-abort:hover:not(:disabled) { background: #fdecea; border-color: var(--bad); }
 button.run-chip { border: none; background: none; padding: 0 2px; color: var(--muted); font-variant-numeric: tabular-nums; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
 button.run-chip.running, button.run-chip.starting, button.run-chip.resuming { color: var(--ok); } button.run-chip.pausing, button.run-chip.paused, button.run-chip.aborting { color: var(--warn); }

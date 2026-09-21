@@ -466,14 +466,36 @@ def launch_worker(layout: RunLayout, *, allow_real=False):
 
 
 def send_command(run_dir, command: str):
-    if command not in ('pause', 'stop', 'cancel'):
-        raise ValueError('command must be pause, stop or cancel')
+    if command not in ('pause', 'stop', 'cancel', 'checkpoint'):
+        raise ValueError('command must be pause, stop, cancel or checkpoint')
     layout = RunLayout(Path(run_dir))
     if not layout.manifest.is_file():
         raise FileNotFoundError(run_dir)
+    if command == 'checkpoint':
+        _check_save_now(layout)
     record = dict(id=uuid4().hex, command=command, issued_utc=utcnow().isoformat())
     write_json(layout.control / 'command.json', record)
     return record
+
+
+def _check_save_now(layout):
+    """`checkpoint` = "Save now": the RUNNING worker saves its model at the next safe boundary and goes on.
+    It is refused, with the reason, whenever nothing would come of it - and it never replaces a pause, stop or
+    cancel that is still in the one-slot control file (a run on its way down saves by itself, or was told not to)."""
+    status = run_status(layout.run_dir)
+    if not status['worker_alive']:
+        ended = dict(paused='paused', stopped='stopped', completed='finished').get(status.get('state'), 'ended')
+        raise RunRejected(f'This run is not running, so there is nothing new to save: its state was saved when it {ended}.',
+                          code='not_running')
+    pending = (read_json(layout.control / 'command.json', default={}) or {}).get('command')
+    if pending in ('pause', 'stop', 'cancel') or status.get('state') in ('pausing', 'stopping'):
+        raise RunRejected('This run is already on its way to a stop' + (
+            ' (forced cancel): nothing more is saved.' if pending == 'cancel' else
+            ': it saves everything by itself as soon as the simulation in flight has finished.'), code='already_stopping')
+    output = (read_json(layout.effective_config, default={}) or {}).get('output') or {}
+    if output.get('save_checkpoints') is False:
+        raise RunRejected('This run was started with "Model checkpoints" switched off, so it keeps no saved model. '
+                          'Start a run with that option on to be able to save.', code='checkpoints_off')
 
 
 def run_status(run_dir) -> dict:

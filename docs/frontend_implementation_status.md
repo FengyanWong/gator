@@ -1106,3 +1106,47 @@ frontend change).
 
 What is verified on real data now: connect / export / deck against the live cell (7.21), result reading and
 measurement (this section). **What is not: Spectre actually running the generated deck, and the license.**
+
+### 7.23 "Save now": save the running run's model without pausing (2026-09-21 ~04:20, same session as 7.20, user: "add a save now button")
+
+**RESTART THE BACKEND FIRST** (the API must accept the new command; workers start with the new engine anyway).
+
+**Why.** A model was saved every N evaluations, at pause, at stop and at the end - but there was no way to keep
+the model "as it is right now" without pausing the run.
+
+**What changed.**
+* **One new run command, `checkpoint`** (`runs.send_command`, `CommandBody`). The engine (`engine.py`,
+  `_poll_control`) marks a save as due with kind `manual`; the scheduler then does what it already does for an
+  automatic save: no new dispatch, wait until nothing is in flight, write the complete save point
+  (`training_state.pt` + `model_weights.pt` + metadata, the same consistency boundary), go on. Nothing is charged.
+  The request is answered in `status.json`: `manual_save = {id, state: waiting | saved, requested_utc,
+  checkpoint_id, saved_utc, evaluations}`. ANY save written after the request answers it, so a pause that
+  overtakes it leaves no request hanging. Events: `control` (command `checkpoint`) and `checkpoint_saved`
+  (kind `manual`). Pruning only ever removes `periodic` saves, so a save made on request stays.
+* **Refused with the reason (HTTP 409, `code`)** instead of silently doing nothing: `not_running` (a paused or
+  ended run has saved everything), `already_stopping` (pausing / stopping saves by itself; the control file has ONE
+  slot, so a pending pause, stop or cancel is never replaced by a save request), `checkpoints_off` (the run's own
+  `effective_config.json` has "Model checkpoints" off). `/api/runs/command` now turns `RunRejected` into that 409.
+* **Frontend.** Header (`RunControl.tsx`): "Save now" LEFT of the main button - Abort stays directly right of it, as
+  7.18 pins - always rendered with a fixed width, enabled only while the phase is `running`; one press = one
+  command, the phase and `pending` are not touched (the main button keeps reading Pause); it reads "Saving..." until
+  the RUN reports this request's id as saved, then the line under the header says "Saved at N evaluations as save
+  point <id>. The run goes on."; a refusal is shown as the backend worded it. Run status tab (`Bottom.tsx`): the
+  same button next to "Pause and save", and the request in the "Last checkpoint" row. The model chooser (7.20)
+  names the new kind: `saved with "Save now"`. No new polling: both places read the status the page already polls
+  while a run is live.
+
+**Verified.** `tests/workbench/test_wb_save_now.py` (6): a save requested at 8 of 30 evaluations is a complete
+`manual` save point at one consistency boundary (ledger = data cursor = counters, files verify) and the run still
+completes all 30; it survives `keep_last_checkpoints=1`; a pause sent right after it still pauses and answers the
+request; the three refusals, with the pending pause / stop / cancel left in place; the 409 over HTTP and 422 for an
+unknown command; and the whole path with a REAL detached MOCK worker over HTTP (saved while `running` and
+`worker_alive`, evaluations keep rising afterwards, `/api/runs/models` lists the `manual` save point, then
+`manual` + `stop`). The three timing-dependent tests were repeated 6 times: 18 of 18. Browser:
+`frontend/scripts/save_now_check.mjs` (headless Edge, 24 checks, 5 screenshots, FIXTURE run, safe next to a live
+run); `run_control_check.mjs` (7.18) and `model_chooser_check.mjs` (7.20) still pass unchanged. `tsc --noEmit` clean.
+
+**Limits, stated plainly.** The save waits for the simulation in flight - on a real circuit up to one simulation
+(about a minute), and with several jobs in parallel the idle lanes wait for the slowest one. A run started with
+"Model checkpoints" off cannot be saved at all. MOCK backend only: no real run was saved this way yet. Nothing
+under `src/analog_optimizer/` changed.

@@ -22,6 +22,7 @@ from pydantic import ValidationError
 from ..schema import SECTION_KEYS, SECTIONS, WorkbenchConfig, canonical_json, config_hash
 from ..storage.dataset import utcnow
 from .base import AgentError, AgentRequest, AgentResult, SECTIONS_BY_KIND
+from . import settings_review
 
 
 CHECKLIST_STATES = ('done', 'missing', 'warning', 'unknown', 'not_applicable')
@@ -41,7 +42,7 @@ def normalize(request: AgentRequest, result: AgentResult):
     """Validate the structured output against scope and row schemas. Returns the clean patch."""
     output = result.structured_output
     problems = []
-    allowed_top = {'kind', 'patch', 'circuit_changes', 'reasoning', 'warnings', 'unresolved', 'checklist'}
+    allowed_top = {'kind', 'patch', 'circuit_changes', 'reasoning', 'warnings', 'unresolved', 'checklist', 'suggestions', 'encoder_ideas'}
     extra = set(output) - allowed_top
     if extra:
         problems.append(f'Unexpected top-level keys {sorted(extra)} (a proposal cannot carry settings or instructions)')
@@ -63,6 +64,12 @@ def normalize(request: AgentRequest, result: AgentResult):
         if section not in sections:
             problems.append(f'{where}: a `{request.kind}` request may not change `{section}`')
             continue
+        if request.kind == 'minimal_start' and action != 'add':
+            # "As few changes as possible" is a rule here, not a wish: a row the backend finds nothing wrong with stays as it is.
+            allowed = ((request.readiness or {}).get('changeable_rows') or {}).get(section)
+            if allowed != '*' and key not in (allowed or ()):
+                problems.append(f'{where}: `{section}/{key}` has no blocking issue, so a minimal-start request may not {action} it')
+                continue
         if request.kind == 'modify_fields':
             if (section, key) not in selected or action != 'replace':
                 problems.append(f'{where}: only the selected rows may be replaced')
@@ -92,7 +99,9 @@ def normalize(request: AgentRequest, result: AgentResult):
                  for entry in (output.get('checklist') if isinstance(output.get('checklist'), list) else [])[:40]
                  if isinstance(entry, dict) and entry.get('status') in CHECKLIST_STATES and entry.get('who') in ('you', 'agent')
                  and str(entry.get('item') or '').strip()]
-    return dict(patch=clean, circuit_changes=changes if isinstance(changes, list) else [], checklist=checklist,
+    # Suggestions for settings exist for a settings_review only; from any other request they are dropped, not obeyed.
+    review = settings_review.normalize(output) if request.kind == 'settings_review' else dict(suggestions=[], refused=[], encoder_ideas=[])
+    return dict(patch=clean, circuit_changes=changes if isinstance(changes, list) else [], checklist=checklist, review=review,
                 reasoning=str(output.get('reasoning') or '')[:8000], warnings=text('warnings'), unresolved=text('unresolved'))
 
 
@@ -164,6 +173,8 @@ class ProposalStore:
             patch=normalized['patch'], circuit_changes=normalized['circuit_changes'],
             diff=structured_diff(request.config, preview), reasoning=normalized['reasoning'],
             warnings=normalized['warnings'], unresolved=normalized['unresolved'], checklist=normalized['checklist'],
+            suggestions=normalized['review']['suggestions'], refused_suggestions=normalized['review']['refused'],
+            encoder_ideas=normalized['review']['encoder_ideas'],
             selection=request.selection,
             logs=result.logs, audit=result.audit, approval=None,
             authorizes='nothing: applying needs an explicit approval bound to this exact proposal, configuration and '

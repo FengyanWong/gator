@@ -56,6 +56,15 @@ ul.checklist li { margin: 3px 0; padding-left: 22px; position: relative; } .chec
 .check-who { margin-left: 6px; padding: 0 5px; border: 1px solid var(--line); border-radius: 8px; font-size: 10.5px; color: var(--muted); background: #fff; }
 .check-detail { color: var(--muted); } .check-missing .check-detail { color: var(--text); } .check-action { color: var(--accent); }
 .check-done b, .check-not_applicable b { font-weight: 400; }
+/* A settings review: one row per suggested setting, applied by the user one by one. */
+.agent-actions { display: inline-flex; gap: 8px; align-items: center; flex: none; } .agent-actions label.check { flex: none; margin: 0; font-size: 11.5px; color: var(--muted); }
+.msg:has(.suggestions) { max-width: none; align-self: stretch; } .suggestions { margin-top: 5px; } .suggestions td { vertical-align: top; } .suggestions td:first-child b, .suggestions td:nth-child(2), .suggestions td:nth-child(3) { white-space: nowrap; word-break: normal; } .suggestions tr.applied td { background: #eaf7ee; }
+.suggestions .quote { font-style: italic; color: var(--muted); margin-top: 2px; } .suggestions a, .ideas a { color: var(--accent); }
+.ideas { margin-top: 8px; padding: 5px 8px; border: 1px solid var(--line); background: #fcfcfd; } .ideas ul { margin: 3px 0; padding-left: 18px; } .ideas li { margin: 3px 0; }
+.selection-info { margin: 2px 0 6px; max-height: 140px; overflow: auto; border: 1px solid var(--line); background: #fcfcfd; padding: 3px 8px; } .selection-info ul { margin: 0; padding-left: 16px; } .selection-info li { margin: 2px 0; word-break: break-word; }
+/* Next to a proposal's diff: the workbench's own verdict on the result, and every value that is only a placeholder. */
+.verdict { margin: 6px 0 4px; font-weight: 600; } .verdict .hint { font-weight: 400; }
+.provisional { margin: 6px 0; padding: 5px 8px; border: 1px solid #e0bd6e; background: #fff6dc; } .provisional ul { margin: 3px 0 0; padding-left: 18px; } .provisional code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
 .agent-side { overflow: auto; min-height: 0; padding-right: 4px; }  /* scrolls by itself: its length must not push the message box out of the panel */
 /* The conversation: one bubble per message. Yours on the right, the agent's on the left, workbench remarks small and centred. */
 .chat { grid-area: chat; overflow: auto; border: 1px solid var(--line); padding: 8px 10px; min-height: 60px; background: #f7f8fa; display: flex; flex-direction: column; gap: 7px; }
@@ -69,7 +78,13 @@ ul.checklist li { margin: 3px 0; padding-left: 22px; position: relative; } .chec
 .msg.error { background: #fdecea; border-color: #e2a19c; color: var(--bad); } .msg.error .who { color: var(--bad); }
 .msg.system { align-self: center; max-width: 80ch; border: none; background: none; padding: 0 8px; color: var(--muted); font-size: 11.5px; text-align: center; } .msg.system .who { display: inline; font-weight: 400; margin-right: 6px; } .msg.system .text { display: inline; } .msg.system .text p { display: inline; }
 .msg.pending { border-color: var(--accent); border-left: 3px solid var(--accent); color: var(--accent); } .msg.focused { box-shadow: 0 0 0 2px #bcd0ef; }
-button.detach { width: 100%; margin-bottom: 4px; } .agent-away { padding: 14px; color: var(--muted); }
+button.detach { width: 100%; margin-bottom: 4px; }
+/* The agent tab is one tab shape holding two buttons: its label and, where a browser tab has its close button, the pop-out control. */
+.tabs .tab-group { display: inline-flex; align-items: center; border: 1px solid var(--line); border-bottom: none; background: #fafbfc; } .tabs .tab-group:hover { border-color: var(--accent); }
+.tabs .tab-group.active { background: #e6eefb; border-color: var(--accent); } .tabs .tab-group > button { border: none; background: none; padding-right: 5px; }
+.tabs .tab-group.detached > button { font-style: italic; color: var(--muted); } .tab-slot { display: inline-flex; }
+.tabs .tab-group button.tab-detach { display: inline-flex; padding: 2px; margin-right: 4px; border-radius: 3px; color: var(--muted); line-height: 0; }
+.tabs .tab-group button.tab-detach:hover { background: #cfd8e6; color: var(--text); } .agent-away { padding: 14px; color: var(--muted); }
 /* Detached into a window of its own: larger type, and the notes become a full-height column beside the chat
    (`display: contents` lifts the message box and the notes out of their shared row into the window's grid). */
 #agent-root { height: 100vh; padding: 10px; background: var(--panel); }

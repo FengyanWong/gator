@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { api, Json, num, saveJson } from '../api';
 
 export type Section = 'parameters' | 'targets' | 'measurements';
-const TITLES: Record<Section, string> = { parameters: 'Optimization Parameters', targets: 'Performance Targets', measurements: 'Measurement Definitions' };
+const TITLES: Record<Section, string> = { parameters: 'Parameters', targets: 'Specs', measurements: 'Probes' };
 
 function Cell({ column, value, onChange }: { column: Json; value: Json; onChange: (v: Json) => void }) {
   const title = column.guidance;

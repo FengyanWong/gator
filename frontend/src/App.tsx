@@ -24,6 +24,8 @@ export function App() {
   const [runDir, setRunDir] = useState<string | null>(() => { try { return localStorage.getItem('gator-workbench-current-run-v1') || null; } catch { return null; } });
   const [tab, setTab] = useState<BottomTab>('status');
   const [agentRequest, setAgentRequest] = useState<{ kind: string; selection: Json[]; prompt?: string } | null>(null);
+  const [agentTabSlot, setAgentTabSlot] = useState<HTMLElement | null>(null);      // on the tab itself: where AgentTab puts its pop-out control
+  const [agentDetached, setAgentDetached] = useState(false);
   const [message, setMessage] = useState<Json>(null);
   const [fatal, setFatal] = useState<string | null>(null);
   const profileId: string | null = config.run.connection_profile_id ?? null;
@@ -129,15 +131,20 @@ export function App() {
       </aside>
       <footer>
         <div className="tabs">
-          {(['agent', 'status', 'logs', 'data', 'files'] as BottomTab[]).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => setTab(t)}>
-            {{ agent: 'Agent conversation', status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files' }[t]}</button>)}
+          {/* The agent tab carries a small control at its right end, where a browser tab has its close button: it moves the
+              conversation into a window of its own. Two sibling buttons in one tab shape - a button inside a button is not valid. */}
+          <span className={`tab-group${tab === 'agent' ? ' active' : ''}${agentDetached ? ' detached' : ''}`}>
+            <button onClick={() => setTab('agent')}>Agent</button><span className="tab-slot" ref={setAgentTabSlot} /></span>
+          {(['status', 'logs', 'data', 'files'] as Exclude<BottomTab, 'agent'>[]).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => setTab(t)}>
+            {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files' }[t]}</button>)}
           <span className="spacer" />
           <select value={runDir ?? ''} onChange={e => setRunDir(e.target.value || null)} onFocus={refreshRuns}>
             <option value="">(select a run)</option>
             {runs.map(r => <option key={r.run_dir} value={r.run_dir}>{r.created_utc?.slice(0, 19)} | {r.task_id} | {r.mode} seed{r.seed} | {r.state}{r.mock ? ' [MOCK]' : ''}</option>)}</select>
         </div>
         <div className="bottom-body">
-          <AgentTab hidden={tab !== 'agent'} config={config} setConfig={setConfig} request={agentRequest} clearRequest={() => setAgentRequest(null)} />
+          <AgentTab hidden={tab !== 'agent'} config={config} setConfig={setConfig} request={agentRequest} clearRequest={() => setAgentRequest(null)}
+            tabSlot={agentTabSlot} onDetached={setAgentDetached} />
           {tab === 'status' && <StatusTab status={status} onCommand={sendCommand} onContinue={continueRun} />}
           {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
           {tab === 'data' && <DataTab runDir={runDir} />}

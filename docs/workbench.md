@@ -147,14 +147,15 @@ after the link came up or the design changed in Virtuoso.
   press, read-only, some seconds): Virtuoso exports the netlist of the testbench cell (or of the cell
   when none is chosen) and the device sizes are read. The copy is kept under
   `configs/local/workbench/native_cells/<library>/<cell>/`, and the cell then loads from it without
-  contacting Virtuoso: you can look at it, fill the three editors, and **Ask the agent for
-  suggestions** - the Agent tab opens with the request written out; its proposal, once approved
-  there, fills the editors. Device types this project has not verified (for example the MIM
-  invented model) are shown with unnamed pins. Such a cell still cannot run: Start stays disabled
+  contacting Virtuoso: you can look at it, fill the three editors (the centre tabs **Parameters** =
+  what may vary, **Specs** = the performance targets, **Probes** = how each one is measured), and
+  **Ask the agent for suggestions** - the Agent tab opens with the request written out; its
+  proposal, once approved there, fills the editors. Device types this project has not verified (for
+  example the MIM invented model) are shown with unnamed pins. Such a cell still cannot run: Start stays disabled
   (`circuit_profile_missing`) until its profile is created.
 * **Create profile** (in the same note; contacts nothing, simulates nothing): give a name, the circuit
-  type and - for a ring oscillator - a rough expected frequency ("1.2G"). The rows of the parameter
-  editor say what may vary. Only what the verified real backend can do is accepted: **widths of
+  type and - for a ring oscillator - a rough expected frequency ("1.2G"). The rows of the
+  **Parameters** tab say what may vary. Only what the verified real backend can do is accepted: **widths of
   single-finger, m = 1 transistors directly inside the cell**, linear ranges that contain the present
   width; ranges are snapped onto Virtuoso's 5 nm width grid and the editor then shows them exactly as
   registered. Anything else is refused with the reason. The cell becomes the task `real:<name>` under
@@ -341,15 +342,52 @@ Bridge skills exist in `~/virtuoso-bridge-lite/skills/` and the project's Codex-
 `.agents/skills/`, but **not** in a Claude Code discovery location. `GET /api/agent/diagnostics`
 reports this and proposes (never executes) symlinks into `.claude/skills/`.
 
+### The conversation in a window of its own
+
+The "Agent" tab carries a small pop-out control at its right end, where a browser tab has its close
+button. It moves the conversation - chat, a request in flight, an open proposal, the settings - into a browser
+window of its own, with larger type and the notes as a full-height column; nothing restarts, and the bottom panel
+stays free for the other tabs. Back again: the same control, "Bring back into the workbench" inside that window,
+"Bring it back here" in the panel, or simply closing the window. The browser must allow pop-ups for this page.
+
 ### What is missing before the run can start
 
 "What's missing to start?" (above the conversation) is answered by the backend, free: no agent request,
-nothing probed. It lists, in the order a start is gated: circuit, Optimization Parameters, Performance
-Targets, Measurement Definitions, other blocking issues, run configuration, output folder and - for a real
+nothing probed. It lists, in the order a start is gated: circuit, Parameters, Specs, Probes (the three
+editor tabs), other blocking issues, run configuration, output folder and - for a real
 circuit - the bridge connection (the LAST test result; it does not test again) and the budget authorization
 that only you can give. Each line says who acts. "Ask the agent to fix what it can" appears only when a
 line is the agent's (the three tables); it sends ONE request of kind `readiness`, and the reply carries its
 own checklist plus, where it had everything it needed, rows to review as a diff.
+
+"Make it startable with the fewest changes" (on that checklist) asks the agent for the SMALLEST edit of the three
+tables that lets the run start. Rows that are already valid cannot be touched - the backend rejects such a proposal.
+Where you gave no number it may use a PROVISIONAL one, but only from data it can point to: a range around a device's
+present size, or "no worse than the design as it stands" from the recorded baseline of a real circuit. Those rows
+are listed in a yellow box next to the diff and say PROVISIONAL in their basis; replace them with your requirements
+when you have them. For a verified real circuit the optimized variables are not a choice: the profile fixes them, the
+agent copies them exactly, and the checklist reports any other set as missing (the run would be refused the moment it
+starts). Under every proposal the workbench itself says whether the run would start after approval. "Fix only what
+needs no assumption" is the strict variant: it writes nothing you did not give every number for.
+
+### Reviewing the settings, with or without publications read online
+
+"Review settings" (above the conversation) asks the agent to look at the run configuration, the RL network, the RL
+training settings and the output settings - not at your circuit - and to suggest values, each with its source. The
+reply is a table: setting, its value now, the suggested value, why and where it comes from, and **Apply**. Applying
+is your own edit of that one setting (undoable like any edit); the agent and the backend apply nothing. Every row was
+tried on a copy of your configuration first, so an illegal value cannot be applied, and a value that only works
+together with another row says so. An agent may never suggest the circuit, the connection, a model to load, the
+output folder or a name.
+
+Tick "check publications online" for ONE review that may search the web and open publication sites (arXiv, IEEE
+Xplore, ACM, OpenReview, GitHub and a few more; add hosts under `agent_web_domains` in
+`configs/local/workbench/settings.json`). It takes minutes and more usage, works with the Claude Code provider only,
+and the agent is then told the kind of circuit and your settings but nothing of the design itself. It must cite
+what it opened, with a quote. A published value is a starting point with a citation, not evidence that it is better
+on your circuit. If a publication uses a network that does not exist here, it is listed as an idea: adding an
+encoder is a change of the optimizer's code that a development session has to make, and it changes the fingerprint
+that every saved model and the recorded audits are checked against.
 
 The agent's brief on what a run needs is a plain file, `src/gator_workbench/agents/run_readiness.md`. It is
 added to every agent request of every provider and to the exported task description, and it is read again

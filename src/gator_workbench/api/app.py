@@ -23,7 +23,9 @@ from .. import (__version__, aggregates, agents, bridge_connect, bridge_read, ch
 from .. import network_presets, profile_preflight, profiles, recipes
 from ..agents import AgentError, AgentRequest, AgentSettings, ProposalRejected, ProposalStore
 from ..agents import catalog as agent_catalog
+from ..agents import proposals as agent_proposals
 from ..agents import readiness as agent_readiness
+from ..agents import settings_review as agent_review
 from ..agents import diagnostics as agent_diagnostics
 from ..agents.prompts import circuit_summary
 from ..best_design import export_netlist
@@ -130,6 +132,7 @@ class ProposeBody(Body):
     config: dict
     selection: list[dict] = []
     request_id: str | None = None
+    web: bool = False                  # settings_review only: this ONE request may search the web and open publication sites
 
 
 class ImportBody(ProposeBody):
@@ -788,8 +791,58 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             output = roots.check(config.output.output_root or runs.remembered_output_root(), create=False, verify_windows=False)
         except Exception:                                  # a checklist must never fail because one line cannot be filled in
             output = None
+        # A real circuit profile fixes WHICH sizes may be written and their range and grid. The engine checks that only when
+        # the worker starts (after the budget was authorized), so say it here: compile offline and compare with the profile.
+        fixed = tasks.profile_parameter_rows(runtime)
+        profile = None
+        if fixed:
+            matches = problem = None
+            broken = any(i['level'] in ('error', 'blocker') and str(i['path']).startswith('parameters') for i in report['issues'])
+            if config.parameters and not broken:
+                try:
+                    from analog_optimizer.envs.sizing import graph_contract
+                    from ..compile import compile_task
+                    matches = graph_contract(compile_task(config, runtime.base_graph).graph) == graph_contract(runtime.base_graph)
+                except Exception as exc:                   # it does not compile: a start would be refused for that alone
+                    problem = redact(f'{type(exc).__name__}: {exc}', 300)
+            profile = dict(rows=fixed, matches=matches, error=problem)
         return agent_readiness.build(config.model_dump(mode='json'), task=runtime, task_blocker=(blocked or {}).get('blocker'),
-                                     validation=report, connection=link, output=output)
+                                     validation=report, connection=link, output=output, profile=profile)
+
+    def check_suggestions(request, proposal):
+        """Every suggested setting is tried on a COPY of the configuration - schema, then static validation with the loaded
+        circuit - so the user sees which rows are legal before applying one. Nothing is applied here."""
+        if request.kind != 'settings_review':
+            return
+        runtime, _ = load_runtime(parse_config(request.config))
+
+        def validate_config(raw):
+            try:
+                parsed = schema.WorkbenchConfig.model_validate(raw)
+            except ValidationError as exc:
+                return '; '.join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()[:3]), []
+            report = validate(parsed, graph=None if runtime is None else runtime.base_graph,
+                              provided_metrics=None if runtime is None else set(runtime.provided_metrics))
+            return None, [issue.code for issue in report.issues if issue.level in ('error', 'blocker')]
+        checked = agent_review.check(request.config, proposal['suggestions'], validate_config=validate_config)
+        proposal['suggestions'], proposal['suggestions_together'] = checked['suggestions'], checked['all_together']
+
+    def readiness_after(request, proposal):
+        """Would the run start once this proposal is applied? The backend's own answer on the patched configuration -
+        never the agent's claim. None when it cannot be worked out (the proposal itself is unaffected)."""
+        try:
+            patched = parse_config(agent_proposals.apply_patch(request.config, proposal['patch'], selection=request.selection))
+            runtime, blocked = load_runtime(patched)
+            after = run_readiness(patched, runtime, blocked)
+        except Exception:
+            return None
+        state = {item['id']: item['status'] for item in after['items']}
+        was_missing = [item for item in (request.readiness or {}).get('items', []) if item['status'] == 'missing' and item['id'] != 'start']
+        return dict(ready=after['ready'], changed_rows=len(proposal['diff']),
+                    resolved=[item['title'] for item in was_missing if state.get(item['id']) != 'missing'],
+                    remaining=[dict(title=item['title'], who=item['who'], detail=item['detail'], action=item['action'])
+                               for item in after['items'] if item['status'] == 'missing' and item['id'] != 'start'],
+                    note='Worked out by the backend on the configuration as it would be after approval.')
 
     def _request(body) -> tuple:
         config = parse_config(body.config)
@@ -809,10 +862,22 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                     'one of those result names too (the profile registers exactly them for the optimizer).')
             else:
                 summary['results_provided'] = list(runtime.provided_metrics)
+            if runtime.reference_metrics:
+                # Verified REAL results of the design AS IT STANDS (its recorded baseline). The only numbers a PROVISIONAL
+                # "no worse than the initial design" target may be built from; nothing here is a requirement of the user.
+                summary['initial_design_results'] = runtime.reference_metrics
         circuit_hash = None if runtime is None else runtime.circuit.get('netlist_sha256')
+        ready, review = run_readiness(config, runtime, blocked), None
+        if body.kind == 'settings_review':
+            # Settings, cited presets and a digest of the task - and nothing of the design (no instance, net or size), so a
+            # request that may read web pages has nothing of it to give away.
+            raw = config.model_dump(mode='json')
+            review = dict(task=agent_review.task_digest(raw, summary), settings=agent_review.settings_data(raw),
+                          publication_presets=agent_review.publication_presets(), run_readiness=agent_review.readiness_digest(ready))
+            summary = None
         request = AgentRequest(kind=body.kind, user_prompt=body.prompt, config=config.model_dump(mode='json'),
-                               circuit_summary=summary, selection=body.selection,
-                               readiness=run_readiness(config, runtime, blocked))
+                               circuit_summary=summary, selection=body.selection, readiness=ready, review=review,
+                               web=bool(body.web), web_domains=agent_review.domains(runs.load_settings().get('agent_web_domains')))
         if body.request_id:
             request.request_id = body.request_id
         return request, circuit_hash
@@ -827,6 +892,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             proposal = proposals.create(request, result, circuit_hash=circuit_hash)
         except AgentError as exc:
             raise HTTPException(409, detail=dict(exc.as_dict(), configuration_unchanged=True))
+        proposal['readiness_after'] = readiness_after(request, proposal)
+        check_suggestions(request, proposal)
         _audit(proposal)
         return proposal
 
@@ -854,7 +921,10 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         try:
             request, circuit_hash = _request(body)
             result = agents.DisabledProvider().import_result(request, body.result)
-            return proposals.create(request, result, circuit_hash=circuit_hash)
+            proposal = proposals.create(request, result, circuit_hash=circuit_hash)
+            proposal['readiness_after'] = readiness_after(request, proposal)
+            check_suggestions(request, proposal)
+            return proposal
         except AgentError as exc:
             raise HTTPException(409, detail=dict(exc.as_dict(), configuration_unchanged=True))
 

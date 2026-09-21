@@ -448,7 +448,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
             <p>Next: ask the agent what this circuit is and which sizes, ranges and targets make sense. Its answer is a proposal in the
               Agent tab; once you approve it there, the three editors are filled from it.</p>
             <div className="row">
-              <button className="primary" onClick={() => onAgent('draft_config', [], DRAFT_PROMPT)} title="Opens the Agent tab with the request written out. Nothing is sent until you press Send there.">Ask the agent for suggestions</button>
+              <button className="primary" onClick={() => onAgent('draft_config', [], DRAFT_PROMPT)} title="Opens the Agent tab with the request written out. Nothing is sent until you press Enter in its message box.">Ask the agent for suggestions</button>
               <button disabled={!profileId || importing || !!listing} onClick={importCell} title="After a change in Virtuoso, or to export through another testbench cell. Read-only.">{importing ? 'Reading...' : 'Read the cell again'}</button>
             </div>
             {circuit.profile_task ? (

@@ -100,6 +100,7 @@ class TaskRuntime:
     supports_threads: bool = False
     notes: list = field(default_factory=list)
     authorized: bool = True            # False = a real task loaded to be SHOWN and validated only: it cannot execute
+    reference_metrics: dict | None = None   # verified REAL results of the INITIAL design: {metric: {value, unit}}; None if unknown
 
     @property
     def mock(self) -> bool:
@@ -421,7 +422,9 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
         notes.append('Loaded for viewing and validation only. Running it needs your explicit authorization of a real '
                      'simulation budget (asked when you press Start).')
     return TaskRuntime(task_key, 'real', graph, recipes.provided_metrics(entry['recipe']), circuit, structure.read_text(),
-                       str(structure), str(mapping), builder, max_concurrency=4, authorized=bool(authorized), notes=notes)
+                       str(structure), str(mapping), builder, max_concurrency=4, authorized=bool(authorized), notes=notes,
+                       reference_metrics=None if reference is None else {
+                           key: dict(value=value, unit=None) for key, value in reference.items() if isinstance(value, (int, float))})
 
 
 def _real_runtime(task_key, name, profile_id=None, *, authorized=False):
@@ -472,8 +475,36 @@ def _real_runtime(task_key, name, profile_id=None, *, authorized=False):
     return TaskRuntime(task_key, 'real', graph, metrics, circuit, (root / info['structure']).read_text(),
                        str(root / info['structure']), str(root / info['mapping']), builder, max_concurrency=4,
                        authorized=bool(authorized),
+                       reference_metrics={name: dict(value=value, unit=(reference.get('metric_units') or {}).get(name))
+                                          for name, value in reference['metrics'].items() if isinstance(value, (int, float))},
                        notes=[] if authorized else ['Loaded for viewing and validation only. Running it needs your explicit '
                                                     'authorization of a real simulation budget (asked when you press Start).'])
+
+
+def profile_parameter_rows(runtime) -> list:
+    """The Parameters-tab rows a REAL circuit profile fixes, written from its own parameter groups (the same
+    mapping as starter_config). A real profile accepts exactly these variables, ranges and grid: the engine compares the
+    compiled configuration with the profile (`graph_contract`) and refuses anything else when the run starts. Empty for
+    a task that fixes nothing (synthetic fixtures, a cell without a profile)."""
+    from dataclasses import asdict
+    if runtime is None or runtime.mock:
+        return []
+    rows = []
+    for group in getattr(runtime.base_graph, 'parameter_groups', ()) or ():
+        record, leader = asdict(group), None
+        for member in record['members']:
+            variable_id = record['id'] if leader is None else f"{record['id']}__{str(member['device_id']).replace('/', '_')}"
+            row = dict(variable_id=variable_id, instance_path=member['device_id'], parameter_name=member['parameter'],
+                       unit=record['unit'], scale=record.get('scale') or 'linear',
+                       value_type='integer' if record.get('domain') == 'integer' else 'continuous')
+            if leader is None:
+                row.update(lower=record['lower'], upper=record['upper'], step=record.get('step'),
+                           optimized=bool(record.get('mutable', True)), initial_value=record.get('value'))
+                leader = variable_id
+            else:
+                row.update(binding_group=leader, ratio=member.get('ratio', 1.0))
+            rows.append(row)
+    return rows
 
 
 def starter_config(task_key: str) -> dict:

@@ -20,6 +20,15 @@ GOOD = dict(kind='targets', patch=[dict(op='replace', section='targets', key='sc
             unresolved=['No datasheet was cited for this value.'])
 
 
+REVIEW = dict(kind='settings_review', patch=[], reasoning='Two settings stand out for a 60-evaluation budget.', warnings=[], unresolved=[],
+              suggestions=[dict(path='run.advanced.batch_size', value='16', reason='Fits the budget.', source='GATOR preset for gat (Lighthouse RL)'),
+                           dict(path='run.network.encoder_type', value='"gat"', reason='Published for SAC sizing.', source='Lighthouse RL',
+                                url='https://arxiv.org/abs/2607.14008', quote='We use a graph attention network'),
+                           dict(path='output.output_root', value='"/tmp/elsewhere"', reason='tidier', source='none')],
+              encoder_ideas=[dict(name='GPS graph transformer', source='Rampasek et al., NeurIPS 2022', url='https://arxiv.org/abs/2205.12454',
+                                  why='Global attention.', what_it_takes='A new encoder class in the optimizer package.')])
+
+
 def main():
     argv = sys.argv[1:]
     name = os.path.basename(sys.argv[0])
@@ -69,6 +78,10 @@ def emit(argv, final):
 def claude(argv, scenario):
     if scenario == 'success':
         emit(argv, result(structured_output=GOOD))
+    elif scenario == 'settings_review':
+        emit(argv, result(structured_output=REVIEW))
+    elif scenario == 'web_refused':                     # a page outside the allowed hosts was refused; the review itself is fine
+        emit(argv, result(structured_output=REVIEW, permission_denials=[dict(tool_name='WebFetch', tool_input=dict(url='https://example.org/x'))]))
     elif scenario == 'no_structured_output':
         emit(argv, result(result='Here is the config:\n```json\n' + json.dumps(GOOD) + '\n```'))
     elif scenario == 'nonzero':

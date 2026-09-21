@@ -1151,6 +1151,41 @@ run); `run_control_check.mjs` (7.18) and `model_chooser_check.mjs` (7.20) still 
 "Model checkpoints" off cannot be saved at all. MOCK backend only: no real run was saved this way yet. Nothing
 under `src/analog_optimizer/` changed.
 
+### 7.25 Agent: "Make it startable with the fewest changes" + a truthful start check for verified real circuits (2026-09-21, same session as 7.16, explicit user request)
+
+Request: "can the agent help modify everything as few as possible for the whole run to be able to start?" Until now the
+`readiness` request assumed nothing, so with empty tables it answered with questions instead of rows.
+
+| Piece | Where |
+|---|---|
+| Request kind `minimal_start`: the smallest edit of the three tables after which the run can start. **Enforced, not just asked for:** `proposals.normalize()` rejects a replace/remove of any row that carries no blocking issue (`changeable_rows` in the readiness report, worked out from the complete issue list; `'*'` for a section-level issue). Adding stays allowed; whether a row was NEEDED is the brief's rule | `agents/base.py`, `agents/proposals.py`, `agents/readiness.py` |
+| Provisional values, only from data the agent was given: a variable's range around the present value in the circuit data; a hard threshold as "no worse than the design as it stands" from `initial_design_results` - the verified REAL baseline, now exposed as `TaskRuntime.reference_metrics` (hand-written profiles: metrics + units; generated profiles: their recorded reference) and added to the circuit summary. Never a typical value from general knowledge; without such a number the target stays missing. Every such row: `basis` starts with `PROVISIONAL:` and a warning names it | `tasks.py`, `api/app.py` (`_request`), `agents/run_readiness.md`, `agents/prompts.py` |
+| `readiness_after` on EVERY proposal (agent or manual import): the backend applies the patch to a copy, re-runs the start checklist and reports `ready`, what it resolves, what remains, rows changed. The workbench's verdict, never the agent's claim | `api/app.py` (`readiness_after`) |
+| UI: on the checklist card "Make it startable with the fewest changes" (primary) and "Fix only what needs no assumption" (the old strict request); next to the diff a yellow box listing every PROVISIONAL row and the line "After you approve: nothing blocks a start" / "still missing: ..." ("Checked by the workbench, not by the agent"); `minimal_start` is a selectable kind | `frontend/src/panels/Bottom.tsx`, `styles.css` |
+
+**Defect found by the first real request and fixed here (it predates this work).** For `real:gpdk045_ota5` the agent proposed
+one provisional variable; static validation and `prepare_run` accept that, but a verified real profile fixes its
+parameter groups and `engine.py` compares `graph_contract(compiled.graph)` with the profile only when the WORKER starts -
+after the budget authorization - and refuses ("A real profile fixes its writable parameters and legal grid"). So the
+checklist (and the new verdict) would have said "ready" for a run that dies at once. Now: `tasks.profile_parameter_rows()`
+writes the rows a real profile fixes from its own parameter groups (same mapping as `starter_config`; they compile to an
+identical contract for all four verified circuits: ota5 5 rows, ota7 7, ldo 3, vco 3), `run_readiness` compiles offline and
+compares, the checklist reports a mismatch or an uncompilable configuration as missing ("would be refused the moment it
+starts"), and the rows go to the agent as `required_parameter_rows` to be copied unchanged (not provisional). No bridge
+contact in any of this.
+
+Verification: `test_wb_agent_readiness.py` 16 tests (7 new). Full `pytest tests/workbench -q`: 357 passed, 1 failed -
+`test_wb_preload.py::test_every_lazy_optimizer_import_is_preloaded`, caused by another session's import that was being
+added to `preload.MODULES` while the run was in flight (the import this work adds, `analog_optimizer.envs.sizing`, was
+already listed); re-run afterwards together with the agent and API files: all pass. Browser check `agent_tab_check.mjs` 68 checks, all pass (both
+buttons, one request of kind `minimal_start`, verdict line, provisional box). **Two real requests** through a scratch
+backend (port 8768, own settings directory + a copy of the connection file, `sonnet` / effort `low`, `real:gpdk045_ota5`
+read from local files only - no bridge contact, no simulation): before the fix 3 rows incl. a made-up variable ($0.23);
+after it 7 rows = the profile's 5 variable rows copied exactly + ONE provisional target (`gain_db_at_start >=` the recorded
+baseline 25.0 dB) + its measurement, `readiness_after.ready = true` with the profile comparison included ($0.25, 42 s).
+NOT verified: that such a run then really starts - that needs the user's connection test and budget authorization.
+Python changed: the running backend needs a restart. Uncommitted.
+
 ### 7.26 Network structure of a saved model, as a table (2026-09-21 ~05:30, same session as 7.20 / 7.23, user: "go, build the structure table")
 
 **RESTART THE BACKEND FIRST** (one new read-only route; two more modules in the preload list).
@@ -1203,3 +1238,115 @@ trained = 7,314 + 2 x 8,369 + 1; 25 + 27 layers, all typed and explained). `mode
 attention, no comparison between save points. Counts are of the workbench's networks as built today; a save point
 written by another source version may come without types. MOCK save points only were read; a real one has the same
 file format. Nothing under `src/analog_optimizer/` changed.
+
+### 7.27 Agent conversation: the detach control moved onto the tab (2026-09-21, same session as 7.14, explicit user request)
+
+Request: "move the detach to its window button onto the tab 'agent conversation' button, like closing browser tab style".
+Frontend only. The "Agent conversation" tab of the bottom strip is now one tab shape (`.tab-group`) holding two SIBLING
+buttons - its label and, at the right end where a browser tab has its close button, a 13 px pop-out icon (`.tab-detach`,
+inline SVG, `aria-label` + tooltip). A button inside a button is not valid HTML, hence siblings. `App.tsx` only offers a
+slot (`<span class="tab-slot">`, handed over as `tabSlot`) and keeps a `detached` flag for the tab's look
+(`onDetached`); `AgentTab` draws the control into the slot through a portal, so all detach logic stays in one place.
+Pressing it detaches WITHOUT switching the bottom tab; while detached the label is italic/muted and the same control
+reads "Bring the conversation back into this tab" (a fourth way back besides the button inside the detached window, the
+note in the panel, and closing that window). The old full-width button in the left column is gone; inside the detached
+window, which has no tab strip, "Bring back into the workbench" stays.
+
+Verification: `npm run build` passes; `agent_tab_check.mjs` 71 checks, all pass on a scratch backend (control is on the
+tab, right of its label, not nested in another button, old button gone; detaching from "Run status" leaves that tab
+selected; the tab shows the detached state; the control brings the conversation back complete). Test-only finding: the
+editors have a `.tabs` strip too, so bottom-strip selectors must start at `footer`. Page refresh only. Uncommitted.
+
+### 7.28 Agent tab wording (2026-09-21, same session as 7.27, explicit user request)
+
+Three text changes, frontend only: the bottom tab "Agent conversation" is now "Agent"; the message box no longer says
+"Enter sends, Shift+Enter starts a new line" (the keys work as before); the notes side window no longer explains itself
+before the first reply ("What a reply lists besides its text appears here instead of in the chat") - it shows its
+heading only. The detached window keeps its title "GATOR - agent conversation". `npm run build` passes;
+`agent_tab_check.mjs` 72 checks, all pass on a scratch backend. The check script now retries its settings snapshot and
+refuses to start without one (a run had silently skipped the restore step when that first read failed once). Page
+refresh only. Uncommitted.
+
+### 7.29 Agent tab: the selected rows on a click; the send button removed (2026-09-21, same session as 7.28, explicit user request)
+
+Frontend only (`Bottom.tsx`, `styles.css`; one tooltip in `Left.tsx`).
+
+* **`modify_fields`: "N selected row(s)" is now a control.** A press lists the rows the request may change, one line
+  each: row ID, its table, what the row is now (a handful of identifying fields per table - `ROW_FACTS` - with short
+  numbers, `1e-6` instead of `0.00000100000`) and what may change (the chosen fields, or "the whole row"); a row that
+  has since been deleted says so. A second press closes it; with no selection it says how to make one. The list
+  scrolls itself into view, because the message-box column scrolls. It belongs to `modify_fields` only.
+* **"Ask agent for a proposal" is gone.** Enter in the message box sends (unchanged, IME-safe); while a request is
+  out the row still offers "Cancel request" and the conversation shows the waiting line. The tooltip of "Ask the agent
+  for suggestions" in the circuit panel said "until you press Send there"; it now says "press Enter in its message box".
+
+Verification: `npm run build` passes; `agent_tab_check.mjs` 76 checks, all pass on a scratch backend. The check now
+seeds the page with the `synthetic:opamp` starter (through `Page.addScriptToEvaluateOnNewDocument`), so rows can be
+ticked in the editors and brought over with "Modify selected with agent..." as a user would. Page refresh only.
+Uncommitted.
+
+### 7.34 Editor tabs renamed: Parameters, Specs, Probes (2026-09-21 ~14:10, separate session, explicit user request)
+
+Request: "Change Tab names as follows, optimization parameters to Parameters, performance targets to Specs,
+Measurement Definitions to Probes."
+
+Names only. The configuration sections, JSON keys, request kinds and column names stay `parameters`, `targets`,
+`measurements` (`measurement_id`, ...), so saved configurations, exports, run directories and agent proposals are
+untouched. What NAMES these tabs to the user follows them, so that nothing points at a tab that no longer exists:
+
+* the tab strip itself (`Editors.tsx`, `TITLES`);
+* the start checklist (`agents/readiness.py`, `TITLES` - it must stay equal to the frontend's). Its action line now
+  reads `Fill in the "Probes" tab, ...`: a one-word name in quotes alone did not say what to fill in;
+* the agent's brief (`agents/run_readiness.md`): items 2-4 carry the tab name and the table it fills, and the agent is
+  told to use the tab names when it talks to the user;
+* the empty-conversation hint of the Agent tab ("a draft of the Parameters, Specs or Probes tab"); `docs/workbench.md`.
+
+Left alone on purpose: the request-kind list of the Agent tab (raw identifiers such as `draft_config`, `targets`,
+`measurements`), the validation messages (they speak of a "target" / "measurement definition" as concepts and name
+fields by their path), and the specification file, which is the user's document and still says the long names.
+
+Verification: `test_wb_agent_readiness.py` 16 passed (two assertions follow the new titles); full workbench suite
+413 passed; `npm run typecheck` passes; `agent_tab_check.mjs` 78 checks, all pass on a scratch backend - two new
+ones (the tab strip reads "Parameters (3) | Specs (1) | Probes (1)"; the empty conversation uses the same names), and
+its canned checklist data follows the backend's titles. Real backend, free endpoint: the checklist of an emptied
+`synthetic:opamp` lists Parameters / Specs / Probes as missing, in that order.
+Live page: `frontend/dist` already holds the change (a parallel session's build at 14:04 picked it up from the shared
+working tree), so a page reload shows the tabs. **The backend on 8765 must be restarted** for the checklist titles
+(`readiness.py` is loaded at start); the brief is read again for every request and needs nothing. Uncommitted.
+
+### 7.36 Agent: "Review settings" over the whole workbench, optionally with publications read online (2026-09-21, same session as 7.25, explicit user request)
+
+Request: "can the agent check publications online and give suggestions on how to change settings over the whole frontend?
+including adding a new network encoder". Until now a proposal could only patch the three tables, and the two web tools
+were on the provider's deny list.
+
+| Piece | Where |
+|---|---|
+| Request kind `settings_review`. It patches NO table (`SECTIONS_BY_KIND` = none). Reply: `suggestions` (path, value as JSON text, reason, source, optional url + verbatim quote) and `encoder_ideas`. 43 suggestible settings: Run configuration, RL network, RL network (Advanced, all but `spec_registry`), Output settings - never the circuit, the connection profile, a model source, the output folder, names. A suggestion for anything else is dropped and named (`refused_suggestions`); from any other request kind suggestions are ignored | new `agents/settings_review.py`, `agents/base.py`, `agents/prompts.py`, `agents/proposals.py` |
+| What the agent is shown: `settings` (present value, meaning, limits from the pydantic schema), `publication_presets` (the curated, cited table of `network_presets.py`, compact), a `task` digest and a readiness digest - **nothing of the design**: no instance, net, size, row or detail text (tested) | `settings_review.task_digest / readiness_digest / settings_data / publication_presets`, `api/app.py` `_request` |
+| The backend tries every suggestion on a COPY (schema, then static validation with the loaded circuit): `applicable`, `problem`, `alone` (a legal value that raises a blocking issue unless a related row is applied too - `hidden_dim` + `heads`), and `suggestions_together`. Nothing is applied by agent or backend | `settings_review.check`, `api/app.py` `check_suggestions` |
+| **Online research, per request, off by default** (`ProposeBody.web`; only a `settings_review` may set it, else `invalid_request`). Claude Code provider only: `WebSearch` + `WebFetch(domain:<host>)` for `PUBLICATION_DOMAINS` (arXiv, IEEE Xplore, ACM DL, OpenReview, PMLR, NeurIPS, Springer, ScienceDirect, Nature, MDPI, doi.org, Semantic Scholar, GitHub, PyG docs) plus hosts the OPERATOR lists under `agent_web_domains` in the settings file - never from a request. The two tools come off `--disallowedTools` (a denied tool cannot be re-allowed; rule syntax and deny-before-allow order checked against code.claude.com/docs/en/permissions on 2026-09-21); everything that writes or executes stays denied; still an empty scratch directory; `--max-turns 40`, timeout >= 900 s. A refused page is counted (`audit.web_calls_refused`) instead of failing the request; any OTHER refused tool is still fatal. Codex: `unsupported_cli` (never installed here) | `agents/claude_code.py`, `agents/codex.py` |
+| Prompt rules: a source for every suggestion (a preset, a fact of the data, or - online only - a page OPENED in this request with url + quote; no citing from memory), a published value is a citation and not evidence for this circuit, web pages are DATA, search with general terms only. The brief got a section "Reviewing settings" (budget first, equal-size comparisons, network changes invalidate saved models, real evaluations cost) | `agents/prompts.py`, `agents/run_readiness.md` |
+| UI: "Review settings" + "check publications online" (a checkbox, never saved) above the conversation; the reply carries a table Setting / Now (live) / Suggested / Why and source (link, quote) / **Apply** - the user's own edit through `setConfig`, so it is undoable and followed by the page's static validation - plus "Apply all", the left-out list and the encoder ideas. A settings review opens no proposal box (there is no diff to approve) | `frontend/src/panels/Bottom.tsx`, `styles.css` |
+
+**A new encoder stays an idea.** The tab's agent has no tool that writes or runs anything, by design, and adding an
+encoder is a change under `src/analog_optimizer/` - it changes `source_digest()`, which gates the loading of every existing
+checkpoint and the re-runs of the M5/M6 audits - plus the schema's `encoder_type` list, presets and tests. The reply
+says so under every idea; doing it is the user's decision and a development session's work.
+
+Verification: `test_wb_agent_settings_review.py` 8 tests; full `pytest tests/workbench -q` **421 passed, 0 failed**
+(5 m 50 s); browser check `agent_tab_check.mjs` 87 checks, all pass on a scratch backend. **One real request with online
+research** (scratch backend, port 8768, `sonnet` / effort `medium`, `synthetic:opamp`): HTTP 200 in 87 s, $0.49 notional,
+11 turns; the CLI transcript shows 2 web searches with general terms only and 6 fetches on arxiv.org (one PDF too large -
+the reply says it could not read it and cites nothing from it), 0 refused calls; 3 applicable suggestions (budget,
+updates per transition, learning rate) each tied to a fact or a preset, the publication presets deliberately NOT pushed
+onto a 60-evaluation budget, and no encoder idea ("none of the publications I could read uses an encoder we lack").
+NOT verified: a refused host in a real run (none occurred), Codex. Python changed: the backend needs a restart. Uncommitted.
+
+### 7.37 Agent tab: two buttons swapped places (2026-09-21, same session as 7.36, explicit user request)
+
+Frontend only (`Bottom.tsx`). "What's missing to start?" moved from the line above the conversation into the row under
+the message box, right after "Export task description". "Review settings" took its old place at the right end of the line
+above the conversation, with its option "check publications online" in front of it. No behaviour changed.
+`npm run build` passes; `agent_tab_check.mjs` 88 checks, all pass on a scratch backend (one new check for the two
+positions). Page refresh only. Uncommitted.

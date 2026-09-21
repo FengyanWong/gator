@@ -125,7 +125,7 @@ def test_every_request_carries_the_brief_and_the_live_state_as_data(tmp_path, mo
 
 
 def test_the_checklist_of_a_reply_is_kept_as_advice_and_never_part_of_the_approval(tmp_path):
-    good = dict(item='Performance Targets', status='missing', who='you', action='State the gain you need.', basis='no hard constraint')
+    good = dict(item='Specs', status='missing', who='you', action='State the gain you need.', basis='no hard constraint')
     output = dict(kind='readiness', patch=[], reasoning='Targets are missing.', warnings=[], unresolved=['required gain'],
                   checklist=[good, dict(item='x', status='exploded', who='you', action='-'), 'not an object',
                              dict(item='', status='done', who='agent', action='-'), dict(item='y', status='done', who='root', action='-')])
@@ -162,3 +162,139 @@ def test_the_checklist_is_free_and_an_agent_request_is_told_the_same(client, tmp
     sent = json.loads((tmp_path / 'record.json').read_text())['stdin']
     assert 'REQUEST KIND: readiness' in sent and '<run_readiness_data>' in sent and 'OPERATOR GUIDE' in sent
     assert '"ready": true' in sent
+
+
+# ------------------------------------------------------------------------------- the fewest changes that let the run start
+def test_only_rows_with_a_blocking_issue_may_be_changed(tmp_path):
+    config = complete(tmp_path)
+    second = dict(config['parameters'][0], variable_id='second')
+    config['parameters'].append(second)
+    last = len(config['parameters']) - 1
+    blocking = [issue('error', 'initial_out_of_bounds', f'parameters[{last}].initial_value'), issue('error', 'unknown_unit', 'targets[0].unit')]
+    assert readiness.changeable_rows(config, blocking) == dict(parameters=['second'], targets=[config['targets'][0]['metric_id']], measurements=[])
+    whole = readiness.changeable_rows(config, blocking + [issue('error', 'binding_graph', 'parameters')])
+    assert whole['parameters'] == '*'                                          # an issue about the section: any row may be the cause
+    assert readiness.changeable_rows(config, [issue('error', 'x', 'parameters[99].unit'), issue('error', 'y', 'run.network')]) == dict(
+        parameters=[], targets=[], measurements=[])
+
+
+def minimal(tmp_path, config, blocking, patch):
+    state = readiness.build(config, task=task(), validation=dict(blocks_run=bool(blocking), issues=blocking, facts={}))
+    req = AgentRequest(kind='minimal_start', user_prompt='Make it startable with the fewest changes.', config=config,
+                       circuit_summary=dict(devices=[]), readiness=state)
+    output = dict(kind='minimal_start', patch=patch, reasoning='minimum', warnings=[], unresolved=[])
+    return ProposalStore().create(req, AgentResult('m1', 'claude_code', 'fixture', output), circuit_hash=None)
+
+
+def test_a_minimal_start_proposal_cannot_touch_a_valid_row(tmp_path):
+    from gator_workbench.agents import AgentError
+    config = complete(tmp_path)
+    target = config['targets'][0]
+    rewrite = [dict(op='replace', section='targets', key=target['metric_id'], value=dict(target, lower=0.5), basis='tidier')]
+    with pytest.raises(AgentError) as error:
+        minimal(tmp_path, config, [], rewrite)                                  # nothing is wrong with that row
+    assert error.value.code == 'schema_failure' and 'no blocking issue' in error.value.detail
+    with pytest.raises(AgentError):
+        minimal(tmp_path, config, [], [dict(op='remove', section='targets', key=target['metric_id'])])
+    broken = [issue('error', 'missing_threshold', 'targets[0].lower')]
+    proposal = minimal(tmp_path, config, broken, rewrite)                       # the same edit IS the fix when the row is at fault
+    assert [d['key'] for d in proposal['diff']] == [target['metric_id']] and proposal['kind'] == 'minimal_start'
+    extra = dict(config['parameters'][0], variable_id='added_variable')
+    added = minimal(tmp_path, config, [], [dict(op='add', section='parameters', key='added_variable', value=extra, basis='PROVISIONAL: 0.5x-2x')])
+    assert added['diff'][0]['change'] == 'added'                                # adding is allowed; whether it was NEEDED is the prompt's rule
+
+
+def test_the_minimal_start_prompt_states_the_limits_and_the_brief_explains_provisional_values(tmp_path):
+    state = readiness.build(complete(tmp_path), task=task(), validation=dict(blocks_run=False, issues=[], facts={}))
+    text = prompts.build_prompt(request(tmp_path, kind='minimal_start', readiness=state))
+    assert 'AS FEW CHANGES AS POSSIBLE' in text and 'may NOT be replaced or removed' in text and '"changeable_rows"' in text
+    assert 'The smallest startable setup' in text and 'PROVISIONAL:' in text and 'initial_design_results' in text
+
+
+def test_the_backend_says_whether_the_run_would_start_after_the_proposal(client, tmp_path):
+    config = complete(tmp_path)
+    empty = dict(config, parameters=[], targets=[], measurements=[])
+    rows = [dict(op='add', section=section, key=row[key], value=row, basis='PROVISIONAL: copied from the fixture')
+            for section, key in (('parameters', 'variable_id'), ('measurements', 'measurement_id')) for row in config[section]]
+    half = client.post('/api/agent/import-result', json=dict(kind='minimal_start', prompt='fewest changes', config=empty,
+                                                             result=dict(kind='minimal_start', patch=rows, reasoning='r', warnings=[], unresolved=[])))
+    after = half.json()['readiness_after']
+    assert half.status_code == 200 and not after['ready'] and after['changed_rows'] == len(rows)
+    assert 'Parameters' in after['resolved'] and [r['title'] for r in after['remaining']] == ['Specs']
+    rows += [dict(op='add', section='targets', key=row['metric_id'], value=row, basis='PROVISIONAL: no worse than the initial design')
+             for row in config['targets']]
+    full = client.post('/api/agent/import-result', json=dict(kind='minimal_start', prompt='fewest changes', config=empty,
+                                                             result=dict(kind='minimal_start', patch=rows, reasoning='r', warnings=[], unresolved=[])))
+    after = full.json()['readiness_after']
+    assert after['ready'] and after['remaining'] == [] and 'Worked out by the backend' in after['note']
+    target = config['targets'][0]
+    refused = client.post('/api/agent/import-result', json=dict(kind='minimal_start', prompt='fewest changes', config=config, result=dict(
+        kind='minimal_start', reasoning='r', warnings=[], unresolved=[],
+        patch=[dict(op='replace', section='targets', key=target['metric_id'], value=dict(target, soft_weight=2.0))])))
+    assert refused.status_code == 409 and 'no blocking issue' in refused.json()['detail']['detail']
+
+
+def test_a_real_circuit_tells_the_agent_the_verified_results_of_the_design_as_it_stands(client, tmp_path, monkeypatch):
+    import dataclasses
+    from gator_workbench import tasks
+    genuine = tasks.load_task
+
+    def as_real(circuit, **kwargs):
+        runtime = genuine(circuit, **kwargs)
+        return dataclasses.replace(runtime, origin='real', reference_metrics=dict(gain_db_at_start=dict(value=25.0, unit='dB')))
+    monkeypatch.setattr(tasks, 'load_task', as_real)
+    client.post('/api/agent/propose', json=dict(kind='minimal_start', prompt='fewest changes', config=complete(tmp_path)))
+    sent = json.loads((tmp_path / 'record.json').read_text())['stdin']
+    assert '"initial_design_results"' in sent and '"gain_db_at_start"' in sent and 'REQUEST KIND: minimal_start' in sent
+    assert tasks.TaskRuntime.__dataclass_fields__['reference_metrics'].default is None      # unknown unless a baseline is on record
+
+
+# ------------------------------------------------------------------------------- a verified real circuit fixes its variables
+def test_a_real_profile_accepts_only_its_own_variables_and_the_checklist_says_so_before_the_start(tmp_path):
+    config = complete(tmp_path)
+    fixed = [dict(variable_id='pair_width', instance_path='XU1/M1', parameter_name='w', unit='m', lower=1e-6, upper=2e-6)]
+    ok = dict(blocks_run=False, issues=[], facts={})
+    passed = dict(overall='ok', age_seconds=1.0, layers=[])
+    real = dict(config, run=dict(config['run'], connection_profile_id='lab'))
+    kw = dict(task=task(mock=False), validation=ok, connection=passed, output=dict(allowed=True, exists=True, writable=True, error=None))
+    differs = readiness.build(real, profile=dict(rows=fixed, matches=False, error=None), **kw)
+    assert not differs['ready'] and by_id(differs)['parameters']['status'] == 'missing'
+    assert 'refused the moment it starts' in by_id(differs)['parameters']['detail'] and differs['changeable_rows']['parameters'] == '*'
+    assert differs['required_parameter_rows'] == fixed
+    same = readiness.build(real, profile=dict(rows=fixed, matches=True, error=None), **kw)
+    assert same['ready'] and by_id(same)['parameters']['status'] == 'done' and same['changeable_rows']['parameters'] == []
+    stuck = readiness.build(real, profile=dict(rows=fixed, matches=None, error='CompileError: no such device'), **kw)
+    assert not stuck['ready'] and 'does not compile' in by_id(stuck)['parameters']['detail']
+    none_yet = readiness.build(dict(real, parameters=[]), profile=dict(rows=fixed, matches=None, error=None), **kw)
+    assert by_id(none_yet)['parameters']['status'] == 'missing' and 'None is configured yet' in by_id(none_yet)['parameters']['detail']
+    free = readiness.build(config, task=task(), validation=ok, profile=None)             # a fixture fixes nothing
+    assert free['required_parameter_rows'] == [] and by_id(free)['parameters']['status'] == 'done'
+
+
+def test_the_rows_a_profile_fixes_are_written_from_its_own_parameter_groups():
+    from dataclasses import dataclass, field
+    from gator_workbench import tasks
+
+    @dataclass
+    class Group:
+        id: str
+        unit: str
+        value: float
+        lower: float
+        upper: float
+        members: list = field(default_factory=list)
+        domain: str = 'continuous'
+        scale: str = 'linear'
+        mutable: bool = True
+        step: float | None = None
+    pair = Group('pair_width', 'm', 4e-6, 3.6e-6, 4.4e-6, step=5e-9, members=[dict(device_id='XU1/M1', parameter='w', ratio=1.0),
+                                                                           dict(device_id='XU1/M2', parameter='w', ratio=1.0)])
+    tail = Group('tail_width', 'm', 4e-6, 1e-6, 1e-5, scale='log', mutable=False, members=[dict(device_id='XU1/M5', parameter='w', ratio=1.0)])
+    runtime = SimpleNamespace(mock=False, base_graph=SimpleNamespace(parameter_groups=[pair, tail]))
+    rows = tasks.profile_parameter_rows(runtime)
+    assert [r['variable_id'] for r in rows] == ['pair_width', 'pair_width__XU1_M2', 'tail_width']
+    assert rows[0] == dict(variable_id='pair_width', instance_path='XU1/M1', parameter_name='w', unit='m', scale='linear', value_type='continuous',
+                           lower=3.6e-6, upper=4.4e-6, step=5e-9, optimized=True, initial_value=4e-6)
+    assert rows[1]['binding_group'] == 'pair_width' and rows[1]['ratio'] == 1.0 and 'lower' not in rows[1]
+    assert rows[2]['optimized'] is False and rows[2]['scale'] == 'log'
+    assert tasks.profile_parameter_rows(SimpleNamespace(mock=True, base_graph=runtime.base_graph)) == [] and tasks.profile_parameter_rows(None) == []

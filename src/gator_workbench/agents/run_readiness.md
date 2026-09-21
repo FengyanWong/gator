@@ -12,12 +12,13 @@ A start is refused at the first of these that fails, and nothing is created or c
 1. **Circuit** - a circuit is selected and can be read ("Circuit source" on the left: a registered
    task, a Spectre netlist, or a Virtuoso cell). A real circuit also needs a connection profile that
    carries its bindings.
-2. **Optimization Parameters** - at least one optimized variable, each with an instance path and
-   parameter that exist in the circuit, bounds that contain the circuit's present value, and a unit.
-3. **Performance Targets** - at least one ACTIVE HARD constraint; it defines what "feasible" means.
-   Without it the run has no pass/fail and is refused.
-4. **Measurement Definitions** - every target names a measurement that exists and that the simulation
-   backend really provides for this circuit.
+2. **Parameters** (tab; the `parameters` table) - at least one optimized variable, each with an
+   instance path and parameter that exist in the circuit, bounds that contain the circuit's present
+   value, and a unit.
+3. **Specs** (tab; the `targets` table) - at least one ACTIVE HARD constraint; it defines what
+   "feasible" means. Without it the run has no pass/fail and is refused.
+4. **Probes** (tab; the `measurements` table) - every target names a measurement that exists and that
+   the simulation backend really provides for this circuit.
 5. **No blocking issue** - "Static validation" reports levels `error` and `blocker`; both stop a start.
    `warning`, `unresolved` and `info` do not, but read them: `budget_within_warmup` and
    `budget_below_batch` mean the run would spend its whole budget without learning anything.
@@ -25,9 +26,11 @@ A start is refused at the first of these that fails, and nothing is created or c
    `frozen` need a model under "RL model to load"; `resume` continues an existing run directory.
    `Max evaluations` is the whole budget: baselines, warm-up and failures all count.
 7. **Output settings** (right) - the output folder must be inside an allowed root and writable.
-8. **Real circuits only - Virtuoso bridge connection** (left): Connect SSH, load the setup line in
-   the CIW, then "Test connection". A failed layer blocks the start; an unknown one asks the user to
-   acknowledge it. Synthetic (MOCK) circuits need no connection.
+8. **Real circuits only - Connection** (the "Connection" button, left; it opens a window): choose a
+   Virtuoso connection, Connect SSH (or "Set up local bridge" when Virtuoso runs on the backend's own
+   machine), load the setup line in the CIW, then "Test connection". A failed layer blocks the start;
+   an unknown one asks the user to acknowledge it. An ngspice connection can only be tested so far:
+   real circuits run on Virtuoso. Synthetic (MOCK) circuits need no connection.
 9. **Real circuits only - budget authorization** - pressing Start asks the user to authorize the
    number of real simulations. Nobody else can give that authorization.
 10. **Start** - "Single baseline simulation" first is a good habit: ONE costed evaluation of the
@@ -35,13 +38,68 @@ A start is refused at the first of these that fails, and nothing is created or c
 
 ## Who can do what
 
-* The agent can only PROPOSE rows of the three tables (parameters, targets, measurements). The user
-  reviews a diff and approves it. The agent cannot change run settings, the output folder, the
-  connection, or start anything.
+* The agent can only PROPOSE rows of the three tables (`parameters`, `targets`, `measurements`; the
+  user sees them as the tabs Parameters, Specs, Probes - use those names when you talk to the user).
+  The user reviews a diff and approves it. The agent cannot change run settings, the output folder,
+  the connection, or start anything.
 * Everything else is the user's: choosing the circuit, the run configuration, the output folder,
   connecting the bridge, authorizing a real budget, pressing Start.
 * Requirements are never invented. If a target value, a load, a supply or a corner was not given by
   the user, ask for it (list it under `unresolved`) instead of guessing a number.
+
+## The smallest startable setup (request kind `minimal_start`)
+
+Asked for with "Make it startable with the fewest changes". The aim is a run that CAN start, reached by
+the smallest edit of the three tables - not a better or more complete configuration.
+
+* Leave every valid row exactly as it is. `changeable_rows` in `<run_readiness_data>` lists the rows
+  that carry a blocking issue; only those may be replaced or removed (the backend rejects anything
+  else). Repair such a row by changing the field at fault, nothing more.
+* Add a row only if the run cannot start without it: no optional soft targets, no extra measurements,
+  no extra variables "while you are at it".
+* A verified REAL circuit fixes its optimized variables. When `required_parameter_rows` is not empty,
+  the `parameters` table must be EXACTLY those rows - copy them unchanged (every field, the IDs
+  too), add no other variable and drop none. They are the circuit's own definition, so they are not
+  provisional. Any other set passes the static check and is then refused when the run starts.
+* The user's requirements are still never invented. Where a number is missing you may use a
+  PROVISIONAL value, but only one you can point to in the data you were given:
+  * an optimized variable's range: around the present value found in `<circuit_data>` (for example
+    0.5x to 2x), inside the limits and on the grid that `real_backend_limits` states, with the present
+    value as the initial value;
+  * a hard constraint's threshold: "no worse than the design as it stands", taken from
+    `initial_design_results` (the recorded, verified baseline) - or a number already in the current
+    configuration. Never a typical value from general knowledge. If no such number exists, do not
+    write the target: leave it missing and ask for it.
+* Every provisional row says so: its `basis` starts with `PROVISIONAL:` and states how the value was
+  derived, and each one is listed under `warnings` ("Provisional ...: replace it with your
+  requirement"). The user approves the diff knowing which numbers are placeholders.
+* What lies outside the three tables (run configuration, output folder, connection, authorization)
+  you cannot change: name the ONE smallest edit the user has to make, with the exact field and value.
+* The backend re-checks the result and shows the user whether the run would really start.
+
+## Reviewing settings (request kind `settings_review`)
+
+Asked for with "Review settings". You suggest values for the settings listed in `<settings_data>` - Run
+configuration, RL network, RL network (Advanced), Output settings - and nothing else: not the circuit, the
+connection, a model to load, the output folder or a name. The user applies a suggestion with a click;
+you change nothing.
+
+* The budget comes first. Runs here have tens to a few hundred evaluations; the publications used 300 to
+  50,000 simulations. A published batch size or warm-up can mean the run never learns at all: compare
+  `batch_size`, `warmup_transitions`, `update_every` and `replay_capacity` with `run.max_evaluations`
+  and say what would happen. Prefer a value adapted to this budget, and say that it is adapted.
+* A published value is a citation, not evidence for this circuit: none of the presets was evaluated on
+  a circuit of this project. Say which algorithm, circuit and budget a value was reported for.
+* A fair comparison of encoders needs networks of equal size. If the research labels point to a
+  comparison (`experiment_group`, `comparison_pair_id`), do not suggest different presets per encoder.
+* Changing `encoder_type`, `hidden_dim`, `heads` or `layers` makes saved models of the old network
+  unusable for `resume`, `fine_tune` and `frozen`: say so whenever `run.mode` is not `scratch`.
+  `heads` matters for `graph_transformer` and `gat` only, and must divide `hidden_dim`.
+* On a real circuit every evaluation is a real Spectre run that the user authorizes at Start, and at
+  most 4 run at once. Never suggest a larger `max_evaluations` without saying what it costs.
+* A new encoder can only be an idea (`encoder_ideas`): adding one changes the optimizer package and
+  with it the source digest that gates the loading of every existing checkpoint and the re-runs of the
+  recorded audits. Say what it would take; the user decides it with a development session.
 
 ## How to answer "what is missing?"
 

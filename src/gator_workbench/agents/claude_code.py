@@ -29,8 +29,10 @@ import tempfile
 from ..security import redact
 from .base import (AgentError, AgentProvider, AgentRequest, AgentResult, WRITE_OR_EXEC_TOOLS, run_cli)
 from .catalog import supports_effort
+from .settings_review import WEB_MAX_TURNS, WEB_TIMEOUT_SECONDS
 from .prompts import build_prompt, proposal_schema_json
 
+WEB_TOOLS = ('WebSearch', 'WebFetch')
 AUTH_PATTERNS = re.compile(r'(?i)(invalid api key|please run /login|not logged in|authentication[_ ]error|'
                            r'oauth token (has )?expired|unauthorized|401\b|credit balance|login required)')
 MODEL_PATTERNS = re.compile(r'(?i)(model[^.\n]{0,80}(not found|does not exist|not available|unavailable|invalid|'
@@ -66,16 +68,21 @@ class ClaudeCodeProvider(AgentProvider):
         argv = [executable, '-p', '--output-format', 'stream-json' if s.stream else 'json']
         if s.stream:
             argv.append('--verbose')
-        argv += ['--json-schema', proposal_schema_json(), '--permission-mode', s.permission_mode,
-                 '--disallowedTools', ','.join(WRITE_OR_EXEC_TOOLS)]
-        if s.allowed_tools:
-            argv += ['--allowedTools', ','.join(s.allowed_tools)]
+        # Online research (a settings_review that asked for it, nothing else): the two web tools come off the deny list - a
+        # denied tool cannot be re-allowed - and WebFetch is allowed for the operator's publication hosts only. Everything that
+        # writes or executes stays denied, and the working directory stays the empty scratch directory.
+        web = bool(request.web and request.kind == 'settings_review' and request.web_domains)
+        denied = [tool for tool in WRITE_OR_EXEC_TOOLS if not (web and tool in WEB_TOOLS)]
+        allowed = list(s.allowed_tools) + (['WebSearch'] + [f'WebFetch(domain:{host})' for host in request.web_domains] if web else [])
+        argv += ['--json-schema', proposal_schema_json(), '--permission-mode', s.permission_mode, '--disallowedTools', ','.join(denied)]
+        if allowed:
+            argv += ['--allowedTools', ','.join(allowed)]
         if s.model:
             argv += ['--model', s.model]
         if s.effort and supports_effort(self.name, s.model):      # e.g. Haiku takes no effort: nothing to pass
             argv += ['--effort', s.effort]
-        if s.max_turns:
-            argv += ['--max-turns', str(int(s.max_turns))]
+        if s.max_turns or web:
+            argv += ['--max-turns', str(int(s.max_turns or WEB_MAX_TURNS))]
         return argv
 
     def propose(self, request: AgentRequest) -> AgentResult:
@@ -92,7 +99,8 @@ class ClaudeCodeProvider(AgentProvider):
         cwd, scratch = self.working_directory(request)
         try:
             code, stdout, stderr = run_cli(self.build_argv(executable, request), stdin_text=build_prompt(request),
-                                           cwd=cwd, timeout=self.settings.timeout_seconds, request_id=request.request_id)
+                                           cwd=cwd, timeout=max(self.settings.timeout_seconds, WEB_TIMEOUT_SECONDS) if request.web
+                                           else self.settings.timeout_seconds, request_id=request.request_id)
         finally:
             if scratch:
                 shutil.rmtree(scratch, ignore_errors=True)
@@ -116,6 +124,10 @@ class ClaudeCodeProvider(AgentProvider):
                      subtype=result.get('subtype'), exit_code=code,
                      note='Audit metadata of the agent request only. Never an RL run id, checkpoint or simulation budget.')
         denials = result.get('permission_denials') or []
+        if request.web:                 # a page outside the publication hosts was refused: that is the rule working, not a fault
+            refused = [d for d in denials if isinstance(d, dict) and d.get('tool_name') in WEB_TOOLS]
+            denials = [d for d in denials if d not in refused]
+            audit['web_calls_refused'] = len(refused)
         if denials:
             raise AgentError('permission_denied', f'{len(denials)} tool call(s) were denied; a proposal request may not '
                                                   'write files or run commands',

@@ -11,10 +11,32 @@ Words only: no host, account, port, path or profile content is put into a checkl
 """
 from __future__ import annotations
 
+import re
+
 TABLES = ('parameters', 'targets', 'measurements')
 BLOCKING = ('error', 'blocker')
-TITLES = dict(parameters='Optimization Parameters', targets='Performance Targets', measurements='Measurement Definitions')
+TITLES = dict(parameters='Parameters', targets='Specs', measurements='Probes')      # = the editor tab names (frontend Editors.tsx)
 LEARNING_WARNINGS = ('budget_within_warmup', 'budget_below_batch')
+ROW_KEYS = dict(parameters='variable_id', targets='metric_id', measurements='measurement_id')      # = schema.SECTION_KEYS
+ROW_PATH = re.compile(r'^(parameters|targets|measurements)\[(\d+)\]')
+
+
+def changeable_rows(config: dict, blocking) -> dict:
+    """Rows of the three tables that carry a blocking issue, per section: a list of row IDs, or '*' when an issue is
+    about the section as a whole (then any of its rows may be the cause). Every other row is valid as it stands, and a
+    `minimal_start` proposal may not replace or remove it."""
+    found = {name: set() for name in TABLES}
+    for issue in blocking:
+        path = str(issue.get('path') or '')
+        match = ROW_PATH.match(path)
+        if match:
+            section, index = match.group(1), int(match.group(2))
+            rows = config.get(section) or []
+            if found[section] != '*' and index < len(rows):
+                found[section].add(str(rows[index].get(ROW_KEYS[section])))
+        elif path.split('.', 1)[0] in TABLES:
+            found[path.split('.', 1)[0]] = '*'
+    return {name: rows if rows == '*' else sorted(rows) for name, rows in found.items()}
 
 
 def _section(path) -> str:
@@ -26,9 +48,11 @@ def _item(item_id, title, status, who, detail, action=''):
     return dict(id=item_id, title=title, status=status, who=who, detail=detail, action=action)
 
 
-def build(config: dict, *, task=None, task_blocker=None, validation=None, connection=None, output=None) -> dict:
+def build(config: dict, *, task=None, task_blocker=None, validation=None, connection=None, output=None, profile=None) -> dict:
     """``config`` and ``validation`` are plain dicts (JSON form). ``task`` is the loaded runtime or None,
-    ``connection`` the monitor's cached status dict or None, ``output`` the result of the output-root check."""
+    ``connection`` the monitor's cached status dict or None, ``output`` the result of the output-root check.
+    ``profile`` = dict(rows, matches) for a REAL circuit whose profile fixes its optimized variables: the rows it
+    accepts, and whether the configured variables compile to exactly them (None = could not be compared yet)."""
     validation = validation or dict(blocks_run=True, issues=[], facts={})
     issues = validation.get('issues') or []
     blocking = [i for i in issues if i.get('level') in BLOCKING]
@@ -50,15 +74,26 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
     # 2-4. the three tables: the only part an agent proposal can change
     rows = {name: len(config.get(name) or []) for name in TABLES}
     hard = [t for t in (config.get('targets') or []) if t.get('hard') and t.get('active', True)]
+    fixed = (profile or {}).get('rows') or []
+    uncompiled = (profile or {}).get('error') if fixed and rows['parameters'] else None
+    mismatch = bool(fixed) and rows['parameters'] > 0 and (profile.get('matches') is False or bool(uncompiled))
     for name in TABLES:
         found = by_section.get(name, [])
+        if name == 'parameters' and fixed and (mismatch or not rows['parameters']) and not found:
+            detail = (f'This verified circuit fixes its optimized variables ({len(fixed)} rows: which sizes may be written, their range and '
+                      'grid). ' + (f'The configuration does not compile, so they could not be compared: {uncompiled}' if uncompiled
+                                  else 'The configured variables differ from them, so the run would be refused the moment it starts.'
+                                  if mismatch else 'None is configured yet.'))
+            items.append(_item(name, TITLES[name], 'missing', 'agent', detail,
+                               'Use exactly the rows of `required_parameter_rows`: "Make it startable with the fewest changes" copies them.'))
+            continue
         empty = dict(parameters=not rows['parameters'], targets=not hard, measurements=not rows['measurements'])[name]
         if found or empty:
             detail = say(found) if found else dict(
                 parameters='No optimized variable yet.', targets='No active hard constraint yet, so nothing defines "feasible".',
                 measurements='No measurement is defined; every target needs one.')[name]
             action = ('State the requirement and where it comes from; the agent can then write the rows.' if name == 'targets'
-                      else f'Fill in "{TITLES[name]}", or ask the agent to draft it from the circuit.')
+                      else f'Fill in the "{TITLES[name]}" tab, or ask the agent to draft it from the circuit.')
             items.append(_item(name, TITLES[name], 'missing', 'agent', detail, action))
         else:
             count = len(hard) if name == 'targets' else rows[name]
@@ -98,21 +133,21 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
     # 8-9. real circuits only
     if mock is False:
         if not run.get('connection_profile_id'):
-            items.append(_item('connection', 'Virtuoso bridge connection', 'missing', 'you', 'No connection profile is selected.',
-                               'Select a profile in "Virtuoso bridge connection" (left), connect, then "Test connection".'))
+            items.append(_item('connection', 'Connection', 'missing', 'you', 'No connection is selected.',
+                               'Press "Connection" (left): in its window choose a Virtuoso connection, connect, then "Test connection".'))
         else:
             overall = (connection or {}).get('overall', 'unknown')
             layers = ', '.join(f"{layer.get('layer')} {layer.get('state')}" for layer in (connection or {}).get('layers') or [])
             status = dict(ok='done', failed='missing', not_ready='missing').get(overall, 'unknown')
             age = (connection or {}).get('age_seconds')
             when = 'never tested in this backend session' if age is None else f'last test {round(age)} s ago'
-            items.append(_item('connection', 'Virtuoso bridge connection', status, 'you', f'{overall} ({when}). {layers}'.strip(),
-                               '' if status == 'done' else 'Press "Test connection" (left). A start tests again by itself and '
-                               'asks you to acknowledge layers that stay unknown.'))
+            items.append(_item('connection', 'Connection', status, 'you', f'{overall} ({when}). {layers}'.strip(),
+                               '' if status == 'done' else 'Press "Connection" (left), then "Test connection" in its window. A '
+                               'start tests again by itself and asks you to acknowledge layers that stay unknown.'))
         items.append(_item('authorization', 'Real simulation budget', 'at_start', 'you',
                            f'Pressing Start asks you to authorize {budget} real evaluation(s). Only you can.'))
     elif mock is True:
-        items.append(_item('connection', 'Virtuoso bridge connection', 'not_applicable', 'you', 'A synthetic (MOCK) circuit needs no bridge.'))
+        items.append(_item('connection', 'Connection', 'not_applicable', 'you', 'A synthetic (MOCK) circuit needs no connection.'))
 
     missing = [i for i in items if i['status'] == 'missing']
     ready = not missing and not validation.get('blocks_run')
@@ -122,6 +157,9 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
     return dict(ready=ready, next=missing[0] if missing else items[-1], items=items, facts=validation.get('facts') or {},
                 # Metric names the simulation backend really returns for this circuit: a target on anything else is refused.
                 provided_metrics=sorted(str(m) for m in (getattr(task, 'provided_metrics', None) or ()))[:80],
+                changeable_rows=dict(changeable_rows(config, blocking), **(dict(parameters='*') if mismatch else {})),
+                # A real profile's own variables: the ONLY Parameters rows its backend accepts. Not provisional.
+                required_parameter_rows=fixed,
                 run=dict(mode=mode, max_evaluations=budget, concurrency=run.get('concurrency', 1), seed=run.get('seed'),
                          encoder=(run.get('network') or {}).get('encoder_type'), mock=mock),
                 issues=[dict(level=i.get('level'), code=i.get('code'), path=i.get('path'), message=str(i.get('message'))[:300])

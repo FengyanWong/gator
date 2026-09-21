@@ -47,6 +47,9 @@ class CodexProvider(AgentProvider):
 
     def propose(self, request: AgentRequest) -> AgentResult:
         request.validate()
+        if request.web:
+            raise AgentError('unsupported_cli', 'Online research is wired for the Claude Code provider only: the codex CLI was never '
+                                                'installed here, so its web options could not be verified. Switch it off or change provider.')
         executable = self.executable()
         if executable is None:
             raise AgentError('cli_missing', '`codex` was not found on the PATH of the BACKEND process')

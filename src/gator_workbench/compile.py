@@ -133,7 +133,12 @@ def build_spec_schema(config: WorkbenchConfig):
     from analog_optimizer.models.inputs import SpecSchema
     custom = config.run.advanced.spec_registry
     if custom is None:
-        return SpecSchema()
+        from .profiles import task_spec_registry
+        generated = task_spec_registry(config.circuit)       # see validation.registry_for: the same fallback, the same order
+        if generated is None:
+            return SpecSchema()
+        return SpecSchema(version='spec-input-generated-profile-v1',
+                          metrics=tuple((e['metric_id'], units.canonical_unit(e['unit']), float(e['reference'])) for e in generated))
     return SpecSchema(version='spec-input-custom-v1',
                       metrics=tuple((e.metric_id, units.canonical_unit(e.unit), float(e.reference)) for e in custom))
 

@@ -299,3 +299,43 @@ def test_a_finished_real_baseline_becomes_the_reference_once(tmp_path, monkeypat
     (run_dir / 'effective_config.json').write_text(json.dumps(dict(circuit=dict(source='registered_task', task_id='real:gpdk045_vco'))))
     with pytest.raises(profiles.ProfileError, match='did not simulate'):
         profiles.record_reference('ring_osc_3stage', run_dir)
+
+
+def test_a_generated_profile_brings_the_result_registry_its_targets_need(tmp_path):
+    """Found before the first baseline: the default RL specification registry knows op-amp results only, so a target on
+    `osc_frequency_hz` was a blocker - and the UI has no editor for the registry."""
+    from gator_workbench.compile import compile_task
+    from gator_workbench.validation import registry_for, validate
+    read_cell(tmp_path)
+    connection_file()
+    target = dict(metric_id='osc_frequency_hz', measurement_id='f_osc', unit='GHz', constraint='>=', lower=1.0, hard=True, normalization_scale=1.0)
+    power = dict(metric_id='supply_power_w', measurement_id='p_supply', unit='uW', constraint='<=', upper=400.0, hard=False,
+                 direction_after_feasible='minimize', normalization_scale=100.0)
+    rows = dict(parameters=ROWS, run=dict(max_evaluations=5), targets=[target, power],
+                measurements=[measurement('f_osc', 'osc_frequency_hz'), dict(measurement('p_supply', 'supply_power_w'), unit='W')])
+    draft = schema.WorkbenchConfig.model_validate(dict(rows, circuit=CIRCUIT))
+    assert registry_for(draft) is None                                               # a cell without a profile: nothing to check yet
+    draft_graph = tasks.load_task(draft.circuit).base_graph
+    assert 'metric_not_in_registry' not in [i.code for i in validate(draft, graph=draft_graph).issues]
+    made = profiles.create_profile('ring_osc_3stage', draft, recipe='ring_oscillator', expected_frequency_hz=1.2e9)
+    assert [e['metric_id'] for e in made['spec_registry']] == list(recipes.RING_METRICS)
+    assert made['spec_registry'][0] == dict(metric_id='osc_frequency_hz', unit='Hz', reference=1.2e9)
+    registered = schema.WorkbenchConfig.model_validate(dict(rows, parameters=made['parameters'],
+                                                            circuit=dict(source='registered_task', task_id='real:ring_osc_3stage')))
+    assert registry_for(registered) == dict(recipes.RING_METRICS)
+    runtime = tasks.load_task(registered.circuit, profile_id='lab')
+    report = validate(registered, graph=runtime.base_graph, provided_metrics=set(runtime.provided_metrics))
+    assert not report.blocks_run, [(i.level, i.code, i.message) for i in report.issues if i.level in ('error', 'blocker')]
+    compiled = compile_task(registered, runtime.base_graph)
+    assert compiled.spec_schema.version == 'spec-input-generated-profile-v1'
+    assert [m[0] for m in compiled.spec_schema.metrics] == list(recipes.RING_METRICS) and compiled.spec_schema.metrics[0][2] == 1.2e9
+    assert sorted(spec.metric_id for spec in compiled.specs) == ['osc_frequency_hz', 'supply_power_w']
+    # a registry stated in the configuration still wins, and other tasks keep the default one
+    explicit = registered.model_copy(deep=True)
+    explicit.run.advanced.spec_registry = [schema.SpecRegistryEntry(metric_id='osc_frequency_hz', unit='Hz', reference=5e8)]
+    assert registry_for(explicit) == dict(osc_frequency_hz='Hz')
+    other = schema.WorkbenchConfig.model_validate(dict(circuit=dict(source='registered_task', task_id='synthetic:opamp'), run=dict(max_evaluations=5)))
+    assert 'gain_db_at_start' in registry_for(other) and 'osc_frequency_hz' not in registry_for(other)
+    unknown = dict(target, metric_id='osc_phase_noise', measurement_id='f_osc')
+    bad = registered.model_copy(update=dict(targets=[schema.PerformanceTarget(**unknown)]))
+    assert 'metric_not_in_registry' in [i.code for i in validate(bad, graph=runtime.base_graph, provided_metrics=set(runtime.provided_metrics)).issues]

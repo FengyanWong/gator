@@ -6,7 +6,7 @@ code diff (`git status`, `git diff`) and the specification before continuing. Do
 redo completed modules from conversational memory. This is a development record, not a
 research output or analysis report.
 
-Last updated: 2026-09-20 (~21:25: section 7.7, per-encoder network settings from publications; ~21:35: section 7.8, Agent tab side window + browser check; ~21:50: section 7.9, connection panel; ~22:00: section 7.10, agent model / effort lists; ~22:00: section 7.11, validate 500 from a concurrent first import of torch_geometric; ~22:15: section 7.12, blocking-issues button in the header; ~22:40: section 7.13, netlist import form; ~22:30: section 7.14, detachable agent conversation; ~23:10: section 7.15, Virtuoso source dropdowns; 2026-09-21 early: section 7.16, start checklist + readiness request; 2026-09-21 ~01:15: section 7.17, read a Virtuoso cell into the workbench (profile creation, increment 1); ~03:40: section 7.18, header Start -> Pause -> Resume + Abort; ~03:30: section 7.19, Create profile -> registered real:<name> task (increment 2); ~04:40: section 7.21, no-simulation check of a generated profile + baseline reference).
+Last updated: 2026-09-20 (~21:25: section 7.7, per-encoder network settings from publications; ~21:35: section 7.8, Agent tab side window + browser check; ~21:50: section 7.9, connection panel; ~22:00: section 7.10, agent model / effort lists; ~22:00: section 7.11, validate 500 from a concurrent first import of torch_geometric; ~22:15: section 7.12, blocking-issues button in the header; ~22:40: section 7.13, netlist import form; ~22:30: section 7.14, detachable agent conversation; ~23:10: section 7.15, Virtuoso source dropdowns; 2026-09-21 early: section 7.16, start checklist + readiness request; 2026-09-21 ~01:15: section 7.17, read a Virtuoso cell into the workbench (profile creation, increment 1); ~03:40: section 7.18, header Start -> Pause -> Resume + Abort; ~03:30: section 7.19, Create profile -> registered real:<name> task (increment 2); ~04:40: section 7.21, no-simulation check of a generated profile + baseline reference; ~06:00: section 7.22, result registry of generated profiles + measurement replayed on real result files).
 
 ## 1. Inspection facts (verified 2026-09-20, not assumed)
 
@@ -1070,3 +1070,39 @@ costed run itself. **RESTART THE BACKEND FIRST** (new module, two endpoints).
 "Record the baseline run as reference". If the measurement contract refuses the waveform (no sustained full-swing
 oscillation in the window, or a frequency far from the expected one) the evaluation fails as a measurement error -
 by design, never a made-up number.
+
+### 7.22 Profile from a Virtuoso cell, increment 3b: a blocker found before the first baseline, and the measurement checked on real result files (2026-09-21 ~06:00, same session as 7.17 / 7.19 / 7.21, user: "leave it, go on")
+
+Still no simulator budget (a bare "go on" does not authorize one). **RESTART THE BACKEND FIRST** (Python only; no
+frontend change).
+
+* **Blocker found and fixed: the RL specification registry.** A target's `metric_id` must be in the registry that
+  lays out the policy's goal input; the default one (`SpecSchema()`) holds the six op-amp results and `score`. A
+  target on `osc_frequency_hz` was therefore a `metric_not_in_registry` blocker whose advice ("add it under Run >
+  Advanced > spec_registry") cannot be followed: the UI has no editor for the registry. The user's first baseline
+  would have stopped there. Now a generated profile brings its registry: `recipes.spec_registry` (the results of the
+  circuit type with fixed references of the right order - the expected frequency, 1e-4 W / A, the supply, the
+  contract limits, the measurement start) is stored in `profile.json`, and `validation.registry_for` /
+  `compile.build_spec_schema` use it when the configuration states none (`SpecSchema` version
+  `spec-input-generated-profile-v1`). An explicit `spec_registry` still wins; other tasks keep the default; a cell
+  without a profile skips the registry check (its registry comes with the profile). The agent is told that a
+  target's `metric_id` must be one of the result names. Test
+  `test_a_generated_profile_brings_the_result_registry_its_targets_need`: a generated ring-oscillator task with a
+  frequency target in GHz and a power target in uW validates without blockers and compiles to two `MetricSpec`s.
+  **The same gap exists for the verified `real:gpdk045_ldo` and `real:gpdk045_vco` tasks** (their results are not in
+  the default registry either; the M6 experiment used its own registry from `configs/m6_real_cross_category.json`).
+  Deliberately NOT changed here: those are verified tasks, and which registry they should share is a research
+  decision (it fixes checkpoint compatibility).
+* **The measurement, checked on REAL Spectre output (read-only, one-off, not a test: the files are local
+  evidence).** (1) `GenericRingOscillatorProfile.analyze` replayed on the result files of a recorded real VCO
+  simulation made through the same adapter (`artifacts/local/m6-vco-runtime/trial/1aaec733.../simulations/
+  7ec6a755...`: `dcOp.dc`, `dcOpInfo.info`, `tranNom.tran.tran`, `spectre.out`; the evidence folder was only read,
+  `measurements.json` went to a scratch copy): frequency 1.711607e8 Hz, supply power 2.661101e-5 W and duty cycle
+  are IDENTICAL to what the verified VCO recipe recorded for the nominal transient; the nine operating points and
+  the completion evidence were read. Swing and startup differ by design: the VCO recipe takes the worst of three
+  control voltages, this recipe has one transient. (2) The PSF transient of the user's standalone ring-oscillator
+  run, read with the same reader: 1.209225e9 Hz; the real `V0:p` current is negative when the source delivers
+  power, as the recipe assumes (196.9 uW over the window).
+
+What is verified on real data now: connect / export / deck against the live cell (7.21), result reading and
+measurement (this section). **What is not: Spectre actually running the generated deck, and the license.**

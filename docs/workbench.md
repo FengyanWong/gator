@@ -147,6 +147,9 @@ after the link came up or the design changed in Virtuoso.
   Circuit types: *Ring oscillator (free-running)* - a transient from declared start voltages, metrics
   `osc_frequency_hz`, `supply_power_w`, `supply_current_a`, swing, duty cycle, period spread, startup;
   *Op-amp / OTA (AC gain)* - only for a testbench that follows the verified OTA's net names.
+  Targets of a generated task use the result names as `metric_id` (`osc_frequency_hz`, ...): the profile
+  registers exactly these results for the optimizer's goal input, so nothing has to be added under
+  `run.advanced.spec_registry`.
   A generated profile passes every offline check of the four verified profiles, **but it has never been
   simulated**. In this order:
   1. **Check against Virtuoso (no simulation)** - everything a real evaluation does before Spectre

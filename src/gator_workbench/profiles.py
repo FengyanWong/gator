@@ -84,6 +84,16 @@ def load_profile(name):
         conditions_file=repo_root() / 'configs' / 'gpdk045_conditions.json')
 
 
+def task_spec_registry(circuit) -> list | None:
+    """The result registry of the generated profile a configuration runs, or None (any other task: the default
+    registry, or whatever the configuration states itself)."""
+    task_id = getattr(circuit, 'task_id', None) or ''
+    if getattr(circuit, 'source', None) != 'registered_task' or not task_id.startswith('real:'):
+        return None
+    entry = list_profiles().get(task_id[len('real:'):])
+    return None if entry is None else entry.get('spec_registry')
+
+
 def reference_metrics(name) -> dict | None:
     """The recorded REAL baseline of a generated profile, once there is one."""
     try:
@@ -313,6 +323,7 @@ def create_profile(name, config, *, recipe, expected_frequency_hz=None) -> dict:
                      library=imported['library'], core_cell=imported['cell'], testbench_cell=imported['testbench_cell'], core_instance=core,
                      pdk_id=imported.get('technology_library') or 'unspecified', created_utc=utcnow().isoformat(),
                      provided_metrics=list(recipes.provided_metrics(recipe)), optimized_variables=sorted(optimized),
+                     spec_registry=recipes.spec_registry(recipe, design),
                      status='unverified: no real baseline simulation has been recorded for this profile yet')
         write_json(staging / FILES['entry'], entry)
         staging.rename(directory)

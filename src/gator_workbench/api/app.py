@@ -783,7 +783,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                     'result_source "backend_profile" must use a source_name from results_by_circuit_type for the fitting circuit '
                     'type; only transistor widths can be optimized (parameter "w" of an nmos/pmos directly inside the core cell, '
                     'single finger, m = 1), on a 5 nm grid with a linear range that contains the present width. Identical or '
-                    'matched transistors should follow one leader through binding_group with ratio 1.')
+                    'matched transistors should follow one leader through binding_group with ratio 1. A target\'s metric_id must be '
+                    'one of those result names too (the profile registers exactly them for the optimizer).')
             else:
                 summary['results_provided'] = list(runtime.provided_metrics)
         circuit_hash = None if runtime is None else runtime.circuit.get('netlist_sha256')

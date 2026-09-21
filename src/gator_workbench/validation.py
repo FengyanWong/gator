@@ -580,6 +580,12 @@ def default_registry():
 def registry_for(config):
     custom = config.run.advanced.spec_registry
     if custom is None:
+        if config.circuit.source == 'virtuoso':
+            return None                   # a cell without a profile: its registry comes with the profile, nothing to check yet
+        from .profiles import task_spec_registry
+        generated = task_spec_registry(config.circuit)       # a generated profile brings the results of its circuit type
+        if generated is not None:
+            return {entry['metric_id']: entry['unit'] for entry in generated}
         return default_registry()
     return {entry.metric_id: entry.unit for entry in custom}
 

@@ -35,6 +35,20 @@ def provided_metrics(recipe) -> tuple:
     return tuple(RING_METRICS) if recipe == RING else OPAMP_METRICS
 
 
+def spec_registry(recipe, design):
+    """The RL specification registry a generated profile brings along: every result of its circuit type, with a
+    fixed physical reference of the right order of magnitude (targets are normalized by it). Without it a target on
+    e.g. `osc_frequency_hz` is refused - the default registry only knows the op-amp results - and the UI has no
+    editor for the registry. None = the default registry fits (op-amp)."""
+    if recipe != RING:
+        return None
+    supply, frequency = number(design['supply_v']), float(design['expected_frequency_hz'])
+    references = dict(osc_frequency_hz=frequency, supply_power_w=1e-4, supply_current_a=1e-4, osc_minimum_swing_v=supply,
+                      osc_duty_cycle=1.0, osc_max_period_spread=CONTRACT['maximum_period_spread'],
+                      osc_max_window_drift=CONTRACT['maximum_half_window_drift'], osc_startup_detection_s=number(design['measurement_start']))
+    return [dict(metric_id=name, unit=unit, reference=references[name]) for name, unit in RING_METRICS.items()]
+
+
 def ring_timing(expected_frequency_hz) -> dict:
     """Transient window from a ROUGH expected frequency. Sized so the measurement contract still holds when the
     sizes move the frequency between about 0.6x and 1.5x: 8 full cycles are needed in each half of the window

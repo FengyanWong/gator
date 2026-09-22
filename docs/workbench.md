@@ -988,6 +988,49 @@ the refusals, apply writing into the copy through a fake write process, the rows
 yet). Browser check: `frontend/scripts/agent_setup_check.mjs` (hermetic: canned agent and Virtuoso answers, every other
 writing request refused - safe against the live backend).
 
+### The agent works in Virtuoso itself: the kind `virtuoso_work` (added 2026-09-22, user request)
+
+The same job, with the agent doing the Virtuoso side itself instead of handing over one proposal. Choose the kind
+**virtuoso_work** in the Agent tab (next to the message box) and ask for what you want; it needs a working copy, like
+the setup proposal above.
+
+**What it may do.** While it works it can:
+
+* read from Virtuoso: the libraries, the cells of a library, and any schematic with its instances, parameters and nets;
+* look at the working copy of this task: its names, which instance values may be a Maestro variable, the calculator
+  functions an output may call, the model file, and what the workbench last wrote into it;
+* read the copy's Maestro test as it stands;
+* **write the Maestro setup into that working copy** - analyses, outputs, specs, variables, bindings and initial
+  conditions - and read it back, correcting what did not land, as often as it needs (twelve writes at most).
+
+**What it may not do, by construction.** There is no tool for anything else, and the workbench refuses a call for one:
+it cannot touch your own cells, write device sizes (those are the optimizer's, written inside a run and restored
+afterwards - a size written between runs would make every run refuse to start until you save the task again), start a
+simulation, run a command, read a file or read the web. A request that may read publications is never a request that may
+write into Virtuoso, so nothing a web page says can reach your design.
+
+**What you still approve.** The answer is the same proposal as ever: the rows for Parameters, Probes and Specs, which
+change nothing until you approve the diff. What the agent wrote in Virtuoso went into the copy while it worked - so if
+you reject the rows, press **Read setup** to take the copy's own setup back into the editors, or write the copy again.
+Under the reply, one folded line says how many steps it took in Virtuoso, whether the copy was written, and which calls
+the workbench refused; while it works, each step appears in the chat as it happens ("Virtuoso: listing the cells of
+GPDK045_RINGOSC", "Writing into the working copy: analyses, outputs, specs").
+
+**How it works.** The workbench starts its own tool server (`gator_workbench/agent_tools.py`) beside the agent CLI and
+grants that one request exactly the tools of its kind (`--mcp-config` with `--strict-mcp-config`, so no other tool server
+exists, and each tool named in `--allowedTools`). The server itself decides nothing: it relays every call to
+`POST /api/agent/tools` of the workbench with a one-time token that stops working the moment the request ends. The
+backend (`agents/tools.py`) checks the grant and the budget, resolves WHICH working copy from your configuration - never
+from the agent's arguments - and then calls the very functions the buttons use, with the connection gate, the Virtuoso
+session lock, the name checks and the records unchanged. Every call is written to
+`configs/local/workbench/agent_tool_calls.jsonl`.
+
+Tests: `tests/workbench/test_wb_agent_tools.py` (what each tool does and refuses, the budget, the closed session, the
+protocol, the flags the CLI is given, the settings file that can neither widen nor add a tool, and the whole chain over
+a real socket with the fake CLI driving the real tool server). The protocol and the flags were also tried once against
+the real `claude` CLI with a stub backend (2026-09-22): it listed the granted tools, called them with the request's
+token, and never saw the one it was not granted.
+
 ### The check before every run: editors, saved task and working copy agree (added 2026-09-22, user request)
 
 The fourth part of the flow. A run runs exactly one saved task on its working copy, so before any costed simulation
@@ -1085,7 +1128,10 @@ transitions = TrajectoryLoader('<run>').transitions()             # optimizer Tr
 prompt on stdin, argv array, no shell, no write/exec tools, no permission bypass; applying needs an
 approval bound to the proposal, configuration and circuit hashes. Agent model/effort are
 independent of RL checkpoints and simulation budgets, and agents are never in the SAC loop. A request
-has no time limit (since 2026-09-21): "Cancel request" stops it.
+has no time limit (since 2026-09-21): "Cancel request" stops it. One request kind goes further, and
+only in one direction: `virtuoso_work` (2026-09-22) is granted the workbench's own Virtuoso tools -
+reads, and the Maestro setup of the task's working copy - for as long as it runs; see "The agent works
+in Virtuoso itself". The tables it proposes still need the user's approval.
 
 Bridge skills exist in `~/virtuoso-bridge-lite/skills/` and the project's Codex-style
 `.agents/skills/`, but **not** in a Claude Code discovery location. `GET /api/agent/diagnostics`

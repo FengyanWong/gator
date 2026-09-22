@@ -108,6 +108,26 @@ try {
     last = await lastMessage();
     check('a plain JSON answer (a server not restarted yet) is still shown', last.text === 'Answered in one piece by an older server.' && last.folds.length === 0, last.text);
 
+    // ---- a request that worked in Virtuoso itself (kind virtuoso_work, status record 7.68) -----------------------------
+    const kinds = await evaluate(`[...document.querySelectorAll('.compose-main .row select option')].map(o => o.textContent)`);
+    check('the tool-using kind can be chosen', kinds.includes('virtuoso_work'), kinds.join(','));
+    await ask('Set this circuit up in Virtuoso.');
+    const withTools = await nextPaused('/api/agent/propose');
+    await fulfil(withTools.requestId, 200, 'text/event-stream', sse([
+      ['progress', { type: 'step', text: 'Looking at the working copy: what may be set there' }],
+      ['progress', { type: 'step', text: "Writing into the working copy: analyses, outputs, specs" }],
+      ['progress', { type: 'reply', text: 'I wrote the setup into the working copy.' }],
+      ['result', { proposal_id: 'fixture-tools', proposal_hash: 'fixture', origin: 'fixture', kind: 'virtuoso_work',
+        reasoning: 'I wrote the setup into the working copy.', warnings: [], unresolved: [], diff: [], circuit_changes: [],
+        virtuoso_copy_written: true,
+        tool_calls: [{ tool: 'working_copy_facts', ok: true, error: null }, { tool: 'working_copy_write_setup', ok: true, error: null },
+          { tool: 'working_copy_write_sizes', ok: false, error: "'working_copy_write_sizes' is not one of the tools of this request." }] }]]));
+    await sleep(600);
+    last = await lastMessage();
+    const steps = last.folds.find(f => f.label.includes('in Virtuoso'));
+    check('the reply says what it did in Virtuoso, folded into one line', !!steps && !steps.open && /^3 step\(s\) in Virtuoso - the working copy was written$/.test(steps.label), JSON.stringify(last.folds.map(f => f.label)));
+    check('... and names the call the workbench refused', !!steps && steps.text.includes('working_copy_write_sizes') && steps.text.includes('not one of the tools'));
+
     // ---- a stream that ends without a verdict (the server went away) ---------------------------------------------------
     await ask('One more.');
     const fourth = await nextPaused('/api/agent/propose');

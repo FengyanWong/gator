@@ -29,6 +29,36 @@ REVIEW = dict(kind='settings_review', patch=[], reasoning='Two settings stand ou
                                   why='Global attention.', what_it_takes='A new encoder class in the optimizer package.')])
 
 
+def use_tools(argv):
+    """What a CLI does with `--mcp-config`: start the server it names and speak MCP to it over its stdin/stdout.
+    The calls below are the ones a test asserts on - including one tool that was never granted."""
+    import subprocess
+    config = json.loads(open(argv[argv.index('--mcp-config') + 1]).read())
+    server = config['mcpServers']['gator']
+    process = subprocess.Popen([server['command']] + server['args'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               env=dict(os.environ, **server.get('env', {})), text=True, bufsize=1)
+    seen = []
+
+    def rpc(method, params=None, ident=[0]):
+        ident[0] += 1
+        process.stdin.write(json.dumps(dict(jsonrpc='2.0', id=ident[0], method=method, params=params or {})) + '\n')
+        process.stdin.flush()
+        return json.loads(process.stdout.readline() or '{}')
+
+    try:
+        seen.append(dict(initialize=rpc('initialize', dict(protocolVersion='2025-06-18', clientInfo=dict(name='fake')))))
+        process.stdin.write(json.dumps(dict(jsonrpc='2.0', method='notifications/initialized')) + '\n')
+        process.stdin.flush()
+        seen.append(dict(tools=[t['name'] for t in (rpc('tools/list').get('result') or {}).get('tools', [])]))
+        for name, arguments in json.loads(os.environ.get('FAKE_CLI_TOOL_CALLS', '[]')):
+            answer = rpc('tools/call', dict(name=name, arguments=arguments)).get('result') or {}
+            seen.append(dict(call=name, isError=answer.get('isError'), text=(answer.get('content') or [{}])[0].get('text', '')[:4000]))
+    finally:
+        process.stdin.close()
+        process.terminate()
+    return seen
+
+
 def main():
     argv = sys.argv[1:]
     name = os.path.basename(sys.argv[0])
@@ -48,13 +78,14 @@ def main():
     scenario = os.environ.get('FAKE_CLI_SCENARIO', 'success')
     if scenario in ('live_demo', 'codex_demo') and 'FAKE-HANG' in stdin:     # a browser check asks for a never-ending answer by prompt text
         scenario = 'live_hang' if scenario == 'live_demo' else 'codex_live_hang'
+    tools = use_tools(argv) if scenario == 'tools' and '--mcp-config' in argv else None
     record = os.environ.get('FAKE_CLI_RECORD')
     if record:
         with open(record, 'w') as stream:
             json.dump(dict(argv=argv, stdin=stdin, cwd=os.getcwd(), path=os.environ.get('PATH'),
                            home=os.environ.get('HOME'), claudecode=os.environ.get('CLAUDECODE'),
                            fine_grained=os.environ.get('CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING'),
-                           files_in_cwd=sorted(os.listdir('.'))), stream)
+                           tools=tools, files_in_cwd=sorted(os.listdir('.'))), stream)
     if scenario == 'hang':
         time.sleep(120)
         return 0
@@ -132,6 +163,9 @@ def claude(argv, scenario):
             print("error: unknown option '--thinking-display'", file=sys.stderr)
             return 1
         emit(argv, result(structured_output=GOOD))
+    elif scenario == 'tools':                           # the workbench's own tools were used above; the answer is the rows
+        emit(argv, result(structured_output=dict(GOOD, kind='virtuoso_work'),
+                          permission_denials=json.loads(os.environ.get('FAKE_CLI_DENIALS', '[]'))))
     elif scenario == 'success':
         emit(argv, result(structured_output=GOOD))
     elif scenario == 'settings_review':

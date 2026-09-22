@@ -14,6 +14,7 @@ import io
 import json
 import mimetypes
 import os
+import secrets
 from pathlib import Path
 import threading
 from urllib.parse import quote
@@ -34,6 +35,7 @@ from ..agents import readiness as agent_readiness
 from ..agents import run_digest as agent_run_digest
 from ..agents import settings_review as agent_review
 from ..agents import diagnostics as agent_diagnostics
+from ..agents import tools as agent_tool_catalog
 from ..agents.prompts import circuit_summary
 from .. import corner_check
 from ..layout import RunLayout, environment_versions
@@ -320,10 +322,11 @@ def sse(kind: str, data) -> str:
     return f"event: {kind}\ndata: {json.dumps(data, default=str, separators=(',', ':'))}\n\n"
 
 
-def live_answer(request, provider, finish):
+def live_answer(request, provider, finish, done=None):
     """The agent's answer as Server-Sent Events (status record 7.48): `progress` while it works (agents/live.py), then ONE
     `result` (the proposal, exactly as the JSON answer) or ONE `error` (exactly as the 409 detail). The agent runs on a
-    thread of its own. If the page goes away first, the request is cancelled: nobody would see the answer."""
+    thread of its own. If the page goes away first, the request is cancelled: nobody would see the answer. `done` is
+    called once the agent is finished, however it ended (the request's tools are closed with it)."""
     async def events():
         loop, inbox = asyncio.get_running_loop(), asyncio.Queue()
 
@@ -341,6 +344,9 @@ def live_answer(request, provider, finish):
             except Exception as exc:              # the JSON answer would be an HTTP 500; a stream must still end with a verdict
                 post('error', dict(code='internal_error', meaning='The workbench failed while handling the reply.',
                                    detail=redact(f'{type(exc).__name__}: {exc}', 1000), configuration_unchanged=True))
+            finally:
+                if done is not None:
+                    done()
         threading.Thread(target=work, name=f'agent-{request.request_id[:8]}', daemon=True).start()
         finished = False
         try:
@@ -369,6 +375,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     roots = OutputRoots(extra_output_roots)
     input_roots = [repo_root().resolve()] + [Path(p).expanduser().resolve() for p in extra_input_roots]
     proposals = ProposalStore()
+    tool_sessions = {}                 # token -> the open tools of one agent request (agents/tools.py); empty between requests
 
     def active_run(profile_id):
         for run in runs.list_runs(roots, include_mock=False)[:20]:
@@ -1279,9 +1286,10 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             results = agent_run_digest.load(run_path(body.run_dir))
             review = dict(settings=agent_review.settings_data(config.model_dump(mode='json')))      # so a suggestion names a real setting
         copy = None
-        if body.kind == 'virtuoso_setup':
+        if body.kind in ('virtuoso_setup', 'virtuoso_work'):
             # The working copy the setup is for, given as DATA: its names, what the workbench last wrote into its Maestro
-            # test, which values may be variables, and the only calculator functions an output may call.
+            # test, which values may be variables, and the only calculator functions an output may call. A `virtuoso_work`
+            # request can read all of this again through its tools; it is here so the first turn already knows it.
             try:
                 target = _setup_target(config)
             except working_copy.CopyError as exc:
@@ -1303,25 +1311,86 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     @app.post('/api/agent/propose')
     def propose(body: ProposeBody, http: Request):
         """Proposal only. Applying needs approval; circuit writes and simulations need their own authorization.
-        A request that accepts `text/event-stream` gets the answer LIVE (`live_answer`), any other gets it in one piece."""
+        A request that accepts `text/event-stream` gets the answer LIVE (`live_answer`), any other gets it in one piece.
+        A request of a TOOL kind (agents/tools.py) also gets the workbench's Virtuoso tools for as long as it runs."""
         try:
             request, circuit_hash = _request(body)
             provider = agents.make_provider(agent_settings())
+            session = _open_tools(request, parse_config(body.config), http)
 
             def finish(result):
                 proposal = proposals.create(request, result, circuit_hash=circuit_hash)
                 if request.kind == 'virtuoso_setup':
                     check_setup(request, proposal)
+                if session is not None:
+                    proposal['tool_calls'] = [dict(tool=c['tool'], ok=c['ok'], error=c['error']) for c in session.history]
+                    proposal['virtuoso_copy_written'] = session.wrote
                 proposal['readiness_after'] = readiness_after(request, proposal)
                 check_suggestions(request, proposal)
                 _audit(proposal)
                 return proposal
+
+            def done():
+                if session is not None:
+                    _close_tools(session)
             if 'text/event-stream' in http.headers.get('accept', ''):
                 request.validate()               # a request that cannot be sent is refused as a plain 409, before any stream
-                return live_answer(request, provider, finish)
-            return finish(provider.propose(request))
+                return live_answer(request, provider, finish, done=done)
+            try:
+                return finish(provider.propose(request))
+            finally:
+                done()
         except AgentError as exc:
             raise HTTPException(409, detail=dict(exc.as_dict(), configuration_unchanged=True))
+
+    # ------------------------------------------------------------------ the agent's own tools (status record 7.68)
+    def _open_tools(request, config, http):
+        """Open this request's tools, if its kind has any. The session holds what the agent may not choose: the working
+        copy (resolved from the configuration, never from a tool argument), the connection it goes through, and how many
+        calls are left. It is closed when the request ends, and its token stops working with it."""
+        names = agent_tool_catalog.granted(request.kind)
+        if not names:
+            return None
+        profile_id = config.run.connection_profile_id
+        session = agent_tool_catalog.ToolSession(
+            request_id=request.request_id, token=secrets.token_urlsafe(32), kind=request.kind, monitor=monitor,
+            profile_id=profile_id, names=tuple(names), on_call=_tool_record,
+            target=lambda: _setup_target(config),
+            read=lambda op, **wanted: bridge_read.read(monitor, profile_id, op, **wanted))
+        tool_sessions[session.token] = session
+        request.tools = tuple(names)
+        request.tools_url = str(http.base_url).rstrip('/')
+        request.tools_token = session.token
+        return session
+
+    def _close_tools(session):
+        session.close()
+        tool_sessions.pop(session.token, None)
+
+    def _tool_record(entry):
+        from ..paths import local_settings_dir
+        from ..storage.atomic import JsonlAppender
+        try:
+            log = JsonlAppender(local_settings_dir() / 'agent_tool_calls.jsonl')
+            log.append(dict(time_utc=utcnow().isoformat(), **entry,
+                            note="One workbench tool call of an agent request: a read, or a Maestro setup written into a "
+                                 "working copy. Never the user's own cell, never a simulation."))
+            log.close()
+        except OSError:
+            pass
+
+    @app.post('/api/agent/tools')
+    def agent_tools(body: dict):
+        """Where the tool server of ONE running request (gator_workbench/agent_tools.py) asks. The token says which
+        request it belongs to; a request that has ended has no tools, and nothing else is accepted."""
+        session = tool_sessions.get(str(body.get('token') or ''))
+        if session is None or session.closed:
+            raise HTTPException(403, detail='These tools are closed: the agent request they belong to is over.')
+        if body.get('method') == 'list':
+            return dict(tools=agent_tool_catalog.described(session.names))
+        if body.get('method') != 'call':
+            raise HTTPException(422, detail=f'Unknown tool method {body.get("method")!r}')
+        return session.call(str(body.get('name') or ''), body.get('arguments') or {})
 
     def _setup_target(config):
         """The working copy a Virtuoso setup is about: the cell's own copy (Circuit source: Virtuoso) or an open task's copy."""

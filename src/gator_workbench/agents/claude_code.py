@@ -35,6 +35,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import sys
 import tempfile
 
 from ..security import redact
@@ -43,6 +44,7 @@ from .catalog import supports_effort
 from .live import LiveTranslator
 from .settings_review import WEB_MAX_TURNS
 from .prompts import build_prompt, proposal_schema_json
+from .tools import SERVER as TOOL_SERVER, mcp_names
 
 WEB_TOOLS = ('WebSearch', 'WebFetch')
 LIVE_OPTIONS = ('--include-partial-messages', '--thinking-display', 'summarized')
@@ -56,6 +58,23 @@ AUTH_PATTERNS = re.compile(r'(?i)(invalid api key|please run /login|not logged i
                            r'oauth token (has )?expired|unauthorized|401\b|credit balance|login required)')
 MODEL_PATTERNS = re.compile(r'(?i)(model[^.\n]{0,80}(not found|does not exist|not available|unavailable|invalid|'
                             r'not supported|no access)|invalid model|unknown model|404[^\n]{0,40}model)')
+
+
+def tool_server_config(request):
+    """(directory, config file) for `--mcp-config`: the workbench's own tool server (gator_workbench/agent_tools.py),
+    started beside the agent and reaching this backend with the one-time token of THIS request. The file is kept OUT of
+    the request's working directory, which stays empty, and both are deleted when the request ends."""
+    if not request.tools:
+        return None, None
+    directory = Path(tempfile.mkdtemp(prefix='gator-agent-tools-'))
+    package_root = str(Path(__file__).resolve().parents[2])            # the directory that holds the `gator_workbench` package
+    server = dict(command=sys.executable, args=['-m', 'gator_workbench.agent_tools'],
+                  env=dict(GATOR_TOOLS_URL=request.tools_url or '', GATOR_TOOLS_TOKEN=request.tools_token or '',
+                           PYTHONPATH=os.pathsep.join(p for p in (package_root, os.environ.get('PYTHONPATH', '')) if p)))
+    config = directory / 'tools.json'
+    config.write_text(json.dumps(dict(mcpServers={TOOL_SERVER: server})))
+    config.chmod(0o600)
+    return directory, str(config)
 
 
 class ClaudeCodeProvider(AgentProvider):
@@ -82,7 +101,7 @@ class ClaudeCodeProvider(AgentProvider):
         scratch = tempfile.mkdtemp(prefix='gator-agent-')
         return Path(scratch), scratch
 
-    def build_argv(self, executable, request: AgentRequest, live=False):
+    def build_argv(self, executable, request: AgentRequest, live=False, mcp_config=None):
         s = self.settings
         events = live or s.stream                                  # a live request needs the event stream
         argv = [executable, '-p', '--output-format', 'stream-json' if events else 'json']
@@ -96,6 +115,12 @@ class ClaudeCodeProvider(AgentProvider):
         web = bool(request.web and request.kind == 'settings_review' and request.web_domains)
         denied = [tool for tool in WRITE_OR_EXEC_TOOLS if not (web and tool in WEB_TOOLS)]
         allowed = list(s.allowed_tools) + (['WebSearch'] + [f'WebFetch(domain:{host})' for host in request.web_domains] if web else [])
+        # The workbench's own tools (agents/tools.py), for a request kind that is granted some. The grant is spelled out
+        # tool by tool - `--disallowedTools` says nothing about MCP tools, and a tool ADDED to the server later must not
+        # become reachable for an older kind - and `--strict-mcp-config` keeps every other MCP server out, including the
+        # user's own. A request without a grant is given an EMPTY server set, so it has no tools at all either way.
+        argv += ['--mcp-config', mcp_config or '{"mcpServers":{}}', '--strict-mcp-config']
+        allowed += mcp_names(request.tools) if request.tools else []
         argv += ['--json-schema', proposal_schema_json(), '--permission-mode', s.permission_mode, '--disallowedTools', ','.join(denied)]
         if allowed:
             argv += ['--allowedTools', ','.join(allowed)]
@@ -131,14 +156,17 @@ class ClaudeCodeProvider(AgentProvider):
     def _run(self, executable, request, on_event):
         live = on_event is not None
         cwd, scratch = self.working_directory(request)
+        config_dir, mcp_config = tool_server_config(request)        # outside the scratch cwd: it stays empty
         try:
-            code, stdout, stderr = run_cli(self.build_argv(executable, request, live=live), stdin_text=build_prompt(request), cwd=cwd,
+            environment = dict(os.environ, **LIVE_ENV) if live else None
+            code, stdout, stderr = run_cli(self.build_argv(executable, request, live=live, mcp_config=mcp_config),
+                                           stdin_text=build_prompt(request), cwd=cwd,
                                            timeout=self.settings.timeout_seconds, request_id=request.request_id,
-                                           env=dict(os.environ, **LIVE_ENV) if live else None,
-                                           on_line=LiveTranslator(on_event).feed if live else None)
+                                           env=environment, on_line=LiveTranslator(on_event).feed if live else None)
         finally:
-            if scratch:
-                shutil.rmtree(scratch, ignore_errors=True)
+            for directory in (scratch, config_dir):
+                if directory:
+                    shutil.rmtree(directory, ignore_errors=True)
         return self.parse(request, code, stdout, stderr)
 
     # ------------------------------------------------------------------ parsing
@@ -163,6 +191,15 @@ class ClaudeCodeProvider(AgentProvider):
             refused = [d for d in denials if isinstance(d, dict) and d.get('tool_name') in WEB_TOOLS]
             denials = [d for d in denials if d not in refused]
             audit['web_calls_refused'] = len(refused)
+        if request.tools:
+            # A request with tools may reach for one it was not granted (another MCP tool, a file tool); the CLI refuses it
+            # and the request goes on, counted and reported. A GRANTED tool that was refused all the same is a fault and
+            # stays fatal below: the permission layer would then disagree with the grant.
+            granted = set(mcp_names(request.tools))
+            outside = [d for d in denials if isinstance(d, dict) and d.get('tool_name') not in granted]
+            denials = [d for d in denials if d not in outside]
+            audit['tool_calls_refused'] = len(outside)
+            audit['tools_refused_names'] = sorted({str(d.get('tool_name')) for d in outside})[:20]
         if denials:
             raise AgentError('permission_denied', f'{len(denials)} tool call(s) were denied; a proposal request may not '
                                                   'write files or run commands',

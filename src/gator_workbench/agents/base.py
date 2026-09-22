@@ -25,7 +25,13 @@ from uuid import uuid4
 from .catalog import efforts_for
 
 REQUEST_KINDS = ('draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'readiness',
-                 'minimal_start', 'settings_review', 'run_review', 'virtuoso_setup')
+                 'minimal_start', 'settings_review', 'run_review', 'virtuoso_setup', 'virtuoso_work')
+# The only kinds whose agent may CALL the workbench's Virtuoso tools (agents/tools.py, status record 7.68). The grant
+# comes from here - from the request kind - and never from the saved settings: `AgentSettings.allowed_tools` stays
+# limited to READ_ONLY_TOOLS below, so a settings file can neither widen nor add a tool. A kind that may read the web
+# (settings_review) or that carries a run's results (run_review) is deliberately NOT here: a request that could read a
+# publication page and write into Virtuoso in one turn would be a path from a web page into the user's design.
+TOOL_KINDS = ('virtuoso_work',)
 SECTIONS_BY_KIND = {
     'draft_config': ('parameters', 'targets', 'measurements'), 'parameters': ('parameters',),
     'targets': ('targets',), 'measurements': ('measurements',),
@@ -44,6 +50,10 @@ SECTIONS_BY_KIND = {
     # Maestro analyses, design variables and bindings. Checked by the backend (allowed calculator functions, which values
     # may be variables); after the user's approval the backend writes it into the copy and reads it back.
     'virtuoso_setup': ('parameters', 'targets', 'measurements'),
+    # The same job with the workbench's Virtuoso TOOLS in the agent's hands (agents/tools.py): it reads what it needs
+    # from Virtuoso and writes the Maestro setup into the working copy itself, then answers with the rows for the three
+    # tables, which the user approves as ever. No `setup` part: the copy already holds what it wrote.
+    'virtuoso_work': ('parameters', 'targets', 'measurements'),
 }
 # Arguments that would remove the permission boundary. Refused even if configured.
 FORBIDDEN_ARGUMENTS = ('--dangerously-skip-permissions', '--allow-dangerously-skip-permissions',
@@ -128,7 +138,10 @@ class AgentRequest:
     results: dict | None = None        # run_review only: the digest of ONE run's output, built by the backend
     web: bool = False                  # settings_review only, per request: may search the web and open publication pages
     web_domains: tuple = ()            # hosts WebFetch may open when `web` is set (operator-defined, never from a request)
-    copy: dict | None = None           # virtuoso_setup only: the working copy - its names, what its Maestro test holds, what may vary
+    copy: dict | None = None           # virtuoso_setup/virtuoso_work: the working copy - its names, what its Maestro test holds, what may vary
+    tools: tuple = ()                  # TOOL_KINDS only: the workbench tool names granted to THIS request (agents/tools.py)
+    tools_url: str | None = None       # where the tool server reaches this backend, and the one-time token of this request
+    tools_token: str | None = None
     requires_bridge_skill: bool = False
     request_id: str = field(default_factory=lambda: uuid4().hex)
 
@@ -141,10 +154,16 @@ class AgentRequest:
             raise AgentError('invalid_request', 'The prompt is too long (20000 characters maximum)')
         if self.web and self.kind != 'settings_review':
             raise AgentError('invalid_request', 'Only a settings_review request may use online research')
+        if self.web and self.kind in TOOL_KINDS:                   # belt and braces: the web and the tools never meet
+            raise AgentError('invalid_request', 'A request that may work in Virtuoso may not read the web')
         if self.kind == 'run_review' and not self.results:
             raise AgentError('invalid_request', 'A run_review needs a run: choose one with "Runs..." first')
-        if self.kind == 'virtuoso_setup' and not self.copy:
+        if self.kind in ('virtuoso_setup', 'virtuoso_work') and not self.copy:
             raise AgentError('invalid_request', 'Setting up in Virtuoso needs the working copy: press "Make a working copy" first')
+        if self.tools and self.kind not in TOOL_KINDS:
+            raise AgentError('invalid_request', f'A {self.kind} request is not granted workbench tools')
+        if self.tools and not (self.tools_url and self.tools_token):
+            raise AgentError('invalid_request', 'A tool grant needs the tool server address and the token of this request')
         if self.kind == 'modify_fields' and not self.selection:
             raise AgentError('invalid_request', 'modify_fields needs a selection of rows/fields')
         return self

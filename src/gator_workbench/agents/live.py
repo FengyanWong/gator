@@ -25,6 +25,26 @@ from ..security import redact
 ANSWER_TOOL = 'StructuredOutput'
 REPLY_FIELD = 'reasoning'
 QUIET_TOOLS = ('ToolSearch',)          # loads the definitions of the web tools: bookkeeping, not a step worth showing
+TOOL_PREFIX = 'mcp__gator__'           # the workbench's own tools (agents/tools.py), said in plain words in the chat
+
+
+def workbench_step(tool, data) -> str:
+    """What a call of the workbench's own tools reads like in the conversation."""
+    name, data = tool[len(TOOL_PREFIX):], data if isinstance(data, dict) else {}
+    if name == 'virtuoso_libraries':
+        return 'Virtuoso: listing the libraries'
+    if name == 'virtuoso_cells':
+        return f"Virtuoso: listing the cells of {data.get('library', '')}"
+    if name == 'virtuoso_read_cell':
+        return f"Virtuoso: reading {data.get('library', '')}/{data.get('cell', '')}"
+    if name == 'working_copy_facts':
+        return 'Looking at the working copy: what may be set there'
+    if name == 'working_copy_setup':
+        return "Reading the working copy's Maestro setup"
+    if name == 'working_copy_write_setup':
+        parts = [part for part in ('analyses', 'outputs', 'specs', 'variables', 'bindings') if data.get(part) is not None]
+        return 'Writing into the working copy: ' + (', '.join(parts) if parts else 'the Maestro setup')
+    return f'Workbench tool: {name}'
 
 
 class PartialAnswer:
@@ -186,6 +206,9 @@ class LiveTranslator:
                 continue
             name, data = block.get('name'), block.get('input') or {}
             if name == ANSWER_TOOL or name in QUIET_TOOLS:
+                continue
+            if isinstance(name, str) and name.startswith(TOOL_PREFIX):
+                self.emit(dict(type='step', text=redact(workbench_step(name, data), 300)))
                 continue
             if name == 'WebSearch':
                 text = f"Searching the web: {data.get('query', '')}"

@@ -332,6 +332,11 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
                   title={using ? `One agent request (${using}). It assumes nothing: it writes only the rows you gave every number for, and asks for the rest.` : 'Select a provider first.'}>Fix only what needs no assumption</button></>}
                 <span className="hint">{m.extra.note}</span></div></>}
             {isReply(m) && m.extra?.checklist?.length > 0 && <Checklist items={m.extra.checklist} />}
+            {/* What the agent did in Virtuoso itself (kind virtuoso_work): one folded line, the refused calls named. */}
+            {isReply(m) && m.extra?.tool_calls?.length > 0 && <details className="thought"><summary>
+              {m.extra.tool_calls.length} step(s) in Virtuoso{m.extra.virtuoso_copy_written ? ' - the working copy was written' : ''}</summary>
+              <div className="thought-text"><ul>{m.extra.tool_calls.map((c: Json, j: number) => <li key={j}>
+                {c.tool}{c.ok ? '' : ` - refused: ${c.error}`}</li>)}</ul></div></details>}
             {isReply(m) && (m.extra?.kind === 'settings_review' || m.extra?.kind === 'run_review') && <Suggestions extra={m.extra} config={config} setConfig={setConfig} />}
             {groups.length > 0 && <button className="notes-link" title="Show these in the side window" onClick={() => setFocus(i === latest ? null : i)}>{groups.map(g => `${g.items.length} ${g.title.toLowerCase()}`).join(', ')}</button>}</div>; })}
           {/* The pending answer, drawn while it is written: the thinking summary (scrolls by itself), steps such as a web
@@ -373,7 +378,8 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); propose(); } }}
           placeholder="Describe what you need. State where each requirement comes from; the agent may not invent requirements." />
         <div className="row">
-          <select title="What the agent may change" value={kind} onChange={e => setKind(e.target.value)}>{['draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'readiness', 'minimal_start', 'settings_review', 'run_review', 'virtuoso_setup'].map(k => <option key={k}>{k}</option>)}</select>
+          <select title="What the agent may change. virtuoso_work also lets it READ from Virtuoso and write the Maestro setup of this task's working copy itself - never your own cells, never device sizes, never a simulation."
+            value={kind} onChange={e => setKind(e.target.value)}>{['draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'readiness', 'minimal_start', 'settings_review', 'run_review', 'virtuoso_setup', 'virtuoso_work'].map(k => <option key={k}>{k}</option>)}</select>
           {kind === 'modify_fields' && <button className="notes-link" aria-expanded={showSelection} onClick={() => setShowSelection(open => !open)}
             title="The rows this request may change. They are chosen in the editors with 'Modify selected with agent...'.">{selection.length} selected row(s)</button>}
           {busy && <button onClick={cancel}>Cancel request</button>}

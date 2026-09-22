@@ -3047,3 +3047,78 @@ Live:
 
 `src/analog_optimizer/` untouched (digest `02127bc3...`, the M6 pin). Committed and pushed on branch `workbench`: only the
 Corner check's hunks and files. The other sessions' uncommitted work stays in the working tree.
+
+### 7.63 Virtuoso task flow, part 5: running a task measured by Maestro - Maestro's own deck, OCEAN on each run's results (2026-09-22 afternoon, same session as 7.55 / 7.57 / 7.60 / 7.61, explicit user request)
+
+Request: "go on part 5" - the run path of Maestro-measured tasks (Maestro's netlist once, Spectre per evaluation, OCEAN
+on the results), proven once against Maestro (budget asked, see Live).
+
+Built:
+* `src/gator_workbench/ocean.py` (new): `Names` reads the name maps Maestro's netlister writes (`amap/`: per cell the
+  master of each instance, per primitive its Spectre terminals, per subcircuit its port indices, net renames such as
+  gnd! -> 0, the delimiters) and `translate` rewrites every signal string of a signal function once, at Save task:
+  `VT("/OUT")` -> `VT("OUT")`, `VT("/XU1/N1")` -> `VT("XU1.N1")`, `IT("/V0/PLUS")` -> `IT("V0:p")`, `IT("/XU1/MN1/D")` ->
+  `IT("XU1.MN1:d")`, `OP("/XU1/MN2" "gm")`; a derived terminal (a source's MINUS) or an unknown instance is refused in
+  words. `remote_raw_dir` (the `-raw` folder the bridge's Spectre run left on the host, from `bridge_result.json`),
+  `program` / `parse` (one SKILL call: `openResults` on that folder, per output `selectResult` + the translated expression,
+  "name=value" lines at 17 digits; never `simulator()` or `design()`), `measure` with a per-process client whose making
+  puts the bridge's VB_ variables back exactly (the run adapter watches them).
+* `bridge_setup.py`: op `maestro_netlist` (a read-only session first, an editable one only if Maestro refuses; Maestro
+  netlists the test into `/tmp/gator_maestro_netlist/<copy library>/<testbench>` on the host; the folder is downloaded).
+  `write_maestro` sets the test's simulator mode to plain Spectre (`asiSetHighPerformanceOptionVal(... 'uniMode
+  "Spectre")`) before saving; `read_maestro` reads it back.
+* `virtuoso_setup.py`: `SIMULATOR_MODE` (normalized, compared - "Simulator mode: the task says Spectre, Virtuoso has
+  APS"), `split_deck` (head / tail around Maestro's circuit part; refused unless it is there exactly once and the head has
+  its simulator line and model include), `deck_include`, `deck_analyses`.
+* `working_copy.maestro_deck_on`: gate, the op, the split, the analyses every output needs, the translation.
+* `profiles.save_task`: a Maestro-measured task netlists its test once after writing its setup; Maestro's circuit part
+  must equal the copy's export (per-block statements); `maestro_deck.json` goes into the task folder; the entry is
+  runnable, carries `maestro_deck_sha256` and a result registry of exactly its outputs (each with its spec's
+  normalization scale); the profile class's checks run at save.
+* `recipes.GenericMaestroProfile`: reads the deck when a run needs it (a task saved before still opens; its builder says
+  "press Save task once"); `build_deck` = head + exported circuit + tail, refusing a model include that is not the
+  connection's; `analyze` checks the executed settings, the completion evidence, then measures with OCEAN and writes
+  `measurements.json` (values in base units, no operating points - only the recorder reads them).
+* `tasks.py`: a Maestro task is runnable when saved with its deck (`MAESTRO_NOT_RUNNABLE` now names the old case);
+  `generated_bridge_config` gives the profile how OCEAN reaches Virtuoso. `validation.py`: an `ade_output` probe is a
+  result when the loaded task provides it (the blocker stays for drafts and every other task); a spec over it can be
+  result-backed. `spec_equations.py`: such probes read their result by source name.
+
+Live (2026-09-22, zero-cost steps and three user-authorized simulations; the user answered "Both: 2 simulations", then
+"Yes: 1 Maestro run"):
+* A read-only probe of OCEAN on the 2026-09-21 baseline's result folder still on the host: `frequency(VT("OUT"))` =
+  1.209256e9, `IT("V0:p")` works; schematic names (`/OUT`) do not resolve there - hence the translation.
+* Throwaway task `ring_maestro_p5` (outputs `frequency(VT("/OUT"))`, `ymax(VT("/OUT"))`; tran 50 ns conservative
+  `skipdc=yes`): Save task 22 s (setup written into the copy, netlisted, `/OUT` -> `OUT`), the check before every run
+  passed all six steps (10.6 s) and wrote the real deck: Maestro's head, the exported circuit, Maestro's tail.
+* Simulation 1, the baseline through the real path (CLI run, 1 evaluation, 32 s): completed; OCEAN measured vmax
+  0.5139414 V; freq had no value - the ring did not oscillate (from 0 V everywhere its stages stay symmetric).
+* Simulation 2, one Maestro run (GUI session, 16 s, closed without saving): vmax 0.51394236 (1.9e-6 apart), average
+  supply current 8e-5 apart, the start-up minimum clearly apart; freq "eval err" in Maestro too. Cause, from the logs:
+  Maestro ran `+aps +mt` (448 time steps), the run adapter plain Spectre (575). The workbench now sets plain Spectre in
+  every task's Maestro test (re-saved live: read back "Spectre").
+* Simulation 3, one Maestro run in plain Spectre mode (15 s): vmax 0.51394140303180191, vmin -0.072694703384923218,
+  average current -1.5592211580198808e-05 - equal to ours to 17 digits, 575 time steps in both; no `+aps` on Maestro's
+  command line.
+* Afterwards: the throwaway task deleted (kept in `profiles/.deleted/`), the copy's re-import record and last-written setup
+  removed, the Maestro view the trial created deleted from the copy (its testbench has only its schematic again), no
+  Maestro window left open. Evidence (git-ignored): `artifacts/local/maestro-first-baseline/` (config, the run directory,
+  Maestro's two result reads); Maestro's own results stay under `/home/minlei/simulation/GPDK045_RINGOSC_GATOR/...` on the
+  host.
+
+Not done, deliberately: the removal of the two circuit types, the testbench auto probes and the older
+`/api/virtuoso/profile` route (approved "once the replacement works"): a Maestro-measured task cannot start an
+oscillator yet - initial conditions cannot be set in a Maestro test from the workbench - so the ring-oscillator circuit
+type stays the only working way to optimize one. (Another session is removing the old route's API part in its cleanup.)
+Next candidates: initial conditions in the Maestro setup (e.g. an `ic` file registered with the test, so Maestro's own
+netlist carries it and the equality holds), then the removal.
+
+Verification: `tests/workbench/test_wb_maestro_run.py` (new, 8), `test_wb_task_save.py` (Save task netlists once, the
+registry; a netlist that does not fit and an untranslatable name save nothing), `test_wb_consistency.py`
+(Maestro task saved with its deck). Full `tests/workbench` on the working tree: 594 passed, 4 failed - all four in
+pieces another session is changing right now (its cleanup: a lazy import in `checkpoints.py`, the removed
+circuit-modification route, `profile_recipes` in the circuit load answer); every part-5 test passes. The commit of 7.63
+holds only this session's hunks (selected by content, since other sessions were editing the same files): full
+`tests/workbench` on a clean `git archive` copy of exactly its tree - 584 passed (3 min 12 s).
+
+`src/analog_optimizer/` untouched. Committed and pushed (branch `workbench`).

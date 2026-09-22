@@ -476,6 +476,43 @@ def last_written(target) -> dict:
         return {}
 
 
+def maestro_deck_on(monitor, profile_id, target, outputs, *, command=None, acknowledge_unknown=False) -> dict:
+    """Maestro's own deck of one copy's test, split around its circuit (`virtuoso_setup.split_deck`), with every output
+    expression translated to the names Spectre gives its results (`ocean.Names`, from the netlist's own name maps).
+    What a Maestro-measured task runs on every evaluation (task flow part 5). `outputs`: [{name, expression, analysis,
+    unit}]. Read-only for the design: Maestro writes its netlist files into a folder of its own. Refused in words when
+    Maestro's netlist has an unexpected layout, an output reads an analysis the deck does not run, or a signal name
+    cannot be translated plainly."""
+    import hashlib
+    from . import ocean
+    _gated(monitor, 'read_cellview', profile_id, 'netlisting the copy\'s Maestro test', acknowledge_unknown=acknowledge_unknown)
+    answer = _run_setup('maestro_netlist', profile_id, target, dict(cells=target['schematics'], test=virtuoso_setup.TEST), command=command)
+    folder = Path(answer['folder'])
+    deck, circuit = (folder / 'input.scs').read_text(), (folder / 'netlist').read_text()
+    head, tail = virtuoso_setup.split_deck(deck, circuit)
+    analyses = virtuoso_setup.deck_analyses(tail)
+    try:
+        names = ocean.Names(folder / 'amap')
+    except (OSError, ValueError) as exc:
+        raise virtuoso_setup.SetupError(f'Maestro\'s name maps could not be read: {exc}')
+    translated, problems = [], []
+    for output in outputs:
+        if output['analysis'] not in analyses:
+            problems.append(f'Output {output["name"]} reads the {output["analysis"]} analysis, which the Maestro test does not run')
+            continue
+        try:
+            translated.append(dict(output, spectre_expression=ocean.translate(output['expression'], names)))
+        except ValueError as exc:
+            problems.append(f'Output {output["name"]}: {exc}')
+    if problems:
+        raise virtuoso_setup.SetupError('; '.join(problems))
+    model_file, section = virtuoso_setup.deck_include(head)
+    return dict(format=virtuoso_setup.DECK_FORMAT, test=answer.get('test', virtuoso_setup.TEST), head=head, tail=tail,
+                sha256=hashlib.sha256((head + '\0' + tail).encode()).hexdigest(), analyses=analyses, outputs=translated,
+                model_file=model_file, section=section, circuit=circuit, netlisted_utc=utcnow().isoformat(),
+                remote_netlist=answer.get('remote'))
+
+
 def write_setup(monitor, profile_id, library, cell, setup, *, command=None) -> dict:
     """Explicit press: make the cell's working copy say what `setup` says (see `write_setup_on`)."""
     return write_setup_on(monitor, profile_id, draft_target(library, cell), setup, command=command)

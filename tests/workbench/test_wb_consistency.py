@@ -13,7 +13,7 @@ from gator_workbench.api import create_app
 from gator_workbench.validation import validate
 from helpers import roots_for
 from test_wb_api import probe
-from test_wb_task_save import config as cell_config, ready, save
+from test_wb_task_save import config as cell_config, maestro_netlister, ready, save
 from test_wb_virtuoso_setup import SETUP, setup_writer
 
 OK_STEPS = [dict(step='profile', ok=True, detail='p'), dict(step='connect', ok=True, detail='c'),
@@ -107,7 +107,7 @@ def test_a_maestro_measured_task_is_compared_with_its_maestro_test(tmp_path):
     answer = dict(exists=True, tests=['GATOR'], test='GATOR', model_files=[['/pdk/model.scs', 'tt']], analyses={'tran': {'stop': '50n'}},
                   variables={}, bindings=[], outputs=SETUP['outputs'], specs=SETUP['specs'], raw_specs={})
     save(tmp_path, name='ring_maestro', cfg=cell_config(probes=rows['measurements'], specs=rows['targets']),
-         extras=dict(analyses={'tran': {'stop': '50n'}}), commands=dict(setup=setup_writer(tmp_path, answer)))
+         extras=dict(analyses={'tran': {'stop': '50n'}}), commands=dict(setup=setup_writer(tmp_path, answer), deck=maestro_netlister(tmp_path)))
     cfg = task_config(tmp_path, 'ring_maestro')
     skipped = OK_STEPS[:3] + [dict(step='deck', ok=True, skipped=True, detail=profile_preflight.DECK_LATER)]
     same = consistency.check(probe(tmp_path), 'lab', cfg, commands=dict(preflight=preflight_process(tmp_path, skipped),

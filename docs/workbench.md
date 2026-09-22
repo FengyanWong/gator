@@ -777,9 +777,10 @@ and fills the editors (one Undo step) - a broken file is refused with its proble
 adds beside the rows (analyses, variables, bindings, the rough frequency, notes) is sent with the next Save task.
 Nothing is saved or written to Virtuoso from the window.
 
-**Not runnable yet:** a task measured by Maestro is saved, listed, opened and edited, but running it is the next part
-(the list and the task say so). Tasks saved before this part (Create profile) have no working copy; they still run on
-the original cell, and Save task refuses them with the way forward.
+**Running a task measured by Maestro:** see "Running a task measured by Maestro" below - Save task also has Maestro
+netlist the task's test once. A Maestro-measured task saved before that part is listed as not runnable until it is saved
+once more. Tasks saved before this part (Create profile) have no working copy; they still run on the original cell, and
+Save task refuses them with the way forward.
 
 Tests: `tests/workbench/test_wb_task_save.py` (fake bridge processes, the recorded ring-oscillator export). Browser
 check: `frontend/scripts/task_save_check.mjs` (hermetic; the task file window, Apply, Save task, Save as);
@@ -838,8 +839,8 @@ three things must say the same thing:
    one - topology and every parameter - and the simulation deck is written. Read-only; it takes the project's Virtuoso
    session lock like a run.
 3. **A task measured by Maestro: its Maestro test.** The copy's test is read back and compared with the task file's
-   `maestro` part (outputs, specs, analyses, variables, bindings). Such a task has no deck of its own yet (its run path is
-   the next part): its export is still compared and the deck step says it was left out.
+   `maestro` part (outputs, specs, analyses, variables, bindings, simulator mode). Its deck is Maestro's own deck around
+   the export (see "Running a task measured by Maestro"); the deck step writes it.
 
 **Start, Single baseline simulation and Resume** run parts 2 and 3 by themselves, right after the connection gate and
 before anything is created (`runs.prepare_run`). A difference starts nothing: the banner under the header lists each step
@@ -858,6 +859,48 @@ taken over.
 fix}], simulated: false}`; 409 `not_a_saved_task` for anything else. Tests: `tests/workbench/test_wb_consistency.py`.
 Browser checks: `frontend/scripts/consistency_check.mjs` (hermetic), `virtuoso_source_check.mjs`,
 `project_help_check.mjs`.
+
+### Running a task measured by Maestro (added 2026-09-22, user request)
+
+The fifth part of the flow. A task whose Probes are the Maestro outputs of its working copy runs like every other saved
+task - Start, Single baseline simulation, the optimizer writing transistor widths into the copy through the PDK
+callbacks - and differs only in the deck each evaluation simulates and in how its results are measured:
+
+* **The deck: Maestro's own, netlisted once.** Save task has Maestro netlist the copy's test at its nominal corner
+  (`maeCreateNetlistForCorner`, nothing in the design is written) and keeps the result split around its circuit:
+  `maestro_deck.json` in the task's folder holds the head (header, design variables, Maestro's model include) and the
+  tail (simulator options, analyses, info statements, saves). Every evaluation puts the circuit the run adapter just
+  exported - with that evaluation's widths - between the two. Save task refuses when Maestro's circuit part and the export
+  are not the same circuit, when an output reads an analysis the test does not run, and when the model include is not
+  the connection's model file (one deck, one model).
+* **The measurement: OCEAN on the run's own results.** Spectre leaves its results on the simulator host (the bridge keeps
+  the folder); OCEAN in the Virtuoso session opens them and evaluates every output expression - the calculator Maestro
+  itself uses. Maestro writes signal names as the schematic does (`VT("/OUT")`, `IT("/V0/PLUS")`), a plain Spectre result
+  folder as Spectre does (`OUT`, `XU1.N1`, `V0:p`); the names are translated once, at Save task, with the name maps
+  Maestro's netlister writes (`amap/`, the maps ADE uses). A name the maps do not translate plainly - a terminal whose
+  current is derived from another (a source's MINUS), an instance not in the maps - is refused then, in words. Values are
+  in base units (Hz, V, A), what the compiled specs compare with.
+* **The simulator mode: plain Spectre.** The optimizer's runs use plain Spectre; Maestro's default is APS, a faster engine
+  that takes other time steps (448 against 575 on the ring oscillator), so its numbers differ in the last digits and more
+  in fast transients. Writing a task's Maestro test therefore also sets plain Spectre, reads it back and compares it;
+  Maestro runs of the copy then compute exactly what the optimizer's runs compute.
+* The network's result registry of such a task is exactly its outputs, each with the scale its spec normalizes by.
+
+Proven live (2026-09-22, three user-authorized simulations): a throwaway task on the ring oscillator's working copy -
+one baseline through the real run path (Maestro's deck in Spectre, OCEAN on the remote results), then one Maestro run in
+APS mode (vmax 1.9e-6 apart, the start-up minimum clearly apart) and one in plain Spectre mode: vmax, vmin and the
+average supply current equal to 17 digits, 575 time steps in both.
+
+Not yet: initial conditions. A Maestro test cannot carry them from the workbench, and a ring oscillator started from its
+DC point or from 0 V everywhere does not oscillate (its stages stay symmetric) - the frequency output then has no value
+in Maestro and in the run alike. Until that is built, an oscillator is optimized with the ring-oscillator circuit type,
+which starts its transient from stated start voltages. Side effect, stated: OCEAN's current results in the Virtuoso
+session point at the last run's folder (ADE and Maestro windows keep their own).
+
+Tests: `tests/workbench/test_wb_maestro_run.py` (translation with name maps, the OCEAN program and its answer, the bridge
+variables left as they were, the deck split, the profile's deck and measurement, a task saved before part 5, outputs as
+results for validation and specs, the simulator mode), `test_wb_task_save.py` (Save task netlists once; a netlist that does
+not fit saves nothing).
 
 ## Reload saved data
 

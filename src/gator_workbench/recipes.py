@@ -169,16 +169,77 @@ class GenericRingOscillatorProfile(GenericMosWidthProfile):
 
 
 class GenericMaestroProfile(GenericMosWidthProfile):
-    """A task whose probes are the Maestro outputs of its working copy. Same verified width writing and checks as every
-    generated profile; building a deck and measuring (Maestro's netlist once, OCEAN on each run's results) is the next
-    part of the build, so both refuse in plain words instead of running anything."""
+    """A task whose probes are the Maestro outputs of its working copy (task flow part 5). The same verified width
+    writing and checks as every generated profile; the deck is Maestro's own deck of the copy's test - netlisted once,
+    at Save task (`maestro_deck.json`) - around the circuit the run adapter exports on every evaluation, and the outputs
+    are measured with OCEAN on that run's results (`ocean.py`): the calculator Maestro itself uses, the signal names
+    translated by Maestro's own name maps. The deck is read when a run needs it, so a task saved before this part still
+    opens (its builder says to save it once)."""
     recipe = MAESTRO
 
-    def build_deck(self, *args, **kwargs):
-        raise RulesError('Running a Maestro-measured task is not built yet')
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._deck_file, self._deck = Path(kwargs['design_file']).parent / 'maestro_deck.json', None
+        self.deck_name = 'input.scs'
+        self.bridge = {}                          # how OCEAN reaches Virtuoso (tasks.generated_bridge_config sets it)
 
-    def analyze(self, *args, **kwargs):
-        raise RulesError('Running a Maestro-measured task is not built yet')
+    @property
+    def maestro(self) -> dict:
+        if self._deck is None:
+            from .virtuoso_setup import DECK_FORMAT
+            try:
+                deck = json.loads(self._deck_file.read_text())
+            except (OSError, ValueError):
+                raise RulesError('This task has no Maestro deck yet: press Save task once (Maestro then netlists its test)')
+            if deck.get('format') != DECK_FORMAT or not deck.get('outputs') or not deck.get('head') or not deck.get('tail'):
+                raise RulesError('The Maestro deck of this task is not one this workbench reads: press Save task once')
+            self._deck = deck
+        return self._deck
+
+    def check_deck(self):
+        self.maestro
+        return self
+
+    @property
+    def analysis_settings(self):
+        deck = self.maestro
+        return dict(version=1, recipe=MAESTRO, deck_sha256=deck['sha256'], analyses=list(deck['analyses']),
+                    outputs=[dict(name=o['name'], expression=o['spectre_expression'], analysis=o['analysis']) for o in deck['outputs']])
+
+    def build_deck(self, structure, model_file, section='tt', *, temperature_c=27.):
+        """Maestro's head (header, design variables, its model include) + the exported circuit + Maestro's tail (options,
+        analyses, info, saves). The model include must be the connection's file and section: one deck, one model."""
+        deck = self.maestro
+        if (deck['model_file'], deck['section']) != (str(model_file), section):
+            raise RulesError(f'The Maestro test includes {deck["model_file"]} (section {deck["section"]}); the connection names '
+                             f'{model_file} (section {section}): make them the same, then save the task again')
+        return deck['head'] + str(structure).strip('\n') + '\n' + deck['tail']
+
+    def analyze(self, job, *, result_name='bridge_result.json', mos_names=()):
+        """The outputs of one finished run, measured with OCEAN on the run's own results on the simulator host (the
+        bridge keeps them). Values in the canonical unit of each probe - what OCEAN returns, and what the compiled
+        specs compare with. No operating points: only the recorder would read them, and it can do without."""
+        from analog_optimizer.backends.spectre_validation import validate_completion
+        from . import ocean, units
+        job, deck, settings = Path(job), self.maestro, self.analysis_settings
+        result = json.loads((job / result_name).read_text())
+        if result.get('analysis_settings') != settings:
+            raise ValueError('The Maestro deck differs from the one the executed netlist was built with')
+        condition = result['condition']
+        if result['status'] != 'success' or condition['purpose'] != 'nominal' or condition.get('monte_carlo') is not None:
+            raise ValueError('Maestro outputs are measured on a successful nominal run only')
+        evidence = validate_completion((job / 'results/spectre.out').read_text(), result['metadata']['returncode'], result['errors'])
+        raw = ocean.remote_raw_dir(result['metadata'])
+        values = ocean.measure(self.bridge, raw, deck['outputs'])
+        metrics = {o['name']: values.get(o['name']) for o in deck['outputs']}
+        metric_units = {o['name']: units.canonical_unit(o['unit']) if units.known(o['unit']) else o['unit'] for o in deck['outputs']}
+        summary = dict(origin='real', job_id=result['job_id'], condition=condition, metrics=metrics, metric_units=metric_units,
+                       metric_validity={k: v is not None and math.isfinite(v) for k, v in metrics.items()}, operating_points={},
+                       execution_evidence=evidence, analysis_settings=settings, results_on_host=raw,
+                       notes=['Measured with OCEAN in Virtuoso on this run\'s own results: the output expressions of the copy\'s '
+                              'Maestro test, their signal names translated by Maestro\'s name maps.'])
+        (job / 'measurements.json').write_text(json.dumps(summary, indent=2, allow_nan=False) + '\n')
+        return summary
 
 
 PROFILE_CLASSES = {'opamp_ac': GenericMosWidthProfile, RING: GenericRingOscillatorProfile, MAESTRO: GenericMaestroProfile}

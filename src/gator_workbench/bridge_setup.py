@@ -234,7 +234,8 @@ def _list(decoded):
 def read_maestro(client, library, testbench, *, test):
     """What the copy's Maestro view holds for the workbench's test. A view that does not exist yet answers empty."""
     exists = _skill(client, f'if(ddGetObj({_q(library)} {_q(testbench)} "maestro") "yes" "no")', 'looking for the Maestro view').strip().strip('"') == 'yes'
-    answer = dict(exists=exists, tests=[], test=None, model_files=[], analyses={}, variables={}, outputs=[], specs=[], raw_specs={})
+    answer = dict(exists=exists, tests=[], test=None, model_files=[], analyses={}, variables={}, outputs=[], specs=[], raw_specs={},
+                  simulator_mode=None)
     if not exists:
         return answer
     session = _session_open(client, library, testbench, mode='r')
@@ -244,6 +245,8 @@ def read_maestro(client, library, testbench, *, test):
         if test not in answer['tests']:
             return answer
         answer['test'] = test
+        answer['simulator_mode'] = _skill(client, f"let((th) th = maeGetTestSession({_q(test)}{s}) if(th asiGetHighPerformanceOptionVal(th 'uniMode) \"\"))",
+                                          'reading the simulator mode').strip().strip('"') or None
         files = _skill(client, f'maeGetEnvOption({_q(test)} ?option "modelFiles"{s})', 'reading the model files')
         answer['model_files'] = [list(pair) for pair in re.findall(r'\(\s*"([^"]*)"\s+"([^"]*)"\s*\)', files or '')]
         for name in _list(_skill(client, f'maeGetEnabledAnalysis({_q(test)}{s})', 'reading the analyses')):
@@ -319,6 +322,10 @@ def write_maestro(client, library, testbench, setup):
                     _skill(client, f'maeDeleteVar({_q(name)}{s})', f'removing variable {name}')
             for name, value in setup['variables'].items():
                 _skill(client, f'maeSetVar({_q(name)} {_q(value)}{s})', f'setting variable {name}')
+        # The simulator mode the optimizer's runs use (plain Spectre: the run adapter passes no +aps), so a Maestro run of
+        # the copy computes the same numbers (APS takes other time steps; seen live 2026-09-22).
+        _skill(client, f"let((th) th = maeGetTestSession({_q(test)}{s}) unless(th error(\"no simulation session for the test\")) "
+                       f"asiSetHighPerformanceOptionVal(th 'uniMode {_q(setup.get('simulator_mode') or 'Spectre')}))", 'setting the simulator mode')
         _skill(client, f'maeSaveSetup(?lib {_q(library)} ?cell {_q(testbench)} ?view "maestro"{s})', 'saving the Maestro setup')
     finally:
         _session_close(client, session)
@@ -358,6 +365,34 @@ def read_bindings(client, library, cells, variables):
     return found
 
 
+MAESTRO_NETLIST_ROOT = '/tmp/gator_maestro_netlist'          # on the simulator host: one folder per copy's testbench
+
+
+def maestro_netlist(client, library, testbench, *, test, out):
+    """Maestro's own netlist of one test at the nominal corner (``maeCreateNetlistForCorner``), downloaded into
+    `out/maestro_netlist`: the deck every evaluation of a Maestro-measured task runs around the circuit it exports, and
+    the name maps (``amap/``) its output expressions are translated with. Maestro writes the netlist files into a
+    folder of its own on the simulator host; nothing in the design is written. A read-only session first; an editable
+    one only when Maestro refuses to netlist from it."""
+    remote = f'{MAESTRO_NETLIST_ROOT}/{library}/{testbench}'
+    for mode in ('r', 'a'):
+        session = _session_open(client, library, testbench, mode=mode)
+        try:
+            done = client.execute_skill(f'maeCreateNetlistForCorner({_q(test)} "Nominal" {_q(remote)} ?session {_q(session)})', timeout=240)
+        finally:
+            _session_close(client, session)
+        if done.ok and not done.errors and done.output.strip() not in ('nil', ''):
+            break
+    else:
+        raise RuntimeError('Maestro did not netlist the test: ' + ('; '.join(done.errors) or done.output or 'no answer'))
+    local = out / 'maestro_netlist'
+    client.download_file(remote, local, recursive=True)
+    found = sorted(local.rglob('input.scs'))
+    if not found or not (found[0].parent / 'netlist').is_file() or not (found[0].parent / 'amap').is_dir():
+        raise RuntimeError('Maestro\'s netlist folder lacks input.scs, netlist or amap/')
+    return dict(test=test, remote=remote, folder=str(found[0].parent))
+
+
 def setup_op(client, op, *, library, testbench, cells, setup=None, restore=(), test):
     if op == 'write_setup':
         write_maestro(client, library, testbench, setup)
@@ -371,7 +406,7 @@ def _main(argv=None):
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--profile-id', required=True)
-    parser.add_argument('--op', choices=('make_copy', 'read_setup', 'write_setup'), required=True)
+    parser.add_argument('--op', choices=('make_copy', 'read_setup', 'write_setup', 'maestro_netlist'), required=True)
     parser.add_argument('--library', required=True)
     parser.add_argument('--cell', required=True)
     parser.add_argument('--testbench', required=True)
@@ -405,6 +440,9 @@ def _main(argv=None):
                     answer = make_copy(client, library=args.library, cell=args.cell, testbench=args.testbench,
                                        copy_library=args.copy_library, reuse_library=args.reuse_library,
                                        overwrite=set(json.loads(args.overwrite)), out=out, rename=json.loads(args.rename))
+                elif args.op == 'maestro_netlist':
+                    request = json.loads(Path(args.request).read_text())
+                    answer = maestro_netlist(client, args.copy_library, args.testbench, test=request['test'], out=out)
                 else:
                     request = json.loads(Path(args.request).read_text())
                     answer = setup_op(client, args.op, library=args.copy_library, testbench=args.testbench, cells=request['cells'],

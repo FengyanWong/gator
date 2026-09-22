@@ -344,10 +344,12 @@ def _check_measurements(config, report, *, provided_metrics):
         elif m.result_source == 'ade_output':
             if not m.source_name:
                 report.add('error', 'missing_source_name', path + '.source_name', 'ade_output needs the output name')
-            report.add('blocker', 'ade_outputs_not_wired', path + '.result_source',
-                       'Reading ADE/Maestro outputs during optimization is not implemented by the existing '
-                       'backends (they evaluate circuit-profile analyzers). Supported sources: backend_profile, '
-                       'expression.')
+            elif provided_metrics is None or m.source_name not in provided_metrics:
+                # A saved task measured by Maestro provides its outputs (OCEAN on every run, task flow part 5); anything
+                # else cannot measure a Maestro output.
+                report.add('blocker', 'ade_outputs_not_wired', path + '.result_source',
+                           f'The Maestro output {m.source_name!r} is measured only by a task saved with it (Save task): this '
+                           'circuit does not measure it.')
         elif m.result_source == 'expression':
             if not m.expression:
                 report.add('error', 'missing_expression', path + '.expression', 'expression source needs one')
@@ -479,7 +481,7 @@ def _check_targets(config, report, measurement_ids, *, registry, extensible=True
         if t.metric_id in measurement_ids and equation != t.metric_id:
             report.add('error', 'spec_name_is_a_probe', path + '.metric_id',
                        f'{t.metric_id!r} is the ID of a Probe, but this spec computes {equation!r}. Give the spec its own name.')
-        result_backed = probe is not None and probe.result_source == 'backend_profile' and probe.source_name == t.metric_id
+        result_backed = probe is not None and probe.result_source in ('backend_profile', 'ade_output') and probe.source_name == t.metric_id
         if provided_metrics is not None and t.metric_id in provided_metrics and not result_backed:
             report.add('error', 'spec_name_is_a_result', path + '.metric_id',
                        f'{t.metric_id!r} is the name of a result the simulation returns, but this spec computes {equation!r}. '

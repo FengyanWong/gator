@@ -75,6 +75,46 @@ print(json.dumps(dict(library=args['--library'], cell=args['--cell'], testbench=
     return [sys.executable, str(script)]
 
 
+MAESTRO_HEAD = ('// Generated for: spectre\nsimulator lang=spectre\nglobal 0\nparameters temperature=27\n'
+                'include "/pdk/model.scs" section=tt\n\n')
+MAESTRO_TAIL = ('\nsimulatorOptions options psfversion="1.4.0" reltol=1e-3 temp=27\n'
+                'tran tran stop=50n errpreset=conservative write="spectre.ic" annotate=status\n'
+                'finalTimeOP info what=oppoint where=rawfile\nsaveOptions options save=allpub\n')
+
+
+def maestro_netlister(tmp_path, circuit=None):
+    """Stands in for `bridge_setup maestro_netlist`: Maestro's netlist folder of the copy's test - input.scs = a head, the
+    circuit (the recorded export with the copy's names, as the copy reader gives it), a tail - plus name maps in the
+    format the real netlister writes (amap/). `circuit` replaces the circuit part (a netlist that differs)."""
+    script = tmp_path / 'maestro_netlister.py'
+    script.write_text(f'''
+import json, re, sys
+from pathlib import Path
+argv = sys.argv[1:]
+args = {{a: argv[i + 1] for i, a in enumerate(argv) if a.startswith('--') and i + 1 < len(argv)}}
+with open({str(tmp_path / 'netlister_calls.jsonl')!r}, 'a') as f:
+    f.write(json.dumps(dict(op=args['--op'], copy=args['--copy-library'], testbench=args['--testbench'])) + '\\n')
+text = {circuit!r} or (Path({str(FIXTURE)!r}) / 'netlist.scs').read_text().replace('// Library name: {LIB}', '// Library name: ' + args['--copy-library'])
+text = re.sub(r'\\btb_ring_osc_3stage\\b', args['--testbench'], text)
+text = re.sub(r'(?<![A-Za-z0-9_])ring_osc_3stage(?![A-Za-z0-9_])', args['--cell'], text)
+folder = Path(args['--output']) / 'maestro_netlist' / 'netlist'
+(folder / 'amap').mkdir(parents=True)
+(folder / 'netlist').write_text(text)
+(folder / 'input.scs').write_text({MAESTRO_HEAD!r} + text + {MAESTRO_TAIL!r})
+maps = {{'top_level_map.inst': [('__NEXT_FILE__', args['--testbench'])],
+        '__simulator_information__': [('__artInstanceTerminalDelimiter__', ':'), ('__artHierarchyDelimiter__', '.')],
+        args['--testbench'] + '.inst': [('V0n', 'analogLib_vdc_spectre'), ('XU1n', args['--cell'])],
+        args['--testbench'] + '.net': [('gnd!v', '0v')],
+        'analogLib_vdc_spectre.inst': [('PLUSv', ':pv'), ('MINUSv', '(FUNCTION minus(root("PLUS")))v')],
+        args['--cell'] + '.inst': [('MN1n MN2n MN3n', 'gpdk045_nmos1v_spectre'), ('OUTv', ':1v')],
+        'gpdk045_nmos1v_spectre.inst': [('Dv', ':dv'), ('Gv', ':gv')]}}
+for name, pairs in maps.items():
+    (folder / 'amap' / name).write_text('HEADER\\n"PSFversion" "1.00"\\n' + ''.join('"%s" "%s"\\n' % (k, v.replace('"', '\\\\"')) for k, v in pairs))
+print(json.dumps(dict(test='GATOR', remote='/tmp/gator_maestro_netlist/x', folder=str(folder))))
+''')
+    return [sys.executable, str(script)]
+
+
 def config(probes=(FREQUENCY_PROBE,), specs=(FREQUENCY_SPEC,), rows=ROWS):
     return schema.WorkbenchConfig.model_validate(dict(
         circuit=dict(source='virtuoso', library=LIB, cell=CELL, testbench_cell=TB, circuit_class='vco'),
@@ -164,7 +204,7 @@ def test_save_as_makes_another_task_with_a_working_copy_of_its_own(tmp_path):
         save(tmp_path, name='ring_fast', task='ring_osc', as_new=True)
 
 
-def test_a_maestro_measured_task_writes_its_setup_into_its_copy_and_is_saved_but_not_run(tmp_path):
+def test_a_maestro_measured_task_writes_its_setup_and_netlists_its_test_once(tmp_path):
     ready(tmp_path)
     readback = working_copy.native_cells.cell_dir(LIB, CELL) / 'testbench_readback.json'
     data = json.loads(readback.read_text())
@@ -173,22 +213,46 @@ def test_a_maestro_measured_task_writes_its_setup_into_its_copy_and_is_saved_but
                   variables={}, bindings=[], outputs=SETUP['outputs'], specs=SETUP['specs'], raw_specs={})
     cfg = config(probes=rows['measurements'], specs=rows['targets'])
     made = save(tmp_path, name='ring_maestro', cfg=cfg, extras=dict(analyses={'tran': {'stop': '50n', 'errpreset': 'conservative'}}),
-                commands=dict(setup=setup_writer(tmp_path, answer)))
-    assert made['measurement'] == dict(kind='maestro') and not made['runnable'] and made['maestro_matches']
+                commands=dict(setup=setup_writer(tmp_path, answer), deck=maestro_netlister(tmp_path)))
+    assert made['measurement'] == dict(kind='maestro') and made['runnable'] and made['maestro_matches']
     [call] = [json.loads(line) for line in (tmp_path / 'setup_calls.jsonl').read_text().splitlines()]
     assert call['op'] == 'write_setup' and call['copy'] == COPY and call['request']['setup']['outputs'] == SETUP['outputs']
     assert call['request']['setup']['analyses'] == {'tran': {'stop': '5e-08', 'errpreset': 'conservative'}}
+    [netlisted] = [json.loads(line) for line in (tmp_path / 'netlister_calls.jsonl').read_text().splitlines()]
+    assert netlisted == dict(op='maestro_netlist', copy=COPY, testbench=TB)                          # once, of the copy's test
     entry = profiles.list_profiles()['ring_maestro']
-    assert entry['recipe'] == 'maestro' and entry['provided_metrics'] == ['freq', 'vmax'] and not entry['runnable']
+    assert entry['recipe'] == 'maestro' and entry['provided_metrics'] == ['freq', 'vmax'] and entry['runnable']
+    assert [(e['metric_id'], e['unit']) for e in entry['spec_registry']] == [('freq', 'Hz'), ('vmax', 'V')]    # exactly its outputs
+    deck = json.loads((Path(entry['directory']) / profiles.FILES['maestro_deck']).read_text())
+    assert deck['head'].rstrip('\n') == MAESTRO_HEAD.rstrip('\n') and deck['tail'].lstrip('\n').startswith('simulatorOptions') and deck['analyses'] == ['tran']
+    assert [(o['name'], o['spectre_expression'], o['analysis']) for o in deck['outputs']] == [
+        ('freq', 'frequency(VT("OUT"))', 'tran'), ('vmax', 'ymax(VT("OUT"))', 'tran')]                # Maestro's names -> Spectre's
     saved = profiles.task_file('ring_maestro')
     assert saved['maestro']['outputs'] == [dict(name='freq', expression='frequency(VT("/OUT"))'), dict(name='vmax', expression='ymax(VT("/OUT"))')]
     listed = next(t for t in tasks.list_tasks() if t['task_key'] == 'real:ring_maestro')
-    assert not listed['available'] and 'next part of the build' in listed['blocker']
+    assert profiles.MAESTRO_NOT_RUNNABLE != listed.get('blocker')
     runtime = tasks.load_task(schema.CircuitReference(source='registered_task', task_id='real:ring_maestro'))
-    assert runtime.provided_metrics == ('freq', 'vmax') and 'next part of the build' in runtime.notes[0]
-    with pytest.raises(tasks.TaskBlocked, match='next part of the build'):
+    assert runtime.provided_metrics == ('freq', 'vmax') and 'Measured by Maestro' in runtime.notes[0]
+    with pytest.raises(tasks.TaskBlocked, match='authoriz'):                                     # runnable now: only the budget question is left
         runtime.env_factory_builder(None, tmp_path, None)
     assert data                                                                                     # the readback fixture was there
+
+
+def test_a_maestro_netlist_that_does_not_fit_saves_nothing(tmp_path):
+    ready(tmp_path)
+    rows = vs.to_rows(SETUP)
+    answer = dict(exists=True, tests=['GATOR'], test='GATOR', model_files=[['/pdk/model.scs', 'tt']], analyses={'tran': {'stop': '50n'}},
+                  variables={}, bindings=[], outputs=SETUP['outputs'], specs=SETUP['specs'], raw_specs={})
+    cfg = config(probes=rows['measurements'], specs=rows['targets'])
+    with pytest.raises(profiles.ProfileError, match='differently from its schematic export'):
+        save(tmp_path, name='ring_maestro', cfg=cfg, extras=dict(analyses={'tran': {'stop': '50n'}}),
+             commands=dict(setup=setup_writer(tmp_path, answer), deck=maestro_netlister(tmp_path, circuit='V9 (A 0) vsource dc=1\n')))
+    unknown = [dict(m, signal='frequency(VT("/XQ/OUT"))') if m['source_name'] == 'freq' else m for m in rows['measurements']]
+    with pytest.raises(vs.SetupError, match='XQ is not an instance'):
+        save(tmp_path, name='ring_maestro', cfg=config(probes=unknown, specs=rows['targets']), extras=dict(analyses={'tran': {'stop': '50n'}}),
+             commands=dict(setup=setup_writer(tmp_path, dict(answer, outputs=[dict(SETUP['outputs'][0], expression='frequency(VT("/XQ/OUT"))')] + SETUP['outputs'][1:])),
+                           deck=maestro_netlister(tmp_path)))
+    assert profiles.list_profiles() == {} and 'claimed_by' not in working_copy.load(LIB, CELL)
 
 
 def test_save_task_keeps_what_was_written_into_the_copy_after_the_last_save(tmp_path):
@@ -200,13 +264,13 @@ def test_save_task_keeps_what_was_written_into_the_copy_after_the_last_save(tmp_
     def answer(stop):
         return dict(exists=True, tests=['GATOR'], test='GATOR', model_files=[['/pdk/model.scs', 'tt']], analyses={'tran': {'stop': stop}},
                     variables={}, bindings=[], outputs=SETUP['outputs'], specs=SETUP['specs'], raw_specs={})
-    save(tmp_path, name='ring_maestro', cfg=cfg, extras=dict(analyses={'tran': {'stop': '50n'}}), commands=dict(setup=setup_writer(tmp_path, answer('50n'))))
+    save(tmp_path, name='ring_maestro', cfg=cfg, extras=dict(analyses={'tran': {'stop': '50n'}}), commands=dict(setup=setup_writer(tmp_path, answer('50n')), deck=maestro_netlister(tmp_path)))
     target = profiles.list_profiles()['ring_maestro']['copy_target']
     assert working_copy.write_setup_on(probe(tmp_path), 'lab', target, vs.from_rows(cfg, analyses={'tran': {'stop': '40n'}}),
                                        command=setup_writer(tmp_path, answer('40n')))['matches']          # what the agent's apply does
-    made = save(tmp_path, name='ring_maestro', task='ring_maestro', cfg=cfg, commands=dict(setup=setup_writer(tmp_path, answer('40n'))))
+    made = save(tmp_path, name='ring_maestro', task='ring_maestro', cfg=cfg, commands=dict(setup=setup_writer(tmp_path, answer('40n')), deck=maestro_netlister(tmp_path)))
     assert made['revision'] == 2
-    save(tmp_path, name='ring_maestro_b', task='ring_maestro', as_new=True, cfg=cfg, commands=dict(setup=setup_writer(tmp_path, answer('40n'))))
+    save(tmp_path, name='ring_maestro_b', task='ring_maestro', as_new=True, cfg=cfg, commands=dict(setup=setup_writer(tmp_path, answer('40n')), deck=maestro_netlister(tmp_path)))
     calls = [json.loads(line) for line in (tmp_path / 'setup_calls.jsonl').read_text().splitlines()]
     assert [c['request']['setup']['analyses']['tran']['stop'] for c in calls] == ['5e-08', '4e-08', '4e-08', '4e-08']
     assert calls[-1]['testbench'] == f'{TB}_ring_maestro_b'

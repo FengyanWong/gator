@@ -227,7 +227,8 @@ def list_tasks():
                           description='Verified GPDK045 bridge profile (Virtuoso + Spectre).'))
     from . import profiles
     for name, entry in profiles.list_profiles().items():         # created from a cell read out of Virtuoso
-        blocker = profiles.MAESTRO_NOT_RUNNABLE if entry.get('recipe') == profiles.MAESTRO else generated_backend_blocker(None)
+        blocker = (profiles.MAESTRO_NOT_RUNNABLE if entry.get('recipe') == profiles.MAESTRO and not entry.get('runnable')
+                   else generated_backend_blocker(None))
         tasks.append(dict(task_key=f'real:{name}', kind='real', circuit_class=entry['circuit_class'], generated=True,
                           pdk_id=entry.get('pdk_id') or 'gpdk045', available=blocker is None, blocker=blocker, library=entry['library'], cell=entry['core_cell'],
                           revision=entry.get('revision'), measurement=entry.get('measurement'), original=entry.get('original'),
@@ -460,6 +461,8 @@ def generated_bridge_config(name, profile_id=None):
     config = BridgeConfig(Path(connection['env_file']).resolve(), entry['library'], (directory / profiles.FILES['receipt']).resolve(),
                           (repo_root() / 'artifacts/local/bridge-state').resolve(), connection['model_file'],
                           profile=connection.get('profile'))
+    if entry.get('recipe') == profiles.MAESTRO:                   # its OCEAN measurement reaches Virtuoso the way the run does
+        profile.bridge = dict(env_file=str(config.env_file), profile=connection.get('profile'), site=connection.get('bridge_site_packages'))
     return config, profile, entry
 
 
@@ -474,7 +477,7 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
     graph = profile.optimization_graph()
 
     def builder(compiled, work_root, run_settings):
-        if entry.get('recipe') == profiles.MAESTRO:
+        if entry.get('recipe') == profiles.MAESTRO and not entry.get('runnable'):
             raise TaskBlocked(profiles.MAESTRO_NOT_RUNNABLE)
         if not authorized:
             raise TaskBlocked(REAL_AUTHORIZATION_REQUIRED, contract=REAL_INTERFACE_CONTRACT)
@@ -498,7 +501,9 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
         notes.append('Loaded for viewing and validation only. Running it needs your explicit authorization of a real '
                      'simulation budget (asked when you press Start).')
     if entry.get('recipe') == profiles.MAESTRO:
-        notes.insert(0, profiles.MAESTRO_NOT_RUNNABLE)
+        notes.insert(0, profiles.MAESTRO_NOT_RUNNABLE if not entry.get('runnable') else
+                     'Measured by Maestro: every evaluation runs the Maestro deck of its working copy\'s test around the exported '
+                     'circuit, and OCEAN measures the outputs on that run\'s results.')
     provided = tuple(entry.get('provided_metrics') or ()) if entry.get('recipe') == profiles.MAESTRO else recipes.provided_metrics(entry['recipe'])
     return TaskRuntime(task_key, 'real', graph, provided, circuit, structure.read_text(),
                        str(structure), str(mapping), builder, max_concurrency=4, authorized=bool(authorized), notes=notes,

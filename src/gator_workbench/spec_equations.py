@@ -117,7 +117,7 @@ class SpecPlan:
     @classmethod
     def from_config(cls, config) -> 'SpecPlan':
         from . import units
-        probes = tuple((m.measurement_id, m.source_name if m.result_source == 'backend_profile' else None,
+        probes = tuple((m.measurement_id, m.source_name if m.result_source in ('backend_profile', 'ade_output') else None,
                         m.expression if m.result_source == 'expression' else None) for m in config.measurements)
         table = {p[0]: p for p in probes}
         specs = []
@@ -149,7 +149,7 @@ class SpecPlan:
             elif expression is not None:
                 value = evaluate(expression, lambda name: resolve(name, trail + (probe_id,)) if name in table else None)
             else:
-                value = None                                      # an ADE output: not executable, never a number
+                value = None                                      # neither a result nor an expression: never a number
             values[probe_id] = value if _finite(value) else None
             return values[probe_id]
         for probe_id in table:

@@ -27,6 +27,9 @@ import json
 import re
 
 TEST = 'GATOR'
+# The Maestro simulator mode of a task's test: plain Spectre, what the optimizer's runs use (the run adapter passes no
+# +aps). Maestro's default APS takes other time steps, so its numbers would differ from the runs' (seen live 2026-09-22).
+SIMULATOR_MODE = 'Spectre'
 MAX_EXPRESSION = 300                                   # schema.MeasurementDefinition.signal
 # Cadence calculator functions an output may call. Anything else is refused, never evaluated.
 FUNCTIONS = frozenset('''
@@ -120,7 +123,7 @@ def normalize(setup) -> dict:
     """The comparable form of a setup: names sorted, numbers in one spelling, analyses reduced to the options stated."""
     setup = setup or {}
     return dict(
-        test=setup.get('test') or TEST,
+        test=setup.get('test') or TEST, simulator_mode=setup.get('simulator_mode') or SIMULATOR_MODE,
         model_files=sorted([str(f), str(s)] for f, s in setup.get('model_files') or []),
         analyses={name: {str(k): canonical(v) for k, v in (options or {}).items()} for name, options in sorted((setup.get('analyses') or {}).items())},
         variables={str(k): canonical(v) for k, v in sorted((setup.get('variables') or {}).items())},
@@ -179,6 +182,8 @@ def differences(expected, found) -> list[str]:
     """What the Virtuoso side (`found`, read back) says differently from `expected`, as plain sentences. Analysis
     options Maestro adds by itself are not differences: only the options `expected` states are compared."""
     e, f, out = normalize(expected), normalize(found), []
+    if e['simulator_mode'] != f['simulator_mode']:
+        out.append(f'Simulator mode: the task says {e["simulator_mode"]}, Virtuoso has {f["simulator_mode"]}')
     if e['model_files'] != f['model_files']:
         out.append(f'Model files: the task says {e["model_files"]}, Virtuoso has {f["model_files"]}')
     for name in sorted(set(e['analyses']) | set(f['analyses'])):
@@ -286,3 +291,37 @@ def _plain(text) -> float:
     if not match:
         raise SetupError(f'{text!r} is not a number Maestro would write')
     return float(match.group(1)) * SUFFIX.get(match.group(2), 1.0)
+
+
+# ---------------------------------------------------------------------------------- Maestro's own deck (task flow part 5)
+DECK_FORMAT = 'gator-maestro-deck-1'
+ANALYSIS_STATEMENT = re.compile(r'^\s*[A-Za-z_]\w*\s+(tran|ac|dc|noise|xf|sp|stb|pss|pac|pnoise|pxf|hb|hbac|hbnoise)\b')
+
+
+def split_deck(deck, circuit) -> tuple[str, str]:
+    """(head, tail) of Maestro's deck of one test around the circuit part it netlisted (`circuit`, its file `netlist`):
+    the head holds the header, the design variables and the model include; the tail the options, analyses, info and
+    saves. Every evaluation of a Maestro-measured task puts the circuit the run adapter exported between the two.
+    A deck whose circuit part is not there exactly once is refused, not guessed at."""
+    body = str(circuit).strip('\n')
+    if not body or deck.count(body) != 1:
+        raise SetupError('Maestro\'s netlist does not hold its circuit part exactly once: its layout is not the one this '
+                         'workbench reads')
+    index = deck.index(body)
+    head, tail = deck[:index], deck[index + len(body):]
+    if not re.search(r'(?m)^simulator lang=spectre\s*$', head) or not re.search(r'(?m)^include\s+"[^"]+"', head):
+        raise SetupError('Maestro\'s netlist head lacks its simulator line or its model include')
+    return head, tail
+
+
+def deck_include(head) -> tuple[str, str | None]:
+    """(model file, section) of the model include in a deck head."""
+    match = re.search(r'(?m)^include\s+"([^"]+)"(?:\s+section=(\S+))?', head)
+    if not match:
+        raise SetupError('The deck head has no model include')
+    return match.group(1), match.group(2)
+
+
+def deck_analyses(tail) -> list[str]:
+    """The analysis types a deck tail runs, in order (e.g. ['tran'])."""
+    return [m.group(1) for m in (ANALYSIS_STATEMENT.match(line) for line in tail.splitlines()) if m]

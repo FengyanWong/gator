@@ -35,7 +35,8 @@ from .storage.dataset import utcnow
 NAME = re.compile(r'^[a-z][a-z0-9_]{1,39}$')
 FORMAT = 'gator-generated-profile-1'
 FILES = dict(design='design.json', mapping='mapping.json', structure='structure.scs', readback='readback.cdf.json',
-             rules='rules.json', receipt='creation.json', entry='profile.json', reference='reference_measurements.json')
+             rules='rules.json', receipt='creation.json', entry='profile.json', reference='reference_measurements.json',
+             maestro_deck='maestro_deck.json')
 RECIPES = {'ring_oscillator': dict(label='Ring oscillator (free-running)', circuit_class='vco'),
            'opamp_ac': dict(label='Op-amp / OTA (AC gain)', circuit_class='opamp')}
 OPAMP_NETS = dict(VDD='supply', VINP='input', VINN='input', VOUT='output', VBIAS='bias')
@@ -373,9 +374,8 @@ def testbench_probes(imported, graph=None) -> dict:
 
 
 MAESTRO = 'maestro'                     # a task whose probes are Maestro outputs of its working copy (runs: OCEAN, coming)
-MAESTRO_NOT_RUNNABLE = ('This task measures the Maestro outputs of its working copy. Running such tasks - Maestro writes the '
-                        'netlist once, Spectre runs every evaluation, OCEAN computes the outputs - is the next part of the build; '
-                        'until then it can be saved, opened, edited and checked, not run.')
+MAESTRO_NOT_RUNNABLE = ('This task measures the Maestro outputs of its working copy, and it was saved before such tasks could '
+                        'run: press Save task once - Maestro then netlists its test, and every run uses that deck.')
 NEEDS_FREQUENCY = ('The ring-oscillator measurement needs a rough expected oscillation frequency: it sizes the transient '
                    '(60 periods, measured after 20). Give it once; the task file keeps it.')
 
@@ -626,6 +626,13 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
             if not written['matches']:
                 raise ProfileError('The copy\'s Maestro setup reads back differently from the rows: ' + '; '.join(written['differences']))
             maestro = virtuoso_setup.normalize(written)
+            # Maestro's own deck of the test, netlisted once: every evaluation runs it around the circuit it exports,
+            # and OCEAN measures the outputs with their signal names translated by Maestro's own name maps.
+            probes = {m.source_name: m for m in config.measurements if m.result_source == 'ade_output'}
+            outputs = [dict(name=o['name'], expression=o['expression'], analysis=probes[o['name']].analysis if o['name'] in probes
+                            else virtuoso_setup.analysis_of(o['expression']), unit=probes[o['name']].unit if o['name'] in probes else '1')
+                       for o in maestro['outputs']]
+            deck = working_copy.maestro_deck_on(monitor, profile_id, target, outputs, command=commands.get('deck'))
         bridge_read.read(monitor, profile_id, 'import_cell', library=target['copy']['library'], cell=target['copy']['cell'],
                          testbench=target['copy']['testbench'], command=commands.get('read'))
         imported = native_cells.load_import(target['copy']['library'], target['copy']['cell'])
@@ -637,10 +644,30 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
         shutil.rmtree(staging, ignore_errors=True)
         staging.mkdir(parents=True)
         extra = dict(original=target['original'], copy=target['copy'], copy_target=target, revision=revision,
-                     measurement=kind, runnable=kind != MAESTRO, saved_utc=utcnow().isoformat())
+                     measurement=kind, runnable=True, saved_utc=utcnow().isoformat())
         if kind == MAESTRO:
             extra['provided_metrics'] = [o['name'] for o in maestro['outputs']]
+        if kind == MAESTRO:
+            # Maestro's circuit part and the export the task is generated from must be the same circuit.
+            exported = Path(imported['netlist_path']).read_text()
+            if working_copy.structure(deck['circuit']) != working_copy.structure(exported):
+                raise ProfileError('Maestro netlists the working copy differently from its schematic export: look at the copy in '
+                                   'Virtuoso, then save again')
+            extra['maestro_deck_sha256'] = deck['sha256']
+            # The network's result registry: exactly the task's outputs, each with the scale its spec normalizes by.
+            from . import units
+            by_probe = {t.equation.strip(): t for t in config.targets}
+            registry = []
+            for output in deck['outputs']:
+                probe = probes.get(output['name'])
+                spec = by_probe.get(probe.measurement_id) if probe is not None else None
+                scale = units.scale_to_canonical(spec.normalization_scale, spec.unit) if spec is not None and spec.normalization_scale else 1.0
+                registry.append(dict(metric_id=output['name'], unit=units.canonical_unit(output['unit']) if units.known(output['unit'])
+                                     else output['unit'], reference=abs(float(scale)) or 1.0))
+            extra['spec_registry'] = registry
         result = _generate(name, config, recipe=kind, imported=imported, staging=staging, expected_frequency_hz=frequency, entry_extra=extra)
+        if kind == MAESTRO:
+            write_json(staging / FILES['maestro_deck'], {k: v for k, v in deck.items() if k != 'circuit'})
         data = task_files.build(
             name=name, revision=revision, saved_utc=extra['saved_utc'], cell=target['original'], copy=target['copy'],
             measurement=measurement,
@@ -676,11 +703,10 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
             aside.parent.mkdir(parents=True, exist_ok=True)
             old.rename(aside)
         staging.rename(directory)
-        if kind != MAESTRO:
-            try:
-                load_profile(name)                                # every check of the verified classes, against the recorded files
-            except Exception as exc:
-                raise ProfileError(f'The task does not pass the checks of the real backend: {exc}')
+        try:
+            load_profile(name).check_deck() if kind == MAESTRO else load_profile(name)   # every check of the verified classes
+        except Exception as exc:
+            raise ProfileError(f'The task does not pass the checks of the real backend: {exc}')
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         if not updating and directory.exists() and not (directory / TASK_FILE).is_file():
@@ -688,7 +714,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
         if claimed:
             working_copy.release(*claimed, name)
         raise
-    return dict(task_key=f'real:{name}', name=name, revision=revision, measurement=measurement, runnable=kind != MAESTRO,
+    return dict(task_key=f'real:{name}', name=name, revision=revision, measurement=measurement, runnable=True,
                 copy=target['copy'], original=target['original'], directory=str(directory), created=not updating,
                 baseline_kept=baseline_kept, changed=sorted(changed), circuit_class=result['entry']['circuit_class'],
                 pdk_id=result['entry']['pdk_id'], parameters=[row.model_dump(mode='json') for row in result['rows']],

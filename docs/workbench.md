@@ -861,6 +861,19 @@ writes the task's own again; change those in the task file. A spec over several 
 Until 2026-09-22 the block had three buttons, **Read setup**, **Use in editors** and **Write to Virtuoso**; the user
 asked for fewer, as the flow has it: Save task writes the copy anyway, and reading now takes over in the same press.
 
+**Starting a circuit that does not start by itself: initial conditions** (added 2026-09-22, user request). An
+oscillator has a symmetric DC operating point and stays in it for the whole simulation, so a ring oscillator measured
+through Maestro reported "eval err" for its frequency until now. A task can therefore carry **initial conditions**: a
+start voltage per net (`maestro.initial_conditions` in the task file, `{"OUT": "0.9", "XU1.N1": "0", "XU1.N2": "0.9"}`;
+a net inside an instance is addressed as Spectre spells it, `XU1.N1`). Save task writes them into a small file on the
+simulator host (`~/.gator/ic/<library>__<testbench>__<test>.scs`, one `ic` statement, written by SKILL - nothing is
+uploaded) and registers that file with the Maestro test as a model file **without a section**. Maestro then netlists
+`include "<that file>"` above the PDK model include, so Maestro's own runs and every deck the optimizer builds from
+that netlist start the circuit the same way. Reading the setup back reads the file too, so a start voltage changed or a
+file deleted in Virtuoso is a difference the check before every run reports; changing them drops a recorded baseline,
+because what is simulated changed. The agent may propose them (`setup.initial_conditions`), and a net name or a value
+that is not a voltage is refused before anyone can approve it. A circuit that settles by itself needs none.
+
 **What may be a Maestro variable.** Only values of analogLib's own resistor, capacitor, inductor and sources. A PDK
 device derives other values from its parameters or clamps them: on the live GPDK045 a transistor width set to a variable
 left the 12 side values the PDK computes from it (as, ad, ps, pd, nrd, nrs, sa, sb, sd, sca, scb, scc) at their old

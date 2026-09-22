@@ -29,6 +29,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import virtuoso_setup
 from .connection import RealBridge, resolve_profile_id, worker_environment
 from .paths import repo_root
 from .security import redact
@@ -222,6 +223,13 @@ def _session_open(client, library, testbench, mode='a'):
     return raw
 
 
+def _read_model_files(client, test, s):
+    """The test's model files as [[file, section]]; an entry without a section is a one-element list in Virtuoso's
+    answer (live 2026-09-22: `(("<ic file>") ("<pdk>" "tt"))`), and its section comes back empty."""
+    listed = _skill(client, f'maeGetEnvOption({_q(test)} ?option "modelFiles"{s})', 'reading the model files')
+    return [[file, section] for file, section in re.findall(r'\(\s*"([^"]*)"(?:\s+"([^"]*)")?\s*\)', listed or '')]
+
+
 def _session_close(client, session):
     client.execute_skill(f'maeCloseSession(?session {_q(session)} ?forceClose t)', timeout=60)
 
@@ -235,7 +243,7 @@ def read_maestro(client, library, testbench, *, test):
     """What the copy's Maestro view holds for the workbench's test. A view that does not exist yet answers empty."""
     exists = _skill(client, f'if(ddGetObj({_q(library)} {_q(testbench)} "maestro") "yes" "no")', 'looking for the Maestro view').strip().strip('"') == 'yes'
     answer = dict(exists=exists, tests=[], test=None, model_files=[], analyses={}, variables={}, outputs=[], specs=[], raw_specs={},
-                  simulator_mode=None)
+                  simulator_mode=None, initial_conditions={}, ic_file=None)
     if not exists:
         return answer
     session = _session_open(client, library, testbench, mode='r')
@@ -247,8 +255,12 @@ def read_maestro(client, library, testbench, *, test):
         answer['test'] = test
         answer['simulator_mode'] = _skill(client, f"let((th) th = maeGetTestSession({_q(test)}{s}) if(th asiGetHighPerformanceOptionVal(th 'uniMode) \"\"))",
                                           'reading the simulator mode').strip().strip('"') or None
-        files = _skill(client, f'maeGetEnvOption({_q(test)} ?option "modelFiles"{s})', 'reading the model files')
-        answer['model_files'] = [list(pair) for pair in re.findall(r'\(\s*"([^"]*)"\s+"([^"]*)"\s*\)', files or '')]
+        listed_files = _read_model_files(client, test, s)
+        answer['model_files'] = [m for m in listed_files if _IC_MARK not in m[0]]
+        for path, _section in listed_files:                       # the ic file, if the test carries one
+            if _IC_MARK in path:
+                answer['ic_file'] = path
+                answer['initial_conditions'] = virtuoso_setup.parse_ic_file(_ic_read(client, path))
         for name in _list(_skill(client, f'maeGetEnabledAnalysis({_q(test)}{s})', 'reading the analyses')):
             options = _skill(client, f'maeGetAnalysis({_q(test)} {_q(name)}{s})', f'reading the {name} options')
             answer['analyses'][name] = {k: v for k, v in re.findall(r'\(\s*"([^"]*)"\s+"([^"]*)"\s*\)', options or '')}
@@ -287,6 +299,38 @@ def parse_spec(raw):
     return dict(op='unsupported', value=' '.join(items)[:200])
 
 
+IC_DIR = '.gator/ic'                      # under the simulator user's home: the ic files of the tasks
+_IC_MARK = f'/{IC_DIR}/'
+
+
+def _ic_path(client, library, testbench, test):
+    """Where this test's initial-condition file lives on the simulator host (its home directory decides)."""
+    name = f'{library}__{testbench}__{test}.scs'
+    raw = _skill(client, f'strcat(getShellEnvVar("HOME") "/{IC_DIR}/" {_q(name)})', 'finding the home directory')
+    path = (raw or '').strip().strip('"')
+    if not path.startswith('/') or _IC_MARK not in path:
+        raise RuntimeError(f'could not build the initial-conditions path on the host (got {path!r})')
+    return path
+
+
+def _ic_write(client, path, text):
+    """Write the ic file (the folders are made first); SKILL writes it, so no file is uploaded."""
+    escaped = text.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
+    folder = path.rsplit('/', 1)[0]
+    written = _skill(client, f'let((p) createDir({_q(folder.rsplit("/", 1)[0])}) createDir({_q(folder)}) '
+                             f'p = outfile({_q(path)} "w") unless(p error("cannot write %s" {_q(path)})) '
+                             f'fprintf(p "%s" "{escaped}") close(p) isFile({_q(path)}))', 'writing the initial conditions')
+    if (written or '').strip() not in ('t', '"t"'):
+        raise RuntimeError(f'the initial-conditions file was not written ({path})')
+
+
+def _ic_read(client, path):
+    """What the ic file on the host says (empty when it is gone)."""
+    raw = _skill(client, f'let((p line all) all = "" p = infile({_q(path)}) if(p progn(while(gets(line p) all = strcat(all line)) close(p)) all) all)',
+                 'reading the initial conditions')
+    return (raw or '').strip().strip('"').replace('\\n', '\n')
+
+
 def write_maestro(client, library, testbench, setup):
     """Make the copy's Maestro test say exactly what `setup` says (outputs are removed and added again, so each one
     keeps no stale spec), save, close. Other tests in the view are left alone."""
@@ -298,8 +342,23 @@ def write_maestro(client, library, testbench, setup):
         if created:
             _skill(client, f'maeCreateTest({_q(test)} ?lib {_q(library)} ?cell {_q(testbench)} ?view "schematic" ?simulator "spectre"{s})',
                    'creating the test')
-        if setup['model_files'] and (created or not setup.get('keep_model_files')):
-            files = ' '.join(f'({_q(f)} {_q(section)})' for f, section in setup['model_files'])
+        # Initial conditions travel as a model file without a section: Maestro's netlist then `include`s the ic file,
+        # so its own runs and every run deck built from its netlist start the circuit the same way. None = keep.
+        conditions, ic_path, listed = setup.get('initial_conditions'), None, None
+        if conditions is not None:                            # None = keep them as they are; {} = the test should have none
+            listed = _read_model_files(client, test, s)
+            if conditions or any(_IC_MARK in file for file, _section in listed):
+                ic_path = _ic_path(client, library, testbench, test)
+                if conditions:
+                    _ic_write(client, ic_path, virtuoso_setup.ic_file_text(conditions))
+                else:
+                    _skill(client, f'if(isFile({_q(ic_path)}) deleteFile({_q(ic_path)}) t)', 'removing the initial conditions file')
+        wanted = [list(m) for m in setup['model_files'] or []]
+        stating = bool(wanted) and (created or not setup.get('keep_model_files'))
+        if stating or ic_path:
+            base = wanted if stating else (listed or [])
+            entries = [m for m in base if _IC_MARK not in m[0]] + ([[ic_path, '']] if conditions else [])
+            files = ' '.join(f'({_q(f)} {_q(section)})' for f, section in entries)
             _skill(client, f'maeSetEnvOption({_q(test)} ?options `(("modelFiles" ({files}))){s})', 'setting the model files')
         for name in _list(_skill(client, f'maeGetEnabledAnalysis({_q(test)}{s})', 'reading the analyses')) if setup['analyses'] is not None else ():
             if name not in setup['analyses']:

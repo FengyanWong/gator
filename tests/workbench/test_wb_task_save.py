@@ -238,6 +238,35 @@ def test_a_maestro_measured_task_writes_its_setup_and_netlists_its_test_once(tmp
     assert data                                                                                     # the readback fixture was there
 
 
+def test_a_task_starts_its_oscillator_with_initial_conditions(tmp_path):
+    """A circuit that does not start by itself gets a start voltage per net: they go into the copy with the rest of the
+    setup, into the task file, and changing them drops the recorded baseline - what is simulated changed."""
+    ready(tmp_path)
+    rows = vs.to_rows(SETUP)
+    conditions = {'N1': '0', 'N2': '0.9', 'OUT': '0.9'}
+
+    def answer(ic):
+        return dict(exists=True, tests=['GATOR'], test='GATOR', model_files=[['/pdk/model.scs', 'tt']],
+                    analyses={'tran': {'stop': '50n', 'errpreset': 'conservative'}}, variables={}, bindings=[],
+                    outputs=SETUP['outputs'], specs=SETUP['specs'], raw_specs={}, initial_conditions=ic,
+                    ic_file='/home/u/.gator/ic/GPDK045_RINGOSC_GATOR__tb__GATOR.scs' if ic else None)
+
+    cfg = config(probes=rows['measurements'], specs=rows['targets'])
+    extras = dict(analyses={'tran': {'stop': '50n', 'errpreset': 'conservative'}}, initial_conditions=conditions)
+    made = save(tmp_path, name='ring_ic', cfg=cfg, extras=extras,
+                commands=dict(setup=setup_writer(tmp_path, answer(conditions)), deck=maestro_netlister(tmp_path)))
+    assert made['runnable'] and made['maestro_matches']
+    [call] = [json.loads(line) for line in (tmp_path / 'setup_calls.jsonl').read_text().splitlines()]
+    assert call['request']['setup']['initial_conditions'] == conditions            # written with the setup, not by hand
+    assert profiles.task_file('ring_ic')['maestro']['initial_conditions'] == conditions
+    (profiles.profile_dir('ring_ic') / 'reference_measurements.json').write_text(json.dumps(dict(origin='real', metrics=dict(freq=1.2e9))))
+    other = dict(conditions, OUT='0.8')
+    again = save(tmp_path, name='ring_ic', task='ring_ic', cfg=cfg, extras=dict(extras, initial_conditions=other),
+                 commands=dict(setup=setup_writer(tmp_path, answer(other)), deck=maestro_netlister(tmp_path)))
+    assert again['changed'] == ['initial_conditions'] and not again['baseline_kept']
+    assert profiles.task_file('ring_ic')['maestro']['initial_conditions'] == other
+
+
 def test_a_maestro_netlist_that_does_not_fit_saves_nothing(tmp_path):
     ready(tmp_path)
     rows = vs.to_rows(SETUP)

@@ -91,6 +91,8 @@ def test_a_proposal_carries_the_setup_and_its_approval_is_bound_to_it(client):
      'MN1 in ring_osc_3stage cannot be set by a variable'),
     (dict(setup=dict(analyses={'ac': {'start': '1'}})), 'Outputs read the analyses tran, which setup.analyses does not set'),
     (dict(setup=dict(analyses='tran')), 'setup.analyses must map an analysis name to its options'),
+    (dict(setup=dict(SETUP, initial_conditions={'OUT 1': '0.9'})), 'a net is named as Virtuoso spells it'),
+    (dict(setup=dict(SETUP, initial_conditions={'OUT': 'half the supply'})), "'half the supply' is not a voltage"),
 ])
 def test_a_setup_that_could_not_be_written_is_refused_before_anyone_can_approve_it(client, result, reason):
     client, _ = client

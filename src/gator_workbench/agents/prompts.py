@@ -54,6 +54,7 @@ PROPOSAL_SCHEMA = {
         'setup': {                                                      # only a `virtuoso_setup` request is asked for one
             'type': 'object', 'additionalProperties': False,
             'properties': {'analyses': {'type': 'object', 'additionalProperties': {'type': 'object', 'additionalProperties': {'type': 'string'}}},
+                           'initial_conditions': {'type': 'object', 'additionalProperties': {'type': 'string'}},
                            'variables': {'type': 'object', 'additionalProperties': {'type': 'string'}},
                            'bindings': {'type': 'array', 'maxItems': 100, 'items': {
                                'type': 'object', 'additionalProperties': False, 'required': ['cell', 'instance', 'parameter', 'variable'],
@@ -202,7 +203,13 @@ def build_prompt(request) -> str:
                   '"Points Per Decade", "dec": "20"}}. Every output needs the analysis it reads.',
                   '- `setup.variables` and `setup.bindings` ONLY for values listed in <working_copy_data> `bindable` (analogLib '
                   'resistors, capacitors, inductors and sources, which nothing is computed from). A PDK device is never bound to '
-                  'a variable. Leave both out when nothing needs one.']
+                  'a variable. Leave both out when nothing needs one.',
+                  '- `setup.initial_conditions` when the circuit does not start by itself: a start voltage per net, e.g. '
+                  '{"OUT": "0.9", "N1": "0", "N2": "0.9"}. A ring oscillator or any other self-starting-in-theory oscillator '
+                  'sits in its symmetric DC point forever in a simulation, so give its stage nets alternating values (0 and the '
+                  'supply) - nets as the netlist spells them, without the leading "/". The backend stores them with the test, so '
+                  'Maestro\'s own runs and the optimizer\'s runs start the same way. Leave it out for a circuit that settles by '
+                  'itself (an amplifier, a bias circuit).']
     if request.kind == 'readiness':
         parts += ['', 'THIS REQUEST: say what is still missing before the RL run can start. Return `checklist`: one entry per '
                   'item of <run_readiness_data>, in its order, the first missing item first; `who` is `agent` ONLY for an item '

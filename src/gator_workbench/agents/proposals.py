@@ -112,8 +112,9 @@ def normalize(request: AgentRequest, result: AgentResult):
 
 
 def _setup(request, raw):
-    """The `setup` part of a virtuoso_setup proposal, reduced to its three parts in their shapes; from any other request
-    it is dropped, not obeyed. What it may contain (functions, bindable values) is checked by the backend on top."""
+    """The `setup` part of a virtuoso_setup proposal, reduced to its four parts in their shapes; from any other request
+    it is dropped, not obeyed. What it may contain (functions, bindable values, net names and voltages) is checked by
+    the backend on top."""
     if request.kind != 'virtuoso_setup' or not isinstance(raw, dict):
         return None
     problems, clean = [], {}
@@ -129,6 +130,12 @@ def _setup(request, raw):
             problems.append('setup.variables must map a variable name to its value')
         else:
             clean['variables'] = {str(k)[:64]: str(v)[:200] for k, v in list(variables.items())[:100]}
+    conditions = raw.get('initial_conditions')
+    if conditions is not None:
+        if not isinstance(conditions, dict):
+            problems.append('setup.initial_conditions must map a net to its start voltage')
+        else:
+            clean['initial_conditions'] = {str(k)[:128]: str(v)[:64] for k, v in list(conditions.items())[:200]}
     bindings = raw.get('bindings')
     if bindings is not None:
         if not isinstance(bindings, list) or any(not isinstance(b, dict) or set(b) != {'cell', 'instance', 'parameter', 'variable'} for b in bindings):

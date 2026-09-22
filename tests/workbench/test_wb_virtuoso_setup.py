@@ -100,6 +100,45 @@ def test_the_spec_answers_of_the_live_installation_are_read():
     assert bridge_setup._q('a"b\\c') == '"a\\"b\\\\c"'
 
 
+def test_initial_conditions_travel_as_a_file_the_test_includes():
+    """A circuit that does not start by itself (an oscillator sits in its symmetric DC point) gets a start voltage per
+    net. They are one ic file on the simulator host, registered with the test as a model file without a section, so
+    Maestro's netlist includes it - and the deck's MODEL include is the one that names a section."""
+    text = vs.ic_file_text({'OUT': '0.9', 'N1': 0, 'N2': '900m'})
+    assert text.splitlines()[1] == 'ic N1=0 N2=0.9 OUT=0.9'                      # one order, one spelling
+    assert vs.parse_ic_file(text) == {'N1': '0', 'N2': '0.9', 'OUT': '0.9'}
+    assert vs.parse_ic_file('// nothing here\n') == {} and vs.ic_file_text({}).splitlines() == [vs.IC_HEADER.strip()]
+    assert vs.differences(dict(initial_conditions={'OUT': '0.9'}), dict(initial_conditions={'OUT': '0.8', 'N1': '0'})) == [
+        'Initial condition on N1: the task says (none), Virtuoso has 0',
+        'Initial condition on OUT: the task says 0.9, Virtuoso has 0.8']
+    problems = vs.validate(dict(initial_conditions={'OUT 1': '1', 'N1': 'later'}))
+    assert any('a net is named as Virtuoso spells it' in p for p in problems) and any("'later' is not a voltage" in p for p in problems)
+    head = 'include "/home/u/.gator/ic/L__T__GATOR.scs"\ninclude "/pdk/gpdk045.scs" section=tt\n'
+    assert vs.deck_include(head) == ('/pdk/gpdk045.scs', 'tt') and len(vs.deck_includes(head)) == 2
+    assert vs.deck_include('include "/pdk/gpdk045.scs"\n') == ('/pdk/gpdk045.scs', None)       # a task without conditions
+    with pytest.raises(vs.SetupError, match='no single model include'):
+        vs.deck_include('include "/a.scs"\ninclude "/b.scs"\n')
+
+
+def test_the_conditions_are_written_with_the_setup_and_read_back(tmp_path):
+    imported(tmp_path)
+    working_copy.make(probe(tmp_path), 'lab', LIB, CELL, command=fake_writer(tmp_path))
+    readback = working_copy.native_cells.cell_dir(LIB, CELL) / 'testbench_readback.json'
+    readback.write_text(json.dumps(dict(instances=[dict(name='V0', lib='analogLib', cell='vdc', params=dict(vdc='1.0', srcType='dc')),
+                                                   dict(name='XU1', lib=LIB, cell=CELL, params={})])))
+    conditions = {'OUT': '0.9', 'N1': '0'}
+    answer = dict(written_answer(), initial_conditions=conditions, ic_file='/home/u/.gator/ic/x.scs')
+    result = working_copy.write_setup(probe(tmp_path), 'lab', LIB, CELL, dict(SETUP, initial_conditions=conditions),
+                                      command=setup_writer(tmp_path, answer))
+    [call] = [json.loads(line) for line in (tmp_path / 'setup_calls.jsonl').read_text().splitlines()]
+    assert call['request']['setup']['initial_conditions'] == conditions and result['matches']
+    assert result['initial_conditions'] == conditions
+    gone = working_copy.write_setup(probe(tmp_path), 'lab', LIB, CELL, dict(SETUP, initial_conditions=conditions),
+                                    command=setup_writer(tmp_path, dict(written_answer(), initial_conditions={})))
+    assert not gone['matches'] and gone['differences'] == ['Initial condition on N1: the task says 0, Virtuoso has (none)',
+                                                           'Initial condition on OUT: the task says 0.9, Virtuoso has (none)']
+
+
 def setup_writer(tmp_path, answer):
     """Stands in for the setup ops of `python -m gator_workbench.bridge_setup`: logs the request, answers `answer`."""
     script = tmp_path / 'setup_writer.py'

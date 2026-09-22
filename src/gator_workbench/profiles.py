@@ -662,7 +662,9 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
             setup = virtuoso_setup.from_rows(config, model_files=extras.get('model_files') or base.get('model_files') or (),
                                              analyses=extras['analyses'] if 'analyses' in extras else base.get('analyses'),
                                              variables=extras['variables'] if 'variables' in extras else base.get('variables'),
-                                             bindings=extras['bindings'] if 'bindings' in extras else base.get('bindings'))
+                                             bindings=extras['bindings'] if 'bindings' in extras else base.get('bindings'),
+                                             initial_conditions=(extras['initial_conditions'] if 'initial_conditions' in extras
+                                                                 else base.get('initial_conditions')))
             written = working_copy.write_setup_on(monitor, profile_id, target, setup, command=commands.get('setup'))
             if not written['matches']:
                 raise ProfileError('The copy\'s Maestro setup reads back differently from the rows: ' + '; '.join(written['differences']))
@@ -714,6 +716,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
             measurement=measurement,
             maestro=None if maestro is None else dict(test=maestro['test'], model_files=maestro['model_files'], analyses=maestro['analyses'],
                                                       variables=maestro['variables'], bindings=maestro['bindings'],
+                                                      initial_conditions=maestro['initial_conditions'],
                                                       outputs=maestro['outputs'], specs=maestro['specs']),
             parameters=[row.model_dump(mode='json', exclude_none=True) for row in result['rows']],
             probes=[m.model_dump(mode='json', exclude_none=True) for m in config.measurements],

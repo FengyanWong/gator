@@ -97,8 +97,10 @@ export function WorkingCopy({ profileId, library, cell, testbench, record, confi
 
   const fresh = !!setup && setup.after === rowsNow(config);
   const diffs: string[] | undefined = fresh ? setup.editor_differences : undefined;
+  const conditions = Object.keys(setup?.initial_conditions ?? {}).length;
   const summary = setup && setup.test ? [`${setup.outputs.length} output${setup.outputs.length === 1 ? '' : 's'}`, `${setup.specs.length} spec${setup.specs.length === 1 ? '' : 's'}`,
     `${Object.keys(setup.variables ?? {}).length} variable${Object.keys(setup.variables ?? {}).length === 1 ? '' : 's'}`,
+    ...(conditions ? [`${conditions} start voltage${conditions === 1 ? '' : 's'}`] : []),
     `analyses: ${Object.keys(setup.analyses ?? {}).join(', ') || 'none'}`].join(', ') : null;
   return (
     <div className="working-copy">

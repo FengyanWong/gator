@@ -122,6 +122,32 @@ def test_a_maestro_measured_task_is_compared_with_its_maestro_test(tmp_path):
     assert reads.count('read_setup') == 2                                     # a read, never a write
 
 
+def test_a_start_voltage_changed_in_virtuoso_stops_the_run(tmp_path):
+    """The initial conditions of a task are part of what is compared: a start voltage changed in the copy (or an ic file
+    that is gone) is a difference, so nothing starts until the task is saved again."""
+    ready(tmp_path)
+    rows = vs.to_rows(SETUP)
+    conditions = {'N1': '0', 'OUT': '0.9'}
+
+    def answer(ic):
+        return dict(exists=True, tests=['GATOR'], test='GATOR', model_files=[['/pdk/model.scs', 'tt']], analyses={'tran': {'stop': '50n'}},
+                    variables={}, bindings=[], outputs=SETUP['outputs'], specs=SETUP['specs'], raw_specs={}, initial_conditions=ic)
+
+    save(tmp_path, name='ring_ic', cfg=cell_config(probes=rows['measurements'], specs=rows['targets']),
+         extras=dict(analyses={'tran': {'stop': '50n'}}, initial_conditions=conditions),
+         commands=dict(setup=setup_writer(tmp_path, answer(conditions)), deck=maestro_netlister(tmp_path)))
+    cfg = task_config(tmp_path, 'ring_ic')
+    skipped = OK_STEPS[:3] + [dict(step='deck', ok=True, skipped=True, detail=profile_preflight.DECK_LATER)]
+    same = consistency.check(probe(tmp_path), 'lab', cfg, commands=dict(preflight=preflight_process(tmp_path, skipped),
+                                                                        setup=setup_writer(tmp_path, answer(conditions))))
+    assert same['ok']
+    result = consistency.check(probe(tmp_path), 'lab', cfg, commands=dict(preflight=preflight_process(tmp_path, skipped, 'maestro'),
+                                                                           setup=setup_writer(tmp_path, answer({'OUT': '0.5'}))))
+    [failed] = [s for s in result['steps'] if not s['ok']]
+    assert failed['step'] == 'maestro' and 'Initial condition on OUT: the task says 0.9, Virtuoso has 0.5' in failed['detail']
+    assert 'Initial condition on N1' in failed['detail'] and 'Save task' in failed['fix']
+
+
 def test_a_start_is_refused_on_a_difference_and_the_check_is_recorded_when_it_passes(tmp_path, monkeypatch):
     cfg = saved_ring(tmp_path)
     outcome = dict(steps=OK_STEPS[:2] + [dict(step='export', ok=False, detail='ValueError: topology differs')])

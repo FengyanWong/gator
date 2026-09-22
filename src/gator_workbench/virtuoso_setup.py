@@ -3,6 +3,11 @@
 One Maestro test (``GATOR``) on the working copy's testbench holds what the simulation needs and measures:
 
 * ``model_files`` - the model file and section (``maeSetEnvOption`` ``modelFiles``);
+* ``initial_conditions`` - a start voltage per net, for a circuit that does not start by itself (an oscillator sits in
+  its symmetric DC point forever). They are written into a small file on the simulator host and registered with the
+  test as a model file without a section, so Maestro's own netlist ``include``s it and every run deck built from that
+  netlist starts the circuit the same way (live probe 2026-09-22: Maestro lists it as ``("<path>")`` and netlists
+  ``include "<path>"`` above the PDK model include);
 * ``analyses`` - the enabled analyses and the options the workbench set (``maeSetAnalysis``);
 * ``outputs`` - named Cadence calculator expressions on testbench nets and branches (``maeAddOutput``): the Probes;
 * ``specs`` - a limit on an output (``maeSetSpec`` ``?gt`` / ``?lt`` / ``?range``): the starting Specs rows;
@@ -40,6 +45,10 @@ pow min max leafValue calcVal iinteg dutyCycle pavg psd spectralPower thd harmon
 compression compressionVRI stddev
 '''.split())
 NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$')
+# A signal an `ic` statement may name: a node of the testbench (OUT), one inside a subcircuit (XU1.N1) or a plain
+# number, as Spectre spells them ("ic 7=0 out=1 OpAmp1.comp=5", spectre -h ic).
+IC_NET = re.compile(r'^[A-Za-z_0-9][A-Za-z0-9_.]{0,127}$')
+IC_HEADER = '// GATOR initial conditions - written with the task, do not edit\n'
 TOKEN = re.compile(r'''\s*(?:(?P<string>"(?:[^"\\]|\\.)*")|(?P<number>(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?[a-zA-Z]?)
                        |(?P<key>\?[A-Za-z_]\w*)|(?P<name>[A-Za-z_]\w*)|(?P<op>[-+*/(),])|(?P<bad>\S))''', re.X)
 ANALYSIS_OF = {'VT': 'tran', 'IT': 'tran', 'VF': 'ac', 'IF': 'ac', 'VDC': 'dc', 'IDC': 'dc', 'OP': 'dc', 'VN': 'noise', 'VN2': 'noise'}
@@ -125,6 +134,7 @@ def normalize(setup) -> dict:
     return dict(
         test=setup.get('test') or TEST, simulator_mode=setup.get('simulator_mode') or SIMULATOR_MODE,
         model_files=sorted([str(f), str(s)] for f, s in setup.get('model_files') or []),
+        initial_conditions={str(k): canonical(v) for k, v in sorted((setup.get('initial_conditions') or {}).items())},
         analyses={name: {str(k): canonical(v) for k, v in (options or {}).items()} for name, options in sorted((setup.get('analyses') or {}).items())},
         variables={str(k): canonical(v) for k, v in sorted((setup.get('variables') or {}).items())},
         bindings=sorted((dict(cell=b['cell'], instance=b['instance'], parameter=b['parameter'], variable=b['variable'])
@@ -161,6 +171,13 @@ def validate(setup, *, bindable=None) -> list[str]:
     for name in s['variables']:
         if not NAME.match(name):
             problems.append(f'Variable name {name!r} must be letters, digits and "_"')
+    for net, value in s['initial_conditions'].items():
+        if not IC_NET.match(net):
+            problems.append(f'Initial condition on {net!r}: a net is named as Virtuoso spells it (OUT, XU1.N1), without spaces')
+        try:
+            _plain(value)
+        except (SetupError, ValueError):
+            problems.append(f'Initial condition on {net}: {value!r} is not a voltage')
     for binding in s['bindings']:
         if binding['variable'] not in s['variables']:
             problems.append(f'{binding["instance"]}.{binding["parameter"]} is bound to {binding["variable"]}, which is not a variable of the setup')
@@ -186,6 +203,10 @@ def differences(expected, found) -> list[str]:
         out.append(f'Simulator mode: the task says {e["simulator_mode"]}, Virtuoso has {f["simulator_mode"]}')
     if e['model_files'] != f['model_files']:
         out.append(f'Model files: the task says {e["model_files"]}, Virtuoso has {f["model_files"]}')
+    for net in sorted(set(e['initial_conditions']) | set(f['initial_conditions'])):
+        if e['initial_conditions'].get(net) != f['initial_conditions'].get(net):
+            out.append(f'Initial condition on {net}: the task says {e["initial_conditions"].get(net, "(none)")}, '
+                       f'Virtuoso has {f["initial_conditions"].get(net, "(none)")}')
     for name in sorted(set(e['analyses']) | set(f['analyses'])):
         if name not in f['analyses']:
             out.append(f'Analysis {name} is not enabled in Virtuoso')
@@ -220,7 +241,7 @@ def probe_id(output_name) -> str:
     return f'm_{output_name}'
 
 
-def from_rows(config, *, test=TEST, model_files=(), analyses=None, variables=None, bindings=None) -> dict:
+def from_rows(config, *, test=TEST, model_files=(), analyses=None, variables=None, bindings=None, initial_conditions=None) -> dict:
     """The setup a configuration's rows ask for: every `ade_output` Probes row is an output (its `signal` holds the
     expression), every active Specs row whose equation is exactly one such probe is that output's spec. Specs over
     several probes, and every optimizer-only field, stay in the workbench."""
@@ -242,6 +263,7 @@ def from_rows(config, *, test=TEST, model_files=(), analyses=None, variables=Non
     # None = "keep what the copy has": the write leaves that part of the Maestro setup alone.
     return dict(test=test, model_files=[list(m) for m in model_files], analyses=None if analyses is None else dict(analyses),
                 variables=None if variables is None else dict(variables), bindings=None if bindings is None else list(bindings),
+                initial_conditions=None if initial_conditions is None else dict(initial_conditions),
                 outputs=outputs, specs=specs)
 
 
@@ -314,12 +336,44 @@ def split_deck(deck, circuit) -> tuple[str, str]:
     return head, tail
 
 
+def deck_includes(head) -> list[tuple[str, str | None]]:
+    """Every `include` of a deck head, in order: (file, section or None)."""
+    return [(m.group(1), m.group(2)) for m in re.finditer(r'(?m)^include\s+"([^"]+)"(?:\s+section=(\S+))?', head)]
+
+
 def deck_include(head) -> tuple[str, str | None]:
-    """(model file, section) of the model include in a deck head."""
-    match = re.search(r'(?m)^include\s+"([^"]+)"(?:\s+section=(\S+))?', head)
-    if not match:
+    """(model file, section) of the MODEL include in a deck head: the one that names a section. A task with initial
+    conditions has a second include - the ic file - which names none, so the section decides which is the model."""
+    found = deck_includes(head)
+    with_section = [item for item in found if item[1]]
+    if len(with_section) == 1:
+        return with_section[0]
+    if not found:
         raise SetupError('The deck head has no model include')
-    return match.group(1), match.group(2)
+    if len(found) == 1:
+        return found[0]
+    listed = ', '.join(f'{f} (section {s})' if s else f for f, s in found)
+    raise SetupError(f'The deck head has no single model include with a section: {listed}')
+
+
+def ic_file_text(conditions) -> str:
+    """The ic file of a task: one `ic` statement, the nets in one order, numbers in one spelling."""
+    items = ' '.join(f'{net}={canonical(value)}' for net, value in sorted((conditions or {}).items()))
+    return IC_HEADER + (f'ic {items}\n' if items else '')
+
+
+def parse_ic_file(text) -> dict:
+    """The conditions an ic file states ({net: value}); comments and anything else are ignored."""
+    found = {}
+    for line in (text or '').splitlines():
+        statement = line.split('//')[0].strip()
+        if not statement.startswith('ic ') and statement != 'ic':
+            continue
+        for item in statement[3:].split():
+            net, _, value = item.partition('=')
+            if net and value:
+                found[net] = value
+    return found
 
 
 def deck_analyses(tail) -> list[str]:

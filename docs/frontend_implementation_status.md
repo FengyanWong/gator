@@ -94,6 +94,7 @@ budget).
 | `80f18d2` | 09-22 16:15 | 7.56, 7.59 | |
 | `a662753` | 09-22 16:43 | 7.63 | |
 | `f283c78` | 09-22 16:47 | - | this split: the index + `docs/workbench-log/` (docs only; described in 7.64) |
+| `8a4b363` | 09-22 17:27 | 7.65 | also the 7.63 note on the settings slip |
 | - | - | 7.53 | in the working tree, not committed when this row was written |
 
 ## Entries
@@ -167,3 +168,4 @@ Newest last. The date, the session and the request are in each title.
 | 7.65 | Save task moves up to the editors' tab line; fewer buttons, as the flow has them (2026-09-22 ~17:10, same session as 7.55 / 7.57 / 7.60 / 7.61 / 7.63, explicit user request) | [7.61-and-later.md](workbench-log/7.61-and-later.md) |
 | 7.66 | Real runs write any value the PDK's property form lets you type, not only transistor widths (2026-09-22 evening, same session as 7.54, explicit user request) | [7.61-and-later.md](workbench-log/7.61-and-later.md) |
 | 7.64 | Repository review: bugs fixed, speed-ups, dead code removed, the record split (2026-09-22, separate session "Project repo optimization review", user: "Check the project repo, is there anything to be optimized or deleted", then chose every proposed action) | [7.61-and-later.md](workbench-log/7.61-and-later.md) |
+| 7.67 | A task can start a circuit that does not start by itself: initial conditions (2026-09-22 evening, same session as 7.55 / 7.57 / 7.60 / 7.61 / 7.63 / 7.65, explicit user request) | [7.61-and-later.md](workbench-log/7.61-and-later.md) |

@@ -358,6 +358,8 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
             <table className="grid small"><tbody>
               {Object.entries(proposal.setup.analyses ?? {}).map(([name, options]: [string, any]) => <tr key={`a-${name}`}><td>analysis {name}</td>
                 <td>{Object.entries(options).map(([k, v]) => `${k}=${v}`).join('  ')}</td></tr>)}
+              {Object.entries(proposal.setup.initial_conditions ?? {}).map(([net, value]: [string, any]) => <tr key={`i-${net}`}>
+                <td>start voltage on {net}</td><td>{String(value)}</td></tr>)}
               {Object.entries(proposal.setup.variables ?? {}).map(([name, value]: [string, any]) => <tr key={`v-${name}`}><td>variable {name}</td><td>{String(value)}</td></tr>)}
               {(proposal.setup.bindings ?? []).map((b: Json) => <tr key={`b-${b.cell}-${b.instance}-${b.parameter}`}><td>{b.instance}.{b.parameter} in {b.cell}</td><td>= {b.variable}</td></tr>)}
             </tbody></table>

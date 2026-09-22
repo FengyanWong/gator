@@ -150,6 +150,7 @@ class SetupBody(CopyBody):
     analyses: dict | None = None        # write from rows: the analyses to set; None keeps what the copy has
     variables: dict | None = None
     bindings: list[dict] | None = None
+    initial_conditions: dict | None = None      # net -> start voltage; None keeps what the copy has
 
 
 class TaskSaveBody(Body):
@@ -662,7 +663,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             if body.config is not None and found.get('test'):
                 config = parse_config(body.config)
                 ours = virtuoso_setup.from_rows(config, model_files=found['model_files'], analyses=found['analyses'],
-                                                variables=found['variables'], bindings=found['bindings'])
+                                                variables=found['variables'], bindings=found['bindings'],
+                                                initial_conditions=found.get('initial_conditions'))
                 found['editor_differences'] = virtuoso_setup.differences(ours, found)
             return found
         return _virtuoso_write(read)
@@ -677,7 +679,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         if body.setup is None and body.config is None:
             fail(422, 'Nothing to write: send the rows (config) or a setup')
         setup = body.setup if body.setup is not None else virtuoso_setup.from_rows(          # a part not sent is kept as the copy has it
-            parse_config(body.config), analyses=body.analyses, variables=body.variables, bindings=body.bindings)
+            parse_config(body.config), analyses=body.analyses, variables=body.variables, bindings=body.bindings,
+            initial_conditions=body.initial_conditions)
         return _virtuoso_write(lambda: working_copy.write_setup(monitor, body.profile_id, body.library, body.cell, setup))
 
     # ------------------------------------------------------------------ saved tasks: "Save task", "Save as", the task file
@@ -1334,7 +1337,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
 
     def _setup_of(config, proposal):
         setup = proposal.get('setup') or {}
-        return virtuoso_setup.from_rows(config, analyses=setup.get('analyses'), variables=setup.get('variables'), bindings=setup.get('bindings'))
+        return virtuoso_setup.from_rows(config, analyses=setup.get('analyses'), variables=setup.get('variables'),
+                                        bindings=setup.get('bindings'), initial_conditions=setup.get('initial_conditions'))
 
     def check_setup(request, proposal):
         """A proposed Virtuoso setup must be writable as it stands: only allowed calculator functions, variables only on

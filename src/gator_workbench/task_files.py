@@ -25,6 +25,8 @@ import json
 
 from pydantic import ValidationError
 
+from . import virtuoso_setup
+
 FORMAT = 'gator-task-1'
 HELP = {
     'what this is': 'The task file: everything this task is, in one place. Edit it here or in the three editors. '
@@ -36,9 +38,12 @@ HELP = {
                    'the two verified circuit types, measured by the workbench. Found from the probes when you save. '
                    'expected_frequency_hz (ring_oscillator only): a rough oscillation frequency; it sizes the transient.',
     'maestro': 'The copy\'s Maestro test. Edit analyses (e.g. {"tran": {"stop": "50n"}}), variables '
-               '({"VSUP": "1.0"}) and bindings ([{"cell": ..., "instance": "V0", "parameter": "vdc", "variable": "VSUP"}]; '
-               'only analogLib resistors, capacitors, inductors and sources) here. Outputs and specs come from the '
-               'Probes and Specs rows.',
+               '({"VSUP": "1.0"}), bindings ([{"cell": ..., "instance": "V0", "parameter": "vdc", "variable": "VSUP"}]; '
+               'only analogLib resistors, capacitors, inductors and sources) and initial_conditions here. Outputs and '
+               'specs come from the Probes and Specs rows. initial_conditions ({"OUT": "0.9", "N1": "0"}) give nets a '
+               'start voltage, which a circuit that does not start by itself needs - an oscillator stays in its '
+               'symmetric DC point without them. They are stored in a small file on the simulator host and registered '
+               'with the test, so Maestro\'s own runs and every run of the workbench start the same way.',
     'parameters': 'Parameters rows: what may vary - instance path as in the circuit (e.g. XU1/MN1), parameter, unit, '
                   'range, step, grouping. In Virtuoso a run writes any value the property form of the instance lets you '
                   'type (read with the cell): widths, lengths, finger counts, multipliers, capacitor sides ...',
@@ -65,11 +70,13 @@ def draft(config, *, name, cell, copy, saved=None, extras=None, setup=None) -> d
     saved, extras = saved or {}, extras or {}
     base_maestro = saved.get('maestro') or {}
     if setup and setup.get('test'):
-        base_maestro = dict(base_maestro, analyses=base_maestro.get('analyses') or setup.get('analyses'),
+        base_maestro = dict(base_maestro, initial_conditions=base_maestro.get('initial_conditions') or setup.get('initial_conditions'),
+                            analyses=base_maestro.get('analyses') or setup.get('analyses'),
                             variables=base_maestro.get('variables') or setup.get('variables'),
                             bindings=base_maestro.get('bindings') or setup.get('bindings'),
                             model_files=base_maestro.get('model_files') or setup.get('model_files'))
-    maestro = dict(analyses=extras.get('analyses', base_maestro.get('analyses') or {}),
+    maestro = dict(initial_conditions=extras.get('initial_conditions', base_maestro.get('initial_conditions') or {}),
+                   analyses=extras.get('analyses', base_maestro.get('analyses') or {}),
                    variables=extras.get('variables', base_maestro.get('variables') or {}),
                    bindings=extras.get('bindings', base_maestro.get('bindings') or []),
                    model_files=extras.get('model_files', base_maestro.get('model_files') or []))
@@ -140,6 +147,12 @@ def parse(text) -> tuple[dict, dict, list[str]]:
             problems.append('maestro.variables must map a variable name to its value')
         else:
             extras['variables'] = {str(k): str(v) for k, v in variables.items()}
+        conditions = maestro.get('initial_conditions', {})
+        if not isinstance(conditions, dict):
+            problems.append('maestro.initial_conditions must map a net to its start voltage, e.g. {"OUT": "0.9"}')
+        else:
+            problems += virtuoso_setup.validate(dict(initial_conditions=conditions))
+            extras['initial_conditions'] = {str(k): str(v) for k, v in conditions.items()}
         if not isinstance(bindings, list) or any(not isinstance(b, dict) or set(b) != {'cell', 'instance', 'parameter', 'variable'}
                                                    for b in bindings):
             problems.append('maestro.bindings must list {"cell", "instance", "parameter", "variable"} objects')
@@ -164,10 +177,10 @@ def what_changed(old, new) -> set[str]:
     if (om.get('kind'), om.get('expected_frequency_hz')) != (nm.get('kind'), nm.get('expected_frequency_hz')):
         changed.add('measurement')
     oa, na = old.get('maestro') or {}, new.get('maestro') or {}
-    for part in ('analyses', 'variables', 'bindings'):
+    for part in ('analyses', 'variables', 'bindings', 'initial_conditions'):
         if json.dumps(oa.get(part) or None, sort_keys=True) != json.dumps(na.get(part) or None, sort_keys=True):
             changed.add(part)
     return changed
 
 
-BASELINE_PARTS = {'parameters', 'probes', 'measurement', 'analyses', 'variables', 'bindings'}
+BASELINE_PARTS = {'parameters', 'probes', 'measurement', 'analyses', 'variables', 'bindings', 'initial_conditions'}

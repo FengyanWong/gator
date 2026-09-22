@@ -10,7 +10,8 @@
 //   - the proposal shows its rows and the Maestro setup (analyses, variables, bindings) with where it will be written;
 //   - approving says what happened in Virtuoso: written and read back, or rows applied and the copy not reachable;
 //   - what the agent wrote into the copy wins over the same parts a task file set on the page earlier: Save task sends
-//     them no more (it takes them from the copy); a failed write leaves them.
+//     them no more (it takes them from the copy); a failed write hands the approved setup to Save task instead (it writes
+//     the copy later - "Write to Virtuoso" is gone, 2026-09-22). Save task sits in the editors' tab line.
 // Run (Windows node sees a WSL variable only when WSLENV names it):
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/agent_setup_check.mjs)"
 import { spawn } from 'node:child_process';
@@ -23,7 +24,7 @@ const PORT = 9398, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:87
 const out = process.argv[2] ?? tmpdir();
 const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-setup-'));
 const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
+  '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let failures = 0; const consoleErrors = [];
 const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
@@ -83,7 +84,7 @@ try {
         ? { config, validation: {}, virtuoso: { written: true, matches: true, differences: [], copy: PROPOSAL.virtuoso_copy },
           note: `The rows were applied and the setup was written into the working copy ${COPY}/${TB} (not your cell), then read back: it matches. No simulation was started.` }
         : { config, validation: {}, virtuoso: { written: false, error: 'The connection gate blocked writing the Maestro setup' },
-          note: 'The rows were applied; writing into the working copy failed: The connection gate blocked writing the Maestro setup Press "Write to Virtuoso" when it can be reached.' });
+          note: 'The rows were applied; writing into the working copy failed: The connection gate blocked writing the Maestro setup Once Virtuoso can be reached, press Save task: it writes the rows and the approved setup into the copy.' });
     }
     refused.push(`${request.method} ${pathname}`);
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${pathname} is not expected` } });
@@ -104,7 +105,7 @@ try {
   const ASK = `[...(${PANEL}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === 'Ask the agent to set up')`;
   const BOX = `document.querySelector('.compose-main textarea')`;
   const stored = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')`);
-  const SAVE_BUTTON = text => `[...(${PANEL}?.querySelectorAll('.task-save button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
+  const SAVE_BUTTON = text => `[...document.querySelectorAll('.editors .tabs .task-save button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const POPUP = `window.open('', 'gator-task-file')`;                         // the same name returns the open window, unchanged
   const popupEval = body => evaluate(`(() => { const w = ${POPUP}; const d = w.document; ${body} })()`, true);
   const applyTaskFile = async () => {                                         // the file sets analyses on the page (TaskSave's extras)
@@ -177,9 +178,10 @@ try {
   await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
   for (let i = 0; i < 40 && !(await evaluate(`!!document.querySelector('.setup-proposal')`)); i++) await sleep(150);
   await evaluate(`[...document.querySelectorAll('.confirm button')].find(b => b.textContent.trim() === 'Approve, apply and write the copy').click()`); await sleep(1200);
-  check('if the copy cannot be reached the rows are applied and the page says what to do', (await chatText()).includes('writing into the working copy failed') && (await chatText()).includes('Write to Virtuoso'));
+  check('if the copy cannot be reached the rows are applied and the page says what to do', (await chatText()).includes('writing into the working copy failed') && (await chatText()).includes('press Save task'));
   saved = await saveTask();
-  check('a write that failed leaves the file\'s analyses for Save task', saved?.extras?.analyses?.tran?.stop === '99n', JSON.stringify(saved?.extras));
+  check('a write that failed hands the approved setup to Save task, over the file\'s analyses; the rest stays', saved?.extras?.analyses?.tran?.stop === '50n'
+    && saved.extras.variables?.VSUP === '1.0' && saved.extras.bindings?.[0]?.instance === 'V0' && saved.extras.expected_frequency_hz === 1.2e9, JSON.stringify(saved?.extras));
   check('no other writing request was made', refused.length === 0, refused.join(' | '));
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
   ws.close();

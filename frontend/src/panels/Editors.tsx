@@ -33,9 +33,14 @@ export function DiffView({ diff }: { diff: Json[] }) {
       </tr>)))}</tbody></table>;
 }
 
-export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRedo, save, savedAt, validation, onAgent }:
+/** `taskSlot` / `taskNotes`: where the circuit panel puts "Save task" (right end of the tab line) and its messages (under
+ *  the toolbar) - the save sits with the rows it stores (user request 2026-09-22). No "Save" button of its own any more:
+ *  the configuration is kept in this browser by itself (store.ts, 0.8 s after each change), and a second "Save" next to
+ *  "Save task" only confused. */
+export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRedo, validation, onAgent, taskSlot, taskNotes }:
   { schema: Json; config: Json; setConfig: (c: Json | ((c: Json) => Json)) => void; undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean;
-    save: () => void; savedAt: string | null; validation: Json; onAgent: (kind: string, selection: Json[]) => void }) {
+    validation: Json; onAgent: (kind: string, selection: Json[]) => void;
+    taskSlot: (element: HTMLElement | null) => void; taskNotes: (element: HTMLElement | null) => void }) {
   const [tab, setTab] = useState<Section>('parameters');
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [help, setHelp] = useState<Json>(null);
@@ -78,21 +83,21 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
 
   return (
     <section className="panel editors">
-      <div className="tabs">{(Object.keys(TITLES) as Section[]).map(s => <button key={s} className={s === tab ? 'active' : ''} onClick={() => { setTab(s); setSelected({}); }}>{TITLES[s]} ({(config[s] ?? []).length})</button>)}</div>
+      <div className="tabs">{(Object.keys(TITLES) as Section[]).map(s => <button key={s} className={s === tab ? 'active' : ''} onClick={() => { setTab(s); setSelected({}); }}>{TITLES[s]} ({(config[s] ?? []).length})</button>)}
+        <span className="tab-actions" ref={taskSlot} /></div>
       <div className="toolbar">
         <button onClick={add}>Add</button>
         <button disabled={!selection.length} onClick={remove}>Delete selected</button>
         <button disabled={!canUndo} onClick={undo}>Undo</button>
         <button disabled={!canRedo} onClick={redo}>Redo</button>
-        <button onClick={save} title="Keeps the configuration in this browser. A started run stores its own effective_config.json.">Save</button>
         <button onClick={() => saveJson(`${config.project.task_name}.config.json`, config)}>Export JSON</button>
         <button onClick={() => file.current?.click()}>Import JSON...</button>
         <input ref={file} type="file" accept="application/json" hidden onChange={e => e.target.files?.[0] && importJson(e.target.files[0])} />
         <span className="spacer" />
         <button onClick={() => onAgent(tab, [])} title="Ask the agent for a proposal for this tab. You review a diff; nothing is applied automatically.">Draft with agent...</button>
         <button disabled={!selection.length} onClick={() => onAgent('modify_fields', selection)}>Modify selected with agent...</button>
-        {savedAt && <span className="hint">saved {savedAt.slice(11, 19)}Z</span>}
       </div>
+      <div className="task-notes" ref={taskNotes} />
       {tab === 'parameters' && <p className="fact">Independent action variables: <b>{validation?.facts?.independent_action_variables ?? '?'}</b> of {rows.length} rows.
         Equal initial values do not imply a binding. The policy's proposed action and the executed (projected/quantized) value are both recorded.</p>}
       {tab === 'targets' && <p className="fact spec-probes">Each spec judges its <b>equation</b>, written with Probe IDs, numbers, + - * / ** and brackets

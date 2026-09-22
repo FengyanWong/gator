@@ -48,9 +48,9 @@ const ROW_SECTIONS = ['parameters', 'targets', 'measurements'];
 const sameRows = (config: Json, starter: Json) => ROW_SECTIONS.every(s => JSON.stringify(config[s] ?? []) === JSON.stringify(starter[s] ?? []));
 const noRows = (config: Json) => ROW_SECTIONS.every(s => !(config[s] ?? []).length);
 
-export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, meta, onAgent }:
+export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, meta, onAgent, taskSlot, taskNotes }:
   { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null; meta: Json;
-    onAgent: (kind: string, selection: Json[], prompt?: string) => void }) {
+    onAgent: (kind: string, selection: Json[], prompt?: string) => void; taskSlot: HTMLElement | null; taskNotes: HTMLElement | null }) {
   const [tasks, setTasks] = useState<Json[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [native, setNative] = useState<Json>(null);
@@ -478,7 +478,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
                 Start stays disabled.</p>
               <p>Next: make the working copy, then ask the agent to set it up - it says what the circuit is and proposes what to vary, what
                 to measure (Maestro outputs, with their analyses) and specs. Its answer is a proposal in the Agent tab; once you approve it there,
-                the three editors are filled and the setup is written into the working copy (never into your cell) and read back.</p>
+                the three editors are filled and the setup is written into the working copy (never into your cell) and read back. Change
+                any row you like, then press <b>Save task</b>.</p>
             </details>
             {(circuit.circuit?.testbench_cell ?? null) !== (ref.testbench_cell ?? null) && (
               <p className="warn tb-stale">This copy was read {circuit.circuit?.testbench_cell ? <>through <code>{circuit.circuit.testbench_cell}</code></> : 'without a testbench'}.
@@ -511,9 +512,15 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
               {Object.keys(noteHere.found.not_fitting ?? {}).length > 0 && <details className="more hint"><summary>Why no circuit type fits</summary>
                 <ul className="steps-list">{Object.entries(noteHere.found.not_fitting).map(([type, why]: [string, any]) => <li key={type}><b>{type}</b>: {why}</li>)}</ul></details>}
             </>)}
-            <p><b>Then save it as a task.</b></p>
+            {/* The save itself sits at the right end of the editors' tab line (TaskSave portals, user request 2026-09-22). */}
+            <p><b>Then save it as a task:</b> <b>Save task</b> is above the editors, next to their tabs.</p>
+            <details className="more hint"><summary>What Save task does</summary>
+              <p>It checks the rows, makes the working copy in Virtuoso say what the task says (for a task measured by Maestro: its outputs, specs
+                and analyses, read back afterwards), reads the copy into the workbench again and stores the task file with the task's files next
+                to it. No simulation. Saving again makes the next revision of the same task; the recorded baseline is kept only if what is
+                measured did not change. <b>Save as</b> makes another task, with a copy of its own in Virtuoso.</p></details>
             <TaskSave profileId={profileId} library={ref.library} cell={ref.cell} task={null} hasCopy={!!circuit.working_copy?.verified}
-              config={config} setConfig={setConfig} onSaved={taskSaved} />
+              config={config} setConfig={setConfig} onSaved={taskSaved} bar={taskSlot} notes={taskNotes} />
           </div>)}
         {circuit.generated_profile && !circuit.baseline_recorded && <p className="warn">This task has no real baseline yet: begin with
           <b> Single baseline simulation</b> (one real Spectre run, asks for your budget) before an optimization run.</p>}
@@ -523,7 +530,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           <div className="note">
             <TaskSave profileId={profileId} library={null} cell={null} task={generatedName}
               revision={tasks.find(t => t.task_key === ref.task_id)?.revision ?? null} hasCopy
-              config={config} setConfig={setConfig} onSaved={taskSaved} />
+              config={config} setConfig={setConfig} onSaved={taskSaved} bar={taskSlot} notes={taskNotes} />
             <p><b>Before every run:</b> Start, Single baseline simulation and Resume first check that the editors, this saved task and its
               working copy in Virtuoso agree. The check simulates nothing; a difference starts nothing and says what to do.</p>
             <details className="more"><summary>What the check compares</summary>

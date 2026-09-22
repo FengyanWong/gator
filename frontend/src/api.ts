@@ -74,7 +74,6 @@ export const api = {
   nativeRead: (profile_id: string, library: string, cell: string) => call('POST', '/api/virtuoso/read', { profile_id, library, cell }),
   workingCopy: (profile_id: string, library: string, cell: string) => call('POST', '/api/virtuoso/copy', { profile_id, library, cell }),
   setupRead: (profile_id: string, library: string, cell: string, config: Json | null) => call('POST', '/api/virtuoso/setup/read', { profile_id, library, cell, config }),
-  setupWrite: (profile_id: string, library: string, cell: string, config: Json) => call('POST', '/api/virtuoso/setup/write', { profile_id, library, cell, config }),
   taskSave: (body: Json) => call('POST', '/api/virtuoso/task/save', body),
   taskFile: (body: Json) => call('POST', '/api/virtuoso/task/file', body),
   taskFileCheck: (text: string) => call('POST', '/api/virtuoso/task/file/check', { text }),

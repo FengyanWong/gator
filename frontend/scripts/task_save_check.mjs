@@ -1,14 +1,15 @@
-// Browser check of saved tasks in the Project panel (TaskSave.tsx, TaskFile.tsx): an open task's "Save task" (next revision),
+// Browser check of saved tasks (TaskSave.tsx, TaskFile.tsx): an open task's "Save task" (next revision),
 // "Save as" (another task) and the task file in a window of its own. Same approach as working_copy_check.mjs: a throwaway
 // headless Edge over the DevTools protocol against a workbench page (default http://127.0.0.1:8765/; GATOR_WORKBENCH_URL for
 // a preview of a temporary build). EVERY /api/virtuoso/* request, the circuit load and the task list of the open task are
 // answered with canned FIXTURES, so Virtuoso is never contacted and nothing is saved anywhere. What it pins (user request
 // 2026-09-22, "go on part 2"):
-//   - an open task names itself and its revision; three short buttons: Save task, Save as, Task file;
+//   - an open task names itself and its revision; three short buttons: Save task, Save as, Task file - at the right end of
+//     the editors' tab line, above "Modify selected with agent...", not in the Project panel (user request 2026-09-22);
 //   - "Task file" opens a window with the task as one readable file (its _help included); "Apply to editors" checks it and
 //     fills the editors (one Undo step); a broken file is refused with its problems and changes nothing;
 //   - "Save task" sends the rows, the task and what the file added (analyses) and reports the revision and the baseline;
-//   - "Save as" asks for a new name beside the button, sends as_new and opens the new task; nothing happens on load.
+//   - "Save as" asks for a new name under the editors' toolbar, sends as_new and opens the new task; nothing happens on load.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
 //   GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_save_check.mjs)" [screenshot-dir]
 import { spawn } from 'node:child_process';
@@ -21,7 +22,7 @@ const PORT = 9397, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:87
 const out = process.argv[2] ?? tmpdir();
 const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-task-'));
 const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
+  '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let failures = 0; const consoleErrors = [];
 const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
@@ -107,9 +108,11 @@ try {
     return r.result.value;
   };
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Circuit source'))`;
-  const BLOCK = `${PANEL}?.querySelector('.task-save')`;
+  const BLOCK = `document.querySelector('.editors .tabs .task-save')`;          // the bar: right end of the editors' tab line
+  const NOTES = `document.querySelector('.editors .task-notes')`;              // its messages and questions, under the toolbar
   const BUTTON = text => `[...(${BLOCK}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const blockText = () => evaluate(`${BLOCK}?.textContent ?? ''`);
+  const notesText = () => evaluate(`${NOTES}?.textContent ?? ''`);
   const press = (label, gesture = false) => evaluate(`${BUTTON(label)}.click()`, gesture);
   const stored = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')`);
   const POPUP = `window.open('', 'gator-task-file')`;                             // the same name returns the open window, unchanged
@@ -132,9 +135,17 @@ try {
   for (let i = 0; i < 100 && !(await evaluate(`!!(${BLOCK})`)); i++) await sleep(100);
   await settle(1500);
   check('nothing is saved or read from Virtuoso on load', calls.length === 0, calls.map(c => c.op).join(' | '));
-  check('the open task names itself and its revision', (await blockText()).includes('Task real:ring_osc, revision 1.'), await blockText());
+  check('the open task names itself and its revision', (await blockText()).includes('Task real:ring_osc, revision 1'), await blockText());
   check('three short buttons: Save task, Save as, Task file', await evaluate(`!!(${BUTTON('Save task')}) && !!(${BUTTON('Save as')}) && !!(${BUTTON('Task file')})`));
-  check('only a person can press it, said beside the buttons', (await blockText()).includes('Only you can press it.'));
+  check('they sit in the editors\' tab line, none in the Project panel', await evaluate(`!!${BLOCK}.closest('.tabs') && !${PANEL}.querySelector('.task-save')
+    && ![...${PANEL}.querySelectorAll('button')].some(b => ['Save task', 'Save as', 'Task file'].includes(b.textContent.trim()))`));
+  const place = await evaluate(`(() => { const bar = ${BLOCK}.getBoundingClientRect(), tabs = ${BLOCK}.closest('.tabs'), line = tabs.getBoundingClientRect();
+    const first = tabs.querySelector('button').getBoundingClientRect();
+    const modify = [...document.querySelectorAll('.editors .toolbar button')].find(b => b.textContent.trim() === 'Modify selected with agent...').getBoundingClientRect();
+    return { right: line.right - bar.right, sameLine: bar.top < first.bottom && bar.bottom > first.top, above: bar.bottom <= modify.top + 1,
+             over: bar.left < modify.right && bar.right > modify.left }; })()`);
+  check('on the tab line, at its right end, above "Modify selected with agent..."', place.sameLine && place.right < 12 && place.above && place.over, JSON.stringify(place));
+  check('only a person can press it, said on the button', await evaluate(`${BUTTON('Save task')}.title.includes('Only you can press it.')`));
 
   // ---- the task file in a window of its own ---------------------------------------------------------------------------------------
   await press('Task file', true); await settle(1500);
@@ -164,17 +175,17 @@ try {
   const saveCall = calls.slice(mark).find(c => c.op === 'task/save');
   check('Save task sends the rows, the open task and what the file added', !!saveCall && saveCall.task === 'ring_osc' && saveCall.name === 'ring_osc' && !saveCall.as_new
     && saveCall.extras?.analyses?.tran?.stop === '40n' && saveCall.config?.targets?.[0]?.lower === 1.25e9, JSON.stringify(saveCall ?? calls.slice(mark)));
-  check('it reports the revision and that the baseline no longer holds', (await blockText()).includes('Saved real:ring_osc, revision 2.') && (await blockText()).includes('no longer holds'), await blockText());
+  check('it reports the revision and that the baseline no longer holds, under the toolbar', (await notesText()).includes('Saved real:ring_osc, revision 2.') && (await notesText()).includes('no longer holds'), await notesText());
   await sleep(500);
   check('the open task shows its new revision', (await blockText()).includes('revision 2'), await blockText());
 
   // ---- Save as: another task, a name beside the button -----------------------------------------------------------------------------
   await press('Save as'); await settle(400);
-  check('Save as asks for the new name beside the button', await evaluate(`[...${BLOCK}.querySelectorAll('label')].some(l => l.firstChild?.textContent.trim() === 'New task name')`));
-  check('the same name cannot be saved as', await evaluate(`[...${BLOCK}.querySelectorAll('button')].filter(b => b.textContent.trim() === 'Save as').at(-1).disabled`));
-  await typeInto(`[...${BLOCK}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'New task name').querySelector('input')`, 'ring_fast'); await sleep(200);
+  check('Save as asks for the new name under the toolbar', await evaluate(`[...${NOTES}.querySelectorAll('label')].some(l => l.firstChild?.textContent.trim() === 'New task name')`));
+  check('the same name cannot be saved as', await evaluate(`[...${NOTES}.querySelectorAll('button')].filter(b => b.textContent.trim() === 'Save as').at(-1).disabled`));
+  await typeInto(`[...${NOTES}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'New task name').querySelector('input')`, 'ring_fast'); await sleep(200);
   mark = calls.length;
-  await evaluate(`[...${BLOCK}.querySelectorAll('button')].filter(b => b.textContent.trim() === 'Save as').at(-1).click()`); await settle(1800);
+  await evaluate(`[...${NOTES}.querySelectorAll('button')].filter(b => b.textContent.trim() === 'Save as').at(-1).click()`); await settle(1800);
   const asCall = calls.slice(mark).find(c => c.op === 'task/save');
   check('Save as sends as_new with the new name and the open task', !!asCall && asCall.as_new === true && asCall.name === 'ring_fast' && asCall.task === 'ring_osc', JSON.stringify(asCall ?? calls.slice(mark)));
   config = await stored();

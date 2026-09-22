@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { api, ApiError, bytes, copy, download, downloadPackage, Json, num, saveJson } from '../api';
 import { usePolling } from '../store';
 import { DiffView } from './Editors';
-import { COPY_SETUP_WRITTEN } from './TaskSave';
+import { COPY_SETUP_PENDING, COPY_SETUP_WRITTEN } from './TaskSave';
 
 const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'transitions', 'states'];
 
@@ -257,6 +257,9 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
       if (applied.virtuoso?.differences?.length) say('system', `What the working copy reads back differently: ${applied.virtuoso.differences.join('; ')}`);
       if (applied.virtuoso?.written) window.dispatchEvent(new CustomEvent(COPY_SETUP_WRITTEN,
         { detail: Object.keys(proposal.setup ?? {}).filter(part => proposal.setup[part] != null) }));
+      // Not written (Virtuoso out of reach): the approved setup waits for the next Save task, which writes the copy.
+      else if (applied.virtuoso && proposal.setup) window.dispatchEvent(new CustomEvent(COPY_SETUP_PENDING,
+        { detail: Object.fromEntries(Object.entries(proposal.setup).filter(([, value]) => value != null)) }));
     } catch (e) { fail(e); setProposal(null); }
   };
   // Model / effort lists of the selected provider (served by the backend; absent until it is restarted with them).

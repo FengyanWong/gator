@@ -1438,7 +1438,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             return dict(config=updated, validation=report.as_dict(),
                         note='Configuration only. No circuit was written and no simulation was started.')
         # The approved setup goes into the WORKING COPY - never the user's cell - and is read back. The rows are applied
-        # either way; if Virtuoso cannot be reached, "Write to Virtuoso" does the rest later.
+        # either way; if Virtuoso cannot be reached, Save task does the rest later (the page keeps the approved setup for
+        # it - the separate "Write to Virtuoso" button went on 2026-09-22).
         virtuoso, profile_id = None, new_config.run.connection_profile_id
         try:
             if not profile_id:
@@ -1457,7 +1458,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                     f"{target['copy']['testbench']} (not your cell), then read back: "
                     + ('it matches.' if virtuoso['matches'] else 'it differs - see the differences.') + ' No simulation was started.')
         else:
-            note = f"The rows were applied; writing into the working copy failed: {virtuoso['error']} Press \"Write to Virtuoso\" when it can be reached."
+            note = (f"The rows were applied; writing into the working copy failed: {virtuoso['error']} Once Virtuoso can be reached, "
+                    "press Save task: it writes the rows and the approved setup into the copy.")
         return dict(config=updated, validation=report.as_dict(), virtuoso=virtuoso, note=note)
 
     @app.post('/api/agent/reject')

@@ -131,7 +131,7 @@ def test_when_virtuoso_cannot_be_reached_the_rows_are_still_applied(tmp_path, mo
     client.post('/api/agent/approve', json=dict(proposal_id=proposal['proposal_id'], proposal_hash=proposal['proposal_hash'], config=cfg))
     applied = client.post('/api/agent/apply', json=dict(proposal_id=proposal['proposal_id'], config=cfg)).json()
     assert len(applied['config']['measurements']) == 2 and not applied['virtuoso']['written']
-    assert 'gate blocked' in applied['virtuoso']['error'] and 'Write to Virtuoso' in applied['note']
+    assert 'gate blocked' in applied['virtuoso']['error'] and 'press Save task' in applied['note']
 
 
 def test_without_a_working_copy_the_request_says_what_to_do_first(tmp_path):

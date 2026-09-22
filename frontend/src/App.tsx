@@ -41,6 +41,8 @@ export function App() {
   const [tab, setTab] = useState<BottomTab>('status');
   const [agentRequest, setAgentRequest] = useState<{ kind: string; selection: Json[]; prompt?: string } | null>(null);
   const [agentTabSlot, setAgentTabSlot] = useState<HTMLElement | null>(null);      // on the tab itself: where AgentTab puts its pop-out control
+  const [taskSlot, setTaskSlot] = useState<HTMLElement | null>(null);              // editors' tab line: where the circuit panel puts "Save task"
+  const [taskNotes, setTaskNotes] = useState<HTMLElement | null>(null);            // under the editors' toolbar: its messages and questions
   const [agentDetached, setAgentDetached] = useState(false);
   const [message, setMessage] = useState<Json>(null);
   const [fatal, setFatal] = useState<string | null>(null);
@@ -136,11 +138,11 @@ export function App() {
       <aside className="left">
         <ConnectionButton profileId={profileId} setProfileId={id => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }))} />
         <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId} meta={meta}
-          onAgent={(kind, selection, prompt) => { setAgentRequest({ kind, selection, prompt }); setTab('agent'); }} />
+          onAgent={(kind, selection, prompt) => { setAgentRequest({ kind, selection, prompt }); setTab('agent'); }} taskSlot={taskSlot} taskNotes={taskNotes} />
       </aside>
       <main>
         <Editors schema={schema} config={config} setConfig={setConfig} undo={store.undo} redo={store.redo} canUndo={store.canUndo} canRedo={store.canRedo}
-          save={store.save} savedAt={store.savedAt} validation={validation} onAgent={(kind, selection) => { setAgentRequest({ kind, selection }); setTab('agent'); }} />
+          validation={validation} onAgent={(kind, selection) => { setAgentRequest({ kind, selection }); setTab('agent'); }} taskSlot={setTaskSlot} taskNotes={setTaskNotes} />
       </main>
       <aside className="right">
         <RunPanel config={config} setConfig={setConfig} runs={runs} circuit={circuit} />

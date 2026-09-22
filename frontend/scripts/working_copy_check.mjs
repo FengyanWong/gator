@@ -5,10 +5,12 @@
 // with a canned FIXTURE, so Virtuoso is never contacted and nothing is written anywhere; the configuration lives in the
 // throwaway browser profile. What it pins (user request 2026-09-21, "start building the mentioned flow"):
 //   - no copy yet: one short "Make a working copy" button, the explanation folded; pressing it asks the backend once;
-//   - a copy: its library named, "Read setup" / "Write to Virtuoso" only on a press, nothing on load;
-//   - a read setup: summary line, how the editors differ, "Use in editors" fills Probes/Specs keeping the user's unit and
-//     optimizer settings, one Undo step; then the editors match; a write reads back and says so;
-//   - writing with no Maestro probe asks first; a blocked gate and an older backend read plainly.
+//   - a copy: its library named, ONE button "Read setup", only on a press, nothing on load - no "Write to Virtuoso" and no
+//     "Use in editors" (user 2026-09-22: fewer buttons, as the flow has it; Save task writes the copy);
+//   - "Read setup" reads AND fills Probes/Specs in one press, keeping the user's unit and optimizer settings, one Undo step
+//     (which also takes back what the page said); read again: the editors already say what the copy says; nothing written;
+//   - a test without outputs and a copy without a Maestro view take nothing and say what to do; a blocked gate and an older
+//     backend read plainly.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
 //   GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/working_copy_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -22,7 +24,7 @@ const PORT = 9395, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:87
 const out = process.argv[2] ?? tmpdir();
 const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-copy-'));
 const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
+  '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let failures = 0; const consoleErrors = [];
 const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
@@ -85,6 +87,8 @@ try {
     if (mode === 'blocked') return fulfil(requestId, 409, { detail: gateBlocked });
     if (mode === 'outdated') return fulfil(requestId, 404, { detail: 'Not Found' });
     if (op === 'copy') { copied = true; return fulfil(requestId, 200, { ...RECORD, already: false, directory: '/fixture' }); }
+    if (op === 'setup/read' && mode === 'no-outputs') return fulfil(requestId, 200, { ...setupAnswer(body.config), outputs: [], specs: [], rows: { measurements: [], targets: [] }, editor_differences: [] });
+    if (op === 'setup/read' && mode === 'no-view') return fulfil(requestId, 200, { exists: false, tests: [], test: null, model_files: [], analyses: {}, variables: {}, bindings: [], outputs: [], specs: [] });
     if (op === 'setup/read') return fulfil(requestId, 200, setupAnswer(body.config));
     if (op === 'setup/write') return fulfil(requestId, 200, { ...setupAnswer(body.config), written: {}, differences: [], matches: true });
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${op} is not expected` } });
@@ -126,7 +130,7 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
   await send('Fetch.enable', { patterns: ['*/api/virtuoso/*', '*/api/circuit/load'].map(urlPattern => ({ urlPattern, requestStage: 'Request' })) });
   // A configuration that already holds a Probes row and a Specs row of the user's own for "freq": their unit and optimizer
-  // settings must survive "Use in editors". Started from the live starter configuration, so it passes the schema.
+  // settings must survive "Read setup". Started from the live starter configuration, so it passes the schema.
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   for (let i = 0; i < 50 && !(await stored()); i++) await sleep(100);
@@ -154,22 +158,20 @@ try {
   check('pressing it asks the backend once, for this cell', JSON.stringify(calls.slice(mark).map(c => [c.op, c.library, c.cell].join(' '))) === JSON.stringify([`copy ${LIB} ${CELL}`]),
     JSON.stringify(calls.slice(mark)));
   check('the copy is named and said to be checked', (await blockText()).includes(`Working copy: ${COPY}/${TB}`) && (await blockText()).includes('netlists like your cell'), await blockText());
-  check('then two buttons: Read setup and Write to Virtuoso', await evaluate(`!!(${BUTTON('Read setup')}) && !!(${BUTTON('Write to Virtuoso')})`));
+  check('then one button, Read setup - no Write to Virtuoso, no Use in editors', await evaluate(`!!(${BUTTON('Read setup')}) && !(${BUTTON('Write to Virtuoso')}) && !(${BUTTON('Use in editors')})`));
+  check('the text beside it says when to press it', (await blockText()).includes('Changed its Maestro test yourself?'), await blockText());
   check('reading the setup still waits for a press', !calls.some(c => c.op === 'setup/read'));
 
-  // ---- reading the copy's Maestro setup -----------------------------------------------------------------------------
+  // ---- Read setup: read and take in one press ---------------------------------------------------------------------------
   mark = calls.length;
   await press('Read setup'); await settle();
   check('Read setup sends the editors along, once', calls.slice(mark).length === 1 && calls[mark].op === 'setup/read' && Array.isArray(calls[mark].config?.measurements));
   check('the setup is summarized in one line', (await blockText()).includes('Test GATOR: 2 outputs, 2 specs, 1 variable, analyses: tran'), await blockText());
-  check('the editors are said to differ, the list folded', (await blockText()).includes('The editors differ from the copy in 2 places')
-    && !(await visible(`[...${BLOCK}.querySelectorAll('li')].find(li => li.textContent.startsWith('Output vmax'))`)));
-  await shot('working-copy-2-read.png');
-  await press('Use in editors'); await settle();
-  const config = await stored();
+  let config = await stored();
+  for (let i = 0; i < 30 && !config.measurements.some(m => m.measurement_id === 'm_vmax'); i++) { await sleep(100); config = await stored(); }   // stored a moment later
   const probe = config.measurements.find(m => m.measurement_id === 'm_freq'), vmax = config.measurements.find(m => m.measurement_id === 'm_vmax');
   const spec = config.targets.find(t => t.metric_id === 'freq');
-  check('Use in editors brings the copy\'s outputs as Probes rows', !!vmax && vmax.result_source === 'ade_output' && vmax.signal === 'ymax(VT("/OUT"))', JSON.stringify(vmax));
+  check('the same press brings the copy\'s outputs as Probes rows', !!vmax && vmax.result_source === 'ade_output' && vmax.signal === 'ymax(VT("/OUT"))', JSON.stringify(vmax));
   check('your unit on a probe of the same name stays', probe?.unit === 'GHz' && probe?.notes === 'mine', JSON.stringify(probe));
   check('your optimizer settings on the spec stay; the copy\'s limit (1e9 Hz) arrives in your unit (1 GHz)', spec?.hard === false && spec?.soft_weight === 3
     && spec?.unit === 'GHz' && Math.abs(spec?.lower - 1) < 1e-12 && spec?.normalization_scale === 0.5, JSON.stringify(spec));
@@ -177,25 +179,32 @@ try {
   check('a spec on a probe in the base unit keeps the copy\'s numbers', vmaxSpec?.unit === 'V' && vmaxSpec?.lower === 0.9 && vmaxSpec?.upper === 1.1, JSON.stringify(vmaxSpec));
   check('the other rows are left alone', config.measurements.length === starter.measurements.length + 2
     && starter.targets.every(t => config.targets.some(u => u.metric_id === t.metric_id)), JSON.stringify(config.targets.map(t => t.metric_id)));
-  check('the page says Undo brings the previous rows back', (await blockText()).includes('Undo brings the previous rows back'));
+  check('the page says what it took and that Undo brings the previous rows back', (await blockText()).includes('Probes and Specs now show the copy\'s outputs and specs')
+    && (await blockText()).includes('Undo brings the previous rows back'), await blockText());
+  check('what differed is listed, folded', (await blockText()).includes('What differed (2)')
+    && !(await visible(`[...${BLOCK}.querySelectorAll('li')].find(li => li.textContent.startsWith('Output vmax'))`)));
+  await shot('working-copy-2-read.png');
+  await evaluate(`[...document.querySelectorAll('.editors .toolbar button')].find(b => b.textContent.trim() === 'Undo').click()`); await settle(1200);
+  config = await stored();
+  check('one Undo takes the rows back, and the page no longer claims them', !config.measurements.some(m => m.measurement_id === 'm_vmax')
+    && !(await blockText()).includes('now show the copy'), await blockText());
   mark = calls.length;
+  await press('Read setup'); await settle(1200);
   await press('Read setup'); await settle();
-  check('read again: the editors match the copy', (await blockText()).includes('The editors match the copy.'), await blockText());
-  await press('Write to Virtuoso'); await settle();
-  check('Write to Virtuoso sends the rows once and reports the read-back', calls.slice(mark).map(c => c.op).join(' ') === 'setup/read setup/write'
-    && (await blockText()).includes('Written and read back: the copy now says what the editors say.'), await blockText());
-  await shot('working-copy-3-written.png');
+  check('read again: the editors already say what the copy says', (await blockText()).includes('The editors already say what the copy says.'), await blockText());
+  check('reading never writes into Virtuoso', calls.slice(mark).every(c => c.op === 'setup/read') && !calls.some(c => c.op === 'setup/write'), calls.slice(mark).map(c => c.op).join(' '));
+  await shot('working-copy-3-taken.png');
 
-  // ---- writing with no Maestro probe asks first --------------------------------------------------------------------------
-  await evaluate(`(() => { const c = JSON.parse(localStorage.getItem('gator-workbench-config-v1'));
-    c.measurements = c.measurements.filter(m => m.result_source !== 'ade_output'); localStorage.setItem('gator-workbench-config-v1', JSON.stringify(c)); })()`);
-  await send('Page.reload');
-  for (let i = 0; i < 100 && !(await evaluate(`!!(${BUTTON('Write to Virtuoso')})`)); i++) await sleep(100);
-  await settle(1200);
-  mark = calls.length; answers.push(false);
-  await press('Write to Virtuoso'); await settle();
-  check('with no Maestro probe in the editors, writing asks first; No writes nothing', dialogs.at(-1)?.planned && dialogs.at(-1).message.includes('no Maestro probes')
-    && !calls.slice(mark).some(c => c.op === 'setup/write'), JSON.stringify(dialogs.at(-1)));
+  // ---- nothing to take: a test without outputs, a copy without a Maestro view ------------------------------------------------
+  const before = JSON.stringify(await stored());
+  mode = 'no-outputs';
+  await press('Read setup'); await settle();
+  check('a test without outputs takes nothing and says so', (await blockText()).includes('It has no outputs, so nothing was taken into the editors.')
+    && JSON.stringify(await stored()) === before, await blockText());
+  mode = 'no-view';
+  await press('Read setup'); await settle();
+  check('a copy without a Maestro view says how it gets one: the agent or Save task', (await blockText()).includes('The copy has no Maestro setup yet')
+    && (await blockText()).includes('Save task') && JSON.stringify(await stored()) === before, await blockText());
 
   // ---- a blocked link and an older backend read plainly ---------------------------------------------------------------------
   mode = 'blocked';

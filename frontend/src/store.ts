@@ -26,8 +26,9 @@ export function migrateConfig(config: Json): Json {
   return { ...config, targets };
 }
 
-/** Configuration state with undo/redo and local persistence (the saved copy lives in the browser;
- *  "Export JSON" writes a file, and a started run stores its own effective_config.json). */
+/** Configuration state with undo/redo and local persistence (kept in the browser by itself, 0.8 s after each change - the
+ *  editors' "Save" button that did the same at once went on 2026-09-22; "Export JSON" writes a file, and a started run
+ *  stores its own effective_config.json). */
 export function useConfig() {
   const [config, setConfigState] = useState<Json>(() => {
     try { return migrateConfig(JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')) ?? emptyConfig(); } catch { return emptyConfig(); }
@@ -35,7 +36,6 @@ export function useConfig() {
   const past = useRef<Json[]>([]);
   const future = useRef<Json[]>([]);
   const [, bump] = useState(0);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const setConfig = useCallback((next: Json | ((c: Json) => Json), record = true) => {
     setConfigState((current: Json) => {
@@ -69,14 +69,9 @@ export function useConfig() {
     bump(n => n + 1);
   }, []);
 
-  const save = useCallback(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-    setSavedAt(new Date().toISOString());
-  }, [config]);
-
   useEffect(() => { const id = setTimeout(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(config)), 800); return () => clearTimeout(id); }, [config]);
 
-  return { config, setConfig, undo, redo, save, savedAt, canUndo: past.current.length > 0, canRedo: future.current.length > 0 };
+  return { config, setConfig, undo, redo, canUndo: past.current.length > 0, canRedo: future.current.length > 0 };
 }
 
 export function usePolling<T>(fn: () => Promise<T>, ms: number, enabled: boolean, deps: unknown[]) {

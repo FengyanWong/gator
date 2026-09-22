@@ -22,7 +22,7 @@ const PORT = 9393, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:87
 const out = process.argv[2] ?? tmpdir();
 const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-help-'));
 const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
+  '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let failures = 0; const consoleErrors = [];
 const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
@@ -117,6 +117,10 @@ try {
   const click = expression => evaluate(`${expression}.click()`);
   const openLines = () => evaluate(`[...${PANEL}.querySelectorAll('details')].filter(d => d.open).map(d => d.querySelector('summary').textContent.trim())`);
   const buttonShown = text => evaluate(`!!(${BUTTON(text)}) && ${BUTTON(text)}.checkVisibility()`);
+  // Save task sits at the right end of the editors' tab line (user request 2026-09-22), not in this panel.
+  const TASK_BAR = `document.querySelector('.editors .tabs .task-save')`;
+  const TASK_BUTTON = text => `[...(${TASK_BAR}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
+  const taskButtonShown = text => evaluate(`!!(${TASK_BUTTON(text)}) && ${TASK_BUTTON(text)}.checkVisibility()`);
   const height = () => evaluate(`Math.round(${PANEL}.getBoundingClientRect().height)`);
   const shot = async name => {                          // a tall window, so the whole column is on the picture instead of its visible part
     await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 2600, deviceScaleFactor: 1, mobile: false }); await sleep(250);
@@ -214,8 +218,10 @@ try {
   check('draft: the headline is in view', await shown('Read from Virtuoso. Not optimizable yet: it has no circuit profile.'));
   check('draft: what to do with it is folded under "What you can do with it now"', await shown('What you can do with it now') && await folded('The workbench now holds its own copy') && await folded('Its answer is a proposal'));
   check('draft: the two buttons stay in view', await buttonShown('Ask the agent to set up') && await buttonShown('Read the cell again'));
-  check('draft: "Then save it as a task." with Save task stays in view, the explanation is folded', await shown('Then save it as a task.') && await shown('What Save task does')
-    && await folded('Saving again makes the next revision') && await evaluate(`${FIELD('New task name')}.checkVisibility()`) && await buttonShown('Save task') && await buttonShown('Task file'));
+  check('draft: "Then save it as a task:" points to Save task above the editors, the explanation is folded', await shown('Then save it as a task:') && await shown('What Save task does')
+    && await folded('Saving again makes the next revision') && !(await evaluate(`!!(${BUTTON('Save task')})`)));
+  check('draft: the name and the two buttons are in view in the editors\' tab line', await evaluate(`${TASK_BAR}?.querySelector('input')?.checkVisibility() ?? false`)
+    && await taskButtonShown('Save task') && await taskButtonShown('Task file'));
   check('draft: the backend\'s note is one closed line "1 note on this circuit"', await shown('1 note on this circuit') && await folded(NOTE));
   await click(SUMMARY('1 note on this circuit')); await sleep(200);
   check('draft: a click shows the note', await shown(NOTE));
@@ -229,7 +235,7 @@ try {
   await shot('help-4b-draft-hierarchy-closed.png');
 
   // ---- a saved task (was: a generated profile) -----------------------------------------------------------------------------------------
-  await click(BUTTON('Save task')); await quiet(); await until(`${PANEL}.textContent.includes('Before every run')`);
+  await click(TASK_BUTTON('Save task')); await quiet(); await until(`${PANEL}.textContent.includes('Before every run')`);
   check('generated profile: the REAL banner and the missing-baseline warning stay in view', await shown('REAL evaluation backend') && await shown('This task has no real baseline yet'));
   check('generated profile: "Before every run" and both buttons stay in view', await shown('Before every run:') && await buttonShown('Check now')
     && await buttonShown('Record the baseline run as reference'));

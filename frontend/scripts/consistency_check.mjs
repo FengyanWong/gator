@@ -17,7 +17,7 @@ const PORT = 9404, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:87
 const out = process.argv[2] ?? tmpdir();
 const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-consistency-'));
 const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
+  '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let failures = 0; const consoleErrors = [];
 const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };

@@ -19,7 +19,7 @@ const PORT = 9381, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:87
 const out = process.argv[2] ?? tmpdir();
 const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-virt-'));
 const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
+  '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let failures = 0; const consoleErrors = [];
 const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
@@ -155,6 +155,12 @@ try {
   const FIELD = label => `${LABEL(label)}?.querySelector('input, select')`;
   const BUTTON = text => `[...${PANEL}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const text = () => evaluate(`${PANEL}.textContent`);
+  // Save task, Save as, Task file and their messages live in the editors (tab line + under the toolbar), not in the panel.
+  const TASK = `document.querySelector('.editors')`;
+  const TASK_BUTTON = text => `[...${TASK}.querySelectorAll('.task-save button, .task-notes button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
+  const TASK_LABEL = label => `[...${TASK}.querySelectorAll('.task-save label, .task-notes label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)})`;
+  const taskText = () => evaluate(`[...${TASK}.querySelectorAll('.task-save, .task-notes')].map(e => e.textContent).join(' ')`);
+  const typeTask = async (label, textToType) => { await evaluate(`(() => { const i = ${TASK_LABEL(label)}.querySelector('input'); i.focus(); i.select(); })()`); await send('Input.insertText', { text: textToType }); };
   const value = label => evaluate(`${FIELD(label)}.value`);
   const options = label => evaluate(`[...${FIELD(label)}.options].map(o => ({ value: o.value, text: o.textContent.trim(), disabled: o.disabled }))`);
   const choose = (label, v) => evaluate(`(() => { const s = ${FIELD(label)}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(v)});
@@ -229,26 +235,27 @@ try {
   // ---- Save task (replaces Create profile): refused in words, asks the frequency once, then the task opens ------------------
   check('there is no Create profile form any more', !(await evaluate(`!!(${BUTTON('Create profile')})`)) && !(await evaluate(`!!(${LABEL('Circuit type')})`))
     && !(await evaluate(`!!(${LABEL('Expected oscillation frequency')})`)));
-  check('"Save task" is offered once the cell has its working copy', !(await evaluate(`${BUTTON('Save task')}.disabled`)) && (await text()).includes('Then save it as a task'));
-  await type('New task name', 'refuse_me'); await sleep(300);
+  check('"Save task" is offered once the cell has its working copy, in the editors\' tab line', !(await evaluate(`${TASK_BUTTON('Save task')}.disabled`))
+    && (await text()).includes('Then save it as a task') && !(await evaluate(`!!(${BUTTON('Save task')})`)));
+  await typeTask('New task name', 'refuse_me'); await sleep(300);
   mark = calls.length;
-  await evaluate(`${BUTTON('Save task')}.click()`); await quiet();
+  await evaluate(`${TASK_BUTTON('Save task')}.click()`); await quiet();
   check('a refusal is shown in its own words and nothing changes', JSON.stringify(calls.slice(mark).map(c => [c.op, c.name, c.library, c.cell])) === JSON.stringify([['task/save', 'refuse_me', 'FIXTURE_DESIGNS', 'ota5_v1']])
-    && (await text()).includes('can only change transistor widths') && (await value('Source')) === 'virtuoso', JSON.stringify(calls.slice(mark)));
-  await evaluate(`(() => { const i = ${FIELD('New task name')}; i.focus(); i.select(); })()`); await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
+    && (await taskText()).includes('can only change transistor widths') && (await value('Source')) === 'virtuoso', JSON.stringify(calls.slice(mark)));
+  await evaluate(`(() => { const i = ${TASK_LABEL('New task name')}.querySelector('input'); i.focus(); i.select(); })()`); await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
   await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 }); await sleep(300);
   mark = calls.length;
-  await evaluate(`${BUTTON('Save task')}.click()`); await quiet();
+  await evaluate(`${TASK_BUTTON('Save task')}.click()`); await quiet();
   check('an empty name falls back to the cell name; the ring oscillator\'s frequency is then asked once', calls.slice(mark).map(c => c.name).join() === 'ota5_v1'
-    && (await text()).includes('needs a rough expected oscillation frequency') && !!(await evaluate(`!!(${LABEL('Rough oscillation frequency')})`)), JSON.stringify(calls.slice(mark)));
-  await type('Rough oscillation frequency', '1.2G'); await sleep(300);
+    && (await taskText()).includes('needs a rough expected oscillation frequency') && !!(await evaluate(`!!(${TASK_LABEL('Rough oscillation frequency')})`)), JSON.stringify(calls.slice(mark)));
+  await typeTask('Rough oscillation frequency', '1.2G'); await sleep(300);
   mark = calls.length;
-  await evaluate(`[...${PANEL}.querySelectorAll('button')].filter(b => b.textContent.trim() === 'Save task').at(-1).click()`); await quiet();
+  await evaluate(`[...${TASK}.querySelectorAll('.task-notes button')].find(b => b.textContent.trim() === 'Save task').click()`); await quiet();
   check('1.2G = 1.2e9 Hz is sent with the rows', calls.slice(mark).length === 1 && calls[mark].extras?.expected_frequency_hz === 1.2e9 && Array.isArray(calls[mark].config?.parameters), JSON.stringify(calls.slice(mark)));
   check('the new task is opened as a registered task', (await value('Source')) === 'registered_task' && (await value('Task')) === 'real:ota5_v1', `${await value('Source')} / ${await value('Task')}`);
   check('it says what happened and what comes first', (await text()).includes('Saved the new task real:ota5_v1') && (await text()).includes('Single baseline simulation'));
   check('the parameter editor shows the rows as saved', await evaluate(`document.querySelector('main').innerHTML.includes('wn_fixture')`));
-  check('the open task offers Save task, Save as and Task file', await evaluate(`!!(${BUTTON('Save task')}) && !!(${BUTTON('Save as')}) && !!(${BUTTON('Task file')})`));
+  check('the open task offers Save task, Save as and Task file', await evaluate(`!!(${TASK_BUTTON('Save task')}) && !!(${TASK_BUTTON('Save as')}) && !!(${TASK_BUTTON('Task file')})`));
   await shot('virtuoso-2c-task-saved.png');
   // ---- before every run: the check Start runs by itself, pressed on its own; and recording a finished baseline -----------
   check('"Check against Virtuoso" is gone: "Check now" runs the check before every run', !(await evaluate(`!!(${BUTTON('Check against Virtuoso (no simulation)')})`))
@@ -271,14 +278,14 @@ try {
   let shown = await text();
   check('the cell is no longer browse-only: the form names its task', shown.includes('This cell already has a registered task: real:ota5_v1') && !shown.includes('built-in')
     && !shown.includes('Not optimizable yet') && !shown.includes('Browse only'), ops(mark).join(' | '));
-  check('no second draft is offered for it: open the task to save it again or save another', !(await evaluate(`!!(${BUTTON('Save task')})`)) && !(await evaluate(`!!(${BUTTON('Read the cell again')})`)));
+  check('no second draft is offered for it: open the task to save it again or save another', !(await evaluate(`!!(${TASK_BUTTON('Save task')})`)) && !(await evaluate(`!!(${BUTTON('Read the cell again')})`)));
   check('the button is short; the task name is text beside it', JSON.stringify(await evaluate(`[...${PANEL}.querySelectorAll('.note button')].map(b => b.textContent.trim())`)) === JSON.stringify(['Open']));
   await shot('virtuoso-2d-cell-has-task.png');
   await choose('Cell', 'vco_fixture'); await quiet();
   shown = await text();
   check('the cell of a verified built-in circuit names that task', shown.includes('This cell already has a registered task: real:gpdk045_vco (a verified built-in circuit)')
     && !shown.includes('Browse only') && !shown.includes('cannot optimize it yet'));
-  check('it is not offered for reading or for a task', !(await evaluate(`!!(${BUTTON('Read this cell into the workbench')})`)) && !(await evaluate(`!!(${BUTTON('Save task')})`)));
+  check('it is not offered for reading or for a task', !(await evaluate(`!!(${BUTTON('Read this cell into the workbench')})`)) && !(await evaluate(`!!(${TASK_BUTTON('Save task')})`)));
   check('what that means is one folded line', await evaluate(`(() => { const d = [...${PANEL}.querySelectorAll('.note details')].find(x => x.querySelector('summary').textContent === 'What this means');
     return !!d && !d.open && d.textContent.includes('gets no second task'); })()`));
   await shot('virtuoso-2e-built-in-cell.png');
@@ -312,7 +319,7 @@ try {
   check('it says what happened; where the files went is one folded line', shown.includes('Task real:ota5_v1 deleted. This cell can get a new one.')
     && await evaluate(`(() => { const d = [...${PANEL}.querySelectorAll('details')].find(x => x.querySelector('summary').textContent === 'Where its files went');
       return !!d && !d.open && d.textContent.includes('/fixture/profiles/.deleted/ota5_v1'); })()`));
-  check('the cell offers Save task again', !!(await evaluate(`!!(${BUTTON('Save task')})`)) && shown.includes('Not optimizable yet') && !shown.includes('already has a registered task'));
+  check('the cell offers Save task again', !!(await evaluate(`!!(${TASK_BUTTON('Save task')})`)) && shown.includes('Not optimizable yet') && !shown.includes('already has a registered task'));
   check('the task left the Registered task list', !(await evaluate(`(async () => (await (await fetch('/api/tasks')).json()).tasks.some(t => t.task_key === 'real:ota5_v1'))()`)));
   await shot('virtuoso-2g-profile-deleted.png');
 

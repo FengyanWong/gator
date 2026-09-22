@@ -258,8 +258,8 @@ to say.
   up" below). Device types this project has not verified (for example the MIM invented model) are shown
   with unnamed pins. Such a cell still cannot run: Start stays disabled (`circuit_profile_missing`) until
   it is saved as a task.
-* **Save task** (in the same note, under the working copy) replaced the former **Create profile** form on
-  2026-09-22 - see "Saving a task" below. What the form checked still holds: only what the verified real
+* **Save task** (at the right end of the editors' tab line since 2026-09-22; the note points there) replaced the
+  former **Create profile** form on 2026-09-22 - see "Saving a task" below. What the form checked still holds: only what the verified real
   backend can do is accepted as a Parameters row - **widths of single-finger, m = 1 transistors directly
   inside the cell**, linear ranges that contain the present width, snapped onto Virtuoso's 5 nm width grid
   (the editor then shows them exactly as registered); anything else is refused with the reason. The cell
@@ -703,17 +703,21 @@ overwrite only what the failed attempt wrote. Records: `configs/local/workbench/
 (`copy.json`, the copy's netlist, the `cds.lib` before/after, the bridge log) and `working_copies/libraries.json`.
 Not copied yet: cells with a CDF of their own (parameterized hierarchical cells) - the button says so instead.
 
-**Read setup / Use in editors / Write to Virtuoso.** One Maestro test, `GATOR`, on the copy's testbench holds what the
+**Read setup.** One Maestro test, `GATOR`, on the copy's testbench holds what the
 simulation needs and measures: the model file (the connection's, section `tt`), the analyses, the outputs (Cadence
 calculator expressions on testbench nets and branches) and a spec per output (`>`, `<` or a range), plus design variables
 and the instance parameters set to them. A Maestro output is a Probes row with source `ade_output` (the output name in
-*source_name*, the expression in *signal*); a Maestro spec is the Specs row whose equation is that one probe. **Read
-setup** shows a one-line summary and, folded, how the editors differ from the copy. **Use in editors** takes the outputs
-and specs over (units are suggested from the expression and marked so; a unit or an optimizer setting already chosen on a
-row of the same name stays, and a limit - Maestro keeps plain numbers in base units - is converted into that unit; one
-Undo reverts it). **Write to Virtuoso** makes the copy's test say what the editors say (the analyses of the copy are
-kept), reads it back and says whether the copy now matches. A spec over several probes, and every optimizer-only field
+*source_name*, the expression in *signal*); a Maestro spec is the Specs row whose equation is that one probe. Two presses
+write the copy, and both read it back: approving the agent's setup and **Save task**. **Read setup** ("Changed its
+Maestro test yourself?") goes the other way in one press: it shows a one-line summary and takes the outputs and specs into
+Probes and Specs (units are suggested from the expression and marked so; a unit or an optimizer setting already chosen on
+a row of the same name stays, and a limit - Maestro keeps plain numbers in base units - is converted into that unit; one
+Undo reverts it), with what differed folded under it. A test without outputs, or a copy without a Maestro view, takes
+nothing and says how the copy gets one. Analyses and variables changed in Maestro are NOT taken over - the next Save task
+writes the task's own again; change those in the task file. A spec over several probes, and every optimizer-only field
 (scale, weight, hard/soft, keep improving, ranges), stays in the workbench. Nothing is synchronized on its own.
+Until 2026-09-22 the block had three buttons, **Read setup**, **Use in editors** and **Write to Virtuoso**; the user
+asked for fewer, as the flow has it: Save task writes the copy anyway, and reading now takes over in the same press.
 
 **What may be a Maestro variable.** Only values of analogLib's own resistor, capacitor, inductor and sources. A PDK
 device derives other values from its parameters or clamps them: on the live GPDK045 a transistor width set to a variable
@@ -726,9 +730,9 @@ calls of listed calculator functions (`VT`, `VF`, `IT`, `frequency`, `bandwidth`
 numbers, the setup's variable names, arithmetic and `?keyword` arguments; anything else (`system(...)`, `;`, backquotes)
 is refused before anything is written. Nothing is evaluated by the workbench itself.
 
-Not built yet (the rest of the flow): the check before every run, and the run path that measures Maestro outputs
-(Maestro's netlist once, Spectre per evaluation, OCEAN on that run's results; proven once against one Maestro run). Until
-then `ade_output` probes and design variables stay blocked for runs by static validation.
+The rest of the flow was built afterwards: the check before every run and the run path that measures Maestro outputs
+(Maestro's netlist once, Spectre per evaluation, OCEAN on that run's results; proven once against one Maestro run) - see
+"The check before every run" and "Running a task measured by Maestro" below.
 
 Tests: `tests/workbench/test_wb_working_copy.py`, `tests/workbench/test_wb_virtuoso_setup.py` (fake write process; the
 answer shapes are the live installation's). Browser check: `frontend/scripts/working_copy_check.mjs` (hermetic, fixtures
@@ -740,18 +744,24 @@ The second part of the flow. **Save task** replaces the former Create profile fo
 type box and its expected-frequency field went once Save task worked). Only a person presses it: the agent has no tool
 that reaches the backend.
 
-**Where.** In the note "Read from Virtuoso", under the working copy: "Then save it as a task" - a New task name (the
-cell's name when left empty), **Save task** and **Task file**. On an open task (Source: Registered task): "Task
-real:<name>, revision N", **Save task**, **Save as** and **Task file**; "Delete task" (was: Delete profile) stays at the
-end of the block.
+**Where.** At the right end of the editors' tab line (Parameters | Probes | Specs), above "Modify selected with
+agent..." - the save sits with the rows it stores (user request 2026-09-22; it used to be in the note "Read from
+Virtuoso", under the working copy, which now only says "Then save it as a task: Save task is above the editors" with
+"What Save task does" folded). For a cell read from Virtuoso: a New task name (the cell's name when left empty),
+**Save task** and **Task file**. On an open task (Source: Registered task): "Task real:<name>, revision N", **Save
+task**, **Save as** and **Task file**. Their messages and questions (the saved revision, a refusal, the ring
+oscillator's rough frequency, the name for Save as) appear under the editors' toolbar. "Delete task" (was: Delete
+profile) stays at the end of the task's block in the Project panel. The editors' own **Save** button went at the same
+time: it kept the configuration in the browser, which the page already does by itself 0.8 s after every change, and a
+second "Save" beside "Save task" only confused.
 
 **What Save task does.** It reads from the Probes how the task measures: all Maestro outputs (`ade_output`) = measured
 by Maestro; all results of one circuit type (`backend_profile`, e.g. what the testbench brought) = that type - the
 ring oscillator or the op-amp, measured by the workbench as before. Mixed probes, or probes that fit both types, are
 refused in plain words. Then, with no simulation:
 1. a task measured by Maestro writes its outputs, specs (from the rows) and analyses, variables and bindings (from a task
-   file applied on the page, else as the copy was last written - by the last save, Write to Virtuoso or the agent's
-   approved setup) into its working copy and reads them back - they must match;
+   file applied on the page or an approved agent setup that could not be written, else as the copy was last written -
+   by the last save or the agent's approved setup) into its working copy and reads them back - they must match;
 2. the working copy is read into the workbench again (netlist export + CDF readback, read-only): the reference every run
    of the task is compared with;
 3. the task's files are generated from that copy (the same generator Create profile used, with its checks), next to
@@ -811,10 +821,12 @@ goes ("Maestro setup of the working copy `<library>/<testbench>`" - never your c
 the proposal's content with the setup. The press fills the editors (one Undo step) and writes the setup - with the
 outputs and specs of the rows - into the copy's test (gated, under the Virtuoso session lock), reads it back and says
 whether the copy now matches. If Virtuoso cannot be reached, the rows are applied all the same and the message says to
-press **Write to Virtuoso** later. No simulation either way, and nothing becomes a task until you press **Save task**,
+press **Save task** once it can be: the page keeps the approved analyses, variables and bindings for that save, which
+writes them into the copy (until 2026-09-22 the message pointed to the removed "Write to Virtuoso", which wrote only
+the outputs and specs). No simulation either way, and nothing becomes a task until you press **Save task**,
 which takes the analyses, variables and bindings written into the copy over (on an open task too: they are newer than
 the ones saved with it). The same parts applied earlier from a task file are dropped on the page when the write
-succeeds; a failed write leaves them.
+succeeds; a failed write replaces them with the approved ones.
 
 Tests: `tests/workbench/test_wb_agent_setup.py` (what the request tells the agent, the proposal and its bound approval,
 the refusals, apply writing into the copy through a fake write process, the rows applied when Virtuoso is down, no copy

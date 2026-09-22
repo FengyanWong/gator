@@ -199,3 +199,10 @@ table.corner-grid td.corner-pass { color: var(--ok); } table.corner-grid td.corn
 table.corner-grid td.corner-fail span { font-weight: normal; } table.corner-grid td.corner-unknown { color: var(--warn); }
 table.corner-grid td.corner-pending { color: var(--muted); font-style: italic; }
 table.corner-checks tr { cursor: default; } table.corner-checks tr.current > td { background: #e6eefb; }
+/* Save task at the right end of the editors' tab line, its messages and questions under their toolbar (TaskSave.tsx portals,
+   user request 2026-09-22). Buttons inside `.tabs` are tab-shaped (no bottom border); these are plain buttons again. */
+.editors > .tabs { flex-wrap: wrap; } .tabs .tab-actions { margin-left: auto; display: inline-flex; } .tabs .tab-actions:empty { display: none; }
+.task-save { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; padding-bottom: 3px; } .task-save > .hint { white-space: nowrap; }
+.task-save > label { flex: none; flex-direction: row; align-items: center; gap: 4px; margin: 0; white-space: nowrap; } .task-save > label input { width: 11em; }
+.tabs .task-save button { border-bottom: 1px solid var(--line); } .tabs .task-save button.primary { border-color: var(--accent); }
+.task-notes:empty { display: none; } .task-save-notes { margin: 0 0 4px; } .task-save-notes p { margin: 2px 0; } .task-save-notes .row > label { flex: 0 1 16em; }

@@ -3,31 +3,24 @@
 // throwaway headless Edge over the DevTools protocol against a served workbench page (default http://127.0.0.1:8765/).
 // Every /api/virtuoso/* request and every circuit load of the Virtuoso source is answered with a canned FIXTURE answer, so
 // Virtuoso is never contacted and the check does not depend on the backend version; the agent is never called. Other
-// requests (schema, the synthetic:gpdk045_ota5 starter, validation) go to the backend and are read-only.
+// requests (schema, the synthetic:gpdk045_ota5 starter, validation) go to the backend and are read-only; any other writing
+// request of the page is refused here (hermetic).
 // The canned Probes rows are what profiles.testbench_probes answers for the recorded ring oscillator (fixtures/ring_osc).
 // Run (Windows node through WSL interop; node >= 22 for the built-in WebSocket):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/testbench_probes_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9397, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:8765/';
-const out = process.argv[2] ?? tmpdir();
-const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-tbprobes-'));
-const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failures = 0; const consoleErrors = [];
-const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+const APP = await workbenchUrl();
+const out = outDir();
+const browser = await launchEdge('tbprobes');
+const consoleErrors = [];
 
 // ---- canned answers ------------------------------------------------------------------------------------------
 const LIBRARY = 'FIXTURE_TB';
 const CELLS = [['ring3', true], ['tb_ring3', true], ['other_tb', true], ['amp', true], ['amp2', true], ['TB_amp2', true], ['lonely', true],
   ['tb_symbolic', false], ['symbolic', true]].map(([name, has_schematic]) => ({ name, views: has_schematic ? ['schematic', 'symbol'] : ['symbol'], has_schematic }));
-const RECIPES = [{ id: 'ring_oscillator', label: 'Ring oscillator (free-running)' }, { id: 'opamp_ac', label: 'Op-amp / OTA (AC gain)' }];
 const RING = 'Ring oscillator (free-running)', OPAMP = 'Op-amp / OTA (AC gain)';
 const MEANING = [['osc_frequency_hz', 'OUT', 'Hz', 'oscillation frequency at OUT'], ['supply_power_w', 'V0:p', 'W', 'average power delivered by the supply V0'],
   ['supply_current_a', 'V0:p', 'A', 'average current delivered by the supply V0'], ['osc_minimum_swing_v', 'OUT XU1.N1 XU1.N2', 'V', 'smallest cycle swing of the ring nets'],
@@ -49,27 +42,18 @@ const imported = new Map();                                                     
 const draft = (library, cell) => {
   const tb = imported.get(`${library}/${cell}`);
   return { loaded: true, task_key: `virtuoso:${library}/${cell}`, mock: false, native_draft: true, complete: true, diagnostics: [],
-    profile_task: null, profile_task_generated: null, profile_recipes: RECIPES, testbench_probes: probesFor(library, cell, tb),
+    profile_task: null, profile_task_generated: null, testbench_probes: probesFor(library, cell, tb),
     circuit: { library, cell, native_draft: true, testbench_cell: tb }, hierarchy: { XU1: { MN1: {}, MP1: {} }, V0: {} }, analysis_context: null,
     evaluation_backend: null, max_concurrency: 1, notes: ['FIXTURE: read from Virtuoso (canned answer).'],
     summary: { device_count: 3, unknown_devices: [], devices: [{ instance_path: 'XU1/MN1', kind: 'nmos', parameters: { w: { value: 1e-6 } } }] } };
 };
 const browseOnly = { loaded: false, blocker: 'FIXTURE: a native cellview needs a verified circuit profile', interface_contract: null,
-  profile_task: null, profile_task_generated: null, profile_recipes: RECIPES };
+  profile_task: null, profile_task_generated: null };
 
 try {
-  let target;
-  for (let i = 0; i < 75 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    if (!target) await sleep(200);
-  }
-  if (!target) throw new Error('Edge did not open a debugging port');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const calls = []; let agentRequests = 0; const dialogs = [];
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
-  const fulfil = (requestId, status, obj) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
-    responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
+  const page = await browser.open({ errors: consoleErrors });
+  const { send, evaluate, fulfil } = page;
+  const calls = []; let agentRequests = 0; const dialogs = [];
   const answer = async ({ requestId, request }) => {
     const pathname = new URL(request.url).pathname;
     if (pathname === '/api/agent/propose') { agentRequests++; return fulfil(requestId, 418, { detail: { message: 'FIXTURE: no agent request is expected' } }); }
@@ -90,19 +74,7 @@ try {
     if (op === 'import') { imported.set(`${body.library}/${body.cell}`, body.testbench ?? null); return fulfil(requestId, 200, { library: body.library, cell: body.cell, testbench_cell: body.testbench, device_count: 3 }); }
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${op} is not expected` } });
   };
-  ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
-    else if (m.method === 'Fetch.requestPaused') answer(m.params).catch(() => { /* page went away */ });
-    else if (m.method === 'Page.javascriptDialogOpening') { dialogs.push(m.params.message); send('Page.handleJavaScriptDialog', { accept: false }).catch(() => undefined); }
-    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-    else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push(m.params.args.map(a => a.value ?? a.description).join(' '));
-  };
-  const evaluate = async expression => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
+  page.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return send('Page.handleJavaScriptDialog', { accept: false }); });
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Circuit source'))`;
   const LABEL = label => `[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)})`;
   const FIELD = label => `${LABEL(label)}?.querySelector('input, select')`;
@@ -123,15 +95,11 @@ try {
   const shot = async name => {
     const H3 = `[...${PANEL}.querySelectorAll('h3')].find(h => h.textContent.trim() === 'Circuit source')`;
     await evaluate(`${H3}.scrollIntoView({ block: 'start' })`); await sleep(200);
-    const clip = await evaluate(`(() => { const a = document.querySelector('.left').getBoundingClientRect(), h = ${H3}.getBoundingClientRect();
-      return { x: a.x, y: Math.max(a.y, h.y - 6), width: a.width, height: a.bottom - Math.max(a.y, h.y - 6), scale: 2 }; })()`);
-    const { data } = await send('Page.captureScreenshot', { format: 'png', clip });
-    writeFileSync(path.join(out, name), Buffer.from(data, 'base64'));
+    await page.shot(path.join(out, name), await evaluate(`(() => { const a = document.querySelector('.left').getBoundingClientRect(), h = ${H3}.getBoundingClientRect();
+      return { x: a.x, y: Math.max(a.y, h.y - 6), width: a.width, height: a.bottom - Math.max(a.y, h.y - 6), scale: 2 }; })()`));
   };
 
-  await send('Page.enable'); await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Fetch.enable', { patterns: ['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose'].map(urlPattern => ({ urlPattern, requestStage: 'Request' })) });
+  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose'], answer, { others: 'read' });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   for (let i = 0; i < 100 && !(await evaluate(`!!(${BUTTON('Load starter configuration')})`)); i++) await sleep(100);
@@ -238,14 +206,10 @@ try {
   check('nothing was sent to the agent', agentRequests === 0, `${agentRequests} request(s)`);
   check('no question was asked on screen', dialogs.length === 0, dialogs.join(' | '));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-  ws.close();
 } catch (error) {
-  failures++; console.log('ERROR ' + (error?.stack ?? error));
+  fail(error);
   if (consoleErrors.length) console.log('page errors: ' + consoleErrors.join(' | ').slice(0, 600));
 } finally {
-  edge.kill();
-  await sleep(500);
-  try { rmSync(profile, { recursive: true, force: true }); } catch { /* Edge may still hold a file; the temp dir is harmless */ }
+  await browser.close();
 }
-console.log(failures ? `${failures} check(s) FAILED` : 'all checks passed');
-process.exit(failures ? 1 : 0);
+finish();

@@ -9,70 +9,38 @@
 //   WSLENV=GATOR_WORKBENCH_URL:GATOR_SCRATCH_OUT GATOR_WORKBENCH_URL=http://127.0.0.1:8769/ GATOR_SCRATCH_OUT=$S/out \
 //     "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_live_check.mjs)" [screenshot-dir]
 // (WSLENV carries the two variables into the Windows process.) Takes about 90 s. Exit code 1 if any check fails.
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9384, APP = process.env.GATOR_WORKBENCH_URL, OUT_ROOT = process.env.GATOR_SCRATCH_OUT;
-if (!APP || !OUT_ROOT || new URL(APP).port === '8765') {
-  console.log('ERROR this check starts real (MOCK) runs: set GATOR_WORKBENCH_URL to a SCRATCH backend (not port 8765) and GATOR_SCRATCH_OUT to its allowed output root.');
+const APP = await workbenchUrl({ writes: true }), OUT_ROOT = process.env.GATOR_SCRATCH_OUT;
+if (!OUT_ROOT) {
+  console.log('ERROR this check starts real (MOCK) runs: set GATOR_SCRATCH_OUT to the allowed output root of the scratch backend (and WSLENV=GATOR_WORKBENCH_URL:GATOR_SCRATCH_OUT).');
   process.exit(1);
 }
-const out = process.argv[2] ?? tmpdir();
-const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-runlive-'));
-const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failures = 0;
-const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+const out = outDir();
+const browser = await launchEdge('runlive');
 const get = async (route, params) => (await fetch(new URL(`api/${route}?` + new URLSearchParams(params), APP))).json();
 
 try {
   const starter = await get('tasks/starter', { task_key: 'synthetic:gpdk045_ota5' });
   // A budget the run cannot reach during the check, so that every ending below is the button's doing.
   const CONFIG = { ...starter, run: { ...starter.run, max_evaluations: 20000, concurrency: 1 }, output: { experiment_name: 'run_control_live', output_root: OUT_ROOT }, research: {} };
-  let target;
-  for (let i = 0; i < 75 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    if (!target) await sleep(200);
-  }
-  if (!target) throw new Error('Edge did not open a debugging port');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const consoleErrors = []; const dialogs = [];
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
-  ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
-    else if (m.method === 'Page.javascriptDialogOpening') { dialogs.push(m.params.message); send('Page.handleJavaScriptDialog', { accept: true }).catch(() => undefined); }
-    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-    else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push(m.params.args.map(a => a.value ?? a.description).join(' '));
-  };
-  const evaluate = async expression => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
-  const until = async (expression, tries = 80) => { for (let i = 0; i < tries; i++) { if (await evaluate(expression)) return true; await sleep(100); } return false; };
+  const page = await browser.open();
+  const { send, evaluate, until, consoleErrors } = page;
+  const dialogs = [];
+  page.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return send('Page.handleJavaScriptDialog', { accept: true }); });
   const MAIN = `document.querySelector('header button.run-main')`, ABORT = `document.querySelector('header button.run-abort')`, CHIP = `document.querySelector('header button.run-chip')`;
   const mainReads = (label, tries = 300) => until(`${MAIN}?.textContent === ${JSON.stringify(label)} && !${MAIN}.disabled`, tries);
   const press = expression => evaluate(`${expression}.click()`);
   const labels = async () => (await evaluate(`window.__seen ?? []`)).map(s => s[0]);
-  const shot = async name => {
-    const clip = await evaluate(`(() => { const r = document.querySelector('header').getBoundingClientRect(); return { x: 0, y: 0, width: 1680, height: Math.min(1050, r.bottom + 60), scale: 1 }; })()`);
-    writeFileSync(path.join(out, name), Buffer.from((await send('Page.captureScreenshot', { format: 'png', clip })).data, 'base64'));
-  };
+  const shot = async name => page.shot(path.join(out, name),
+    await evaluate(`(() => { const r = document.querySelector('header').getBoundingClientRect(); return { x: 0, y: 0, width: 1680, height: Math.min(1050, r.bottom + 60), scale: 1 }; })()`));
 
-  await send('Page.enable'); await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: `if (location.protocol.startsWith('http')) {
-    if (!sessionStorage.getItem('fixture-seeded')) { sessionStorage.setItem('fixture-seeded', '1'); localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(CONFIG))}); }
-    window.__seen = [];
+  // Every [label, disabled] the main button shows on the page is recorded in window.__seen.
+  await page.seed({ config: CONFIG, when: 'once', also: `window.__seen = [];
     new MutationObserver(() => { const b = document.querySelector('header button.run-main'); if (!b) return; const now = [b.textContent, b.disabled];
       const last = window.__seen[window.__seen.length - 1]; if (!last || last[0] !== now[0] || last[1] !== now[1]) window.__seen.push(now); })
-      .observe(document, { subtree: true, childList: true, characterData: true, attributes: true }); }` });
+      .observe(document, { subtree: true, childList: true, characterData: true, attributes: true });` });
   await send('Page.navigate', { url: APP });
   if (!(await until(`!!(${MAIN})`, 150))) throw new Error('the run buttons never appeared: ' + consoleErrors.join(' | ').slice(0, 300));
   check('the real validation lets the MOCK starter configuration start', await until(`${MAIN}.textContent === 'Start' && !${MAIN}.disabled && [...document.querySelectorAll('header span.ok')].some(s => s.textContent === 'configuration valid')`, 300));
@@ -137,13 +105,9 @@ try {
   await press(ABORT);
   check('cleanup: aborted', await mainReads('Start', 600));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 400));
-  ws.close();
 } catch (error) {
-  failures++; console.log('ERROR ' + (error?.stack ?? error));
+  fail(error);
 } finally {
-  edge.kill();
-  await sleep(500);
-  try { rmSync(profile, { recursive: true, force: true }); } catch { /* Edge may still hold a file; the temp dir is harmless */ }
+  await browser.close();
 }
-console.log(failures ? `${failures} check(s) FAILED` : 'all checks passed');
-process.exit(failures ? 1 : 0);
+finish();

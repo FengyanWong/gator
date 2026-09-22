@@ -317,6 +317,8 @@ def test_deleting_the_task_frees_the_cell_s_copy_for_a_new_one(tmp_path):
     save(tmp_path, extras=dict(expected_frequency_hz=1.2e9))
     gone = profiles.delete_profile('ring_osc')
     assert gone['deleted'] == 'real:ring_osc' and 'claimed_by' not in working_copy.load(LIB, CELL)
+    # The page puts the answer into its Circuit source: the user's own cell and testbench, never the working copy.
+    assert (gone['library'], gone['cell'], gone['testbench_cell']) == (LIB, CELL, TB)
     assert save(tmp_path, name='ring_osc2', extras=dict(expected_frequency_hz=1.2e9))['revision'] == 1
 
 

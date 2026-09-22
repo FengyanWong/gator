@@ -1,12 +1,11 @@
 """Units, bindings, measurements, targets: one schema, semantic validation, compilation to the
 optimizer's existing ParameterGroup / MetricSpec objects."""
 import json
-import math
 
 import pytest
 from pydantic import ValidationError
 
-from gator_workbench import compile as comp, schema, tasks, units, validation
+from gator_workbench import compile as comp, schema, spec_equations, tasks, units, validation
 from gator_workbench.engine import decode_action
 from helpers import make_config
 
@@ -229,10 +228,9 @@ def test_restricted_expressions_never_execute_code(tmp_path):
         assert 'expression_rejected' in issues(report, 'error'), text
     report, _ = check(bad('undefined_measurement * 2'))
     assert 'expression_unknown_symbol' in issues(report, 'error')
-    config = bad('(m_score * 2) - 1')
-    values = comp.evaluate_expression_measurements(config, {'score': 0.75})
-    assert values == {'m_score': 0.75, 'm_bad': 0.5}
-    assert comp.evaluate_expression_measurements(config, {'score': None})['m_bad'] is None    # invalid stays invalid
+    plan = spec_equations.SpecPlan.from_config(bad('(m_score * 2) - 1'))
+    assert plan.probe_values({'score': 0.75}) == {'m_score': 0.75, 'm_bad': 0.5}
+    assert plan.probe_values({})['m_bad'] is None           # a missing (invalid) input stays invalid, never a number
 
 
 # ------------------------------------------------------------------------------- compile / feasibility

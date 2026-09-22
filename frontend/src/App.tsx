@@ -64,7 +64,12 @@ export function App() {
     return () => clearTimeout(id);
   }, [JSON.stringify(config)]);
 
-  const { value: status } = usePolling(() => api.status(runDir!), 1500, !!runDir, [runDir]);
+  // A run that has ended for good (completed, failed, cancelled: none of them can be continued) changes no more, so its
+  // status is read once a minute instead of every 1.5 s. A paused or stopped run can come back, and keeps the quick poll.
+  const [statusEvery, setStatusEvery] = useState(1500);
+  const { value: status } = usePolling(() => api.status(runDir!), statusEvery, !!runDir, [runDir]);
+  useEffect(() => setStatusEvery(status && !status.worker_alive && ['completed', 'failed', 'cancelled'].includes(status.state) ? 60000 : 1500),
+    [status?.worker_alive, status?.state]);
   const isReal = circuit?.loaded && circuit.mock === false;
   // The run the header buttons act on (Start -> Pause -> Resume, Abort). It is not the run the bottom tabs show.
   const [looked, setLooked] = useState(false);

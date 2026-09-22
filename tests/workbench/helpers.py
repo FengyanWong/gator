@@ -8,9 +8,17 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
+import os
 from pathlib import Path
+import tempfile
 import time
 from uuid import uuid4
+
+# A script that imports these helpers OUTSIDE pytest (a scratch smoke run) must not write the user's remembered settings:
+# prepare_run() saves output_root / concurrency / last_run into the settings folder, and conftest.py only redirects it under
+# pytest. On 2026-09-22 a smoke script rewrote the live configs/local/workbench/settings.json this way. Under pytest the
+# variable is already set and this line does nothing.
+os.environ.setdefault('GATOR_WORKBENCH_SETTINGS_DIR', tempfile.mkdtemp(prefix='gator-wb-helpers-settings-'))
 
 from analog_optimizer.backends.backend import SimulationResult, SimulationStatus
 from analog_optimizer.backends.synthetic_sizing import SyntheticSizingBackend

@@ -2,13 +2,26 @@
 
 **M6 is closed at pilot scale (2026-09-20):** the cross-category pipeline was built, run on real circuits and independently audited, while the question of whether transfer or a graph transformer helps is not answered at this scale; see the closing entry in [project decisions](docs/decisions.md). In the pilot, the [three category holdouts](docs/m6-real-results.md) used exactly 2,811 Spectre calls and 1,566 SAC updates, with final circuit/baseline restoration passed. The independent audit verified all 2,811 saved candidate packages and 162 learner checkpoints with zero new simulator calls, and the final regression suite passed 544 tests. GT adaptation achieved 2/3 OTA, 3/3 LDO and 3/3 VCO successes; coordinate search achieved 3/3 in every class without pretraining. This short experiment on known circuits does not establish a GT advantage. The [frozen protocol](docs/m6-real-protocol.md), [VCO runtime qualification](docs/m6-vco-runtime.md) and earlier [synthetic benchmark](docs/m6-cross-category.md) remain separate evidence.
 
+## Workbench (web UI, since 2026-09-20)
+
+`src/gator_workbench/` (FastAPI backend) and `frontend/` (React/TypeScript) make the optimizer usable from a browser: circuits from registered tasks or read from Virtuoso, the Parameters / Probes / Specs editors, run control, data-only outputs, an optional agent that proposes configurations, and a check of a run's best designs at five PVT corners. Real simulations stay a user-authorized budget. What each feature does: [docs/workbench.md](docs/workbench.md); its development record: the index [docs/frontend_implementation_status.md](docs/frontend_implementation_status.md) and [docs/workbench-log/](docs/workbench-log/).
+
+```bash
+python -m pip install -c constraints.txt -e '.[graph,test,web,webtest]'
+PYTHONPATH=src python -m gator_workbench.cli serve               # http://127.0.0.1:8765/
+cd frontend && npm run build                                     # the page the backend serves
+OMP_NUM_THREADS=1 python -m pytest -q -n 12 --dist load          # every test, in about a minute
+```
+
+`constraints.txt` holds the exact torch / torch-geometric / numpy / networkx versions: a saved model only loads under the versions it was saved with.
+
 已实现离线基础链路：`VirtuosoBackend` 抽象 → synthetic `MockBackend` 导出网表 → Spectre 子集解析器 → `CircuitGraph` → PyTorch Geometric `HeteroData`。包含 op-amp、LDO、VCO 三个小型 synthetic fixture。另外已在真实 Virtuoso 中创建 GPDK045 五管 OTA 和测试台，完成 Spectre DC/AC、负载扰动、原参数复跑以及真实网表到 PyG 的验收；见 [运放基线](docs/opamp-baseline.md)。
 
 真实接口使用已有的 **Virtuoso Bridge**（发行包 `virtuoso-bridge`，import `virtuoso_bridge`）。已实现专用于当前 GPDK045 OTA 的 `VirtuosoBridgeBackend` 薄适配层，完成 M1/M2 宽度 4 → 4.4 → 4 µm 的真实回写、仿真和恢复；见 [后端验收](docs/opamp-backend.md)。本项目的 `VirtuosoBackend` 方法属于自有接口，底层继续调用上游连接、导出和 Spectre API；尚未实现通用 PDK 适配。
 
 已进一步实现单 worker 的 **`CircuitSizingEnv.reset/step` → 参数合法化 → 真实仿真 → 规格评价/奖励 → 候选记录与恢复**。M3 完整验收实际运行 8 次 Spectre，覆盖宽度边界、3 个随机候选、重复候选和恢复基线。真实 CDF 的宽度取整已纳入 5 nm 动作网格。详见 [环境与随机候选验收](docs/opamp-environment.md)。
 
-M3 已补充 typed PVT/Monte Carlo 工况接口、GPDK045 来源配置、nominal-only 环境约束及 top 3／corner 汇总纯函数。MC 执行仍明确不支持，后验证调度尚未实现。详见 [PVT／MC 接口说明](docs/pvt-mc-interfaces.md)。
+M3 已补充 typed PVT/Monte Carlo 工况接口、GPDK045 来源配置、nominal-only 环境约束及 top 3／corner 汇总纯函数。MC 执行仍明确不支持，后验证调度尚未实现。详见 [PVT／MC 接口说明](docs/pvt-mc-interfaces.md)。 (Since 2026-09-22 the workbench's Corner check simulates a run's best designs again at the five GPDK045 corners - see [docs/workbench.md](docs/workbench.md); Monte Carlo is still not supported.)
 
 2026-09-19 用户继续授权 **M4**：已实现局部端口感知 Graph Transformer、参数组 actor、独立 action-conditioned twin critics、连续 proposal SAC、nominal-only replay 和完整训练 checkpoint。**231 项离线测试通过，零失败、零跳过。** 双拓扑 synthetic demo 支持同 batch 的 2 维／1 维动作及精确恢复；真实小验收新增 **5 次 Spectre、3 条经验、2 次 SAC 更新**，恢复后的基线网表与指标一致。实测候选之一达到当前 smoke specs；这不证明收敛或优化优势。实现、测试和复现命令见 [M4 验收记录](docs/m4-graph-sac.md)。
 
@@ -39,8 +52,8 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 # CPU 环境可先按 PyTorch 官方源安装，避免默认下载 CUDA 依赖：
-python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-python -m pip install -e '.[graph,test]'
+python -m pip install -c constraints.txt torch --index-url https://download.pytorch.org/whl/cpu
+python -m pip install -c constraints.txt -e '.[graph,test]'     # exact versions: saved models need them
 python -m pytest -q
 python examples/netlist_demo.py tests/fixtures/synthetic/opamp.scs --config configs/opamp.json
 # 无 Cadence：两个 analytic toy 环境、一个 SAC learner、checkpoint 验收。
@@ -71,7 +84,9 @@ PYTHONPATH=src python3 -m analog_optimizer.demo tests/fixtures/synthetic/vco.scs
 | `src/analog_optimizer/backends/` | Backend 抽象、synthetic mock、真实 bridge 适配器和 GPDK045 电路约束 |
 | `src/analog_optimizer/netlist/` | tokenizer、白名单表达式、JSON 配置、层次解析 |
 | `src/analog_optimizer/graph/` | 独立数据类、参数组校验、异构 PyG 与固定语义同构/dense 输入转换 |
-| `configs/` | synthetic model/端口映射、net 角色、可调参数组 |
+| `configs/` | synthetic model/端口映射、net 角色、可调参数组; also the GPDK045 real-circuit configs. The M5/M6 audits pin these files by hash: do not edit, reformat or move them |
+| `src/gator_workbench/`, `frontend/` | the workbench (web UI): backend and page; see [docs/workbench.md](docs/workbench.md) |
+| `constraints.txt` | exact library versions that saved models need |
 | `src/analog_optimizer/parameters/` | 按独立可调组映射 normalized proposal，执行边界/网格/整数合法化 |
 | `src/analog_optimizer/measurements/specs.py` | 单位、有效性、min/max/range 规格和有限奖励 |
 | `src/analog_optimizer/envs/` | 单 worker 环境、有限步数、失败处理、候选日志和恢复 |

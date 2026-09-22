@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from gator_workbench import bridge_setup, schema, virtuoso_setup as vs, working_copy
+from gator_workbench import bridge_setup, virtuoso_setup as vs, working_copy
 from helpers import make_config
 from test_wb_api import probe
 from test_wb_working_copy import CELL, COPY, LIB, TB, fake_writer, imported

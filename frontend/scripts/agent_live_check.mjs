@@ -3,73 +3,34 @@
 // waiting line promises no time limit. Drives a throwaway headless Edge over the DevTools protocol.
 //
 // Default (hermetic): /api/agent/propose is intercepted and answered with canned Server-Sent Events (and once with a plain
-// JSON body, as an older server sends). No agent CLI is started, nothing is saved: safe against the running workbench.
+// JSON body, as an older server sends); every other writing request of the page is refused (reads pass). No agent CLI is
+// started, nothing is saved: safe against the running workbench.
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/agent_live_check.mjs)" [screenshot-dir]
-// --live: nothing is intercepted. Needs a SCRATCH backend whose `claude` is the fake CLI of the tests in scenario
+// --live: nothing is intercepted, so it refuses the live backend (port 8765). Needs a SCRATCH backend whose `claude` is the fake CLI of the tests in scenario
 // `live_demo` (a thinking summary over ~4 s, then the reply a few characters at a time; a prompt containing FAKE-HANG
 // never finishes), so the page is watched receiving a real stream:
 //   PATH=<dir with tests/workbench/fixtures/fake_cli.py as `claude`>:$PATH FAKE_CLI_SCENARIO=live_demo FAKE_CLI_PAUSE=4 \
 //   GATOR_WORKBENCH_SETTINGS_DIR=<empty dir> PYTHONPATH=src python -m gator_workbench.cli serve --port 8768
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:8768/ <run line above> --live [screenshot-dir]
 // --live --codex (status record 7.50): the same with the fake as `codex` too, scenario `codex_demo`; the check SAVES
-// provider = codex on that scratch backend. Codex sends whole items: reasoning paragraph by paragraph, the command and the
-// web search as steps, the reply in one piece at the end.
+// provider = codex on that scratch backend, and puts the agent settings back at the end (also after a failure). Codex
+// sends whole items: reasoning paragraph by paragraph, the command and the web search as steps, the reply in one piece.
 // Screenshots go to the given directory, else to the OS temp directory. Exit code 1 if any check fails.
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { check, fail, finish, keepAgentSettings, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9391, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:8765/';
 const LIVE = process.argv.includes('--live'), CODEX = LIVE && process.argv.includes('--codex');
-const out = process.argv.slice(2).find(a => !a.startsWith('--')) ?? tmpdir();
-const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-'));
-const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failures = 0;
-const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+const APP = await workbenchUrl({ writes: LIVE });
+const out = outDir();
+const browser = await launchEdge('agentlive');
+let kept = null;                                                      // --codex: the agent settings before, put back in `finally`
 
 try {
-  let target;
-  for (let i = 0; i < 75 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    if (!target) await sleep(200);
-  }
-  if (!target) throw new Error('Edge did not open a debugging port');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const paused = []; const consoleErrors = [];
-  ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); if (p) m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
-    else if (m.method === 'Fetch.requestPaused') paused.push({ requestId: m.params.requestId, url: m.params.request.url, headers: m.params.request.headers, postData: m.params.request.postData });
-    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-    else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push(m.params.args.map(a => a.value ?? a.description).join(' '));
-  };
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
-  const evaluate = async expression => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
-  const nextPaused = async (suffix, ms = 5000) => {
-    for (let waited = 0; waited < ms; waited += 50) {
-      const i = paused.findIndex(p => p.url.endsWith(suffix));
-      if (i >= 0) return paused.splice(i, 1)[0];
-      await sleep(50);
-    }
-    throw new Error(`no intercepted request for ${suffix}`);
-  };
-  const fulfil = (requestId, status, type, text) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
-    responseHeaders: [{ name: 'Content-Type', value: type }], body: Buffer.from(text).toString('base64') });
+  const page = await browser.open();
+  const { send, evaluate, nextPaused, consoleErrors } = page;
+  const fulfil = page.fulfilText;
   const sse = events => events.map(([kind, data]) => `event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`).join(': working\n\n');
-  const shot = async name => {
-    const clip = await evaluate(`(() => { const r = document.querySelector('footer').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, scale: 1 }; })()`);
-    const { data } = await send('Page.captureScreenshot', { format: 'png', clip });
-    writeFileSync(path.join(out, name), Buffer.from(data, 'base64'));
-  };
+  const shot = name => page.shot(path.join(out, name), `document.querySelector('footer')`);
   const BOX = `document.querySelector('.compose-main textarea')`;
   const ask = async text => {
     await evaluate(`(() => { const box = ${BOX}; box.focus(); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, ${JSON.stringify(text)});
@@ -84,16 +45,16 @@ try {
     const folds = [...m.querySelectorAll('details.thought')].map(d => ({ label: d.querySelector('summary').textContent, open: d.open, text: d.querySelector('.thought-text').textContent }));
     return { cls: m.className, text: m.querySelector(':scope > .text').innerText, folds, items: m.querySelectorAll(':scope > .text li').length }; })()`);
 
-  await send('Page.enable'); await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  if (!LIVE) await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/agent/propose', requestStage: 'Request' }, { urlPattern: '*/api/agent/cancel', requestStage: 'Request' }] });
+  if (!LIVE) await page.hold(['*/api/agent/propose', '*/api/agent/cancel'], null, { others: 'read' });
   if (CODEX) {                                                        // scratch backend only (see the header)
+    kept = await keepAgentSettings(APP);
+    if (!kept) throw new Error(`the agent settings could not be read from ${APP}; nothing was changed`);
     const saved = await (await fetch(`${APP}api/agent/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'codex' }) })).json();
     if (!saved.saved) throw new Error(`provider codex could not be selected: ${JSON.stringify(saved)}`);
   }
   const starter = await (await fetch(`${APP}api/tasks/starter?task_key=synthetic:gpdk045_ota5`)).json();
   const seeded = { schema_version: 'gator-workbench-config-v1', ...(starter.config ?? starter), output: { experiment_name: 'experiment' }, research: {} };
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(seeded))});` });
+  await page.seed({ config: seeded });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!document.querySelector('.tabs button')`)); i++) await sleep(100);
   await sleep(1200);
@@ -114,7 +75,7 @@ try {
     await fulfil(first.requestId, 200, 'text/event-stream', sse([['progress', { type: 'model', model: 'fixture-live-model' }], ['progress', { type: 'thinking', text: '' }],
       ...THINK.match(/.{1,17}/gs).map(t => ['progress', { type: 'thinking', text: t }]), ['progress', { type: 'writing', field: 'kind' }], ['progress', { type: 'writing', field: 'reasoning' }],
       ...REPLY.match(/.{1,9}/gs).map(t => ['progress', { type: 'reply', text: t }]), ['progress', { type: 'writing', field: 'patch' }],
-      ['result', { proposal_id: 'fixture-live-1', proposal_hash: 'fixture', origin: 'fixture', kind: 'targets', reasoning: REPLY, warnings: ['The 60 dB target is close to the baseline.'], unresolved: [], diff: [], circuit_changes: [] }]]));
+      ['result', { proposal_id: 'fixture-live-1', proposal_hash: 'fixture', origin: 'fixture', kind: 'targets', reasoning: REPLY, warnings: ['The 60 dB target is close to the baseline.'], unresolved: [], diff: [] }]]));
     await sleep(700);
     let last = await lastMessage();
     check('the reply is in the chat, formatted', last.cls.includes('reply') && last.text.startsWith('I set the gain target') && last.items === 2, JSON.stringify(last).slice(0, 160));
@@ -142,7 +103,7 @@ try {
     await evaluate(`${BOX}.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))`);
     const third = await nextPaused('/api/agent/propose');
     await fulfil(third.requestId, 200, 'application/json', JSON.stringify({ proposal_id: 'fixture-live-2', proposal_hash: 'fixture', origin: 'fixture', kind: 'targets',
-      reasoning: 'Answered in one piece by an older server.', warnings: [], unresolved: [], diff: [], circuit_changes: [] }));
+      reasoning: 'Answered in one piece by an older server.', warnings: [], unresolved: [], diff: [] }));
     await sleep(500);
     last = await lastMessage();
     check('a plain JSON answer (a server not restarted yet) is still shown', last.text === 'Answered in one piece by an older server.' && last.folds.length === 0, last.text);
@@ -201,12 +162,9 @@ try {
   }
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
 } catch (error) {
-  failures++;
-  console.log(`ERROR ${error.stack ?? error}`);
+  fail(error);
 } finally {
-  edge.kill();
-  await sleep(500);
-  try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 400 }); } catch { /* left behind */ }
+  await kept?.restore();                                              // --codex saved provider = codex
+  await browser.close();
 }
-console.log(failures ? `${failures} check(s) FAILED` : 'all checks passed');
-process.exit(failures ? 1 : 0);
+finish();

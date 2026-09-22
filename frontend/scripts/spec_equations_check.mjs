@@ -8,53 +8,24 @@
 // Run (Windows node through WSL interop; node >= 22):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/spec_equations_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
-import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9397, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:8765/';
-const out = process.argv[2] ?? tmpdir();
-mkdirSync(out, { recursive: true });
-const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-specs-'));
-const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failures = 0;
-const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+const APP = await workbenchUrl();
+const out = outDir();
+const browser = await launchEdge('specs');
 
 try {
-  let target;
-  for (let i = 0; i < 75 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    if (!target) await sleep(200);
-  }
-  if (!target) throw new Error('Edge did not open a debugging port');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const consoleErrors = []; const refused = [];
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
+  const page = await browser.open();
+  const { send, evaluate, consoleErrors } = page;
+  const refused = [];
   const answer = ({ requestId, request }) => {
     const name = new URL(request.url).pathname;
-    if (request.method === 'GET' || name === '/api/config/validate' || name === '/api/circuit/load') return send('Fetch.continueRequest', { requestId });
+    if (request.method === 'GET' || name === '/api/config/validate' || name === '/api/circuit/load') return page.pass(requestId);
     if (name !== '/api/output/check') refused.push(`${request.method} ${name}`);            // the output-folder look-up: refused, harmless
-    return send('Fetch.fulfillRequest', { requestId, responseCode: 418, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
-      body: Buffer.from(JSON.stringify({ detail: { message: 'FIXTURE: this check lets no writing request through' } })).toString('base64') });
+    return page.refuse(requestId);
   };
-  ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
-    else if (m.method === 'Fetch.requestPaused') answer(m.params).catch(() => { /* the page went away */ });
-    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-    else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push(m.params.args.map(a => a.value ?? a.description).join(' '));
-  };
-  const evaluate = async expression => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
-  const until = async (expression, tries = 100) => { for (let i = 0; i < tries; i++) { if (await evaluate(expression)) return true; await sleep(100); } return false; };
+  const until = (expression, tries = 100) => page.until(expression, tries);
   const EDITORS = `document.querySelector('.editors')`;
   const openTab = name => evaluate(`[...${EDITORS}.querySelectorAll('.tabs button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(name)})).click()`);
   const headers = () => evaluate(`[...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.textContent.replace(' *', '').trim())`);
@@ -72,18 +43,16 @@ try {
     }
     return [false, await issues(row)];
   };
-  const shot = async name => { const { data } = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(path.join(out, name), Buffer.from(data, 'base64')); };
+  const shot = name => page.shot(path.join(out, name));
 
-  await send('Page.enable'); await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*', requestStage: 'Request' }] });
+  await page.intercept(['*/api/*'], answer);
   // The page opens as a browser that saved its configuration BEFORE specs had equations: one probe in `measurement_id`.
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   const legacy = starter.targets.map(t => Object.fromEntries(Object.entries(t).map(([k, v]) => [k === 'equation' ? 'measurement_id' : k, v])));
   check('the backend knows equations (restarted after 7.52)', starter.targets[0]?.equation === 'm_score', JSON.stringify(starter.targets[0]));
   const SEED = { schema_version: 'gator-workbench-config-v1', ...starter, targets: legacy,
     run: { mode: 'scratch', concurrency: 1, threads_per_job: 1, ...starter.run }, output: { experiment_name: 'fixture' }, research: {} };
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: `if (!localStorage.getItem('gator-workbench-config-v1')) localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(SEED))});` });
+  await page.seed({ config: SEED, when: 'missing' });
   await send('Page.navigate', { url: APP });
   check('the page opens', await until(`!!${EDITORS}`));
   await openTab('Specs');
@@ -123,14 +92,9 @@ try {
 
   check('the page sent no writing request but validations', refused.length === 0, JSON.stringify(refused));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | '));
-  ws.close();
 } catch (e) {
-  failures++;
-  console.log(`FAIL  the check itself failed: ${e.message}`);
+  fail(e);
 } finally {
-  edge.kill();
-  await sleep(500);
-  try { rmSync(profile, { recursive: true, force: true }); } catch { /* Edge may still hold a file */ }
+  await browser.close();
 }
-console.log(failures ? `${failures} check(s) FAILED` : 'all checks passed');
-process.exit(failures ? 1 : 0);
+finish();

@@ -10,8 +10,10 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.optional-dependencies]
+# Ranges for a fresh project. The EXACT versions that existing saved models need are in constraints.txt (pip install -c).
 graph = ["torch>=2.2,<3", "torch-geometric>=2.5,<3", "numpy>=1.24,<3", "networkx>=3,<4"]
-test = ["pytest>=8,<10"]
+# pytest-xdist: the whole suite in about a minute with `-n 12 --dist load` (OMP_NUM_THREADS=1), instead of about five.
+test = ["pytest>=8,<10", "pytest-xdist>=3.8,<4"]
 export = ["pyarrow>=14,<24"]
 # Local engineering workbench (src/gator_workbench): FastAPI backend + Parquet raw tables.
 # No plotting libraries by design; the workbench produces data only.

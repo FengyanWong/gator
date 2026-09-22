@@ -53,8 +53,6 @@ for _canonical, _spellings in _LINEAR.items():
         _LOOKUP[_spelling] = (_canonical, _factor, 0.0)
 _LOOKUP.update(_AFFINE)
 
-CANONICAL_UNITS = tuple(sorted(set(v[0] for v in _LOOKUP.values())))
-
 # Canonical unit expected for each feature-schema parameter kind used by the optimizer
 # (analog_optimizer.graph.pyg_converter.FeatureSchema.parameters). "m"/"nf" are counts.
 PARAMETER_KIND_UNITS = {'w': 'm', 'l': 'm', 'm': 'count', 'nf': 'count', 'r': 'ohm',

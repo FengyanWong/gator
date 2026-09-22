@@ -14,23 +14,14 @@
 // Run (Windows node through WSL interop; node >= 22 for the built-in WebSocket; about 30 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/corner_check_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9411, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:8765/';
-const out = process.argv[2] ?? tmpdir();
-const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-corners-'));
-const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failures = 0;
-const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+const APP = await workbenchUrl();
+const out = outDir();
+const browser = await launchEdge('corners');
 
 // ---- the fixture run and its corner checks ------------------------------------------------------------------------------
-const RUN_KEY = 'gator-workbench-current-run-v1';
 const DIR = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task/scratch__seed0__0001';
 const C0 = '20260921T090000Z-0000a000', C1 = '20260922T100000Z-00c0ffee', C2 = '20260922T101500Z-00beef00';
 const CORNERS = [['nominal', 'tt', 27, 1.0], ['ss_hot_low', 'ss', 125, 0.9], ['ff_cold_high', 'ff', -40, 1.1], ['fs_nominal', 'fs', 27, 1.0], ['sf_nominal', 'sf', 27, 1.0]]
@@ -77,18 +68,9 @@ const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }
 try {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   const CONFIG = { ...starter, output: { experiment_name: 'fixture' }, research: {} };
-  let target;
-  for (let i = 0; i < 75 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    if (!target) await sleep(200);
-  }
-  if (!target) throw new Error('Edge did not open a debugging port');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const consoleErrors = []; const refused = []; const dialogs = []; const answers = [];
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
-  const fulfil = (requestId, status, obj) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
-    responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
+  const page = await browser.open({ consoleApi: false });
+  const { send, fulfil, consoleErrors } = page;
+  const refused = []; const dialogs = []; const answers = [];
   const answer = ({ requestId, request }) => {
     const url = new URL(request.url), name = url.pathname, body = request.postData ? JSON.parse(request.postData) : null;
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
@@ -114,42 +96,21 @@ try {
       return fulfil(requestId, 200, { check_id: id, worker_pid: 1, simulations: body.simulations, mock: id === C1 });
     }
     if (name === '/api/runs/corner-check/stop') { sim.stops.push(body); return fulfil(requestId, 200, { id: 'fixture-stop', command: 'stop' }); }
-    if (request.method === 'GET') return send('Fetch.continueRequest', { requestId });
-    refused.push(`${request.method} ${name}`);
-    return fulfil(requestId, 418, { detail: { message: 'FIXTURE: this check lets no writing request through' } });
+    return page.readOrRefuse({ requestId, request }, refused);
   };
-  ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
-    else if (m.method === 'Fetch.requestPaused') answer(m.params).catch(() => { /* the page went away */ });
-    else if (m.method === 'Page.javascriptDialogOpening') {
-      dialogs.push(m.params.message);
-      send('Page.handleJavaScriptDialog', { accept: answers.shift() ?? false }).catch(() => undefined);
-    }
-    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-  };
-  const evaluate = async expression => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, userGesture: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
-  const until = async (expression, tries = 80) => { for (let i = 0; i < tries; i++) { if (await evaluate(expression)) return true; await sleep(100); } return false; };
+  page.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return send('Page.handleJavaScriptDialog', { accept: answers.shift() ?? false }); });
+  const evaluate = expression => page.evaluate(expression, true);
+  const until = (expression, tries = 80) => page.until(expression, tries);
   const waitFor = async (test, tries = 60) => { for (let i = 0; i < tries; i++) { if (test()) return true; await sleep(100); } return !!test(); };   // on this side
   const TAB = `document.querySelector('.corner-check')`;
   const BUTTON = caption => `[...document.querySelectorAll('.corner-check .row button')].find(b => b.textContent === ${JSON.stringify(caption)})`;
   const text = () => evaluate(`${TAB}?.innerText ?? ''`);
   const cells = () => evaluate(`[...document.querySelectorAll('table.corner-grid tbody tr')].map(r => [...r.cells].map(c => c.textContent.trim()))`);
-  const shot = async name => {
-    const clip = await evaluate(`(() => { const r = document.querySelector('footer').getBoundingClientRect(); return { x: 0, y: r.y, width: 1680, height: r.height, scale: 1 }; })()`);
-    const { data } = await send('Page.captureScreenshot', { format: 'png', clip });
-    writeFileSync(path.join(out, name), Buffer.from(data, 'base64'));
-  };
+  const shot = async name => page.shot(path.join(out, name),
+    await evaluate(`(() => { const r = document.querySelector('footer').getBoundingClientRect(); return { x: 0, y: r.y, width: 1680, height: r.height, scale: 1 }; })()`));
 
-  await send('Page.enable'); await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*', requestStage: 'Request' }] });
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: `if (location.protocol.startsWith('http') && !sessionStorage.getItem('fixture-seeded')) { sessionStorage.setItem('fixture-seeded', '1');
-    localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(CONFIG))}); localStorage.setItem(${JSON.stringify(RUN_KEY)}, ${JSON.stringify(DIR)}); }` });
+  await page.intercept(['*/api/*'], answer);
+  await page.seed({ config: CONFIG, run: DIR, when: 'once' });
   await send('Page.navigate', { url: APP });
   if (!(await until(`!!document.querySelector('footer .tabs')`, 150))) throw new Error('the page never showed its bottom tabs: ' + JSON.stringify(await evaluate(`document.body.innerText.slice(0, 300)`)));
   const tabs = await evaluate(`[...document.querySelectorAll('footer .tabs > button')].map(b => b.textContent)`);
@@ -248,13 +209,9 @@ try {
 
   console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
   check('no console exception', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-  console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
-  ws.close();
 } catch (error) {
-  failures++; console.log(`FAIL  the check could not run: ${error.message}`);
+  fail(error);
 } finally {
-  edge.kill();
-  await sleep(500);
-  try { rmSync(profile, { recursive: true, force: true }); } catch { /* Edge may still hold a file; it is a temp dir */ }
+  await browser.close();
 }
-process.exit(failures ? 1 : 0);
+finish();

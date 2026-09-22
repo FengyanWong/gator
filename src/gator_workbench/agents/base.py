@@ -20,17 +20,16 @@ from pathlib import Path
 import signal
 import subprocess
 import threading
-import time
 from uuid import uuid4
 
 from .catalog import efforts_for
 
-REQUEST_KINDS = ('draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'circuit_modification', 'readiness',
+REQUEST_KINDS = ('draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'readiness',
                  'minimal_start', 'settings_review', 'run_review', 'virtuoso_setup')
 SECTIONS_BY_KIND = {
     'draft_config': ('parameters', 'targets', 'measurements'), 'parameters': ('parameters',),
     'targets': ('targets',), 'measurements': ('measurements',),
-    'modify_fields': ('parameters', 'targets', 'measurements'), 'circuit_modification': (),
+    'modify_fields': ('parameters', 'targets', 'measurements'),
     'readiness': ('parameters', 'targets', 'measurements'),      # "what is missing to start?": a checklist, plus rows it can fix
     # The fewest row changes after which the run can start. proposals.normalize() refuses a change to a row that has no
     # blocking issue, so "as few as possible" is enforced here and not merely asked for.

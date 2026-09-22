@@ -91,10 +91,11 @@ def normalize(request: AgentRequest, result: AgentResult):
         clean.append(dict(op=action, section=section, key=key, value=value, basis=str(op.get('basis') or '')[:1000]))
     if problems:
         raise ProposalRejected('The proposal was rejected by backend validation', problems)
-    changes = output.get('circuit_changes') or []
-    if changes and request.kind != 'circuit_modification':
-        raise ProposalRejected('Only a circuit_modification request may propose circuit changes',
-                               ['circuit_changes present in a configuration request'])
+    # The agent no longer proposes netlist changes (the request kind went on 2026-09-22: nothing could load the file it wrote).
+    # An empty list, as older exported results carry, is accepted.
+    if output.get('circuit_changes'):
+        raise ProposalRejected('The agent cannot change the circuit: it proposes rows (and, for a working copy, its Maestro '
+                               'setup)', ['circuit_changes present'])
     text = lambda name: [str(item)[:1000] for item in (output.get(name) or []) if isinstance(item, (str, int, float))]
     # Advisory text only: it changes nothing and is not part of what an approval is bound to. Malformed entries are dropped.
     checklist = [dict(item=str(entry.get('item') or '')[:200], status=entry.get('status'), who=entry.get('who'),
@@ -105,7 +106,7 @@ def normalize(request: AgentRequest, result: AgentResult):
     # Suggestions for settings exist for a settings_review only; from any other request they are dropped, not obeyed.
     review = (settings_review.normalize(output) if request.kind in ('settings_review', 'run_review')
               else dict(suggestions=[], refused=[], encoder_ideas=[]))
-    return dict(patch=clean, circuit_changes=changes if isinstance(changes, list) else [], checklist=checklist, review=review,
+    return dict(patch=clean, checklist=checklist, review=review,
                 setup=_setup(request, output.get('setup')),
                 reasoning=str(output.get('reasoning') or '')[:8000], warnings=text('warnings'), unresolved=text('unresolved'))
 
@@ -202,9 +203,9 @@ class ProposalStore:
         proposal = dict(
             proposal_id=result.request_id, provider=result.provider, origin=result.origin, kind=request.kind,
             created_utc=utcnow().isoformat(), status='proposed', base_config_hash=config_hash(request.config),
-            circuit_hash=circuit_hash, proposal_hash=_hash(dict(patch=normalized['patch'], circuit_changes=normalized['circuit_changes'],
+            circuit_hash=circuit_hash, proposal_hash=_hash(dict(patch=normalized['patch'],
                                                                 **({'setup': normalized['setup']} if normalized['setup'] is not None else {}))),
-            patch=normalized['patch'], circuit_changes=normalized['circuit_changes'], setup=normalized['setup'],
+            patch=normalized['patch'], setup=normalized['setup'],
             diff=structured_diff(request.config, preview), reasoning=normalized['reasoning'],
             warnings=normalized['warnings'], unresolved=normalized['unresolved'], checklist=normalized['checklist'],
             suggestions=normalized['review']['suggestions'], refused_suggestions=normalized['review']['refused'],

@@ -56,7 +56,7 @@ from .paths import repo_root
 from .schema import WorkbenchConfig, task_definition_hash
 from .security import redact
 from .storage.atomic import JsonlAppender, read_json, read_jsonl, write_json
-from .storage.dataset import DatasetReader, utcnow
+from .storage.dataset import DatasetReader
 
 CHECK_DIR = 'corner_checks'
 MAX_DESIGNS = 3

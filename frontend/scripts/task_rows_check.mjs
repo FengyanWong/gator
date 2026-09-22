@@ -15,22 +15,13 @@
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_rows_check.mjs)" [--live] [screenshot-dir]
 // Exit code 1 if any check fails.
-import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9395, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:8765/';
-const args = process.argv.slice(2), LIVE = args.includes('--live');
-const out = args.find(a => a !== '--live') ?? tmpdir();
-mkdirSync(out, { recursive: true });
-const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-taskrows-'));
-const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failures = 0;
-const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+const LIVE = process.argv.includes('--live');                 // reads go to the backend; writing requests are refused either way
+const APP = await workbenchUrl();
+const out = outDir();
+const browser = await launchEdge('taskrows');
 
 // ---- canned answers (hermetic mode) -------------------------------------------------------------------------------
 const parameter = (variable_id, instance_path, more) => ({ variable_id, instance_path, parameter_name: 'w', unit: 'm', scale: 'linear', value_type: 'continuous', ...more });
@@ -72,45 +63,21 @@ const loaded = taskId => REMOVED.includes(taskId) ? gone(taskId) : ({ loaded: tr
 const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: true, independent_action_variables: 1 }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: null };
 
 try {
-  let target;
-  for (let i = 0; i < 75 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    if (!target) await sleep(200);
-  }
-  if (!target) throw new Error('Edge did not open a debugging port');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const consoleErrors = []; const refused = []; const starters = []; const loads = [];
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
-  const fulfil = (requestId, status, obj) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
-    responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
-  const answer = ({ requestId, request }) => {
-    const url = new URL(request.url), name = url.pathname, pass = () => send('Fetch.continueRequest', { requestId });
+  const page = await browser.open();
+  const { send, evaluate, fulfil, consoleErrors } = page;
+  const refused = []; const starters = []; const loads = [];
+  const answer = params => {
+    const { requestId, request } = params, url = new URL(request.url), name = url.pathname, pass = () => page.pass(requestId);
     if (name === '/api/tasks/starter') starters.push(url.searchParams.get('task_key'));
     if (name === '/api/circuit/load') loads.push(JSON.parse(request.postData ?? '{}').circuit ?? {});
-    if (LIVE) return request.method === 'GET' || name === '/api/circuit/load' || name === '/api/config/validate' ? pass()
-      : (refused.push(`${request.method} ${name}`), fulfil(requestId, 418, { detail: { message: 'FIXTURE: this check lets no writing request through' } }));
+    if (LIVE) return name === '/api/circuit/load' || name === '/api/config/validate' ? pass() : page.readOrRefuse(params, refused);
     if (name === '/api/tasks') return fulfil(requestId, 200, { tasks: TASKS, real_interface_contract: {} });
     if (name === '/api/tasks/starter') { const s = STARTERS[url.searchParams.get('task_key')]; return s ? fulfil(requestId, 200, s) : fulfil(requestId, 404, { detail: 'No starter configuration for this task' }); }
     if (name === '/api/circuit/load') return fulfil(requestId, 200, loaded(loads[loads.length - 1].task_id ?? ''));
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
-    if (request.method === 'GET') return pass();
-    refused.push(`${request.method} ${name}`);
-    return fulfil(requestId, 418, { detail: { message: 'FIXTURE: this check lets no writing request through' } });
+    return page.readOrRefuse(params, refused);
   };
-  ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
-    else if (m.method === 'Fetch.requestPaused') answer(m.params).catch(() => { /* the page went away */ });
-    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-    else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push(m.params.args.map(a => a.value ?? a.description).join(' '));
-  };
-  const evaluate = async expression => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
-  const until = async (expression, tries = 100) => { for (let i = 0; i < tries; i++) { if (await evaluate(expression)) return true; await sleep(100); } return false; };
+  const until = (expression, tries = 100) => page.until(expression, tries);
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Circuit source'))`;
   const FIELD = label => `[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)}).querySelector('input, select')`;
   const BUTTON = (scope, text) => `[...${scope}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
@@ -126,15 +93,13 @@ try {
     return [...${EDITORS}.querySelectorAll('table.editor tbody tr')].map(r => { const c = r.children[at]?.querySelector('input, select'); return c ? c.value : null; }); })()`);
   const note = () => evaluate(`${PANEL}.querySelector('.task-rows')?.textContent ?? ''`);
   const config = () => evaluate(`new Promise(r => setTimeout(() => r(JSON.parse(localStorage.getItem('gator-workbench-config-v1'))), 1000))`);   // the page saves 0.8 s after a change
-  const shot = async name => { const { data } = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(path.join(out, name), Buffer.from(data, 'base64')); };
+  const shot = name => page.shot(path.join(out, name));
 
-  await send('Page.enable'); await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*', requestStage: 'Request' }] });
+  await page.intercept(['*/api/*'], answer);
   // The page opens as the user's did: on the MOCK task, with the rows "Load starter configuration" had given it.
   const mock = LIVE ? await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json() : MOCK;
   const SEED = { schema_version: 'gator-workbench-config-v1', ...mock, run: { mode: 'scratch', concurrency: 1, threads_per_job: 1, ...mock.run }, output: { experiment_name: 'fixture' }, research: {} };
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: `if (!localStorage.getItem('gator-workbench-config-v1')) localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(SEED))});` });
+  await page.seed({ config: SEED, when: 'missing' });
   await send('Page.navigate', { url: APP });
   check('the page opens', await until(`!!(${PANEL}) && ${FIELD('Task')}.options.length > 1`));
   await openTab('Specs');
@@ -241,13 +206,9 @@ try {
   console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
   check('the page asked to start, continue, command, connect or call an agent on its own: never', !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/)/.test(r)), refused.join(', '));
   check('no console errors', consoleErrors.filter(e => !/404|418/.test(e)).length === 0, consoleErrors.join(' | ').slice(0, 300));
-  ws.close();
 } catch (error) {
-  failures++; console.log('ERROR ' + (error?.stack ?? error));
+  fail(error);
 } finally {
-  edge.kill();
-  await sleep(500);
-  try { rmSync(profile, { recursive: true, force: true }); } catch { /* Edge may still hold a file; the temp dir is harmless */ }
+  await browser.close();
 }
-console.log(failures ? `${failures} check(s) FAILED` : 'all checks passed');
-process.exit(failures ? 1 : 0);
+finish();

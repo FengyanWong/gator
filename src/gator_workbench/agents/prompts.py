@@ -33,12 +33,6 @@ PROPOSAL_SCHEMA = {
                            'key': {'type': 'string', 'maxLength': 120},
                            'value': {'type': 'object'},
                            'basis': {'type': 'string', 'maxLength': 1000}}}},
-        'circuit_changes': {'type': 'array', 'maxItems': 200, 'items': {
-            'type': 'object', 'additionalProperties': False,
-            'required': ['instance_path', 'parameter_name', 'new_value', 'unit', 'reason'],
-            'properties': {'instance_path': {'type': 'string'}, 'parameter_name': {'type': 'string'},
-                           'new_value': {'type': 'number'}, 'unit': {'type': 'string'},
-                           'reason': {'type': 'string', 'maxLength': 1000}}}},
         'checklist': {'type': 'array', 'maxItems': 40, 'items': {       # only a `readiness` request is asked for one
             'type': 'object', 'additionalProperties': False, 'required': ['item', 'status', 'who', 'action'],
             'properties': {'item': {'type': 'string', 'maxLength': 200},
@@ -147,7 +141,7 @@ def build_prompt(request) -> str:
         'proposal. A human reviews a diff of your proposal before anything is applied.',
         '',
         f'REQUEST KIND: {request.kind}',
-        'You may change ONLY these sections: ' + (', '.join(sections) if sections else '(none - propose circuit_changes only)'),
+        'You may change ONLY these sections: ' + (', '.join(sections) if sections else '(none - this request changes no table)'),
     ]
     if request.kind == 'modify_fields':
         parts.append('You may change ONLY these rows/fields: ' + json.dumps(request.selection))

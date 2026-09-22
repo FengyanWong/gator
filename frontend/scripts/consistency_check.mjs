@@ -7,20 +7,13 @@
 // other writing request is refused here - nothing is checked in Virtuoso, started or saved on the backend it runs against.
 // Run (Windows node sees a WSL variable only when WSLENV names it):
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/consistency_check.mjs)"
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9404, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:8765/';
-const out = process.argv[2] ?? tmpdir();
-const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-consistency-'));
-const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failures = 0; const consoleErrors = [];
-const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+const APP = await workbenchUrl();
+const out = outDir();
+const browser = await launchEdge('consistency');
+const consoleErrors = [];
 
 // ---- canned answers ------------------------------------------------------------------------------------------
 const TASK = 'real:ring_osc';
@@ -47,18 +40,9 @@ const REFUSED = { message: `Not started: the working copy in Virtuoso differs fr
   report: { ...FAILED_CHECK, steps: FAILED_CHECK.steps.slice(1) } };
 
 try {
-  let target;
-  for (let i = 0; i < 75 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    if (!target) await sleep(200);
-  }
-  if (!target) throw new Error('Edge did not open a debugging port');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const calls = []; const refused = []; const dialogs = [];
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
-  const fulfil = (requestId, status, obj) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
-    responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
+  const page = await browser.open({ errors: consoleErrors });
+  const { send, evaluate, fulfil } = page;
+  const calls = []; const refused = []; const dialogs = [];
   const answer = async ({ requestId, request }) => {
     const url = new URL(request.url), pathname = url.pathname, body = JSON.parse(request.postData ?? '{}');
     if (pathname === '/api/tasks') return fulfil(requestId, 200, TASKS);
@@ -70,22 +54,9 @@ try {
     if (pathname === '/api/virtuoso/task/check') { calls.push({ path: pathname, ...body }); await sleep(300); return fulfil(requestId, 200, FAILED_CHECK); }
     if (pathname === '/api/runs/start') { calls.push({ path: pathname, ...body }); return fulfil(requestId, 409, { detail: REFUSED }); }
     if (request.method === 'GET' || (pathname === '/api/output/check' && !body.create)) return send('Fetch.continueRequest', { requestId });   // reads
-    refused.push(`${request.method} ${pathname}`);
-    return fulfil(requestId, 418, { detail: { message: 'FIXTURE: this check lets no writing request through' } });
+    return page.readOrRefuse({ requestId, request }, refused);
   };
-  ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
-    else if (m.method === 'Fetch.requestPaused') answer(m.params).catch(() => { /* page went away */ });
-    else if (m.method === 'Page.javascriptDialogOpening') { dialogs.push(m.params.message); send('Page.handleJavaScriptDialog', { accept: true }).catch(() => undefined); }
-    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-    else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push(m.params.args.map(a => a.value ?? a.description).join(' '));
-  };
-  const evaluate = async expression => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
+  page.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return send('Page.handleJavaScriptDialog', { accept: true }); });
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Circuit source'))`;
   const BUTTON = text => `[...(${PANEL}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const STEPS = `${PANEL}?.querySelector('.check-steps')`;
@@ -93,10 +64,8 @@ try {
   const START = `[...document.querySelectorAll('header button')].find(b => b.textContent.trim() === 'Start')`;
   const shownText = el => evaluate(`(() => { const e = ${el}; return e && e.checkVisibility() ? e.innerText : ''; })()`);
 
-  await send('Page.enable'); await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*', requestStage: 'Request' }] });
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(CONFIG))});` });
+  await page.intercept(['*/api/*'], answer);
+  await page.seed({ config: CONFIG });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 150 && !(await evaluate(`!!(${BUTTON('Check now')})`)); i++) await sleep(100);
   await sleep(1000);
@@ -119,8 +88,7 @@ try {
     && steps.includes('FAILED: The working copy in Virtuoso differs from the saved task.') && steps.includes('press Save task to take the copy as it is now')
     && steps.includes('real:ring_osc - one step does not agree, so a run would not start. Nothing was simulated.'), steps.slice(0, 300));
   check('the reason is folded until asked for', !(await evaluate(`[...${STEPS}.querySelectorAll('details p')].find(p => p.textContent.includes('FIXTURE MN1')).checkVisibility()`)));
-  const { data } = await send('Page.captureScreenshot', { format: 'png' });
-  writeFileSync(path.join(out, 'consistency-1-check-now.png'), Buffer.from(data, 'base64'));
+  await page.shot(path.join(out, 'consistency-1-check-now.png'));
   // the rows change (the saved rows come back): the result was about the rows before, so it goes
   await evaluate(`${BUTTON('Load starter configuration')}.click()`);
   for (let i = 0; i < 30 && (await evaluate(`!!(${STEPS})`)); i++) await sleep(100);
@@ -138,18 +106,12 @@ try {
     && !(await evaluate(`!!${BANNER}.querySelector('pre')`)), banner.slice(0, 300));
   await evaluate(`[...${BANNER}.querySelectorAll('.check-steps summary')].find(x => x.textContent === 'the reason').click()`); await sleep(300);
   check('opening a reason inside the banner does not close it', await evaluate(`!!${BANNER}`) && (await shownText(BANNER)).includes('FIXTURE MN1'));
-  const shot = await send('Page.captureScreenshot', { format: 'png' });
-  writeFileSync(path.join(out, 'consistency-2-start-refused.png'), Buffer.from(shot.data, 'base64'));
+  await page.shot(path.join(out, 'consistency-2-start-refused.png'));
   check('no other writing request was made', refused.length === 0, refused.join(' | '));
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
-  ws.close();
 } catch (error) {
-  failures++;
-  console.log('FAIL  the check itself stopped: ' + (error?.stack ?? error));
+  fail(error);
 } finally {
-  edge.kill();
-  await sleep(500);
-  try { rmSync(profile, { recursive: true, force: true }); } catch { /* Edge may still hold a file */ }
-  console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
-  process.exit(failures ? 1 : 0);
+  await browser.close();
 }
+finish();

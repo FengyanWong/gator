@@ -165,32 +165,31 @@ def test_preconditions_names_and_duplicates(tmp_path):
         profiles.create_profile('ring_c', config(), recipe='ring_oscillator', expected_frequency_hz=1e9)
 
 
-def test_the_api_creates_the_profile_and_the_cell_stops_being_browse_only(tmp_path):
+def test_a_created_profile_makes_the_cell_a_registered_task_over_the_api(tmp_path):
     read_cell(tmp_path)
     connection_file()
     client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False, monitor=probe(tmp_path)))
     before = client.post('/api/circuit/load', json=dict(circuit=CIRCUIT)).json()
-    assert before['native_draft'] and before['profile_task'] is None and [r['id'] for r in before['profile_recipes']] == ['ring_oscillator', 'opamp_ac']
-    body = dict(config=config().model_dump(mode='json'), name='ring_osc_3stage', recipe='ring_oscillator', expected_frequency_hz=1.2e9)
-    refused = client.post('/api/virtuoso/profile', json=dict(body, expected_frequency_hz=None))
-    assert refused.status_code == 409 and 'expected oscillation frequency' in refused.json()['detail']['message']
-    made = client.post('/api/virtuoso/profile', json=body)
-    assert made.status_code == 200 and made.json()['task_key'] == 'real:ring_osc_3stage' and len(made.json()['parameters']) == 6
+    assert before['native_draft'] and before['profile_task'] is None and 'profile_recipes' not in before
+    # The Create profile form went in 7.57 and its route on 2026-09-22 (the page saves tasks); create_profile stays the
+    # generator's plain path and is called directly.
+    with pytest.raises(profiles.ProfileError, match='expected oscillation frequency'):
+        profiles.create_profile('ring_osc_3stage', config(), recipe='ring_oscillator', expected_frequency_hz=None)
+    made = profiles.create_profile('ring_osc_3stage', config(), recipe='ring_oscillator', expected_frequency_hz=1.2e9)
+    assert made['task_key'] == 'real:ring_osc_3stage' and len(made['parameters']) == 6
     assert client.post('/api/circuit/load', json=dict(circuit=CIRCUIT)).json()['profile_task'] == 'real:ring_osc_3stage'
     assert 'real:ring_osc_3stage' in [t['task_key'] for t in client.get('/api/tasks').json()['tasks']]
     registered = dict(source='registered_task', task_id='real:ring_osc_3stage')
     loaded = client.post('/api/circuit/load', json=dict(circuit=registered)).json()
     assert loaded['loaded'] and loaded['generated_profile'] and loaded['baseline_recorded'] is False and loaded['mock'] is False
     assert any('Single baseline simulation' in note for note in loaded['notes'])
-    full = config(rows=made.json()['parameters']).model_dump(mode='json')
+    full = config(rows=made['parameters']).model_dump(mode='json')
     full['circuit'] = registered
     report = client.post('/api/config/validate', json=dict(config=full)).json()
     assert 'circuit_profile_missing' not in [i['code'] for i in report['issues']]
     # without the explicit authorization nothing starts and nothing is created
     started = client.post('/api/runs/start', json=dict(config=full))
     assert started.status_code >= 400 and not list(tmp_path.glob('**/run_manifest.json'))
-    for bad in (dict(body, name='Bad Name'), dict(body, recipe='x y'), dict(body, host='10.0.0.1')):
-        assert client.post('/api/virtuoso/profile', json=bad).status_code == 422
 
 
 # ------------------------------------------------------------------------------------------------ towards the first real baseline
@@ -420,8 +419,7 @@ def test_the_api_deletes_a_generated_profile_and_the_cell_offers_a_new_one(tmp_p
     read_cell(tmp_path)
     connection_file()
     client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False, monitor=probe(tmp_path)))
-    body = dict(config=config().model_dump(mode='json'), name='ring_osc_3stage', recipe='ring_oscillator', expected_frequency_hz=1.2e9)
-    assert client.post('/api/virtuoso/profile', json=body).status_code == 200
+    profiles.create_profile('ring_osc_3stage', config(), recipe='ring_oscillator', expected_frequency_hz=1.2e9)
     shown = client.post('/api/circuit/load', json=dict(circuit=CIRCUIT)).json()
     assert shown['profile_task'] == 'real:ring_osc_3stage' and shown['profile_task_generated'] is True
     gone = client.post('/api/virtuoso/profile/delete', json=dict(name='ring_osc_3stage'))
@@ -429,7 +427,7 @@ def test_the_api_deletes_a_generated_profile_and_the_cell_offers_a_new_one(tmp_p
     assert 'real:ring_osc_3stage' not in [t['task_key'] for t in client.get('/api/tasks').json()['tasks']]
     after = client.post('/api/circuit/load', json=dict(circuit=CIRCUIT)).json()
     assert after['native_draft'] and after['profile_task'] is None
-    assert client.post('/api/virtuoso/profile', json=body).status_code == 200                 # starting over works
+    profiles.create_profile('ring_osc_3stage', config(), recipe='ring_oscillator', expected_frequency_hz=1.2e9)   # starting over works
     for name, status in (('nothing_here', 409), ('gpdk045_ota5', 409), ('Bad Name', 422), ('../x', 422)):
         refused = client.post('/api/virtuoso/profile/delete', json=dict(name=name))
         assert refused.status_code == status

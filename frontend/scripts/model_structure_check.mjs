@@ -15,21 +15,13 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/model_structure_check.mjs)" [screenshot-dir]
 // Optional: GATOR_WORKBENCH_OUTPUT_ROOT = the output folder whose real models the last section uses
 // (from WSL: WSLENV=GATOR_WORKBENCH_URL:GATOR_WORKBENCH_OUTPUT_ROOT). Exit code 1 if any check fails.
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9391, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:8765/';
+const APP = await workbenchUrl();
 const ROOT = process.env.GATOR_WORKBENCH_OUTPUT_ROOT || undefined;
-const out = process.argv[2] ?? tmpdir();
-const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-structure-'));
-const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failures = 0;
-const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+const out = outDir();
+const browser = await launchEdge('structure');
 
 // ---- canned answers ------------------------------------------------------------------------------------------
 const NET = { encoder_type: 'graph_transformer', hidden_dim: 16, heads: 2, layers: 1 };
@@ -70,18 +62,9 @@ const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }
 try {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   const CONFIG = { ...starter, run: { ...starter.run, mode: 'fine_tune', network: NET, model_source: { run_dir: RUN, checkpoint_id: 'latest' } }, output: { experiment_name: 'fixture', ...(ROOT ? { output_root: ROOT } : {}) }, research: {} };
-  let target;
-  for (let i = 0; i < 75 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    if (!target) await sleep(200);
-  }
-  if (!target) throw new Error('Edge did not open a debugging port');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const consoleErrors = []; const refused = []; const asked = []; let canned = true, mode = {}, failNext = null;
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
-  const fulfil = (requestId, status, obj) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
-    responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
+  const page = await browser.open({ consoleApi: false });
+  const { send, evaluate, fulfil, consoleErrors } = page;
+  const refused = []; const asked = []; let canned = true, mode = {}, failNext = null;
   const answer = ({ requestId, request }) => {
     const name = new URL(request.url).pathname, body = request.postData ? JSON.parse(request.postData) : null;
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
@@ -94,22 +77,9 @@ try {
       if (failNext) { const detail = failNext; failNext = null; return fulfil(requestId, 409, { detail }); }
       return fulfil(requestId, 200, structure(body.checkpoint_id, mode));
     }
-    if (request.method === 'GET') return send('Fetch.continueRequest', { requestId });
-    refused.push(`${request.method} ${name}`);
-    return fulfil(requestId, 418, { detail: { message: 'FIXTURE: this check lets no writing request through' } });
+    return page.readOrRefuse({ requestId, request }, refused);
   };
-  ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
-    else if (m.method === 'Fetch.requestPaused') answer(m.params).catch(() => { /* the page went away */ });
-    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-  };
-  const evaluate = async expression => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
-  const until = async (expression, tries = 60) => { for (let i = 0; i < tries; i++) { if (await evaluate(expression)) return true; await sleep(100); } return false; };
+  const until = (expression, tries = 60) => page.until(expression, tries);
   const RIGHT = `document.querySelector('.right')`, FOLD = `document.querySelector('.right details.structure')`, DIALOG = `document.querySelector('dialog.structure-dialog')`;
   const setSelect = (expression, value) => evaluate(`(() => { const s = ${expression}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)});
     s.dispatchEvent(new Event('change', { bubbles: true })); return s.value; })()`);
@@ -119,16 +89,11 @@ try {
   const layers = () => evaluate(`[...${DIALOG}.querySelectorAll('table.structure-layers')].map(t => [...t.tBodies[0].rows].map(r => ({ cells: [...r.cells].map(c => c.textContent.trim()), css: r.className })))`);
   const lastAsked = () => asked[asked.length - 1] ?? {};
   const waitAsked = async (count) => { for (let i = 0; i < 50 && asked.length < count; i++) await sleep(100); return asked.length; };
-  const shot = async (name, expression) => {
-    const clip = await evaluate(`(() => { const r = ${expression}.getBoundingClientRect(); return { x: Math.max(0, r.x), y: Math.max(0, r.y), width: Math.min(1680, r.width), height: Math.min(1050, r.height), scale: 1 }; })()`);
-    const { data } = await send('Page.captureScreenshot', { format: 'png', clip });
-    writeFileSync(path.join(out, name), Buffer.from(data, 'base64'));
-  };
+  const shot = async (name, expression) => page.shot(path.join(out, name),
+    await evaluate(`(() => { const r = ${expression}.getBoundingClientRect(); return { x: Math.max(0, r.x), y: Math.max(0, r.y), width: Math.min(1680, r.width), height: Math.min(1050, r.height), scale: 1 }; })()`));
 
-  await send('Page.enable'); await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*', requestStage: 'Request' }] });
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: `if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(CONFIG))}); }` });
+  await page.intercept(['*/api/*'], answer);
+  await page.seed({ config: CONFIG, when: 'once' });
   await send('Page.navigate', { url: APP });
   if (!(await until(`!!${RIGHT}?.querySelector('select.model-point')`, 150))) throw new Error('the model chooser never showed the seeded model; the page reads: ' + JSON.stringify(await evaluate(`document.body.innerText.slice(0, 300)`)));
   if (!(await until(`!!(${FOLD})`, 60))) throw new Error('this page has no "Network structure" fold-out: the served frontend is older than it (npm run build, then reload)');
@@ -221,13 +186,9 @@ try {
   check('the page asked to start, continue, command, connect, save settings or call an agent on its own: never',
     !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/|network-settings)/.test(r)), refused.join(', '));
   check('no console exception', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-  console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
-  ws.close();
 } catch (error) {
-  failures++; console.log(`FAIL  the check could not run: ${error.message}`);
+  fail(error);
 } finally {
-  edge.kill();
-  await sleep(500);
-  try { rmSync(profile, { recursive: true, force: true }); } catch { /* Edge may still hold a file; it is a temp dir */ }
+  await browser.close();
 }
-process.exit(failures ? 1 : 0);
+finish();

@@ -115,22 +115,14 @@ def test_an_incomplete_netlist_reference_names_the_file_that_is_missing(client):
     assert 'netlist_path' in both and 'parser_config_path' in both and 'never guessed' in both
 
 
-def test_circuit_modification_is_diff_then_confirmed_working_copy(client, tmp_path):
-    circuit = dict(source='netlist', netlist_path=str(REPO / 'tests/fixtures/synthetic/opamp.scs'),
-                   parser_config_path=str(REPO / 'configs/opamp.json'))
-    original = (REPO / 'tests/fixtures/synthetic/opamp.scs').read_text()
-    body = dict(circuit=circuit, changes=[dict(instance_path='CL', parameter_name='c', new_value=2, unit='pF')],
-                output_root=str(tmp_path))
-    preview = client.post('/api/circuit/modify', json=body).json()
-    assert preview['applied'] is False and preview['diff'][0]['after'] == pytest.approx(2e-12)
-    assert not (tmp_path / 'working_copies').exists()                            # nothing written before confirmation
-    applied = client.post('/api/circuit/modify', json=dict(body, confirmed=True)).json()
-    copy = Path(applied['working_copy'])
-    assert applied['applied'] and copy.is_file() and 'c=2e-12' in copy.read_text() and copy.parent.name == 'working_copies'
-    assert (REPO / 'tests/fixtures/synthetic/opamp.scs').read_text() == original  # the original is never overwritten
-    assert 'checkpoint compatibility' in applied['revalidate'] and 'No native schematic' in applied['note']
-    native = client.post('/api/circuit/modify', json=dict(circuit=dict(source='virtuoso', library='L', cell='C'), changes=[]))
-    assert native.status_code == 501 and 'NEW cellview' in native.json()['detail']['message']
+def test_routes_without_a_caller_are_gone(client):
+    # 2026-09-22: circuit changes proposed by the agent (a netlist file nothing could load), the Create profile form's
+    # route (Save task replaced it) and the mode suggestion (it comes with /api/runs/model) were removed.
+    for path in ('/api/circuit/modify', '/api/virtuoso/profile', '/api/runs/suggest-mode'):
+        assert client.post(path, json={}).status_code in (404, 405), path
+    # A malformed body is refused with 422 like everywhere else, not a 500.
+    for path in ('/api/config/diff', '/api/aggregates/export', '/api/agent/cancel', '/api/agent/reject'):
+        assert client.post(path, json={'unexpected': 1}).status_code == 422, path
 
 
 # ------------------------------------------------------------------------------- output settings

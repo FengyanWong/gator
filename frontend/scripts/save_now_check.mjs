@@ -13,25 +13,16 @@
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/save_now_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9389, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:8765/';
-const out = process.argv[2] ?? tmpdir();
-const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-savenow-'));
-const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failures = 0;
-const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+const APP = await workbenchUrl();
+const out = outDir();
+const browser = await launchEdge('savenow');
 
 // ---- the simulated run (FIXTURE) -------------------------------------------------------------------------------------
-const RUN_KEY = 'gator-workbench-current-run-v1';
 const DIR = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task__scratch__seed0__0001';
-const sim = { state: 'running', alive: true, charged: 12, max: 60, beat: 0, manual_save: null, last_checkpoint_utc: null };
+const sim = { state: 'running', alive: true, charged: 12, max: 60, beat: 0, manual_save: null, last_checkpoint_utc: null, output: { save_checkpoints: true } };
 const listed = () => [{ run_dir: DIR, run_id: 'fixture-run', task_id: 'fixture_task:0000', task_definition_hash: 'fixture', mode: 'scratch', mock: true, seed: 0,
   created_utc: '2026-09-21T00:00:00+00:00', state: sim.state, experiment: 'fixture_experiment__0001', evaluations: null, first_feasible_eval_count: null, resumability: null }];
 const statusOf = () => ({ state: sim.state, run_id: 'fixture-run', mode: 'scratch', entry: 'start', provenance: 'mock', mock: true, worker_alive: sim.alive, run_dir: DIR,
@@ -45,62 +36,34 @@ const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }
 try {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   const CONFIG = { ...starter, output: { experiment_name: 'fixture' }, research: {} };
-  let target;
-  for (let i = 0; i < 75 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    if (!target) await sleep(200);
-  }
-  if (!target) throw new Error('Edge did not open a debugging port');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const consoleErrors = []; const refused = []; const commands = []; const dialogs = []; let refuseNext = null, requests = 0;
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
-  const fulfil = (requestId, status, obj) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
-    responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
+  const page = await browser.open({ consoleApi: false });
+  const { send, evaluate, until, fulfil, consoleErrors } = page;
+  const refused = []; const commands = []; const dialogs = []; const answers = []; let refuseNext = null, requests = 0;
   const answer = ({ requestId, request }) => {
     const url = new URL(request.url), name = url.pathname, body = request.postData ? JSON.parse(request.postData) : null;
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
     if (name === '/api/runs/status') return url.searchParams.get('run_dir') === DIR ? fulfil(requestId, 200, statusOf()) : fulfil(requestId, 404, { detail: 'Not a run directory' });
     if (name === '/api/runs') return fulfil(requestId, 200, { runs: listed() });
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
-    if (name === '/api/runs/download') return fulfil(requestId, 200, { output: { save_checkpoints: true } });
+    if (name === '/api/runs/download') return fulfil(requestId, 200, { output: sim.output });              // the run's effective_config.json
     if (name === '/api/runs/command') {
       commands.push(body.command);
       if (refuseNext) { const detail = refuseNext; refuseNext = null; return fulfil(requestId, 409, { detail }); }
       return fulfil(requestId, 200, { id: `fixture-request-${++requests}`, command: body.command, issued_utc: '2026-09-21T00:00:00+00:00' });
     }
-    if (request.method === 'GET') return send('Fetch.continueRequest', { requestId });
-    refused.push(`${request.method} ${name}`);
-    return fulfil(requestId, 418, { detail: { message: 'FIXTURE: this check lets no writing request through' } });
+    return page.readOrRefuse({ requestId, request }, refused);
   };
-  ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
-    else if (m.method === 'Fetch.requestPaused') answer(m.params).catch(() => { /* the page went away */ });
-    else if (m.method === 'Page.javascriptDialogOpening') { dialogs.push(m.params.message); send('Page.handleJavaScriptDialog', { accept: false }).catch(() => undefined); }
-    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-  };
-  const evaluate = async expression => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
-  const until = async (expression, tries = 80) => { for (let i = 0; i < tries; i++) { if (await evaluate(expression)) return true; await sleep(100); } return false; };
+  // confirm(): answered as planned (answers), an unplanned one with "Cancel"; every question is recorded
+  page.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return send('Page.handleJavaScriptDialog', { accept: answers.length ? answers.shift() : false }); });
   const SAVE = `document.querySelector('header button.run-save')`, MAIN = `document.querySelector('header button.run-main')`, ABORT = `document.querySelector('header button.run-abort')`;
   const look = () => evaluate(`({ save: ${SAVE}?.textContent, saveOff: ${SAVE}?.disabled, title: ${SAVE}?.title, main: ${MAIN}?.textContent, abortOff: ${ABORT}?.disabled,
     banner: document.querySelector('.banner')?.textContent ?? null, mainX: ${MAIN}?.getBoundingClientRect().x, saveWidth: ${SAVE}?.getBoundingClientRect().width })`);
   const banner = text => until(`(document.querySelector('.banner')?.textContent ?? '').includes(${JSON.stringify(text)})`, 60);
-  const shot = async name => {
-    const clip = await evaluate(`(() => { const r = document.querySelector('header').getBoundingClientRect(); return { x: 0, y: 0, width: 1680, height: Math.min(1050, r.bottom + 60), scale: 1 }; })()`);
-    const { data } = await send('Page.captureScreenshot', { format: 'png', clip });
-    writeFileSync(path.join(out, name), Buffer.from(data, 'base64'));
-  };
+  const shot = async name => page.shot(path.join(out, name),
+    await evaluate(`(() => { const r = document.querySelector('header').getBoundingClientRect(); return { x: 0, y: 0, width: 1680, height: Math.min(1050, r.bottom + 60), scale: 1 }; })()`));
 
-  await send('Page.enable'); await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*', requestStage: 'Request' }] });
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: `if (location.protocol.startsWith('http') && !sessionStorage.getItem('fixture-seeded')) { sessionStorage.setItem('fixture-seeded', '1');
-    localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(CONFIG))}); localStorage.setItem(${JSON.stringify(RUN_KEY)}, ${JSON.stringify(DIR)}); }` });
+  await page.intercept(['*/api/*'], answer);
+  await page.seed({ config: CONFIG, run: DIR, when: 'once' });
   await send('Page.navigate', { url: APP });
   if (!(await until(`!!(${MAIN})`, 150))) throw new Error('the run buttons never appeared; the page reads: ' + JSON.stringify(await evaluate(`document.body.innerText.slice(0, 300)`)));
   if (!(await until(`!!(${SAVE})`, 30))) throw new Error('this page has no "Save now" button: the served frontend is older than it (npm run build, then reload)');
@@ -164,14 +127,50 @@ try {
 
   console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
   check('no confirmation dialog was needed for a save', dialogs.length === 0, dialogs.join(' | ').slice(0, 200));
+
+  // ---- the Run status tab asks the header's questions (review of 2026-09-22) ------------------------------------------------------------------------
+  // "Pause and save", "Stop and save" and "Force cancel" acted on one click, and "Force cancel" was on whenever a worker lived.
+  const STATUS_BUTTON = text => `[...document.querySelectorAll('.status-grid button')].find(b => b.textContent === ${JSON.stringify(text)})`;
+  const sentSince = async (mark, ms = 3000) => { for (let waited = 0; waited < ms && commands.length === mark; waited += 100) await sleep(100); return commands.slice(mark); };
+  const askedSince = async (mark, ms = 3000) => { for (let waited = 0; waited < ms && dialogs.length === mark; waited += 100) await sleep(100); return dialogs.slice(mark); };
+  Object.assign(sim, { state: 'running', alive: true });
+  check('(set-up) the run is running again: the tab\'s "Stop and save" is on', await until(`!!(${STATUS_BUTTON('Stop and save')}) && !${STATUS_BUTTON('Stop and save')}.disabled`, 60));
+  check('"Force cancel" is off while the run is simply running: nothing waits to be forced', await evaluate(`${STATUS_BUTTON('Force cancel')}.disabled`));
+  let mark = commands.length, seen = dialogs.length;
+  answers.push(false); await evaluate(`${STATUS_BUTTON('Stop and save')}.click()`);
+  let asked = await askedSince(seen);
+  check('"Stop and save" asks the header\'s Abort question first', asked.length === 1 && /^Abort this run\?/.test(asked[0]), asked.join(' | ').slice(0, 120));
+  check('... answered "Cancel", no command is sent', (await sentSince(mark, 1500)).length === 0, commands.slice(mark).join());
+  answers.push(true); await evaluate(`${STATUS_BUTTON('Stop and save')}.click()`);
+  check('... answered "OK", one stop is sent', JSON.stringify(await sentSince(mark)) === '["stop"]', commands.slice(mark).join());
+  sim.output = { save_checkpoints: true, save_replay_snapshots: false };                      // a run that cannot come back after a pause
+  mark = commands.length; seen = dialogs.length;
+  answers.push(false); await evaluate(`${STATUS_BUTTON('Pause and save')}.click()`);
+  asked = await askedSince(seen);
+  check('"Pause and save" on a run that cannot come back asks the header\'s Pause question', asked.length === 1 && /cannot be resumed after a pause: replay snapshots are switched off/.test(asked[0]), asked.join(' | ').slice(0, 120));
+  check('... answered "Cancel", no command is sent', (await sentSince(mark, 1500)).length === 0, commands.slice(mark).join());
+  answers.push(true); await evaluate(`${STATUS_BUTTON('Pause and save')}.click()`);
+  check('... answered "OK", one pause is sent', JSON.stringify(await sentSince(mark)) === '["pause"]', commands.slice(mark).join());
+  sim.output = { save_checkpoints: true };
+  sim.state = 'stopping';
+  check('"Force cancel" is on while a stop waits for the simulation in flight', await until(`!${STATUS_BUTTON('Force cancel')}.disabled`, 60));
+  mark = commands.length; seen = dialogs.length;
+  answers.push(false); await evaluate(`${STATUS_BUTTON('Force cancel')}.click()`);
+  asked = await askedSince(seen);
+  check('"Force cancel" asks the header\'s Force abort question; answered "Cancel", nothing is sent', asked.length === 1 && /^Force abort\?/.test(asked[0])
+    && (await sentSince(mark, 1500)).length === 0, `${asked.join(' | ').slice(0, 80)} / ${commands.slice(mark).join()}`);
+  answers.push(true); await evaluate(`${STATUS_BUTTON('Force cancel')}.click()`);
+  check('... answered "OK", one cancel is sent', JSON.stringify(await sentSince(mark)) === '["cancel"]', commands.slice(mark).join());
+  sim.state = 'pausing';
+  check('"Force cancel" is on while a pause waits, too', await until(`!${STATUS_BUTTON('Force cancel')}.disabled`, 60));
+  Object.assign(sim, { state: 'paused', alive: false });
+  check('... and off again once the worker is gone', await until(`${STATUS_BUTTON('Force cancel')}.disabled`, 60));
+  await shot('save-now-6-status-questions.png');
+  check('every answer this check planned was used by a question on screen', answers.length === 0, `${answers.length} left`);
   check('no console exception', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-  console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
-  ws.close();
 } catch (error) {
-  failures++; console.log(`FAIL  the check could not run: ${error.message}`);
+  fail(error);
 } finally {
-  edge.kill();
-  await sleep(500);
-  try { rmSync(profile, { recursive: true, force: true }); } catch { /* Edge may still hold a file; it is a temp dir */ }
+  await browser.close();
 }
-process.exit(failures ? 1 : 0);
+finish();

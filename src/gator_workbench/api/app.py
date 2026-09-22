@@ -36,7 +36,6 @@ from ..agents import settings_review as agent_review
 from ..agents import diagnostics as agent_diagnostics
 from ..agents.prompts import circuit_summary
 from .. import corner_check
-from ..best_design import export_netlist
 from ..layout import RunLayout, environment_versions
 from ..native_cells import load_import as load_cell_import       # `native_cells` is a route name in create_app
 from ..paths import OutputRoots, PathNotAllowed, default_output_root, directory_bytes, repo_root, safe_child
@@ -133,13 +132,6 @@ class NativeReadBody(Body):
     testbench: str | None = None        # import only: the cell whose netlist is exported (the testbench around `cell`)
 
 
-class CreateProfileBody(Body):
-    config: dict
-    name: str = Field(pattern=r'^[a-z][a-z0-9_]{1,39}$')
-    recipe: str = Field(pattern=r'^[a-z_]{1,40}$')
-    expected_frequency_hz: float | None = Field(None, gt=0)
-
-
 class CopyBody(Body):
     profile_id: str | None = Field(None, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
     library: str = Field(pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
@@ -184,7 +176,6 @@ class TaskCheckBody(Body):
 
 class ProfileActionBody(Body):
     name: str = Field(pattern=r'^[a-z][a-z0-9_]{1,39}$')
-    profile_id: str | None = Field(None, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
     run_dir: str | None = None
 
 
@@ -224,11 +215,17 @@ class ApplyBody(Body):
     config: dict
 
 
-class CircuitChangeBody(Body):
-    circuit: dict
-    changes: list[dict]
-    confirmed: bool = False
-    output_root: str | None = None
+class DiffBody(Body):
+    before: dict = {}
+    after: dict = {}
+
+
+class CancelBody(Body):
+    request_id: str
+
+
+class RejectBody(Body):
+    proposal_id: str
 
 
 class ExportBody(Body):
@@ -430,6 +427,15 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         except Exception as exc:
             return None, dict(blocker=redact(f'{type(exc).__name__}: {exc}', 1000), interface_contract=None)
 
+    def validate_loaded(config, runtime):
+        """Static validation against the loaded circuit, the SAME way for the page, the start checklist, the settings
+        review and an applied proposal. A cell read from Virtuoso that has no task yet (a native draft) provides metrics
+        nobody knows: they are not checked - an empty list reported every probe as `metric_not_provided` in the agent's
+        checklist while the page showed none."""
+        draft = runtime is not None and bool(runtime.circuit.get('native_draft'))
+        return validate(config, graph=None if runtime is None else runtime.base_graph,
+                        provided_metrics=None if runtime is None or draft else set(runtime.provided_metrics))
+
     def agent_settings() -> AgentSettings:
         saved = runs.load_settings().get('agent') or {}
         saved['provider'] = agents.default_provider_name(saved.get('provider'))
@@ -513,7 +519,6 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         # built-in circuits - is not "browse only", and gets no second profile: the form points to its task.
         existing = profiles.task_for_cell(circuit.library, circuit.cell) if circuit.source == 'virtuoso' and circuit.library and circuit.cell else None
         native = dict(profile_task=existing and existing['task_key'], profile_task_generated=existing and existing['generated'],
-                      profile_recipes=[dict(id=key, label=value['label']) for key, value in profiles.RECIPES.items()],
                       working_copy=working_copy.load(circuit.library, circuit.cell) if circuit.library and circuit.cell else None
                       ) if circuit.source == 'virtuoso' else {}
         if runtime is None:
@@ -537,55 +542,6 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                     native_draft=bool(runtime.circuit.get('native_draft')), generated_profile=bool(runtime.circuit.get('generated_profile')),
                     baseline_recorded=runtime.circuit.get('baseline_recorded'), **native)
 
-    @app.post('/api/circuit/modify')
-    def circuit_modify(body: CircuitChangeBody):
-        """proposal -> structured diff -> user confirmation -> execution on a WORKING COPY -> reread + validate.
-        The original netlist is never overwritten. A netlist is not a native schematic."""
-        circuit = schema.CircuitReference.model_validate(body.circuit)
-        authorize_circuit(circuit)
-        if circuit.source == 'virtuoso':
-            fail(501, 'Writing a native schematic is not implemented. Contract: connection gate write_cellview, explicit '
-                      'user confirmation, execution on a NEW cellview (never the original or a PDK library), reread '
-                      'and validate. The bridge offers schematic.create/modify/edit/plan for this.',
-                 required_gate='write_cellview', needed_layers=list(connection.ACTION_LAYERS['write_cellview']))
-        shell = schema.WorkbenchConfig.model_validate(dict(circuit=circuit.model_dump(), run=dict(max_evaluations=1)))
-        runtime, blocked = load_runtime(shell)
-        if runtime is None:
-            fail(409, blocked['blocker'])
-        members, diff = [], []
-        for change in body.changes:
-            try:
-                value = units.to_canonical(float(change['new_value']), change['unit'])
-            except (KeyError, ValueError, units.UnitError) as exc:
-                fail(422, f'Invalid circuit change: {exc}')
-            current = runtime.base_graph.parameters.get(change['instance_path'], {}).get(change['parameter_name'])
-            if current is None:
-                fail(422, f"{change['instance_path']}.{change['parameter_name']} is not in the circuit")
-            members.append(dict(instance_path=change['instance_path'], parameter_name=change['parameter_name'], value=value))
-            diff.append(dict(instance_path=change['instance_path'], parameter_name=change['parameter_name'],
-                             before=current.value, after=value, before_expression=current.raw))
-
-        def reparse(text):
-            from analog_optimizer.netlist.config import ParserConfig
-            from analog_optimizer.netlist.spectre_parser import SpectreParser
-            return SpectreParser(ParserConfig.from_file(runtime.parser_config_path)).parse_text(
-                text, source=runtime.netlist_path, top=runtime.circuit.get('dut_hierarchy'))
-        outcome = export_netlist(runtime.netlist_text, runtime.base_graph, members, reparse=reparse)
-        if outcome['status'] != 'verified':
-            fail(409, f"The change cannot be applied safely: {outcome['reason']}")
-        if not body.confirmed:
-            return dict(applied=False, diff=diff, note='Structured diff only. Confirm to write a working copy.')
-        root = roots.resolve(body.output_root or runs.remembered_output_root())
-        target_dir = root / 'working_copies'
-        target_dir.mkdir(parents=True, exist_ok=True)
-        from uuid import uuid4
-        target = target_dir / f'{Path(runtime.netlist_path).stem}__{uuid4().hex[:10]}.scs'
-        target.write_text(outcome['text'], encoding='utf8')
-        return dict(applied=True, diff=diff, working_copy=str(target), original_untouched=runtime.netlist_path,
-                    revalidate=['variable references', 'measurement nodes', 'test environment', 'checkpoint compatibility'],
-                    note='Reload the circuit from the working copy. The task identity changed, so earlier approvals and '
-                         'a full resume of earlier runs no longer apply. No native schematic was generated.')
-
     @app.post('/api/virtuoso/libraries')
     def native_libraries(body: NativeReadBody):
         return _native(body, 'libraries')
@@ -605,18 +561,6 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         cell) plus the parameter readback, kept locally (`native_cells`). Gated and read-only; zero cost. The cell
         can then be shown, edited against, validated and summarized for the agent. It cannot run: no profile."""
         return _native(body, 'import_cell')
-
-    @app.post('/api/virtuoso/profile')
-    def native_create_profile(body: CreateProfileBody):
-        """Explicit click: turn the cell that was read into the workbench + the rows of the three editors into a
-        circuit profile and register it as `real:<name>`. Contacts nothing (no Virtuoso, no simulation). Whatever the
-        verified real backend cannot do is refused with the reason. Returns the rows ADJUSTED onto the width grid: a
-        real run requires the configured variables to be exactly the registered ones."""
-        config = parse_config(body.config)
-        try:
-            return profiles.create_profile(body.name, config, recipe=body.recipe, expected_frequency_hz=body.expected_frequency_hz)
-        except profiles.ProfileError as exc:
-            fail(409, exc, code='profile_refused')
 
     @app.post('/api/virtuoso/profile/reference')
     def native_profile_reference(body: ProfileActionBody):
@@ -729,19 +673,16 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         saved = profiles.task_file(body.task) if entry else None
         if entry:
             cell, copy = entry.get('original'), entry.get('copy')
-            last = Path((entry.get('copy_target') or {}).get('state_dir') or '.') / 'last_written_setup.json'
+            state_dir = (entry.get('copy_target') or {}).get('state_dir')      # None: a task made before working copies
             name = body.task
         else:
             record = working_copy.load(body.library, body.cell) if body.library and body.cell else None
             cell = (record or {}).get('original') or (dict(library=body.library, cell=body.cell, testbench=config.circuit.testbench_cell)
                                                         if body.library and body.cell else None)
             copy = (record or {}).get('copy')
-            last = working_copy.record_dir(body.library, body.cell) / 'last_written_setup.json' if record else Path('/nonexistent')
+            state_dir = working_copy.record_dir(body.library, body.cell) if record else None
             name = (body.cell or 'task').lower()
-        try:
-            setup = json.loads(last.read_text())
-        except (OSError, ValueError):
-            setup = None
+        setup = working_copy.last_written(dict(state_dir=state_dir)) if state_dir else None
         data = task_files.draft(config, name=name, cell=cell, copy=copy, saved=saved, extras=body.extras,
                                 setup=dict(setup, test='GATOR') if setup else None)
         return dict(text=task_files.render(data), name=name, revision=(saved or {}).get('revision', 0), saved=saved is not None)
@@ -781,21 +722,17 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     def config_validate(body: ConfigBody):
         config = parse_config(body.config)
         runtime, blocked = load_runtime(config)
-        draft = runtime is not None and bool(runtime.circuit.get('native_draft'))
-        # A cell read from Virtuoso has no profile yet: which metrics it will provide is unknown (not checked),
-        # and it must never look startable.
-        report = validate(config, graph=None if runtime is None else runtime.base_graph,
-                          provided_metrics=None if runtime is None or draft else set(runtime.provided_metrics))
-        if draft:
+        report = validate_loaded(config, runtime)
+        if runtime is not None and runtime.circuit.get('native_draft'):          # it must never look startable
             report.add('blocker', 'circuit_profile_missing', 'circuit', tasks.NATIVE_DRAFT_NOT_EXECUTABLE)
         return dict(report.as_dict(), config_hash=schema.config_hash(config),
                     task_definition_hash=schema.task_definition_hash(config), circuit_blocker=blocked,
                     mock=None if runtime is None else runtime.mock)
 
     @app.post('/api/config/diff')
-    def config_diff(body: dict):
+    def config_diff(body: DiffBody):
         from ..agents.proposals import structured_diff
-        return dict(diff=structured_diff(body.get('before') or {}, body.get('after') or {}))
+        return dict(diff=structured_diff(body.before, body.after))
 
     # ------------------------------------------------------------------ output settings
     @app.get('/api/output/browse')
@@ -878,14 +815,6 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             return dict(runs=runs.list_runs(roots, output_root, include_mock=include_mock))
         except PathNotAllowed as exc:
             fail(403, exc)
-
-    @app.post('/api/runs/suggest-mode')
-    def suggest_mode(body: dict):
-        config = parse_config(body.get('config'))
-        source = body.get('source_run_dir')
-        if source:
-            run_path(source)
-        return runs.suggest_mode(config, source)
 
     @app.post('/api/runs/model')
     def describe_model(body: dict):
@@ -1087,8 +1016,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         if table not in TABLES:
             fail(404, 'Unknown table')
         reader = DatasetReader(run_path(run_dir) / 'data')
-        rows = reader.rows(table)
-        rows = rows[-limit:] if tail else rows[:limit]
+        whole = reader.table(table)             # only the rows shown are turned into Python (was: all of them, then 20 kept)
+        rows = (whole.slice(max(0, whole.num_rows - limit)) if tail else whole.slice(0, limit)).to_pylist()
         clean = []
         for row in rows:
             for column in TABLES[table]['columns']:
@@ -1140,8 +1069,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                                  headers={'Content-Disposition': f'attachment; filename="{path.name}__data.zip"'})
 
     @app.post('/api/aggregates/export')
-    def export_aggregates(body: dict):
-        run_dir = run_path(body.get('run_dir'))
+    def export_aggregates(body: ExportBody):
+        run_dir = run_path(body.run_dir)
         experiment = RunLayout(run_dir).experiment_dir
         return dict(experiment_dir=str(experiment), files=aggregates.export_aggregates(experiment))
 
@@ -1189,8 +1118,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     def run_readiness(config, runtime, blocked) -> dict:
         """The start checklist. Free: static validation, the output-root check and the monitor's CACHED connection
         status - no bridge contact, no simulator, no agent. A fresh connection test stays the user's button."""
-        report = validate(config, graph=None if runtime is None else runtime.base_graph,
-                          provided_metrics=None if runtime is None else set(runtime.provided_metrics)).as_dict()
+        report = validate_loaded(config, runtime).as_dict()
         profile_id = config.run.connection_profile_id
         try:
             link = monitor.status(profile_id) if profile_id and runtime is not None and not runtime.mock else None
@@ -1230,8 +1158,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                 parsed = schema.WorkbenchConfig.model_validate(raw)
             except ValidationError as exc:
                 return '; '.join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()[:3]), []
-            report = validate(parsed, graph=None if runtime is None else runtime.base_graph,
-                              provided_metrics=None if runtime is None else set(runtime.provided_metrics))
+            report = validate_loaded(parsed, runtime)
             return None, [issue.code for issue in report.issues if issue.level in ('error', 'blocker')]
         checked = agent_review.check(request.config, proposal['suggestions'], validate_config=validate_config)
         proposal['suggestions'], proposal['suggestions_together'] = checked['suggestions'], checked['all_together']
@@ -1379,8 +1306,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         return run_readiness(config, runtime, blocked)
 
     @app.post('/api/agent/cancel')
-    def cancel(body: dict):
-        return dict(cancelled=agents.REGISTRY.cancel(str(body.get('request_id'))))
+    def cancel(body: CancelBody):
+        return dict(cancelled=agents.REGISTRY.cancel(body.request_id))
 
     @app.post('/api/agent/export-task')
     def export_task(body: ProposeBody):
@@ -1431,8 +1358,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             raise HTTPException(409, detail=dict(message=str(exc), problems=exc.problems, configuration_unchanged=True))
         new_config = parse_config(updated)
         runtime, _ = load_runtime(new_config)
-        report = validate(new_config, graph=None if runtime is None else runtime.base_graph,
-                          provided_metrics=None if runtime is None else set(runtime.provided_metrics))
+        report = validate_loaded(new_config, runtime)
         proposal = proposals.get(body.proposal_id)
         if proposal['kind'] != 'virtuoso_setup':
             return dict(config=updated, validation=report.as_dict(),
@@ -1463,9 +1389,9 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         return dict(config=updated, validation=report.as_dict(), virtuoso=virtuoso, note=note)
 
     @app.post('/api/agent/reject')
-    def reject(body: dict):
+    def reject(body: RejectBody):
         try:
-            return proposals.reject(str(body.get('proposal_id')))
+            return proposals.reject(body.proposal_id)
         except KeyError:
             fail(404, 'Unknown proposal')
 

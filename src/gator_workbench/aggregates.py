@@ -27,9 +27,6 @@ from .storage.atomic import publish, read_json, temporary_path, write_json
 from .storage.dataset import DatasetReader, utcnow
 
 FIRST_FEASIBLE_CONVENTION = 'evaluations_charged_when_scheduler_confirmed_feasibility_including_in_flight'
-EARLY_STOPS = ('user_pause', 'user_stop', 'user_cancel', 'wall_time_limit', 'insufficient_storage',
-               'persistence_failure', 'consecutive_failures', 'infrastructure_failures', 'evaluation_exception',
-               'exception', 'interrupted')
 
 COLUMNS = {
     'run_summary': [

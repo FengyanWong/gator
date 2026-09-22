@@ -293,10 +293,6 @@ def _original_values_on(target) -> dict:
             for (owner, instance), entry in _readbacks(target['original']).items() for parameter, value in (entry.get('params') or {}).items()}
 
 
-def bindable(library, cell) -> dict:
-    return bindable_on(draft_target(library, cell))
-
-
 # ---------------------------------------------------------------------------------- targets: which copy a setup is about
 def draft_target(library, cell) -> dict:
     """The cell's own working copy - the one "Make a working copy" made - as the setup functions take it."""

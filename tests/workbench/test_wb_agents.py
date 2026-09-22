@@ -3,7 +3,6 @@ No real Claude/Codex session is ever started by these tests."""
 import json
 import os
 from pathlib import Path
-import shutil
 import stat
 import sys
 import threading
@@ -380,9 +379,7 @@ def test_diagnostics_expose_backend_cwd_path_and_nesting_without_secrets(tmp_pat
 
 
 def test_redaction():
-    from gator_workbench.security import redact, redact_env
+    from gator_workbench.security import redact
     text = redact('Authorization: Bearer abc.def password=hunter2 token: xyz sk-ant-api03-AAAAAAAAAAAA https://u:p4ss@host/x')
     for secret in ('abc.def', 'hunter2', 'xyz', 'api03-AAAA', 'p4ss'):
         assert secret not in text
-    assert redact_env(dict(PATH='/bin', LM_LICENSE_FILE='5280@lic', API_TOKEN='t')) == dict(
-        PATH='/bin', LM_LICENSE_FILE='[REDACTED]', API_TOKEN='[REDACTED]')

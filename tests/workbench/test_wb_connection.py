@@ -4,7 +4,6 @@ import fcntl
 import json
 import os
 from pathlib import Path
-import stat
 import sys
 import threading
 import time
@@ -176,7 +175,6 @@ def test_readiness_is_separate_from_connectivity(settings):
 
 def test_readiness_reuses_the_adapters_own_rule():
     """The panel calls the adapter's rule, so there are never two definitions of 'ready'."""
-    from types import SimpleNamespace
 
     class Client:
         def __init__(self, names):

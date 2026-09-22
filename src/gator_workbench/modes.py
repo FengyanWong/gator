@@ -15,7 +15,6 @@ A compatibility failure raises; nothing here ever falls back to scratch.
 """
 from __future__ import annotations
 
-from dataclasses import asdict
 import random
 
 from . import checkpoints as ckpt

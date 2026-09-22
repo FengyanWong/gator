@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { api, ApiError, bytes, copy, download, downloadPackage, Json, num, saveJson } from '../api';
 import { usePolling } from '../store';
 import { DiffView } from './Editors';
+import { abortConfirmed, forceAbortConfirmed, forceAllowed, pauseConfirmed } from './RunControl';
 import { COPY_SETUP_PENDING, COPY_SETUP_WRITTEN } from './TaskSave';
 
 const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'transitions', 'states'];
@@ -30,7 +31,7 @@ const ASK_SETTINGS = 'Review the settings of this run - run configuration, RL ne
 // What a live request has shown so far (api.proposeLive; the backend's agents/live.py says what each event means).
 type Live = { model: string | null; thinking: string; steps: string[]; reply: string; writing: string | null; last: string | null; answerAt: number | null };
 const NO_LIVE: Live = { model: null, thinking: '', steps: [], reply: '', writing: null, last: null, answerAt: null };
-const WRITING: Record<string, string> = { reasoning: 'the reply', patch: 'the proposed rows', circuit_changes: 'the circuit changes', checklist: 'the checklist',
+const WRITING: Record<string, string> = { reasoning: 'the reply', patch: 'the proposed rows', checklist: 'the checklist',
   suggestions: 'the suggestions', encoder_ideas: 'the encoder ideas', warnings: 'the warnings', unresolved: 'the open questions' };
 const heard = (live: Live, e: Json): Live => {
   const next = { ...live, last: e.type === 'model' ? live.last : e.type };
@@ -141,15 +142,6 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
   const [showSelection, setShowSelection] = useState(false);  // modify_fields: the rows the request may change, listed on demand
   const [popup, setPopup] = useState<Window | null>(null);    // while set, the conversation is shown in its own browser window
   const [manual, setManual] = useState('');
-  const [circuitDiff, setCircuitDiff] = useState<Json>(null);
-  // Prompt-driven circuit modification: proposal -> structured diff -> confirmation -> WORKING COPY -> reload.
-  const circuitChange = async (confirmed: boolean) => {
-    try {
-      const result = await api.modifyCircuit({ circuit: config.circuit, changes: proposal.circuit_changes, confirmed, output_root: config.output?.output_root ?? null });
-      setCircuitDiff(result);
-      if (result.applied) say('system', `Working copy written: ${result.working_copy}. The original (${result.original_untouched}) is untouched. ${result.note}`);
-    } catch (e) { fail(e); }
-  };
   const isReply = (m: Json) => m.role !== 'user' && m.role !== 'system' && m.role !== 'checklist';
   const say = (role: string, text: string, extra?: Json) => {
     setLog(l => [...l, { role, text, extra, at: new Date().toLocaleTimeString([], { hour12: false }) }]);
@@ -362,13 +354,6 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
             {proposal.readiness_after.ready ? 'After you approve: nothing blocks a start.'
               : <>After you approve, still missing: {proposal.readiness_after.remaining.map((r: Json) => `${r.title} (${r.who === 'agent' ? 'agent can draft it' : 'yours'})`).join(', ') || 'see the blocking issues'}.</>}
             <span className="hint"> {proposal.readiness_after.changed_rows} row(s) changed{proposal.readiness_after.resolved.length > 0 && `; resolves ${proposal.readiness_after.resolved.join(', ')}`}. Checked by the workbench, not by the agent.</span></p>}
-          {proposal.circuit_changes?.length > 0 && <div><h4>Proposed circuit changes ({proposal.circuit_changes.length})</h4>
-            <table className="grid small"><tbody>{proposal.circuit_changes.map((c: Json, i: number) => <tr key={i}><td>{c.instance_path}.{c.parameter_name}</td><td>{num(c.new_value)} {c.unit}</td><td>{c.reason}</td></tr>)}</tbody></table>
-            {circuitDiff?.diff && <table className="grid small"><thead><tr><th>Parameter</th><th>Before</th><th>After (canonical)</th></tr></thead><tbody>
-              {circuitDiff.diff.map((d: Json, i: number) => <tr key={i}><td>{d.instance_path}.{d.parameter_name}</td><td>{num(d.before)} ({d.before_expression})</td><td>{num(d.after)}</td></tr>)}</tbody></table>}
-            <button onClick={() => circuitChange(false)}>Preview circuit diff</button>
-            <button disabled={!circuitDiff?.diff || circuitDiff.applied} onClick={() => (popup ?? window).confirm('Write a WORKING COPY of the netlist with these changes? The original is never overwritten, and no native schematic is generated.') && circuitChange(true)}>Confirm: write working copy</button>
-          </div>}
           {proposal.setup && <div className="setup-proposal"><h4>Maestro setup of the working copy{proposal.virtuoso_copy ? ` ${proposal.virtuoso_copy.library}/${proposal.virtuoso_copy.testbench}` : ''}</h4>
             <table className="grid small"><tbody>
               {Object.entries(proposal.setup.analyses ?? {}).map(([name, options]: [string, any]) => <tr key={`a-${name}`}><td>analysis {name}</td>
@@ -386,7 +371,7 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); propose(); } }}
           placeholder="Describe what you need. State where each requirement comes from; the agent may not invent requirements." />
         <div className="row">
-          <select title="What the agent may change" value={kind} onChange={e => setKind(e.target.value)}>{['draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'circuit_modification', 'readiness', 'minimal_start', 'settings_review', 'run_review', 'virtuoso_setup'].map(k => <option key={k}>{k}</option>)}</select>
+          <select title="What the agent may change" value={kind} onChange={e => setKind(e.target.value)}>{['draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'readiness', 'minimal_start', 'settings_review', 'run_review', 'virtuoso_setup'].map(k => <option key={k}>{k}</option>)}</select>
           {kind === 'modify_fields' && <button className="notes-link" aria-expanded={showSelection} onClick={() => setShowSelection(open => !open)}
             title="The rows this request may change. They are chosen in the editors with 'Modify selected with agent...'.">{selection.length} selected row(s)</button>}
           {busy && <button onClick={cancel}>Cancel request</button>}
@@ -462,9 +447,13 @@ export function StatusTab({ status, onCommand, onContinue }: { status: Json; onC
     <div className="row">
       <button disabled={!status.worker_alive || ['pausing', 'stopping'].includes(status.state) || status.manual_save?.state === 'waiting'} onClick={() => onCommand('checkpoint')}
         title="Save the model now without pausing. The simulation in flight finishes first, the model is written as a new save point, and the run goes on by itself.">Save now</button>
-      <button disabled={!status.worker_alive} onClick={() => onCommand('pause')}>Pause and save</button>
-      <button disabled={!status.worker_alive} onClick={() => onCommand('stop')}>Stop and save</button>
-      <button disabled={!status.worker_alive} onClick={() => onCommand('cancel')} title="Forced: unfinished evaluations are recorded as cancelled and stay charged.">Force cancel</button>
+      {/* The same questions and the same rule as the header's Pause / Abort / Force abort (RunControl.tsx). */}
+      <button disabled={!status.worker_alive || ['pausing', 'stopping'].includes(status.state)}
+        onClick={async () => { if (await pauseConfirmed(status.run_dir)) onCommand('pause'); }}>Pause and save</button>
+      <button disabled={!status.worker_alive || ['pausing', 'stopping'].includes(status.state)}
+        onClick={() => { if (abortConfirmed(status)) onCommand('stop'); }}>Stop and save</button>
+      <button disabled={!forceAllowed(status)} onClick={() => { if (forceAbortConfirmed()) onCommand('cancel'); }}
+        title="Only while a pause or a stop is waiting for the simulation in flight, for a run that is stuck: unfinished evaluations are recorded as cancelled and stay charged.">Force cancel</button>
       <button disabled={status.worker_alive || !['paused', 'stopped', 'interrupted'].includes(status.state)} onClick={onContinue}>Continue</button>
       <button onClick={() => saveJson(`${runName(status.run_dir)}__status.json`, { exported_utc: new Date().toISOString(), ...status })}
         title="Everything this tab shows, as it is right now, in one JSON file: state, budget, best design, connection, the run's manifest and summary.">Export status (JSON)</button>

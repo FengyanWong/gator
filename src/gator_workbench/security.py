@@ -13,7 +13,6 @@ _PATTERNS = [
                 r'client[_-]?secret|license[_-]?key)\s*["\']?\s*[=:]\s*["\']?)([^\s"\',;&]+)'), r'\1[REDACTED]'),
     (re.compile(r'(?i)\b([a-z][a-z0-9+.\-]*://[^\s:/@]+):([^\s@/]+)@'), r'\1:[REDACTED]@'),
 ]
-SENSITIVE_ENV = re.compile(r'(?i)(key|token|secret|passw|credential|auth|cookie|session|license|lm_license|cds_lic)')
 
 
 def redact(text, limit=None):
@@ -25,8 +24,3 @@ def redact(text, limit=None):
     if limit is not None and len(text) > limit:
         text = text[:limit] + f'... [truncated {len(text) - limit} chars]'
     return text
-
-
-def redact_env(environment):
-    """Names only for sensitive variables; values are never returned."""
-    return {key: ('[REDACTED]' if SENSITIVE_ENV.search(key) else value) for key, value in environment.items()}

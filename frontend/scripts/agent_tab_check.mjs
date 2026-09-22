@@ -4,96 +4,49 @@
 // the pending row, cancel, readable errors, the warnings/unresolved side window, the chat surviving a tab switch.
 // /api/agent/propose and /api/agent/cancel are intercepted and answered with canned data labelled `fixture`:
 // no agent CLI is started and no usage is spent. The model / effort section DOES save agent settings (provider,
-// model, effort) through the real API; they are read first and put back at the end, even after a failure. To
-// keep a live setup out of it entirely, point the check at a scratch backend:
+// model, effort) through the real API; they are read first and put back at the end, even after a failure. So it refuses
+// the live backend (no GATOR_WORKBENCH_URL, port 8765, or a URL that proxies to it): run it against a scratch backend:
 //   GATOR_WORKBENCH_SETTINGS_DIR=<empty dir> PYTHONPATH=src python -m gator_workbench.cli serve --port 8768
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:8768/ <run line below>
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/agent_tab_check.mjs)" [screenshot-dir]
 // Screenshots go to the given directory, else to the OS temp directory. Exit code 1 if any check fails.
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { check, fail, finish, keepAgentSettings, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9377, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:8765/';
-const out = process.argv[2] ?? tmpdir();
-const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-'));
-const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failures = 0;
-const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
-const SAVED_KEYS = ['provider', 'model', 'effort', 'timeout_seconds', 'permission_mode', 'allowed_tools', 'max_turns', 'stream'];
+const APP = await workbenchUrl({ writes: true });
+const out = outDir();
 const readSettings = async () => (await fetch(`${APP}api/agent/settings`)).json();
-let original = null;                                                // put back in `finally`
-for (let attempt = 0; attempt < 6 && !original; attempt++) { original = await readSettings().catch(() => null); if (!original) await sleep(500); }
-if (!original) {                                                     // without a snapshot the settings could not be restored: do not start
+const kept = await keepAgentSettings(APP);                           // put back in `finally`
+if (!kept) {                                                         // without a snapshot the settings could not be restored: do not start
   console.log(`ERROR the agent settings could not be read from ${APP}; nothing was changed`);
-  edge.kill(); try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 400 }); } catch { /* left behind */ }
   process.exit(1);
 }
+const browser = await launchEdge('agent');
 
 try {
-  let target;
-  for (let i = 0; i < 75 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    if (!target) await sleep(200);
-  }
-  if (!target) throw new Error('Edge did not open a debugging port');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const paused = []; const consoleErrors = []; const autoAnswer = [];
-  ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); if (p) m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }   // an auto-answer waits for no reply
-    else if (m.method === 'Fetch.requestPaused' && autoAnswer.some(a => m.params.request.url.includes(a.match))) {
-      const hit = autoAnswer.find(a => m.params.request.url.includes(a.match));
-      ws.send(JSON.stringify({ id: ++nextId, method: 'Fetch.fulfillRequest', params: { requestId: m.params.requestId, responseCode: 200,
-        responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(hit.body)).toString('base64') } }));
-    }
-    else if (m.method === 'Fetch.requestPaused') paused.push({ requestId: m.params.requestId, url: m.params.request.url, postData: m.params.request.postData });
-    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-    else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push(m.params.args.map(a => a.value ?? a.description).join(' '));
-  };
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
-  const evaluate = async (expression, userGesture = false) => {          // userGesture: a click that may open a window
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, userGesture });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
-  const nextPaused = async (suffix, ms = 5000) => {
-    for (let waited = 0; waited < ms; waited += 50) {
-      const i = paused.findIndex(p => p.url.endsWith(suffix));
-      if (i >= 0) return paused.splice(i, 1)[0];
-      await sleep(50);
-    }
-    throw new Error(`no intercepted request for ${suffix}`);
-  };
-  const fulfil = (requestId, status, obj) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
-    responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
+  const session = await browser.open();                                  // (the body names the detached window "page")
+  const { send, evaluate, nextPaused, fulfil, consoleErrors, paused } = session;
+  const autoAnswer = [];                                              // requests answered at once, without the check waiting for them
   const enter = async (modifiers = 0) => {
     const k = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, modifiers };
     await send('Input.dispatchKeyEvent', { type: 'keyDown', text: '\r', unmodifiedText: '\r', ...k });
     await send('Input.dispatchKeyEvent', { type: 'keyUp', ...k });
   };
-  const shot = async (name, selector = 'footer') => {
-    const clip = await evaluate(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, scale: 1 }; })()`);
-    const { data } = await send('Page.captureScreenshot', { format: 'png', clip });
-    writeFileSync(path.join(out, name), Buffer.from(data, 'base64'));
-  };
+  const shot = (name, selector = 'footer') => session.shot(path.join(out, name), `document.querySelector(${JSON.stringify(selector)})`);
   const BOX = `document.querySelector('.compose-main textarea')`;
   const clickTab = label => evaluate(`[...document.querySelectorAll('footer .tabs button')].find(b => b.textContent.trim() === ${JSON.stringify(label)}).click()`);
   const chatLines = () => evaluate(`[...document.querySelectorAll('.chat .msg')].map(m => m.textContent)`);
   const notesText = () => evaluate(`document.querySelector('.notes').innerText`);
 
-  await send('Page.enable'); await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/agent/propose', requestStage: 'Request' }, { urlPattern: '*/api/agent/cancel', requestStage: 'Request' }, { urlPattern: '*/api/agent/readiness', requestStage: 'Request' }, { urlPattern: '*/api/runs/status*', requestStage: 'Request' }] });
+  await session.hold(['*/api/agent/propose', '*/api/agent/cancel', '*/api/agent/readiness', '*/api/runs/status*'], ({ requestId, request }) => {
+    const hit = autoAnswer.find(a => request.url.includes(a.match));
+    if (hit) fulfil(requestId, 200, hit.body).catch(() => { /* the page went away */ });
+    return !!hit;
+  });
   const starter = await (await fetch(`${APP}api/tasks/starter?task_key=synthetic:gpdk045_ota5`)).json();
   const seeded = { schema_version: 'gator-workbench-config-v1', ...(starter.config ?? starter), output: { experiment_name: 'experiment' }, research: {} };   // the page needs `output`
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(seeded))});` });
+  await session.seed({ config: seeded });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!document.querySelector('.tabs button')`)); i++) await sleep(100);
   await sleep(1200);
@@ -181,7 +134,9 @@ try {
     reasoning: 'I set the gain target from your spec sheet.\n\n- `gain` target: **60 dB**\n- power: unchanged\n\nThree things I could not determine are listed as unresolved.',
     warnings: ['The 60 dB gain target is close to the simulated baseline (58.2 dB); the default budget may be too small to see an improvement.', 'Phase margin has no target, so stability is not constrained.'],
     unresolved: ['Load capacitance for the gain measurement was not given.', 'Supply corner (nominal only?) was not stated.', 'No upper limit on power was given.'],
-    diff: [{ section: 'targets', key: 'gain', change: 'changed', fields: [{ field: 'value', before: 55, after: 60 }] }], circuit_changes: [] });
+    diff: [{ section: 'targets', key: 'gain', change: 'changed', fields: [{ field: 'value', before: 55, after: 60 }] }],
+    // The agent proposes no circuit changes any more (review of 2026-09-22); an older backend may still send the field.
+    circuit_changes: [{ instance_path: 'M1', parameter_name: 'w', new_value: 2e-6, unit: 'm', reason: 'FIXTURE: an older backend still sends circuit changes' }] });
   await sleep(500);
   let lines = await chatLines();
   check('reply text is in the chat', lines.some(l => l.includes('I set the gain target')));
@@ -196,6 +151,9 @@ try {
   let notes = await notesText();
   check('side window lists unresolved + warnings', notes.includes('Unresolved (3)') && notes.includes('Warnings (2)') && notes.includes('Load capacitance') && notes.includes('Phase margin'));
   check('pending row is gone after the reply', (await evaluate(`!document.querySelector('.msg.pending')`)));
+  check('the proposal shows no "Proposed circuit changes" block and no circuit-diff buttons, although this answer still carries circuit_changes',
+    !(await evaluate(`[...document.querySelectorAll('.confirm h4')].some(h => h.textContent.startsWith('Proposed circuit changes'))
+      || [...document.querySelectorAll('.confirm button')].some(b => /circuit diff|write working copy/i.test(b.textContent))`)));
   const tall = await evaluate(`(() => { const h = s => Math.round(document.querySelector(s).getBoundingClientRect().height); const n = document.querySelector('.notes').getBoundingClientRect(), b = ${BOX}.getBoundingClientRect(), c = document.querySelector('.confirm').getBoundingClientRect();
     return { notes: h('.notes'), confirm: h('.confirm'), chat: h('.chat'), rightOfBox: n.x >= b.right - 1, rightOfProposal: n.x >= c.right - 1, coversBox: n.top <= b.top && n.bottom >= b.bottom }; })()`);
   const reach = await evaluate(`(() => { const send = document.querySelector('.compose-main .row button').getBoundingClientRect(), body = document.querySelector('.bottom-body').getBoundingClientRect(); return { sendBottom: Math.round(send.bottom), panelBottom: Math.round(body.bottom) }; })()`);
@@ -251,7 +209,7 @@ try {
   check('a plain Enter is taken by the handler', ime.plain === true);
   const fourth = await nextPaused('/api/agent/propose', 1500).catch(() => null);      // the plain one sends "make it faster" again
   check('only the plain Enter produced a request', !!fourth && paused.length === 0);
-  if (fourth) await fulfil(fourth.requestId, 200, { proposal_id: 'fixture-2', proposal_hash: 'fixture', origin: 'fixture', kind: 'targets', reasoning: 'Nothing to change.', warnings: [], unresolved: [], diff: [], circuit_changes: [] });
+  if (fourth) await fulfil(fourth.requestId, 200, { proposal_id: 'fixture-2', proposal_hash: 'fixture', origin: 'fixture', kind: 'targets', reasoning: 'Nothing to change.', warnings: [], unresolved: [], diff: [] });
   await sleep(400);
   check('a clean reply empties the side window', (await notesText()).includes('Nothing listed for this reply'));
 
@@ -282,6 +240,9 @@ try {
   await evaluate(`(() => { const s = document.querySelector('.compose-main > .row select'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'draft_config'); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   await sleep(200);
   check('the count belongs to modify_fields only', !(await evaluate(`!!document.querySelector('.compose-main > .row button.notes-link')`)));
+  const kinds = await evaluate(`[...document.querySelectorAll('.compose-main > .row select option')].map(o => o.value)`);
+  check('the request kinds on offer: no circuit_modification any more (the agent proposes no circuit changes)', !kinds.includes('circuit_modification')
+    && ['draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'readiness', 'minimal_start', 'settings_review', 'run_review', 'virtuoso_setup'].every(k => kinds.includes(k)), kinds.join(' '));
 
   // ---- what is missing before the run can start: free checklist first, the agent second -----------------------------
   const missingButton = `[...document.querySelectorAll('.compose-main > .row button')].find(b => b.textContent.startsWith("What's missing"))`;
@@ -326,7 +287,7 @@ try {
   const leanBody = JSON.parse(leanCall.postData);
   check('"fewest changes" is ONE request of kind `minimal_start`', leanBody.kind === 'minimal_start' && leanBody.prompt.includes('as few changes as possible'), leanBody.kind);
   const widthRow = { variable_id: 'm1_w', instance_path: 'M1', parameter_name: 'w', basis: 'PROVISIONAL: 0.5x-2x around the present width of 2 um' };
-  await fulfil(leanCall.requestId, 200, { proposal_id: 'fixture-5', proposal_hash: 'fixture', origin: 'fixture', kind: 'minimal_start', circuit_changes: [],
+  await fulfil(leanCall.requestId, 200, { proposal_id: 'fixture-5', proposal_hash: 'fixture', origin: 'fixture', kind: 'minimal_start',
     reasoning: 'I added one optimized width and nothing else; no valid row was touched. A target is still yours: no baseline is on record.',
     warnings: ['Provisional range for m1_w: replace it with your requirement.'], unresolved: ['A hard requirement and where it comes from'],
     patch: [{ op: 'add', section: 'parameters', key: 'm1_w', value: widthRow, basis: widthRow.basis }],
@@ -345,7 +306,7 @@ try {
   const fixBody = JSON.parse(fixCall.postData);
   check('... as ONE request of kind `readiness` with the standard question', fixBody.kind === 'readiness' && fixBody.prompt.startsWith('What is still missing before this RL run can start?'), `${fixBody.kind}`);
   await fulfil(fixCall.requestId, 200, { proposal_id: 'fixture-4', proposal_hash: 'fixture', origin: 'fixture', kind: 'readiness', reasoning: 'State the gain you need; I drafted the two transistor widths.',
-    warnings: [], unresolved: ['Required gain and where it comes from'], diff: [], circuit_changes: [],
+    warnings: [], unresolved: ['Required gain and where it comes from'], diff: [],
     checklist: [{ item: 'Parameters', status: 'done', who: 'agent', action: '', basis: 'Drafted in this proposal.' },
       { item: 'Specs', status: 'missing', who: 'you', action: 'Tell me the gain you need and where the number comes from.', basis: 'Requirements are never invented.' }] });
   await sleep(500);
@@ -364,7 +325,7 @@ try {
   const suggestion = (path, value, now, extra = {}) => ({ path, value, now, panel: path.startsWith('run.network') ? 'RL network' : 'RL network (Advanced)', changes: true, applicable: true, problem: null, alone: null,
     reason: 'Fits a 60-evaluation budget.', source: 'Lighthouse RL (arXiv:2607.14008)', url: 'https://arxiv.org/abs/2607.14008', quote: 'batch size of 32', ...extra });
   await fulfil(reviewCall.requestId, 200, { proposal_id: 'fixture-6', proposal_hash: 'fixture', origin: 'fixture', kind: 'settings_review', reasoning: 'Three settings stand out for this budget.',
-    warnings: [], unresolved: [], diff: [], patch: [], circuit_changes: [], suggestions_together: { ok: true, problem: null },
+    warnings: [], unresolved: [], diff: [], patch: [], suggestions_together: { ok: true, problem: null },
     suggestions: [suggestion('run.advanced.batch_size', 12, 8), suggestion('run.network.hidden_dim', 56, 32, { alone: 'Applied alone it raises a blocking issue (heads_divisibility); apply it together with the related rows.' }),
       suggestion('run.advanced.gamma', 1.5, 0.99, { applicable: false, problem: 'run.advanced.gamma: Input should be less than or equal to 1' })],
     refused_suggestions: ['output.output_root: not a setting an agent may suggest'],
@@ -396,7 +357,7 @@ try {
   const waitingOnline = await evaluate(`document.querySelector('.msg.pending').innerText`);
   check('with the box ticked the request asks for online research, and the waiting line says it takes minutes (with no time limit: 7.48)', JSON.parse(onlineCall.postData).web === true && waitingOnline.includes('reading publications online') && waitingOnline.includes('No time limit'), waitingOnline.slice(0, 90));
   // One checkpoint interval (status record 7.58): a suggestion for one of the two fields names the other in `clears`.
-  await fulfil(onlineCall.requestId, 200, { proposal_id: 'fixture-7', proposal_hash: 'fixture', origin: 'fixture', kind: 'settings_review', reasoning: 'Nothing further.', warnings: [], unresolved: [], diff: [], patch: [], circuit_changes: [],
+  await fulfil(onlineCall.requestId, 200, { proposal_id: 'fixture-7', proposal_hash: 'fixture', origin: 'fixture', kind: 'settings_review', reasoning: 'Nothing further.', warnings: [], unresolved: [], diff: [], patch: [],
     suggestions: [suggestion('output.checkpoint_every_seconds', 600, null, { panel: 'Output settings', clears: ['output.checkpoint_every_evaluations'] })], refused_suggestions: [], encoder_ideas: [], suggestions_together: { ok: true, problem: null } });
   await sleep(400);
   const interval = await table();
@@ -411,19 +372,8 @@ try {
   await evaluate(`${onlineBox}.click()`);
 
   // ---- detached into a window of its own, and back --------------------------------------------------------------
-  const pages = async () => (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).filter(t => t.type === 'page');
-  const popupTarget = async (present, ms = 5000) => { for (let waited = 0; waited < ms; waited += 100) { const found = (await pages()).find(t => t.id !== target.id && t.title === 'GATOR - agent conversation'); /* by title: Edge may open pages of its own */ if (!!found === present) return found ?? null; await sleep(100); } throw new Error(`the detached window did not ${present ? 'appear' : 'close'}`); };
-  const attachTo = async page => {                                   // a second DevTools session, for the detached window
-    const socket = new WebSocket(page.webSocketDebuggerUrl); await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
-    let id = 0; const waiting = new Map();
-    socket.onmessage = ev => { const m = JSON.parse(ev.data); if (m.id) { const w = waiting.get(m.id); waiting.delete(m.id); m.error ? w.reject(new Error(JSON.stringify(m.error))) : w.resolve(m.result); }
-      else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push('detached: ' + (m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text)); };
-    socket.onclose = () => { for (const w of waiting.values()) w.reject(new Error('the detached window went away')); waiting.clear(); };
-    const call = (method, params = {}) => new Promise((resolve, reject) => { const n = ++id; waiting.set(n, { resolve, reject }); socket.send(JSON.stringify({ id: n, method, params })); });
-    await call('Runtime.enable');
-    const run = async (expression, userGesture = false) => { const r = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, userGesture }); if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text); return r.result.value; };
-    return { call, run, close: () => socket.close() };
-  };
+  const popupTarget = present => browser.window('GATOR - agent conversation', { present, except: session.target.id });
+  const attachTo = target => browser.attach(target, { errors: consoleErrors, prefix: 'detached: ' });   // a second DevTools session, for the detached window
   const linesBefore = (await chatLines()).length;
   const tabControl = await evaluate(`(() => { const c = document.querySelector('.tabs .tab-detach'), group = c?.closest('.tab-group'), label = group?.querySelector('button');
     return c ? { label: label.textContent, rightOfLabel: c.getBoundingClientRect().left >= label.getBoundingClientRect().right - 1, inTab: c.getBoundingClientRect().right <= group.getBoundingClientRect().right + 1,
@@ -433,9 +383,9 @@ try {
   await evaluate(`document.querySelector('.tabs .tab-detach').click()`, true);
   let page = await popupTarget(true);
   let far = await attachTo(page);
-  await far.call('Emulation.setDeviceMetricsOverride', { width: 1180, height: 900, deviceScaleFactor: 1, mobile: false });   // a headless popup ignores the requested size
+  await far.send('Emulation.setDeviceMetricsOverride', { width: 1180, height: 900, deviceScaleFactor: 1, mobile: false });   // a headless popup ignores the requested size
   await sleep(600);
-  const there = await far.run(`(() => { const chat = document.querySelector('.agent.detached .chat'), notes = document.querySelector('.notes'), mine = document.querySelector('.msg.user');
+  const there = await far.evaluate(`(() => { const chat = document.querySelector('.agent.detached .chat'), notes = document.querySelector('.notes'), mine = document.querySelector('.msg.user');
     return { title: document.title, lines: document.querySelectorAll('.chat .msg').length, font: chat && getComputedStyle(chat).fontSize, mine: mine && getComputedStyle(mine).alignSelf,
       notesShare: notes ? notes.getBoundingClientRect().height / innerHeight : 0, notesRight: notes && chat ? notes.getBoundingClientRect().left >= chat.getBoundingClientRect().right : false,
       button: document.querySelector('button.detach')?.textContent, using: document.querySelector('.agent-using span')?.textContent, chatShare: chat ? chat.getBoundingClientRect().height / innerHeight : 0 }; })()`);
@@ -444,20 +394,19 @@ try {
   const here = await evaluate(`({ away: !!document.querySelector('.agent-away'), inline: !!document.querySelector('footer .agent') })`);
   check('the workbench says where the conversation went', here.away && !here.inline);
   await clickTab('Run status'); await sleep(300);
-  check('the bottom panel is free for other tabs while detached', (await far.run(`document.querySelectorAll('.chat .msg').length`)) === linesBefore && (await evaluate(`getComputedStyle(document.querySelector('.agent-away')).display`)) === 'none');
-  const { data: farShot } = await far.call('Page.captureScreenshot', { format: 'png' });
-  writeFileSync(path.join(out, '7-detached.png'), Buffer.from(farShot, 'base64'));
-  await far.run(`document.querySelector('.compose-main textarea').focus()`);
-  await far.call('Input.insertText', { text: 'asked from the detached window' });
+  check('the bottom panel is free for other tabs while detached', (await far.evaluate(`document.querySelectorAll('.chat .msg').length`)) === linesBefore && (await evaluate(`getComputedStyle(document.querySelector('.agent-away')).display`)) === 'none');
+  await far.shot(path.join(out, '7-detached.png'));
+  await far.evaluate(`document.querySelector('.compose-main textarea').focus()`);
+  await far.send('Input.insertText', { text: 'asked from the detached window' });
   const farKey = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
-  await far.call('Input.dispatchKeyEvent', { type: 'keyDown', text: '\r', unmodifiedText: '\r', ...farKey }); await far.call('Input.dispatchKeyEvent', { type: 'keyUp', ...farKey });
+  await far.send('Input.dispatchKeyEvent', { type: 'keyDown', text: '\r', unmodifiedText: '\r', ...farKey }); await far.send('Input.dispatchKeyEvent', { type: 'keyUp', ...farKey });
   const fifth = await nextPaused('/api/agent/propose');
   check('Enter in the detached window sends the request', JSON.parse(fifth.postData).prompt === 'asked from the detached window');
-  await fulfil(fifth.requestId, 200, { proposal_id: 'fixture-3', proposal_hash: 'fixture', origin: 'fixture', kind: 'targets', reasoning: 'Answer shown in the detached window.', warnings: ['one warning'], unresolved: [], diff: [], circuit_changes: [] });
+  await fulfil(fifth.requestId, 200, { proposal_id: 'fixture-3', proposal_hash: 'fixture', origin: 'fixture', kind: 'targets', reasoning: 'Answer shown in the detached window.', warnings: ['one warning'], unresolved: [], diff: [] });
   await sleep(500);
-  const answered = await far.run(`({ lines: document.querySelectorAll('.chat .msg').length, last: document.querySelector('.chat .msg:last-of-type .text').textContent, notes: document.querySelector('.notes').innerText })`);
+  const answered = await far.evaluate(`({ lines: document.querySelectorAll('.chat .msg').length, last: document.querySelector('.chat .msg:last-of-type .text').textContent, notes: document.querySelector('.notes').innerText })`);
   check('the reply and its notes arrive in the detached window', answered.lines === linesBefore + 2 && answered.last === 'Answer shown in the detached window.' && answered.notes.includes('Warnings (1)'));
-  await Promise.race([far.run(`document.querySelector('button.detach').click()`, true).catch(() => {}), sleep(2000)]);      // the click closes the very window that would answer
+  await Promise.race([far.evaluate(`document.querySelector('button.detach').click()`, true).catch(() => {}), sleep(2000)]);      // the click closes the very window that would answer
   await popupTarget(false); far.close(); await sleep(400);
   await clickTab('Agent'); await sleep(300);
   check('"Bring back" closes the window and the conversation is in the tab again, complete', (await chatLines()).length === linesBefore + 2 && !(await evaluate(`!!document.querySelector('.agent-away')`)));
@@ -497,7 +446,7 @@ try {
   const runCall = await nextPaused('/api/agent/propose');
   const runBody = JSON.parse(runCall.postData);
   check('it is ONE request of kind `run_review` for that run - never online', runBody.kind === 'run_review' && runBody.run_dir === fakeRun && runBody.web === false && runBody.prompt.includes('(run scratch__seed7__0123456789ab)'), JSON.stringify({ kind: runBody.kind, web: runBody.web }));
-  await fulfil(runCall.requestId, 200, { proposal_id: 'fixture-8', proposal_hash: 'fixture', origin: 'fixture', kind: 'run_review', warnings: [], unresolved: [], diff: [], patch: [], circuit_changes: [],
+  await fulfil(runCall.requestId, 200, { proposal_id: 'fixture-8', proposal_hash: 'fixture', origin: 'fixture', kind: 'run_review', warnings: [], unresolved: [], diff: [], patch: [],
     reasoning: 'The run found a feasible design after 6 of 60 evaluations.\n\n- 13 of 60 evaluations met the target (`score` >= 0.95)\n- 39 were chosen by the policy, 40 learner updates ran\n\nIt is a MOCK run: this shows the plumbing, not a circuit.',
     suggestions: [{ path: 'run.stop_at_first_feasible', value: true, now: false, panel: 'Run configuration', changes: true, applicable: true, problem: null, alone: null,
       reason: 'The first feasible design came at evaluation 6; the other 54 added nothing to it.', source: 'first_feasible.first_feasible_eval_count = 6, budget.charged = 60', url: '', quote: '' }],
@@ -510,19 +459,11 @@ try {
   await shot('9-run-review.png');
   await evaluate(`localStorage.removeItem('gator-workbench-current-run-v1')`);
   check('no console errors or exceptions', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
-  await send('Browser.close').catch(() => {});
 } catch (e) {
-  failures++; console.log('ERROR', e.stack ?? e);
+  fail(e);
 } finally {
-  if (original) {                                                   // the settings the model / effort section changed
-    const body = Object.fromEntries(SAVED_KEYS.map(k => [k, original[k]]));
-    const restored = await fetch(`${APP}api/agent/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.ok, () => false);
-    const now = restored ? await readSettings().catch(() => null) : null;
-    check('agent settings are back as they were', !!now && ['provider', 'model', 'effort'].every(k => now[k] === original[k]), now ? `${now.provider} / ${now.model} / ${now.effort}` : 'restore failed');
-  }
-  edge.kill();
-  await sleep(1500);
-  try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 400 }); } catch (e) { console.log('profile dir left behind:', profile, e.code); }
-  console.log(failures ? `${failures} check(s) failed` : `all checks passed; screenshots in ${out}`);
-  process.exit(failures ? 1 : 0);
+  await kept.restore();                                             // the settings the model / effort section changed
+  await browser.close();
 }
+console.log(`screenshots in ${out}`);
+finish();

@@ -14,24 +14,17 @@
 //     the copy later - "Write to Virtuoso" is gone, 2026-09-22). Save task sits in the editors' tab line.
 // Run (Windows node sees a WSL variable only when WSLENV names it):
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/agent_setup_check.mjs)"
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9398, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:8765/';
-const out = process.argv[2] ?? tmpdir();
-const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-setup-'));
-const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failures = 0; const consoleErrors = [];
-const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+const APP = await workbenchUrl();
+const out = outDir();
+const browser = await launchEdge('setup');
+const consoleErrors = [];
 
 const LIB = 'GPDK045_RINGOSC', CELL = 'ring_osc_3stage', TB = 'tb_ring_osc_3stage', COPY = 'GPDK045_RINGOSC_GATOR';
 let withCopy = false, applyOutcome = 'written';
-const draft = () => ({ loaded: true, task_key: `virtuoso:${LIB}/${CELL}`, mock: false, native_draft: true, complete: true, diagnostics: [], profile_task: null, profile_task_generated: null, profile_recipes: [],
+const draft = () => ({ loaded: true, task_key: `virtuoso:${LIB}/${CELL}`, mock: false, native_draft: true, complete: true, diagnostics: [], profile_task: null, profile_task_generated: null,
   working_copy: withCopy ? { verified: true, problems: [], copy: { library: COPY, cell: CELL, testbench: TB }, original: { library: LIB, cell: CELL, testbench: TB } } : null,
   circuit: { library: LIB, cell: CELL, native_draft: true, testbench_cell: TB }, hierarchy: { XU1: { MN1: {} }, V0: {} }, analysis_context: null,
   evaluation_backend: null, max_concurrency: 1, testbench_probes: null,
@@ -40,23 +33,14 @@ const PROBES = [{ measurement_id: 'm_freq', analysis: 'tran', result_source: 'ad
 const PROPOSAL = { proposal_id: 'setup-1', proposal_hash: 'fixture', origin: 'fixture', kind: 'virtuoso_setup',
   reasoning: 'A three-stage ring oscillator: three inverters in a loop, the frequency set by their delay.', warnings: [], unresolved: ['No power limit was given.'],
   diff: [{ section: 'measurements', key: 'm_freq', change: 'added', fields: [{ field: 'signal', before: null, after: 'frequency(VT("/OUT"))' }] }],
-  circuit_changes: [], patch: [{ op: 'add', section: 'measurements', key: 'm_freq', value: PROBES[0] }],
+  patch: [{ op: 'add', section: 'measurements', key: 'm_freq', value: PROBES[0] }],
   setup: { analyses: { tran: { stop: '50n', errpreset: 'conservative' } }, variables: { VSUP: '1.0' }, bindings: [{ cell: TB, instance: 'V0', parameter: 'vdc', variable: 'VSUP' }] },
   virtuoso_copy: { library: COPY, cell: CELL, testbench: TB } };
 
 try {
-  let target;
-  for (let i = 0; i < 75 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    if (!target) await sleep(200);
-  }
-  if (!target) throw new Error('Edge did not open a debugging port');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const calls = []; const refused = [];
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
-  const fulfil = (requestId, status, obj) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
-    responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
+  const page = await browser.open({ errors: consoleErrors });
+  const { send, evaluate, fulfil } = page;
+  const calls = []; const refused = [];
   const answer = async ({ requestId, request }) => {
     const pathname = new URL(request.url).pathname, body = JSON.parse(request.postData ?? '{}');
     if (pathname === '/api/circuit/load') return body.circuit?.source === 'virtuoso' ? fulfil(requestId, 200, draft()) : send('Fetch.continueRequest', { requestId });
@@ -89,18 +73,6 @@ try {
     refused.push(`${request.method} ${pathname}`);
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${pathname} is not expected` } });
   };
-  ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
-    else if (m.method === 'Fetch.requestPaused') answer(m.params).catch(() => { /* page went away */ });
-    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-    else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push(m.params.args.map(a => a.value ?? a.description).join(' '));
-  };
-  const evaluate = async (expression, userGesture = false) => {          // userGesture: a click that may open a window
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, userGesture });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Circuit source'))`;
   const ASK = `[...(${PANEL}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === 'Ask the agent to set up')`;
   const BOX = `document.querySelector('.compose-main textarea')`;
@@ -122,9 +94,7 @@ try {
   };
   const chatText = () => evaluate(`document.querySelector('.chat')?.textContent ?? ''`);
 
-  await send('Page.enable'); await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*', requestStage: 'Request' }] });
+  await page.intercept(['*/api/*'], answer);
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   for (let i = 0; i < 50 && !(await stored()); i++) await sleep(100);
@@ -159,8 +129,7 @@ try {
   check('the proposal shows the Maestro setup and where it goes', shown.includes(`Maestro setup of the working copy ${COPY}/${TB}`) && shown.includes('analysis tran') && shown.includes('stop=50n')
     && shown.includes('variable VSUP') && shown.includes('V0.vdc in tb_ring_osc_3stage') && shown.includes('not into your cell'), shown.slice(0, 200));
   check('its button says it writes the copy', await evaluate(`[...document.querySelectorAll('.confirm button')].some(b => b.textContent.trim() === 'Approve, apply and write the copy')`));
-  const { data } = await send('Page.captureScreenshot', { format: 'png' });
-  writeFileSync(path.join(out, 'agent-setup-1-proposal.png'), Buffer.from(data, 'base64'));
+  await page.shot(path.join(out, 'agent-setup-1-proposal.png'));
   await evaluate(`[...document.querySelectorAll('.confirm button')].find(b => b.textContent.trim() === 'Approve, apply and write the copy').click()`); await sleep(1200);
   check('approving applies and then says it was written into the copy and read back', (await chatText()).includes('written into the working copy') && (await chatText()).includes('it matches')
     && calls.some(c => c.path === '/api/agent/approve') && calls.some(c => c.path === '/api/agent/apply'));
@@ -184,14 +153,9 @@ try {
     && saved.extras.variables?.VSUP === '1.0' && saved.extras.bindings?.[0]?.instance === 'V0' && saved.extras.expected_frequency_hz === 1.2e9, JSON.stringify(saved?.extras));
   check('no other writing request was made', refused.length === 0, refused.join(' | '));
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
-  ws.close();
 } catch (error) {
-  failures++;
-  console.log('FAIL  the check itself stopped: ' + (error?.stack ?? error));
+  fail(error);
 } finally {
-  edge.kill();
-  await sleep(500);
-  try { rmSync(profile, { recursive: true, force: true }); } catch { /* Edge may still hold a file */ }
-  console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
-  process.exit(failures ? 1 : 0);
+  await browser.close();
 }
+finish();

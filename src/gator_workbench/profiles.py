@@ -69,10 +69,6 @@ def list_profiles() -> dict:
     return found
 
 
-def profile_for_cell(library, cell) -> dict | None:
-    return next((entry for entry in list_profiles().values() if entry['library'] == library and entry['core_cell'] == cell), None)
-
-
 def tasks_for_cell(library, cell) -> list:
     """The GENERATED tasks of a cell: saved from it (their `original`), or running on it (their copy is this cell)."""
     found = []
@@ -735,7 +731,7 @@ def record_reference(name, run_dir) -> dict:
     directory, run_dir = Path(entry['directory']), Path(run_dir)
     target = directory / FILES['reference']
     if target.exists():
-        raise ProfileError(f'real:{name} already has a recorded baseline; it is never replaced. Create a new profile to start over.')
+        raise ProfileError(f'real:{name} already has a recorded baseline; it is never replaced. To start over, delete the task and save it again.')
     try:
         config = json.loads((run_dir / 'effective_config.json').read_text())
         manifest = json.loads((run_dir / 'run_manifest.json').read_text())
@@ -824,5 +820,10 @@ def delete_profile(name, *, run_rows=()) -> dict:
     if original.get('library') and original.get('cell'):             # the cell's working copy is free for a new task
         from . import working_copy
         working_copy.release(original['library'], original['cell'], name)
-    return dict(deleted=entry['task_key'], name=name, library=entry['library'], cell=entry['core_cell'],
-                testbench_cell=entry.get('testbench_cell'), baseline_recorded=(kept / FILES['reference']).is_file(), kept_copy=str(kept))
+        # The page puts the answer into its Circuit source: the user's OWN cell, not the working copy the task ran on (that
+        # used to lead the next "Save task" to make a copy of the copy). A profile made before working copies has none.
+        cell = dict(library=original['library'], cell=original['cell'], testbench_cell=original.get('testbench'))
+    else:
+        cell = dict(library=entry['library'], cell=entry['core_cell'], testbench_cell=entry.get('testbench_cell'))
+    return dict(deleted=entry['task_key'], name=name, **cell,
+                baseline_recorded=(kept / FILES['reference']).is_file(), kept_copy=str(kept))

@@ -20,8 +20,10 @@ table files; they return results to the scheduler, which commits them.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import importlib.util
 from pathlib import Path
 import shutil
+import sys
 
 from .. import TABLE_SCHEMA_VERSION
 from .atomic import (JsonlAppender, PersistenceError, publish, read_jsonl, remove_registered_temporaries,
@@ -30,6 +32,13 @@ from .tables import FLUSH_ORDER, TABLES, arrow_schema, normalize_row
 
 TIMESTAMP_COLUMNS = {table: [c.name for c in spec['columns'] if c.type == 'timestamp']
                      for table, spec in TABLES.items()}
+
+# pyarrow turns a timezone-aware timestamp into Python by trying `import pytz` first and falling back to zoneinfo. pytz
+# is not a dependency, and a FAILED import is not cached: every single value repeated a full sys.path search (measured
+# 2026-09-22: 400 rows took 500 ms instead of 2 ms, more on the 9p-mounted repo). A None entry makes that import fail at
+# once; the rows are identical (zoneinfo either way). An installed pytz is left alone.
+if 'pytz' not in sys.modules and importlib.util.find_spec('pytz') is None:
+    sys.modules['pytz'] = None
 
 
 def utcnow():

@@ -19,7 +19,7 @@ loaded from inside an allowed output root after its SHA-256 matched ``metadata.j
 """
 from __future__ import annotations
 
-from dataclasses import asdict
+from contextlib import contextmanager
 from pathlib import Path
 import shutil
 from uuid import uuid4
@@ -49,6 +49,22 @@ def _digest(value) -> str:
     import hashlib
     import json
     return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
+
+
+@contextmanager
+def _one_source_digest():
+    """One save asked for the optimizer package's source digest three times (the contract inside `learner.save` and two
+    contract summaries), each time reading all its .py files again - about 0.4 s apiece on the 9p-mounted repo. The code
+    running in this process cannot change during a save, so the whole save uses ONE digest, taken here. Nothing under
+    src/analog_optimizer changes; its function is back in place when the save ends."""
+    import analog_optimizer.training.sac as sac
+    original = sac.source_digest
+    digest = original()
+    sac.source_digest = lambda: digest
+    try:
+        yield
+    finally:
+        sac.source_digest = original
 
 
 def contract_summary(learner) -> dict:
@@ -111,8 +127,10 @@ class CheckpointStore:
                          data_cursor=data_cursor, counters=counters, collector=collector_state,
                          boundary=RECOVERABLE_BOUNDARY)
         try:
-            learner.save(staging / 'training_state.pt', saved_replay, run_state=run_state)
-            weights = dict(format='gator-workbench-weights-v1', contract=contract_summary(learner),
+            with _one_source_digest():
+                learner.save(staging / 'training_state.pt', saved_replay, run_state=run_state)
+                contract = contract_summary(learner)
+            weights = dict(format='gator-workbench-weights-v1', contract=contract,
                            actor=learner.actor.state_dict(), critics=learner.critics.state_dict(),
                            targets=learner.targets.state_dict(), log_alpha=learner.log_alpha.detach().clone(),
                            updates=int(learner.updates))
@@ -144,7 +162,7 @@ class CheckpointStore:
                 counters=counters, ledger=ledger_state, data_cursor=data_cursor,
                 replay=dict(size=manifest['size'], insertions=manifest['insertions'], capacity=manifest['capacity'],
                             evicted=manifest['evicted']),
-                contract=contract_summary(learner), experiment=effective_experiment,
+                contract=contract, experiment=effective_experiment,
                 weight_sha256=weight_digest(learner), files=files,
                 trust='training_state.pt holds Python dataclasses: load it only from a trusted local output root. '
                       'model_weights.pt holds tensors only and is loaded with weights_only=True.',
@@ -169,6 +187,18 @@ class CheckpointStore:
                 reason='No validation-set policy evaluation has occurred in this run; a best policy is never invented.'))
         self.last_saved_at = utcnow()
         self._prune(checkpoint_id)
+        return metadata
+
+    def relabel(self, checkpoint_id, kind, *, was):
+        """Give an existing save another kind when the state it holds is exactly the one a new save would write (a run
+        that ends right after a periodic save). Only its role changes: files, counters and checksums stay as they are;
+        `relabelled_from` records the kind it had. Returns the updated metadata."""
+        path = self.root / checkpoint_id / 'metadata.json'
+        metadata = dict(read_json(path), kind=kind, relabelled_from=was, relabelled_utc=utcnow().isoformat())
+        write_json(path, metadata)
+        latest = read_json(self.root / 'latest.json', default=None)
+        if latest and latest.get('checkpoint_id') == checkpoint_id:
+            write_json(self.root / 'latest.json', dict(latest, kind=kind))
         return metadata
 
     def _prune(self, keep_id):

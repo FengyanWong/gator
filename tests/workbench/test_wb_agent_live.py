@@ -20,7 +20,6 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from gator_workbench import agents
 from gator_workbench.agents import AgentError, AgentRequest, AgentSettings, ClaudeCodeProvider, CodexProvider
 from gator_workbench.agents import base
 from gator_workbench.agents.live import CodexTranslator, LiveTranslator, PartialAnswer

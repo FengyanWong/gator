@@ -10,12 +10,12 @@ judges the value of its equation over the probes (``spec_equations``).
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import math
 
 from . import spec_equations, units
 from .schema import WorkbenchConfig
-from .validation import resolve_leaders, uniform_grid, registry_for
+from .validation import resolve_leaders, uniform_grid
 
 
 class CompileError(ValueError):
@@ -182,19 +182,6 @@ def compile_task(config: WorkbenchConfig, graph) -> CompiledTask:
     return CompiledTask(compiled_graph, specs, schema, variables, targets, plan, preference)
 
 
-def evaluate_expression_measurements(config: WorkbenchConfig, raw: dict[str, float | None]):
-    """Derive expression measurements from profile metrics. A missing/non-finite input makes
-    the derived value invalid (None); it is never replaced by a number."""
-    return spec_equations.SpecPlan.from_config(config).probe_values(
-        {name: value for name, value in raw.items() if value is not None})
-
-
-def spec_values(config: WorkbenchConfig, raw: dict[str, float | None]):
-    """{spec name: the value of its equation over the probes | None}, from the valid simulator results `raw`."""
-    return spec_equations.SpecPlan.from_config(config).spec_values(
-        {name: value for name, value in raw.items() if value is not None})
-
-
 def hard_constraints(targets, metrics: dict, validity: dict):
     """Feasibility decided from raw canonical values and thresholds, independent of the reward.
 
@@ -224,12 +211,3 @@ def hard_constraints(targets, metrics: dict, validity: dict):
                          normalized_violation=violation))
     feasible = valid and feasible
     return valid, feasible, rows, (worst if valid else None)
-
-
-def with_group_values(graph, values: dict):
-    """Copy of `graph` with group/current member values set (used when re-reading a state)."""
-    graph = deepcopy(graph)
-    for i, group in enumerate(graph.parameter_groups):
-        if group.id in values:
-            graph.parameter_groups[i] = replace(group, value=values[group.id])
-    return graph

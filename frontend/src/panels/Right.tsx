@@ -3,6 +3,7 @@ import { api, bytes, copy, Json, num } from '../api';
 import { ModelChooser } from './ModelChooser';
 import { CircuitGraphView } from './CircuitGraphView';
 import { ModelStructure } from './ModelStructure';
+import { Typed } from './Typed';
 
 function Num({ label, value, onChange, title, nullable, disabled, note, after, placeholder }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; nullable?: boolean; disabled?: boolean; note?: string; after?: ReactNode; placeholder?: string }) {
   // The typed text is kept while the box has focus: "0." and "3e-" are steps towards 0.005 and 3e-4, not values.
@@ -206,11 +207,13 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
   }, [loads, archDiffers, JSON.stringify(savedNet)]);
   useEffect(() => setNetMessage(m => m?.level === 'warn' ? null : m), [source.run_dir, source.checkpoint_id, run.mode]);
 
-  // Default the RL model to the last model used by this project, and its `latest` checkpoint (not `best`).
+  // Default the RL model to the last model used by this project, and its `latest` checkpoint (not `best`) - in a Mode that
+  // loads a model. In scratch it used to be written into the configuration on page load: a validation warning
+  // (source_ignored_in_scratch), an undo step nobody made and a model compile on every edit.
   useEffect(() => {
-    if (source.run_dir) return;
+    if (source.run_dir || !loads) return;
     api.defaultModel(config.project.name).then(d => d.run_dir && set({ model_source: { ...source, run_dir: d.run_dir, checkpoint_id: 'latest' } })).catch(() => undefined);
-  }, [config.project.name]);
+  }, [config.project.name, loads]);
   useEffect(() => {
     setModel(null); setError(null);
     if (!source.run_dir) return;
@@ -394,19 +397,22 @@ export function ResearchPanel({ config, setConfig }: { config: Json; setConfig: 
   const r = config.research ?? {};
   const set = (fields: Json) => setConfig(c => ({ ...c, research: { ...(c.research ?? {}), ...fields } }));
   const list = (v: string) => v.split(',').map(s => s.trim()).filter(Boolean);
+  // A list is typed as text with commas. The box keeps "a," while the list is ['a']: it used to swallow every comma.
+  const listBox = (field: string, numbers = false) => <Typed value={r[field] ?? []} format={v => (v ?? []).join(', ')}
+    parse={t => ({ value: numbers ? list(t).map(Number).filter(Number.isFinite) : list(t) })} onChange={v => set({ [field]: v })} />;
   return (
     <details className="panel"><summary><b>Research experiments</b> (optional for a single run; missing labels stay "unspecified")</summary>
       <label>Experiment group<input value={r.experiment_group ?? 'unspecified'} onChange={e => set({ experiment_group: e.target.value })} /></label>
       <label>Split<select value={r.split ?? 'unspecified'} onChange={e => set({ split: e.target.value })}>{['unspecified', 'train', 'validation', 'test'].map(s => <option key={s}>{s}</option>)}</select></label>
       <label>Generalization level<select value={r.generalization_level ?? 'unspecified'} onChange={e => set({ generalization_level: e.target.value })}>
         {['unspecified', 'same_task', 'unseen_spec', 'unseen_topology', 'unseen_circuit_class'].map(s => <option key={s}>{s}</option>)}</select></label>
-      <label>Training sources<input value={(r.training_sources ?? []).join(', ')} onChange={e => set({ training_sources: list(e.target.value) })} /></label>
-      <label>Test tasks<input value={(r.test_tasks ?? []).join(', ')} onChange={e => set({ test_tasks: list(e.target.value) })} /></label>
+      <label>Training sources{listBox('training_sources')}</label>
+      <label>Test tasks{listBox('test_tasks')}</label>
       <label title="Associates runs with the same target, initial dimensions, budget, test setup and target seed.">Comparison pair ID<input value={r.comparison_pair_id ?? 'unspecified'} onChange={e => set({ comparison_pair_id: e.target.value })} /></label>
       <div className="row"><Num label="Task order K" nullable value={r.task_order} onChange={v => set({ task_order: v })} /><Num label="Pretrain seed (source)" nullable value={r.pretrain_seed} onChange={v => set({ pretrain_seed: v })} /></div>
-      <label>Budget checkpoints<input value={(r.budget_checkpoints ?? []).join(', ')} onChange={e => set({ budget_checkpoints: list(e.target.value).map(Number).filter(Number.isFinite) })} /></label>
+      <label>Budget checkpoints{listBox('budget_checkpoints', true)}</label>
       <label>Method label<input value={r.method_label ?? 'unspecified'} onChange={e => set({ method_label: e.target.value })} placeholder="Scratch | Pretrained-Frozen | Pretrained-Fine-tuned | encoder-only transfer" /></label>
-      <label>Ablation labels<input value={(r.ablation_labels ?? []).join(', ')} onChange={e => set({ ablation_labels: list(e.target.value) })} /></label>
+      <label>Ablation labels{listBox('ablation_labels')}</label>
     </details>
   );
 }

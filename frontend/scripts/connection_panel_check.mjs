@@ -2,7 +2,8 @@
 // Same approach as agent_tab_check.mjs: a throwaway headless Edge over the DevTools protocol against the RUNNING
 // workbench (default http://127.0.0.1:8765/). EVERY request to /api/connection/* is intercepted, logged and answered
 // with a canned answer labelled FIXTURE, so no probe is started, no tunnel is touched, no file is written and neither
-// Virtuoso nor ngspice is contacted. That makes it safe against the live backend; it needs only the built page.
+// Virtuoso nor ngspice is contacted; any other writing request of the page is refused (reads pass). That makes it safe
+// against the live backend; it needs only the built page.
 // What it pins:
 //   * the connection block of the left column is ONE button, and pressing it opens the connection window (user request
 //     2026-09-21); the window is a second browser window, found by its title and driven over a second DevTools session;
@@ -13,24 +14,17 @@
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/connection_panel_check.mjs)" [screenshot-dir]
 // With GATOR_CONNECTION_LIVE=1 a last section lets the requests THROUGH to the backend: only ever against a scratch
-// backend with its own GATOR_WORKBENCH_SETTINGS_DIR (it adds a connection to that folder and runs the real ngspice test).
+// backend with its own GATOR_WORKBENCH_SETTINGS_DIR (it adds a connection to that folder and runs the real ngspice test);
+// the check then refuses the live backend (port 8765). From WSL: WSLENV=GATOR_WORKBENCH_URL:GATOR_CONNECTION_LIVE.
 // Exit code 1 if any check fails.
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9379, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:8765/';
 const LIVE = process.env.GATOR_CONNECTION_LIVE === '1';
+const APP = await workbenchUrl({ writes: LIVE });
 const QUIET_MS = 17000;
-const out = process.argv[2] ?? tmpdir();
-const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-conn-'));
-const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failures = 0;
-const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+const out = outDir();
+const browser = await launchEdge('conn');
 
 // ---- canned answers ------------------------------------------------------------------------------------------
 const VIRTUOSO = ['bridge_package', 'connection_profile', 'tunnel', 'daemon', 'session_readiness', 'spectre', 'spectre_license'];
@@ -68,18 +62,9 @@ const fixtures = {
 };
 
 try {
-  let target;
-  for (let i = 0; i < 75 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    if (!target) await sleep(200);
-  }
-  if (!target) throw new Error('Edge did not open a debugging port');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const seen = []; const consoleErrors = []; let statusAnswer = fixtures.never; let live = false;
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
-  const fulfil = (requestId, status, obj) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
-    responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
+  const page = await browser.open();
+  const { send, evaluate, fulfil, consoleErrors } = page;
+  const seen = []; let statusAnswer = fixtures.never; let live = false;
   const answer = ({ requestId, request }) => {                                    // every connection request: log it, answer it here
     const url = new URL(request.url), name = url.pathname.replace('/api/connection/', '');
     const body = request.postData ? JSON.parse(request.postData) : null;
@@ -95,34 +80,12 @@ try {
       return fulfil(requestId, 200, { created: true, profile_id: body.profile_id, kind: body.kind, backup: '/fixture/bridge_connection.json.before-FIXTURE', note: 'FIXTURE note.', profiles: fixtures.profiles() }); }
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${request.method} ${name} is not expected in this check` } });
   };
-  ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
-    else if (m.method === 'Fetch.requestPaused') answer(m.params).catch(() => { /* the page went away (reload) */ });
-    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-    else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push(m.params.args.map(a => a.value ?? a.description).join(' '));
-  };
-  const evaluate = async (expression, userGesture = false) => {                   // userGesture: a click that may open a window
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, userGesture });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
   const names = (from = 0) => seen.slice(from).map(s => `${s.method} ${s.name}`);
   const settle = async (mark, ms = 4000) => { for (let waited = 0; waited < ms && seen.length === mark; waited += 100) await sleep(100); await sleep(500); };
 
   // ---- the window: a second page, found by its title, with a DevTools session of its own ---------------------------
-  const pages = async () => (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).filter(t => t.type === 'page');
-  const windowTarget = async (present, ms = 5000) => { for (let waited = 0; waited < ms; waited += 100) { const found = (await pages()).find(t => t.id !== target.id && t.title === 'GATOR - connection'); /* by title: Edge may open pages of its own */ if (!!found === present) return found ?? null; await sleep(100); } throw new Error(`the connection window did not ${present ? 'appear' : 'close'}`); };
-  const attachTo = async page => {
-    const socket = new WebSocket(page.webSocketDebuggerUrl); await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
-    let id = 0; const waiting = new Map();
-    socket.onmessage = ev => { const m = JSON.parse(ev.data); if (m.id) { const w = waiting.get(m.id); waiting.delete(m.id); m.error ? w.reject(new Error(JSON.stringify(m.error))) : w.resolve(m.result); }
-      else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push('window: ' + (m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text)); };
-    const call = (method, params = {}) => new Promise((resolve, reject) => { const n = ++id; waiting.set(n, { resolve, reject }); socket.send(JSON.stringify({ id: n, method, params })); });
-    await call('Runtime.enable');
-    const run = async (expression, userGesture = false) => { const r = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, userGesture }); if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text); return r.result.value; };
-    return { call, run, close: () => socket.close() };
-  };
+  const windowTarget = present => browser.window('GATOR - connection', { present, except: page.target.id });
+  const attachTo = target => browser.attach(target, { errors: consoleErrors, prefix: 'window: ' });
   const BUTTON = `document.querySelector('.left button.connection-button')`;
   const WINDOW = `document.querySelector('.connection-window')`;
   let far = null, farPage = null;
@@ -130,33 +93,26 @@ try {
     await evaluate(`${BUTTON}.click()`, true);
     farPage = await windowTarget(true);
     far = await attachTo(farPage);
-    await far.call('Emulation.setDeviceMetricsOverride', { width: 660, height: 920, deviceScaleFactor: 1, mobile: false });   // a headless popup ignores the requested size
-    for (let i = 0; i < 50 && !(await far.run(`!!(${WINDOW})`)); i++) await sleep(100);
+    await far.send('Emulation.setDeviceMetricsOverride', { width: 660, height: 920, deviceScaleFactor: 1, mobile: false });   // a headless popup ignores the requested size
+    for (let i = 0; i < 50 && !(await far.evaluate(`!!(${WINDOW})`)); i++) await sleep(100);
     await sleep(400);
   };
-  const text = () => far.run(`${WINDOW}.innerText`);
-  const badge = () => far.run(`${WINDOW}.querySelector('.badge').textContent`);
-  const hint = () => far.run(`${WINDOW}.querySelector('.badge').nextElementSibling.textContent`);
-  const buttons = () => far.run(`[...${WINDOW}.querySelectorAll('button')].map(b => b.textContent.trim())`);
-  const press = label => far.run(`(() => { const b = [...${WINDOW}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()`, true);
-  const choose = (selector, value) => far.run(`(() => { const s = ${WINDOW}.querySelector(${JSON.stringify(selector)}); if (!s) return false;
+  const text = () => far.evaluate(`${WINDOW}.innerText`);
+  const badge = () => far.evaluate(`${WINDOW}.querySelector('.badge').textContent`);
+  const hint = () => far.evaluate(`${WINDOW}.querySelector('.badge').nextElementSibling.textContent`);
+  const buttons = () => far.evaluate(`[...${WINDOW}.querySelectorAll('button')].map(b => b.textContent.trim())`);
+  const press = label => far.evaluate(`(() => { const b = [...${WINDOW}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()`, true);
+  const choose = (selector, value) => far.evaluate(`(() => { const s = ${WINDOW}.querySelector(${JSON.stringify(selector)}); if (!s) return false;
     Object.getOwnPropertyDescriptor(s.ownerDocument.defaultView.HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)});
     s.dispatchEvent(new s.ownerDocument.defaultView.Event('change', { bubbles: true })); return true; })()`);
-  const shot = async (session, selector, name) => {
-    const expression = `(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: Math.min(r.height, 1400), scale: 2 }; })()`;
-    const clip = session === 'main' ? await evaluate(expression) : await far.run(expression);
-    const { data } = await (session === 'main' ? send : far.call)('Page.captureScreenshot', { format: 'png', clip, captureBeyondViewport: true });
-    writeFileSync(path.join(out, name), Buffer.from(data, 'base64'));
-  };
+  const shot = (session, selector, name) => (session === 'main' ? page : far).shot(path.join(out, name), `document.querySelector(${JSON.stringify(selector)})`, { scale: 2, maxHeight: 1400, beyond: true });
   const loaded = async (connection = 'lab') => {
     for (let i = 0; i < 100 && !(await evaluate(`!!(${BUTTON})`)); i++) await sleep(100);
     for (let i = 0; i < 50 && !(await evaluate(`${BUTTON}?.textContent.includes(${JSON.stringify(connection)})`)); i++) await sleep(100);
     await sleep(1500);                                                           // room for anything the page would do on its own
   };
 
-  await send('Page.enable'); await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/connection/*', requestStage: 'Request' }] });
+  await page.intercept(['*/api/connection/*'], answer, { others: 'read' });
   await send('Page.navigate', { url: APP });
   await loaded();
 
@@ -175,11 +131,11 @@ try {
   let mark = seen.length;
   await openWindow();
   check('pressing the button opens a window of its own, titled "GATOR - connection"', !!farPage && farPage.title === 'GATOR - connection');
-  check('the window shows the block under the heading "Connection"', (await far.run(`${WINDOW}.querySelector('h2')?.textContent`)) === 'Connection');
+  check('the window shows the block under the heading "Connection"', (await far.evaluate(`${WINDOW}.querySelector('h2')?.textContent`)) === 'Connection');
   check('opening the window sends NO request at all', seen.length === mark, names(mark).join(', '));
   check('an untested link reads "never tested" / UNKNOWN', (await hint()) === 'never tested' && (await badge()) === 'UNKNOWN', `${await badge()} | ${await hint()}`);
   check('the button says the window is open', (await evaluate(`${BUTTON}.textContent`)).includes('(window open)'));
-  const styled = await far.run(`(() => { const s = getComputedStyle(${WINDOW}.querySelector('.step-no')); return s.borderRadius !== '0px' && s.color === 'rgb(255, 255, 255)'; })()`);
+  const styled = await far.evaluate(`(() => { const s = getComputedStyle(${WINDOW}.querySelector('.step-no')); return s.borderRadius !== '0px' && s.color === 'rgb(255, 255, 255)'; })()`);
   check('the window carries the workbench style sheet', styled);
 
   // ---- Virtuoso over SSH: the three steps, as before ----------------------------------------------------------------
@@ -233,7 +189,7 @@ try {
   check('ngspice on this machine: ONE step - test; no connect step, no CIW step, no Spectre button', shown.includes('Test ngspice on this machine') && !shown.includes('Virtuoso CIW')
     && JSON.stringify((await buttons()).filter(b => !/Add a connection/.test(b))) === JSON.stringify(['Test connection', 'Details']), (await buttons()).join(' | '));
   check('what an ngspice connection cannot do yet is said plainly, as a neutral note (not as an error)', shown.includes('can do today: be tested') && shown.includes('not built yet')
-    && (await far.run(`!!${WINDOW}.querySelector('.note') && !${WINDOW}.querySelector('.note.error, .note .error, .blocker')`)));
+    && (await far.evaluate(`!!${WINDOW}.querySelector('.note') && !${WINDOW}.querySelector('.note.error, .note .error, .blocker')`)));
   mark = seen.length;
   await press('Test connection');
   await settle(mark);
@@ -241,7 +197,7 @@ try {
   check('testing ngspice sends one interactive check of that connection', pressed.length === 1 && JSON.stringify(pressed[0].body) === JSON.stringify({ profile_id: 'sim', scope: 'interactive', trigger: 'user' }), JSON.stringify(pressed.map(p => p.body)));
   await press('Details');
   await sleep(300);
-  const rows = await far.run(`[...${WINDOW}.querySelectorAll('table.grid tbody tr td:first-child')].map(td => td.textContent)`);
+  const rows = await far.evaluate(`[...${WINDOW}.querySelectorAll('table.grid tbody tr td:first-child')].map(td => td.textContent)`);
   check('Details lists the four ngspice layers, and says the one simulation is the built-in test circuit', JSON.stringify(rows) === JSON.stringify(NGSPICE) && (await text()).includes('built-in three-element test circuit, never one of yours'), rows.join(', '));
   await shot('window', '.connection-window', 'connection-5-window-ngspice-local.png');
   await press('Hide');
@@ -255,15 +211,15 @@ try {
   await press('Add a connection...');
   await settle(mark);
   check('"Add a connection..." looks at what is installed (one GET setup) only when pressed', JSON.stringify(names(mark)) === JSON.stringify(['GET setup']), names(mark).join(', '));
-  const kindsOffered = await far.run(`[...${WINDOW}.querySelectorAll('.connection-add select')[0].options].map(o => o.textContent)`);
+  const kindsOffered = await far.evaluate(`[...${WINDOW}.querySelectorAll('.connection-add select')[0].options].map(o => o.textContent)`);
   check('the four kinds are offered', JSON.stringify(kindsOffered) === JSON.stringify(KINDS.map(k => k.label)), kindsOffered.join(' | '));
   await choose('.connection-add select', 'ngspice_ssh');
   await sleep(300);
-  const form = await far.run(`(() => { const add = ${WINDOW}.querySelector('.connection-add'); return { hosts: [...add.querySelectorAll('select')[1].options].map(o => o.textContent),
+  const form = await far.evaluate(`(() => { const add = ${WINDOW}.querySelector('.connection-add'); return { hosts: [...add.querySelectorAll('select')[1].options].map(o => o.textContent),
     name: add.querySelector('input').value, inputs: add.querySelectorAll('input').length, text: add.innerText }; })()`);
   check('ngspice over SSH offers the Host names of ~/.ssh/config as a list - there is no box to type an address into', JSON.stringify(form.hosts) === JSON.stringify(['simhost', 'sim2']) && form.inputs === 1 && form.name === 'ngspice-ssh', JSON.stringify(form));
   await shot('window', '.connection-window', 'connection-6-window-add.png');
-  await far.run(`(() => { const s = ${WINDOW}.querySelectorAll('.connection-add select')[1]; Object.getOwnPropertyDescriptor(s.ownerDocument.defaultView.HTMLSelectElement.prototype, 'value').set.call(s, 'sim2');
+  await far.evaluate(`(() => { const s = ${WINDOW}.querySelectorAll('.connection-add select')[1]; Object.getOwnPropertyDescriptor(s.ownerDocument.defaultView.HTMLSelectElement.prototype, 'value').set.call(s, 'sim2');
     s.dispatchEvent(new s.ownerDocument.defaultView.Event('change', { bubbles: true })); })()`);
   await sleep(200);
   mark = seen.length;
@@ -274,7 +230,7 @@ try {
     && JSON.stringify(pressed[0].body) === JSON.stringify({ profile_id: 'ngspice-ssh', kind: 'ngspice_ssh', ssh_host: 'sim2' }), JSON.stringify(pressed.map(p => p.body)));
   shown = await text();
   check('the new connection is selected, the kept copy of the file is named, and nothing was tested by itself', shown.includes('Connection "ngspice-ssh" was added') && shown.includes('.before-FIXTURE')
-    && (await far.run(`${WINDOW}.querySelector('select').value`)) === 'ngspice-ssh' && !seen.slice(mark).some(s => s.name === 'check' || s.name === 'connect'), names(mark).join(', '));
+    && (await far.evaluate(`${WINDOW}.querySelector('select').value`)) === 'ngspice-ssh' && !seen.slice(mark).some(s => s.name === 'check' || s.name === 'connect'), names(mark).join(', '));
 
   // ---- closing the window; the button opens it again; a reload closes it ------------------------------------------------
   await send('Target.closeTarget', { targetId: farPage.id });              // the user closes the window with its own X
@@ -283,7 +239,7 @@ try {
   check('after the window is closed the button no longer says "window open", and keeps the state', !(await evaluate(`${BUTTON}.textContent`)).includes('(window open)') && (await evaluate(`${BUTTON}.textContent`)).includes('ngspice-ssh'));
   mark = seen.length;
   await openWindow();
-  check('the button opens the window again, still without any request', seen.length === mark && (await far.run(`${WINDOW}.querySelector('select').value`)) === 'ngspice-ssh', names(mark).join(', '));
+  check('the button opens the window again, still without any request', seen.length === mark && (await far.evaluate(`${WINDOW}.querySelector('select').value`)) === 'ngspice-ssh', names(mark).join(', '));
 
   statusAnswer = fixtures.old; mark = seen.length;
   await send('Page.reload'); await sleep(300); await loaded('ngspice-ssh');   // the configuration remembers the connection chosen last
@@ -307,11 +263,11 @@ try {
     if (!(await buttons()).includes('Create connection')) { await press('Add a connection...'); await sleep(1500); }
     await choose('.connection-add select', 'ngspice_local');
     await sleep(300);
-    const liveForm = await far.run(`${WINDOW}.querySelector('.connection-add').innerText`);
+    const liveForm = await far.evaluate(`${WINDOW}.querySelector('.connection-add').innerText`);
     check('LIVE: the backend reports whether ngspice is installed on its machine', /(found|missing): ngspice program/.test(liveForm), liveForm.replace(/\s+/g, ' ').slice(0, 200));
     await press('Create connection');
     for (let i = 0; i < 60 && !(await text()).includes('was added'); i++) await sleep(100);
-    check('LIVE: the connection is written by the real backend and selected', (await text()).includes('Connection "ngspice-local" was added') && (await far.run(`${WINDOW}.querySelector('select').value`)) === 'ngspice-local');
+    check('LIVE: the connection is written by the real backend and selected', (await text()).includes('Connection "ngspice-local" was added') && (await far.evaluate(`${WINDOW}.querySelector('select').value`)) === 'ngspice-local');
     await press('Test connection');
     for (let i = 0; i < 300 && (await badge()) === 'UNKNOWN'; i++) await sleep(100);
     const liveText = (await text()).replace(/\s+/g, ' ');
@@ -323,13 +279,9 @@ try {
   }
 
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-  far?.close(); ws.close();
 } catch (error) {
-  failures++; console.log('ERROR ' + (error?.stack ?? error));
+  fail(error);
 } finally {
-  edge.kill();
-  await sleep(500);
-  try { rmSync(profile, { recursive: true, force: true }); } catch { /* Edge may still hold a file; the temp dir is harmless */ }
+  await browser.close();
 }
-console.log(failures ? `${failures} check(s) FAILED` : 'all checks passed');
-process.exit(failures ? 1 : 0);
+finish();

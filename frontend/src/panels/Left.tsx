@@ -3,6 +3,7 @@ import { api, Json } from '../api';
 import { WorkingCopy } from './WorkingCopy';
 import { TaskSave } from './TaskSave';
 import { CheckSteps } from './Consistency';
+import { Typed } from './Typed';
 
 /** The connection block lives in Connection.tsx: one button in this column that opens the connection window. */
 
@@ -425,10 +426,10 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       <label title="A DUT may be identified inside one testbench; separate DUT/testbench files are not required.">DUT hierarchy / subcircuit<input value={ref.dut_hierarchy ?? ''} onChange={e => patch({ dut_hierarchy: e.target.value || null })} /></label>
       <div className="row">
         <label title="What kind of circuit this is: opamp, ldo, vco, ... A label for your records. Results tables are grouped by it, and the validator uses it to check a claim such as 'tested on an unseen circuit class'.">Circuit class
-          <input list="circuit-classes" value={ref.circuit_class ?? ''} onChange={e => patch({ circuit_class: e.target.value || 'unspecified' })} />
+          <Typed list="circuit-classes" value={ref.circuit_class} format={v => v ?? ''} parse={t => ({ value: t || 'unspecified' })} onChange={v => patch({ circuit_class: v })} />
           <datalist id="circuit-classes">{['opamp', 'ldo', 'vco', 'bandgap', 'comparator', 'oscillator', 'unspecified'].map(c => <option key={c} value={c} />)}</datalist></label>
         <label title="Which process design kit (technology) the circuit is built in, e.g. gpdk045. Written into the run records so a result can be traced to its technology. PDK files are never copied.">PDK id
-          <input value={ref.pdk_id ?? ''} onChange={e => patch({ pdk_id: e.target.value || 'unspecified' })} /></label>
+          <Typed value={ref.pdk_id} format={v => v ?? ''} parse={t => ({ value: t || 'unspecified' })} onChange={v => patch({ pdk_id: v })} /></label>
       </div>
       <details className="more hint"><summary>What circuit class and PDK id are for</summary>
         <p>Circuit class and PDK id are labels saved with every run. They do not change the simulation or the optimization;

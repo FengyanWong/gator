@@ -3,7 +3,6 @@ refuses before anyone can approve it, and what "Approve and apply" does - the ro
 into the cell's WORKING COPY (read back). FAKE write process and manually imported agent results - no agent CLI, no
 Virtuoso, no simulation."""
 import json
-import sys
 
 import pytest
 from fastapi.testclient import TestClient

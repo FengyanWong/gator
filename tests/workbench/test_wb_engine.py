@@ -1,7 +1,6 @@
 """Run engine: shared budgets under several workers, retry accounting, asynchronous first
 feasibility / failure / null, pause-resume, forced cancellation and real crash recovery.
 All evaluations use the MOCK analytic backend (optionally scripted to fail)."""
-import json
 import os
 from pathlib import Path
 import signal
@@ -242,14 +241,16 @@ def test_input_snapshot_has_no_fake_dut_or_testbench_files(tmp_path):
 
 
 # ------------------------------------------------------------------------------- pause / resume / cancel
-def request_after(layout, command, evaluations, timeout=60):
+def request_after(layout, command, evaluations, timeout=60, *, in_flight=False):
+    """Send `command` once the run shows `evaluations` completed - and, with `in_flight`, a simulation running right then
+    (without that, a busy machine could send a forced cancel between two evaluations, with nothing left to cancel)."""
     import threading
 
     def watch():
         deadline = time.time() + timeout
         while time.time() < deadline:
-            status = read_json(layout.status, default={}) or {}
-            if ((status.get('budget') or {}).get('completed') or 0) >= evaluations:
+            budget = (read_json(layout.status, default={}) or {}).get('budget') or {}
+            if (budget.get('completed') or 0) >= evaluations and (not in_flight or (budget.get('in_flight') or 0) > 0):
                 runs.send_command(layout.run_dir, command)
                 return
             time.sleep(0.01)
@@ -318,9 +319,11 @@ def test_resume_refuses_a_changed_task_and_a_running_run(tmp_path):
 def test_forced_cancel_records_unfinished_evaluations_as_charged(tmp_path):
     config = make_config(tmp_path, threshold=1.5, run=dict(max_evaluations=40, concurrency=2))
     layout, _ = runs.prepare_run(config, roots_for(tmp_path))
-    request_after(layout, 'cancel', 4)
-    # different delays keep the lanes out of lockstep, so a job is genuinely mid-flight at cancel time
-    assert run_prepared(layout, delays={'0': 0.5, '1': 0.8}) == 'cancelled'
+    request_after(layout, 'cancel', 4, in_flight=True)
+    # different delays keep the lanes out of lockstep, so a job is genuinely mid-flight at cancel time; each job is long
+    # next to the status file's throttle (<= 1 s) and a learner step on a busy machine (a parallel test run), else both
+    # jobs could end before the command is read and nothing would be left to cancel
+    assert run_prepared(layout, delays={'0': 1.5, '1': 2.0}) == 'cancelled'
     s = summary(layout)
     evaluations = by_seq(layout)
     assert s['termination']['forced'] and not s['termination']['normal_completion']

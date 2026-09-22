@@ -65,7 +65,6 @@ export const api = {
   tasks: () => call('GET', '/api/tasks'),
   starter: (taskKey: string) => call('GET', '/api/tasks/starter' + q({ task_key: taskKey })),
   loadCircuit: (circuit: Json) => call('POST', '/api/circuit/load', { circuit }),
-  modifyCircuit: (body: Json) => call('POST', '/api/circuit/modify', body),
   nativeLibraries: (profile_id: string) => call('POST', '/api/virtuoso/libraries', { profile_id }),
   nativeCells: (profile_id: string, library: string) => call('POST', '/api/virtuoso/cells', { profile_id, library }),
   nativeImport: (profile_id: string, library: string, cell: string, testbench: string | null) => call('POST', '/api/virtuoso/import', { profile_id, library, cell, testbench }),
@@ -90,7 +89,6 @@ export const api = {
   connectionCreateProfile: (body: Json) => call('POST', '/api/connection/profile', body),
   connectionConnect: (profile_id: string) => call('POST', '/api/connection/connect', { profile_id }),
   runs: (output_root?: string) => call('GET', '/api/runs' + q({ output_root })),
-  suggestMode: (config: Json, source_run_dir?: string | null) => call('POST', '/api/runs/suggest-mode', { config, source_run_dir }),
   model: (run_dir: string, checkpoint_id: string, config?: Json) => call('POST', '/api/runs/model', { run_dir, checkpoint_id, config }),
   defaultModel: (project: string) => call('GET', '/api/runs/default-model' + q({ project })),
   savedModels: (output_root?: string) => call('GET', '/api/runs/models' + q({ output_root })),
@@ -116,14 +114,18 @@ export const api = {
   saveAgentSettings: (body: Json) => call('PUT', '/api/agent/settings', body),
   agentDiagnostics: () => call('GET', '/api/agent/diagnostics'),
   agentReadiness: (config: Json) => call('POST', '/api/agent/readiness', { config }),      // free: no model is called, nothing is probed
-  propose: (body: Json) => call('POST', '/api/agent/propose', body),
-  proposeLive,
+  proposeLive,              // POST /api/agent/propose: live events when the backend streams, else its plain JSON answer
   cancelAgent: (request_id: string) => call('POST', '/api/agent/cancel', { request_id }),
   exportTask: (body: Json) => call('POST', '/api/agent/export-task', body),
   importResult: (body: Json) => call('POST', '/api/agent/import-result', body),
   approve: (body: Json) => call('POST', '/api/agent/approve', body),
   apply: (body: Json) => call('POST', '/api/agent/apply', body),
   reject: (proposal_id: string) => call('POST', '/api/agent/reject', { proposal_id }),
+  // Load PDK (backend pdk.py): the PDKs loaded so far, one of them in full, and an explicit read through a connection.
+  pdks: () => call('GET', '/api/pdks'),
+  pdk: (pdk_id: string) => call('GET', '/api/pdks/' + encodeURIComponent(pdk_id)),
+  loadPdk: (profile_id: string, technology_library: string | null, model_file: string | null) =>
+    call('POST', '/api/pdks/load', { profile_id, technology_library, model_file }),
 };
 
 function save(name: string, blob: Blob) {

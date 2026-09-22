@@ -24,7 +24,7 @@ from pathlib import Path
 import re
 import sys
 
-from .paths import local_settings_dir, repo_root
+from .paths import repo_root
 
 # Normalized toy optimum per parameter kind for the analytic mock objective. Arbitrary by
 # construction: the mock backend checks plumbing, never electrical behaviour.

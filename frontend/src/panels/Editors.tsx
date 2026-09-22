@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { api, Json, num, saveJson } from '../api';
 import { migrateConfig } from '../store';
+import { Typed } from './Typed';
 
 export type Section = 'parameters' | 'targets' | 'measurements';
 const TITLES: Record<Section, string> = { parameters: 'Parameters', measurements: 'Probes', targets: 'Specs' };   // key order = tab order
@@ -13,12 +14,13 @@ function Cell({ column, value, onChange }: { column: Json; value: Json; onChange
   }
   if (column.type === 'boolean') return <input type="checkbox" title={title} checked={!!value} onChange={e => onChange(e.target.checked)} />;
   if (column.type === 'number' || column.type === 'integer') {
-    return <input title={title} className="numeric" value={value ?? ''} placeholder={column.nullable ? '-' : ''}
-      onChange={e => { const t = e.target.value.trim(); onChange(t === '' ? (column.nullable ? null : 0) : Number.isFinite(Number(t)) ? Number(t) : value); }} />;
+    return <Typed title={title} className="numeric" placeholder={column.nullable ? '-' : ''} value={value} onChange={onChange}
+      format={v => v == null ? '' : String(v)}
+      parse={t => { const s = t.trim(), n = Number(s); return s === '' ? { value: column.nullable ? null : 0 } : Number.isFinite(n) ? { value: n } : undefined; }} />;
   }
   if (column.type === 'array' || column.type === 'object') {
-    return <input title={title + ' (JSON)'} value={value == null ? '' : JSON.stringify(value)}
-      onChange={e => { try { onChange(e.target.value.trim() === '' ? null : JSON.parse(e.target.value)); } catch { /* keep typing */ } }} />;
+    return <Typed title={title + ' (JSON)'} value={value} onChange={onChange} format={v => v == null ? '' : JSON.stringify(v)}
+      parse={t => { if (t.trim() === '') return { value: null }; try { return { value: JSON.parse(t) }; } catch { return undefined; } }} />;
   }
   return <input title={title} value={value ?? ''} onChange={e => onChange(e.target.value === '' && column.nullable ? null : e.target.value)} />;
 }
@@ -61,7 +63,11 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
     // Specs row used to get constraint = null and normalization_scale = null, and the whole configuration failed validation.
     for (const c of columns) row[c.name] = c.default !== undefined && (c.default !== null || c.nullable) ? c.default
       : c.nullable ? null : c.options ? c.options[0] : c.type === 'number' ? 1 : c.type === 'boolean' ? false : '';
-    row[keyField] = `${tab.slice(0, -1)}_${rows.length + 1}`;
+    // A free ID: `rows.length + 1` repeated an existing one after a deletion, and "Delete selected" then removed both rows.
+    const used = new Set(rows.map(r => r[keyField]));
+    let n = rows.length + 1;
+    while (used.has(`${tab.slice(0, -1)}_${n}`)) n += 1;
+    row[keyField] = `${tab.slice(0, -1)}_${n}`;
     // A new spec starts as the simplest equation over the probes: the first probe, in its unit.
     const first = config.measurements?.[0];
     if (tab === 'targets' && first && !row.equation) Object.assign(row, { equation: first.measurement_id ?? '', unit: row.unit || first.unit || '' });

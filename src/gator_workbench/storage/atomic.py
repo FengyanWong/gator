@@ -58,12 +58,15 @@ def temporary_path(path: Path) -> Path:
 
 
 def publish(temporary: Path, destination: Path) -> int:
-    """fsync + rename + directory fsync + bounded visibility check. Returns byte size."""
+    """fsync + rename + directory fsync + bounded visibility check. Returns byte size.
+    The ONE fsync of the file's bytes happens here, whoever wrote them (write_json does not fsync a second time)."""
+    renamed = False
     try:
         with temporary.open('rb') as stream:
             os.fsync(stream.fileno())
         size = temporary.stat().st_size
         temporary.replace(destination)
+        renamed = True
         fsync_directory(destination.parent)
         _await_visible(destination, size)
         return size
@@ -72,12 +75,11 @@ def publish(temporary: Path, destination: Path) -> int:
     except OSError as exc:
         raise PersistenceError(f'Cannot publish {destination}: {exc}') from exc
     finally:
-        try:
-            temporary.unlink()
-        except FileNotFoundError:
-            pass
-        except OSError:
-            pass
+        if not renamed:                  # after a rename there is no temporary left to remove
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
 
 
 def jsonable(value):
@@ -137,11 +139,9 @@ def write_json(path, value, *, indent=2) -> dict:
     try:
         with temporary.open('x', encoding='utf8') as stream:
             stream.write(text)
-            stream.flush()
-            os.fsync(stream.fileno())
     except OSError as exc:
         raise PersistenceError(f'Cannot write {path}: {exc}') from exc
-    size = publish(temporary, path)
+    size = publish(temporary, path)             # fsyncs the bytes before the rename
     return dict(bytes=size, sha256=hashlib.sha256(text.encode('utf8')).hexdigest(), null_reasons=reasons)
 
 

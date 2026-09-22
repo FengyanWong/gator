@@ -2,7 +2,8 @@
 // "Save as" (another task) and the task file in a window of its own. Same approach as working_copy_check.mjs: a throwaway
 // headless Edge over the DevTools protocol against a workbench page (default http://127.0.0.1:8765/; GATOR_WORKBENCH_URL for
 // a preview of a temporary build). EVERY /api/virtuoso/* request, the circuit load and the task list of the open task are
-// answered with canned FIXTURES, so Virtuoso is never contacted and nothing is saved anywhere. What it pins (user request
+// answered with canned FIXTURES, so Virtuoso is never contacted and nothing is saved anywhere; any other writing request of
+// the page is refused (reads pass). What it pins (user request
 // 2026-09-22, "go on part 2"):
 //   - an open task names itself and its revision; three short buttons: Save task, Save as, Task file - at the right end of
 //     the editors' tab line, above "Modify selected with agent...", not in the Project panel (user request 2026-09-22);
@@ -10,22 +11,15 @@
 //     fills the editors (one Undo step); a broken file is refused with its problems and changes nothing;
 //   - "Save task" sends the rows, the task and what the file added (analyses) and reports the revision and the baseline;
 //   - "Save as" asks for a new name under the editors' toolbar, sends as_new and opens the new task; nothing happens on load.
-// Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
-//   GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_save_check.mjs)" [screenshot-dir]
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+// Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; WSLENV carries the URL into it):
+//   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_save_check.mjs)" [screenshot-dir]
 import path from 'node:path';
+import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9397, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:8765/';
-const out = process.argv[2] ?? tmpdir();
-const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-task-'));
-const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failures = 0; const consoleErrors = [];
-const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+const APP = await workbenchUrl();
+const out = outDir();
+const browser = await launchEdge('task');
+const consoleErrors = [];
 
 // ---- canned answers ------------------------------------------------------------------------------------------
 const ROWS = [{ variable_id: 'wn', instance_path: 'XU1/MN1', parameter_name: 'w', unit: 'um', optimized: true, lower: 0.6, upper: 1.6, step: 0.005 }];
@@ -42,18 +36,9 @@ const fileText = (task, rows) => JSON.stringify({ _help: { 'what this is': 'The 
   parameters: rows.parameters, probes: rows.measurements, specs: rows.targets, notes: '' }, null, 2);
 
 try {
-  let target;
-  for (let i = 0; i < 75 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    if (!target) await sleep(200);
-  }
-  if (!target) throw new Error('Edge did not open a debugging port');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const calls = []; const dialogs = []; const answers = [];
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
-  const fulfil = (requestId, status, obj) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
-    responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
+  const page = await browser.open({ errors: consoleErrors });
+  const { send, evaluate, fulfil } = page;
+  const calls = []; const dialogs = []; const answers = [];
   const answer = async ({ requestId, request }) => {
     const url = new URL(request.url), pathname = url.pathname, body = JSON.parse(request.postData ?? '{}');
     if (pathname === '/api/tasks') {
@@ -90,23 +75,11 @@ try {
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${op} is not expected` } });
   };
   let revision = 1;
-  ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
-    else if (m.method === 'Fetch.requestPaused') answer(m.params).catch(() => { /* page went away */ });
-    else if (m.method === 'Page.javascriptDialogOpening') {
-      const accept = answers.length ? answers.shift() : null;
-      dialogs.push({ message: m.params.message, planned: accept !== null });
-      send('Page.handleJavaScriptDialog', { accept: !!accept }).catch(() => undefined);
-    }
-    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-    else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push(m.params.args.map(a => a.value ?? a.description).join(' '));
-  };
-  const evaluate = async (expression, userGesture = false) => {          // userGesture: a click that may open a window
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, userGesture });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
+  page.on('Page.javascriptDialogOpening', p => {
+    const accept = answers.length ? answers.shift() : null;
+    dialogs.push({ message: p.message, planned: accept !== null });
+    return send('Page.handleJavaScriptDialog', { accept: !!accept });
+  });
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Circuit source'))`;
   const BLOCK = `document.querySelector('.editors .tabs .task-save')`;          // the bar: right end of the editors' tab line
   const NOTES = `document.querySelector('.editors .task-notes')`;              // its messages and questions, under the toolbar
@@ -121,9 +94,7 @@ try {
     Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value').set.call(el, ${JSON.stringify(text)}); el.dispatchEvent(new Event('input', { bubbles: true })); })()`, true);
   const settle = (ms = 900) => sleep(ms);
 
-  await send('Page.enable'); await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Fetch.enable', { patterns: ['*/api/virtuoso/*', '*/api/circuit/load', '*/api/tasks', '*/api/tasks/starter*'].map(urlPattern => ({ urlPattern, requestStage: 'Request' })) });
+  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/tasks', '*/api/tasks/starter*'], answer, { others: 'read' });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   for (let i = 0; i < 50 && !(await stored()); i++) await sleep(100);
@@ -194,16 +165,11 @@ try {
     (await evaluate(`${PANEL}.textContent`)).includes('tb_ring_osc_3stage_ring_fast'));
   check('no unplanned dialog', dialogs.every(d => d.planned), JSON.stringify(dialogs));
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
-  const { data } = await send('Page.captureScreenshot', { format: 'png' });
-  writeFileSync(path.join(out, 'task-save-1.png'), Buffer.from(data, 'base64'));
-  ws.close();
+  await page.shot(path.join(out, 'task-save-1.png'));
+  console.log(`INFO  other writing requests the page sent on its own, all refused here: ${[...new Set(page.refused)].join(', ') || 'none'}`);
 } catch (error) {
-  failures++;
-  console.log('FAIL  the check itself stopped: ' + (error?.stack ?? error));
+  fail(error);
 } finally {
-  edge.kill();
-  await sleep(500);
-  try { rmSync(profile, { recursive: true, force: true }); } catch { /* Edge may still hold a file */ }
-  console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
-  process.exit(failures ? 1 : 0);
+  await browser.close();
 }
+finish();

@@ -334,7 +334,6 @@ class RunEngine:
                                   're-admitted to replay; the learner updates made after it are not recoverable.')
         if self.encoder is not None:
             self.encoder.written = {r['state_id'] for r in DatasetReader(self.layout.data).rows('states', ['state_id'])}
-        self.resume_report = report
         self._pending_events = [('resumed', report)]
 
     def _record_interrupted(self):
@@ -997,6 +996,7 @@ class RunEngine:
         self.dataset.compact_journal()
         self.counters['last_checkpoint_commit'] = self.dataset.last_seq
         self.last_checkpoint_time, self.checkpoint_due, self.checkpoint_kind = self._clock(), False, 'periodic'
+        self.last_checkpoint = metadata
         self._event('checkpoint_saved', checkpoint_id=metadata['checkpoint_id'], kind=kind,
                     capability=metadata['restoration_capability'], commit_seq=self.dataset.last_seq)
         if self.manual_save and self.manual_save['state'] == 'waiting':
@@ -1005,6 +1005,25 @@ class RunEngine:
                                     saved_utc=metadata['created_utc'], evaluations=self.dataset.last_seq)
             if self.stop_reason is None:                # a run on its way down writes its final status right after
                 self._write_status('running')
+        return metadata
+
+    def _relabel_unchanged(self, kind):
+        """A run that completes right after a periodic save (its budget a multiple of the checkpoint interval) would
+        write the very same state a second time, replay buffer and all. That save becomes the final one instead. Only
+        for 'final' and only when nothing moved since: the same commit, learner updates and replay insertions."""
+        last = getattr(self, 'last_checkpoint', None)
+        if (kind != 'final' or last is None or last.get('kind') != 'periodic' or not self.config.output.save_checkpoints
+                or (self.manual_save and self.manual_save['state'] == 'waiting')):
+            return None
+        counters = last['counters']
+        if (counters['evaluations_committed'] != self.dataset.last_seq
+                or counters['learner_updates'] != int(self.learner.updates)
+                or counters['replay_insertions'] != (0 if self.replay is None else self.replay.insertions)):
+            return None
+        metadata = self.checkpoints.relabel(last['checkpoint_id'], kind, was=last['kind'])
+        self.last_checkpoint = metadata
+        self._event('checkpoint_saved', checkpoint_id=metadata['checkpoint_id'], kind=kind, relabelled_from=last['kind'],
+                    capability=metadata['restoration_capability'], commit_seq=self.dataset.last_seq)
         return metadata
 
     # ------------------------------------------------------------------ finalize
@@ -1033,7 +1052,7 @@ class RunEngine:
                 self.dataset.flush()
                 if not self.ledger.in_flight_ids():
                     kind = {'paused': 'pause', 'stopped': 'stop', 'completed': 'final'}.get(final_state, 'safety')
-                    checkpoint = self._checkpoint(kind)
+                    checkpoint = self._relabel_unchanged(kind) or self._checkpoint(kind)
             except BaseException as exc:
                 persistence_ok = False
                 problems.append(f'final save failed: {type(exc).__name__}: {exc}')
@@ -1074,7 +1093,6 @@ class RunEngine:
 
     def _write_outputs(self, final_state, checkpoint, persistence_ok):
         from .summary import build_run_summary
-        from .tasks import parse_netlist
         task = self.task
         reparse = None
         if task.netlist_path and task.parser_config_path:

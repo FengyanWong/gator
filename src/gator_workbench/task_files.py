@@ -26,8 +26,6 @@ import json
 from pydantic import ValidationError
 
 FORMAT = 'gator-task-1'
-KINDS = ('maestro', 'ring_oscillator', 'opamp_ac')
-EDITABLE = ('measurement', 'maestro', 'parameters', 'probes', 'specs', 'notes')
 HELP = {
     'what this is': 'The task file: everything this task is, in one place. Edit it here or in the three editors. '
                     '"Apply to editors" checks it and puts the rows into the editors; "Save task" stores it. Nothing is '

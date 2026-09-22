@@ -2,7 +2,6 @@
 across different topologies and action dimensions, and reloading of configuration + trajectories.
 The complete experience archive is tested against the finite replay snapshot."""
 import json
-from pathlib import Path
 import shutil
 
 import pytest
@@ -311,8 +310,6 @@ def test_transitions_reload_as_valid_optimizer_objects_without_waveforms_or_work
     for original in saved:                                                      # bit-exact replay items
         assert reloaded[original.candidate_id].fingerprint() == original.fingerprint()
     current, following = loader.training_batch(transitions[:4])                 # real network inputs
-    from gator_workbench import tasks
-    from gator_workbench.compile import compile_task
     learner = modes._new_learner(meta['experiment'], modes.model_config_from(config.run.network),
                                  modes.sac_config_from(config.run.advanced), None)
     with torch.no_grad():

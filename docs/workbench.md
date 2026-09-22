@@ -83,7 +83,10 @@ The header has one main run button and **Abort** next to it. The main button cha
 * A real run asks for the budget again at Resume (what is left of it). A run that was started with checkpoints or
   replay snapshots switched off cannot come back from a pause; Pause says so before it pauses.
 * The Run status tab keeps its own buttons (Pause and save, Stop and save, Force cancel, Continue with a new total
-  budget). They act on the run shown there.
+  budget). They act on the run shown there, and ask what the header asks: Pause and save says first when the run
+  cannot come back from a pause, Stop and save asks before it ends the run, and Force cancel is offered only while
+  a pause or a stop is waiting for the simulation in flight - for a run that is stuck (entry 7.64; before, all three
+  acted on one click and Force cancel was offered while the run was simply running).
 
 Browser checks: `frontend/scripts/run_control_check.mjs` (fixtures only, safe next to a live run) and
 `frontend/scripts/run_control_live_check.mjs` (real MOCK worker; needs a scratch backend, refuses port 8765).
@@ -299,8 +302,10 @@ to say.
      with that result, as the four verified profiles do. Recorded once, never replaced.
 
 `POST /api/virtuoso/libraries | cells | read | import`, body `{"profile_id", "library"?, "cell"?, "testbench"?}`;
-`POST /api/virtuoso/profile`, body `{"config", "name", "recipe", "expected_frequency_hz"?}`;
-`POST /api/virtuoso/profile/preflight` `{"name", "profile_id"}`; `POST /api/virtuoso/profile/reference` `{"name", "run_dir"?}`.
+`POST /api/virtuoso/profile/reference` `{"name", "run_dir"?}`; `POST /api/virtuoso/profile/delete` `{"name"}` (answers
+with the task's own cell - never its working copy - for the Circuit source). A task is saved with
+`POST /api/virtuoso/task/save` (section "Saving a task"); the older `POST /api/virtuoso/profile` (Create profile) and
+`/profile/preflight` routes are gone (entries 7.57, 7.64).
 
 ## Connection profiles (section 2.1)
 

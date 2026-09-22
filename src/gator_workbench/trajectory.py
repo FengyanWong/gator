@@ -153,12 +153,3 @@ class TrajectoryLoader:
         return (batch_observations([t.observation for t in transitions], feature_schema, spec_schema),
                 batch_observations([t.next_observation for t in transitions], feature_schema, spec_schema))
 
-
-def schema_description():
-    return dict(
-        loader='gator_workbench.trajectory.TrajectoryLoader(run_dir).transitions()',
-        state_reconstruction='static template (data/states/static/<static_graph_ref>) + graph_patch_json -> '
-                             'CircuitGraph; spec_ref -> specifications; observation_fields_json -> remaining fields',
-        codec='analog_optimizer.recording.codec (gator-recording-v1): JSON, registered dataclasses only, no pickle',
-        independent_of='raw waveforms, simulator installation, the original run process',
-        differs_from_replay_snapshot='complete append-only history vs. finite circular buffer in a checkpoint')

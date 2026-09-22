@@ -15,25 +15,18 @@
 //   WSLENV=GATOR_WORKBENCH_URL:GATOR_SCRATCH_OUT GATOR_WORKBENCH_URL=http://127.0.0.1:8769/ GATOR_SCRATCH_OUT=$S/out \
 //     "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/export_check.mjs)" [screenshot-dir]
 // (WSLENV carries the two variables into the Windows process.) Takes about 60 s. Exit code 1 if any check fails.
-import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9391, APP = process.env.GATOR_WORKBENCH_URL, OUT_ROOT = process.env.GATOR_SCRATCH_OUT;
-if (!APP || !OUT_ROOT || new URL(APP).port === '8765') {
-  console.log('ERROR this check starts a real (MOCK) run and writes exports: set GATOR_WORKBENCH_URL to a SCRATCH backend (not port 8765) and GATOR_SCRATCH_OUT to its allowed output root.');
+const APP = await workbenchUrl({ writes: true }), OUT_ROOT = process.env.GATOR_SCRATCH_OUT;
+if (!OUT_ROOT) {
+  console.log('ERROR this check starts a real (MOCK) run and writes exports: set GATOR_SCRATCH_OUT to the allowed output root of the scratch backend (and WSLENV=GATOR_WORKBENCH_URL:GATOR_SCRATCH_OUT).');
   process.exit(1);
 }
-const out = process.argv[2] ?? tmpdir();
-const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-export-'));
-const saved = mkdtempSync(path.join(tmpdir(), 'gator-cdp-export-saved-'));          // the browser's download folder
-const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failures = 0;
-const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+const out = outDir();
+const browser = await launchEdge('export');
+const saved = browser.tempDir('saved');                                                // the browser's download folder
 const get = async (route, params) => (await fetch(new URL(`api/${route}?` + new URLSearchParams(params), APP))).json();
 const post = async (route, body) => (await fetch(new URL(`api/${route}`, APP), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
 // File names of a zip, from its central directory (node has no zip reader; signature PK\1\2, name length at +28, name at +46).
@@ -53,28 +46,10 @@ try {
   if (status.state !== 'completed') throw new Error('the MOCK run did not complete: ' + status.state);
   console.log(`INFO  MOCK run ${RUN} of experiment ${EXPERIMENT}: ${status.budget.charged} evaluations`);
 
-  let target;
-  for (let i = 0; i < 75 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    if (!target) await sleep(200);
-  }
-  if (!target) throw new Error('Edge did not open a debugging port');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const consoleErrors = []; const dialogs = [];
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
-  ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
-    else if (m.method === 'Page.javascriptDialogOpening') { dialogs.push(m.params.message); send('Page.handleJavaScriptDialog', { accept: true }).catch(() => undefined); }
-    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-  };
-  const evaluate = async (expression, userGesture = false) => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, userGesture });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
-  const until = async (expression, tries = 80) => { for (let i = 0; i < tries; i++) { if (await evaluate(expression)) return true; await sleep(100); } return false; };
+  const page = await browser.open({ consoleApi: false });
+  const { send, evaluate, until, consoleErrors } = page;
+  const dialogs = [];
+  page.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return send('Page.handleJavaScriptDialog', { accept: true }); });
   const button = text => `[...document.querySelectorAll('footer .bottom-body button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const press = text => evaluate(`${button(text)}.click()`, true);                                       // a real click: downloads need the user's gesture
   const tab = async text => { await evaluate(`[...document.querySelectorAll('footer .tabs > button')].find(b => b.textContent.trim() === ${JSON.stringify(text)}).click()`); return until(`!!(${button(text === 'Run status' ? 'Export status (JSON)' : 'Refresh')}) || ${JSON.stringify(text)} === 'Logs'`, 60); };
@@ -82,16 +57,10 @@ try {
   const HINT = text => `(${button(text)}?.closest('.row').querySelector('.hint')?.textContent ?? '')`;
   let row = 'Export status (JSON)';                                                                        // the button whose row the note is read from
   const hint = () => evaluate(HINT(row));
-  const shot = async name => {
-    const clip = await evaluate(`(() => { const r = document.querySelector('footer').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, scale: 1 }; })()`);
-    writeFileSync(path.join(out, name), Buffer.from((await send('Page.captureScreenshot', { format: 'png', clip })).data, 'base64'));
-  };
+  const shot = name => page.shot(path.join(out, name), `document.querySelector('footer')`);
 
-  await send('Page.enable'); await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
   await send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: saved });
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: `if (location.protocol.startsWith('http') && !sessionStorage.getItem('fixture-seeded')) { sessionStorage.setItem('fixture-seeded', '1');
-    localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(CONFIG))}); localStorage.setItem('gator-workbench-current-run-v1', ${JSON.stringify(DIR)}); }` });
+  await page.seed({ config: CONFIG, run: DIR, when: 'once' });
   await send('Page.navigate', { url: APP });
   if (!(await until(`!!document.querySelector('footer .tabs')`, 150))) throw new Error('the workbench never appeared; the page reads: ' + JSON.stringify(await evaluate(`document.body.innerText.slice(0, 300)`)));
 
@@ -163,13 +132,9 @@ try {
   console.log(`INFO  saved by the browser: ${readdirSync(saved).join(', ')}`);
   check('no dialog was needed', dialogs.length === 0, dialogs.join(' | ').slice(0, 200));
   check('no console exception', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-  console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
-  ws.close();
 } catch (error) {
-  failures++; console.log(`FAIL  the check could not run: ${error.message}`);
+  fail(error);
 } finally {
-  edge.kill();
-  await sleep(500);
-  for (const dir of [profile, saved]) try { rmSync(dir, { recursive: true, force: true }); } catch { /* Edge may still hold a file; it is a temp dir */ }
+  await browser.close();                                                     // the download folder goes with it
 }
-process.exit(failures ? 1 : 0);
+finish();

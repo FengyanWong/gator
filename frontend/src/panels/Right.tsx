@@ -4,23 +4,24 @@ import { ModelChooser } from './ModelChooser';
 import { CircuitGraphView } from './CircuitGraphView';
 import { ModelStructure } from './ModelStructure';
 
-function Num({ label, value, onChange, title, nullable, disabled, note }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; nullable?: boolean; disabled?: boolean; note?: string }) {
+function Num({ label, value, onChange, title, nullable, disabled, note, after, placeholder }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; nullable?: boolean; disabled?: boolean; note?: string; after?: ReactNode; placeholder?: string }) {
   // The typed text is kept while the box has focus: "0." and "3e-" are steps towards 0.005 and 3e-4, not values.
   // It is dropped as soon as the value changes from outside (reset button, undo, another encoder), focus or not.
   const [text, setText] = useState<string | null>(null);
   const typed = text === null ? undefined : text.trim() === '' ? (nullable ? null : 0) : Number(text);
   const stale = text !== null && (typed === null || Number.isFinite(typed)) && typed !== (value ?? null);
   useEffect(() => { if (stale) setText(null); }, [stale]);
+  const box = <input className="numeric" value={(stale ? null : text) ?? value ?? ''} placeholder={placeholder ?? (nullable ? 'none' : '')} disabled={disabled} onBlur={() => setText(null)}
+    onChange={e => { setText(e.target.value); const t = e.target.value.trim();
+      if (t === '') onChange(nullable ? null : 0); else if (Number.isFinite(Number(t))) onChange(Number(t)); }} />;
   return (
     <label title={title} className={disabled ? 'disabled' : undefined}><span>{label}{note && <span className="hint"> - {note}</span>}</span>
-      <input className="numeric" value={(stale ? null : text) ?? value ?? ''} placeholder={nullable ? 'none' : ''} disabled={disabled} onBlur={() => setText(null)}
-        onChange={e => { setText(e.target.value); const t = e.target.value.trim();
-          if (t === '') onChange(nullable ? null : 0); else if (Number.isFinite(Number(t))) onChange(Number(t)); }} /></label>);
+      {after ? <span className="with-unit">{box}{after}</span> : box}</label>);
 }
 
-// A size that the configuration keeps in whole bytes, typed as a number plus a unit. The unit is only how the number is
-// typed and shown: choosing another unit keeps the number and changes what it means (2 GiB -> 2 MiB), so "type, then
-// choose the unit" and "choose the unit, then type" both end at the same size.
+// A size that the configuration keeps in whole bytes, typed as a number plus a unit. The saved bytes change only when a
+// number is typed; choosing another unit converts the shown number and leaves the size alone (1.5 GiB -> 1536 MiB).
+// The shown number is always exact - the shortest decimal that gives the saved bytes back - never a rounded version.
 const BYTE_UNITS: [string, number][] = [['bytes', 1], ['KiB', 1024], ['MiB', 1024 ** 2], ['GiB', 1024 ** 3], ['TiB', 1024 ** 4]];
 const unitSize = (name: string) => BYTE_UNITS.find(([unit]) => unit === name)?.[1] ?? 1;
 // The shortest decimal number that gives back exactly these bytes in that unit; undefined when `places` decimals cannot.
@@ -30,6 +31,9 @@ const inUnit = (n: number, size: number, places: number): number | undefined => 
 };
 const bestUnit = (n: Json): string => typeof n !== 'number' ? 'GiB'
   : ([...BYTE_UNITS].reverse().find(([, size]) => n >= size && inUnit(n, size, 3) !== undefined) ?? BYTE_UNITS[0])[0];
+// Exact in that unit, with as many decimals as it takes (1395864371 bytes in TiB = 0.00126953125); the full quotient
+// only for a size that is not a whole number of bytes, which the schema would refuse anyway.
+const showIn = (n: number, size: number): string => String(inUnit(n, size, 15) ?? n / size);
 
 function ByteSize({ label, value, onChange, title, empty }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; empty: string }) {
   const [unit, setUnit] = useState(() => bestUnit(value));
@@ -42,17 +46,19 @@ function ByteSize({ label, value, onChange, title, empty }: { label: string; val
   useEffect(() => { if (stale) setText(null); }, [stale]);
   // A value that did not come from this box (loaded configuration, undo) is shown in the unit that reads best.
   useEffect(() => { if (value !== sent.current) { sent.current = value; if (typeof value === 'number') setUnit(bestUnit(value)); } }, [value]);
-  const shown = typeof value === 'number' ? String(inUnit(value, size, 6) ?? Number((value / size).toFixed(3))) : '';
+  const shown = typeof value === 'number' ? showIn(value, size) : '';
   const send = (b: Json) => { if (b === null || Number.isFinite(b)) { sent.current = b; onChange(b); } };
-  const box = (stale ? null : text) ?? shown;
   return (
     <label title={`${title ? title + ' ' : ''}${typeof value === 'number' ? `Saved as ${value} bytes.` : `Empty = ${empty}.`}`}><span>{label}</span>
       <span className="with-unit">
-        <input className="numeric" value={box} placeholder={empty} onBlur={() => setText(null)}
+        <input className="numeric" value={(stale ? null : text) ?? shown} placeholder={empty} onBlur={() => setText(null)}
           onChange={e => { setText(e.target.value); send(toBytes(e.target.value, size)); }} />
-        <select aria-label={`${label}: unit`} value={unit} onChange={e => { setUnit(e.target.value); if (box.trim() !== '') send(toBytes(box, unitSize(e.target.value))); }}>
+        {/* Another unit shows the same size in other words; nothing is saved by it. */}
+        <select aria-label={`${label}: unit`} value={unit} onChange={e => { setText(null); setUnit(e.target.value); }}>
           {BYTE_UNITS.map(([name]) => <option key={name}>{name}</option>)}</select></span></label>);
 }
+
+type Every = 'evaluations' | 'seconds';
 
 // A whole module of the right column folded under its own heading (user request 2026-09-21). It starts OPEN; the
 // viewer's choice is kept in this browser. It is a <details>, so the content stays mounted while folded: nothing inside
@@ -323,6 +329,17 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
   useEffect(() => { if (root) api.checkOutput(root).then(setCheck).catch(() => setCheck(null)); }, [root]);
   const paths = activeRun?.paths;
   const tail = String(root).split(/[\\/]/).filter(Boolean).slice(-2).join('/');
+  // ONE checkpoint interval, counted in evaluations OR in seconds (user request 2026-09-22). The number goes into the field
+  // of the chosen unit and the other field is emptied - also the default of 50 evaluations that an absent field means. The
+  // backend refuses both at once (validation.py, checkpoint_interval_both). Another unit carries the number over:
+  // evaluations and seconds do not convert into each other.
+  const every: Json = out.checkpoint_every_evaluations === undefined ? 50 : out.checkpoint_every_evaluations;
+  const seconds: Json = out.checkpoint_every_seconds ?? null;
+  const [by, setBy] = useState<Every>(() => seconds !== null && every === null ? 'seconds' : 'evaluations');
+  useEffect(() => { if (seconds !== null && every === null) setBy('seconds'); else if (every !== null && seconds === null) setBy('evaluations'); }, [every, seconds]);
+  const interval: Json = by === 'seconds' ? seconds : every;
+  const setEvery = (unit: Every, v: Json) => set({ checkpoint_every_evaluations: unit === 'evaluations' ? v : null, checkpoint_every_seconds: unit === 'seconds' ? v : null });
+  const both = every !== null && seconds !== null;          // only from a file or an older copy of the configuration
   return (
     <Module id="output" title="Output settings" summary={[out.experiment_name, tail ? `.../${tail}` : 'no output root'].filter(Boolean).join(' - ')}>
       {/* "Copy path" is a sibling of the label, not inside it: a button inside would become what the label's text clicks. */}
@@ -357,15 +374,18 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
       {out.save_replay_snapshots === false && <p className="warn">Without replay snapshots checkpoints are weights_only: a full training-state resume of this run will NOT be possible.</p>}
       <Check label="Complete transition archive (independent of replay snapshots)" value={out.save_transition_archive ?? true} onChange={v => set({ save_transition_archive: v })} />
       <Check label="Experiment summary CSVs" value={out.export_summary_csv ?? true} onChange={v => set({ export_summary_csv: v })} />
-      <div className="row"><Num label="Checkpoint every N evaluations" nullable value={out.checkpoint_every_evaluations === undefined ? 50 : out.checkpoint_every_evaluations} onChange={v => set({ checkpoint_every_evaluations: v })} />
-        <Num label="or every S seconds" nullable value={out.checkpoint_every_seconds} onChange={v => set({ checkpoint_every_seconds: v })} /></div>
+      <Num label="Checkpoint every" nullable value={interval} placeholder="only at pause, stop, end" onChange={v => setEvery(by, v)}
+        title="The model and its training state are saved every N evaluations or every S seconds - one of the two. Empty = only when the run pauses, stops or ends."
+        after={<select aria-label="Checkpoint every: unit" value={by} onChange={e => { const unit = e.target.value as Every; setBy(unit);
+          const carried = (unit === 'seconds' ? seconds : every) ?? interval; if (carried !== null) setEvery(unit, carried); }}>
+          <option>evaluations</option><option>seconds</option></select>} />
+      {both && <p className="warn">This configuration has both: every {every} evaluations and every {seconds} seconds. Only one can be kept - type a number or choose the unit, and the other is emptied.</p>}
       <label title="Raw PSF only; nothing is rendered. Applies to raw outputs that actually exist.">Raw waveform retention
         <select value={out.waveform_retention ?? 'best_and_failures'} onChange={e => set({ waveform_retention: e.target.value })}><option>none</option><option>best_and_failures</option><option>all</option></select></label>
       {/* null is a real setting here (no limit); only a configuration without the field shows the backend's default. */}
       <ByteSize label="Waveform storage limit" empty="no limit" value={out.waveform_storage_limit_bytes === undefined ? 2147483648 : out.waveform_storage_limit_bytes}
         onChange={v => set({ waveform_storage_limit_bytes: v })}
         title="Oldest retained failures are removed first. The best design, models and primary data are never deleted automatically." />
-      <p className="hint">Pausing, stopping and normal completion always save safely. Detailed CSV copies are exported on demand; raw tables are Parquet.</p>
     </Module>
   );
 }

@@ -4,11 +4,15 @@
 // and /api/config/validate with an empty one; GET requests pass through; every other writing request is refused here,
 // so this check can start, save or probe nothing on the backend it runs against. The browser profile is new and
 // temporary (the user's saved configuration is not touched), and the clipboard is replaced by a recorder in the page.
-// What it pins (user request 2026-09-21):
+// What it pins (user requests 2026-09-21 and 2026-09-22):
 //   - "Copy path" sits at the right end of the "Output root" caption line, as text (no button chrome), and still copies;
-//   - "Waveform storage limit" is a number box plus a unit list; the configuration keeps whole bytes; choosing another
-//     unit keeps the number; an empty box is "no limit" and stays empty; a value from outside picks a readable unit.
-// Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 20 s):
+//   - "Waveform storage limit" is a number box plus a unit list; the configuration keeps the typed size in whole bytes;
+//     choosing another unit CONVERTS the shown number and saves nothing (1.5 GiB -> 1536 MiB); an empty box is "no limit"
+//     and stays empty; a value from outside is shown exactly, in the unit that reads best;
+//   - "Checkpoint every" is ONE number with the unit evaluations OR seconds: the other field is always emptied (also the
+//     default of 50 evaluations), another unit carries the number over, a configuration with both says so;
+//   - the closing line "Pausing, stopping and normal completion always save safely..." is gone.
+// Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 30 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/output_panel_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import { spawn } from 'node:child_process';
@@ -33,7 +37,10 @@ const OUTPUT_CHECK = { resolved: ROOT, allowed: true, writable: true, error: nul
 const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: null };
 
 try {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:opamp', APP))).json();
+  const listed = (await (await fetch(new URL('api/tasks', APP))).json()).tasks.map(t => t.task_key);
+  const mockTask = listed.find(key => key.startsWith('synthetic:'));
+  if (!mockTask) throw new Error(`the backend lists no MOCK task: ${listed.join(', ')}`);
+  const starter = await (await fetch(new URL(`api/tasks/starter?task_key=${encodeURIComponent(mockTask)}`, APP))).json();
   const CONFIG = { ...starter, output: { experiment_name: 'fixture', output_root: ROOT, waveform_storage_limit_bytes: 2 * GIB }, research: {} };
   let target;
   for (let i = 0; i < 75 && !target; i++) {
@@ -76,13 +83,31 @@ try {
   const LIMIT = `[...${PANEL}.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent.trim() === 'Waveform storage limit')`;
   const BOX = `${LIMIT}.querySelector('input')`, UNIT = `${LIMIT}.querySelector('select')`;
   const stored = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1')).output.waveform_storage_limit_bytes`);
-  const settled = async () => { await sleep(1100); return { box: await evaluate(`${BOX}.value`), unit: await evaluate(`${UNIT}.value`), bytes: await stored() }; };  // the page saves 0.8 s after a change
+  const flushed = async () => { await sleep(150); for (let i = 0; i < 100 && !(await evaluate('window.__saves.size === 0')); i++) await sleep(100); };
+  const settled = async () => { await flushed(); return { box: await evaluate(`${BOX}.value`), unit: await evaluate(`${UNIT}.value`), bytes: await stored() }; };  // the page saves 0.8 s after a change
   const type = async text => {
     await evaluate(`(() => { const i = ${BOX}; i.focus(); i.select(); })()`);
     if (text === '') for (const t of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type: t, key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46, nativeVirtualKeyCode: 46 });
     else await send('Input.insertText', { text });
   };
   const blur = () => evaluate(`${BOX}.blur()`);
+  const CP = `[...${PANEL}.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent.trim() === 'Checkpoint every')`;
+  const CP_BOX = `${CP}.querySelector('input')`, CP_UNIT = `${CP}.querySelector('select')`;
+  const WARN = `[...${PANEL}.querySelectorAll('p.warn')].find(p => p.textContent.includes('This configuration has both'))`;
+  const saved = () => evaluate(`(() => { const o = JSON.parse(localStorage.getItem('gator-workbench-config-v1')).output, v = k => k in o ? o[k] : 'absent';
+    return { e: v('checkpoint_every_evaluations'), s: v('checkpoint_every_seconds') }; })()`);
+  const cp = async () => { await flushed(); return { box: await evaluate(`${CP_BOX}.value`), unit: await evaluate(`${CP_UNIT}.value`), ...(await saved()), warn: await evaluate(`!!(${WARN})`) }; };
+  const typeCp = async text => {
+    await evaluate(`(() => { const i = ${CP_BOX}; i.focus(); i.select(); })()`);
+    if (text === '') for (const t of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type: t, key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46, nativeVirtualKeyCode: 46 });
+    else await send('Input.insertText', { text });
+    await evaluate(`${CP_BOX}.blur()`);
+  };
+  const chooseCp = unit => evaluate(`(() => { const s = ${CP_UNIT}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(unit)}); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  const editStored = async change => {
+    await evaluate(`(() => { const c = JSON.parse(localStorage.getItem('gator-workbench-config-v1')); (${change})(c.output); localStorage.setItem('gator-workbench-config-v1', JSON.stringify(c)); })()`);
+    await send('Page.reload'); await until(`!!(${PANEL}) && !!(${CP})`, 150);
+  };
   const choose = unit => evaluate(`(() => { const s = ${UNIT}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(unit)}); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   const shot = async name => {
     await evaluate(`${PANEL}.scrollIntoView({ block: 'start' })`); await sleep(150);
@@ -94,6 +119,12 @@ try {
   await send('Page.enable'); await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 2200, deviceScaleFactor: 1, mobile: false });
   await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*', requestStage: 'Request' }] });
+  // The page writes its configuration to localStorage 800 ms after the last change (store.ts). Headless Edge can run that
+  // timer late, so a fixed wait reads one step behind: the check waits until no 800 ms timer is pending instead. A change
+  // that should NOT happen (a unit choice saving a size) still arms that timer, and is then waited for and seen.
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { const set = window.setTimeout, clear = window.clearTimeout; window.__saves = new Set();
+    window.setTimeout = (fn, ms, ...rest) => { if (ms !== 800) return set(fn, ms, ...rest); const id = set(() => { window.__saves.delete(id); fn(...rest); }, ms); window.__saves.add(id); return id; };
+    window.clearTimeout = id => { window.__saves.delete(id); return clear(id); }; })();` });
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `if (!localStorage.getItem('gator-workbench-config-v1')) localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(CONFIG))});` });
   await send('Page.navigate', { url: APP });
   if (!(await until(`!!(${PANEL})`, 150))) throw new Error('the Output settings panel never appeared; the page reads: '
@@ -135,16 +166,28 @@ try {
   check('leaving the box keeps 1.5 GiB', s.box === '1.5' && s.unit === 'GiB' && s.bytes === 1.5 * GIB, JSON.stringify(s));
   await type('0.'); s = await settled();
   check('a half-typed "0." stays in the box while typing', s.box === '0.', JSON.stringify(s));
-  await type('500'); await blur(); await choose('MiB'); s = await settled();
-  check('type 500, THEN choose MiB: 500 MiB (the number stays, the unit gives it its meaning)', s.box === '500' && s.unit === 'MiB' && s.bytes === 500 * MIB, JSON.stringify(s));
-  await choose('GiB'); await type('3'); await blur(); s = await settled();
-  check('choose GiB, THEN type 3: 3 GiB', s.box === '3' && s.unit === 'GiB' && s.bytes === 3 * GIB, JSON.stringify(s));
-  await type('1.3'); await blur(); s = await settled();
-  check('1.3 GiB is not a whole number of bytes: rounded to 1395864371, still shown as 1.3', s.box === '1.3' && s.bytes === 1395864371 && Number.isInteger(s.bytes), JSON.stringify(s));
-  await choose('bytes'); s = await settled();
-  check('the unit "bytes" takes the number as bytes, whole ones only (1.3 -> 1)', s.box === '1' && s.unit === 'bytes' && s.bytes === 1, JSON.stringify(s));
-  await type('4096'); await blur(); s = await settled();
-  check('4096 bytes stay "4096 bytes" while the user chose that unit', s.box === '4096' && s.unit === 'bytes' && s.bytes === 4096, JSON.stringify(s));
+  await type('500'); await blur(); s = await settled();
+  check('(setup) 500 GiB', s.box === '500' && s.unit === 'GiB' && s.bytes === 500 * GIB, JSON.stringify(s));
+  await choose('MiB'); s = await settled();
+  check('choosing MiB CONVERTS the shown number: 500 GiB -> 512000 MiB, the saved size stays', s.box === '512000' && s.unit === 'MiB' && s.bytes === 500 * GIB, JSON.stringify(s));
+  await choose('TiB'); s = await settled();
+  check('... and TiB: 0.48828125 TiB, the same bytes', s.box === '0.48828125' && s.bytes === 500 * GIB, JSON.stringify(s));
+  await choose('GiB'); await type('1.3'); await blur(); s = await settled();
+  check('1.3 GiB is saved as the whole bytes nearest to it (1395864371) and still reads 1.3', s.box === '1.3' && s.bytes === 1395864371, JSON.stringify(s));
+  const views = {};
+  for (const unit of ['MiB', 'KiB', 'bytes', 'TiB', 'GiB']) { await choose(unit); views[unit] = (await settled()).box; }
+  s = await settled();
+  check('every unit shows that size exactly - 1331.2 MiB, 1363148.8 KiB, 1395864371 bytes, 0.00126953125 TiB, 1.3 GiB',
+    JSON.stringify(views) === JSON.stringify({ MiB: '1331.2', KiB: '1363148.8', bytes: '1395864371', TiB: '0.00126953125', GiB: '1.3' }), JSON.stringify(views));
+  check('and choosing units saved nothing: still 1395864371 bytes', s.bytes === 1395864371, JSON.stringify(s));
+  await type('2.'); s = await settled();
+  check('(setup) "2." half-typed = 2 GiB', s.box === '2.' && s.bytes === 2 * GIB, JSON.stringify(s));
+  await choose('MiB'); s = await settled();
+  check('a unit chosen while typing shows the converted number: 2048 MiB', s.box === '2048' && s.unit === 'MiB' && s.bytes === 2 * GIB, JSON.stringify(s));
+  await choose('bytes'); await type('4096'); await blur(); s = await settled();
+  check('typed in bytes, 4096 is saved as 4096', s.box === '4096' && s.unit === 'bytes' && s.bytes === 4096, JSON.stringify(s));
+  await choose('KiB'); s = await settled();
+  check('... and reads 4 KiB', s.box === '4' && s.bytes === 4096, JSON.stringify(s));
 
   // ---- empty = no limit, and it stays empty (the old box snapped back to the default while the configuration said "none") --
   await type(''); await blur(); s = await settled();
@@ -161,22 +204,58 @@ try {
   await blur(); s = await settled();
   check('and leaving the box puts the last good number back', s.box === '250' && s.bytes === 250 * MIB, JSON.stringify(s));
 
-  // ---- the neighbouring box had the same fault: "Checkpoint every N evaluations" may be empty too ------------------------
-  const EVERY = `[...${PANEL}.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent.trim() === 'Checkpoint every N evaluations').querySelector('input')`;
-  await evaluate(`(() => { const i = ${EVERY}; i.focus(); i.select(); })()`);
-  for (const t of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type: t, key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46, nativeVirtualKeyCode: 46 });
-  await evaluate(`${EVERY}.blur()`); await sleep(1100);
-  const every = { box: await evaluate(`${EVERY}.value`), saved: await evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1')).output.checkpoint_every_evaluations`) };
-  check('an emptied "Checkpoint every N evaluations" saves null and stays empty (it used to show 50 again)', every.box === '' && every.saved === null, JSON.stringify(every));
+  // ---- "Checkpoint every": ONE number, in evaluations OR in seconds ------------------------------------------------------
+  check('one box and a unit list [evaluations, seconds]; the second box "or every S seconds" is gone',
+    JSON.stringify(await evaluate(`[...${CP_UNIT}.options].map(o => o.value)`)) === JSON.stringify(['evaluations', 'seconds'])
+    && !(await evaluate(`${PANEL}.textContent.includes('every S seconds') || ${PANEL}.textContent.includes('every N evaluations')`)));
+  let c = await cp();
+  check('a configuration without the field shows the default: 50 evaluations, and writes nothing by itself', c.box === '50' && c.unit === 'evaluations' && c.e === 'absent' && c.s === 'absent' && !c.warn, JSON.stringify(c));
+  await chooseCp('seconds'); c = await cp();
+  check('seconds carries the number over and EMPTIES the evaluations (the default of 50 too)', c.box === '50' && c.unit === 'seconds' && c.e === null && c.s === 50, JSON.stringify(c));
+  await typeCp('600'); c = await cp();
+  check('600 seconds', c.box === '600' && c.s === 600 && c.e === null, JSON.stringify(c));
+  await chooseCp('evaluations'); c = await cp();
+  check('back to evaluations: 600 evaluations, the seconds emptied', c.box === '600' && c.unit === 'evaluations' && c.e === 600 && c.s === null, JSON.stringify(c));
+  await typeCp('25'); c = await cp();
+  check('25 evaluations', c.box === '25' && c.e === 25 && c.s === null, JSON.stringify(c));
+  await typeCp(''); c = await cp();
+  check('an emptied box = no periodic checkpoint: both empty, and it stays empty', c.box === '' && c.e === null && c.s === null, JSON.stringify(c));
+  check('the empty box says what it means', (await evaluate(`${CP_BOX}.placeholder`)) === 'only at pause, stop, end', await evaluate(`${CP_BOX}.placeholder`));
+  await chooseCp('seconds'); c = await cp();
+  check('a unit chosen for an empty box sets nothing', c.box === '' && c.unit === 'seconds' && c.e === null && c.s === null, JSON.stringify(c));
+  await typeCp('900'); c = await cp();
+  check('900 seconds', c.box === '900' && c.unit === 'seconds' && c.s === 900 && c.e === null, JSON.stringify(c));
+  await editStored(`o => { o.checkpoint_every_evaluations = 50; o.checkpoint_every_seconds = 600; }`); c = await cp();
+  check('a configuration with BOTH (a file, an older copy) says so, in the evaluations view', c.warn && c.unit === 'evaluations' && c.box === '50', JSON.stringify(c));
+  check('the warning names both values', /every 50 evaluations and every 600 seconds/.test(await evaluate(`${WARN}.textContent`)), await evaluate(`${WARN}.textContent`));
+  await shot('output-3-both.png');
+  await chooseCp('seconds'); c = await cp();
+  check('choosing seconds keeps ITS value (600) and empties the evaluations', c.box === '600' && c.unit === 'seconds' && c.s === 600 && c.e === null && !c.warn, JSON.stringify(c));
+  await editStored(`o => { delete o.checkpoint_every_evaluations; o.checkpoint_every_seconds = 600; }`); c = await cp();
+  check('seconds with the evaluations field ABSENT is both too (the default of 50 applies)', c.warn && c.box === '50' && c.e === 'absent' && c.s === 600, JSON.stringify(c));
+  await typeCp('40'); c = await cp();
+  check('typing a number keeps only that one: 40 evaluations, the seconds emptied', c.box === '40' && c.e === 40 && c.s === null && !c.warn, JSON.stringify(c));
+  await editStored(`o => { o.checkpoint_every_evaluations = null; o.checkpoint_every_seconds = 120; }`); c = await cp();
+  check('a stored seconds interval opens in the seconds view', c.box === '120' && c.unit === 'seconds' && !c.warn, JSON.stringify(c));
+
+  // ---- the closing line is gone --------------------------------------------------------------------------------------------
+  check('"Pausing, stopping and normal completion always save safely..." is no longer in the panel',
+    !(await evaluate(`${PANEL}.textContent.includes('Pausing, stopping') || ${PANEL}.textContent.includes('raw tables are Parquet')`)));
 
   // ---- a value that did not come from the box: Undo, and a reloaded configuration ---------------------------------------
-  await type('7'); await blur(); await choose('GiB'); s = await settled();
+  await until(`!!(${LIMIT})`, 50); await choose('MiB'); await type('7'); await blur(); s = await settled();
+  check('(setup) 7 MiB', s.box === '7' && s.unit === 'MiB' && s.bytes === 7 * MIB, JSON.stringify(s));
+  await choose('GiB'); s = await settled();
+  check('(setup) shown as 0.0068359375 GiB, still 7 MiB', s.box === '0.0068359375' && s.bytes === 7 * MIB, JSON.stringify(s));
+  await type('7'); await blur(); s = await settled();
   check('(setup) 7 GiB', s.box === '7' && s.unit === 'GiB' && s.bytes === 7 * GIB, JSON.stringify(s));
   await evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent === 'Undo').click()`); s = await settled();
   check('Undo brings back 7 MiB, shown in the unit that reads best', s.box === '7' && s.unit === 'MiB' && s.bytes === 7 * MIB, JSON.stringify(s));
   await evaluate(`(() => { const c = JSON.parse(localStorage.getItem('gator-workbench-config-v1')); c.output.waveform_storage_limit_bytes = 1500000000; localStorage.setItem('gator-workbench-config-v1', JSON.stringify(c)); })()`);
   await send('Page.reload'); await until(`!!(${PANEL}) && !!(${LIMIT})`, 150); s = await settled();
-  check('an odd value from a loaded configuration is shown exactly, never rounded: 1464843.75 KiB = 1500000000 bytes', Math.round(Number(s.box) * { bytes: 1, KiB: 1024, MiB: MIB, GiB: GIB }[s.unit]) === 1500000000 && s.bytes === 1500000000, JSON.stringify(s));
+  check('an odd value from a loaded configuration is shown exactly, never rounded: 1464843.75 KiB = 1500000000 bytes', s.box === '1464843.75' && s.unit === 'KiB' && s.bytes === 1500000000, JSON.stringify(s));
+  await choose('MiB'); s = await settled();
+  check('in MiB it reads 1430.511475, which gives back exactly 1500000000 bytes', s.box === '1430.511475' && Math.round(Number(s.box) * MIB) === 1500000000 && s.bytes === 1500000000, JSON.stringify(s));
   await evaluate(`(() => { const c = JSON.parse(localStorage.getItem('gator-workbench-config-v1')); delete c.output.waveform_storage_limit_bytes; localStorage.setItem('gator-workbench-config-v1', JSON.stringify(c)); })()`);
   await send('Page.reload'); await until(`!!(${PANEL}) && !!(${LIMIT})`, 150); s = await settled();
   check('a configuration without the field shows the backend default, 2 GiB, and writes nothing by itself', s.box === '2' && s.unit === 'GiB' && s.bytes === undefined, JSON.stringify(s));

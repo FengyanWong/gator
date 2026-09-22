@@ -2591,6 +2591,70 @@ Not built yet: the agent's whole-setup proposal (part 3; then "Ask the agent for
 every run (part 4; then "Check against Virtuoso" goes), the run path of Maestro-measured tasks (part 5; then the two
 circuit types go).
 
+### 7.58 Output settings: ONE checkpoint interval (evaluations OR seconds), also in the backend; the storage limit converts with its unit; the closing line deleted (2026-09-22 ~00:45, same session as 7.41, explicit user request)
+
+Request: "Make checkpoint saving option only available as either every n evaluation or every s seconds. The waveform
+storage limit after inputting should save the exact size value and change its number with unit change. delete the
+comment down below Pausing, stopping and normal completion always save safely. Detailed CSV copies are exported on
+demand; raw tables are Parquet." Asked on the way: "checkpoint saving should be related to backend? Is it not?" - yes:
+the engine writes the checkpoints (`engine.py`, `checkpoint_due` / `_checkpoint`); the panel only edits two fields of
+the configuration. So the rule is in the backend as well, not only on the screen.
+
+* **One checkpoint interval (page).** The two boxes "Checkpoint every N evaluations" and "or every S seconds" became
+  one row, `Checkpoint every [ 50 ] [evaluations | seconds]`: a number plus a unit list like the storage limit (`Num`
+  got an `after` slot and a `placeholder`). The number goes into the field of the chosen unit and the other field is
+  set to `null` - ALWAYS, also when that field is absent, because an absent `checkpoint_every_evaluations` is the
+  schema's default of 50 (choosing seconds on a fresh configuration would otherwise mean "every 50 evaluations and every
+  S seconds"). Another unit carries the number over (evaluations and seconds do not convert into each other). An empty
+  box is no periodic checkpoint (placeholder "only at pause, stop, end": the engine's final `_checkpoint` still runs when
+  a run pauses, stops or ends). A configuration with both (a file, an older browser copy - also seconds with the
+  evaluations field absent) shows an amber line naming both values; typing a number or choosing a unit keeps one, and
+  choosing the other unit keeps THAT unit's own value.
+* **One checkpoint interval (backend).** Until now the engine saved at whichever interval came first.
+  (a) `validation.py`: new blocking error `checkpoint_interval_both` (path `output.checkpoint_every_seconds`, plain
+  message naming both values) - `runs.start` refuses a blocking report, so no run with both can start, whatever the
+  configuration came from. Deliberately not a schema validator (`schema.py` untouched): old configurations and the
+  `effective_config.json` of old runs still parse and resume; none of the runs under `outputs/` has both.
+  (b) `agents/settings_review.py`: `EXCLUSIVE` pairs the two fields. A suggestion for one is tried on the copy with the
+  other emptied and carries `clears`; "Apply" / "Apply all" in the Agent tab (`Bottom.tsx`, `applyRow`) empty that field
+  too, and the row says so. Without it, such a suggestion carried "Applied alone it raises a blocking issue
+  (checkpoint_interval_both)" (checked with the pairing switched off). (c) `agents/run_readiness.md`: one bullet telling
+  the agent that the two are one setting.
+* **Storage limit: the unit converts.** Choosing another unit now converts the shown number and saves nothing
+  (500 GiB -> 512000 MiB -> 0.48828125 TiB, the same bytes); only typing changes the saved size. This replaces 7.41's
+  "the number stays, the unit gives it its meaning", which the user did not want. The configuration still holds whole
+  bytes (the schema field is an `int`: 1.3 GiB is saved as 1395864371, the nearest whole byte). The shown number is
+  always exact - the shortest decimal that gives the saved bytes back, now with up to 15 decimals: 1.3 GiB reads
+  1331.2 MiB, 1363148.8 KiB, 1395864371 bytes, 0.00126953125 TiB. A unit chosen while typing drops the typed text and
+  shows the converted number.
+* **Deleted**: the closing hint "Pausing, stopping and normal completion always save safely. Detailed CSV copies are
+  exported on demand; raw tables are Parquet." (explicit "delete", so not folded).
+
+Verification. `tsc --noEmit` passes. Backend tests: `test_wb_schema_validation.py::test_run_setting_rules` (both, and
+seconds with the evaluations field absent -> blocking error with the plain message; one alone, or neither -> none) and
+the new `test_wb_agent_settings_review.py::test_a_checkpoint_interval_is_one_setting_in_two_units` (with the REAL
+validation, as `app.check_suggestions` runs it): the two files 59 of 59. Full `tests/workbench` on a clean copy of the last commit (`d498c59`, `git archive`) plus
+ONLY this entry's backend changes - the shared tree was mid-change by two peers: 516 passed, none failed. The same run
+in the shared tree: 528 passed, 23 failed, 4 errors, every one in work that peers were changing at that moment (16 x
+`KeyError: 'pdk_id'`, the rest expecting the old toy-opamp rows of the MOCK-task merge); none touches this entry's files,
+and its two tests pass there too.
+Browser: `frontend/scripts/output_panel_check.mjs`, 60 checks (was 36), all pass, twice, on a private build (`vite
+build --outDir <Windows temp>`, preview on 5183, `/api` to the live 8765; hermetic as before). Its first run failed 8
+checks by reading the stored configuration ONE STEP BEHIND: the page writes it to localStorage 800 ms after the last
+change (`store.ts`) and headless Edge ran that timer later than the check's fixed 1.1 s wait. The check now wraps the
+page's 800 ms timers and waits until none is pending, so a save that should not happen (a unit choice) is still seen.
+It now takes whatever `synthetic:*` task the backend lists (a peer is merging the MOCK tasks). `agent_tab_check.mjs`
+got two checks: the online review's fixture now suggests `output.checkpoint_every_seconds = 600` with `clears`, the row
+says it empties the other field, and after Apply the Output panel reads "600 seconds" with no "both" warning
+(before: "50 evaluations"): 94 checks, all pass, on a scratch backend (port 8768, empty settings folder) behind a
+private build (preview on 5184 with a throwaway preview config pointing `/api` at 8768).
+Live: the user restarted 8765 at 00:53 (after the last backend edit); the live backend refuses a configuration with
+both intervals (`POST /api/config/validate`: `blocks_run` true, `checkpoint_interval_both` with the plain message).
+`frontend/dist` rebuilt at 00:54 on the user's word after `tsc --noEmit` passed (`index-me5AKf1o.js`,
+`index-BIRCeLxq.css`); it carries every session's frontend of that moment, including 7.57's, which had waited for
+this restart. `output_panel_check.mjs` against the live 8765: 60 of 60.
+Committed on branch `workbench` (this entry's lines only), not pushed.
+
 ### 7.60 Virtuoso task flow, part 3: the agent sets the task up - one proposal, written into the working copy ("Ask the agent for suggestions" removed) (2026-09-22 ~01:20, same session as 7.55 / 7.57, explicit user request)
 
 Request: "go on part 3" - step 3 of the user's flow: the Agent tab's agent proposes the whole setup (Parameters / Probes /

@@ -395,9 +395,19 @@ try {
   await sleep(1200);
   const waitingOnline = await evaluate(`document.querySelector('.msg.pending').innerText`);
   check('with the box ticked the request asks for online research, and the waiting line says it takes minutes (with no time limit: 7.48)', JSON.parse(onlineCall.postData).web === true && waitingOnline.includes('reading publications online') && waitingOnline.includes('No time limit'), waitingOnline.slice(0, 90));
+  // One checkpoint interval (status record 7.58): a suggestion for one of the two fields names the other in `clears`.
   await fulfil(onlineCall.requestId, 200, { proposal_id: 'fixture-7', proposal_hash: 'fixture', origin: 'fixture', kind: 'settings_review', reasoning: 'Nothing further.', warnings: [], unresolved: [], diff: [], patch: [], circuit_changes: [],
-    suggestions: [], refused_suggestions: [], encoder_ideas: [], suggestions_together: { ok: true, problem: null } });
+    suggestions: [suggestion('output.checkpoint_every_seconds', 600, null, { panel: 'Output settings', clears: ['output.checkpoint_every_evaluations'] })], refused_suggestions: [], encoder_ideas: [], suggestions_together: { ok: true, problem: null } });
   await sleep(400);
+  const interval = await table();
+  check('a suggested checkpoint interval says that applying it empties the other one', interval.rows.length === 1 && interval.rows[0].cells[3].includes('Applying it also empties checkpoint_every_evaluations'), JSON.stringify(interval.rows[0]?.cells));
+  const checkpointRow = () => evaluate(`(() => { const l = [...document.querySelectorAll('.right label')].find(x => x.querySelector('span')?.textContent.trim() === 'Checkpoint every');
+    return { box: l.querySelector('input').value, unit: l.querySelector('select').value, both: [...document.querySelectorAll('.right p.warn')].some(p => p.textContent.includes('This configuration has both')) }; })()`);
+  const beforeApply = await checkpointRow();
+  await evaluate(`[...document.querySelectorAll('.msg.reply .suggestions')].at(-1).querySelector('tbody tr button').click()`); await sleep(400);
+  const afterApply = await checkpointRow();
+  check('Apply keeps ONE interval: 50 evaluations became 600 seconds, with no "both" warning', beforeApply.unit === 'evaluations' && beforeApply.box === '50'
+    && afterApply.unit === 'seconds' && afterApply.box === '600' && !afterApply.both && (await table()).rows[0].applied, JSON.stringify({ beforeApply, afterApply }));
   await evaluate(`${onlineBox}.click()`);
 
   // ---- detached into a window of its own, and back --------------------------------------------------------------

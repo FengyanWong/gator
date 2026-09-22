@@ -32,6 +32,12 @@ SUGGESTIBLE = {
     'output': ('save_learner_updates', 'save_checkpoints', 'save_replay_snapshots', 'save_transition_archive', 'export_summary_csv',
                'checkpoint_every_evaluations', 'checkpoint_every_seconds', 'keep_last_checkpoints'),
 }
+# Two fields that are ONE setting: a checkpoint interval counted in evaluations or in seconds (user request 2026-09-22;
+# validation.py refuses both at once). A suggested value for one empties the other - on the copy it is tried on, and
+# when the user applies it (`clears`). Always, not only when the other has a value: an absent
+# `checkpoint_every_evaluations` still means the schema's default of 50.
+EXCLUSIVE = {'output.checkpoint_every_evaluations': 'output.checkpoint_every_seconds',
+             'output.checkpoint_every_seconds': 'output.checkpoint_every_evaluations'}
 MODELS = {'run': RunSettings, 'run.network': NetworkConfig, 'run.advanced': AdvancedRL, 'output': OutputSettings}
 PANELS = {'run': 'Run configuration', 'run.network': 'RL network', 'run.advanced': 'RL network (Advanced)', 'output': 'Output settings'}
 PATHS = tuple(f'{group}.{name}' for group, names in SUGGESTIBLE.items() for name in names)
@@ -65,6 +71,13 @@ def _set(config: dict, path: str, value) -> dict:
     for part in parts[:-1]:
         node = node.setdefault(part, {})
     node[parts[-1]] = value
+    return result
+
+
+def _apply(config: dict, path: str, value, clears) -> dict:
+    result = _set(config, path, value)
+    for other in clears:
+        result = _set(result, other, None)
     return result
 
 
@@ -165,18 +178,19 @@ def check(config: dict, suggestions, *, validate_config) -> dict:
     checked, together = [], config
     for item in suggestions:
         now = _get(config, item['path'])
+        clears = [EXCLUSIVE[item['path']]] if item['path'] in EXCLUSIVE and item['value'] is not None else []
         record = dict(item, now=now, panel=PANELS[item['path'].rsplit('.', 1)[0]], changes=now != item['value'], applicable=False, problem=None,
-                      alone=None)
+                      alone=None, clears=clears)
         if not record['changes']:
             record['problem'] = 'It is already set to this value.'
         else:
-            problem, after = validate_config(_set(config, item['path'], item['value']))
+            problem, after = validate_config(_apply(config, item['path'], item['value'], clears))
             new = sorted(set(after) - set(before))
             record['problem'] = problem
             record['applicable'] = problem is None          # a legal value; `alone` says when it needs another row of this list
             record['alone'] = f"Applied alone it raises a blocking issue ({', '.join(new)}); apply it together with the related rows." if new else None
             if problem is None:
-                together = _set(together, item['path'], item['value'])
+                together = _apply(together, item['path'], item['value'], clears)
         checked.append(record)
     problem, after = validate_config(together)
     new = sorted(set(after) - set(before))

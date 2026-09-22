@@ -105,6 +105,31 @@ def test_every_suggestion_is_tried_on_a_copy_and_a_pair_may_need_each_other(tmp_
     assert found['all_together']['ok'] and config == complete(tmp_path)              # nothing was applied
 
 
+def test_a_checkpoint_interval_is_one_setting_in_two_units(tmp_path):
+    from gator_workbench import schema, tasks, validation
+
+    def validate_config(raw):                                        # what the API layer does (app.check_suggestions)
+        parsed = schema.WorkbenchConfig.model_validate(raw)
+        runtime = tasks.load_task(parsed.circuit)
+        report = validation.validate(parsed, graph=runtime.base_graph, provided_metrics=set(runtime.provided_metrics))
+        return None, [issue.code for issue in report.issues if issue.level in ('error', 'blocker')]
+    config = complete(tmp_path)
+    config['output']['checkpoint_every_evaluations'] = 50
+    assert 'checkpoint_interval_both' in validate_config(settings_review._set(config, 'output.checkpoint_every_seconds', 600))[1]
+    found = settings_review.check(config, [dict(path='output.checkpoint_every_seconds', value=600), dict(path='output.save_learner_updates', value=False)],
+                                  validate_config=validate_config)
+    interval, other = found['suggestions']
+    assert interval['applicable'] and interval['alone'] is None and interval['clears'] == ['output.checkpoint_every_evaluations']
+    assert other['clears'] == [] and found['all_together']['ok']
+    assert config['output']['checkpoint_every_evaluations'] == 50 and config['output'].get('checkpoint_every_seconds') is None   # nothing applied
+    del config['output']['checkpoint_every_evaluations']            # absent = the default of 50, emptied all the same
+    again = settings_review.check(config, [dict(path='output.checkpoint_every_seconds', value=600)], validate_config=validate_config)['suggestions'][0]
+    assert again['applicable'] and again['alone'] is None and again['clears'] == ['output.checkpoint_every_evaluations']
+    config['output']['checkpoint_every_seconds'] = 600
+    emptied = settings_review.check(config, [dict(path='output.checkpoint_every_seconds', value=None)], validate_config=validate_config)['suggestions'][0]
+    assert emptied['clears'] == []                                   # emptying one leaves the other as it is
+
+
 # ------------------------------------------------------------------------------- the web, narrowly
 def test_web_tools_stay_denied_unless_this_request_asked_and_then_only_publication_hosts(tmp_path, cli):
     record = cli('settings_review')

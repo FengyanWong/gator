@@ -47,6 +47,9 @@ const seconds = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); 
 const getIn =(config: Json, path: string) => path.split('.').reduce((node: Json, part) => node?.[part], config) ?? null;
 const setIn = (config: Json, path: string, value: Json): Json => { const [head, ...rest] = path.split('.');
   return { ...config, [head]: rest.length ? setIn(config?.[head] ?? {}, rest.join('.'), value) : value }; };
+// A suggested value may empty a setting that is one with it (the two checkpoint intervals: every N evaluations OR every
+// S seconds). The backend names those in `clears` and tried the suggestion that way.
+const applyRow = (config: Json, s: Json): Json => (s.clears ?? []).reduce((c: Json, path: string) => setIn(c, path, null), setIn(config, s.path, s.value));
 
 // Suggestions of a settings review. Nothing is applied by the agent or the backend: "Apply" is the user's own edit of that
 // setting, the same as typing the value into its panel, and the page's static validation follows it as usual.
@@ -59,9 +62,10 @@ function Suggestions({ extra, config, setConfig }: { extra: Json; config: Json; 
         return <tr key={i} className={applied ? 'applied' : ''}>
         <td><span className="hint">{s.panel}</span><br /><b>{s.path.split('.').pop()}</b></td><td>{brief(now)}</td><td><b>{brief(s.value)}</b></td>
         <td>{s.reason} <span className="hint">Source: {s.source || 'none given'}</span>{s.url && <> <a href={s.url} target="_blank" rel="noreferrer">open</a></>}
-          {s.quote && <div className="quote">"{s.quote}"</div>}{s.problem && !applied && <div className="error">{s.problem}</div>}{s.alone && !applied && <div className="warn">{s.alone}</div>}</td>
-        <td>{applied ? <span className="ok">applied</span> : <button disabled={!s.applicable} onClick={() => setConfig(setIn(config, s.path, s.value))}>Apply</button>}</td></tr>; })}</tbody></table>}
-    {rows.length > 0 && <div className="row"><button disabled={!open.length || !extra.suggestions_together?.ok} onClick={() => setConfig(open.reduce((c, s) => setIn(c, s.path, s.value), config))}
+          {s.quote && <div className="quote">"{s.quote}"</div>}{s.problem && !applied && <div className="error">{s.problem}</div>}{s.alone && !applied && <div className="warn">{s.alone}</div>}
+          {s.clears?.length > 0 && !applied && <div className="hint">Applying it also empties {s.clears.map((path: string) => path.split('.').pop()).join(', ')}: only one of the two can be set.</div>}</td>
+        <td>{applied ? <span className="ok">applied</span> : <button disabled={!s.applicable} onClick={() => setConfig(applyRow(config, s))}>Apply</button>}</td></tr>; })}</tbody></table>}
+    {rows.length > 0 && <div className="row"><button disabled={!open.length || !extra.suggestions_together?.ok} onClick={() => setConfig(open.reduce((c, s) => applyRow(c, s), config))}
       title={extra.suggestions_together?.ok ? 'Sets every legal suggestion at once.' : `Together they would not be valid: ${extra.suggestions_together?.problem ?? ''}`}>Apply all ({open.length})</button>
       <span className="hint">Each row was tried on a copy of your configuration by the workbench. Applying is your own edit of that setting; nothing else changes.</span></div>}
     {extra.refused_suggestions?.length > 0 && <p className="hint">Left out - not something an agent may suggest: {extra.refused_suggestions.join('; ')}</p>}

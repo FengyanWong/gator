@@ -111,6 +111,9 @@ you change nothing.
   `heads` matters for `graph_transformer` and `gat` only, and must divide `hidden_dim`.
 * On a real circuit every evaluation is a real Spectre run that the user authorizes at Start, and at
   most 4 run at once. Never suggest a larger `max_evaluations` without saying what it costs.
+* `checkpoint_every_evaluations` and `checkpoint_every_seconds` are one setting in two units: a
+  checkpoint every N evaluations OR every S seconds, never both. Suggest at most one of them; applying
+  it empties the other.
 * A new encoder can only be an idea (`encoder_ideas`): adding one changes the optimizer package and
   with it the source digest that gates the loading of every existing checkpoint and the re-runs of the
   recorded audits. Say what it would take; the user decides it with a development session.

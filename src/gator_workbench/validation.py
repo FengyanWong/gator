@@ -583,6 +583,13 @@ def _check_run(config, report):
     if not out.save_checkpoints:
         report.add('warning', 'no_checkpoints', 'output.save_checkpoints',
                    'Checkpoints are off: the run can be neither resumed nor used as a transfer source.')
+    if out.checkpoint_every_evaluations is not None and out.checkpoint_every_seconds is not None:
+        # One interval, counted in evaluations OR in seconds (user request 2026-09-22). The engine would save at whichever
+        # comes first; the Output settings panel keeps one and empties the other, so both come only from a file or an old copy.
+        report.add('error', 'checkpoint_interval_both', 'output.checkpoint_every_seconds',
+                   f'Choose one checkpoint interval: every {out.checkpoint_every_evaluations} evaluations OR every '
+                   f'{out.checkpoint_every_seconds:g} seconds, not both. In Output settings, type one number and choose '
+                   'its unit; the other one is emptied.')
     if not out.save_transition_archive:
         report.add('warning', 'no_transition_archive', 'output.save_transition_archive',
                    'The complete experience archive is off. A replay snapshot is NOT a complete history once the '

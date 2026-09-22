@@ -108,6 +108,11 @@ export const api = {
   exportAggregates: (run_dir: string) => call('POST', '/api/aggregates/export', { run_dir }),
   downloadUrl: (run_dir: string, path: string) => '/api/runs/download' + q({ run_dir, path }),
   aggregatesUrl: (run_dir: string) => '/api/aggregates/download' + q({ run_dir }),          // the experiment's research CSVs, one zip
+  // Corner check (backend corner_check.py): the plan is free; start asks for the real budget through launchWithConsent.
+  cornerPlan: (run_dir: string, designs?: number) => call('GET', '/api/runs/corner-check/plan' + q({ run_dir, designs })),
+  cornerStart: (body: Json) => call('POST', '/api/runs/corner-check/start', body),
+  cornerStatus: (run_dir: string, check_id: string) => call('GET', '/api/runs/corner-check/status' + q({ run_dir, check_id })),
+  cornerStop: (run_dir: string, check_id: string) => call('POST', '/api/runs/corner-check/stop', { run_dir, check_id }),
   agentSettings: () => call('GET', '/api/agent/settings'),
   saveAgentSettings: (body: Json) => call('PUT', '/api/agent/settings', body),
   agentDiagnostics: () => call('GET', '/api/agent/diagnostics'),

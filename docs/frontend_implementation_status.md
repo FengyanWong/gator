@@ -2814,3 +2814,117 @@ probes and the older `/api/virtuoso/profile` route go.
 
 `src/analog_optimizer/` untouched. Committed and pushed (branch `workbench`); the push also carried the local e1103a7 (7.58)
 that another session had committed before it.
+
+### 7.62 Corner check: a run's best designs simulated again at five corners (2026-09-22, separate session, explicit user request)
+
+User request: "build the corner post-check with a workbench button", after asking what the M3 "top 3 x 5 corner
+post-check" is like. The weak spots named in that answer are fixed in the design below (feasible designs only, ranked by
+margin instead of a random tie-break).
+
+What the user sees (`docs/workbench.md`, "Corner check"): a bottom tab **Corner check** after Output files. For the shown
+run it has:
+* the plan, which is free: which designs, which corners, how many simulations ("Designs" 1-3, the cost written beside it);
+* **Check**, then the progress and **Stop**;
+* a design x corner grid: pass, FAIL with the worst spec and its value, or unknown with the reason;
+* a verdict per design (accepted / rejected / inconclusive, with the pass count);
+* the worst value of each spec (folded);
+* for a real cell, whether its widths were restored;
+* the earlier checks (folded list, double click shows one).
+
+Backend `src/gator_workbench/corner_check.py` (new):
+* **Taken from the optimizer unchanged.** Grading is `evaluation.corners.summarize_corners`. The corners are the profile's
+  `condition_config` (`configs/gpdk045_conditions.json`), and each one is checked by the profile's `validate_condition`.
+  The supply change is the profile's `structure_for_condition`.
+* **Selection.** M3's `select_top_designs` is NOT used: the reward is 0 for every feasible design, and it breaks that tie
+  by `uuid4().hex`. Instead:
+  - only feasible evaluations count (valid, every hard constraint met, status ok);
+  - identical executed widths count once (12 significant digits);
+  - the safest come first: the largest smallest margin over the hard targets (distance to the nearest limit / scale),
+    from the metrics table's aggregate rows and the compiled targets;
+  - ties go to the earlier completion.
+* **Nominal is simulated again,** because `summarize_corners` takes only `pvt_validation` results: 15 simulations for 3
+  designs. The repeat is compared with the run's own spec values (rel 1e-6), and a difference is reported.
+* **Real path.** It uses the verified single-worker adapter `VirtuosoBridgeBackend`, which supports conditions end to end.
+  The workbench's native parallel path refuses anything but nominal (`NativeCandidateBackend.validate_condition`).
+  - Sequence: connect -> per design `set_parameters` (journaled CDF write) -> per corner `generate_netlist(condition)` +
+    `run_simulation(condition)` -> `restore()` + read back against the initial widths, also after an exception -> close.
+  - Specs computed by equations go through `SpecPlan.wrap`, as in a run. `BridgeConfig` is assembled as
+    `tasks._real_runtime` does it.
+  - The profile decides which circuits take part: today `real:gpdk045_ota5` and `_ota7` (`checkable_real_tasks()`).
+    For the LDO, the VCO and generated profiles, a neutral refusal gives the profile's own reason.
+  - Authorization: `authorize_real_simulation` plus the simulation count the page showed, compared by the server. Then the
+    connection gate (`runs.connection_gate`, the same codes as Start).
+  - The check is refused while the adapter's session lock `artifacts/local/bridge-state/session.lock` is held. Two
+    infrastructure failures in a row stop it.
+  - Before the first simulation the worker checks everything against `request.json`: mock or real, task hash, corners,
+    designs, count, and the assignments against the profile.
+* **MOCK path.** `SyntheticSizingBackend` is built per corner with its toy optimum moved by `MOCK_CORNER_SHIFT` (nominal 0,
+  ss +0.35, ff -0.35, fs +0.15, sf -0.15). The results are relabelled `pvt_validation`, so the same grading applies.
+  MOCK is labelled everywhere.
+* **Detached worker:** `python -m gator_workbench.corner_check --check-dir ... [--allow-real] --lock-fd N`, with the run
+  worker's lock hand-over; SIGTERM or SIGINT means "stop after the simulation in flight". Files go in
+  `<run>/corner_checks/<YYYYmmddTHHMMSSZ-xxxxxxxx>/`: request, status, results.jsonl, summary, work/, worker.log.
+* **API** (`api/app.py`: one import, two body classes, four routes after `/api/runs/status`):
+  - `GET /api/runs/corner-check/plan`
+  - `POST .../start`. Its 409 codes: `real_authorization_required`, `connection_gate_acknowledge`, `plan_changed`,
+    `virtuoso_busy`, `already_running`, `no_feasible_design`, `corners_unsupported`, ...
+  - `GET .../status`
+  - `POST .../stop`
+
+Frontend:
+* `frontend/src/panels/CornerCheck.tsx` is new. `App.tsx` gets the tab, `api.ts` 4 calls, and `styles.css` rules at its
+  end.
+* Check goes through `launchWithConsent`, the Start button's consent loop: the budget question, then the connection
+  question.
+* While a check is live its status is read every 1.5 s (as the run status is), then the plan once more. Nothing else runs
+  on a timer.
+* The grid comes first and the plan's designs below it, so the result is in view without scrolling.
+
+Found on the way: a scratch script that imports `tests/workbench/helpers` and starts a run writes the LIVE
+`configs/local/workbench/settings.json`, because only `conftest.py` redirects `GATOR_WORKBENCH_SETTINGS_DIR`.
+* Mine did at 15:26: it changed the output root, the concurrency and a last_run entry.
+* Restored byte-identical at 15:32 from a copy of 2026-09-21 19:09, after another session noticed.
+* Suggested lasting fix, not made because the file is shared: an import-time `os.environ.setdefault(...)` in
+  `tests/workbench/helpers.py`.
+
+Verification:
+* `tests/workbench/test_wb_corner_check.py` (new, 15 tests):
+  - plan: safest distinct feasible designs, margins, counts, fewer designs, no feasible design, a working run, which
+    profiles accept corners;
+  - a MOCK check end to end: 15 results in order, verdicts = the grid, nominal repeat, the run's own files untouched;
+  - a stop before the first simulation; an unknown corner -> inconclusive; a changed plan or count refused;
+  - the REAL path against a fake adapter that records every call:
+    - the order: connect, read, write design 1, 5 x export+simulate as `pvt_validation`, write design 2, ..., restore,
+      read, close;
+    - a failed corner rejects;
+    - power follows the corner's supply;
+    - no authorization = no adapter call;
+    - two infrastructure failures stop after 4 simulations and restore;
+    - a readback mismatch after restoring = `recovery_required` plus the journal;
+    - an adapter exception still restores;
+  - HTTP with the detached worker: plan, a changed plan refused, start, poll to completed, stop refused when not running,
+    bad and unknown ids.
+* Full `tests/workbench` on a snapshot copy of the working tree (Linux FS; the other sessions' uncommitted work included):
+  589 tests, 588 passed, 1 failed in 3 min 43 s. The failure is
+  `test_wb_engine.py::test_forced_cancel_records_unfinished_evaluations_as_charged`, the known timing-flaky test: it needs
+  a job mid-flight at the cancel, and the engine is not touched here. It passed 3 of 3 when run again alone.
+* Browser:
+  - `frontend/scripts/corner_check_check.mjs` (new, 35 checks, fixtures only, safe on 8765) against a scratch build on
+    5181: all pass.
+  - One live MOCK check through the page, on a scratch backend (8772, empty settings folder, a MOCK run of 30
+    evaluations): the plan with the real variable names, Check, 15 simulations, 2 accepted / 1 rejected (score 0.8716 at
+    ss_hot_low), the worst values, no dialog, no console error. The scratch backend and both previews were stopped.
+  - `tsc --noEmit` clean on the whole tree.
+* No real Spectre simulation was made: the real path is tested against a fake adapter only.
+
+Live:
+* The user restarted 8765 at 15:49. After `tsc --noEmit` came back clean and the busy "Virtuoso read whole flow" session
+  answered "build ok", the live `frontend/dist` was rebuilt at 15:50 (`index-DNCRwAOU.js`).
+* The build carries every session's uncommitted frontend work.
+* Checked on the live page (fixture-only, safe on 8765): `corner_check_check.mjs` 35, `consistency_check.mjs` 13,
+  `run_list_check.mjs` and `blocking_issues_check.mjs` - all pass.
+* The live backend answers `/api/runs/corner-check/plan`. The one run in the user's output root is the old
+  `synthetic:opamp` delivery example; it gets the neutral note that its task no longer exists.
+
+`src/analog_optimizer/` untouched (digest `02127bc3...`, the M6 pin). Committed and pushed on branch `workbench`: only the
+Corner check's hunks and files. The other sessions' uncommitted work stays in the working tree.

@@ -538,6 +538,51 @@ A log can be downloaded while the run is still writing it: the download is the f
 press, cut at the last complete line. Parquet stays the source of truth; every CSV is a derived copy.
 Browser check: `frontend/scripts/export_check.mjs` (real MOCK run; needs a scratch backend, refuses port 8765).
 
+### Corner check: a run's best designs at five corners (added 2026-09-22, user request)
+
+The **Corner check** tab (after Output files) simulates the shown run's best designs again at five fixed conditions and
+says, per design, whether it holds up. It is a check AFTER the optimization: nothing of it goes back into the run, its
+replay, its model or its best design.
+
+* **Which designs.** Only designs that met every hard spec at the normal condition (a design that fails there would
+  only fail again), identical widths counted once, the SAFEST first: the largest smallest margin, i.e. the distance to
+  the nearest limit divided by that spec's scale. (The optimizer's reward is 0 for every feasible design, so ranking by
+  reward would pick at random.) **Designs** chooses 1 to 3; the text beside it says what a press costs: designs x 5
+  corners.
+* **Which corners.** The project's screening set, `configs/gpdk045_conditions.json`: TT 27 °C 1.0 V (the normal one,
+  simulated again), SS 125 °C 0.9 V, FF -40 °C 1.1 V, FS and SF at 27 °C 1.0 V. The testbench's supply changes with the
+  corner; its input common mode (0.6 V), bias (0.4 V) and load stay as they are.
+* **The verdict** is the optimizer's own grading (`evaluation.corners.summarize_corners`, M3): **accepted** = every hard
+  spec met at all five corners; **rejected** = at least one corner failed (a spec missed, or the simulator reported the
+  design invalid or not converging); **inconclusive** = nothing failed, but at least one corner has no usable answer (a
+  timeout, the connection, a measurement that did not validate) - never blamed on the design. Each cell of the grid
+  says pass, FAIL with the worst spec and its value, or unknown with the reason; the verdict column adds the pass count.
+  Folded below: the worst value of each spec and the corner it came from. The normal corner is simulated again and
+  compared with the run's own result; a difference is said.
+* **Which circuits.** The two op-amps (`real:gpdk045_ota5`, `real:gpdk045_ota7`) and the MOCK task. The LDO, the VCO
+  and generated profiles are qualified at their normal condition only: the tab says so in a neutral note and Check
+  stays off.
+* **A real circuit** costs real Spectre simulations. Check first asks for exactly that budget ("Authorize 15
+  simulations?"; no = nothing is created), then, as Start does, the connection gate (unknown layers are asked about).
+  The check writes each design's widths into the cell with the same adapter a run uses, simulates its five corners,
+  and at the end writes the recorded widths back and reads them back; the tab says whether that worked. It is refused
+  while a real run or another check holds Virtuoso. Two failures in a row that are not the design's (timeout, transport,
+  license, simulator) stop it, so no more budget is spent on a broken link; the cell is restored then too.
+* **MOCK** is free: the toy score has its optimum moved at each corner. It exercises the check, not a circuit.
+* It runs in a process of its own, like a run's worker, so a page reload or a backend restart does not cut it. **Stop**
+  ends it after the simulation in flight. While it works the tab reads its progress every 1.5 s; otherwise nothing
+  updates by itself (**Refresh** reads again). Earlier checks of the run are a folded list; a double click shows one.
+* Files: `<run>/corner_checks/<check_id>/` - `request.json` (the designs, corners and authorization), `status.json`,
+  `results.jsonl` (one line per simulation, with every value), `summary.json` (the verdicts), `work/`, `worker.log`.
+  API: `GET /api/runs/corner-check/plan` (free, local files only), `POST .../start`, `GET .../status`, `POST .../stop`.
+* Limits, bluntly: five corners are an engineering sample, not a proven worst case; 0.9 V is a project choice (-10 %),
+  not a PDK minimum; the OTA testbenches set the tail current with a fixed 0.4 V gate voltage, so corners move that
+  current more than a real bias circuit would; passing all five says nothing about mismatch (no Monte Carlo). The real
+  path has so far run only against a fake adapter in the tests: no real Spectre simulation of a corner has been made.
+
+Backend: `src/gator_workbench/corner_check.py`; tests `tests/workbench/test_wb_corner_check.py`. Browser check:
+`frontend/scripts/corner_check_check.mjs` (fixtures only; safe against the live backend).
+
 ### Folding the right column's modules (added 2026-09-21, user request)
 
 "Run configuration" and "Output settings" fold into one line with a click on their heading (the "Research

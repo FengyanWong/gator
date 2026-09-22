@@ -10,8 +10,9 @@ import { LIVE_STATES, RunButtons, launchWithConsent, resumeRun, useRunControl } 
 import { RunListButton } from './panels/RunList';
 import { OutputPanel, ResearchPanel, RunPanel } from './panels/Right';
 import { AgentTab, DataTab, FilesTab, LogsTab, StatusTab } from './panels/Bottom';
+import { CornerCheckTab } from './panels/CornerCheck';
 
-type BottomTab = 'agent' | 'status' | 'logs' | 'data' | 'files';
+type BottomTab = 'agent' | 'status' | 'logs' | 'data' | 'files' | 'corners';
 
 /** Layout (specification section 2): left = project, connection, circuit; center = three editors;
  *  right = run configuration + output settings (always visible); bottom = agent, logs, status, data, files.
@@ -140,8 +141,8 @@ export function App() {
               conversation into a window of its own. Two sibling buttons in one tab shape - a button inside a button is not valid. */}
           <span className={`tab-group${tab === 'agent' ? ' active' : ''}${agentDetached ? ' detached' : ''}`}>
             <button onClick={() => setTab('agent')}>Agent</button><span className="tab-slot" ref={setAgentTabSlot} /></span>
-          {(['status', 'logs', 'data', 'files'] as Exclude<BottomTab, 'agent'>[]).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => setTab(t)}>
-            {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files' }[t]}</button>)}
+          {(['status', 'logs', 'data', 'files', 'corners'] as Exclude<BottomTab, 'agent'>[]).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => setTab(t)}>
+            {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', corners: 'Corner check' }[t]}</button>)}
           <span className="spacer" />
           <RunListButton runs={runs} runDir={runDir} onChoose={setRunDir} onRefresh={refreshRuns} />
         </div>
@@ -152,6 +153,7 @@ export function App() {
           {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
           {tab === 'data' && <DataTab runDir={runDir} />}
           {tab === 'files' && <FilesTab runDir={runDir} />}
+          {tab === 'corners' && <CornerCheckTab runDir={runDir} />}
         </div>
       </footer>
     </div>

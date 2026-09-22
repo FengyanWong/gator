@@ -35,6 +35,7 @@ from ..agents import run_digest as agent_run_digest
 from ..agents import settings_review as agent_review
 from ..agents import diagnostics as agent_diagnostics
 from ..agents.prompts import circuit_summary
+from .. import corner_check
 from ..best_design import export_netlist
 from ..layout import RunLayout, environment_versions
 from ..native_cells import load_import as load_cell_import       # `native_cells` is a route name in create_app
@@ -77,6 +78,20 @@ class ContinueBody(Body):
     max_evaluations: int | None = Field(None, ge=1)
     authorize_real_simulation: bool = False
     acknowledge_unknown_connection: bool = False
+
+
+class CornerCheckBody(Body):
+    run_dir: str
+    designs: int = Field(corner_check.MAX_DESIGNS, ge=1, le=corner_check.MAX_DESIGNS)
+    expected_designs: list[str] | None = None        # the evaluations the page showed: a plan that changed is refused
+    simulations: int | None = Field(None, ge=1)      # the number the page showed (and a real check's user authorized)
+    authorize_real_simulation: bool = False
+    acknowledge_unknown_connection: bool = False
+
+
+class CornerStopBody(Body):
+    run_dir: str
+    check_id: str = Field(pattern=corner_check.CHECK_ID.pattern)
 
 
 class PathBody(Body):
@@ -1014,6 +1029,45 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         profile = (result.get('connection_profile_id') or None)
         result['connection'] = monitor.status(profile) if profile else dict(overall='not_applicable')
         return result
+
+    # ------------------------------------------------------------------ corner check: a run's best designs at 5 corners
+    @app.get('/api/runs/corner-check/plan')
+    def corner_check_plan(run_dir: str, designs: int = Query(corner_check.MAX_DESIGNS, ge=1, le=corner_check.MAX_DESIGNS)):
+        """Which designs a check would simulate at which corners, and how many simulations that is. Free: local files."""
+        return corner_check.plan(run_path(run_dir), designs=designs)
+
+    @app.post('/api/runs/corner-check/start')
+    def corner_check_start(body: CornerCheckBody):
+        """A real circuit needs authorize_real_simulation (and the connection gate); nothing is created before both."""
+        run_dir = run_path(body.run_dir)
+        try:
+            directory = corner_check.prepare(run_dir, designs=body.designs, expected=body.expected_designs,
+                                             simulations=body.simulations, allow_real=body.authorize_real_simulation,
+                                             acknowledge_unknown=body.acknowledge_unknown_connection, monitor=monitor)
+        except (corner_check.CheckRefused, runs.RunRejected) as exc:
+            raise HTTPException(409, detail=dict(message=redact(str(exc), 2000), code=exc.code, report=exc.report))
+        request = read_json(directory / 'request.json')
+        pid = corner_check.launch(directory, allow_real=body.authorize_real_simulation and not request['mock'])
+        return dict(check_id=request['check_id'], worker_pid=pid, simulations=request['simulations'], mock=request['mock'])
+
+    @app.get('/api/runs/corner-check/status')
+    def corner_check_status(run_dir: str, check_id: str):
+        try:
+            return corner_check.check_status(run_path(run_dir), check_id)
+        except corner_check.CheckRefused as exc:
+            fail(400, exc)
+        except FileNotFoundError:
+            fail(404, 'This run has no corner check with that identifier.')
+
+    @app.post('/api/runs/corner-check/stop')
+    def corner_check_stop(body: CornerStopBody):
+        """The simulation in flight ends, then the cell is restored; nothing is killed."""
+        try:
+            return corner_check.request_stop(run_path(body.run_dir), body.check_id)
+        except corner_check.CheckRefused as exc:
+            raise HTTPException(409, detail=dict(message=redact(str(exc), 2000), code=exc.code))
+        except FileNotFoundError:
+            fail(404, 'This run has no corner check with that identifier.')
 
     @app.get('/api/runs/files')
     def files(run_dir: str):

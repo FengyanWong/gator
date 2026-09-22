@@ -23,6 +23,44 @@ from .schema import WorkbenchConfig
 
 FEATURE_PARAMETER_KINDS = ('w', 'l', 'm', 'nf', 'r', 'c', 'ind', 'dc')
 BLOCKING = ('error', 'blocker')
+# The units the optimizer can vary a group in (analog_optimizer.models.inputs): a PDK parameter is varied in the standard
+# kind of its unit (compile._group_kind). An area, a current or a temperature has no such kind.
+VARIABLE_UNITS = ('m', 'count', '1', 'ohm', 'F', 'H', 'V')
+
+
+def _pdk_record(config):
+    """The loaded PDK the configuration's network is built with, or None (standard list, or a PDK not loaded)."""
+    name = getattr(config.run.network, 'vocabulary', 'standard') or 'standard'
+    if not name.startswith('pdk:'):
+        return None
+    from .pdk import load_record
+    return load_record(name[4:])
+
+
+def _pdk_facts(record, graph, p):
+    """The PDK's facts about the parameter a row names, when its instance is a component of that PDK."""
+    if record is None or graph is None or not p.instance_path:
+        return None
+    device = next((d for d in graph.devices if d.id == p.instance_path), None)
+    if device is None or device.model_ref not in record['devices']:
+        return None
+    from .pdk import parameter_facts
+    return parameter_facts(record, device.model_ref, p.parameter_name)
+
+
+def _loaded_pdk_knowing(graph, p):
+    """The id of a LOADED PDK that knows this row's device and parameter, for a hint under the standard list."""
+    if graph is None or not p.instance_path:
+        return None
+    device = next((d for d in graph.devices if d.id == p.instance_path), None)
+    if device is None:
+        return None
+    from .pdk import list_pdks, load_record, parameter_facts
+    for entry in list_pdks():
+        facts = parameter_facts(load_record(entry['pdk_id']), device.model_ref, p.parameter_name)
+        if facts and facts.get('numeric'):
+            return entry['pdk_id']
+    return None
 
 
 @dataclass(frozen=True)
@@ -126,9 +164,37 @@ def independent_action_count(parameters):
 
 
 # ------------------------------------------------------------------------------ sections
+def _check_pdk_parameter(report, path, p, facts, record):
+    """A row that varies a parameter of a PDK component, under that PDK's component list."""
+    where = f"{p.parameter_name} of {p.instance_path} (PDK {record['pdk_id']})"
+    if not facts.get('numeric'):
+        report.add('blocker', 'pdk_parameter_not_numeric', path + '.parameter_name',
+                   f"{where} is a {facts.get('type') or 'non-numeric'} setting in the PDK's description, not a number: it "
+                   'cannot be varied.')
+        return
+    stated = units.canonical_unit(p.unit)
+    stated = 'count' if stated == '1' else stated
+    declared = facts.get('unit')
+    if declared and stated != declared:
+        report.add('error', 'unit_mismatch', path + '.unit',
+                   f"{where} is measured in {declared} ({'declared by the PDK' if facts.get('unit_declared') else facts.get('unit_basis') or 'standard parameter'}), "
+                   f'not {p.unit!r}')
+        return
+    if stated not in VARIABLE_UNITS:
+        report.add('blocker', 'parameter_unit_not_variable', path + '.unit',
+                   f'{where} would be varied in {p.unit!r}. The optimizer varies lengths, counts, resistances, '
+                   'capacitances, inductances and voltages only.')
+        return
+    if not declared:
+        report.add('warning', 'pdk_unit_undeclared', path + '.unit',
+                   f"The PDK does not declare the unit of {where}; it is taken as {p.unit!r}, as this row states. Its "
+                   f"default there is {facts.get('default')!r} - check that the unit is right.")
+
+
 def _check_parameters(config, report, graph):
     parameters = config.parameters
     seen, targets = set(), {}
+    record = _pdk_record(config)
     for i, p in enumerate(parameters):
         path = f'parameters[{i}]'
         if p.variable_id in seen:
@@ -148,14 +214,21 @@ def _check_parameters(config, report, graph):
                 report.add('error', 'conflicting_targets', path,
                            f'{p.variable_id} and {targets[key]} both write {p.instance_path}.{p.parameter_name}')
             targets[key] = p.variable_id
-            expected = units.PARAMETER_KIND_UNITS.get(p.parameter_name)
-            if expected and units.canonical_unit(p.unit) != expected:
-                report.add('error', 'unit_mismatch', path + '.unit',
-                           f'Parameter {p.parameter_name!r} is measured in {expected}, not {p.unit!r}')
-            if p.parameter_name not in FEATURE_PARAMETER_KINDS:
-                report.add('blocker', 'parameter_kind_unsupported', path + '.parameter_name',
-                           f'{p.parameter_name!r} is not in the optimizer feature vocabulary '
-                           f'{FEATURE_PARAMETER_KINDS}; the graph encoder cannot represent it')
+            facts = _pdk_facts(record, graph, p)
+            if facts is not None:                       # a component of the PDK the network is built with
+                _check_pdk_parameter(report, path, p, facts, record)
+            else:
+                expected = units.PARAMETER_KIND_UNITS.get(p.parameter_name)
+                if expected and units.canonical_unit(p.unit) != expected:
+                    report.add('error', 'unit_mismatch', path + '.unit',
+                               f'Parameter {p.parameter_name!r} is measured in {expected}, not {p.unit!r}')
+                if p.parameter_name not in FEATURE_PARAMETER_KINDS:
+                    knowing = _loaded_pdk_knowing(graph, p) if record is None else None
+                    report.add('blocker', 'parameter_kind_unsupported', path + '.parameter_name',
+                               f'{p.parameter_name!r} is not in the optimizer feature vocabulary '
+                               f'{FEATURE_PARAMETER_KINDS}; the graph encoder cannot represent it'
+                               + (f'. The loaded PDK {knowing} knows it: choose the component list "PDK {knowing}" in the '
+                                  'RL network block to vary it.' if knowing else ''))
         else:
             report.add('blocker', 'design_variable_writeback_unsupported', path + '.target_kind',
                        'Existing adapters write instance parameters only; global/ADE design-variable writeback '
@@ -284,6 +357,7 @@ def _check_bindings_against_circuit(config, report, graph):
 
 
 def _check_parameters_against_circuit(config, report, graph):
+    record = _pdk_record(config)
     _check_bindings_against_circuit(config, report, graph)
     devices = {d.id: d for d in graph.devices}
     for i, p in enumerate(config.parameters):
@@ -295,7 +369,7 @@ def _check_parameters_against_circuit(config, report, graph):
             report.add('error', 'unknown_instance', path + '.instance_path',
                        f'{p.instance_path!r} is not an instance of the loaded circuit')
             continue
-        if device.kind == 'unknown':
+        if device.kind == 'unknown' and not (record is not None and device.model_ref in record['devices']):
             report.add('error', 'unknown_device_semantics', path,
                        f'{p.instance_path} uses an unmapped model; its parameters cannot be optimized')
         value = graph.parameters.get(p.instance_path, {}).get(p.parameter_name)
@@ -567,6 +641,18 @@ def _check_run(config, report):
         report.add('warning', 'budget_within_warmup', 'run.advanced.warmup_transitions',
                    'The whole budget is random warm-up exploration; the policy never chooses an action. Published '
                    'settings assume thousands of simulations: lower the warm-up or raise the budget')
+    vocabulary = getattr(run.network, 'vocabulary', 'standard') or 'standard'
+    if vocabulary != 'standard':
+        from .pdk import label, load_record
+        record = load_record(vocabulary[4:])
+        if record is None:
+            report.add('blocker', 'pdk_not_loaded', 'run.network.vocabulary',
+                       f'The network is to know the components of PDK {vocabulary[4:]}, but that PDK is not loaded. Load it '
+                       'with "Load PDK..." in the RL network block, or choose the standard list.')
+        else:
+            report.add('info', 'pdk_vocabulary', 'run.network.vocabulary',
+                       f"The network is built with the component list of {label(record['vocabulary'])}. A model trained "
+                       'with it loads only with this list, and models trained with the standard list do not load with it.')
     if run.mode == 'frozen':
         report.add('info', 'frozen_no_updates', 'run.mode',
                    'frozen: no weight, temperature or normalization updates; no learner_updates rows are written')
@@ -649,6 +735,11 @@ def validate(config: WorkbenchConfig, *, graph=None, provided_metrics=None,
                    extensible=config.run.advanced.spec_registry is None, provided_metrics=provided_metrics)
     _check_run(config, report)
     _check_research(config, report, for_generalization=for_generalization)
+    record = _pdk_record(config)
+    if record is not None and graph is not None and not any(d.model_ref in record['devices'] for d in graph.devices):
+        report.add('warning', 'pdk_not_in_circuit', 'run.network.vocabulary',
+                   f"No part of this circuit is a component of PDK {record['pdk_id']}: the network is built with that PDK's "
+                   'list, but sees this circuit as the standard list does. Its models would only load with that list.')
     report.facts['circuit_checked'] = graph is not None
     if graph is None:
         report.add('unresolved', 'circuit_not_loaded', 'circuit',

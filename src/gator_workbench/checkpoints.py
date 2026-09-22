@@ -282,7 +282,12 @@ def check_compatibility(metadata, *, mode, task_definition_hash, contract) -> di
         checks.append(dict(component=component, detail=detail,
                            status='ok' if ok else 'incompatible' if fatal else 'warning'))
     strict = mode == 'resume'
-    for key, label in [('feature_schema', 'graph feature schema'), ('spec_schema', 'goal/spec input schema'),
+    from .pdk import schema_label
+    same = saved['feature_schema'] == contract['feature_schema']
+    add('graph feature schema (components the network knows)', same,
+        'identical' if same else f"this model knows the {schema_label(saved['feature_schema'])} component list; this run "
+        f"uses the {schema_label(contract['feature_schema'])} list. A model only loads with the list it was trained with.")
+    for key, label in [('spec_schema', 'goal/spec input schema'),
                        ('model_config', 'network architecture'), ('action_version', 'action semantics'),
                        ('graph_schema', 'circuit graph schema'), ('normalizer', 'preprocessing/normalization'),
                        ('critic_action', 'critic action representation'), ('origin', 'real/synthetic origin')]:

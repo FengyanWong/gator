@@ -146,6 +146,31 @@ def suggest_mode(config: WorkbenchConfig, source_run_dir=None) -> dict:
                        'the source recorded as its parent.')
 
 
+def _vocabulary_for(config, source_run=None):
+    """The component list a new run's network is built with (None = the standard list). A run that LOADS a saved model
+    takes that model's own list when it names the same PDK - the network follows the model, as its sizes do - even if
+    the PDK was loaded again since; the model's list is copied from its run folder."""
+    from . import pdk
+    wanted = pdk.requested(config)
+    if source_run is not None:
+        own = pdk.run_vocabulary(source_run)
+        if own is not None and own.name == wanted:
+            return own
+    try:
+        return pdk.current_vocabulary(wanted)
+    except pdk.PdkError as exc:
+        raise RunRejected(str(exc), code='pdk_not_loaded')
+
+
+def vocabulary_record(vocabulary) -> dict:
+    """What the manifest says about the component list (the list itself is the run's network_vocabulary.json)."""
+    from . import pdk
+    if vocabulary is None:
+        return dict(name=pdk.STANDARD, label=pdk.label(None))
+    return dict(name=vocabulary.name, label=vocabulary.label, pdk_id=vocabulary.pdk_id, version=vocabulary.version,
+                sha256=vocabulary.sha256, file=pdk.RUN_FILE)
+
+
 def connection_gate(task, config, monitor, *, acknowledge_unknown=False):
     """Pre-dispatch gate (section 2.1). Runs BEFORE any directory, reservation or manifest exists, so a
     blocked start leaves nothing behind. Mock runs need no bridge layer: not_applicable."""
@@ -227,8 +252,10 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
     source_manifest = source_meta = source_dir = None
     source_model = dict(cost_status='not_applicable', cost_evaluations=None, provenance_chain=[])
     parent = None
+    vocabulary = _vocabulary_for(config) if config.run.mode not in ('fine_tune', 'frozen') else None
     if config.run.mode in ('fine_tune', 'frozen'):
         source_run = Path(roots.resolve(config.run.model_source.run_dir))
+        vocabulary = _vocabulary_for(config, source_run)
         if is_mock_path(source_run) != task.mock:
             raise RunRejected('A mock-trained model cannot be loaded for a real task (or vice versa)', code='mock_isolation')
         source_dir = ckpt.resolve_checkpoint(source_run, config.run.model_source.checkpoint_id)
@@ -245,7 +272,7 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
                               'explicitly as continual learning.', code='continual_learning')
         contract = modes.current_contract(learner_experiment(config, task, task_hash),
                                           modes.model_config_from(config.run.network),
-                                          modes.sac_config_from(config.run.advanced), compiled.spec_schema)
+                                          modes.sac_config_from(config.run.advanced), compiled.spec_schema, vocabulary)
         compatibility = ckpt.check_compatibility(source_meta, mode=config.run.mode, task_definition_hash=task_hash,
                                                  contract=contract)
         if not compatibility['compatible']:
@@ -266,6 +293,8 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
                                                                  config.output.experiment_id)
     layout, run_id = new_run_dir(experiment_dir, config.project.task_name, config.run.mode, config.run.seed)
     layout.create()
+    from .pdk import write_run_vocabulary
+    write_run_vocabulary(layout.run_dir, vocabulary)          # the run's own copy: resume and later loads use it
     config = config.model_copy(deep=True)
     config.output.output_root, config.output.experiment_id = str(roots.resolve(output_root)), experiment_id
     research, pretrain_seed, pretrain_origin = _research_block(config, source_manifest)
@@ -289,7 +318,8 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
                          action='absolute-group-v1: normalized proposal -> legalized physical assignment'),
         architecture=dict(network=config.run.network.model_dump(), sac=config.run.advanced.model_dump(mode='json'),
                           spec_schema=dict(version=compiled.spec_schema.version,
-                                           metrics=[list(m) for m in compiled.spec_schema.metrics])),
+                                           metrics=[list(m) for m in compiled.spec_schema.metrics]),
+                          vocabulary=vocabulary_record(vocabulary)),
         source_model=source_model, parent=parent,
         research=research, split=research['split'], generalization_level=research['generalization_level'],
         seeds=dict(target_seed=config.run.seed, pretrain_seed=pretrain_seed, pretrain_seed_origin=pretrain_origin,
@@ -360,9 +390,11 @@ def _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifes
         raise RunRejected(f"max_evaluations ({merged.run.max_evaluations}) is below the {meta['ledger']['charged']} "
                           'evaluations this run already consumed; resume keeps existing counters', code='budget')
     compiled = compile_task(merged, task.base_graph)
+    from .pdk import run_vocabulary
     contract = modes.current_contract(learner_experiment(merged, task, task_hash),
                                       modes.model_config_from(merged.run.network),
-                                      modes.sac_config_from(merged.run.advanced), compiled.spec_schema)
+                                      modes.sac_config_from(merged.run.advanced), compiled.spec_schema,
+                                      run_vocabulary(run_dir))                  # the run's own list, never a newer load
     compatibility = ckpt.check_compatibility(meta, mode='resume', task_definition_hash=task_hash, contract=contract)
     if not compatibility['compatible']:
         raise RunRejected('The latest checkpoint cannot be fully resumed. No fallback to scratch is performed.',

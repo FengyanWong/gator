@@ -1,0 +1,17 @@
+// DEMO CIRCUIT FOR TESTS ONLY - built from the invented demo045 PDK; no circuit performance claims.
+simulator lang=spectre
+global 0
+subckt demo_core VDD VIN VOUT VSS
+    M1 (VOUT VIN NT VSS) dm_nch w=4u l=200n nf=2 m=1
+    M2 (VOUT VB VDD VDD) dm_pch w=8u l=200n nf=1 m=1
+    MC (NT VSS VSS VSS) dm_ncap w=10u l=1u m=1
+    Q1 (VDD VB VSS VSS) dm_npn area=25 m=1
+    D1 (VB VSS) dm_dio area=40f pj=800n m=1
+    R1 (NT VSS VSS) dm_rpoly l=8u w=2u
+    L1 (VOUT VX VSS) dm_ind w=3u s=1.5u r=10u nr=3.5 m=1
+    C1 (VX VSS VSS) dm_mim w=5u l=5u m=1
+ends demo_core
+XU1 (VDD VIN VOUT 0) demo_core
+VDD (VDD 0) vsource dc=1.0
+VIN (VIN 0) vsource dc=0.5
+CL (VOUT 0) capacitor c=1p

@@ -211,6 +211,8 @@ class RunEngine:
         self.archive = out.save_transition_archive
         experiment = learner_experiment(cfg, self.task, self.task_hash)
         self.experiment = experiment
+        from .pdk import run_vocabulary
+        self.vocabulary = run_vocabulary(self.layout.run_dir)      # the run's own component list; None = standard
         source_dir = source_meta = None
         if self.entry == 'resume':
             source_dir = ckpt.resolve_checkpoint(self.layout.run_dir, 'latest')
@@ -223,7 +225,7 @@ class RunEngine:
                             model_config=modes.model_config_from(cfg.run.network),
                             sac_config=modes.sac_config_from(adv), spec_schema=self.compiled.spec_schema,
                             advanced=adv, seed=cfg.run.seed, origin=self.task.origin, source_dir=source_dir,
-                            source_metadata=source_meta, task_definition_hash=self.task_hash)
+                            source_metadata=source_meta, task_definition_hash=self.task_hash, vocabulary=self.vocabulary)
         self.learner, self.replay, self.freeze = built['learner'], built['replay'], built['freeze']
         self.load_policy = built['policy']
         if self.frozen:
@@ -252,7 +254,8 @@ class RunEngine:
             from analog_optimizer.graph.pyg_converter import FeatureSchema
             self.encoder = StateEncoder(self.layout.data / 'states' / 'static', task_id=self.task_id,
                                         graph=self.compiled.graph, specs=self.compiled.specs,
-                                        feature_schema_version=FeatureSchema().version,
+                                        feature_schema_version=(FeatureSchema() if self.vocabulary is None
+                                                                else self.vocabulary.schema).version,
                                         spec_schema_version=self.compiled.spec_schema.version)
         if self.entry == 'resume':
             self._restore(built['run_state'])

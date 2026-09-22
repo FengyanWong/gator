@@ -44,6 +44,27 @@ def _canonical_bounds(parameter):
     return convert(lower), convert(upper), (None if step is None else units.scale_to_canonical(step, parameter.unit))
 
 
+# The optimizer's eight parameter kinds and the one unit each is varied in (analog_optimizer.models.inputs: counts are
+# spelled '1' there; the workbench's canonical spelling of a count is 'count').
+KIND_UNITS = {'w': 'm', 'l': 'm', 'm': '1', 'nf': '1', 'r': 'ohm', 'c': 'F', 'ind': 'H', 'dc': 'V'}
+UNIT_KINDS = {'m': 'l', '1': 'm', 'ohm': 'r', 'F': 'c', 'H': 'ind', 'V': 'dc'}
+
+
+def group_unit(unit):
+    """The unit a group is handed to the optimizer in: a count is '1' there (a group in 'count' was refused by the
+    network input, so an `m` or `nf` row could never run before)."""
+    return '1' if unit == 'count' else unit
+
+
+def _group_kind(name, unit):
+    """The optimizer's kind of a group: its own name when that is one of the eight kinds in its own unit, else the kind
+    of its unit - a PDK parameter (an inductor's radius, a bipolar area factor) is varied as a length or a count, and its
+    binding keeps its own name, which is what the network's column is chosen by (pdk.Vocabulary.view)."""
+    if KIND_UNITS.get(name) == unit or (name == 'dc' and unit in ('V', 'A')):
+        return name
+    return UNIT_KINDS.get(unit)
+
+
 def build_graph(config: WorkbenchConfig, graph):
     """Return a deep copy of `graph` whose parameter_groups are the configured variables."""
     from analog_optimizer.graph.circuit_graph import ParameterBinding, ParameterGroup
@@ -82,15 +103,20 @@ def build_graph(config: WorkbenchConfig, graph):
             bindings.append(ParameterBinding(row.instance_path, row.parameter_name, ratio,
                                              convert(row.lower) if own else None,
                                              convert(row.upper) if own else None))
-        group = ParameterGroup(id=leader_id, parameter_kind=leader.parameter_name,
-                               unit=units.canonical_unit(leader.unit), value=value, lower=lower, upper=upper,
+        unit = group_unit(units.canonical_unit(leader.unit))
+        kind = _group_kind(leader.parameter_name, unit)
+        if kind is None:
+            raise CompileError(f'{leader_id}: {leader.parameter_name} in {leader.unit!r} cannot be varied: the optimizer '
+                               'varies lengths, counts, resistances, capacitances, inductances and voltages only')
+        group = ParameterGroup(id=leader_id, parameter_kind=kind,
+                               unit=unit, value=value, lower=lower, upper=upper,
                                members=tuple(bindings),
                                domain='integer' if leader.value_type == 'integer' else 'continuous',
                                scale=leader.scale, mutable=leader.optimized, step=step)
         groups.append(group)
         variables.append(dict(variable_id=leader_id, unit=group.unit, lower=lower, upper=upper, step=step,
                               scale=leader.scale, domain=group.domain, optimized=leader.optimized,
-                              parameter_kind=leader.parameter_name,
+                              parameter_kind=kind, parameter_name=leader.parameter_name,
                               members=[dict(variable_id=row.variable_id, instance_path=row.instance_path,
                                             parameter_name=row.parameter_name, ratio=ratio) for row, ratio in rows]))
     graph.parameter_groups = groups

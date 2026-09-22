@@ -41,7 +41,8 @@ const EXAMPLE_NETLIST = { netlist_path: 'tests/fixtures/synthetic/opamp.scs', pa
 /** What the Agent tab is asked once a cell was read from Virtuoso and copied. Shown in the message box first: editable, never sent by
  *  itself. The request kind is `virtuoso_setup`: the rows plus the Maestro setup of the working copy, written there after approval. */
 const SETUP_PROMPT = 'Read this circuit and say in two or three sentences what it is and how it works. Then set it up for optimization in its '
-  + 'working copy: which transistor widths to vary (grouped where devices must match) with sensible ranges, what to measure as Maestro outputs '
+  + 'working copy: which sizes to vary (transistor widths and lengths, finger counts, capacitor sides - whatever the PDK\'s form lets you type; '
+  + 'grouped where devices must match) with sensible ranges, what to measure as Maestro outputs '
   + 'with the analyses they need, and specs on them. Add the requirements I give here: ';
 
 /** The three editors, by their configuration keys: Parameters, Specs, Probes. */

@@ -1,0 +1,32 @@
+simulator lang = spectre
+library demo045
+section passive
+//  a three-terminal resistor: a resistive path between its first two pins, junction diodes to its body
+subckt dm_rpoly ( n1 n2 body )
+parameters l=1e-6 w=1e-6
++ rsh=100 tfac=1.0
+r1 ( n1 nm ) bsource r=rsh*l/w/2*tfac
+r2 ( nm n2 ) bsource r=rsh*l/w/2*tfac
+d1 ( body nm ) dm_dio area=l*w
+ends dm_rpoly
+
+//  an inductor model: w = width, s = space, r = inner RADIUS, nr = turns (r is a length here, not a resistance)
+subckt dm_ind (n1 n2 gnd)
+parameters w=2u s=1.5u r=10u nr=3.5
+c1 (n1 n2) capacitor c=1f*nr
+r1 (n1 2) resistor r=0.02*nr*r/w
+l1 (2 n2) inductor l=1n*nr*nr
+c4 (n1 gnd) capacitor c=5f
+c5 (n2 gnd) capacitor c=5f
+ends dm_ind
+
+//  an inline capacitor with series parasitics
+inline subckt dm_mim (n1 n2 body)
+parameters w=1u l=1u
+model mim_core capacitor c=1f
+l1 (n1 n11) inductor l=10p
+dm_mim (n11 n2) mim_core c=w*l*1e-3
+c2 (n2 body) capacitor c=1f
+ends dm_mim ends_with_another_name
+endsection passive
+endlibrary demo045

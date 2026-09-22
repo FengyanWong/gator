@@ -1,0 +1,11 @@
+* DEMO PDK FOR TESTS ONLY - invented names and numbers, no process data of any real PDK.
+* Written in the syntax of a Spectre model library: corner sections that include device sections.
+simulator lang=spectre
+library demo045
+
+section tt
+include "demo045_mos.scs" section=mos
+include "demo045_passive.scs" section=passive
+endsection tt
+
+endlibrary demo045

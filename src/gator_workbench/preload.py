@@ -29,6 +29,7 @@ MODULES = (
     'numpy', 'pyarrow', 'pyarrow.parquet', 'torch', 'torch_geometric',
     'torch_geometric.nn',                             # structure table of a saved model (model_structure.py)
     'analog_optimizer.backends.spectre_validation',   # generated profiles (recipes.py)
+    'analog_optimizer.backends.native_preparation',    # the form writer's preparation session (cdf_write.py)
     'analog_optimizer.backends.synthetic_sizing',
     'analog_optimizer.backends.virtuoso_bridge',      # the adapter only; it does not import `virtuoso_bridge`
     'analog_optimizer.envs.sizing',

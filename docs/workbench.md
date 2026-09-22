@@ -686,6 +686,143 @@ transition archive cannot be shown. The drawing library (cytoscape 3.34.3, MIT, 
 separate file that the browser fetches only when the view is opened. Browser check:
 `frontend/scripts/graph_view_check.mjs`.
 
+### The components the network knows: "Load PDK" (added 2026-09-21, user request)
+
+**In plain words.** The RL network turns every part of a circuit into a node with a *kind*, every pin into a link with
+a *role* (drain, gate, ...), and reads a fixed set of parameter *columns*. It can only tell apart what its list names.
+The optimizer's own list ("standard") has 8 kinds - unknown, nmos, pmos, resistor, capacitor, inductor, vsource,
+isource - and 8 parameters (w, l, m, nf, r, c, ind, dc); anything else (bipolar transistors, diodes, S-parameter
+blocks, ports) is "unknown" and stays fixed. **Load PDK** reads one PDK and gives the network a list with EVERY
+component of that PDK: for GPDK045, 54 components (14 MOS incl. MOS capacitors, 6 bipolar, 10 diodes, 21 resistors, 1
+MIM capacitor, 2 inductors), each with its own kind, its pins with their real roles (collector / base / emitter,
+anode / cathode, ...) and all its numeric parameters (28 columns).
+
+**Why this does not touch the protected package.** The list is not code in `src/analog_optimizer/`: it is the
+`FeatureSchema` the package's `SACLearner` takes as an argument and records in every saved model's contract. A PDK list
+is built by the workbench (`src/gator_workbench/pdk.py`) and handed to the unchanged package. So the source digest stays
+`02127bc3...`, every model saved so far keeps its standard list and still loads, and the M6 audit re-runs unchanged. A
+model trained with a PDK list loads only with that same list, and a standard model not with a PDK list: the package's
+own contract check refuses the mix, and the compatibility report says it in words ("this model knows the PDK gpdk045
+(54 components, version fa5c3946) component list; this run uses the standard list").
+
+**Where.** Run configuration > RL network (Mode `scratch`): under the encoder, **Components** (standard / every loaded
+PDK) and the button **Load PDK...**, which opens the PDK window. The window loads and shows; the choice is the list in
+the RL network block. In `resume` / `fine_tune` / `frozen` the list follows the chosen model by itself, as its network
+does, and the model's facts gain a "Components" row. Saved as `run.network.vocabulary` = `standard` (written as no field
+at all, so every existing configuration keeps its hashes) or `pdk:<technology library>`.
+
+**What "Load" reads - explicit click, read-only, no simulation** (`POST /api/pdks/load`, connection gate
+`read_cellview`, reader op `pdk`; about 3 s for GPDK045):
+1. Virtuoso's own description of every cell of the technology library, in ONE query: the Spectre model a cell netlists
+   to, the pin order and the Spectre pin each pin is, the parameters written on each instance line, their declared
+   units and defaults (CDF `simInfo` / parameters). A cell with no Spectre entry of its own (GPDK045's resistors) is
+   looked into: its schematic is opened read-only and closed again, as the bridge's reader does, and the primitive it
+   places names the model (`resm1` -> `primRes2` with model `g45rm1`).
+2. The PDK's Spectre model files (the connection's `model_file` and everything it includes), downloaded through the
+   bridge into a temporary folder OUTSIDE the repository, scanned and deleted. They say what each model is.
+Empty boxes = the technology library of the connection's design library and the connection's model file. The result is
+kept under `configs/local/workbench/pdks/<id>/` (git-ignored): the extracted facts and the files' SHA-256 - never the
+PDK files. Every version ever loaded stays in `versions/<sha256>.json`; a run keeps its own copy of the list it was
+started with (`network_vocabulary.json`), so loading the PDK again never changes an existing run or model.
+
+**How each fact is decided - by rule, nothing guessed from a name.** A device's family comes from the Spectre
+primitive of its model (`bsim4` -> MOS with the card's `type=n|p`, `bjt` -> bipolar `npn|pnp`, `diode`, `resistor`,
+`capacitor`, `inductor`); for a wrapping subcircuit from its own element (an `inline subckt`), from the one MOS / bipolar
+element it holds, or from what lies between its first two pins (resistive only = resistor; an inductor there =
+inductor, its parallel capacitor and series resistor being parasitics; a declared resistance / capacitance unit of the
+cell decides between passive candidates). A pin's role is the primitive terminal it reaches, directly or through one
+series element (GPDK045's gate resistor); a passive's first two pins are its two ends, further pins its body. The CDF's
+pin mapping is cross-checked against the model file's pin order. A parameter's scale is the standard scale of its
+declared unit (length 1 um, capacitance 1 pF ...), else the power of ten of the PDK's own default value. One column per
+name, except where families disagree on its scale (a bipolar `area` factor of 25 vs a diode `area` of 40 fF become
+`bjt.area` and `diode.area`); a name that means something else in the standard list keeps the PDK's own name (an
+inductor's netlist `r` is its inner RADIUS, so it is `rad`, never the resistance column). What cannot be established
+stays "unknown" and is listed; for GPDK045 nothing was.
+
+**How a circuit reaches the network.** The task's circuit graph is left exactly as it is: the environment, the backend,
+the replay, the archive and every table keep the graph the simulator saw. Only at the network's input
+(`pdk.learner_class`: the package's `SACLearner` with its `batch` shown the PDK's view) each device whose Spectre model
+belongs to the PDK takes its PDK kind and pin roles and its parameters move into the PDK's columns; sources and ideal
+parts keep their standard kinds. The circuit graph view draws that view (PDK model names, shaped by family).
+
+**Varying more than w, l, m, nf, r, c, ind, dc.** With a PDK list a Parameters row may vary any numeric parameter the
+PDK gives a component - an inductor's `rad`, a bipolar `area`, a diode's `pj` ... - when its unit is a length, a count, a
+resistance, a capacitance, an inductance or a voltage: the package varies a group only in one of its eight kinds, so
+such a parameter is varied as the kind of its unit (a radius as a length) while its binding keeps its own name, which is
+what the network's column follows. The unit is checked against the PDK's declared unit; a parameter the PDK declares
+no unit for takes the unit its row states, with a warning. With the standard list such a row stays blocked, and the
+message names the loaded PDK that would allow it. The PDK list changes what the network understands; what a real run
+may WRITE in Virtuoso is decided by the property form of each instance (next section).
+
+**Also fixed on the way:** a row varying `m` or `nf` could never run. The form demanded the unit `count`, while the
+network input accepts a count only as `1`; a group in `count` failed at the first action. Counts are now handed to the
+optimizer as `1`.
+
+**When reading a Virtuoso cell** (Circuit source "Virtuoso library / cell / view"), a loaded PDK of the cell's
+technology library also names the pins of the PDK components the repository has no verified mapping for (bipolar,
+diodes, all resistor types ...): the copy parses completely instead of listing them as unverified. "Save task" takes
+them too (since 2026-09-22): pins as the PDK itself states them.
+
+Tests: `tests/workbench/test_wb_pdk.py` (invented `demo045` PDK in `tests/workbench/fixtures/pdk_demo/`). Browser check:
+`frontend/scripts/pdk_check.mjs` (hermetic, fixtures only, safe against the live backend).
+
+### What a real run writes: any value the property form lets you type (added 2026-09-22, user request)
+
+**In plain words.** A real run used to change transistor widths only. It now changes any value the PDK's property form
+(the "Edit Object Properties" form of an instance) lets a user type: a transistor's width, length, finger count or
+multiplier, a MIM capacitor's sides or multiplier, a resistor's segment length ... - and nothing the form greys out or
+computes (a transistor's diffusion areas, a MIM capacitor's capacitance while it is computed from its sides). The protected
+package is untouched (source digest unchanged); everything is in the workbench (`cdf_facts.py`, `cdf_rules.py`,
+`cdf_write.py`).
+
+**Where the rules come from - read, never assumed.** Reading a cell (and "Save task", which reads the working copy again)
+now also runs one read-only query: for every instance of the core cell, the description (CDF) of its cell - which form
+field feeds which netlist parameter (GPDK045's netlist `w` is `simW` = the field `w`; `nf` is the field `fingers`), each
+field's type, the form's "may be typed" and "is shown" rules, its callback, its choice list, the form's init and done
+procedures - and each rule that is an expression, evaluated on the instance as it is now (a MIM capacitor's `w` is
+typeable while "Calculate Parameter" is not `width`). A rule only the open form can decide (GPDK045's
+`gpdk045_mosEditable` reads the form's widgets) is trusted as the form would be. Kept beside the copy as `core_cdf.json`;
+nothing is written, and the query reports whether the cell was modified (it never was).
+
+**What Save task accepts.** Widths of single-finger, m = 1 transistors keep the verified width writer (as before, rules of
+format 1). Any other row goes to the form writer (rules of format 2) when the form lets a user type it; otherwise Save task
+says why, in words ("the form greys it out in the setting C1 has now (its rule: ...)", "its form field fingers holds a
+count; give the row that unit"). Grids, because a run stops at the first value the PDK does not keep as written: lengths on
+the 5 nm grid the GPDK045 readbacks confirmed (a transistor's total width on fingers x 5 nm, so its finger width stays on
+it), counts in whole numbers from 1 (a finger count only where the finger width stays on the grid: 1 um allows 1, 2, 4, 5
+... fingers, not 3), a choice list on its own evenly spaced values; the range must contain the present value. A transistor
+varies its total width or its finger count, not both. The rows come back adjusted (snapped inward, the step filled in),
+as for widths.
+
+**What a run does with each candidate** (`cdf_write.write_skill`, one SKILL transaction, one save): for every instance with
+a value to change - and only those - the form's init procedure, then per field: its rule, the value, its callback; repeated
+(at most three rounds) until every requested value AND every value the task keeps as recorded reads back as it should. The
+second part matters: GPDK045 folds a wide transistor into more fingers when its total width is typed, so the recorded
+finger count is typed back, as a user would. Then the form's done procedure, `schCheck`, `dbSave`. The checks after it are
+the verified profiles' checks, generalized: an instance that is not written is compared field by field with the record; a
+written one may change what its callbacks compute, never a mode setting (a cyclic / boolean field) or a held value, and a
+transistor keeps total width = fingers x finger width with fresh areas; the exported netlist carries exactly the values the
+form reads back, and for what the form computed from them (the areas, the MIM capacitance) exactly what the form now holds. A value the PDK does not keep (a clamped capacitor side) fails the write, the candidate is rolled back,
+and the run stops with that message - no simulation of a design the optimizer did not ask for. The no-simulation check
+before every run, the corner check and the run itself use the same writer.
+
+**Checked live (2026-09-22, no simulation):** read-only, the query on the ring oscillator's working copy
+(`GPDK045_RINGOSC_GATOR`) and the no-simulation check of a task varying transistor widths and lengths, the MIM capacitor
+sides and a multiplier through the new adapter - connect, export, deck: all pass. Then, with the user's go-ahead, three
+candidates written into the copy through the run's own adapter (transistor w 1.2 um + l 60 nm; MIM w 3 um + m 3; the range
+ends w 1.6 um, l 45 nm, MIM w 5.6 um, m 1): each read back exactly as asked, GPDK045's callbacks recomputed what they own
+(finger width, areas, `nrd`, the MIM capacitance 25.0194f -> 17.4394f), every held value stayed, each export passed; about
+0.2-0.4 s per write, 0.5 s per export. The restore brought every field back, and a fresh export of the copy equals the one
+it was verified with, statement for statement; the original cell and the protected `vco_m6_v1` were unchanged.
+
+**Also fixed on the way:** the mapping of every saved task pinned each group's recorded value, so the export of any
+candidate that changed a value failed the graph's own check ("Binding/current value mismatch"): a run of a saved task could
+never get past its first change - only the one-evaluation baseline ever ran. The group values now come from the netlist,
+as in the verified mappings. Tasks saved before keep the old mapping until they are saved again.
+
+Tests: `tests/workbench/test_wb_cdf_write.py` (recorded REAL form rules of the ring oscillator, `fixtures/ring_osc/
+core_cdf.json`; a fake Virtuoso that runs the writer's SKILL with emulated callbacks - folding, clamping, bookkeeping).
+
 ### The Virtuoso side of a task: working copy and Maestro setup (added 2026-09-21, user request)
 
 The first part of the task flow the user asked for on 2026-09-21 (cell + testbench -> the agent sets up parameters,

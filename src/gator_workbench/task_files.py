@@ -40,7 +40,8 @@ HELP = {
                'only analogLib resistors, capacitors, inductors and sources) here. Outputs and specs come from the '
                'Probes and Specs rows.',
     'parameters': 'Parameters rows: what may vary - instance path as in the circuit (e.g. XU1/MN1), parameter, unit, '
-                  'range, step, grouping. In Virtuoso only transistor widths are written.',
+                  'range, step, grouping. In Virtuoso a run writes any value the property form of the instance lets you '
+                  'type (read with the cell): widths, lengths, finger counts, multipliers, capacitor sides ...',
     'probes': 'Probes rows: what is measured. result_source ade_output = a Maestro output (source_name = its name, '
               'signal = its expression); backend_profile = a result of the circuit type; expression = arithmetic over '
               'other probes.',

@@ -6,14 +6,18 @@ and (b) what the three editors say may vary into the same set of files a hand-wr
 file-driven ``generic_profile`` class, under ``configs/local/workbench/profiles/<name>/``. The result is
 registered as the task ``real:<name>`` (``tasks.py``).
 
-Creating a profile contacts nothing: no Virtuoso, no simulation. It REFUSES whatever the verified real
-backend cannot do (``generic_profile``): anything but MOS widths, multi-finger / m>1 transistors, a log
-scale, an unverified device type, a supply other than the verified nominal one. A refusal says what to
-change, in plain words. What it cannot know is whether the circuit then simulates as hoped: a generated
-profile has NO real baseline until the user runs the budget-authorized "Single baseline simulation" of
-the new task - it is labelled unverified until then.
+Creating a profile contacts nothing: no Virtuoso, no simulation. It REFUSES whatever the real backend
+cannot do, in plain words. Widths of single-finger, m=1 transistors take the verified width writer
+(``generic_profile``, rules of format 1). Any other value takes the form writer (``cdf_rules`` /
+``cdf_write``, rules of format 2): a parameter qualifies when the PDK's property form lets a user type it
+in that instance - read from Virtuoso together with the cell (``cdf_facts``: its form field, rule,
+callback and choices) - and not otherwise; lengths stay on the 5 nm grid, counts on whole numbers. Device
+types: the verified ones, and every component of a loaded PDK (pins as the PDK itself states them).
+Always refused: a supply other than the verified nominal one. What it cannot know is whether the circuit
+then simulates as hoped: a generated profile has NO real baseline until the user runs the
+budget-authorized "Single baseline simulation" of the new task - it is labelled unverified until then.
 
-The rows of the editors are returned ADJUSTED (bounds snapped onto the width grid, the step filled in,
+The rows of the editors are returned ADJUSTED (bounds snapped onto the grid, the step filled in,
 followers without clamps of their own): a real run requires the configured variables to be exactly the
 profile's (``graph_contract``), so the form must show what was registered.
 """
@@ -107,7 +111,10 @@ def load_profile(name):
     if entry is None:
         raise ProfileError(f'Unknown generated profile {name!r}')
     directory = Path(entry['directory'])
-    return recipes.PROFILE_CLASSES[entry['recipe']](
+    from . import cdf_write                                  # rules of format 2: any value the PDK's form lets a user type
+    classes = cdf_write.PROFILE_CLASSES if cdf_write.rules_format(directory / FILES['rules']) == cdf_write.RULES_FORMAT \
+        else recipes.PROFILE_CLASSES
+    return classes[entry['recipe']](
         rules_file=directory / FILES['rules'], design_file=directory / FILES['design'], mapping_file=directory / FILES['mapping'],
         reference_structure=directory / FILES['structure'], reference_readback=directory / FILES['readback'],
         conditions_file=repo_root() / 'configs' / 'gpdk045_conditions.json')
@@ -383,14 +390,29 @@ class NeedsFrequency(ProfileError):
 def _checked_import(imported, name):
     """(netlist text, device mapping, core CDF readback) of an import a profile can be made from, or a plain refusal."""
     text = Path(imported['netlist_path']).read_text()
-    mapping, unverified = native_cells.build_mapping(text, circuit_id=name)
+    # The verified models, and every component of the cell's PDK once it was loaded (Load PDK: pins as the PDK states them).
+    mapping, unverified = native_cells.build_mapping(text, circuit_id=name, technology_library=imported.get('technology_library'))
     if unverified:
-        raise ProfileError(f'Device type(s) {", ".join(unverified)} are not verified in this project: their pin order is unknown, '
-                           'so the circuit cannot be described to the optimizer')
+        raise ProfileError(f'Device type(s) {", ".join(unverified)} are neither verified in this project nor described by a loaded '
+                           'PDK: their pin order is unknown, so the circuit cannot be described to the optimizer (Load PDK reads '
+                           'the PDK\'s own description of its components)')
     reference = json.loads((Path(imported['directory']) / native_cells.FILES['core_readback']).read_text())
     if any(key not in item for item in reference.get('instances', []) for key in ('name', 'lib', 'cell', 'view', 'terms', 'params')):
         raise ProfileError('This copy of the cell lacks details a profile needs (it was read by an older version): press "Read the cell again"')
     return text, mapping, reference
+
+
+def _form_facts(imported):
+    """What the property form of each instance lets a user type, read together with the cell (`cdf_facts`), or None
+    for a cell read before that was recorded."""
+    from . import cdf_facts
+    try:
+        facts = json.loads((Path(imported['directory']) / cdf_facts.FILE).read_text())
+    except (OSError, ValueError):
+        return None
+    if facts.get('format') != cdf_facts.FORMAT or (facts.get('library'), facts.get('cell')) != (imported['library'], imported['cell']):
+        return None
+    return facts
 
 
 def _nominal_supply() -> float:
@@ -409,7 +431,22 @@ def _generate(name, config, *, recipe, imported, staging, expected_frequency_hz=
     (staging / FILES['structure']).write_text(text)
     graph = SpectreParser(ParserConfig.from_file(staging / FILES['mapping'])).parse_file(staging / FILES['structure'])
     core = _core_instance(imported, graph)
-    rows, optimized, leaders = _adjust_rows(config, graph, core)
+    facts, specs = _form_facts(imported), None
+    try:                                              # the verified width writer, when it can do what the rows ask
+        rows, optimized, leaders = _adjust_rows(config, graph, core)
+        check_writable_record(reference, sorted({row.instance_path.split('/')[1] for row in rows
+                                                 if leaders[row.variable_id][0] in optimized}))
+    except ValueError as refused:                     # else the form writer, by the form rules read with the cell
+        if facts is None or facts.get('error'):
+            hint = (' (Read the cell again: reading it now also records what its property form lets you type, and then '
+                    'such values can vary too.)' if facts is None else f' (What its property form lets you type could not be '
+                    f'read with the cell: {facts["error"]})')
+            raise ProfileError(str(refused) + hint) from None
+        from . import cdf_rules
+        try:
+            rows, optimized, leaders, specs = cdf_rules.adjust(config, graph, core, facts, reference)
+        except cdf_rules.RowError as exc:
+            raise ProfileError(str(exc)) from None
     adjusted = config.model_copy(update=dict(parameters=rows))
     try:
         compiled, _ = build_graph(adjusted, graph)
@@ -423,10 +460,6 @@ def _generate(name, config, *, recipe, imported, staging, expected_frequency_hz=
         if group.mutable:
             for member in group.members:
                 writable[member.device_id.split('/')[1]] = (group.lower * member.ratio, group.upper * member.ratio)
-    try:
-        check_writable_record(reference, list(writable))
-    except ValueError as exc:
-        raise ProfileError(str(exc))
     design = dict(topology=f'generated:{recipe}', pdk_library=imported.get('technology_library'), library=imported['library'],
                   core_cell=imported['cell'], testbench_cell=imported['testbench_cell'])
     if recipe == 'ring_oscillator':
@@ -459,15 +492,26 @@ def _generate(name, config, *, recipe, imported, staging, expected_frequency_hz=
     if unknown:
         raise ProfileError(f'Measurement(s) {", ".join(unknown)} use a result this circuit type does not produce. '
                            f'Available: {", ".join(available)}')
+    # No `value` in a group, as in the verified mappings: the parser takes it from the netlist it reads. A recorded value
+    # made every export of a changed candidate fail its own graph check ("Binding/current value mismatch").
     mapping.update(net_roles={'0': ['ground'], **net_roles},
-                   parameter_groups=[dict(asdict(group), members=[asdict(m) for m in group.members]) for group in compiled.parameter_groups])
+                   parameter_groups=[dict({k: v for k, v in asdict(group).items() if k != 'value'}, members=[asdict(m) for m in group.members])
+                                     for group in compiled.parameter_groups])
     write_json(staging / FILES['mapping'], mapping)
     write_json(staging / FILES['design'], design)
     write_json(staging / FILES['readback'], reference)
-    write_json(staging / FILES['rules'], dict(
-        format=RULES_FORMAT, recipe=recipe, core_instance=core, width_step=VERIFIED_WIDTH_STEP, mos_instances=mos,
-        fixed_instances=[n for n in instances if n not in mos],
-        writable=[dict(instance=n, lower=lo, upper=hi) for n, (lo, hi) in writable.items()]))
+    if specs is None:
+        write_json(staging / FILES['rules'], dict(
+            format=RULES_FORMAT, recipe=recipe, core_instance=core, width_step=VERIFIED_WIDTH_STEP, mos_instances=mos,
+            fixed_instances=[n for n in instances if n not in mos],
+            writable=[dict(instance=n, lower=lo, upper=hi) for n, (lo, hi) in writable.items()]))
+    else:
+        from . import cdf_rules
+        try:
+            rules = cdf_rules.rules_v2(recipe=recipe, core=core, facts=facts, reference=reference, compiled=compiled, specs=specs)
+        except cdf_rules.RowError as exc:
+            raise ProfileError(str(exc)) from None
+        write_json(staging / FILES['rules'], dict(rules, mos_instances=mos))
     write_json(staging / FILES['receipt'], dict(
         library=imported['library'], core_cell=imported['cell'], testbench_cell=imported['testbench_cell'], config=design,
         receipt_recorded_at=utcnow().isoformat(), source_netlist_sha256=imported['netlist_sha256'], imported_utc=imported['imported_utc'],
@@ -477,6 +521,7 @@ def _generate(name, config, *, recipe, imported, staging, expected_frequency_hz=
                  library=imported['library'], core_cell=imported['cell'], testbench_cell=imported['testbench_cell'], core_instance=core,
                  pdk_id=imported.get('technology_library') or 'unspecified', created_utc=utcnow().isoformat(),
                  provided_metrics=list(recipes.provided_metrics(recipe)), optimized_variables=sorted(optimized),
+                 writer='widths' if specs is None else 'form',
                  spec_registry=recipes.spec_registry(recipe, design) if recipe in RECIPES else None,
                  status='unverified: no real baseline simulation has been recorded for this profile yet')
     entry.update(entry_extra or {})                   # what the task adds: its cells, copy, revision, measurement

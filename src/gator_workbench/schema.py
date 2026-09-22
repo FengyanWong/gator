@@ -206,11 +206,19 @@ class CircuitReference(_Model):
 
 
 # --------------------------------------------------------------------------- run
+STANDARD_VOCABULARY = 'standard'
+
+
 class NetworkConfig(_Model):
     encoder_type: Literal['graph_transformer', 'mlp', 'rgcn', 'gat', 'port_gnn', 'gcn'] = 'graph_transformer'
     hidden_dim: int = Field(32, ge=4, le=1024)
     heads: int = Field(4, ge=1, le=32)
     layers: int = Field(2, ge=1, le=16)
+    vocabulary: str = Field(STANDARD_VOCABULARY, max_length=80, pattern=r'^(standard|pdk:[A-Za-z_][A-Za-z0-9_.\-]{0,63})$',
+        description='Which components the network knows. standard: the 8 generic kinds (MOS, R, C, L, sources) every '
+                    'model saved before 2026-09-21 was trained with; other parts are "unknown". pdk:<technology '
+                    'library>: every component of that PDK, loaded with "Load PDK..." (gator_workbench.pdk). A model '
+                    'trained with one list loads only with the same list.')
 
 
 class SpecRegistryEntry(_Model):
@@ -381,7 +389,12 @@ _ONE_PROBE = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]*$')
 def _hashed(data):
     """What both hashes see. A spec whose equation is one Probe ID is hashed in the form every configuration had before
     specs were equations (`measurement_id`), so a configuration written earlier keeps its hashes: its runs still
-    resume, its checkpoints still load, and approvals and proposals made for it still bind."""
+    resume, its checkpoints still load, and approvals and proposals made for it still bind. The network's component list
+    (`run.network.vocabulary`, added later) is hashed as absent while it is the standard one, for the same reason."""
+    run = data.get('run') if isinstance(data, dict) else None
+    network = run.get('network') if isinstance(run, dict) else None
+    if isinstance(network, dict) and network.get('vocabulary') == STANDARD_VOCABULARY:
+        data = dict(data, run=dict(run, network={k: v for k, v in network.items() if k != 'vocabulary'}))
     targets = data.get('targets') if isinstance(data, dict) else None
     if not isinstance(targets, list):
         return data

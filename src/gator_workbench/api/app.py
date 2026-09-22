@@ -125,6 +125,12 @@ class NetworkResetBody(Body):
     to: str = Field('publication', pattern='^(publication|gator_baseline)$')
 
 
+class PdkLoadBody(Body):
+    profile_id: str = Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
+    technology_library: str | None = Field(None, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$')   # empty = the connection's design library's
+    model_file: str | None = Field(None, max_length=1000)                                        # empty = the connection's model file
+
+
 class NativeReadBody(Body):
     profile_id: str = Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
     library: str | None = None
@@ -490,6 +496,41 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         except KeyError:
             fail(404, f'Unknown encoder: {encoder}')
 
+    # ------------------------------------------------------------------ PDK: the components the network knows
+    @app.get('/api/pdks')
+    def loaded_pdks():
+        """The PDKs loaded so far (local files only). Each one can be the network's component list."""
+        from .. import pdk
+        return dict(pdks=pdk.list_pdks(), standard=dict(vocabulary=pdk.STANDARD, label=pdk.label(None),
+                                                         kinds=list(pdk.standard_schema().device_kinds),
+                                                         parameters=list(pdk.standard_schema().parameters)))
+
+    @app.get('/api/pdks/{pdk_id}')
+    def loaded_pdk(pdk_id: str):
+        """Everything that was read about one loaded PDK: every component, its pins and roles, its parameters."""
+        from .. import pdk
+        record = pdk.load_record(pdk_id)
+        if record is None:
+            fail(404, f'PDK {pdk_id} is not loaded')
+        return pdk.describe(record)
+
+    @app.post('/api/pdks/load')
+    def load_pdk(body: PdkLoadBody):
+        """Explicit click: read one technology library's own description and its Spectre model files through the
+        connection (read-only, no simulation), and store what the network needs. PDK files are not kept."""
+        from .. import pdk
+        try:
+            return bridge_read.read(monitor, body.profile_id, 'pdk', library=body.technology_library or None,
+                                    model_file=body.model_file or None)
+        except PermissionError as exc:
+            raise HTTPException(409, detail=dict(message=str(exc), gate=getattr(exc, 'gate', None)))
+        except pdk.PdkError as exc:
+            fail(422, exc)
+        except (KeyError, ValueError) as exc:
+            fail(422, exc)
+        except Exception as exc:
+            fail(502, exc)
+
     @app.get('/api/tasks')
     def get_tasks():
         return dict(tasks=tasks.list_tasks(), real_interface_contract=tasks.REAL_INTERFACE_CONTRACT)
@@ -826,6 +867,11 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         except FileNotFoundError as exc:
             fail(404, exc)
         result = dict(description=description)
+        from .. import pdk
+        own = pdk.run_vocabulary(run_dir)                  # the model's component list: the page's list follows it
+        result['vocabulary'] = dict(name=own.name if own else pdk.STANDARD, label=own.label if own else pdk.label(None),
+                                    pdk_id=own.pdk_id if own else None, sha256=own.sha256 if own else None,
+                                    loaded=bool(own is None or pdk.load_record(own.pdk_id) is not None))
         if body.get('config'):
             config = parse_config(body['config'])
             runtime, blocked = load_runtime(config)
@@ -843,13 +889,22 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                     # 500 "CompileError: mp1_w: bounds are required" that hid the model as well).
                     result['compatibility_unchecked'] = compatibility_unchecked(exc)
                 else:
-                    contract = modes.current_contract(learner_experiment(config, runtime, task_hash),
-                                                      modes.model_config_from(config.run.network),
-                                                      modes.sac_config_from(config.run.advanced), compiled.spec_schema)
-                    meta_ = ckpt.read_metadata(description['path'])
-                    mode = config.run.mode if config.run.mode != 'scratch' else 'fine_tune'
-                    result['compatibility'] = ckpt.check_compatibility(meta_, mode=mode, task_definition_hash=task_hash,
-                                                                       contract=contract)
+                    try:
+                        vocabulary = runs._vocabulary_for(config, run_dir)      # what a run of this page would use
+                    except runs.RunRejected as exc:
+                        result['compatibility_unchecked'] = dict(
+                            title='The component list of this configuration is not available',
+                            what=str(exc), note='Load that PDK with "Load PDK..." in the RL network block, or choose the '
+                            'standard list. The saved model itself is fine.', technical=f'{exc.code}: {exc}')
+                    else:
+                        contract = modes.current_contract(learner_experiment(config, runtime, task_hash),
+                                                          modes.model_config_from(config.run.network),
+                                                          modes.sac_config_from(config.run.advanced), compiled.spec_schema,
+                                                          vocabulary)
+                        meta_ = ckpt.read_metadata(description['path'])
+                        mode = config.run.mode if config.run.mode != 'scratch' else 'fine_tune'
+                        result['compatibility'] = ckpt.check_compatibility(meta_, mode=mode, task_definition_hash=task_hash,
+                                                                           contract=contract)
                 result['suggestion'] = runs.suggest_mode(config, run_dir)
         return result
 
@@ -1185,16 +1240,18 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         runtime, blocked = load_runtime(config)
         summary = None if runtime is None else circuit_summary(runtime.base_graph, circuit=runtime.circuit)
         if summary is not None and not runtime.mock:
-            # A real backend produces a fixed set of results per circuit type, and writes transistor widths only. Said to
-            # the agent, so its measurement rows name results that exist and its variables are ones that can be written.
+            # A real backend produces a fixed set of results per circuit type, and writes what the property form lets a user
+            # type. Said to the agent, so its measurement rows name results that exist and its variables can be written.
             if runtime.circuit.get('native_draft'):
                 summary['results_by_circuit_type'] = {key: list(recipes.provided_metrics(key)) for key in profiles.RECIPES}
                 summary['real_backend_limits'] = (
                     'This cell has no circuit profile yet. When one is created from your proposal: a measurement with '
                     'result_source "backend_profile" must use a source_name from results_by_circuit_type for the fitting circuit '
-                    'type; only transistor widths can be optimized (parameter "w" of an nmos/pmos directly inside the core cell, '
-                    'single finger, m = 1), on a 5 nm grid with a linear range that contains the present width. Identical or '
-                    'matched transistors should follow one leader through binding_group with ratio 1. A target\'s metric_id must be '
+                    'type; a parameter can be optimized when the property form of its instance (directly inside the core cell) '
+                    'lets a user type it - transistor w, l, nf, m, a MIM capacitor\'s w, l, m, ... (a form that greys a field out '
+                    'or computes it, e.g. areas, refuses it) - lengths on a 5 nm grid, counts in whole numbers, and a range that '
+                    'contains the present value; a transistor varies its total width or its finger count, not both. Identical or '
+                    'matched parts should follow one leader through binding_group with ratio 1. A target\'s metric_id must be '
                     'one of those result names too (the profile registers exactly them for the optimizer).')
             else:
                 summary['results_provided'] = list(runtime.provided_metrics)

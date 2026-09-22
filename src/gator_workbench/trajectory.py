@@ -145,11 +145,15 @@ class TrajectoryLoader:
                                               and row['next_state_ref'] is not None)
         return rows
 
-    def training_batch(self, transitions, *, feature_schema=None, spec_schema=None):
-        """Reconstruct the exact network inputs for a list of transitions."""
+    def training_batch(self, transitions, *, feature_schema=None, spec_schema=None, vocabulary=None):
+        """Reconstruct the exact network inputs for a list of transitions. `vocabulary`: the run's PDK component list
+        (pdk.run_vocabulary), whose view the network saw the states through; its schema is then the feature schema."""
         from analog_optimizer.graph.pyg_converter import FeatureSchema
         from analog_optimizer.models.inputs import SpecSchema, batch_observations
+        if vocabulary is not None:
+            feature_schema, see = vocabulary.schema, vocabulary.view
+        else:
+            see = lambda observation: observation                      # noqa: E731 - the standard list sees states as stored
         feature_schema, spec_schema = feature_schema or FeatureSchema(), spec_schema or SpecSchema()
-        return (batch_observations([t.observation for t in transitions], feature_schema, spec_schema),
-                batch_observations([t.next_observation for t in transitions], feature_schema, spec_schema))
-
+        return (batch_observations([see(t.observation) for t in transitions], feature_schema, spec_schema),
+                batch_observations([see(t.next_observation) for t in transitions], feature_schema, spec_schema))

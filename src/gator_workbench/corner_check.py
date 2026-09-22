@@ -583,9 +583,9 @@ class Worker:
         return config, profile
 
     def _run_real(self):
-        from analog_optimizer.backends.virtuoso_bridge import VirtuosoBridgeBackend
+        from .cdf_write import backend_class              # a task that writes by the PDK's form writes the same way here
         config, profile = self._bridge_parts()
-        backend = self.context.compiled.plan.wrap(VirtuosoBridgeBackend(config, profile))
+        backend = self.context.compiled.plan.wrap(backend_class(profile)(config, profile))
         work = self.directory / 'work'
         timeout = self.context.config.run.advanced.simulation_timeout_seconds
         connected, initial, failures = False, None, 0

@@ -184,9 +184,11 @@ def build_prompt(request) -> str:
         parts += ['', 'THIS REQUEST: set this circuit up for optimization in its WORKING COPY in Virtuoso (<working_copy_data>). The '
                   'backend writes your setup into the copy only after the user approves it, then reads it back. Say first, in two '
                   'or three sentences of `reasoning`, what the circuit is and how it works; then return:',
-                  '- `patch` rows of `parameters`: what may vary. In Virtuoso only transistor widths are written (parameter "w" of an '
-                  'nmos/pmos directly inside the core cell, single finger, m = 1, 5 nm grid, a linear range containing the present '
-                  'width); identical or matched transistors follow one leader through binding_group with ratio 1.',
+                  '- `patch` rows of `parameters`: what may vary. In Virtuoso a run writes any value the property form of an '
+                  'instance directly inside the core cell lets a user type (transistor w, l, nf, m; a MIM capacitor\'s w, l, m; '
+                  'never a field the form greys out or computes, such as areas), lengths on a 5 nm grid, counts in whole numbers, '
+                  'a range containing the present value, and a transistor varies its total width or its finger count, not both; '
+                  'identical or matched parts follow one leader through binding_group with ratio 1.',
                   '- `patch` rows of `measurements` (the Probes): Maestro outputs, each with result_source "ade_output", source_name = '
                   'the output name (letters, digits, "_"), signal = its Cadence calculator expression, analysis = the analysis it '
                   'reads, unit = the unit of its value, measurement_id = "m_" + source_name. Expressions may call ONLY the functions '

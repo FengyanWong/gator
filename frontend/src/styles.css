@@ -190,6 +190,18 @@ details.section { margin-top: 10px; } details.section > summary > h3 { display: 
 details.section.module { margin-top: 0; } details.module > summary { cursor: pointer; } details.module[open] > summary { margin-bottom: 4px; }
 .module-summary { display: block; margin: 2px 0 0 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .module-attention { margin-left: 8px; padding: 0 5px; border-radius: 3px; font-size: 10.5px; font-weight: 600; color: #fff; background: var(--warn); } .module-attention.error { background: var(--bad); }
+/* Load PDK (Pdk.tsx): the "Components" line of the RL network block, and the PDK window (a pop-up like the connection
+   window; about:blank = quirks mode, so its tables are told to inherit the font). */
+/* a labelled list beside a bare button: bottom-aligned, one height for both (a centred row would put the button between the
+   caption and the list) */
+.component-row { align-items: flex-end; } .component-row > label { flex: 1; margin: 0; } .component-row > label select { width: 100%; height: 26px; }
+.component-row > button { flex: none; height: 26px; } .component-list .component-what { margin: 2px 0 4px; }
+#pdk-root { min-height: 100vh; background: var(--panel); }
+.pdk-window { max-width: 1060px; margin: 0 auto; padding: 14px 18px 24px; font-size: 13.5px; } .pdk-window h2 { margin: 0 0 8px; font-size: 17px; }
+.pdk-window h3 { margin: 14px 0 6px; font-size: 14.5px; } .pdk-window p { margin: 5px 0; } .pdk-window .hint, .pdk-window label { font-size: 12.5px; }
+.pdk-window table { font: inherit; } .pdk-window .pdk-form { align-items: flex-end; } .pdk-window .pdk-form > label { flex: 1 1 240px; }
+.pdk-window .pdk-form > button { flex: none; } .pdk-list tr { cursor: default; } .pdk-list tr.active td { background: #eef4ff; }
+.pdk-devices td { vertical-align: top; } .pdk-devices td:first-child, .pdk-devices td:nth-child(2) { white-space: nowrap; } .pdk-window .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 /* Corner check tab (CornerCheck.tsx): the plan line, the designs, then one row per design and one column per corner with a
    verdict at the end; pass / FAIL / unknown in the result colours. */
 .corner-check .row { align-items: center; } .corner-check .row > label { flex: none; flex-direction: row; align-items: center; gap: 4px; margin: 0; }

@@ -113,6 +113,22 @@ def capture_attention(actor, run):
     return result, captured
 
 
+STANDARD_FAMILY = dict(nmos='nmos', pmos='pmos', resistor='resistor', capacitor='capacitor', inductor='inductor',
+                       vsource='vsource', isource='isource')
+
+
+def _family(device, vocabulary):
+    """The standard kind a device is drawn as: its own kind, or - for a PDK kind - the PDK's family of it (an n-type PDK
+    transistor is drawn like an nmos). The page shows the PDK kind as the name; only shape and colour follow this."""
+    if device.kind in STANDARD_FAMILY or vocabulary is None:
+        return STANDARD_FAMILY.get(device.kind, 'unknown')
+    entry = vocabulary.devices.get(device.model_ref) or {}
+    family = entry.get('family')
+    if family == 'mos':
+        return {'n': 'nmos', 'p': 'pmos'}.get(entry.get('polarity'), 'mos')
+    return family or 'unknown'
+
+
 def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
     from .engine import decode_action
     from .trajectory import TrajectoryLoader
@@ -125,6 +141,15 @@ def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
     loader = TrajectoryLoader(run_dir)
     row, steps = _step(loader, evaluation, (meta.get('counters') or {}).get('evaluations_committed'))
     observation = loader.observation(row['state_ref'])
+    # A run built with a PDK's component list saw every circuit through that PDK's view: replay it the same way, and
+    # draw what the network saw (the PDK kinds and pin roles). The run's own copy of the list is used, never a newer load.
+    from .pdk import run_vocabulary
+    vocabulary = run_vocabulary(run_dir)
+    if vocabulary is not None:
+        if vocabulary.schema != features:
+            raise GraphViewUnavailable('The component list kept in this run folder is not the one this save point was '
+                                       'trained with, so the circuit cannot be shown to it the same way.')
+        observation = vocabulary.view(observation)
     batch = batch_observations([observation], features, spec)
     sample, layers = capture_attention(actor, lambda: actor.sample(batch, deterministic=True))
     policy = batch.proposals(sample.actions)[0]
@@ -183,7 +208,8 @@ def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
                   saved_at=(meta.get('counters') or {}).get('evaluations_committed'), status=observation.status, **steps),
         metrics=[dict(id=k, value=v, unit=observation.metric_units.get(k, ''), valid=bool(observation.metric_validity.get(k)))
                  for k, v in sorted(observation.metrics.items())],
-        devices=[dict(id=d.id, kind=d.kind, model=d.model_ref, groups=member_of.get(d.id, []),
+        vocabulary=dict(name=vocabulary.name, label=vocabulary.label) if vocabulary is not None else dict(name='standard', label='standard (8 generic kinds)'),
+        devices=[dict(id=d.id, kind=d.kind, model=d.model_ref, groups=member_of.get(d.id, []), family=_family(d, vocabulary),
                       parameters={name: p.value for name, p in (graph.parameters.get(d.id) or {}).items() if p.value is not None})
                  for d in graph.devices],
         nets=[dict(id=n.id, roles=list(n.roles)) for n in graph.nets],

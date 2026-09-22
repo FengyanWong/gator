@@ -74,6 +74,7 @@ def test_a_configuration_from_before_equations_loads_and_keeps_both_hashes(tmp_p
     legacy_dump = new.model_dump(mode='json')
     for row in legacy_dump['targets']:                                                   # exactly what the old schema dumped
         row['measurement_id'] = row.pop('equation')
+    del legacy_dump['run']['network']['vocabulary']              # added later (7.54); the old schema had no such field
     old = schema.WorkbenchConfig.model_validate(legacy_dump)
     assert old.targets[0].equation == 'm_score' and old == new
     # the hashes an old run, checkpoint, approval or proposal recorded are the hashes computed now

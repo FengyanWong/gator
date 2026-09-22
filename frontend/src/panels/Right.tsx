@@ -3,6 +3,7 @@ import { api, bytes, copy, Json, num } from '../api';
 import { ModelChooser } from './ModelChooser';
 import { CircuitGraphView } from './CircuitGraphView';
 import { ModelStructure } from './ModelStructure';
+import { ComponentList } from './Pdk';
 import { Typed } from './Typed';
 
 function Num({ label, value, onChange, title, nullable, disabled, note, after, placeholder }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; nullable?: boolean; disabled?: boolean; note?: string; after?: ReactNode; placeholder?: string }) {
@@ -129,8 +130,16 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
   const entry: Json = netSettings?.settings?.[encoder] ?? null;
   const usesHeads: boolean = entry ? !!entry.uses_heads : ['graph_transformer', 'gat'].includes(encoder);
   const remember = (e: Json) => setNetSettings((s: Json) => s && ({ ...s, settings: { ...s.settings, [e.encoder_type]: e } }));
+  // The component list is not a per-encoder setting: another encoder keeps the list that was chosen.
+  const keepList = (network: Json) => network?.vocabulary && network.vocabulary !== 'standard' ? { vocabulary: network.vocabulary } : {};
   const applyEntry = (e: Json, record = true) => setConfig(c => ({ ...c, run: { ...c.run,
-    network: { encoder_type: e.encoder_type, ...e.network }, advanced: { ...(c.run.advanced ?? {}), ...e.advanced } } }), record);
+    network: { ...keepList(c.run.network), encoder_type: e.encoder_type, ...e.network }, advanced: { ...(c.run.advanced ?? {}), ...e.advanced } } }), record);
+  // The standard list is written as no field at all: that is what every configuration had before, and a server that was
+  // not restarted yet still accepts it.
+  const chooseList = (value: string, record = true) => setConfig(c => {
+    const { vocabulary: _old, ...rest } = c.run.network ?? {};
+    return { ...c, run: { ...c.run, network: value === 'standard' ? rest : { ...rest, vocabulary: value } } };
+  }, record);
   const flush = (): Promise<void> => {
     window.clearTimeout(timer.current);
     const job = pending.current; pending.current = null;
@@ -206,6 +215,9 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
     setConfig(c => ({ ...c, run: { ...c.run, network: { ...(c.run.network ?? {}), ...savedNet } } }), false);
   }, [loads, archDiffers, JSON.stringify(savedNet)]);
   useEffect(() => setNetMessage(m => m?.level === 'warn' ? null : m), [source.run_dir, source.checkpoint_id, run.mode]);
+  // The component list follows the chosen model as its network does: its weights only fit the list it was trained with.
+  const savedList: string | undefined = loads ? model?.vocabulary?.name : undefined;
+  useEffect(() => { if (savedList && savedList !== (net.vocabulary ?? 'standard')) chooseList(savedList, false); }, [savedList, net.vocabulary]);
 
   // Default the RL model to the last model used by this project, and its `latest` checkpoint (not `best`) - in a Mode that
   // loads a model. In scratch it used to be written into the configuration on page load: a validation warning
@@ -221,7 +233,8 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
   }, [source.run_dir, source.checkpoint_id, run.mode, JSON.stringify(net), JSON.stringify(adv), JSON.stringify(config.targets), JSON.stringify(config.parameters)]);
 
   const folded = [run.mode, typeof budget === 'number' ? `${budget} evaluations` : null,
-    `${encoder} ${net.hidden_dim ?? '?'}/${net.heads ?? '?'}/${net.layers ?? '?'}`].filter(Boolean).join(' - ');
+    `${encoder} ${net.hidden_dim ?? '?'}/${net.heads ?? '?'}/${net.layers ?? '?'}`,
+    net.vocabulary && net.vocabulary !== 'standard' ? `knows ${net.vocabulary.slice(4)}` : null].filter(Boolean).join(' - ');
   return (
     <Module id="run" title="Run configuration" summary={folded}>
       <label title="scratch: random init, new run. resume: same task, same run, full state. fine_tune: compatible weights, new task, new run with a parent. frozen: no updates at all.">Mode
@@ -249,6 +262,8 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
         <Num label="heads" value={net.heads ?? entry?.network?.heads ?? 4} onChange={v => editNet({ heads: v })} disabled={!usesHeads} note={usesHeads ? undefined : 'ignored by this encoder'}
           title={usesHeads ? 'Attention heads. hidden must be divisible by heads.' : 'Only graph_transformer and gat have attention heads. The number is still written into the checkpoint, so it is kept fixed here.'} />
         <Num label="layers" value={net.layers ?? entry?.network?.layers ?? 2} onChange={v => editNet({ layers: v })} /></div>
+      <ComponentList value={net.vocabulary ?? 'standard'} onChoose={v => chooseList(v)} profileId={run.connection_profile_id ?? null}
+        circuitPdk={config.circuit?.pdk_id} />
       {entry && <><p className="hint in-use">In use: <b>{originLabel}</b></p>
         <div className="row pair">
           <button disabled={entry.origin === 'publication' && !differs} onClick={() => reset('publication')} title="Forget the saved values of this encoder and return to the values taken from publications.">Publication preset</button>
@@ -282,6 +297,9 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
         {model?.description && <table className="grid small model-facts"><tbody>
           {savedNet && <tr className="model-network"><td>Network</td><td><b>{savedNet.encoder_type}</b>, hidden {savedModel.hidden_dim}, heads {savedModel.heads}{archDiffers || usesHeads ? '' : ' (ignored by this encoder)'}, layers {savedModel.layers}
             <span className="hint"> - this run uses it as it is: a saved model only loads into the network it was trained with.</span></td></tr>}
+          {model.vocabulary && <tr className="model-components"><td>Components</td><td><b>{model.vocabulary.label}</b>
+            <span className="hint"> - the network of this run knows the same list{model.vocabulary.name !== 'standard' && !model.vocabulary.loaded
+              ? '; that PDK is not loaded now, which is needed only for Parameters rows on its own parameters' : ''}.</span></td></tr>}
           <tr><td>Trained on</td><td>{model.description.source_task_id}</td></tr>
           <tr><td>Saved (UTC)</td><td>{model.description.created_utc}</td></tr>
           <tr><td>Schema</td><td>{model.description.metadata_version}</td></tr>

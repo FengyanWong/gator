@@ -10,9 +10,14 @@ every attempt to run it is refused with that reason (``tasks.load_task``, ``runs
 static validation).
 
 Device mapping: pin order and parameter meaning are never guessed. The models a draft may use are
-the ones already verified in this repository's GPDK045 mappings (``configs/gpdk045_*.json``). Any
-other model stays ``unknown`` - shown, flagged, its pins unnamed - until it is verified. Net roles
-are not guessed either: only Spectre's global net ``0`` is marked as ground.
+the ones already verified in this repository's GPDK045 mappings (``configs/gpdk045_*.json``) and, once
+the cell's technology library was loaded with "Load PDK" (``pdk.py``), every component that PDK's own
+description names - pins and parameters as the PDK states them. Any other model stays ``unknown`` -
+shown, flagged, its pins unnamed. A profile for real runs takes the same models (``profiles._checked_import``).
+Net roles are not guessed either: only Spectre's global net ``0`` is marked as ground.
+
+The import also records what the property form of every instance lets a user type (``core_cdf.json``,
+``cdf_facts``): the basis of which values a real run may write besides transistor widths.
 """
 from __future__ import annotations
 
@@ -29,7 +34,7 @@ from .storage.dataset import utcnow
 
 NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')          # a plain Cadence name; the same rule as bridge_read.NAME
 FILES = dict(netlist='netlist.scs', mapping='mapping.json', core_readback='core_readback.json',
-             testbench_readback='testbench_readback.json', meta='meta.json')
+             testbench_readback='testbench_readback.json', meta='meta.json', form_rules='core_cdf.json')
 FORMAT = 'gator-native-cell-1'
 
 
@@ -65,17 +70,26 @@ def verified_models() -> dict:
     return {name: entry for name, entry in models.items() if name not in conflicting}
 
 
-def build_mapping(netlist_text, *, circuit_id='native') -> tuple:
+def build_mapping(netlist_text, *, circuit_id='native', technology_library=None) -> tuple:
     """(parser configuration, models left unverified) for an exported netlist: the verified models it
-    actually uses. No parameter groups - which sizes move, and how, is decided in the editors."""
+    actually uses, then - with `technology_library` loaded as a PDK - the components that PDK describes
+    (in the standard list's terms, pdk.parse_models). No parameter groups - which sizes move, and how, is
+    decided in the editors."""
     from analog_optimizer.netlist.config import ParserConfig
     from analog_optimizer.netlist.spectre_parser import SpectreParser
     survey = SpectreParser(ParserConfig(models={})).parse_text(netlist_text, source='<virtuoso-export>', circuit_id=circuit_id)
     used = sorted({device.model_ref for device in survey.devices})
-    verified = verified_models()
-    mapping = dict(mapping_version='native-draft-1', models={name: verified[name] for name in used if name in verified},
-                   global_nets=['0'], net_roles={'0': ['ground']}, parameter_groups=[])
-    return mapping, [name for name in used if name not in verified]
+    verified, described, version = verified_models(), {}, 'native-draft-1'
+    if technology_library:
+        from .pdk import load_record, parse_models
+        record = load_record(technology_library)
+        if record is not None:
+            described = parse_models(record)
+            if any(name in described and name not in verified for name in used):
+                version = f"native-draft-1+pdk-{record['pdk_id']}-{record['sha256'][:12]}"
+    models = {name: verified.get(name) or described[name] for name in used if name in verified or name in described}
+    mapping = dict(mapping_version=version, models=models, global_nets=['0'], net_roles={'0': ['ground']}, parameter_groups=[])
+    return mapping, [name for name in used if name not in models]
 
 
 def finish_import(directory, *, library, cell, testbench_cell=None, technology_library=None, profile_id=None) -> dict:
@@ -87,14 +101,21 @@ def finish_import(directory, *, library, cell, testbench_cell=None, technology_l
     directory = Path(directory)
     netlist = directory / FILES['netlist']
     text = netlist.read_text()
-    mapping, unverified = build_mapping(text, circuit_id=f'{library}__{cell}')
+    mapping, unverified = build_mapping(text, circuit_id=f'{library}__{cell}', technology_library=technology_library)
     write_json(directory / FILES['mapping'], mapping)
+    described = sorted(set(mapping['models']) - set(verified_models()))
     graph = SpectreParser(ParserConfig.from_file(directory / FILES['mapping'])).parse_file(netlist)
-    meta = dict(format=FORMAT, library=library, cell=cell, testbench_cell=testbench_cell or None,
+    try:
+        facts = json.loads((directory / FILES['form_rules']).read_text())
+        form_rules = (dict(read=False, reason=facts['error']) if facts.get('error') else
+                      dict(read=True, instances=len(facts.get('instances') or {}), modified_after=bool(facts.get('modified_after'))))
+    except (OSError, ValueError, KeyError):
+        form_rules = None                                  # a reader older than the form rules
+    meta = dict(format=FORMAT, library=library, cell=cell, testbench_cell=testbench_cell or None, form_rules=form_rules,
                 exported_cell=testbench_cell or cell, technology_library=technology_library, profile_id=profile_id,
                 imported_utc=utcnow().isoformat(), netlist_sha256=_sha256(netlist),
                 mapping_sha256=_sha256(directory / FILES['mapping']), device_count=len(graph.devices),
-                net_count=len(graph.nets), unverified_models=unverified,
+                net_count=len(graph.nets), unverified_models=unverified, pdk_described_models=described,
                 origin='virtuoso netlist export + schematic readback through the bridge (read-only)')
     write_json(directory / FILES['meta'], meta)
     target = cell_dir(library, cell)

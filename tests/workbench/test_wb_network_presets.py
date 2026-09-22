@@ -81,7 +81,8 @@ def test_the_gator_baseline_is_the_schema_default_and_stays_the_fallback_of_a_ba
     raw = make_config(tmp_path).model_dump(mode='json')
     del raw['run']['network'], raw['run']['advanced']
     bare = schema.WorkbenchConfig.model_validate(raw)             # old configurations keep their meaning
-    assert bare.run.network.model_dump() == dict(encoder_type='graph_transformer', **baseline['network'])
+    # (the component list, added later, defaults to the standard one every old configuration was built with)
+    assert bare.run.network.model_dump() == dict(encoder_type='graph_transformer', **baseline['network'], vocabulary='standard')
     assert {k: v for k, v in bare.run.advanced.model_dump().items() if k in baseline['advanced']} == baseline['advanced']
 
 

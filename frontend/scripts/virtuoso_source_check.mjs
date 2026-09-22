@@ -196,7 +196,7 @@ try {
   await shot('virtuoso-2b-draft.png');
   await evaluate(`${BUTTON('Ask the agent to set up')}.click()`); await sleep(800);
   const box = await evaluate(`document.querySelector('footer textarea')?.value ?? ''`);
-  check('"Ask the agent to set up" opens the Agent tab with the request written out', box.includes('which transistor widths to vary') && box.includes('what it is') && box.includes('working copy'), box.slice(0, 80));
+  check('"Ask the agent to set up" opens the Agent tab with the request written out', box.includes('which sizes to vary') && box.includes('what it is') && box.includes('working copy'), box.slice(0, 80));
   check('nothing was sent to the agent by itself', agentRequests === 0, `${agentRequests} request(s)`);
 
   // ---- Save task (replaces Create profile): refused in words, asks the frequency once, then the task opens ------------------

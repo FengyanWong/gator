@@ -24,8 +24,12 @@ export const si = (value: unknown, unit?: string) => {
 };
 const fixed = (v: unknown, digits = 3) => typeof v === 'number' ? v.toFixed(digits) : '-';
 const DIRECTIONS: Record<string, string> = { to_device: 'what a device takes from its nets', to_net: 'what a net takes from its devices' };
-const KIND_COLOUR: Record<string, string> = { nmos: '#dbeafe', pmos: '#fde2e2', resistor: '#e6f4ea', capacitor: '#e6f4ea', inductor: '#e6f4ea', vsource: '#f1e8ff', isource: '#f1e8ff', unknown: '#eef0f3' };
-const FAMILY: Record<string, string> = { nmos: 'transistor', pmos: 'transistor', resistor: 'passive', capacitor: 'passive', inductor: 'passive', vsource: 'source', isource: 'source' };
+const KIND_COLOUR: Record<string, string> = { nmos: '#dbeafe', pmos: '#fde2e2', bjt: '#fef3c7', diode: '#fef3c7', resistor: '#e6f4ea', capacitor: '#e6f4ea', varactor: '#e6f4ea', inductor: '#e6f4ea', vsource: '#f1e8ff', isource: '#f1e8ff', unknown: '#eef0f3' };
+const FAMILY: Record<string, string> = { nmos: 'transistor', pmos: 'transistor', bjt: 'transistor', diode: 'passive', resistor: 'passive', capacitor: 'passive', varactor: 'passive', inductor: 'passive', vsource: 'source', isource: 'source' };
+// A run built with a PDK's component list sees PDK kinds ("gpdk045:g45n1svt"); the backend adds the family each is drawn
+// as (an n-type PDK transistor like an nmos). The node is named by the PDK model; shape and colour follow the family.
+const look = (d: Json): string => d.family ?? d.kind;
+const shortKind = (kind: string) => kind.includes(':') ? kind.split(':').slice(1).join(':') : kind;
 const ROLE_COLOUR: Record<string, string> = { supply: '#fecaca', ground: '#d5d9e0', input: '#bbf7d0', output: '#fde68a', bias: '#e9d5ff', clock: '#e9d5ff', normal: '#ffffff' };
 const netRole = (net: Json) => (net.roles as string[]).find(r => r !== 'normal') ?? 'normal';
 
@@ -90,8 +94,8 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
       for (const g of view.groups) if (g.mutable && g.policy_value != null)
         for (const m of g.members) (proposal[m.device] ??= []).push(`${m.parameter} ${si(g.value * m.ratio, g.unit)} -> ${si(g.policy_value * m.ratio, g.unit)}`);
       const elements = [
-        ...view.devices.map((d: Json) => ({ data: { id: `d:${d.id}`, type: 'device', kind: d.kind, family: FAMILY[d.kind] ?? 'other', colour: KIND_COLOUR[d.kind] ?? KIND_COLOUR.unknown,
-          sized: d.groups.length > 0 ? 1 : 0, label: [d.id, d.kind, ...(proposal[d.id] ?? [])].join('\n') } })),
+        ...view.devices.map((d: Json) => ({ data: { id: `d:${d.id}`, type: 'device', kind: d.kind, family: FAMILY[look(d)] ?? 'other', colour: KIND_COLOUR[look(d)] ?? KIND_COLOUR.unknown,
+          sized: d.groups.length > 0 ? 1 : 0, label: [d.id, shortKind(d.kind), ...(proposal[d.id] ?? [])].join('\n') } })),
         ...view.nets.map((n: Json) => ({ data: { id: `n:${n.id}`, type: 'net', role: netRole(n), colour: ROLE_COLOUR[netRole(n)] ?? ROLE_COLOUR.normal, label: n.id } })),
         ...view.connections.map((c: Json) => ({ data: { id: `c:${c.id}`, source: `d:${c.device}`, target: `n:${c.net}`, label: c.terminal, role: c.role, attention: 0, trivial: 0,
           bulk: c.role === 'bulk' ? 1 : 0 } })),
@@ -109,7 +113,7 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
         { selector: 'edge', style: { 'curve-style': 'bezier', label: 'data(label)', 'font-size': 8, color: '#66707e', 'text-background-color': '#fff', 'text-background-opacity': 0.85, 'text-background-padding': '1px',
           width: 'mapData(attention, 0, 1, 1, 10)', 'line-color': 'mapData(attention, 0, 1, #c9ced6, #1f5fbf)' } },
         // a link that enters a device at its gate ends in a dot there, one that enters at the bulk in a bar
-        { selector: 'edge[role = "gate"]', style: { 'source-arrow-shape': 'circle', 'source-arrow-color': '#66707e', 'arrow-scale': 0.8 } },
+        { selector: 'edge[role = "gate"], edge[role = "base"]', style: { 'source-arrow-shape': 'circle', 'source-arrow-color': '#66707e', 'arrow-scale': 0.8 } },
         { selector: 'edge[role = "bulk"]', style: { 'source-arrow-shape': 'tee', 'source-arrow-color': '#66707e', 'arrow-scale': 0.8 } },
         { selector: 'edge[trivial = 1]', style: { width: 1, 'line-style': 'dashed', 'line-color': '#c9ced6' } },
         { selector: 'edge.hidden', style: { display: 'none' } },
@@ -170,7 +174,8 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
             {generic && <p className="note graph-generic">This graph names no supply and no ground net, so there are no circuit hints for the positions: the drawing package's own layered layout is used.</p>}
             {!attention.available && <p className="note graph-no-attention">{attention.reason}</p>}
             {attention.available && <div className="note graph-reading"><p>{view.reading}</p><p className="hint">Thick blue = much attention; thin dashed grey = a receiver with a single connection (always 1.0). Blue border = a device whose size the policy sets.</p></div>}
-            <p className="hint graph-legend"><b>Nodes:</b> rounded boxes = transistors (blue nmos, red pmos), barrels = R / C / L, cut corners = sources, circles = nets
+            {view.vocabulary?.name && view.vocabulary.name !== 'standard' && <p className="hint graph-vocabulary">The network of this run knows the components of <b>{view.vocabulary.label}</b>: a node shows its PDK model.</p>}
+            <p className="hint graph-legend"><b>Nodes:</b> rounded boxes = transistors (blue nmos, red pmos, yellow bipolar), barrels = R / C / L and diodes, cut corners = sources, circles = nets
               (red supply, grey ground, green input, yellow output). <b>Links:</b> one ending in a dot enters the device at its gate, one ending in a bar at its bulk.
               Positions follow fixed rules from the circuit (supply on top, ground at the bottom, the current path in between); it is the network's graph, not a schematic.</p>
             <h4>Sizes: now, proposed, tried</h4>

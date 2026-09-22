@@ -481,14 +481,14 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
             raise TaskBlocked(profiles.MAESTRO_NOT_RUNNABLE)
         if not authorized:
             raise TaskBlocked(REAL_AUTHORIZATION_REQUIRED, contract=REAL_INTERFACE_CONTRACT)
-        from analog_optimizer.training.parallel import NativeEnvironmentFactory
         from analog_optimizer.envs.sizing import graph_contract
+        from .cdf_write import factory_class              # a task written by the PDK's form: the form writer owns the cell
         if graph_contract(compiled.graph) != graph_contract(graph):
-            raise TaskBlocked('This task fixes which widths may change, their ranges and their grid. The rows of the parameter '
+            raise TaskBlocked('This task fixes which values may change, their ranges and their grid. The rows of the parameter '
                               'editor differ from what was saved; press "Save task" to save the new rows first.')
         adv = run_settings.advanced
-        return _with_computed_specs(NativeEnvironmentFactory(config, profile, compiled.specs, Path(work_root), adv.episode_length,
-                                                             adv.simulation_timeout_seconds, reference), compiled)
+        return _with_computed_specs(factory_class(profile)(config, profile, compiled.specs, Path(work_root), adv.episode_length,
+                                                           adv.simulation_timeout_seconds, reference), compiled)
     structure, mapping = directory / profiles.FILES['structure'], directory / profiles.FILES['mapping']
     circuit = dict(circuit_class=entry['circuit_class'], pdk_id=entry.get('pdk_id') or 'gpdk045', dut_hierarchy=None,
                    netlist_sha256=_sha256(structure), parser_config_sha256=_sha256(mapping), netlist_file=str(structure),

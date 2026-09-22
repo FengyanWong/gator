@@ -56,8 +56,8 @@ def run(name, profile_id, work_root) -> dict:
         config, profile, entry = tasks.generated_bridge_config(name, profile_id)
         done('profile')
         current = 'connect'
-        from analog_optimizer.backends.virtuoso_bridge import VirtuosoBridgeBackend
-        backend = VirtuosoBridgeBackend(config, profile)
+        from .cdf_write import backend_class              # the adapter the run itself uses for this task
+        backend = backend_class(profile)(config, profile)
         backend.connect()
         done('connect')
         current = 'export'

@@ -21,7 +21,8 @@ import { Json } from '../api';
 export type Point = { x: number; y: number };
 
 const ROW = 112, COLUMN = 214, SOURCES = ['vsource', 'isource'];
-export const conducting = (role: string) => role !== 'gate' && role !== 'bulk';
+// A bipolar base is a control terminal like a gate (a run built with a PDK's component list names it).
+export const conducting = (role: string) => role !== 'gate' && role !== 'base' && role !== 'bulk';
 const roleOf = (net: Json): string => (net.roles as string[]).find(r => r !== 'normal') ?? 'normal';
 const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
 
@@ -45,7 +46,8 @@ export function hintedLayout(view: Json): Record<string, Point> | null {
   const ground: string[] = view.nets.filter((n: Json) => roleOf(n) === 'ground').map((n: Json) => n.id);
   if (!supply.length || !ground.length) return null;
   const rail = new Set([...supply, ...ground]);
-  const kind: Record<string, string> = Object.fromEntries(view.devices.map((d: Json) => [d.id, d.kind]));
+  // a PDK kind ("gpdk045:g45cmim") is placed as its family ("capacitor"), which the backend sends along
+  const kind: Record<string, string> = Object.fromEntries(view.devices.map((d: Json) => [d.id, d.family ?? d.kind]));
   const wires: Json[] = view.connections;
   const conductsAt: Record<string, string[]> = {}, gates: Record<string, string[]> = {}, devicesOn: Record<string, string[]> = {};
   const pathAt: Record<string, string[]> = {}, pathOn: Record<string, string[]> = {};          // the DC current path: conducting terminals, no capacitors
@@ -53,7 +55,7 @@ export function hintedLayout(view: Json): Record<string, Point> | null {
     if (conducting(w.role)) {
       (conductsAt[w.device] ??= []).push(w.net); (devicesOn[w.net] ??= []).push(w.device);
       if (kind[w.device] !== 'capacitor') { (pathAt[w.device] ??= []).push(w.net); (pathOn[w.net] ??= []).push(w.device); }
-    } else if (w.role === 'gate') (gates[w.net] ??= []).push(w.device);
+    } else if (w.role === 'gate' || w.role === 'base') (gates[w.net] ??= []).push(w.device);
   }
   // Device steps from a set of rails. A path may END at another rail but never runs through one.
   const steps = (start: string[]) => {
@@ -79,8 +81,8 @@ export function hintedLayout(view: Json): Record<string, Point> | null {
   }
   const railLevel = (net: string) => supply.includes(net) ? 0 : 1;
   const control: string[] = view.nets.filter((n: Json) => isControl(n.id)).map((n: Json) => n.id);
-  const sources: string[] = view.devices.filter((d: Json) => SOURCES.includes(d.kind) && (conductsAt[d.id] ?? []).every(n => rail.has(n) || control.includes(n))).map((d: Json) => d.id);
-  const hanging: string[] = view.devices.filter((d: Json) => d.kind === 'capacitor').map((d: Json) => d.id);
+  const sources: string[] = view.devices.filter((d: Json) => SOURCES.includes(kind[d.id]) && (conductsAt[d.id] ?? []).every(n => rail.has(n) || control.includes(n))).map((d: Json) => d.id);
+  const hanging: string[] = view.devices.filter((d: Json) => kind[d.id] === 'capacitor').map((d: Json) => d.id);
   for (const d of view.devices) {
     const known = (conductsAt[d.id] ?? []).map(n => rail.has(n) ? railLevel(n) : level[`n:${n}`]).filter(v => v !== undefined);
     level[`d:${d.id}`] = known.length ? mean(known) : 0.5;

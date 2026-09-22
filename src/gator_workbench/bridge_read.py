@@ -7,7 +7,9 @@ own example ``examples/01_virtuoso/basic/04_list_library_cells.py`` (copied, not
 memory; read-only ``dd`` calls that open no cellview and touch no window). The bridge has no method
 of its own for that listing. ``schematic.read`` always opens the view named ``schematic``, read-only,
 and closes it again - which is why a view is never asked for: the listing only tells which cells
-HAVE a schematic.
+HAVE a schematic. Op ``pdk`` ("Load PDK", ``pdk.read_from_virtuoso``) reads a technology library's own description
+with one ``execute_skill`` query and fetches its Spectre model files with the bridge's ``client.download_file`` into a
+temporary folder outside the repository, deleted after scanning.
 
 Native databases are queried through the bridge, never parsed as text. What is read is shown
 AS READ: CDF parameter strings stay strings, and port order / parameter semantics are marked as
@@ -81,11 +83,12 @@ def _main(argv=None):
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--profile-id', required=True)
-    parser.add_argument('--op', choices=('libraries', 'cells', 'read_schematic', 'import_cell'), required=True)
+    parser.add_argument('--op', choices=('libraries', 'cells', 'read_schematic', 'import_cell', 'pdk'), required=True)
     parser.add_argument('--library')
     parser.add_argument('--cell')
     parser.add_argument('--testbench')
     parser.add_argument('--output')
+    parser.add_argument('--model-file')
     args = parser.parse_args(argv)
     settings = resolve_profile_id(args.profile_id)
     bridge = RealBridge(settings)
@@ -121,12 +124,37 @@ def _main(argv=None):
                 if args.testbench:
                     readbacks['testbench_readback.json'] = client.schematic.read(args.library, args.testbench,
                                                                                  include_positions=False, param_filters=None)
+                # What the property form of every instance lets a user type (cdf_facts: one more read-only query). A
+                # failed query leaves the import as before - transistor widths only - and keeps the reason.
+                from . import cdf_facts
+                try:
+                    from virtuoso_bridge import decode_skill_output
+                    answer = client.execute_skill(cdf_facts.facts_skill(args.library, args.cell), timeout=120)
+                    readbacks[cdf_facts.FILE] = (cdf_facts.parse_facts(decode_skill_output(answer.output), library=args.library,
+                                                                       cell=args.cell) if answer.ok else
+                                                 dict(format=cdf_facts.FORMAT, library=args.library, cell=args.cell,
+                                                      error=redact('; '.join(map(str, answer.errors)) or 'the query failed', 400)))
+                except Exception as exc:
+                    readbacks[cdf_facts.FILE] = dict(format=cdf_facts.FORMAT, library=args.library, cell=args.cell,
+                                                     error=redact(f'{type(exc).__name__}: {exc}', 400))
             structure = Path(exported['input_file']).parent / 'netlist'      # the structure-only file, as the run adapter uses it
             (out / 'netlist.scs').write_text(structure.read_text())
             for name, snapshot in readbacks.items():
                 (out / name).write_text(json.dumps(snapshot, default=str, indent=1))
             print(json.dumps(dict(library=args.library, cell=args.cell, testbench_cell=args.testbench,
                                   technology_library=info.technology_library)))
+        elif args.op == 'pdk':
+            # Read-only: the technology library's own description (CDF) in ONE query, and the model files downloaded into
+            # a temporary folder outside the repository, scanned and deleted (pdk.read_from_virtuoso). Empty = the
+            # technology library of the connection's design library, and the connection's model file.
+            from contextlib import redirect_stdout
+            from .pdk import read_from_virtuoso
+            with redirect_stdout(sys.stderr):                      # the bridge prints progress; stdout keeps the one JSON line
+                library = args.library or (client.library.get(settings['library']).technology_library if settings.get('library') else None)
+                if not library:
+                    raise ValueError('Name the technology library: the connection states no design library to take it from')
+                raw = read_from_virtuoso(client, technology_library=library, model_file=args.model_file or settings.get('model_file'))
+            print(json.dumps(raw))
         else:
             snapshot = client.schematic.read(args.library, args.cell, include_positions=False, param_filters=None)
             print(json.dumps(dict(snapshot=snapshot), default=str))
@@ -135,11 +163,15 @@ def _main(argv=None):
     return 0
 
 
-def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, timeout=90.0, command=None):
+def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, timeout=90.0, command=None, model_file=None):
     """Gate, then run the reader process. Raises PermissionError when the gate blocks."""
     for value in (library, cell, testbench):
         if value is not None and not NAME.match(value):
             raise ValueError('library and cell must be plain Cadence names')
+    if model_file is not None:
+        from .pdk import REMOTE_PATH
+        if not REMOTE_PATH.match(model_file) or '/../' in model_file:
+            raise ValueError('The model file must be an absolute path on the simulator host (letters, digits, / . _ - +)')
     gate = monitor.gate('read_cellview', profile_id)
     if not gate['allowed']:
         error = PermissionError('The connection gate blocked reading the native design')
@@ -155,6 +187,9 @@ def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, ti
             raise ValueError('library and cell are required')
         argv += ['--library', library, '--cell', cell]
     incoming = None
+    if op == 'pdk':
+        argv += (['--library', library] if library else []) + (['--model-file', model_file] if model_file else [])
+        timeout = max(timeout, 600.0)                              # ~5 MB of model files; a single query for all cells
     if op == 'import_cell':
         if not library or not cell:
             raise ValueError('library and cell are required')
@@ -183,6 +218,9 @@ def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, ti
         if op == 'import_cell':
             return native_cells.finish_import(incoming, library=library, cell=cell, testbench_cell=testbench,
                                               technology_library=data.get('technology_library'), profile_id=profile_id)
+        if op == 'pdk':
+            from . import pdk
+            return pdk.describe(pdk.finish_load(data))
     finally:
         if incoming is not None and incoming.exists():             # a failed or unparseable import leaves nothing behind
             import shutil

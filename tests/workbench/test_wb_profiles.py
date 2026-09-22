@@ -212,7 +212,7 @@ def test_the_agent_is_told_what_a_real_backend_can_measure_and_write(tmp_path):
     client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False, monitor=probe(tmp_path)))
     body = dict(kind='draft_config', prompt='what is this circuit?', config=config().model_dump(mode='json'))
     task = json.dumps(client.post('/api/agent/export-task', json=body).json())
-    assert 'results_by_circuit_type' in task and 'osc_frequency_hz' in task and 'only transistor widths can be optimized' in task
+    assert 'results_by_circuit_type' in task and 'osc_frequency_hz' in task and 'property form of its instance' in task
     profiles.create_profile('ring_osc_3stage', config(), recipe='ring_oscillator', expected_frequency_hz=1.2e9)
     registered = config().model_dump(mode='json')
     registered['circuit'] = dict(source='registered_task', task_id='real:ring_osc_3stage')

@@ -42,9 +42,12 @@ def seed_everything(seed):
     torch.manual_seed(seed)
 
 
-def _new_learner(experiment, model_config, sac_config, spec_schema):
-    from analog_optimizer.training.sac import SACLearner
-    return SACLearner(experiment=experiment, model_config=model_config, config=sac_config, spec_schema=spec_schema)
+def _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary=None):
+    """`vocabulary`: None = the optimizer's standard component list; a loaded PDK's list (pdk.Vocabulary) otherwise.
+    Either way the learner is the package's own SACLearner (pdk.learner_class only adds the PDK view at its input)."""
+    from .pdk import learner_class
+    return learner_class(vocabulary)(experiment=experiment, model_config=model_config, config=sac_config, spec_schema=spec_schema,
+                                     feature_schema=None if vocabulary is None else vocabulary.schema)
 
 
 def _encoder_state(state, *, only_encoder):
@@ -70,21 +73,21 @@ class EncoderFreeze:
             parameter.grad = None
 
 
-def current_contract(experiment, model_config, sac_config, spec_schema):
-    return ckpt.contract_summary(_new_learner(experiment, model_config, sac_config, spec_schema))
+def current_contract(experiment, model_config, sac_config, spec_schema, vocabulary=None):
+    return ckpt.contract_summary(_new_learner(experiment, model_config, sac_config, spec_schema, vocabulary))
 
 
 def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, seed, origin,
-          source_dir=None, source_metadata=None, task_definition_hash=None):
-    """Returns dict(learner, replay, run_state, policy, freeze)."""
+          source_dir=None, source_metadata=None, task_definition_hash=None, vocabulary=None):
+    """Returns dict(learner, replay, run_state, policy, freeze). `vocabulary`: the run's component list (None = standard)."""
     from analog_optimizer.training.replay import ReplayBuffer
-    from analog_optimizer.training.sac import SACLearner
+    from .pdk import learner_class
     import torch
     seed_everything(seed)
     policy = dict(mode=mode, source_checkpoint=None, loaded=[], reset=[], frozen_modules=[], notes=[])
     freeze = None
     if mode == 'scratch':
-        learner = _new_learner(experiment, model_config, sac_config, spec_schema)
+        learner = _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary)
         replay = ReplayBuffer(advanced.replay_capacity, origin=origin, seed=seed)
         policy['reset'] = ['actor', 'critics', 'target_networks', 'temperature', 'optimizers', 'replay_buffer',
                            'task_counters']
@@ -97,7 +100,7 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
     if problems:
         raise ckpt.CheckpointIncompatible(dict(checks=[dict(component='checkpoint files', status='incompatible',
                                                             detail='; '.join(problems))]))
-    contract = current_contract(experiment, model_config, sac_config, spec_schema)
+    contract = current_contract(experiment, model_config, sac_config, spec_schema, vocabulary)
     report = ckpt.check_compatibility(source_metadata, mode=mode, task_definition_hash=task_definition_hash,
                                       contract=contract)
     policy.update(source_checkpoint=dict(checkpoint_id=source_metadata['checkpoint_id'], path=str(source_dir),
@@ -109,15 +112,15 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
         raise ckpt.CheckpointIncompatible(report)
 
     if mode == 'resume':
-        learner, replay, run_state = SACLearner.load(
+        learner, replay, run_state = learner_class(vocabulary).load(
             source_dir / 'training_state.pt', experiment=experiment, model_config=model_config,
-            config=sac_config, spec_schema=spec_schema)
+            config=sac_config, spec_schema=spec_schema, feature_schema=None if vocabulary is None else vocabulary.schema)
         policy['loaded'] = list(ckpt.FULL_COMPONENTS)
         policy['notes'].append('Full training state restored; existing counters are retained.')
         return dict(learner=learner, replay=replay, run_state=run_state, policy=policy, freeze=None)
 
     weights = ckpt.load_weights(source_dir)
-    learner = _new_learner(experiment, model_config, sac_config, spec_schema)
+    learner = _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary)
     if mode == 'fine_tune':
         only_encoder = advanced.encoder_only_transfer
         learner.actor.load_state_dict(_encoder_state(weights['actor'], only_encoder=only_encoder),

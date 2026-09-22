@@ -13,7 +13,8 @@ loading and the M5/M6 audits, and the real-run code is duck-typed on the profile
 (``backends/virtuoso_bridge.py``, ``native_preparation.py``, ``training/parallel.py``,
 ``provenance.profile_contract``), so subclassing from here needs no change there.
 
-Deliberate limits, because they are the limits of what has been verified:
+Deliberate limits, because they are the limits of what has been verified (every other value the PDK's property form
+lets a user type is written by ``cdf_write``, rules of format 2 - this class stays the verified path for widths):
   * only MOS widths are writable - the adapter's single write path is ``set_gpdk_mos``, which also
     forces ``fingers = 1`` and ``m = 1``; a writable transistor recorded with anything else is refused;
   * widths move on the 5 nm grid that real CDF readbacks confirmed (``docs/decisions.md``);

@@ -250,9 +250,8 @@ def test_the_no_simulation_check_is_gated_and_reports_the_step_that_failed(tmp_p
     assert outcome['steps'][1]['step'] == 'connect' and outcome['steps'][1]['ok'] is False
     client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False,
                                    monitor=probe(tmp_path, tunnel='failed', daemon='not_checked', session_readiness='not_checked')))
-    blocked = client.post('/api/virtuoso/profile/preflight', json=dict(name='ring_osc_3stage', profile_id='lab'))
-    assert blocked.status_code == 409 and blocked.json()['detail']['gate']['blocking'] == ['tunnel']
-    assert client.post('/api/virtuoso/profile/preflight', json=dict(name='ring_osc_3stage')).status_code == 422
+    # "Check against Virtuoso" became a part of the check before every run (consistency.py): its own route is gone
+    assert client.post('/api/virtuoso/profile/preflight', json=dict(name='ring_osc_3stage', profile_id='lab')).status_code in (404, 405)
     assert client.post('/api/virtuoso/profile/reference', json=dict(name='ring_osc_3stage')).json()['detail']['code'] == 'no_baseline_run'
 
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, Json } from '../api';
 import { WorkingCopy } from './WorkingCopy';
 import { TaskSave } from './TaskSave';
+import { CheckSteps } from './Consistency';
 
 /** The connection block lives in Connection.tsx: one button in this column that opens the connection window. */
 
@@ -170,14 +171,16 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     if (made.task_key === ref.task_id) { setConfig(c => ({ ...c, parameters: made.parameters })); load(ref); return; }
     setConfig(c => ({ ...c, parameters: made.parameters, circuit: { ...c.circuit, source: 'registered_task', task_id: made.task_key, circuit_class: made.circuit_class, pdk_id: made.pdk_id } }));
   };
-  // A generated profile, before its first costed run: check it against the live cell WITHOUT simulating (the run adapter
-  // connects, Virtuoso exports, the export is compared, the deck is written), and afterwards record the finished baseline
-  // as the profile's reference. Both are explicit presses; neither starts a simulation.
-  const [preflight, setPreflight] = useState<Json>(null);
+  // A saved task: "Check now" runs the check Start runs by itself before every run (backend consistency.py - the editors,
+  // the task file and the working copy in Virtuoso must agree; the run adapter connects and exports without simulating),
+  // and after a finished Single baseline simulation its result is recorded as the task's reference. Both are explicit
+  // presses; neither starts a simulation. A check result goes as soon as the rows change: it was about the rows before.
+  const [taskCheck, setTaskCheck] = useState<Json>(null);
   const [profileBusy, setProfileBusy] = useState<string | null>(null);
   const [profileMessage, setProfileMessage] = useState<Json>(null);
   const generatedName = ref.source === 'registered_task' && circuit?.generated_profile ? String(ref.task_id ?? '').replace(/^real:/, '') : null;
-  useEffect(() => { setPreflight(null); setProfileMessage(null); }, [generatedName]);
+  useEffect(() => { setTaskCheck(null); setProfileMessage(null); }, [generatedName]);
+  useEffect(() => { setTaskCheck(null); }, [JSON.stringify([config.parameters, config.measurements, config.targets])]);
   const profileAction = async (what: string, action: () => Promise<void>) => {
     setProfileBusy(what); setProfileMessage(null);
     try { await action(); }
@@ -187,7 +190,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
         : gate ? gateText(gate) : e.message });
     } finally { setProfileBusy(null); }
   };
-  const checkProfile = () => profileAction('check', async () => { setPreflight(await api.profilePreflight(generatedName!, profileId!)); });
+  const checkTask = () => profileAction('check', async () => { setTaskCheck(await api.taskCheck(profileId, config)); });
   const recordReference = () => profileAction('reference', async () => {
     const recorded = await api.profileReference(generatedName!);
     setProfileMessage({ level: 'ok', text: `Baseline recorded from run ${recorded.run_id ?? recorded.run_dir}. Every later run compares its first evaluation with it.` });
@@ -512,21 +515,24 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
             <TaskSave profileId={profileId} library={null} cell={null} task={generatedName}
               revision={tasks.find(t => t.task_key === ref.task_id)?.revision ?? null} hasCopy
               config={config} setConfig={setConfig} onSaved={taskSaved} />
-            <p><b>Before the first costed run:</b> check this task against its cell in Virtuoso.</p>
-            <details className="more"><summary>What the check does</summary>
-              <p>It does everything a real evaluation does before Spectre starts - connect, export the netlist, compare it with the record,
-                write the simulation deck - and simulates nothing.</p></details>
+            <p><b>Before every run:</b> Start, Single baseline simulation and Resume first check that the editors, this saved task and its
+              working copy in Virtuoso agree. The check simulates nothing; a difference starts nothing and says what to do.</p>
+            <details className="more"><summary>What the check compares</summary>
+              <ul className="steps-list">
+                <li>The rows of Parameters, Probes and Specs against the saved task. While you edit, the header's blocking issues say it too.</li>
+                <li>The working copy against the task: the run adapter connects (no ADE/Maestro window may be open on the copy), Virtuoso exports
+                  its netlist, the export is compared with the saved one - topology and every parameter - and the simulation deck is written.</li>
+                <li>For a task measured by Maestro: the copy's Maestro test against the task.</li>
+              </ul>
+              <p>Everything but the rows needs the link up. Nothing is written into Virtuoso.</p></details>
             <div className="row">
-              <button disabled={!profileId || !!profileBusy} onClick={checkProfile} title="Read-only and zero-cost. Needs the link up and no ADE/Maestro window open on the design.">
-                {profileBusy === 'check' ? 'Checking...' : 'Check against Virtuoso (no simulation)'}</button>
+              <button disabled={!!profileBusy} onClick={checkTask} title="The check Start runs by itself before every run. Read-only, no simulation.">
+                {profileBusy === 'check' ? 'Checking...' : 'Check now'}</button>
               {!circuit.baseline_recorded && <button disabled={!!profileBusy} onClick={recordReference}
                 title="After a finished Single baseline simulation of this task: its result becomes the reference that every later run is compared with. Recorded once, never replaced.">
                 {profileBusy === 'reference' ? 'Recording...' : 'Record the baseline run as reference'}</button>}
             </div>
-            {preflight && <ul className="steps-list">
-              {preflight.steps.map((s: Json) => <li key={s.step} className={s.ok ? 'ok' : 'error'}><b>{s.ok ? 'passed' : 'FAILED'}: {s.step}</b> - {s.detail}</li>)}
-              <li className={preflight.ok ? 'ok' : 'error'}><b>{preflight.ok ? 'The task matches the live cell. Nothing was simulated.' : 'Not ready for a real run: see the failed step.'}</b></li>
-            </ul>}
+            {taskCheck && <CheckSteps result={taskCheck} />}
             {profileMessage && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
             <div className="row start-over"><span className="hint">To start over from the cell:</span>
               <button disabled={!!profileBusy} onClick={deleteProfile} title="Asks once more. The task leaves the Registered task list; its files are kept aside, and runs already made keep their data.">

@@ -2736,3 +2736,81 @@ Next: part 4 - the check before every run (then "Check against Virtuoso" goes); 
 Maestro-measured tasks (then the two circuit types, the auto probes and the older `/api/virtuoso/profile` route go).
 
 `src/analog_optimizer/` untouched. Committed and pushed together with 7.57 (branch `workbench`).
+
+### 7.61 Virtuoso task flow, part 4: the check before every run ("Check against Virtuoso" removed) (2026-09-22 afternoon, same session as 7.55 / 7.57 / 7.60, explicit user request)
+
+Request: "go on part 4" - before every run of a saved task, the editors, the saved task and its working copy in
+Virtuoso must agree (the user's "frontend backend and virtuoso side consistency"); it replaces "Check against Virtuoso"
+(removal approved in 7.55 once the replacement works).
+
+What the check compares (a run runs exactly one saved task on its working copy):
+1. the editors' Parameters / Probes / Specs rows against the task file (`task.json`), as the schema reads them - offline;
+2. the saved task against its working copy in Virtuoso - the run adapter's no-simulation preflight: creation receipt, no
+   ADE/Maestro window on the copy, the recorded sizes, the exported netlist against the saved one (topology and every
+   parameter), the deck written;
+3. a task measured by Maestro: the copy's Maestro test read back against the task file's `maestro` part.
+
+Built:
+* `src/gator_workbench/consistency.py` (new): `saved_task` (one file read; the task list only when needed),
+  `row_differences` (row-level differences by row ID via the proposals' `structured_diff`, in words: "osc_frequency_hz:
+  lower 1.3e+09 here, 1.1e+09 saved"; "the same rows, in another order"), `editors_step`, `copy_steps` (preflight steps
+  mapped to titles, a failure headline per step and what to do - close the named ADE/Maestro windows, bring the link up,
+  press Save task to take a changed copy over or undo the change in Virtuoso; a blocked gate is a step of its own; the
+  Maestro test via `working_copy.read_setup_on` + `virtuoso_setup.differences`), `check`, `summary`.
+* `validation.py`: `_check_saved_task` - a blocking issue `task_not_saved` per editor that differs from the saved task
+  (path `parameters` / `measurements` / `targets`), not for a resume (it runs the run's own rows). So the header says it
+  while you edit, and Start is not offered.
+* `runs.py`: `_check_consistency` right after the connection gate in `prepare_run` - parts 2 and 3 for a saved task
+  (the rows were validated already), with the run's own acknowledgement of unknown connection layers; a difference is
+  `RunRejected(code='consistency', report=<the check>)` before anything is created; a passed check goes into the manifest
+  (`consistency_check`; for a resume into its new segment).
+* `profile_preflight.py`: `acknowledge_unknown` for its gate; a Maestro-measured task refuses only when its deck is built
+  (after the export was compared), so the deck step says it was left out (`DECK_LATER`) instead of failing the export.
+  `working_copy.read_setup_on` / `_gated` take `acknowledge_unknown` too.
+* API: `POST /api/virtuoso/task/check` (409 `not_a_saved_task` otherwise); `POST /api/virtuoso/profile/preflight` REMOVED
+  (its only caller was the removed button; the function stays as part 2 of the check).
+* Frontend: `Consistency.tsx` (new, `CheckSteps`: passed / left out / FAILED per step, what to do beside a failure, the
+  reason one closed line; its clicks do not close a banner). `Left.tsx`: "Before the first costed run ... Check against
+  Virtuoso (no simulation)" became "Before every run: Start, Single baseline simulation and Resume first check ..." with
+  a folded "What the check compares" and a short **Check now** (works without a connection too: the rows are compared and
+  the rest says it needs one); the result goes as soon as a row changes. `App.tsx`: a start refused with code
+  `consistency` shows the steps in the banner instead of a message line and JSON. `api.ts`: `taskCheck`, no
+  `profilePreflight`.
+* Docs: `docs/workbench.md` "The check before every run"; the numbered "In this order" list names Check now.
+
+Live (2026-09-22 ~15:38, zero simulations, nothing written into Virtuoso): a throwaway task `ring_trial_p4` saved from the
+user's ring oscillator (the testbench's probes, widths in two groups, 1.2 GHz rough frequency; 3.7 s, reads only), then
+`consistency.check` with the real monitor and run adapter: all five steps passed in 4.3 s (editors, profile, connect,
+export, deck - the deck's last lines shown); with a spec and a range edited, validation named both rows. Then the task
+was deleted (kept in `profiles/.deleted/`), the copy's import record removed; the copy is unclaimed and still verified.
+The failure paths were not provoked live (that would need a write into the copy or an ADE window in the user's session):
+they are covered by the tests with the adapter's own message texts.
+
+Verification:
+* `tests/workbench/test_wb_consistency.py` (new, 6): validation names the rows and fields per editor, not for a resume or
+  a built-in circuit; the check's steps pass, and fail in words for a changed copy, an ADE/Maestro window, a blocked gate,
+  no connection and edited rows; a Maestro task compared with its test (a changed output expression named; reads only);
+  `prepare_run` refuses with code `consistency` and creates nothing, records a passed check in the manifest, and a row
+  difference is refused by validation before the copy is read; the route and the old route gone; the preflight leaves a
+  Maestro task's deck for later and fails any other refusal. `test_wb_profiles.py`: the old route's assertions became
+  "gone". Full `tests/workbench`: 574 passed (8 min 24 s, the working tree with the other sessions' work).
+* Browser, scratch build on 5176 (`/api` to the live 8765, hermetic checks): `consistency_check.mjs` (new, 13: Check now
+  sends one check with the connection and the rows, passed / FAILED lines with the fix beside, the reason folded, the
+  result gone after a row change, Start = budget question + one start, the refused start's steps in the banner without
+  JSON or a repeated message, opening a reason keeps the banner, no other writing request, no page error),
+  `virtuoso_source_check.mjs` 70 (Check now instead of Check against Virtuoso), `project_help_check.mjs` 39,
+  `task_save_check.mjs` 19, `working_copy_check.mjs` 23, `agent_setup_check.mjs` 15 - all pass. `tsc --noEmit` clean.
+* Live `frontend/dist` NOT rebuilt (another session is editing App.tsx / api.ts right now) and 8765 not restarted: the
+  page on 8765 still shows the old button until the backend restart and a dist build.
+
+* The commit of 7.61 holds only this session's hunks (the other sessions' uncommitted work in the same files stays in the
+  working tree): full `tests/workbench` on a clean `git archive` copy of exactly its tree - 542 passed (2 min 53 s);
+  `tsc --noEmit` and `vite build` clean on the same tree.
+
+Not compared: the user's own cell against the working copy (a copy is made once; a change of the cell after it is not
+taken over). Next: part 5 - the run path of Maestro-measured tasks (Maestro's netlist once, Spectre per evaluation, OCEAN
+on the results; one equality check against a Maestro run needs a budget answer), then the two circuit types, the auto
+probes and the older `/api/virtuoso/profile` route go.
+
+`src/analog_optimizer/` untouched. Committed and pushed (branch `workbench`); the push also carried the local e1103a7 (7.58)
+that another session had committed before it.

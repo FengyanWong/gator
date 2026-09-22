@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .. import (__version__, aggregates, agents, bridge_connect, bridge_read, checkpoints as ckpt, connection, runs, schema,
                 tasks, units)
-from .. import network_presets, profile_preflight, profiles, recipes, task_files, virtuoso_setup, working_copy
+from .. import consistency, network_presets, profiles, recipes, task_files, virtuoso_setup, working_copy
 from ..agents import AgentError, AgentRequest, AgentSettings, ProposalRejected, ProposalStore
 from ..agents import catalog as agent_catalog
 from ..agents import proposals as agent_proposals
@@ -160,6 +160,11 @@ class TaskFileBody(Body):
 
 class TaskFileTextBody(Body):
     text: str = Field(max_length=2_000_000)
+
+
+class TaskCheckBody(Body):
+    profile_id: str | None = Field(None, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
+    config: dict
 
 
 class ProfileActionBody(Body):
@@ -599,22 +604,6 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         except profiles.ProfileError as exc:
             fail(409, exc, code='profile_refused')
 
-    @app.post('/api/virtuoso/profile/preflight')
-    def native_profile_preflight(body: ProfileActionBody):
-        """Explicit click: check a generated profile against the LIVE cell without simulating - the run adapter
-        connects, Virtuoso exports, the export is compared with the record, the deck is written. Read-only, zero
-        cost, gated. It takes the session lock of a real run, so the two exclude each other."""
-        if not body.profile_id:
-            fail(422, 'A connection profile is required')
-        try:
-            return profile_preflight.preflight(monitor, body.name, body.profile_id)
-        except PermissionError as exc:
-            raise HTTPException(409, detail=dict(message=str(exc), gate=getattr(exc, 'gate', None)))
-        except KeyError:
-            fail(404, 'Unknown generated profile')
-        except Exception as exc:
-            fail(502, exc)
-
     @app.post('/api/virtuoso/profile/reference')
     def native_profile_reference(body: ProfileActionBody):
         """Explicit click: the real baseline of a finished run of this task becomes the profile's reference (read
@@ -742,6 +731,18 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         data = task_files.draft(config, name=name, cell=cell, copy=copy, saved=saved, extras=body.extras,
                                 setup=dict(setup, test='GATOR') if setup else None)
         return dict(text=task_files.render(data), name=name, revision=(saved or {}).get('revision', 0), saved=saved is not None)
+
+    @app.post('/api/virtuoso/task/check')
+    def virtuoso_task_check(body: TaskCheckBody):
+        """Explicit click ("Check now"): the check Start runs by itself before every run of a saved task - the editors
+        against the task file, the task against its working copy in Virtuoso (the run adapter connects and exports, the
+        deck is written, nothing is simulated), and a Maestro-measured task's Maestro test. Read-only; every step says
+        what it found, a blocked gate included."""
+        config = parse_config(body.config)
+        try:
+            return consistency.check(monitor, body.profile_id, config)
+        except KeyError as exc:
+            fail(409, exc.args[0] if exc.args else exc, code='not_a_saved_task')
 
     @app.post('/api/virtuoso/task/file/check')
     def virtuoso_task_file_check(body: TaskFileTextBody):

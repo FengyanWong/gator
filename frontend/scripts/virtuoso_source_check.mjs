@@ -100,8 +100,10 @@ try {
     if (op === 'cells') return mode === 'outdated' ? fulfil(requestId, 404, { detail: 'Not Found' })
       : fulfil(requestId, 200, { library: body.library, truncated: false, ...(CELLS[body.library] ?? { technology_library: null, cells: [] }) });
     if (op === 'read') return fulfil(requestId, 200, schematic(body.library, body.cell));
-    if (op === 'profile/preflight') return fulfil(requestId, 200, { profile_preflight: true, name: body.name, ok: true, simulated: false, deck: '/fixture/ring_osc.scs',
-      steps: ['profile', 'connect', 'export', 'deck'].map(step => ({ step, ok: true, detail: `FIXTURE: ${step} passed` })) });
+    if (op === 'task/check') return fulfil(requestId, 200, { consistency_check: true, task: body.config?.circuit?.task_id, revision: 1, ok: true, simulated: false,
+      steps: [['editors', 'The editors hold the rows of the saved task'], ['connect', 'The run adapter reaches the working copy'],
+        ['export', 'The netlist Virtuoso exports from the working copy matches the saved task'], ['deck', 'The simulation deck is written (not run)']]
+        .map(([step, title]) => ({ step, ok: true, title, detail: `FIXTURE: ${step} passed` })) });
     if (op === 'profile/reference') {
       if (!baselineExists) return fulfil(requestId, 409, { detail: { message: 'No run of real:ota5_v1 was found under the output root. Run "Single baseline simulation" first.', code: 'no_baseline_run' } });
       baselineRecorded = true;
@@ -248,12 +250,16 @@ try {
   check('the parameter editor shows the rows as saved', await evaluate(`document.querySelector('main').innerHTML.includes('wn_fixture')`));
   check('the open task offers Save task, Save as and Task file', await evaluate(`!!(${BUTTON('Save task')}) && !!(${BUTTON('Save as')}) && !!(${BUTTON('Task file')})`));
   await shot('virtuoso-2c-task-saved.png');
-  // ---- before the first costed run: the no-simulation check, and recording a finished baseline ---------------------------
+  // ---- before every run: the check Start runs by itself, pressed on its own; and recording a finished baseline -----------
+  check('"Check against Virtuoso" is gone: "Check now" runs the check before every run', !(await evaluate(`!!(${BUTTON('Check against Virtuoso (no simulation)')})`))
+    && (await text()).includes('Before every run:'));
   mark = calls.length;
-  await evaluate(`${BUTTON('Check against Virtuoso (no simulation)')}.click()`); await quiet();
-  check('the check is one request for this profile and this connection', JSON.stringify(calls.slice(mark).map(c => [c.op, c.name, c.profile_id])) === JSON.stringify([['profile/preflight', 'ota5_v1', 'lab']]), JSON.stringify(calls.slice(mark)));
+  await evaluate(`${BUTTON('Check now')}.click()`); await quiet();
+  check('the check is one request with this connection and the editors\' rows', JSON.stringify(calls.slice(mark).map(c => [c.op, c.profile_id, c.config?.circuit?.task_id])) === JSON.stringify([['task/check', 'lab', 'real:ota5_v1']])
+    && Array.isArray(calls[mark]?.config?.parameters), JSON.stringify(calls.slice(mark)).slice(0, 200));
   const shownCheck = await text();
-  check('its four steps and the verdict are shown', ['passed: profile', 'passed: connect', 'passed: export', 'passed: deck', 'The task matches the live cell. Nothing was simulated.'].every(t => shownCheck.includes(t)));
+  check('its steps and the verdict are shown', ['passed: The editors hold the rows of the saved task', 'passed: The netlist Virtuoso exports from the working copy matches',
+    'agree. Nothing was simulated.'].every(t => shownCheck.includes(t)), shownCheck.slice(shownCheck.indexOf('Check now'), shownCheck.indexOf('Check now') + 300));
   await evaluate(`${BUTTON('Record the baseline run as reference')}.click()`); await quiet();
   check('without a baseline run, recording says what to do first', (await text()).includes('Run "Single baseline simulation" first'));
   baselineExists = true;

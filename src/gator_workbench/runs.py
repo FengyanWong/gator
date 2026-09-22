@@ -169,6 +169,21 @@ def connection_gate(task, config, monitor, *, acknowledge_unknown=False):
     return gate
 
 
+def _check_consistency(config, task, monitor, acknowledge_unknown):
+    """The check before every run of a saved task (consistency.py): its working copy in Virtuoso must still be what the
+    task saved - read-only, no simulation. The rows were compared by static validation already. A difference refuses the
+    start before anything is created; None for every other task."""
+    if task.mock:
+        return None
+    from . import consistency
+    if consistency.saved_task(config, with_entry=False) is None:
+        return None
+    result = consistency.check(monitor, config.run.connection_profile_id, config, rows=False, acknowledge_unknown=acknowledge_unknown)
+    if not result['ok']:
+        raise RunRejected(consistency.summary(result), report=result, code='consistency')
+    return result
+
+
 def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False, confirm_transfer=False,
                 monitor=None, acknowledge_unknown=False):
     """Returns (RunLayout, manifest). Raises RunRejected with the validation/compatibility report."""
@@ -197,8 +212,13 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
                           code='concurrency')
     task_hash = task_definition_hash(config)
     gate = connection_gate(task, config, monitor, acknowledge_unknown=acknowledge_unknown)
+    consistency = _check_consistency(config, task, monitor, acknowledge_unknown)
     if config.run.mode == 'resume':
-        return _prepare_resume(config, roots, task, task_hash, gate)
+        layout, manifest = _prepare_resume(config, roots, task, task_hash, gate)
+        if consistency is not None:
+            manifest['segments'][-1]['consistency_check'] = consistency
+            write_json(layout.manifest, manifest)
+        return layout, manifest
     output_root = config.output.output_root or remembered_output_root()
     check = roots.check(output_root, create=True, verify_windows=False)
     if not check['allowed'] or not check['writable']:
@@ -281,7 +301,7 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
         execution=dict(concurrency=config.run.concurrency, threads_per_job=config.run.threads_per_job,
                        threads_applied=task.supports_threads, cache_policy=config.run.cache_policy,
                        frozen_action=config.run.frozen_action if config.run.mode == 'frozen' else None),
-        connection_gate=gate,
+        connection_gate=gate, consistency_check=consistency,
         authorization=dict(real_simulation=bool(allow_real and not task.mock),
                            authorized_max_evaluations=config.run.max_evaluations if allow_real and not task.mock else None),
         code=code_provenance(), environment=environment_versions(), created_utc=now, state='created',

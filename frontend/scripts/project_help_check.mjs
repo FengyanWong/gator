@@ -229,11 +229,11 @@ try {
   await shot('help-4b-draft-hierarchy-closed.png');
 
   // ---- a saved task (was: a generated profile) -----------------------------------------------------------------------------------------
-  await click(BUTTON('Save task')); await quiet(); await until(`${PANEL}.textContent.includes('Before the first costed run')`);
+  await click(BUTTON('Save task')); await quiet(); await until(`${PANEL}.textContent.includes('Before every run')`);
   check('generated profile: the REAL banner and the missing-baseline warning stay in view', await shown('REAL evaluation backend') && await shown('This task has no real baseline yet'));
-  check('generated profile: "Before the first costed run" and both buttons stay in view', await shown('Before the first costed run:') && await buttonShown('Check against Virtuoso (no simulation)')
+  check('generated profile: "Before every run" and both buttons stay in view', await shown('Before every run:') && await buttonShown('Check now')
     && await buttonShown('Record the baseline run as reference'));
-  check('generated profile: what the check does is folded', await shown('What the check does') && await folded('It does everything a real evaluation does'));
+  check('generated profile: what the check compares is folded', await shown('What the check compares') && await folded('no ADE/Maestro window may be open on the copy'));
   check('generated profile: two notes are one closed line', await shown('2 notes on this circuit') && await folded('FIXTURE NOTE: a second one.'));
   check('generated profile: Hierarchy stays closed, as the user left it', (await evaluate(`${HIERARCHY}.open`)) === false && await shown('Hierarchy (1 instances)') && await folded('Instances and parameters'));
   await shot('help-5-generated-profile.png');

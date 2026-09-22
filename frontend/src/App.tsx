@@ -3,6 +3,7 @@ import { api, Json } from './api';
 import { useConfig, usePolling } from './store';
 import { CircuitPanel } from './panels/Left';
 import { ConnectionButton } from './panels/Connection';
+import { CheckSteps } from './panels/Consistency';
 import { Editors } from './panels/Editors';
 import { ValidationStatus } from './panels/Issues';
 import { LIVE_STATES, RunButtons, launchWithConsent, resumeRun, useRunControl } from './panels/RunControl';
@@ -115,8 +116,10 @@ export function App() {
         <RunButtons control={control} blocked={!!validation?.blocks_run} onStart={() => start(false)} onResumed={started => showRun(started, 'resume')}
           onMessage={setMessage} onShow={dir => { setRunDir(dir); setTab('status'); }} />
       </header>
-      {message && <div className={`banner ${message.level}`} onClick={() => setMessage(null)}>{message.text}
-        {message.detail?.report && <details><summary>details</summary><pre>{JSON.stringify(message.detail.report, null, 1)}</pre></details>}</div>}
+      {message && <div className={`banner ${message.level}`} onClick={() => setMessage(null)}>
+        {/* A start refused by the check before every run: its steps say it all (what differs, what to do). */}
+        {message.detail?.code === 'consistency' && message.detail.report?.steps ? <CheckSteps result={message.detail.report} refused />
+          : <>{message.text}{message.detail?.report && <details><summary>details</summary><pre>{JSON.stringify(message.detail.report, null, 1)}</pre></details>}</>}</div>}
       <aside className="left">
         <ConnectionButton profileId={profileId} setProfileId={id => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }))} />
         <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId} meta={meta}

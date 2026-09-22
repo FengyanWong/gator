@@ -288,9 +288,10 @@ to say.
   Virtuoso during a run.
   First real simulation of a generated profile: 2026-09-21, one authorized baseline of the 3-stage ring
   oscillator, 1.2092 GHz, cell identical before and after (status record 7.24). In this order:
-  1. **Check against Virtuoso (no simulation)** - everything a real evaluation does before Spectre
-     starts (connect through the run adapter, export, compare with the record, write the deck). Free,
-     read-only; needs the link up and no ADE/Maestro window open on the design.
+  1. **Check now** - the check before every run (below): the editors against the saved task, and
+     everything a real evaluation does before Spectre starts (connect through the run adapter, export,
+     compare with the record, write the deck). Free, read-only; needs the link up and no ADE/Maestro
+     window open on the design. Start runs it by itself as well.
   2. **Single baseline simulation** in the header - one real Spectre run; asks for your budget.
   3. **Record the baseline run as reference** - from then on every run compares its first evaluation
      with that result, as the four verified profiles do. Recorded once, never replaced.
@@ -771,6 +772,45 @@ Tests: `tests/workbench/test_wb_agent_setup.py` (what the request tells the agen
 the refusals, apply writing into the copy through a fake write process, the rows applied when Virtuoso is down, no copy
 yet). Browser check: `frontend/scripts/agent_setup_check.mjs` (hermetic: canned agent and Virtuoso answers, every other
 writing request refused - safe against the live backend).
+
+### The check before every run: editors, saved task and working copy agree (added 2026-09-22, user request)
+
+The fourth part of the flow. A run runs exactly one saved task on its working copy, so before any costed simulation
+three things must say the same thing:
+
+1. **The editors and the saved task.** The rows of Parameters, Probes and Specs must be the rows of the task file,
+   compared as the schema reads them (a field shown with its default equals one left out). This is offline: static
+   validation says it while you edit - a blocking issue `task_not_saved` per editor that differs, naming the rows and
+   fields ("Specs differ from the saved task real:ring_osc (revision 1): osc_frequency_hz: lower 1.3e+09 here, 1.1e+09
+   saved") - so Start is not offered until **Save task** stores them (it keeps the recorded baseline when
+   only specs or notes changed) or **Load starter configuration** takes the saved rows back. A resume runs the run's own
+   saved rows and is not compared.
+2. **The saved task and its working copy in Virtuoso.** The run adapter does everything a real evaluation does before
+   Spectre starts, and nothing after: it connects (the creation record matches, no ADE/Maestro window is open on the copy,
+   the copy still has the recorded sizes), Virtuoso exports the testbench netlist, the export is compared with the saved
+   one - topology and every parameter - and the simulation deck is written. Read-only; it takes the project's Virtuoso
+   session lock like a run.
+3. **A task measured by Maestro: its Maestro test.** The copy's test is read back and compared with the task file's
+   `maestro` part (outputs, specs, analyses, variables, bindings). Such a task has no deck of its own yet (its run path is
+   the next part): its export is still compared and the deck step says it was left out.
+
+**Start, Single baseline simulation and Resume** run parts 2 and 3 by themselves, right after the connection gate and
+before anything is created (`runs.prepare_run`). A difference starts nothing: the banner under the header lists each step
+- passed / FAILED, what differs, and what to do (for example "The working copy was changed in Virtuoso after the task was
+saved: press Save task to take the copy as it is now, or undo the change in Virtuoso", or which ADE/Maestro windows to
+close). A passed check is kept in the run's manifest (`consistency_check`, for a resume in its segment).
+
+**Check now** (in the task's block, where "Check against Virtuoso" was - that button and its route are gone: it was
+part 2 alone) runs all three parts on its own: free, read-only, no simulation. Its result goes as soon as a row changes.
+Without a connection it compares the rows and says the rest needs one.
+
+Not compared: your own cell against the working copy. A copy is made once, and a change of your cell after it is not
+taken over.
+
+`POST /api/virtuoso/task/check`, body `{"profile_id", "config"}`: `{ok, task, revision, steps: [{step, ok, title, detail,
+fix}], simulated: false}`; 409 `not_a_saved_task` for anything else. Tests: `tests/workbench/test_wb_consistency.py`.
+Browser checks: `frontend/scripts/consistency_check.mjs` (hermetic), `virtuoso_source_check.mjs`,
+`project_help_check.mjs`.
 
 ## Reload saved data
 

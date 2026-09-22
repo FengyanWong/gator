@@ -382,8 +382,8 @@ def _request_dir(target) -> Path:
     return directory
 
 
-def _gated(monitor, action, profile_id, what):
-    gate = monitor.gate(action, profile_id)
+def _gated(monitor, action, profile_id, what, *, acknowledge_unknown=False):
+    gate = monitor.gate(action, profile_id, acknowledge_unknown=acknowledge_unknown)
     if not gate['allowed']:
         error = PermissionError(f'The connection gate blocked {what}')
         error.gate = gate
@@ -408,9 +408,9 @@ def _described(answer) -> dict:
                 rows=virtuoso_setup.to_rows(answer) if usable else dict(measurements=[], targets=[]))
 
 
-def read_setup_on(monitor, profile_id, target, *, command=None) -> dict:
-    """What the Maestro view of one copy says now. Read-only, zero cost."""
-    _gated(monitor, 'read_cellview', profile_id, 'reading the Maestro setup')
+def read_setup_on(monitor, profile_id, target, *, command=None, acknowledge_unknown=False) -> dict:
+    """What the Maestro view of one copy says now. Read-only, zero cost. `acknowledge_unknown`: see profile_preflight."""
+    _gated(monitor, 'read_cellview', profile_id, 'reading the Maestro setup', acknowledge_unknown=acknowledge_unknown)
     answer = _run_setup('read_setup', profile_id, target, dict(cells=target['schematics'], test=virtuoso_setup.TEST), command=command)
     return _described(answer)
 

@@ -651,4 +651,21 @@ def validate(config: WorkbenchConfig, *, graph=None, provided_metrics=None,
     if graph is None:
         report.add('unresolved', 'circuit_not_loaded', 'circuit',
                    'Instance paths, parameter names and initial values were NOT checked against a circuit')
+    _check_saved_task(config, report)
     return report
+
+
+def _check_saved_task(config, report):
+    """A saved task runs exactly as it was saved (task flow part 4, consistency.py): Parameters, Probes or Specs rows that
+    differ from its task file block a start until "Save task" stores them, or "Load starter configuration" takes the saved
+    rows back. A resume runs the run's own saved rows, so it is not compared."""
+    if config.run.mode == 'resume':
+        return
+    from . import consistency
+    found = consistency.saved_task(config, with_entry=False)
+    if found is None:
+        return
+    name, _, saved = found
+    for section, lines in consistency.row_differences(config, saved).items():
+        report.add('error', 'task_not_saved', section,
+                   consistency.describe_rows(section, lines, name=name, revision=saved.get('revision')) + ' ' + consistency.FIX_ROWS)

@@ -12,6 +12,10 @@ adapter binds the bridge environment and takes the project's session lock
 (``artifacts/local/bridge-state/session.lock`` - the same lock a real run takes, so the two exclude
 each other). The gate asks for the layers of ``write_cellview`` (1-5: package, profile, tunnel, daemon,
 session readiness); nothing is written - those are simply the layers a netlist export needs.
+
+Since the task flow's part 4 it is one part of the check before every run (``consistency.py``): Start runs it by itself,
+and "Check now" shows its steps. A task measured by Maestro has no deck of its own yet (its run path is the next part):
+its export is still compared, and the deck step says it was left out.
 """
 from __future__ import annotations
 
@@ -35,11 +39,14 @@ MEANING = dict(
             'Virtuoso still has the recorded sizes.',
     export='Virtuoso exported the testbench netlist; its topology and every parameter match the recorded reference.',
     deck='The simulation deck was written (not run).')
+DECK_LATER = ('Not written: a task measured by Maestro gets its deck from the run path of such tasks, the next part of the '
+              'build. The export above was compared all the same.')
 
 
 def run(name, profile_id, work_root) -> dict:
     """In the short-lived process. Returns {ok, steps: [{step, ok, detail}], deck}."""
     from . import tasks
+    from .generic_profile import RulesError
     steps, deck, backend = [], None, None
 
     def done(step, detail=None):
@@ -54,12 +61,20 @@ def run(name, profile_id, work_root) -> dict:
         backend.connect()
         done('connect')
         current = 'export'
-        artifact = backend.generate_netlist(Path(work_root))
-        done('export')
-        current = 'deck'
-        deck = str(artifact.path)
-        tail = [line for line in Path(artifact.path).read_text().splitlines() if line.strip()][-4:]
-        done('deck', MEANING['deck'] + ' Last lines: ' + ' | '.join(tail))
+        try:
+            artifact = backend.generate_netlist(Path(work_root))
+        except RulesError as exc:
+            # A Maestro-measured task refuses only when the deck is built, after the export was read back and compared.
+            if getattr(profile, 'recipe', None) != 'maestro' or 'not built yet' not in str(exc):
+                raise
+            done('export')
+            steps.append(dict(step='deck', ok=True, skipped=True, detail=DECK_LATER))
+        else:
+            done('export')
+            current = 'deck'
+            deck = str(artifact.path)
+            tail = [line for line in Path(artifact.path).read_text().splitlines() if line.strip()][-4:]
+            done('deck', MEANING['deck'] + ' Last lines: ' + ' | '.join(tail))
     except BaseException as exc:                                   # reported, never raised: the caller shows the step that failed
         steps.append(dict(step=current, ok=False, detail=redact(f'{type(exc).__name__}: {exc}', 600),
                           trace=redact(traceback.format_exc()[-1500:], 1500)))
@@ -87,13 +102,14 @@ def _main(argv=None):
     return 0
 
 
-def preflight(monitor, name, profile_id, *, timeout=300.0, command=None) -> dict:
-    """Gate, then the check process. Raises PermissionError when the gate blocks."""
+def preflight(monitor, name, profile_id, *, timeout=300.0, command=None, acknowledge_unknown=False) -> dict:
+    """Gate, then the check process. Raises PermissionError when the gate blocks. `acknowledge_unknown`: the start this
+    check belongs to acknowledged unknown connection layers, so this gate accepts them too."""
     from . import profiles
     directory = profiles.profile_dir(name)
     if name not in profiles.list_profiles():
         raise KeyError(name)
-    gate = monitor.gate('write_cellview', profile_id)              # its layer set (1-5); nothing is written
+    gate = monitor.gate('write_cellview', profile_id, acknowledge_unknown=acknowledge_unknown)   # its layer set (1-5); nothing is written
     if not gate['allowed']:
         error = PermissionError('The connection gate blocked the check')
         error.gate = gate

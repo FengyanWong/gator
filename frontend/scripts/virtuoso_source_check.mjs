@@ -40,6 +40,7 @@ const schematic = (library, cell) => ({ source: 'virtuoso', library, cell, origi
 const draft = (library, cell) => ({ loaded: true, task_key: `virtuoso:${library}/${cell}`, mock: false, native_draft: true, complete: true, diagnostics: [],
   profile_task: created.has(`${library}/${cell}`) ? `real:${cell}` : null, profile_task_generated: created.has(`${library}/${cell}`) ? true : null,
   profile_recipes: RECIPES,
+  working_copy: { verified: true, problems: [], copy: { library: `${library}_GATOR`, cell, testbench: 'ota5_tb' }, original: { library, cell, testbench: 'ota5_tb' } },
   circuit: { library, cell, native_draft: true }, hierarchy: { XU1: { M1: {}, M2: {} }, V0: {} }, analysis_context: null, evaluation_backend: null, max_concurrency: 1,
   summary: { device_count: 3, unknown_devices: [], devices: [{ instance_path: 'XU1/M1', kind: 'nmos', parameters: { w: { value: 4e-6 } } }] },
   notes: ['FIXTURE: read from Virtuoso (canned answer).'] });
@@ -111,6 +112,15 @@ try {
       created.delete(`FIXTURE_DESIGNS/${body.name}`); baselineRecorded = false;
       return fulfil(requestId, 200, { deleted: `real:${body.name}`, name: body.name, library: 'FIXTURE_DESIGNS', cell: body.name, testbench_cell: 'ota5_tb', baseline_recorded: true,
         kept_copy: `/fixture/profiles/.deleted/${body.name}.20260921T000000Z` });
+    }
+    if (op === 'task/save') {
+      if (body.name === 'refuse_me') return fulfil(requestId, 409, { detail: { message: 'FIXTURE: the real backend can only change transistor widths', code: 'refused' } });
+      if (!body.extras?.expected_frequency_hz) return fulfil(requestId, 409, { detail: { code: 'needs_expected_frequency',
+        message: 'The ring-oscillator measurement needs a rough expected oscillation frequency: it sizes the transient (60 periods, measured after 20). Give it once; the task file keeps it.' } });
+      created.add(`${body.library}/${body.cell}`);
+      return fulfil(requestId, 200, { task_key: `real:${body.name}`, name: body.name, revision: 1, created: true, runnable: true, circuit_class: 'vco', pdk_id: 'gpdk045',
+        measurement: { kind: 'ring_oscillator', expected_frequency_hz: body.extras.expected_frequency_hz }, parameters: ROWS,
+        copy: { library: `${body.library}_GATOR`, cell: body.cell, testbench: 'ota5_tb' }, original: { library: body.library, cell: body.cell, testbench: 'ota5_tb' } });
     }
     if (op === 'profile') {
       if (body.name === 'refuse_me') return fulfil(requestId, 409, { detail: { message: 'FIXTURE: the real backend can only change transistor widths', code: 'profile_refused' } });
@@ -209,34 +219,41 @@ try {
   await evaluate(`${BUTTON('Read the cell again')}.click()`); await quiet();
   check('"Read the cell again" exports through the chosen testbench', JSON.stringify(ops(mark)) === JSON.stringify(['import FIXTURE_DESIGNS ota5_v1 ota5_tb']), ops(mark).join(' | '));
   await shot('virtuoso-2b-draft.png');
-  await evaluate(`${BUTTON('Ask the agent for suggestions')}.click()`); await sleep(800);
+  await evaluate(`${BUTTON('Ask the agent to set up')}.click()`); await sleep(800);
   const box = await evaluate(`document.querySelector('footer textarea')?.value ?? ''`);
-  check('"Ask the agent" opens the Agent tab with the request written out', box.includes('which device sizes to vary') && box.includes('what it is'), box.slice(0, 80));
+  check('"Ask the agent to set up" opens the Agent tab with the request written out', box.includes('which transistor widths to vary') && box.includes('what it is') && box.includes('working copy'), box.slice(0, 80));
   check('nothing was sent to the agent by itself', agentRequests === 0, `${agentRequests} request(s)`);
 
-  // ---- Create profile: refused in words, then registered; the cell stops being browse-only ------------------------------
-  check('"Create profile" waits for the expected frequency', await evaluate(`${BUTTON('Create profile')}.disabled`));
-  await type('Expected oscillation frequency', '1.2G'); await sleep(300);
-  await type('Profile name', 'refuse_me'); await sleep(300);
+  // ---- Save task (replaces Create profile): refused in words, asks the frequency once, then the task opens ------------------
+  check('there is no Create profile form any more', !(await evaluate(`!!(${BUTTON('Create profile')})`)) && !(await evaluate(`!!(${LABEL('Circuit type')})`))
+    && !(await evaluate(`!!(${LABEL('Expected oscillation frequency')})`)));
+  check('"Save task" is offered once the cell has its working copy', !(await evaluate(`${BUTTON('Save task')}.disabled`)) && (await text()).includes('Then save it as a task'));
+  await type('New task name', 'refuse_me'); await sleep(300);
   mark = calls.length;
-  await evaluate(`${BUTTON('Create profile')}.click()`); await quiet();
-  check('a refusal is shown in its own words and nothing changes', JSON.stringify(ops(mark)) === JSON.stringify(['profile refuse_me ring_oscillator 1200000000'])
-    && (await text()).includes('can only change transistor widths') && (await value('Source')) === 'virtuoso', ops(mark).join(' | '));
-  await evaluate(`(() => { const i = ${FIELD('Profile name')}; i.focus(); i.select(); })()`); await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
+  await evaluate(`${BUTTON('Save task')}.click()`); await quiet();
+  check('a refusal is shown in its own words and nothing changes', JSON.stringify(calls.slice(mark).map(c => [c.op, c.name, c.library, c.cell])) === JSON.stringify([['task/save', 'refuse_me', 'FIXTURE_DESIGNS', 'ota5_v1']])
+    && (await text()).includes('can only change transistor widths') && (await value('Source')) === 'virtuoso', JSON.stringify(calls.slice(mark)));
+  await evaluate(`(() => { const i = ${FIELD('New task name')}; i.focus(); i.select(); })()`); await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
   await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 }); await sleep(300);
   mark = calls.length;
-  await evaluate(`${BUTTON('Create profile')}.click()`); await quiet();
-  check('an empty name falls back to the cell name; the type and 1.2G = 1.2e9 Hz are sent', JSON.stringify(ops(mark)) === JSON.stringify(['profile ota5_v1 ring_oscillator 1200000000']), ops(mark).join(' | '));
+  await evaluate(`${BUTTON('Save task')}.click()`); await quiet();
+  check('an empty name falls back to the cell name; the ring oscillator\'s frequency is then asked once', calls.slice(mark).map(c => c.name).join() === 'ota5_v1'
+    && (await text()).includes('needs a rough expected oscillation frequency') && !!(await evaluate(`!!(${LABEL('Rough oscillation frequency')})`)), JSON.stringify(calls.slice(mark)));
+  await type('Rough oscillation frequency', '1.2G'); await sleep(300);
+  mark = calls.length;
+  await evaluate(`[...${PANEL}.querySelectorAll('button')].filter(b => b.textContent.trim() === 'Save task').at(-1).click()`); await quiet();
+  check('1.2G = 1.2e9 Hz is sent with the rows', calls.slice(mark).length === 1 && calls[mark].extras?.expected_frequency_hz === 1.2e9 && Array.isArray(calls[mark].config?.parameters), JSON.stringify(calls.slice(mark)));
   check('the new task is opened as a registered task', (await value('Source')) === 'registered_task' && (await value('Task')) === 'real:ota5_v1', `${await value('Source')} / ${await value('Task')}`);
-  check('it says what happened and what comes first', (await text()).includes('Profile real:ota5_v1 created') && (await text()).includes('Single baseline simulation'));
-  check('the parameter editor shows the rows as registered', await evaluate(`document.querySelector('main').innerHTML.includes('wn_fixture')`));
-  await shot('virtuoso-2c-profile-created.png');
+  check('it says what happened and what comes first', (await text()).includes('Saved the new task real:ota5_v1') && (await text()).includes('Single baseline simulation'));
+  check('the parameter editor shows the rows as saved', await evaluate(`document.querySelector('main').innerHTML.includes('wn_fixture')`));
+  check('the open task offers Save task, Save as and Task file', await evaluate(`!!(${BUTTON('Save task')}) && !!(${BUTTON('Save as')}) && !!(${BUTTON('Task file')})`));
+  await shot('virtuoso-2c-task-saved.png');
   // ---- before the first costed run: the no-simulation check, and recording a finished baseline ---------------------------
   mark = calls.length;
   await evaluate(`${BUTTON('Check against Virtuoso (no simulation)')}.click()`); await quiet();
   check('the check is one request for this profile and this connection', JSON.stringify(calls.slice(mark).map(c => [c.op, c.name, c.profile_id])) === JSON.stringify([['profile/preflight', 'ota5_v1', 'lab']]), JSON.stringify(calls.slice(mark)));
   const shownCheck = await text();
-  check('its four steps and the verdict are shown', ['passed: profile', 'passed: connect', 'passed: export', 'passed: deck', 'The profile matches the live cell. Nothing was simulated.'].every(t => shownCheck.includes(t)));
+  check('its four steps and the verdict are shown', ['passed: profile', 'passed: connect', 'passed: export', 'passed: deck', 'The task matches the live cell. Nothing was simulated.'].every(t => shownCheck.includes(t)));
   await evaluate(`${BUTTON('Record the baseline run as reference')}.click()`); await quiet();
   check('without a baseline run, recording says what to do first', (await text()).includes('Run "Single baseline simulation" first'));
   baselineExists = true;
@@ -248,48 +265,48 @@ try {
   let shown = await text();
   check('the cell is no longer browse-only: the form names its task', shown.includes('This cell already has a registered task: real:ota5_v1') && !shown.includes('built-in')
     && !shown.includes('Not optimizable yet') && !shown.includes('Browse only'), ops(mark).join(' | '));
-  check('no second profile is offered for it', !(await evaluate(`!!(${BUTTON('Create profile')})`)) && !(await evaluate(`!!(${BUTTON('Read the cell again')})`)));
+  check('no second draft is offered for it: open the task to save it again or save another', !(await evaluate(`!!(${BUTTON('Save task')})`)) && !(await evaluate(`!!(${BUTTON('Read the cell again')})`)));
   check('the button is short; the task name is text beside it', JSON.stringify(await evaluate(`[...${PANEL}.querySelectorAll('.note button')].map(b => b.textContent.trim())`)) === JSON.stringify(['Open']));
   await shot('virtuoso-2d-cell-has-task.png');
   await choose('Cell', 'vco_fixture'); await quiet();
   shown = await text();
   check('the cell of a verified built-in circuit names that task', shown.includes('This cell already has a registered task: real:gpdk045_vco (a verified built-in circuit)')
     && !shown.includes('Browse only') && !shown.includes('cannot optimize it yet'));
-  check('it is not offered for reading or for a profile', !(await evaluate(`!!(${BUTTON('Read this cell into the workbench')})`)) && !(await evaluate(`!!(${BUTTON('Create profile')})`)));
+  check('it is not offered for reading or for a task', !(await evaluate(`!!(${BUTTON('Read this cell into the workbench')})`)) && !(await evaluate(`!!(${BUTTON('Save task')})`)));
   check('what that means is one folded line', await evaluate(`(() => { const d = [...${PANEL}.querySelectorAll('.note details')].find(x => x.querySelector('summary').textContent === 'What this means');
-    return !!d && !d.open && d.textContent.includes('A cell has one task'); })()`));
+    return !!d && !d.open && d.textContent.includes('gets no second task'); })()`));
   await shot('virtuoso-2e-built-in-cell.png');
   await evaluate(`${BUTTON('Open')}.click()`); await quiet();
   check('"Open" chooses the task under Source: Registered task', (await value('Source')) === 'registered_task' && (await value('Task')) === 'real:gpdk045_vco', `${await value('Source')} / ${await value('Task')}`);
-  check('a built-in circuit has no Delete profile', !(await evaluate(`!!(${BUTTON('Delete profile')})`)));
+  check('a built-in circuit has no Delete task', !(await evaluate(`!!(${BUTTON('Delete task')})`)));
 
-  // ---- Delete profile: asked once more, refused while a run works, then back at the cell with Create profile ----------------
+  // ---- Delete task: asked once more, refused while a run works, then back at the cell with Save task -----------------------
   await choose('Source', 'virtuoso'); await quiet();
   await choose('Cell', 'ota5_v1'); await quiet();
   await evaluate(`${BUTTON('Open')}.click()`); await quiet();
-  check('the generated profile is opened from its cell', (await value('Source')) === 'registered_task' && (await value('Task')) === 'real:ota5_v1', `${await value('Source')} / ${await value('Task')}`);
-  check('its block ends with "Delete profile", explained beside the button', !!(await evaluate(`!!(${BUTTON('Delete profile')})`)) && (await text()).includes('A profile is never edited.'));
-  await shot('virtuoso-2f-delete-offered.png', BUTTON('Delete profile'));
+  check('the saved task is opened from its cell', (await value('Source')) === 'registered_task' && (await value('Task')) === 'real:ota5_v1', `${await value('Source')} / ${await value('Task')}`);
+  check('its block ends with "Delete task", explained beside the button', !!(await evaluate(`!!(${BUTTON('Delete task')})`)) && (await text()).includes('To start over from the cell'));
+  await shot('virtuoso-2f-delete-offered.png', BUTTON('Delete task'));
   mark = calls.length; answers.push(false);
-  await evaluate(`${BUTTON('Delete profile')}.click()`); await quiet(800);
+  await evaluate(`${BUTTON('Delete task')}.click()`); await quiet(800);
   const asked = dialogs[dialogs.length - 1]?.message ?? '';
-  check('the press asks once more and says what goes', asked.includes('Delete the profile real:ota5_v1?') && asked.includes('can no longer be resumed') && asked.includes('copy of the profile')
+  check('the press asks once more and says what goes', asked.includes('Delete the task real:ota5_v1?') && asked.includes('can no longer be resumed') && asked.includes('copy of the task')
     && asked.includes('recorded baseline goes with it'), asked.slice(0, 120));
   check('"Cancel" deletes nothing', ops(mark).length === 0 && (await value('Task')) === 'real:ota5_v1', ops(mark).join(' | '));
   answers.push(true);
-  await evaluate(`${BUTTON('Delete profile')}.click()`); await quiet();
+  await evaluate(`${BUTTON('Delete task')}.click()`); await quiet();
   check('a refusal is shown in its own words and the task stays', JSON.stringify(ops(mark)) === JSON.stringify(['profile/delete ota5_v1']) && (await text()).includes('is working right now')
     && (await value('Task')) === 'real:ota5_v1', ops(mark).join(' | '));
   deleteRefused = false; mark = calls.length; answers.push(true);
-  await evaluate(`${BUTTON('Delete profile')}.click()`); await quiet();
+  await evaluate(`${BUTTON('Delete task')}.click()`); await quiet();
   shown = await text();
   check('deleting is one request', JSON.stringify(ops(mark).filter(o => o.startsWith('profile'))) === JSON.stringify(['profile/delete ota5_v1']), ops(mark).join(' | '));
-  check('the form goes back to the cell the profile was made from', (await value('Source')) === 'virtuoso' && (await value('Library')) === 'FIXTURE_DESIGNS' && (await value('Cell')) === 'ota5_v1'
+  check('the form goes back to the cell the task was saved from', (await value('Source')) === 'virtuoso' && (await value('Library')) === 'FIXTURE_DESIGNS' && (await value('Cell')) === 'ota5_v1'
     && (await value('Testbench cell')) === 'ota5_tb', `${await value('Source')} / ${await value('Library')} / ${await value('Cell')} / ${await value('Testbench cell')}`);
-  check('it says what happened; where the files went is one folded line', shown.includes('Profile real:ota5_v1 deleted. This cell can get a new one.')
+  check('it says what happened; where the files went is one folded line', shown.includes('Task real:ota5_v1 deleted. This cell can get a new one.')
     && await evaluate(`(() => { const d = [...${PANEL}.querySelectorAll('details')].find(x => x.querySelector('summary').textContent === 'Where its files went');
       return !!d && !d.open && d.textContent.includes('/fixture/profiles/.deleted/ota5_v1'); })()`));
-  check('the cell offers Create profile again', !!(await evaluate(`!!(${BUTTON('Create profile')})`)) && shown.includes('Not optimizable yet') && !shown.includes('already has a registered task'));
+  check('the cell offers Save task again', !!(await evaluate(`!!(${BUTTON('Save task')})`)) && shown.includes('Not optimizable yet') && !shown.includes('already has a registered task'));
   check('the task left the Registered task list', !(await evaluate(`(async () => (await (await fetch('/api/tasks')).json()).tasks.some(t => t.task_key === 'real:ota5_v1'))()`)));
   await shot('virtuoso-2g-profile-deleted.png');
 

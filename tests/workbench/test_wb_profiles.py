@@ -111,7 +111,7 @@ def test_the_ring_oscillator_becomes_a_registered_real_task(tmp_path):
     assert type(factory).__name__ == 'NativeEnvironmentFactory' and factory.reference_metrics is None     # no baseline yet
     assert factory.config.library == 'GPDK045_RINGOSC' and factory.config.creation_receipt == (directory / 'creation.json').resolve()
     widened = [dict(r, upper=4.0) if r['variable_id'] == 'wp' else r for r in made['parameters']]
-    with pytest.raises(tasks.TaskBlocked, match='differ from what was registered'):
+    with pytest.raises(tasks.TaskBlocked, match='differ from what was saved'):
         runnable.env_factory_builder(compile_task(config(rows=widened).model_copy(update=dict(circuit=reference)), runnable.base_graph), tmp_path, registered.run)
     # a recorded real baseline becomes the reference every worker's first evaluation is compared with
     (directory / 'reference_measurements.json').write_text(json.dumps(dict(origin='real', metrics=dict(osc_frequency_hz=1.2e9))))

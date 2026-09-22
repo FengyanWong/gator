@@ -259,12 +259,14 @@ def verified(library, cell) -> dict:
     return record
 
 
-def _readbacks(library, cell) -> dict:
-    """{(cell, instance): readback entry} of the testbench and the cell, as read from the ORIGINAL at import (CDF
-    parameter names and values, library/cell of each instance)."""
-    imported, record = native_cells.load_import(library, cell), load(library, cell)
+def _readbacks(original) -> dict:
+    """{(cell, instance): readback entry} of the ORIGINAL testbench and cell, as read at import (CDF parameter names and
+    values, the library/cell of each instance)."""
+    imported = native_cells.load_import(original['library'], original['cell'])
+    if imported is None:
+        return {}
     directory, found = Path(imported['directory']), {}
-    for owner, name in ((record['original']['testbench'], 'testbench_readback.json'), (cell, 'core_readback.json')):
+    for owner, name in ((original['testbench'], 'testbench_readback.json'), (original['cell'], 'core_readback.json')):
         try:
             data = json.loads((directory / name).read_text())
         except (OSError, ValueError):
@@ -274,28 +276,110 @@ def _readbacks(library, cell) -> dict:
     return found
 
 
-def bindable(library, cell) -> dict:
-    """{(cell, instance): parameter names} a Maestro variable may set: analogLib's own resistor, capacitor, inductor and
-    sources, which nothing else is computed from. A PDK device is never bound: its CDF callbacks derive other values
-    (the GPDK045 transistor's 12 side values stayed stale under a variable width, 2026-09-21) or clamp the value."""
-    verified(library, cell)
-    return {key: set(entry.get('params') or {}) for key, entry in _readbacks(library, cell).items()
+def bindable_on(target) -> dict:
+    """{(cell of the copy, instance): parameter names} a Maestro variable may set: analogLib's own resistor, capacitor,
+    inductor and sources, which nothing else is computed from. A PDK device is never bound: its CDF callbacks derive
+    other values (the GPDK045 transistor's 12 side values stayed stale under a variable width, 2026-09-21) or clamp."""
+    names = target['names']
+    return {(names.get(owner, owner), instance): set(entry.get('params') or {})
+            for (owner, instance), entry in _readbacks(target['original']).items()
             if entry.get('lib') == 'analogLib' and entry.get('cell') in ANALOGLIB_PRIMITIVES}
 
 
-def _original_values(library, cell) -> dict:
-    """{(cell, instance, parameter): value} of the ORIGINAL design, from its CDF readback."""
-    return {(c, i, p): v for (c, i), entry in _readbacks(library, cell).items() for p, v in (entry.get('params') or {}).items()}
+def _original_values_on(target) -> dict:
+    """{(cell of the copy, instance, parameter): value} the ORIGINAL design has, from its CDF readback."""
+    names = target['names']
+    return {(names.get(owner, owner), instance, parameter): value
+            for (owner, instance), entry in _readbacks(target['original']).items() for parameter, value in (entry.get('params') or {}).items()}
 
 
-def _request_dir(library, cell) -> Path:
-    directory = record_dir(library, cell) / 'setup' / utcnow().strftime('%Y%m%dT%H%M%S%f')
+def bindable(library, cell) -> dict:
+    return bindable_on(draft_target(library, cell))
+
+
+# ---------------------------------------------------------------------------------- targets: which copy a setup is about
+def draft_target(library, cell) -> dict:
+    """The cell's own working copy - the one "Make a working copy" made - as the setup functions take it."""
+    record = verified(library, cell)
+    return dict(original=record['original'], copy=record['copy'], names={c['cell']: c['cell'] for c in record['cells']},
+                schematics=[c['cell'] for c in record['cells'] if 'schematic' in c['views']],
+                state_dir=str(record_dir(library, cell)))
+
+
+def claim(library, cell, task):
+    """The first task saved from a cell takes the cell's working copy; a second task gets its own copy (Save as)."""
+    record = verified(library, cell)
+    if record.get('claimed_by') not in (None, task):
+        raise CopyError(f'The working copy of {library}/{cell} belongs to the task real:{record["claimed_by"]}: open it and use Save as')
+    write_json(record_dir(library, cell) / RECORD, dict(record, claimed_by=task))
+
+
+def release(library, cell, task):
+    record = load(library, cell)
+    if record and record.get('claimed_by') == task:
+        write_json(record_dir(library, cell) / RECORD, {k: v for k, v in record.items() if k != 'claimed_by'})
+
+
+def task_copy_dir(task) -> Path:
+    return store_root() / '_tasks' / _checked(task)
+
+
+def make_task_copy(monitor, profile_id, source, task, *, source_netlist, command=None, timeout=600.0) -> dict:
+    """"Save as": a copy of its own for the new task `task`, made from the working copy of the task being saved
+    (`source`, a target) inside the same library, every copied cell named <original cell>_<task>. Accepted when it
+    netlists like the source copy (names mapped back) and the source copy reads back unchanged. Returns its target."""
+    names = {original: f'{original}_{task}' for original in source['names']}
+    for name in names.values():
+        if not native_cells.NAME.match(name) or len(name) > 120:
+            raise CopyError(f'The copy cell name {name!r} would not be a plain Cadence name: choose a shorter task name')
+    rename = {source['names'][original]: new for original, new in names.items()}
+    _gated(monitor, 'write_cellview', profile_id, 'writing into Virtuoso')
+    directory = task_copy_dir(task)
+    attempt_file = directory.parent / f'{task}.{ATTEMPT}'
+    try:
+        attempt = json.loads(attempt_file.read_text())
+    except (OSError, ValueError):
+        attempt = {}
+    incoming = directory.parent / f'.incoming-{uuid4().hex}'
+    incoming.mkdir(parents=True)
+    library = source['copy']['library']
+    try:
+        args = ['--library', library, '--cell', source['copy']['cell'], '--testbench', source['copy']['testbench'],
+                '--copy-library', library, '--reuse-library', '--rename', json.dumps(rename),
+                '--overwrite', json.dumps(sorted(attempt.get('copied', [])))]
+        try:
+            answer = bridge_setup.run(profile_id, 'make_copy', args=args, output=incoming, command=command, timeout=timeout)
+        except BaseException:
+            _keep_attempt(incoming, attempt_file, attempt, library, library, profile_id)
+            raise
+        text = (incoming / 'netlist.scs').read_text()
+        for old, new in sorted(rename.items(), key=lambda item: -len(item[1])):
+            text = re.sub(rf'\b{re.escape(new)}\b', old, text)
+        problems = compare(source_netlist, text, copy_library=library, copied_cells=sorted(rename))
+        touched = sorted(name for name, digest in answer['originals_before'].items() if answer['originals_after'].get(name) != digest)
+        if touched:
+            problems.append(f'The source copy read back differently afterwards: {", ".join(touched)}')
+        if problems:
+            raise CopyError('The new copy did not pass its checks: ' + '; '.join(problems))
+        target = dict(original=source['original'], copy=dict(library=library, cell=answer['copy_cell'], testbench=answer['copy_testbench']),
+                      names=names, schematics=[names[o] for o, c in source['names'].items() if c in source['schematics']],
+                      state_dir=str(directory))
+        write_json(incoming / RECORD, dict(format=FORMAT, created_utc=utcnow().isoformat(), profile_id=profile_id, task=task,
+                                           made_from=source['copy'], target=target, copied=answer['copied'], verified=True))
+        if directory.exists():
+            directory.rename(directory.with_name(f'{task}.replaced-{utcnow().strftime("%Y%m%dT%H%M%S")}'))
+        incoming.rename(directory)
+        attempt_file.unlink(missing_ok=True)
+    except BaseException:
+        shutil.rmtree(incoming, ignore_errors=True)
+        raise
+    return target
+
+
+def _request_dir(target) -> Path:
+    directory = Path(target['state_dir']) / 'setup' / utcnow().strftime('%Y%m%dT%H%M%S%f')
     directory.mkdir(parents=True)
     return directory
-
-
-def _schematics(record):
-    return [c['cell'] for c in record['cells'] if 'schematic' in c['views']]
 
 
 def _gated(monitor, action, profile_id, what):
@@ -306,11 +390,11 @@ def _gated(monitor, action, profile_id, what):
         raise error
 
 
-def _run_setup(op, profile_id, record, request, *, command=None):
-    out = _request_dir(record['original']['library'], record['original']['cell'])
+def _run_setup(op, profile_id, target, request, *, command=None):
+    out = _request_dir(target)
     (out / 'request.json').write_text(json.dumps(request, indent=1))
-    answer = bridge_setup.run(profile_id, op, args=['--library', record['original']['library'], '--cell', record['copy']['cell'],
-                                                     '--testbench', record['copy']['testbench'], '--copy-library', record['copy']['library'],
+    answer = bridge_setup.run(profile_id, op, args=['--library', target['original']['library'], '--cell', target['copy']['cell'],
+                                                     '--testbench', target['copy']['testbench'], '--copy-library', target['copy']['library'],
                                                      '--request', str(out / 'request.json')],
                               output=out, command=command, timeout=300.0)
     write_json(out / 'answer.json', answer)
@@ -324,12 +408,16 @@ def _described(answer) -> dict:
                 rows=virtuoso_setup.to_rows(answer) if usable else dict(measurements=[], targets=[]))
 
 
-def read_setup(monitor, profile_id, library, cell, *, command=None) -> dict:
-    """Explicit press: what the copy's Maestro view says now. Read-only, zero cost."""
-    record = verified(library, cell)
+def read_setup_on(monitor, profile_id, target, *, command=None) -> dict:
+    """What the Maestro view of one copy says now. Read-only, zero cost."""
     _gated(monitor, 'read_cellview', profile_id, 'reading the Maestro setup')
-    answer = _run_setup('read_setup', profile_id, record, dict(cells=_schematics(record), test=virtuoso_setup.TEST), command=command)
+    answer = _run_setup('read_setup', profile_id, target, dict(cells=target['schematics'], test=virtuoso_setup.TEST), command=command)
     return _described(answer)
+
+
+def read_setup(monitor, profile_id, library, cell, *, command=None) -> dict:
+    """Explicit press: what the cell's working copy's Maestro view says now. Read-only, zero cost."""
+    return read_setup_on(monitor, profile_id, draft_target(library, cell), command=command)
 
 
 def default_model_files(profile_id):
@@ -343,36 +431,51 @@ def default_model_files(profile_id):
     return [[model_file, SECTION]] if model_file else []
 
 
-def write_setup(monitor, profile_id, library, cell, setup, *, command=None) -> dict:
-    """Explicit press: make the copy's Maestro test say what `setup` says, read it back and compare. A variable that
-    is no longer set on a parameter puts the ORIGINAL cell's value back. Zero cost; writes only into the copy."""
-    record = verified(library, cell)
+def write_setup_on(monitor, profile_id, target, setup, *, command=None) -> dict:
+    """Make one copy's Maestro test say what `setup` says, read it back and compare. A variable that is no longer set on
+    a parameter puts the ORIGINAL cell's value back. Zero cost; writes only into that copy."""
     setup = dict(setup)
     if not setup.get('model_files'):
         setup['model_files'], setup['keep_model_files'] = default_model_files(profile_id), True
-    problems = virtuoso_setup.validate(setup, bindable=bindable(library, cell))
+    problems = virtuoso_setup.validate(setup, bindable=bindable_on(target))
     if problems:
         raise virtuoso_setup.SetupError('The setup cannot be written: ' + '; '.join(problems))
     _gated(monitor, 'write_cellview', profile_id, 'writing the Maestro setup')
-    last_file = record_dir(library, cell) / 'last_written_setup.json'
+    last_file = Path(target['state_dir']) / 'last_written_setup.json'
     try:
         last = json.loads(last_file.read_text())
     except (OSError, ValueError):
         last = {}
+    keep = [part for part in ('analyses', 'variables', 'bindings') if setup.get(part) is None]      # None = leave as the copy has it
     wanted = {(b['cell'], b['instance'], b['parameter']) for b in setup.get('bindings') or []}
-    originals = _original_values(library, cell)
-    restore = [[c, i, p, originals[(c, i, p)]] for c, i, p in {(b['cell'], b['instance'], b['parameter']) for b in last.get('bindings') or []} - wanted
-               if (c, i, p) in originals]
+    originals = _original_values_on(target)
+    restore = [] if 'bindings' in keep else [
+        [c, i, p, originals[(c, i, p)]] for c, i, p in {(b['cell'], b['instance'], b['parameter']) for b in last.get('bindings') or []} - wanted
+        if (c, i, p) in originals]
     normalized = virtuoso_setup.normalize(setup)
-    normalized['analyses'] = None if setup.get('analyses') is None else normalized['analyses']
+    for part in keep:
+        normalized[part] = None
     normalized['keep_model_files'] = bool(setup.get('keep_model_files'))
-    answer = _run_setup('write_setup', profile_id, record, dict(cells=_schematics(record), test=normalized['test'], setup=normalized,
+    answer = _run_setup('write_setup', profile_id, target, dict(cells=target['schematics'], test=normalized['test'], setup=normalized,
                                                               restore=restore), command=command)
     wanted, got = virtuoso_setup.normalize(setup), virtuoso_setup.normalize(answer)
-    # What was left to the copy (analyses not sent, model files not chosen) is compared with what the copy has.
-    expected = dict(wanted, analyses=wanted['analyses'] if setup.get('analyses') is not None else got['analyses'],
-                    model_files=got['model_files'] if setup.get('keep_model_files') and got['model_files'] else wanted['model_files'])
-    write_json(last_file, virtuoso_setup.normalize(setup))
+    # What was left to the copy (a part not sent, model files not chosen) is compared with what the copy has.
+    expected = dict(wanted, model_files=got['model_files'] if setup.get('keep_model_files') and got['model_files'] else wanted['model_files'],
+                    **{part: got[part] for part in keep})
+    write_json(last_file, expected)                                    # what the copy holds now
     found = _described(answer)
     diffs = virtuoso_setup.differences(expected, answer)
-    return dict(found, written=virtuoso_setup.normalize(setup), differences=diffs, matches=not diffs)
+    return dict(found, written=expected, differences=diffs, matches=not diffs)
+
+
+def last_written(target) -> dict:
+    """The setup last written into this copy (what its Maestro test holds, as far as the workbench wrote it), or {}."""
+    try:
+        return json.loads((Path(target['state_dir']) / 'last_written_setup.json').read_text())
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+
+
+def write_setup(monitor, profile_id, library, cell, setup, *, command=None) -> dict:
+    """Explicit press: make the cell's working copy say what `setup` says (see `write_setup_on`)."""
+    return write_setup_on(monitor, profile_id, draft_target(library, cell), setup, command=command)

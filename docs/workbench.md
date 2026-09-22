@@ -231,12 +231,12 @@ to say.
 * **Testbench cell**: a cell named `tb_<cell>` (the `tb_` prefix in any case, the cell name exact, with
   a schematic) is chosen by itself when you pick the cell, or when the cell list arrives while the box
   is empty ("Found by its name"); choose another one or (none) at any time. A testbench chosen by hand
-  stays when the next cell has no `tb_` of its own. Create profile needs one: a profile simulates the
-  testbench, not the bare cell.
+  stays when the next cell has no `tb_` of its own. A task needs one: it simulates the testbench, not
+  the bare cell (the working copy copies the testbench and the cells under it).
 * **Probes follow the testbench**: once the cell was read through a testbench, the **Probes** tab gets
   the results of the circuit type that testbench fits, each with its `signal` - where in THIS testbench
   it is read: the output net (`OUT`), the ring nets, or the supply branch (`V0:p`, the current through
-  the supply source `V0`) - and Create profile's Circuit type follows. This happens only after your own
+  the supply source `V0`) - and Save task measures the task by that circuit type. This happens only after your own
   choice of library / cell / testbench or a Read press, never on page load, and only over rows that are
   nobody's work: empty, brought by an earlier testbench, or still exactly the rows the last registered
   task brought (that task's untouched targets then leave **Specs** with them). Rows you edited stay,
@@ -250,38 +250,42 @@ to say.
   `configs/local/workbench/native_cells/<library>/<cell>/`, and the cell then loads from it without
   contacting Virtuoso: you can look at it, fill the three editors (the centre tabs, in this order:
   **Parameters** = what may vary, **Probes** = what is measured and how, **Specs** = equations over
-  those probes and the limits they must meet), and
-  **Ask the agent for suggestions** - the Agent tab opens with the request written out; its
-  proposal, once approved there, fills the editors. Device types this project has not verified (for
-  example the MIM invented model) are shown with unnamed pins. Such a cell still cannot run: Start stays disabled
-  (`circuit_profile_missing`) until its profile is created.
-* **Create profile** (in the same note; contacts nothing, simulates nothing): give a name, the circuit
-  type and - for a ring oscillator - a rough expected frequency ("1.2G"). The rows of the
-  **Parameters** tab say what may vary. Only what the verified real backend can do is accepted: **widths of
-  single-finger, m = 1 transistors directly inside the cell**, linear ranges that contain the present
-  width; ranges are snapped onto Virtuoso's 5 nm width grid and the editor then shows them exactly as
-  registered. Anything else is refused with the reason. The cell becomes the task `real:<name>` under
-  **Registered task** (files in `configs/local/workbench/profiles/<name>/`) and stops being browse-only.
-  **One cell, one task.** A cell that already has a registered task - the profile made from it, or one of
-  the four verified built-in circuits (`real:gpdk045_vco` for `vco_m6_v1`, ...; the library is the one
-  the Virtuoso connection states) - shows "This cell already has a registered task: `real:<name>`" with
-  an **Open** button instead of the profile form, and Create profile refuses it.
-  **Delete profile** (last line of a generated task's block; asks once more): a profile is never edited,
-  so this is how to start over with other sizes or another circuit type. The task leaves the list and
-  the form returns to the cell, where Create profile is offered again; the name is free again. Nothing
-  is erased: the folder moves to `configs/local/workbench/profiles/.deleted/<name>.<time>/`, its
-  recorded baseline included (a new profile needs a new real baseline). Runs already made keep their
+  those probes and the limits they must meet), make the working copy and
+  **Ask the agent to set up** - the Agent tab opens with the request written out; its proposal, once
+  approved there, fills the editors and is written into the working copy (see "The agent sets the task
+  up" below). Device types this project has not verified (for example the MIM invented model) are shown
+  with unnamed pins. Such a cell still cannot run: Start stays disabled (`circuit_profile_missing`) until
+  it is saved as a task.
+* **Save task** (in the same note, under the working copy) replaced the former **Create profile** form on
+  2026-09-22 - see "Saving a task" below. What the form checked still holds: only what the verified real
+  backend can do is accepted as a Parameters row - **widths of single-finger, m = 1 transistors directly
+  inside the cell**, linear ranges that contain the present width, snapped onto Virtuoso's 5 nm width grid
+  (the editor then shows them exactly as registered); anything else is refused with the reason. The cell
+  becomes the task `real:<name>` under **Registered task** (files in
+  `configs/local/workbench/profiles/<name>/`) and stops being browse-only.
+  A cell that already has a registered task - one saved from it, or one of the four verified built-in
+  circuits (`real:gpdk045_vco` for `vco_m6_v1`, ...; the library is the one the Virtuoso connection
+  states) - shows "This cell already has a registered task: `real:<name>`" with an **Open** button; open
+  it to change it (Save task) or to make another task from it (Save as, with a working copy of its own).
+  A built-in circuit gets no second task.
+  **Delete task** (last line of a saved task's block; asks once more; was: Delete profile): the task
+  leaves the list, its name is free again and the cell's working copy is free for the next Save task.
+  Nothing is erased: the folder moves to `configs/local/workbench/profiles/.deleted/<name>.<time>/`,
+  its recorded baseline included (a new task needs a new real baseline). Runs already made keep their
   data, but a paused one can no longer be resumed. Refused while a run of the task is working, and for
   the built-in circuits.
-  Circuit types: *Ring oscillator (free-running)* - a transient from declared start voltages, metrics
+  Circuit types (how a task measured by the workbench itself measures; they go once tasks measured by
+  Maestro can run): *Ring oscillator (free-running)* - a transient from declared start voltages, metrics
   `osc_frequency_hz`, `supply_power_w`, `supply_current_a`, swing, duty cycle, period spread, startup;
   *Op-amp / OTA (AC gain)* - only for a testbench that follows the verified OTA's net names.
   Targets of a generated task use the result names as `metric_id` (`osc_frequency_hz`, ...): the profile
   registers exactly these results for the optimizer's goal input, so nothing has to be added under
   `run.advanced.spec_registry`.
-  **A real run writes into the cell the profile was made from** (every evaluation, the baseline included,
-  re-applies the widths through the PDK callbacks, checks and saves the cellview; the original widths are written
-  back when the run ends). Keep that cell closed in Virtuoso during a run. A working-copy mode does not exist yet.
+  **Where a real run writes.** A task saved with Save task names its working copy, so its runs write into the
+  copy. A task made with the former Create profile has no working copy: its runs write into the cell it was
+  made from (every evaluation, the baseline included, re-applies the widths through the PDK callbacks, checks
+  and saves the cellview; the original widths are written back when the run ends) - keep that cell closed in
+  Virtuoso during a run.
   First real simulation of a generated profile: 2026-09-21, one authorized baseline of the 3-stage ring
   oscillator, 1.2092 GHz, cell identical before and after (status record 7.24). In this order:
   1. **Check against Virtuoso (no simulation)** - everything a real evaluation does before Spectre
@@ -674,14 +678,99 @@ calls of listed calculator functions (`VT`, `VF`, `IT`, `frequency`, `bandwidth`
 numbers, the setup's variable names, arithmetic and `?keyword` arguments; anything else (`system(...)`, `;`, backquotes)
 is refused before anything is written. Nothing is evaluated by the workbench itself.
 
-Not built yet (the rest of the flow): the task file and **Save task** / **Save task as** (they replace Create profile),
-the agent's proposal of a whole setup, and the run path that measures Maestro outputs (Maestro's netlist once, Spectre
-per evaluation, OCEAN on that run's results; proven once against one Maestro run). Until then `ade_output` probes and
-design variables stay blocked for runs by static validation.
+Not built yet (the rest of the flow): the check before every run, and the run path that measures Maestro outputs
+(Maestro's netlist once, Spectre per evaluation, OCEAN on that run's results; proven once against one Maestro run). Until
+then `ade_output` probes and design variables stay blocked for runs by static validation.
 
 Tests: `tests/workbench/test_wb_working_copy.py`, `tests/workbench/test_wb_virtuoso_setup.py` (fake write process; the
 answer shapes are the live installation's). Browser check: `frontend/scripts/working_copy_check.mjs` (hermetic, fixtures
 only, safe against the live backend).
+
+### Saving a task: Save task, Save as and the task file (added 2026-09-22, user request)
+
+The second part of the flow. **Save task** replaces the former Create profile form (user decision: the form, its Circuit
+type box and its expected-frequency field went once Save task worked). Only a person presses it: the agent has no tool
+that reaches the backend.
+
+**Where.** In the note "Read from Virtuoso", under the working copy: "Then save it as a task" - a New task name (the
+cell's name when left empty), **Save task** and **Task file**. On an open task (Source: Registered task): "Task
+real:<name>, revision N", **Save task**, **Save as** and **Task file**; "Delete task" (was: Delete profile) stays at the
+end of the block.
+
+**What Save task does.** It reads from the Probes how the task measures: all Maestro outputs (`ade_output`) = measured
+by Maestro; all results of one circuit type (`backend_profile`, e.g. what the testbench brought) = that type - the
+ring oscillator or the op-amp, measured by the workbench as before. Mixed probes, or probes that fit both types, are
+refused in plain words. Then, with no simulation:
+1. a task measured by Maestro writes its outputs, specs (from the rows) and analyses, variables and bindings (from a task
+   file applied on the page, else as the copy was last written - by the last save, Write to Virtuoso or the agent's
+   approved setup) into its working copy and reads them back - they must match;
+2. the working copy is read into the workbench again (netlist export + CDF readback, read-only): the reference every run
+   of the task is compared with;
+3. the task's files are generated from that copy (the same generator Create profile used, with its checks), next to
+   `task.json` in `configs/local/workbench/profiles/<name>/`, and the task is registered as `real:<name>`.
+
+The ring oscillator's measurement needs a rough expected frequency (it sizes the transient): the first save asks for it
+once, in one line under the buttons; the task file keeps it. The task's files name the COPY's library, so the real run
+adapter opens the working copy - a run never writes into the user's cell any more.
+
+**Saving again, Save as.** Save task on an open task makes its next revision under the same name (the user's decision:
+saving again never makes a new task). The previous revision is kept in `history/r<N>/` inside the task's folder, the
+old folder aside in `profiles/.deleted/`. A recorded baseline is kept only if parameters, probes, measurement, analyses,
+variables and bindings are unchanged; changing only specs or notes keeps it. **Save as** makes another task with a
+working copy of its own: the open task's copy is copied inside the same library with every cell renamed
+`<cell>_<new task>` and checked against it (netlist statements with the names mapped back, the source copy unchanged).
+The first save of a cell takes the cell's working copy; a cell that has tasks is opened through them (its note lists
+them), and Delete task frees the copy again.
+
+**The task file.** One readable JSON file: the cell, the copy, the measurement, the Maestro part, the Parameters /
+Probes / Specs rows and notes, with a `_help` part that explains every part (JSON has no comments). **Task file** opens
+the file of the CURRENT editors in a window of its own; **Apply to editors** checks every row with the editors' schema
+and fills the editors (one Undo step) - a broken file is refused with its problems and changes nothing. What the file
+adds beside the rows (analyses, variables, bindings, the rough frequency, notes) is sent with the next Save task.
+Nothing is saved or written to Virtuoso from the window.
+
+**Not runnable yet:** a task measured by Maestro is saved, listed, opened and edited, but running it is the next part
+(the list and the task say so). Tasks saved before this part (Create profile) have no working copy; they still run on
+the original cell, and Save task refuses them with the way forward.
+
+Tests: `tests/workbench/test_wb_task_save.py` (fake bridge processes, the recorded ring-oscillator export). Browser
+check: `frontend/scripts/task_save_check.mjs` (hermetic; the task file window, Apply, Save task, Save as);
+`virtuoso_source_check.mjs`, `project_help_check.mjs` and `testbench_probes_check.mjs` follow the new form.
+
+### The agent sets the task up: one proposal, written into the working copy (added 2026-09-22, user request)
+
+The third part of the flow. **Ask the agent to set up** (in the note "Read from Virtuoso", beside Read the cell again)
+replaced "Ask the agent for suggestions" (user decision 2026-09-21: removed once this worked). It waits for the working
+copy, then opens the Agent tab with the request kind `virtuoso_setup` and the request written out: say in two or three
+sentences what the circuit is and how it works, then set it up for optimization in its working copy - which transistor
+widths to vary (grouped where devices must match), what to measure as Maestro outputs with the analyses they need, and
+specs. Add your own requirements to the words ("more than 1.1 GHz"); nothing is sent until you press Enter.
+
+**What the agent is given.** Besides the circuit (read from your cell; instance paths and nets are the same in the copy)
+and the three editors, the copy as data: its library, cells and Maestro test `GATOR`, what the workbench last wrote
+into that test, which instance values may be Maestro variables (see "What may be a Maestro variable" above), the
+calculator functions an output may call, and the connection's model file. It answers with rows for Parameters, Probes
+and Specs plus a `setup` part - analyses with their options, design variables, and the instance values set to them. A
+part it leaves out stays in the copy as it is.
+
+**Checked before anyone can approve it.** The backend refuses a proposal whose setup could not be written as it stands:
+an output calling a function outside the allowed list, a variable on a PDK device, an output reading an analysis the
+setup does not set, a malformed part. The Agent tab shows the reasons; there is nothing to approve.
+
+**Approve, apply and write the copy.** The proposal shows its row changes and, under them, the Maestro setup and where it
+goes ("Maestro setup of the working copy `<library>/<testbench>`" - never your cell). One approval covers both, bound to
+the proposal's content with the setup. The press fills the editors (one Undo step) and writes the setup - with the
+outputs and specs of the rows - into the copy's test (gated, under the Virtuoso session lock), reads it back and says
+whether the copy now matches. If Virtuoso cannot be reached, the rows are applied all the same and the message says to
+press **Write to Virtuoso** later. No simulation either way, and nothing becomes a task until you press **Save task**,
+which takes the analyses, variables and bindings written into the copy over (on an open task too: they are newer than
+the ones saved with it). The same parts applied earlier from a task file are dropped on the page when the write
+succeeds; a failed write leaves them.
+
+Tests: `tests/workbench/test_wb_agent_setup.py` (what the request tells the agent, the proposal and its bound approval,
+the refusals, apply writing into the copy through a fake write process, the rows applied when Virtuoso is down, no copy
+yet). Browser check: `frontend/scripts/agent_setup_check.mjs` (hermetic: canned agent and Virtuoso answers, every other
+writing request refused - safe against the live backend).
 
 ## Reload saved data
 

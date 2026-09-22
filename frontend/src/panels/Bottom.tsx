@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { api, ApiError, bytes, copy, download, downloadPackage, Json, num, saveJson } from '../api';
 import { usePolling } from '../store';
 import { DiffView } from './Editors';
+import { COPY_SETUP_WRITTEN } from './TaskSave';
 
 const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'transitions', 'states'];
 
@@ -249,6 +250,9 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
       await api.approve({ proposal_id: proposal.proposal_id, proposal_hash: proposal.proposal_hash, config });
       const applied = await api.apply({ proposal_id: proposal.proposal_id, config });
       setConfig(applied.config); setProposal(null); say('system', applied.note);
+      if (applied.virtuoso?.differences?.length) say('system', `What the working copy reads back differently: ${applied.virtuoso.differences.join('; ')}`);
+      if (applied.virtuoso?.written) window.dispatchEvent(new CustomEvent(COPY_SETUP_WRITTEN,
+        { detail: Object.keys(proposal.setup ?? {}).filter(part => proposal.setup[part] != null) }));
     } catch (e) { fail(e); setProposal(null); }
   };
   // Model / effort lists of the selected provider (served by the backend; absent until it is restarted with them).
@@ -358,7 +362,16 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
             <button onClick={() => circuitChange(false)}>Preview circuit diff</button>
             <button disabled={!circuitDiff?.diff || circuitDiff.applied} onClick={() => (popup ?? window).confirm('Write a WORKING COPY of the netlist with these changes? The original is never overwritten, and no native schematic is generated.') && circuitChange(true)}>Confirm: write working copy</button>
           </div>}
-          <button disabled={!proposal.diff.length} onClick={approveAndApply}>Approve and apply to the configuration</button>
+          {proposal.setup && <div className="setup-proposal"><h4>Maestro setup of the working copy{proposal.virtuoso_copy ? ` ${proposal.virtuoso_copy.library}/${proposal.virtuoso_copy.testbench}` : ''}</h4>
+            <table className="grid small"><tbody>
+              {Object.entries(proposal.setup.analyses ?? {}).map(([name, options]: [string, any]) => <tr key={`a-${name}`}><td>analysis {name}</td>
+                <td>{Object.entries(options).map(([k, v]) => `${k}=${v}`).join('  ')}</td></tr>)}
+              {Object.entries(proposal.setup.variables ?? {}).map(([name, value]: [string, any]) => <tr key={`v-${name}`}><td>variable {name}</td><td>{String(value)}</td></tr>)}
+              {(proposal.setup.bindings ?? []).map((b: Json) => <tr key={`b-${b.cell}-${b.instance}-${b.parameter}`}><td>{b.instance}.{b.parameter} in {b.cell}</td><td>= {b.variable}</td></tr>)}
+            </tbody></table>
+            <p className="hint">Approving fills the editors and writes this, with the outputs and specs of the rows, into the working copy - not into your
+              cell - then reads it back. {Object.keys(proposal.setup.analyses ?? {}).length ? '' : 'The analyses the copy has stay as they are.'}</p></div>}
+          <button disabled={!proposal.diff.length} onClick={approveAndApply}>{proposal.kind === 'virtuoso_setup' ? 'Approve, apply and write the copy' : 'Approve and apply to the configuration'}</button>
           <button onClick={() => api.reject(proposal.proposal_id).then(() => setProposal(null))}>Reject</button>
           <span className="hint"> The approval is bound to this exact proposal, configuration and circuit; any later change invalidates it.</span></div>}
         {/* Enter sends, Shift+Enter breaks the line. An Enter that confirms an IME candidate (isComposing / 229) must not send. */}
@@ -366,7 +379,7 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); propose(); } }}
           placeholder="Describe what you need. State where each requirement comes from; the agent may not invent requirements." />
         <div className="row">
-          <select title="What the agent may change" value={kind} onChange={e => setKind(e.target.value)}>{['draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'circuit_modification', 'readiness', 'minimal_start', 'settings_review', 'run_review'].map(k => <option key={k}>{k}</option>)}</select>
+          <select title="What the agent may change" value={kind} onChange={e => setKind(e.target.value)}>{['draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'circuit_modification', 'readiness', 'minimal_start', 'settings_review', 'run_review', 'virtuoso_setup'].map(k => <option key={k}>{k}</option>)}</select>
           {kind === 'modify_fields' && <button className="notes-link" aria-expanded={showSelection} onClick={() => setShowSelection(open => !open)}
             title="The rows this request may change. They are chosen in the editors with 'Modify selected with agent...'.">{selection.length} selected row(s)</button>}
           {busy && <button onClick={cancel}>Cancel request</button>}

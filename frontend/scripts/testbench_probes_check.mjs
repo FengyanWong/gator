@@ -165,7 +165,7 @@ try {
     && (await shown('.tb-probes'))?.includes('The targets of synthetic:opamp were removed from Specs'), await shown('.tb-probes'));
   check('what the rows mean is one click away (folded)', await evaluate(`(() => { const d = [...${PANEL}.querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'What the Probes rows say');
     return !!d && !d.open && d.textContent.includes('V0:p, the current through the supply source V0'); })()`));
-  check('the circuit type of Create profile follows the testbench', (await value('Circuit type')) === 'ring_oscillator');
+  check('there is no circuit type box any more: a saved task reads it from its probes', !(await evaluate(`[...document.querySelectorAll('label')].some(l => l.firstChild?.textContent.trim() === 'Circuit type')`)));
   check('the copy matches the box: no "read again" warning', !(await shown('.tb-stale')));
   await shot('tbprobes-2-brought.png');
 

@@ -35,6 +35,7 @@ const schematic = (library, cell) => ({ source: 'virtuoso', library, cell, origi
 const NOTE = 'FIXTURE NOTE: read from Virtuoso (canned answer).';
 const draft = (library, cell) => ({ loaded: true, task_key: `virtuoso:${library}/${cell}`, mock: false, native_draft: true, complete: true, diagnostics: [], profile_task: null,
   profile_recipes: [{ id: 'ring_oscillator', label: 'Ring oscillator (free-running)' }], circuit: { library, cell, native_draft: true }, hierarchy: { XU1: { M1: {}, M2: {} }, V0: {} },
+  working_copy: { verified: true, problems: [], copy: { library: `${library}_GATOR`, cell, testbench: `tb_${cell}` }, original: { library, cell, testbench: `tb_${cell}` } },
   analysis_context: null, evaluation_backend: null, max_concurrency: 1,
   summary: { device_count: 3, unknown_devices: [], devices: [{ instance_path: 'XU1/M1', kind: 'nmos', parameters: { w: { value: 4e-6 } } }] }, notes: [NOTE] });
 const generated = task => ({ loaded: true, task_key: task, mock: false, native_draft: false, generated_profile: true, baseline_recorded: false, complete: true,
@@ -72,6 +73,8 @@ try {
       if (op === 'read') return fulfil(requestId, 200, schematic(body.library, body.cell));
       if (op === 'import') { imported.add(`${body.library}/${body.cell}`); return fulfil(requestId, 200, { library: body.library, cell: body.cell, testbench_cell: body.testbench, device_count: 3 }); }
       if (op === 'profile') { created.add(`real:${body.name}`); return fulfil(requestId, 200, { task_key: `real:${body.name}`, name: body.name, recipe: body.recipe, circuit_class: 'vco', pdk_id: 'gpdk045', parameters: ROWS }); }
+      if (op === 'task/save') { created.add(`real:${body.name}`); return fulfil(requestId, 200, { task_key: `real:${body.name}`, name: body.name, revision: 1, created: true, runnable: true,
+        circuit_class: 'vco', pdk_id: 'gpdk045', parameters: ROWS, copy: { library: `${body.library}_GATOR`, cell: body.cell, testbench: `tb_${body.cell}` } }); }
       return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${op} is not expected` } });
     }
     if (name === '/api/circuit/load') {
@@ -128,7 +131,8 @@ try {
   await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*', requestStage: 'Request' }] });
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(CONFIG))});` });
   await send('Page.navigate', { url: APP });
-  if (!(await until(`!!(${PANEL}) && ${PANEL}.textContent.includes('Hierarchy (')`, 150))) throw new Error('the Project panel never showed a loaded circuit | console: ' + consoleErrors.join(' | ').slice(0, 300));
+  if (!(await until(`!!(${PANEL}) && ${PANEL}.textContent.includes('Hierarchy (')`, 150))) throw new Error('the Project panel never showed a loaded circuit | panel: '
+    + (await evaluate(`${PANEL}?.textContent.slice(0, 700) ?? 'no panel'`)) + ' | console: ' + consoleErrors.join(' | ').slice(0, 300));
 
   // ---- a registered task: nothing is unfolded by itself ----------------------------------------------------------
   check('on page load no line of the panel is unfolded', (await openLines()).length === 0, (await openLines()).join(' | '));
@@ -209,9 +213,9 @@ try {
   await click(BUTTON('Read this cell into the workbench')); await quiet(); await until(`${PANEL}.textContent.includes('Not optimizable yet')`);
   check('draft: the headline is in view', await shown('Read from Virtuoso. Not optimizable yet: it has no circuit profile.'));
   check('draft: what to do with it is folded under "What you can do with it now"', await shown('What you can do with it now') && await folded('The workbench now holds its own copy') && await folded('Its answer is a proposal'));
-  check('draft: the two buttons stay in view', await buttonShown('Ask the agent for suggestions') && await buttonShown('Read the cell again'));
-  check('draft: "Then create the profile." with its form stays in view, the explanation is folded', await shown('Then create the profile.') && await shown('What Create profile does')
-    && await folded('snapped onto its 5 nm width grid') && await evaluate(`${FIELD('Profile name')}.checkVisibility() && ${FIELD('Expected oscillation frequency')}.checkVisibility()`) && await buttonShown('Create profile'));
+  check('draft: the two buttons stay in view', await buttonShown('Ask the agent to set up') && await buttonShown('Read the cell again'));
+  check('draft: "Then save it as a task." with Save task stays in view, the explanation is folded', await shown('Then save it as a task.') && await shown('What Save task does')
+    && await folded('Saving again makes the next revision') && await evaluate(`${FIELD('New task name')}.checkVisibility()`) && await buttonShown('Save task') && await buttonShown('Task file'));
   check('draft: the backend\'s note is one closed line "1 note on this circuit"', await shown('1 note on this circuit') && await folded(NOTE));
   await click(SUMMARY('1 note on this circuit')); await sleep(200);
   check('draft: a click shows the note', await shown(NOTE));
@@ -224,10 +228,9 @@ try {
     && await shown('Hierarchy (3 instances)') && await evaluate(`!${TREE}.checkVisibility()`) && await folded('Instances and parameters') && await folded('Native schematic'));
   await shot('help-4b-draft-hierarchy-closed.png');
 
-  // ---- a generated profile -------------------------------------------------------------------------------------------------------------
-  await type('Expected oscillation frequency', '1.2G'); await sleep(300);
-  await click(BUTTON('Create profile')); await quiet(); await until(`${PANEL}.textContent.includes('Before the first costed run')`);
-  check('generated profile: the REAL banner and the missing-baseline warning stay in view', await shown('REAL evaluation backend') && await shown('Generated profile without a real baseline'));
+  // ---- a saved task (was: a generated profile) -----------------------------------------------------------------------------------------
+  await click(BUTTON('Save task')); await quiet(); await until(`${PANEL}.textContent.includes('Before the first costed run')`);
+  check('generated profile: the REAL banner and the missing-baseline warning stay in view', await shown('REAL evaluation backend') && await shown('This task has no real baseline yet'));
   check('generated profile: "Before the first costed run" and both buttons stay in view', await shown('Before the first costed run:') && await buttonShown('Check against Virtuoso (no simulation)')
     && await buttonShown('Record the baseline run as reference'));
   check('generated profile: what the check does is folded', await shown('What the check does') && await folded('It does everything a real evaluation does'));

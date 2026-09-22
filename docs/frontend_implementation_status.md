@@ -2520,3 +2520,155 @@ check (replacing "Check against Virtuoso"), the run path that measures `ade_outp
 Spectre per evaluation with transistor sizes written into the COPY, OCEAN on that run's results; one Maestro run to
 prove equality - needs the user's budget) and then the removal of the two fixed circuit types. Until then static
 validation keeps `ade_output` probes and design variables blocked for runs.
+
+### 7.57 Virtuoso task flow, part 2: the task file, "Save task" and "Save as" (Create profile removed) (2026-09-22 ~00:30, same session as 7.55, explicit user request)
+
+Request: "go on part 2" - the task file (one readable file the user can open and change, laid out like an example) and
+a manual "Save task" that stores the task from the Parameters / Probes / Specs rows, replacing Create profile (removal
+approved in 7.55 once the replacement works); decided with the user in 7.55: saving again updates the same task (no new
+task), plus a "Save task as" function.
+
+Built:
+* `src/gator_workbench/task_files.py` (new): the task file `gator-task-1` (`cell`, `copy`, `measurement`, `maestro`,
+  `parameters` / `probes` / `specs`, `notes`, `virtuoso` fingerprints) with a `_help` part that explains every part in
+  the file itself; `draft` (the file of the CURRENT editors, taking what the page holds beside the rows, else the saved
+  task, else the copy's last written Maestro setup), `parse` (every row checked with the editors' schema models; the
+  Maestro part and the rough frequency checked; problems in plain words; nothing saved), `what_changed` +
+  `BASELINE_PARTS`.
+* `profiles.py`: the body of `create_profile` became `_generate` (same checks, one generator for both routes; the older
+  route stays for the API/tests) with a third measurement `maestro` (supply from the one source, else the verified
+  nominal); `measurement_kind` (from the Probes: all ade_output -> maestro, all one circuit type's results -> that type,
+  expression probes follow; mixed / both-fitting / empty refused in words); `save_task`: first save takes the cell's
+  working copy (`working_copy.claim`), Save task on an open task = next revision (refused while a run of it works, or
+  for tasks made before working copies), Save as = `working_copy.make_task_copy`; a Maestro-measured task writes its
+  setup into its copy and must read back identical; the copy is re-imported (`bridge_read` import op, read-only) and
+  the files are generated from it into a staging folder, swapped in with `history/r<N>/` and the old folder aside in
+  `.deleted`; the recorded baseline carried over only when `what_changed` misses every `BASELINE_PARTS` entry; a
+  refusal releases the claim and leaves nothing. `NeedsFrequency` (the ring oscillator's rough frequency, asked once and
+  kept in the task file) replaces the removed form field. `tasks_for_cell` (by the task's `original` or its copy);
+  `task_for_cell` uses it; `delete_profile` frees the cell's copy again.
+* `working_copy.py`: setups work on a TARGET (`draft_target` = the cell's own copy; a task's `copy_target`), bindable
+  parameters and restore values translated to the copy's cell names; `make_task_copy` (renamed cells `<cell>_<task>` in
+  the same library, checked against the source copy with the names mapped back, the source copy fingerprinted before and
+  after, half-way attempts resumable like the first copy); `claim` / `release`. `bridge_setup.make_copy` takes a rename
+  map (`REMASTER_SKILL` re-points headers by an `assoc` list of source -> copy names).
+* `recipes.py`: `GenericMaestroProfile` (the same verified width writing; deck and measurement refuse until the run path
+  exists); `provided_metrics('maestro')` = () - the task's own output names are its entry's `provided_metrics`.
+  `tasks.py`: Maestro-measured tasks listed as not available with `MAESTRO_NOT_RUNNABLE` and loaded describe-only (the
+  builder refuses); a saved task's starter rows are exactly its task file's rows; `list_tasks` carries `revision`,
+  `measurement`, `original`; the "rows differ" refusal now says to press Save task.
+* API: `POST /api/virtuoso/task/save` (409 `needs_expected_frequency` for the one question, `refused` for plain
+  refusals, the gate as usual), `POST /api/virtuoso/task/file`, `POST /api/virtuoso/task/file/check`.
+* Frontend: `TaskSave.tsx` (new; New task name, Save task, Save as with a name beside it, Task file; the frequency
+  question in one line when asked; "Only you can press it"; explanation folded), `TaskFile.tsx` (new; the file in a
+  window of its own - portal like the Connection window - with Apply to editors / Revert / Close and the problems
+  listed). `Left.tsx`: the Create profile form (Profile name, Circuit type, Expected oscillation frequency) is gone;
+  "Then save it as a task" + TaskSave in the draft note; an open generated task gets TaskSave, "Saved the new task ..."
+  after a first save / Save as, "Delete task" (was Delete profile), texts say task. `api.ts`: `taskSave`, `taskFile`,
+  `taskFileCheck` (next to the other Virtuoso calls).
+
+Live (2026-09-22 ~00:25, zero simulations): a trial task `ring_trial_p2` saved from the user's ring oscillator (the
+testbench's 8 probes, widths in two groups, the ring frequency given once): 4.0 s, registered with library
+`GPDK045_RINGOSC_GATOR`; "Check against Virtuoso (no simulation)" on it: all four steps passed (3.9 s) - the real run
+adapter connects to the COPY, the export matches in topology and every parameter, the deck is written. Save as
+`ring_trial_p2b`: renamed copy cells `ring_osc_3stage_ring_trial_p2b` / `tb_ring_osc_3stage_ring_trial_p2b` made and
+checked (5.6 s), its check passed (3.2 s). Then both trial tasks deleted (kept in `profiles/.deleted/`), the two renamed
+cells deleted from the copy library, their records removed; the copy library holds only the plain copy, which still
+netlists like the original, unclaimed. No task of the user's was created.
+
+Verification: `tests/workbench/test_wb_task_save.py` (8: first save / claim / runs on the copy / starter rows; next
+revision keeping and dropping the baseline, history, refusals; Save as with its own copy; a Maestro-measured task written,
+read back, saved, listed not runnable, loaded describe-only; a drifting read-back saves nothing; how a task measures;
+Delete frees the copy; the file routes). `test_wb_profiles.py`: the "rows differ" wording. Browser, on a scratch build
+on 5176 (`/api` to the live 8765, not restarted): `task_save_check.mjs` (new, hermetic: the file window opens with its
+_help, Apply fills the editors, a broken file changes nothing, Save task sends rows + task + the file's analyses and
+reports revision/baseline, Save as asks the name beside the button and opens the new task), `working_copy_check.mjs`,
+`virtuoso_source_check.mjs` and `project_help_check.mjs` (rewritten for Save task / Delete task; the draft caption is
+"New task name" because the Project panel already has "Task name"), `testbench_probes_check.mjs` (the circuit type box
+is gone) - all pass. `tsc --noEmit` clean. Live `frontend/dist` NOT rebuilt yet; the backend needs a restart.
+
+Not built yet: the agent's whole-setup proposal (part 3; then "Ask the agent for suggestions" goes), the check before
+every run (part 4; then "Check against Virtuoso" goes), the run path of Maestro-measured tasks (part 5; then the two
+circuit types go).
+
+### 7.60 Virtuoso task flow, part 3: the agent sets the task up - one proposal, written into the working copy ("Ask the agent for suggestions" removed) (2026-09-22 ~01:20, same session as 7.55 / 7.57, explicit user request)
+
+Request: "go on part 3" - step 3 of the user's flow: the Agent tab's agent proposes the whole setup (Parameters / Probes /
+Specs rows AND the Maestro setup of the working copy), the user approves, the setup is written into the working copy and
+read back, the editors are filled. It replaces "Ask the agent for suggestions" (removal approved in 7.55 once the
+replacement works).
+
+Built:
+* `agents/base.py`: request kind `virtuoso_setup` (sections parameters, targets, measurements); `AgentRequest.copy` - the
+  working copy as data; without it the request is refused ("... press "Make a working copy" first").
+* `agents/prompts.py`: the answer schema's `setup` part (analyses with options, variables, bindings); the request's
+  instructions (what the circuit is in two or three sentences; widths grouped where devices must match; Maestro outputs
+  with the analyses they read; specs; only listed calculator functions; a PDK device is never bound to a variable; a part
+  left out stays as the copy has it); a `<working_copy_data>` block.
+* `agents/proposals.py`: `setup` is taken only from a `virtuoso_setup` answer, reduced to its three parts in their shapes
+  (from any other kind it is dropped, not obeyed); it is part of the proposal and of its hash, so the one approval covers it.
+* `api/app.py`: the request carries the copy (names, `maestro_now` = what the workbench last wrote into its test, the
+  instance values that may be variables, the allowed functions, the connection's model file). `check_setup` runs on every
+  proposal of the kind (live answer and imported result): `virtuoso_setup.validate` against the copy's bindable values,
+  plus every analysis an `ade_output` probe reads must be in `setup.analyses` when that part is sent - otherwise the
+  proposal is rejected and the request answered 409 with the reasons, before anyone can approve it. `apply` of an
+  approved `virtuoso_setup` proposal writes the setup (with the outputs and specs of the applied rows) into the copy
+  through `working_copy.write_setup_on` (gate `write_cellview`, session lock) and answers `virtuoso` {written, matches,
+  differences, copy} with a note; if Virtuoso cannot be reached the rows are applied anyway and the note says to press
+  Write to Virtuoso later.
+* A part left out (None) is KEPT: `virtuoso_setup.from_rows` returns None for it and `working_copy.write_setup_on` leaves
+  it as the copy has it and compares it with what the copy has. Found while building this: an empty part would have wiped
+  what the copy held.
+* `profiles.save_task`: the analyses / variables / bindings of a Maestro-measured task now come from what the page sends,
+  else from what the copy was LAST WRITTEN with, else from the saved task (was: saved task before the copy) - otherwise
+  Save task on an open task would have put the old setup back over an approved agent setup; Save as starts from the open
+  task's copy. Save as from a task made before working copies is refused in words (was a KeyError, HTTP 500).
+* `agents/prompts.py`, found while preparing the commit: the `<working_copy_data>` block had been put between the
+  circuit-data `if` and its `else`, so EVERY other request kind was told "No circuit is loaded" next to its circuit data
+  (live on 8765 since the 00:53 restart until the next one). Fixed; a test pins the line for both cases.
+* Frontend: `Left.tsx` - "Ask the agent for suggestions" is gone; **Ask the agent to set up** beside Read the cell again,
+  disabled until the working copy is verified (its title says why), opens the Agent tab with kind `virtuoso_setup` and
+  the request written out (sends nothing). `Bottom.tsx` - the proposal box shows, under the row diff, "Maestro setup of
+  the working copy <library>/<testbench>" (analyses with options, variables, `V0.vdc in <cell> = VSUP`) and that it goes
+  into the copy, not your cell; the button is **Approve, apply and write the copy**; the result says whether the copy
+  matches, or that the rows were applied and the write failed. After a successful write it sends
+  `COPY_SETUP_WRITTEN` with the parts written; `TaskSave.tsx` drops those parts from what a task file had set on the page,
+  so the next Save task takes them from the copy.
+* Docs: `docs/workbench.md` "The agent sets the task up"; the section "Browsing a Virtuoso library" no longer describes
+  the Create profile form (removed in 7.57) or the old agent button.
+
+Live: nothing written into Virtuoso and no agent request sent by this session - the write path is the one verified live
+in 7.55 / 7.57. The user restarted 8765 at 00:53 and the session of 7.58 rebuilt the live `frontend/dist` at 00:54 (its
+bundle was byte-identical to the build checked here, and the live API lists `virtuoso_setup`), so part 3 was live
+except the two follow-ups above, written after that. With every peer idle and only `Bottom.tsx` / `TaskSave.tsx` changed
+since 00:54, this session rebuilt the live `frontend/dist` at ~01:30 (`tsc --noEmit` first; `index-IVAPl79a.js`, the
+bundle the checks below passed on) and ran `agent_setup_check.mjs` 15, `task_save_check.mjs` 19 and
+`working_copy_check.mjs` 23 on the live 8765 - all pass. The `save_task` precedence fix needs a backend restart.
+
+Verification:
+* `tests/workbench/test_wb_agent_setup.py` (10: what the request tells the agent; only a request without circuit data
+  hears "No circuit is loaded"; the proposal carries the setup and its
+  approval is bound to it; four refusals - a function outside the list, a variable on a PDK device, an output whose
+  analysis is not set, a malformed part; apply fills the editors and writes into the copy through a fake write process,
+  variables and bindings not proposed = kept; rows applied when the gate blocks; no copy yet).
+  `test_wb_task_save.py` +2 (10): Save task and Save as carry the setup written into the copy after the last save on;
+  Save as from an old task refused in words. Full `tests/workbench` with the follow-ups: 567 passed (6 min 47 s, exit 0),
+  before the prompt fix and its test; the commit's own tree was tested separately (below).
+* Browser: `agent_setup_check.mjs` (new, 15, hermetic - canned agent and Virtuoso answers, every other writing request
+  refused, so also safe on the live 8765, where it passed): the button waits for the copy, opens the tab without
+  sending, Enter sends one `virtuoso_setup` request, the setup table and where it goes, the button caption, approve =
+  written and read back, the probe in the editors, a failed write, the task file's analyses dropped after a write and
+  kept after a failed one. On a scratch build (5176, `/api` to 8765): `working_copy_check.mjs` 23, `task_save_check.mjs`
+  19, `virtuoso_source_check.mjs` 69, `project_help_check.mjs` 39; on a scratch backend (8768, empty settings plus a
+  copy of the connection file): `testbench_probes_check.mjs` 39, `agent_tab_check.mjs` 94 - all pass. `tsc --noEmit`
+  clean. Trap noted: Windows node sees `GATOR_WORKBENCH_URL` only with `WSLENV=GATOR_WORKBENCH_URL`; without it every
+  check silently runs against 8765.
+
+* The commit of 7.57 + 7.60 holds only this session's hunks (the other sessions' uncommitted work in the same files stays
+  in the working tree): full `tests/workbench` on a clean `git archive` copy of exactly its tree - 535 passed (2 min
+  50 s); `tsc --noEmit` and `vite build` clean on the same tree.
+
+Next: part 4 - the check before every run (then "Check against Virtuoso" goes); part 5 - the run path of
+Maestro-measured tasks (then the two circuit types, the auto probes and the older `/api/virtuoso/profile` route go).
+
+`src/analog_optimizer/` untouched. Committed and pushed together with 7.57 (branch `workbench`).

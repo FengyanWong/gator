@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, Json } from '../api';
 import { WorkingCopy } from './WorkingCopy';
+import { TaskSave } from './TaskSave';
 
 /** The connection block lives in Connection.tsx: one button in this column that opens the connection window. */
 
@@ -33,16 +34,13 @@ const namedTestbench = (cells: Json, cell?: string | null): string | null => {
   return found.find((name: string) => name === `tb_${cell}`) ?? found[0] ?? null;
 };
 const sameJson = (a: Json, b: Json) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
-/** "1.2G", "800M", "1.2e9" -> Hz. NaN when it is not a number. */
-const parseFrequency = (text: string) => {
-  const match = /^\s*([0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\s*([kMG]?)(?:Hz)?\s*$/.exec(text);
-  return match ? Number(match[1]) * ({ '': 1, k: 1e3, M: 1e6, G: 1e9 } as Record<string, number>)[match[2]] : NaN;
-};
 const EXAMPLE_NETLIST = { netlist_path: 'tests/fixtures/synthetic/opamp.scs', parser_config_path: 'configs/opamp.json' };
 
-/** What the Agent tab is asked once a cell was read from Virtuoso. Shown in the message box first: editable, never sent by itself. */
-const DRAFT_PROMPT = 'Read this circuit and say in two or three sentences what it is and how it works. Then propose: which device sizes to vary, '
-  + 'which of them must move together (matched or identical devices), a sensible range for each, and targets with the measurements they need.';
+/** What the Agent tab is asked once a cell was read from Virtuoso and copied. Shown in the message box first: editable, never sent by
+ *  itself. The request kind is `virtuoso_setup`: the rows plus the Maestro setup of the working copy, written there after approval. */
+const SETUP_PROMPT = 'Read this circuit and say in two or three sentences what it is and how it works. Then set it up for optimization in its '
+  + 'working copy: which transistor widths to vary (grouped where devices must match) with sensible ranges, what to measure as Maestro outputs '
+  + 'with the analyses they need, and specs on them. Add the requirements I give here: ';
 
 /** The three editors, by their configuration keys: Parameters, Specs, Probes. */
 const ROW_SECTIONS = ['parameters', 'targets', 'measurements'];
@@ -162,23 +160,15 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // Reading a cell INTO the workbench is an explicit press: Virtuoso exports the netlist of the testbench (or of the cell)
   // and the sizes are read back - read-only, zero-cost, some seconds. The backend keeps the copy; the circuit then loads
   // from it like any other, so the editors, the validation and the agent can work on it. It still cannot run.
-  // Create profile: the cell that was read + the rows of the three editors become the task real:<name>. Nothing is
-  // contacted; whatever the real backend cannot do comes back as a plain reason. The rows return snapped onto the width grid.
-  const [profileName, setProfileName] = useState('');
-  const [recipe, setRecipe] = useState('ring_oscillator');
-  const [frequency, setFrequency] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [created, setCreated] = useState<Json>(null);
-  const suggestedName = (ref.cell ?? '').toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^[^a-z]+/, '').slice(0, 40);
-  const createProfile = async () => {
-    setCreating(true); setNativeError(null);
-    try {
-      const made = await api.createProfile(config, profileName || suggestedName, recipe, recipe === 'ring_oscillator' ? parseFrequency(frequency) : null);
-      setCreated(made); setDeleted(null);
-      api.tasks().then(t => setTasks(t.tasks)).catch(() => undefined);
-      setConfig(c => ({ ...c, parameters: made.parameters, circuit: { ...c.circuit, source: 'registered_task', task_id: made.task_key, circuit_class: made.circuit_class, pdk_id: made.pdk_id } }));
-    } catch (e: any) { setNativeError({ step: 'profile', text: e.message }); }
-    finally { setCreating(false); }
+  // Save task (TaskSave.tsx, replaces Create profile - user decision 2026-09-21): the editors' rows become the task
+  // real:<name>, which runs on the cell's working copy. After a first save or a Save as the form switches to the task; after
+  // saving the open task again it is loaded again (its baseline may no longer hold).
+  const [saved, setSaved] = useState<Json>(null);          // the last first save / Save as: said again once the task is open
+  const taskSaved = (made: Json) => {
+    setDeleted(null); setSaved(made.created ? made : null);
+    api.tasks().then(t => setTasks(t.tasks)).catch(() => undefined);
+    if (made.task_key === ref.task_id) { setConfig(c => ({ ...c, parameters: made.parameters })); load(ref); return; }
+    setConfig(c => ({ ...c, parameters: made.parameters, circuit: { ...c.circuit, source: 'registered_task', task_id: made.task_key, circuit_class: made.circuit_class, pdk_id: made.pdk_id } }));
   };
   // A generated profile, before its first costed run: check it against the live cell WITHOUT simulating (the run adapter
   // connects, Virtuoso exports, the export is compared, the deck is written), and afterwards record the finished baseline
@@ -203,17 +193,18 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     setProfileMessage({ level: 'ok', text: `Baseline recorded from run ${recorded.run_id ?? recorded.run_dir}. Every later run compares its first evaluation with it.` });
     await load(ref);
   });
-  // Delete profile: the way to start over (another circuit type, other sizes to vary - a profile is never edited). Asked
-  // once more, because the task leaves the list. The backend keeps the files aside and refuses while a run of the task
-  // is working. The form then goes back to the cell the profile was made from, where Create profile is offered again.
+  // Delete task: takes a saved task out of the list. Asked once more, because the task leaves the list. The backend keeps
+  // the files aside and refuses while a run of the task is working. The form then goes back to the cell the task was saved
+  // from, whose working copy is free again for a new task.
   const [deleted, setDeleted] = useState<Json>(null);
   const deleteProfile = () => {
-    if (!window.confirm(`Delete the profile real:${generatedName}?\n\nIt leaves the Registered task list, and its cell can get a new profile. Runs already made `
-      + 'with it keep their data, but a paused one can no longer be resumed. A copy of the profile\'s files is kept on the backend machine.'
-      + (circuit?.baseline_recorded ? '\n\nIts recorded baseline goes with it: a new profile needs a new real baseline simulation.' : ''))) return;
+    if (!window.confirm(`Delete the task real:${generatedName}?\n\nIt leaves the Registered task list, and its cell can get a new task. Runs already made `
+      + 'with it keep their data, but a paused one can no longer be resumed. A copy of the task\'s files is kept on the backend machine, and its '
+      + 'working copy stays in Virtuoso.'
+      + (circuit?.baseline_recorded ? '\n\nIts recorded baseline goes with it: a new task needs a new real baseline simulation.' : ''))) return;
     profileAction('delete', async () => {
       const gone = await api.deleteProfile(generatedName!);
-      setDeleted(gone); setCreated(null);
+      setDeleted(gone);
       api.tasks().then(t => setTasks(t.tasks)).catch(() => undefined);
       setConfig(c => ({ ...c, circuit: { ...c.circuit, source: 'virtuoso', task_id: null, library: gone.library, cell: gone.cell, view: 'schematic', testbench_cell: gone.testbench_cell ?? null } }));
     });
@@ -233,8 +224,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // library / cell / testbench or a press of Read, never on page load; and only over rows that are nobody's work - empty,
   // brought by an earlier testbench, or still exactly the rows the last registered task brought. That task's untouched
   // targets leave Specs with them (they point at its probes). Rows someone edited stay, and the line offers the exchange.
-  // The Circuit type of Create profile follows the testbench too. A choice exchanges within its own Undo step; a press
-  // is a step of its own.
+  // A choice exchanges within its own Undo step; a press is a step of its own. (The circuit type a saved task measures
+  // with is read from its Probes when it is saved.)
   const [probeNote, setProbeNote] = useState<Json>(null);  // { state: brought | kept | none, found, clearedTask? }
   const brought = useRef<string[]>([]);                     // Probes this panel brought from a testbench (JSON), this page session
   const followCount = useRef(0);
@@ -242,7 +233,6 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     const mine = ++followCount.current;
     const found = loaded?.loaded && loaded.native_draft && !loaded.profile_task ? loaded.testbench_probes : null;
     if (!found) { setProbeNote(null); return; }
-    if (found.circuit_type) setRecipe(found.circuit_type);
     if (!found.rows.length) { setProbeNote({ state: 'none', found }); return; }
     if (sameJson(latest.current.measurements, found.rows)) { setProbeNote(null); return; }
     const taskId = latest.current.circuit.task_id;
@@ -314,8 +304,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       <p><b>This cell already has a registered task:</b> <code>{circuit.profile_task}</code>{builtIn ? ' (a verified built-in circuit)' : ''}{' '}
         <button onClick={() => chooseTask(circuit.profile_task, { source: 'registered_task' })} title="Source: Registered task, with this task chosen.">Open</button></p>
       <details className="more"><summary>What this means</summary>
-        <p>The workbench can already optimize this cell - through that task, under Source: Registered task. A cell has one task, so no
-          second profile is created for it here.{builtIn ? '' : ' To start over with other sizes or another circuit type, open the task and press Delete profile.'}</p></details>
+        <p>The workbench can already optimize this cell - through that task, under Source: Registered task.{builtIn ? ' A verified built-in circuit gets no second task.'
+          : ' Open it to change it (Save task) or to make another task from it (Save as), which gets a working copy of its own. To start over from the cell, open it and press Delete task.'}</p></details>
     </div>) : null;
   // What was read straight from Virtuoso. It is a line of the Hierarchy block; while no circuit is loaded (browse only)
   // there is no such block and it stands alone at the end of the panel.
@@ -433,7 +423,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           "unspecified" is fine for a single run.{ref.source === 'virtuoso' && ' The PDK id is filled in from the library\'s technology library.'}</p></details>
       {error && <p className="error">{error}</p>}
       {deletedHere && ref.source === 'virtuoso' && !circuit?.profile_task && (<>
-        <p className="ok">Profile <code>{deletedHere.deleted}</code> deleted. This cell can get a new one.</p>
+        <p className="ok">Task <code>{deletedHere.deleted}</code> deleted. This cell can get a new one.</p>
         <details className="more hint"><summary>Where its files went</summary>
           <p>Nothing was erased. They are kept on the backend machine in <code>{deletedHere.kept_copy}</code>.</p></details>
       </>)}
@@ -474,14 +464,16 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
             <details className="more"><summary>What you can do with it now</summary>
               <p>The workbench now holds its own copy of this cell, so you can look at it, fill the three editors and let the agent help.
                 Start stays disabled.</p>
-              <p>Next: ask the agent what this circuit is and which sizes, ranges and targets make sense. Its answer is a proposal in the
-                Agent tab; once you approve it there, the three editors are filled from it.</p>
+              <p>Next: make the working copy, then ask the agent to set it up - it says what the circuit is and proposes what to vary, what
+                to measure (Maestro outputs, with their analyses) and specs. Its answer is a proposal in the Agent tab; once you approve it there,
+                the three editors are filled and the setup is written into the working copy (never into your cell) and read back.</p>
             </details>
             {(circuit.circuit?.testbench_cell ?? null) !== (ref.testbench_cell ?? null) && (
               <p className="warn tb-stale">This copy was read {circuit.circuit?.testbench_cell ? <>through <code>{circuit.circuit.testbench_cell}</code></> : 'without a testbench'}.
                 Press <b>Read the cell again</b> to read it {ref.testbench_cell ? <>through <code>{ref.testbench_cell}</code></> : 'without one'}: Probes then follow it.</p>)}
             <div className="row">
-              <button className="primary" onClick={() => onAgent('draft_config', [], DRAFT_PROMPT)} title="Opens the Agent tab with the request written out. Nothing is sent until you press Enter in its message box.">Ask the agent for suggestions</button>
+              <button className="primary" disabled={!circuit.working_copy?.verified} onClick={() => onAgent('virtuoso_setup', [], SETUP_PROMPT)}
+                title={circuit.working_copy?.verified ? 'Opens the Agent tab with the request written out. Nothing is sent until you press Enter in its message box.' : 'Make the working copy first (below): the agent\'s setup is written into it.'}>Ask the agent to set up</button>
               <button disabled={!profileId || importing || !!listing} onClick={importCell} title="After a change in Virtuoso, or to export through another testbench cell. Read-only.">{importing ? 'Reading...' : 'Read the cell again'}</button>
             </div>
             <WorkingCopy profileId={profileId} library={ref.library} cell={ref.cell} testbench={circuit.circuit?.testbench_cell ?? null}
@@ -507,31 +499,20 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
               {Object.keys(noteHere.found.not_fitting ?? {}).length > 0 && <details className="more hint"><summary>Why no circuit type fits</summary>
                 <ul className="steps-list">{Object.entries(noteHere.found.not_fitting).map(([type, why]: [string, any]) => <li key={type}><b>{type}</b>: {why}</li>)}</ul></details>}
             </>)}
-            <p><b>Then create the profile.</b></p>
-            <details className="more"><summary>What Create profile does</summary>
-              <p>It takes what may vary from the parameter editor (only transistor widths can be changed in the real Virtuoso; ranges are
-                snapped onto its 5 nm width grid) and registers the cell as a task. No simulation runs: the first real one is the new
-                task's <b>Single baseline simulation</b>, which asks for your budget.</p></details>
-            <div className="row">
-              <label title="Lowercase letters, digits and _. It becomes the task real:<name>.">Profile name
-                <input value={profileName} placeholder={suggestedName} onChange={e => setProfileName(e.target.value)} /></label>
-              <label title="Decides which analysis runs and how results become numbers.">Circuit type
-                <select value={recipe} onChange={e => setRecipe(e.target.value)}>
-                  {(circuit.profile_recipes ?? []).map((r: Json) => <option key={r.id} value={r.id}>{r.label}</option>)}</select></label>
-            </div>
-            {recipe === 'ring_oscillator' && <label title="Rough is enough: it only sizes the transient simulation (60 periods long, measured after 20).">Expected oscillation frequency
-              <input value={frequency} placeholder="e.g. 1.2G" onChange={e => setFrequency(e.target.value)} /></label>}
-            <div className="row"><button className="primary" onClick={createProfile}
-              disabled={creating || !(profileName || suggestedName) || (recipe === 'ring_oscillator' && !(parseFrequency(frequency) > 0))}>
-              {creating ? 'Creating...' : 'Create profile'}</button></div>
+            <p><b>Then save it as a task.</b></p>
+            <TaskSave profileId={profileId} library={ref.library} cell={ref.cell} task={null} hasCopy={!!circuit.working_copy?.verified}
+              config={config} setConfig={setConfig} onSaved={taskSaved} />
           </div>)}
-        {created && circuit.generated_profile && created.task_key === ref.task_id && <div className="note"><p><b>Profile {created.task_key} created.</b> The parameter editor now shows the
-          ranges exactly as registered. Nothing has been simulated yet.</p></div>}
-        {circuit.generated_profile && !circuit.baseline_recorded && <p className="warn">Generated profile without a real baseline: begin with
+        {circuit.generated_profile && !circuit.baseline_recorded && <p className="warn">This task has no real baseline yet: begin with
           <b> Single baseline simulation</b> (one real Spectre run, asks for your budget) before an optimization run.</p>}
+        {saved && saved.task_key === ref.task_id && <p className="ok">Saved the new task <code>{saved.task_key}</code>. It runs on the working copy
+          <code> {saved.copy?.library}/{saved.copy?.testbench}</code>; nothing has been simulated yet.</p>}
         {generatedName && (
           <div className="note">
-            <p><b>Before the first costed run:</b> check this profile against the cell in Virtuoso.</p>
+            <TaskSave profileId={profileId} library={null} cell={null} task={generatedName}
+              revision={tasks.find(t => t.task_key === ref.task_id)?.revision ?? null} hasCopy
+              config={config} setConfig={setConfig} onSaved={taskSaved} />
+            <p><b>Before the first costed run:</b> check this task against its cell in Virtuoso.</p>
             <details className="more"><summary>What the check does</summary>
               <p>It does everything a real evaluation does before Spectre starts - connect, export the netlist, compare it with the record,
                 write the simulation deck - and simulates nothing.</p></details>
@@ -544,12 +525,12 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
             </div>
             {preflight && <ul className="steps-list">
               {preflight.steps.map((s: Json) => <li key={s.step} className={s.ok ? 'ok' : 'error'}><b>{s.ok ? 'passed' : 'FAILED'}: {s.step}</b> - {s.detail}</li>)}
-              <li className={preflight.ok ? 'ok' : 'error'}><b>{preflight.ok ? 'The profile matches the live cell. Nothing was simulated.' : 'Not ready for a real run: see the failed step.'}</b></li>
+              <li className={preflight.ok ? 'ok' : 'error'}><b>{preflight.ok ? 'The task matches the live cell. Nothing was simulated.' : 'Not ready for a real run: see the failed step.'}</b></li>
             </ul>}
             {profileMessage && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
-            <div className="row start-over"><span className="hint">A profile is never edited. To change what may vary or the circuit type, start over:</span>
+            <div className="row start-over"><span className="hint">To start over from the cell:</span>
               <button disabled={!!profileBusy} onClick={deleteProfile} title="Asks once more. The task leaves the Registered task list; its files are kept aside, and runs already made keep their data.">
-                {profileBusy === 'delete' ? 'Deleting...' : 'Delete profile'}</button></div>
+                {profileBusy === 'delete' ? 'Deleting...' : 'Delete task'}</button></div>
           </div>)}
         {circuit.notes?.length > 0 && <details className="more hint"><summary>{circuit.notes.length === 1 ? '1 note' : `${circuit.notes.length} notes`} on this circuit</summary>
           {circuit.notes.map((n: string) => <p key={n}>{n}</p>)}</details>}

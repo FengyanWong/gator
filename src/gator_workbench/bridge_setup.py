@@ -69,9 +69,9 @@ COPY_VIEW_SKILL = '''
 let((src dst)
   src = dbOpenCellViewByType("%(library)s" "%(cell)s" "%(view)s" nil "r")
   unless(src error("cannot open %(library)s/%(cell)s/%(view)s"))
-  dst = dbCopyCellView(src "%(copy_library)s" "%(cell)s" "%(view)s" nil nil %(overwrite)s)
+  dst = dbCopyCellView(src "%(copy_library)s" "%(dest)s" "%(view)s" nil nil %(overwrite)s)
   dbClose(src)
-  unless(dst error("dbCopyCellView refused %(copy_library)s/%(cell)s/%(view)s"))
+  unless(dst error("dbCopyCellView refused %(copy_library)s/%(dest)s/%(view)s"))
   dbClose(dst)
   t)
 '''
@@ -84,16 +84,18 @@ let((out)
       out = strcat(out car(pair) "/" cadr(pair) " ")))
   out)
 '''
-# Re-point every instance of a copied cell in one copied schematic at the copy, then check and save it. Answers
-# "remastered|<header count>|<schCheck result>".
+# Re-point every instance of a copied cell in one copied schematic at its copy (same name, or the new name of a "Save as"
+# copy), then check and save it. Answers "remastered|<header count>|<schCheck result>".
 REMASTER_SKILL = '''
-let((cv n checked)
-  cv = dbOpenCellViewByType("%(copy_library)s" "%(cell)s" "schematic" nil "a")
-  unless(cv error("cannot open %(copy_library)s/%(cell)s/schematic for editing"))
+let((cv n checked pairs hit)
+  pairs = list(%(pairs)s)
+  cv = dbOpenCellViewByType("%(copy_library)s" "%(dest)s" "schematic" nil "a")
+  unless(cv error("cannot open %(copy_library)s/%(dest)s/schematic for editing"))
   n = 0
   foreach(ih cv~>instHeaders
-    when(ih~>libName == "%(library)s" && member(ih~>cellName list(%(copied)s))
-      dbSetInstHeaderMasterName(ih "%(copy_library)s" ih~>cellName ih~>viewName)
+    hit = assoc(ih~>cellName pairs)
+    when(ih~>libName == "%(library)s" && hit
+      dbSetInstHeaderMasterName(ih "%(copy_library)s" cadr(hit) ih~>viewName)
       n = n + 1))
   checked = schCheck(cv)
   dbSave(cv)
@@ -132,7 +134,7 @@ def _originals(client, library, cells):
             for c in cells if 'schematic' in c['views']}
 
 
-def make_copy(client, *, library, cell, testbench, copy_library, reuse_library, overwrite, out):
+def make_copy(client, *, library, cell, testbench, copy_library, reuse_library, overwrite, out, rename=None):
     """Copy the testbench and its library's cells under it into `copy_library`. `progress.json` in `out` is rewritten
     after every step, so a copy that stops half-way still says which library it created and what it wrote."""
     progress = dict(created_library=False, copied=[])
@@ -152,7 +154,13 @@ def make_copy(client, *, library, cell, testbench, copy_library, reuse_library, 
         raise RuntimeError('Cannot copy this hierarchy yet: '
                            + '; '.join(filter(None, [unusable and f'no schematic or symbol view: {", ".join(unusable)}',
                                                       with_cdf and f'cells with parameters of their own (CDF) are not copied yet: {", ".join(with_cdf)}'])))
-    targets = [(c['cell'], view) for c in cells for view in COPIED_VIEWS if view in c['views']]
+    rename = {c['cell']: (rename or {}).get(c['cell'], c['cell']) for c in cells}       # source cell -> its copy's name
+    if copy_library == library and any(src == dst for src, dst in rename.items()):
+        raise RuntimeError('A copy inside the same library needs new cell names')
+    for dst in rename.values():
+        if not NAME.match(dst):
+            raise RuntimeError(f'{dst!r} is not a plain Cadence cell name')
+    targets = [(rename[c['cell']], view) for c in cells for view in COPIED_VIEWS if view in c['views']]
     before = _originals(client, library, cells)
     existing = set(client.library.list())
     cds_lib = f'{working_dir}/cds.lib'
@@ -171,24 +179,26 @@ def make_copy(client, *, library, cell, testbench, copy_library, reuse_library, 
         copy_info = client.library.create(copy_library, f'{working_dir}/{copy_library}', technology_library=info.technology_library)
         note(created_library=True, copy_path=copy_info.path, copy_technology_library=copy_info.technology_library)
         client.download_file(cds_lib, out / 'cds.lib.after')
+    source_of = {dst: src for src, dst in rename.items()}
     for name, view in targets:
-        _skill(client, COPY_VIEW_SKILL % dict(library=library, cell=name, view=view, copy_library=copy_library,
+        _skill(client, COPY_VIEW_SKILL % dict(library=library, cell=source_of[name], dest=name, view=view, copy_library=copy_library,
                                               overwrite='t' if f'{name}/{view}' in overwrite else 'nil'),
-               f'copying {name}/{view}')
+               f'copying {source_of[name]}/{view} as {name}')
         note(copied=progress['copied'] + [f'{name}/{view}'])
-    names = ' '.join(f'"{c["cell"]}"' for c in cells)
+    pairs = ' '.join(f'list("{src}" "{dst}")' for src, dst in rename.items())
     remastered = {}
     for item in cells:
         if 'schematic' in item['views']:
-            answer = _skill(client, REMASTER_SKILL % dict(library=library, cell=item['cell'], copy_library=copy_library, copied=names),
-                            f're-pointing {item["cell"]}').strip().strip('"')
+            answer = _skill(client, REMASTER_SKILL % dict(library=library, dest=rename[item['cell']], copy_library=copy_library, pairs=pairs),
+                            f're-pointing {rename[item["cell"]]}').strip().strip('"')
             _, count, checked = answer.split('|', 2)
-            remastered[item['cell']] = dict(headers=int(count), sch_check=checked)
-    exported = client.schematic.export_netlist(copy_library, testbench, out / 'package', timeout=180)
+            remastered[rename[item['cell']]] = dict(headers=int(count), sch_check=checked)
+    exported = client.schematic.export_netlist(copy_library, rename[testbench], out / 'package', timeout=180)
     structure = Path(exported['input_file']).parent / 'netlist'
     (out / 'netlist.scs').write_text(structure.read_text())
     after = _originals(client, library, cells)
     return dict(library=library, cell=cell, testbench=testbench, copy_library=copy_library, copy_path=copy_info.path,
+                copy_cell=rename[cell], copy_testbench=rename[testbench], rename=rename,
                 technology_library=info.technology_library, copy_technology_library=copy_info.technology_library,
                 working_dir=working_dir, created_library=progress['created_library'], cds_lib=cds_lib, cells=cells,
                 copied=[dict(cell=c, view=v) for c, v in (item.split('/') for item in progress['copied'])],
@@ -303,11 +313,12 @@ def write_maestro(client, library, testbench, setup):
         for spec in setup['specs']:
             value = ('list(' + ' '.join(_q(v) for v in spec['value']) + ')') if isinstance(spec['value'], list) else _q(spec['value'])
             _skill(client, f'maeSetSpec({_q(spec["output"])} {_q(test)} ?{spec["op"]} {value}{s})', f'setting the spec on {spec["output"]}')
-        for name in _list(_skill(client, f'maeGetSetup(?typeName "variables"{s})', 'reading the variables')):
-            if name not in setup['variables']:
-                _skill(client, f'maeDeleteVar({_q(name)}{s})', f'removing variable {name}')
-        for name, value in setup['variables'].items():
-            _skill(client, f'maeSetVar({_q(name)} {_q(value)}{s})', f'setting variable {name}')
+        if setup['variables'] is not None:                   # None: the variables stay as they are
+            for name in _list(_skill(client, f'maeGetSetup(?typeName "variables"{s})', 'reading the variables')):
+                if name not in setup['variables']:
+                    _skill(client, f'maeDeleteVar({_q(name)}{s})', f'removing variable {name}')
+            for name, value in setup['variables'].items():
+                _skill(client, f'maeSetVar({_q(name)} {_q(value)}{s})', f'setting variable {name}')
         _skill(client, f'maeSaveSetup(?lib {_q(library)} ?cell {_q(testbench)} ?view "maestro"{s})', 'saving the Maestro setup')
     finally:
         _session_close(client, session)
@@ -350,7 +361,7 @@ def read_bindings(client, library, cells, variables):
 def setup_op(client, op, *, library, testbench, cells, setup=None, restore=(), test):
     if op == 'write_setup':
         write_maestro(client, library, testbench, setup)
-        write_bindings(client, library, setup['bindings'], restore)
+        write_bindings(client, library, setup['bindings'] or [], restore)      # None: nothing bound or unbound
     answer = read_maestro(client, library, testbench, test=test)
     answer['bindings'] = read_bindings(client, library, cells, list(answer['variables']))
     return answer
@@ -368,6 +379,7 @@ def _main(argv=None):
     parser.add_argument('--request', help='JSON file: setup to write, cells, restore list, test name (setup ops)')
     parser.add_argument('--reuse-library', action='store_true')
     parser.add_argument('--overwrite', default='[]', help='JSON list of cell/view a failed earlier attempt wrote')
+    parser.add_argument('--rename', default='{}', help='JSON map source cell -> name of its copy (Save as)')
     parser.add_argument('--output', required=True)
     args = parser.parse_args(argv)
     for value in (args.library, args.cell, args.testbench, args.copy_library):
@@ -392,7 +404,7 @@ def _main(argv=None):
                 if args.op == 'make_copy':
                     answer = make_copy(client, library=args.library, cell=args.cell, testbench=args.testbench,
                                        copy_library=args.copy_library, reuse_library=args.reuse_library,
-                                       overwrite=set(json.loads(args.overwrite)), out=out)
+                                       overwrite=set(json.loads(args.overwrite)), out=out, rename=json.loads(args.rename))
                 else:
                     request = json.loads(Path(args.request).read_text())
                     answer = setup_op(client, args.op, library=args.copy_library, testbench=args.testbench, cells=request['cells'],

@@ -215,7 +215,7 @@ def probe_id(output_name) -> str:
     return f'm_{output_name}'
 
 
-def from_rows(config, *, test=TEST, model_files=(), analyses=None, variables=None, bindings=()) -> dict:
+def from_rows(config, *, test=TEST, model_files=(), analyses=None, variables=None, bindings=None) -> dict:
     """The setup a configuration's rows ask for: every `ade_output` Probes row is an output (its `signal` holds the
     expression), every active Specs row whose equation is exactly one such probe is that output's spec. Specs over
     several probes, and every optimizer-only field, stay in the workbench."""
@@ -234,8 +234,10 @@ def from_rows(config, *, test=TEST, model_files=(), analyses=None, variables=Non
         elif target.constraint == 'interval' and target.lower is not None and target.upper is not None:
             specs.append(dict(output=probe.source_name, op='range',
                               value=[_number_text(target.lower, target.unit), _number_text(target.upper, target.unit)]))
-    return dict(test=test, model_files=[list(m) for m in model_files], analyses=dict(analyses or {}),
-                variables=dict(variables or {}), bindings=list(bindings), outputs=outputs, specs=specs)
+    # None = "keep what the copy has": the write leaves that part of the Maestro setup alone.
+    return dict(test=test, model_files=[list(m) for m in model_files], analyses=None if analyses is None else dict(analyses),
+                variables=None if variables is None else dict(variables), bindings=None if bindings is None else list(bindings),
+                outputs=outputs, specs=specs)
 
 
 def _number_text(value, unit):

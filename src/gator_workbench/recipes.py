@@ -31,8 +31,12 @@ CONTRACT = dict(minimum_cycles=8, minimum_swing_fraction=0.8, maximum_period_spr
 _NET = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$')
 
 
+MAESTRO = 'maestro'
+
+
 def provided_metrics(recipe) -> tuple:
-    return tuple(RING_METRICS) if recipe == RING else OPAMP_METRICS
+    """The results a circuit type computes. A Maestro-measured task names its own (its outputs: the registry entry)."""
+    return tuple(RING_METRICS) if recipe == RING else () if recipe == MAESTRO else OPAMP_METRICS
 
 
 def spec_registry(recipe, design):
@@ -164,4 +168,17 @@ class GenericRingOscillatorProfile(GenericMosWidthProfile):
         return summary
 
 
-PROFILE_CLASSES = {'opamp_ac': GenericMosWidthProfile, RING: GenericRingOscillatorProfile}
+class GenericMaestroProfile(GenericMosWidthProfile):
+    """A task whose probes are the Maestro outputs of its working copy. Same verified width writing and checks as every
+    generated profile; building a deck and measuring (Maestro's netlist once, OCEAN on each run's results) is the next
+    part of the build, so both refuse in plain words instead of running anything."""
+    recipe = MAESTRO
+
+    def build_deck(self, *args, **kwargs):
+        raise RulesError('Running a Maestro-measured task is not built yet')
+
+    def analyze(self, *args, **kwargs):
+        raise RulesError('Running a Maestro-measured task is not built yet')
+
+
+PROFILE_CLASSES = {'opamp_ac': GenericMosWidthProfile, RING: GenericRingOscillatorProfile, MAESTRO: GenericMaestroProfile}

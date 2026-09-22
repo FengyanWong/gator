@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .. import (__version__, aggregates, agents, bridge_connect, bridge_read, checkpoints as ckpt, connection, runs, schema,
                 tasks, units)
-from .. import network_presets, profile_preflight, profiles, recipes, virtuoso_setup, working_copy
+from .. import network_presets, profile_preflight, profiles, recipes, task_files, virtuoso_setup, working_copy
 from ..agents import AgentError, AgentRequest, AgentSettings, ProposalRejected, ProposalStore
 from ..agents import catalog as agent_catalog
 from ..agents import proposals as agent_proposals
@@ -137,6 +137,29 @@ class SetupBody(CopyBody):
     analyses: dict | None = None        # write from rows: the analyses to set; None keeps what the copy has
     variables: dict | None = None
     bindings: list[dict] | None = None
+
+
+class TaskSaveBody(Body):
+    profile_id: str | None = Field(None, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
+    name: str = Field(pattern=r'^[a-z][a-z0-9_]{1,39}$')
+    config: dict
+    library: str | None = Field(None, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
+    cell: str | None = Field(None, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
+    task: str | None = Field(None, pattern=r'^[a-z][a-z0-9_]{1,39}$')     # the open task: updated, or the source of Save as
+    as_new: bool = False
+    extras: dict | None = None          # what the task file holds beside the rows: analyses, variables, bindings, frequency, notes
+
+
+class TaskFileBody(Body):
+    config: dict
+    library: str | None = Field(None, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
+    cell: str | None = Field(None, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
+    task: str | None = Field(None, pattern=r'^[a-z][a-z0-9_]{1,39}$')
+    extras: dict | None = None
+
+
+class TaskFileTextBody(Body):
+    text: str = Field(max_length=2_000_000)
 
 
 class ProfileActionBody(Body):
@@ -665,11 +688,67 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             fail(422, 'A connection profile is required')
         if body.setup is None and body.config is None:
             fail(422, 'Nothing to write: send the rows (config) or a setup')
-        setup = body.setup if body.setup is not None else virtuoso_setup.from_rows(
-            parse_config(body.config), analyses=body.analyses, variables=body.variables, bindings=body.bindings or ())
-        if body.setup is None and body.analyses is None:
-            setup = dict(setup, analyses=None)                  # keep the copy's analyses as they are
+        setup = body.setup if body.setup is not None else virtuoso_setup.from_rows(          # a part not sent is kept as the copy has it
+            parse_config(body.config), analyses=body.analyses, variables=body.variables, bindings=body.bindings)
         return _virtuoso_write(lambda: working_copy.write_setup(monitor, body.profile_id, body.library, body.cell, setup))
+
+    # ------------------------------------------------------------------ saved tasks: "Save task", "Save as", the task file
+    @app.post('/api/virtuoso/task/save')
+    def virtuoso_task_save(body: TaskSaveBody):
+        """Explicit click - a person's only: store the editors' rows as the task real:<name>. The first save of a cell takes
+        its working copy; on an open task, Save task updates it (next revision) and Save as (`as_new`) makes another task
+        with a copy of its own. A Maestro-measured task writes its setup into its copy and reads it back first; then the
+        copy is read into the workbench (read-only) and the task files are generated from it. Zero simulations."""
+        if not body.profile_id:
+            fail(422, 'A connection profile is required')
+        config = parse_config(body.config)
+        try:
+            return profiles.save_task(monitor, body.profile_id, body.name, config, library=body.library, cell=body.cell,
+                                      task=body.task, as_new=body.as_new, extras=body.extras,
+                                      run_rows=runs.list_runs(roots, include_mock=False))
+        except profiles.NeedsFrequency as exc:
+            fail(409, exc, code='needs_expected_frequency')
+        except PermissionError as exc:
+            raise HTTPException(409, detail=dict(message=str(exc), gate=getattr(exc, 'gate', None)))
+        except (profiles.ProfileError, working_copy.CopyError, virtuoso_setup.SetupError) as exc:
+            fail(409, exc, code='refused')
+        except (KeyError, ValueError) as exc:
+            fail(422, exc)
+        except Exception as exc:
+            fail(502, exc)
+
+    @app.post('/api/virtuoso/task/file')
+    def virtuoso_task_file(body: TaskFileBody):
+        """The task file of the CURRENT editors - what "Save task" would store - as text, laid out with its own
+        explanations. Local files only: nothing is read from Virtuoso."""
+        config = parse_config(body.config)
+        entry = profiles.list_profiles().get(body.task) if body.task else None
+        saved = profiles.task_file(body.task) if entry else None
+        if entry:
+            cell, copy = entry.get('original'), entry.get('copy')
+            last = Path((entry.get('copy_target') or {}).get('state_dir') or '.') / 'last_written_setup.json'
+            name = body.task
+        else:
+            record = working_copy.load(body.library, body.cell) if body.library and body.cell else None
+            cell = (record or {}).get('original') or (dict(library=body.library, cell=body.cell, testbench=config.circuit.testbench_cell)
+                                                        if body.library and body.cell else None)
+            copy = (record or {}).get('copy')
+            last = working_copy.record_dir(body.library, body.cell) / 'last_written_setup.json' if record else Path('/nonexistent')
+            name = (body.cell or 'task').lower()
+        try:
+            setup = json.loads(last.read_text())
+        except (OSError, ValueError):
+            setup = None
+        data = task_files.draft(config, name=name, cell=cell, copy=copy, saved=saved, extras=body.extras,
+                                setup=dict(setup, test='GATOR') if setup else None)
+        return dict(text=task_files.render(data), name=name, revision=(saved or {}).get('revision', 0), saved=saved is not None)
+
+    @app.post('/api/virtuoso/task/file/check')
+    def virtuoso_task_file_check(body: TaskFileTextBody):
+        """Read a task file someone edited: its rows (checked with the editors' schema), what it holds beside them, and
+        every problem in plain words. Nothing is saved."""
+        rows, extras, problems = task_files.parse(body.text)
+        return dict(rows=rows, extras=extras, problems=problems, ok=not problems)
 
     def _native(body, op):
         try:
@@ -1158,9 +1237,24 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             # The agent reads no file: the backend condenses the run's own records. `run_path` keeps it inside the allowed roots.
             results = agent_run_digest.load(run_path(body.run_dir))
             review = dict(settings=agent_review.settings_data(config.model_dump(mode='json')))      # so a suggestion names a real setting
+        copy = None
+        if body.kind == 'virtuoso_setup':
+            # The working copy the setup is for, given as DATA: its names, what the workbench last wrote into its Maestro
+            # test, which values may be variables, and the only calculator functions an output may call.
+            try:
+                target = _setup_target(config)
+            except working_copy.CopyError as exc:
+                raise AgentError('invalid_request', str(exc))
+            copy = dict(copy=target['copy'], cell_you_drew=target['original'], test=virtuoso_setup.TEST,
+                        maestro_now=working_copy.last_written(target) or 'nothing written by the workbench yet',
+                        bindable=[dict(cell=c, instance=i, parameters=sorted(p)) for (c, i), p in sorted(working_copy.bindable_on(target).items())],
+                        allowed_functions=sorted(virtuoso_setup.FUNCTIONS),
+                        model_files=working_copy.default_model_files(config.run.connection_profile_id),
+                        note='The circuit data is read from the copy\'s cell; instance paths and nets are the same in the copy.')
         request = AgentRequest(kind=body.kind, user_prompt=body.prompt, config=config.model_dump(mode='json'),
                                circuit_summary=summary, selection=body.selection, readiness=ready, review=review, results=results,
-                               web=bool(body.web), web_domains=agent_review.domains(runs.load_settings().get('agent_web_domains')))
+                               web=bool(body.web), web_domains=agent_review.domains(runs.load_settings().get('agent_web_domains')),
+                               copy=copy)
         if body.request_id:
             request.request_id = body.request_id
         return request, circuit_hash
@@ -1175,6 +1269,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
 
             def finish(result):
                 proposal = proposals.create(request, result, circuit_hash=circuit_hash)
+                if request.kind == 'virtuoso_setup':
+                    check_setup(request, proposal)
                 proposal['readiness_after'] = readiness_after(request, proposal)
                 check_suggestions(request, proposal)
                 _audit(proposal)
@@ -1185,6 +1281,41 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             return finish(provider.propose(request))
         except AgentError as exc:
             raise HTTPException(409, detail=dict(exc.as_dict(), configuration_unchanged=True))
+
+    def _setup_target(config):
+        """The working copy a Virtuoso setup is about: the cell's own copy (Circuit source: Virtuoso) or an open task's copy."""
+        circuit = config.circuit
+        if circuit.source == 'virtuoso' and circuit.library and circuit.cell:
+            return working_copy.draft_target(circuit.library, circuit.cell)
+        if circuit.source == 'registered_task' and (circuit.task_id or '').startswith('real:'):
+            entry = profiles.list_profiles().get(circuit.task_id[len('real:'):])
+            if entry and entry.get('copy_target'):
+                return entry['copy_target']
+        raise working_copy.CopyError('Setting up in Virtuoso needs a working copy: read the cell into the workbench and press '
+                                     '"Make a working copy" (a task saved with Save task has one)')
+
+    def _setup_of(config, proposal):
+        setup = proposal.get('setup') or {}
+        return virtuoso_setup.from_rows(config, analyses=setup.get('analyses'), variables=setup.get('variables'), bindings=setup.get('bindings'))
+
+    def check_setup(request, proposal):
+        """A proposed Virtuoso setup must be writable as it stands: only allowed calculator functions, variables only on
+        values nothing is computed from, every output with the analysis it reads. Otherwise the proposal is refused here -
+        before anyone can approve it - with the reasons."""
+        preview = schema.WorkbenchConfig.model_validate(agent_proposals.apply_patch(request.config, proposal['patch']))
+        target = _setup_target(preview)
+        wanted = _setup_of(preview, proposal)
+        problems = virtuoso_setup.validate(wanted, bindable=working_copy.bindable_on(target))
+        if wanted['analyses'] is not None:
+            read = {m.analysis for m in preview.measurements if m.result_source == 'ade_output' and m.analysis != 'other'}
+            missing = sorted(read - set(wanted['analyses']))
+            if missing:
+                problems.append(f'Outputs read the analyses {", ".join(missing)}, which setup.analyses does not set')
+        if problems:
+            proposals.reject(proposal['proposal_id'])
+            raise AgentError('schema_failure', 'The proposed Virtuoso setup was refused by the backend: ' + '; '.join(problems)[:3000],
+                             problems=problems)
+        proposal['virtuoso_copy'] = target['copy']
 
     @app.post('/api/agent/readiness')
     def readiness(body: ConfigBody):
@@ -1211,6 +1342,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             request, circuit_hash = _request(body)
             result = agents.DisabledProvider().import_result(request, body.result)
             proposal = proposals.create(request, result, circuit_hash=circuit_hash)
+            if request.kind == 'virtuoso_setup':
+                check_setup(request, proposal)
             proposal['readiness_after'] = readiness_after(request, proposal)
             check_suggestions(request, proposal)
             return proposal
@@ -1246,8 +1379,32 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         runtime, _ = load_runtime(new_config)
         report = validate(new_config, graph=None if runtime is None else runtime.base_graph,
                           provided_metrics=None if runtime is None else set(runtime.provided_metrics))
-        return dict(config=updated, validation=report.as_dict(),
-                    note='Configuration only. No circuit was written and no simulation was started.')
+        proposal = proposals.get(body.proposal_id)
+        if proposal['kind'] != 'virtuoso_setup':
+            return dict(config=updated, validation=report.as_dict(),
+                        note='Configuration only. No circuit was written and no simulation was started.')
+        # The approved setup goes into the WORKING COPY - never the user's cell - and is read back. The rows are applied
+        # either way; if Virtuoso cannot be reached, "Write to Virtuoso" does the rest later.
+        virtuoso, profile_id = None, new_config.run.connection_profile_id
+        try:
+            if not profile_id:
+                raise working_copy.CopyError('No connection is chosen: choose one in the Connection window')
+            target = _setup_target(new_config)
+            written = working_copy.write_setup_on(monitor, profile_id, target, _setup_of(new_config, proposal))
+            virtuoso = dict(written=True, matches=written['matches'], differences=written['differences'], copy=target['copy'])
+        except PermissionError as exc:
+            virtuoso = dict(written=False, error=str(exc), gate=getattr(exc, 'gate', None))
+        except (working_copy.CopyError, virtuoso_setup.SetupError) as exc:
+            virtuoso = dict(written=False, error=str(exc))
+        except Exception as exc:
+            virtuoso = dict(written=False, error=redact(f'{type(exc).__name__}: {exc}', 600))
+        if virtuoso['written']:
+            note = (f"The rows were applied and the setup was written into the working copy {target['copy']['library']}/"
+                    f"{target['copy']['testbench']} (not your cell), then read back: "
+                    + ('it matches.' if virtuoso['matches'] else 'it differs - see the differences.') + ' No simulation was started.')
+        else:
+            note = f"The rows were applied; writing into the working copy failed: {virtuoso['error']} Press \"Write to Virtuoso\" when it can be reached."
+        return dict(config=updated, validation=report.as_dict(), virtuoso=virtuoso, note=note)
 
     @app.post('/api/agent/reject')
     def reject(body: dict):

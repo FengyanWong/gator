@@ -8,7 +8,9 @@ A proposal is only ever a suggestion:
     proposal was generated against. If either changed, the approval is invalidated and the
     diff must be reviewed again;
   * applying a proposal changes configuration only. It never writes a circuit, never starts a
-    simulation and never touches validation, directory permissions or approval rules;
+    simulation and never touches validation, directory permissions or approval rules. (The one
+    kind that goes further, `virtuoso_setup`, has its approved `setup` written into the cell's
+    WORKING COPY by the API route after this step - never into the user's cell.);
   * a failed proposal leaves the user's configuration untouched.
 """
 from __future__ import annotations
@@ -42,7 +44,8 @@ def normalize(request: AgentRequest, result: AgentResult):
     """Validate the structured output against scope and row schemas. Returns the clean patch."""
     output = result.structured_output
     problems = []
-    allowed_top = {'kind', 'patch', 'circuit_changes', 'reasoning', 'warnings', 'unresolved', 'checklist', 'suggestions', 'encoder_ideas'}
+    allowed_top = {'kind', 'patch', 'circuit_changes', 'reasoning', 'warnings', 'unresolved', 'checklist', 'suggestions', 'encoder_ideas',
+                   'setup'}
     extra = set(output) - allowed_top
     if extra:
         problems.append(f'Unexpected top-level keys {sorted(extra)} (a proposal cannot carry settings or instructions)')
@@ -103,7 +106,37 @@ def normalize(request: AgentRequest, result: AgentResult):
     review = (settings_review.normalize(output) if request.kind in ('settings_review', 'run_review')
               else dict(suggestions=[], refused=[], encoder_ideas=[]))
     return dict(patch=clean, circuit_changes=changes if isinstance(changes, list) else [], checklist=checklist, review=review,
+                setup=_setup(request, output.get('setup')),
                 reasoning=str(output.get('reasoning') or '')[:8000], warnings=text('warnings'), unresolved=text('unresolved'))
+
+
+def _setup(request, raw):
+    """The `setup` part of a virtuoso_setup proposal, reduced to its three parts in their shapes; from any other request
+    it is dropped, not obeyed. What it may contain (functions, bindable values) is checked by the backend on top."""
+    if request.kind != 'virtuoso_setup' or not isinstance(raw, dict):
+        return None
+    problems, clean = [], {}
+    analyses = raw.get('analyses')
+    if analyses is not None:
+        if not isinstance(analyses, dict) or any(not isinstance(k, str) or not isinstance(v, dict) for k, v in analyses.items()):
+            problems.append('setup.analyses must map an analysis name to its options')
+        else:
+            clean['analyses'] = {k[:40]: {str(o)[:60]: str(v)[:200] for o, v in options.items()} for k, options in list(analyses.items())[:20]}
+    variables = raw.get('variables')
+    if variables is not None:
+        if not isinstance(variables, dict):
+            problems.append('setup.variables must map a variable name to its value')
+        else:
+            clean['variables'] = {str(k)[:64]: str(v)[:200] for k, v in list(variables.items())[:100]}
+    bindings = raw.get('bindings')
+    if bindings is not None:
+        if not isinstance(bindings, list) or any(not isinstance(b, dict) or set(b) != {'cell', 'instance', 'parameter', 'variable'} for b in bindings):
+            problems.append('setup.bindings must list {cell, instance, parameter, variable} objects')
+        else:
+            clean['bindings'] = [{k: str(b[k])[:128] for k in ('cell', 'instance', 'parameter', 'variable')} for b in bindings[:100]]
+    if problems:
+        raise ProposalRejected('The proposal was rejected by backend validation', problems)
+    return clean
 
 
 def apply_patch(config: dict, patch, *, selection=None) -> dict:
@@ -169,9 +202,9 @@ class ProposalStore:
         proposal = dict(
             proposal_id=result.request_id, provider=result.provider, origin=result.origin, kind=request.kind,
             created_utc=utcnow().isoformat(), status='proposed', base_config_hash=config_hash(request.config),
-            circuit_hash=circuit_hash, proposal_hash=_hash(dict(patch=normalized['patch'],
-                                                                circuit_changes=normalized['circuit_changes'])),
-            patch=normalized['patch'], circuit_changes=normalized['circuit_changes'],
+            circuit_hash=circuit_hash, proposal_hash=_hash(dict(patch=normalized['patch'], circuit_changes=normalized['circuit_changes'],
+                                                                **({'setup': normalized['setup']} if normalized['setup'] is not None else {}))),
+            patch=normalized['patch'], circuit_changes=normalized['circuit_changes'], setup=normalized['setup'],
             diff=structured_diff(request.config, preview), reasoning=normalized['reasoning'],
             warnings=normalized['warnings'], unresolved=normalized['unresolved'], checklist=normalized['checklist'],
             suggestions=normalized['review']['suggestions'], refused_suggestions=normalized['review']['refused'],

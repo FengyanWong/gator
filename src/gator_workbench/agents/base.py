@@ -26,7 +26,7 @@ from uuid import uuid4
 from .catalog import efforts_for
 
 REQUEST_KINDS = ('draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'circuit_modification', 'readiness',
-                 'minimal_start', 'settings_review', 'run_review')
+                 'minimal_start', 'settings_review', 'run_review', 'virtuoso_setup')
 SECTIONS_BY_KIND = {
     'draft_config': ('parameters', 'targets', 'measurements'), 'parameters': ('parameters',),
     'targets': ('targets',), 'measurements': ('measurements',),
@@ -41,6 +41,10 @@ SECTIONS_BY_KIND = {
     # What a run produced (agents/run_digest.py, given as DATA - the agent reads no file): an explanation, and what to change next
     # as rows of the three tables and/or as settings suggestions. Never online.
     'run_review': ('parameters', 'targets', 'measurements'),
+    # A whole setup of a cell's WORKING COPY in Virtuoso (the task flow): the rows of the three tables plus `setup` - the
+    # Maestro analyses, design variables and bindings. Checked by the backend (allowed calculator functions, which values
+    # may be variables); after the user's approval the backend writes it into the copy and reads it back.
+    'virtuoso_setup': ('parameters', 'targets', 'measurements'),
 }
 # Arguments that would remove the permission boundary. Refused even if configured.
 FORBIDDEN_ARGUMENTS = ('--dangerously-skip-permissions', '--allow-dangerously-skip-permissions',
@@ -125,6 +129,7 @@ class AgentRequest:
     results: dict | None = None        # run_review only: the digest of ONE run's output, built by the backend
     web: bool = False                  # settings_review only, per request: may search the web and open publication pages
     web_domains: tuple = ()            # hosts WebFetch may open when `web` is set (operator-defined, never from a request)
+    copy: dict | None = None           # virtuoso_setup only: the working copy - its names, what its Maestro test holds, what may vary
     requires_bridge_skill: bool = False
     request_id: str = field(default_factory=lambda: uuid4().hex)
 
@@ -139,6 +144,8 @@ class AgentRequest:
             raise AgentError('invalid_request', 'Only a settings_review request may use online research')
         if self.kind == 'run_review' and not self.results:
             raise AgentError('invalid_request', 'A run_review needs a run: choose one with "Runs..." first')
+        if self.kind == 'virtuoso_setup' and not self.copy:
+            raise AgentError('invalid_request', 'Setting up in Virtuoso needs the working copy: press "Make a working copy" first')
         if self.kind == 'modify_fields' and not self.selection:
             raise AgentError('invalid_request', 'modify_fields needs a selection of rows/fields')
         return self

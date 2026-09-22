@@ -216,9 +216,10 @@ def list_tasks():
                           description='Verified GPDK045 bridge profile (Virtuoso + Spectre).'))
     from . import profiles
     for name, entry in profiles.list_profiles().items():         # created from a cell read out of Virtuoso
-        blocker = generated_backend_blocker(None)
+        blocker = profiles.MAESTRO_NOT_RUNNABLE if entry.get('recipe') == profiles.MAESTRO else generated_backend_blocker(None)
         tasks.append(dict(task_key=f'real:{name}', kind='real', circuit_class=entry['circuit_class'], generated=True,
                           pdk_id=entry.get('pdk_id') or 'gpdk045', available=blocker is None, blocker=blocker, library=entry['library'], cell=entry['core_cell'],
+                          revision=entry.get('revision'), measurement=entry.get('measurement'), original=entry.get('original'),
                           verified=profiles.reference_metrics(name) is not None,
                           description=f"Profile generated from {entry['library']}/{entry['core_cell']} (Virtuoso + Spectre). "
                                       + ('' if profiles.reference_metrics(name) else 'No real baseline recorded yet.')))
@@ -460,13 +461,15 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
     graph = profile.optimization_graph()
 
     def builder(compiled, work_root, run_settings):
+        if entry.get('recipe') == profiles.MAESTRO:
+            raise TaskBlocked(profiles.MAESTRO_NOT_RUNNABLE)
         if not authorized:
             raise TaskBlocked(REAL_AUTHORIZATION_REQUIRED, contract=REAL_INTERFACE_CONTRACT)
         from analog_optimizer.training.parallel import NativeEnvironmentFactory
         from analog_optimizer.envs.sizing import graph_contract
         if graph_contract(compiled.graph) != graph_contract(graph):
-            raise TaskBlocked('This profile fixes which widths may change, their ranges and their grid. The rows of the parameter '
-                              'editor differ from what was registered; create a new profile to change them.')
+            raise TaskBlocked('This task fixes which widths may change, their ranges and their grid. The rows of the parameter '
+                              'editor differ from what was saved; press "Save task" to save the new rows first.')
         adv = run_settings.advanced
         return _with_computed_specs(NativeEnvironmentFactory(config, profile, compiled.specs, Path(work_root), adv.episode_length,
                                                              adv.simulation_timeout_seconds, reference), compiled)
@@ -481,7 +484,10 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
     if not authorized:
         notes.append('Loaded for viewing and validation only. Running it needs your explicit authorization of a real '
                      'simulation budget (asked when you press Start).')
-    return TaskRuntime(task_key, 'real', graph, recipes.provided_metrics(entry['recipe']), circuit, structure.read_text(),
+    if entry.get('recipe') == profiles.MAESTRO:
+        notes.insert(0, profiles.MAESTRO_NOT_RUNNABLE)
+    provided = tuple(entry.get('provided_metrics') or ()) if entry.get('recipe') == profiles.MAESTRO else recipes.provided_metrics(entry['recipe'])
+    return TaskRuntime(task_key, 'real', graph, provided, circuit, structure.read_text(),
                        str(structure), str(mapping), builder, max_concurrency=4, authorized=bool(authorized), notes=notes,
                        reference_metrics=None if reference is None else {
                            key: dict(value=value, unit=None) for key, value in reference.items() if isinstance(value, (int, float))})
@@ -614,6 +620,11 @@ def real_starter_config(task_key: str) -> dict:
         if entry is None:
             raise KeyError(task_key)
         circuit_class, pdk_id = entry['circuit_class'], entry.get('pdk_id') or 'gpdk045'
+        saved = profiles.task_file(name)
+        if saved is not None:                          # a saved task: its own rows, exactly as "Save task" stored them
+            return dict(project=starter_project(task_key),
+                        circuit=dict(source='registered_task', task_id=task_key, circuit_class=circuit_class, pdk_id=pdk_id),
+                        parameters=saved.get('parameters') or [], measurements=saved.get('probes') or [], targets=saved.get('specs') or [])
         profile = profiles.load_profile(name)
         graph = profile.optimization_graph()
         # The Probes of the testbench the profile was made through: the rows reading the cell brought

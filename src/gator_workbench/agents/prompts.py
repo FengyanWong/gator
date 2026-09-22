@@ -57,6 +57,14 @@ PROPOSAL_SCHEMA = {
             'properties': {'name': {'type': 'string', 'maxLength': 120}, 'source': {'type': 'string', 'maxLength': 600},
                            'url': {'type': 'string', 'maxLength': 300}, 'why': {'type': 'string', 'maxLength': 800},
                            'what_it_takes': {'type': 'string', 'maxLength': 800}}}},
+        'setup': {                                                      # only a `virtuoso_setup` request is asked for one
+            'type': 'object', 'additionalProperties': False,
+            'properties': {'analyses': {'type': 'object', 'additionalProperties': {'type': 'object', 'additionalProperties': {'type': 'string'}}},
+                           'variables': {'type': 'object', 'additionalProperties': {'type': 'string'}},
+                           'bindings': {'type': 'array', 'maxItems': 100, 'items': {
+                               'type': 'object', 'additionalProperties': False, 'required': ['cell', 'instance', 'parameter', 'variable'],
+                               'properties': {'cell': {'type': 'string'}, 'instance': {'type': 'string'},
+                                              'parameter': {'type': 'string'}, 'variable': {'type': 'string'}}}}}},
         'warnings': {'type': 'array', 'items': {'type': 'string', 'maxLength': 1000}, 'maxItems': 100},
         'unresolved': {'type': 'array', 'items': {'type': 'string', 'maxLength': 1000}, 'maxItems': 100},
     },
@@ -178,6 +186,27 @@ def build_prompt(request) -> str:
                   'one entry per item, `agent` only for what THIS patch fixes, and for anything outside the three tables the ONE '
                   'smallest edit the user has to make (exact panel, field and value). `reasoning`: what you changed and why it '
                   'is the minimum, then what is still the user\'s, in two to four sentences.']
+    if request.kind == 'virtuoso_setup':
+        parts += ['', 'THIS REQUEST: set this circuit up for optimization in its WORKING COPY in Virtuoso (<working_copy_data>). The '
+                  'backend writes your setup into the copy only after the user approves it, then reads it back. Say first, in two '
+                  'or three sentences of `reasoning`, what the circuit is and how it works; then return:',
+                  '- `patch` rows of `parameters`: what may vary. In Virtuoso only transistor widths are written (parameter "w" of an '
+                  'nmos/pmos directly inside the core cell, single finger, m = 1, 5 nm grid, a linear range containing the present '
+                  'width); identical or matched transistors follow one leader through binding_group with ratio 1.',
+                  '- `patch` rows of `measurements` (the Probes): Maestro outputs, each with result_source "ade_output", source_name = '
+                  'the output name (letters, digits, "_"), signal = its Cadence calculator expression, analysis = the analysis it '
+                  'reads, unit = the unit of its value, measurement_id = "m_" + source_name. Expressions may call ONLY the functions '
+                  'listed in <working_copy_data> `allowed_functions`, on the testbench nets and branches of the circuit data (a net '
+                  'as "/OUT", a supply branch as "/V0/PLUS"); anything else is refused by the backend.',
+                  '- `patch` rows of `targets` (the Specs): equation = ONE probe\'s measurement_id, a constraint with its limits in '
+                  'the probe\'s unit, normalization_scale, and a `basis` naming where the requirement comes from. Do not invent '
+                  'requirements: a number the user did not give goes under `unresolved`.',
+                  '- `setup.analyses`: the Maestro analyses the outputs need, as options, e.g. {"tran": {"stop": "50n", "errpreset": '
+                  '"conservative"}} or {"ac": {"start": "1", "stop": "10G", "incrType": "Logarithmic", "stepTypeLog": '
+                  '"Points Per Decade", "dec": "20"}}. Every output needs the analysis it reads.',
+                  '- `setup.variables` and `setup.bindings` ONLY for values listed in <working_copy_data> `bindable` (analogLib '
+                  'resistors, capacitors, inductors and sources, which nothing is computed from). A PDK device is never bound to '
+                  'a variable. Leave both out when nothing needs one.']
     if request.kind == 'readiness':
         parts += ['', 'THIS REQUEST: say what is still missing before the RL run can start. Return `checklist`: one entry per '
                   'item of <run_readiness_data>, in its order, the first missing item first; `who` is `agent` ONLY for an item '
@@ -222,6 +251,8 @@ def build_prompt(request) -> str:
         parts += ['<circuit_data>', json.dumps(request.circuit_summary, indent=1, allow_nan=False), '</circuit_data>', '']
     else:
         parts += ['No circuit is loaded: instance paths cannot be verified. Say so under `unresolved`.', '']
+    if request.kind == 'virtuoso_setup' and request.copy is not None:
+        parts += ['<working_copy_data>', json.dumps(request.copy, indent=1, allow_nan=False, default=str), '</working_copy_data>', '']
     parts += ['<user_prompt_data>', request.user_prompt, '</user_prompt_data>']
     return '\n'.join(parts)
 

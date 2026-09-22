@@ -72,13 +72,23 @@ def profile_for_cell(library, cell) -> dict | None:
     return next((entry for entry in list_profiles().values() if entry['library'] == library and entry['core_cell'] == cell), None)
 
 
+def tasks_for_cell(library, cell) -> list:
+    """The GENERATED tasks of a cell: saved from it (their `original`), or running on it (their copy is this cell)."""
+    found = []
+    for entry in list_profiles().values():
+        original = entry.get('original') or {}
+        if (original.get('library'), original.get('cell')) == (library, cell) or (entry['library'], entry['core_cell']) == (library, cell):
+            found.append(dict(task_key=entry['task_key'], name=entry['name'], generated=True))
+    return found
+
+
 def task_for_cell(library, cell) -> dict | None:
     """The registered task a Virtuoso cell already belongs to, or None: the profile generated from it, or one of the
     verified built-in circuits. A built-in names its cell in its design file and its library in a Virtuoso connection
     (``bridge_connection.json``), so a cell of the same name in any other library is another cell. Local reads only."""
-    generated = profile_for_cell(library, cell)
+    generated = tasks_for_cell(library, cell)
     if generated:
-        return dict(task_key=generated['task_key'], name=generated['name'], generated=True)
+        return generated[0]
     from .connection import load_profiles
     from .tasks import REAL_PROFILES
     if not library or not cell or library not in {settings.get('library') for settings in load_profiles()['profiles'].values()
@@ -362,10 +372,124 @@ def testbench_probes(imported, graph=None) -> dict:
     return answer
 
 
-def create_profile(name, config, *, recipe, expected_frequency_hz=None) -> dict:
+MAESTRO = 'maestro'                     # a task whose probes are Maestro outputs of its working copy (runs: OCEAN, coming)
+MAESTRO_NOT_RUNNABLE = ('This task measures the Maestro outputs of its working copy. Running such tasks - Maestro writes the '
+                        'netlist once, Spectre runs every evaluation, OCEAN computes the outputs - is the next part of the build; '
+                        'until then it can be saved, opened, edited and checked, not run.')
+NEEDS_FREQUENCY = ('The ring-oscillator measurement needs a rough expected oscillation frequency: it sizes the transient '
+                   '(60 periods, measured after 20). Give it once; the task file keeps it.')
+
+
+class NeedsFrequency(ProfileError):
+    """Save task needs the expected frequency of the ring-oscillator measurement (the page asks for it once)."""
+
+
+def _checked_import(imported, name):
+    """(netlist text, device mapping, core CDF readback) of an import a profile can be made from, or a plain refusal."""
+    text = Path(imported['netlist_path']).read_text()
+    mapping, unverified = native_cells.build_mapping(text, circuit_id=name)
+    if unverified:
+        raise ProfileError(f'Device type(s) {", ".join(unverified)} are not verified in this project: their pin order is unknown, '
+                           'so the circuit cannot be described to the optimizer')
+    reference = json.loads((Path(imported['directory']) / native_cells.FILES['core_readback']).read_text())
+    if any(key not in item for item in reference.get('instances', []) for key in ('name', 'lib', 'cell', 'view', 'terms', 'params')):
+        raise ProfileError('This copy of the cell lacks details a profile needs (it was read by an older version): press "Read the cell again"')
+    return text, mapping, reference
+
+
+def _nominal_supply() -> float:
+    return float(json.loads((repo_root() / 'configs' / 'gpdk045_conditions.json').read_text())['nominal']['supply_v'])
+
+
+def _generate(name, config, *, recipe, imported, staging, expected_frequency_hz=None, entry_extra=None) -> dict:
+    """Write the profile files of `imported` (the import of the cell a task runs on - its working copy - or, on the
+    older route, the original) into the new folder `staging`: device mapping, netlist, CDF readback, design, rules,
+    receipt and registry entry. Refuses, in plain words, whatever the verified real backend cannot do."""
     from analog_optimizer.netlist.config import ParserConfig
     from analog_optimizer.netlist.spectre_parser import SpectreParser
     from .compile import CompileError, build_graph
+    text, mapping, reference = _checked_import(imported, name)
+    write_json(staging / FILES['mapping'], mapping)
+    (staging / FILES['structure']).write_text(text)
+    graph = SpectreParser(ParserConfig.from_file(staging / FILES['mapping'])).parse_file(staging / FILES['structure'])
+    core = _core_instance(imported, graph)
+    rows, optimized, leaders = _adjust_rows(config, graph, core)
+    adjusted = config.model_copy(update=dict(parameters=rows))
+    try:
+        compiled, _ = build_graph(adjusted, graph)
+    except (CompileError, ValueError) as exc:
+        raise ProfileError(str(exc))
+    kinds = {device.id: device.kind for device in graph.devices}
+    instances = [item['name'] for item in reference['instances']]
+    mos = [n for n in instances if kinds.get(f'{core}/{n}') in ('nmos', 'pmos')]
+    writable = {}
+    for group in compiled.parameter_groups:
+        if group.mutable:
+            for member in group.members:
+                writable[member.device_id.split('/')[1]] = (group.lower * member.ratio, group.upper * member.ratio)
+    try:
+        check_writable_record(reference, list(writable))
+    except ValueError as exc:
+        raise ProfileError(str(exc))
+    design = dict(topology=f'generated:{recipe}', pdk_library=imported.get('technology_library'), library=imported['library'],
+                  core_cell=imported['cell'], testbench_cell=imported['testbench_cell'])
+    if recipe == 'ring_oscillator':
+        if expected_frequency_hz is None:
+            raise NeedsFrequency(NEEDS_FREQUENCY)
+        source, supply_net, dc = _supply(graph)
+        try:
+            timing = recipes.ring_timing(expected_frequency_hz)
+        except ValueError as exc:
+            raise ProfileError(str(exc))
+        design.update(supply_v=format(dc.value, '.12g'), supply_source=source, supply_net=supply_net,
+                      expected_frequency_hz=float(expected_frequency_hz), **timing,
+                      **recipes.CONTRACT, **_ring(graph, core, format(dc.value, '.12g')))
+        net_roles = {supply_net: ['supply'], design['stage_nets'][0]: ['output']}
+    elif recipe == MAESTRO:
+        try:
+            source, supply_net, dc = _supply(graph)
+            design.update(supply_v=format(dc.value, '.12g'), supply_source=source, supply_net=supply_net)
+            net_roles = {supply_net: ['supply']}
+        except ProfileError:                           # more than one source: the verified nominal supply, no role guessed
+            design.update(supply_v=format(_nominal_supply(), '.12g'))
+            net_roles = {}
+    else:
+        _opamp_fit(graph, core)
+        design.update(supply_v=format(graph.parameters['VDD']['dc'].value, '.12g'))
+        net_roles = {net: [role] for net, role in OPAMP_NETS.items()}
+    available = recipes.provided_metrics(recipe)
+    unknown = [f'{m.measurement_id} ({m.source_name})' for m in config.measurements
+               if m.result_source == 'backend_profile' and m.source_name and m.source_name not in available]
+    if unknown:
+        raise ProfileError(f'Measurement(s) {", ".join(unknown)} use a result this circuit type does not produce. '
+                           f'Available: {", ".join(available)}')
+    mapping.update(net_roles={'0': ['ground'], **net_roles},
+                   parameter_groups=[dict(asdict(group), members=[asdict(m) for m in group.members]) for group in compiled.parameter_groups])
+    write_json(staging / FILES['mapping'], mapping)
+    write_json(staging / FILES['design'], design)
+    write_json(staging / FILES['readback'], reference)
+    write_json(staging / FILES['rules'], dict(
+        format=RULES_FORMAT, recipe=recipe, core_instance=core, width_step=VERIFIED_WIDTH_STEP, mos_instances=mos,
+        fixed_instances=[n for n in instances if n not in mos],
+        writable=[dict(instance=n, lower=lo, upper=hi) for n, (lo, hi) in writable.items()]))
+    write_json(staging / FILES['receipt'], dict(
+        library=imported['library'], core_cell=imported['cell'], testbench_cell=imported['testbench_cell'], config=design,
+        receipt_recorded_at=utcnow().isoformat(), source_netlist_sha256=imported['netlist_sha256'], imported_utc=imported['imported_utc'],
+        note='Generated by the workbench from a cell that already existed in Virtuoso; the workbench did not create the cell.'))
+    circuit_class = RECIPES[recipe]['circuit_class'] if recipe in RECIPES else (config.circuit.circuit_class or 'unspecified')
+    entry = dict(format=FORMAT, name=name, task_key=f'real:{name}', recipe=recipe, circuit_class=circuit_class,
+                 library=imported['library'], core_cell=imported['cell'], testbench_cell=imported['testbench_cell'], core_instance=core,
+                 pdk_id=imported.get('technology_library') or 'unspecified', created_utc=utcnow().isoformat(),
+                 provided_metrics=list(recipes.provided_metrics(recipe)), optimized_variables=sorted(optimized),
+                 spec_registry=recipes.spec_registry(recipe, design) if recipe in RECIPES else None,
+                 status='unverified: no real baseline simulation has been recorded for this profile yet')
+    entry.update(entry_extra or {})                   # what the task adds: its cells, copy, revision, measurement
+    write_json(staging / FILES['entry'], entry)
+    return dict(entry=entry, rows=rows)
+
+
+def create_profile(name, config, *, recipe, expected_frequency_hz=None) -> dict:
+    """The older route (API only; the page saves tasks with `save_task`): a profile of the ORIGINAL cell."""
     from .tasks import REAL_PROFILES
     directory = profile_dir(name)
     if name in REAL_PROFILES or directory.exists():
@@ -382,84 +506,11 @@ def create_profile(name, config, *, recipe, expected_frequency_hz=None) -> dict:
     if existing:
         raise ProfileError(f'{imported["library"]}/{imported["cell"]} already has the registered task {existing["task_key"]}'
                            + ('' if existing['generated'] else ' (a verified built-in circuit): choose it under Source: Registered task'))
-    text = Path(imported['netlist_path']).read_text()
-    mapping, unverified = native_cells.build_mapping(text, circuit_id=name)
-    if unverified:
-        raise ProfileError(f'Device type(s) {", ".join(unverified)} are not verified in this project: their pin order is unknown, '
-                           'so the circuit cannot be described to the optimizer')
-    reference = json.loads((Path(imported['directory']) / native_cells.FILES['core_readback']).read_text())
-    if any(key not in item for item in reference.get('instances', []) for key in ('name', 'lib', 'cell', 'view', 'terms', 'params')):
-        raise ProfileError('This copy of the cell lacks details a profile needs (it was read by an older version): press "Read the cell again"')
     staging = directory.with_name(f'.{name}.creating')
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True)
     try:
-        write_json(staging / FILES['mapping'], mapping)
-        (staging / FILES['structure']).write_text(text)
-        graph = SpectreParser(ParserConfig.from_file(staging / FILES['mapping'])).parse_file(staging / FILES['structure'])
-        core = _core_instance(imported, graph)
-        rows, optimized, leaders = _adjust_rows(config, graph, core)
-        adjusted = config.model_copy(update=dict(parameters=rows))
-        try:
-            compiled, _ = build_graph(adjusted, graph)
-        except (CompileError, ValueError) as exc:
-            raise ProfileError(str(exc))
-        kinds = {device.id: device.kind for device in graph.devices}
-        instances = [item['name'] for item in reference['instances']]
-        mos = [n for n in instances if kinds.get(f'{core}/{n}') in ('nmos', 'pmos')]
-        writable = {}
-        for group in compiled.parameter_groups:
-            if group.mutable:
-                for member in group.members:
-                    writable[member.device_id.split('/')[1]] = (group.lower * member.ratio, group.upper * member.ratio)
-        try:
-            check_writable_record(reference, list(writable))
-        except ValueError as exc:
-            raise ProfileError(str(exc))
-        design = dict(topology=f'generated:{recipe}', pdk_library=imported.get('technology_library'), library=imported['library'],
-                      core_cell=imported['cell'], testbench_cell=imported['testbench_cell'])
-        if recipe == 'ring_oscillator':
-            if expected_frequency_hz is None:
-                raise ProfileError('Give a rough expected oscillation frequency: it sizes the transient simulation')
-            source, supply_net, dc = _supply(graph)
-            try:
-                timing = recipes.ring_timing(expected_frequency_hz)
-            except ValueError as exc:
-                raise ProfileError(str(exc))
-            design.update(supply_v=format(dc.value, '.12g'), supply_source=source, supply_net=supply_net,
-                          expected_frequency_hz=float(expected_frequency_hz), **timing,
-                          **recipes.CONTRACT, **_ring(graph, core, format(dc.value, '.12g')))
-            net_roles = {supply_net: ['supply'], design['stage_nets'][0]: ['output']}
-        else:
-            _opamp_fit(graph, core)
-            design.update(supply_v=format(graph.parameters['VDD']['dc'].value, '.12g'))
-            net_roles = {net: [role] for net, role in OPAMP_NETS.items()}
-        available = recipes.provided_metrics(recipe)
-        unknown = [f'{m.measurement_id} ({m.source_name})' for m in config.measurements
-                   if m.result_source == 'backend_profile' and m.source_name and m.source_name not in available]
-        if unknown:
-            raise ProfileError(f'Measurement(s) {", ".join(unknown)} use a result this circuit type does not produce. '
-                               f'Available: {", ".join(available)}')
-        mapping.update(net_roles={'0': ['ground'], **net_roles},
-                       parameter_groups=[dict(asdict(group), members=[asdict(m) for m in group.members]) for group in compiled.parameter_groups])
-        write_json(staging / FILES['mapping'], mapping)
-        write_json(staging / FILES['design'], design)
-        write_json(staging / FILES['readback'], reference)
-        write_json(staging / FILES['rules'], dict(
-            format=RULES_FORMAT, recipe=recipe, core_instance=core, width_step=VERIFIED_WIDTH_STEP, mos_instances=mos,
-            fixed_instances=[n for n in instances if n not in mos],
-            writable=[dict(instance=n, lower=lo, upper=hi) for n, (lo, hi) in writable.items()]))
-        write_json(staging / FILES['receipt'], dict(
-            library=imported['library'], core_cell=imported['cell'], testbench_cell=imported['testbench_cell'], config=design,
-            receipt_recorded_at=utcnow().isoformat(), source_netlist_sha256=imported['netlist_sha256'], imported_utc=imported['imported_utc'],
-            note='Generated by the workbench from a cell that already existed in Virtuoso; the workbench did not create the cell.'))
-        entry = dict(format=FORMAT, name=name, task_key=f'real:{name}', recipe=recipe, circuit_class=RECIPES[recipe]['circuit_class'],
-                     library=imported['library'], core_cell=imported['cell'], testbench_cell=imported['testbench_cell'], core_instance=core,
-                     pdk_id=imported.get('technology_library') or 'unspecified', created_utc=utcnow().isoformat(),
-                     provided_metrics=list(recipes.provided_metrics(recipe)), optimized_variables=sorted(optimized),
-                     spec_registry=recipes.spec_registry(recipe, design),
-                     status='unverified: no real baseline simulation has been recorded for this profile yet')
-        write_json(staging / FILES['entry'], entry)
+        result = _generate(name, config, recipe=recipe, imported=imported, staging=staging, expected_frequency_hz=expected_frequency_hz)
         staging.rename(directory)
         try:
             load_profile(name)                                    # every check of the verified classes, against the recorded files
@@ -469,7 +520,179 @@ def create_profile(name, config, *, recipe, expected_frequency_hz=None) -> dict:
         shutil.rmtree(staging, ignore_errors=True)
         shutil.rmtree(directory, ignore_errors=True)
         raise
-    return dict(entry, directory=str(directory), parameters=[row.model_dump(mode='json') for row in rows])
+    return dict(result['entry'], directory=str(directory), parameters=[row.model_dump(mode='json') for row in result['rows']])
+
+
+# ---------------------------------------------------------------------------------- saving a task: "Save task" / "Save as"
+TASK_FILE = 'task.json'
+HISTORY = 'history'
+
+
+def measurement_kind(config) -> str:
+    """How a task measures, read from its Probes: all Maestro outputs -> 'maestro'; all results of one circuit type ->
+    that type. Expression probes follow the probes they are made of."""
+    measured = [m for m in config.measurements if m.result_source != 'expression']
+    if not config.measurements:
+        raise ProfileError('Probes is empty: say what the simulation measures (Probes tab) before saving the task')
+    sources = {m.result_source for m in measured}
+    if not sources:
+        raise ProfileError('Every probe is an expression over other probes: at least one must be measured')
+    if sources == {'ade_output'}:
+        return MAESTRO
+    if sources == {'backend_profile'}:
+        names = {m.source_name for m in measured}
+        fitting = [recipe for recipe in RECIPES if names <= set(recipes.provided_metrics(recipe))]
+        if len(fitting) == 1:
+            return fitting[0]
+        if not fitting:
+            raise ProfileError(f'The probes name results that no circuit type gives together: {", ".join(sorted(names))}')
+        raise ProfileError('The probes fit both circuit types (only supply results): add a probe that says which one, '
+                           'e.g. osc_frequency_hz or gain_db_at_start')
+    raise ProfileError('The probes mix Maestro outputs and results of a circuit type: a task measures one way')
+
+
+def task_file(name) -> dict | None:
+    try:
+        return json.loads((profile_dir(name) / TASK_FILE).read_text())
+    except (OSError, ValueError, ProfileError):
+        return None
+
+
+def save_task(monitor, profile_id, name, config, *, library=None, cell=None, task=None, as_new=False, extras=None,
+              run_rows=(), commands=None) -> dict:
+    """Explicit press - only a person can do it: store the editors' rows as the task real:<name>.
+
+    * First save from a cell: the task takes the cell's working copy. "Save task" on an open task updates THAT task (a
+      new revision, same name); "Save as" (`as_new`) makes a new task with a copy of its own, made from the open task's
+      copy, cells renamed <cell>_<name>.
+    * Virtuoso side first: a Maestro-measured task writes its setup (outputs and specs from the rows; analyses,
+      variables and bindings from `extras`, else from what the copy was last written with, else from the saved task
+      file) into its copy and reads it back - it must match;
+      then the copy is read into the workbench again (netlist + CDF readback, read-only): the reference every run of
+      the task is compared with.
+    * Then the profile files are generated from that copy and the task file is written. A new revision keeps the
+      recorded baseline only when parameters, probes, measurement, analyses, variables and bindings are unchanged."""
+    from . import bridge_read, task_files, virtuoso_setup, working_copy
+    from .tasks import REAL_PROFILES
+    commands, extras = commands or {}, dict(extras or {})
+    directory = profile_dir(name)                                # validates the name
+    current = list_profiles().get(task) if task else None
+    if task and current is None:
+        raise ProfileError(f'Unknown task real:{task}')
+    updating = current is not None and not as_new
+    if updating:
+        if name != task:
+            raise ProfileError('Save task keeps the task name: use Save as for a task under another name')
+        working = working_run_of(name, run_rows)
+        if working is not None:
+            raise ProfileError(f'Run {working.get("run_id") or working["run_dir"]} of real:{name} is working right now: let it finish first')
+        if not current.get('copy_target'):
+            raise ProfileError(f'real:{name} was made before tasks had working copies: open its cell, make a working copy and save a new task')
+    elif name in REAL_PROFILES or directory.exists():
+        raise ProfileError(f'A task called real:{name} already exists: choose another name')
+    kind = measurement_kind(config)
+    saved = task_file(task) if current else None
+    claimed = None
+    if updating:
+        target = current['copy_target']
+    elif current:
+        if not current.get('copy_target'):
+            raise ProfileError(f'real:{task} was made before tasks had working copies: open its cell, make a working copy and save a new task')
+        target = working_copy.make_task_copy(monitor, profile_id, current['copy_target'], name,
+                                             source_netlist=(Path(current['directory']) / FILES['structure']).read_text(),
+                                             command=commands.get('copy'))
+    else:
+        if not library or not cell:
+            raise ProfileError('Say which cell the task is of')
+        existing = [t for t in tasks_for_cell(library, cell)]
+        if existing:
+            raise ProfileError(f'{library}/{cell} already has the task(s) {", ".join(t["task_key"] for t in existing)}: open one and use Save as')
+        target = working_copy.draft_target(library, cell)
+        working_copy.claim(library, cell, name)
+        claimed = (library, cell)
+    staging = directory.with_name(f'.{name}.saving')
+    try:
+        # What the task file adds beside the rows: sent with this save, else what the copy was last written with (by the last
+        # save, "Write to Virtuoso" or an approved agent setup - so never older than the saved task's), else the saved task's;
+        # a part none of them names stays as the copy has it. Save as starts from the open task's copy.
+        base = working_copy.last_written(current['copy_target'] if current else target) or (saved or {}).get('maestro') or {}
+        maestro = None
+        if kind == MAESTRO:
+            setup = virtuoso_setup.from_rows(config, model_files=extras.get('model_files') or base.get('model_files') or (),
+                                             analyses=extras['analyses'] if 'analyses' in extras else base.get('analyses'),
+                                             variables=extras['variables'] if 'variables' in extras else base.get('variables'),
+                                             bindings=extras['bindings'] if 'bindings' in extras else base.get('bindings'))
+            written = working_copy.write_setup_on(monitor, profile_id, target, setup, command=commands.get('setup'))
+            if not written['matches']:
+                raise ProfileError('The copy\'s Maestro setup reads back differently from the rows: ' + '; '.join(written['differences']))
+            maestro = virtuoso_setup.normalize(written)
+        bridge_read.read(monitor, profile_id, 'import_cell', library=target['copy']['library'], cell=target['copy']['cell'],
+                         testbench=target['copy']['testbench'], command=commands.get('read'))
+        imported = native_cells.load_import(target['copy']['library'], target['copy']['cell'])
+        if imported is None:
+            raise ProfileError('The working copy could not be read back into the workbench')
+        frequency = extras.get('expected_frequency_hz', ((saved or {}).get('measurement') or {}).get('expected_frequency_hz'))
+        measurement = dict(kind=kind, **({'expected_frequency_hz': float(frequency)} if kind == 'ring_oscillator' and frequency else {}))
+        revision = (saved or {}).get('revision', 0) + 1 if updating else 1
+        shutil.rmtree(staging, ignore_errors=True)
+        staging.mkdir(parents=True)
+        extra = dict(original=target['original'], copy=target['copy'], copy_target=target, revision=revision,
+                     measurement=kind, runnable=kind != MAESTRO, saved_utc=utcnow().isoformat())
+        if kind == MAESTRO:
+            extra['provided_metrics'] = [o['name'] for o in maestro['outputs']]
+        result = _generate(name, config, recipe=kind, imported=imported, staging=staging, expected_frequency_hz=frequency, entry_extra=extra)
+        data = task_files.build(
+            name=name, revision=revision, saved_utc=extra['saved_utc'], cell=target['original'], copy=target['copy'],
+            measurement=measurement,
+            maestro=None if maestro is None else dict(test=maestro['test'], model_files=maestro['model_files'], analyses=maestro['analyses'],
+                                                      variables=maestro['variables'], bindings=maestro['bindings'],
+                                                      outputs=maestro['outputs'], specs=maestro['specs']),
+            parameters=[row.model_dump(mode='json', exclude_none=True) for row in result['rows']],
+            probes=[m.model_dump(mode='json', exclude_none=True) for m in config.measurements],
+            specs=[t.model_dump(mode='json', exclude_none=True) for t in config.targets],
+            notes=extras.get('notes', (saved or {}).get('notes', '')),
+            virtuoso=dict(copy_netlist_sha256=imported['netlist_sha256'],
+                          maestro_fingerprint=virtuoso_setup.fingerprint(maestro) if maestro else None))
+        write_json(staging / TASK_FILE, data)
+        changed, baseline_kept = set(), False
+        if updating:
+            old = Path(current['directory'])
+            history = staging / HISTORY
+            if (old / HISTORY).is_dir():
+                shutil.copytree(old / HISTORY, history)
+            keep = history / f'r{saved.get("revision", 0) if saved else 0}'
+            keep.mkdir(parents=True, exist_ok=True)
+            for item in old.iterdir():
+                if item.is_file():
+                    shutil.copy2(item, keep / item.name)
+            changed = task_files.what_changed(saved, data)
+            if (old / FILES['reference']).is_file() and not changed & task_files.BASELINE_PARTS:
+                shutil.copy2(old / FILES['reference'], staging / FILES['reference'])
+                baseline_kept = True
+                entry = json.loads((staging / FILES['entry']).read_text())
+                write_json(staging / FILES['entry'], dict(entry, status=current.get('status', entry['status']),
+                                                          baseline_recorded_utc=current.get('baseline_recorded_utc')))
+            aside = old.parent / TRASH / f'{name}.r{saved.get("revision", 0) if saved else 0}.{utcnow().strftime("%Y%m%dT%H%M%S%fZ")}'
+            aside.parent.mkdir(parents=True, exist_ok=True)
+            old.rename(aside)
+        staging.rename(directory)
+        if kind != MAESTRO:
+            try:
+                load_profile(name)                                # every check of the verified classes, against the recorded files
+            except Exception as exc:
+                raise ProfileError(f'The task does not pass the checks of the real backend: {exc}')
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        if not updating and directory.exists() and not (directory / TASK_FILE).is_file():
+            shutil.rmtree(directory, ignore_errors=True)
+        if claimed:
+            working_copy.release(*claimed, name)
+        raise
+    return dict(task_key=f'real:{name}', name=name, revision=revision, measurement=measurement, runnable=kind != MAESTRO,
+                copy=target['copy'], original=target['original'], directory=str(directory), created=not updating,
+                baseline_kept=baseline_kept, changed=sorted(changed), circuit_class=result['entry']['circuit_class'],
+                pdk_id=result['entry']['pdk_id'], parameters=[row.model_dump(mode='json') for row in result['rows']],
+                maestro_matches=None if maestro is None else True)
 
 
 # ---------------------------------------------------------------------------------- the first real baseline
@@ -571,5 +794,9 @@ def delete_profile(name, *, run_rows=()) -> dict:
     kept = directory.parent / TRASH / f'{name}.{utcnow().strftime("%Y%m%dT%H%M%S%fZ")}'
     kept.parent.mkdir(parents=True, exist_ok=True)
     directory.rename(kept)
+    original = entry.get('original') or {}
+    if original.get('library') and original.get('cell'):             # the cell's working copy is free for a new task
+        from . import working_copy
+        working_copy.release(original['library'], original['cell'], name)
     return dict(deleted=entry['task_key'], name=name, library=entry['library'], cell=entry['core_cell'],
                 testbench_cell=entry.get('testbench_cell'), baseline_recorded=(kept / FILES['reference']).is_file(), kept_copy=str(kept))

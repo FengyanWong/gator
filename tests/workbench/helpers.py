@@ -1,7 +1,12 @@
 """Shared helpers for workbench tests. Everything here is MOCK: the analytic toy backend plus a
-scripted variant that injects failures and delays. No Virtuoso, Spectre, network or agent CLI."""
+scripted variant that injects failures and delays. No Virtuoso, Spectre, network or agent CLI.
+
+The circuit is a REAL one (status record 7.59): the workbench's one MOCK task, synthetic:gpdk045_ota5, is the GPDK045
+OTA5 netlist on the toy backend. A test that needs other circuits (a transfer to another topology, a multi-task
+experiment) registers more real examples for its own process with `other_circuits`; the workbench never lists them."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 import time
@@ -64,7 +69,30 @@ class ScriptedEnvFactory:
                                 expected_origin='synthetic')
 
 
-def make_config(root, task='synthetic:opamp', *, threshold=0.95, run=None, output=None, research=None,
+MOCK_TASK = 'synthetic:gpdk045_ota5'      # 3 width groups (input pair, mirror pair, tail): 5 rows, 3 action variables
+
+# The other real GPDK045 examples, as MOCK circuits a test may add (netlist + device mapping, the mapping's groups).
+OTHER_CIRCUITS = dict(
+    gpdk045_ldo=dict(netlist='examples/circuits/gpdk045_ldo.scs', config='configs/gpdk045_ldo.json', circuit_class='ldo'),
+    gpdk045_ota7=dict(netlist='examples/circuits/gpdk045_ota7.scs', config='configs/gpdk045_ota7.json', circuit_class='opamp'),
+    gpdk045_vco=dict(netlist='examples/circuits/gpdk045_vco.scs', config='configs/gpdk045_vco.json', circuit_class='vco'),
+)
+
+
+@contextmanager
+def other_circuits(*names):
+    """synthetic:<name> for each named OTHER_CIRCUITS entry, in this process only (runs through `execute`, not a detached
+    worker, which would not see them). Removed again afterwards."""
+    added = {name: dict(OTHER_CIRCUITS[name], pdk_id='gpdk045', description='test only') for name in names}
+    tasks.SYNTHETIC_FIXTURES.update(added)
+    try:
+        yield [f'synthetic:{name}' for name in names]
+    finally:
+        for name in added:
+            tasks.SYNTHETIC_FIXTURES.pop(name, None)
+
+
+def make_config(root, task=MOCK_TASK, *, threshold=0.95, run=None, output=None, research=None,
                 advanced=None, project=None, mutate=None):
     raw = tasks.starter_config(task)
     raw['targets'][0]['lower'] = threshold

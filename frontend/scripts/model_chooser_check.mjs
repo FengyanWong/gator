@@ -48,11 +48,11 @@ const model = (name, circuit, points, extra = {}) => { const newest = points.fin
     reason: points.some(p => p.is_best_policy) ? null : 'FIXTURE: no validation-set policy evaluation has occurred in this run', score: null },
   checkpoints: points, network: newest.network, saved_utc: newest.created_utc, trained_evaluations: newest.evaluations,
   learner_updates: newest.learner_updates, restoration_capability: newest.restoration_capability, ...extra }; };
-const A = model('FIXTURE_opamp_gt', 'synthetic:opamp', [point('a1', 6, 'periodic', 1), point('a2', 12, 'periodic', 2), point('a3', 18, 'periodic', 3), point('a4', 20, 'final', 4, { is_latest: true })]);
+const A = model('FIXTURE_opamp_gt', 'synthetic:gpdk045_ota5', [point('a1', 6, 'periodic', 1), point('a2', 12, 'periodic', 2), point('a3', 18, 'periodic', 3), point('a4', 20, 'final', 4, { is_latest: true })]);
 const B = model('FIXTURE_ldo_gat', 'synthetic:ldo', [point('b1', 8, 'stop', 5, { is_latest: true, network: GAT })]);
 const C = model('FIXTURE_weights_only', 'synthetic:vco', [point('c1', 10, 'pause', 6, { is_latest: true, restoration_capability: 'weights_only', missing_components: ['replay_snapshot (disabled in output settings)'] })]);
 const D = model('FIXTURE_real_ota5', 'real:gpdk045_ota5', [point('d1', 30, 'periodic', 7, { is_best_policy: true, network: RGCN }), point('d2', 40, 'final', 8, { is_latest: true, network: RGCN })], { mock: false });
-const FILLERS = ['e', 'f', 'g'].map((t, n) => model(`FIXTURE_filler_${t}`, 'synthetic:opamp', [point(`${t}1`, 5 + n, 'final', 9 + n, { is_latest: true })]));
+const FILLERS = ['e', 'f', 'g'].map((t, n) => model(`FIXTURE_filler_${t}`, 'synthetic:gpdk045_ota5', [point(`${t}1`, 5 + n, 'final', 9 + n, { is_latest: true })]));
 const MODELS = [A, B, C, D, ...FILLERS].sort((x, y) => (x.saved_utc < y.saved_utc ? 1 : -1));            // newest save first, as the backend sends it
 const describe = (run_dir, checkpoint_id) => {
   const m = MODELS.find(x => x.run_dir === run_dir); if (!m) return null;
@@ -67,7 +67,7 @@ const describe = (run_dir, checkpoint_id) => {
 const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: null };
 
 try {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:opamp', APP))).json();
+  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   const CONFIG = { ...starter, run: { ...starter.run, mode: 'scratch', network: NET }, output: { experiment_name: 'fixture', ...(ROOT ? { output_root: ROOT } : {}) }, research: {} };
   let target;
   for (let i = 0; i < 75 && !target; i++) {
@@ -187,7 +187,7 @@ try {
   check('the count is said', /7 saved models under the output folder/.test(await blockText()));
   const byName = name => shown.find(c => c.title === name);
   check('a card names the circuit, the network, the training and the saves in plain words',
-    byName(A.task_name).lines[0] === 'synthetic:opamp - graph_transformer 16/2/1' && byName(A.task_name).lines[1] === '20 evaluations of training - 4 save points'
+    byName(A.task_name).lines[0] === 'synthetic:gpdk045_ota5 - graph_transformer 16/2/1' && byName(A.task_name).lines[1] === '20 evaluations of training - 4 save points'
     && /^last saved .+ - run completed \(scratch, seed 1\)$/.test(byName(A.task_name).lines[2]), JSON.stringify(byName(A.task_name).lines));
   check('one save point is singular', byName(B.task_name).lines[1] === '8 evaluations of training - 1 save point', byName(B.task_name).lines[1]);
   check('MOCK models are tagged, the real one is not', byName(A.task_name).tags.includes('MOCK') && !byName(D.task_name).tags.includes('MOCK'), JSON.stringify([byName(A.task_name).tags, byName(D.task_name).tags]));

@@ -338,7 +338,7 @@ def test_a_generated_profile_brings_the_result_registry_its_targets_need(tmp_pat
     explicit = registered.model_copy(deep=True)
     explicit.run.advanced.spec_registry = [schema.SpecRegistryEntry(metric_id='osc_frequency_hz', unit='Hz', reference=5e8)]
     assert registry_for(explicit) == dict(osc_frequency_hz='Hz')
-    other = schema.WorkbenchConfig.model_validate(dict(circuit=dict(source='registered_task', task_id='synthetic:opamp'), run=dict(max_evaluations=5)))
+    other = schema.WorkbenchConfig.model_validate(dict(circuit=dict(source='registered_task', task_id='synthetic:gpdk045_ota5'), run=dict(max_evaluations=5)))
     assert 'gain_db_at_start' in registry_for(other) and 'osc_frequency_hz' not in registry_for(other)
     # a spec under a name the registry lacks is added to it (spec_equations); a configured registry takes it as given
     unknown = dict(target, metric_id='osc_phase_noise', equation='f_osc')

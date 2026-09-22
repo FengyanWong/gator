@@ -64,7 +64,7 @@ def test_forms_are_driven_by_the_backend_schema(client):
 
 def test_validation_endpoint_and_schema_rejection(client, tmp_path):
     good = client.post('/api/config/validate', json=dict(config=config_json(tmp_path))).json()
-    assert good['blocks_run'] is False and good['facts']['independent_action_variables'] == 2 and good['mock'] is True
+    assert good['blocks_run'] is False and good['facts']['independent_action_variables'] == 3 and good['mock'] is True
     raw = config_json(tmp_path)
     raw['parameters'][0]['lower'] = 1.0
     bad = client.post('/api/config/validate', json=dict(config=raw)).json()
@@ -78,12 +78,12 @@ def test_validation_endpoint_and_schema_rejection(client, tmp_path):
 def test_tasks_and_circuit_loading(client):
     listed = client.get('/api/tasks').json()
     kinds = {t['task_key']: t for t in listed['tasks']}
-    assert kinds['synthetic:opamp']['kind'] == 'mock' and 'MOCK' in kinds['synthetic:opamp']['description']
+    assert kinds['synthetic:gpdk045_ota5']['kind'] == 'mock' and 'MOCK' in kinds['synthetic:gpdk045_ota5']['description']
     real = kinds['real:gpdk045_ota5']
     assert real['available'] is False and real['blocker']                      # the specific blocker, not a fake backend
     assert 'NativeEnvironmentFactory' in listed['real_interface_contract']['environment_factory']
-    loaded = client.post('/api/circuit/load', json=dict(circuit=dict(source='registered_task', task_id='synthetic:opamp'))).json()
-    assert loaded['loaded'] and loaded['mock'] and set(loaded['hierarchy']) >= {'input_left', 'CL'}
+    loaded = client.post('/api/circuit/load', json=dict(circuit=dict(source='registered_task', task_id='synthetic:gpdk045_ota5'))).json()
+    assert loaded['loaded'] and loaded['mock'] and set(loaded['hierarchy']) >= {'XU1', 'CL'}
     assert 'MOCK' in loaded['evaluation_backend'] and loaded['provided_metrics'] == ['score']
     blocked = client.post('/api/circuit/load', json=dict(circuit=dict(source='registered_task', task_id='real:gpdk045_ota5'))).json()
     assert blocked['loaded'] is False and blocked['blocker'] and blocked['interface_contract']
@@ -292,7 +292,7 @@ def test_native_reads_are_gated_and_a_real_snapshot_is_summarised(tmp_path):
     assert blocked.status_code == 409 and blocked.json()['detail']['gate']['blocking'] == ['bridge_package']
     # offline work keeps working while the bridge is down
     assert down.post('/api/config/validate', json=dict(config=config_json(tmp_path))).status_code == 200
-    assert down.post('/api/circuit/load', json=dict(circuit=dict(source='registered_task', task_id='synthetic:ldo'))).json()['loaded']
+    assert down.post('/api/circuit/load', json=dict(circuit=dict(source='registered_task', task_id='synthetic:gpdk045_ota5'))).json()['loaded']
     snapshot = json.loads((REPO / 'examples/circuits/gpdk045_ota5.cdf.json').read_text())   # captured REAL readback
     summary = bridge_read.summarize_snapshot(snapshot, library='GATOR_TESTS', cell='ota5_v1')
     assert summary['instance_count'] == 5 and summary['instances'][0]['master']['library']

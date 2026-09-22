@@ -6,7 +6,10 @@
 // The browser profile is new and temporary: the user's saved configuration is not touched.
 // What it pins (user request 2026-09-20): the notifier is a button; the list appears when the button is RELEASED, not
 // when it is pressed; it lists ALL blocking issues in full and no other; a second press hides it; it follows a new
-// validation, closes when nothing blocks, and does not reopen by itself.
+// validation, closes when nothing blocks, and does not reopen by itself. Since status record 7.56 (user report
+// 2026-09-21): a configuration the schema rejects (HTTP 422) is listed one issue per field, at its row, in the backend's
+// plain words, with the schema's own text folded under "Technical details" - also for an older backend's answer. It seeds
+// the one MOCK task, synthetic:gpdk045_ota5 (status record 7.59).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 15 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/blocking_issues_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -41,9 +44,20 @@ const fixtures = { three: report([OTHERS[0], BLOCKING[0], OTHERS[1], BLOCKING[1]
 try {
   // The MOCK task's starter configuration (a read-only GET), so that "Where" can name a parameter row. It is put into
   // the temporary browser profile only, and never validated for real: the reports above are what the page is told.
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:opamp', APP))).json();
+  // The one MOCK task (status record 7.59), the real OTA5: five rows, the followers of its two pairs at rows 1 and 3.
+  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   const CONFIG = { ...starter, output: { experiment_name: 'fixture' }, research: {} };  // as "Load starter configuration" merges it
   const ROW_KEY = CONFIG.parameters[0].variable_id;
+  // What a backend answers when the schema rejects the configuration (HTTP 422, schema.describe_errors); an older backend
+  // sent pydantic's text at parameters.1.variable_id; anything else is one plain failure.
+  const FOLLOWERS = [1, 3];
+  const PATTERN = "String should match pattern '^[A-Za-z_][A-Za-z0-9_.\\-]*$'";
+  const idError = n => ({ path: `parameters[${n}].variable_id`, code: 'invalid_id', technical: `FIXTURE: ${PATTERN} [string_pattern_mismatch]`,
+    message: `FIXTURE: "${CONFIG.parameters[n].variable_id}" cannot be an ID: it contains "/".` });
+  const rejectedBy = errors => ({ status: 422, body: { detail: { message: 'The configuration does not match the schema', errors } } });
+  Object.assign(fixtures, { rejected: rejectedBy(FOLLOWERS.map(idError)),
+    rejectedOld: rejectedBy([{ path: 'parameters.3.variable_id', message: `FIXTURE: ${PATTERN}` }, { path: 'run.max_evaluations', message: 'FIXTURE: Input should be a valid integer' }]),
+    failed: { status: 500, body: { detail: 'FIXTURE: the backend failed' } } });
   let target;
   for (let i = 0; i < 75 && !target; i++) {
     try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
@@ -58,7 +72,7 @@ try {
     responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
   const answer = ({ requestId, request }) => {
     const name = new URL(request.url).pathname;
-    if (name === '/api/config/validate') { validations++; return fulfil(requestId, 200, answerWith); }
+    if (name === '/api/config/validate') { validations++; return answerWith.status ? fulfil(requestId, answerWith.status, answerWith.body) : fulfil(requestId, 200, answerWith); }
     if (request.method === 'GET') return send('Fetch.continueRequest', { requestId });
     refused.push(`${request.method} ${name}`);                                   // a panel asking on its own; never a start
     return fulfil(requestId, 418, { detail: { message: 'FIXTURE: this check lets no writing request through' } });
@@ -160,6 +174,33 @@ try {
   await evaluate(`${BUTTON}.focus()`);
   for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, text: type === 'keyDown' ? '\r' : undefined });
   check('Enter on the focused button shows the list', await until(`!!(${LIST})`, 30));
+
+  // ---- a configuration the schema rejects: one issue per field, at its row, in plain words (status record 7.56) ------------
+  // Before, the page listed ONE issue "(whole configuration)" holding pydantic's list as JSON (user report 2026-09-21).
+  await revalidate(fixtures.rejected);
+  const schemaRows = await rows();
+  const key = n => CONFIG.parameters[n].variable_id;
+  check('each rejected field is its own blocking issue (2)', schemaRows.length === 2 && (await evaluate(`${BUTTON}.textContent`)) === '2 blocking issue(s)', JSON.stringify(schemaRows.map(r => r.slice(0, 4))));
+  check('each names its field and the key of its row', schemaRows.every((r, n) => r[2] === 'invalid_id' && r[3] === `parameters[${FOLLOWERS[n]}].variable_id row ${key(FOLLOWERS[n])}`), JSON.stringify(schemaRows.map(r => r[3])));
+  check('each message is the plain one, not a JSON list', schemaRows.every((r, n) => r[4].startsWith(idError(FOLLOWERS[n]).message)) && !schemaRows.some(r => r[4].includes('[{')), JSON.stringify(schemaRows.map(r => r[4])));
+  const TECH = `[...${LIST}.querySelectorAll('tbody tr')].map(tr => tr.querySelector('details.more'))`;
+  check('the schema\'s own words are folded under "Technical details"', await evaluate(`${TECH}.every(d => d && !d.open && d.querySelector('summary').textContent === 'Technical details' && !d.querySelector('code').checkVisibility())`));
+  await evaluate(`${TECH}[0].querySelector('summary').click()`);
+  check('one click shows them', await until(`${TECH}[0].open && ${TECH}[0].querySelector('code').checkVisibility() && ${TECH}[0].querySelector('code').textContent.includes('string_pattern_mismatch')`, 30));
+  const EDITOR_ROWS = `[...document.querySelectorAll('section.editors table.editor tbody tr')]`;
+  const marked = await evaluate(`${EDITOR_ROWS}.map(tr => [tr.classList.contains('has-error'), tr.querySelector('td.issues').textContent])`);
+  check('the Parameters editor marks exactly those rows', marked.length === 5 && marked.every(([bad, text], n) => bad === FOLLOWERS.includes(n) && text === (FOLLOWERS.includes(n) ? 'error: invalid_id' : '')), JSON.stringify(marked));
+  await shot('issues-5-rejected.png');
+  await revalidate(fixtures.rejectedOld);
+  const oldRows = await rows();
+  check('an older backend\'s answer is split the same way, its paths written like the report\'s', oldRows.length === 2 && oldRows[0][2] === 'schema'
+    && oldRows[0][3] === `parameters[3].variable_id row ${key(3)}` && oldRows[0][4] === `FIXTURE: ${PATTERN}` && oldRows[1][3] === 'run.max_evaluations', JSON.stringify(oldRows));
+  check('... without an empty "Technical details"', !(await evaluate(`!!${LIST}.querySelector('details')`)));
+  await revalidate(fixtures.failed);
+  const failedRows = await rows();
+  check('any other failure is one issue with its text only', failedRows.length === 1 && failedRows[0][3] === '(whole configuration)' && failedRows[0][4] === 'FIXTURE: the backend failed', JSON.stringify(failedRows));
+  await revalidate(fixtures.valid);
+  check('a valid answer clears them', !(await evaluate(`!!(${BUTTON})`)) && (await evaluate(`${EDITOR_ROWS}.filter(tr => tr.classList.contains('has-error')).length`)) === 0);
 
   console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
   check('the page asked to start, continue, command, connect or call an agent on its own: never', !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/)/.test(r)), refused.join(', '));

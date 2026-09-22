@@ -108,7 +108,7 @@ def test_the_circuit_load_answers_the_probes_of_the_copy_and_they_validate(tmp_p
     assert not [i for i in report['issues'] if i['path'].startswith('measurements') and i['level'] in ('error', 'blocker')]
     browse = client.post('/api/circuit/load', json=dict(circuit=dict(CIRCUIT, cell='never_read'))).json()
     assert 'testbench_probes' not in browse                                          # no copy, nothing to say
-    mock = client.post('/api/circuit/load', json=dict(circuit=dict(source='registered_task', task_id='synthetic:opamp'))).json()
+    mock = client.post('/api/circuit/load', json=dict(circuit=dict(source='registered_task', task_id='synthetic:gpdk045_ota5'))).json()
     assert 'testbench_probes' not in mock
 
 

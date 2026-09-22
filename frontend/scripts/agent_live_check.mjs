@@ -91,7 +91,7 @@ try {
     const saved = await (await fetch(`${APP}api/agent/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'codex' }) })).json();
     if (!saved.saved) throw new Error(`provider codex could not be selected: ${JSON.stringify(saved)}`);
   }
-  const starter = await (await fetch(`${APP}api/tasks/starter?task_key=synthetic:opamp`)).json();
+  const starter = await (await fetch(`${APP}api/tasks/starter?task_key=synthetic:gpdk045_ota5`)).json();
   const seeded = { schema_version: 'gator-workbench-config-v1', ...(starter.config ?? starter), output: { experiment_name: 'experiment' }, research: {} };
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(seeded))});` });
   await send('Page.navigate', { url: APP });

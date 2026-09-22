@@ -69,7 +69,7 @@ def _old_hash(data, keys=None):
 
 
 def test_a_configuration_from_before_equations_loads_and_keeps_both_hashes(tmp_path):
-    raw = tasks.starter_config('synthetic:opamp')
+    raw = tasks.starter_config('synthetic:gpdk045_ota5')
     new = schema.WorkbenchConfig.model_validate(dict(raw, run=dict(max_evaluations=5)))
     legacy_dump = new.model_dump(mode='json')
     for row in legacy_dump['targets']:                                                   # exactly what the old schema dumped
@@ -159,7 +159,7 @@ def test_a_computed_spec_gets_a_registry_entry_sized_by_what_it_computes_not_by_
     def with_power(raw, lower):
         raw['measurements'] += [probe('m_ugb', 'unity_gain_hz', 'Hz'), probe('m_power', 'supply_power_w', 'W')]
         raw['targets'].append(spec('hz_per_watt', 'm_ugb / m_power', unit='Hz', lower=lower, normalization_scale=1e12))
-    base = schema.WorkbenchConfig.model_validate(tasks.starter_config('synthetic:opamp') | dict(run=dict(max_evaluations=5)))
+    base = schema.WorkbenchConfig.model_validate(tasks.starter_config('synthetic:gpdk045_ota5') | dict(run=dict(max_evaluations=5)))
     schemas = []
     for lower in (1e11, 3e12):
         raw = base.model_dump(mode='json')

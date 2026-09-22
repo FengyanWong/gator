@@ -263,17 +263,22 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // "score" as its only spec, and "synthetic-fixture" as its PDK). The labels follow at once. The rows of the three editors
   // are exchanged only while they are nobody's work - empty, or still exactly what the task before had brought; rows that
   // were edited stay, and the button offers the exchange. A project name nobody typed - the untouched default, or what some
-  // task's starter gives (mock-opamp ...) - follows too, so a real run is not filed under mock_*; a typed name stays, on
-  // the button as well. The exchange is not a history step of its own: one Undo takes back the task choice and everything
-  // it brought.
+  // task's starter gives (mock-gpdk045-ota5 ...) - follows too, so a real run is not filed under mock_*; a typed name stays,
+  // on the button as well. The exchange is not a history step of its own: one Undo takes back the task choice and
+  // everything it brought. The rows of a MOCK task that no longer exists (four were removed, status record 7.59) are
+  // nobody's work either: no task can run them.
   const [taskRows, setTaskRows] = useState<Json>(null);      // what the last task choice did to the editors: { task, state, ... }
   const following = useRef(0);                               // only the newest choice may answer
   const starterNamed = (p: Json) => (p.name === 'gator-project' && p.task_name === 'task')
     || tasks.some(t => t.starter_project?.name === p.name && t.starter_project?.task_name === p.task_name);
   const starterProblem = (e: any, taskId: string) => (e.status === 404 && taskId.startsWith('real:')
     ? 'This backend is older than the page and has no starting rows for a real task yet: restart it (gator_workbench.cli serve).' : e.message);
+  const goneMock = (taskId?: string | null) => !!taskId && taskId.startsWith('synthetic:') && tasks.length > 0 && !tasks.some(t => t.task_key === taskId);
+  const removedMock = goneMock(ref.task_id);
+  // What a removed MOCK task's starter named the project (mock-vco / mock_vco): nobody typed it either.
+  const goneStarterNamed = (p: Json, taskId: string) => { const n = taskId.slice('synthetic:'.length); return p.name === `mock-${n}` && p.task_name === `mock_${n}`; };
   const chooseTask = async (taskId: string, more: Json = {}) => {
-    const before = config, mine = ++following.current;
+    const before = config, mine = ++following.current, gone = goneMock(before.circuit.task_id);
     const listed = tasks.find(t => t.task_key === taskId);
     patch({ ...more, task_id: taskId, ...(listed?.circuit_class ? { circuit_class: listed.circuit_class } : {}), ...(listed?.pdk_id ? { pdk_id: listed.pdk_id } : {}) });
     setTaskRows({ task: taskId, state: 'reading' });
@@ -282,9 +287,9 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       api.starter(taskId).catch((e: any) => ({ problem: starterProblem(e, taskId) }))]);
     if (mine !== following.current) return;
     if (starter.problem) { setTaskRows({ task: taskId, state: 'unavailable', text: starter.problem }); return; }
-    const untouched = noRows(before) || (!!previous && sameRows(before, previous));
+    const untouched = noRows(before) || gone || (!!previous && sameRows(before, previous));
     setConfig(c => (c.circuit.task_id !== taskId ? c : {
-      ...c, project: starterNamed(c.project) ? { ...c.project, ...starter.project } : c.project,
+      ...c, project: starterNamed(c.project) || (gone && goneStarterNamed(c.project, before.circuit.task_id)) ? { ...c.project, ...starter.project } : c.project,
       ...(untouched ? { parameters: starter.parameters, targets: starter.targets, measurements: starter.measurements } : {}) }), false);
     setTaskRows({ task: taskId, state: untouched ? 'brought' : 'kept', starter, from: before.circuit.task_id });
   };
@@ -333,10 +338,14 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       {ref.source === 'registered_task' && (<>
         <label>Task
           <select value={ref.task_id ?? ''} onChange={e => chooseTask(e.target.value)}>
+            {removedMock && <option value={ref.task_id} disabled>{ref.task_id} (removed)</option>}
             {tasks.map(t => <option key={t.task_key} value={t.task_key}>{t.task_key}{t.kind === 'mock' ? '  [MOCK]' : t.available ? '' : '  [blocked]'}</option>)}
           </select>
         </label>
-        {ref.task_id && <button onClick={useStarter} title="Replaces the rows of Parameters, Probes and Specs with this task's own. A MOCK fixture: its declared groups and the toy score. A real circuit: the parameters its profile fixes and its targets of record. Everything stays editable, and Undo takes it back.">Load starter configuration</button>}
+        {/* A configuration saved with one of the four removed MOCK tasks (status record 7.59): a plain note, not a red "Blocked". */}
+        {removedMock && <div className="note"><p><code>{ref.task_id}</code> no longer exists: the workbench has one MOCK task now,{' '}
+          <code>synthetic:gpdk045_ota5</code> - the real OTA5 circuit on the free toy backend. Choose it under Task; it brings its own rows.</p></div>}
+        {ref.task_id && !removedMock && <button onClick={useStarter} title="Replaces the rows of Parameters, Probes and Specs with this task's own. The MOCK task: the width groups of its circuit and the toy score. A real circuit: the parameters its profile fixes and its targets of record. Everything stays editable, and Undo takes it back.">Load starter configuration</button>}
         {taskRows?.task === ref.task_id && (
           taskRows.state === 'reading' ? <p className="hint task-rows">Reading this task's rows...</p>
           : taskRows.state === 'unavailable' ? <p className="error task-rows">{taskRows.text}</p>
@@ -455,7 +464,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           <details><summary>Technical details</summary><p>{circuit.blocker}</p>
             {circuit.interface_contract && <pre>{JSON.stringify(circuit.interface_contract, null, 1)}</pre>}</details>
         </div>)}
-      {circuit && !circuit.loaded && ref.source !== 'virtuoso' && <div className="blocker"><b>Blocked:</b> {labelled(circuit.blocker ?? '')}
+      {circuit && !circuit.loaded && ref.source !== 'virtuoso' && !removedMock && <div className="blocker"><b>Blocked:</b> {labelled(circuit.blocker ?? '')}
         {circuit.interface_contract && <details><summary>Interface contract</summary><pre>{JSON.stringify(circuit.interface_contract, null, 1)}</pre></details>}</div>}
       {circuit?.loaded && (<>
         {circuit.mock && <p className="mock">MOCK evaluation backend: {circuit.evaluation_backend}</p>}

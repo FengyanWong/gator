@@ -34,7 +34,7 @@ const REPORT = { resolved: ROOT, allowed: true, writable: true, error: null, hos
 const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: null };
 
 try {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:opamp', APP))).json();
+  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   // The network and training numbers are the ones this backend has stored, and the budget is well above its warm-up: a
   // configuration that raises no warning of its own (a differing network or a starved budget would be a warning inside).
   const stored = await (await fetch(new URL('api/network-settings', APP))).json();

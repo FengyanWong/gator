@@ -66,7 +66,7 @@ def test_runs_without_a_saved_model_and_damaged_save_points_are_never_offered(tm
     models = ckpt.saved_models(listed)
     assert [m['task_name'] for m in models] == ['with_model']                        # ... one holds a model
     model = models[0]
-    assert model['run_dir'] == str(saved.run_dir) and model['circuit_task'] == 'synthetic:opamp' and model['mock'] is True
+    assert model['run_dir'] == str(saved.run_dir) and model['circuit_task'] == 'synthetic:gpdk045_ota5' and model['mock'] is True
     assert model['network'] == SMALL_NET and model['trained_evaluations'] == 8
     assert model['latest'] == model['checkpoints'][-1]['checkpoint_id'] and model['saved_utc']
     json.dumps(models, allow_nan=False)                                              # plain JSON for the API

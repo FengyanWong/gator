@@ -2521,6 +2521,61 @@ Spectre per evaluation with transistor sizes written into the COPY, OCEAN on tha
 prove equality - needs the user's budget) and then the removal of the two fixed circuit types. Until then static
 validation keeps `ade_output` probes and design variables blocked for runs.
 
+### 7.56 A configuration the schema rejects is listed field by field in plain words; synthetic:vco starts valid (2026-09-22 ~00:10, separate session, user report)
+
+User report (pasted, no question): after choosing the registered task `synthetic:vco` the header showed
+"1 blocking issue(s)": `error | schema | (whole configuration) | The configuration does not match the schema
+[{"path":"parameters.1.variable_id","message":"String should match pattern '^[A-Za-z_][A-Za-z0-9_.\\-]*$'"}, ...3..., ...5...]`.
+
+Cause: `tasks.starter_config` (the MOCK tasks' starting rows, unchanged since the first build `bcf7c5e`) named a
+follower row `<group>__<device>` and kept the device's `/`. synthetic:vco's followers are `stage_a/pull_up` ..., so rows
+1, 3 and 5 got `stage_a_width__stage_a/pull_up` ..., which the schema's ID pattern (letters, digits, `_ . -`, starting
+with a letter or `_`) rejects. The real tasks' builder `_graph_parameter_rows` already swapped `/` for `_`. No test
+covered synthetic:vco; the other three MOCK fixtures have flat device names. Every earlier synthetic:vco configuration
+was rejected the same way, so no saved run or hash can carry the old IDs.
+
+Changes:
+* `tasks._member_variable_id` (new): one rule for both builders - every character an ID cannot hold becomes `_`; the
+  exact device stays in `instance_path`. synthetic:vco now gives `stage_a_width__stage_a_pull_up` ...; the IDs of every
+  other task are unchanged (they were all valid, so `/` was the only character ever swapped).
+* `schema.describe_errors` (new), used by `api/app.py::parse_config`: the 422 of every route that reads a configuration
+  now lists per field `path` in the validation report's form (`parameters[1].variable_id`, was pydantic's
+  `parameters.1.variable_id`), `code` (`invalid_id` for an ID the pattern rejects, else `schema`), `message` in plain
+  words and `technical` (pydantic's text + error type). An ID message names the wrong characters, gives an ID that works
+  (the same swap) and says what must be renamed with it (the `binding_group` of rows that follow a parameter; the Specs
+  equations that use a probe). Other kinds: missing, empty, too long, unknown field, number / whole number / true-false,
+  NaN, one of the choices, bounds, a validator's own text; anything else keeps pydantic's words.
+* `App.tsx` `rejected()`: a 422 becomes one blocking issue per field instead of ONE "(whole configuration)" issue
+  holding the JSON list. An older backend's dot paths are rewritten, so the list's "Where" names the row key and the
+  editor marks the row (`has-error`, "error: invalid_id") either way. The header's **Static validation** button handles
+  the rejection too (it had no catch: the old report stayed and the rejection was unhandled). `Issues.tsx`: `technical`
+  under a closed "Technical details" line in the message cell.
+
+For the user: restart 8765 (`tasks.py`, `schema.py`, `app.py` changed), then press **Load starter configuration** (or
+rename the three IDs by hand, e.g. `stage_a_width__stage_a_pull_up`; they are followers, nothing refers to them). The
+browser keeps the old rows in its saved configuration, and since they now differ from the task's rows, choosing the task
+again keeps them (the "kept" note offers the same button). The live `frontend/dist` was NOT rebuilt by this session: the
+busy session of part 2 of the Virtuoso task flow asked to do the next live build itself (its own frontend was mid-change)
+and to include `App.tsx` / `Issues.tsx`. Until then the page is the 23:19 build: after the restart a rejected
+configuration still shows as ONE issue holding the JSON list, now with the plain messages inside it.
+
+Verification:
+* `tests/workbench/test_wb_schema_errors.py` (12, new): the 4 MOCK starters pass the schema, the validation (no error or
+  blocker) and compile; the 4 verified real starters pass the schema (their full validation stays in
+  `test_wb_real_starter.py`); the follower IDs; the old rows give exactly 3 `invalid_id` errors at `parameters[1|3|5]`
+  with the plain message and pydantic's text in `technical`; the other kinds' messages; `/api/config/validate` answers
+  422 field by field, and the fixed starter validates without a blocker.
+* Full `tests/workbench` on a snapshot copy (Linux FS) of the working tree as it was at ~00:00, with the peers'
+  uncommitted 7.53 / 7.54 and the part-2 session's files of that moment: 549 passed (2 min 34 s, exit 0).
+* `tsc --noEmit` clean (whole tree). Browser: `blocking_issues_check.mjs` now seeds synthetic:vco (six rows; the live
+  backend still hands out the old `/` IDs) and has 10 new checks, 36 in all: one issue per rejected field with its row
+  key, the plain message, "Technical details" closed (`checkVisibility`) and opening on a click, editor rows 1/3/5
+  marked and 0/2/4 not, an older backend's answer, a plain failure, a valid answer clears them. All pass on a scratch
+  build (`vite build --outDir <Windows temp>`, preview on 5179, `/api` to the live 8765 - every validation answered by a
+  fixture, every other writing request refused); preview stopped and the temp build deleted afterwards.
+
+`src/analog_optimizer/` untouched. Committed together with 7.59 on branch `workbench` (this session's lines only).
+
 ### 7.57 Virtuoso task flow, part 2: the task file, "Save task" and "Save as" (Create profile removed) (2026-09-22 ~00:30, same session as 7.55, explicit user request)
 
 Request: "go on part 2" - the task file (one readable file the user can open and change, laid out like an example) and
@@ -2654,6 +2709,70 @@ both intervals (`POST /api/config/validate`: `blocks_run` true, `checkpoint_inte
 `index-BIRCeLxq.css`); it carries every session's frontend of that moment, including 7.57's, which had waited for
 this restart. `output_panel_check.mjs` against the live 8765: 60 of 60.
 Committed on branch `workbench` (this entry's lines only), not pushed.
+
+### 7.59 One MOCK task, on a real circuit: synthetic:gpdk045_ota5 replaces the four toy-fixture tasks (2026-09-22 ~01:00, same session as 7.56, explicit user request)
+
+User request: "are the mock tasks useful at this point? If useful, reduce the number of mock tasks to 1. If not, delete
+all of them. Use one real circuit example as test".
+
+Answer given: useful, and one is enough. A MOCK task is the only zero-cost way to run the whole workbench - start, pause,
+resume, abort, save points, fine-tune / frozen, exports, graph view, the agent's run review - with no Virtuoso and no
+Spectre budget, and every workbench test and browser check runs on one. The four were redundant: all optimize the same
+toy `score`, and their circuit classes meant nothing to it.
+
+Changes:
+* `tasks.py`: `SYNTHETIC_FIXTURES` has ONE entry, `gpdk045_ota5` - the real OTA5 netlist and device mapping that
+  `real:gpdk045_ota5` runs (`examples/circuits/gpdk045_ota5.scs`, `configs/gpdk045_opamp.json`), class opamp, PDK label
+  `gpdk045` (was `synthetic-fixture`: it IS a GPDK045 netlist; MOCK is the evaluation), a description saying so. Its
+  starter: the mapping's three width groups (input pair M1 + M2, mirror pair M3 + M4, tail M5; log ranges): 5 rows,
+  3 action variables, `score >= 0.95`, project `mock-gpdk045-ota5` / `mock_gpdk045_ota5` (a MOCK starter's name now
+  writes `_` as `-`, like a real one's). `REMOVED_MOCK_TASKS` (`synthetic:opamp`, `_opamp_two_stage`, `_ldo`, `_vco`):
+  `load_task` refuses them with `MOCK_TASK_REMOVED` (one plain sentence naming the task that is left), the starter route
+  answers 404, and `validation.validate` adds the error `task_removed` at `circuit.task_id`, so Start stays disabled and
+  the blocking-issues list says why (a task that cannot be loaded otherwise validates as "not checked", never blocked).
+  An entry without `pdk_id` / `description` (a circuit a test registers for itself, e.g. `test_wb_pdk`'s demo) gets
+  `MOCK_PDK` / `MOCK_DESCRIPTION`. The toy fixture files stay: the optimizer package's own tests, `examples/*.py` and
+  `configs/m6_cross_category.json` use them.
+* Frontend: `store.ts`'s first-visit task is the new one. `Left.tsx`, registered-task block only: a saved configuration
+  that names a removed task shows it as a disabled "(removed)" entry and a neutral note naming the task that is left - no
+  red "Blocked" box, no **Load starter configuration** (that task has no rows). Choosing a task after it exchanges the
+  rows at once (no task can run them; one Undo brings them back), and a project name the old starter gave (`mock-vco` /
+  `mock_vco`) follows as well.
+* Found on the way: `optimized_dut.scs` (the best design as a netlist) is only written when every varied device is a
+  top-level instance - `best_design.export_netlist` refuses a device inside a subcircuit, because editing a definition
+  would change every instance of it. The OTA5's widths sit inside `XU1`, so the MOCK task writes no such file, exactly as
+  every real task; the run's `artifact_manifest.json` says why, and `parameters.csv` always holds the values. The flat toy
+  netlists had hidden this. The exporter's own test now runs on the OTA5 netlist: its top-level load `CL` is rewritten and
+  verified by re-parsing, `XU1/M1` is refused.
+* Tests: `helpers.MOCK_TASK` is the default task; `helpers.other_circuits(...)` registers the other real examples (LDO,
+  OTA7, VCO) as MOCK circuits for the test process only - the workbench never lists them. The transfer to another
+  topology and action dimension (OTA5, 3 -> LDO 2 and OTA7 with all four groups, 4) and the multi-task experiment (unseen
+  LDO and OTA7) use them. `test_wb_mock_task.py` (new, 8): one MOCK task and it is the real OTA5's netlist and mapping;
+  its starter; a short free run labelled mock; each removed task refused with the plain reason, no starter; the API's
+  load, starter and validation of a saved `synthetic:vco`. Updated to the real circuit: `test_wb_schema_validation`
+  (3 variables / 5 rows; the parametrized errors use the OTA5's bounds), `test_wb_engine` (5 members per evaluation; the
+  best-design netlist as above), `test_wb_agents` (10 devices; the netlist's comments stay out of the agent's summary),
+  `test_wb_api`, `test_wb_modes_trajectory`, `test_wb_aggregates`, `test_wb_real_starter`, `test_wb_model_chooser`,
+  `test_wb_profiles`, `test_wb_spec_equations`, `test_wb_testbench_probes`, `test_wb_schema_errors` (7.56's ID test now on
+  the OTA5's followers `XU1/M2`, `XU1/M4`).
+* Browser checks: the seed task is `synthetic:gpdk045_ota5` in 17 scripts (`output_panel_check.mjs` picks the listed MOCK
+  task itself - changed by the session of 7.58). `task_rows_check.mjs` has a new section: a saved `synthetic:vco`
+  configuration opens with the removed entry and the note, no red box, no starter button; choosing the MOCK task brings its
+  rows and name at once; one Undo brings the saved state back. `blocking_issues_check.mjs`: the OTA5's two followers.
+* Docs: `workbench.md` (what is real and what is mock; the starter table; the netlist paragraph).
+
+Live: the user restarted 8765 at 00:53 and the session of 7.58 rebuilt the live `frontend/dist` at 00:54 on their
+request - the backend lists only `synthetic:gpdk045_ota5` and answers `synthetic:vco` with the plain sentence, and the live
+bundle is byte-identical to the build checked here (`index-me5AKf1o.js`). A browser that saved one of the removed tasks
+(the user's saved `synthetic:vco`) shows the note; choosing `synthetic:gpdk045_ota5` brings its rows. Old MOCK runs on disk stay readable; a run of a removed task
+cannot be resumed (its task is refused).
+
+Verification:
+* Full `tests/workbench` on a snapshot copy (Linux FS) of the working tree: 565 passed (2 min 57 s, exit 0).
+* `tsc --noEmit` clean (whole tree). Browser, on a scratch backend (port 8769, started from that snapshot, empty settings
+  plus a copy of the connection file) serving a build of the same tree: `task_rows_check.mjs` 42 hermetic (8 new) + 39 `--live`, `blocking_issues_check.mjs` 36, `circuit_source_check.mjs` 14, `testbench_probes_check.mjs` 39, `project_help_check.mjs` 39, `virtuoso_source_check.mjs` 69, `spec_equations_check.mjs` 15, `model_chooser_check.mjs` 62, `run_list_check.mjs` 60, `graph_view_check.mjs` 54, `model_structure_check.mjs` 29, `module_fold_check.mjs` 29, `run_control_check.mjs` 60, `save_now_check.mjs` 24, `pdk_check.mjs` 27, `output_panel_check.mjs` 60, `agent_tab_check.mjs` 94, `agent_live_check.mjs` 14, and with MOCK runs on that scratch backend `export_check.mjs` 22 and `run_control_live_check.mjs` 23 - all pass. (`run_list_check.mjs` stopped once inside the batch with a script error after 45 passes - its pop-up window not found in time; it passed alone twice.) The scratch backend was stopped afterwards.
+
+`src/analog_optimizer/` untouched. Committed together with 7.56 on branch `workbench` (this session's lines only).
 
 ### 7.60 Virtuoso task flow, part 3: the agent sets the task up - one proposal, written into the working copy ("Ask the agent for suggestions" removed) (2026-09-22 ~01:20, same session as 7.55 / 7.57, explicit user request)
 

@@ -73,8 +73,8 @@ def test_the_ldo_and_vco_bring_the_registry_of_their_experiment_and_the_ota_keep
     stated = as_config(tasks.starter_config('real:gpdk045_ldo'))                              # a registry stated in the configuration still wins
     stated.run.advanced.spec_registry = [schema.SpecRegistryEntry(metric_id='supply_power_w', unit='W', reference=1e-5)]
     assert registry_for(stated) == dict(supply_power_w='W')
-    mock = as_config(tasks.starter_config('synthetic:ldo'))
-    assert 'ldo_psrr_1khz_db' not in registry_for(mock)                                       # the MOCK ldo fixture is not the verified LDO
+    mock = as_config(tasks.starter_config('synthetic:gpdk045_ota5'))
+    assert 'score' in registry_for(mock) and 'ldo_psrr_1khz_db' not in registry_for(mock)     # the MOCK task brings no registry of record
 
 
 def test_the_regulation_units_of_the_ldo_are_known():
@@ -84,14 +84,16 @@ def test_the_regulation_units_of_the_ldo_are_known():
 
 
 def test_the_mock_starter_is_what_it_was():
-    raw = tasks.starter_config('synthetic:opamp')
+    raw = tasks.starter_config('synthetic:gpdk045_ota5')
     assert set(raw) == {'project', 'circuit', 'parameters', 'measurements', 'targets', 'run'}
-    assert [t['metric_id'] for t in raw['targets']] == ['score'] and raw['circuit']['pdk_id'] == 'synthetic-fixture'
+    assert [t['metric_id'] for t in raw['targets']] == ['score'] and raw['circuit']['pdk_id'] == 'gpdk045'   # a real GPDK045 netlist (7.59)
     assert raw['run'] == dict(max_evaluations=60, seed=17)
     with pytest.raises(KeyError):
         tasks.starter_config('real:no_such_circuit')
     with pytest.raises(KeyError):
         tasks.starter_config('synthetic:no_such_fixture')
+    with pytest.raises(KeyError):
+        tasks.starter_config('synthetic:opamp')                                               # one of the four removed in 7.59
 
 
 def test_a_generated_profile_gets_its_parameters_and_probes_and_no_invented_target(tmp_path, monkeypatch):
@@ -117,7 +119,7 @@ def test_a_generated_profile_gets_its_parameters_and_probes_and_no_invented_targ
 def test_the_api_serves_the_rows_and_each_task_names_its_pdk(tmp_path):
     client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
     listed = {t['task_key']: t for t in client.get('/api/tasks').json()['tasks']}
-    assert listed['real:gpdk045_ota5']['pdk_id'] == 'gpdk045' and listed['synthetic:opamp']['pdk_id'] == 'synthetic-fixture'
+    assert listed['real:gpdk045_ota5']['pdk_id'] == 'gpdk045' and listed['synthetic:gpdk045_ota5']['pdk_id'] == 'gpdk045'
     for key, row in listed.items():                                                           # the page tells a starter-made project name by these
         assert row['starter_project'] == tasks.starter_config(key)['project'], key
     answer = client.get('/api/tasks/starter', params=dict(task_key='real:gpdk045_ota5'))

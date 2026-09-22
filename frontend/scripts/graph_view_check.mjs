@@ -38,7 +38,7 @@ const RUN = '/fixture/outputs/mock/fx__1/runs/FIXTURE_graph/scratch_seed1__r1';
 const POINT = { checkpoint_id: 'ckpt-00000020-final', kind: 'final', created_utc: '2026-09-21T10:04:00+00:00', mode: 'scratch', evaluations: 20, learner_updates: 16, replay_size: 20,
   restoration_capability: 'full_state', missing_components: [], network: NET, is_latest: true, is_best_policy: false };
 const MODEL = { run_dir: RUN, run_id: 'run-fx', task_id: 'FIXTURE_graph:0123456789abcdef', task_name: 'FIXTURE_graph', task_definition_hash: 'f'.repeat(64), mode: 'scratch', mock: true, seed: 1,
-  created_utc: '2026-09-21T10:00:00+00:00', state: 'completed', experiment: 'fx__1', evaluations: 20, circuit_task: 'synthetic:opamp', circuit_class: 'opamp', latest: POINT.checkpoint_id,
+  created_utc: '2026-09-21T10:00:00+00:00', state: 'completed', experiment: 'fx__1', evaluations: 20, circuit_task: 'synthetic:gpdk045_ota5', circuit_class: 'opamp', latest: POINT.checkpoint_id,
   best_policy: { selected: null, status: 'not_selected', reason: 'FIXTURE', score: null }, checkpoints: [POINT], network: NET, saved_utc: POINT.created_utc, trained_evaluations: 20, learner_updates: 16, restoration_capability: 'full_state' };
 const DESCRIBED = { description: { checkpoint_id: POINT.checkpoint_id, path: `${RUN}/checkpoints/${POINT.checkpoint_id}`, kind: 'final', source_run_id: 'run-fx', source_task_id: MODEL.task_id, mode: 'scratch',
   created_utc: POINT.created_utc, metadata_version: 'FIXTURE', counters: { evaluations_committed: 20, learner_updates: 16, replay_size: 20 }, restoration_capability: 'full_state', restorable_components: [],
@@ -68,7 +68,7 @@ const view = (evaluation, { attention = true } = {}) => ({ checkpoint_id: POINT.
 const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: null };
 
 try {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:opamp', APP))).json();
+  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   const CONFIG = { ...starter, run: { ...starter.run, mode: 'fine_tune', network: { ...NET, layers: 2 }, model_source: { run_dir: RUN, checkpoint_id: 'latest' } }, output: { experiment_name: 'fixture', ...(ROOT ? { output_root: ROOT } : {}) }, research: {} };
   let target;
   for (let i = 0; i < 75 && !target; i++) {

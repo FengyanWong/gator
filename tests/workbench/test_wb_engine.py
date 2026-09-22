@@ -49,7 +49,7 @@ def test_every_table_is_written_with_raw_values_and_action_provenance(tmp_path):
     reader = DatasetReader(layout.data)
     counts = reader.row_counts()
     assert counts['evaluations'] == 14 and counts['simulator_jobs'] == 14 and reader.verify() == []
-    assert counts['parameters'] == 14 * 3                       # 2 independent variables, one with a bound member
+    assert counts['parameters'] == 14 * 5                       # 3 independent variables, two with a bound member
     assert counts['learner_updates'] > 0 and counts['transitions'] > 0 and counts['states'] > 0
     parameters = reader.rows('parameters')
     step = next(p for p in parameters if p['raw_policy_action'] is not None and p['role'] == 'independent')
@@ -193,29 +193,43 @@ def test_no_feasible_design_gives_null_and_right_censoring_not_the_budget(tmp_pa
 
 
 # ------------------------------------------------------------------------------- best design
-def test_best_design_records_variables_bindings_metrics_and_a_verified_netlist(tmp_path):
+def test_best_design_records_variables_bindings_and_metrics(tmp_path):
     layout, _ = execute(make_config(tmp_path, threshold=0.9, run=dict(max_evaluations=25)), tmp_path)
     best = read_json(layout.best_design / 'best_feasible.json')
     design = best['design']
     assert best['status'] == 'found' and design['feasible'] and design['provenance'] == 'mock'
-    assert {v['variable_id'] for v in design['independent_variables']} == {'input_pair_width', 'load_capacitance'}
-    assert len(design['expanded_bindings']) == 3 and design['test_conditions'] == ['nominal']
+    assert {v['variable_id'] for v in design['independent_variables']} == {'input_pair_width', 'mirror_pair_width', 'tail_width'}
+    assert len(design['expanded_bindings']) == 5 and design['test_conditions'] == ['nominal']
     assert 'no PVT' in design['validation_status'] and design['metrics']['score'] >= 0.9
     evaluation = next(e for e in by_seq(layout) if e['evaluation_id'] == design['evaluation_id'])
     assert evaluation['all_hard_constraints_satisfied']
+    lines = (layout.best_design / 'parameters.csv').read_text().strip().splitlines()
+    assert lines[0].startswith('variable_id,member_variable_id,role,instance_path') and len(lines) == 6
+    # The OTA5's transistors sit inside its subcircuit XU1: a netlist with the best widths would edit the shared
+    # definition, so none is written - as for the real OTA5 - and the artifact manifest says why.
+    assert not (layout.best_design / 'optimized_dut.scs').exists()
+    notes = read_json(layout.run_dir / 'artifact_manifest.json')['notes']
+    assert any(n.startswith('best_design/optimized_dut.scs: not created: XU1/M1 is inside a subcircuit') for n in notes), notes
+    assert 'w=(4u)' in (layout.input_snapshot / 'netlist.scs').read_text()      # the source netlist is never modified
+
+
+def test_a_best_design_netlist_is_rewritten_and_proved_by_reparsing():
+    """best_design.export_netlist on the real OTA5 netlist: a top-level value (the load CL) is rewritten and verified by
+    re-parsing; a value inside the subcircuit is refused."""
     from analog_optimizer.netlist.config import ParserConfig
     from analog_optimizer.netlist.spectre_parser import SpectreParser
-    text = (layout.best_design / 'optimized_dut.scs').read_text()
-    reparsed = SpectreParser(ParserConfig.from_file(REPO / 'configs/opamp.json')).parse_text(text)
-    for member in design['expanded_bindings']:                    # the exported netlist really carries the design
-        actual = reparsed.parameters[member['instance_path']][member['parameter_name']].value
-        assert actual == pytest.approx(member['value'], rel=1e-9)
-    lines = (layout.best_design / 'parameters.csv').read_text().strip().splitlines()
-    assert lines[0].startswith('variable_id,member_variable_id,role,instance_path') and len(lines) == 4
-    width = next(m for m in design['expanded_bindings'] if m['instance_path'] == 'input_left')['value']
-    assert f'w={width:.12g}' in text and 'w=width' not in text.split('input_left')[1].split('\n')[0]
-    original = (layout.input_snapshot / 'netlist.scs').read_text()
-    assert 'w=width' in original                                  # the source netlist is never modified
+    from gator_workbench import tasks
+    from gator_workbench.best_design import export_netlist
+    netlist, mapping = REPO / 'examples/circuits/gpdk045_ota5.scs', REPO / 'configs/gpdk045_opamp.json'
+    graph, text = tasks.parse_netlist(netlist, mapping), netlist.read_text()
+    reparse = lambda rewritten: SpectreParser(ParserConfig.from_file(mapping)).parse_text(rewritten)
+    outcome = export_netlist(text, graph, [dict(instance_path='CL', parameter_name='c', value=2.5e-12)], reparse=reparse)
+    assert outcome['status'] == 'verified', outcome.get('reason')
+    line = next(l for l in outcome['text'].split('\n') if l.startswith('CL '))
+    assert 'c=2.5e-12' in line and 'CL (VOUT 0) capacitor c=1p' in text
+    assert reparse(outcome['text']).parameters['CL']['c'].value == pytest.approx(2.5e-12)
+    refused = export_netlist(text, graph, [dict(instance_path='XU1/M1', parameter_name='w', value=5e-6)], reparse=reparse)
+    assert refused['status'] == 'unsupported' and 'inside a subcircuit' in refused['reason']
 
 
 def test_input_snapshot_has_no_fake_dut_or_testbench_files(tmp_path):

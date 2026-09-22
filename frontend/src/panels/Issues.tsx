@@ -36,7 +36,8 @@ export function ValidationStatus({ validation, config, schema }: { validation: J
         <tbody>{blocking.map((issue: Json, n: number) => {
           const key = rowKey(issue.path ?? '', config, schema);
           return <tr key={n}><td className="numeric">{n + 1}</td><td className="issue error">{issue.level}</td><td>{issue.code}</td>
-            <td><code>{issue.path || '(whole configuration)'}</code>{key && <span className="hint"> row {key}</span>}</td><td>{issue.message}</td></tr>;
+            <td><code>{issue.path || '(whole configuration)'}</code>{key && <span className="hint"> row {key}</span>}</td>
+            <td>{issue.message}{issue.technical && <details className="more"><summary>Technical details</summary><code>{issue.technical}</code></details>}</td></tr>;
         })}</tbody></table></div>
     </div>}
   </>);

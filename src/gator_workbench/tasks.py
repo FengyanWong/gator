@@ -3,6 +3,8 @@
 * ``synthetic:*`` tasks use the optimizer's explicit analytic toy backend
   (``SyntheticSizingBackend``). They are MOCK: origin=synthetic, provenance=mock, their
   ``score`` is not a circuit metric, and their data is confined to the mock output root.
+  There is ONE (status record 7.59): ``synthetic:gpdk045_ota5``, a real circuit's netlist
+  on that toy backend. The four toy-fixture tasks it replaced are ``REMOVED_MOCK_TASKS``.
 * ``netlist`` sources are parsed by the existing Spectre-subset parser. The repository
   has no generic real simulator runner for an arbitrary imported netlist, so real
   evaluation of such a task is reported as a blocker; mock evaluation is available and
@@ -19,6 +21,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import re
 import sys
 
 from .paths import local_settings_dir, repo_root
@@ -27,13 +30,22 @@ from .paths import local_settings_dir, repo_root
 # construction: the mock backend checks plumbing, never electrical behaviour.
 MOCK_TARGETS = {'w': 0.4, 'l': -0.2, 'm': 0.0, 'nf': 0.0, 'r': 0.3, 'c': -0.3, 'ind': 0.1, 'dc': 0.2}
 
+# The ONE MOCK task (user decision 2026-09-22, status record 7.59): the free analytic toy backend on a REAL circuit - the
+# GPDK045 OTA5 netlist and device mapping that real:gpdk045_ota5 is verified on, with the mapping's three width groups
+# (input pair, mirror pair, tail) as its Parameters rows. It runs the whole workbench with no Virtuoso and no Spectre; its
+# `score` is still not a circuit metric, and a model it trains can never load into a real run (runs: mock_isolation). The
+# four toy-fixture tasks it replaced stay loadable nowhere; their files stay for the optimizer package's own tests.
 SYNTHETIC_FIXTURES = {
-    'opamp': dict(netlist='tests/fixtures/synthetic/opamp.scs', config='configs/opamp.json', circuit_class='opamp'),
-    'opamp_two_stage': dict(netlist='tests/fixtures/synthetic/opamp_two_stage.scs',
-                            config='configs/opamp_two_stage.json', circuit_class='opamp'),
-    'ldo': dict(netlist='tests/fixtures/synthetic/ldo.scs', config='configs/ldo.json', circuit_class='ldo'),
-    'vco': dict(netlist='tests/fixtures/synthetic/vco.scs', config='configs/vco.json', circuit_class='vco'),
+    'gpdk045_ota5': dict(netlist='examples/circuits/gpdk045_ota5.scs', config='configs/gpdk045_opamp.json',
+                         circuit_class='opamp', pdk_id='gpdk045',
+                         description='MOCK: the real GPDK045 OTA5 circuit (the netlist real:gpdk045_ota5 runs) on the free '
+                                     'analytic toy backend - no Virtuoso, no Spectre. Its score is not a circuit result.'),
 }
+# What an entry that names no PDK / description gets (a circuit a test registers for itself, e.g. test_wb_pdk's demo).
+MOCK_PDK, MOCK_DESCRIPTION = 'synthetic-fixture', 'MOCK: the analytic toy backend on a fixture netlist. Its score is not a circuit result.'
+REMOVED_MOCK_TASKS = ('synthetic:opamp', 'synthetic:opamp_two_stage', 'synthetic:ldo', 'synthetic:vco')
+MOCK_TASK_REMOVED = ('{task} no longer exists: the workbench has one MOCK task now, synthetic:gpdk045_ota5 - the real OTA5 '
+                     'circuit on the free toy backend. Choose it under "Task".')
 
 REAL_PROFILES = {
     'gpdk045_ota5': dict(profile='analog_optimizer.backends.gpdk045:Gpdk045OtaProfile', circuit_class='opamp',
@@ -199,7 +211,7 @@ def starter_project(task_key) -> dict:
     """The project / task name a task's starter gives: what a run is filed under (runs/<task_name>/) until the user names
     it. Listed with every task, so the page can tell a name nobody typed from one the user chose."""
     kind, _, name = task_key.partition(':')
-    return (dict(name=f'mock-{name}', task_name=f'mock_{name}') if kind == 'synthetic'
+    return (dict(name=f"mock-{name.replace('_', '-')}", task_name=f'mock_{name}') if kind == 'synthetic'
             else dict(name=name.replace('_', '-'), task_name=name))
 
 
@@ -207,8 +219,7 @@ def list_tasks():
     tasks = []
     for name, info in SYNTHETIC_FIXTURES.items():
         tasks.append(dict(task_key=f'synthetic:{name}', kind='mock', circuit_class=info['circuit_class'],
-                          pdk_id='synthetic-fixture', available=True, description='Analytic toy objective on a synthetic fixture netlist. '
-                                                      'MOCK data; not a circuit result.'))
+                          pdk_id=info.get('pdk_id', MOCK_PDK), available=True, description=info.get('description', MOCK_DESCRIPTION)))
     for name, info in REAL_PROFILES.items():
         blocker = real_backend_blocker(None, name)               # each circuit has its own receipt and baseline
         tasks.append(dict(task_key=f'real:{name}', kind='real', circuit_class=info['circuit_class'], pdk_id='gpdk045',
@@ -328,8 +339,10 @@ def load_task(circuit, *, allow_real=False, profile_id=None) -> TaskRuntime:
         if kind == 'synthetic' and name in SYNTHETIC_FIXTURES:
             info = SYNTHETIC_FIXTURES[name]
             return _netlist_runtime(key, root / info['netlist'], root / info['config'],
-                                    circuit_class=info['circuit_class'], pdk_id='synthetic-fixture',
+                                    circuit_class=info['circuit_class'], pdk_id=info.get('pdk_id', MOCK_PDK),
                                     top=circuit.dut_hierarchy)
+        if key in REMOVED_MOCK_TASKS:
+            raise TaskBlocked(MOCK_TASK_REMOVED.format(task=key))
         if kind == 'real' and name not in REAL_PROFILES:
             from . import profiles
             if name in profiles.list_profiles():
@@ -557,8 +570,19 @@ def profile_parameter_rows(runtime) -> list:
     """The Parameters-tab rows a REAL circuit profile fixes, written from its own parameter groups (the same
     mapping as starter_config). A real profile accepts exactly these variables, ranges and grid: the engine compares the
     compiled configuration with the profile (`graph_contract`) and refuses anything else when the run starts. Empty for
-    a task that fixes nothing (synthetic fixtures, a cell without a profile)."""
+    a task that fixes nothing (the MOCK task, a cell without a profile)."""
     return [] if runtime is None or runtime.mock else _graph_parameter_rows(runtime.base_graph)
+
+
+_NOT_IN_AN_ID = re.compile(r'[^A-Za-z0-9_.\-]')
+
+
+def _member_variable_id(group_id, device_id) -> str:
+    """The Parameters-row ID of a group member that follows the group's leader: `<group>__<device>`, with every character
+    an ID may not hold (schema: letters, digits, _ . -) written as _ - the / of a hierarchical path such as XU1/M1 or
+    stage_a/pull_up, the <> of a bus. The ID is only a label; the exact device stays in `instance_path`. The MOCK
+    starter used to keep the /, so choosing synthetic:vco gave three rows the schema rejects (status record 7.56)."""
+    return f'{group_id}__{_NOT_IN_AN_ID.sub("_", str(device_id))}'
 
 
 def _graph_parameter_rows(graph) -> list:
@@ -567,7 +591,7 @@ def _graph_parameter_rows(graph) -> list:
     for group in getattr(graph, 'parameter_groups', ()) or ():
         record, leader = asdict(group), None
         for member in record['members']:
-            variable_id = record['id'] if leader is None else f"{record['id']}__{str(member['device_id']).replace('/', '_')}"
+            variable_id = record['id'] if leader is None else _member_variable_id(record['id'], member['device_id'])
             row = dict(variable_id=variable_id, instance_path=member['device_id'], parameter_name=member['parameter'],
                        unit=record['unit'], scale=record.get('scale') or 'linear',
                        value_type='integer' if record.get('domain') == 'integer' else 'continuous')
@@ -650,8 +674,8 @@ def real_starter_config(task_key: str) -> dict:
 
 def starter_config(task_key: str) -> dict:
     """A valid starting configuration for a registered task. A convenience for manual editing; every field stays
-    editable. A synthetic task: derived from the fixture's own declared parameter groups, with the toy `score` as
-    its only target. A real task: real_starter_config."""
+    editable. The MOCK task: the groups its device mapping declares, with the toy `score` as its only target. A real
+    task: real_starter_config. A removed MOCK task (REMOVED_MOCK_TASKS) has none: KeyError, like any unknown task."""
     from analog_optimizer.netlist.config import ParserConfig
     kind, _, name = task_key.partition(':')
     if kind == 'real' and name:
@@ -664,7 +688,7 @@ def starter_config(task_key: str) -> dict:
     for group in parser_config.parameter_groups:
         leader = None
         for member in group['members']:
-            variable_id = f"{group['id']}" if leader is None else f"{group['id']}__{member['device_id']}"
+            variable_id = f"{group['id']}" if leader is None else _member_variable_id(group['id'], member['device_id'])
             row = dict(variable_id=variable_id, instance_path=member['device_id'], parameter_name=member['parameter'],
                        unit=group['unit'], scale=group.get('scale', 'linear'),
                        value_type='integer' if group.get('domain') == 'integer' else 'continuous')
@@ -678,7 +702,7 @@ def starter_config(task_key: str) -> dict:
     return dict(
         project=starter_project(task_key),
         circuit=dict(source='registered_task', task_id=task_key, circuit_class=info['circuit_class'],
-                     pdk_id='synthetic-fixture'),
+                     pdk_id=info.get('pdk_id', MOCK_PDK)),
         parameters=parameters,
         measurements=[dict(measurement_id='m_score', analysis='other', result_source='backend_profile',
                            source_name='score', unit='fixture',

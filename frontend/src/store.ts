@@ -7,7 +7,7 @@ const HISTORY_LIMIT = 100;
 export const emptyConfig = (): Json => ({
   schema_version: 'gator-workbench-config-v1',
   project: { name: 'gator-project', task_name: 'task', notes: '' },
-  circuit: { source: 'registered_task', task_id: 'synthetic:opamp', circuit_class: 'unspecified', pdk_id: 'unspecified' },
+  circuit: { source: 'registered_task', task_id: 'synthetic:gpdk045_ota5', circuit_class: 'unspecified', pdk_id: 'unspecified' },
   parameters: [], targets: [], measurements: [],
   run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, threads_per_job: 1, seed: 0 },
   output: { experiment_name: 'experiment' },

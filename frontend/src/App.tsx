@@ -14,6 +14,18 @@ import { CornerCheckTab } from './panels/CornerCheck';
 
 type BottomTab = 'agent' | 'status' | 'logs' | 'data' | 'files' | 'corners';
 
+/** A configuration the backend cannot even read (HTTP 422): one blocking issue per field it names, in its plain words
+ *  (schema.describe_errors), at the place the validation report uses (parameters[1].variable_id), so the list names the
+ *  row and the editor marks it. Before, all of them were one issue with pydantic's list as JSON (user report 2026-09-21).
+ *  An older backend sends parameters.1.variable_id and pydantic's text: the path is rewritten the same way. Anything
+ *  else (the backend unreachable...) stays one issue. */
+function rejected(e: any): Json {
+  const errors: Json[] = Array.isArray(e.detail?.errors) ? e.detail.errors : [];
+  const issues = errors.length ? errors.map((x: Json) => ({ level: 'error', code: x.code ?? 'schema', message: x.message, technical: x.technical,
+    path: String(x.path ?? '').replace(/\.(\d+)(?=\.|$)/g, '[$1]') })) : [{ level: 'error', code: 'schema', path: '', message: e.message }];
+  return { blocks_run: true, issues, facts: {} };
+}
+
 /** Layout (specification section 2): left = project, connection, circuit; center = three editors;
  *  right = run configuration + output settings (always visible); bottom = agent, logs, status, data, files.
  *  Tables, numbers, status and file lists only - nothing is plotted. */
@@ -46,7 +58,7 @@ export function App() {
 
   // Static validation follows every edit (debounced); it never starts anything.
   useEffect(() => {
-    const id = setTimeout(() => api.validate(config).then(setValidation).catch(e => setValidation({ blocks_run: true, issues: [{ level: 'error', code: 'schema', path: '', message: e.message + ' ' + JSON.stringify(e.detail?.errors ?? '') }], facts: {} })), 500);
+    const id = setTimeout(() => api.validate(config).then(setValidation).catch(e => setValidation(rejected(e))), 500);
     return () => clearTimeout(id);
   }, [JSON.stringify(config)]);
 
@@ -111,7 +123,7 @@ export function App() {
         <b>GATOR workbench</b><span className="hint"> {meta?.version} | {meta?.environment?.environment} | data-only outputs (no plots)</span>
         <span className="spacer" />
         <ValidationStatus validation={validation} config={config} schema={schema} />
-        <button onClick={() => api.validate(config).then(setValidation)}>Static validation</button>
+        <button onClick={() => api.validate(config).then(setValidation).catch(e => setValidation(rejected(e)))}>Static validation</button>
         <button disabled={!!validation?.blocks_run || control.phase !== 'idle'} onClick={() => start(true)}
           title={control.phase === 'idle' ? 'ONE costed evaluation of the initial design. It is a preflight record, not free.' : 'Not while the header holds a run that is active or paused. Abort lets go of a paused run.'}>Single baseline simulation</button>
         <RunButtons control={control} blocked={!!validation?.blocks_run} onStart={() => start(false)} onResumed={started => showRun(started, 'resume')}

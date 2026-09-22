@@ -11,7 +11,7 @@ import torch
 from gator_workbench import checkpoints as ckpt, modes, runs, schema
 from gator_workbench.storage import read_json
 from gator_workbench.trajectory import TrajectoryLoader
-from helpers import execute, make_config, roots_for, rows, summary
+from helpers import execute, make_config, other_circuits, roots_for, rows, summary
 
 
 def latest(layout):
@@ -19,7 +19,7 @@ def latest(layout):
     return directory, ckpt.read_metadata(directory)
 
 
-def transfer_config(tmp_path, source_layout, mode, task='synthetic:opamp', **kwargs):
+def transfer_config(tmp_path, source_layout, mode, task='synthetic:gpdk045_ota5', **kwargs):
     run = dict(dict(max_evaluations=12, mode=mode), **kwargs.pop('run', {}))
     config = make_config(tmp_path, task, run=run, **kwargs)
     config.run.model_source.run_dir = str(source_layout.run_dir)
@@ -159,16 +159,18 @@ def test_fine_tune_needs_confirmation_for_a_new_task_and_records_its_parent(sour
 
 
 def test_transfer_to_a_different_topology_and_action_dimension(source_run):
-    root, layout = source_run                                   # source: opamp, 2 action variables
-    for task, dimensions in (('synthetic:ldo', 1), ('synthetic:opamp_two_stage', 3)):
-        config = transfer_config(root, layout, 'fine_tune', task=task, project=dict(task_name=task.split(':')[1]))
-        target, state = execute(config, root, confirm_transfer=True)
-        assert state == 'completed', summary(target)['error']
-        step = next(t for t in rows(target, 'transitions'))
-        assert len(step['action']) == dimensions
-        parameters = [p for p in rows(target, 'parameters') if p['role'] == 'independent']
-        assert len({p['variable_id'] for p in parameters}) == dimensions
-        assert summary(target)['totals']['gradient_updates'] > 0
+    root, layout = source_run                                   # source: the OTA5, 3 action variables
+    every_group = lambda raw: [p.update(optimized=True) for p in raw['parameters'] if not p.get('binding_group')]
+    with other_circuits('gpdk045_ldo', 'gpdk045_ota7') as (ldo, ota7):                       # two more real circuits
+        for task, dimensions, mutate in ((ldo, 2, None), (ota7, 4, every_group)):
+            config = transfer_config(root, layout, 'fine_tune', task=task, project=dict(task_name=task.split(':')[1]), mutate=mutate)
+            target, state = execute(config, root, confirm_transfer=True)
+            assert state == 'completed', summary(target)['error']
+            step = next(t for t in rows(target, 'transitions'))
+            assert len(step['action']) == dimensions
+            parameters = [p for p in rows(target, 'parameters') if p['role'] == 'independent']
+            assert len({p['variable_id'] for p in parameters}) == dimensions
+            assert summary(target)['totals']['gradient_updates'] > 0
 
 
 def test_encoder_only_transfer_critic_reset_and_frozen_encoder(source_run):
@@ -316,8 +318,8 @@ def test_transitions_reload_as_valid_optimizer_objects_without_waveforms_or_work
     with torch.no_grad():
         assert learner.actor.sample(current).actions.shape[0] == int(current.action_counts.sum())
     state = loader.state_rows()[rows(layout, 'transitions')[0]['state_ref']]
-    assert state['group_ids'] == ['input_pair_width', 'load_capacitance'] and state['group_mutable'] == [True, True]
-    assert len(state['members']) == 3 and state['metric_ids'] == ['score'] and state['normalizer_version']
+    assert state['group_ids'] == ['input_pair_width', 'mirror_pair_width', 'tail_width'] and state['group_mutable'] == [True, True, True]
+    assert len(state['members']) == 5 and state['metric_ids'] == ['score'] and state['normalizer_version']
     assert len(loader.state_rows()) == len({s['state_id'] for s in rows(layout, 'states')})   # de-duplicated
 
 

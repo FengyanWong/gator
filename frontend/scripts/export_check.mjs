@@ -43,7 +43,7 @@ const savedFile = async name => { for (let i = 0; i < 100; i++) { const names = 
 
 try {
   // ---- one small finished MOCK run to export from -------------------------------------------------------------------------------
-  const starter = await get('tasks/starter', { task_key: 'synthetic:opamp' });
+  const starter = await get('tasks/starter', { task_key: 'synthetic:gpdk045_ota5' });
   const CONFIG = { ...starter, run: { ...starter.run, max_evaluations: 12, concurrency: 1 }, output: { experiment_name: 'export_check', output_root: OUT_ROOT }, research: {} };
   const started = await post('runs/start', { config: CONFIG });
   if (!started.run_dir) throw new Error('the MOCK run did not start: ' + JSON.stringify(started).slice(0, 400));

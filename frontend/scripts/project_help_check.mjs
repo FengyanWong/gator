@@ -48,7 +48,7 @@ try {
   // The connection profile comes from the configuration: seeded, so the check does not depend on the connection UI.
   const profiles = await (await fetch(new URL('api/connection/profiles', APP))).json().catch(() => ({}));
   const CONFIG = { schema_version: 'gator-workbench-config-v1', project: { name: 'fixture', task_name: 'fixture', notes: '' },
-    circuit: { source: 'registered_task', task_id: 'synthetic:opamp', circuit_class: 'unspecified', pdk_id: 'unspecified' }, parameters: [], targets: [], measurements: [],
+    circuit: { source: 'registered_task', task_id: 'synthetic:gpdk045_ota5', circuit_class: 'unspecified', pdk_id: 'unspecified' }, parameters: [], targets: [], measurements: [],
     run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, threads_per_job: 1, seed: 0, connection_profile_id: profiles.active ?? 'fixture' },
     output: { experiment_name: 'fixture' }, research: {} };
   let target;

@@ -30,7 +30,7 @@ const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok 
 const get = async (route, params) => (await fetch(new URL(`api/${route}?` + new URLSearchParams(params), APP))).json();
 
 try {
-  const starter = await get('tasks/starter', { task_key: 'synthetic:opamp' });
+  const starter = await get('tasks/starter', { task_key: 'synthetic:gpdk045_ota5' });
   // A budget the run cannot reach during the check, so that every ending below is the button's doing.
   const CONFIG = { ...starter, run: { ...starter.run, max_evaluations: 20000, concurrency: 1 }, output: { experiment_name: 'run_control_live', output_root: OUT_ROOT }, research: {} };
   let target;

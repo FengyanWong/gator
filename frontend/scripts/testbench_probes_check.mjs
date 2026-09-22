@@ -3,7 +3,7 @@
 // throwaway headless Edge over the DevTools protocol against a served workbench page (default http://127.0.0.1:8765/).
 // Every /api/virtuoso/* request and every circuit load of the Virtuoso source is answered with a canned FIXTURE answer, so
 // Virtuoso is never contacted and the check does not depend on the backend version; the agent is never called. Other
-// requests (schema, the synthetic:opamp starter, validation) go to the backend and are read-only.
+// requests (schema, the synthetic:gpdk045_ota5 starter, validation) go to the backend and are read-only.
 // The canned Probes rows are what profiles.testbench_probes answers for the recorded ring oscillator (fixtures/ring_osc).
 // Run (Windows node through WSL interop; node >= 22 for the built-in WebSocket):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/testbench_probes_check.mjs)" [screenshot-dir]
@@ -162,7 +162,7 @@ try {
     && saved.measurements.find(r => r.source_name === 'supply_power_w')?.signal === 'V0:p', JSON.stringify(saved.measurements?.map(r => r.signal)));
   check('the untouched MOCK target left Specs with its probe', (saved.targets ?? []).length === 0, JSON.stringify(saved.targets));
   check('the panel says so, naming the testbench, the type and the task', (await shown('.tb-probes'))?.includes('Probes now show what the testbench tb_ring3 measures: 8 results of the circuit type Ring oscillator (free-running).')
-    && (await shown('.tb-probes'))?.includes('The targets of synthetic:opamp were removed from Specs'), await shown('.tb-probes'));
+    && (await shown('.tb-probes'))?.includes('The targets of synthetic:gpdk045_ota5 were removed from Specs'), await shown('.tb-probes'));
   check('what the rows mean is one click away (folded)', await evaluate(`(() => { const d = [...${PANEL}.querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'What the Probes rows say');
     return !!d && !d.open && d.textContent.includes('V0:p, the current through the supply source V0'); })()`));
   check('there is no circuit type box any more: a saved task reads it from its probes', !(await evaluate(`[...document.querySelectorAll('label')].some(l => l.firstChild?.textContent.trim() === 'Circuit type')`)));

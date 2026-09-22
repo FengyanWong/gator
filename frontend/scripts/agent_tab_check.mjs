@@ -91,7 +91,7 @@ try {
   await send('Page.enable'); await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
   await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/agent/propose', requestStage: 'Request' }, { urlPattern: '*/api/agent/cancel', requestStage: 'Request' }, { urlPattern: '*/api/agent/readiness', requestStage: 'Request' }, { urlPattern: '*/api/runs/status*', requestStage: 'Request' }] });
-  const starter = await (await fetch(`${APP}api/tasks/starter?task_key=synthetic:opamp`)).json();
+  const starter = await (await fetch(`${APP}api/tasks/starter?task_key=synthetic:gpdk045_ota5`)).json();
   const seeded = { schema_version: 'gator-workbench-config-v1', ...(starter.config ?? starter), output: { experiment_name: 'experiment' }, research: {} };   // the page needs `output`
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(seeded))});` });
   await send('Page.navigate', { url: APP });
@@ -485,7 +485,7 @@ try {
   const reviewRun = `[...document.querySelectorAll('.compose-main > .row button')].find(b => b.textContent === 'Review results')`;
   const idle = await evaluate(`({ disabled: ${reviewRun}.disabled, why: ${reviewRun}.title, after: ${reviewRun}.previousElementSibling.textContent })`);
   check('"Review results" stands after "What\'s missing?" and waits for a run to be chosen', idle.disabled && idle.why.includes('Runs...') && idle.after === "What's missing?", JSON.stringify(idle));
-  const fakeRun = 'D:/gator/outputs/mock/check__abc/runs/mock_opamp/scratch__seed7__0123456789ab';
+  const fakeRun = 'D:/gator/outputs/mock/check__abc/runs/mock_gpdk045_ota5/scratch__seed7__0123456789ab';
   autoAnswer.push({ match: '/api/runs/status', body: { run_dir: fakeRun, state: 'completed', stop_reason: 'budget_exhausted', worker_alive: false, mode: 'scratch', concurrency: 1, learner_updates: 40,
     manifest: { mock: true, mock_notice: 'MOCK' }, budget: { charged: 60, max_evaluations: 60, in_flight: 0, completed: 60, failed: 0, remaining: 0, launches: 60, retries: 0, cache_hits: 0 }, active_workers: [] } });
   await evaluate(`localStorage.setItem('gator-workbench-current-run-v1', ${JSON.stringify(fakeRun)})`);

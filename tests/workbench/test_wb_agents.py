@@ -205,8 +205,8 @@ def test_circuit_summary_contains_engineering_facts_only(tmp_path):
     runtime = tasks.load_task(config.circuit)
     summary = prompts.circuit_summary(runtime.base_graph, circuit=runtime.circuit)
     text = json.dumps(summary)
-    assert summary['device_count'] == 7 and summary['devices'][0]['terminals'][0]['net']
-    assert '//' not in text and 'SYNTHETIC' not in text              # netlist comments never reach an agent
+    assert summary['device_count'] == 10 and summary['devices'][0]['terminals'][0]['net']      # the OTA5 testbench: 5 MOS, 4 sources, CL
+    assert '//' not in text and 'Library name' not in text           # netlist comments never reach an agent
     assert '/mnt/' not in text and 'netlist_file' not in text          # nor backend file paths
 
 

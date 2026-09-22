@@ -108,7 +108,7 @@ is never replaced), or it was started with "Model checkpoints" switched off. Bro
 
 | Path | Status |
 |---|---|
-| `synthetic:*` tasks, imported netlists | **MOCK**: the optimizer's analytic toy backend (`origin=synthetic`). Every row says `provenance=mock`, data lives under `<output_root>/mock/`, and it is excluded from real-experiment aggregates. The `score` is not a circuit metric. |
+| `synthetic:gpdk045_ota5` (the one MOCK task), imported netlists | **MOCK**: the optimizer's analytic toy backend (`origin=synthetic`) on a REAL circuit - the GPDK045 OTA5 netlist and device mapping `real:gpdk045_ota5` runs (`examples/circuits/gpdk045_ota5.scs`, `configs/gpdk045_opamp.json`). Free: no Virtuoso, no Spectre. Every row says `provenance=mock`, data lives under `<output_root>/mock/`, and it is excluded from real-experiment aggregates. The `score` is not a circuit metric, and a model it trains never loads into a real run. Until 2026-09-22 there were four MOCK tasks on toy netlists (`synthetic:opamp`, `_opamp_two_stage`, `_ldo`, `_vco`); they were removed (status record 7.59). A configuration that still names one opens with a plain note and cannot start. |
 | `real:gpdk045_*` tasks | The verified bridge profiles through the existing `NativeEnvironmentFactory`. Need virtuoso-bridge 0.8.0 importable by the backend interpreter, a connection profile, a passing connection gate and an explicit budget authorization. **Not exercised in this delivery** (see the status record). Nothing ever falls back to mock. |
 | Arbitrary native cellviews | Read-only browsing through the bridge. Optimizing one needs a verified circuit profile; writing a native schematic is not implemented (contract returned by the API). |
 
@@ -119,12 +119,14 @@ source -> Task** brings that task's rows:
 
 | Task | Parameters | Probes | Specs |
 |---|---|---|---|
-| `synthetic:*` (MOCK) | the fixture's declared groups | `m_score` | one toy row, `score >= 0.95` (unit `fixture`): the analytic backend computes no gain, bandwidth or power, so there is nothing else to aim at |
+| `synthetic:gpdk045_ota5` (MOCK) | the three width groups of the OTA5's device mapping: input pair (M1 + M2), mirror pair (M3 + M4), tail (M5) - 5 rows, 3 action variables | `m_score` | one toy row, `score >= 0.95` (unit `fixture`): the analytic backend computes no gain, bandwidth or power, so there is nothing else to aim at |
 | `real:gpdk045_ota5`, `_ota7`, `_ldo`, `_vco` | exactly the rows the circuit's profile fixes (a real run accepts no others) | one per target | the circuit's **targets of record**: the frozen specification files of the real experiments (`configs/m6_real_cross_category.json`, partition `train`; `configs/gpdk045_ota7_transfer.json` for the OTA7). For the OTA5: gain >= 25.01 dB, unity-gain frequency >= 3.54 MHz, phase margin >= 90 deg, supply power <= 2.1 uW, output DC 0.2-0.8 V, exactly one unity-gain crossing. Every row states this source in `basis`. They are pilot goals near the measured baseline, **not product specifications**: edit them to your own requirements |
 | a profile created from your own cell | the rows the profile fixes | one per result its circuit type produces, ready to carry a target | **none**: requirements are never inferred from a circuit. State yours, or press "Draft with agent..." |
 
 * The **Circuit class / PDK id** labels follow the task at once, and so does a project name that a starter had given
-  (`mock-opamp` -> `gpdk045-ota5`), so a real run is not filed under `runs/mock_opamp/`. A name you typed stays.
+  (`mock-gpdk045-ota5` -> `gpdk045-ota5`), so a real run is not filed under `runs/mock_gpdk045_ota5/`. A name you typed
+  stays. Choosing a task after one of the removed MOCK tasks brings the new task's rows and name at once: no task can run
+  the old rows any more (one Undo brings them back).
 * Rows are exchanged only while they are nobody's work: empty, or still exactly what the task before had brought.
   **Rows you edited stay**; the panel says so, and **Load starter configuration** (there for every task) exchanges
   them when you want it. One **Undo** takes back a task choice together with everything it brought.
@@ -1002,7 +1004,12 @@ see `test_wb_agent_live.py`), and in a browser by `frontend/scripts/agent_live_c
 
 The header shows blocking issues as a red button, "N blocking issue(s)": a press lists every one of
 them in full (level, code, field and editor row, message), including those that belong to no editor
-tab; the list follows each validation and closes when nothing blocks. Its browser check is
+tab; the list follows each validation and closes when nothing blocks. A configuration the schema
+cannot even read (for example an ID with a `/` in it) is listed the same way, one issue per field:
+the field and its editor row, what is wrong in plain words (for an ID: which characters, an ID that
+works, and what else must be renamed with it), and the schema's own text under a closed
+"Technical details" line; the editor marks the row (backend `schema.describe_errors`, status record
+7.56). Its browser check is
 `frontend/scripts/blocking_issues_check.mjs` (headless Edge against the running workbench; the
 validation is answered with canned FIXTURE reports and every other writing request is refused, so
 it is safe against the live backend; run line in its header).

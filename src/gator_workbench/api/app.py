@@ -400,8 +400,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         try:
             config = schema.WorkbenchConfig.model_validate(raw)
         except ValidationError as exc:
-            fail(422, 'The configuration does not match the schema',
-                 errors=[dict(path='.'.join(map(str, e['loc'])), message=e['msg']) for e in exc.errors()[:50]])
+            fail(422, 'The configuration does not match the schema', errors=schema.describe_errors(exc))
         authorize_circuit(config.circuit)
         return config
 

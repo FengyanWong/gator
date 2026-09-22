@@ -38,7 +38,7 @@ const point = (tag, evaluations, kind, latest) => ({ checkpoint_id: `ckpt-${Stri
   evaluations, learner_updates: evaluations - 4, replay_size: evaluations, restoration_capability: 'full_state', missing_components: [], network: NET, is_latest: latest, is_best_policy: false });
 const POINTS = [point('early', 6, 'periodic', false), point('final', 20, 'final', true)];
 const MODEL = { run_dir: RUN, run_id: 'run-fx', task_id: 'FIXTURE_structure:0123456789abcdef', task_name: 'FIXTURE_structure', task_definition_hash: 'f'.repeat(64), mode: 'scratch', mock: true, seed: 1,
-  created_utc: '2026-09-21T10:00:00+00:00', state: 'completed', experiment: 'fx__1', evaluations: 20, circuit_task: 'synthetic:opamp', circuit_class: 'opamp', latest: POINTS[1].checkpoint_id,
+  created_utc: '2026-09-21T10:00:00+00:00', state: 'completed', experiment: 'fx__1', evaluations: 20, circuit_task: 'synthetic:gpdk045_ota5', circuit_class: 'opamp', latest: POINTS[1].checkpoint_id,
   best_policy: { selected: null, status: 'not_selected', reason: 'FIXTURE', score: null }, checkpoints: POINTS, network: NET, saved_utc: POINTS[1].created_utc, trained_evaluations: 20,
   learner_updates: 16, restoration_capability: 'full_state' };
 const resolve = id => id === 'latest' ? POINTS[1] : POINTS.find(p => p.checkpoint_id === id);
@@ -68,7 +68,7 @@ const structure = (id, { typed = true, withUnused = true, scale = 1 } = {}) => {
 const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: null };
 
 try {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:opamp', APP))).json();
+  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   const CONFIG = { ...starter, run: { ...starter.run, mode: 'fine_tune', network: NET, model_source: { run_dir: RUN, checkpoint_id: 'latest' } }, output: { experiment_name: 'fixture', ...(ROOT ? { output_root: ROOT } : {}) }, research: {} };
   let target;
   for (let i = 0; i < 75 && !target; i++) {

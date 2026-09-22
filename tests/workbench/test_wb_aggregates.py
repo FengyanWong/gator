@@ -9,7 +9,7 @@ import pytest
 
 from gator_workbench import aggregates, runs
 from gator_workbench.storage import read_json
-from helpers import execute, make_config, roots_for, summary
+from helpers import execute, make_config, other_circuits, roots_for, summary
 
 
 def table(experiment_dir, name):
@@ -25,26 +25,26 @@ def meta(experiment_dir, name):
 def workflow(tmp_path_factory):
     root = tmp_path_factory.mktemp('workflow')
     labels = lambda **k: dict(dict(experiment_group='g1', budget_checkpoints=[5, 14, 50]), **k)
-    source, _ = execute(make_config(root, 'synthetic:opamp', run=dict(max_evaluations=20, seed=100),
+    source, _ = execute(make_config(root, 'synthetic:gpdk045_ota5', run=dict(max_evaluations=20, seed=100),
                                     project=dict(task_name='source_opamp'),
                                     research=labels(split='train', method_label='Pretraining')), root)
     experiment_id = read_json(source.manifest)['experiment_id']
     out = dict(experiment_id=experiment_id)
     made = dict(source=source)
-    for order, (task, name, threshold) in enumerate([('synthetic:ldo', 'target_ldo', 0.9),
-                                                     ('synthetic:opamp_two_stage', 'target_two_stage', 1.5)], start=1):
-        for seed in (1, 2):
-            pair = f'{name}-seed{seed}'
-            common = dict(split='test', generalization_level='unseen_topology', training_sources=['opamp'],
-                          comparison_pair_id=pair, task_order=order)
-            made[name, 'scratch', seed], _ = execute(make_config(
-                root, task, threshold=threshold, run=dict(max_evaluations=14, seed=seed), output=out,
-                project=dict(task_name=name), research=labels(method_label='Scratch', **common)), root)
-            for mode, label in (('fine_tune', 'Pretrained-Fine-tuned'), ('frozen', 'Pretrained-Frozen')):
-                config = make_config(root, task, threshold=threshold, run=dict(max_evaluations=14, seed=seed, mode=mode),
-                                     output=out, project=dict(task_name=name), research=labels(method_label=label, **common))
-                config.run.model_source.run_dir = str(source.run_dir)
-                made[name, mode, seed], _ = execute(config, root, confirm_transfer=True)
+    with other_circuits('gpdk045_ldo', 'gpdk045_ota7') as (ldo, ota7):                       # two unseen real circuits
+        for order, (task, name, threshold) in enumerate([(ldo, 'target_ldo', 0.9), (ota7, 'target_two_stage', 1.5)], start=1):
+            for seed in (1, 2):
+                pair = f'{name}-seed{seed}'
+                common = dict(split='test', generalization_level='unseen_topology', training_sources=['opamp'],
+                              comparison_pair_id=pair, task_order=order)
+                made[name, 'scratch', seed], _ = execute(make_config(
+                    root, task, threshold=threshold, run=dict(max_evaluations=14, seed=seed), output=out,
+                    project=dict(task_name=name), research=labels(method_label='Scratch', **common)), root)
+                for mode, label in (('fine_tune', 'Pretrained-Fine-tuned'), ('frozen', 'Pretrained-Frozen')):
+                    config = make_config(root, task, threshold=threshold, run=dict(max_evaluations=14, seed=seed, mode=mode),
+                                         output=out, project=dict(task_name=name), research=labels(method_label=label, **common))
+                    config.run.model_source.run_dir = str(source.run_dir)
+                    made[name, mode, seed], _ = execute(config, root, confirm_transfer=True)
     return root, source.experiment_dir, made
 
 

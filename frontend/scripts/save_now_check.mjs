@@ -43,7 +43,7 @@ const statusOf = () => ({ state: sim.state, run_id: 'fixture-run', mode: 'scratc
 const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: true };
 
 try {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:opamp', APP))).json();
+  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   const CONFIG = { ...starter, output: { experiment_name: 'fixture' }, research: {} };
   let target;
   for (let i = 0; i < 75 && !target; i++) {

@@ -15,7 +15,7 @@ def issues(report, level=None):
     return {i.code for i in report.issues if level is None or i.level == level}
 
 
-def check(config, task='synthetic:opamp'):
+def check(config, task='synthetic:gpdk045_ota5'):
     runtime = tasks.load_task(config.circuit)
     return validation.validate(config, graph=runtime.base_graph, provided_metrics=set(runtime.provided_metrics)), runtime
 
@@ -69,7 +69,7 @@ def test_editor_columns_come_from_the_schema():
 def test_valid_starter_config_counts_independent_actions(tmp_path):
     report, _ = check(make_config(tmp_path))
     assert not report.blocks_run, [i.as_dict() for i in report.issues]
-    assert report.facts['independent_action_variables'] == 2 and report.facts['parameter_rows'] == 3
+    assert report.facts['independent_action_variables'] == 3 and report.facts['parameter_rows'] == 5      # the OTA5's three width groups
     assert report.facts['circuit_checked'] is True
 
 
@@ -79,16 +79,16 @@ def test_equal_initial_values_do_not_imply_a_binding(tmp_path):
         row.update(binding_group=None, lower=1e-6, upper=8e-6, scale='log')
     report, _ = check(make_config(tmp_path, mutate=unbind))
     assert not report.blocks_run
-    assert report.facts['independent_action_variables'] == 3     # both inputs start at 2u yet stay independent
+    assert report.facts['independent_action_variables'] == 4     # both inputs start at 4u yet stay independent
 
 
 @pytest.mark.parametrize('change, code', [
-    (lambda p: p[0].update(lower=9e-6), 'invalid_bounds'),
+    (lambda p: p[0].update(lower=11e-6), 'invalid_bounds'),               # above its upper bound, 10 um
     (lambda p: p[0].update(unit='pF'), 'unit_mismatch'),
     (lambda p: p[0].update(unit='furlong'), 'unknown_unit'),
     (lambda p: p[0].update(scale='log', lower=-1e-6), 'log_scale_nonpositive'),
-    (lambda p: p[0].update(initial_value=9e-6), 'initial_out_of_bounds'),
-    (lambda p: p[0].update(initial_value=3e-6), 'initial_differs_from_circuit'),
+    (lambda p: p[0].update(initial_value=12e-6), 'initial_out_of_bounds'),
+    (lambda p: p[0].update(initial_value=3e-6), 'initial_differs_from_circuit'),   # the netlist says 4 um
     (lambda p: p[0].update(step=1e-3), 'step_exceeds_range'),
     (lambda p: p[0].update(instance_path='no_such_instance'), 'unknown_instance'),
     (lambda p: p[0].update(parameter_name='zz'), 'unknown_parameter'),
@@ -246,7 +246,7 @@ def test_compile_produces_existing_optimizer_objects(tmp_path):
     assert all(isinstance(g, ParameterGroup) for g in compiled.graph.parameter_groups)
     assert all(isinstance(s, MetricSpec) for s in compiled.specs)
     width = compiled.graph.parameter_groups[0]
-    assert [m.device_id for m in width.members] == ['input_left', 'input_right']
+    assert [m.device_id for m in width.members] == ['XU1/M1', 'XU1/M2']
     mapper = ActionMapper(compiled.graph)
     for z in (-1.0, -0.37, 0.0, 0.61, 1.0):          # decode_action mirrors the optimizer's mapper
         legal = mapper.legalize({g: z for g in mapper.group_ids})

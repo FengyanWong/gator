@@ -436,3 +436,103 @@ def editor_columns(section: str) -> list[dict]:
                             nullable=any(b.get('type') == 'null' for b in prop.get('anyOf', [])),
                             guidance=info.description or '', default=prop.get('default')))
     return columns
+
+
+# --------------------------------------------------------------------------- schema errors in plain words
+# The row IDs, and what else names them: an ID that is renamed has to be renamed there too.
+ID_FIELDS = {'variable_id': 'rows that follow it (binding_group)', 'metric_id': None,
+             'measurement_id': 'Specs equations that use it'}
+_NOT_IN_AN_ID = re.compile(r'[^A-Za-z0-9_.\-]')
+_BOUNDS = dict(greater_than=('gt', 'greater than'), greater_than_equal=('ge', 'at least'),
+               less_than=('lt', 'less than'), less_than_equal=('le', 'at most'))
+
+
+def describe_errors(exc, limit: int = 50) -> list[dict]:
+    """What the schema rejects in a configuration, one entry per field, in plain words (user report 2026-09-21: the page
+    showed pydantic's list as JSON, "String should match pattern ..."). `path` is written like the validation report's
+    (parameters[1].variable_id), so the page names the row and the editor marks it; `code` is invalid_id for an ID the
+    schema cannot take, otherwise schema; `technical` keeps the schema's own words."""
+    out = []
+    for error in exc.errors()[:limit]:
+        code, message = _plain_error(error)
+        out.append(dict(path=_error_path(error['loc']), code=code, message=message,
+                        technical=f"{error['msg']} [{error['type']}]"))
+    return out
+
+
+def _error_path(loc) -> str:
+    path = ''
+    for part in loc:
+        path += f'[{part}]' if isinstance(part, int) else f'.{part}' if path else str(part)
+    return path
+
+
+def _quoted(value) -> str:
+    text = str(value)
+    return f'"{text[:60]}..."' if len(text) > 60 else f'"{text}"'
+
+
+def _number(value) -> str:
+    return str(value).lower() if isinstance(value, bool) else format(value, 'g') if isinstance(value, (int, float)) else str(value)
+
+
+def _given(value) -> str:
+    """What the field holds, when that is short enough to say: ' (it is "abc")', ' (it is 1.5)'."""
+    if isinstance(value, str):
+        return f' (it is {_quoted(value)})' if value else ''
+    return f' (it is {_number(value)})' if isinstance(value, (int, float)) else ''
+
+
+def _plain_error(error) -> tuple[str, str]:
+    kind, value, ctx = error['type'], error.get('input'), error.get('ctx') or {}
+    names = [part for part in error['loc'] if isinstance(part, str)]
+    field = names[-1] if names else 'The configuration'
+    given = _given(value)
+    if kind == 'string_pattern_mismatch' and field in ID_FIELDS and isinstance(value, str):
+        return 'invalid_id', _id_advice(value, ID_FIELDS[field])
+    if kind == 'string_pattern_mismatch':
+        return 'schema', f'{field} is not written in the form this field takes{given}.'
+    if kind == 'missing':
+        return 'schema', f'{field} is missing: this field needs a value.'
+    if kind == 'string_too_short':
+        return 'schema', f'{field} is empty: it needs a value.'
+    if kind == 'string_too_long':
+        return 'schema', f'{field} is too long: at most {ctx.get("max_length")} characters.'
+    if kind == 'too_long':
+        return 'schema', f'{field} has too many entries: at most {ctx.get("max_length")}.'
+    if kind == 'extra_forbidden':
+        return 'schema', f'{field} is not a field of this part of the configuration: remove it.'
+    if kind in ('float_parsing', 'float_type'):
+        return 'schema', f'{field} needs a number{given}.'
+    if kind in ('int_parsing', 'int_type', 'int_from_float'):
+        return 'schema', f'{field} needs a whole number{given}.'
+    if kind in ('bool_parsing', 'bool_type'):
+        return 'schema', f'{field} needs true or false{given}.'
+    if kind == 'finite_number':
+        return 'schema', f'{field} needs a finite number, not NaN or infinity.'
+    if kind == 'literal_error':
+        return 'schema', f'{field} must be one of {ctx.get("expected")}{given}.'
+    if kind in _BOUNDS and _BOUNDS[kind][0] in ctx:
+        key, words = _BOUNDS[kind]
+        return 'schema', f'{field} must be {words} {_number(ctx[key])}{given}.'
+    if kind == 'value_error':
+        return 'schema', str(error['msg']).removeprefix('Value error, ')
+    return 'schema', f'{field}: {error["msg"]}.'
+
+
+def _shown(char: str) -> str:
+    return 'a space' if char == ' ' else f'"{char}"'
+
+
+def _id_advice(value: str, also: str | None) -> str:
+    """Why `value` cannot be an ID, and one that can: every character an ID may not hold becomes _ (the swap the task
+    starters make, tasks._member_variable_id)."""
+    bad = sorted(set(_NOT_IN_AN_ID.findall(value)), key=value.index)
+    reasons = ['it contains ' + ', '.join(map(_shown, bad))] if bad else []
+    if value[:1] in tuple('0123456789.-'):
+        reasons.append(f'it starts with "{value[0]}"')
+    suggestion = _NOT_IN_AN_ID.sub('_', value)
+    suggestion = suggestion if re.match(r'[A-Za-z_]', suggestion) else f'_{suggestion}'
+    return (f'{_quoted(value)} cannot be an ID: {" and ".join(reasons) or "it is not written like one"}. An ID holds only '
+            f'letters, digits and _ . - and starts with a letter or _, for example {suggestion}'
+            + (f' - {also} need the new ID too.' if also else '.'))

@@ -11,10 +11,11 @@ description: "开发和审查基于 Cadence Virtuoso/Spectre、virtuoso-bridge-l
 
 ## 先读什么
 
-每次使用先读 [项目决策](references/project-decisions.md)，确认当前范围；再按任务选择材料，不必一次加载全部：
+每次使用先读仓库根目录的 `CLAUDE.md`（当前规则）与 [项目决策](references/project-decisions.md)（研究侧 M1-M6 的范围；最新状态以 `docs/decisions.md` 为准：M6 已于 2026-09-20 以试点规模收尾）；再按任务选择材料，不必一次加载全部：
 
 | 当前任务 | 读取材料 |
 |---|---|
+| 工作台（Web UI：`src/gator_workbench/`、`frontend/`） | `docs/frontend_implementation_status.md`（开发记录索引）、`docs/workbench.md`（各功能现状）；工作台代码只放在这两个目录 |
 | 首次启动、拆分任务、验收 | [阶段与交付](references/milestones.md) |
 | Virtuoso、Spectre、SSH、WSL、VM、运行失败 | [后端契约](references/bridge-backend.md) |
 | netlist、device/net graph、端口、参数组、PyG | [图与解析契约](references/graph-contract.md) |
@@ -22,9 +23,6 @@ description: "开发和审查基于 Cadence Virtuoso/Spectre、virtuoso-bridge-l
 | 泛化、基线、消融、性能、论文结论 | [实验与审查](references/evaluation.md) |
 | PVT/Monte Carlo 接口、top-k 后验证、未来算力预算 | [工况与统计验证](references/pvt-monte-carlo.md) |
 | 外部 API、文献或安装方式需要核对 | [来源与核实边界](references/sources.md) |
-
-[项目配置草案](assets/project-contract.example.yaml)是待落地的契约示例，**不是现有程序可直接运行的配置**。
-[首个任务提示词](assets/first-task.md)仅用于尚未完成 M1 的仓库，不覆盖当前阶段。
 
 ## 当前默认方向
 
@@ -45,7 +43,7 @@ Virtuoso schematic / exported Spectre netlist
 - 优化范围先是固定拓扑的器件尺寸、偏置及被明确允许的参数；不是拓扑搜索或自动布局布线。
 - 初始目标是可靠单电路闭环；之后验证同类电路的规格与拓扑迁移，再研究 LDO/VCO/OpAmp 跨类别迁移。
 - 当前项目已完成 M4、M5 首轮与真实同类新拓扑补验，以及 M6 前的编码器接口；M6 已完成合成跨类别协议、真实 LDO/VCO 基线鉴定和一次冻结的真实跨类别试点（2,811 次 Spectre 调用、1,566 次 SAC 更新，独立审计与 544 项回归全部通过），但未证明 GT 迁移优势；随后的严格模式（reference）复验以 28 次 Spectre 调用确认了全部 36 个成功 VCO 运行的首个可行设计（见 `docs/m6-vco-requalification.md`）；M6 已于 2026-09-20 按用户决定在试点规模收尾：流程已在真实电路上跑通并经独立审计，但迁移或 GT 是否有优势在该规模下没有结论；更大规模前瞻实验及各项可选扩展均未进行，需用户另行决定与预算。里程碑计划在 M6 之后未定义新阶段。不要在 `src/analog_optimizer/` 内随意新增或修改 `.py`：`source_digest()` 决定既有 checkpoint 能否加载及冻结协议能否复核。不要再用早期“止于 M3”的范围限制覆盖后续授权；新任务仍以用户请求为准。最新证据和边界见项目 `docs/decisions.md`、`docs/m5-real-topology.md`、`docs/encoder-ablation.md`、`docs/m6-real-results.md`。
-- 训练/采样维持已验证 nominal、单 worker；PVT 仅用于以后对 nominal top 3 独立设计的 5 个代表性工况后验证，不进入训练奖励或 replay。PVT 调度及 Monte Carlo 执行仍未实现；编码器接口完成不自动启动这些扩展或 M6。
+- 训练/采样维持已验证 nominal；并行 Spectre 采集入口默认 4 个 worker（各自隔离的网表与作业目录，共享一个 learner/replay，见 `docs/parallel-spectre-sac.md`）。PVT 只用于事后验证，不进入训练奖励或 replay：自 2026-09-22 起工作台的 Corner check 可对一次 run 的最佳设计在 5 个 GPDK045 工况下重新仿真（`docs/workbench.md`）；Monte Carlo 执行仍未实现。
 - 工艺角与温度从实际 PDK 模型/文档读取，电压还需核对所用器件的限制。用户撤回的 1.8 V 示例不作为 GPDK045 当前 OTA 的配置。区分 PDK 明文范围与项目自行选取的筛选点。
 - 当前 GT 使用局部端口注意力；宽度、层数及与其他架构的优劣仍需实验比较，不能从接口通过推断迁移优势。
 
@@ -53,7 +51,7 @@ Virtuoso schematic / exported Spectre netlist
 
 ## 开工流程
 
-1. **检查仓库。** 阅读现有 `AGENTS.md`、README、依赖声明、配置、测试及相关模块；检查未提交改动，不覆盖用户工作。
+1. **检查仓库。** 阅读 `CLAUDE.md`（本仓库没有 `AGENTS.md`）、README、依赖声明（精确版本见 `constraints.txt`）、配置、测试及相关模块；检查未提交改动，不覆盖用户工作——多个会话共用同一工作区与 git index。
 2. **确认范围。** 用简短文字指出本次输入、输出、受影响接口和验收条件。能够从仓库解决的问题先查代码，不重复询问。
 3. **核对环境。** 确认 Python 所在环境、bridge 的真实安装位置与版本、Virtuoso/Spectre 所在主机、现有连接方式；不在日志输出凭据。
 4. **最小实现。** 优先修改已有模块；只在缺失时创建结构。不可把假实现包装成真实后端。
@@ -97,7 +95,7 @@ Virtuoso schematic / exported Spectre netlist
 - 写原理图前确认目标和当前授权，使用副本/检查点或经核实的恢复策略；不得默认覆盖原设计。
 - 每个仿真 job 使用唯一目录和标识；只清理本项目拥有的文件和进程。
 - 在网表、request/result、图观测与日志间传递同一份 PVT/MC context；明确 nominal/pvt_validation/mc_validation。Monte Carlo 未实现时显式报不支持，禁止把重复 nominal 仿真包装成统计样本。
-- 默认单 worker。没有隔离 cellview、session 或不可变网表时，不并发修改同一 Virtuoso 设计。
+- 并行只在隔离的 cellview、session 或不可变网表上进行（并行 Spectre SAC 即如此：一个准备进程串行处理候选，各 worker 只跑各自的网表）；否则不并发修改同一 Virtuoso 设计。
 - 先测通信、参数更新、netlisting、仿真、解析与训练耗时，再讨论提速；不要把换 bridge 当成必然仿真加速。
 - 不硬编码主机、用户名、PDK 路径、模型名、许可证路径；不要自动上传私有 PDK、netlist、波形或密钥。
 

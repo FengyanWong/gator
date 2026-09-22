@@ -1,8 +1,8 @@
 # analog-optimizer — Codex 项目 Skill
 
-版本：0.2；同步日期：2026-09-19。
+版本：0.3；同步日期：2026-09-22。
 按照近期模拟电路优化讨论编写，保留当前方向：**端口感知 Graph Transformer + goal-conditioned SAC + Virtuoso bridge / Spectre**。
-默认**不加 surrogate、LLM、Mamba**。项目现已完成 M4/M5 首轮及 M6 前编码器接口：支持 MLP/GCN/RGCN/GAT 与默认 GT 的统一 SAC 迁移对照，保留 port-GNN；M6 尚未开始。最新状态见 [项目决策](references/project-decisions.md)。
+默认**不加 surrogate、LLM、Mamba**。项目已完成 M1–M5 与编码器接口（MLP/GCN/RGCN/GAT 与默认 GT 的统一 SAC 迁移对照，保留 port-GNN）；M6 已于 2026-09-20 以试点规模收尾（流程跑通并经独立审计，迁移或 GT 优势未得出结论）。此后的工作是 Web 工作台（`src/gator_workbench/`、`frontend/`）。最新状态以仓库的 `docs/decisions.md`、`CLAUDE.md` 与 `docs/workbench.md` 为准；[项目决策](references/project-decisions.md) 记录研究侧的约定。
 
 本包是给 Codex 的指令和参考材料，**不是优化器代码、已训练模型或已接通的 Virtuoso 插件**。
 安装不会安装 Python 依赖、连接 VM、修改原理图或运行 Spectre。
@@ -23,8 +23,7 @@ analog-optimizer/
 │   ├── milestones.md
 │   └── sources.md
 ├── assets/
-│   ├── project-contract.example.yaml
-│   └── first-task.md
+│   └── icon.svg
 └── README.zh-CN.md
 ```
 
@@ -90,8 +89,7 @@ WSL 用户目录、Windows 用户目录和 VM 用户目录不同。按实际使�
 在 Codex 中输入 `$analog-optimizer`，再写具体任务。
 CLI/IDE 的 skill 选择方式及自动匹配由当前客户端支持情况决定；新文件未出现时重启 Codex。[S1](references/sources.md)
 
-仅在仓库尚未完成 M1 时使用 [首个任务提示词](assets/first-task.md)；已有项目从当前阶段继续。
-也可以直接要求审查，例如：
+已有项目从当前阶段继续。也可以直接要求审查，例如：
 
 ```text
 $analog-optimizer

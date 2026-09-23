@@ -348,8 +348,11 @@ def write_maestro(client, library, testbench, setup):
         wanted = [list(m) for m in setup['model_files'] or []]
         stating = bool(wanted) and (created or not setup.get('keep_model_files'))
         if stating or ic_path:
-            base = wanted if stating else (listed or [])
-            entries = [m for m in base if _IC_MARK not in m[0]] + ([[ic_path, '']] if conditions else [])
+            if listed is None:                                # conditions kept: the ic file the test has stays registered
+                listed = _read_model_files(client, test, s)
+            base = wanted if stating else listed
+            keep_ic = [m for m in listed if _IC_MARK in m[0]] if conditions is None else []
+            entries = [m for m in base if _IC_MARK not in m[0]] + keep_ic + ([[ic_path, '']] if conditions else [])
             files = ' '.join(f'({_q(f)} {_q(section)})' for f, section in entries)
             _skill(client, f'maeSetEnvOption({_q(test)} ?options `(("modelFiles" ({files}))){s})', 'setting the model files')
         for name in _list(_skill(client, f'maeGetEnabledAnalysis({_q(test)}{s})', 'reading the analyses')) if setup['analyses'] is not None else ():

@@ -263,6 +263,32 @@ def test_a_task_starts_its_oscillator_with_initial_conditions(tmp_path):
     assert profiles.task_file('ring_ic')['maestro']['initial_conditions'] == other
 
 
+def test_saving_the_task_again_keeps_its_initial_conditions(tmp_path):
+    """The sequence that lost them live on 2026-09-22 (23:08): save with conditions, then save the OPEN task again with
+    nothing said about them. A setup that does not mention a part means "leave it as the copy has it" - it must not read
+    as "this test has none", and the ic file must stay registered even when the model files are stated."""
+    ready(tmp_path)
+    rows = vs.to_rows(SETUP)
+    conditions = {'N1': '0', 'OUT': '0.9'}
+
+    def answer(ic):
+        return dict(exists=True, tests=['GATOR'], test='GATOR', model_files=[['/pdk/model.scs', 'tt']],
+                    analyses={'tran': {'stop': '50n', 'errpreset': 'conservative'}}, variables={}, bindings=[],
+                    outputs=SETUP['outputs'], specs=SETUP['specs'], raw_specs={}, initial_conditions=ic,
+                    ic_file='/home/u/.gator/ic/x.scs' if ic else None)
+
+    cfg = config(probes=rows['measurements'], specs=rows['targets'])
+    extras = dict(analyses={'tran': {'stop': '50n', 'errpreset': 'conservative'}}, initial_conditions=conditions)
+    save(tmp_path, name='ring_keep', cfg=cfg, extras=extras,
+         commands=dict(setup=setup_writer(tmp_path, answer(conditions)), deck=maestro_netlister(tmp_path)))
+    again = save(tmp_path, name='ring_keep', task='ring_keep', cfg=cfg,                       # no extras at all
+                 commands=dict(setup=setup_writer(tmp_path, answer(conditions)), deck=maestro_netlister(tmp_path)))
+    assert again['revision'] == 2 and again['maestro_matches'] and 'initial_conditions' not in (again['changed'] or [])
+    assert profiles.task_file('ring_keep')['maestro']['initial_conditions'] == conditions
+    second = [json.loads(line) for line in (tmp_path / 'setup_calls.jsonl').read_text().splitlines()][-1]
+    assert second['request']['setup']['initial_conditions'] in (None, conditions)      # kept or stated again - never {}
+
+
 def test_a_maestro_netlist_that_does_not_fit_saves_nothing(tmp_path):
     ready(tmp_path)
     rows = vs.to_rows(SETUP)

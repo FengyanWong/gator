@@ -502,7 +502,10 @@ def write_setup_on(monitor, profile_id, target, setup, *, command=None) -> dict:
         last = json.loads(last_file.read_text())
     except (OSError, ValueError):
         last = {}
-    keep = [part for part in ('analyses', 'variables', 'bindings') if setup.get(part) is None]      # None = leave as the copy has it
+    # None = leave as the copy has it. `initial_conditions` belongs here too: without it a setup that simply does not
+    # mention them (every plain "Save task" of an open task) would be read as "this test has none" and DELETE them - it
+    # did, to the user's ring task on 2026-09-22 23:08, and the next save then stored a task file without them.
+    keep = [part for part in ('analyses', 'variables', 'bindings', 'initial_conditions') if setup.get(part) is None]
     wanted = {(b['cell'], b['instance'], b['parameter']) for b in setup.get('bindings') or []}
     originals = _original_values_on(target)
     restore = [] if 'bindings' in keep else [

@@ -189,7 +189,9 @@ def build_prompt(request) -> str:
                   'is the minimum, then what is still the user\'s, in two to four sentences.']
     if request.kind == 'virtuoso_setup':
         parts += ['', 'THIS REQUEST: set this circuit up for optimization in its WORKING COPY in Virtuoso (<working_copy_data>). The '
-                  'backend writes your setup into the copy only after the user approves it, then reads it back. Say first, in two '
+                  'backend writes your setup into the copy only after the user approves it, then reads it back. That copy may BE '
+                  'the cell the user drew - `own_copy` in <working_copy_data> says so, and then `cell_you_drew` is empty because '
+                  'there is no separate original: propose nothing you would not want written into their own drawing. Say first, in two '
                   'or three sentences of `reasoning`, what the circuit is and how it works; then return:',
                   '- `patch` rows of `parameters`: what may vary. In Virtuoso a run writes any value the property form of an '
                   'instance directly inside the core cell lets a user type (transistor w, l, nf, m; a MIM capacitor\'s w, l, m; '

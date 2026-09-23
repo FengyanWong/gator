@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, Json } from '../api';
+import { api, Json, problemText, virtuosoGateText } from '../api';
 
 /** The Virtuoso side of a cell read into the workbench: its WORKING COPY (the only cells the task flow writes into) and
  *  the Maestro setup of that copy (outputs = Probes, specs = the starting Specs rows). Every action is an explicit press.
@@ -7,9 +7,6 @@ import { api, Json } from '../api';
  *  copy and reads it: "Read setup" takes what the copy's Maestro test says into Probes and Specs (for changes someone made
  *  in Maestro). Its own "Write to Virtuoso" and the separate "Use in editors" went on 2026-09-22 (user: fewer buttons,
  *  as the flow has it - Save task writes the copy anyway). Nothing happens on load, nothing syncs by itself. */
-
-const gateText = (gate: Json) => `Virtuoso cannot be reached (${[...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') || gate.status}). `
-  + 'Bring the link up in the Connection window, then try again.';
 
 const PREFIX: Record<string, number> = { T: 1e12, G: 1e9, M: 1e6, k: 1e3, m: 1e-3, u: 1e-6, 'µ': 1e-6, n: 1e-9, p: 1e-12, f: 1e-15, a: 1e-18 };
 
@@ -59,9 +56,7 @@ export function WorkingCopy({ profileId, library, cell, testbench, record, confi
     setBusy(what); setMessage(null);
     try { await action(); }
     catch (e: any) {
-      const gate = e.detail?.gate;
-      setMessage({ level: 'error', text: e.status === 404 || e.status === 405 ? 'This backend is older than the page and cannot do this yet: restart it (gator_workbench.cli serve).'
-        : gate ? gateText(gate) : e.message });
+      setMessage({ level: 'error', text: problemText(e, virtuosoGateText) });
     } finally { setBusy(null); }
   };
   const make = () => act('copy', async () => {

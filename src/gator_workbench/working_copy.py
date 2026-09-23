@@ -25,6 +25,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from . import bridge_setup, native_cells, virtuoso_setup
+from .connection import require_gate
 from .paths import local_settings_dir
 from .storage.atomic import write_json
 from .storage.dataset import utcnow
@@ -194,11 +195,7 @@ def make(monitor, profile_id, library, cell, *, command=None, timeout=600.0) -> 
         raise CopyError('Read the cell through its testbench first: the copy is of the testbench and the cell under it')
     copy_library = copy_library_name(library)
     ours = own_libraries()
-    gate = monitor.gate('write_cellview', profile_id)
-    if not gate['allowed']:
-        error = PermissionError('The connection gate blocked writing into Virtuoso')
-        error.gate = gate
-        raise error
+    require_gate(monitor, 'write_cellview', profile_id, 'writing into Virtuoso')
     target = record_dir(library, cell)
     attempt_file = target.parent / f'{cell}.{ATTEMPT}'
     try:
@@ -329,7 +326,7 @@ def make_task_copy(monitor, profile_id, source, task, *, source_netlist, command
         if not native_cells.NAME.match(name) or len(name) > 120:
             raise CopyError(f'The copy cell name {name!r} would not be a plain Cadence name: choose a shorter task name')
     rename = {source['names'][original]: new for original, new in names.items()}
-    _gated(monitor, 'write_cellview', profile_id, 'writing into Virtuoso')
+    require_gate(monitor, 'write_cellview', profile_id, 'writing into Virtuoso')
     directory = task_copy_dir(task)
     attempt_file = directory.parent / f'{task}.{ATTEMPT}'
     try:
@@ -378,14 +375,6 @@ def _request_dir(target) -> Path:
     return directory
 
 
-def _gated(monitor, action, profile_id, what, *, acknowledge_unknown=False):
-    gate = monitor.gate(action, profile_id, acknowledge_unknown=acknowledge_unknown)
-    if not gate['allowed']:
-        error = PermissionError(f'The connection gate blocked {what}')
-        error.gate = gate
-        raise error
-
-
 def _run_setup(op, profile_id, target, request, *, command=None):
     out = _request_dir(target)
     (out / 'request.json').write_text(json.dumps(request, indent=1))
@@ -406,7 +395,7 @@ def _described(answer) -> dict:
 
 def read_setup_on(monitor, profile_id, target, *, command=None, acknowledge_unknown=False) -> dict:
     """What the Maestro view of one copy says now. Read-only, zero cost. `acknowledge_unknown`: see profile_preflight."""
-    _gated(monitor, 'read_cellview', profile_id, 'reading the Maestro setup', acknowledge_unknown=acknowledge_unknown)
+    require_gate(monitor, 'read_cellview', profile_id, 'reading the Maestro setup', acknowledge_unknown=acknowledge_unknown)
     answer = _run_setup('read_setup', profile_id, target, dict(cells=target['schematics'], test=virtuoso_setup.TEST), command=command)
     return _described(answer)
 
@@ -436,7 +425,7 @@ def write_setup_on(monitor, profile_id, target, setup, *, command=None) -> dict:
     problems = virtuoso_setup.validate(setup, bindable=bindable_on(target))
     if problems:
         raise virtuoso_setup.SetupError('The setup cannot be written: ' + '; '.join(problems))
-    _gated(monitor, 'write_cellview', profile_id, 'writing the Maestro setup')
+    require_gate(monitor, 'write_cellview', profile_id, 'writing the Maestro setup')
     last_file = Path(target['state_dir']) / 'last_written_setup.json'
     try:
         last = json.loads(last_file.read_text())
@@ -481,7 +470,7 @@ def maestro_deck_on(monitor, profile_id, target, outputs, *, command=None, ackno
     cannot be translated plainly."""
     import hashlib
     from . import ocean
-    _gated(monitor, 'read_cellview', profile_id, 'netlisting the copy\'s Maestro test', acknowledge_unknown=acknowledge_unknown)
+    require_gate(monitor, 'read_cellview', profile_id, 'netlisting the copy\'s Maestro test', acknowledge_unknown=acknowledge_unknown)
     answer = _run_setup('maestro_netlist', profile_id, target, dict(cells=target['schematics'], test=virtuoso_setup.TEST), command=command)
     folder = Path(answer['folder'])
     deck, circuit = (folder / 'input.scs').read_text(), (folder / 'netlist').read_text()

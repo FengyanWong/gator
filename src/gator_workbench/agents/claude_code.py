@@ -39,7 +39,7 @@ import sys
 import tempfile
 
 from ..security import redact
-from .base import (AgentError, AgentProvider, AgentRequest, AgentResult, WRITE_OR_EXEC_TOOLS, run_cli)
+from .base import (AgentError, AgentRequest, AgentResult, CliProvider, WRITE_OR_EXEC_TOOLS, run_cli)
 from .catalog import supports_effort
 from .live import LiveTranslator
 from .settings_review import WEB_MAX_TURNS
@@ -77,20 +77,9 @@ def tool_server_config(request):
     return directory, str(config)
 
 
-class ClaudeCodeProvider(AgentProvider):
-    name = 'claude_code'
+class ClaudeCodeProvider(CliProvider):
+    name, cli = 'claude_code', 'claude'
     carries_tools = True       # --mcp-config + --strict-mcp-config: only the tools this request was granted
-
-    def executable(self):
-        if self.settings.cli_path:
-            path = Path(self.settings.cli_path)
-            return str(path) if path.is_file() and os.access(path, os.X_OK) else None
-        return shutil.which('claude')
-
-    def available(self):
-        path = self.executable()
-        return dict(provider=self.name, available=path is not None, executable=path,
-                    reason=None if path else "`claude` is not on the backend process PATH")
 
     def working_directory(self, request: AgentRequest):
         """Proposal requests run in an empty scratch directory: even a read-only tool then has nothing

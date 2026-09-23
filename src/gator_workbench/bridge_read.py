@@ -19,14 +19,10 @@ cellview, and every call is preceded by the connection gate for ``read_cellview`
 from __future__ import annotations
 
 import json
-import os
 import re
-import signal
-import subprocess
 import sys
 
-from .connection import RealBridge, resolve_profile_id, worker_environment
-from .paths import repo_root
+from .connection import RealBridge, child_error, require_gate, resolve_profile_id, run_child
 from .security import redact
 
 NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
@@ -172,11 +168,7 @@ def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, ti
         from .pdk import REMOTE_PATH
         if not REMOTE_PATH.match(model_file) or '/../' in model_file:
             raise ValueError('The model file must be an absolute path on the simulator host (letters, digits, / . _ - +)')
-    gate = monitor.gate('read_cellview', profile_id)
-    if not gate['allowed']:
-        error = PermissionError('The connection gate blocked reading the native design')
-        error.gate = gate
-        raise error
+    require_gate(monitor, 'read_cellview', profile_id, 'reading the native design')
     argv = (command or [sys.executable, '-m', 'gator_workbench.bridge_read']) + ['--profile-id', profile_id, '--op', op]
     if op == 'cells':
         if not library:
@@ -200,20 +192,13 @@ def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, ti
         incoming.parent.mkdir(parents=True, exist_ok=True)
         argv += ['--library', library, '--cell', cell, '--output', str(incoming)] + (['--testbench', testbench] if testbench else [])
         timeout = max(timeout, 300.0)                              # a netlist export alone may take two minutes
-    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                               shell=False, env=worker_environment(), cwd=str(repo_root()), start_new_session=True)
     try:
-        try:
-            stdout, stderr = process.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
-            process.communicate()
+        finished = run_child(argv, timeout)
+        if finished is None:
             raise TimeoutError('The bridge read did not finish in time')
-        if process.returncode != 0:
-            raise RuntimeError(redact(stderr.strip().splitlines()[-1] if stderr.strip() else 'bridge read failed', 400))
+        stdout, stderr, code = finished
+        if code != 0:
+            raise child_error(stderr, 'bridge read failed')
         data = json.loads(stdout.strip().splitlines()[-1])
         if op == 'import_cell':
             return native_cells.finish_import(incoming, library=library, cell=cell, testbench_cell=testbench,

@@ -1,6 +1,6 @@
 import { Fragment, MouseEvent, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { usePopupWindow } from './popupWindow';
+import { BLOCKED, usePopupWindow } from './popupWindow';
 import { api, bytes, Json, short } from '../api';
 import { LIVE_STATES } from './RunControl';
 
@@ -186,7 +186,7 @@ export function RunListButton({ runs, runDir, onChoose, onRefresh }: { runs: Jso
   );
 
   return (<>
-    {blocked && <span className="error run-list-blocked">The browser blocked the new window. Allow pop-ups for this page, then press the button again.</span>}
+    {blocked && <span className="error run-list-blocked">{BLOCKED}</span>}
     {/* The run that is shown is said as plain text to the LEFT of the button; the button itself only reads "Runs..." (user request 2026-09-21). */}
     <span className="run-list-current" title={runDir ?? undefined}>{current ? label(current) : runDir ? folder(runDir) : 'No run selected'}</span>
     <button className={`run-list-button${popup ? ' open' : ''}`} onClick={openWindow}

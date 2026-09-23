@@ -43,6 +43,7 @@ from analog_optimizer.training.parallel import NativeEnvironmentFactory
 from .cdf_rules import RULES_FORMAT
 from .generic_profile import GenericMosWidthProfile, RulesError, _same
 from .recipes import GenericMaestroProfile, GenericRingOscillatorProfile, MAESTRO, RING
+from .security import skill_string as _skill_string
 
 NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')       # library / cell / instance, as everywhere in the workbench
 FIELD = re.compile(r'^[A-Za-z_]\w{0,63}$')                        # a CDF parameter (form field)
@@ -173,10 +174,6 @@ class Held:
     parameter: str | None
     field: Field
     value: float | None
-
-
-def _skill_string(text) -> str:
-    return '"' + str(text).replace('\\', '\\\\').replace('"', '\\"') + '"'
 
 
 # ------------------------------------------------------------------------------------------ the SKILL of one candidate

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePopupWindow } from './popupWindow';
-import { api, Json } from '../api';
+import { api, Json, problemText } from '../api';
 
 /** The task file in a window of its own: everything a task is, as one readable file (its own `_help` part explains each
  *  part). The person - or someone pasting the agent's text - edits it here; "Apply to editors" checks it with the same
@@ -32,7 +32,7 @@ export function TaskFileWindow({ text, title, onApply, onClose }: {
         setMessage({ level: 'ok', text: 'Applied: the editors now hold these rows. Press "Save task" to store them; Undo takes them back.' });
       }
     } catch (e: any) {
-      setMessage({ level: 'error', text: e.status === 404 || e.status === 405 ? 'This backend is older than the page and cannot do this yet: restart it (gator_workbench.cli serve).' : e.message });
+      setMessage({ level: 'error', text: problemText(e) });
     } finally { setBusy(false); }
   };
 

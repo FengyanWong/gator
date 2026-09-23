@@ -46,16 +46,6 @@ def _actor(meta, weights):
     return actor.eval()
 
 
-def _schemas(contract):
-    from analog_optimizer.graph.pyg_converter import FeatureSchema
-    from analog_optimizer.models.inputs import SpecSchema
-
-    def tuples(value):
-        return tuple(tuples(v) for v in value) if isinstance(value, (list, tuple)) else value
-    return (FeatureSchema(**{k: tuples(v) for k, v in contract['feature_schema'].items()}),
-            SpecSchema(**{k: tuples(v) for k, v in contract['spec_schema'].items()}))
-
-
 def _one_row(reader, table, column, value, columns=None):
     """The ONE row of an archive table with `column == value`, read with a parquet filter: the other rows are never
     turned into Python objects (a long run holds thousands of states with their JSON patches)."""
@@ -137,7 +127,7 @@ def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
     directory = ckpt.resolve_checkpoint(run_dir, checkpoint_id)
     meta, weights = model_structure.load_verified(directory)
     actor = _actor(meta, weights)
-    features, spec = _schemas(meta['contract'])
+    features, spec = model_structure.schemas(meta['contract'])
     loader = TrajectoryLoader(run_dir)
     row, steps = _step(loader, evaluation, (meta.get('counters') or {}).get('evaluations_committed'))
     observation = loader.observation(row['state_ref'])

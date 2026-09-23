@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, Json } from '../api';
+import { api, Json, problemText, virtuosoGateText } from '../api';
 import { TaskFileWindow } from './TaskFile';
 
 /** "Save task" - a person's press only - and what goes with it: "Save as" (another task, with a working copy of its own)
@@ -11,8 +11,6 @@ import { TaskFileWindow } from './TaskFile';
  *  user request 2026-09-22: the save sits with the rows it stores. The component stays in the circuit panel, which owns
  *  the cell and the task; two portals put it there. */
 
-const gateText = (gate: Json) => `Virtuoso cannot be reached (${[...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') || gate.status}). `
-  + 'Bring the link up in the Connection window, then try again.';
 const NAME = /^[a-z][a-z0-9_]{1,39}$/;
 const SUFFIX: Record<string, number> = { T: 1e12, G: 1e9, M: 1e6, k: 1e3, K: 1e3 };
 const parseFrequency = (text: string) => {
@@ -58,9 +56,7 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   const suggested = suggestTaskName(cell);
   const taskName = task ?? (name || suggested);
   const report = (e: any) => {
-    const gate = e.detail?.gate;
-    setMessage({ level: 'error', text: e.status === 404 || e.status === 405 ? 'This backend is older than the page and cannot do this yet: restart it (gator_workbench.cli serve).'
-      : gate ? gateText(gate) : e.message });
+    setMessage({ level: 'error', text: problemText(e, virtuosoGateText) });
   };
   const save = async (asNew: boolean, target: string, more: Json = {}) => {
     setBusy(asNew ? 'as' : 'save'); setMessage(null);

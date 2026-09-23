@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import threading
@@ -341,3 +342,19 @@ class AgentProvider:
 
     def cancel(self, request_id) -> bool:
         return REGISTRY.cancel(request_id)
+
+
+class CliProvider(AgentProvider):
+    """A provider that runs an agent CLI: `cli` on the PATH, or the configured `cli_path` when it is an executable file."""
+    cli = None
+
+    def executable(self):
+        if self.settings.cli_path:
+            path = Path(self.settings.cli_path)
+            return str(path) if path.is_file() and os.access(path, os.X_OK) else None
+        return shutil.which(self.cli)
+
+    def available(self):
+        path = self.executable()
+        return dict(provider=self.name, available=path is not None, executable=path,
+                    reason=None if path else f'`{self.cli}` is not on the backend process PATH')

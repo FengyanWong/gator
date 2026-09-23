@@ -60,17 +60,22 @@ def _describe(part, path):
     return 'Other', None
 
 
-def _rebuild(contract):
-    """The network described by the checkpoint's own contract: {part: module}. Raises when it cannot be built."""
+def schemas(contract):
+    """(FeatureSchema, SpecSchema) of a checkpoint's own contract: its JSON lists back as the tuples the schemas hold."""
     from analog_optimizer.graph.pyg_converter import FeatureSchema
-    from analog_optimizer.models.encoders import ModelConfig
-    from analog_optimizer.models.graph_transformer import GraphCritic, GroupActor
     from analog_optimizer.models.inputs import SpecSchema
 
     def tuples(value):
         return tuple(tuples(v) for v in value) if isinstance(value, (list, tuple)) else value
-    features = FeatureSchema(**{k: tuples(v) for k, v in contract['feature_schema'].items()})
-    spec = SpecSchema(**{k: tuples(v) for k, v in contract['spec_schema'].items()})
+    return (FeatureSchema(**{k: tuples(v) for k, v in contract['feature_schema'].items()}),
+            SpecSchema(**{k: tuples(v) for k, v in contract['spec_schema'].items()}))
+
+
+def _rebuild(contract):
+    """The network described by the checkpoint's own contract: {part: module}. Raises when it cannot be built."""
+    from analog_optimizer.models.encoders import ModelConfig
+    from analog_optimizer.models.graph_transformer import GraphCritic, GroupActor
+    features, spec = schemas(contract)
     config = ModelConfig(**contract['model_config'])
     return dict(actor=GroupActor(features, spec, config), critic=GraphCritic(features, spec, config))
 

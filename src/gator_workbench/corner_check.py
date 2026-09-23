@@ -39,8 +39,6 @@ import os
 from pathlib import Path
 import re
 import signal
-import subprocess
-import sys
 from uuid import uuid4
 
 from analog_optimizer.backends.backend import SimulationRequest, SimulationStatus, UnsupportedCapability
@@ -382,22 +380,9 @@ def launch(directory, *, allow_real=False) -> int:
         _release_start(directory.parent.parent)
         raise
     _release_start(directory.parent.parent)
-    env = dict(os.environ)
-    env['PYTHONPATH'] = os.pathsep.join(filter(None, [str(repo_root() / 'src'), env.get('PYTHONPATH')]))
-    command = [sys.executable, '-m', 'gator_workbench.corner_check', '--check-dir', str(directory),
-               '--lock-fd', str(lock.fileno())] + (['--allow-real'] if allow_real else [])
-    log = (directory / 'worker.log').open('ab')
-    try:
-        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                                   cwd=str(repo_root()), env=env, start_new_session=True, close_fds=True,
-                                   pass_fds=(lock.fileno(),))
-    except BaseException:
-        lock.release()
-        raise
-    finally:
-        log.close()
-    lock.detach()
-    return process.pid
+    from .runs import spawn_detached
+    return spawn_detached('corner_check', ['--check-dir', str(directory)] + (['--allow-real'] if allow_real else []),
+                          lock, directory / 'worker.log')
 
 
 def request_stop(run_dir, check_id) -> dict:

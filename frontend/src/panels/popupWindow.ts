@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 
+/** What a panel says when the browser refused to open its window. */
+export const BLOCKED = 'The browser blocked the new window. Allow pop-ups for this page, then press the button again.';
+
 /** The workbench's pop-up windows (connection, runs, PDK, task file): a NAMED `about:blank` window with the page's own
  *  stylesheets copied into it and one root element to portal React into. The window closes with the page, and when the
  *  viewer closes it the panel hears of it. `open()` brings an already open window to the front instead of making a
- *  second one; `blocked` says the browser refused to open it, and each panel words that in its own way.
+ *  second one; `blocked` says the browser refused to open it (`BLOCKED` says so; the task file names its own button).
  *
  *  Written in the review of 2026-09-23: these same twenty lines stood in four panels. The Agent tab's conversation
  *  window (`Bottom.tsx`) deliberately stays outside this hook - it carries handlers of its own in both directions. */

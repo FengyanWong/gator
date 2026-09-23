@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { usePopupWindow } from './popupWindow';
+import { BLOCKED, usePopupWindow } from './popupWindow';
 import { api, Json } from '../api';
 
 const STATE_LABEL: Record<string, string> = {
@@ -105,7 +105,7 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
         <span className="connection-button-what">{profileId ? `${profileId}${entry?.kind_label ? ` - ${entry.kind_label}` : ''}` : profiles && profiles.profiles.length === 0 ? 'none set up yet' : 'none selected'}{popup ? ' (window open)' : ''}</span>
         {profileId && <span className={`badge state-${overall}`} title={status?.checked_utc ? `Last test: ${testedAt(status.checked_utc)}` : 'Never tested'}>{STATE_LABEL[overall] ?? overall}</span>}
       </button>
-      {blocked && <p className="error">The browser blocked the new window. Allow pop-ups for this page, then press the button again.</p>}
+      {blocked && <p className="error">{BLOCKED}</p>}
     </section>
   );
 

@@ -233,6 +233,46 @@ def worker_environment() -> dict:
     return env
 
 
+def kill_group(process) -> None:
+    """SIGKILL a child's OWN process group (it was started with start_new_session) - never the backend's."""
+    try:
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def run_child(argv, timeout):
+    """Run `argv` in the worker environment, in a process group of its own, for at most `timeout` seconds:
+    (stdout, stderr, returncode), or None when it did not finish in time - its group is then killed. The one way the
+    backend waits for a bridge read, a Virtuoso write, a profile check or a connection probe."""
+    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                               shell=False, env=worker_environment(), cwd=str(repo_root()), start_new_session=True)
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        kill_group(process)
+        process.communicate()
+        return None
+    return stdout, stderr, process.returncode
+
+
+def require_gate(monitor, action, profile_id, what, *, acknowledge_unknown=False) -> dict:
+    """The gate for `action`, or PermissionError('The connection gate blocked <what>') carrying the gate as `.gate` (the
+    page shows its blocking layers). Every bridge read, Virtuoso write and profile check asks this way."""
+    gate = monitor.gate(action, profile_id, acknowledge_unknown=acknowledge_unknown)
+    if not gate['allowed']:
+        error = PermissionError(f'The connection gate blocked {what}')
+        error.gate = gate
+        raise error
+    return gate
+
+
+def child_error(stderr, default, limit=400) -> RuntimeError:
+    """What a failed child said last on stderr (redacted), as the error to raise."""
+    lines = (stderr or '').strip().splitlines()
+    return RuntimeError(redact(lines[-1] if lines else default, limit))
+
+
 # ---------------------------------------------------------------------------- bridge facade
 class RealBridge:
     """Thin facade over the installed bridge. Only observation methods exist here - there is
@@ -527,21 +567,14 @@ class ConnectionMonitor:
         names, slow = FAMILY_LAYERS[family], TIMEOUT_LAYER[family]
         started, began = utcnow(), time.monotonic()
         self.probes_started += 1
-        process = subprocess.Popen(self._command(profile_id, scope, bool(active)), stdin=subprocess.DEVNULL,
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=False,
-                                   env=worker_environment(), cwd=str(repo_root()), start_new_session=True)
-        try:
-            stdout, stderr = process.communicate(timeout=self.probe_timeout_seconds)
+        finished = run_child(self._command(profile_id, scope, bool(active)), self.probe_timeout_seconds)
+        if finished is not None:
+            stdout, stderr, _ = finished
             layers = self._parse(stdout, names)
             if layers is None:
                 layers = [layer(n, 'unknown', 'unparseable_probe_output', stderr[-300:] if stderr else 'no JSON on stdout')
                           for n in names]
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(os.getpgid(process.pid), signal.SIGKILL)      # only the probe's own process group
-            except (ProcessLookupError, PermissionError):
-                pass
-            process.communicate()
+        else:                                                           # only the probe's own process group was killed
             state, reason = ('busy', 'busy_active_run') if active and family == 'virtuoso' else ('unknown', 'probe_timeout')
             layers = [layer(n, state if n == slow else 'not_checked', reason if n == slow else None,
                             next_step=NEXT_STEPS[reason] if n == slow else None) for n in names]

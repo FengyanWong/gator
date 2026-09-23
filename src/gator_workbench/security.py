@@ -24,3 +24,9 @@ def redact(text, limit=None):
     if limit is not None and len(text) > limit:
         text = text[:limit] + f'... [truncated {len(text) - limit} chars]'
     return text
+
+
+def skill_string(text) -> str:
+    """A Python string as a SKILL string literal - the only escaping between a PDK's own text and the SKILL the workbench
+    generates. The backslash is escaped first, then the quote: the other order would let a string close its literal."""
+    return '"' + str(text).replace('\\', '\\\\').replace('"', '\\"') + '"'

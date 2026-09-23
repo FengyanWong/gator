@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, Json } from '../api';
+import { api, Json, OLDER_BACKEND, problemText } from '../api';
 import { WorkingCopy } from './WorkingCopy';
 import { TaskSave } from './TaskSave';
 import { CheckSteps } from './Consistency';
@@ -95,7 +95,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   const browsing = ref.source === 'virtuoso' && !!profileId;
   const nativeProblem = (step: string, e: any) => {
     const gate = e.detail?.gate, outdated = e.status === 404 || e.status === 405;
-    setNativeError({ step, outdated, text: outdated ? 'This backend is older than the page and cannot do this yet: restart it (gator_workbench.cli serve).'
+    setNativeError({ step, outdated, text: outdated ? OLDER_BACKEND
       : gate ? gateText(gate) : e.message });
   };
   const nativeStep = (step: string, call: () => Promise<Json>, done: (answer: Json) => void) => {
@@ -160,9 +160,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     setProfileBusy(what); setProfileMessage(null);
     try { await action(); }
     catch (e: any) {
-      const gate = e.detail?.gate;
-      setProfileMessage({ level: 'error', text: e.status === 404 || e.status === 405 ? 'This backend is older than the page and cannot do this yet: restart it (gator_workbench.cli serve).'
-        : gate ? gateText(gate) : e.message });
+      setProfileMessage({ level: 'error', text: problemText(e, gateText) });
     } finally { setProfileBusy(null); }
   };
   const checkTask = () => profileAction('check', async () => { setTaskCheck(await api.taskCheck(profileId, config)); });

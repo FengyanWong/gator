@@ -22,17 +22,14 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
-import os
 import re
-import signal
-import subprocess
 import sys
 from pathlib import Path
 
 from . import virtuoso_setup
-from .connection import RealBridge, resolve_profile_id, worker_environment
+from .connection import RealBridge, child_error, resolve_profile_id, run_child
 from .paths import repo_root
-from .security import redact
+from .security import skill_string as _q
 
 NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
 COPIED_VIEWS = ('schematic', 'symbol')
@@ -207,11 +204,6 @@ def make_copy(client, *, library, cell, testbench, copy_library, reuse_library, 
 
 
 # ---------------------------------------------------------------------------------- Maestro setup of the copy
-def _q(text):
-    """A Python string as a SKILL string literal."""
-    return '"' + str(text).replace('\\', '\\\\').replace('"', '\\"') + '"'
-
-
 def _alist(options):
     return '`(' + ' '.join(f'({_q(k)} {_q(v)})' for k, v in options.items()) + ')'
 
@@ -517,20 +509,12 @@ def run(profile_id, op, *, args, output, timeout=600.0, command=None):
     """Run one write process; returns its JSON answer. The caller has passed the connection gate."""
     argv = (command or [sys.executable, '-m', 'gator_workbench.bridge_setup']) + ['--profile-id', profile_id, '--op', op,
                                                                                  '--output', str(output)] + list(args)
-    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                               shell=False, env=worker_environment(), cwd=str(repo_root()), start_new_session=True)
-    try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-        process.communicate()
+    finished = run_child(argv, timeout)
+    if finished is None:
         raise TimeoutError('The Virtuoso write did not finish in time; look at the copy before trying again')
-    if process.returncode != 0:
-        lines = [line for line in stderr.strip().splitlines() if line.strip()]
-        raise RuntimeError(redact(lines[-1] if lines else 'the Virtuoso write failed', 600))
+    stdout, stderr, code = finished
+    if code != 0:
+        raise child_error(stderr, 'the Virtuoso write failed', 600)
     return json.loads(stdout.strip().splitlines()[-1])
 
 

@@ -64,7 +64,7 @@ def test_the_hooks_do_not_change_what_the_policy_proposes_and_the_recorded_actio
     directory = ckpt.resolve_checkpoint(layout.run_dir, 'latest')
     meta, weights = model_structure.load_verified(directory)
     actor = graph_view._actor(meta, weights)
-    features, spec = graph_view._schemas(meta['contract'])
+    features, spec = model_structure.schemas(meta['contract'])
     loader = TrajectoryLoader(layout.run_dir)
     row = next(r for r in loader.transition_rows() if r['commit_seq'] == view['step']['evaluation'])
     from analog_optimizer.models.inputs import batch_observations

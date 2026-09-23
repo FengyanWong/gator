@@ -155,6 +155,14 @@ export const saveJson = (name: string, value: Json) => save(name, new Blob([JSON
 export const copy = (text: string) => navigator.clipboard?.writeText(text);
 export const bytes = (n?: number | null) => n == null ? '-' : n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KiB`
   : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MiB` : `${(n / 1073741824).toFixed(2)} GiB`;
+// A backend that does not know a route yet answers 404 / 405: it has to be restarted. A blocked connection gate is said
+// with the panel's `gateText`; anything else in the backend's own words.
+export const OLDER_BACKEND = 'This backend is older than the page and cannot do this yet: restart it (gator_workbench.cli serve).';
+export const problemText = (e: any, gateText?: (gate: Json) => string): string => e.status === 404 || e.status === 405 ? OLDER_BACKEND
+  : e.detail?.gate && gateText ? gateText(e.detail.gate) : e.message;
+// Save task and the working-copy panel: the gate refused a Virtuoso read or write.
+export const virtuosoGateText = (gate: Json) => `Virtuoso cannot be reached (${[...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') || gate.status}). `
+  + 'Bring the link up in the Connection window, then try again.';
 export const num = (v: unknown) => typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toPrecision(6)) : v == null ? '' : String(v);
 
 // ONE way of writing a number in the whole page (review of 2026-09-23: the SI form was written twice, in the corner

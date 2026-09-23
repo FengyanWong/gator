@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import hashlib
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -503,17 +502,20 @@ def launch_worker(layout: RunLayout, *, allow_real=False):
             lock.acquire()
         except RuntimeError:
             raise RunRejected('This run already has an active worker', code='already_running')
-    env = dict(os.environ)
-    env['PYTHONPATH'] = os.pathsep.join(filter(None, [str(repo_root() / 'src'), env.get('PYTHONPATH')]))
-    command = [sys.executable, '-m', 'gator_workbench.worker', '--run-dir', str(layout.run_dir),
-               '--lock-fd', str(lock.fileno())]
-    if allow_real:
-        command.append('--allow-real')
-    log = (layout.logs / 'worker.log').open('ab')
+    return spawn_detached('worker', ['--run-dir', str(layout.run_dir)] + (['--allow-real'] if allow_real else []),
+                          lock, layout.logs / 'worker.log')
+
+
+def spawn_detached(module, args, lock, log_path) -> int:
+    """`python -m gator_workbench.<module> <args> --lock-fd N` in a session of its own, holding `lock`: it is handed over
+    through pass_fds and this process lets go of it without releasing it. Output goes to `log_path`. Returns the pid.
+    Run workers and corner-check workers start this way."""
+    from .connection import worker_environment
+    log = Path(log_path).open('ab')
     try:
-        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                                   cwd=str(repo_root()), env=env, start_new_session=True, close_fds=True,
-                                   pass_fds=(lock.fileno(),))
+        process = subprocess.Popen([sys.executable, '-m', f'gator_workbench.{module}', *args, '--lock-fd', str(lock.fileno())],
+                                   stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, cwd=str(repo_root()),
+                                   env=worker_environment(), start_new_session=True, close_fds=True, pass_fds=(lock.fileno(),))
     except BaseException:
         lock.release()
         raise

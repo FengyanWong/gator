@@ -16,7 +16,6 @@ file, and only when a CLI version writes none is it the last agent message of th
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 import re
 import shutil
@@ -24,7 +23,7 @@ import subprocess
 import tempfile
 
 from ..security import redact
-from .base import AgentError, AgentProvider, AgentRequest, AgentResult, run_cli
+from .base import AgentError, AgentRequest, AgentResult, CliProvider, run_cli
 from .claude_code import AUTH_PATTERNS, MODEL_PATTERNS
 from .live import CodexTranslator
 from .prompts import PROPOSAL_SCHEMA, build_prompt
@@ -38,19 +37,8 @@ def listed(option, help_text) -> bool:
     return re.search(rf'(?<![\w-]){re.escape(option)}(?![\w-])', help_text) is not None
 
 
-class CodexProvider(AgentProvider):
-    name = 'codex'
-
-    def executable(self):
-        if self.settings.cli_path:
-            path = Path(self.settings.cli_path)
-            return str(path) if path.is_file() and os.access(path, os.X_OK) else None
-        return shutil.which('codex')
-
-    def available(self):
-        path = self.executable()
-        return dict(provider=self.name, available=path is not None, executable=path,
-                    reason=None if path else '`codex` is not on the backend process PATH')
+class CodexProvider(CliProvider):
+    name = cli = 'codex'
 
     def help_text(self, executable):
         try:

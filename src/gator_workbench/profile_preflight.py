@@ -20,15 +20,11 @@ its export is still compared, and the deck step says it was left out.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
-import signal
-import subprocess
 import sys
 import traceback
 
-from .connection import worker_environment
-from .paths import repo_root
+from .connection import child_error, require_gate, run_child
 from .security import redact
 from .storage.dataset import utcnow
 
@@ -109,26 +105,16 @@ def preflight(monitor, name, profile_id, *, timeout=300.0, command=None, acknowl
     directory = profiles.profile_dir(name)
     if name not in profiles.list_profiles():
         raise KeyError(name)
-    gate = monitor.gate('write_cellview', profile_id, acknowledge_unknown=acknowledge_unknown)   # its layer set (1-5); nothing is written
-    if not gate['allowed']:
-        error = PermissionError('The connection gate blocked the check')
-        error.gate = gate
-        raise error
+    # the write gate for its layer set (1-5); nothing is written
+    require_gate(monitor, 'write_cellview', profile_id, 'the check', acknowledge_unknown=acknowledge_unknown)
     work_root = directory / 'preflight' / utcnow().strftime('%Y%m%dT%H%M%S')
     work_root.mkdir(parents=True, exist_ok=True)
     argv = (command or [sys.executable, '-m', 'gator_workbench.profile_preflight']) + [
         '--name', name, '--profile-id', profile_id, '--work-root', str(work_root)]
-    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                               shell=False, env=worker_environment(), cwd=str(repo_root()), start_new_session=True)
-    try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-        process.communicate()
+    finished = run_child(argv, timeout)
+    if finished is None:
         raise TimeoutError('The check did not finish in time')
+    stdout, stderr, _ = finished
     for line in reversed((stdout or '').strip().splitlines()):
         try:
             data = json.loads(line)
@@ -137,7 +123,7 @@ def preflight(monitor, name, profile_id, *, timeout=300.0, command=None, acknowl
         if isinstance(data, dict) and data.get('profile_preflight') is True:
             (work_root / 'preflight.json').write_text(json.dumps(data, indent=1))
             return dict(data, work_root=str(work_root))
-    raise RuntimeError(redact((stderr or '').strip().splitlines()[-1] if (stderr or '').strip() else 'the check gave no result', 400))
+    raise child_error(stderr, 'the check gave no result')
 
 
 if __name__ == '__main__':

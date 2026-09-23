@@ -299,25 +299,34 @@ def _binding_problem(name, bound):
     return None
 
 
-def real_backend_blocker(profile_id=None, name=None):
-    """Why real execution is impossible here, or None. With `name`, the per-circuit bindings of that
-    registered real task are checked as well."""
+def _link_problem(profile_id, not_importable):
+    """(why the connection profile cannot reach a real bridge here, or None; the profiles file; the profile's settings).
+    `not_importable`: what to do when the bridge package is missing, completed with where to set it."""
     loaded, settings = _profile_settings(profile_id)
     if not loaded['exists'] or not loaded['profiles']:
         return (f"No bridge connection profile is configured ({loaded['file']}). The backend never guesses hosts, "
-                'libraries, accounts or model paths.')
+                'libraries, accounts or model paths.'), loaded, settings
     if settings is None:
-        return f'Connection profile {profile_id!r} is not configured.'
+        return f'Connection profile {profile_id!r} is not configured.', loaded, settings
     wrong_kind = _not_a_virtuoso_connection(profile_id, settings)
     if wrong_kind:
-        return wrong_kind
+        return wrong_kind, loaded, settings
     if settings.get('bridge_site_packages'):
         import site
         site.addsitedir(str(Path(settings['bridge_site_packages']).resolve()))
     if not bridge_importable():
-        return (f'virtuoso_bridge is not importable by the backend interpreter ({sys.executable}). It is installed '
-                'only in another virtualenv. Install virtuoso-bridge 0.8.0 into this interpreter, or set '
-                '"bridge_site_packages" for the profile in configs/local/workbench/bridge_connection.json.')
+        return (f'virtuoso_bridge is not importable by the backend interpreter ({sys.executable}). {not_importable} for the '
+                'profile in configs/local/workbench/bridge_connection.json.'), loaded, settings
+    return None, loaded, settings
+
+
+def real_backend_blocker(profile_id=None, name=None):
+    """Why real execution is impossible here, or None. With `name`, the per-circuit bindings of that
+    registered real task are checked as well."""
+    problem, loaded, settings = _link_problem(profile_id, 'It is installed only in another virtualenv. Install virtuoso-bridge '
+                                              '0.8.0 into this interpreter, or set "bridge_site_packages"')
+    if problem:
+        return problem
     bound = real_bindings(settings, name)
     missing = [k for k in ('env_file', 'library', 'creation_receipt', 'model_file', 'reference_measurements')
                if not bound.get(k)]
@@ -412,21 +421,9 @@ def _native_draft_runtime(imported, circuit):
 def generated_backend_blocker(profile_id=None):
     """Why a GENERATED profile cannot execute here, or None. Its receipt and (later) its baseline live in its own
     folder, so of the connection profile it needs only the link and the model file."""
-    loaded, settings = _profile_settings(profile_id)
-    if not loaded['exists'] or not loaded['profiles']:
-        return (f"No bridge connection profile is configured ({loaded['file']}). The backend never guesses hosts, "
-                'libraries, accounts or model paths.')
-    if settings is None:
-        return f'Connection profile {profile_id!r} is not configured.'
-    wrong_kind = _not_a_virtuoso_connection(profile_id, settings)
-    if wrong_kind:
-        return wrong_kind
-    if settings.get('bridge_site_packages'):
-        import site
-        site.addsitedir(str(Path(settings['bridge_site_packages']).resolve()))
-    if not bridge_importable():
-        return (f'virtuoso_bridge is not importable by the backend interpreter ({sys.executable}). Set '
-                '"bridge_site_packages" for the profile in configs/local/workbench/bridge_connection.json.')
+    problem, _, settings = _link_problem(profile_id, 'Set "bridge_site_packages"')
+    if problem:
+        return problem
     missing = [k for k in ('env_file', 'model_file') if not settings.get(k)]
     return f'The connection profile lacks {missing}, which a real run needs.' if missing else None
 

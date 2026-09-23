@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { usePopupWindow } from './popupWindow';
+import { BLOCKED, usePopupWindow } from './popupWindow';
 import { api, Json } from '../api';
 
 // Load PDK (user request 2026-09-21; backend src/gator_workbench/pdk.py). The RL network is BUILT from a list of the
@@ -48,7 +48,7 @@ export function ComponentList({ value, onChoose, profileId, circuitPdk }: { valu
         : chosen ? <>Knows all {chosen.summary.devices} components of {chosen.pdk_id}: {byFamily(chosen.summary)}. Other parts keep their standard kinds.</>
         : null}</p>
       {missing && <p className="warn">PDK {value.slice(4)} is not loaded here. Load it with "Load PDK...", or choose another list.</p>}
-      {blocked && <p className="error">The browser blocked the new window. Allow pop-ups for this page, then press the button again.</p>}
+      {blocked && <p className="error">{BLOCKED}</p>}
       {error && <p className="warn">{error}</p>}
       <details className="component-help"><summary>What the component list changes</summary>
         <p className="hint">The network turns every part of the circuit into a node with a kind, and every pin into a link with a role (drain,

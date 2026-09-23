@@ -49,6 +49,11 @@ from ..storage.tables import TABLES, data_dictionary
 from ..validation import validate
 
 
+PROFILE_ID = r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$'        # a connection profile: an identifier, never a host, port or command
+CADENCE_NAME = r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$'      # a Virtuoso library or cell
+TASK_NAME = r'^[a-z][a-z0-9_]{1,39}$'                  # a saved task: real:<name>
+
+
 class Body(BaseModel):
     model_config = ConfigDict(extra='forbid')          # hosts, ports, commands... simply do not exist as fields
 
@@ -101,13 +106,13 @@ class PathBody(Body):
 
 
 class ConnectionBody(Body):
-    profile_id: str = Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
+    profile_id: str = Field(pattern=PROFILE_ID)
     scope: str = Field('interactive', pattern='^(cheap|interactive|full)$')
     trigger: str = Field('user', pattern='^(user|auto)$')      # auto = profile change in the UI: cheap layers only
 
 
 class ConnectBody(Body):
-    profile_id: str = Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')      # an identifier: never a host, port or command
+    profile_id: str = Field(pattern=PROFILE_ID)      # an identifier: never a host, port or command
 
 
 class CreateConnectionBody(ConnectBody):
@@ -128,22 +133,22 @@ class NetworkResetBody(Body):
 
 
 class PdkLoadBody(Body):
-    profile_id: str = Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
+    profile_id: str = Field(pattern=PROFILE_ID)
     technology_library: str | None = Field(None, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$')   # empty = the connection's design library's
     model_file: str | None = Field(None, max_length=1000)                                        # empty = the connection's model file
 
 
 class NativeReadBody(Body):
-    profile_id: str = Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
+    profile_id: str = Field(pattern=PROFILE_ID)
     library: str | None = None
     cell: str | None = None
     testbench: str | None = None        # import only: the cell whose netlist is exported (the testbench around `cell`)
 
 
 class CopyBody(Body):
-    profile_id: str | None = Field(None, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
-    library: str = Field(pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
-    cell: str = Field(pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
+    profile_id: str | None = Field(None, pattern=PROFILE_ID)
+    library: str = Field(pattern=CADENCE_NAME)
+    cell: str = Field(pattern=CADENCE_NAME)
 
 
 class SetupBody(CopyBody):
@@ -151,21 +156,21 @@ class SetupBody(CopyBody):
 
 
 class TaskSaveBody(Body):
-    profile_id: str | None = Field(None, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
-    name: str = Field(pattern=r'^[a-z][a-z0-9_]{1,39}$')
+    profile_id: str | None = Field(None, pattern=PROFILE_ID)
+    name: str = Field(pattern=TASK_NAME)
     config: dict
-    library: str | None = Field(None, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
-    cell: str | None = Field(None, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
-    task: str | None = Field(None, pattern=r'^[a-z][a-z0-9_]{1,39}$')     # the open task: updated, or the source of Save as
+    library: str | None = Field(None, pattern=CADENCE_NAME)
+    cell: str | None = Field(None, pattern=CADENCE_NAME)
+    task: str | None = Field(None, pattern=TASK_NAME)     # the open task: updated, or the source of Save as
     as_new: bool = False
     extras: dict | None = None          # what the task file holds beside the rows: analyses, variables, bindings, frequency, notes
 
 
 class TaskFileBody(Body):
     config: dict
-    library: str | None = Field(None, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
-    cell: str | None = Field(None, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
-    task: str | None = Field(None, pattern=r'^[a-z][a-z0-9_]{1,39}$')
+    library: str | None = Field(None, pattern=CADENCE_NAME)
+    cell: str | None = Field(None, pattern=CADENCE_NAME)
+    task: str | None = Field(None, pattern=TASK_NAME)
     extras: dict | None = None
 
 
@@ -174,12 +179,12 @@ class TaskFileTextBody(Body):
 
 
 class TaskCheckBody(Body):
-    profile_id: str | None = Field(None, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
+    profile_id: str | None = Field(None, pattern=PROFILE_ID)
     config: dict
 
 
 class ProfileActionBody(Body):
-    name: str = Field(pattern=r'^[a-z][a-z0-9_]{1,39}$')
+    name: str = Field(pattern=TASK_NAME)
     run_dir: str | None = None
 
 
@@ -273,6 +278,16 @@ def attachment(name: str) -> dict:
     encoded = quote(name)
     return {'Content-Disposition': f'attachment; filename="{name}"' if encoded == name
             else f"attachment; filename*=utf-8''{encoded}"}
+
+
+def zip_download(members, name: str):
+    """(file, name inside the archive) pairs as one zip download, built in memory."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+        for item, inside in members:
+            archive.write(item, inside)
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type='application/zip', headers=attachment(name))
 
 
 def file_snapshot(path: Path, chunk_size: int = 1 << 20):
@@ -396,13 +411,26 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         except Exception:                      # a diagnostic must never prevent the backend from starting
             pass
     if auto_check_on_start:
-        import threading
         app.state.auto_check_thread = threading.Thread(target=auto_check, name='gator-connection-auto-check', daemon=True)
         app.state.auto_check_thread.start()
 
     # ------------------------------------------------------------------ helpers
     def fail(status, message, **extra):
         raise HTTPException(status, detail=dict(message=redact(str(message), 2000), **extra))
+
+    def _bridge_call(action, *refusals):
+        """A request that goes through the connection gate to Virtuoso. A blocked gate is a 409 carrying the gate; each
+        (exception classes, code) of `refusals`, in order, a 409 with that code; a wrong name or value a 422; anything
+        else a 502."""
+        try:
+            return action()
+        except PermissionError as exc:
+            raise HTTPException(409, detail=dict(message=str(exc), gate=getattr(exc, 'gate', None)))
+        except Exception as exc:
+            for kinds, code in refusals:
+                if isinstance(exc, kinds):
+                    fail(409, exc, code=code)
+            fail(422 if isinstance(exc, (KeyError, ValueError)) else 502, exc)
 
     def parse_config(raw) -> schema.WorkbenchConfig:
         try:
@@ -523,18 +551,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     def load_pdk(body: PdkLoadBody):
         """Explicit click: read one technology library's own description and its Spectre model files through the
         connection (read-only, no simulation), and store what the network needs. PDK files are not kept."""
-        from .. import pdk
-        try:
-            return bridge_read.read(monitor, body.profile_id, 'pdk', library=body.technology_library or None,
-                                    model_file=body.model_file or None)
-        except PermissionError as exc:
-            raise HTTPException(409, detail=dict(message=str(exc), gate=getattr(exc, 'gate', None)))
-        except pdk.PdkError as exc:
-            fail(422, exc)
-        except (KeyError, ValueError) as exc:
-            fail(422, exc)
-        except Exception as exc:
-            fail(502, exc)
+        return _bridge_call(lambda: bridge_read.read(monitor, body.profile_id, 'pdk', library=body.technology_library or None,
+                                                     model_file=body.model_file or None))          # a PdkError is a ValueError: 422
 
     @app.get('/api/tasks')
     def get_tasks():
@@ -633,17 +651,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             fail(409, exc, code='delete_refused')
 
     # ------------------------------------------------------------------ working copy + its Maestro setup
-    def _virtuoso_write(action):
-        try:
-            return action()
-        except PermissionError as exc:
-            raise HTTPException(409, detail=dict(message=str(exc), gate=getattr(exc, 'gate', None)))
-        except (working_copy.CopyError, virtuoso_setup.SetupError) as exc:
-            fail(409, exc, code='refused')
-        except (KeyError, ValueError) as exc:
-            fail(422, exc)
-        except Exception as exc:
-            fail(502, exc)
+    COPY_REFUSED = ((working_copy.CopyError, virtuoso_setup.SetupError), 'refused')
 
     @app.post('/api/virtuoso/copy')
     def virtuoso_copy(body: CopyBody):
@@ -652,7 +660,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         the user's cells and checks that: the copy netlists like the original and the originals read back unchanged."""
         if not body.profile_id:
             fail(422, 'A connection profile is required')
-        return _virtuoso_write(lambda: working_copy.make(monitor, body.profile_id, body.library, body.cell))
+        return _bridge_call(lambda: working_copy.make(monitor, body.profile_id, body.library, body.cell), COPY_REFUSED)
 
     @app.post('/api/virtuoso/setup/read')
     def virtuoso_setup_read(body: SetupBody):
@@ -671,7 +679,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                                                 initial_conditions=found.get('initial_conditions'))
                 found['editor_differences'] = virtuoso_setup.differences(ours, found)
             return found
-        return _virtuoso_write(read)
+        return _bridge_call(read, COPY_REFUSED)
 
     # ------------------------------------------------------------------ saved tasks: "Save task", "Save as", the task file
     @app.post('/api/virtuoso/task/save')
@@ -683,20 +691,10 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         if not body.profile_id:
             fail(422, 'A connection profile is required')
         config = parse_config(body.config)
-        try:
-            return profiles.save_task(monitor, body.profile_id, body.name, config, library=body.library, cell=body.cell,
-                                      task=body.task, as_new=body.as_new, extras=body.extras,
-                                      run_rows=runs.list_runs(roots, include_mock=False))
-        except profiles.NeedsFrequency as exc:
-            fail(409, exc, code='needs_expected_frequency')
-        except PermissionError as exc:
-            raise HTTPException(409, detail=dict(message=str(exc), gate=getattr(exc, 'gate', None)))
-        except (profiles.ProfileError, working_copy.CopyError, virtuoso_setup.SetupError) as exc:
-            fail(409, exc, code='refused')
-        except (KeyError, ValueError) as exc:
-            fail(422, exc)
-        except Exception as exc:
-            fail(502, exc)
+        return _bridge_call(lambda: profiles.save_task(monitor, body.profile_id, body.name, config, library=body.library, cell=body.cell,
+                                                       task=body.task, as_new=body.as_new, extras=body.extras,
+                                                       run_rows=runs.list_runs(roots, include_mock=False)),
+                            (profiles.NeedsFrequency, 'needs_expected_frequency'), ((profiles.ProfileError,), 'refused'), COPY_REFUSED)
 
     @app.post('/api/virtuoso/task/file')
     def virtuoso_task_file(body: TaskFileBody):
@@ -741,15 +739,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         return dict(rows=rows, extras=extras, problems=problems, ok=not problems)
 
     def _native(body, op):
-        try:
-            return bridge_read.read(monitor, body.profile_id, op, library=body.library, cell=body.cell,
-                                    testbench=body.testbench if op == 'import_cell' else None)
-        except PermissionError as exc:
-            raise HTTPException(409, detail=dict(message=str(exc), gate=getattr(exc, 'gate', None)))
-        except (KeyError, ValueError) as exc:
-            fail(422, exc)
-        except Exception as exc:
-            fail(502, exc)
+        return _bridge_call(lambda: bridge_read.read(monitor, body.profile_id, op, library=body.library, cell=body.cell,
+                                                     testbench=body.testbench if op == 'import_cell' else None))
 
     # ------------------------------------------------------------------ configuration
     @app.post('/api/config/validate')
@@ -790,7 +781,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         return connection.public_profiles()
 
     @app.get('/api/connection/status')
-    def connection_status(profile_id: str = Query(pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')):
+    def connection_status(profile_id: str = Query(pattern=PROFILE_ID)):
         return bridge_connect.describe(monitor.status(profile_id))
 
     @app.post('/api/connection/check')
@@ -1107,16 +1098,10 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     def export_package(body: ExportBody):
         """Data-only package: JSON, Parquet, CSV, JSONL, netlists. No waveforms, work files or models."""
         path = run_path(body.run_dir)
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
-            for item in sorted(p for p in path.rglob('*') if p.is_file()):
-                relative = item.relative_to(path).as_posix()
-                if relative.split('/')[0] in ('work', 'control', 'waveforms', 'checkpoints') or '/_quarantine/' in relative:
-                    continue
-                archive.write(item, relative)
-        buffer.seek(0)
-        return StreamingResponse(buffer, media_type='application/zip',
-                                 headers={'Content-Disposition': f'attachment; filename="{path.name}__data.zip"'})
+        members = ((item, item.relative_to(path).as_posix()) for item in sorted(p for p in path.rglob('*') if p.is_file()))
+        return zip_download([(item, relative) for item, relative in members if relative.split('/')[0] not in
+                             ('work', 'control', 'waveforms', 'checkpoints') and '/_quarantine/' not in relative],
+                            f'{path.name}__data.zip')
 
     @app.post('/api/aggregates/export')
     def export_aggregates(body: ExportBody):
@@ -1133,12 +1118,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         members = [m for m in members if m.is_file() and not m.is_symlink()]
         if not members:
             fail(404, 'No research CSVs have been exported for this experiment yet')
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
-            for item in members:
-                archive.write(item, item.name)
-        buffer.seek(0)
-        return StreamingResponse(buffer, media_type='application/zip', headers=attachment(f'{experiment.name}__aggregates.zip'))
+        return zip_download([(item, item.name) for item in members], f'{experiment.name}__aggregates.zip')
 
     # ------------------------------------------------------------------ agent assistance
     @app.get('/api/agent/diagnostics')
@@ -1312,12 +1292,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             session = _open_tools(request, parse_config(body.config), http)
 
             def finish(result):
-                proposal = proposals.create(request, result, circuit_hash=circuit_hash)
-                if request.kind == 'virtuoso_setup':
-                    check_setup(request, proposal)
-                proposal.update(_tool_outcome(session))
-                proposal['readiness_after'] = readiness_after(request, proposal)
-                check_suggestions(request, proposal)
+                proposal = _proposal(request, result, circuit_hash, session)
                 _audit(proposal)
                 return proposal
 
@@ -1335,6 +1310,17 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             # "configuration_unchanged" read as "nothing happened" (review of 2026-09-23): the tables are unchanged, the
             # copy in Virtuoso is not, and the answer now says which tools ran and whether one of them wrote.
             raise HTTPException(409, detail=dict(exc.as_dict(), configuration_unchanged=True, **_tool_outcome(session)))
+
+    def _proposal(request, result, circuit_hash, session=None):
+        """A reply - the agent's, or one imported by hand (no tools, so no `tool_calls`) - as a proposal: a Virtuoso setup
+        checked for writability, what its tools did, whether the run would start after it, its suggestions tried."""
+        proposal = proposals.create(request, result, circuit_hash=circuit_hash)
+        if request.kind == 'virtuoso_setup':
+            check_setup(request, proposal)
+        proposal.update(_tool_outcome(session))
+        proposal['readiness_after'] = readiness_after(request, proposal)
+        check_suggestions(request, proposal)
+        return proposal
 
     # ------------------------------------------------------------------ the agent's own tools (status record 7.68)
     def _open_tools(request, config, http):
@@ -1371,17 +1357,20 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     def settings_provider_name(provider) -> str:
         return getattr(provider, 'name', None) or type(provider).__name__
 
-    def _tool_record(entry):
+    def _log_line(file, note, /, **entry):          # positional-only: an entry may carry any key
+        """One line of a local agent log. A log that cannot be written never fails the request or its tool call."""
         from ..paths import local_settings_dir
         from ..storage.atomic import JsonlAppender
         try:
-            log = JsonlAppender(local_settings_dir() / 'agent_tool_calls.jsonl')
-            log.append(dict(time_utc=utcnow().isoformat(), **entry,
-                            note="One workbench tool call of an agent request: a read, or a Maestro setup written into a "
-                                 "working copy. Never the user's own cell, never a simulation."))
+            log = JsonlAppender(local_settings_dir() / file)
+            log.append(dict(time_utc=utcnow().isoformat(), **entry, note=note))
             log.close()
         except OSError:
             pass
+
+    def _tool_record(entry):
+        _log_line('agent_tool_calls.jsonl', "One workbench tool call of an agent request: a read, or a Maestro setup written "
+                                            "into a working copy. Never the user's own cell, never a simulation.", **entry)
 
     @app.post('/api/agent/tools')
     def agent_tools(body: dict):
@@ -1455,13 +1444,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     def import_result(body: ImportBody):
         try:
             request, circuit_hash = _request(body)
-            result = agents.DisabledProvider().import_result(request, body.result)
-            proposal = proposals.create(request, result, circuit_hash=circuit_hash)
-            if request.kind == 'virtuoso_setup':
-                check_setup(request, proposal)
-            proposal['readiness_after'] = readiness_after(request, proposal)
-            check_suggestions(request, proposal)
-            return proposal
+            return _proposal(request, agents.DisabledProvider().import_result(request, body.result), circuit_hash)
         except AgentError as exc:
             raise HTTPException(409, detail=dict(exc.as_dict(), configuration_unchanged=True))
 
@@ -1530,16 +1513,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             fail(404, 'Unknown proposal')
 
     def _audit(proposal):
-        from ..paths import local_settings_dir
-        from ..storage.atomic import JsonlAppender
-        try:
-            log = JsonlAppender(local_settings_dir() / 'agent_audit.jsonl')
-            log.append(dict(time_utc=utcnow().isoformat(), proposal_id=proposal['proposal_id'], provider=proposal['provider'],
-                            origin=proposal['origin'], kind=proposal['kind'], audit=proposal['audit'],
-                            note='Agent request audit only. Never an RL run id, checkpoint or simulation budget.'))
-            log.close()
-        except OSError:
-            pass
+        _log_line('agent_audit.jsonl', 'Agent request audit only. Never an RL run id, checkpoint or simulation budget.',
+                  **{key: proposal[key] for key in ('proposal_id', 'provider', 'origin', 'kind', 'audit')})
 
     @app.exception_handler(Exception)
     async def unexpected(request, exc):

@@ -1,12 +1,12 @@
-// Browser check of the agent's whole Virtuoso setup (request kind `virtuoso_setup`): "Ask the agent to set up" in the note of a
-// cell read from Virtuoso, the proposal box showing the Maestro setup of the working copy, and "Approve, apply and write the
-// copy". Same approach as agent_tab_check.mjs / working_copy_check.mjs: a throwaway headless Edge over the DevTools protocol
+// Browser check of the agent's whole Virtuoso setup (request kind `virtuoso_setup`): "Ask the agent to set up" in the Virtuoso
+// WINDOW (the cell read from Virtuoso lives there since 2026-09-23), the proposal box showing the Maestro setup of the working
+// copy, and "Approve, apply and write the copy". Same approach as agent_tab_check.mjs / working_copy_check.mjs: a throwaway headless Edge over the DevTools protocol
 // against a workbench page (GATOR_WORKBENCH_URL for a preview of a temporary build). /api/agent/propose|approve|apply,
 // /api/circuit/load and /api/virtuoso/* are answered with canned FIXTURES - no agent CLI, no Virtuoso; every other request
 // that is not a read is refused here, so nothing is saved or written on the backend it runs against. What it pins (user
 // request 2026-09-22, "go on part 3"):
-//   - the button waits for the working copy, then opens the Agent tab with the request written out (kind virtuoso_setup) and
-//     sends nothing by itself;
+//   - the button waits until the cell is declared the one the flow works in (the copy the user made), then opens the Agent
+//     tab of the workbench with the request written out (kind virtuoso_setup) and sends nothing by itself;
 //   - the proposal shows its rows and the Maestro setup (analyses, variables, bindings) with where it will be written;
 //   - approving says what happened in Virtuoso: written and read back, or rows applied and the copy not reachable;
 //   - what the agent wrote into the copy wins over the same parts a task file set on the page earlier: Save task sends
@@ -24,8 +24,9 @@ const consoleErrors = [];
 
 const LIB = 'GPDK045_RINGOSC', CELL = 'ring_osc_3stage', TB = 'tb_ring_osc_3stage', COPY = 'GPDK045_RINGOSC_GATOR';
 let withCopy = false, applyOutcome = 'written';
+// The cell the user declared as their copy (2026-09-23): the record names the cell itself. COPY is what the agent's answer names.
 const draft = () => ({ loaded: true, task_key: `virtuoso:${LIB}/${CELL}`, mock: false, native_draft: true, complete: true, diagnostics: [], profile_task: null, profile_task_generated: null,
-  working_copy: withCopy ? { verified: true, problems: [], copy: { library: COPY, cell: CELL, testbench: TB }, original: { library: LIB, cell: CELL, testbench: TB } } : null,
+  working_copy: withCopy ? { declared: true, verified: true, problems: [], created_utc: '2026-09-23T10:00:00+00:00', copy: { library: LIB, cell: CELL, testbench: TB, path: null }, original: { library: LIB, cell: CELL, testbench: TB } } : null,
   circuit: { library: LIB, cell: CELL, native_draft: true, testbench_cell: TB }, hierarchy: { XU1: { MN1: {} }, V0: {} }, analysis_context: null,
   evaluation_backend: null, max_concurrency: 1, testbench_probes: null,
   summary: { device_count: 2, unknown_devices: [], devices: [{ instance_path: 'XU1/MN1', kind: 'nmos', parameters: { w: { value: 1e-6 } } }] }, notes: [] });
@@ -73,8 +74,18 @@ try {
     refused.push(`${request.method} ${pathname}`);
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${pathname} is not expected` } });
   };
-  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Circuit source'))`;
-  const ASK = `[...(${PANEL}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === 'Ask the agent to set up')`;
+  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
+  const LAUNCH = `${PANEL}?.querySelector('button.virtuoso-button')`;
+  // The cell's note is in the Virtuoso window: a second page, found by its title, with a DevTools session of its own.
+  const WIN = `document.querySelector('.virtuoso-window')`;
+  const ASK = `[...(${WIN}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === 'Ask the agent to set up')`;
+  let far = null;
+  const openWindow = async () => {
+    await evaluate(`${LAUNCH}.click()`, true);
+    far = await browser.attach(await browser.window('GATOR - Virtuoso cell', { present: true, except: page.target.id }), { errors: consoleErrors, prefix: 'window: ' });
+    await far.send('Emulation.setDeviceMetricsOverride', { width: 720, height: 980, deviceScaleFactor: 1, mobile: false });
+    for (let i = 0; i < 50 && !(await far.evaluate(`!!(${WIN})`)); i++) await sleep(100);
+  };
   const BOX = `document.querySelector('.compose-main textarea')`;
   const stored = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')`);
   const SAVE_BUTTON = text => `[...document.querySelectorAll('.editors .tabs .task-save button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
@@ -102,19 +113,27 @@ try {
   await evaluate(`localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify({ ...start,
     circuit: { ...start.circuit, source: 'virtuoso', task_id: null, library: LIB, cell: CELL, view: 'schematic', testbench_cell: TB, pdk_id: 'gpdk045' }, measurements: [], targets: [] }))})`);
   await send('Page.reload');
-  for (let i = 0; i < 100 && !(await evaluate(`!!(${ASK})`)); i++) await sleep(100);
+  for (let i = 0; i < 100 && !(await evaluate(`!!(${LAUNCH})`)); i++) await sleep(100);
   await sleep(1200);
-  if (!(await evaluate(`!!(${ASK})`))) console.log('DEBUG panel: ' + (await evaluate(`${PANEL}?.textContent.slice(0, 900) ?? 'no panel'`))
-    + '\nDEBUG stored circuit: ' + JSON.stringify((await stored())?.circuit) + '\nDEBUG errors: ' + consoleErrors.join(' | ').slice(0, 1500)
-    + '\nDEBUG buttons: ' + (await evaluate(`[...(${PANEL}?.querySelectorAll('button') ?? [])].map(b => JSON.stringify(b.textContent)).join(' ')`)));
-  check('without a working copy the button waits and says why', await evaluate(`${ASK}.disabled && ${ASK}.title.includes('Make the working copy first')`));
+  await openWindow();
+  for (let i = 0; i < 100 && !(await far.evaluate(`!!(${ASK})`)); i++) await sleep(100);
+  if (!(await far.evaluate(`!!(${ASK})`))) console.log('DEBUG window: ' + (await far.evaluate(`${WIN}?.textContent.slice(0, 900) ?? 'no window'`))
+    + '\nDEBUG stored circuit: ' + JSON.stringify((await stored())?.circuit) + '\nDEBUG errors: ' + consoleErrors.join(' | ').slice(0, 1500));
+  check('the cell\'s note is in the Virtuoso window, not in the column', await far.evaluate(`!!(${ASK})`) && !(await evaluate(`[...${PANEL}.querySelectorAll('button')].some(b => b.textContent.trim() === 'Ask the agent to set up')`)));
+  check('until the cell is declared a copy the button waits and says why', await far.evaluate(`${ASK}.disabled && ${ASK}.title.includes('confirm that it is a copy you made')`));
+  check('and the window says how the cell becomes that: Read the cell again', (await far.evaluate(`${WIN}.textContent`)).includes('Not yet the cell the task flow works in')
+    && !(await far.evaluate(`[...${WIN}.querySelectorAll('button')].some(b => b.textContent.trim() === 'Make a working copy')`)));
   withCopy = true;
   await send('Page.reload');
-  for (let i = 0; i < 100 && !(await evaluate(`!!(${ASK}) && !${ASK}.disabled`)); i++) await sleep(100);
+  for (let i = 0; i < 100 && !(await evaluate(`!!(${LAUNCH})`)); i++) await sleep(100);
   await sleep(800);
-  check('with the working copy it can be pressed; nothing was asked of the agent on load', !(await evaluate(`${ASK}.disabled`)) && !calls.some(c => c.path.startsWith('/api/agent/')));
+  await openWindow();
+  for (let i = 0; i < 100 && !(await far.evaluate(`!!(${ASK}) && !${ASK}.disabled`)); i++) await sleep(100);
+  await sleep(800);
+  check('with the cell declared it can be pressed; nothing was asked of the agent on load', !(await far.evaluate(`${ASK}.disabled`)) && !calls.some(c => c.path.startsWith('/api/agent/')));
+  check('the window says the cell is worked in directly', (await far.evaluate(`${WIN}.textContent`)).includes(`Working in ${LIB}/${TB} directly: you declared it a copy you made`));
   check('a task file applied on the page sets analyses for the next Save task', (await applyTaskFile()).includes('Applied'));
-  await evaluate(`${ASK}.click()`); await sleep(900);
+  await far.evaluate(`${ASK}.click()`, true); await sleep(900);
   const box = await evaluate(`${BOX}?.value ?? ''`);
   check('it opens the Agent tab with the request written out, sending nothing', box.includes('set it up for optimization in its working copy') && !calls.some(c => c.path === '/api/agent/propose'), box.slice(0, 90));
   check('the request kind is virtuoso_setup', (await evaluate(`[...document.querySelectorAll('.compose-main select')].map(s => s.value).includes('virtuoso_setup')`)));
@@ -127,7 +146,7 @@ try {
   check('Enter sends one virtuoso_setup request with the words added', sent?.kind === 'virtuoso_setup' && sent.prompt.includes('1.1 GHz'), JSON.stringify(sent ?? {}).slice(0, 120));
   const shown = await evaluate(`document.querySelector('.setup-proposal')?.textContent ?? ''`);
   check('the proposal shows the Maestro setup and where it goes', shown.includes(`Maestro setup of the working copy ${COPY}/${TB}`) && shown.includes('analysis tran') && shown.includes('stop=50n')
-    && shown.includes('variable VSUP') && shown.includes('V0.vdc in tb_ring_osc_3stage') && shown.includes('not into your cell'), shown.slice(0, 200));
+    && shown.includes('variable VSUP') && shown.includes('V0.vdc in tb_ring_osc_3stage') && shown.includes('the cell you read as your copy'), shown.slice(0, 200));
   check('its button says it writes the copy', await evaluate(`[...document.querySelectorAll('.confirm button')].some(b => b.textContent.trim() === 'Approve, apply and write the copy')`));
   await page.shot(path.join(out, 'agent-setup-1-proposal.png'));
   await evaluate(`[...document.querySelectorAll('.confirm button')].find(b => b.textContent.trim() === 'Approve, apply and write the copy').click()`); await sleep(1200);

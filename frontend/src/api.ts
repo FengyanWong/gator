@@ -67,11 +67,13 @@ export const api = {
   loadCircuit: (circuit: Json) => call('POST', '/api/circuit/load', { circuit }),
   nativeLibraries: (profile_id: string) => call('POST', '/api/virtuoso/libraries', { profile_id }),
   nativeCells: (profile_id: string, library: string) => call('POST', '/api/virtuoso/cells', { profile_id, library }),
-  nativeImport: (profile_id: string, library: string, cell: string, testbench: string | null) => call('POST', '/api/virtuoso/import', { profile_id, library, cell, testbench }),
+  // work_here: the page asked whether the cell is a copy the user made and they said yes - the cell then becomes the one the task
+  // flow works in (sent only then, so an older backend still reads a cell).
+  nativeImport: (profile_id: string, library: string, cell: string, testbench: string | null, work_here = false) =>
+    call('POST', '/api/virtuoso/import', { profile_id, library, cell, testbench, ...(work_here ? { work_here: true } : {}) }),
   profileReference: (name: string) => call('POST', '/api/virtuoso/profile/reference', { name }),
   deleteProfile: (name: string) => call('POST', '/api/virtuoso/profile/delete', { name }),
   nativeRead: (profile_id: string, library: string, cell: string) => call('POST', '/api/virtuoso/read', { profile_id, library, cell }),
-  workingCopy: (profile_id: string, library: string, cell: string) => call('POST', '/api/virtuoso/copy', { profile_id, library, cell }),
   setupRead: (profile_id: string, library: string, cell: string, config: Json | null) => call('POST', '/api/virtuoso/setup/read', { profile_id, library, cell, config }),
   taskSave: (body: Json) => call('POST', '/api/virtuoso/task/save', body),
   taskFile: (body: Json) => call('POST', '/api/virtuoso/task/file', body),
@@ -160,7 +162,7 @@ export const bytes = (n?: number | null) => n == null ? '-' : n < 1024 ? `${n} B
 export const OLDER_BACKEND = 'This backend is older than the page and cannot do this yet: restart it (gator_workbench.cli serve).';
 export const problemText = (e: any, gateText?: (gate: Json) => string): string => e.status === 404 || e.status === 405 ? OLDER_BACKEND
   : e.detail?.gate && gateText ? gateText(e.detail.gate) : e.message;
-// Save task and the working-copy panel: the gate refused a Virtuoso read or write.
+// Save task and the working-cell panel: the gate refused a Virtuoso read or write.
 export const virtuosoGateText = (gate: Json) => `Virtuoso cannot be reached (${[...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') || gate.status}). `
   + 'Bring the link up in the Connection window, then try again.';
 export const num = (v: unknown) => typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toPrecision(6)) : v == null ? '' : String(v);

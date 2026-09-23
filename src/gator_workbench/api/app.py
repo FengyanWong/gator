@@ -143,6 +143,7 @@ class NativeReadBody(Body):
     library: str | None = None
     cell: str | None = None
     testbench: str | None = None        # import only: the cell whose netlist is exported (the testbench around `cell`)
+    work_here: bool = False             # import only: the user said this cell is a copy they made - the task flow works in it (working_copy.declare)
 
 
 class CopyBody(Body):
@@ -623,8 +624,19 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     def native_import(body: NativeReadBody):
         """Explicit click: read a cell INTO the workbench - Virtuoso's netlist export of the testbench (or of the
         cell) plus the parameter readback, kept locally (`native_cells`). Gated and read-only; zero cost. The cell
-        can then be shown, edited against, validated and summarized for the agent. It cannot run: no profile."""
-        return _native(body, 'import_cell')
+        can then be shown, edited against, validated and summarized for the agent. It cannot run: no profile.
+        `work_here` (2026-09-23): the page asked whether the cell is a copy the user made and they said yes - the cell
+        that was read becomes the task flow's working copy (working_copy.declare, no further contact with Virtuoso;
+        the workbench makes no copy of its own any more); the answer then carries the record."""
+        if body.work_here and not body.testbench:               # said before any export: the declaration would refuse anyway
+            fail(409, 'Choose the cell\'s Testbench cell first: the task simulates the testbench and keeps its Maestro setup there.', code='refused')
+        imported = _native(body, 'import_cell')
+        if body.work_here:
+            try:
+                imported = dict(imported, working_copy=working_copy.declare(body.profile_id, body.library, body.cell))
+            except working_copy.CopyError as exc:
+                fail(409, exc, code='refused')
+        return imported
 
     @app.post('/api/virtuoso/profile/reference')
     def native_profile_reference(body: ProfileActionBody):
@@ -655,12 +667,12 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
 
     @app.post('/api/virtuoso/copy')
     def virtuoso_copy(body: CopyBody):
-        """Explicit click: copy the cell that was read (with its testbench) into the workbench's own library
-        `<library>_GATOR` - the first write into Virtuoso. Gated, takes the session lock, backs up cds.lib, never touches
-        the user's cells and checks that: the copy netlists like the original and the originals read back unchanged."""
-        if not body.profile_id:
-            fail(422, 'A connection profile is required')
-        return _bridge_call(lambda: working_copy.make(monitor, body.profile_id, body.library, body.cell), COPY_REFUSED)
+        """Refused since 2026-09-23 (user request): the workbench makes no copy of a cell any more. The user copies the
+        cell and its testbench in Virtuoso and reads the copy (`/api/virtuoso/import` with `work_here`: the page asks
+        whether it is a copy they made). `working_copy.make` stays for Save as through the API and for the tests."""
+        fail(409, f'The workbench no longer makes copies of your cells ({body.library}/{body.cell} was not copied): copy the cell '
+                  'and its testbench in Virtuoso yourself, then read the copy in the Virtuoso window - it asks whether the cell '
+                  'is a copy you made and works in it.', code='copies_not_made')
 
     @app.post('/api/virtuoso/setup/read')
     def virtuoso_setup_read(body: SetupBody):
@@ -1259,12 +1271,14 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                 target = _setup_target(config)
             except working_copy.CopyError as exc:
                 raise AgentError('invalid_request', str(exc))
-            copy = dict(copy=target['copy'], cell_you_drew=target['original'], test=virtuoso_setup.TEST,
+            own = working_copy.is_declared(target)          # the user's own copy, declared on the read: written directly
+            copy = dict(copy=target['copy'], cell_you_drew=None if own else target['original'], own_copy=own, test=virtuoso_setup.TEST,
                         maestro_now=working_copy.last_written(target) or 'nothing written by the workbench yet',
                         bindable=[dict(cell=c, instance=i, parameters=sorted(p)) for (c, i), p in sorted(working_copy.bindable_on(target).items())],
                         allowed_functions=sorted(virtuoso_setup.FUNCTIONS),
                         model_files=working_copy.default_model_files(config.run.connection_profile_id),
-                        note='The circuit data is read from the copy\'s cell; instance paths and nets are the same in the copy.')
+                        note=('This is the cell the user declared as a copy they made; the workbench writes into it directly. ' if own else '')
+                             + 'The circuit data is read from the copy\'s cell; instance paths and nets are the same in the copy.')
         request = AgentRequest(kind=body.kind, user_prompt=body.prompt, config=config.model_dump(mode='json'),
                                circuit_summary=summary, selection=body.selection, readiness=ready, review=review, results=results,
                                web=bool(body.web), web_domains=agent_review.domains(runs.load_settings().get('agent_web_domains')),
@@ -1394,8 +1408,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             entry = profiles.list_profiles().get(circuit.task_id[len('real:'):])
             if entry and entry.get('copy_target'):
                 return entry['copy_target']
-        raise working_copy.CopyError('Setting up in Virtuoso needs a working copy: read the cell into the workbench and press '
-                                     '"Make a working copy" (a task saved with Save task has one)')
+        raise working_copy.CopyError('Setting up in Virtuoso needs the cell the task flow works in: read the cell into the workbench '
+                                     'and confirm that it is a copy you made (the Virtuoso window asks); a task saved with Save task has one')
 
     def _setup_of(config, proposal):
         setup = proposal.get('setup') or {}

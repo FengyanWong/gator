@@ -367,8 +367,8 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
               {Object.entries(proposal.setup.variables ?? {}).map(([name, value]: [string, any]) => <tr key={`v-${name}`}><td>variable {name}</td><td>{String(value)}</td></tr>)}
               {(proposal.setup.bindings ?? []).map((b: Json) => <tr key={`b-${b.cell}-${b.instance}-${b.parameter}`}><td>{b.instance}.{b.parameter} in {b.cell}</td><td>= {b.variable}</td></tr>)}
             </tbody></table>
-            <p className="hint">Approving fills the editors and writes this, with the outputs and specs of the rows, into the working copy - not into your
-              cell - then reads it back. {Object.keys(proposal.setup.analyses ?? {}).length ? '' : 'The analyses the copy has stay as they are.'}</p></div>}
+            <p className="hint">Approving fills the editors and writes this, with the outputs and specs of the rows, into the working copy - the cell
+              you read as your copy - then reads it back. {Object.keys(proposal.setup.analyses ?? {}).length ? '' : 'The analyses the copy has stay as they are.'}</p></div>}
           <button disabled={!proposal.diff.length} onClick={approveAndApply}>{proposal.kind === 'virtuoso_setup' ? 'Approve, apply and write the copy' : 'Approve and apply to the configuration'}</button>
           <button onClick={() => api.reject(proposal.proposal_id).then(() => setProposal(null))}>Reject</button>
           <span className="hint"> The approval is bound to this exact proposal, configuration and circuit; any later change invalidates it.</span></div>}

@@ -57,7 +57,7 @@ try {
     return page.readOrRefuse({ requestId, request }, refused);
   };
   page.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return send('Page.handleJavaScriptDialog', { accept: true }); });
-  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Circuit source'))`;
+  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
   const BUTTON = text => `[...(${PANEL}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const STEPS = `${PANEL}?.querySelector('.check-steps')`;
   const BANNER = `document.querySelector('.banner')`;

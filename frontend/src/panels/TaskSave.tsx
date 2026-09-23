@@ -3,10 +3,12 @@ import { createPortal } from 'react-dom';
 import { api, Json, problemText, virtuosoGateText } from '../api';
 import { TaskFileWindow } from './TaskFile';
 
-/** "Save task" - a person's press only - and what goes with it: "Save as" (another task, with a working copy of its own)
- *  and the task file. `task` = the open task (Save task updates it); without one, the first save of the cell (its
- *  working copy is then the task's). The extras - what the task file holds beside the rows (analyses, variables,
- *  bindings, the ring oscillator's rough frequency, notes) - live here until the save.
+/** "Save task" - a person's press only - and the task file. `task` = the open task (Save task updates it); without one,
+ *  the first save of the cell read from Virtuoso (the cell the user declared as their copy is then the task's). The
+ *  extras - what the task file holds beside the rows (analyses, variables, bindings, the ring oscillator's rough
+ *  frequency, notes) - live here until the save. "Save as" went on 2026-09-23 with the copies the workbench made:
+ *  another task is another copy the user makes in Virtuoso, read in the Virtuoso window and saved from there (the backend
+ *  still answers `as_new` for the API).
  *  Shown at the right end of the editors' tab line (`bar`), its messages and questions under their toolbar (`notes`) -
  *  user request 2026-09-22: the save sits with the rows it stores. The component stays in the circuit panel, which owns
  *  the cell and the task; two portals put it there. */
@@ -35,12 +37,10 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<Json>(null);
   const [extras, setExtras] = useState<Json>({});
-  const [askFrequency, setAskFrequency] = useState<string | null>(null);      // which save asked: 'save' | 'as'
+  const [askFrequency, setAskFrequency] = useState(false);                    // the save asked for the ring oscillator's rough frequency
   const [frequency, setFrequency] = useState('');
-  const [asking, setAsking] = useState(false);
-  const [newName, setNewName] = useState('');
   const [file, setFile] = useState<Json>(null);                               // { text, title } while the window is open
-  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(null); setAsking(false); }, [task, library, cell]);
+  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); }, [task, library, cell]);
   useEffect(() => {
     const written = (e: Event) => setExtras((x: Json) => {
       const next = { ...x };
@@ -58,17 +58,17 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   const report = (e: any) => {
     setMessage({ level: 'error', text: problemText(e, virtuosoGateText) });
   };
-  const save = async (asNew: boolean, target: string, more: Json = {}) => {
-    setBusy(asNew ? 'as' : 'save'); setMessage(null);
+  const save = async (more: Json = {}) => {
+    setBusy('save'); setMessage(null);
     const sent = { ...extras, ...more };
     try {
-      const made = await api.taskSave({ profile_id: profileId, name: target, config, library, cell, task, as_new: asNew, extras: sent });
-      setExtras(sent); setAskFrequency(null); setAsking(false); setNewName('');
+      const made = await api.taskSave({ profile_id: profileId, name: taskName, config, library, cell, task, as_new: false, extras: sent });
+      setExtras(sent); setAskFrequency(false);
       const kept = made.created ? '' : made.baseline_kept ? ' The recorded baseline still holds.' : made.changed?.length ? ' The recorded baseline no longer holds (what is measured changed): run a new baseline.' : '';
       setMessage({ level: 'ok', text: `${made.created ? `Saved the new task ${made.task_key}.` : `Saved ${made.task_key}, revision ${made.revision}.`}${made.runnable ? '' : ' It can be opened and edited; running Maestro-measured tasks comes with the next part.'}${kept}` });
       onSaved(made);
     } catch (e: any) {
-      if (e.detail?.code === 'needs_expected_frequency') { setAskFrequency(asNew ? 'as' : 'save'); setMessage({ level: 'warn', text: e.detail.message }); }
+      if (e.detail?.code === 'needs_expected_frequency') { setAskFrequency(true); setMessage({ level: 'warn', text: e.detail.message }); }
       else report(e);
     } finally { setBusy(null); }
   };
@@ -85,20 +85,19 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   };
   const frequencyValue = parseFrequency(frequency);
   const canSave = !!profileId && (task ? true : hasCopy) && NAME.test(taskName) && !busy;
-  const said = askFrequency || (asking && !askFrequency) || message;
+  const said = askFrequency || message;
   return (<>
     {bar && createPortal(
       <div className="task-save">
         {!task && <label title="Lowercase letters, digits and _. It becomes the task real:<name>.">New task name
           <input value={name} placeholder={suggested} onChange={e => setName(e.target.value)} /></label>}
         {task && <span className="hint">Task <code>real:{task}</code>{revision ? `, revision ${revision}` : ''}</span>}
-        <button className="primary" disabled={!canSave} onClick={() => save(false, taskName)}
+        <button className="primary" disabled={!canSave} onClick={() => save()}
           title={(task ? 'Stores the rows of Parameters, Probes and Specs as this task (its next revision). ' : hasCopy
-            ? 'Stores the rows of Parameters, Probes and Specs as a new task of this cell. ' : 'Make the working copy first (in the Virtuoso note on the left). ')
-            + 'It writes the working copy to match and reads it back; no simulation. Only you can press it.'}>
+            ? 'Stores the rows of Parameters, Probes and Specs as a new task of this cell. '
+            : 'Read the cell in the Virtuoso window first and confirm that it is a copy you made: the task is saved into that cell. ')
+            + 'It writes the cell in Virtuoso to match and reads it back; no simulation. Only you can press it.'}>
           {busy === 'save' ? 'Saving...' : 'Save task'}</button>
-        {task && <button disabled={!!busy || !profileId} onClick={() => { setAsking(a => !a); setAskFrequency(null); }}
-          title="Makes another task from these rows, with a working copy of its own in Virtuoso.">Save as</button>}
         <button disabled={!!busy} onClick={openFile} title="The task as one readable file, in a window of its own: open it, change it, apply it to the editors.">Task file</button>
       </div>, bar)}
     {notes && said && createPortal(
@@ -106,14 +105,7 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
         {askFrequency && <div className="row">
           <label title="Rough is enough: it only sizes the transient (60 periods, measured after 20).">Rough oscillation frequency
             <input value={frequency} placeholder="e.g. 1.2G" onChange={e => setFrequency(e.target.value)} /></label>
-          <button className="primary" disabled={!(frequencyValue > 0) || !!busy}
-            onClick={() => askFrequency === 'as' ? save(true, newName, { expected_frequency_hz: frequencyValue }) : save(false, taskName, { expected_frequency_hz: frequencyValue })}>
-            {askFrequency === 'as' ? 'Save as' : 'Save task'}</button></div>}
-        {asking && !askFrequency && <div className="row">
-          <label title="Lowercase letters, digits and _.">New task name <input value={newName} onChange={e => setNewName(e.target.value)} /></label>
-          <button className="primary" disabled={!NAME.test(newName) || newName === task || !!busy} onClick={() => save(true, newName)}>
-            {busy === 'as' ? 'Saving...' : 'Save as'}</button>
-          <button onClick={() => setAsking(false)}>Cancel</button></div>}
+          <button className="primary" disabled={!(frequencyValue > 0) || !!busy} onClick={() => save({ expected_frequency_hz: frequencyValue })}>Save task</button></div>}
         {message && <p className={message.level === 'ok' ? 'ok' : message.level === 'warn' ? 'warn' : 'error'}>{message.text}</p>}
       </div>, notes)}
     {file && <TaskFileWindow text={file.text} title={file.title} onApply={applyFile} onClose={() => setFile(null)} />}

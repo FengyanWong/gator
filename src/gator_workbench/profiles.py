@@ -645,7 +645,8 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
         if working is not None:
             raise ProfileError(f'Run {working.get("run_id") or working["run_dir"]} of real:{name} is working right now: let it finish first')
         if not current.get('copy_target'):
-            raise ProfileError(f'real:{name} was made before tasks had working copies: open its cell, make a working copy and save a new task')
+            raise ProfileError(f'real:{name} was made before tasks had working copies: read its cell in the Virtuoso window (confirming '
+                               'that it is a copy you made) and save a new task')
     elif name in REAL_PROFILES or directory.exists():
         raise ProfileError(f'A task called real:{name} already exists: choose another name')
     kind = measurement_kind(config)
@@ -655,7 +656,8 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
         target = current['copy_target']
     elif current:
         if not current.get('copy_target'):
-            raise ProfileError(f'real:{task} was made before tasks had working copies: open its cell, make a working copy and save a new task')
+            raise ProfileError(f'real:{task} was made before tasks had working copies: read its cell in the Virtuoso window (confirming '
+                               'that it is a copy you made) and save a new task')
         target = working_copy.make_task_copy(monitor, profile_id, current['copy_target'], name,
                                              source_netlist=(Path(current['directory']) / FILES['structure']).read_text(),
                                              command=commands.get('copy'))

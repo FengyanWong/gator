@@ -53,7 +53,7 @@ def client(tmp_path, monkeypatch):
 
 def test_the_request_says_what_the_copy_is_and_what_may_be_returned():
     assert SECTIONS_BY_KIND['virtuoso_setup'] == ('parameters', 'targets', 'measurements') and 'setup' in PROPOSAL_SCHEMA['properties']
-    with pytest.raises(AgentError, match='Make a working copy'):
+    with pytest.raises(AgentError, match='confirm that it is a copy'):
         AgentRequest(kind='virtuoso_setup', user_prompt='set it up', config=config(), circuit_summary=None).validate()
     copy = dict(copy=dict(library=COPY, cell=CELL, testbench=TB), allowed_functions=sorted(vs.FUNCTIONS),
                 bindable=[dict(cell=TB, instance='V0', parameters=['vdc'])])
@@ -140,4 +140,4 @@ def test_without_a_working_copy_the_request_says_what_to_do_first(tmp_path):
     read_cell(tmp_path)
     client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
     refused = client.post('/api/agent/import-result', json=dict(kind='virtuoso_setup', prompt='set it up', config=config(), result=answer()))
-    assert refused.status_code == 409 and 'Make the working copy first' in json.dumps(refused.json())
+    assert refused.status_code == 409 and 'confirm that it is a copy you made' in json.dumps(refused.json())

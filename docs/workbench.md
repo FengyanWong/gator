@@ -203,15 +203,16 @@ Code: `src/gator_workbench/spec_equations.py`; tests: `tests/workbench/test_wb_s
 
 ### Spectre netlist import: removed
 
-**Circuit source** offers two sources: **Registered task** and **Virtuoso library / cell / view**.
-The third one, "Import Spectre netlist" (a `.scs` file plus a device-mapping JSON, MOCK runs only),
-was removed on user request (2026-09-21, status record 7.53).
+The Project column offers the **Registered task** list; a Virtuoso cell is read in the **Virtuoso cell...**
+window (since 2026-09-23, user request; until then a **Circuit source** list offered both). A third source,
+"Import Spectre netlist" (a `.scs` file plus a device-mapping JSON, MOCK runs only), was removed on user
+request (2026-09-21, status record 7.53).
 
 A configuration saved before still says `source: netlist` (the browser's saved copy, an imported
-JSON file, a run's `effective_config.json`). It still opens, with the same hashes. The Source list
-then shows **Spectre netlist (removed)** and a note names the saved file; nothing is loaded from it
-and a run cannot start from it (the backend answers "The workbench no longer imports Spectre netlist
-files..."). Choosing another source also drops the two file paths from the configuration.
+JSON file, a run's `effective_config.json`). It still opens, with the same hashes. The Task list
+then shows no task ("the saved source was removed") and a note names the saved file; nothing is loaded
+from it and a run cannot start from it (the backend answers "The workbench no longer imports Spectre
+netlist files..."). Choosing a task also drops the two file paths from the configuration.
 
 Netlists as such are still used: the MOCK task is the OTA5's netlist, and a Virtuoso cell is read
 through Virtuoso's own netlist export. The best design is written as `optimized_dut.scs` only when
@@ -220,19 +221,26 @@ or MOCK) would mean editing a definition every instance shares, so the file is n
 run's `artifact_manifest.json` says why; `parameters.csv` always holds the values. The agent's circuit-modification working copy is still written, but only as a
 file for your records: the workbench cannot load it as a circuit any more.
 
-### Browsing a Virtuoso library
+### Browsing a Virtuoso library: the Virtuoso window
 
-Project panel, **Circuit source -> Virtuoso library / cell / view** (needs a connection profile and
-a link that is up). There is nothing to press: choosing the source lists the libraries, choosing a
-library lists its cells, choosing a cell reads its schematic. Each step is a gated, read-only,
-zero-cost bridge call and waits for the one before it. **Refresh** repeats the chain, for example
-after the link came up or the design changed in Virtuoso.
+The Project column holds the project fields and the registered task only (user request 2026-09-23). Its
+**Virtuoso cell...** button - one short button, with what it is for as text beside it - opens the **Virtuoso
+window**, a browser window of its own like the connection window (needs a connection profile and a link
+that is up; allow pop-ups if the browser blocks it). There is nothing to press: opening the window lists
+the libraries, choosing a library lists its cells, choosing a cell reads its schematic. Each step is a
+gated, read-only, zero-cost bridge call and waits for the one before it. **Refresh** repeats the chain, for
+example after the link came up or the design changed in Virtuoso. A library chosen in the window makes
+the page follow the Virtuoso cell instead of the task: the column's Task list then shows none and names
+the cell beside the button. Choosing a task in the column makes the page follow the task again, and the
+window then starts from a blank library. Closing the window loses nothing.
 
-The Project panel keeps its explanations folded: a line with a small triangle ("What circuit class
-and PDK id are for", "Why: it has no circuit profile yet", "What the check does", "2 notes on this
-circuit", ...) opens on a click. Headlines, warnings and buttons are always in view.
+The column and the window keep their explanations folded: a line with a small triangle ("Labels: class
+..., PDK ..." - the column's circuit class, PDK id and DUT hierarchy boxes are one closed line naming their
+values -, "Why: it has no circuit profile yet", "What the check compares", "2 notes on this circuit", ...)
+opens on a click. Headlines, warnings and buttons are always in view.
 
-The **Hierarchy** block at the end of the panel is folded the same way: one closed line, "Hierarchy
+The **Hierarchy** block at the end of the column (of the window, for a cell read from Virtuoso) is folded
+the same way: one closed line, "Hierarchy
 (N instances)". A click shows the instance tree and, under it, two more closed lines: **Instances
 and parameters** (the sizes as the workbench uses them) and **Native schematic** (what was read
 straight from Virtuoso, as read). While no circuit is loaded - the browse-only case - there is no
@@ -249,13 +257,13 @@ to say.
   circuit class". They change neither the simulation nor the optimization, and `unspecified` is fine
   for a single run. The PDK id is filled in from the library's technology library unless you typed
   one.
-* This source is **browse only**: optimizing a native design needs one of the verified circuit
-  profiles (the `real:gpdk045_*` registered tasks).
+* A cell is **browse only** until it is saved as a task (below). The note above **Read this cell into the
+  workbench** warns, in view, that the workbench writes into the cell it reads: work on a copy.
 * **Testbench cell**: a cell named `tb_<cell>` (the `tb_` prefix in any case, the cell name exact, with
   a schematic) is chosen by itself when you pick the cell, or when the cell list arrives while the box
   is empty ("Found by its name"); choose another one or (none) at any time. A testbench chosen by hand
   stays when the next cell has no `tb_` of its own. A task needs one: it simulates the testbench, not
-  the bare cell (the working copy copies the testbench and the cells under it).
+  the bare cell, and keeps its Maestro test there.
 * **Probes follow the testbench**: once the cell was read through a testbench, the **Probes** tab gets
   the results of the circuit type that testbench fits, each with its `signal` - where in THIS testbench
   it is read: the output net (`OUT`), the ring nets, or the supply branch (`V0:p`, the current through
@@ -267,16 +275,18 @@ to say.
   circuit type brings nothing; the note says why. The rows describe the copy that was read: after
   choosing another testbench, press **Read the cell again**. The circuit type decides how each result
   is measured, so editing `signal` does not move it.
-* **Read this cell into the workbench** (first step towards a profile for your own cell; explicit
-  press, read-only, some seconds): Virtuoso exports the netlist of the testbench cell (or of the cell
-  when none is chosen) and the device sizes are read. The copy is kept under
+* **Read this cell into the workbench** (first step towards a task for your own cell; explicit press,
+  read-only, some seconds). The first read of a cell ASKS whether it is a copy you made (the workbench makes
+  no copy of its own since 2026-09-23 - see "The cell the task flow works in" below): Cancel reads nothing,
+  OK reads it and makes it the cell the task flow works in. Virtuoso exports the netlist of the testbench
+  cell and the device sizes are read. The export is kept under
   `configs/local/workbench/native_cells/<library>/<cell>/`, and the cell then loads from it without
   contacting Virtuoso: you can look at it, fill the three editors (the centre tabs, in this order:
   **Parameters** = what may vary, **Probes** = what is measured and how, **Specs** = equations over
-  those probes and the limits they must meet), make the working copy and
+  those probes and the limits they must meet) and
   **Ask the agent to set up** - the Agent tab opens with the request written out; its proposal, once
-  approved there, fills the editors and is written into the working copy (see "The agent sets the task
-  up" below). Device types this project has not verified (for example the MIM invented model) are shown
+  approved there, fills the editors and is written into that cell's Maestro view (see "The agent sets the
+  task up" below). Device types this project has not verified (for example the MIM invented model) are shown
   with unnamed pins. Such a cell still cannot run: Start stays disabled (`circuit_profile_missing`) until
   it is saved as a task.
 * **Save task** (at the right end of the editors' tab line since 2026-09-22; the note points there) replaced the
@@ -289,10 +299,10 @@ to say.
   A cell that already has a registered task - one saved from it, or one of the four verified built-in
   circuits (`real:gpdk045_vco` for `vco_m6_v1`, ...; the library is the one the Virtuoso connection
   states) - shows "This cell already has a registered task: `real:<name>`" with an **Open** button; open
-  it to change it (Save task) or to make another task from it (Save as, with a working copy of its own).
-  A built-in circuit gets no second task.
-  **Delete task** (last line of a saved task's block; asks once more; was: Delete profile): the task
-  leaves the list, its name is free again and the cell's working copy is free for the next Save task.
+  it to change it (Save task); another task needs another copy of the cell, made in Virtuoso and read in
+  the window. A built-in circuit gets no second task.
+  **Delete task** (last line of a saved task's block in the column; asks once more; was: Delete profile):
+  the task leaves the list, its name is free again and the cell is free for the next Save task.
   Nothing is erased: the folder moves to `configs/local/workbench/profiles/.deleted/<name>.<time>/`,
   its recorded baseline included (a new task needs a new real baseline). Runs already made keep their
   data, but a paused one can no longer be resumed. Refused while a run of the task is working, and for
@@ -304,11 +314,12 @@ to say.
   Targets of a generated task use the result names as `metric_id` (`osc_frequency_hz`, ...): the profile
   registers exactly these results for the optimizer's goal input, so nothing has to be added under
   `run.advanced.spec_registry`.
-  **Where a real run writes.** A task saved with Save task names its working copy, so its runs write into the
-  copy. A task made with the former Create profile has no working copy: its runs write into the cell it was
-  made from (every evaluation, the baseline included, re-applies the widths through the PDK callbacks, checks
-  and saves the cellview; the original widths are written back when the run ends) - keep that cell closed in
-  Virtuoso during a run.
+  **Where a real run writes.** A task saved with Save task names the cell the flow works in - since
+  2026-09-23 the copy YOU made and declared when it was read; before that a copy the workbench made
+  (`<library>_GATOR`) - so its runs write into that cell (every evaluation, the baseline included, re-applies
+  the sizes through the PDK callbacks, checks and saves the cellview; the original sizes are written back when
+  the run ends; a forced abort can leave them changed) - keep that cell closed in Virtuoso during a run. A task
+  made with the former Create profile has no working copy: its runs write into the cell it was made from.
   First real simulation of a generated profile: 2026-09-21, one authorized baseline of the 3-stage ring
   oscillator, 1.2092 GHz, cell identical before and after (status record 7.24). In this order:
   1. **Check now** - the check before every run (below): the editors against the saved task, and
@@ -319,7 +330,8 @@ to say.
   3. **Record the baseline run as reference** - from then on every run compares its first evaluation
      with that result, as the four verified profiles do. Recorded once, never replaced.
 
-`POST /api/virtuoso/libraries | cells | read | import`, body `{"profile_id", "library"?, "cell"?, "testbench"?}`;
+`POST /api/virtuoso/libraries | cells | read | import`, body `{"profile_id", "library"?, "cell"?, "testbench"?}` (import:
+`"work_here"?` - the user said the cell is a copy they made; the answer then carries the `working_copy` record);
 `POST /api/virtuoso/profile/reference` `{"name", "run_dir"?}`; `POST /api/virtuoso/profile/delete` `{"name"}` (answers
 with the task's own cell - never its working copy - for the Circuit source). A task is saved with
 `POST /api/virtuoso/task/save` (section "Saving a task"); the older `POST /api/virtuoso/profile` (Create profile) and
@@ -845,31 +857,37 @@ as in the verified mappings. Tasks saved before keep the old mapping until they 
 Tests: `tests/workbench/test_wb_cdf_write.py` (recorded REAL form rules of the ring oscillator, `fixtures/ring_osc/
 core_cdf.json`; a fake Virtuoso that runs the writer's SKILL with emulated callbacks - folding, clamping, bookkeeping).
 
-## A task's Virtuoso side: the working copy, saving, the agent, the run
+## A task's Virtuoso side: the cell it works in, saving, the agent, the run
 
-### The Virtuoso side of a task: working copy and Maestro setup (added 2026-09-21, user request)
+### The cell the task flow works in: the user's own copy (2026-09-23, user request) and its Maestro setup
 
 The first part of the task flow the user asked for on 2026-09-21 (cell + testbench -> the agent sets up parameters,
 probes and specs IN Virtuoso -> read back -> edited anywhere -> "Save task"). It lives in the note "Read from Virtuoso"
-of the Project panel, under the buttons of a cell read into the workbench, and every step is a button.
+of the Virtuoso window, under the buttons of a cell read into the workbench, and every step is a button.
 
-**Make a working copy.** The task flow writes only into copies. The button copies the testbench the cell was read through
-and every cell of the same library under it into `<library>_GATOR` - a library the workbench adds itself, in Virtuoso's
-working directory next to the user's libraries, bound to the same technology library - and points the copied testbench at
-the copied cells. Cell and instance names stay the same, so every Parameters row and every probe names the same instance
-path in the copy. It is the first write into Virtuoso: gated (`write_cellview`), under the project's Virtuoso session lock
-(a real run and the copy exclude each other), `cds.lib` downloaded before a library is added (and after: the one added
-`DEFINE` line is on record). Only functions whose syntax was read from the Cadence documentation of the installation
-itself are used (`dbCopyCellView`, `dbSetInstHeaderMasterName`, `schCheck`, `dbSave`, and the bridge's `library.create`).
-The copy is accepted only when the copy's netlist has the same statements as the original's in every block (their order
-does not matter to Spectre - re-pointing an instance moves it in Virtuoso's database), every copied cell in it comes from
-the copy library, and the original schematics read back identical before and after. A library of that name the
-workbench did not make is never written into; a copy that stopped half-way is finished by the next press, which may
-overwrite only what the failed attempt wrote. Records: `configs/local/workbench/working_copies/<library>/<cell>/`
-(`copy.json`, the copy's netlist, the `cds.lib` before/after, the bridge log) and `working_copies/libraries.json`.
-Not copied yet: cells with a CDF of their own (parameterized hierarchical cells) - the button says so instead.
+**The user's own copy (since 2026-09-23).** The workbench makes NO copy of a cell any more. Copy the cell and its
+testbench in Virtuoso yourself (Library Manager), choose the copy in the window and press **Read this cell into the
+workbench**: the press asks (a confirm) whether the cell is a copy you made, and the warning above the button says why -
+saving a task writes the Maestro test `GATOR` into the testbench, and every run sets device sizes in the cell (put back
+when the run ends; a forced abort can leave them changed). Cancel reads nothing. OK reads the cell with `work_here`, and
+the backend records the cell that was read as the flow's working copy (`working_copy.declare`: a record with
+`copy == original` and `declared: true`; `verified` there means "the user said so", not a netlist comparison - nothing is
+contacted beyond the read, and the check before every run keeps comparing the cell's export with the saved task). The
+window then says "Working in `<library>/<testbench>` directly: you declared it a copy you made (when)", and reading a
+declared cell again asks nothing. Refused in words: a cell read without its testbench (before any export), the PDK's own
+library, an export that does not name the cell. `POST /api/virtuoso/copy` refuses (`copies_not_made`).
 
-**Read setup.** One Maestro test, `GATOR`, on the copy's testbench holds what the
+Until 2026-09-23 the button **Make a working copy** did this instead: it copied the testbench the cell was read through
+and every cell of the same library under it into `<library>_GATOR` - a library the workbench added itself, bound to the
+same technology library - and pointed the copied testbench at the copied cells (gated, under the session lock, `cds.lib`
+backed up; accepted only when the copy netlisted like the original, every copied cell came from the copy library and the
+originals read back unchanged; records under `configs/local/workbench/working_copies/<library>/<cell>/` and
+`working_copies/libraries.json`). Tasks saved on such a copy keep running on it: their records name it, their line in the
+window says "made by the workbench before 2026-09-23", and nothing migrates them. `working_copy.make` remains for Save as
+through the API and for the tests. Cell and instance names are the same in a copy as in the original, so every
+Parameters row and every probe names the same instance path either way.
+
+**Read setup.** One Maestro test, `GATOR`, on the cell's testbench holds what the
 simulation needs and measures: the model file (the connection's, section `tt`), the analyses, the outputs (Cadence
 calculator expressions on testbench nets and branches) and a spec per output (`>`, `<` or a range), plus design variables
 and the instance parameters set to them. A Maestro output is a Probes row with source `ade_output` (the output name in
@@ -917,7 +935,7 @@ Tests: `tests/workbench/test_wb_working_copy.py`, `tests/workbench/test_wb_virtu
 answer shapes are the live installation's). Browser check: `frontend/scripts/working_copy_check.mjs` (hermetic, fixtures
 only, safe against the live backend).
 
-### Saving a task: Save task, Save as and the task file (added 2026-09-22, user request)
+### Saving a task: Save task and the task file (added 2026-09-22, user request; Save as removed 2026-09-23)
 
 The second part of the flow. **Save task** replaces the former Create profile form (user decision: the form, its Circuit
 type box and its expected-frequency field went once Save task worked). Only a person presses it: the agent has no tool
@@ -925,12 +943,12 @@ that reaches the backend.
 
 **Where.** At the right end of the editors' tab line (Parameters | Probes | Specs), above "Modify selected with
 agent..." - the save sits with the rows it stores (user request 2026-09-22; it used to be in the note "Read from
-Virtuoso", under the working copy, which now only says "Then save it as a task: Save task is above the editors" with
-"What Save task does" folded). For a cell read from Virtuoso: a New task name (the cell's name when left empty),
-**Save task** and **Task file**. On an open task (Source: Registered task): "Task real:<name>, revision N", **Save
-task**, **Save as** and **Task file**. Their messages and questions (the saved revision, a refusal, the ring
-oscillator's rough frequency, the name for Save as) appear under the editors' toolbar. "Delete task" (was: Delete
-profile) stays at the end of the task's block in the Project panel. The editors' own **Save** button went at the same
+Virtuoso", which now only says "Then save it as a task: Save task is above the editors" with "What Save task does"
+folded). For a cell read from Virtuoso: a New task name (the cell's name when left empty), **Save task** and **Task
+file**. On an open task (Registered task): "Task real:<name>, revision N", **Save task** and **Task file**. Their
+messages and questions (the saved revision, a refusal, the ring oscillator's rough frequency) appear under the editors'
+toolbar. "Delete task" (was: Delete profile) stays at the end of the task's block in the Project column. The editors'
+own **Save** button went at the same
 time: it kept the configuration in the browser, which the page already does by itself 0.8 s after every change, and a
 second "Save" beside "Save task" only confused.
 
@@ -947,17 +965,18 @@ refused in plain words. Then, with no simulation:
    `task.json` in `configs/local/workbench/profiles/<name>/`, and the task is registered as `real:<name>`.
 
 The ring oscillator's measurement needs a rough expected frequency (it sizes the transient): the first save asks for it
-once, in one line under the buttons; the task file keeps it. The task's files name the COPY's library, so the real run
-adapter opens the working copy - a run never writes into the user's cell any more.
+once, in one line under the buttons; the task file keeps it. The task's files name the cell the flow works in (the copy
+you declared, or the made copy of an older task), so the real run adapter opens that cell - never a cell you did not
+declare or copy.
 
-**Saving again, Save as.** Save task on an open task makes its next revision under the same name (the user's decision:
+**Saving again.** Save task on an open task makes its next revision under the same name (the user's decision:
 saving again never makes a new task). The previous revision is kept in `history/r<N>/` inside the task's folder, the
 old folder aside in `profiles/.deleted/`. A recorded baseline is kept only if parameters, probes, measurement, analyses,
-variables and bindings are unchanged; changing only specs or notes keeps it. **Save as** makes another task with a
-working copy of its own: the open task's copy is copied inside the same library with every cell renamed
-`<cell>_<new task>` and checked against it (netlist statements with the names mapped back, the source copy unchanged).
-The first save of a cell takes the cell's working copy; a cell that has tasks is opened through them (its note lists
-them), and Delete task frees the copy again.
+variables and bindings are unchanged; changing only specs or notes keeps it. **Save as** went on 2026-09-23 with the
+copies the workbench made: another task is another copy you make in Virtuoso, read in the window and saved from there
+(the backend still answers `as_new` for the API, with a renamed copy inside the same library). The first save of a cell
+takes the cell (or, for an older task, its made copy); a cell that has a task is opened through it (its note says so),
+and Delete task frees the cell again.
 
 **The task file.** One readable JSON file: the cell, the copy, the measurement, the Maestro part, the Parameters /
 Probes / Specs rows and notes, with a `_help` part that explains every part (JSON has no comments). **Task file** opens
@@ -972,14 +991,15 @@ once more. Tasks saved before this part (Create profile) have no working copy; t
 Save task refuses them with the way forward.
 
 Tests: `tests/workbench/test_wb_task_save.py` (fake bridge processes, the recorded ring-oscillator export). Browser
-check: `frontend/scripts/task_save_check.mjs` (hermetic; the task file window, Apply, Save task, Save as);
-`virtuoso_source_check.mjs`, `project_help_check.mjs` and `testbench_probes_check.mjs` follow the new form.
+check: `frontend/scripts/task_save_check.mjs` (hermetic; the task file window, Apply, Save task; no Save as);
+`virtuoso_source_check.mjs`, `project_help_check.mjs` and `testbench_probes_check.mjs` follow the window.
 
 ### The agent sets the task up: one proposal, written into the working copy (added 2026-09-22, user request)
 
-The third part of the flow. **Ask the agent to set up** (in the note "Read from Virtuoso", beside Read the cell again)
-replaced "Ask the agent for suggestions" (user decision 2026-09-21: removed once this worked). It waits for the working
-copy, then opens the Agent tab with the request kind `virtuoso_setup` and the request written out: say in two or three
+The third part of the flow. **Ask the agent to set up** (in the Virtuoso window's note, beside Read the cell again)
+replaced "Ask the agent for suggestions" (user decision 2026-09-21: removed once this worked). It waits until the cell is
+declared the one the flow works in (or, for an older task, has its made copy), then opens the Agent tab with the request
+kind `virtuoso_setup` and the request written out: say in two or three
 sentences what the circuit is and how it works, then set it up for optimization in its working copy - which transistor
 widths to vary (grouped where devices must match), what to measure as Maestro outputs with the analyses they need, and
 specs. Add your own requirements to the words ("more than 1.1 GHz"); nothing is sent until you press Enter.
@@ -996,7 +1016,7 @@ an output calling a function outside the allowed list, a variable on a PDK devic
 setup does not set, a malformed part. The Agent tab shows the reasons; there is nothing to approve.
 
 **Approve, apply and write the copy.** The proposal shows its row changes and, under them, the Maestro setup and where it
-goes ("Maestro setup of the working copy `<library>/<testbench>`" - never your cell). One approval covers both, bound to
+goes ("Maestro setup of the working copy `<library>/<testbench>`" - the cell you read as your copy). One approval covers both, bound to
 the proposal's content with the setup. The press fills the editors (one Undo step) and writes the setup - with the
 outputs and specs of the rows - into the copy's test (gated, under the Virtuoso session lock), reads it back and says
 whether the copy now matches. If Virtuoso cannot be reached, the rows are applied all the same and the message says to
@@ -1028,7 +1048,8 @@ the setup proposal above.
   conditions - and read it back, correcting what did not land, as often as it needs (twelve writes at most).
 
 **What it may not do, by construction.** There is no tool for anything else, and the workbench refuses a call for one:
-it cannot touch your own cells, write device sizes (those are the optimizer's, written inside a run and restored
+it cannot touch any cell but the task's working copy (since 2026-09-23 the cell you declared as your copy), write device
+sizes (those are the optimizer's, written inside a run and restored
 afterwards - a size written between runs would make every run refuse to start until you save the task again), start a
 simulation, run a command, read a file or read the web. A request that may read publications is never a request that may
 write into Virtuoso, so nothing a web page says can reach your design.

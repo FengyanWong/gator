@@ -1,19 +1,19 @@
-"""Working copies: the cells the task flow edits in Virtuoso are COPIES, never the cells the user drew.
+"""Working copies: the cell the task flow edits in Virtuoso - its Maestro setup, and the device sizes of every run.
 
-A cell read into the workbench (``native_cells``, through its testbench) gets one working copy: the testbench and
-every cell of its library under it, copied into ``<library>_GATOR`` - a library the workbench creates itself, in
-Virtuoso's working directory, bound to the same technology library. Cell and instance names stay the same, so every
-Parameters row and Probes signal names the same instance path in the copy as in the original.
+Since 2026-09-23 (user request) the workbench makes NO copy of its own. The user copies the cell and its testbench
+in Virtuoso, reads the copy into the workbench, and the page asks whether it is a copy they made: on "yes" the cell
+that was read IS the working copy (``declare``: a record with ``copy == original``, ``declared: true``). Everything
+that writes "into the copy" then writes into that cell, which is why the page warns before the question.
 
-Making the copy is the first write into Virtuoso. It is an explicit press, passes the connection gate for
-``write_cellview``, takes the project's Virtuoso session lock and backs up ``cds.lib`` before a library is added
-(``bridge_setup.py``). It is accepted only when three things hold, each checked from what Virtuoso answers:
+Until then a cell read into the workbench (``native_cells``, through its testbench) got a copy the workbench made
+(``make``): the testbench and every cell of its library under it, copied into ``<library>_GATOR`` - a library the
+workbench created itself, in Virtuoso's working directory, bound to the same technology library - accepted only when
+the copy's netlist was the original's, every copied cell came from the copy library, and the originals read back
+unchanged. Tasks saved on such a copy keep running on it: their records name it, and nothing migrates them.
+``make`` itself is still what "Save as" through the API and the tests use; the page no longer offers it.
 
-* the copy's netlist is the original's, line for line (comments aside): same devices, nets and values;
-* every copied cell in that netlist comes from the copy library - the testbench really points at the copy;
-* the original schematics read back identical before and after - nothing was written into them.
-
-A library of that name that the workbench did not make is never written into. The record of each copy lives under
+Cell and instance names are the same in a copy as in the original, so every Parameters row and Probes signal names
+the same instance path either way. The record of each working copy lives under
 ``configs/local/workbench/working_copies/<library>/<cell>/``.
 """
 from __future__ import annotations
@@ -124,6 +124,32 @@ def netlist_libraries(text) -> dict:
     return found
 
 
+def netlist_cells(text, library) -> list:
+    """[{cell, views}] of `library` in an exported netlist, from the netlister's `// Library name:` / `// Cell name:` /
+    `// View name:` comment triplets, in the order they appear (the top cell - the testbench - comes last). What a
+    declared copy records as its cells, where a made copy recorded what it copied."""
+    found, current = {}, {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        for key, name in (('// Library name:', 'library'), ('// Cell name:', 'cell'), ('// View name:', 'view')):
+            if stripped.startswith(key):
+                current[name] = stripped.split(':', 1)[1].strip()
+                break
+        if current.keys() >= {'library', 'cell', 'view'}:
+            if current['library'] == library and native_cells.NAME.match(current['cell']) and native_cells.NAME.match(current['view']):
+                views = found.setdefault(current['cell'], [])
+                if current['view'] not in views:
+                    views.append(current['view'])
+            current = {}
+    return [dict(cell=cell, views=sorted(views)) for cell, views in found.items()]
+
+
+def is_declared(target) -> bool:
+    """A record or target whose copy IS the cell that was read: the user's own copy, declared on the read."""
+    original, copy = target.get('original') or {}, target.get('copy') or {}
+    return bool(copy) and (original.get('library'), original.get('cell')) == (copy.get('library'), copy.get('cell'))
+
+
 def compare(original_netlist, copy_netlist, *, copy_library, copied_cells) -> list[str]:
     """Problems of a copy as plain sentences; empty = the copy is the original, pointing at itself."""
     problems = []
@@ -169,6 +195,8 @@ def reverify(library, cell) -> dict | None:
     record, imported = load(library, cell), native_cells.load_import(library, cell)
     if record is None or imported is None:
         return None
+    if record.get('declared'):                       # the user's own copy: there is no separate original to compare with
+        return record
     directory = record_dir(library, cell)
     problems = compare(Path(imported['netlist_path']).read_text(), (directory / 'netlist.scs').read_text(),
                        copy_library=record['copy']['library'], copied_cells=sorted({c['cell'] for c in record['copied']}))
@@ -180,10 +208,50 @@ def reverify(library, cell) -> dict | None:
     return record
 
 
-# ---------------------------------------------------------------------------------- making one
+# ---------------------------------------------------------------------------------- the user's own copy (since 2026-09-23)
+def declare(profile_id, library, cell) -> dict:
+    """The user's OWN copy: the workbench makes no copy of its own any more (user request 2026-09-23). After a cell was
+    read into the workbench, the page asks whether it is a copy the user made; on "yes" the import request carries
+    `work_here` and the cell that was read becomes the task flow's working copy - the same record as a made copy, with
+    copy == original - so everything that writes "into the copy" (the Maestro setup when a task is saved, the device
+    sizes of every run, put back at its end) writes into THIS cell. Nothing is contacted: the import already proved
+    that the cell netlists through its testbench and reads back; `verified` here means "the user said it is a copy",
+    not a netlist comparison (there is no separate original). A cell that has a record keeps it (`already`), so a
+    task saved on a copy the workbench made earlier keeps running on that copy."""
+    existing = load(library, cell)
+    if existing:
+        return dict(existing, already=True)
+    imported = native_cells.load_import(library, cell)
+    if imported is None:
+        raise CopyError('Read the cell into the workbench first (Read this cell into the workbench)')
+    testbench = imported.get('testbench_cell')
+    if not testbench:
+        raise CopyError('Read the cell through its testbench first: a task simulates the testbench, and its Maestro setup lives there')
+    technology = imported.get('technology_library')
+    if technology and library == technology:
+        raise CopyError(f'{library} is the technology library - the PDK itself: copy the cell into a library of yours first')
+    cells = netlist_cells(Path(imported['netlist_path']).read_text(), library)
+    named = {c['cell'] for c in cells}
+    if not {cell, testbench} <= named:
+        raise CopyError(f'The export of {testbench} does not name both {cell} and {testbench} in {library}: read the cell again '
+                        'through a testbench of the same library')
+    record = dict(format=FORMAT, created_utc=utcnow().isoformat(), profile_id=profile_id, declared=True,
+                  original=dict(library=library, cell=cell, testbench=testbench, netlist_sha256=imported['netlist_sha256']),
+                  copy=dict(library=library, cell=cell, testbench=testbench, path=None),
+                  technology_library=technology, created_library=False, cds_lib=None, cells=cells, copied=[], remastered={},
+                  originals_unchanged=None, netlist_equal=None, problems=[], verified=True)
+    target = record_dir(library, cell)
+    target.mkdir(parents=True, exist_ok=True)
+    write_json(target / RECORD, record)
+    return dict(record, directory=str(target), already=False)
+
+
+# ---------------------------------------------------------------------------------- making one (until 2026-09-23)
 def make(monitor, profile_id, library, cell, *, command=None, timeout=600.0) -> dict:
-    """Explicit press: copy the cell that was read into the workbench, with its testbench, into the workbench's own
-    library. Returns the record; an existing copy is returned as it is (a copy is made once)."""
+    """Copy the cell that was read into the workbench, with its testbench, into the workbench's own library. Returns
+    the record; an existing copy is returned as it is (a copy is made once). The page no longer offers this (user
+    request 2026-09-23: the user makes the copy, see `declare`); `make_task_copy` (Save as through the API) and the
+    tests still go this way, and tasks saved on a made copy keep running on it."""
     existing = load(library, cell)
     if existing:
         return dict(existing, already=True)
@@ -250,7 +318,8 @@ SECTION = 'tt'                                                               # t
 def verified(library, cell) -> dict:
     record = load(library, cell)
     if record is None:
-        raise CopyError('Make the working copy first: the task flow writes only into the copy')
+        raise CopyError('This cell is not yet the one the task flow works in: read it into the workbench and confirm that it is a copy '
+                        'you made (the Virtuoso window asks when you read it)')
     if not record.get('verified'):
         raise CopyError('The working copy did not pass its checks: ' + '; '.join(record.get('problems') or ['(no details)']))
     return record
@@ -292,7 +361,8 @@ def _original_values_on(target) -> dict:
 
 # ---------------------------------------------------------------------------------- targets: which copy a setup is about
 def draft_target(library, cell) -> dict:
-    """The cell's own working copy - the one "Make a working copy" made - as the setup functions take it."""
+    """The cell's own working copy - the cell itself when the user declared it their copy, or the copy the workbench
+    made before 2026-09-23 - as the setup functions take it."""
     record = verified(library, cell)
     return dict(original=record['original'], copy=record['copy'], names={c['cell']: c['cell'] for c in record['cells']},
                 schematics=[c['cell'] for c in record['cells'] if 'schematic' in c['views']],
@@ -303,7 +373,8 @@ def claim(library, cell, task):
     """The first task saved from a cell takes the cell's working copy; a second task gets its own copy (Save as)."""
     record = verified(library, cell)
     if record.get('claimed_by') not in (None, task):
-        raise CopyError(f'The working copy of {library}/{cell} belongs to the task real:{record["claimed_by"]}: open it and use Save as')
+        raise CopyError(f'{library}/{cell} belongs to the task real:{record["claimed_by"]}: open it (Save task saves it again). Another task '
+                        'needs another copy: make one in Virtuoso and read it in the Virtuoso window')
     write_json(record_dir(library, cell) / RECORD, dict(record, claimed_by=task))
 
 

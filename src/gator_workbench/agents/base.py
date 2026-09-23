@@ -160,7 +160,8 @@ class AgentRequest:
         if self.kind == 'run_review' and not self.results:
             raise AgentError('invalid_request', 'A run_review needs a run: choose one with "Runs..." first')
         if self.kind in ('virtuoso_setup', 'virtuoso_work') and not self.copy:
-            raise AgentError('invalid_request', 'Setting up in Virtuoso needs the working copy: press "Make a working copy" first')
+            raise AgentError('invalid_request', 'Setting up in Virtuoso needs the working copy: read the cell into the workbench and '
+                                                'confirm that it is a copy you made (the Virtuoso window asks)')
         if self.tools and self.kind not in TOOL_KINDS:
             raise AgentError('invalid_request', f'A {self.kind} request is not granted workbench tools')
         if self.tools and not (self.tools_url and self.tools_token):

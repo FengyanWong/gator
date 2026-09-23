@@ -32,8 +32,10 @@ HELP = {
     'what this is': 'The task file: everything this task is, in one place. Edit it here or in the three editors. '
                     '"Apply to editors" checks it and puts the rows into the editors; "Save task" stores it. Nothing is '
                     'written to Virtuoso or saved until you press "Save task".',
-    'cell': 'The cell you drew. Never written.',
-    'copy': 'The working copy in Virtuoso that the task simulates (made by "Make a working copy" / "Save as").',
+    'cell': 'The cell the task was read from. Since 2026-09-23 that is the copy you made in Virtuoso and read in the '
+            'Virtuoso window (the workbench makes no copy of its own), so cell and copy name the same cell.',
+    'copy': 'The cell in Virtuoso that the task simulates and writes its Maestro test into. A task saved before '
+            '2026-09-23 names the copy the workbench made then (<library>_GATOR) and keeps running on it.',
     'measurement': 'kind = maestro: the Maestro outputs of the copy are the probes. kind = ring_oscillator or opamp_ac: '
                    'the two verified circuit types, measured by the workbench. Found from the probes when you save. '
                    'expected_frequency_hz (ring_oscillator only): a rough oscillation frequency; it sizes the transient.',

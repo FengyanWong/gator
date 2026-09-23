@@ -1,6 +1,7 @@
-// Browser check: the Testbench cell box finds `tb_<cell>` by name, and the Probes tab follows the testbench a Virtuoso
-// cell was read through (user request 2026-09-21, status record 7.49). Same approach as virtuoso_source_check.mjs: a
-// throwaway headless Edge over the DevTools protocol against a served workbench page (default http://127.0.0.1:8765/).
+// Browser check: the Testbench cell box (in the Virtuoso WINDOW since 2026-09-23) finds `tb_<cell>` by name, and the Probes
+// tab follows the testbench a Virtuoso cell was read through (user request 2026-09-21, status record 7.49). Same approach
+// as virtuoso_source_check.mjs: a throwaway headless Edge over the DevTools protocol against a served workbench page
+// (default http://127.0.0.1:8765/).
 // Every /api/virtuoso/* request and every circuit load of the Virtuoso source is answered with a canned FIXTURE answer, so
 // Virtuoso is never contacted and the check does not depend on the backend version; the agent is never called. Other
 // requests (schema, the synthetic:gpdk045_ota5 starter, validation) go to the backend and are read-only; any other writing
@@ -39,10 +40,12 @@ const probesFor = (library, cell, tb) => {
     [OPAMP]: 'The op-amp recipe expects the testbench of the verified OTA (...). Missing here: VBIAS, VINN' } };
 };
 const imported = new Map();                                                         // "library/cell" -> the testbench it was read through
+const declared = new Set();                                                         // "library/cell" the user declared a copy (the first read asks)
 const draft = (library, cell) => {
   const tb = imported.get(`${library}/${cell}`);
   return { loaded: true, task_key: `virtuoso:${library}/${cell}`, mock: false, native_draft: true, complete: true, diagnostics: [],
     profile_task: null, profile_task_generated: null, testbench_probes: probesFor(library, cell, tb),
+    working_copy: declared.has(`${library}/${cell}`) ? { declared: true, verified: true, problems: [], copy: { library, cell, testbench: tb, path: null }, original: { library, cell, testbench: tb } } : null,
     circuit: { library, cell, native_draft: true, testbench_cell: tb }, hierarchy: { XU1: { MN1: {}, MP1: {} }, V0: {} }, analysis_context: null,
     evaluation_backend: null, max_concurrency: 1, notes: ['FIXTURE: read from Virtuoso (canned answer).'],
     summary: { device_count: 3, unknown_devices: [], devices: [{ instance_path: 'XU1/MN1', kind: 'nmos', parameters: { w: { value: 1e-6 } } }] } };
@@ -71,69 +74,81 @@ try {
     if (op === 'read') return fulfil(requestId, 200, { source: 'virtuoso', library: body.library, cell: body.cell, origin: 'FIXTURE', instance_count: 1, nets: ['OUT'],
       instances: [{ instance_path: 'MN1', master: { library: 'gpdk045', cell: 'nmos1v', view: 'symbol' }, terminals: [], parameters: { w: { raw: '1u' } } }],
       requires_confirmation: ['FIXTURE'], note: 'FIXTURE' });
-    if (op === 'import') { imported.set(`${body.library}/${body.cell}`, body.testbench ?? null); return fulfil(requestId, 200, { library: body.library, cell: body.cell, testbench_cell: body.testbench, device_count: 3 }); }
+    if (op === 'import') { imported.set(`${body.library}/${body.cell}`, body.testbench ?? null); if (body.work_here) declared.add(`${body.library}/${body.cell}`);
+      return fulfil(requestId, 200, { library: body.library, cell: body.cell, testbench_cell: body.testbench, device_count: 3 }); }
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${op} is not expected` } });
   };
-  page.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return send('Page.handleJavaScriptDialog', { accept: false }); });
-  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Circuit source'))`;
-  const LABEL = label => `[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)})`;
+  // The first read asks whether the cell is a copy the user made (answered yes, once); any other question is unplanned.
+  const onDialog = session => session.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return session.send('Page.handleJavaScriptDialog', { accept: dialogs.length === 1 }); });
+  onDialog(page);
+  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
+  const COLUMN_BUTTON = text => `[...${PANEL}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
+  // The library / cell / testbench boxes and the cell's note are in the Virtuoso window: a second page with a session of its own.
+  const WIN = `document.querySelector('.virtuoso-window')`;
+  let far = null;
+  const openWindow = async () => {
+    await evaluate(`${PANEL}.querySelector('button.virtuoso-button').click()`, true);
+    far = await browser.attach(await browser.window('GATOR - Virtuoso cell', { present: true, except: page.target.id }), { errors: consoleErrors, prefix: 'window: ' });
+    await far.send('Page.enable'); onDialog(far);
+    await far.send('Emulation.setDeviceMetricsOverride', { width: 720, height: 1400, deviceScaleFactor: 1, mobile: false });
+    for (let i = 0; i < 50 && !(await far.evaluate(`!!(${WIN})`)); i++) await sleep(100);
+    await quiet();
+  };
+  const LABEL = label => `[...${WIN}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)})`;
   const FIELD = label => `${LABEL(label)}?.querySelector('input, select')`;
-  const BUTTON = text => `[...${PANEL}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
+  const BUTTON = text => `[...${WIN}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const EDITOR_BUTTON = text => `[...document.querySelectorAll('section.editors .toolbar button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
-  const text = () => evaluate(`${PANEL}.textContent.replace(/\\s+/g, ' ')`);
-  const shown = selector => evaluate(`(() => { const e = ${PANEL}.querySelector(${JSON.stringify(selector)}); return e && e.checkVisibility() ? e.textContent.replace(/\\s+/g, ' ').trim() : null; })()`);
-  const value = label => evaluate(`${FIELD(label)}?.value`);
-  const options = label => evaluate(`[...${FIELD(label)}.options].map(o => o.value)`);
-  const choose = async (label, v) => { await evaluate(`(() => { const s = ${FIELD(label)}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(v)});
-    s.dispatchEvent(new Event('change', { bubbles: true })); })()`); await quiet(); };
-  const press = async (label, where = BUTTON) => { await evaluate(`${where(label)}.click()`); await quiet(); };
+  const text = () => far.evaluate(`${WIN}.textContent.replace(/\\s+/g, ' ')`);
+  const shown = selector => far.evaluate(`(() => { const e = ${WIN}.querySelector(${JSON.stringify(selector)}); return e && e.checkVisibility() ? e.textContent.replace(/\\s+/g, ' ').trim() : null; })()`);
+  const value = label => far.evaluate(`${FIELD(label)}?.value`);
+  const options = label => far.evaluate(`[...${FIELD(label)}.options].map(o => o.value)`);
+  const choose = async (label, v) => { await far.evaluate(`(() => { const s = ${FIELD(label)}; const w = s.ownerDocument.defaultView;
+    Object.getOwnPropertyDescriptor(w.HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(v)}); s.dispatchEvent(new w.Event('change', { bubbles: true })); })()`); await quiet(); };
+  const press = async (label, where = BUTTON) => { await (where === BUTTON ? far : page).evaluate(`${where(label)}.click()`, true); await quiet(); };
   const quiet = async (ms = 700) => { let seen = -1; while (seen !== calls.length) { seen = calls.length; await sleep(ms); } };
   const counts = () => evaluate(`Object.fromEntries([...document.querySelectorAll('section.editors .tabs button')].map(b => /^(\\w+) \\((\\d+)\\)$/.exec(b.textContent.trim())).filter(Boolean).map(m => [m[1], Number(m[2])]))`);
   const probes = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? '{}').measurements ?? null`);
   const configNow = async () => { await sleep(1000); return evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? '{}')`); };   // saved 800 ms after a change
   const imports = (from = 0) => calls.slice(from).filter(c => c.op === 'import').map(c => `${c.cell} ${c.testbench ?? '-'}`);
-  const shot = async name => {
-    const H3 = `[...${PANEL}.querySelectorAll('h3')].find(h => h.textContent.trim() === 'Circuit source')`;
-    await evaluate(`${H3}.scrollIntoView({ block: 'start' })`); await sleep(200);
-    await page.shot(path.join(out, name), await evaluate(`(() => { const a = document.querySelector('.left').getBoundingClientRect(), h = ${H3}.getBoundingClientRect();
-      return { x: a.x, y: Math.max(a.y, h.y - 6), width: a.width, height: a.bottom - Math.max(a.y, h.y - 6), scale: 2 }; })()`));
-  };
+  const shot = name => far.shot(path.join(out, name), WIN, { scale: 2, maxHeight: 1400, beyond: true });
 
   await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose'], answer, { others: 'read' });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
-  for (let i = 0; i < 100 && !(await evaluate(`!!(${BUTTON('Load starter configuration')})`)); i++) await sleep(100);
+  for (let i = 0; i < 100 && !(await evaluate(`!!(${COLUMN_BUTTON('Load starter configuration')})`)); i++) await sleep(100);
   for (let i = 0; i < 60 && !(await evaluate(`/\\S/.test(document.querySelector('.left button.connection-button .connection-button-what')?.textContent.replace(/none (selected|set up yet)/, '') ?? '')`)); i++) await sleep(100);
   await sleep(800);
 
   // ---- a registered task's rows first: the MOCK starter (its Probe m_score, its target score) -------------------------
-  await press('Load starter configuration'); await sleep(800);
+  await press('Load starter configuration', COLUMN_BUTTON); await sleep(800);
   check('the MOCK starter is in the editors', (await counts()).Specs === 1 && (await counts()).Probes === 1, JSON.stringify(await counts()));
 
-  // ---- tb_<cell> is found by its name ------------------------------------------------------------------------------------
-  await choose('Source', 'virtuoso'); await choose('Library', LIBRARY);
+  // ---- tb_<cell> is found by its name (in the window) ---------------------------------------------------------------------
+  await openWindow(); await choose('Library', LIBRARY);
   check('the testbench box offers the cells with a schematic', JSON.stringify(await options('Testbench cell')) === JSON.stringify(['', ...CELLS.filter(c => c.has_schematic).map(c => c.name)]),
     JSON.stringify(await options('Testbench cell')));
   await choose('Cell', 'ring3');
   check('choosing ring3 chooses tb_ring3 by itself', (await value('Testbench cell')) === 'tb_ring3', await value('Testbench cell'));
   check('the form says why', (await shown('.tb-named')) === "Found by its name: tb_ + the cell's name.", await shown('.tb-named'));
   check('the browse-only note names the testbench the cell will be read through', (await text()).includes('read it into the workbench through the testbench tb_ring3'));
+  check('the note warns that the cell itself is written, in view', (await shown('.copy-warning'))?.startsWith('Work on a copy, never on your design.'));
   check('a browse-only cell brings no probes', (await counts()).Probes === 1 && !(await shown('.tb-probes')));
   await shot('tbprobes-1-found.png');
 
   // ---- reading the cell through it: Probes follow the testbench; the MOCK target leaves with its probe ----------------------------
   let mark = calls.length;
   await press('Read this cell into the workbench'); await sleep(600);
-  check('the press reads the cell through tb_ring3', JSON.stringify(imports(mark)) === JSON.stringify(['ring3 tb_ring3']), imports(mark).join(' | '));
+  check('the press asks once whether the cell is a copy, then reads the cell through tb_ring3 with work_here', JSON.stringify(imports(mark)) === JSON.stringify(['ring3 tb_ring3'])
+    && dialogs.length === 1 && calls.filter(c => c.op === 'import').at(-1)?.work_here === true, `${imports(mark).join(' | ')} / ${dialogs.length} dialog(s)`);
   let saved = await configNow();
   check('Probes now hold the testbench\'s 8 results, with its nets', saved.measurements?.length === 8 && saved.measurements[0].signal === 'OUT'
     && saved.measurements.find(r => r.source_name === 'supply_power_w')?.signal === 'V0:p', JSON.stringify(saved.measurements?.map(r => r.signal)));
   check('the untouched MOCK target left Specs with its probe', (saved.targets ?? []).length === 0, JSON.stringify(saved.targets));
   check('the panel says so, naming the testbench, the type and the task', (await shown('.tb-probes'))?.includes('Probes now show what the testbench tb_ring3 measures: 8 results of the circuit type Ring oscillator (free-running).')
     && (await shown('.tb-probes'))?.includes('The targets of synthetic:gpdk045_ota5 were removed from Specs'), await shown('.tb-probes'));
-  check('what the rows mean is one click away (folded)', await evaluate(`(() => { const d = [...${PANEL}.querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'What the Probes rows say');
+  check('what the rows mean is one click away (folded)', await far.evaluate(`(() => { const d = [...${WIN}.querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'What the Probes rows say');
     return !!d && !d.open && d.textContent.includes('V0:p, the current through the supply source V0'); })()`));
-  check('there is no circuit type box any more: a saved task reads it from its probes', !(await evaluate(`[...document.querySelectorAll('label')].some(l => l.firstChild?.textContent.trim() === 'Circuit type')`)));
+  check('there is no circuit type box any more: a saved task reads it from its probes', !(await far.evaluate(`[...document.querySelectorAll('label')].some(l => l.firstChild?.textContent.trim() === 'Circuit type')`)));
   check('the copy matches the box: no "read again" warning', !(await shown('.tb-stale')));
   await shot('tbprobes-2-brought.png');
 
@@ -151,10 +166,10 @@ try {
   mark = calls.length;
   await choose('Testbench cell', 'other_tb'); await sleep(500);
   check('choosing another testbench reads nothing from Virtuoso', imports(mark).length === 0, imports(mark).join(' | '));
-  check('the note says the copy was read through another testbench', (await shown('.tb-stale')) === 'This copy was read through tb_ring3. Press Read the cell again to read it through other_tb: Probes then follow it.',
+  check('the note says the cell was read through another testbench', (await shown('.tb-stale')) === 'This cell was read through tb_ring3. Press Read the cell again to read it through other_tb: Probes then follow it.',
     await shown('.tb-stale'));
   check('edited Probes are kept, and the exchange is offered', (await shown('.tb-probes'))?.startsWith('Probes hold rows you edited, not the ones of the testbench tb_ring3.')
-    && !!(await evaluate(`!!(${BUTTON('Use testbench probes')})`)), await shown('.tb-probes'));
+    && !!(await far.evaluate(`!!(${BUTTON('Use testbench probes')})`)), await shown('.tb-probes'));
   saved = await configNow();
   check('the edited row is still there', saved.measurements?.[0]?.notes === 'my own note', saved.measurements?.[0]?.notes);
   await shot('tbprobes-3-kept.png');
@@ -162,10 +177,10 @@ try {
   // ---- a testbench that fits no circuit type: Probes stay, the reasons are folded ------------------------------------------------------
   mark = calls.length;
   await press('Read the cell again'); await sleep(600);
-  check('"Read the cell again" reads it through other_tb', JSON.stringify(imports(mark)) === JSON.stringify(['ring3 other_tb']), imports(mark).join(' | '));
+  check('"Read the cell again" reads it through other_tb, asking nothing more', JSON.stringify(imports(mark)) === JSON.stringify(['ring3 other_tb']) && dialogs.length === 1, imports(mark).join(' | '));
   check('it says that no circuit type fits, and Probes are left alone', (await shown('.tb-probes')) === 'Probes were left as they were. The testbench other_tb fits none of the circuit types.'
     && (await probes())?.[0]?.notes === 'my own note', await shown('.tb-probes'));
-  check('why each type does not fit is folded', await evaluate(`(() => { const d = [...${PANEL}.querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'Why no circuit type fits');
+  check('why each type does not fit is folded', await far.evaluate(`(() => { const d = [...${WIN}.querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'Why no circuit type fits');
     return !!d && !d.open && d.textContent.includes('found 2') && d.textContent.includes('Missing here'); })()`));
   check('the copy matches the box again', !(await shown('.tb-stale')));
 
@@ -204,7 +219,7 @@ try {
   check('Refresh never replaces a chosen testbench', (await value('Testbench cell')) === 'other_tb', await value('Testbench cell'));
 
   check('nothing was sent to the agent', agentRequests === 0, `${agentRequests} request(s)`);
-  check('no question was asked on screen', dialogs.length === 0, dialogs.join(' | '));
+  check('the only question on screen was the one about the copy, asked once', dialogs.length === 1 && dialogs[0].includes('COPY you made'), dialogs.join(' | '));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
 } catch (error) {
   fail(error);

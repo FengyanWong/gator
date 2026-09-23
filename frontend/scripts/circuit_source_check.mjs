@@ -1,14 +1,15 @@
-// Browser check of the Project panel's "Circuit source" list after "Import Spectre netlist" was removed (user request
-// 2026-09-21, status record 7.53; there is no frontend test runner). Same approach as project_help_check.mjs: a throwaway
+// Browser check of a configuration saved with the removed "Import Spectre netlist" source (user request 2026-09-21,
+// status record 7.53; since 2026-09-23 the column has no Source list any more - the Task list of the registered task says
+// it; there is no frontend test runner). Same approach as project_help_check.mjs: a throwaway
 // headless Edge over the DevTools protocol against the RUNNING workbench (default http://127.0.0.1:8765/), with a new,
 // temporary browser profile whose saved configuration is SEEDED with one written while the netlist source existed.
 // EVERY /api/* request is paused: GETs, static validation and the load of a registered task pass through (read-only; the
 // task here is the MOCK task synthetic:gpdk045_ota5), every other request is refused here - nothing is started, saved or
 // probed, and Virtuoso is never contacted. So it is safe against the user's live backend.
-// What it pins: the list offers a registered task and a Virtuoso cell only; a saved configuration that still names the
-// netlist source shows it as removed, says so in plain words and sends NOTHING about it to the backend; choosing another
-// source drops the two file paths (in the browser's saved copy too) and loads normally; Undo brings the old state back
-// without a request. (Until 7.53 this script checked the netlist form itself: 21 checks, status record 7.13.)
+// What it pins: a saved configuration that still names the netlist source shows no task chosen, says so in plain words and
+// sends NOTHING about it to the backend; choosing a task drops the two file paths (in the browser's saved copy too) and
+// loads normally; Undo brings the old state back without a request. (Until 7.53 this script checked the netlist form
+// itself: 21 checks, status record 7.13; until 2026-09-23 the Source list.)
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/circuit_source_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -42,17 +43,17 @@ try {
                                                                                        // it writes a probe file, so it is refused too, but expected
     return page.refuse(requestId, 'FIXTURE: this check lets no other request through');
   };
-  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Circuit source'))`;
+  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
   const FIELD = label => `[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)})?.querySelector('input, select')`;
-  const SOURCE = FIELD('Source');
+  const SOURCE = FIELD('Task');
   const text = () => evaluate(`${PANEL}.textContent`);
   const options = () => evaluate(`[...${SOURCE}.options].map(o => ({ value: o.value, text: o.textContent.trim(), disabled: o.disabled }))`);
   const choose = (label, v) => evaluate(`(() => { const s = ${FIELD(label)}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(v)});
     s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   const settle = async (mark, ms = 6000) => { for (let waited = 0; waited < ms && loads.length === mark; waited += 100) await sleep(100); await sleep(900); };
   const saved = () => evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)}) || 'null')?.circuit ?? null`);
-  const shot = async name => {                                                      // the left column scrolls: bring the source into view, clip to what is visible
-    const H3 = `[...${PANEL}.querySelectorAll('h3')].find(h => h.textContent.trim() === 'Circuit source')`;
+  const shot = async name => {                                                      // the left column scrolls: bring the task into view, clip to what is visible
+    const H3 = `[...${PANEL}.querySelectorAll('h3')].find(h => h.textContent.trim() === 'Registered task')`;
     await evaluate(`${H3}.scrollIntoView({ block: 'start' })`); await sleep(200);
     await page.shot(path.join(out, name), await evaluate(`(() => { const a = document.querySelector('.left').getBoundingClientRect(), h = ${H3}.getBoundingClientRect();
       return { x: a.x, y: Math.max(a.y, h.y - 6), width: a.width, height: a.bottom - Math.max(a.y, h.y - 6), scale: 2 }; })()`));
@@ -61,16 +62,17 @@ try {
   await page.intercept(['*/api/*'], answer);
   await page.seed({ config: CONFIG });
   await send('Page.navigate', { url: APP });
-  if (!(await until(`!!(${PANEL}) && !!(${SOURCE})`, 150))) throw new Error('the Project panel never showed its Source list | console: ' + consoleErrors.join(' | ').slice(0, 300));
+  if (!(await until(`!!(${PANEL}) && !!(${SOURCE})`, 150))) throw new Error('the Project panel never showed its Task list | console: ' + consoleErrors.join(' | ').slice(0, 300));
   await sleep(2500);                                                                // time enough for any load the page might (wrongly) send
 
   // ---- a configuration saved with the removed source -----------------------------------------------------------------
   const before = await options();
-  check('the saved source is shown as removed (and cannot be chosen again), next to the two sources on offer',
-    (await evaluate(`${SOURCE}.value`)) === 'netlist' && JSON.stringify(before) === JSON.stringify([{ value: 'netlist', text: 'Spectre netlist (removed)', disabled: true },
-      { value: 'registered_task', text: 'Registered task', disabled: false }, { value: 'virtuoso', text: 'Virtuoso library / cell / view', disabled: false }]), JSON.stringify(before));
+  check('no task is chosen: the list shows the removed source as none, and cannot be left on it',
+    (await evaluate(`${SOURCE}.value`)) === '' && before[0]?.disabled === true && before[0].text === '(none: the saved source was removed)'
+    && before.some(o => o.value === 'synthetic:gpdk045_ota5') && !before.some(o => o.value === 'virtuoso' || o.value === 'netlist'), JSON.stringify(before));
+  check('there is no Source list in the column any more', !(await evaluate(`!![...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'Source')`)));
   check('a plain note says what happened, names the saved file and what to do', (await text()).includes('This configuration was saved with a Spectre netlist file')
-    && (await text()).includes(NETLIST) && (await text()).includes('The workbench no longer imports netlists: choose another source above.')
+    && (await text()).includes(NETLIST) && (await text()).includes('The workbench no longer imports netlists: choose a task below, or a Virtuoso cell in its window.')
     && await evaluate(`!!${PANEL}.querySelector('.note code')`));
   const widths = await evaluate(`(() => { const c = document.querySelector('.left'); return [c.scrollWidth, c.clientWidth]; })()`);
   check('the long path wraps inside the note: the column does not scroll sideways', widths[0] <= widths[1], `scrollWidth ${widths[0]}, clientWidth ${widths[1]}`);
@@ -83,15 +85,15 @@ try {
   check('no circuit of any source is shown', !(await text()).includes('Hierarchy ('));
   await shot('source-1-saved-netlist.png');
 
-  // ---- choosing a source that is on offer ----------------------------------------------------------------------------------
+  // ---- choosing a task -----------------------------------------------------------------------------------------------------
   let mark = loads.length;
-  await choose('Source', 'registered_task'); await settle(mark);
-  check('"Registered task" sends exactly one load: that task, without the two file paths', loads.length === mark + 1 && loads[mark].source === 'registered_task'
+  await choose('Task', 'synthetic:gpdk045_ota5'); await settle(mark);
+  check('choosing a task sends exactly one load: that task, without the two file paths', loads.length === mark + 1 && loads[mark].source === 'registered_task'
     && loads[mark].task_id === 'synthetic:gpdk045_ota5' && loads[mark].netlist_path === null && loads[mark].parser_config_path === null, JSON.stringify(loads.slice(mark)));
   check('the task is read: MOCK backend, its hierarchy', (await text()).includes('MOCK evaluation backend') && (await text()).includes('Hierarchy ('));
-  const after = (await options()).map(o => o.value);
-  check('the removed entry and the note are gone', JSON.stringify(after) === JSON.stringify(['registered_task', 'virtuoso'])
-    && !(await text()).includes('This configuration was saved with a Spectre netlist file'), after.join(' | '));
+  const after = await options();
+  check('the removed entry and the note are gone', !after.some(o => o.value === '' ) && (await evaluate(`${SOURCE}.value`)) === 'synthetic:gpdk045_ota5'
+    && !(await text()).includes('This configuration was saved with a Spectre netlist file'), after.map(o => o.value).join(' | '));
   await sleep(1200);                                                                // the page keeps its copy 0.8 s after a change
   const kept = await saved();
   check('the browser\'s saved copy no longer names the files', kept?.source === 'registered_task' && kept.netlist_path === null && kept.parser_config_path === null, JSON.stringify(kept));
@@ -100,7 +102,7 @@ try {
   // ---- Undo brings the old configuration back, still without a request ---------------------------------------------------------
   mark = loads.length;
   await evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Undo').click()`); await sleep(1500);
-  check('Undo: the saved netlist source is back, shown as removed, and nothing is sent', (await evaluate(`${SOURCE}.value`)) === 'netlist'
+  check('Undo: the saved netlist source is back, shown as none, and nothing is sent', (await evaluate(`${SOURCE}.value`)) === ''
     && (await text()).includes('This configuration was saved with a Spectre netlist file') && loads.length === mark && !(await text()).includes('Hierarchy ('),
     `${loads.length - mark} request(s)`);
 

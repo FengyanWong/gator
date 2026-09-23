@@ -168,7 +168,7 @@ def written_answer():
 
 def test_writing_a_setup_goes_to_the_copy_only_and_is_compared_on_the_way_back(tmp_path):
     imported(tmp_path)
-    with pytest.raises(working_copy.CopyError, match='Make the working copy first'):
+    with pytest.raises(working_copy.CopyError, match='confirm that it is a copy'):
         write(probe(tmp_path), SETUP)
     working_copy.make(probe(tmp_path), 'lab', LIB, CELL, command=fake_writer(tmp_path))
     readback = working_copy.native_cells.cell_dir(LIB, CELL) / 'testbench_readback.json'
@@ -228,8 +228,10 @@ def test_the_copy_and_setup_routes_go_through_the_same_checks(tmp_path, monkeypa
     client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
     cell = dict(library=LIB, cell=CELL)
     assert client.post('/api/virtuoso/setup/read', json=dict(cell, profile_id='lab')).status_code == 409     # no copy yet
-    made = client.post('/api/virtuoso/copy', json=dict(cell, profile_id='lab'))
-    assert made.status_code == 200 and made.json()['verified']
+    # The page no longer makes copies (2026-09-23): the route refuses, the copy here is made the way Save as makes one.
+    refused = client.post('/api/virtuoso/copy', json=dict(cell, profile_id='lab'))
+    assert refused.status_code == 409 and refused.json()['detail']['code'] == 'copies_not_made'
+    assert working_copy.make(probe(tmp_path), 'lab', LIB, CELL, command=fake_writer(tmp_path))['verified']
     loaded = client.post('/api/circuit/load', json=dict(circuit=dict(source='virtuoso', library=LIB, cell=CELL, testbench_cell=TB))).json()
     assert loaded['working_copy']['copy']['library'] == COPY                      # the page learns of the copy with the circuit
     readback = working_copy.native_cells.cell_dir(LIB, CELL) / 'testbench_readback.json'
@@ -254,4 +256,4 @@ def test_the_copy_and_setup_routes_go_through_the_same_checks(tmp_path, monkeypa
     assert last['op'] == 'write_setup' and last['request']['setup']['analyses'] is None       # the copy's analyses are kept
     with pytest.raises(vs.SetupError, match=r'system\(\) is not'):
         write(probe(tmp_path), dict(SETUP, outputs=[dict(name='x', expression='system("y")')], specs=[]))
-    assert client.post('/api/virtuoso/copy', json=cell).status_code == 422                   # a connection profile is required
+    assert client.post('/api/virtuoso/copy', json=cell).status_code == 409                   # refused before anything else

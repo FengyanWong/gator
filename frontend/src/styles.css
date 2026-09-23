@@ -127,6 +127,15 @@ button.notes-link { border: none; background: none; padding: 0 3px; color: var(-
 .connection-window .hint, .connection-window label, .connection-window .steps-list { font-size: 12.5px; } .connection-window .step { margin-top: 10px; padding-top: 8px; } .connection-window .step-head { font-size: 13.5px; }
 .connection-window .step-no { width: 18px; height: 18px; line-height: 18px; font-size: 11.5px; } .connection-window .command code { font-size: 12.5px; } .connection-window .status-line { font-size: 13px; }
 .connection-window .row > label { flex: 1; } .connection-window .row > button { flex: none; } .connection-window p { margin: 5px 0; } .connection-window .connection-add { background: #f7f8fa; padding: 8px 10px; border: 1px solid var(--line); }
+/* The Virtuoso cellview import of the left column is ONE button (user request 2026-09-23); pressing it opens the Virtuoso window,
+   a pop-up like the connection window (about:blank = quirks mode, so its tables are told to inherit the font). */
+.row.virtuoso-launcher { align-items: center; } .row.virtuoso-launcher > .hint { flex: 1 1 120px; } .row.virtuoso-launcher > button { flex: none; }
+details.labels > summary { color: var(--muted); } details.labels > summary b { font-weight: 600; color: var(--text); }
+#virtuoso-root { min-height: 100vh; background: var(--panel); }
+.virtuoso-window { max-width: 760px; margin: 0 auto; padding: 14px 18px 24px; font-size: 13.5px; } .virtuoso-window h2 { margin: 0 0 8px; font-size: 17px; }
+.virtuoso-window .hint, .virtuoso-window label, .virtuoso-window .steps-list { font-size: 12.5px; } .virtuoso-window p { margin: 5px 0; }
+.virtuoso-window details > summary { cursor: pointer; } .virtuoso-window table { font: inherit; } .virtuoso-window .row > button { flex: none; }
+.virtuoso-window .copy-warning { border: 1px solid var(--warn); background: #fff6dc; padding: 5px 8px; }
 .real { background: #e8f0fd; border: 1px solid var(--accent); padding: 4px 8px; font-weight: 600; }
 label.disabled { opacity: .6; } input:disabled { background: #eceef1; color: var(--muted); cursor: not-allowed; }
 td.numeric { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap !important; } details a { color: var(--accent); }

@@ -1,16 +1,17 @@
-// Browser check of saved tasks (TaskSave.tsx, TaskFile.tsx): an open task's "Save task" (next revision),
-// "Save as" (another task) and the task file in a window of its own. Same approach as working_copy_check.mjs: a throwaway
+// Browser check of saved tasks (TaskSave.tsx, TaskFile.tsx): an open task's "Save task" (next revision) and the task
+// file in a window of its own. Same approach as working_copy_check.mjs: a throwaway
 // headless Edge over the DevTools protocol against a workbench page (default http://127.0.0.1:8765/; GATOR_WORKBENCH_URL for
 // a preview of a temporary build). EVERY /api/virtuoso/* request, the circuit load and the task list of the open task are
 // answered with canned FIXTURES, so Virtuoso is never contacted and nothing is saved anywhere; any other writing request of
 // the page is refused (reads pass). What it pins (user request
 // 2026-09-22, "go on part 2"):
-//   - an open task names itself and its revision; three short buttons: Save task, Save as, Task file - at the right end of
-//     the editors' tab line, above "Modify selected with agent...", not in the Project panel (user request 2026-09-22);
+//   - an open task names itself and its revision; two short buttons: Save task, Task file - at the right end of the
+//     editors' tab line, above "Modify selected with agent...", not in the Project panel (user request 2026-09-22); no
+//     "Save as" since 2026-09-23 (the workbench makes no copies: another task is another copy the user makes and reads);
 //   - "Task file" opens a window with the task as one readable file (its _help included); "Apply to editors" checks it and
 //     fills the editors (one Undo step); a broken file is refused with its problems and changes nothing;
 //   - "Save task" sends the rows, the task and what the file added (analyses) and reports the revision and the baseline;
-//   - "Save as" asks for a new name under the editors' toolbar, sends as_new and opens the new task; nothing happens on load.
+//     nothing happens on load.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; WSLENV carries the URL into it):
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_save_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -80,7 +81,7 @@ try {
     dialogs.push({ message: p.message, planned: accept !== null });
     return send('Page.handleJavaScriptDialog', { accept: !!accept });
   });
-  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Circuit source'))`;
+  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
   const BLOCK = `document.querySelector('.editors .tabs .task-save')`;          // the bar: right end of the editors' tab line
   const NOTES = `document.querySelector('.editors .task-notes')`;              // its messages and questions, under the toolbar
   const BUTTON = text => `[...(${BLOCK}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
@@ -107,7 +108,7 @@ try {
   await settle(1500);
   check('nothing is saved or read from Virtuoso on load', calls.length === 0, calls.map(c => c.op).join(' | '));
   check('the open task names itself and its revision', (await blockText()).includes('Task real:ring_osc, revision 1'), await blockText());
-  check('three short buttons: Save task, Save as, Task file', await evaluate(`!!(${BUTTON('Save task')}) && !!(${BUTTON('Save as')}) && !!(${BUTTON('Task file')})`));
+  check('two short buttons: Save task, Task file - no Save as', await evaluate(`!!(${BUTTON('Save task')}) && !(${BUTTON('Save as')}) && !!(${BUTTON('Task file')})`));
   check('they sit in the editors\' tab line, none in the Project panel', await evaluate(`!!${BLOCK}.closest('.tabs') && !${PANEL}.querySelector('.task-save')
     && ![...${PANEL}.querySelectorAll('button')].some(b => ['Save task', 'Save as', 'Task file'].includes(b.textContent.trim()))`));
   const place = await evaluate(`(() => { const bar = ${BLOCK}.getBoundingClientRect(), tabs = ${BLOCK}.closest('.tabs'), line = tabs.getBoundingClientRect();
@@ -150,19 +151,11 @@ try {
   await sleep(500);
   check('the open task shows its new revision', (await blockText()).includes('revision 2'), await blockText());
 
-  // ---- Save as: another task, a name beside the button -----------------------------------------------------------------------------
-  await press('Save as'); await settle(400);
-  check('Save as asks for the new name under the toolbar', await evaluate(`[...${NOTES}.querySelectorAll('label')].some(l => l.firstChild?.textContent.trim() === 'New task name')`));
-  check('the same name cannot be saved as', await evaluate(`[...${NOTES}.querySelectorAll('button')].filter(b => b.textContent.trim() === 'Save as').at(-1).disabled`));
-  await typeInto(`[...${NOTES}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'New task name').querySelector('input')`, 'ring_fast'); await sleep(200);
-  mark = calls.length;
-  await evaluate(`[...${NOTES}.querySelectorAll('button')].filter(b => b.textContent.trim() === 'Save as').at(-1).click()`); await settle(1800);
-  const asCall = calls.slice(mark).find(c => c.op === 'task/save');
-  check('Save as sends as_new with the new name and the open task', !!asCall && asCall.as_new === true && asCall.name === 'ring_fast' && asCall.task === 'ring_osc', JSON.stringify(asCall ?? calls.slice(mark)));
-  config = await stored();
-  check('the new task is opened', config.circuit.task_id === 'real:ring_fast', config.circuit.task_id);
-  check('the panel says the new task was saved and on which copy', (await evaluate(`${PANEL}.textContent`)).includes('Saved the new task real:ring_fast') &&
-    (await evaluate(`${PANEL}.textContent`)).includes('tb_ring_osc_3stage_ring_fast'));
+  // ---- no "Save as" (2026-09-23): the open task never sends as_new; another task is another copy, read in the Virtuoso window ----
+  check('nothing under the toolbar asks for a new task name', !(await evaluate(`[...${NOTES}?.querySelectorAll('label') ?? []].some(l => l.firstChild?.textContent.trim() === 'New task name')`)));
+  check('no save of this check was sent as_new', calls.filter(c => c.op === 'task/save').every(c => c.as_new === false), JSON.stringify(calls.filter(c => c.op === 'task/save').map(c => c.as_new)));
+  check('the task\'s block in the column names it and offers Check now', (await evaluate(`${PANEL}.textContent`)).includes('Before every run:')
+    && (await evaluate(`[...${PANEL}.querySelectorAll('button')].some(b => b.textContent.trim() === 'Check now')`)));
   check('no unplanned dialog', dialogs.every(d => d.planned), JSON.stringify(dialogs));
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
   await page.shot(path.join(out, 'task-save-1.png'));

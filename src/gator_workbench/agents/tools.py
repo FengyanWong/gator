@@ -61,12 +61,14 @@ def _copy_facts(session, arguments):
     """The working copy this request is about - no Virtuoso call, the workbench's own records."""
     target = session.target()
     bindable = working_copy.bindable_on(target)
-    return dict(copy=target['copy'], cell_you_drew=target['original'], test=virtuoso_setup.TEST,
+    own = working_copy.is_declared(target)                 # the user's own copy, declared on the read: written directly
+    return dict(copy=target['copy'], cell_you_drew=None if own else target['original'], own_copy=own, test=virtuoso_setup.TEST,
                 last_written_by_the_workbench=working_copy.last_written(target) or None,
                 bindable=[dict(cell=c, instance=i, parameters=sorted(p)) for (c, i), p in sorted(bindable.items())],
                 allowed_functions=sorted(virtuoso_setup.FUNCTIONS),
                 model_files=working_copy.default_model_files(session.profile_id),
-                note='Only these instance parameters may be set to a Maestro variable. Transistor sizes are not among '
+                note=('This is the cell the user declared as a copy they made; the workbench writes into it directly. ' if own else '')
+                     + 'Only these instance parameters may be set to a Maestro variable. Transistor sizes are not among '
                      'them and are not yours to write: the optimizer writes them inside a run and restores them.')
 
 
@@ -95,7 +97,8 @@ def _write_setup(session, arguments):
     return dict(copy=target['copy'], matches=written['matches'], differences=written['differences'],
                 now=dict(analyses=written.get('analyses'), outputs=written.get('outputs'), specs=written.get('specs'),
                          variables=written.get('variables'), bindings=written.get('bindings')),
-                note='Written into the working copy only. Nothing was simulated, and your own cell was not touched.')
+                note='Written into the working copy only' + (' - the cell the user declared as their copy' if working_copy.is_declared(target)
+                                                             else ', not into the cell the user drew') + '. Nothing was simulated.')
 
 
 ROW = dict(type='object', additionalProperties=False)

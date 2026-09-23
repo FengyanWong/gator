@@ -121,7 +121,8 @@ budget).
 | `4231a8f` | 09-22 19:51 | 7.67 | |
 | `00fc084` | 09-22 19:56 | 7.68 | |
 | `0fea6b1` | 09-23 02:07 | 7.53 | the departed session's netlist removal, committed on the user's decision |
-| `bfcfb2d` | 09-23 03:22 | 7.69 | review round 2; also the rollover rule and the lists in this file |
+| `bfcfb2d` | 09-23 03:10 | 7.69 | review round 2; also the rollover rule and the lists in this file |
+| `e4ef6b4` | 09-23 03:54 | 7.70 | review round 3: identical code merged only; nothing under `src/analog_optimizer` |
 
 ## Entries
 

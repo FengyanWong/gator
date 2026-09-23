@@ -123,7 +123,9 @@ try {
   check('the connection block of the left column is ONE button', !!block && block.controls === 1 && block.first, JSON.stringify(block));
   check('it is called "Connection" and names the connection in use, its kind and the last state', !!block && /^Connection\s*lab - Virtuoso over SSH\s*UNKNOWN$/.test(block.text), block?.text);
   check('the old panel (heading, steps, profile select) is gone from the column', !!block && !block.headings.some(h => /connection/i.test(h)) && block.height < 90, JSON.stringify(block));   // two lines of text; the old panel was > 300 px
-  check('page load reads the profiles and the cached status once each', JSON.stringify(names().sort()) === JSON.stringify(['GET profiles', 'GET status']), names().join(', '));
+  // Since 7.76 the Project column reads the connection list too (the family of the connection in use): a read of the
+  // workbench's own file, no probe - so the page load is two GET profiles + one GET status, and nothing else.
+  check('page load reads the profiles (twice: the button and the Project column) and the cached status once, and checks nothing', JSON.stringify(names().sort()) === JSON.stringify(['GET profiles', 'GET profiles', 'GET status']), names().join(', '));
   check('page load starts NO check', !seen.some(s => s.method === 'POST'), names().join(', '));
   await shot('main', '.left', 'connection-1-left-column.png');
 
@@ -173,9 +175,11 @@ try {
   const select = async id => { const before = seen.length; await choose('select', id); await settle(before); return seen.slice(before); };
   let switched = await select('here');
   shown = await text();
-  check('choosing another connection reads its cached status once and checks nothing', switched.length === 1 && switched[0].method === 'GET' && switched[0].name === 'status', switched.map(s => `${s.method} ${s.name}`).join(', '));
+  check('choosing another connection reads its cached status once (and the Project column the connection list) and checks nothing',
+    switched.every(s => s.method === 'GET' && ['status', 'profiles'].includes(s.name)) && switched.filter(s => s.name === 'status').length === 1, switched.map(s => `${s.method} ${s.name}`).join(', '));
   check('Virtuoso on this machine: "Set up local bridge", no SSH wording in the steps', shown.includes('Set up the bridge on this machine') && (await buttons()).includes('Set up local bridge')
     && !(await buttons()).includes('Connect SSH') && shown.includes('no SSH and no tunnel') && shown.includes('Load the bridge in the Virtuoso CIW'), (await buttons()).join(' | '));
+  check('a Virtuoso connection shows no ngspice note', !shown.includes('agent aid is under construction') && !shown.includes('What an ngspice connection runs'));
   mark = seen.length;
   await press('Set up local bridge');
   await settle(mark);
@@ -188,8 +192,10 @@ try {
   shown = await text();
   check('ngspice on this machine: ONE step - test; no connect step, no CIW step, no Spectre button', shown.includes('Test ngspice on this machine') && !shown.includes('Virtuoso CIW')
     && JSON.stringify((await buttons()).filter(b => !/Add a connection/.test(b))) === JSON.stringify(['Test connection', 'Details']), (await buttons()).join(' | '));
-  check('what an ngspice connection cannot do yet is said plainly, as a neutral note (not as an error)', shown.includes('can do today: be tested') && shown.includes('not built yet')
+  check('what an ngspice connection runs is said plainly, as a neutral note (not as an error)', shown.includes('What an ngspice connection runs: the ngspice netlist tasks')
     && (await far.evaluate(`!!${WINDOW}.querySelector('.note') && !${WINDOW}.querySelector('.note.error, .note .error, .blocker')`)));
+  check('the note says that the ngspice agent aid is under construction (user request 2026-09-24)', shown.includes('The ngspice agent aid is under construction')
+    && await far.evaluate(`!!${WINDOW}.querySelector('.note p.agent-aid')`), shown.slice(0, 200));
   mark = seen.length;
   await press('Test connection');
   await settle(mark);
@@ -247,7 +253,7 @@ try {
   try { await windowTarget(false); } catch { closedByReload = false; }
   far.close();
   check('a reload closes the window (no dead window is left behind)', closedByReload);
-  check('a reload reads the profiles and the cached status once each, and checks nothing', JSON.stringify(names(mark).sort()) === JSON.stringify(['GET profiles', 'GET status']), names(mark).join(', '));
+  check('a reload reads the profiles (the button and the Project column) and the cached status once, and checks nothing', JSON.stringify(names(mark).sort()) === JSON.stringify(['GET profiles', 'GET profiles', 'GET status']), names(mark).join(', '));
   await openWindow();
   check('an old cached result is labelled as too old', /^tested at .* - too old to trust, shown as unknown$/.test(await hint()) && (await badge()) === 'UNKNOWN', `${await badge()} | ${await hint()}`);
   await shot('window', '.connection-window', 'connection-7-window-old-result.png');

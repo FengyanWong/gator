@@ -9,7 +9,8 @@
 // name, text, kinds and labels, then the column follows the new task (the Task list shows it as [ngspice]) and the
 // editors hold its starter rows; a saved ngspice task shows its block in the column (revision, results, Delete task);
 // the launchers follow the connection in use (/api/connection/profiles answered by fixtures: none chosen = both, a
-// Virtuoso connection = "Virtuoso cell..." only, an ngspice connection = "ngspice netlist..." only).
+// Virtuoso connection = "Virtuoso cell..." only, an ngspice connection = "ngspice netlist..." only), and the Task list
+// lists the ngspice tasks under the same rule, except the task the page follows (record 7.77).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/ngspice_window_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -164,22 +165,36 @@ try {
   await shot('ngspice-3-column.png');
   check('the window now offers the next revision', (await win.evaluate(`[...${W}.querySelectorAll('button')].map(b => b.textContent.trim())`)).includes('Save (next revision)'));
 
-  // ---- the launchers follow the connection in use ----------------------------------------------------------------------------------
+  // ---- the launchers follow the connection in use, and so do the ngspice tasks in the Task list (records 7.76, 7.77) -----------------
   connections = [{ id: 'fixture-lab', kind: 'virtuoso_ssh', family: 'virtuoso' }, { id: 'fixture-sim', kind: 'ngspice_local', family: 'ngspice' }];
-  const launchers = () => evaluate(`(() => { const p = ${PANEL}; return { virtuoso: !!p.querySelector('button.virtuoso-button'), ngspice: !!p.querySelector('button.ngspice-button') }; })()`);
-  const withConnection = async id => {
-    await page.seed({ config: { ...JSON.parse(await evaluate(`localStorage.getItem('gator-workbench-config-v1')`)), run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, threads_per_job: 1, seed: 0, connection_profile_id: id } } });
+  const TASK_SELECT = `[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'Task')?.querySelector('select')`;
+  const launchers = () => evaluate(`(() => { const p = ${PANEL}; return { virtuoso: !!p.querySelector('button.virtuoso-button'), ngspice: !!p.querySelector('button.ngspice-button'),
+    tasks: [...((${TASK_SELECT})?.options ?? [])].map(o => o.textContent.trim()) }; })()`);
+  // The page reloaded with the connection `id` in use and, when one is given, another task followed (its rows emptied; the MOCK
+  // task's load passes through to the backend, read-only).
+  const withConnection = async (id, task = null) => {
+    const stored = JSON.parse(await evaluate(`localStorage.getItem('gator-workbench-config-v1')`));
+    await page.seed({ config: { ...stored, ...(task ? { circuit: { ...stored.circuit, source: 'registered_task', task_id: task }, parameters: [], measurements: [], targets: [] } : {}),
+      run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, threads_per_job: 1, seed: 0, connection_profile_id: id } } });
     await send('Page.navigate', { url: APP });
     await until(`!!(${PANEL})`, 150); await sleep(2000);
     return launchers();
   };
+  const ngspiceListed = shown => shown.tasks.filter(t => t.startsWith('ngspice:'));
   const onVirtuoso = await withConnection('fixture-lab');
   check('with a Virtuoso connection in use the column offers "Virtuoso cell..." only', onVirtuoso.virtuoso && !onVirtuoso.ngspice, JSON.stringify(onVirtuoso));
+  check('the ngspice task the page follows stays listed there, marked "choose its connection"', ngspiceListed(onVirtuoso).length === 1
+    && onVirtuoso.tasks.some(t => t.startsWith('ngspice:fixture_ota') && t.includes('choose its connection')), JSON.stringify(onVirtuoso.tasks));
+  const onVirtuosoMock = await withConnection('fixture-lab', 'synthetic:gpdk045_ota5');
+  check('with the MOCK task followed and a Virtuoso connection in use, no ngspice task is listed (the example shows only while ngspice is connected)',
+    onVirtuosoMock.tasks.some(t => t.startsWith('synthetic:gpdk045_ota5')) && ngspiceListed(onVirtuosoMock).length === 0, JSON.stringify(onVirtuosoMock.tasks));
   const onNgspice = await withConnection('fixture-sim');
   check('with an ngspice connection in use it offers "ngspice netlist..." only', !onNgspice.virtuoso && onNgspice.ngspice, JSON.stringify(onNgspice));
+  check('and the ngspice task is listed again', onNgspice.tasks.some(t => t.startsWith('ngspice:fixture_ota')), JSON.stringify(onNgspice.tasks));
   await shot('ngspice-4-launcher-ngspice.png');
   const onNone = await withConnection(null);
   check('with no connection chosen it offers both', onNone.virtuoso && onNone.ngspice, JSON.stringify(onNone));
+  check('and lists the ngspice task (the same rule as the button)', onNone.tasks.some(t => t.startsWith('ngspice:fixture_ota')), JSON.stringify(onNone.tasks));
 
   check('the page asked nothing else of the backend (every request besides reads is refused here)', refused.length === 0, refused.join(' | '));
   check('no console errors in the page', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

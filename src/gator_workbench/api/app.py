@@ -600,6 +600,18 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         authorize_circuit(circuit)
         shell = schema.WorkbenchConfig.model_validate(dict(circuit=circuit.model_dump(), run=dict(max_evaluations=1)))
         runtime, blocked = load_runtime(shell)
+        if runtime is not None and runtime.circuit.get('generated_profile') and not runtime.circuit.get('baseline_recorded'):
+            # A Single baseline simulation records itself when it finishes (record 7.78); one made before that, or one
+            # whose worker could not, becomes the reference now: the newest completed one of this task under the
+            # remembered output root (the one every run is filed under; none remembered = no run was ever made here),
+            # from its manifest and tables, nothing simulated. The task is then loaded again with its reference.
+            remembered = runs.load_settings().get('output_root')
+            try:
+                adopted = remembered and profiles.adopt_latest_baseline(runtime.task_key[len('real:'):], roots.resolve(remembered))
+            except (PathNotAllowed, OSError):
+                adopted = None
+            if adopted:
+                runtime, blocked = load_runtime(shell)
         # A Virtuoso cell that already has a registered task - a profile generated from it, or one of the verified
         # built-in circuits - is not "browse only", and gets no second profile: the form points to its task.
         existing = profiles.task_for_cell(circuit.library, circuit.cell) if circuit.source == 'virtuoso' and circuit.library and circuit.cell else None
@@ -626,7 +638,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                     analysis_context=graph.metadata.get('analysis_context'), notes=runtime.notes,
                     evaluation_backend=runtime.circuit.get('evaluation_backend'), max_concurrency=runtime.max_concurrency,
                     native_draft=bool(runtime.circuit.get('native_draft')), generated_profile=bool(runtime.circuit.get('generated_profile')),
-                    baseline_recorded=runtime.circuit.get('baseline_recorded'), **native)
+                    baseline_recorded=runtime.circuit.get('baseline_recorded'), baseline_attempt=runtime.circuit.get('baseline_attempt'), **native)
 
     @app.post('/api/virtuoso/libraries')
     def native_libraries(body: NativeReadBody):
@@ -662,7 +674,9 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     @app.post('/api/virtuoso/profile/reference')
     def native_profile_reference(body: ProfileActionBody):
         """Explicit click: the real baseline of a finished run of this task becomes the profile's reference (read
-        from the run's own tables; never replaced once recorded). Without `run_dir`: the newest run of the task."""
+        from the run's own tables; never replaced once recorded). Without `run_dir`: the newest run of the task. Since
+        record 7.78 a finished Single baseline simulation records itself; the press is for a run made another way
+        (an optimization run's first evaluation, a run made before)."""
         try:
             run_dir = run_path(body.run_dir) if body.run_dir else profiles.latest_baseline_run(
                 body.name, [r['run_dir'] for r in runs.list_runs(roots, include_mock=False)])

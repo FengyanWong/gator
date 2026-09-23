@@ -40,8 +40,8 @@ td.issues { min-width: 170px; white-space: normal !important; }
 .blocker { border: 1px solid var(--bad); background: #fdecea; padding: 6px; margin: 6px 0; }
 /* A limit explained, not a fault: neutral, unlike .blocker. */
 .note { border: 1px solid var(--line); border-left: 3px solid var(--accent); background: #eef3fb; padding: 6px 8px; margin: 6px 0; } .note p { margin: 4px 0; } .note ul { margin: 2px 0 4px; padding-left: 18px; } .note code { overflow-wrap: anywhere; }
-/* Delete profile: the last line of a generated profile's block - what it is for as text, the short button at its right end. */
-.row.start-over { align-items: center; border-top: 1px solid var(--line); margin-top: 8px; padding-top: 6px; } .row.start-over .hint { flex: 1 1 150px; } .row.start-over button { flex: none; }
+/* The task row of the Project column: "Load task" at the left, "Delete task" at the right end (user request 2026-09-24). */
+.row.task-buttons { align-items: center; margin: 6px 0 4px; } .row.task-buttons button { flex: none; }
 pre { white-space: pre-wrap; word-break: break-word; margin: 4px 0; font-size: 11px; } pre.small { max-height: 180px; overflow: auto; }
 .badge { display: inline-block; padding: 1px 7px; border: 1px solid var(--line); font-size: 11px; font-weight: 600; }
 .state-ok { background: #e2f4e7; color: var(--ok); border-color: #9fd0ad; } .state-failed { background: #fdecea; color: var(--bad); border-color: #e2a19c; }

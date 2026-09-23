@@ -1089,6 +1089,7 @@ class RunEngine:
         segment.update(ended_utc=iso(ended), end_state=final_state, stop_reason=self.stop_reason,
                        active_seconds=self._clock() - self._segment_started)
         self.manifest['state'] = final_state
+        self._adopt_baseline()
         write_json(self.layout.manifest, self.manifest)
         self._event('segment_ended', state=final_state, stop_reason=self.stop_reason, error=self.error)
         self._write_status(final_state)
@@ -1101,6 +1102,24 @@ class RunEngine:
         for stream in (self.events, self.errors, self.dispatch_log):
             stream.close()
         return final_state
+
+    def _adopt_baseline(self):
+        """A finished "Single baseline simulation" of a generated task becomes the task's reference by itself
+        (profiles.adopt_baseline_run, record 7.78) - only that run kind, after the tables are closed and the manifest
+        says how the run ended, before it is written. What it did or why not goes into the manifest's notes. Nothing
+        here may fail the run: a problem is logged and the run ends as it would have."""
+        if self.manifest.get('run_kind') != 'baseline_preflight':
+            return
+        try:
+            from . import profiles
+            outcome = profiles.adopt_baseline_run(self.layout.run_dir, manifest=self.manifest)
+        except BaseException as exc:
+            self._log_error('baseline_reference_failed', exc)
+            return
+        if outcome:
+            self.manifest.setdefault('notes', []).append(outcome['note'])
+            self.manifest_notes = [*getattr(self, 'manifest_notes', []), outcome['note']]
+            self._event('baseline_reference', recorded=outcome['recorded'], task=f"real:{outcome['name']}", note=outcome['note'])
 
     def _write_outputs(self, final_state, checkpoint, persistence_ok):
         from .summary import build_run_summary

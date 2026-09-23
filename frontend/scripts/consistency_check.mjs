@@ -90,7 +90,7 @@ try {
   check('the reason is folded until asked for', !(await evaluate(`[...${STEPS}.querySelectorAll('details p')].find(p => p.textContent.includes('FIXTURE MN1')).checkVisibility()`)));
   await page.shot(path.join(out, 'consistency-1-check-now.png'));
   // the rows change (the saved rows come back): the result was about the rows before, so it goes
-  await evaluate(`${BUTTON('Load starter configuration')}.click()`);
+  await evaluate(`${BUTTON('Load task')}.click()`);
   for (let i = 0; i < 30 && (await evaluate(`!!(${STEPS})`)); i++) await sleep(100);
   check('once a row changes, the old result goes', !(await evaluate(`!!(${STEPS})`)));
   // Start: the budget question first, then the backend refuses with code consistency - the banner lists the steps

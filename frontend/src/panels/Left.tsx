@@ -64,9 +64,9 @@ const copyQuestion = (r: Json) => `Work in ${r.library}/${r.cell} directly?\n\n`
   + 'So only read a COPY you made in Virtuoso (Library Manager: copy the cell and its testbench into a library of yours).\n\n'
   + `OK = ${r.library}/${r.cell} is such a copy: read it and work in it.\nCancel = read nothing.`;
 
-export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, onAgent, taskSlot, taskNotes }:
+export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, onAgent, taskSlot, taskNotes, taskEpoch = 0 }:
   { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null;
-    onAgent: (kind: string, selection: Json[], prompt?: string) => void; taskSlot: HTMLElement | null; taskNotes: HTMLElement | null }) {
+    onAgent: (kind: string, selection: Json[], prompt?: string) => void; taskSlot: HTMLElement | null; taskNotes: HTMLElement | null; taskEpoch?: number }) {
   const [tasks, setTasks] = useState<Json[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [native, setNative] = useState<Json>(null);
@@ -118,6 +118,9 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     if (!offered) { request.current++; setError(null); setCircuit(null); return; }
     load(ref, follow && virtuosoOn ? follow : null);
   }, [loadKey]);
+  // A run that came to rest in the header may have changed what the task knows about itself - a finished Single baseline
+  // simulation records the task's reference by itself (status record 7.78) - so the task is read again: local files, free.
+  useEffect(() => { if (taskEpoch && offered && ref.source === 'registered_task') load(ref); }, [taskEpoch]);
 
   // The window: libraries -> cells -> schematic follow each other without a button (user request 2026-09-20). Each step
   // starts from an explicit choice (opening the window, a library, a cell), waits for the step before it, and is a
@@ -174,26 +177,32 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     setConfig(c => ({ ...c, parameters: made.parameters, circuit: { ...c.circuit, source: 'registered_task', task_id: made.task_key, circuit_class: made.circuit_class, pdk_id: made.pdk_id } }));
   };
   // A saved task: "Check now" runs the check Start runs by itself before every run (backend consistency.py - the editors,
-  // the task file and the cell in Virtuoso must agree; the run adapter connects and exports without simulating),
-  // and after a finished Single baseline simulation its result is recorded as the task's reference. Both are explicit
-  // presses; neither starts a simulation. A check result goes as soon as the rows change: it was about the rows before.
+  // the task file and the cell in Virtuoso must agree; the run adapter connects and exports without simulating). A
+  // finished Single baseline simulation records its result as the task's reference by itself (status record 7.78);
+  // "Record the baseline run as reference" stays for a run made another way. Explicit presses, none starts a simulation.
+  // A check result goes as soon as the rows change: it was about the rows before. A message says which press it answers
+  // (`what`): the answer to Delete task stands by that button, in the task row at the top of the column.
   const [taskCheck, setTaskCheck] = useState<Json>(null);
   const [profileBusy, setProfileBusy] = useState<string | null>(null);
   const [profileMessage, setProfileMessage] = useState<Json>(null);
   const generatedName = ref.source === 'registered_task' && circuit?.generated_profile ? String(ref.task_id ?? '').replace(/^real:/, '') : null;
+  // Delete task is offered for a generated task (real:<name>, saved from a cell) whether it is loaded or blocked - one
+  // that no longer passes its checks is one to start over from; the task list says which tasks are generated.
+  const deletableName = generatedName ?? (ref.source === 'registered_task' && tasks.find(t => t.task_key === ref.task_id)?.generated
+    ? String(ref.task_id ?? '').replace(/^real:/, '') : null);
   useEffect(() => { setTaskCheck(null); setProfileMessage(null); }, [generatedName]);
   useEffect(() => { setTaskCheck(null); }, [JSON.stringify([config.parameters, config.measurements, config.targets])]);
   const profileAction = async (what: string, action: () => Promise<void>) => {
     setProfileBusy(what); setProfileMessage(null);
     try { await action(); }
     catch (e: any) {
-      setProfileMessage({ level: 'error', text: problemText(e, gateText) });
+      setProfileMessage({ level: 'error', what, text: problemText(e, gateText) });
     } finally { setProfileBusy(null); }
   };
   const checkTask = () => profileAction('check', async () => { setTaskCheck(await api.taskCheck(profileId, config)); });
   const recordReference = () => profileAction('reference', async () => {
     const recorded = await api.profileReference(generatedName!);
-    setProfileMessage({ level: 'ok', text: `Baseline recorded from run ${recorded.run_id ?? recorded.run_dir}. Every later run compares its first evaluation with it.` });
+    setProfileMessage({ level: 'ok', what: 'reference', text: `Baseline recorded from run ${recorded.run_id ?? recorded.run_dir}. Every later run compares its first evaluation with it.` });
     await load(ref);
   });
   // Delete task: takes a saved task out of the list. Asked once more, because the task leaves the list. The backend keeps
@@ -201,12 +210,12 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // from, which is free again for a new task.
   const [deleted, setDeleted] = useState<Json>(null);
   const deleteProfile = () => {
-    if (!window.confirm(`Delete the task real:${generatedName}?\n\nIt leaves the Registered task list, and its cell can get a new task. Runs already made `
+    if (!window.confirm(`Delete the task real:${deletableName}?\n\nIt leaves the Registered task list, and its cell can get a new task. Runs already made `
       + 'with it keep their data, but a paused one can no longer be resumed. A copy of the task\'s files is kept on the backend machine; the '
       + 'cell in Virtuoso stays as it is, its Maestro test included.'
       + (circuit?.baseline_recorded ? '\n\nIts recorded baseline goes with it: a new task needs a new real baseline simulation.' : ''))) return;
     profileAction('delete', async () => {
-      const gone = await api.deleteProfile(generatedName!);
+      const gone = await api.deleteProfile(deletableName!);
       setDeleted(gone);
       api.tasks().then(t => setTasks(t.tasks)).catch(() => undefined);
       setConfig(c => ({ ...c, circuit: { ...c.circuit, source: 'virtuoso', task_id: null, library: gone.library, cell: gone.cell, view: 'schematic', testbench_cell: gone.testbench_cell ?? null } }));
@@ -225,6 +234,10 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     return () => { live = false; };
   }, [profileId]);
   const showVirtuoso = family !== 'ngspice', showNgspice = family !== 'virtuoso';
+  // The Task list follows the same rule for the ngspice tasks (user request 2026-09-24: the ngspice OTA example is to show
+  // only while ngspice is connected): while a Virtuoso connection is in use they are left out of the list, except the task
+  // the page follows, which stays listed and chosen (the backend marks it "choose its connection").
+  const listed = tasks.filter(t => t.kind !== 'ngspice' || showNgspice || (ref.source === 'registered_task' && t.task_key === ref.task_id));
   // An ngspice netlist task (Ngspice.tsx saves it; the page then follows it). Delete takes it out of the list: its folder
   // is kept aside on the backend machine, and the page follows the first task left (the rows stay unless untouched).
   const ngspiceTask = ref.source === 'registered_task' && /^ngspice:/.test(ref.task_id ?? '') ? String(ref.task_id).slice('ngspice:'.length) : null;
@@ -235,7 +248,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     profileAction('delete', async () => {
       const gone = await api.ngspiceDelete(ngspiceTask!);
       const left = await api.tasks().then(t => { setTasks(t.tasks); return t.tasks; }).catch(() => [] as Json[]);
-      setProfileMessage({ level: 'ok', text: `Task ${gone.deleted} deleted; its files are kept in ${gone.kept_copy}.` });
+      setProfileMessage({ level: 'ok', what: 'delete', text: `Task ${gone.deleted} deleted; its files are kept in ${gone.kept_copy}.` });
       const next = left.find((t: Json) => t.task_key !== gone.deleted);
       if (next) chooseTask(next.task_key);
     });
@@ -398,19 +411,30 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           {ref.source !== 'registered_task' && <option value="" disabled>{virtuosoOn ? (ref.cell ? `(none: ${ref.library}/${ref.cell} is read from Virtuoso)` : '(none: a Virtuoso cell is being chosen)')
             : '(none: the saved source was removed)'}</option>}
           {removedMock && <option value={ref.task_id} disabled>{ref.task_id} (removed)</option>}
-          {tasks.map(t => <option key={t.task_key} value={t.task_key}>{t.task_key}{t.kind === 'mock' ? '  [MOCK]' : t.kind === 'ngspice' ? (t.available ? '  [ngspice]' : '  [ngspice: choose its connection]') : t.available ? '' : '  [blocked]'}</option>)}
+          {listed.map(t => <option key={t.task_key} value={t.task_key}>{t.task_key}{t.kind === 'mock' ? '  [MOCK]' : t.kind === 'ngspice' ? (t.available ? '  [ngspice]' : '  [ngspice: choose its connection]') : t.available ? '' : '  [blocked]'}</option>)}
         </select>
       </label>
       {ref.source === 'registered_task' && (<>
         {/* A configuration saved with one of the four removed MOCK tasks (status record 7.59): a plain note, not a red "Blocked". */}
         {removedMock && <div className="note"><p><code>{ref.task_id}</code> no longer exists: the workbench has one MOCK task now,{' '}
           <code>synthetic:gpdk045_ota5</code> - the real OTA5 circuit on the free toy backend. Choose it under Task; it brings its own rows.</p></div>}
-        {ref.task_id && !removedMock && <button onClick={useStarter} title="Replaces the rows of Parameters, Probes and Specs with this task's own. The MOCK task: the width groups of its circuit and the toy score. A real circuit: the parameters its profile fixes and its targets of record. Everything stays editable, and Undo takes it back.">Load starter configuration</button>}
+        {/* The task's two buttons in one row (user request 2026-09-24): "Load task" (was: Load starter configuration) brings
+            its rows; "Delete task" at the right end, for a task that can leave the list - one saved from a cell, or an ngspice
+            netlist; the built-in circuits and the MOCK task cannot. What Delete does is in its tooltip; it asks once more. */}
+        {ref.task_id && !removedMock && <div className="row task-buttons">
+          <button onClick={useStarter} title="Replaces the rows of Parameters, Probes and Specs with this task's own. The MOCK task: the width groups of its circuit and the toy score. A real circuit: the parameters its profile fixes and its targets of record. Everything stays editable, and Undo takes it back.">Load task</button>
+          <span className="spacer" />
+          {(deletableName || ngspiceTask) && <button disabled={!!profileBusy} onClick={ngspiceTask ? deleteNgspice : deleteProfile}
+            title={ngspiceTask ? 'Asks once more. The task leaves the Registered task list; its deck and task file are kept aside on the backend machine, and runs already made keep their data.'
+              : 'Asks once more. The task leaves the Registered task list and its cell can get a new one; its files are kept aside on the backend machine, and runs already made keep their data.'}>
+            {profileBusy === 'delete' ? 'Deleting...' : 'Delete task'}</button>}
+        </div>}
+        {profileMessage?.what === 'delete' && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
         {taskRows?.task === ref.task_id && (
           taskRows.state === 'reading' ? <p className="hint task-rows">Reading this task's rows...</p>
           : taskRows.state === 'unavailable' ? <p className="error task-rows">{taskRows.text}</p>
           : taskRows.state === 'kept' ? <p className="warn task-rows">Parameters, Probes and Specs still hold the rows you edited{taskRows.from ? <> for <code>{taskRows.from}</code></> : null}.
-              <b> Load starter configuration</b> replaces them with this task's.</p>
+              <b> Load task</b> replaces them with this task's.</p>
           : sameRows(config, taskRows.starter) && <p className="hint task-rows">Parameters, Probes and Specs now show this task's rows
               {taskRows.starter.targets.length ? '' : ' - it has no targets of record, so Specs is yours to fill (its results are ready in Probes)'}. Undo brings the previous ones back.</p>)}
       </>)}
@@ -467,14 +491,17 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
                 connection (on this machine, or over SSH with the deck sent in), and reads the <code>name = value</code> lines it prints. To change
                 the deck, press <b>ngspice netlist...</b> above (shown while an ngspice connection is in use): saving stores the next revision
                 (runs made before keep their own copy).</p></details>
-            {profileMessage && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
-            <div className="row start-over"><span className="hint">To take it out of the list:</span>
-              <button disabled={!!profileBusy} onClick={deleteNgspice} title="Asks once more. The task leaves the Registered task list; its deck and task file are kept aside, and runs already made keep their data.">
-                {profileBusy === 'delete' ? 'Deleting...' : 'Delete task'}</button></div>
           </div>
         </>)}
-        {circuit.generated_profile && !circuit.baseline_recorded && <p className="warn">This task has no real baseline yet: begin with
-          <b> Single baseline simulation</b> (one real Spectre run, asks for your budget) before an optimization run.</p>}
+        {/* Until the task has its reference. A finished Single baseline simulation records it by itself (status record 7.78);
+            one whose measurement was refused is named with the reason, instead of the same standing advice. */}
+        {circuit.generated_profile && !circuit.baseline_recorded && (circuit.baseline_attempt
+          ? <p className="warn">The Single baseline simulation <code>{String(circuit.baseline_attempt.run_id ?? '').slice(0, 12)}</code>
+              {circuit.baseline_attempt.ended_utc ? ` (${String(circuit.baseline_attempt.ended_utc).slice(0, 16).replace('T', ' ')} UTC)` : ''} gave no usable
+              baseline: {circuit.baseline_attempt.reason} Run <b>Single baseline simulation</b> again once that is put right; a finished one becomes
+              the task's reference by itself.</p>
+          : <p className="warn">This task has no real baseline yet: begin with <b>Single baseline simulation</b> (one real Spectre run, asks for
+              your budget) before an optimization run. When it finishes, its result becomes the task's reference by itself.</p>)}
         {saved && saved.task_key === ref.task_id && <p className="ok">Saved the new task <code>{saved.task_key}</code>. It runs in
           <code> {saved.copy?.library}/{saved.copy?.testbench}</code>{saved.copy?.library === saved.original?.library ? ' - the cell you declared as your copy' : ' - its working copy'}; nothing has been simulated yet.</p>}
         {generatedName && (
@@ -496,14 +523,11 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
               <button disabled={!!profileBusy} onClick={checkTask} title="The check Start runs by itself before every run. Read-only, no simulation.">
                 {profileBusy === 'check' ? 'Checking...' : 'Check now'}</button>
               {!circuit.baseline_recorded && <button disabled={!!profileBusy} onClick={recordReference}
-                title="After a finished Single baseline simulation of this task: its result becomes the reference that every later run is compared with. Recorded once, never replaced.">
+                title="A finished Single baseline simulation records itself. This press is for a run made another way: the newest run of this task (an optimization run's first evaluation is a baseline too). Recorded once, never replaced.">
                 {profileBusy === 'reference' ? 'Recording...' : 'Record the baseline run as reference'}</button>}
             </div>
             {taskCheck && <CheckSteps result={taskCheck} />}
-            {profileMessage && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
-            <div className="row start-over"><span className="hint">To start over from the cell:</span>
-              <button disabled={!!profileBusy} onClick={deleteProfile} title="Asks once more. The task leaves the Registered task list; its files are kept aside, and runs already made keep their data.">
-                {profileBusy === 'delete' ? 'Deleting...' : 'Delete task'}</button></div>
+            {profileMessage && profileMessage.what !== 'delete' && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
           </div>)}
         {circuitInfo}
       </>)}

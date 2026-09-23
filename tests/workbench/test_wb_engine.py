@@ -1,6 +1,7 @@
 """Run engine: shared budgets under several workers, retry accounting, asynchronous first
 feasibility / failure / null, pause-resume, forced cancellation and real crash recovery.
 All evaluations use the MOCK analytic backend (optionally scripted to fail)."""
+import json
 import os
 from pathlib import Path
 import signal
@@ -439,3 +440,39 @@ def test_core_persistence_failure_stops_simulating_instead_of_losing_data(tmp_pa
     assert all(recovered.has(key) for key in set(acknowledged) | flushed)
     recovered.close()
     assert sorted(set(r['evaluation_id'] for r in rows(layout, 'evaluations'))) == sorted(set(acknowledged) | flushed)
+
+
+# ------------------------------------------------------------------------------- a Single baseline simulation records itself (7.78)
+def test_a_single_baseline_run_asks_the_task_flow_to_record_it_when_it_ends(tmp_path, monkeypatch):
+    """The header's "Single baseline simulation" is a run of kind baseline_preflight (api `_start`). When it ends, the
+    worker hands it to profiles.adopt_baseline_run, and what that says goes into the manifest's notes; a MOCK run gets no
+    note (there is nothing to record), an optimization run is never handed over."""
+    from gator_workbench import profiles
+    from gator_workbench.storage.atomic import write_json
+    handed = []
+
+    def fake_adopt(run_dir, manifest=None):
+        handed.append((Path(run_dir), manifest['state'], manifest['run_kind']))
+        return dict(recorded=True, name='ring', note='FIXTURE: recorded as the reference of real:ring')
+    monkeypatch.setattr(profiles, 'adopt_baseline_run', fake_adopt)
+    # an optimization run: not handed over
+    layout, state = execute(make_config(tmp_path, run=dict(max_evaluations=3)), tmp_path)
+    assert state == 'completed' and handed == [] and 'FIXTURE' not in json.dumps(read_json(layout.manifest)['notes'])
+    # a baseline run: handed over once the manifest says how it ended, and the answer is in its notes and its artifact manifest
+    roots = roots_for(tmp_path)
+    layout, manifest = runs.prepare_run(make_config(tmp_path, run=dict(max_evaluations=1)), roots)
+    manifest['run_kind'] = 'baseline_preflight'
+    write_json(layout.manifest, manifest)
+    assert run_prepared(layout) == 'completed'
+    assert handed == [(layout.run_dir, 'completed', 'baseline_preflight')]
+    final = read_json(layout.manifest)
+    assert final['notes'][-1] == 'FIXTURE: recorded as the reference of real:ring'
+    assert 'FIXTURE: recorded as the reference of real:ring' in read_json(layout.run_dir / 'artifact_manifest.json')['notes']
+    events = read_jsonl(layout.logs / 'events.jsonl')
+    assert [e for e in events if e['event'] == 'baseline_reference'][0]['recorded'] is True
+    # the real helper on a MOCK baseline run: nothing to record, nothing said, the run ends as it would have
+    monkeypatch.undo()
+    layout, manifest = runs.prepare_run(make_config(tmp_path, run=dict(max_evaluations=1)), roots)
+    manifest['run_kind'] = 'baseline_preflight'
+    write_json(layout.manifest, manifest)
+    assert run_prepared(layout) == 'completed' and 'reference' not in json.dumps(read_json(layout.manifest)['notes'])

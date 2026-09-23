@@ -38,11 +38,13 @@ A start is refused at the first of these that fails, and nothing is created or c
 9. **Real circuits only - budget authorization** - pressing Start asks the user to authorize the
    number of real simulations. Nobody else can give that authorization.
 10. **Start** - "Single baseline simulation" first is a good habit: ONE costed evaluation of the
-    initial design that proves the whole chain before a budget is spent. Then "Start".
+    initial design that proves the whole chain before a budget is spent. For a task saved from a
+    Virtuoso cell its finished result becomes the task's reference by itself (the column then no
+    longer says "no real baseline yet"). Then "Start".
 
-## The task's own rows: "Load starter configuration"
+## The task's own rows: "Load task"
 
-For a registered task the Project panel (left) has **Load starter configuration**. It replaces the rows of
+For a registered task the Project panel (left) has **Load task**. It replaces the rows of
 the three tables with the task's own, free and exact: for a verified real circuit the parameters its
 profile fixes (the same rows as `required_parameter_rows`) and its targets of record, each with the
 source it comes from; for a profile made from a cell the parameters and measurements, no target; for a

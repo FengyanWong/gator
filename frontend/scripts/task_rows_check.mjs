@@ -96,7 +96,7 @@ try {
   const shot = name => page.shot(path.join(out, name));
 
   await page.intercept(['*/api/*'], answer);
-  // The page opens as the user's did: on the MOCK task, with the rows "Load starter configuration" had given it.
+  // The page opens as the user's did: on the MOCK task, with the rows "Load task" had given it.
   const mock = LIVE ? await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json() : MOCK;
   const SEED = { schema_version: 'gator-workbench-config-v1', ...mock, run: { mode: 'scratch', concurrency: 1, threads_per_job: 1, ...mock.run }, output: { experiment_name: 'fixture' }, research: {} };
   await page.seed({ config: SEED, when: 'missing' });
@@ -148,8 +148,8 @@ try {
   check('the edited Specs are still there', (await column('metric_id')).includes('gain_db_at_start') && (await column('lower')).includes('26'), JSON.stringify(await column('lower')));
   check('labels and the starter-made name follow all the same', (await value('PDK id')) === 'gpdk045' && (await value('Name')) === 'mock-gpdk045-ota5', `${await value('PDK id')} / ${await value('Name')}`);
   await shot('task-rows-2-edited-rows-kept.png');
-  await evaluate(`${BUTTON(PANEL, 'Load starter configuration')}.click()`);
-  check('"Load starter configuration" exchanges them', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`) && JSON.stringify(await column('metric_id')) === '["score"]', JSON.stringify(await column('metric_id')));
+  await evaluate(`${BUTTON(PANEL, 'Load task')}.click()`);
+  check('"Load task" exchanges them', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`) && JSON.stringify(await column('metric_id')) === '["score"]', JSON.stringify(await column('metric_id')));
 
   // ---- a name the user typed stays ---------------------------------------------------------------------------------------
   await setInput(FIELD('Name'), 'my-amplifier');
@@ -157,9 +157,9 @@ try {
   check('untouched MOCK rows are exchanged for the OTA7\'s', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`) && (await column('metric_id')).includes('gain_db_at_start'), await note());
   check(LIVE ? 'LIVE: the OTA7 has its own numbers (53.3 dB)' : 'the OTA7 has its own numbers', (await column('lower')).includes('53.3'), JSON.stringify(await column('lower')));
   check('a typed project name stays', (await value('Name')) === 'my-amplifier', await value('Name'));
-  check('the button is there for a real task too', await evaluate(`!!${BUTTON(PANEL, 'Load starter configuration')}`));
+  check('the button is there for a real task too', await evaluate(`!!${BUTTON(PANEL, 'Load task')}`));
   await setInput(`${EDITORS}.querySelector('table.editor tbody tr input.numeric')`, '54');
-  await evaluate(`${BUTTON(PANEL, 'Load starter configuration')}.click()`);
+  await evaluate(`${BUTTON(PANEL, 'Load task')}.click()`);
   check('the button puts the task\'s own numbers back and keeps the typed name as well', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`)
     && (await column('lower')).includes('53.3') && !(await column('lower')).includes('54') && (await value('Name')) === 'my-amplifier', `${JSON.stringify(await column('lower'))} ${await value('Name')}`);
 
@@ -193,7 +193,7 @@ try {
     await evaluate(`[...${PANEL}.querySelectorAll('.note')].map(n => n.textContent).join(' | ')`));
   for (let i = 0; i < 50 && !loads.slice(mark).some(l => l.task_id === 'synthetic:vco'); i++) await sleep(100);
   await sleep(400);                                                              // the load's answer is drawn
-  check('no red "Blocked" box, and no "Load starter configuration" for a task that has none', !(await evaluate(`!!${PANEL}.querySelector('.blocker')`)) && !(await evaluate(`!!${BUTTON(PANEL, 'Load starter configuration')}`)));
+  check('no red "Blocked" box, and no "Load task" for a task that has none', !(await evaluate(`!!${PANEL}.querySelector('.blocker')`)) && !(await evaluate(`!!${BUTTON(PANEL, 'Load task')}`)));
   await shot('task-rows-4-removed-task.png');
   await choose('Task', 'synthetic:gpdk045_ota5');
   check('choosing the MOCK task brings its rows at once: a removed task\'s rows are nobody\'s work', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`)

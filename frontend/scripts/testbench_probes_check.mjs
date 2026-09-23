@@ -115,12 +115,12 @@ try {
   await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose'], answer, { others: 'read' });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
-  for (let i = 0; i < 100 && !(await evaluate(`!!(${COLUMN_BUTTON('Load starter configuration')})`)); i++) await sleep(100);
+  for (let i = 0; i < 100 && !(await evaluate(`!!(${COLUMN_BUTTON('Load task')})`)); i++) await sleep(100);
   for (let i = 0; i < 60 && !(await evaluate(`/\\S/.test(document.querySelector('.left button.connection-button .connection-button-what')?.textContent.replace(/none (selected|set up yet)/, '') ?? '')`)); i++) await sleep(100);
   await sleep(800);
 
   // ---- a registered task's rows first: the MOCK starter (its Probe m_score, its target score) -------------------------
-  await press('Load starter configuration', COLUMN_BUTTON); await sleep(800);
+  await press('Load task', COLUMN_BUTTON); await sleep(800);
   check('the MOCK starter is in the editors', (await counts()).Specs === 1 && (await counts()).Probes === 1, JSON.stringify(await counts()));
 
   // ---- tb_<cell> is found by its name (in the window) ---------------------------------------------------------------------

@@ -38,7 +38,7 @@ try {
   // the temporary browser profile only, and never validated for real: the reports above are what the page is told.
   // The one MOCK task (status record 7.59), the real OTA5: five rows, the followers of its two pairs at rows 1 and 3.
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
-  const CONFIG = { ...starter, output: { experiment_name: 'fixture' }, research: {} };  // as "Load starter configuration" merges it
+  const CONFIG = { ...starter, output: { experiment_name: 'fixture' }, research: {} };  // as "Load task" merges it
   const ROW_KEY = CONFIG.parameters[0].variable_id;
   // What a backend answers when the schema rejects the configuration (HTTP 422, schema.describe_errors); an older backend
   // sent pydantic's text at parameters.1.variable_id; anything else is one plain failure.

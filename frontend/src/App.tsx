@@ -74,6 +74,14 @@ export function App() {
   // The run the header buttons act on (Start -> Pause -> Resume, Abort). It is not the run the bottom tabs show.
   const [looked, setLooked] = useState(false);
   const control = useRunControl(status, looked);
+  // When the header's run comes to rest, the Project column reads its task again (a finished Single baseline simulation
+  // records the task's reference by itself, status record 7.78): a counter the column follows. Not on the page's first look.
+  const [taskEpoch, setTaskEpoch] = useState(0);
+  const lastPhase = useRef(control.phase);
+  useEffect(() => {
+    if (control.phase === 'idle' && !['idle', 'checking'].includes(lastPhase.current)) setTaskEpoch(n => n + 1);
+    lastPhase.current = control.phase;
+  }, [control.phase]);
   const adopted = useRef(false);
   useEffect(() => {
     refreshRuns().then(list => {
@@ -145,7 +153,8 @@ export function App() {
       <aside className="left">
         <ConnectionButton profileId={profileId} setProfileId={id => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }))} />
         <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId}
-          onAgent={(kind, selection, prompt) => { setAgentRequest({ kind, selection, prompt }); setTab('agent'); }} taskSlot={taskSlot} taskNotes={taskNotes} />
+          onAgent={(kind, selection, prompt) => { setAgentRequest({ kind, selection, prompt }); setTab('agent'); }} taskSlot={taskSlot} taskNotes={taskNotes}
+          taskEpoch={taskEpoch} />
       </aside>
       <main>
         <Editors schema={schema} config={config} setConfig={setConfig} undo={store.undo} redo={store.redo} canUndo={store.canUndo} canRedo={store.canRedo}

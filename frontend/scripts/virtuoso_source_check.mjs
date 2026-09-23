@@ -12,7 +12,7 @@
 //   - reading a cell ASKS whether it is a copy the user made (window.confirm): Cancel reads nothing, OK reads it with
 //     `work_here` and the cell becomes the one the flow works in - the window says so; no "Make a working copy" anywhere;
 //     a cell without a testbench is refused in words; reading it again asks nothing;
-//   - Save task (no Save as) from the window's cell, the task then in the column; Check now / Record / Delete task in the column;
+//   - Save task (no Save as) from the window's cell, the task then in the column; Check now / Record in its block, Delete task in the task row;
 //     a cell that already has a task, a built-in cell; a blocked gate and an older backend are readable.
 // Needs a configured connection profile (the page selects the active one; reading the profiles probes nothing).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
@@ -345,7 +345,13 @@ try {
   await wChoose('Cell', 'ota5_v1'); await quiet();
   await wPress('Open'); await quiet();
   check('the saved task is opened from its cell', (await value('Task')) === 'real:ota5_v1', await value('Task'));
-  check('its block ends with "Delete task", explained beside the button', !!(await evaluate(`!!(${BUTTON('Delete task')})`)) && (await text()).includes('To start over from the cell'));
+  // Since 2026-09-24 (status record 7.78) Delete task stands in the task row at the top of the column, at the right end,
+  // next to "Load task" (was: Load starter configuration); what it does is its tooltip.
+  const taskRow = await evaluate(`(() => { const d = ${BUTTON('Delete task')}, l = ${BUTTON('Load task')}; if (!d || !l) return 'missing';
+    return d.closest('.row.task-buttons') === l.closest('.row.task-buttons') && d.getBoundingClientRect().left > l.getBoundingClientRect().right
+      && Math.abs(d.getBoundingClientRect().top - l.getBoundingClientRect().top) < 4 ? 'ok' : 'elsewhere'; })()`);
+  check('"Delete task" stands at the right of "Load task", in the task row', taskRow === 'ok', taskRow);
+  check('the task row is the only place: the block does not say "To start over from the cell" any more', !(await text()).includes('To start over from the cell'));
   mark = calls.length; answers.push(false);
   await evaluate(`${BUTTON('Delete task')}.click()`); await quiet(800);
   const askedDelete = dialogs[dialogs.length - 1]?.message ?? '';

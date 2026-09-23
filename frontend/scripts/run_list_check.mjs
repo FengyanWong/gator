@@ -60,7 +60,7 @@ const validReport = { blocks_run: false, counts: {}, facts: { circuit_checked: f
 
 try {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
-  const CONFIG = { ...starter, output: { experiment_name: 'fixture' }, research: {} };     // as "Load starter configuration" merges it
+  const CONFIG = { ...starter, output: { experiment_name: 'fixture' }, research: {} };     // as "Load task" merges it
   const page = await browser.open();
   const { send, evaluate, until, fulfil, consoleErrors } = page;
   const refused = []; const seen = [];

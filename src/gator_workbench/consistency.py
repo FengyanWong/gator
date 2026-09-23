@@ -29,7 +29,7 @@ from .storage.dataset import utcnow
 # (configuration key, editor name, row ID field, task file part)
 SECTIONS = (('parameters', 'Parameters', 'variable_id', 'parameters'), ('measurements', 'Probes', 'measurement_id', 'probes'),
             ('targets', 'Specs', 'metric_id', 'specs'))
-FIX_ROWS = 'Press Save task to save the rows as they are now, or Load starter configuration to take the saved rows back.'
+FIX_ROWS = 'Press Save task to save the rows as they are now, or Load task to take the saved rows back.'
 FIX_COPY = ('The working copy was changed in Virtuoso after the task was saved: press Save task to take the copy as it is '
             'now, or undo the change in Virtuoso.')
 TITLES = dict(

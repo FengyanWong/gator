@@ -94,7 +94,10 @@ The header has one main run button and **Abort** next to it. The main button cha
 * The header controls ONE run - the one started or resumed from this page, remembered across a reload - and shows
   it as a small text button ("running 12 / 60"; press it to see the run under Run status). It is not the run chosen
   in the list of the bottom tabs: looking at an older run's data never takes Pause and Abort away from a live run.
-  While a run is active or paused in the header, "Single baseline simulation" is not available.
+  While a run is active or paused in the header, "Single baseline simulation" is not available. A finished
+  Single baseline simulation of a task saved from a cell records its result as the task's reference by itself
+  (status record 7.78): once the run has come to rest the Project column reads the task again and no longer
+  says "no real baseline yet".
 * A real run asks for the budget again at Resume (what is left of it). A run that was started with checkpoints or
   replay snapshots switched off cannot come back from a pause; Pause says so before it pauses.
 * The Run status tab keeps its own buttons (Pause and save, Stop and save, Force cancel, Continue with a new total
@@ -147,7 +150,8 @@ source -> Task** brings that task's rows:
   stays. Choosing a task after one of the removed MOCK tasks brings the new task's rows and name at once: no task can run
   the old rows any more (one Undo brings them back).
 * Rows are exchanged only while they are nobody's work: empty, or still exactly what the task before had brought.
-  **Rows you edited stay**; the panel says so, and **Load starter configuration** (there for every task) exchanges
+  **Rows you edited stay**; the panel says so, and **Load task** (there for every task; was "Load starter
+  configuration" until 2026-09-24, status record 7.78) exchanges
   them when you want it. One **Undo** takes back a task choice together with everything it brought.
 * Run settings are never touched by a task choice, and a real budget is never suggested.
 * The LDO and VCO results are not in the optimizer's default result registry, and the UI has no editor for it. These
@@ -234,13 +238,17 @@ their own copy of the deck in `input_snapshot/netlist.cir`, and a changed deck i
 the deck on the backend without keeping it and says what it found: elements by kind, the values a run can vary,
 the results it measures (with a unit guessed from the result's name or its expression: `gain_db`, `ugf_hz`,
 `v(out)` -> V, `i(vdd)` -> A - edit the Probes row when the guess is wrong), the analyses, includes, diagnostics
-and, in plain words, what would stop a run. **Delete task** (in the column, for the task the page follows) takes
+and, in plain words, what would stop a run. **Delete task** (in the column's task row, at the right of Load task,
+for the task the page follows) takes
 it out of the list; its folder is kept aside on the backend machine. Nothing in the window runs a simulation.
 
 **Which launcher the column shows follows the connection in use** (user request 2026-09-23): with a Virtuoso
 connection chosen (the "Connection" button) the column offers **Virtuoso cell...** only, with an ngspice connection
 **ngspice netlist...** only; with no connection chosen, or one of a kind the page does not know, both. The family is
-read from the connection list (the workbench's own file, no probe) when the connection changes. An ngspice task the
+read from the connection list (the workbench's own file, no probe) when the connection changes. The Registered task
+list follows the same rule for the ngspice tasks (user request 2026-09-24: the ngspice OTA example is to show only
+while ngspice is connected): while a Virtuoso connection is in use they are left out of the list, except the task the
+page follows, which stays listed and chosen (marked `[ngspice: choose its connection]`). An ngspice task the
 page follows keeps its block in the column either way; its deck is edited through the ngspice window, so switch to
 an ngspice connection to edit or run it.
 
@@ -278,7 +286,8 @@ What the deck must contain, and what the workbench makes of it (`src/gator_workb
 
 How a run works (`src/gator_workbench/ngspice_backend.py`, `ngspice_tasks.py`): the task is a **real** task of the
 connection family `ngspice`. Start needs an ngspice connection chosen in the Connection window ("ngspice on this
-machine" or "ngspice over SSH"; the column and the Task list say so when the connection in use is a Virtuoso one),
+machine" or "ngspice over SSH"; the column says so when the connection in use is a Virtuoso one, and the Task list then
+lists no ngspice task but the one the page follows, marked "choose its connection"),
 its four-layer test as the gate (the program answers, the built-in divider solves), and the confirmation of the
 number of simulations that Start asks for (the same consent as for every real run; no license or budget is spent,
 but every evaluation is counted as real). Each evaluation is one `ngspice -b` process on the written deck: on this
@@ -384,7 +393,8 @@ to say.
   states) - shows "This cell already has a registered task: `real:<name>`" with an **Open** button; open
   it to change it (Save task); another task needs another copy of the cell, made in Virtuoso and read in
   the window. A built-in circuit gets no second task.
-  **Delete task** (last line of a saved task's block in the column; asks once more; was: Delete profile):
+  **Delete task** (in the column's task row, at the right end next to Load task since 2026-09-24 - before
+  that the last line of the task's block; asks once more; was: Delete profile):
   the task leaves the list, its name is free again and the cell is free for the next Save task.
   Nothing is erased: the folder moves to `configs/local/workbench/profiles/.deleted/<name>.<time>/`,
   its recorded baseline included (a new task needs a new real baseline). Runs already made keep their
@@ -409,9 +419,15 @@ to say.
      everything a real evaluation does before Spectre starts (connect through the run adapter, export,
      compare with the record, write the deck). Free, read-only; needs the link up and no ADE/Maestro
      window open on the design. Start runs it by itself as well.
-  2. **Single baseline simulation** in the header - one real Spectre run; asks for your budget.
-  3. **Record the baseline run as reference** - from then on every run compares its first evaluation
-     with that result, as the four verified profiles do. Recorded once, never replaced.
+  2. **Single baseline simulation** in the header - one real Spectre run; asks for your budget. When it
+     finishes, its result is recorded as the task's reference BY ITSELF (status record 7.78, 2026-09-24):
+     from then on every run compares its first evaluation with that result, as the verified profiles do.
+     Recorded once, never replaced. A refused measurement (incomplete, invalid) is named in the column
+     with its reason instead of the standing advice. A baseline made before 7.78 - or one whose worker
+     could not record it - is adopted when the task is next loaded: the newest completed one of the
+     task under the remembered output root, provided the task was not saved again after it.
+  3. **Record the baseline run as reference** - the same recording as a press, for a run made another
+     way: the newest run of the task (an optimization run's first evaluation is a baseline too).
 
 `POST /api/virtuoso/libraries | cells | read | import`, body `{"profile_id", "library"?, "cell"?, "testbench"?}` (import:
 `"work_here"?` - the user said the cell is a copy they made; the answer then carries the `working_copy` record);
@@ -544,6 +560,9 @@ A profile now says WHAT it connects to and HOW, with `"kind"`:
   the sentence to show), a Virtuoso task started on an ngspice connection is refused in words before anything is
   probed, and so is an ngspice task on a Virtuoso connection. The GPDK045 models are Spectre-format files: an
   ngspice deck needs models ngspice can read (its own `.model` lines, or an open PDK's files).
+* **The ngspice agent aid is under construction** (a note under the ngspice steps, user request 2026-09-24):
+  the agent's setup help - reading a circuit and proposing its parameters, probes and specs - works for Virtuoso
+  cells only so far; an ngspice deck is set up by hand in the ngspice window.
 * **Add a connection** (in the window). `GET /api/connection/setup` reports, per kind, what was found
   on the backend machine (bridge env file and package; the `ngspice` and `ssh` programs; the Host
   NAMES of `~/.ssh/config` - names only, the rest of that file is never read out).
@@ -1030,7 +1049,8 @@ Virtuoso", which now only says "Then save it as a task: Save task is above the e
 folded). For a cell read from Virtuoso: a New task name (the cell's name when left empty), **Save task** and **Task
 file**. On an open task (Registered task): "Task real:<name>, revision N", **Save task** and **Task file**. Their
 messages and questions (the saved revision, a refusal, the ring oscillator's rough frequency) appear under the editors'
-toolbar. "Delete task" (was: Delete profile) stays at the end of the task's block in the Project column. The editors'
+toolbar. "Delete task" (was: Delete profile) stayed at the end of the task's block in the Project column until
+2026-09-24; it is in the column's task row now, at the right of Load task (7.78). The editors'
 own **Save** button went at the same
 time: it kept the configuration in the browser, which the page already does by itself 0.8 s after every change, and a
 second "Save" beside "Save task" only confused.
@@ -1169,7 +1189,7 @@ three things must say the same thing:
    validation says it while you edit - a blocking issue `task_not_saved` per editor that differs, naming the rows and
    fields ("Specs differ from the saved task real:ring_osc (revision 1): osc_frequency_hz: lower 1.3e+09 here, 1.1e+09
    saved") - so Start is not offered until **Save task** stores them (it keeps the recorded baseline when
-   only specs or notes changed) or **Load starter configuration** takes the saved rows back. A resume runs the run's own
+   only specs or notes changed) or **Load task** takes the saved rows back. A resume runs the run's own
    saved rows and is not compared.
 2. **The saved task and its working copy in Virtuoso.** The run adapter does everything a real evaluation does before
    Spectre starts, and nothing after: it connects (the creation record matches, no ADE/Maestro window is open on the copy,

@@ -15,7 +15,8 @@ callback and choices) - and not otherwise; lengths stay on the 5 nm grid, counts
 types: the verified ones, and every component of a loaded PDK (pins as the PDK itself states them).
 Always refused: a supply other than the verified nominal one. What it cannot know is whether the circuit
 then simulates as hoped: a generated profile has NO real baseline until the user runs the
-budget-authorized "Single baseline simulation" of the new task - it is labelled unverified until then.
+budget-authorized "Single baseline simulation" of the new task - it is labelled unverified until then. A
+finished one records itself as the task's reference (`adopt_baseline_run`, record 7.78).
 
 The rows of the editors are returned ADJUSTED (bounds snapped onto the grid, the step filled in,
 followers without clamps of their own): a real run requires the configured variables to be exactly the
@@ -24,6 +25,8 @@ profile's (``graph_contract``), so the form must show what was registered.
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -52,6 +55,10 @@ class ProfileError(ValueError):
 
 def store_root() -> Path:
     return local_settings_dir() / 'profiles'
+
+
+def _sha256(path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def profile_dir(name) -> Path:
@@ -816,7 +823,11 @@ def record_reference(name, run_dir) -> dict:
     raw = {row['metric_name']: row for row in reader.rows('metrics', ['evaluation_id', 'measurement_id', 'metric_name', 'raw_value', 'unit',
                                                                       'valid', 'aggregation_level'])
            if row['evaluation_id'] == evaluation and row['measurement_id'] is None and row['aggregation_level'] == 'condition'}
-    expected = list(recipes.provided_metrics(entry['recipe']))
+    # A task measured by Maestro names its own results (its outputs; `recipes.provided_metrics` has none for it) - found
+    # on the user's first real baseline, 2026-09-24: with the recipe's empty tuple every Maestro baseline was "unexpected".
+    expected = list(entry.get('provided_metrics') or ()) if entry.get('recipe') == MAESTRO else list(recipes.provided_metrics(entry['recipe']))
+    if not expected:
+        raise ProfileError(f'real:{name} names no result to record (its provided_metrics are empty)')
     problems = [metric for metric in expected if metric not in raw or not raw[metric]['valid'] or raw[metric]['raw_value'] is None]
     if problems or set(raw) != set(expected):
         raise ProfileError('The baseline of that run is not a complete, valid measurement '
@@ -827,7 +838,7 @@ def record_reference(name, run_dir) -> dict:
                      metric_units={metric: raw[metric]['unit'] for metric in expected},
                      note='Raw backend metrics of the baseline evaluation, read from the run\'s metrics table.')
     write_json(target, reference)
-    write_json(directory / FILES['entry'], dict({k: v for k, v in entry.items() if k != 'directory'},
+    write_json(directory / FILES['entry'], dict({k: v for k, v in entry.items() if k not in ('directory', 'baseline_attempt')},
                                                 status='baseline recorded: one real simulation of the recorded sizes',
                                                 baseline_recorded_utc=reference['recorded_utc']))
     return reference
@@ -843,6 +854,97 @@ def latest_baseline_run(name, run_dirs):
         if (config.get('circuit') or {}).get('task_id') == f'real:{name}':
             return str(run_dir)
     return None
+
+
+# ---------------------------------------------------------------------------------- a finished Single baseline simulation records itself
+BASELINE_KIND = 'baseline_preflight'                 # run_kind of the header's "Single baseline simulation" (api/app.py `_start`)
+
+
+def _run_outlived_the_task(entry, manifest) -> str | None:
+    """Why a run cannot be the reference of the task as it is NOW, or None. A task saved again after the run (its cell,
+    its parameters, its Maestro setup: `write_setup_on` keeps the reference only when no baseline part changed) is not
+    the task that run simulated, so an older run's baseline would describe a task that no longer exists."""
+    circuit = manifest.get('circuit') or {}
+    directory = Path(entry['directory'])
+    try:
+        current = dict(netlist_sha256=_sha256(directory / FILES['structure']), parser_config_sha256=_sha256(directory / FILES['mapping']))
+    except OSError:
+        return 'the task files cannot be read'
+    if any(circuit.get(key) != value for key, value in current.items()):
+        return 'the task was saved again after that run (its cell or its parameters differ)'
+    saved, created = entry.get('saved_utc'), manifest.get('created_utc')
+    try:
+        if saved and created and datetime.fromisoformat(created) < datetime.fromisoformat(saved):
+            return 'the task was saved again after that run'
+    except ValueError:
+        pass
+    return None
+
+
+def adopt_baseline_run(run_dir, manifest=None) -> dict | None:
+    """A finished "Single baseline simulation" of a generated task becomes the task's reference BY ITSELF - until record
+    7.78 (2026-09-24) "Record the baseline run as reference" was a press of its own, and after the user's first real
+    baseline the Project column still said "no real baseline yet". The worker calls this at the end of such a run
+    (engine.py `_adopt_baseline`); for a run made before that, `adopt_latest_baseline` does it when the task is loaded.
+
+    None when the run is not one to record (an optimization run, a MOCK run, a built-in circuit): nothing to say.
+    Otherwise dict(recorded, name, note) - the note is the sentence for the run's manifest. A refused measurement
+    (incomplete, invalid) is kept in the task's entry as `baseline_attempt`, so the column can say why the task still
+    has no baseline; a run the task has outlived is left alone. A reference is never replaced."""
+    run_dir = Path(run_dir)
+    if manifest is None:
+        try:
+            manifest = json.loads((run_dir / 'run_manifest.json').read_text())
+        except (OSError, ValueError):
+            return None
+    task_key = (manifest.get('circuit') or {}).get('task_key') or ''
+    if manifest.get('run_kind') != BASELINE_KIND or manifest.get('mock') or not task_key.startswith('real:'):
+        return None
+    name = task_key[len('real:'):]
+    entry = list_profiles().get(name)
+    if entry is None:
+        return None
+    if manifest.get('state') != 'completed':
+        return dict(recorded=False, name=name, note=f'Not recorded as the reference of {task_key}: the run ended as {manifest.get("state")}.')
+    if reference_metrics(name) is not None:
+        return dict(recorded=False, name=name, note=f'{task_key} already has a recorded baseline; it is never replaced.')
+    outlived = _run_outlived_the_task(entry, manifest)
+    if outlived:
+        return dict(recorded=False, name=name, note=f'Not recorded as the reference of {task_key}: {outlived}.')
+    attempt = entry.get('baseline_attempt') or {}
+    if attempt.get('run_id') and attempt.get('run_id') == manifest.get('run_id'):      # tried before: the answer has not changed
+        return dict(recorded=False, name=name, note=f'Not recorded as the reference of {task_key}: {attempt["reason"]}', attempt=attempt)
+    try:
+        reference = record_reference(name, run_dir)
+    except ProfileError as exc:
+        attempt = dict(run_id=manifest.get('run_id'), run_dir=str(run_dir), reason=str(exc),
+                       ended_utc=((manifest.get('segments') or [{}])[-1]).get('ended_utc') or manifest.get('created_utc'))
+        write_json(Path(entry['directory']) / FILES['entry'], dict({k: v for k, v in entry.items() if k != 'directory'}, baseline_attempt=attempt))
+        return dict(recorded=False, name=name, note=f'Not recorded as the reference of {task_key}: {exc}', attempt=attempt)
+    return dict(recorded=True, name=name, reference=reference,
+                note=f'Recorded as the reference of {task_key}: every later run compares its first evaluation with this result.')
+
+
+def adopt_latest_baseline(name, data_root) -> dict | None:
+    """The newest completed Single baseline simulation of real:<name> under the output root becomes its reference - for
+    a run made before such runs recorded themselves. Called when a generated task without a reference is loaded
+    (api/app.py `circuit_load`); reads the run manifests only, one small file per run, and never once a reference
+    exists. Only the newest completed one is tried: a refusal is remembered in the entry and said in the column."""
+    from .layout import find_runs
+    newest = None
+    for run_dir in find_runs(data_root):
+        try:
+            manifest = json.loads((run_dir / 'run_manifest.json').read_text())
+        except (OSError, ValueError):
+            continue
+        if (manifest.get('run_kind') == BASELINE_KIND and manifest.get('state') == 'completed' and not manifest.get('mock')
+                and (manifest.get('circuit') or {}).get('task_key') == f'real:{name}'
+                and (newest is None or (manifest.get('created_utc') or '') > newest[0])):
+            newest = (manifest.get('created_utc') or '', run_dir, manifest)
+    if newest is None:
+        return None
+    outcome = adopt_baseline_run(newest[1], manifest=newest[2])
+    return outcome if outcome and outcome['recorded'] else None
 
 
 # ---------------------------------------------------------------------------------- starting over

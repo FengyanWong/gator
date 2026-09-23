@@ -16,14 +16,14 @@ const TERMINAL = ['completed', 'paused', 'stopped', 'cancelled', 'failed'];
 const RESUMABLE = ['paused', 'interrupted'];
 export const LIVE_STATES = ['starting', 'running', 'pausing', 'stopping'];
 
-export type Phase = 'idle' | 'checking' | 'starting' | 'running' | 'pausing' | 'paused' | 'resuming' | 'aborting' | 'finishing';
+type Phase = 'idle' | 'checking' | 'starting' | 'running' | 'pausing' | 'paused' | 'resuming' | 'aborting' | 'finishing';
 type Launch = null | 'start' | 'resume';
 type Pending = Launch | 'pause' | 'abort';
 
 /** `pending`: a request of this page that the run has not shown yet. `launched`: this page has just started a worker.
  *  Until its first status is written (it imports for 2-3 s) the file still shows how the PREVIOUS segment ended
  *  ("paused"), although the run is on its way again. */
-export function phaseOf(status: Json, pending: Pending, launched: Launch): Phase {
+function phaseOf(status: Json, pending: Pending, launched: Launch): Phase {
   const asked = pending === 'start' || pending === 'resume' ? pending : status ? null : launched;
   if (asked) return asked === 'start' ? 'starting' : 'resuming';
   if (status?.worker_alive) {

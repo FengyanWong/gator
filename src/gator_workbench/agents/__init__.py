@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 
 from .base import (AgentError, AgentProvider, AgentRequest, AgentResult, AgentSettings, ERROR_CODES, REGISTRY,
-                   REQUEST_KINDS)
+                   REQUEST_KINDS, TOOL_KINDS)
 from .claude_code import ClaudeCodeProvider
 from .codex import CodexProvider
 from .disabled import DisabledProvider
@@ -33,5 +33,5 @@ def availability() -> list:
 
 
 __all__ = ['AgentError', 'AgentProvider', 'AgentRequest', 'AgentResult', 'AgentSettings', 'ERROR_CODES', 'REGISTRY',
-           'REQUEST_KINDS', 'ClaudeCodeProvider', 'CodexProvider', 'DisabledProvider', 'ProposalRejected',
+           'REQUEST_KINDS', 'TOOL_KINDS', 'ClaudeCodeProvider', 'CodexProvider', 'DisabledProvider', 'ProposalRejected',
            'ProposalStore', 'PROVIDERS', 'default_provider_name', 'make_provider', 'availability']

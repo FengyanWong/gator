@@ -308,6 +308,14 @@ class RunEngine:
         self.previous_best_waveform = collector.get('previous_best_waveform')
         cursor = run_state['data_cursor']
         report = dict(checkpoint_commit_seq=cursor['commit_seq'], recovery=self.dataset.recovery)
+        # The best design is also written on every improvement (best_design/tracker_state.json), which reaches further
+        # than the last checkpoint. Without it a crash after the only feasible evaluation resumed with an empty tracker,
+        # finalized as "no feasible design" and DELETED parameters.csv / optimized_dut.scs of a design its own
+        # evaluations table still held (review of 2026-09-23).
+        later = read_json(self.layout.best_design / 'tracker_state.json', default=None)
+        if later and (later.get('last_commit_seq') or 0) > cursor['commit_seq']:
+            self.tracker = best_design.BestDesignTracker(self.compiled.preference, later)
+            report['best_design_after_checkpoint'] = later['last_commit_seq']
         self.dataset.flush()
         interrupted = self._record_interrupted()
         post = self.dataset.last_seq - cursor['commit_seq']

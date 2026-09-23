@@ -1,23 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, Json } from '../api';
+import { api, Json, si } from '../api';
 import { launchWithConsent } from './RunControl';
 
 /** Corner check (status record 7.62; backend corner_check.py): the shown run's safest feasible designs, simulated again at
  *  the five fixed corners. The plan is read from the run's own files when the tab opens (free); the check starts only on
  *  the button, a real circuit only after the budget question. While a check works its progress is read every 1.5 s, as the
  *  run status is; nothing else runs on a timer. */
-
-const SI = new Set(['Hz', 'W', 'V', 'A', 'F', 'm', 's', 'ohm', 'H']);
-const PREFIXES: [number, string][] = [[1e9, 'G'], [1e6, 'M'], [1e3, 'k'], [1, ''], [1e-3, 'm'], [1e-6, 'µ'], [1e-9, 'n'], [1e-12, 'p'], [1e-15, 'f']];
-/** 3.2e6 Hz -> "3.2 MHz", 1.5e-6 W -> "1.5 uW"; units without prefixes (dB, deg, count, the MOCK score) as plain numbers. */
-export function eng(value: unknown, unit?: string | null): string {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
-  const plain = !unit || unit === 'fixture' || unit === 'count' ? '' : ` ${unit}`;
-  if (!unit || !SI.has(unit)) return `${+value.toPrecision(4)}${plain}`;
-  if (value === 0) return `0 ${unit}`;
-  const [factor, prefix] = PREFIXES.find(([f]) => Math.abs(value) >= f) ?? PREFIXES[PREFIXES.length - 1];
-  return `${+(value / factor).toPrecision(4)} ${prefix}${unit}`;
-}
 
 const VERDICT: Record<string, [string, string]> = { accepted: ['accepted', 'ok'], rejected: ['rejected', 'error'], inconclusive: ['inconclusive', 'warn'] };
 const STATE_TEXT: Record<string, string> = { starting: 'Starting', running: 'Running', stopping: 'Stopping after the simulation in flight',
@@ -28,11 +16,11 @@ const LIVE = ['starting', 'running', 'stopping'];
 function Cell({ record, running }: { record?: Json; running: boolean }) {
   if (!record) return <td className={running ? 'corner-pending' : 'hint'}>{running ? 'running...' : '-'}</td>;
   const values = Object.entries(record.metrics ?? {}).filter(([, v]) => v != null)
-    .map(([k, v]) => `${k} = ${eng(v, record.metric_units?.[k])}`).join('\n');
+    .map(([k, v]) => `${k} = ${si(v, record.metric_units?.[k])}`).join('\n');
   if (record.state === 'passed') return <td className="corner-pass" title={values}>pass</td>;
   if (record.state === 'failed') {
     const worst = record.failing?.[0];
-    return <td className="corner-fail" title={values || record.status}>FAIL{worst ? <span> {worst.metric_id} {eng(worst.value, worst.unit)}</span>
+    return <td className="corner-fail" title={values || record.status}>FAIL{worst ? <span> {worst.metric_id} {si(worst.value, worst.unit)}</span>
       : <span> {record.status.replace(/_/g, ' ')}</span>}</td>;
   }
   const why = record.status === 'ok' ? 'measurement not valid' : record.status.replace(/_/g, ' ');
@@ -92,7 +80,7 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
   const current = status?.current;
   const failedRepeat = (summary?.designs ?? []).filter((d: Json) => d.nominal_repeat?.matches === false);
   const variables = (d: Json) => Object.values(Object.fromEntries((d.widths ?? []).map((w: Json) => [w.variable_id, w])) as Record<string, Json>)
-    .map(w => `${w.variable_id} ${eng(w.value, w.unit)}`).join(' · ');
+    .map(w => `${w.variable_id} ${si(w.value, w.unit)}`).join(' · ');
   return (<div className="corner-check">
     {plan?.notice && <p className="mock">{plan.notice}</p>}
     <div className="row">
@@ -141,12 +129,12 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
           {summary.restoration.journal ? ` The adapter's journal: ${summary.restoration.journal}` : ''}</p>)}
       {failedRepeat.length > 0 && <p className="warn">The nominal simulation of {failedRepeat.map((d: Json) => `design #${d.rank}`).join(', ')} differs from the
         run's own result ({failedRepeat[0].nominal_repeat.differences.map((x: Json) => { const unit = results.find(r => r.metric_units?.[x.metric_id])?.metric_units[x.metric_id];
-          return `${x.metric_id}: run ${eng(x.run, unit)}, check ${eng(x.check, unit)}`; }).join('; ')}).</p>}
+          return `${x.metric_id}: run ${si(x.run, unit)}, check ${si(x.check, unit)}`; }).join('; ')}).</p>}
       {summary?.designs?.some((d: Json) => d.worst_case_metrics) && <details className="more"><summary>Worst value of each spec, per design</summary>
         <table className="grid small"><thead><tr><th>Design</th><th>Spec</th><th>Worst value</th><th>At corner</th><th>Corners measured</th></tr></thead>
           <tbody>{summary.designs.flatMap((d: Json) => Object.entries(d.worst_case_metrics ?? {}).map(([name, w]: [string, Json]) => {
             const unit = results.find(r => r.evaluation_id === d.evaluation_id)?.metric_units?.[name];
-            return <tr key={`${d.rank}|${name}`}><td>#{d.rank}</td><td>{name}</td><td>{eng(w.value, unit)}</td><td>{w.corner_id ?? '-'}</td>
+            return <tr key={`${d.rank}|${name}`}><td>#{d.rank}</td><td>{name}</td><td>{si(w.value, unit)}</td><td>{w.corner_id ?? '-'}</td>
               <td>{w.valid_corner_count} of {corners.length}</td></tr>;
           }))}</tbody></table></details>}
     </div>}

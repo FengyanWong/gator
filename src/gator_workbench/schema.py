@@ -322,9 +322,12 @@ class OutputSettings(_Model):
     export_summary_csv: bool = True
     checkpoint_every_evaluations: Optional[int] = Field(50, ge=1)
     checkpoint_every_seconds: Optional[float] = Field(None, gt=0)
-    keep_last_checkpoints: Optional[int] = Field(None, ge=1,
-        description='Empty = keep every checkpoint (models are never deleted automatically). A number is an '
-                    'explicit instruction to prune older PERIODIC checkpoints; latest, final and best are kept.')
+    keep_last_checkpoints: Optional[int] = Field(10, ge=1,
+        description='How many PERIODIC save points to keep, the newest ones. A save point holds the replay buffer, so '
+                    'it grows with the run: keeping every one of a long run filled the run folder with copies (measured '
+                    '2026-09-23: 40 MB of save points against 1.2 MB of data after 250 evaluations). Save now, pause, '
+                    'stop and final save points, the latest one and a selected best policy are never removed. '
+                    'Empty = keep every one.')
     learner_update_log_every: int = Field(1, ge=1,
         description='Write every Nth learner update. cumulative_updates stays exact regardless.')
     flush_every_evaluations: int = Field(16, ge=1, le=100000,

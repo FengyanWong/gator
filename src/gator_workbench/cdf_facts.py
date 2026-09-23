@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 
-from .pdk import CDF_UNITS, _number, _plist, _write_source, parse_cdf_text, skill_value
+from .pdk import CDF_UNITS, _number, _write_source, parse_cdf_text, skill_value
 
 FORMAT = 'gator-cdf-facts-1'
 FILE = 'core_cdf.json'
@@ -85,8 +85,8 @@ let((cv lines masters extra cell cdf sp mp lcv val key rule)
             cell~>views~>name) lines)
           lines = cons(sprintf(nil "FORM|%s|%L|%L" cadr(key) cdf~>formInitProc cdf~>doneProc) lines)
           foreach(p cdf~>parameters
-            lines = cons(sprintf(nil "PARAM|%s|%s|%L|%L|%L|%L|%L|%L|%L|%L" cadr(key) p~>name p~>paramType p~>units
-              p~>defValue p~>prompt p~>editable p~>display p~>callback p~>choices) lines))))
+            lines = cons(sprintf(nil "PARAM|%s|%s|%L|%L|%L|%L|%L|%L|%L|%L|%L" cadr(key) p~>name p~>paramType p~>units
+              p~>defValue p~>prompt p~>editable p~>display p~>callback p~>choices p~>range) lines))))
       lines = cons(sprintf(nil "AFTER|%L" cv~>modifiedButNotSaved) lines))
     when(cv dbClose(cv)))
   buildString(reverse(lines) "\n"))
@@ -211,11 +211,6 @@ def unit_of(facts, source) -> str:
     """The canonical unit of a CDF parameter: its declared units, else a count."""
     entry = ((facts['cells'].get(source['cell']) or {}).get('parameters') or {}).get(source['cdf']) or {}
     return CDF_UNITS.get(entry.get('units')) or '1'
-
-
-def default_of(facts, cell, name):
-    entry = ((facts['cells'].get(cell) or {}).get('parameters') or {}).get(name) or {}
-    return entry.get('default')
 
 
 def mode_parameters(facts, cell) -> list:

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { usePopupWindow } from './popupWindow';
 import { api, Json } from '../api';
 
 /** The task file in a window of its own: everything a task is, as one readable file (its own `_help` part explains each
@@ -8,34 +9,18 @@ import { api, Json } from '../api';
  *  task". Opened by a press, closed with its own button or the window's. */
 export function TaskFileWindow({ text, title, onApply, onClose }: {
   text: string; title: string; onApply: (rows: Json, extras: Json) => void; onClose: () => void }) {
-  const [popup, setPopup] = useState<Window | null>(null);
-  const [root, setRoot] = useState<HTMLElement | null>(null);
+  // The same pop-up window as the connection, run and PDK windows (`popupWindow.ts`); this one opens with the panel
+  // and takes the panel with it when the viewer closes it.
+  const { popup, root, blocked, open } = usePopupWindow('gator-task-file',
+    { title: `GATOR - ${title}`, features: 'popup,width=760,height=900', rootId: 'task-file-root',
+      rootClass: 'task-file-window', onClose, closeOnUnmount: true });
   const [draft, setDraft] = useState(text);
   const [problems, setProblems] = useState<string[] | null>(null);
   const [message, setMessage] = useState<Json>(null);
   const [busy, setBusy] = useState(false);
-  const [blocked, setBlocked] = useState<string | null>(null);
 
   useEffect(() => { setDraft(text); setProblems(null); setMessage(null); }, [text]);
-  useEffect(() => {
-    const opened = window.open('', 'gator-task-file', 'popup,width=760,height=900');
-    if (!opened) { setBlocked('The browser blocked the new window. Allow pop-ups for this page, then press "Task file" again.'); return; }
-    const doc = opened.document;
-    doc.title = `GATOR - ${title}`;
-    doc.head.querySelectorAll('link, style').forEach(node => node.remove());          // a window of that name may be reused
-    document.querySelectorAll<HTMLElement>('link[rel="stylesheet"], style').forEach(node => {
-      const copy = node.cloneNode(true) as HTMLElement;
-      if (node instanceof HTMLLinkElement) (copy as HTMLLinkElement).href = node.href;   // absolute: the new window is about:blank
-      doc.head.appendChild(copy);
-    });
-    doc.body.innerHTML = '<div id="task-file-root" class="task-file-window"></div>';
-    setPopup(opened); setRoot(doc.getElementById('task-file-root'));
-    const closed = () => onClose();
-    const leave = () => opened.close();
-    opened.addEventListener('pagehide', closed);
-    window.addEventListener('pagehide', leave);
-    return () => { opened.removeEventListener('pagehide', closed); window.removeEventListener('pagehide', leave); opened.close(); };
-  }, []);
+  useEffect(() => { open(); }, []);
 
   const apply = async () => {
     setBusy(true); setMessage(null);
@@ -51,7 +36,7 @@ export function TaskFileWindow({ text, title, onApply, onClose }: {
     } finally { setBusy(false); }
   };
 
-  if (blocked) return <p className="error">{blocked}</p>;
+  if (blocked) return <p className="error">The browser blocked the new window. Allow pop-ups for this page, then press "Task file" again.</p>;
   if (!popup || !root) return null;
   return createPortal(
     <div className="task-file">

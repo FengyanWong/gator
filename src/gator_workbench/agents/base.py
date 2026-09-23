@@ -326,6 +326,7 @@ def _read_live(process, stdin_text, timeout, on_line, max_output):
 
 class AgentProvider:
     name = 'base'
+    carries_tools = False      # can this provider be given the workbench's own tools, isolated from any other? (TOOL_KINDS)
 
     def __init__(self, settings: AgentSettings | None = None):
         self.settings = (settings or AgentSettings()).validate()

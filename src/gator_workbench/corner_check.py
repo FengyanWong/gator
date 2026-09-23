@@ -298,8 +298,48 @@ def prepare(run_dir, *, designs, expected=None, simulations=None, allow_real=Fal
     if simulations is not None and simulations != proposal['simulations']:
         raise CheckRefused(f"The check needs {proposal['simulations']} simulations, not {simulations}. Read the plan "
                            'again and look.', code='plan_changed')
-    if live_checks(run_dir):
-        raise CheckRefused('A corner check of this run is already running.', code='already_running')
+    # "Is one already running?" and the worker's own lock used to be two separate calls with the API in between, so two
+    # presses could both pass and two workers then size the SAME Virtuoso cell - the loser restoring against sizes the
+    # winner had already overwritten (review of 2026-09-23). This run-scoped lock is held from here until `launch` has
+    # the worker's lock, so the second press sees the first check.
+    start = _start_lock(run_dir)
+    try:
+        if live_checks(run_dir):
+            raise CheckRefused('A corner check of this run is already running.', code='already_running')
+        return _prepared(run_dir, proposal, chosen, allow_real=allow_real, acknowledge_unknown=acknowledge_unknown,
+                         monitor=monitor)
+    except BaseException:
+        _release_start(run_dir)
+        raise
+
+
+def _start_lock(run_dir):
+    """One start at a time per run. Held by `prepare` and handed to `launch`, which releases it once the check's own
+    worker lock is taken."""
+    from .engine import RunLock
+    key = str(Path(run_dir).resolve())
+    if key in _STARTING:
+        raise CheckRefused('A corner check of this run is being started right now.', code='already_starting')
+    lock = RunLock(Path(run_dir) / CHECK_DIR / 'control' / 'start.lock')
+    try:
+        lock.acquire()
+    except RuntimeError:
+        raise CheckRefused('A corner check of this run is being started right now.', code='already_starting')
+    _STARTING[key] = lock
+    return lock
+
+
+def _release_start(run_dir):
+    lock = _STARTING.pop(str(Path(run_dir).resolve()), None)
+    if lock is not None:
+        lock.release()
+
+
+_STARTING = {}
+
+
+def _prepared(run_dir, proposal, chosen, *, allow_real, acknowledge_unknown, monitor):
+    from .runs import connection_gate
     layout = RunLayout(Path(run_dir))
     manifest = read_json(layout.manifest)
     gate = None
@@ -331,10 +371,17 @@ def prepare(run_dir, *, designs, expected=None, simulations=None, allow_real=Fal
 
 
 def launch(directory, *, allow_real=False) -> int:
-    """The detached worker (own session, lock handed over as for a run). Never launched by tests or at import."""
+    """The detached worker (own session, lock handed over as for a run). Never launched by tests or at import.
+    The run's start lock, taken in `prepare`, is released once this check's own lock is held: from then on a second
+    press sees a live check."""
     directory = Path(directory)
     lock = RunLock(directory / 'control' / 'check.lock')
-    lock.acquire()
+    try:
+        lock.acquire()
+    except BaseException:
+        _release_start(directory.parent.parent)
+        raise
+    _release_start(directory.parent.parent)
     env = dict(os.environ)
     env['PYTHONPATH'] = os.pathsep.join(filter(None, [str(repo_root() / 'src'), env.get('PYTHONPATH')]))
     command = [sys.executable, '-m', 'gator_workbench.corner_check', '--check-dir', str(directory),

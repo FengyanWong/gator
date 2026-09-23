@@ -75,7 +75,6 @@ try {
     if (op === 'setup/read' && mode === 'no-outputs') return fulfil(requestId, 200, { ...setupAnswer(body.config), outputs: [], specs: [], rows: { measurements: [], targets: [] }, editor_differences: [] });
     if (op === 'setup/read' && mode === 'no-view') return fulfil(requestId, 200, { exists: false, tests: [], test: null, model_files: [], analyses: {}, variables: {}, bindings: [], outputs: [], specs: [] });
     if (op === 'setup/read') return fulfil(requestId, 200, setupAnswer(body.config));
-    if (op === 'setup/write') return fulfil(requestId, 200, { ...setupAnswer(body.config), written: {}, differences: [], matches: true });
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${op} is not expected` } });
   };
   page.on('Page.javascriptDialogOpening', p => {

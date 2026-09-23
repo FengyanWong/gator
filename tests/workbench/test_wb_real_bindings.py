@@ -8,6 +8,7 @@ import pytest
 from gator_workbench import tasks
 from gator_workbench.paths import local_settings_dir
 from gator_workbench.schema import CircuitReference
+from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
 
 REPO = Path(__file__).resolve().parents[2]
 DESIGNS = {name: json.loads((REPO / info['design']).read_text()) for name, info in tasks.REAL_PROFILES.items()}
@@ -32,11 +33,6 @@ def write_profile(**profile):
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(dict(active='lab', profiles=dict(lab=dict(dict(env_file='/x/.env', library='MY_LIB',
                                                                                model_file='/pdk/model.scs'), **profile)))))
-
-
-@pytest.fixture(autouse=True)
-def _bridge_is_importable(monkeypatch):
-    monkeypatch.setattr(tasks, 'bridge_importable', lambda: True)
 
 
 def test_each_circuit_uses_its_own_receipt_and_baseline(tmp_path):

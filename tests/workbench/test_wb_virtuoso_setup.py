@@ -18,6 +18,12 @@ SETUP = dict(test='GATOR', model_files=[['/pdk/gpdk045.scs', 'tt']], analyses={'
              variables={'VSUP': '1.0'}, bindings=[dict(cell=TB, instance='V0', parameter='vdc', variable='VSUP')])
 
 
+def write(monitor, setup, **kw):
+    """Write a setup into the cell's OWN working copy - `write_setup_on` on `draft_target`, the pair a task save and
+    the agent's tool use. Raises `CopyError` when no copy was made."""
+    return working_copy.write_setup_on(monitor, 'lab', working_copy.draft_target(LIB, CELL), setup, **kw)
+
+
 def test_only_listed_calculator_functions_and_names_pass():
     assert vs.check_expression('frequency(VT("/OUT"))') == []
     assert vs.check_expression('average(IT("/V0/PLUS")) * VSUP', variables={'VSUP'}) == []
@@ -128,13 +134,12 @@ def test_the_conditions_are_written_with_the_setup_and_read_back(tmp_path):
                                                    dict(name='XU1', lib=LIB, cell=CELL, params={})])))
     conditions = {'OUT': '0.9', 'N1': '0'}
     answer = dict(written_answer(), initial_conditions=conditions, ic_file='/home/u/.gator/ic/x.scs')
-    result = working_copy.write_setup(probe(tmp_path), 'lab', LIB, CELL, dict(SETUP, initial_conditions=conditions),
-                                      command=setup_writer(tmp_path, answer))
+    result = write(probe(tmp_path), dict(SETUP, initial_conditions=conditions), command=setup_writer(tmp_path, answer))
     [call] = [json.loads(line) for line in (tmp_path / 'setup_calls.jsonl').read_text().splitlines()]
     assert call['request']['setup']['initial_conditions'] == conditions and result['matches']
     assert result['initial_conditions'] == conditions
-    gone = working_copy.write_setup(probe(tmp_path), 'lab', LIB, CELL, dict(SETUP, initial_conditions=conditions),
-                                    command=setup_writer(tmp_path, dict(written_answer(), initial_conditions={})))
+    gone = write(probe(tmp_path), dict(SETUP, initial_conditions=conditions),
+                 command=setup_writer(tmp_path, dict(written_answer(), initial_conditions={})))
     assert not gone['matches'] and gone['differences'] == ['Initial condition on N1: the task says 0, Virtuoso has (none)',
                                                            'Initial condition on OUT: the task says 0.9, Virtuoso has (none)']
 
@@ -164,12 +169,12 @@ def written_answer():
 def test_writing_a_setup_goes_to_the_copy_only_and_is_compared_on_the_way_back(tmp_path):
     imported(tmp_path)
     with pytest.raises(working_copy.CopyError, match='Make the working copy first'):
-        working_copy.write_setup(probe(tmp_path), 'lab', LIB, CELL, SETUP)
+        write(probe(tmp_path), SETUP)
     working_copy.make(probe(tmp_path), 'lab', LIB, CELL, command=fake_writer(tmp_path))
     readback = working_copy.native_cells.cell_dir(LIB, CELL) / 'testbench_readback.json'
     readback.write_text(json.dumps(dict(instances=[dict(name='V0', lib='analogLib', cell='vdc', params=dict(vdc='1.0', srcType='dc')),
                                                    dict(name='XU1', lib=LIB, cell=CELL, params={})])))
-    result = working_copy.write_setup(probe(tmp_path), 'lab', LIB, CELL, SETUP, command=setup_writer(tmp_path, written_answer()))
+    result = write(probe(tmp_path), SETUP, command=setup_writer(tmp_path, written_answer()))
     assert result['matches'] and result['differences'] == [] and result['fingerprint'] == vs.fingerprint(written_answer())
     assert [r['measurement_id'] for r in result['rows']['measurements']] == ['m_freq', 'm_vmax']
     [call] = [json.loads(line) for line in (tmp_path / 'setup_calls.jsonl').read_text().splitlines()]
@@ -177,13 +182,13 @@ def test_writing_a_setup_goes_to_the_copy_only_and_is_compared_on_the_way_back(t
     assert call['request']['setup']['outputs'] == SETUP['outputs'] and call['request']['restore'] == []
     assert call['request']['cells'] == [TB, CELL]
     # A variable no longer set on a parameter puts the ORIGINAL value back.
-    working_copy.write_setup(probe(tmp_path), 'lab', LIB, CELL, dict(SETUP, variables={}, bindings=[]),
-                             command=setup_writer(tmp_path, dict(written_answer(), variables={}, bindings=[])))
+    write(probe(tmp_path), dict(SETUP, variables={}, bindings=[]),
+          command=setup_writer(tmp_path, dict(written_answer(), variables={}, bindings=[])))
     last = [json.loads(line) for line in (tmp_path / 'setup_calls.jsonl').read_text().splitlines()][-1]
     assert last['request']['restore'] == [[TB, 'V0', 'vdc', '1.0']]
     # What differs on the way back is reported, not hidden.
     drifted = dict(written_answer(), specs=[dict(output='freq', op='gt', value='2e+09'), SETUP['specs'][1]])
-    result = working_copy.write_setup(probe(tmp_path), 'lab', LIB, CELL, SETUP, command=setup_writer(tmp_path, drifted))
+    result = write(probe(tmp_path), SETUP, command=setup_writer(tmp_path, drifted))
     assert not result['matches'] and result['differences'] == ["Spec on freq: the task says ('gt', '1000000000'), Virtuoso has ('gt', '2000000000')"]
 
 
@@ -192,10 +197,10 @@ def test_a_setup_that_fails_its_checks_writes_nothing(tmp_path):
     working_copy.make(probe(tmp_path), 'lab', LIB, CELL, command=fake_writer(tmp_path))
     bad = dict(SETUP, bindings=[dict(cell=CELL, instance='MN1', parameter='w', variable='VSUP')])
     with pytest.raises(vs.SetupError, match='MN1 in ring_osc_3stage cannot be set by a variable'):
-        working_copy.write_setup(probe(tmp_path), 'lab', LIB, CELL, bad, command=setup_writer(tmp_path, written_answer()))
+        write(probe(tmp_path), bad, command=setup_writer(tmp_path, written_answer()))
     with pytest.raises(PermissionError, match='gate blocked writing the Maestro setup'):
-        working_copy.write_setup(probe(tmp_path, daemon='failed'), 'lab', LIB, CELL, dict(SETUP, bindings=[], variables={}),
-                                 command=setup_writer(tmp_path, written_answer()))
+        write(probe(tmp_path, daemon='failed'), dict(SETUP, bindings=[], variables={}),
+              command=setup_writer(tmp_path, written_answer()))
     assert not (tmp_path / 'setup_calls.jsonl').exists()
 
 
@@ -209,7 +214,7 @@ def test_reading_an_empty_or_foreign_view_gives_no_rows(tmp_path):
     assert call['op'] == 'read_setup' and call['request']['test'] == 'GATOR'
 
 
-def test_the_routes_copy_read_and_write_through_the_same_checks(tmp_path, monkeypatch):
+def test_the_copy_and_setup_routes_go_through_the_same_checks(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from gator_workbench.api import create_app
     imported(tmp_path)
@@ -233,18 +238,20 @@ def test_the_routes_copy_read_and_write_through_the_same_checks(tmp_path, monkey
     def with_rows(raw):
         rows = vs.to_rows(SETUP)
         raw['measurements'], raw['targets'] = rows['measurements'], rows['targets']
-    config = make_config(tmp_path, mutate=with_rows).model_dump(mode='json')
+    task = make_config(tmp_path, mutate=with_rows)
+    config = task.model_dump(mode='json')
     read = client.post('/api/virtuoso/setup/read', json=dict(cell, profile_id='lab', config=config)).json()
     assert read['editor_differences'] == [] and read['fingerprint'] == vs.fingerprint(written_answer())
     config['targets'][0]['lower'] = 2e9
     read = client.post('/api/virtuoso/setup/read', json=dict(cell, profile_id='lab', config=config)).json()
     assert read['editor_differences'] == ["Spec on freq: the task says ('gt', '2000000000'), Virtuoso has ('gt', '1000000000')"]
     config['targets'][0]['lower'] = 1e9
-    written = client.post('/api/virtuoso/setup/write', json=dict(cell, profile_id='lab', config=config,
-                                                                 variables=SETUP['variables'], bindings=SETUP['bindings'])).json()
-    assert written.get('matches'), written
+    # The rows are written into the copy through the pair a task save and the agent's tool use (the route that did
+    # this had no caller left once "Write to Virtuoso" went, 7.65, and was removed in the review of 2026-09-23).
+    written = write(probe(tmp_path), vs.from_rows(task, variables=SETUP['variables'], bindings=SETUP['bindings']))
+    assert written['matches'], written
     last = [json.loads(line) for line in (tmp_path / 'setup_calls.jsonl').read_text().splitlines()][-1]
     assert last['op'] == 'write_setup' and last['request']['setup']['analyses'] is None       # the copy's analyses are kept
-    bad = client.post('/api/virtuoso/setup/write', json=dict(cell, profile_id='lab', setup=dict(SETUP, outputs=[dict(name='x', expression='system("y")')], specs=[])))
-    assert bad.status_code == 409 and 'system() is not' in bad.json()['detail']['message']
+    with pytest.raises(vs.SetupError, match=r'system\(\) is not'):
+        write(probe(tmp_path), dict(SETUP, outputs=[dict(name='x', expression='system("y")')], specs=[]))
     assert client.post('/api/virtuoso/copy', json=cell).status_code == 422                   # a connection profile is required

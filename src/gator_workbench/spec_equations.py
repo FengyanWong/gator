@@ -25,9 +25,7 @@ import ast
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 import math
-import re
 
-ID = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]*$')                       # a Probe ID (schema.MeasurementDefinition)
 MAX_LENGTH = 512                                                      # schema.PerformanceTarget.equation
 _ALLOWED = (ast.Expression, ast.Constant, ast.Name, ast.Load, ast.UnaryOp, ast.UAdd, ast.USub,
             ast.BinOp, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)

@@ -147,12 +147,7 @@ class CopyBody(Body):
 
 
 class SetupBody(CopyBody):
-    config: dict | None = None          # read: the editors' rows, to say how they differ; write: the rows to write
-    setup: dict | None = None           # write: a whole setup instead of the rows (the agent's approved proposal)
-    analyses: dict | None = None        # write from rows: the analyses to set; None keeps what the copy has
-    variables: dict | None = None
-    bindings: list[dict] | None = None
-    initial_conditions: dict | None = None      # net -> start voltage; None keeps what the copy has
+    config: dict | None = None          # the editors' rows, to say how the copy's setup differs from them
 
 
 class TaskSaveBody(Body):
@@ -322,11 +317,12 @@ def sse(kind: str, data) -> str:
     return f"event: {kind}\ndata: {json.dumps(data, default=str, separators=(',', ':'))}\n\n"
 
 
-def live_answer(request, provider, finish, done=None):
+def live_answer(request, provider, finish, done=None, outcome=None):
     """The agent's answer as Server-Sent Events (status record 7.48): `progress` while it works (agents/live.py), then ONE
     `result` (the proposal, exactly as the JSON answer) or ONE `error` (exactly as the 409 detail). The agent runs on a
     thread of its own. If the page goes away first, the request is cancelled: nobody would see the answer. `done` is
-    called once the agent is finished, however it ended (the request's tools are closed with it)."""
+    called once the agent is finished, however it ended (the request's tools are closed with it). `outcome` says what the
+    request's tools did, so a FAILURE can say it too - a failed request may already have written the working copy."""
     async def events():
         loop, inbox = asyncio.get_running_loop(), asyncio.Queue()
 
@@ -340,10 +336,11 @@ def live_answer(request, provider, finish, done=None):
             try:
                 post('result', finish(provider.propose(request, on_event=lambda event: post('progress', event))))
             except AgentError as exc:
-                post('error', dict(exc.as_dict(), configuration_unchanged=True))
+                post('error', dict(exc.as_dict(), configuration_unchanged=True, **(outcome() if outcome else {})))
             except Exception as exc:              # the JSON answer would be an HTTP 500; a stream must still end with a verdict
                 post('error', dict(code='internal_error', meaning='The workbench failed while handling the reply.',
-                                   detail=redact(f'{type(exc).__name__}: {exc}', 1000), configuration_unchanged=True))
+                                   detail=redact(f'{type(exc).__name__}: {exc}', 1000), configuration_unchanged=True,
+                                   **(outcome() if outcome else {})))
             finally:
                 if done is not None:
                     done()
@@ -675,20 +672,6 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                 found['editor_differences'] = virtuoso_setup.differences(ours, found)
             return found
         return _virtuoso_write(read)
-
-    @app.post('/api/virtuoso/setup/write')
-    def virtuoso_setup_write(body: SetupBody):
-        """Explicit click: make the working copy's Maestro test say what the editors' rows say (Probes of source
-        ade_output, the Specs on exactly one of them) - or `setup`, an approved proposal - then read it back and
-        compare. Writes only into the copy; zero cost."""
-        if not body.profile_id:
-            fail(422, 'A connection profile is required')
-        if body.setup is None and body.config is None:
-            fail(422, 'Nothing to write: send the rows (config) or a setup')
-        setup = body.setup if body.setup is not None else virtuoso_setup.from_rows(          # a part not sent is kept as the copy has it
-            parse_config(body.config), analyses=body.analyses, variables=body.variables, bindings=body.bindings,
-            initial_conditions=body.initial_conditions)
-        return _virtuoso_write(lambda: working_copy.write_setup(monitor, body.profile_id, body.library, body.cell, setup))
 
     # ------------------------------------------------------------------ saved tasks: "Save task", "Save as", the task file
     @app.post('/api/virtuoso/task/save')
@@ -1081,8 +1064,10 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         if table not in TABLES:
             fail(404, 'Unknown table')
         reader = DatasetReader(run_path(run_dir) / 'data')
-        whole = reader.table(table)             # only the rows shown are turned into Python (was: all of them, then 20 kept)
-        rows = (whole.slice(max(0, whole.num_rows - limit)) if tail else whole.slice(0, limit)).to_pylist()
+        # Only the rows shown are read from disk and turned into Python: `tail` walks the parts from the newest backwards
+        # (it read every part of the run, then kept 20).
+        part = reader.tail(table, limit) if tail else reader.table(table).slice(0, limit)
+        rows = part.to_pylist()
         clean = []
         for row in rows:
             for column in TABLES[table]['columns']:
@@ -1313,18 +1298,24 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         """Proposal only. Applying needs approval; circuit writes and simulations need their own authorization.
         A request that accepts `text/event-stream` gets the answer LIVE (`live_answer`), any other gets it in one piece.
         A request of a TOOL kind (agents/tools.py) also gets the workbench's Virtuoso tools for as long as it runs."""
+        session = None
         try:
             request, circuit_hash = _request(body)
             provider = agents.make_provider(agent_settings())
+            # Validated BEFORE the tools are opened: a request that cannot be sent used to leave the live-answer path with
+            # an open tool session (its token still worked), because only the plain path had the `finally` that closes it.
+            request.validate()
+            if request.kind in agents.TOOL_KINDS and not getattr(provider, 'carries_tools', False):
+                fail(409, f'The {settings_provider_name(provider)} provider cannot be given the workbench\'s Virtuoso tools, '
+                          f'so a "{request.kind}" request would work without them and say it has them. Choose the Claude Code '
+                          'provider under Agent settings, or a request kind that needs no tools.', code='tools_unsupported')
             session = _open_tools(request, parse_config(body.config), http)
 
             def finish(result):
                 proposal = proposals.create(request, result, circuit_hash=circuit_hash)
                 if request.kind == 'virtuoso_setup':
                     check_setup(request, proposal)
-                if session is not None:
-                    proposal['tool_calls'] = [dict(tool=c['tool'], ok=c['ok'], error=c['error']) for c in session.history]
-                    proposal['virtuoso_copy_written'] = session.wrote
+                proposal.update(_tool_outcome(session))
                 proposal['readiness_after'] = readiness_after(request, proposal)
                 check_suggestions(request, proposal)
                 _audit(proposal)
@@ -1334,14 +1325,16 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                 if session is not None:
                     _close_tools(session)
             if 'text/event-stream' in http.headers.get('accept', ''):
-                request.validate()               # a request that cannot be sent is refused as a plain 409, before any stream
-                return live_answer(request, provider, finish, done=done)
+                return live_answer(request, provider, finish, done=done, outcome=lambda: _tool_outcome(session))
             try:
                 return finish(provider.propose(request))
             finally:
                 done()
         except AgentError as exc:
-            raise HTTPException(409, detail=dict(exc.as_dict(), configuration_unchanged=True))
+            # A request that FAILS may already have written the working copy through its tools. Saying only
+            # "configuration_unchanged" read as "nothing happened" (review of 2026-09-23): the tables are unchanged, the
+            # copy in Virtuoso is not, and the answer now says which tools ran and whether one of them wrote.
+            raise HTTPException(409, detail=dict(exc.as_dict(), configuration_unchanged=True, **_tool_outcome(session)))
 
     # ------------------------------------------------------------------ the agent's own tools (status record 7.68)
     def _open_tools(request, config, http):
@@ -1366,6 +1359,17 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     def _close_tools(session):
         session.close()
         tool_sessions.pop(session.token, None)
+
+    def _tool_outcome(session) -> dict:
+        """What this request's tools did - said with the answer AND with a failure, because a request that ends badly may
+        already have written the working copy."""
+        if session is None:
+            return {}
+        return dict(tool_calls=[dict(tool=c['tool'], ok=c['ok'], error=c['error']) for c in session.history],
+                    virtuoso_copy_written=session.wrote)
+
+    def settings_provider_name(provider) -> str:
+        return getattr(provider, 'name', None) or type(provider).__name__
 
     def _tool_record(entry):
         from ..paths import local_settings_dir

@@ -148,10 +148,15 @@ def build_artifact_manifest(layout: RunLayout, *, run_id, final: bool, dataset_s
             status = 'final' if relative in flushed else 'quarantined_unlisted_part'
         if relative.startswith('data/_journal/') and not final:
             status = 'pending'
+        # A checkpoint carries its own per-file SHA-256 in its metadata.json (checkpoints.py), and a save point grows
+        # with the replay buffer: re-hashing all of them at every run end read hundreds of megabytes twice over on the
+        # 9p mount. They are listed with their size and cite their own checksums instead (review of 2026-09-23).
+        own_checksum = top == 'checkpoints' and path.name != 'metadata.json'
         try:
             entries.append(dict(path=relative, purpose=PURPOSES.get(top, PURPOSES.get(relative, 'run file')),
                                 format=path.suffix.lstrip('.') or 'none', bytes=path.stat().st_size,
-                                sha256=sha256_file(path) if final or status == 'final' else None,
+                                sha256=None if own_checksum else (sha256_file(path) if final or status == 'final' else None),
+                                checksum_in=f'checkpoints/{relative.split("/")[1]}/metadata.json' if own_checksum else None,
                                 write_status=status))
         except OSError:
             continue

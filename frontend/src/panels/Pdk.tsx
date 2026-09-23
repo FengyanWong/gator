@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { usePopupWindow } from './popupWindow';
 import { api, Json } from '../api';
 
 // Load PDK (user request 2026-09-21; backend src/gator_workbench/pdk.py). The RL network is BUILT from a list of the
@@ -22,40 +23,15 @@ const USABLE_PDK_ID = (id?: string | null) => !!id && /^[A-Za-z_][A-Za-z0-9_.\-]
 export function ComponentList({ value, onChoose, profileId, circuitPdk }: { value: string; onChoose: (v: string) => void; profileId: string | null; circuitPdk?: string | null }) {
   const [list, setList] = useState<Json>(null);
   const [error, setError] = useState<string | null>(null);
-  const [popup, setPopup] = useState<Window | null>(null);
-  const [blocked, setBlocked] = useState<string | null>(null);
+  const { popup, root, blocked, open: openWindow } = usePopupWindow('gator-pdk',
+    { title: 'GATOR - PDK', features: 'popup,width=1100,height=900', rootId: 'pdk-root' });
   const refresh = () => api.pdks().then(l => { setList(l); setError(null); }).catch(e => setError(e.status === 404
     ? 'This workbench server is older than the page: restart it to load PDKs.' : `The loaded PDKs cannot be listed: ${e.message}`));
   useEffect(() => { refresh(); }, []);                   // local files only: which PDKs were loaded before
 
-  const openWindow = () => {
-    if (popup && !popup.closed) { popup.focus(); return; }
-    const opened = window.open('', 'gator-pdk', 'popup,width=1100,height=900');
-    if (!opened) { setBlocked('The browser blocked the new window. Allow pop-ups for this page, then press the button again.'); return; }
-    const doc = opened.document;
-    doc.title = 'GATOR - PDK';
-    doc.head.querySelectorAll('link, style').forEach(node => node.remove());
-    document.querySelectorAll<HTMLElement>('link[rel="stylesheet"], style').forEach(node => {
-      const copy = node.cloneNode(true) as HTMLElement;
-      if (node instanceof HTMLLinkElement) (copy as HTMLLinkElement).href = node.href;
-      doc.head.appendChild(copy);
-    });
-    doc.body.innerHTML = '<div id="pdk-root"></div>';
-    setBlocked(null); setPopup(opened);
-  };
-  useEffect(() => {
-    if (!popup) return;
-    const closed = () => setPopup(null);
-    const leave = () => popup.close();
-    popup.addEventListener('pagehide', closed);
-    window.addEventListener('pagehide', leave);
-    return () => { popup.removeEventListener('pagehide', closed); window.removeEventListener('pagehide', leave); };
-  }, [popup]);
-
   const pdks: Json[] = list?.pdks ?? [];
   const chosen: Json = pdks.find(p => p.vocabulary === value) ?? null;
   const missing = value !== 'standard' && list && !chosen;
-  const root = popup?.document.getElementById('pdk-root');
   return (
     <div className="component-list">
       <div className="row component-row">
@@ -72,7 +48,7 @@ export function ComponentList({ value, onChoose, profileId, circuitPdk }: { valu
         : chosen ? <>Knows all {chosen.summary.devices} components of {chosen.pdk_id}: {byFamily(chosen.summary)}. Other parts keep their standard kinds.</>
         : null}</p>
       {missing && <p className="warn">PDK {value.slice(4)} is not loaded here. Load it with "Load PDK...", or choose another list.</p>}
-      {blocked && <p className="error">{blocked}</p>}
+      {blocked && <p className="error">The browser blocked the new window. Allow pop-ups for this page, then press the button again.</p>}
       {error && <p className="warn">{error}</p>}
       <details className="component-help"><summary>What the component list changes</summary>
         <p className="hint">The network turns every part of the circuit into a node with a kind, and every pin into a link with a role (drain,

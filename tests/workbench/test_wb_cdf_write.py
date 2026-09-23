@@ -16,18 +16,14 @@ from types import SimpleNamespace
 import pytest
 
 from analog_optimizer.backends.virtuoso_bridge import BridgeConfig, VirtuosoBridgeBackend
-from gator_workbench import bridge_read, cdf_facts, cdf_write, native_cells, profiles, schema, tasks
+from gator_workbench import bridge_read, cdf_facts, cdf_write, profiles, schema, tasks
 from gator_workbench.generic_profile import GenericMosWidthProfile
+from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
 from test_wb_api import probe
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'ring_osc'
 CIRCUIT = dict(source='virtuoso', library='GPDK045_RINGOSC', cell='ring_osc_3stage', testbench_cell='tb_ring_osc_3stage',
                circuit_class='vco')
-
-
-@pytest.fixture(autouse=True)
-def _bridge_is_importable(monkeypatch):
-    monkeypatch.setattr(tasks, 'bridge_importable', lambda: True)
 
 
 def fake_reader(tmp_path, files=('netlist.scs', 'core_readback.json', 'testbench_readback.json', 'core_cdf.json')):

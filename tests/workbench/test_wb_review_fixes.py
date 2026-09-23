@@ -16,6 +16,7 @@ from gator_workbench.storage import read_json
 from helpers import execute, make_config
 from test_wb_api import probe
 from test_wb_profiles import CIRCUIT, config, connection_file, read_cell
+from test_wb_agent_tools import cli, fake_virtuoso, server   # noqa: F401 - fixtures: fake CLI on PATH, Virtuoso answered locally, the workbench on a socket
 
 
 def test_a_cell_read_from_virtuoso_is_validated_the_same_way_everywhere(tmp_path, monkeypatch):
@@ -92,3 +93,74 @@ def test_timestamps_do_not_search_for_a_missing_pytz_per_value():
     started = time.perf_counter()
     rows = pa.table({'t': column}).to_pylist()
     assert rows[0]['t'].tzinfo is not None and time.perf_counter() - started < 0.5      # was ~1.25 ms per value
+
+
+# ------------------------------------------------------------------------- round two (2026-09-23), status record 7.69
+def test_a_request_that_fails_after_writing_the_copy_says_so(server, cli, tmp_path, fake_virtuoso, monkeypatch):
+    """It used to answer only "configuration_unchanged": the tables were indeed unchanged, the working copy in Virtuoso
+    was not, and nothing in the answer said which tools had run. The whole chain runs here - fake CLI, real tool server,
+    real backend, fake Virtuoso - and the CLI writes the setup and THEN fails."""
+    import urllib.error
+    import urllib.request
+    monkeypatch.setenv('FAKE_CLI_SCENARIO', 'tools_then_denied')
+    monkeypatch.setenv('FAKE_CLI_TOOL_CALLS', json.dumps([['working_copy_write_setup', dict(analyses={'tran': {'stop': '50n'}})]]))
+    config = make_config(tmp_path).model_dump(mode='json')
+    config['circuit'] = dict(config['circuit'], source='virtuoso', library='RING', cell='ring')
+    body = json.dumps(dict(kind='virtuoso_work', prompt='Set this up', config=config)).encode()
+    with pytest.raises(urllib.error.HTTPError) as refused:
+        urllib.request.urlopen(urllib.request.Request(f'{server}/api/agent/propose', data=body,
+                                                      headers={'Content-Type': 'application/json'}), timeout=120)
+    assert refused.value.code == 409
+    detail = json.loads(refused.value.read())['detail']
+    assert detail['code'] == 'permission_denied' and detail['configuration_unchanged'] is True
+    assert detail['virtuoso_copy_written'] is True                      # the part that used to be missing
+    assert [c['tool'] for c in detail['tool_calls']] == ['working_copy_write_setup']
+    assert [a['op'] for a in fake_virtuoso] == ['read_setup', 'write_setup']          # the copy really was written
+
+
+def test_a_request_that_cannot_be_sent_opens_no_tools(tmp_path, monkeypatch, fake_virtuoso):
+    """The live-answer path validated AFTER opening the tools and outside the `finally` that closes them, so a refused
+    request left a session behind whose token still worked."""
+    minted = []
+    import secrets as secrets_module
+    monkeypatch.setattr(secrets_module, 'token_urlsafe', lambda n=32: minted.append(f'fixture-token-{len(minted)}') or minted[-1])
+    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False))
+    config = make_config(tmp_path).model_dump(mode='json')
+    config['circuit'] = dict(config['circuit'], source='virtuoso', library='RING', cell='ring')
+    body = dict(kind='virtuoso_work', prompt='x' * 20_001, config=config)       # a prompt no request may carry
+    for headers in ({}, {'Accept': 'text/event-stream'}):
+        assert client.post('/api/agent/propose', json=body, headers=headers).status_code == 409
+    assert minted == []                                                  # no session was opened at all
+    assert client.post('/api/agent/tools', json=dict(token='fixture-token-0', method='list')).status_code == 403
+
+
+def test_a_provider_that_cannot_carry_the_tools_refuses_the_request(tmp_path, monkeypatch, fake_virtuoso):
+    """A `virtuoso_work` request on Codex used to be accepted: the prompt said "you have the workbench tools", the
+    provider passed none, and its own MCP configuration stayed in force."""
+    from gator_workbench import agents
+    from gator_workbench.agents import CodexProvider
+    monkeypatch.setattr(agents, 'make_provider', lambda settings: CodexProvider(settings))
+    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False))
+    config = make_config(tmp_path).model_dump(mode='json')
+    config['circuit'] = dict(config['circuit'], source='virtuoso', library='RING', cell='ring')
+    answer = client.post('/api/agent/propose', json=dict(kind='virtuoso_work', prompt='Set this up', config=config))
+    assert answer.status_code == 409 and answer.json()['detail']['code'] == 'tools_unsupported'
+    assert 'cannot be given the workbench' in answer.json()['detail']['message']
+    assert agents.ClaudeCodeProvider.carries_tools is True and CodexProvider.carries_tools is False
+
+
+def test_a_row_outside_the_pdks_own_range_is_refused_when_the_task_is_saved(tmp_path, monkeypatch):
+    """The PDK declares in its CDF what its property form accepts. It was never read, so a row outside it passed every
+    offline check and the first candidate the PDK clamped stopped the run - after a real evaluation was paid for."""
+    from gator_workbench import cdf_rules, pdk
+    text = '\n'.join([
+        'CELL|nmos1v|"nch"|("D" "G" "S" "B")|nil|("w" "l")|nil|nil|nil|nil|("schematic")',
+        'PARAM|nmos1v|w|"float"|"lengthMetric"|1e-06|"Width"|t|t|nil|nil|(1e-07 1e-05)',
+        'PARAM|nmos1v|l|"float"|"lengthMetric"|4.5e-08|"Length"|t|t|nil|nil|nil'])
+    cells = pdk.parse_cdf_text(text)['cells']
+    assert cells['nmos1v']['parameters']['w']['range'] == [1e-07, 1e-05]       # read from the PDK
+    assert cells['nmos1v']['parameters']['l']['range'] is None                 # the PDK declares none: unchanged
+    source = pdk._write_source(cells, 'nmos1v', 'w')
+    assert source['range'] == [1e-07, 1e-05]                                   # and it reaches the rules
+    assert pdk.numeric_range('(2 1)') is None and pdk.numeric_range(['1u', '5u']) is None      # only a plain pair counts
+    assert cdf_rules is not None

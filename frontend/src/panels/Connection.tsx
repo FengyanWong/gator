@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { usePopupWindow } from './popupWindow';
 import { api, Json } from '../api';
 
 const STATE_LABEL: Record<string, string> = {
@@ -33,8 +34,9 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  const [popup, setPopup] = useState<Window | null>(null);      // while set, the connection window is open
-  const [blocked, setBlocked] = useState<string | null>(null);
+  // While `popup` is set, the connection window is open (one pop-up window for the whole page: `popupWindow.ts`).
+  const { popup, root, blocked, open: openWindow } = usePopupWindow('gator-connection',
+    { title: 'GATOR - connection', features: 'popup,width=660,height=920', rootId: 'connection-root' });
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<Json>({ kind: 'virtuoso_ssh', name: '', ssh_host: '', bridge_profile: '' });
   const [created, setCreated] = useState<Json>(null);
@@ -56,29 +58,6 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
   }, [profileId]);
 
   // ---- the window ------------------------------------------------------------------------------------------------
-  const openWindow = () => {
-    if (popup && !popup.closed) { popup.focus(); return; }
-    const opened = window.open('', 'gator-connection', 'popup,width=660,height=920');
-    if (!opened) { setBlocked('The browser blocked the new window. Allow pop-ups for this page, then press the button again.'); return; }
-    const doc = opened.document;
-    doc.title = 'GATOR - connection';
-    doc.head.querySelectorAll('link, style').forEach(node => node.remove());          // a window of that name may be reused
-    document.querySelectorAll<HTMLElement>('link[rel="stylesheet"], style').forEach(node => {
-      const copy = node.cloneNode(true) as HTMLElement;
-      if (node instanceof HTMLLinkElement) (copy as HTMLLinkElement).href = node.href;   // absolute: the new window is about:blank
-      doc.head.appendChild(copy);
-    });
-    doc.body.innerHTML = '<div id="connection-root"></div>';
-    setBlocked(null); setPopup(opened);
-  };
-  useEffect(() => {
-    if (!popup) return;
-    const closed = () => setPopup(null);                   // the window was closed with its own close button
-    const leave = () => popup.close();                     // the workbench page is leaving: do not leave a dead window behind
-    popup.addEventListener('pagehide', closed);
-    window.addEventListener('pagehide', leave);
-    return () => { popup.removeEventListener('pagehide', closed); window.removeEventListener('pagehide', leave); };
-  }, [popup]);
 
   // ---- actions: every one of them is a button press ----------------------------------------------------------------
   const run = async (name: string, action: () => Promise<void>) => {
@@ -126,7 +105,7 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
         <span className="connection-button-what">{profileId ? `${profileId}${entry?.kind_label ? ` - ${entry.kind_label}` : ''}` : profiles && profiles.profiles.length === 0 ? 'none set up yet' : 'none selected'}{popup ? ' (window open)' : ''}</span>
         {profileId && <span className={`badge state-${overall}`} title={status?.checked_utc ? `Last test: ${testedAt(status.checked_utc)}` : 'Never tested'}>{STATE_LABEL[overall] ?? overall}</span>}
       </button>
-      {blocked && <p className="error">{blocked}</p>}
+      {blocked && <p className="error">The browser blocked the new window. Allow pop-ups for this page, then press the button again.</p>}
     </section>
   );
 
@@ -284,6 +263,5 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
       {details}
     </div>
   );
-  const root = popup?.document.getElementById('connection-root');
   return <>{launcher}{popup && root && createPortal(view, root)}</>;
 }

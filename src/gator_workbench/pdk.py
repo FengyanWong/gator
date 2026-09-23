@@ -116,8 +116,8 @@ let((lib lines cdf sp mp cv)
           cell~>views~>name) lines)
         lines = cons(sprintf(nil "FORM|%s|%L|%L" cell~>name cdf~>formInitProc cdf~>doneProc) lines)
         foreach(p cdf~>parameters
-          lines = cons(sprintf(nil "PARAM|%s|%s|%L|%L|%L|%L|%L|%L|%L|%L" cell~>name p~>name p~>paramType p~>units p~>defValue
-            p~>prompt p~>editable p~>display p~>callback p~>choices) lines))
+          lines = cons(sprintf(nil "PARAM|%s|%s|%L|%L|%L|%L|%L|%L|%L|%L|%L" cell~>name p~>name p~>paramType p~>units p~>defValue
+            p~>prompt p~>editable p~>display p~>callback p~>choices p~>range) lines))
         when(and(null(sp) member("schematic" cell~>views~>name))
           cv = nil
           unwindProtect(
@@ -248,6 +248,20 @@ def _form_rule(text):
     return str(value)
 
 
+def numeric_range(value):
+    """A CDF `range` attribute as two numbers, or None when it is absent or not a plain numeric pair. The property form
+    itself refuses a value outside it, so a task whose bounds leave it would die on its first clamped candidate."""
+    if isinstance(value, str):
+        value = [part for part in value.replace('(', ' ').replace(')', ' ').split() if part]
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        return None
+    try:
+        low, high = float(value[0]), float(value[1])
+    except (TypeError, ValueError):
+        return None
+    return [low, high] if low <= high and math.isfinite(low) and math.isfinite(high) else None
+
+
 def parse_cdf_text(text):
     """The query's lines -> {cells: {name: {...}}, leaves: {cell: [{instance, library, cell, model}]}, layout_only: [..]}."""
     cells, leaves, layout_only = {}, {}, []
@@ -270,6 +284,8 @@ def parse_cdf_text(text):
             if len(parts) >= 11:                          # how the property form treats it (Load PDK since 2026-09-22)
                 entry.update(editable=_form_rule(parts[7]), display=_form_rule(parts[8]), callback=skill_value(parts[9]),
                              choices=skill_value(parts[10]))
+            if len(parts) >= 12:                          # the range the form itself enforces (2026-09-23): (low high)
+                entry['range'] = numeric_range(skill_value(parts[11]))
             cells[parts[1]]['parameters'][parts[2]] = entry
         elif tag == 'FORM' and len(parts) >= 4 and parts[1] in cells:
             cells[parts[1]]['form'] = dict(init=skill_value(parts[2]), done=skill_value(parts[3]))
@@ -661,7 +677,8 @@ def _write_source(cells, cell, name, parent=None, depth=0):
         inner = _write_source(cells, parent, found.group(2), None, depth + 1) if parent else None
         return None if inner is None else dict(inner, on='parent')
     return dict(cdf=name, on='self', cell=cell, type=entry.get('type'), editable=entry.get('editable'),
-                display=entry.get('display'), callback=entry.get('callback'), choices=entry.get('choices'))
+                display=entry.get('display'), callback=entry.get('callback'), choices=entry.get('choices'),
+                range=entry.get('range'))          # what the form itself accepts, when the PDK declares it
 
 
 def _writable(source, numeric):

@@ -15,11 +15,11 @@ const gateText = (gate: Json) => `Virtuoso cannot be reached (${[...(gate.blocki
   + 'Bring the link up in the Connection window, then try again.';
 const NAME = /^[a-z][a-z0-9_]{1,39}$/;
 const SUFFIX: Record<string, number> = { T: 1e12, G: 1e9, M: 1e6, k: 1e3, K: 1e3 };
-export const parseFrequency = (text: string) => {
+const parseFrequency = (text: string) => {
   const m = text.trim().match(/^(\d+(?:\.\d+)?(?:e[-+]?\d+)?)\s*([TGMkK]?)(?:hz)?$/i);
   return m ? parseFloat(m[1]) * (SUFFIX[m[2]] ?? 1) : NaN;
 };
-export const suggestTaskName = (cell: string | null | undefined) =>
+const suggestTaskName = (cell: string | null | undefined) =>
   (cell ?? '').toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^[^a-z]+/, '').slice(0, 40);
 /** Sent by the Agent tab when an approved setup was written into the working copy, naming the parts it wrote (analyses,
  *  variables, bindings). The same parts set here earlier from the task file are older now and are dropped: Save task

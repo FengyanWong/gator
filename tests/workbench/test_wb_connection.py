@@ -13,7 +13,7 @@ import pytest
 from gator_workbench import connection, runs, tasks
 from gator_workbench.connection import ConnectionMonitor, LAYERS, run_layers
 from gator_workbench.storage.atomic import read_jsonl
-from helpers import execute, make_config, roots_for, rows, summary
+from helpers import bridge_settings as settings, execute, make_config, roots_for, rows, summary  # noqa: F401 - an imported fixture belongs to this module
 
 REPO = Path(__file__).resolve().parents[2]
 LICENSE_OK = ['Users of Virtuoso_Multi_mode_Simulation:  (Total of 10 licenses issued;  Total of 3 licenses in use)']
@@ -75,13 +75,6 @@ class FakeBridge:
 
     def close(self):
         self.calls.append('close')
-
-
-@pytest.fixture
-def settings(tmp_path):
-    env = tmp_path / 'bridge.env'
-    env.write_text('VB_REMOTE_HOST=eda-host\nVB_PASSWORD=super-secret-value\n')
-    return dict(env_file=str(env), profile='lab')
 
 
 def states(layers):

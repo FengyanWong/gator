@@ -13,6 +13,7 @@ from gator_workbench.api.app import create_app
 from gator_workbench.bridge_connect import BridgeConnector, ciw_lines, describe, perform_connect, summarize
 from gator_workbench.connection import ConnectionMonitor, LAYERS, run_layers
 from gator_workbench.storage.atomic import read_jsonl
+from helpers import bridge_settings as settings  # noqa: F401 - an imported fixture belongs to this module
 from test_wb_connection import FakeBridge
 
 SETUP = '/tmp/virtuoso_bridge_alice/38094/virtuoso_bridge/virtuoso_setup.il'
@@ -28,13 +29,6 @@ class FakeTunnel(FakeBridge):
         if self.b['start_error']:
             raise self.b['start_error']
         self.b['running'] = self.b['comes_up']
-
-
-@pytest.fixture
-def settings(tmp_path):
-    env = tmp_path / 'bridge.env'
-    env.write_text('VB_REMOTE_HOST=eda-host\nVB_PASSWORD=super-secret-value\n')
-    return dict(env_file=str(env), profile='lab')
 
 
 def connect(settings, **behaviour):

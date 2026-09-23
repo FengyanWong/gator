@@ -79,6 +79,7 @@ def tool_server_config(request):
 
 class ClaudeCodeProvider(AgentProvider):
     name = 'claude_code'
+    carries_tools = True       # --mcp-config + --strict-mcp-config: only the tools this request was granted
 
     def executable(self):
         if self.settings.cli_path:

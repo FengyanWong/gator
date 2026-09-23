@@ -10,6 +10,19 @@ One exception ON SCREEN, by user decision of 2026-09-21: the **circuit graph vie
 below), drawn in the browser with cytoscape (MIT, frontend only, loaded when the view is opened). It is a
 diagnostic picture; nothing drawn is written into a run folder or an export, so the outputs stay data-only.
 
+**Where things are described** (this file is long; a section says what its feature does NOW):
+[Start](#start) ·
+[Start, Pause, Resume, Abort](#start-pause-resume-abort-added-2026-09-21-user-request) ·
+[What is real and what is mock](#what-is-real-and-what-is-mock) ·
+[Connection profiles](#connection-profiles-section-21) ·
+[Output layout](#output-layout) ·
+[The right column](#the-right-column-settings-saved-models-and-the-graph-view) ·
+[The PDK and what a run writes back](#the-pdk-and-what-a-real-run-writes-back-into-virtuoso) ·
+[A task's Virtuoso side](#a-tasks-virtuoso-side-the-working-copy-saving-the-agent-the-run) ·
+[Reload saved data](#reload-saved-data) ·
+[Agent providers](#agent-providers) ·
+[Tests](#tests)
+
 All code lives in `src/gator_workbench/` and `frontend/`. **Nothing under
 `src/analog_optimizer/` is modified**, because `training/sac.py::source_digest()` hashes that
 package and gates checkpoint loading and the M5/M6 audits.
@@ -18,7 +31,8 @@ package and gates checkpoint loading and the M5/M6 audits.
 
 ```bash
 # once: backend dependencies into the project environment
-/tmp/analog-optimizer-venv/bin/python -m pip install -e '.[graph,web,webtest]'
+/tmp/analog-optimizer-venv/bin/python -m pip install -c constraints.txt -e '.[graph,test,web,webtest]'
+# the pin file is not optional: a saved model loads only under the torch / torch-geometric it was saved with
 
 # once (and after UI changes): build the UI. This machine has no Linux node; the Windows
 # toolchain works through WSL interop. A native Linux node works the same way.
@@ -114,7 +128,7 @@ is never replaced), or it was started with "Model checkpoints" switched off. Bro
 |---|---|
 | `synthetic:gpdk045_ota5` (the one MOCK task) | **MOCK**: the optimizer's analytic toy backend (`origin=synthetic`) on a REAL circuit - the GPDK045 OTA5 netlist and device mapping `real:gpdk045_ota5` runs (`examples/circuits/gpdk045_ota5.scs`, `configs/gpdk045_opamp.json`). Free: no Virtuoso, no Spectre. Every row says `provenance=mock`, data lives under `<output_root>/mock/`, and it is excluded from real-experiment aggregates. The `score` is not a circuit metric, and a model it trains never loads into a real run. Until 2026-09-22 there were four MOCK tasks on toy netlists (`synthetic:opamp`, `_opamp_two_stage`, `_ldo`, `_vco`); they were removed (status record 7.59). A configuration that still names one opens with a plain note and cannot start. |
 | `real:gpdk045_*` tasks | The verified bridge profiles through the existing `NativeEnvironmentFactory`. Need virtuoso-bridge 0.8.0 importable by the backend interpreter, a connection profile, a passing connection gate and an explicit budget authorization. **Not exercised in this delivery** (see the status record). Nothing ever falls back to mock. |
-| Arbitrary native cellviews | Read-only browsing through the bridge. Optimizing one needs a verified circuit profile; writing a native schematic is not implemented (contract returned by the API). |
+| Arbitrary native cellviews | Read-only browsing through the bridge. Optimizing one needs a saved task, which runs on a WORKING COPY of the cell: a run writes instance values into that copy (the form writer since 7.66), never into the cell you drew, and no cellview is created or redrawn. |
 
 ### Choosing a registered task: whose rows Parameters, Probes and Specs show
 
@@ -594,6 +608,8 @@ replay, its model or its best design.
 Backend: `src/gator_workbench/corner_check.py`; tests `tests/workbench/test_wb_corner_check.py`. Browser check:
 `frontend/scripts/corner_check_check.mjs` (fixtures only; safe against the live backend).
 
+## The right column: settings, saved models and the graph view
+
 ### Folding the right column's modules (added 2026-09-21, user request)
 
 "Run configuration" and "Output settings" fold into one line with a click on their heading (the "Research
@@ -689,6 +705,8 @@ picture (the numbers do not change); nodes can be dragged, "Spread out" and "Fit
 transition archive cannot be shown. The drawing library (cytoscape 3.34.3, MIT, no further dependencies) is a
 separate file that the browser fetches only when the view is opened. Browser check:
 `frontend/scripts/graph_view_check.mjs`.
+
+## The PDK, and what a real run writes back into Virtuoso
 
 ### The components the network knows: "Load PDK" (added 2026-09-21, user request)
 
@@ -826,6 +844,8 @@ as in the verified mappings. Tasks saved before keep the old mapping until they 
 
 Tests: `tests/workbench/test_wb_cdf_write.py` (recorded REAL form rules of the ring oscillator, `fixtures/ring_osc/
 core_cdf.json`; a fake Virtuoso that runs the writer's SKILL with emulated callbacks - folding, clamping, bookkeeping).
+
+## A task's Virtuoso side: the working copy, saving, the agent, the run
 
 ### The Virtuoso side of a task: working copy and Maestro setup (added 2026-09-21, user request)
 
@@ -1105,10 +1125,10 @@ one baseline through the real run path (Maestro's deck in Spectre, OCEAN on the 
 APS mode (vmax 1.9e-6 apart, the start-up minimum clearly apart) and one in plain Spectre mode: vmax, vmin and the
 average supply current equal to 17 digits, 575 time steps in both.
 
-Not yet: initial conditions. A Maestro test cannot carry them from the workbench, and a ring oscillator started from its
-DC point or from 0 V everywhere does not oscillate (its stages stay symmetric) - the frequency output then has no value
-in Maestro and in the run alike. Until that is built, an oscillator is optimized with the ring-oscillator circuit type,
-which starts its transient from stated start voltages. Side effect, stated: OCEAN's current results in the Virtuoso
+Initial conditions were the missing piece here and are built since 2026-09-22 (see "Starting a circuit that does not
+start by itself" above): a task carries a start voltage per net, Save task writes them into a small file on the
+simulator host and every evaluation includes it, so a ring oscillator measured through Maestro oscillates. The
+ring-oscillator circuit type remains for a task measured by the workbench itself. Side effect, stated: OCEAN's current results in the Virtuoso
 session point at the last run's folder (ADE and Maestro windows keep their own).
 
 Tests: `tests/workbench/test_wb_maestro_run.py` (translation with name maps, the OCEAN program and its answer, the bridge

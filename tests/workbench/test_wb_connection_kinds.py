@@ -16,18 +16,12 @@ from gator_workbench.api.app import create_app
 from gator_workbench.bridge_connect import BridgeConnector, describe, perform_connect, summarize
 from gator_workbench.connection import ConnectionMonitor, LAYERS, NGSPICE_LAYERS, run_layers
 from gator_workbench.storage.atomic import read_json, read_jsonl, write_json
+from helpers import bridge_settings as settings  # noqa: F401 - an imported fixture belongs to this module
 from test_wb_bridge_connect import FakeTunnel
 from test_wb_connection import FakeBridge, reasons, states
 
 VERSION_TEXT = '******\n** ngspice-36 : Circuit level simulation program\n** The U. C. Berkeley CAD Group\n******\n'
 SOLVED = 'Doing analysis at TEMP = 27.000000 and TNOM = 27.000000\n\nNo. of Data Rows : 1\nv(out) = 5.000000e-01\nngspice-36 done\n'
-
-
-@pytest.fixture
-def settings(tmp_path):
-    env = tmp_path / 'bridge.env'
-    env.write_text('VB_REMOTE_HOST=eda-host\nVB_PASSWORD=super-secret-value\n')
-    return dict(env_file=str(env), profile='lab')
 
 
 def write_profiles(**profiles):

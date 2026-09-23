@@ -4,7 +4,7 @@ import type { Json } from './api';
 const STORAGE_KEY = 'gator-workbench-config-v1';
 const HISTORY_LIMIT = 100;
 
-export const emptyConfig = (): Json => ({
+const emptyConfig = (): Json => ({
   schema_version: 'gator-workbench-config-v1',
   project: { name: 'gator-project', task_name: 'task', notes: '' },
   circuit: { source: 'registered_task', task_id: 'synthetic:gpdk045_ota5', circuit_class: 'unspecified', pdk_id: 'unspecified' },

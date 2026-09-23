@@ -20,6 +20,8 @@ from uuid import uuid4
 # variable is already set and this line does nothing.
 os.environ.setdefault('GATOR_WORKBENCH_SETTINGS_DIR', tempfile.mkdtemp(prefix='gator-wb-helpers-settings-'))
 
+import pytest
+
 from analog_optimizer.backends.backend import SimulationResult, SimulationStatus
 from analog_optimizer.backends.synthetic_sizing import SyntheticSizingBackend
 
@@ -29,6 +31,23 @@ from gator_workbench.paths import OutputRoots
 from gator_workbench.storage import DatasetReader, read_json
 
 SMALL_NET = dict(encoder_type='graph_transformer', hidden_dim=16, heads=2, layers=1)
+
+
+# Two fixtures that several test modules used to write out for themselves (review of 2026-09-23). A module gets one by
+# importing it: `from helpers import bridge_is_importable  # noqa: F401` - an imported fixture belongs to that module,
+# so the autouse one below applies there and nowhere else.
+@pytest.fixture(autouse=True)
+def bridge_is_importable(monkeypatch):
+    """The Virtuoso bridge package counts as installed, so a real task is not blocked for the want of it."""
+    monkeypatch.setattr(tasks, 'bridge_importable', lambda: True)
+
+
+@pytest.fixture
+def bridge_settings(tmp_path):
+    """A connection profile's settings: an environment file with a secret in it (redaction is tested on this)."""
+    env = tmp_path / 'bridge.env'
+    env.write_text('VB_REMOTE_HOST=eda-host\nVB_PASSWORD=super-secret-value\n')
+    return dict(env_file=str(env), profile='lab')
 
 
 class ScriptedBackend(SyntheticSizingBackend):

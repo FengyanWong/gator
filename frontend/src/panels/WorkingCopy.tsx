@@ -14,7 +14,7 @@ const gateText = (gate: Json) => `Virtuoso cannot be reached (${[...(gate.blocki
 const PREFIX: Record<string, number> = { T: 1e12, G: 1e9, M: 1e6, k: 1e3, m: 1e-3, u: 1e-6, 'µ': 1e-6, n: 1e-9, p: 1e-12, f: 1e-15, a: 1e-18 };
 
 /** How many base units one `unit` is, when `unit` is `base` with an SI prefix ('GHz' of 'Hz' -> 1e9); null otherwise. */
-export function prefixFactor(unit: string, base: string): number | null {
+function prefixFactor(unit: string, base: string): number | null {
   if (unit === base) return 1;
   const prefix = unit.endsWith(base) ? unit.slice(0, unit.length - base.length) : null;
   return prefix !== null && prefix in PREFIX ? PREFIX[prefix] : null;
@@ -24,7 +24,7 @@ export function prefixFactor(unit: string, base: string): number | null {
  *  optimizer-only field someone chose on a row of the same name is kept - and a limit from the copy (Maestro keeps plain
  *  numbers in base units: Hz, V, s) is converted into that unit; when it cannot be, the spec keeps the base unit. Rows of
  *  other kinds are left alone. */
-export function withSetupRows(config: Json, rows: Json): Json {
+function withSetupRows(config: Json, rows: Json): Json {
   const probes: Json[] = config.measurements ?? [], specs: Json[] = config.targets ?? [];
   const before = new Map(probes.map(p => [p.measurement_id, p]));
   const measurements = [...probes.filter(p => p.result_source !== 'ade_output'),

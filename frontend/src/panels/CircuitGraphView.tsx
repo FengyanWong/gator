@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, Json } from '../api';
+import { api, Json, short, si } from '../api';
 import { hintedLayout } from './circuitLayout';
 
 // The circuit graph view (user decision 2026-09-21: ONE on-screen diagnostic picture; nothing drawn is ever written to
@@ -12,16 +12,6 @@ import { hintedLayout } from './circuitLayout';
 // small mark at the device end of a link that enters a gate (dot) or a bulk (bar).
 // Attention is normalized per RECEIVING node, so a node with one connection always reads 1.0: such lines are drawn
 // thin and dashed. The tables beside the picture carry the same numbers.
-const PREFIX: Record<string, string> = { '-15': 'f', '-12': 'p', '-9': 'n', '-6': 'u', '-3': 'm', '0': '', '3': 'k', '6': 'M', '9': 'G' };
-const PHYSICAL = ['m', 'F', 'H', 'ohm', 'V', 'A', 'W', 'Hz', 's', 'S'];       // 855.4 "mfixture" or "mdB" would be nonsense
-export const si = (value: unknown, unit?: string) => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
-  const u = !unit || unit === '1' ? '' : unit;
-  if (u && !PHYSICAL.includes(u)) return `${+value.toPrecision(4)} ${u}`;
-  if (value === 0) return `0${u ? ' ' + u : ''}`;
-  const exponent = Math.floor(Math.log10(Math.abs(value)) / 3) * 3, prefix = PREFIX[String(exponent)];
-  return prefix === undefined ? `${value.toExponential(3)}${u ? ' ' + u : ''}` : `${+(value / 10 ** exponent).toPrecision(4)}${prefix || u ? ' ' : ''}${prefix}${u}`;
-};
 const fixed = (v: unknown, digits = 3) => typeof v === 'number' ? v.toFixed(digits) : '-';
 const DIRECTIONS: Record<string, string> = { to_device: 'what a device takes from its nets', to_net: 'what a net takes from its devices' };
 const KIND_COLOUR: Record<string, string> = { nmos: '#dbeafe', pmos: '#fde2e2', bjt: '#fef3c7', diode: '#fef3c7', resistor: '#e6f4ea', capacitor: '#e6f4ea', varactor: '#e6f4ea', inductor: '#e6f4ea', vsource: '#f1e8ff', isource: '#f1e8ff', unknown: '#eef0f3' };
@@ -188,7 +178,7 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
             <h4>Selected</h4>
             {!picked && <p className="hint graph-picked">Click a device, a net or a line. Nodes can be dragged; the wheel zooms.</p>}
             {(device || net) && <div className="graph-picked"><p><b>{(device ?? net).id}</b> - {device ? `${device.kind} (${device.model})` : `net, ${net.roles.join(' / ')}`}</p>
-              {device && <p className="hint">{Object.entries(device.parameters).map(([k, v]) => `${k} = ${si(v as number)}`).join(', ') || 'no numeric parameters'}{device.groups.length ? ` - sized by ${device.groups.join(', ')}` : ''}</p>}
+              {device && <p className="hint">{Object.entries(device.parameters).map(([k, v]) => `${k} = ${short(v)}`).join(', ') || 'no numeric parameters'}{device.groups.length ? ` - sized by ${device.groups.join(', ')}` : ''}</p>}
               {attention.available && <table className="grid small graph-around"><thead><tr><th>{device ? 'Terminal' : 'Device'}</th><th>{device ? 'Net' : 'Terminal'}</th><th>Attention</th><th>Uniform</th></tr></thead><tbody>
                 {around.map((c: Json) => { const a = attentionOf(c, layer, head, towards); return <tr key={c.id}><td>{device ? c.terminal : c.device}</td><td>{device ? c.net : c.terminal}</td>
                   <td className="numeric">{fixed(a.value)}</td><td className="numeric">{fixed(a.uniform)}</td></tr>; })}

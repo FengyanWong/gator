@@ -78,7 +78,9 @@ def main():
     scenario = os.environ.get('FAKE_CLI_SCENARIO', 'success')
     if scenario in ('live_demo', 'codex_demo') and 'FAKE-HANG' in stdin:     # a browser check asks for a never-ending answer by prompt text
         scenario = 'live_hang' if scenario == 'live_demo' else 'codex_live_hang'
-    tools = use_tools(argv) if scenario == 'tools' and '--mcp-config' in argv else None
+    # `tools_then_denied`: the tools ARE used (the working copy is written) and the request fails afterwards - the case
+    # where the answer must still say what was written (review of 2026-09-23).
+    tools = use_tools(argv) if scenario in ('tools', 'tools_then_denied') and '--mcp-config' in argv else None
     record = os.environ.get('FAKE_CLI_RECORD')
     if record:
         with open(record, 'w') as stream:
@@ -179,6 +181,9 @@ def claude(argv, scenario):
         return 3
     elif scenario == 'permission_denied':
         emit(argv, result(structured_output=GOOD, permission_denials=[dict(tool_name='Bash', tool_input=dict(command='rm -rf x'))]))
+    elif scenario == 'tools_then_denied':      # the working copy was written above; THEN the request fails
+        emit(argv, result(structured_output=GOOD,
+                          permission_denials=[dict(tool_name='mcp__gator__working_copy_write_setup', tool_input={})]))
     elif scenario == 'unauthenticated':
         emit(argv, result(subtype='error_during_execution', is_error=True, result='Invalid API key · Please run /login'))
         return 1

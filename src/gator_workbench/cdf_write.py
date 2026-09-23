@@ -173,7 +173,6 @@ class Held:
     parameter: str | None
     field: Field
     value: float | None
-    recorded: object = None
 
 
 def _skill_string(text) -> str:
@@ -245,7 +244,12 @@ def write_skill(library, cell, plan) -> str | None:
             '  changed = nil\n'
             f'  cv = dbOpenCellViewByType({_skill_string(library)} {_skill_string(cell)} "schematic" "schematic" "a")\n'
             '  unwindProtect(progn(\n'
-            '    unless(cv error("%s" "cannot open the cell for writing"))\n    '
+            '    unless(cv error("%s" "cannot open the cell for writing"))\n'
+            # A cellview that a Virtuoso window holds with UNSAVED edits would have those edits saved by this write's own
+            # dbSave, and an aborted write could not be thrown away by closing it (dbClose only drops one open count).
+            # Refuse before anything is set (review of 2026-09-23).
+            '    when(cv~>modifiedButNotSaved error("%s" "the cell has unsaved edits in a Virtuoso window: save or '
+            'discard them there, then start again"))\n    '
             + '\n    '.join(blocks) +
             '\n    when(changed\n      schCheck(cv)\n      unless(dbSave(cv) error("%s" "Save failed")))\n    t\n'
             '  ) when(cv dbClose(cv))))')
@@ -279,8 +283,8 @@ class CdfWritableProfile(GenericMosWidthProfile):
                             for w in rules.get('writes') or ())
         if not self.writes:
             raise RulesError('The rules name no parameter that may change')
-        self.held = tuple(Held(h['device'], h.get('parameter'), field(h), None if h.get('value') is None else float(h['value']),
-                               h.get('recorded')) for h in rules.get('held') or ())
+        self.held = tuple(Held(h['device'], h.get('parameter'), field(h),
+                               None if h.get('value') is None else float(h['value'])) for h in rules.get('held') or ())
         self.derived = {(d['device'], d['parameter']): (d['instance'], d['cdf']) for d in rules.get('derived') or ()}
         for h in self.held:
             if h.value is not None:

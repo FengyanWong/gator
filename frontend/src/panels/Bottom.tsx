@@ -1,6 +1,6 @@
 import { Fragment, ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, ApiError, bytes, copy, download, downloadPackage, Json, num, saveJson } from '../api';
+import { api, ApiError, bytes, copy, download, downloadPackage, Json, num, saveJson, short } from '../api';
 import { usePolling } from '../store';
 import { DiffView } from './Editors';
 import { abortConfirmed, forceAbortConfirmed, forceAllowed, pauseConfirmed } from './RunControl';
@@ -19,7 +19,6 @@ const NOTE_GROUPS: { key: string; title: string; css: string; text: (item: Json)
 const ROW_KEY: Record<string, string> = { parameters: 'variable_id', targets: 'metric_id', measurements: 'measurement_id' };
 const ROW_FACTS: Record<string, string[]> = { parameters: ['instance_path', 'parameter_name', 'lower', 'upper', 'unit', 'initial_value', 'binding_group'],
   targets: ['equation', 'constraint', 'lower', 'upper', 'target', 'unit', 'hard', 'active'], measurements: ['analysis', 'result_source', 'source_name', 'unit'] };
-const brief = (v: unknown) => typeof v !== 'number' ? String(num(v)) : v !== 0 && (Math.abs(v) < 1e-3 || Math.abs(v) >= 1e6) ? v.toExponential(3).replace(/\.?0+e/, 'e') : String(+v.toPrecision(6));   // 1e-6 and 0.9, not 0.00000100000 and 0.900000
 const CUSTOM = '__custom__';          // value of the "Custom..." entry of the agent-model list; never sent to the backend
 const noteGroups = (m: Json) => NOTE_GROUPS.map(g => ({ ...g, items: (Array.isArray(m?.extra?.[g.key]) ? m.extra[g.key] : []) as Json[] })).filter(g => g.items.length > 0);
 const WHO: Record<string, string> = { user: 'You', system: 'Workbench', checklist: 'Workbench - run readiness', error: 'Error', manual_import: 'Imported result' };
@@ -61,7 +60,7 @@ function Suggestions({ extra, config, setConfig }: { extra: Json; config: Json; 
     {rows.length > 0 && <table className="grid small"><thead><tr><th>Setting</th><th>Now</th><th>Suggested</th><th>Why, and where it comes from</th><th></th></tr></thead><tbody>
       {rows.map((s, i) => { const live = getIn(config, s.path), applied = live === s.value, now = live ?? s.now;      // a setting the page never touched shows the backend's default
         return <tr key={i} className={applied ? 'applied' : ''}>
-        <td><span className="hint">{s.panel}</span><br /><b>{s.path.split('.').pop()}</b></td><td>{brief(now)}</td><td><b>{brief(s.value)}</b></td>
+        <td><span className="hint">{s.panel}</span><br /><b>{s.path.split('.').pop()}</b></td><td>{short(now)}</td><td><b>{short(s.value)}</b></td>
         <td>{s.reason} <span className="hint">Source: {s.source || 'none given'}</span>{s.url && <> <a href={s.url} target="_blank" rel="noreferrer">open</a></>}
           {s.quote && <div className="quote">"{s.quote}"</div>}{s.problem && !applied && <div className="error">{s.problem}</div>}{s.alone && !applied && <div className="warn">{s.alone}</div>}
           {s.clears?.length > 0 && !applied && <div className="hint">Applying it also empties {s.clears.map((path: string) => path.split('.').pop()).join(', ')}: only one of the two can be set.</div>}</td>
@@ -392,7 +391,7 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
           ? <p className="hint">No row is selected. Tick rows in one of the editors above and press "Modify selected with agent...".</p>
           : <ul>{selection.map((s: Json, i: number) => { const row = (config[s.section] ?? []).find((r: Json) => r[ROW_KEY[s.section]] === s.key); return <li key={i}>
               <b>{s.key}</b> <span className="hint">({s.section})</span>{' '}
-              {row ? (ROW_FACTS[s.section] ?? []).filter(f => row[f] !== null && row[f] !== undefined && row[f] !== '').map(f => `${f} ${brief(row[f])}`).join(', ') : <span className="error">no longer in the table</span>}
+              {row ? (ROW_FACTS[s.section] ?? []).filter(f => row[f] !== null && row[f] !== undefined && row[f] !== '').map(f => `${f} ${short(row[f])}`).join(', ') : <span className="error">no longer in the table</span>}
               <span className="hint"> - may change: {s.fields?.length ? s.fields.join(', ') : 'the whole row'}</span></li>; })}</ul>}</div>}
         <details><summary>Import a structured result (manual workflow)</summary>
           <textarea value={manual} onChange={e => setManual(e.target.value)} rows={3} placeholder="Paste the JSON object returned by any assistant" />

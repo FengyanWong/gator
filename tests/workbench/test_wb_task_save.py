@@ -10,18 +10,14 @@ from fastapi.testclient import TestClient
 
 from gator_workbench import profiles, schema, task_files, tasks, virtuoso_setup as vs, working_copy
 from gator_workbench.api import create_app
+from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
 from test_wb_api import probe
-from test_wb_profiles import FIXTURE, ROWS, connection_file, read_cell, row
+from test_wb_profiles import FIXTURE, ROWS, connection_file, read_cell
 from test_wb_virtuoso_setup import SETUP, setup_writer
 from test_wb_working_copy import CELL, COPY, LIB, TB, fake_writer
 
 FREQUENCY_PROBE = dict(measurement_id='m_osc_frequency_hz', analysis='tran', result_source='backend_profile', source_name='osc_frequency_hz', unit='Hz')
 FREQUENCY_SPEC = dict(metric_id='osc_frequency_hz', equation='m_osc_frequency_hz', unit='Hz', constraint='>=', lower=1.1e9, normalization_scale=1e9)
-
-
-@pytest.fixture(autouse=True)
-def _bridge_is_importable(monkeypatch):
-    monkeypatch.setattr(tasks, 'bridge_importable', lambda: True)
 
 
 def copy_reader(tmp_path):
@@ -371,7 +367,6 @@ def test_the_task_file_routes_show_the_draft_and_check_hand_edits(tmp_path):
     assert not bad['ok'] and any(p.startswith('probes[0] analysis') for p in bad['problems']) and any('bindings' in p for p in bad['problems'])
     assert client.post('/api/virtuoso/task/file/check', json=dict(text='{"a": ')).json()['problems'][0].startswith('Not valid JSON')
     # Save task through the route: a refusal for the missing frequency is its own code, so the page can ask for it.
-    import functools
     real = profiles.save_task
 
     def with_fakes(*args, **kwargs):

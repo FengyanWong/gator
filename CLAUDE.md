@@ -44,8 +44,16 @@ documentation; it is not auto-loaded by Claude Code). Decisions: `docs/decisions
 OMP_NUM_THREADS=1 /tmp/analog-optimizer-venv/bin/python -m pytest -q -n 12 --dist load   # the same in ~1 min
 /tmp/analog-optimizer-venv/bin/python -m pytest tests/workbench -q    # workbench only
 PYTHONPATH=src /tmp/analog-optimizer-venv/bin/python -m gator_workbench.cli serve
+cd frontend && npx tsc --noEmit     # ALWAYS before a build: vite does NOT type-check
 cd frontend && npm run build        # Windows node via WSL interop on this machine
+node frontend/scripts/<name>.mjs    # a browser check; without GATOR_WORKBENCH_URL it drives the LIVE 8765
 ```
+
+`npm run build` overwrites the `dist/` the user's backend serves, so never build while another
+session's edit leaves `tsc` failing, and never while a real run is being watched in the browser.
+Most checks in `frontend/scripts/` default to the live backend on 8765: to point one at a scratch
+backend, export `GATOR_WORKBENCH_URL` AND add it to `WSLENV` (`WSLENV=GATOR_WORKBENCH_URL` - without
+that the Windows-side browser never receives it and the check silently uses 8765).
 
 Tests must never touch real settings: `GATOR_WORKBENCH_SETTINGS_DIR` redirects
 `configs/local/workbench/` (the test suite sets it; it also reaches worker/probe subprocesses).

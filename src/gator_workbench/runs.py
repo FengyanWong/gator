@@ -429,6 +429,12 @@ def _register_in_experiment(experiment_dir, manifest, compiled, task, created):
             break
         except RuntimeError:
             time.sleep(0.05)
+    else:
+        # It used to fall through and do the read-modify-write anyway: two starts within the same seconds then lost one
+        # run from experiment.json and split_manifest.json, silently (review of 2026-09-23). Refusing a start is the
+        # lesser harm - nothing has been created yet, and the user can simply press Start again.
+        raise RunRejected(f'Another run is being registered in {experiment_dir} right now (10 s). Nothing was created; '
+                          'start it again in a moment.', code='experiment_busy')
     try:
         if created or not (experiment_dir / 'data_dictionary.json').exists():
             write_data_dictionary(experiment_dir / 'data_dictionary.json')

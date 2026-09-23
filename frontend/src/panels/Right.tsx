@@ -7,15 +7,12 @@ import { ComponentList } from './Pdk';
 import { Typed } from './Typed';
 
 function Num({ label, value, onChange, title, nullable, disabled, note, after, placeholder }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; nullable?: boolean; disabled?: boolean; note?: string; after?: ReactNode; placeholder?: string }) {
-  // The typed text is kept while the box has focus: "0." and "3e-" are steps towards 0.005 and 3e-4, not values.
-  // It is dropped as soon as the value changes from outside (reset button, undo, another encoder), focus or not.
-  const [text, setText] = useState<string | null>(null);
-  const typed = text === null ? undefined : text.trim() === '' ? (nullable ? null : 0) : Number(text);
-  const stale = text !== null && (typed === null || Number.isFinite(typed)) && typed !== (value ?? null);
-  useEffect(() => { if (stale) setText(null); }, [stale]);
-  const box = <input className="numeric" value={(stale ? null : text) ?? value ?? ''} placeholder={placeholder ?? (nullable ? 'none' : '')} disabled={disabled} onBlur={() => setText(null)}
-    onChange={e => { setText(e.target.value); const t = e.target.value.trim();
-      if (t === '') onChange(nullable ? null : 0); else if (Number.isFinite(Number(t))) onChange(Number(t)); }} />;
+  // `Typed` keeps what is being typed while the box has focus ("0." and "3e-" are steps towards 0.005 and 3e-4, not
+  // values) and drops it as soon as the value changes from outside (reset button, undo, another encoder), focus or not.
+  const box = <Typed className="numeric" value={value} disabled={disabled} placeholder={placeholder ?? (nullable ? 'none' : '')}
+    format={v => v === null || v === undefined ? '' : String(v)}
+    parse={t => t.trim() === '' ? { value: nullable ? null : 0 } : Number.isFinite(Number(t)) ? { value: Number(t) } : undefined}
+    onChange={onChange} />;
   return (
     <label title={title} className={disabled ? 'disabled' : undefined}><span>{label}{note && <span className="hint"> - {note}</span>}</span>
       {after ? <span className="with-unit">{box}{after}</span> : box}</label>);
@@ -39,24 +36,20 @@ const showIn = (n: number, size: number): string => String(inUnit(n, size, 15) ?
 
 function ByteSize({ label, value, onChange, title, empty }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; empty: string }) {
   const [unit, setUnit] = useState(() => bestUnit(value));
-  const [text, setText] = useState<string | null>(null);                          // kept while typing, as in Num
   const sent = useRef<Json>(value);
   const size = unitSize(unit);
   const toBytes = (t: string, s: number): Json => t.trim() === '' ? null : Math.round(Number(t) * s);
-  const typed = text === null ? undefined : toBytes(text, size);
-  const stale = text !== null && (typed === null || Number.isFinite(typed)) && typed !== (value ?? null);
-  useEffect(() => { if (stale) setText(null); }, [stale]);
   // A value that did not come from this box (loaded configuration, undo) is shown in the unit that reads best.
   useEffect(() => { if (value !== sent.current) { sent.current = value; if (typeof value === 'number') setUnit(bestUnit(value)); } }, [value]);
-  const shown = typeof value === 'number' ? showIn(value, size) : '';
-  const send = (b: Json) => { if (b === null || Number.isFinite(b)) { sent.current = b; onChange(b); } };
+  const send = (b: Json) => { sent.current = b; onChange(b); };
   return (
     <label title={`${title ? title + ' ' : ''}${typeof value === 'number' ? `Saved as ${value} bytes.` : `Empty = ${empty}.`}`}><span>{label}</span>
       <span className="with-unit">
-        <input className="numeric" value={(stale ? null : text) ?? shown} placeholder={empty} onBlur={() => setText(null)}
-          onChange={e => { setText(e.target.value); send(toBytes(e.target.value, size)); }} />
+        {/* The same box as everywhere else (`Typed`): what is being typed survives, in the unit chosen here. */}
+        <Typed className="numeric" value={value} placeholder={empty} format={v => typeof v === 'number' ? showIn(v, size) : ''}
+          parse={t => { const b = toBytes(t, size); return b === null || Number.isFinite(b) ? { value: b } : undefined; }} onChange={send} />
         {/* Another unit shows the same size in other words; nothing is saved by it. */}
-        <select aria-label={`${label}: unit`} value={unit} onChange={e => { setText(null); setUnit(e.target.value); }}>
+        <select aria-label={`${label}: unit`} value={unit} onChange={e => setUnit(e.target.value)}>
           {BYTE_UNITS.map(([name]) => <option key={name}>{name}</option>)}</select></span></label>);
 }
 

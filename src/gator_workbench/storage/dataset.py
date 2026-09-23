@@ -262,6 +262,23 @@ class DatasetReader:
     def rows(self, table, columns=None):
         return self.table(table, columns).to_pylist()
 
+    def tail(self, table, limit, columns=None):
+        """The LAST `limit` rows, reading parts from the newest backwards and stopping as soon as it has them. The Data
+        tab used to read every part of a run to show twenty rows (50 ms at 30 parts, seconds on the 9p mount)."""
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        paths, taken, have = self.parts(table), [], 0
+        for path in reversed(paths):
+            part = pq.read_table(path, columns=columns)
+            taken.append(part)
+            have += part.num_rows
+            if have >= limit:
+                break
+        if not taken:
+            return self.table(table, columns)                       # no part yet: the empty table with its schema
+        whole = pa.concat_tables(list(reversed(taken)))
+        return whole.slice(max(0, whole.num_rows - limit))
+
     def row_counts(self):
         return {table: sum(f['rows'].get(table, 0) for f in self.flushes) for table in TABLES}
 

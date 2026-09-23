@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from gator_workbench import bridge_read, native_cells, profiles, recipes, schema, tasks
 from gator_workbench.api import create_app
 from gator_workbench.paths import local_settings_dir
+from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
 from test_wb_api import probe
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'ring_osc'
@@ -56,11 +57,6 @@ def connection_file():
     target = local_settings_dir() / 'bridge_connection.json'
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(dict(active='lab', profiles=dict(lab=dict(env_file='/x/.env', library='GATOR_TESTS', model_file='/pdk/model.scs')))))
-
-
-@pytest.fixture(autouse=True)
-def _bridge_is_importable(monkeypatch):
-    monkeypatch.setattr(tasks, 'bridge_importable', lambda: True)
 
 
 def test_the_ring_oscillator_becomes_a_registered_real_task(tmp_path):

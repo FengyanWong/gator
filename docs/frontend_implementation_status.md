@@ -22,6 +22,11 @@ The record itself moved, unchanged, into `docs/workbench-log/` on 2026-09-22 (en
 work in parallel), and add its row at the end of the table below. Entries are append-only; a later entry supersedes an
 earlier one without editing it.
 
+**Rolling the open file over:** when the open file passes entry 7.80 or 80 kB (whichever comes first), move its
+entries unchanged into `docs/workbench-log/7.61-7.80.md`, start `7.81-and-later.md` as the new open file, and change
+the two rows in the table above. The split exists so that a default read reaches the newest entries; a file that grew
+past ~80 kB stopped doing that (7.64).
+
 ## 0. Reading guide (written 2026-09-22 ~00:05 for an outside review; updated for the split, 7.64)
 
 `first-build.md` describes the FIRST build (commit `bcf7c5e`, 2026-09-20 ~17:44) and was never rewritten; the entries
@@ -41,8 +46,9 @@ Outdated in `first-build.md`, and the entry that changed it:
 * 6.5 "not implemented": Maestro outputs, specs and design variables are read from and written to a working COPY (7.55);
   a task measured by Maestro runs (7.63). PVT: a run's best designs can be simulated again at five corners (7.62).
   Monte Carlo: still none.
-* 6.7 "not exercised in a browser": headless-Edge checks since 7.8; 29 scripts in `frontend/scripts/*.mjs` on
-  2026-09-22.
+* 6.7 "not exercised in a browser": headless-Edge checks since 7.8; on 2026-09-23, 28 check scripts in
+  `frontend/scripts/*.mjs` plus the shared harness `frontend/scripts/lib/harness.mjs` (7.64). Most of them drive the
+  LIVE backend on 8765 unless `GATOR_WORKBENCH_URL` is exported through `WSLENV`.
 * 5.1 test counts: the newest entry that reports a full `tests/workbench` run has the current count.
 * Section 7, steps 1-3: done, the first one differently - the first real run was a generated profile's baseline, not
   `real:gpdk045_ota5` (7.24); browser checks from 7.8 on; a real `claude` request in 7.6.
@@ -52,10 +58,24 @@ Outdated in `first-build.md`, and the entry that changed it:
   / `recipes.py` 7.19, `profile_preflight.py` 7.21, `model_structure.py` 7.26, `ngspice_link.py` 7.32,
   `graph_view.py` 7.33, `agents/settings_review.py` 7.36, `agents/run_digest.py` 7.39, `agents/live.py` 7.48,
   `spec_equations.py` 7.52, `pdk.py` 7.54, `working_copy.py` / `virtuoso_setup.py` / `bridge_setup.py` 7.55,
-  `task_files.py` 7.57, `consistency.py` 7.61, `corner_check.py` 7.62, `ocean.py` 7.63; panels `Issues.tsx` 7.12,
+  `task_files.py` 7.57, `consistency.py` 7.61, `corner_check.py` 7.62, `ocean.py` 7.63,
+  `cdf_facts.py` / `cdf_rules.py` / `cdf_write.py` 7.66, `agent_tools.py` + `agents/tools.py` 7.68; panels `Issues.tsx` 7.12,
   `RunControl.tsx` 7.18, `ModelChooser.tsx` 7.20, `ModelStructure.tsx` 7.26, `Connection.tsx` 7.32,
   `CircuitGraphView.tsx` + `circuitLayout.ts` 7.33, `RunList.tsx` 7.38, `Pdk.tsx` 7.54, `WorkingCopy.tsx` 7.55,
-  `TaskSave.tsx` + `TaskFile.tsx` 7.57, `Consistency.tsx` 7.61, `CornerCheck.tsx` 7.62.
+  `TaskSave.tsx` + `TaskFile.tsx` 7.57, `Consistency.tsx` 7.61, `CornerCheck.tsx` 7.62, `Typed.tsx` 7.64.
+
+An entry that a later one REVERSED (both stand as written; the later one is what is true):
+
+* the four toy MOCK tasks of the first build -> ONE MOCK task on a real netlist, `synthetic:gpdk045_ota5` (7.59).
+* "Import Spectre netlist" as a circuit source (7.13 fixed its form) -> the source was removed on the user's request
+  (7.53): the UI is gone and the backend refuses it, the schema keeps the field so that old configs still hash.
+* "Create profile" (7.19 / 7.21 built it, 7.47 gave it one task per cell) -> replaced by the task file with
+  "Save task" / "Save task as" (7.57).
+* centre tab order Parameters | Specs | Probes (7.34) -> Probes before Specs (7.51).
+* "Ask the agent for suggestions" (7.60), "Write to Virtuoso" / "Use in editors" / the browser's own Save (7.55, 7.57)
+  and "Check against Virtuoso" (7.61) -> removed or merged into the flow's own buttons (7.61, 7.65).
+* "the tab's agent has no write tool" (7.36, 7.39) -> request kind `virtuoso_work` gives it the workbench's own tools
+  (7.68).
 
 Known slips inside the entries (left as written):
 
@@ -95,9 +115,12 @@ budget).
 | `a662753` | 09-22 16:43 | 7.63 | |
 | `f283c78` | 09-22 16:47 | - | this split: the index + `docs/workbench-log/` (docs only; described in 7.64) |
 | `8a4b363` | 09-22 17:27 | 7.65 | also the 7.63 note on the settings slip |
-| `0f7c944`, `64ac955` | 09-22 18:1x | 7.64 | |
-| `f713cea` | 09-22 19:25 | 7.54, 7.66 | |
-| - | - | 7.53 | in the working tree, not committed when this row was written |
+| `0f7c944`, `64ac955` | 09-22 18:46, 18:47 | 7.64 | the second one carries the text of two assets the first removed |
+| `f713cea` | 09-22 19:12 | 7.54, 7.66 | |
+| `34ef5e2` | 09-22 19:15 | - | names the commits of 7.64 inside that entry |
+| `4231a8f` | 09-22 19:51 | 7.67 | |
+| `00fc084` | 09-22 19:56 | 7.68 | |
+| `0fea6b1` | 09-23 02:07 | 7.53 | the departed session's netlist removal, committed on the user's decision |
 
 ## Entries
 
@@ -173,3 +196,4 @@ Newest last. The date, the session and the request are in each title.
 | 7.66 | Real runs write any value the PDK's property form lets you type, not only transistor widths (2026-09-22 evening, same session as 7.54, explicit user request) | [7.61-and-later.md](workbench-log/7.61-and-later.md) |
 | 7.67 | A task can start a circuit that does not start by itself: initial conditions (2026-09-22 evening, same session as 7.55 / 7.57 / 7.60 / 7.61 / 7.63 / 7.65, explicit user request) | [7.61-and-later.md](workbench-log/7.61-and-later.md) |
 | 7.68 | The agent works in Virtuoso itself: the workbench's own tools, granted per request kind (2026-09-22 evening, same session as 7.48 / 7.50, explicit user request) | [7.61-and-later.md](workbench-log/7.61-and-later.md) |
+| 7.69 | Repository review, round 2: nine correctness fixes, four speed-ups, one formatter, one pop-up window (2026-09-23, same session as 7.64, user: "Check another round", then chose every proposed group) | [7.61-and-later.md](workbench-log/7.61-and-later.md) |

@@ -12,16 +12,12 @@ import pytest
 from gator_workbench import ocean, profiles, recipes, schema, tasks, virtuoso_setup as vs
 from gator_workbench.spec_equations import SpecPlan
 from gator_workbench.validation import validate
+from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
 from test_wb_task_save import MAESTRO_HEAD, MAESTRO_TAIL, config as cell_config, maestro_netlister, ready, save
 from test_wb_virtuoso_setup import SETUP, setup_writer
 
 COMMAND = ('/opt/cadence/SPECTRE231/bin/spectre -64 /tmp/vb/15f61d39/input.scs +escchars +log /tmp/vb/15f61d39/spectre.out '
            '-format psfascii -raw /tmp/vb/15f61d39/input.raw +lqtimeout 900 -maxw 5 -maxn 5 +logstatus')
-
-
-@pytest.fixture(autouse=True)
-def _bridge_is_importable(monkeypatch):
-    monkeypatch.setattr(tasks, 'bridge_importable', lambda: True)
 
 
 def amap(tmp_path):

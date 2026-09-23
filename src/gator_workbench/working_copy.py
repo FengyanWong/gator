@@ -507,8 +507,3 @@ def maestro_deck_on(monitor, profile_id, target, outputs, *, command=None, ackno
                 sha256=hashlib.sha256((head + '\0' + tail).encode()).hexdigest(), analyses=analyses, outputs=translated,
                 model_file=model_file, section=section, circuit=circuit, netlisted_utc=utcnow().isoformat(),
                 remote_netlist=answer.get('remote'))
-
-
-def write_setup(monitor, profile_id, library, cell, setup, *, command=None) -> dict:
-    """Explicit press: make the cell's working copy say what `setup` says (see `write_setup_on`)."""
-    return write_setup_on(monitor, profile_id, draft_target(library, cell), setup, command=command)

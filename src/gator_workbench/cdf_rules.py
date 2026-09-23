@@ -78,7 +78,7 @@ def spec_for(facts, core, device, parameter, reference, graph) -> dict:
     return dict(device=device, parameter=parameter, instance=instance, cell=facts['instances'][instance]['cell'],
                 cdf=source['cdf'], on=source['on'], kind=kind, choices=choices,
                 rule=True if source['editable'] is True else source['editable'], callback=source['callback'] or None,
-                unit=cdf_facts.unit_of(facts, source), value=value)
+                unit=cdf_facts.unit_of(facts, source), value=value, range=source.get('range'))
 
 
 def held_for(facts, core, device, written, reference, graph) -> list:
@@ -238,6 +238,19 @@ def adjust(config, graph, core, facts, reference):
                 step = None if row.step is None else units.scale_to_canonical(row.step, row.unit)
             if row.scale == 'log' and lower <= 0:
                 raise RowError(f'{row.variable_id}: a logarithmic range needs a positive lower bound')
+            # The PDK's own declared range, when it states one: the property form refuses a value outside it, so a row
+            # that leaves it would die on its first clamped candidate - after a real evaluation was paid for.
+            for ratio, member in members:
+                allowed = member.get('range')
+                if not allowed or not ratio:
+                    continue
+                low, high = min(lower * ratio, upper * ratio), max(lower * ratio, upper * ratio)
+                if low < allowed[0] - 1e-18 or high > allowed[1] + 1e-18:
+                    scale = units.scale_to_canonical(1.0, row.unit) or 1.0        # canonical -> the row's own unit
+                    raise RowError(f'{row.variable_id}: the property form of {member["device"]} accepts '
+                                   f'{allowed[0] / scale:g} to {allowed[1] / scale:g} {row.unit} for {member["cdf"]}; '
+                                   f'the row asks for {row.lower:g} to {row.upper:g} {row.unit}'
+                                   + (f' (ratio {ratio:g})' if ratio != 1 else ''))
             try:
                 step = _group_step([(ratio, m['grid']) for ratio, m in members], step)
             except RowError as exc:

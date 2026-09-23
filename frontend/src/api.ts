@@ -156,3 +156,22 @@ export const copy = (text: string) => navigator.clipboard?.writeText(text);
 export const bytes = (n?: number | null) => n == null ? '-' : n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KiB`
   : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MiB` : `${(n / 1073741824).toFixed(2)} GiB`;
 export const num = (v: unknown) => typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toPrecision(6)) : v == null ? '' : String(v);
+
+// ONE way of writing a number in the whole page (review of 2026-09-23: the SI form was written twice, in the corner
+// check and in the graph view, with different prefix letters, and the short form twice more).
+// `short`: six significant digits without padding - 41.5 and 2.34558e-6, not 41.5000 and 0.00000234558 (device sizes
+// are that small). `si`: four significant digits with the SI prefix of the unit, for a unit that takes one.
+export const short = (v: unknown) => typeof v !== 'number' ? (v == null ? '' : String(v))
+  : v !== 0 && (Math.abs(v) < 1e-3 || Math.abs(v) >= 1e6) ? v.toExponential(5).replace(/\.?0+e/, 'e') : String(Number(v.toPrecision(6)));
+const PREFIXED = ['m', 'F', 'H', 'ohm', 'V', 'A', 'W', 'Hz', 's', 'S'];          // 855.4 "mfixture" or "mdB" would be nonsense
+const PREFIXES: [number, string][] = [[1e12, 'T'], [1e9, 'G'], [1e6, 'M'], [1e3, 'k'], [1, ''], [1e-3, 'm'], [1e-6, '\u00b5'],
+  [1e-9, 'n'], [1e-12, 'p'], [1e-15, 'f'], [1e-18, 'a']];
+export const si = (value: unknown, unit?: string | null): string => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
+  const u = !unit || unit === '1' || unit === 'count' || unit === 'fixture' ? '' : unit;   // no unit, or one that is not a quantity
+  const tail = u ? ` ${u}` : '';
+  if (!u || !PREFIXED.includes(u)) return `${+value.toPrecision(4)}${tail}`;
+  if (value === 0) return `0${tail}`;
+  const [factor, prefix] = PREFIXES.find(([f]) => Math.abs(value) >= f) ?? PREFIXES[PREFIXES.length - 1];
+  return `${+(value / factor).toPrecision(4)} ${prefix}${u}`;
+};

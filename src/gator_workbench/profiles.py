@@ -111,6 +111,7 @@ def load_profile(name):
     if entry is None:
         raise ProfileError(f'Unknown generated profile {name!r}')
     directory = Path(entry['directory'])
+    _refuse_recorded_group_values(name, directory / FILES['mapping'])
     from . import cdf_write                                  # rules of format 2: any value the PDK's form lets a user type
     classes = cdf_write.PROFILE_CLASSES if cdf_write.rules_format(directory / FILES['rules']) == cdf_write.RULES_FORMAT \
         else recipes.PROFILE_CLASSES
@@ -118,6 +119,22 @@ def load_profile(name):
         rules_file=directory / FILES['rules'], design_file=directory / FILES['design'], mapping_file=directory / FILES['mapping'],
         reference_structure=directory / FILES['structure'], reference_readback=directory / FILES['readback'],
         conditions_file=repo_root() / 'configs' / 'gpdk045_conditions.json')
+
+
+def _refuse_recorded_group_values(name, mapping_file):
+    """A task saved before 2026-09-22 recorded each group's value in its mapping. It then loads, passes every offline
+    check and its baseline, and fails on the FIRST changed candidate with "Binding/current value mismatch" - after a
+    real evaluation has been paid for. Say it before anything is started (review of 2026-09-23)."""
+    try:
+        mapping = json.loads(Path(mapping_file).read_text())
+    except (OSError, ValueError):
+        return                                   # an unreadable mapping is the profile object's own error to report
+    stale = [g.get('id') for g in (mapping.get('parameter_groups') or [])
+             if isinstance(g, dict) and 'value' in g and (g.get('lower') is not None or g.get('upper') is not None)]
+    if stale:
+        raise ProfileError(f'real:{name} was saved before the mapping stopped recording a fixed value per variable, so its '
+                           f'first changed candidate would be refused by its own graph check ({", ".join(map(str, stale[:3]))}'
+                           f'{"..." if len(stale) > 3 else ""}). Open the task and press "Save task" once; nothing else changes.')
 
 
 def task_spec_registry(circuit) -> list | None:

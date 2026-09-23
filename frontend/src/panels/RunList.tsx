@@ -1,6 +1,7 @@
 import { Fragment, MouseEvent, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, bytes, Json } from '../api';
+import { usePopupWindow } from './popupWindow';
+import { api, bytes, Json, short } from '../api';
 import { LIVE_STATES } from './RunControl';
 
 /** Which run the bottom tabs show (user request 2026-09-21): ONE button at the right end of the bottom tab strip, where
@@ -24,9 +25,6 @@ const span = (seconds?: number | null) => {
   const t = Math.round(seconds), h = Math.floor(t / 3600);
   return h ? `${h} h ${two(Math.floor(t % 3600 / 60))} min` : `${Math.floor(t / 60)} min ${two(t % 60)} s`;
 };
-// Six significant digits without padding: 41.5 and 2.34558e-6, not 41.5000 and 0.00000234558 (device sizes are that small).
-const short = (v: unknown) => typeof v !== 'number' ? (v == null ? '' : String(v))
-  : v !== 0 && (Math.abs(v) < 1e-3 || Math.abs(v) >= 1e6) ? v.toExponential(5).replace(/\.?0+e/, 'e') : String(Number(v.toPrecision(6)));
 const pairs = (values: Json) => Object.entries(values ?? {}).map(([k, v]) => `${k}=${short(v)}`).join('  ');
 // A best design lists its variables as [{ variable_id, value, unit }].
 const variables = (list: Json) => Array.isArray(list) ? list.map((v: Json) => `${v.variable_id}=${short(v.value)}${v.unit ? ` ${v.unit}` : ''}`).join('  ') : pairs(list);
@@ -102,8 +100,9 @@ function RunDetails({ row, info, error, onCopy, copied }: { row: Json; info: Jso
 }
 
 export function RunListButton({ runs, runDir, onChoose, onRefresh }: { runs: Json[]; runDir: string | null; onChoose: (runDir: string | null) => void; onRefresh: () => Promise<Json[]> }) {
-  const [popup, setPopup] = useState<Window | null>(null);      // while set, the run window is open
-  const [blocked, setBlocked] = useState(false);
+  // While `popup` is set, the run window is open (one pop-up window for the whole page: `popupWindow.ts`).
+  const { popup, root, blocked, open: openPopup } = usePopupWindow('gator-runs',
+    { title: 'GATOR - runs', features: 'popup,width=1500,height=860', rootId: 'runs-root' });
   const [loading, setLoading] = useState(false);
   const [readAt, setReadAt] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
@@ -127,28 +126,8 @@ export function RunListButton({ runs, runDir, onChoose, onRefresh }: { runs: Jso
 
   const openWindow = () => {
     refresh();                                                   // pressing the button is the request to see the current list
-    if (popup && !popup.closed) { popup.focus(); return; }
-    const opened = window.open('', 'gator-runs', 'popup,width=1500,height=860');
-    if (!opened) { setBlocked(true); return; }
-    const doc = opened.document;
-    doc.title = 'GATOR - runs';
-    doc.head.querySelectorAll('link, style').forEach(node => node.remove());          // a window of that name may be reused
-    document.querySelectorAll<HTMLElement>('link[rel="stylesheet"], style').forEach(node => {
-      const copy = node.cloneNode(true) as HTMLElement;
-      if (node instanceof HTMLLinkElement) (copy as HTMLLinkElement).href = node.href;   // absolute: the new window is about:blank
-      doc.head.appendChild(copy);
-    });
-    doc.body.innerHTML = '<div id="runs-root"></div>';
-    setBlocked(false); setPopup(opened);
+    openPopup();
   };
-  useEffect(() => {
-    if (!popup) return;
-    const closed = () => setPopup(null);                   // the window was closed with its own close button
-    const leave = () => popup.close();                     // the workbench page is leaving: do not leave a dead window behind
-    popup.addEventListener('pagehide', closed);
-    window.addEventListener('pagehide', leave);
-    return () => { popup.removeEventListener('pagehide', closed); window.removeEventListener('pagehide', leave); };
-  }, [popup]);
   // The click happens in the run window, so ITS clipboard is the one a browser lets this gesture write to.
   const copyPath = (text: string) => (popup ?? window).navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined);
 
@@ -206,7 +185,6 @@ export function RunListButton({ runs, runDir, onChoose, onRefresh }: { runs: Jso
     </div>
   );
 
-  const root = popup?.document.getElementById('runs-root');
   return (<>
     {blocked && <span className="error run-list-blocked">The browser blocked the new window. Allow pop-ups for this page, then press the button again.</span>}
     {/* The run that is shown is said as plain text to the LEFT of the button; the button itself only reads "Runs..." (user request 2026-09-21). */}

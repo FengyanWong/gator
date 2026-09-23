@@ -18,6 +18,7 @@ from __future__ import annotations
 from concurrent.futures import Future
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import queue
 import threading
@@ -25,6 +26,13 @@ import threading
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def _mtime(path):
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return 0
 
 
 class _EnvDriver:
@@ -44,15 +52,25 @@ class _EnvDriver:
                     config_sha256=env.config_sha256, supports_retry=hasattr(env, '_evaluate'))
 
     def _new_records(self):
+        """The journal files this lane has not read yet. With waveform retention "all" the per-candidate journals are
+        never removed, and stat-ing EVERY one of them on every lane operation was quadratic over a run (measured: 150
+        evaluations -> 94 ms per call, projected minutes on the 9p mount at a thousand). Only the names that are new are
+        stat-ed and read now."""
         records = []
-        if self._journal.is_dir():
-            for path in sorted(self._journal.glob('*.json'), key=lambda p: p.stat().st_mtime_ns):
-                if path.name not in self._seen and not path.name.endswith('.tmp'):
-                    self._seen.add(path.name)
-                    try:
-                        records.append(json.loads(path.read_text()))
-                    except (OSError, json.JSONDecodeError):
-                        pass
+        if not self._journal.is_dir():
+            return records
+        try:
+            names = [entry.name for entry in os.scandir(self._journal)]
+        except OSError:
+            return records
+        fresh = [name for name in names
+                 if name.endswith('.json') and not name.endswith('.tmp') and name not in self._seen]
+        for name in sorted(fresh, key=lambda name: _mtime(self._journal / name)):
+            self._seen.add(name)
+            try:
+                records.append(json.loads((self._journal / name).read_text()))
+            except (OSError, json.JSONDecodeError):
+                pass
         return records
 
     def run(self, op, proposal=None):

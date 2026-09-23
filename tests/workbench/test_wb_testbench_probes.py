@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 from gator_workbench import bridge_read, native_cells, profiles, recipes, schema, tasks
 from gator_workbench.api import create_app
 from test_wb_api import probe
-from test_wb_profiles import CIRCUIT, FIXTURE, _bridge_is_importable, config, connection_file, read_cell   # noqa: F401 (autouse fixture)
+from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
+from test_wb_profiles import CIRCUIT, FIXTURE, config, connection_file, read_cell
 
 REPO = Path(__file__).resolve().parents[2]
 RING_SIGNALS = dict(m_osc_frequency_hz='OUT', m_supply_power_w='V0:p', m_supply_current_a='V0:p', m_osc_minimum_swing_v='OUT XU1.N1 XU1.N2',

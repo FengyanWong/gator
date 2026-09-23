@@ -18,11 +18,11 @@ import { Json } from '../api';
 //     read as a connection to that node).
 // A graph without a supply AND a ground net has no such hints: the caller falls back to the package's layered layout.
 
-export type Point = { x: number; y: number };
+type Point = { x: number; y: number };
 
 const ROW = 112, COLUMN = 214, SOURCES = ['vsource', 'isource'];
 // A bipolar base is a control terminal like a gate (a run built with a PDK's component list names it).
-export const conducting = (role: string) => role !== 'gate' && role !== 'base' && role !== 'bulk';
+const conducting = (role: string) => role !== 'gate' && role !== 'base' && role !== 'bulk';
 const roleOf = (net: Json): string => (net.roles as string[]).find(r => r !== 'normal') ?? 'normal';
 const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
 

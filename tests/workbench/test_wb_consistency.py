@@ -11,18 +11,13 @@ from fastapi.testclient import TestClient
 from gator_workbench import consistency, profile_preflight, runs, schema, tasks, virtuoso_setup as vs
 from gator_workbench.api import create_app
 from gator_workbench.validation import validate
-from helpers import roots_for
+from helpers import bridge_is_importable, roots_for  # noqa: F401 - an imported fixture belongs to this module
 from test_wb_api import probe
 from test_wb_task_save import config as cell_config, maestro_netlister, ready, save
 from test_wb_virtuoso_setup import SETUP, setup_writer
 
 OK_STEPS = [dict(step='profile', ok=True, detail='p'), dict(step='connect', ok=True, detail='c'),
             dict(step='export', ok=True, detail='e'), dict(step='deck', ok=True, detail='d')]
-
-
-@pytest.fixture(autouse=True)
-def _bridge_is_importable(monkeypatch):
-    monkeypatch.setattr(tasks, 'bridge_importable', lambda: True)
 
 
 def preflight_process(tmp_path, steps, tag='check'):

@@ -213,6 +213,18 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     });
   };
   const deletedHere = deleted && virtuosoOn && deleted.library === ref.library && deleted.cell === ref.cell ? deleted : null;
+  // The launchers follow the connection in use (user request 2026-09-23): a Virtuoso connection shows "Virtuoso cell..."
+  // only, an ngspice connection "ngspice netlist..." only; no connection (or one of a kind this page does not know) shows
+  // both. The family is read from the profile list - the workbench's own file, no probe - when the connection changes.
+  const [family, setFamily] = useState<string | null>(null);
+  useEffect(() => {
+    if (!profileId) { setFamily(null); return; }
+    let live = true;
+    api.connectionProfiles().then(p => { if (live) setFamily((p.profiles ?? []).find((x: Json) => x.profile_id === profileId)?.family ?? null); })
+      .catch(() => { if (live) setFamily(null); });
+    return () => { live = false; };
+  }, [profileId]);
+  const showVirtuoso = family !== 'ngspice', showNgspice = family !== 'virtuoso';
   // An ngspice netlist task (Ngspice.tsx saves it; the page then follows it). Delete takes it out of the list: its folder
   // is kept aside on the backend machine, and the page follows the first task left (the rows stay unless untouched).
   const ngspiceTask = ref.source === 'registered_task' && /^ngspice:/.test(ref.task_id ?? '') ? String(ref.task_id).slice('ngspice:'.length) : null;
@@ -402,18 +414,21 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           : sameRows(config, taskRows.starter) && <p className="hint task-rows">Parameters, Probes and Specs now show this task's rows
               {taskRows.starter.targets.length ? '' : ' - it has no targets of record, so Specs is yours to fill (its results are ready in Probes)'}. Undo brings the previous ones back.</p>)}
       </>)}
-      {/* The Virtuoso cellview import is ONE button that opens its window (user request 2026-09-23); the text beside it says what the page follows. */}
-      <div className="row virtuoso-launcher">
-        <span className="hint">{virtuosoOn && ref.cell ? <>Read from Virtuoso: <code>{ref.library}/{ref.cell}</code></> : virtuosoOn ? 'Reading from Virtuoso: choose a cell in the window'
-          : 'A task from a cell you copied in Virtuoso:'}</span>
-        <button className="virtuoso-button" onClick={openWindow} title={popup ? 'The Virtuoso window is open: press to bring it to the front.'
-          : 'Opens the Virtuoso window: choose a library, a cell and its testbench, read the cell into the workbench (it asks whether the cell is a copy you made), let the agent set it up, save it as a task. Opening it reads nothing.'}>Virtuoso cell...</button>
-      </div>
-      {blocked && <p className="error">{BLOCKED}</p>}
-      {/* An ngspice netlist becomes a task in ITS window (user request 2026-09-23): the same one-button shape. */}
-      <div className="row virtuoso-launcher ngspice-launcher">
-        <span className="hint">{ngspiceTask ? <>ngspice netlist task: <code>{ref.task_id}</code></> : 'A task from an ngspice netlist (a SPICE deck):'}</span>
-        <NgspiceButton config={config} circuit={circuit} chooseTask={chooseTask} onTasksChanged={refreshTasks} />
+      {/* The two other ways to a task, each ONE button that opens its window (user request 2026-09-23): the Virtuoso cellview
+          import and an ngspice netlist. One small grid, so the two buttons stand under each other in one column and the text
+          beside each says what the page follows (user: "arrange this part to make it more readable", 2026-09-23). */}
+      <div className="launchers">
+        {showVirtuoso && <div className="row virtuoso-launcher">
+          <span className="hint">{virtuosoOn && ref.cell ? <>Read from Virtuoso: <code>{ref.library}/{ref.cell}</code></> : virtuosoOn ? 'Reading from Virtuoso: choose a cell in the window'
+            : 'From a cell you copied in Virtuoso:'}</span>
+          <button className="virtuoso-button" onClick={openWindow} title={popup ? 'The Virtuoso window is open: press to bring it to the front.'
+            : 'Opens the Virtuoso window: choose a library, a cell and its testbench, read the cell into the workbench (it asks whether the cell is a copy you made), let the agent set it up, save it as a task. Opening it reads nothing.'}>Virtuoso cell...</button>
+        </div>}
+        {showVirtuoso && blocked && <p className="error">{BLOCKED}</p>}
+        {showNgspice && <div className="row virtuoso-launcher ngspice-launcher">
+          <span className="hint">{ngspiceTask ? <>ngspice task: <code>{ngspiceTask}</code></> : 'From an ngspice netlist (a SPICE deck):'}</span>
+          <NgspiceButton config={config} circuit={circuit} chooseTask={chooseTask} onTasksChanged={refreshTasks} />
+        </div>}
       </div>
       {deletedHere && !circuit?.profile_task && (<>
         <p className="ok">Task <code>{deletedHere.deleted}</code> deleted. Its cell <code>{deletedHere.library}/{deletedHere.cell}</code> can get a new one (Virtuoso cell...).</p>
@@ -450,7 +465,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
             <details className="more"><summary>How it runs</summary>
               <p>Each evaluation writes the chosen sizes into their own places in the deck, runs <code>ngspice -b</code> on it through the ngspice
                 connection (on this machine, or over SSH with the deck sent in), and reads the <code>name = value</code> lines it prints. To change
-                the deck, open the ngspice window above: saving stores the next revision (runs made before keep their own copy).</p></details>
+                the deck, press <b>ngspice netlist...</b> above (shown while an ngspice connection is in use): saving stores the next revision
+                (runs made before keep their own copy).</p></details>
             {profileMessage && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
             <div className="row start-over"><span className="hint">To take it out of the list:</span>
               <button disabled={!!profileBusy} onClick={deleteNgspice} title="Asks once more. The task leaves the Registered task list; its deck and task file are kept aside, and runs already made keep their data.">

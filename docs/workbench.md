@@ -237,6 +237,13 @@ the results it measures (with a unit guessed from the result's name or its expre
 and, in plain words, what would stop a run. **Delete task** (in the column, for the task the page follows) takes
 it out of the list; its folder is kept aside on the backend machine. Nothing in the window runs a simulation.
 
+**Which launcher the column shows follows the connection in use** (user request 2026-09-23): with a Virtuoso
+connection chosen (the "Connection" button) the column offers **Virtuoso cell...** only, with an ngspice connection
+**ngspice netlist...** only; with no connection chosen, or one of a kind the page does not know, both. The family is
+read from the connection list (the workbench's own file, no probe) when the connection changes. An ngspice task the
+page follows keeps its block in the column either way; its deck is edited through the ngspice window, so switch to
+an ngspice connection to edit or run it.
+
 What the deck must contain, and what the workbench makes of it (`src/gator_workbench/ngspice_netlist.py`):
 
 * SPICE syntax as ngspice reads it: the title line first, elements `R C L M X D Q J V I E G F H B S`, `+`

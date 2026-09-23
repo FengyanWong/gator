@@ -7,7 +7,9 @@
 // "GATOR - ngspice netlist") and sends nothing by itself; Example loads a deck through /api/ngspice/read (the path under
 // the repository); Check sends the text and shows the summary (elements, results with units, problems); Save sends the
 // name, text, kinds and labels, then the column follows the new task (the Task list shows it as [ngspice]) and the
-// editors hold its starter rows; a saved ngspice task shows its block in the column (revision, results, Delete task).
+// editors hold its starter rows; a saved ngspice task shows its block in the column (revision, results, Delete task);
+// the launchers follow the connection in use (/api/connection/profiles answered by fixtures: none chosen = both, a
+// Virtuoso connection = "Virtuoso cell..." only, an ngspice connection = "ngspice netlist..." only).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/ngspice_window_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -42,9 +44,18 @@ try {
   const sent = [];   // every ngspice request: { name, body }
   const refused = [];
   let tasksSeen = 0, saved = false;
+  // The connection list is a fixture: no connection at first (so the page adopts none and shows both launchers), later two
+  // connections of the two families. The live backend's file - and its active connection - never reaches the page.
+  const KINDS = [{ kind: 'virtuoso_ssh', family: 'virtuoso', transport: 'ssh', label: 'Virtuoso over SSH', summary: '' },
+    { kind: 'ngspice_local', family: 'ngspice', transport: 'local', label: 'ngspice on this machine', summary: '' }];
+  let connections = [];
+  const profilesAnswer = () => ({ active: null, connection_file: 'FIXTURE', connection_file_exists: connections.length > 0, kinds: KINDS,
+    profiles: connections.map(c => ({ profile_id: c.id, bridge_profile: null, kind: c.kind, kind_declared: true, family: c.family, transport: 'ssh', kind_label: c.kind, settings_present: ['kind'] })) });
   const answer = ({ requestId, request }) => {
     const name = new URL(request.url).pathname;
     const body = request.postData ? JSON.parse(request.postData) : null;
+    if (name === '/api/connection/profiles') return page.fulfil(requestId, 200, profilesAnswer());
+    if (name === '/api/connection/status') return page.fulfil(requestId, 200, { profile_id: null, overall: 'unknown', layers: [], stale: true });
     if (name.startsWith('/api/ngspice/')) {
       sent.push({ name, body });
       if (name === '/api/ngspice/read') return page.fulfil(requestId, 200, { path: body.path, text: DECK, size: DECK.length });
@@ -83,7 +94,7 @@ try {
   // ---- the column: one button, its text beside it, nothing sent -------------------------------------------------------------
   check('one short button "ngspice netlist..." with what it is for as text beside it',
     (await evaluate(`${LAUNCHER}.querySelector('button.ngspice-button')?.textContent.trim()`)) === 'ngspice netlist...'
-    && (await evaluate(`${LAUNCHER}.querySelector('.hint')?.textContent`)).includes('A task from an ngspice netlist'));
+    && (await evaluate(`${LAUNCHER}.querySelector('.hint')?.textContent`)).includes('From an ngspice netlist'));
   check('the column holds no netlist form of its own (no text box, no path field)', !(await evaluate(`!!${PANEL}.querySelector('textarea, input[placeholder*=".cir"]')`)));
   check('nothing was sent to the ngspice routes on page load', sent.length === 0);
 
@@ -145,10 +156,30 @@ try {
   check('the column shows the ngspice task block: backend line, the connection sentence, revision, results, Delete task',
     column.includes('ngspice evaluation backend') && column.includes('Choose an ngspice connection') && column.includes('revision 1') && column.includes('vout_v')
     && await evaluate(`[...${PANEL}.querySelectorAll('button')].some(b => b.textContent.trim() === 'Delete task')`), column.slice(0, 300));
-  check('the launcher text names the task the page follows', (await evaluate(`${LAUNCHER}.querySelector('.hint')?.textContent`)).includes('ngspice netlist task: ngspice:fixture_ota'));
+  check('the launcher text names the task the page follows', (await evaluate(`${LAUNCHER}.querySelector('.hint')?.textContent`)).includes('ngspice task: fixture_ota'));
+  const aligned = await evaluate(`(() => { const a = ${PANEL}.querySelector('button.virtuoso-button').getBoundingClientRect(), b = ${LAUNCHER}.querySelector('button.ngspice-button').getBoundingClientRect();
+    return { sameColumn: Math.abs(a.left - b.left) < 1 && Math.abs(a.right - b.right) < 1, below: b.top > a.bottom }; })()`);
+  check('the two window buttons stand under each other in one column of the same width', aligned.sameColumn && aligned.below, JSON.stringify(aligned));
   check('no red Blocked box for the followed task', !(await evaluate(`!!${PANEL}.querySelector('.blocker')`)));
   await shot('ngspice-3-column.png');
   check('the window now offers the next revision', (await win.evaluate(`[...${W}.querySelectorAll('button')].map(b => b.textContent.trim())`)).includes('Save (next revision)'));
+
+  // ---- the launchers follow the connection in use ----------------------------------------------------------------------------------
+  connections = [{ id: 'fixture-lab', kind: 'virtuoso_ssh', family: 'virtuoso' }, { id: 'fixture-sim', kind: 'ngspice_local', family: 'ngspice' }];
+  const launchers = () => evaluate(`(() => { const p = ${PANEL}; return { virtuoso: !!p.querySelector('button.virtuoso-button'), ngspice: !!p.querySelector('button.ngspice-button') }; })()`);
+  const withConnection = async id => {
+    await page.seed({ config: { ...JSON.parse(await evaluate(`localStorage.getItem('gator-workbench-config-v1')`)), run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, threads_per_job: 1, seed: 0, connection_profile_id: id } } });
+    await send('Page.navigate', { url: APP });
+    await until(`!!(${PANEL})`, 150); await sleep(2000);
+    return launchers();
+  };
+  const onVirtuoso = await withConnection('fixture-lab');
+  check('with a Virtuoso connection in use the column offers "Virtuoso cell..." only', onVirtuoso.virtuoso && !onVirtuoso.ngspice, JSON.stringify(onVirtuoso));
+  const onNgspice = await withConnection('fixture-sim');
+  check('with an ngspice connection in use it offers "ngspice netlist..." only', !onNgspice.virtuoso && onNgspice.ngspice, JSON.stringify(onNgspice));
+  await shot('ngspice-4-launcher-ngspice.png');
+  const onNone = await withConnection(null);
+  check('with no connection chosen it offers both', onNone.virtuoso && onNone.ngspice, JSON.stringify(onNone));
 
   check('the page asked nothing else of the backend (every request besides reads is refused here)', refused.length === 0, refused.join(' | '));
   check('no console errors in the page', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

@@ -32,7 +32,7 @@ const CELLS = {
   FIXTURE_DESIGNS: { technology_library: 'gpdk045', cells: [
     { name: 'ota5_v1', views: ['maestro', 'schematic', 'symbol'], has_schematic: true },
     { name: 'ota5_tb', views: ['schematic'], has_schematic: true },
-    { name: 'vco_fixture', views: ['schematic', 'symbol'], has_schematic: true },           // stands for the cell of a verified built-in circuit
+    { name: 'vco_fixture', views: ['schematic', 'symbol'], has_schematic: true },           // stands for the cell of a verified built-in circuit (the OTA7 since the VCO task was withdrawn, 7.73)
     { name: 'symbol_only', views: ['symbol'], has_schematic: false }] },
   FIXTURE_OTHER: { technology_library: 'otherTech', cells: [{ name: 'inv', views: ['schematic', 'symbol'], has_schematic: true }] },
 };
@@ -57,7 +57,7 @@ const generated = task => ({ loaded: true, task_key: task, mock: false, native_d
   diagnostics: [], circuit: {}, hierarchy: { XU1: { M1: {} } }, analysis_context: null, evaluation_backend: 'FIXTURE', max_concurrency: 4,
   summary: { device_count: 1, unknown_devices: [], devices: [] }, notes: ['FIXTURE: generated profile.'] });
 const builtInCell = { loaded: false, blocker: 'FIXTURE: a native cellview needs a verified circuit profile', interface_contract: null,
-  profile_task: 'real:gpdk045_vco', profile_task_generated: false };
+  profile_task: 'real:gpdk045_ota7', profile_task_generated: false };
 const browseOnly = { loaded: false, blocker: 'FIXTURE: a native cellview needs a verified circuit profile', interface_contract: null, profile_task: null,
   profile_task_generated: null, working_copy: null };
 const gateBlocked = { message: 'The connection gate blocked reading the native design', gate: { allowed: false, status: 'blocked', blocking: ['tunnel'], uncertain: [] } };
@@ -204,7 +204,7 @@ try {
   check('no Source list, no Library / Cell / Testbench boxes in the column', !(await evaluate(`!!(${LABEL('Source')}) || !!(${LABEL('Library')}) || !!(${LABEL('Cell')}) || !!(${LABEL('Testbench cell')})`)));
   check('the Task list is there, on the MOCK task', (await value('Task')) === 'synthetic:gpdk045_ota5', await value('Task'));
   const launcher = await evaluate(`(() => { const b = ${LAUNCH}; const row = b?.closest('.row'); return b ? { caption: b.textContent.trim(), beside: row.querySelector('.hint')?.textContent.trim() } : null; })()`);
-  check('ONE short button "Virtuoso cell..." with what it is for as text beside it', !!launcher && launcher.caption === 'Virtuoso cell...' && launcher.beside === 'A task from a cell you copied in Virtuoso:', JSON.stringify(launcher));
+  check('ONE short button "Virtuoso cell..." with what it is for as text beside it', !!launcher && launcher.caption === 'Virtuoso cell...' && launcher.beside === 'From a cell you copied in Virtuoso:', JSON.stringify(launcher));
   check('the labels are one folded line naming their values', await evaluate(`(() => { const d = ${PANEL}.querySelector('details.labels'); return !!d && !d.open && /^Labels: class \\w+, PDK \\w+/.test(d.querySelector('summary').textContent.trim()); })()`),
     await evaluate(`${PANEL}.querySelector('details.labels summary')?.textContent`));
   check('Circuit class and PDK id are explained', !!(await evaluate(`!!(${LABEL('Circuit class')})`)) && (await text()).includes('labels saved with every run')
@@ -331,13 +331,13 @@ try {
   await shotWindow('virtuoso-2d-cell-has-task.png');
   await wChoose('Cell', 'vco_fixture'); await quiet();
   shown = await wText();
-  check('the cell of a verified built-in circuit names that task', shown.includes('This cell already has a registered task: real:gpdk045_vco (a verified built-in circuit)')
+  check('the cell of a verified built-in circuit names that task', shown.includes('This cell already has a registered task: real:gpdk045_ota7 (a verified built-in circuit)')
     && !shown.includes('Browse only') && !shown.includes('cannot optimize it yet'));
   check('it is not offered for reading or for a task', !(await wHas('Read this cell into the workbench')) && !(await evaluate(`!!(${TASK_BUTTON('Save task')})`)));
   check('what that means is one folded line', await far.evaluate(`(() => { const d = [...${WIN}.querySelectorAll('.note details')].find(x => x.querySelector('summary').textContent === 'What this means');
     return !!d && !d.open && d.textContent.includes('gets no second task'); })()`));
   await wPress('Open'); await quiet();
-  check('"Open" chooses the task in the column', (await stored()).circuit.source === 'registered_task' && (await value('Task')) === 'real:gpdk045_vco', await value('Task'));
+  check('"Open" chooses the task in the column', (await stored()).circuit.source === 'registered_task' && (await value('Task')) === 'real:gpdk045_ota7', await value('Task'));
   check('a built-in circuit has no Delete task', !(await evaluate(`!!(${BUTTON('Delete task')})`)));
 
   // ---- Delete task: asked once more, refused while a run works, then back at the cell with Save task -----------------------

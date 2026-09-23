@@ -81,12 +81,13 @@ def _input_snapshot(layout: RunLayout, task, compiled, config):
         diagnostics=[dict(code=d.code, message=d.message, severity=d.severity) for d in graph.diagnostics]))
     notes = []
     if task.netlist_text is not None:
-        (snapshot / 'netlist.scs').write_text(task.netlist_text, encoding='utf8')
+        name = 'netlist.cir' if task.circuit.get('simulator') == 'ngspice' else 'netlist.scs'   # a SPICE deck is not .scs
+        (snapshot / name).write_text(task.netlist_text, encoding='utf8')
         write_json(snapshot / 'hierarchy.json', dict(
-            combined_netlist='netlist.scs', dut_hierarchy=task.circuit.get('dut_hierarchy'),
+            combined_netlist=name, dut_hierarchy=task.circuit.get('dut_hierarchy'),
             source_file=task.netlist_path, sha256=task.circuit.get('netlist_sha256'),
             instances=[d.id for d in graph.devices]))
-        notes.append('input_snapshot: the source is ONE combined netlist, saved as netlist.scs with hierarchy.json. '
+        notes.append(f'input_snapshot: the source is ONE combined netlist, saved as {name} with hierarchy.json. '
                      'Separate dut.scs / testbench.scs do not exist and no empty placeholders were created.')
     write_json(snapshot / 'parameter_mapping.json', dict(variables=list(compiled.variables),
                                                          action_version='absolute-group-v1',
@@ -181,6 +182,17 @@ def connection_gate(task, config, monitor, *, acknowledge_unknown=False):
     if not profile_id:
         raise RunRejected('A real task needs run.connection_profile_id (the identifier of a configured profile). '
                           'There is no fallback to another profile or to mock mode.', code='connection_gate')
+    # The connection must be of the family the task runs on: an ngspice netlist task never probes Virtuoso, and a
+    # Virtuoso task never runs on ngspice. Said before the gate probes anything.
+    from . import connection
+    family = getattr(task, 'connection_family', 'virtuoso')
+    settings = connection.load_profiles()['profiles'].get(profile_id)
+    if settings is not None and connection.family_of(connection.profile_kind(settings if isinstance(settings, dict) else {})) != family:
+        label = connection.KINDS.get(connection.profile_kind(settings if isinstance(settings, dict) else {}) or '', {}).get('label', 'of an unknown kind')
+        raise RunRejected(f'Connection {profile_id!r} is "{label}", but this task runs on '
+                          + ('ngspice: choose an ngspice connection ("ngspice on this machine" or "ngspice over SSH") in the '
+                             'Connection window, or add one there.' if family == 'ngspice' else
+                             'Virtuoso + Spectre: choose a Virtuoso connection in the Connection window.'), code='connection_gate')
     try:
         gate = monitor.gate('real_simulation', profile_id, acknowledge_unknown=acknowledge_unknown)
     except (KeyError, ValueError) as exc:

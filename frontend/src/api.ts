@@ -73,6 +73,13 @@ export const api = {
     call('POST', '/api/virtuoso/import', { profile_id, library, cell, testbench, ...(work_here ? { work_here: true } : {}) }),
   profileReference: (name: string) => call('POST', '/api/virtuoso/profile/reference', { name }),
   deleteProfile: (name: string) => call('POST', '/api/virtuoso/profile/delete', { name }),
+  // The ngspice window (backend ngspice_tasks.py): a deck read from a file inside the allowed input roots, checked without
+  // being kept, saved as the task ngspice:<name>; a saved task's deck for editing; a task taken out of the list.
+  ngspiceRead: (path: string) => call('POST', '/api/ngspice/read', { path }),
+  ngspiceCheck: (body: Json) => call('POST', '/api/ngspice/check', body),
+  ngspiceSave: (body: Json) => call('POST', '/api/ngspice/task/save', body),
+  ngspiceTask: (name: string) => call('GET', '/api/ngspice/task' + q({ name })),
+  ngspiceDelete: (name: string) => call('POST', '/api/ngspice/task/delete', { name }),
   nativeRead: (profile_id: string, library: string, cell: string) => call('POST', '/api/virtuoso/read', { profile_id, library, cell }),
   setupRead: (profile_id: string, library: string, cell: string, config: Json | null) => call('POST', '/api/virtuoso/setup/read', { profile_id, library, cell, config }),
   taskSave: (body: Json) => call('POST', '/api/virtuoso/task/save', body),

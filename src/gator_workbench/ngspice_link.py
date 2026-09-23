@@ -17,8 +17,8 @@ named, everything downstream stays ``not_checked`` - and it OBSERVES:
 SSH runs in BatchMode with the user's own ssh configuration - ports, keys and jump hosts belong in
 ``~/.ssh/config`` - so a missing key fails fast instead of waiting for a password.
 
-What an ngspice connection is good for TODAY is this test. No ngspice evaluation backend exists yet, so the
-gate refuses real runs on it (``connection.FAMILY_ACTIONS``).
+This test is also the gate of a real run on the connection (``connection.FAMILY_ACTIONS``): the ngspice netlist
+tasks (``ngspice_tasks``) run through ``ngspice_backend``, which reaches ngspice the same two ways.
 
 Confirmed against a real ngspice-36 on 2026-09-21: ``--version`` prints ``ngspice-36``, and ``ngspice -b <deck>``
 runs the ``.control`` block below and prints ``v(out) = 5.000000e-01``.

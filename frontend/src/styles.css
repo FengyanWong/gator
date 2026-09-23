@@ -136,6 +136,10 @@ details.labels > summary { color: var(--muted); } details.labels > summary b { f
 .virtuoso-window .hint, .virtuoso-window label, .virtuoso-window .steps-list { font-size: 12.5px; } .virtuoso-window p { margin: 5px 0; }
 .virtuoso-window details > summary { cursor: pointer; } .virtuoso-window table { font: inherit; } .virtuoso-window .row > button { flex: none; }
 .virtuoso-window .copy-warning { border: 1px solid var(--warn); background: #fff6dc; padding: 5px 8px; }
+/* The ngspice window: the deck itself is the main thing, in a monospace box that fills the width. */
+.ngspice-window .ngspice-text { width: 100%; box-sizing: border-box; font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.35; white-space: pre; overflow: auto; }
+.ngspice-window .row.ngspice-file { align-items: flex-end; } .ngspice-window .row.ngspice-file > button { flex: none; }
+.ngspice-window .ngspice-check table td { vertical-align: top; } .ngspice-window .ngspice-check li.warn { color: var(--warn); }
 .real { background: #e8f0fd; border: 1px solid var(--accent); padding: 4px 8px; font-weight: 600; }
 label.disabled { opacity: .6; } input:disabled { background: #eceef1; color: var(--muted); cursor: not-allowed; }
 td.numeric { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap !important; } details a { color: var(--accent); }

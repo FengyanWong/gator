@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { api, Json, OLDER_BACKEND, problemText } from '../api';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { WorkingCopy } from './WorkingCopy';
+import { NgspiceButton } from './Ngspice';
 import { TaskSave } from './TaskSave';
 import { CheckSteps } from './Consistency';
 import { Typed } from './Typed';
@@ -12,6 +13,8 @@ import { Typed } from './Typed';
 /** The left column holds the Project fields and the REGISTERED TASK only (user request 2026-09-23). Reading a cell from
  *  Virtuoso - library / cell / testbench, the read, the agent's setup, the task's first save - lives in a window of its
  *  own behind ONE button, "Virtuoso cell..." (the mechanism of the connection window: a portal into a named pop-up).
+ *  An ngspice netlist (a SPICE deck pasted or loaded from a file) becomes a task the same way, behind "ngspice netlist..."
+ *  (Ngspice.tsx): such a task runs on an ngspice connection and needs no Virtuoso.
  *  The workbench makes no working copy of its own any more: reading a cell asks whether it is a copy the user made, and
  *  then works in THAT cell (the backend records it as the cell's working copy: import with `work_here`). */
 
@@ -210,6 +213,21 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     });
   };
   const deletedHere = deleted && virtuosoOn && deleted.library === ref.library && deleted.cell === ref.cell ? deleted : null;
+  // An ngspice netlist task (Ngspice.tsx saves it; the page then follows it). Delete takes it out of the list: its folder
+  // is kept aside on the backend machine, and the page follows the first task left (the rows stay unless untouched).
+  const ngspiceTask = ref.source === 'registered_task' && /^ngspice:/.test(ref.task_id ?? '') ? String(ref.task_id).slice('ngspice:'.length) : null;
+  const refreshTasks = () => api.tasks().then(t => setTasks(t.tasks)).catch(() => undefined);
+  const deleteNgspice = () => {
+    if (!window.confirm(`Delete the task ngspice:${ngspiceTask}?\n\nIt leaves the Registered task list. Runs already made with it keep their data, `
+      + 'but a paused one can no longer be resumed. Its deck and task file are kept aside on the backend machine.')) return;
+    profileAction('delete', async () => {
+      const gone = await api.ngspiceDelete(ngspiceTask!);
+      const left = await api.tasks().then(t => { setTasks(t.tasks); return t.tasks; }).catch(() => [] as Json[]);
+      setProfileMessage({ level: 'ok', text: `Task ${gone.deleted} deleted; its files are kept in ${gone.kept_copy}.` });
+      const next = left.find((t: Json) => t.task_key !== gone.deleted);
+      if (next) chooseTask(next.task_key);
+    });
+  };
   // Reading a cell INTO the workbench is an explicit press: Virtuoso exports the netlist of the testbench (or of the cell)
   // and the sizes are read back - read-only, zero-cost, some seconds. The first read of a cell asks whether it is a copy
   // the user made (copyQuestion): "OK" reads it AND makes it the cell the task flow works in (import with work_here; the
@@ -368,7 +386,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           {ref.source !== 'registered_task' && <option value="" disabled>{virtuosoOn ? (ref.cell ? `(none: ${ref.library}/${ref.cell} is read from Virtuoso)` : '(none: a Virtuoso cell is being chosen)')
             : '(none: the saved source was removed)'}</option>}
           {removedMock && <option value={ref.task_id} disabled>{ref.task_id} (removed)</option>}
-          {tasks.map(t => <option key={t.task_key} value={t.task_key}>{t.task_key}{t.kind === 'mock' ? '  [MOCK]' : t.available ? '' : '  [blocked]'}</option>)}
+          {tasks.map(t => <option key={t.task_key} value={t.task_key}>{t.task_key}{t.kind === 'mock' ? '  [MOCK]' : t.kind === 'ngspice' ? (t.available ? '  [ngspice]' : '  [ngspice: choose its connection]') : t.available ? '' : '  [blocked]'}</option>)}
         </select>
       </label>
       {ref.source === 'registered_task' && (<>
@@ -392,6 +410,11 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           : 'Opens the Virtuoso window: choose a library, a cell and its testbench, read the cell into the workbench (it asks whether the cell is a copy you made), let the agent set it up, save it as a task. Opening it reads nothing.'}>Virtuoso cell...</button>
       </div>
       {blocked && <p className="error">{BLOCKED}</p>}
+      {/* An ngspice netlist becomes a task in ITS window (user request 2026-09-23): the same one-button shape. */}
+      <div className="row virtuoso-launcher ngspice-launcher">
+        <span className="hint">{ngspiceTask ? <>ngspice netlist task: <code>{ref.task_id}</code></> : 'A task from an ngspice netlist (a SPICE deck):'}</span>
+        <NgspiceButton config={config} circuit={circuit} chooseTask={chooseTask} onTasksChanged={refreshTasks} />
+      </div>
       {deletedHere && !circuit?.profile_task && (<>
         <p className="ok">Task <code>{deletedHere.deleted}</code> deleted. Its cell <code>{deletedHere.library}/{deletedHere.cell}</code> can get a new one (Virtuoso cell...).</p>
         <details className="more hint"><summary>Where its files went</summary>
@@ -415,8 +438,25 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
         {circuit.interface_contract && <details><summary>Interface contract</summary><pre>{JSON.stringify(circuit.interface_contract, null, 1)}</pre></details>}</div>}
       {ref.source === 'registered_task' && circuit?.loaded && (<>
         {circuit.mock && <p className="mock">MOCK evaluation backend: {circuit.evaluation_backend}</p>}
-        {circuit.mock === false && !circuit.native_draft && <p className="real">REAL evaluation backend: {circuit.evaluation_backend ?? 'Virtuoso + Spectre'}. Every
+        {circuit.mock === false && !circuit.native_draft && circuit.simulator !== 'ngspice' && <p className="real">REAL evaluation backend: {circuit.evaluation_backend ?? 'Virtuoso + Spectre'}. Every
           evaluation is a costed simulation; Start asks you to authorize the budget first.</p>}
+        {circuit.simulator === 'ngspice' && (<>
+          <p className="real">ngspice evaluation backend: every evaluation is one real circuit simulation by ngspice (no license). Start asks you to
+            confirm the number of simulations first.</p>
+          {circuit.circuit?.connection_problem && <p className="warn">{circuit.circuit.connection_problem}</p>}
+          <div className="note">
+            <p><b>ngspice netlist task</b>, revision {circuit.circuit?.revision ?? '?'}{circuit.circuit?.title ? <>: <i>{circuit.circuit.title}</i></> : null}.
+              {' '}{(circuit.circuit?.measurements ?? []).length} results: <code>{(circuit.circuit?.measurements ?? []).join(', ')}</code>.</p>
+            <details className="more"><summary>How it runs</summary>
+              <p>Each evaluation writes the chosen sizes into their own places in the deck, runs <code>ngspice -b</code> on it through the ngspice
+                connection (on this machine, or over SSH with the deck sent in), and reads the <code>name = value</code> lines it prints. To change
+                the deck, open the ngspice window above: saving stores the next revision (runs made before keep their own copy).</p></details>
+            {profileMessage && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
+            <div className="row start-over"><span className="hint">To take it out of the list:</span>
+              <button disabled={!!profileBusy} onClick={deleteNgspice} title="Asks once more. The task leaves the Registered task list; its deck and task file are kept aside, and runs already made keep their data.">
+                {profileBusy === 'delete' ? 'Deleting...' : 'Delete task'}</button></div>
+          </div>
+        </>)}
         {circuit.generated_profile && !circuit.baseline_recorded && <p className="warn">This task has no real baseline yet: begin with
           <b> Single baseline simulation</b> (one real Spectre run, asks for your budget) before an optimization run.</p>}
         {saved && saved.task_key === ref.task_id && <p className="ok">Saved the new task <code>{saved.task_key}</code>. It runs in

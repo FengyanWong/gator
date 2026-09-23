@@ -128,6 +128,7 @@ is never replaced), or it was started with "Model checkpoints" switched off. Bro
 |---|---|
 | `synthetic:gpdk045_ota5` (the one MOCK task) | **MOCK**: the optimizer's analytic toy backend (`origin=synthetic`) on a REAL circuit - the netlist and device mapping of the verified GPDK045 OTA5 (`examples/circuits/gpdk045_ota5.scs`, `configs/gpdk045_opamp.json`). Free: no Virtuoso, no Spectre. Every row says `provenance=mock`, data lives under `<output_root>/mock/`, and it is excluded from real-experiment aggregates. The `score` is not a circuit metric, and a model it trains never loads into a real run. Until 2026-09-22 there were four MOCK tasks on toy netlists (`synthetic:opamp`, `_opamp_two_stage`, `_ldo`, `_vco`); they were removed (status record 7.59). A configuration that still names one opens with a plain note and cannot start. |
 | `real:gpdk045_*` tasks | The verified bridge profiles through the existing `NativeEnvironmentFactory`. Need virtuoso-bridge 0.8.0 importable by the backend interpreter, a connection profile, a passing connection gate and an explicit budget authorization. **Not exercised in this delivery** (see the status record). Nothing ever falls back to mock. Two of the four were removed on user request on 2026-09-23 (status record 7.73): `real:gpdk045_ota5` and `real:gpdk045_vco`, whose example cells were deleted from Virtuoso (a backup is kept). Left: `real:gpdk045_ota7` and `real:gpdk045_ldo`. A configuration that still names a removed one opens with a plain note and cannot start. |
+| `ngspice:<name>` tasks (added 2026-09-23) | A SPICE deck pasted or loaded in the **ngspice netlist...** window and saved as a task. **REAL** circuit simulations by ngspice (`origin=real`, `provenance=real`), on this machine or over SSH through an ngspice connection - no license, no Virtuoso, but counted, authorized (Start asks) and recorded exactly like every real run, so the data is never mistaken for mock data. Its models never load into a MOCK run and the other way round; they are interchangeable with Virtuoso real runs as far as the network contract allows. |
 | Arbitrary native cellviews | Read-only browsing through the bridge. Optimizing one needs a saved task, which runs on a WORKING COPY of the cell: a run writes instance values into that copy (the form writer since 7.66), never into the cell you drew, and no cellview is created or redrawn. |
 
 ### Choosing a registered task: whose rows Parameters, Probes and Specs show
@@ -220,6 +221,81 @@ every varied device is a top-level instance: a device inside a subcircuit (the O
 or MOCK) would mean editing a definition every instance shares, so the file is not created and the
 run's `artifact_manifest.json` says why; `parameters.csv` always holds the values. The agent's circuit-modification working copy is still written, but only as a
 file for your records: the workbench cannot load it as a circuit any more.
+
+### An ngspice netlist as a task: the ngspice window (added 2026-09-23, user request)
+
+The Project column's second one-button window, **ngspice netlist...**, takes a SPICE deck - pasted into its text box,
+or loaded from a file on the backend machine (a path under the allowed input roots, `--allow-input-root`; a Windows
+path is converted for the WSL backend; **Example** loads `examples/circuits/ngspice_ota5_level1.cir`, a
+five-transistor OTA on textbook level-1 models with no PDK at all) - and saves it as the task `ngspice:<name>`.
+The Project column then follows that task: Parameters and Probes show its rows, Specs is yours to fill. Saving the
+same name again stores the next revision (the deck before is kept as `history/r<N>.cir`); runs made before keep
+their own copy of the deck in `input_snapshot/netlist.cir`, and a changed deck is a changed task. **Check** reads
+the deck on the backend without keeping it and says what it found: elements by kind, the values a run can vary,
+the results it measures (with a unit guessed from the result's name or its expression: `gain_db`, `ugf_hz`,
+`v(out)` -> V, `i(vdd)` -> A - edit the Probes row when the guess is wrong), the analyses, includes, diagnostics
+and, in plain words, what would stop a run. **Delete task** (in the column, for the task the page follows) takes
+it out of the list; its folder is kept aside on the backend machine. Nothing in the window runs a simulation.
+
+What the deck must contain, and what the workbench makes of it (`src/gator_workbench/ngspice_netlist.py`):
+
+* SPICE syntax as ngspice reads it: the title line first, elements `R C L M X D Q J V I E G F H B S`, `+`
+  continuation lines, `*` / `$` / `;` comments, `.subckt`/`.ends` with `params:`, `.param` (also inside a
+  subcircuit), `.global`, `.include` / `.lib`, SPICE numbers (`4u`, `1Meg`, `1M` = milli, `10uF`), `{expressions}`
+  over parameters (a whitelist evaluator with ngspice's arithmetic functions, never `eval`), and `.end`.
+* **Results**: `.meas` statements, or in a `.control` block `meas ...`, `let x = ...` + `print x`. Their names are the
+  Probes rows (`source_name`); a run reads the `name = value` lines ngspice prints (`.meas` names come back in
+  lowercase; a failed measurement is missing, never a number). ngspice has no `.meas op`: read operating-point
+  values in a control block (`op`, `let`, `print`). The example does exactly that, plus `set units=degrees` so
+  that `vp()` gives degrees.
+* **What the network sees**: the standard vocabulary (nmos, pmos, resistor, capacitor, inductor, vsource,
+  isource, unknown). The kind of a MOS comes from its `.model` line - in the deck or in the files it includes,
+  which are read for their `.model` and `.subckt` lines only (never copied, shown or sent anywhere; up to 48 MB
+  of them). A diode, a bipolar, a behavioural source, or an instance of a subcircuit the deck does not define (a
+  PDK cell such as `sky130_fd_pr__nfet_01v8`) is `unknown`, a warning, not an error: ngspice simulates it either
+  way, only an unknown device cannot be sized. The window's "Models the deck does not define" box declares kinds
+  for those (`name=nmos name2=pmos`), saved with the task.
+* **Sizes a run can vary**: a numeric value of a top-level element (W, L, M, NF of a transistor; the value of an
+  R, C, L, the DC value of a source), and of an element inside a subcircuit the deck instantiates **exactly once**
+  (a testbench around one DUT). Inside a subcircuit used twice the value is shown but not offered - writing the
+  definition would change every instance. The starter rows: widths, resistances, capacitances and inductances
+  optimized within half..twice their present value, lengths, counts and sources fixed; all editable, as always.
+* **Writing back**: each evaluation replaces the value's own token in the deck (`W=4u` -> `W=4.5e-06`, `{wn}` ->
+  the number, `1k` -> `1500`) and nothing else, then reads the deck again to prove the write (the environment's
+  usual contract check). The best design is written as `best_design/optimized_dut.cir` the same way - also for
+  values inside the once-used subcircuit, which the Spectre exporter refuses.
+* **Files**: on this machine, relative `.include` / `.lib` paths are resolved from the folder the deck was loaded
+  from (ngspice itself resolves them from ITS working directory, so the run makes them absolute in the deck); a
+  pasted deck has no folder, so write absolute paths. Over SSH the deck is sent in on stdin and every path in it is
+  a path on that machine. The workbench copies no model file anywhere.
+
+How a run works (`src/gator_workbench/ngspice_backend.py`, `ngspice_tasks.py`): the task is a **real** task of the
+connection family `ngspice`. Start needs an ngspice connection chosen in the Connection window ("ngspice on this
+machine" or "ngspice over SSH"; the column and the Task list say so when the connection in use is a Virtuoso one),
+its four-layer test as the gate (the program answers, the built-in divider solves), and the confirmation of the
+number of simulations that Start asks for (the same consent as for every real run; no license or budget is spent,
+but every evaluation is counted as real). Each evaluation is one `ngspice -b` process on the written deck: on this
+machine in the job's own folder; over SSH through `ssh -o BatchMode=yes -- <host> '<fixed command>'` with the deck
+on stdin into a `mktemp -d` folder that the same command removes. Its output is kept as `ngspice.log` next to the
+deck. Outcomes: the results it prints are the evaluation; a solver failure (timestep too small, singular matrix,
+no convergence) is a NONCONVERGED design that was evaluated (reward -1); a deck error, a missing program or a
+broken ssh link is an infrastructure failure that evaluated nothing; a timeout is retryable within
+`max_retries`. The nominal condition recorded with every evaluation is what the deck states: its temperature
+(`.temp` / `.option temp`, else 27 C) and its largest DC voltage source. Concurrency: up to half the CPU cores
+(8 at most) on this machine, 4 ssh sessions. Corner checks are not available for these tasks (the Corner check
+tab says so): they simulate through the Virtuoso profiles.
+
+Where things are: the task store `configs/local/workbench/ngspice/<name>/` (`netlist.cir`, `task.json`,
+`history/`, deleted tasks under `.deleted/`); routes `POST /api/ngspice/read` (a file inside the input roots),
+`POST /api/ngspice/check`, `POST /api/ngspice/task/save`, `GET /api/ngspice/task?name=`, `POST
+/api/ngspice/task/delete`; the window `frontend/src/panels/Ngspice.tsx`. Tests: `tests/workbench/test_wb_ngspice.py`
+(fakes, plus two tests marked REAL that run the ngspice installed on this machine on the example deck - skipped
+without one). Browser check: `frontend/scripts/ngspice_window_check.mjs` (fixtures, safe on the live backend).
+
+**Installing ngspice on this WSL** (2026-09-23): Ubuntu 22.04's package is ngspice-36; the latest release,
+ngspice-47, was built from source into `~/.local/opt/ngspice-47` with a user-local conda-forge C/C++ toolchain
+(`~/.local/share/gator-ngspice/toolchain`, needed at run time for `libgomp` / `libreadline`) and linked as
+`~/.local/bin/ngspice` - no root, nothing system-wide. `sudo apt install ngspice` gives the older 36 instead.
 
 ### Browsing a Virtuoso library: the Virtuoso window
 
@@ -455,12 +531,12 @@ A profile now says WHAT it connects to and HOW, with `"kind"`:
   `user@host`. Both are checked against a strict pattern before anything runs, are passed as argv
   entries (`ssh -o BatchMode=yes -o ConnectTimeout=8 -- <host> <fixed command>`, no local shell) and
   never appear in a result or a log. SSH is batch mode: key-based login and an accepted host key.
-* **What an ngspice connection can do today: be tested.** There is no ngspice evaluation backend yet,
-  so the gate refuses real runs and Virtuoso reads on it without probing (`blocking:
-  ["connection_kind"]`, with the sentence to show), and a real circuit names the wrong kind instead of
-  listing missing Virtuoso settings. Building that backend is a separate increment; the one place to
-  switch it on is `connection.FAMILY_ACTIONS`. Note that the GPDK045 models are Spectre-format files:
-  ngspice will need circuits with models it can read.
+* **What an ngspice connection runs: the ngspice netlist tasks** (since 2026-09-23; see "An ngspice
+  netlist as a task" above). A real run of such a task probes the four layers as its gate. Reading or writing a
+  Virtuoso cell on an ngspice connection is still refused without probing (`blocking: ["connection_kind"]`, with
+  the sentence to show), a Virtuoso task started on an ngspice connection is refused in words before anything is
+  probed, and so is an ngspice task on a Virtuoso connection. The GPDK045 models are Spectre-format files: an
+  ngspice deck needs models ngspice can read (its own `.model` lines, or an open PDK's files).
 * **Add a connection** (in the window). `GET /api/connection/setup` reports, per kind, what was found
   on the backend machine (bridge env file and package; the `ngspice` and `ssh` programs; the Host
   NAMES of `~/.ssh/config` - names only, the rest of that file is never read out).

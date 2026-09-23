@@ -8,6 +8,8 @@
 * The ``netlist`` source (a Spectre netlist file imported by path) was removed on user
   request (status record 7.53). The schema still reads it, so configurations and runs
   saved before stay readable, but no circuit is loaded from it: ``NETLIST_SOURCE_REMOVED``.
+* ``ngspice:*`` tasks are SPICE decks the user saved in the ngspice window (``ngspice_tasks``): REAL circuit
+  simulations by ngspice, on this machine or over ssh, through an ngspice connection; no license, no Virtuoso.
 * ``real:*`` tasks describe the verified GPDK045 bridge profiles. They are only
   runnable when the backend interpreter can import ``virtuoso_bridge`` and the operator
   supplied a connection file. Otherwise the precise blocker and the interface contract
@@ -141,6 +143,7 @@ class TaskRuntime:
     notes: list = field(default_factory=list)
     authorized: bool = True            # False = a real task loaded to be SHOWN and validated only: it cannot execute
     reference_metrics: dict | None = None   # verified REAL results of the INITIAL design: {metric: {value, unit}}; None if unknown
+    connection_family: str = 'virtuoso'     # which family of connection a real run needs: virtuoso (Spectre) or ngspice
 
     @property
     def mock(self) -> bool:
@@ -252,6 +255,8 @@ def list_tasks():
                           verified=profiles.reference_metrics(name) is not None,
                           description=f"Profile generated from {entry['library']}/{entry['core_cell']} (Virtuoso + Spectre). "
                                       + ('' if profiles.reference_metrics(name) else 'No real baseline recorded yet.')))
+    from . import ngspice_tasks
+    tasks.extend(ngspice_tasks.task_entries())                 # SPICE decks saved in the ngspice window
     for task in tasks:
         task['starter_project'] = starter_project(task['task_key'])
     return tasks
@@ -276,7 +281,8 @@ def _not_a_virtuoso_connection(profile_id, settings):
     if kind is None or family_of(kind) == 'virtuoso':
         return None                                   # an unknown kind is named by the connection check itself
     return (f'Connection {profile_id or "(the active one)"!r} is "{KINDS[kind]["label"]}". This circuit runs on Virtuoso + '
-            'Spectre: choose a Virtuoso connection in the Connection window. Running circuits on ngspice is not built yet.')
+            'Spectre: choose a Virtuoso connection in the Connection window. An ngspice connection runs the ngspice netlist '
+            'tasks (Project column: "ngspice netlist...").')
 
 
 CIRCUIT_KEYS = ('creation_receipt', 'reference_measurements')     # these two belong to ONE circuit, not to the link
@@ -379,6 +385,9 @@ def load_task(circuit, *, allow_real=False, profile_id=None) -> TaskRuntime:
                 if blocker:
                     raise TaskBlocked(blocker, contract=REAL_INTERFACE_CONTRACT)
                 return _generated_runtime(key, name, profile_id, authorized=bool(allow_real))
+        if kind == 'ngspice' and name:
+            from . import ngspice_tasks
+            return ngspice_tasks.runtime(key, name, profile_id, authorized=bool(allow_real))
         if kind == 'real' and name in REAL_PROFILES:
             blocker = real_backend_blocker(profile_id, name)
             if blocker:
@@ -698,6 +707,9 @@ def starter_config(task_key: str) -> dict:
     kind, _, name = task_key.partition(':')
     if kind == 'real' and name:
         return real_starter_config(task_key)
+    if kind == 'ngspice' and name:
+        from . import ngspice_tasks
+        return ngspice_tasks.starter_config(task_key)          # KeyError for a task that does not exist
     if kind != 'synthetic' or name not in SYNTHETIC_FIXTURES:
         raise KeyError(task_key)
     root, info = repo_root(), SYNTHETIC_FIXTURES[name]

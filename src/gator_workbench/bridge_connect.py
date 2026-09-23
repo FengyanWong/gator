@@ -331,7 +331,8 @@ def create_profile(profile_id=DEFAULT_PROFILE_ID, *, kind=connection.DEFAULT_KIN
         write_json(target, document)
     note = ('Enough for connecting and testing. Real-simulation tasks also need library, creation_receipt, model_file and '
             'reference_measurements in this file (docs/workbench.md).' if family == 'virtuoso' else
-            'Enough for testing. Running circuits on ngspice is not built yet; real runs need a Virtuoso connection.')
+            'Enough for testing and for running the ngspice netlist tasks (Project column: "ngspice netlist..."). Virtuoso '
+            'cells still need a Virtuoso connection.')
     return dict(created=True, profile_id=profile_id, kind=kind, connection_file=str(target), settings_present=sorted(profile),
                 backup=None if backup is None else str(backup), note=note)
 

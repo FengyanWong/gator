@@ -102,8 +102,10 @@ export function App() {
     try {
       // A refusal creates nothing; what the backend asks for (real budget, a model from another task, unknown
       // connection layers) is put to the user and the start is repeated with the answers.
+      // An ngspice netlist task is real too (circuit simulations, counted and recorded as such), only without a license.
       const started = await launchWithConsent(flags => api.start({ config, baseline_only, ...flags }), { real: !!isReal, transfer: true,
-        authorizeText: `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?` });
+        authorizeText: circuit?.simulator === 'ngspice' ? `This starts ngspice simulations of the task (no license; every one is counted as a real evaluation).\nRun a budget of ${budget} candidate evaluation(s)?`
+          : `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?` });
       if (started) launchedRun(started, 'start'); else setMessage({ level: 'info', text: 'Not started: you answered no, so nothing was created.' });
     } catch (e: any) { failed(e); } finally { control.setPending(null); }
   };

@@ -59,10 +59,11 @@ Outdated in `first-build.md`, and the entry that changed it:
   `graph_view.py` 7.33, `agents/settings_review.py` 7.36, `agents/run_digest.py` 7.39, `agents/live.py` 7.48,
   `spec_equations.py` 7.52, `pdk.py` 7.54, `working_copy.py` / `virtuoso_setup.py` / `bridge_setup.py` 7.55,
   `task_files.py` 7.57, `consistency.py` 7.61, `corner_check.py` 7.62, `ocean.py` 7.63,
-  `cdf_facts.py` / `cdf_rules.py` / `cdf_write.py` 7.66, `agent_tools.py` + `agents/tools.py` 7.68; panels `Issues.tsx` 7.12,
+  `cdf_facts.py` / `cdf_rules.py` / `cdf_write.py` 7.66, `agent_tools.py` + `agents/tools.py` 7.68,
+  `ngspice_netlist.py` / `ngspice_backend.py` / `ngspice_tasks.py` 7.74; panels `Issues.tsx` 7.12,
   `RunControl.tsx` 7.18, `ModelChooser.tsx` 7.20, `ModelStructure.tsx` 7.26, `Connection.tsx` 7.32,
   `CircuitGraphView.tsx` + `circuitLayout.ts` 7.33, `RunList.tsx` 7.38, `Pdk.tsx` 7.54, `WorkingCopy.tsx` 7.55,
-  `TaskSave.tsx` + `TaskFile.tsx` 7.57, `Consistency.tsx` 7.61, `CornerCheck.tsx` 7.62, `Typed.tsx` 7.64.
+  `TaskSave.tsx` + `TaskFile.tsx` 7.57, `Consistency.tsx` 7.61, `CornerCheck.tsx` 7.62, `Typed.tsx` 7.64, `Ngspice.tsx` 7.74.
 
 An entry that a later one REVERSED (both stand as written; the later one is what is true):
 
@@ -203,3 +204,4 @@ Newest last. The date, the session and the request are in each title.
 | 7.71 | A task keeps its initial conditions when it is saved again - the ring task had lost them (2026-09-23 early morning, same session as 7.67, found while restarting the backend on the user's request) | [7.61-and-later.md](workbench-log/7.61-and-later.md) |
 | 7.72 | The Virtuoso cellview import moves into a window; the workbench makes no working copy - the user's copy is declared on the read; the column keeps the registered task (2026-09-23 afternoon, session "Virtuoso cellview import workflow", explicit user request) | [7.61-and-later.md](workbench-log/7.61-and-later.md) |
 | 7.73 | The OTA5 and VCO examples removed: their Virtuoso cells deleted (backup kept), their built-in tasks withdrawn; OTA7, LDO and the MOCK task stay (2026-09-23 afternoon, session "whole flow", explicit user request) | [7.61-and-later.md](workbench-log/7.61-and-later.md) |
+| 7.74 | ngspice netlist tasks: a SPICE deck becomes a task in the ngspice window and runs on an ngspice connection (on this machine or over SSH); ngspice-47 built and installed on this WSL (2026-09-23 evening, session "ngspice netlist input and SSH support", explicit user request) | [7.61-and-later.md](workbench-log/7.61-and-later.md) |

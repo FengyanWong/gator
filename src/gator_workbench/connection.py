@@ -37,7 +37,8 @@ Connection kinds (2026-09-21). A profile declares WHAT it connects to and HOW wi
 checks that the bridge env file agrees (a profile that says "this machine" must never start an SSH
 tunnel somewhere else). The ngspice kinds have their own four layers, checked by ``ngspice_link.py`` -
 this module stays unable to launch anything. The monitor and the gate work per family; an action a
-family cannot serve (reading a Virtuoso cell through ngspice) is refused without probing anything.
+family cannot serve (reading a Virtuoso cell through ngspice) is refused without probing anything. Since
+2026-09-23 an ngspice connection also serves ``real_simulation``: the ngspice netlist tasks run on it.
 """
 from __future__ import annotations
 
@@ -89,17 +90,15 @@ FAMILY_SCOPES = dict(
     virtuoso=dict(cheap=CHEAP_LAYERS, interactive=INTERACTIVE_LAYERS, full=LAYERS),
     # cheap = no contact with anything, as for Virtuoso. ngspice has no license layer, so full = interactive.
     ngspice=dict(cheap=NGSPICE_LAYERS[:1], interactive=NGSPICE_LAYERS, full=NGSPICE_LAYERS))
-# What each family can serve TODAY. An ngspice connection can be tested, but no ngspice evaluation backend exists:
-# add 'real_simulation': NGSPICE_LAYERS here in the increment that builds one.
-FAMILY_ACTIONS = dict(virtuoso=ACTION_LAYERS, ngspice={'offline': ()})
+# What each family can serve. An ngspice connection runs the ngspice netlist tasks (ngspice_backend, 2026-09-23): a
+# real run on it probes its four layers first. Reading or writing a Virtuoso cell stays a Virtuoso matter.
+FAMILY_ACTIONS = dict(virtuoso=ACTION_LAYERS, ngspice={'offline': (), 'real_simulation': NGSPICE_LAYERS})
 TIMEOUT_LAYER = dict(virtuoso='daemon', ngspice='ngspice')      # the layer a probe that never answered is reported on
 UNSUPPORTED_ACTION = {
     'read_cellview': 'This is an ngspice connection. Reading a Virtuoso library or cell needs a Virtuoso connection: '
                      'choose one in the Connection window.',
     'write_cellview': 'This is an ngspice connection. Working on a Virtuoso cell needs a Virtuoso connection: choose one '
                       'in the Connection window.',
-    'real_simulation': 'This is an ngspice connection. It can be tested, but running circuits on ngspice is not built '
-                       'yet: real runs need a Virtuoso connection (choose one in the Connection window); mock runs need none.',
 }
 
 
@@ -635,12 +634,13 @@ class ConnectionMonitor:
         needed = FAMILY_ACTIONS[family_of(kind)].get(action)
         if needed is None:
             # The connection is of a kind that cannot serve this action at all. Nothing is probed: no test could change it.
+            sentence = UNSUPPORTED_ACTION.get(action, f'This kind of connection ({kind}) cannot serve {action}.')
             gate = dict(action=action, allowed=False, profile_id=profile_id, connection_kind=kind, checked_utc=None,
                         status='blocked', needed_layers=[], blocking=['connection_kind'], uncertain=[],
-                        acknowledged_unknown=False, bridge_version=None, next_steps=[UNSUPPORTED_ACTION[action]],
+                        acknowledged_unknown=False, bridge_version=None, next_steps=[sentence],
                         layers=[dict(layer='connection_kind', state='failed', reason_code='unsupported_by_connection_kind')])
             self._log(dict(profile_id=profile_id, trigger='gate', checked_utc=utcnow().isoformat(), duration_seconds=0.0,
-                           overall='failed', layers=[dict(gate['layers'][0], diagnostic=UNSUPPORTED_ACTION[action])],
+                           overall='failed', layers=[dict(gate['layers'][0], diagnostic=sentence)],
                            refusal=dict(action=action, status='blocked', blocking=gate['blocking'], uncertain=[])))
             return gate
         scope = 'full' if 'spectre' in needed else 'interactive'

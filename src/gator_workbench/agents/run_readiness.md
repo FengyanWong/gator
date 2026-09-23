@@ -9,9 +9,10 @@ not do.
 
 A start is refused at the first of these that fails, and nothing is created or charged before that.
 
-1. **Circuit** - a circuit is selected and can be read ("Circuit source" on the left: a registered
-   task or a Virtuoso cell; netlist files are not imported). A real circuit also needs a connection
-   profile that carries its bindings.
+1. **Circuit** - a circuit is selected and can be read (the Project column on the left: a registered
+   task, a Virtuoso cell read in its window, or an ngspice netlist saved as a task in its window; Spectre
+   netlist files are not imported). A real Virtuoso circuit also needs a connection profile that carries its
+   bindings.
 2. **Parameters** (tab; the `parameters` table) - at least one optimized variable, each with an
    instance path and parameter that exist in the circuit, bounds that contain the circuit's present
    value, and a unit.
@@ -31,8 +32,9 @@ A start is refused at the first of these that fails, and nothing is created or c
 8. **Real circuits only - Connection** (the "Connection" button, left; it opens a window): choose a
    Virtuoso connection, Connect SSH (or "Set up local bridge" when Virtuoso runs on the backend's own
    machine), load the setup line in the CIW, then "Test connection". A failed layer blocks the start;
-   an unknown one asks the user to acknowledge it. An ngspice connection can only be tested so far:
-   real circuits run on Virtuoso. Synthetic (MOCK) circuits need no connection.
+   an unknown one asks the user to acknowledge it. An `ngspice:<name>` task needs an ngspice connection
+   instead ("ngspice on this machine" or "ngspice over SSH": its test is the gate). Synthetic (MOCK)
+   circuits need no connection.
 9. **Real circuits only - budget authorization** - pressing Start asks the user to authorize the
    number of real simulations. Nobody else can give that authorization.
 10. **Start** - "Single baseline simulation" first is a good habit: ONE costed evaluation of the

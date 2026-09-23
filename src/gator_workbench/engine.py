@@ -1105,18 +1105,21 @@ class RunEngine:
     def _write_outputs(self, final_state, checkpoint, persistence_ok):
         from .summary import build_run_summary
         task = self.task
-        reparse = None
+        reparse, exporter, netlist_name = None, None, 'optimized_dut.scs'
         if task.netlist_path and task.parser_config_path:
             def reparse(text):
                 from analog_optimizer.netlist.config import ParserConfig
                 from analog_optimizer.netlist.spectre_parser import SpectreParser
                 return SpectreParser(ParserConfig.from_file(task.parser_config_path)).parse_text(
                     text, source=task.netlist_path, top=task.circuit.get('dut_hierarchy'))
+        elif task.circuit.get('simulator') == 'ngspice':          # a SPICE deck: its own writer, values also inside a once-used subcircuit
+            from .ngspice_tasks import export_deck
+            exporter, netlist_name = export_deck(task), 'optimized_dut.cir'
         notes = best_design.write_outputs(
             self.layout.best_design, self.tracker,
             task=dict(task_id=self.task_id, task_key=task.task_key, circuit=task.circuit, provenance=self.provenance),
             config_summary=dict(targets=list(self.compiled.targets), variables=list(self.compiled.variables)),
-            netlist_text=task.netlist_text, graph=self.compiled.graph, reparse=reparse)
+            netlist_text=task.netlist_text, graph=self.compiled.graph, reparse=reparse, exporter=exporter, netlist_name=netlist_name)
         self.manifest_notes = [f'best_design/{k}: {v}' for k, v in notes.items()]
         summary = build_run_summary(self, final_state, checkpoint, persistence_ok)
         write_json(self.layout.summary, summary)

@@ -191,8 +191,10 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
       </div>
       {result}
     </div>
-    <div className="note"><p><b>What an ngspice connection can do today: be tested.</b> Running circuits on ngspice is not built yet, so real runs
-      still need a Virtuoso connection, and reading a Virtuoso library needs one too. Mock runs and everything offline need no connection at all.</p></div>
+    <div className="note"><p><b>What an ngspice connection runs: the ngspice netlist tasks</b> (Project column, "ngspice netlist..."). Every evaluation of such
+      a task is one <code>ngspice -b</code> run {local ? 'on this machine' : 'on that machine, through ssh (the deck goes in on stdin; paths in it are that machine\'s)'};
+      the test above is what a run checks first. Virtuoso cells and the verified GPDK045 tasks still need a Virtuoso connection; mock runs and
+      everything offline need no connection at all.</p></div>
   </>);
 
   const addForm = adding && (

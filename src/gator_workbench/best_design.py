@@ -88,7 +88,7 @@ def _record(candidate, *, status, tracker, task, config_summary):
 
 
 def write_outputs(directory, tracker: BestDesignTracker, *, task, config_summary, netlist_text, graph,
-                  reparse=None, netlist_name='optimized_dut.scs'):
+                  reparse=None, netlist_name='optimized_dut.scs', exporter=None):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     notes = {}
@@ -118,7 +118,8 @@ def write_outputs(directory, tracker: BestDesignTracker, *, task, config_summary
     temporary = temporary_path(directory / 'parameters.csv')
     temporary.write_text(buffer.getvalue(), encoding='utf8')
     publish(temporary, directory / 'parameters.csv')
-    outcome = export_netlist(netlist_text, graph, feasible['members'], reparse=reparse)
+    # `exporter`: another netlist language's writer (an ngspice deck), with the same outcome contract as export_netlist.
+    outcome = exporter(netlist_text, graph, feasible['members']) if exporter else export_netlist(netlist_text, graph, feasible['members'], reparse=reparse)
     if outcome['status'] == 'verified':
         temporary = temporary_path(directory / netlist_name)
         temporary.write_text(outcome['text'], encoding='utf8')

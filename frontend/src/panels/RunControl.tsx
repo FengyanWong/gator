@@ -131,7 +131,7 @@ export function resumeRun(dir: string, status: Json, maxEvaluations: number | nu
   const left = budget && typeof total === 'number' ? Math.max(0, total - budget.charged) : null;
   return launchWithConsent(flags => api.continueRun({ run_dir: dir, max_evaluations: maxEvaluations, ...flags }), {
     real: (status?.mock ?? status?.manifest?.mock) === false,
-    authorizeText: 'This continues REAL Virtuoso/Spectre simulations in the paused run.\n' + (left === null ? 'Authorize the rest of its evaluation budget?'
+    authorizeText: 'This continues REAL simulations (Virtuoso/Spectre, or ngspice for an ngspice netlist task) in the paused run.\n' + (left === null ? 'Authorize the rest of its evaluation budget?'
       : `Authorize up to ${left} more candidate evaluation(s)? (${budget.charged} of ${total} are used.)`) });
 }
 

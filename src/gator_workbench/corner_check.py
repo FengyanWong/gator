@@ -103,6 +103,9 @@ def corner_record(corner) -> dict:
 def _real_profile(task_key):
     """The circuit profile object of a real task, from local files only (no connection)."""
     name = task_key.partition(':')[2]
+    if str(task_key).startswith('ngspice:'):
+        raise CheckRefused('Corner checks simulate through the Virtuoso profiles: an ngspice netlist task has none yet.',
+                           code='unsupported_task')
     if name in tasks.offered_real_profiles():
         return tasks._verified_profile(name)
     from . import profiles

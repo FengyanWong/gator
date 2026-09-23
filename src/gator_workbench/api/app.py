@@ -27,7 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .. import (__version__, aggregates, agents, bridge_connect, bridge_read, checkpoints as ckpt, connection, runs, schema,
                 tasks, units)
-from .. import consistency, network_presets, profiles, recipes, task_files, virtuoso_setup, working_copy
+from .. import consistency, network_presets, ngspice_tasks, profiles, recipes, task_files, virtuoso_setup, working_copy
 from ..agents import AgentError, AgentRequest, AgentSettings, ProposalRejected, ProposalStore
 from ..agents import catalog as agent_catalog
 from ..agents import proposals as agent_proposals
@@ -187,6 +187,26 @@ class TaskCheckBody(Body):
 class ProfileActionBody(Body):
     name: str = Field(pattern=TASK_NAME)
     run_dir: str | None = None
+
+
+class NgspiceReadBody(Body):
+    path: str = Field(min_length=1, max_length=1000)       # a file on the backend machine, inside an allowed input root
+
+
+class NgspiceCheckBody(Body):
+    text: str = Field(max_length=ngspice_tasks.MAX_NETLIST_BYTES)
+    device_kinds: str | dict | None = None                  # "name=kind ..." as typed in the window, or a mapping
+    source_path: str | None = Field(None, max_length=1000)  # where the deck was loaded from: its folder resolves relative includes
+
+
+class NgspiceSaveBody(NgspiceCheckBody):
+    name: str = Field(pattern=ngspice_tasks.NAME.pattern)
+    circuit_class: str = Field('unspecified', max_length=120)
+    pdk_id: str = Field('unspecified', max_length=200)
+
+
+class NgspiceNameBody(Body):
+    name: str = Field(pattern=ngspice_tasks.NAME.pattern)
 
 
 class AgentSettingsBody(Body):
@@ -599,6 +619,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
             for part in device.id.split('/'):
                 node = node.setdefault(part, {})
         return dict(loaded=True, task_key=runtime.task_key, mock=runtime.mock, circuit=runtime.circuit,
+                    simulator=runtime.circuit.get('simulator') or ('mock' if runtime.mock else 'spectre'),
                     content_sha256=runtime.circuit.get('netlist_sha256'), provided_metrics=list(runtime.provided_metrics),
                     hierarchy=tree, summary=circuit_summary(graph, circuit=runtime.circuit), complete=graph.complete,
                     diagnostics=[dict(code=d.code, severity=d.severity, message=d.message) for d in graph.diagnostics],
@@ -660,6 +681,68 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         try:
             return profiles.delete_profile(body.name, run_rows=runs.list_runs(roots, include_mock=False))
         except profiles.ProfileError as exc:
+            fail(409, exc, code='delete_refused')
+
+    # ------------------------------------------------------------------ ngspice netlist tasks (the ngspice window)
+    def _ngspice_kinds(body):
+        try:
+            return (ngspice_tasks.parse_kinds_text(body.device_kinds) if isinstance(body.device_kinds, str)
+                    else ngspice_tasks._clean_kinds(body.device_kinds or {}))
+        except ngspice_tasks.NgspiceTaskError as exc:
+            fail(422, exc)
+
+    def _ngspice_source(path):
+        """The file a deck was loaded from, for its relative includes: only a path under the input roots counts - the
+        browser names no other file (it got this one from /api/ngspice/read)."""
+        if not path:
+            return None
+        resolved = Path(path).expanduser().resolve()
+        return str(resolved) if any(resolved == r or r in resolved.parents for r in input_roots) else None
+
+    @app.post('/api/ngspice/read')
+    def ngspice_read(body: NgspiceReadBody):
+        """A deck read from a file on the backend machine (inside an allowed input root) into the window's text box."""
+        try:
+            return ngspice_tasks.read_file(body.path, input_roots)
+        except PermissionError as exc:
+            fail(403, exc)
+        except ngspice_tasks.NgspiceTaskError as exc:
+            fail(409, exc, code='refused')
+
+    @app.post('/api/ngspice/check')
+    def ngspice_check(body: NgspiceCheckBody):
+        """How the deck reads: elements, the values a run can vary, the results, problems. Nothing is stored or run."""
+        source = _ngspice_source(body.source_path)
+        return ngspice_tasks.check(body.text, device_kinds=_ngspice_kinds(body),
+                                   include_root=str(Path(source).parent) if source else None)
+
+    @app.post('/api/ngspice/task/save')
+    def ngspice_save(body: NgspiceSaveBody):
+        """Explicit press: the deck becomes the task ngspice:<name>, or its next revision. No simulation."""
+        try:
+            entry = ngspice_tasks.save(body.name, body.text, device_kinds=_ngspice_kinds(body), source_path=_ngspice_source(body.source_path),
+                                       circuit_class=body.circuit_class, pdk_id=body.pdk_id)
+        except ngspice_tasks.NgspiceTaskError as exc:
+            fail(409, exc, code='refused')
+        parsed = ngspice_tasks.parse_entry(entry, body.text)
+        return dict(entry, starter=ngspice_tasks.starter_config(entry['task_key']), check=dict(ok=True, **ngspice_tasks.summary(parsed)))
+
+    @app.get('/api/ngspice/task')
+    def ngspice_task(name: str):
+        """The saved deck of a task, for editing in the window."""
+        try:
+            entry, text = ngspice_tasks.load(name)
+        except (KeyError, ngspice_tasks.NgspiceTaskError):
+            fail(404, f'No ngspice task named {name!r}')
+        return dict(entry, text=text)
+
+    @app.post('/api/ngspice/task/delete')
+    def ngspice_delete(body: NgspiceNameBody):
+        """Explicit click (the page asks once more): the task leaves the list; its folder is kept aside. Refused while a
+        run of it is working."""
+        try:
+            return ngspice_tasks.delete(body.name, run_rows=runs.list_runs(roots, include_mock=False))
+        except ngspice_tasks.NgspiceTaskError as exc:
             fail(409, exc, code='delete_refused')
 
     # ------------------------------------------------------------------ working copy + its Maestro setup

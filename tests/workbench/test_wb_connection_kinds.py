@@ -277,15 +277,17 @@ def test_an_unknown_kind_is_named_by_the_real_probe_and_nothing_is_probed(tmp_pa
 def test_the_gate_refuses_what_a_kind_cannot_serve_without_probing(tmp_path):
     write_profiles(sim=dict(kind='ngspice_local'), lab=dict(env_file='/x/.env'))
     monitor = ConnectionMonitor(probe_command=ngspice_probe(tmp_path))
-    for action, word in (('read_cellview', 'Reading a Virtuoso library'), ('write_cellview', 'Virtuoso cell'),
-                         ('real_simulation', 'not built yet')):
+    for action, word in (('read_cellview', 'Reading a Virtuoso library'), ('write_cellview', 'Virtuoso cell')):
         gate = monitor.gate(action, 'sim', acknowledge_unknown=True)
         assert not gate['allowed'] and gate['status'] == 'blocked' and gate['blocking'] == ['connection_kind']
         assert gate['connection_kind'] == 'ngspice_local' and word in gate['next_steps'][0]
     assert monitor.probes_started == 0                                     # no test could change the answer
     assert monitor.gate('offline', 'sim')['allowed']
+    # Since 2026-09-23 an ngspice connection RUNS the ngspice netlist tasks: a real simulation on it probes its four layers.
+    gate = monitor.gate('real_simulation', 'sim')
+    assert gate['allowed'] and gate['needed_layers'] == list(NGSPICE_LAYERS) and monitor.probes_started == 1
     refusals = [e for e in read_jsonl(connection.connection_file().parent / 'connection_checks.jsonl') if e.get('refusal')]
-    assert len(refusals) == 3 and refusals[0]['refusal']['blocking'] == ['connection_kind']
+    assert len(refusals) == 2 and refusals[0]['refusal']['blocking'] == ['connection_kind']
     with pytest.raises(KeyError):
         monitor.gate('teleport', 'sim')
     with pytest.raises(ValueError):
@@ -334,7 +336,7 @@ def test_a_connection_is_added_next_to_the_existing_ones_which_are_never_changed
     write_json(connection.connection_file(), original)
     before = connection.connection_file().read_text()
     made = bridge_connect.create_profile('sim', kind='ngspice_local')
-    assert made['kind'] == 'ngspice_local' and made['settings_present'] == ['kind'] and 'not built yet' in made['note']
+    assert made['kind'] == 'ngspice_local' and made['settings_present'] == ['kind'] and 'ngspice netlist tasks' in made['note']
     assert Path(made['backup']).read_text() == before                                             # the previous file, kept
     far = bridge_connect.create_profile('far', kind='ngspice_ssh', ssh_host='simhost')
     here = bridge_connect.create_profile('here', kind='virtuoso_local', bridge_profile='local_vm')

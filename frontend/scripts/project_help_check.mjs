@@ -12,20 +12,13 @@
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/project_help_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9393, APP = process.env.GATOR_WORKBENCH_URL ?? 'http://127.0.0.1:8765/';
-const out = process.argv[2] ?? tmpdir();
-const profile = mkdtempSync(path.join(tmpdir(), 'gator-cdp-help-'));
-const edge = spawn(EDGE, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failures = 0; const consoleErrors = [];
-const check = (name, ok, info = '') => { if (!ok) failures++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
+const APP = await workbenchUrl();
+const out = outDir();
+const browser = await launchEdge('help');
+const consoleErrors = [];
 
 // ---- canned answers ------------------------------------------------------------------------------------------
 const LIBRARY = 'FIXTURE_DESIGNS', CELLS = [{ name: 'ring_a', views: ['maestro', 'schematic', 'symbol'], has_schematic: true }, { name: 'ring_b', views: ['schematic'], has_schematic: true }];
@@ -34,7 +27,7 @@ const schematic = (library, cell) => ({ source: 'virtuoso', library, cell, origi
   requires_confirmation: ['FIXTURE'], note: 'FIXTURE' });
 const NOTE = 'FIXTURE NOTE: read from Virtuoso (canned answer).';
 const draft = (library, cell) => ({ loaded: true, task_key: `virtuoso:${library}/${cell}`, mock: false, native_draft: true, complete: true, diagnostics: [], profile_task: null,
-  profile_recipes: [{ id: 'ring_oscillator', label: 'Ring oscillator (free-running)' }], circuit: { library, cell, native_draft: true }, hierarchy: { XU1: { M1: {}, M2: {} }, V0: {} },
+  circuit: { library, cell, native_draft: true }, hierarchy: { XU1: { M1: {}, M2: {} }, V0: {} },
   working_copy: { verified: true, problems: [], copy: { library: `${library}_GATOR`, cell, testbench: `tb_${cell}` }, original: { library, cell, testbench: `tb_${cell}` } },
   analysis_context: null, evaluation_backend: null, max_concurrency: 1,
   summary: { device_count: 3, unknown_devices: [], devices: [{ instance_path: 'XU1/M1', kind: 'nmos', parameters: { w: { value: 4e-6 } } }] }, notes: [NOTE] });
@@ -51,18 +44,9 @@ try {
     circuit: { source: 'registered_task', task_id: 'synthetic:gpdk045_ota5', circuit_class: 'unspecified', pdk_id: 'unspecified' }, parameters: [], targets: [], measurements: [],
     run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, threads_per_job: 1, seed: 0, connection_profile_id: profiles.active ?? 'fixture' },
     output: { experiment_name: 'fixture' }, research: {} };
-  let target;
-  for (let i = 0; i < 75 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    if (!target) await sleep(200);
-  }
-  if (!target) throw new Error('Edge did not open a debugging port');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  let nextId = 0; const pending = new Map(); const calls = []; const refused = []; const imported = new Set(); const created = new Set(); let inFlight = 0;
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
-  const fulfil = (requestId, status, obj) => send('Fetch.fulfillRequest', { requestId, responseCode: status,
-    responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(obj)).toString('base64') });
+  const page = await browser.open({ errors: consoleErrors });
+  const { send, evaluate, until, fulfil } = page;
+  const calls = []; const refused = []; const imported = new Set(); const created = new Set(); let inFlight = 0;
   const answer = async ({ requestId, request }) => {
     const name = new URL(request.url).pathname, body = JSON.parse(request.postData ?? '{}');
     if (name.startsWith('/api/virtuoso/')) {
@@ -83,29 +67,14 @@ try {
       if (circuit.source === 'virtuoso' && imported.has(`${circuit.library}/${circuit.cell}`)) return fulfil(requestId, 200, draft(circuit.library, circuit.cell));
       return send('Fetch.continueRequest', { requestId });                         // a registered task, or "no profile yet": read-only on the backend
     }
-    if (request.method === 'GET' || name === '/api/config/validate') return send('Fetch.continueRequest', { requestId });
-    refused.push(`${request.method} ${name}`);
-    return fulfil(requestId, 418, { detail: { message: 'FIXTURE: this check lets no writing request through' } });
+    if (name === '/api/config/validate') return page.pass(requestId);
+    return page.readOrRefuse({ requestId, request }, refused);
   };
-  ws.onmessage = ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
-    else if (m.method === 'Fetch.requestPaused') answer(m.params).catch(() => { /* the page went away */ });
-    else if (m.method === 'Runtime.exceptionThrown') consoleErrors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-    else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push(m.params.args.map(a => a.value ?? a.description).join(' '));
-  };
-  const evaluate = async expression => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
-  const until = async (expression, tries = 80) => { for (let i = 0; i < tries; i++) { if (await evaluate(expression)) return true; await sleep(100); } return false; };
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Circuit source'))`;
   const FIELD = label => `[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)})?.querySelector('input, select')`;
   const BUTTON = text => `[...${PANEL}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const choose = (label, v) => evaluate(`(() => { const s = ${FIELD(label)}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(v)});
     s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
-  const type = async (label, textToType) => { await evaluate(`(() => { const i = ${FIELD(label)}; i.focus(); i.select(); })()`); await send('Input.insertText', { text: textToType }); };
   const quiet = async (ms = 700) => { let seen = -1; while (seen !== calls.length || inFlight) { seen = calls.length; await sleep(ms); } };
   // "present" = in the page at all; "shown" = the innermost element holding the words is really rendered (a closed <details> hides its content).
   const HOLDER = needle => `[...${PANEL}.querySelectorAll('*')].filter(e => e.textContent.includes(${JSON.stringify(needle)}) && ![...e.children].some(c => c.textContent.includes(${JSON.stringify(needle)})))`;
@@ -124,16 +93,12 @@ try {
   const height = () => evaluate(`Math.round(${PANEL}.getBoundingClientRect().height)`);
   const shot = async name => {                          // a tall window, so the whole column is on the picture instead of its visible part
     await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 2600, deviceScaleFactor: 1, mobile: false }); await sleep(250);
-    const clip = await evaluate(`(() => { const r = ${PANEL}.getBoundingClientRect(); return { x: r.x - 4, y: r.y - 4, width: r.width + 8, height: Math.min(r.height + 8, 2500), scale: 2 }; })()`);
-    const { data } = await send('Page.captureScreenshot', { format: 'png', clip });
-    writeFileSync(path.join(out, name), Buffer.from(data, 'base64'));
+    await page.shot(path.join(out, name), PANEL, { pad: 4, scale: 2, maxHeight: 2500 });
     await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
   };
 
-  await send('Page.enable'); await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*', requestStage: 'Request' }] });
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(CONFIG))});` });
+  await page.intercept(['*/api/*'], answer);
+  await page.seed({ config: CONFIG });
   await send('Page.navigate', { url: APP });
   if (!(await until(`!!(${PANEL}) && ${PANEL}.textContent.includes('Hierarchy (')`, 150))) throw new Error('the Project panel never showed a loaded circuit | panel: '
     + (await evaluate(`${PANEL}?.textContent.slice(0, 700) ?? 'no panel'`)) + ' | console: ' + consoleErrors.join(' | ').slice(0, 300));
@@ -162,15 +127,9 @@ try {
   await click(SUMMARY('Instances and parameters')); await sleep(200);
   await shot('help-1b-hierarchy-open.png');                                         // left open: the later states must find it as the user left it
 
-  // ---- Import Spectre netlist: one short line says what to do, the rest is folded ------------------------------------
-  await choose('Source', 'netlist'); await sleep(900);
-  check('netlist: the short instruction is in view', await shown('Two files are needed: fill in both paths'));
-  check('netlist: the long explanation is folded under "Which two files, and where they may be"', await shown('Which two files, and where they may be')
-    && await folded('nothing is uploaded from the browser') && await folded('--allow-input-root'));
-  check('netlist: both buttons stay in view', await buttonShown('Load netlist') && await buttonShown('Try the example'));
-  await click(SUMMARY('Which two files')); await sleep(200);
-  check('netlist: a click shows what the two files are and where they may be', await shown('nothing is uploaded from the browser') && await shown('--allow-input-root'));
-  await shot('help-2-netlist-unfolded.png');
+  // ---- "Import Spectre netlist" was removed (user request, status record 7.53): circuit_source_check.mjs pins the rest --
+  const sources = await evaluate(`[...${FIELD('Source')}.options].map(o => o.value)`);
+  check('the Source list offers a registered task and a Virtuoso cell only', JSON.stringify(sources) === JSON.stringify(['registered_task', 'virtuoso']), sources.join(' | '));
 
   // ---- Virtuoso source: browse only ---------------------------------------------------------------------------------------
   await choose('Source', 'virtuoso'); await quiet();
@@ -247,14 +206,10 @@ try {
   console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
   check('the page asked to start, continue, command, connect or call an agent on its own: never', !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify)/.test(r)), refused.join(', '));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-  ws.close();
 } catch (error) {
-  failures++; console.log('ERROR ' + (error?.stack ?? error));
+  fail(error);
   if (consoleErrors.length) console.log('page errors: ' + consoleErrors.join(' | ').slice(0, 600));
 } finally {
-  edge.kill();
-  await sleep(500);
-  try { rmSync(profile, { recursive: true, force: true }); } catch { /* Edge may still hold a file; the temp dir is harmless */ }
+  await browser.close();
 }
-console.log(failures ? `${failures} check(s) FAILED` : 'all checks passed');
-process.exit(failures ? 1 : 0);
+finish();

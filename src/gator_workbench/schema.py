@@ -184,13 +184,14 @@ class MeasurementDefinition(_Model):
 # --------------------------------------------------------------------------- circuit
 class CircuitReference(_Model):
     source: Literal['registered_task', 'netlist', 'virtuoso'] = Field(
-        description='registered_task: a task provider known to the backend. netlist: a Spectre netlist parsed by '
-                    'the existing parser. virtuoso: a native library/cell/view read through the bridge.')
+        description='registered_task: a task provider known to the backend. virtuoso: a native library/cell/view read '
+                    'through the bridge. netlist: the REMOVED Spectre netlist import - still read, so configurations '
+                    'and runs saved before stay readable (and keep their hashes), but no circuit is loaded from it.')
     task_id: Optional[str] = Field(None, max_length=200)
     netlist_path: Optional[str] = Field(None, max_length=1000,
-        description='Backend-side path inside an allowed directory. Not a browser upload folder.')
+        description='Removed netlist source only (kept for configurations saved before). Backend-side path.')
     parser_config_path: Optional[str] = Field(None, max_length=1000,
-        description='Device/port mapping. Port order and parameter semantics come from here, never guessed.')
+        description='Removed netlist source only (kept for configurations saved before). Device/port mapping.')
     library: Optional[str] = Field(None, max_length=200)
     cell: Optional[str] = Field(None, max_length=200)
     view: Optional[str] = Field(None, max_length=200)

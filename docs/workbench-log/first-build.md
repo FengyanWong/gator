@@ -59,7 +59,7 @@ Nothing under `src/analog_optimizer/` was touched. New package `src/gator_workbe
 | `units.py` | Explicit unit registry; unknown units rejected |
 | `validation.py` | Semantic validation; `error` / `blocker` (valid but not executable by the backend) / `warning` / `unresolved` |
 | `compile.py` | Config -> existing `ParameterGroup` / `MetricSpec`; independent hard-constraint check; restricted expressions |
-| `tasks.py` | Task providers: `synthetic:*` (MOCK), netlist import, `real:*` GPDK045 profiles with blocker + interface contract |
+| `tasks.py` | Task providers: `synthetic:*` (MOCK), `real:*` GPDK045 profiles with blocker + interface contract; the netlist import was removed (7.53) |
 | `paths.py` | Output-root allowlist, tested writability, Windows path verified by read-back, mock root isolation |
 | `storage/` | Atomic JSON, fsynced JSONL, journaled Parquet dataset (WAL + flush log + quarantine), table/data-dictionary definitions |
 | `budget.py` | Shared budget ledger: reserve/charge/release, retries, launch cap, first-feasibility snapshot |

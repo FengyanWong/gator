@@ -5,10 +5,9 @@
   ``score`` is not a circuit metric, and their data is confined to the mock output root.
   There is ONE (status record 7.59): ``synthetic:gpdk045_ota5``, a real circuit's netlist
   on that toy backend. The four toy-fixture tasks it replaced are ``REMOVED_MOCK_TASKS``.
-* ``netlist`` sources are parsed by the existing Spectre-subset parser. The repository
-  has no generic real simulator runner for an arbitrary imported netlist, so real
-  evaluation of such a task is reported as a blocker; mock evaluation is available and
-  labelled as such.
+* The ``netlist`` source (a Spectre netlist file imported by path) was removed on user
+  request (status record 7.53). The schema still reads it, so configurations and runs
+  saved before stay readable, but no circuit is loaded from it: ``NETLIST_SOURCE_REMOVED``.
 * ``real:*`` tasks describe the verified GPDK045 bridge profiles. They are only
   runnable when the backend interpreter can import ``virtuoso_bridge`` and the operator
   supplied a connection file. Otherwise the precise blocker and the interface contract
@@ -361,17 +360,7 @@ def load_task(circuit, *, allow_real=False, profile_id=None) -> TaskRuntime:
             return _real_runtime(key, name, profile_id, authorized=bool(allow_real))
         raise TaskBlocked(f'Unknown registered task {key!r}')
     if circuit.source == 'netlist':
-        if not circuit.netlist_path or not circuit.parser_config_path:
-            missing = [label for label, value in (('the netlist file (netlist_path)', circuit.netlist_path),
-                                                  ('a device mapping JSON (parser_config_path)', circuit.parser_config_path))
-                       if not value]
-            raise TaskBlocked(f'An imported netlist still needs {" and ".join(missing)}. The mapping says which pin is '
-                              'which and what each device parameter means; that is never guessed.')
-        return _netlist_runtime(f'netlist:{Path(circuit.netlist_path).name}', circuit.netlist_path,
-                                circuit.parser_config_path, circuit_class=circuit.circuit_class,
-                                pdk_id=circuit.pdk_id, top=circuit.dut_hierarchy,
-                                notes=['Imported netlists can only be evaluated by the MOCK analytic backend: the '
-                                       'repository has no generic real simulator runner for arbitrary netlists.'])
+        raise TaskBlocked(NETLIST_SOURCE_REMOVED)
     if circuit.source == 'virtuoso':
         from . import native_cells
         imported = native_cells.load_import(circuit.library, circuit.cell) if circuit.library and circuit.cell else None
@@ -382,6 +371,10 @@ def load_task(circuit, *, allow_real=False, profile_id=None) -> TaskRuntime:
                               + ', '.join(f'real:{n}' for n in REAL_PROFILES), contract=REAL_INTERFACE_CONTRACT)
         return _native_draft_runtime(imported, circuit)
     raise TaskBlocked(f'Unsupported circuit source {circuit.source!r}')
+
+
+NETLIST_SOURCE_REMOVED = ('The workbench no longer imports Spectre netlist files. Choose a registered task or a Virtuoso '
+                          'cell under "Circuit source".')
 
 
 NATIVE_DRAFT_NOT_EXECUTABLE = ('This cell was read from Virtuoso, but it has no circuit profile yet, so it cannot be '

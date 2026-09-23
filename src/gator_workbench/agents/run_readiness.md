@@ -10,8 +10,8 @@ not do.
 A start is refused at the first of these that fails, and nothing is created or charged before that.
 
 1. **Circuit** - a circuit is selected and can be read ("Circuit source" on the left: a registered
-   task, a Spectre netlist, or a Virtuoso cell). A real circuit also needs a connection profile that
-   carries its bindings.
+   task or a Virtuoso cell; netlist files are not imported). A real circuit also needs a connection
+   profile that carries its bindings.
 2. **Parameters** (tab; the `parameters` table) - at least one optimized variable, each with an
    instance path and parameter that exist in the circuit, bounds that contain the circuit's present
    value, and a unit.

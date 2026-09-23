@@ -213,7 +213,7 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
       {result}
     </div>
     <div className="note"><p><b>What an ngspice connection can do today: be tested.</b> Running circuits on ngspice is not built yet, so real runs
-      still need a Virtuoso connection, and reading a Virtuoso library needs one too. Mock runs, netlist import and everything offline need no connection at all.</p></div>
+      still need a Virtuoso connection, and reading a Virtuoso library needs one too. Mock runs and everything offline need no connection at all.</p></div>
   </>);
 
   const addForm = adding && (
@@ -255,7 +255,7 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
     <div className="connection-window">
       <h2>Connection</h2>
       {profiles && profiles.profiles.length === 0
-        ? <p className="hint">No connection is set up yet ({profiles.connection_file}). Netlist import, manual editing, JSON import/export, data export and mock runs work without one.</p>
+        ? <p className="hint">No connection is set up yet ({profiles.connection_file}). Manual editing, JSON import/export, data export and mock runs work without one.</p>
         : <div className="row">
           <label>Connection
             <select value={profileId ?? ''} onChange={e => setProfileId(e.target.value || null)}>

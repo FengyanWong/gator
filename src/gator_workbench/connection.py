@@ -65,7 +65,7 @@ STATES = ('ok', 'failed', 'not_ready', 'not_applicable', 'not_checked', 'busy', 
 CHEAP_LAYERS = LAYERS[:3]              # no contact with Virtuoso: safe for automatic checks
 INTERACTIVE_LAYERS = LAYERS[:5]        # adds one read-only SKILL round trip + the readiness rule
 ACTION_LAYERS = {
-    'offline': (),                                   # netlist import, manual editing, JSON, data export, mock runs
+    'offline': (),                                   # manual editing, JSON, data export, mock runs
     'read_cellview': LAYERS[:4],
     'write_cellview': LAYERS[:5],
     'real_simulation': LAYERS,                       # baseline, start, continue

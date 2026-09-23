@@ -91,28 +91,29 @@ def test_tasks_and_circuit_loading(client):
     assert native['loaded'] is False and 'verified circuit profile' in native['blocker']
 
 
-def test_netlist_import_is_limited_to_operator_allowed_input_roots(client, tmp_path):
-    ok = client.post('/api/circuit/load', json=dict(circuit=dict(
-        source='netlist', netlist_path=str(REPO / 'tests/fixtures/synthetic/ldo.scs'),
-        parser_config_path=str(REPO / 'configs/ldo.json'), dut_hierarchy=None)))
-    assert ok.status_code == 200 and ok.json()['loaded'] and any('MOCK' in n for n in ok.json()['notes'])
+def test_the_removed_netlist_source_is_refused_in_plain_words(client, tmp_path):
+    """User request 2026-09-21 (status record 7.53): "Import Spectre netlist" is gone. A configuration saved before
+    still reads, but no circuit is loaded from it - complete or not - so nothing can start from it; and a path
+    outside the allowed roots is still refused before anything else."""
+    netlist, mapping = str(REPO / 'tests/fixtures/synthetic/ldo.scs'), str(REPO / 'configs/ldo.json')
+    for given in (dict(netlist_path=netlist, parser_config_path=mapping), dict(netlist_path=netlist), {}):
+        answer = client.post('/api/circuit/load', json=dict(circuit=dict(source='netlist', **given)))
+        assert answer.status_code == 200 and answer.json()['loaded'] is False, given
+        assert answer.json()['blocker'] == tasks.NETLIST_SOURCE_REMOVED and 'netlist_path' not in answer.json()['blocker']
+    saved = config_json(tmp_path)
+    saved['circuit'] = dict(saved['circuit'], source='netlist', task_id=None, netlist_path=netlist, parser_config_path=mapping)
+    checked = client.post('/api/config/validate', json=dict(config=saved))
+    assert checked.status_code == 200 and checked.json()['circuit_blocker']['blocker'] == tasks.NETLIST_SOURCE_REMOVED
+    started = client.post('/api/runs/start', json=dict(config=saved))
+    assert started.status_code == 409 and started.json()['detail']['code'] == 'task_blocked'
+    assert started.json()['detail']['message'] == tasks.NETLIST_SOURCE_REMOVED
+    assert not list(tmp_path.rglob('run_manifest.json'))                          # refused before a run directory exists
     outside = tmp_path / 'secret.scs'
     outside.write_text('// x')
     for path in (str(outside), '/etc/passwd', str(REPO / 'configs/../../../etc/passwd')):
         response = client.post('/api/circuit/load', json=dict(circuit=dict(
-            source='netlist', netlist_path=path, parser_config_path=str(REPO / 'configs/ldo.json'))))
+            source='netlist', netlist_path=path, parser_config_path=mapping)))
         assert response.status_code == 403, path
-
-
-def test_an_incomplete_netlist_reference_names_the_file_that_is_missing(client):
-    """User report 2026-09-20: the old text named both schema fields whatever was missing."""
-    netlist, mapping = str(REPO / 'tests/fixtures/synthetic/ldo.scs'), str(REPO / 'configs/ldo.json')
-    for given, named, silent in ((dict(netlist_path=netlist), 'parser_config_path', 'netlist_path'),
-                                 (dict(parser_config_path=mapping), 'netlist_path', 'parser_config_path')):
-        answer = client.post('/api/circuit/load', json=dict(circuit=dict(source='netlist', **given))).json()
-        assert not answer['loaded'] and named in answer['blocker'] and silent not in answer['blocker'], answer['blocker']
-    both = client.post('/api/circuit/load', json=dict(circuit=dict(source='netlist'))).json()['blocker']
-    assert 'netlist_path' in both and 'parser_config_path' in both and 'never guessed' in both
 
 
 def test_routes_without_a_caller_are_gone(client):

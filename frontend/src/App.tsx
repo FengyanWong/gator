@@ -142,7 +142,7 @@ export function App() {
           : <>{message.text}{message.detail?.report && <details><summary>details</summary><pre>{JSON.stringify(message.detail.report, null, 1)}</pre></details>}</>}</div>}
       <aside className="left">
         <ConnectionButton profileId={profileId} setProfileId={id => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }))} />
-        <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId} meta={meta}
+        <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId}
           onAgent={(kind, selection, prompt) => { setAgentRequest({ kind, selection, prompt }); setTab('agent'); }} taskSlot={taskSlot} taskNotes={taskNotes} />
       </aside>
       <main>

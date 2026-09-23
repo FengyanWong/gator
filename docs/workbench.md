@@ -30,7 +30,8 @@ PYTHONPATH=src /tmp/analog-optimizer-venv/bin/python -m gator_workbench.cli serv
 ```
 
 Options: `--allow-root DIR` adds an allowed **output** root, `--allow-input-root DIR` an allowed
-**netlist input** root. Roots can only be added by the operator here (or with
+**input** root (it was for the removed netlist import; now it only limits the two file paths an older
+configuration may still carry). Roots can only be added by the operator here (or with
 `GATOR_WORKBENCH_ALLOWED_ROOTS`), never from the browser, an imported file or an agent.
 `--host` other than localhost prints a warning: there is no authentication layer.
 `--connection-check-on-start` runs one cheap connection check at start (off by default, see
@@ -111,7 +112,7 @@ is never replaced), or it was started with "Model checkpoints" switched off. Bro
 
 | Path | Status |
 |---|---|
-| `synthetic:gpdk045_ota5` (the one MOCK task), imported netlists | **MOCK**: the optimizer's analytic toy backend (`origin=synthetic`) on a REAL circuit - the GPDK045 OTA5 netlist and device mapping `real:gpdk045_ota5` runs (`examples/circuits/gpdk045_ota5.scs`, `configs/gpdk045_opamp.json`). Free: no Virtuoso, no Spectre. Every row says `provenance=mock`, data lives under `<output_root>/mock/`, and it is excluded from real-experiment aggregates. The `score` is not a circuit metric, and a model it trains never loads into a real run. Until 2026-09-22 there were four MOCK tasks on toy netlists (`synthetic:opamp`, `_opamp_two_stage`, `_ldo`, `_vco`); they were removed (status record 7.59). A configuration that still names one opens with a plain note and cannot start. |
+| `synthetic:gpdk045_ota5` (the one MOCK task) | **MOCK**: the optimizer's analytic toy backend (`origin=synthetic`) on a REAL circuit - the GPDK045 OTA5 netlist and device mapping `real:gpdk045_ota5` runs (`examples/circuits/gpdk045_ota5.scs`, `configs/gpdk045_opamp.json`). Free: no Virtuoso, no Spectre. Every row says `provenance=mock`, data lives under `<output_root>/mock/`, and it is excluded from real-experiment aggregates. The `score` is not a circuit metric, and a model it trains never loads into a real run. Until 2026-09-22 there were four MOCK tasks on toy netlists (`synthetic:opamp`, `_opamp_two_stage`, `_ldo`, `_vco`); they were removed (status record 7.59). A configuration that still names one opens with a plain note and cannot start. |
 | `real:gpdk045_*` tasks | The verified bridge profiles through the existing `NativeEnvironmentFactory`. Need virtuoso-bridge 0.8.0 importable by the backend interpreter, a connection profile, a passing connection gate and an explicit budget authorization. **Not exercised in this delivery** (see the status record). Nothing ever falls back to mock. |
 | Arbitrary native cellviews | Read-only browsing through the bridge. Optimizing one needs a verified circuit profile; writing a native schematic is not implemented (contract returned by the API). |
 
@@ -186,21 +187,24 @@ then read the unity-gain frequency while pass/fail read the bandwidth, and valid
 
 Code: `src/gator_workbench/spec_equations.py`; tests: `tests/workbench/test_wb_spec_equations.py`.
 
-### Importing a Spectre netlist
+### Spectre netlist import: removed
 
-Project panel, **Circuit source -> Import Spectre netlist**. Two files are needed, both read on the
-machine that runs the backend (nothing is uploaded from the browser):
+**Circuit source** offers two sources: **Registered task** and **Virtuoso library / cell / view**.
+The third one, "Import Spectre netlist" (a `.scs` file plus a device-mapping JSON, MOCK runs only),
+was removed on user request (2026-09-21, status record 7.53).
 
-* **Netlist path** - the Spectre netlist (`.scs`).
-* **Device mapping (JSON)** - for each device type in the netlist: which pin is which and what its
-  parameters mean. It is never guessed. The project's mappings are in `configs/` (`opamp.json`,
-  `ldo.json`, `vco.json`, `gpdk045_opamp.json`, ...).
+A configuration saved before still says `source: netlist` (the browser's saved copy, an imported
+JSON file, a run's `effective_config.json`). It still opens, with the same hashes. The Source list
+then shows **Spectre netlist (removed)** and a note names the saved file; nothing is loaded from it
+and a run cannot start from it (the backend answers "The workbench no longer imports Spectre netlist
+files..."). Choosing another source also drops the two file paths from the configuration.
 
-Both must lie inside an allowed input root (the repository; more with `--allow-input-root DIR`). A
-Windows path (`D:\gator\my.scs`) is converted to its WSL path. Fill in both and press **Load
-netlist** (or Enter) - the panel asks the backend only then, not while you type. **Try the example**
-loads `tests/fixtures/synthetic/opamp.scs` with `configs/opamp.json`. An imported netlist runs on the
-MOCK backend only: the repository has no generic real simulator runner for arbitrary netlists.
+Netlists as such are still used: the MOCK task is the OTA5's netlist, and a Virtuoso cell is read
+through Virtuoso's own netlist export. The best design is written as `optimized_dut.scs` only when
+every varied device is a top-level instance: a device inside a subcircuit (the OTA5's `XU1/M1`, real
+or MOCK) would mean editing a definition every instance shares, so the file is not created and the
+run's `artifact_manifest.json` says why; `parameters.csv` always holds the values. The agent's circuit-modification working copy is still written, but only as a
+file for your records: the workbench cannot load it as a circuit any more.
 
 ### Browsing a Virtuoso library
 

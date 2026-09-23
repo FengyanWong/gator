@@ -59,8 +59,8 @@ def test_empty_tables_are_the_agents_to_fix_and_everything_else_is_the_users(tmp
     assert items['output']['status'] == 'done' and 'created when the run starts' in items['output']['detail']
     assert items['start']['status'] == 'missing'
     assert items['parameters']['action'].startswith('Press "Load starter configuration"')            # a registered task brings its own rows
-    typed = readiness.build(dict(config, circuit=dict(source='netlist')), task=task(), validation=dict(blocks_run=True, issues=found, facts={}))
-    assert by_id(typed)['parameters']['action'].startswith('Fill in')                                  # an imported netlist has no starter
+    typed = readiness.build(dict(config, circuit=dict(source='virtuoso', library='L', cell='C')), task=task(), validation=dict(blocks_run=True, issues=found, facts={}))
+    assert by_id(typed)['parameters']['action'].startswith('Fill in')                                  # a cell read from Virtuoso has no starter
 
 
 def test_an_inactive_or_soft_target_does_not_define_feasibility(tmp_path):

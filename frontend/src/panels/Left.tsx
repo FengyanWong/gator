@@ -18,14 +18,9 @@ function Tree({ node, path = '' }: { node: Json; path?: string }) {
   return <ul className="tree">{keys.map(k => <li key={path + k}><span>{k}</span><Tree node={node[k]} path={path + k + '/'} /></li>)}</ul>;
 }
 
-/** Backend messages name the schema fields; the form shows labels. */
-const FIELD_LABEL: Record<string, string> = { netlist_path: 'Netlist path', parser_config_path: 'Device mapping (JSON)' };
-const labelled = (text: string) => text.replace(/\b(netlist_path|parser_config_path)\b/g, name => `"${FIELD_LABEL[name]}"`);
-/** D:\folder\file -> /mnt/d/folder/file when the backend runs in WSL (its own paths start with "/"). */
-const backendPath = (text: string, posixBackend: boolean) => {
-  const drive = /^([A-Za-z]):[\\/](.*)$/.exec(text.trim());
-  return posixBackend && drive ? `/mnt/${drive[1].toLowerCase()}/${drive[2].replace(/\\/g, '/')}` : text.trim();
-};
+/** The circuit sources on offer. "Import Spectre netlist" was removed (user request, status record 7.53): a configuration
+ *  saved before still names `netlist`, and the list then shows that as removed instead of pretending another source is chosen. */
+const SOURCES: [string, string][] = [['registered_task', 'Registered task'], ['virtuoso', 'Virtuoso library / cell / view']];
 /** A dropdown must be able to show the configured value even when the list does not (yet) contain it. */
 const withCurrent = (names: string[], current?: string | null) => (current && !names.includes(current) ? [current, ...names] : names);
 /** The testbench a cell's NAME points to: `tb_<cell>` in the listed library (the prefix in any case, the cell name exact),
@@ -36,7 +31,6 @@ const namedTestbench = (cells: Json, cell?: string | null): string | null => {
   return found.find((name: string) => name === `tb_${cell}`) ?? found[0] ?? null;
 };
 const sameJson = (a: Json, b: Json) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
-const EXAMPLE_NETLIST = { netlist_path: 'tests/fixtures/synthetic/opamp.scs', parser_config_path: 'configs/opamp.json' };
 
 /** What the Agent tab is asked once a cell was read from Virtuoso and copied. Shown in the message box first: editable, never sent by
  *  itself. The request kind is `virtuoso_setup`: the rows plus the Maestro setup of the working copy, written there after approval. */
@@ -50,8 +44,8 @@ const ROW_SECTIONS = ['parameters', 'targets', 'measurements'];
 const sameRows = (config: Json, starter: Json) => ROW_SECTIONS.every(s => JSON.stringify(config[s] ?? []) === JSON.stringify(starter[s] ?? []));
 const noRows = (config: Json) => ROW_SECTIONS.every(s => !(config[s] ?? []).length);
 
-export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, meta, onAgent, taskSlot, taskNotes }:
-  { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null; meta: Json;
+export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, onAgent, taskSlot, taskNotes }:
+  { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null;
     onAgent: (kind: string, selection: Json[], prompt?: string) => void; taskSlot: HTMLElement | null; taskNotes: HTMLElement | null }) {
   const [tasks, setTasks] = useState<Json[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -63,58 +57,37 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   const [listing, setListing] = useState<string | null>(null);            // what is being fetched from Virtuoso right now
   const [nativeError, setNativeError] = useState<Json>(null);             // { step, text, outdated }
   const [refresh, setRefresh] = useState(0);                              // repeats the whole chain
-  const [loading, setLoading] = useState(false);
   const ref = config.circuit;
-  const edited = useRef(false);                     // set by this panel's own inputs: typing must not load a netlist per keystroke
-  const pressed = useRef<string | null>(null);      // the reference a button press is already loading
+  const offered = SOURCES.some(([value]) => value === ref.source);     // false: a saved configuration names the removed netlist source
   const request = useRef(0);                        // only the newest load may answer
   const followNext = useRef(false);                 // the next load answers a choice of library / cell / testbench: Probes may follow it
   const latest = useRef(config);                    // the configuration as it is NOW, for answers that arrive later
   latest.current = config;
   const patch = (fields: Json, follow = false) => {
-    edited.current = true;
     if (follow) followNext.current = true;
     setConfig(c => ({ ...c, circuit: { ...c.circuit, ...fields } }));
   };
-  const netlistReady = !!ref.netlist_path?.trim() && !!ref.parser_config_path?.trim();
-  const root = meta?.repo_root ? `${meta.repo_root}/` : '';     // absolute, so the example does not depend on where the backend was started
-  const example = { netlist_path: root + EXAMPLE_NETLIST.netlist_path, parser_config_path: root + EXAMPLE_NETLIST.parser_config_path };
 
   useEffect(() => { api.tasks().then(t => setTasks(t.tasks)).catch(e => setError(e.message)); }, []);
   // follow: 'choice' (a library / cell / testbench was chosen) or 'press' (the cell was read): a Virtuoso draft that loads
   // then brings the Probes of the testbench it was read through (followTestbench).
   const load = async (reference: Json, follow: 'choice' | 'press' | null = null) => {
     const mine = ++request.current;
-    setError(null); setLoading(true);
+    setError(null);
     try {
       const loaded = await api.loadCircuit(reference);
       if (mine === request.current) { setCircuit(loaded); if (follow) followTestbench(loaded, follow === 'press'); }
     }
-    catch (e: any) { if (mine === request.current) { setError(labelled(e.message)); setCircuit(null); } }
-    finally { if (mine === request.current) setLoading(false); }
+    catch (e: any) { if (mine === request.current) { setError(e.message); setCircuit(null); } }
   };
   useEffect(() => {
-    const key = JSON.stringify(ref), typed = edited.current, follow = followNext.current;
-    edited.current = false; followNext.current = false;
-    if (pressed.current === key) { pressed.current = null; return; }
-    // A netlist is loaded by its button (or Enter), never while its paths are being typed or still missing: asking the
-    // backend then only produced "Blocked: needs netlist_path ..." the moment the source was chosen. Whatever was
-    // loaded before no longer belongs to this reference, so it is cleared. A complete reference that arrives from
-    // outside this panel (imported configuration, approved proposal) still loads by itself, like a registered task.
-    if (ref.source === 'netlist' && (typed || !netlistReady)) { request.current++; setLoading(false); setError(null); setCircuit(null); return; }
+    const follow = followNext.current;
+    followNext.current = false;
+    // The removed netlist source is not sent to the backend (which refuses it): the panel says so and waits for a
+    // choice. Whatever was loaded before no longer belongs to this reference, so it is cleared.
+    if (!offered) { request.current++; setError(null); setCircuit(null); return; }
     load(ref, follow && ref.source === 'virtuoso' ? 'choice' : null);
   }, [JSON.stringify(ref)]);
-  const loadNetlist = (fields: Json = {}) => {
-    const posix = (meta?.repo_root ?? '/').startsWith('/');
-    const wanted = { ...ref, ...fields };
-    const fixed = { ...wanted, netlist_path: backendPath(wanted.netlist_path ?? '', posix), parser_config_path: backendPath(wanted.parser_config_path ?? '', posix) };
-    if (JSON.stringify(fixed) !== JSON.stringify(ref)) { pressed.current = JSON.stringify(fixed); setConfig(c => ({ ...c, circuit: fixed })); }
-    load(fixed);
-  };
-  // Enter loads, like the button. An Enter that confirms an IME candidate (isComposing / 229) must not.
-  const onEnter = (e: { key: string; keyCode: number; nativeEvent: { isComposing: boolean } }) => {
-    if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && netlistReady) loadNetlist();
-  };
 
   // Source "Virtuoso": libraries -> cells -> schematic follow each other without a button (user request 2026-09-20).
   // Each step starts from an explicit choice (the source, a library, a cell), waits for the step before it, and is a
@@ -331,12 +304,14 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       <label>Task name<input value={config.project.task_name} onChange={e => setConfig(c => ({ ...c, project: { ...c.project, task_name: e.target.value } }))} /></label>
       <h3>Circuit source</h3>
       <label>Source
-        <select value={ref.source} onChange={e => patch({ source: e.target.value })}>
-          <option value="registered_task">Registered task</option>
-          <option value="netlist">Import Spectre netlist</option>
-          <option value="virtuoso">Virtuoso library / cell / view</option>
+        {/* Leaving the removed source also drops its two file paths: nothing reads them any more. */}
+        <select value={ref.source} onChange={e => patch({ source: e.target.value, ...(offered ? {} : { netlist_path: null, parser_config_path: null }) })}>
+          {!offered && <option value={ref.source} disabled>{ref.source === 'netlist' ? 'Spectre netlist (removed)' : ref.source}</option>}
+          {SOURCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </label>
+      {!offered && <div className="note"><p>This configuration was saved with a Spectre netlist file{ref.netlist_path ? <> (<code>{ref.netlist_path}</code>)</> : null}.
+        The workbench no longer imports netlists: choose another source above.</p></div>}
       {ref.source === 'registered_task' && (<>
         <label>Task
           <select value={ref.task_id ?? ''} onChange={e => chooseTask(e.target.value)}>
@@ -355,30 +330,6 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
               <b> Load starter configuration</b> replaces them with this task's.</p>
           : sameRows(config, taskRows.starter) && <p className="hint task-rows">Parameters, Probes and Specs now show this task's rows
               {taskRows.starter.targets.length ? '' : ' - it has no targets of record, so Specs is yours to fill (its results are ready in Probes)'}. Undo brings the previous ones back.</p>)}
-      </>)}
-      {ref.source === 'netlist' && (<>
-        <label title="Backend-side path inside an allowed input root. Not a browser upload folder.">Netlist path
-          <input value={ref.netlist_path ?? ''} placeholder={`e.g. ${example.netlist_path}`} onKeyDown={onEnter} onChange={e => patch({ netlist_path: e.target.value })} /></label>
-        <label title="Device/port mapping: port order and parameter semantics come from here, never guessed.">Device mapping (JSON)
-          <input value={ref.parser_config_path ?? ''} placeholder={`e.g. ${example.parser_config_path}`} onKeyDown={onEnter} onChange={e => patch({ parser_config_path: e.target.value })} /></label>
-        <div className="row">
-          <button disabled={!netlistReady || loading} onClick={() => loadNetlist()} title="Reads and parses the two files on the backend machine. Nothing is simulated.">{loading ? 'Loading...' : 'Load netlist'}</button>
-          <button disabled={loading} onClick={() => loadNetlist(example)} title="Fills in the project's small op-amp fixture and its mapping, and loads it.">Try the example</button>
-        </div>
-        {!netlistReady ? (<>
-          <p className="hint">Two files are needed: fill in both paths, then press <b>Load netlist</b>.</p>
-          <details className="more hint"><summary>Which two files, and where they may be</summary>
-            <p>Both are read on the computer that runs the workbench - nothing is uploaded from the browser:</p>
-            <ul className="steps-list">
-              <li><b>Netlist path</b> - the Spectre netlist (.scs).</li>
-              <li><b>Device mapping (JSON)</b> - says, for each device type in the netlist, which pin is which and what its parameters mean.
-                The workbench never guesses this. The project's own mappings are in <code>configs/</code> (<code>configs/opamp.json</code>, <code>configs/gpdk045_opamp.json</code>, ...).</li>
-            </ul>
-            <p>Both must be inside {(meta?.allowed_input_roots ?? []).map((r: string) => <code key={r}>{r} </code>)}
-              (another folder: start the backend with <code>--allow-input-root DIR</code>). A Windows path such as <code>D:\gator\my.scs</code> is
-              converted for you.</p>
-          </details>
-        </>) : !circuit && !error && !loading && <p className="hint">Not loaded yet - press <b>Load netlist</b> (or Enter).</p>}
       </>)}
       {ref.source === 'virtuoso' && (<>
         {!profileId && <p className="hint">Press "Connection" above and choose a Virtuoso connection: the libraries are read from that Virtuoso.</p>}
@@ -466,7 +417,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           <details><summary>Technical details</summary><p>{circuit.blocker}</p>
             {circuit.interface_contract && <pre>{JSON.stringify(circuit.interface_contract, null, 1)}</pre>}</details>
         </div>)}
-      {circuit && !circuit.loaded && ref.source !== 'virtuoso' && !removedMock && <div className="blocker"><b>Blocked:</b> {labelled(circuit.blocker ?? '')}
+      {circuit && !circuit.loaded && ref.source !== 'virtuoso' && !removedMock && <div className="blocker"><b>Blocked:</b> {circuit.blocker}
         {circuit.interface_contract && <details><summary>Interface contract</summary><pre>{JSON.stringify(circuit.interface_contract, null, 1)}</pre></details>}</div>}
       {circuit?.loaded && (<>
         {circuit.mock && <p className="mock">MOCK evaluation backend: {circuit.evaluation_backend}</p>}

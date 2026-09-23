@@ -61,7 +61,7 @@ def test_static_validation_says_when_the_editors_differ_from_the_saved_task(tmp_
     resumed = tighter.model_copy(deep=True)
     resumed.run.mode = 'resume'                                                # a resume runs the run's own saved rows
     assert issues(resumed) == []
-    mock = schema.WorkbenchConfig.model_validate(dict(tasks.starter_config('real:gpdk045_ota5'), run=dict(max_evaluations=3)))
+    mock = schema.WorkbenchConfig.model_validate(dict(tasks.starter_config('real:gpdk045_ota7'), run=dict(max_evaluations=3)))
     assert issues(mock) == []                                                  # a built-in circuit has no task file
 
 
@@ -175,7 +175,7 @@ def test_the_check_route_replaces_check_against_virtuoso(tmp_path, monkeypatch):
     client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
     answer = client.post('/api/virtuoso/task/check', json=dict(profile_id='lab', config=cfg.model_dump(mode='json'))).json()
     assert answer['ok'] and answer['task'] == 'real:ring_osc' and answer['steps'][0]['step'] == 'editors'
-    mock = schema.WorkbenchConfig.model_validate(dict(tasks.starter_config('real:gpdk045_ota5'), run=dict(max_evaluations=3)))
+    mock = schema.WorkbenchConfig.model_validate(dict(tasks.starter_config('real:gpdk045_ota7'), run=dict(max_evaluations=3)))
     refused = client.post('/api/virtuoso/task/check', json=dict(profile_id='lab', config=mock.model_dump(mode='json')))
     assert refused.status_code == 409 and refused.json()['detail']['code'] == 'not_a_saved_task'
     assert client.post('/api/virtuoso/profile/preflight', json=dict(name='ring_osc', profile_id='lab')).status_code in (404, 405)

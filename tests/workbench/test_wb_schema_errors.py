@@ -39,7 +39,7 @@ def test_every_mock_task_starts_from_rows_the_schema_and_the_validation_accept(t
     comp.compile_task(config, runtime.base_graph)
 
 
-@pytest.mark.parametrize('task', [f'real:{name}' for name in sorted(tasks.REAL_PROFILES)])
+@pytest.mark.parametrize('task', [f'real:{name}' for name in sorted(tasks.offered_real_profiles())])
 def test_every_verified_task_starts_from_rows_the_schema_accepts(task):
     as_config(tasks.starter_config(task))          # their full validation: test_wb_real_starter
 

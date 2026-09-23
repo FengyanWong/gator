@@ -294,8 +294,8 @@ def test_the_gate_refuses_what_a_kind_cannot_serve_without_probing(tmp_path):
 
 def test_a_real_circuit_names_a_connection_of_the_wrong_kind_instead_of_missing_settings(tmp_path):
     write_profiles(sim=dict(kind='ngspice_ssh', ssh_host='sim-host'))
-    for blocker in (tasks.real_backend_blocker('sim', 'gpdk045_ota5'), tasks.generated_backend_blocker('sim'),
-                    tasks.real_backend_blocker(None, 'gpdk045_ota5')):      # None = the active profile
+    for blocker in (tasks.real_backend_blocker('sim', 'gpdk045_ota7'), tasks.generated_backend_blocker('sim'),
+                    tasks.real_backend_blocker(None, 'gpdk045_ota7')):      # None = the active profile
         assert 'ngspice over SSH' in blocker and 'Virtuoso connection' in blocker and 'env_file' not in blocker
         assert 'sim-host' not in blocker
 

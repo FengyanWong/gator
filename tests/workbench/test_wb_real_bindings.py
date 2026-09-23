@@ -37,56 +37,58 @@ def write_profile(**profile):
 
 def test_each_circuit_uses_its_own_receipt_and_baseline(tmp_path):
     circuits = {name: dict(creation_receipt=receipt(tmp_path, name), reference_measurements=baseline(tmp_path, name))
-                for name in ('gpdk045_ota5', 'gpdk045_ldo')}
+                for name in ('gpdk045_ota7', 'gpdk045_ldo')}
     write_profile(circuits=circuits)
     bound = tasks.real_bindings(tasks._profile_settings('lab')[1], 'gpdk045_ldo')
     assert bound['creation_receipt'] == circuits['gpdk045_ldo']['creation_receipt'] and 'circuits' not in bound
     assert bound['library'] == 'MY_LIB' and bound['model_file'] == '/pdk/model.scs'          # the link is shared
-    assert tasks.real_backend_blocker('lab', 'gpdk045_ota5') is None and tasks.real_backend_blocker('lab', 'gpdk045_ldo') is None
+    assert tasks.real_backend_blocker('lab', 'gpdk045_ota7') is None and tasks.real_backend_blocker('lab', 'gpdk045_ldo') is None
     listed = {t['task_key']: t for t in tasks.list_tasks()}
-    assert listed['real:gpdk045_ota5']['available'] and listed['real:gpdk045_ldo']['available']
-    assert not listed['real:gpdk045_vco']['available'] and 'real:gpdk045_vco' in listed['real:gpdk045_vco']['blocker']
+    assert listed['real:gpdk045_ota7']['available'] and listed['real:gpdk045_ldo']['available']
+    write_profile(circuits=dict(gpdk045_ota7=circuits['gpdk045_ota7']))                     # the LDO without its own entry
+    listed = {t['task_key']: t for t in tasks.list_tasks()}
+    assert not listed['real:gpdk045_ldo']['available'] and 'real:gpdk045_ldo' in listed['real:gpdk045_ldo']['blocker']
 
 
 def test_a_connection_only_profile_says_which_circuit_keys_are_missing(tmp_path):
     write_profile()
-    message = tasks.real_backend_blocker('lab', 'gpdk045_ota5')
-    assert "['creation_receipt', 'reference_measurements'] for real:gpdk045_ota5" in message
-    assert '"circuits": {"gpdk045_ota5"' in message
+    message = tasks.real_backend_blocker('lab', 'gpdk045_ota7')
+    assert "['creation_receipt', 'reference_measurements'] for real:gpdk045_ota7" in message
+    assert '"circuits": {"gpdk045_ota7"' in message
     with pytest.raises(tasks.TaskBlocked) as raised:
-        tasks.load_task(CircuitReference(source='registered_task', task_id='real:gpdk045_ota5'), allow_real=True, profile_id='lab')
-    assert 'gpdk045_ota5' in str(raised.value) and raised.value.contract['connection_file_keys']
+        tasks.load_task(CircuitReference(source='registered_task', task_id='real:gpdk045_ota7'), allow_real=True, profile_id='lab')
+    assert 'gpdk045_ota7' in str(raised.value) and raised.value.contract['connection_file_keys']
 
 
 def test_the_flat_single_circuit_form_still_works_but_never_binds_the_wrong_circuit(tmp_path):
-    write_profile(creation_receipt=receipt(tmp_path, 'gpdk045_ota5'), reference_measurements=baseline(tmp_path, 'gpdk045_ota5'))
-    assert tasks.real_backend_blocker('lab', 'gpdk045_ota5') is None
+    write_profile(creation_receipt=receipt(tmp_path, 'gpdk045_ota7'), reference_measurements=baseline(tmp_path, 'gpdk045_ota7'))
+    assert tasks.real_backend_blocker('lab', 'gpdk045_ota7') is None
     wrong = tasks.real_backend_blocker('lab', 'gpdk045_ldo')                  # the opamp receipt must not reach the LDO
-    assert 'core_cell' in wrong and DESIGNS['gpdk045_ota5']['core_cell'] in wrong and DESIGNS['gpdk045_ldo']['core_cell'] in wrong
+    assert 'core_cell' in wrong and DESIGNS['gpdk045_ota7']['core_cell'] in wrong and DESIGNS['gpdk045_ldo']['core_cell'] in wrong
 
 
 @pytest.mark.parametrize('profile, fragment', [
-    (lambda t: dict(circuits=dict(gpdk045_ota5=dict(creation_receipt=str(t / 'absent.json'),
-                                                    reference_measurements=baseline(t, 'gpdk045_ota5')))), 'does not exist'),
-    (lambda t: dict(circuits=dict(gpdk045_ota5=dict(creation_receipt=receipt(t, 'gpdk045_ota5', library='OTHER_LIB'),
-                                                    reference_measurements=baseline(t, 'gpdk045_ota5')))), "library='OTHER_LIB'"),
-    (lambda t: dict(circuits=dict(gpdk045_ota5=dict(creation_receipt=receipt(t, 'gpdk045_ota5'),
-                                                    reference_measurements=baseline(t, 'gpdk045_ota5', origin='synthetic')))),
+    (lambda t: dict(circuits=dict(gpdk045_ota7=dict(creation_receipt=str(t / 'absent.json'),
+                                                    reference_measurements=baseline(t, 'gpdk045_ota7')))), 'does not exist'),
+    (lambda t: dict(circuits=dict(gpdk045_ota7=dict(creation_receipt=receipt(t, 'gpdk045_ota7', library='OTHER_LIB'),
+                                                    reference_measurements=baseline(t, 'gpdk045_ota7')))), "library='OTHER_LIB'"),
+    (lambda t: dict(circuits=dict(gpdk045_ota7=dict(creation_receipt=receipt(t, 'gpdk045_ota7'),
+                                                    reference_measurements=baseline(t, 'gpdk045_ota7', origin='synthetic')))),
      'verified REAL baseline'),
-    (lambda t: dict(circuits=dict(gpdk045_ota5=dict(creation_receipt=receipt(t, 'gpdk045_ota5'),
-                                                    reference_measurements=baseline(t, 'gpdk045_ota5', metrics={})))),
+    (lambda t: dict(circuits=dict(gpdk045_ota7=dict(creation_receipt=receipt(t, 'gpdk045_ota7'),
+                                                    reference_measurements=baseline(t, 'gpdk045_ota7', metrics={})))),
      'verified REAL baseline'),
 ])
 def test_inconsistent_bindings_block_before_anything_is_prepared(tmp_path, profile, fragment):
     write_profile(**profile(tmp_path))
-    assert fragment in tasks.real_backend_blocker('lab', 'gpdk045_ota5')
+    assert fragment in tasks.real_backend_blocker('lab', 'gpdk045_ota7')
 
 
 def test_a_real_task_loads_for_viewing_but_cannot_execute_without_the_explicit_authorization(tmp_path):
     """Refusing to LOAD it made the authorization dialog unreachable (the UI learns "real" from the loaded circuit)."""
-    write_profile(circuits=dict(gpdk045_ota5=dict(creation_receipt=receipt(tmp_path, 'gpdk045_ota5'),
-                                                  reference_measurements=baseline(tmp_path, 'gpdk045_ota5'))))
-    reference = CircuitReference(source='registered_task', task_id='real:gpdk045_ota5')
+    write_profile(circuits=dict(gpdk045_ota7=dict(creation_receipt=receipt(tmp_path, 'gpdk045_ota7'),
+                                                  reference_measurements=baseline(tmp_path, 'gpdk045_ota7'))))
+    reference = CircuitReference(source='registered_task', task_id='real:gpdk045_ota7')
     shown = tasks.load_task(reference, allow_real=False, profile_id='lab')
     assert not shown.mock and shown.authorized is False and shown.base_graph.devices and shown.provided_metrics
     assert any('explicit authorization' in note for note in shown.notes)

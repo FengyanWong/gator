@@ -14,7 +14,7 @@ from test_wb_api import probe
 from test_wb_profiles import ROWS, config as cell_config, connection_file, read_cell
 
 REPO = Path(__file__).resolve().parents[2]
-VERIFIED = sorted(tasks.REAL_PROFILES)
+VERIFIED = sorted(tasks.offered_real_profiles())
 
 
 def of_record(name):
@@ -52,21 +52,20 @@ def test_a_verified_circuit_starts_from_its_targets_of_record(name):
 
 def test_each_result_is_labelled_with_the_analysis_that_produces_it():
     analysis = lambda name: {m['source_name']: m['analysis'] for m in tasks.starter_config(f'real:{name}')['measurements']}
-    assert analysis('gpdk045_ota5') == dict(phase_margin_estimate_deg='ac', supply_power_w='dc', output_dc_v='dc',
+    assert analysis('gpdk045_ota7') == dict(phase_margin_estimate_deg='ac', supply_power_w='dc', output_dc_v='dc',
                                             unity_downward_crossings='ac', gain_db_at_start='ac', unity_gain_hz='ac')
     ldo = analysis('gpdk045_ldo')
     assert (ldo['ldo_psrr_1khz_db'], ldo['ldo_step_deviation_v'], ldo['ldo_line_regulation_v_per_v'], ldo['supply_power_w']) == ('ac', 'tran', 'dc', 'dc')
-    assert set(analysis('gpdk045_vco').values()) == {'tran'}                                  # an oscillator: everything from its transient run
 
 
-def test_the_ldo_and_vco_bring_the_registry_of_their_experiment_and_the_ota_keeps_the_default():
+def test_the_ldo_brings_the_registry_of_its_experiment_and_the_ota_keeps_the_default():
     m6 = json.loads((REPO / 'configs/m6_real_cross_category.json').read_text())['schema']
-    for name in ('gpdk045_ldo', 'gpdk045_vco'):
+    for name in ('gpdk045_ldo',):
         configured = as_config(tasks.starter_config(f'real:{name}'))
         assert registry_for(configured) == {metric: unit for metric, unit, _ in m6['metrics']}
         spec_schema = compile_task(configured, tasks._verified_profile(name).optimization_graph()).spec_schema
         assert spec_schema.version == m6['version'] and [list(m) for m in spec_schema.metrics] == m6['metrics']
-    for name in ('gpdk045_ota5', 'gpdk045_ota7'):                                             # unchanged: models stay interchangeable
+    for name in ('gpdk045_ota7',):                                                            # unchanged: models stay interchangeable
         configured = as_config(tasks.starter_config(f'real:{name}'))
         assert 'score' in registry_for(configured) and 'ldo_psrr_1khz_db' not in registry_for(configured)
         assert compile_task(configured, tasks._verified_profile(name).optimization_graph()).spec_schema.version == 'spec-input-v1'
@@ -119,12 +118,31 @@ def test_a_generated_profile_gets_its_parameters_and_probes_and_no_invented_targ
 def test_the_api_serves_the_rows_and_each_task_names_its_pdk(tmp_path):
     client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
     listed = {t['task_key']: t for t in client.get('/api/tasks').json()['tasks']}
-    assert listed['real:gpdk045_ota5']['pdk_id'] == 'gpdk045' and listed['synthetic:gpdk045_ota5']['pdk_id'] == 'gpdk045'
+    assert listed['real:gpdk045_ota7']['pdk_id'] == 'gpdk045' and listed['synthetic:gpdk045_ota5']['pdk_id'] == 'gpdk045'
     for key, row in listed.items():                                                           # the page tells a starter-made project name by these
         assert row['starter_project'] == tasks.starter_config(key)['project'], key
-    answer = client.get('/api/tasks/starter', params=dict(task_key='real:gpdk045_ota5'))
+    answer = client.get('/api/tasks/starter', params=dict(task_key='real:gpdk045_ota7'))
     assert answer.status_code == 200
     targets = {t['metric_id']: t for t in answer.json()['targets']}
-    assert targets['gain_db_at_start']['constraint'] == '>=' and targets['gain_db_at_start']['lower'] == 25.01
-    assert targets['supply_power_w']['constraint'] == 'interval' and targets['supply_power_w']['upper'] == 2.1e-06
+    assert targets['gain_db_at_start']['constraint'] == '>=' and targets['gain_db_at_start']['lower'] == 53.3
+    assert targets['supply_power_w']['constraint'] == 'interval' and targets['supply_power_w']['upper'] == 3.24e-06
     assert client.get('/api/tasks/starter', params=dict(task_key='real:no_such_circuit')).status_code == 404
+    assert client.get('/api/tasks/starter', params=dict(task_key='real:gpdk045_vco')).status_code == 404      # removed (7.73)
+
+
+def test_the_removed_example_tasks_are_refused_in_words():
+    """real:gpdk045_ota5 and real:gpdk045_vco were removed on user request (status record 7.73): their example cells were
+    deleted from Virtuoso. Nothing lists, loads or starts them any more, and an old configuration naming one says why.
+    Their names stay reserved (test_wb_profiles: a saved task cannot take the name of a built-in circuit)."""
+    listed = {t['task_key'] for t in tasks.list_tasks()}
+    assert {'real:gpdk045_ota7', 'real:gpdk045_ldo', 'synthetic:gpdk045_ota5'} <= listed
+    starter = tasks.starter_config('real:gpdk045_ota7')
+    for key in tasks.REMOVED_REAL_TASKS:
+        assert key not in listed
+        with pytest.raises(tasks.TaskBlocked, match='no longer exists') as raised:
+            tasks.load_task(schema.CircuitReference(source='registered_task', task_id=key), allow_real=True)
+        assert 'real:gpdk045_ota7, real:gpdk045_ldo' in str(raised.value)
+        with pytest.raises(KeyError):
+            tasks.starter_config(key)
+        old = as_config(dict(starter, circuit=dict(starter['circuit'], task_id=key)))
+        assert ('error', 'task_removed') in {(i.level, i.code) for i in validate(old).issues}

@@ -103,7 +103,7 @@ def corner_record(corner) -> dict:
 def _real_profile(task_key):
     """The circuit profile object of a real task, from local files only (no connection)."""
     name = task_key.partition(':')[2]
-    if name in tasks.REAL_PROFILES:
+    if name in tasks.offered_real_profiles():
         return tasks._verified_profile(name)
     from . import profiles
     if name not in profiles.list_profiles():
@@ -126,7 +126,7 @@ def _corner_problem(profile, corners):
 def checkable_real_tasks() -> tuple:
     """The registered real tasks whose profile accepts the corners (built-ins only; local files, cached per process)."""
     found = []
-    for name in tasks.REAL_PROFILES:
+    for name in tasks.offered_real_profiles():
         try:
             profile = tasks._verified_profile(name)
             if _corner_problem(profile, screening_corners(profile)[0]) is None:

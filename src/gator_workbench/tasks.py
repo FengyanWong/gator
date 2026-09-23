@@ -11,7 +11,8 @@
 * ``real:*`` tasks describe the verified GPDK045 bridge profiles. They are only
   runnable when the backend interpreter can import ``virtuoso_bridge`` and the operator
   supplied a connection file. Otherwise the precise blocker and the interface contract
-  are returned. Nothing falls back to mock.
+  are returned. Nothing falls back to mock. Two were removed on user request (status
+  record 7.73, their example cells deleted from Virtuoso): ``REMOVED_REAL_TASKS``.
 """
 from __future__ import annotations
 
@@ -37,8 +38,8 @@ MOCK_TARGETS = {'w': 0.4, 'l': -0.2, 'm': 0.0, 'nf': 0.0, 'r': 0.3, 'c': -0.3, '
 SYNTHETIC_FIXTURES = {
     'gpdk045_ota5': dict(netlist='examples/circuits/gpdk045_ota5.scs', config='configs/gpdk045_opamp.json',
                          circuit_class='opamp', pdk_id='gpdk045',
-                         description='MOCK: the real GPDK045 OTA5 circuit (the netlist real:gpdk045_ota5 runs) on the free '
-                                     'analytic toy backend - no Virtuoso, no Spectre. Its score is not a circuit result.'),
+                         description='MOCK: the netlist of the verified GPDK045 OTA5 circuit on the free analytic toy '
+                                     'backend - no Virtuoso, no Spectre. Its score is not a circuit result.'),
 }
 # What an entry that names no PDK / description gets (a circuit a test registers for itself, e.g. test_wb_pdk's demo).
 MOCK_PDK, MOCK_DESCRIPTION = 'synthetic-fixture', 'MOCK: the analytic toy backend on a fixture netlist. Its score is not a circuit result.'
@@ -64,6 +65,13 @@ REAL_PROFILES = {
                         structure='examples/circuits/gpdk045_vco.scs',
                         readback='examples/circuits/gpdk045_vco.cdf.json'),
 }
+# Built-in tasks REMOVED on user request (2026-09-23, status record 7.73): their example cells - GATOR_TESTS/ota5_v1 and
+# vco_m6_v1 with their testbenches - were deleted from Virtuoso (backup: artifacts/local/example-cells-deleted-2026-09-23/).
+# Their entries stay in REAL_PROFILES on purpose: the names stay reserved (a saved task cannot take over a name that old
+# runs and the M5/M6 record use), the MOCK task runs on the OTA5 netlist and mapping, and test_wb_generic_profile still
+# compares the generated profile with all four hand-written ones. What offers, starts or checks a task goes through
+# offered_real_profiles() and refuses these in words, like REMOVED_MOCK_TASKS.
+REMOVED_REAL_TASKS = ('real:gpdk045_ota5', 'real:gpdk045_vco')
 
 # The TARGETS OF RECORD of the verified circuits: the frozen specification files of the real experiments, as (file, keys
 # down to the list of specs). Pilot goals near each circuit's measured baseline - not product specifications. They are what
@@ -94,7 +102,7 @@ REAL_INTERFACE_CONTRACT = dict(
     connection_file=str(Path('configs/local/workbench/bridge_connection.json')),
     connection_file_format='{"active": "<id>", "profiles": {"<id>": {...keys below...}}}',
     connection_file_keys=['env_file', 'library', 'model_file', 'profile (optional)', 'bridge_site_packages (optional)',
-                          'circuits: {"<task name, e.g. gpdk045_ota5>": {"creation_receipt": ..., '
+                          'circuits: {"<task name, e.g. gpdk045_ota7>": {"creation_receipt": ..., '
                           '"reference_measurements": ...}}',
                           'creation_receipt + reference_measurements at the top level (older single-circuit form; used '
                           'only for a circuit without its own "circuits" entry)'],
@@ -214,12 +222,22 @@ def starter_project(task_key) -> dict:
             else dict(name=name.replace('_', '-'), task_name=name))
 
 
+def offered_real_profiles() -> dict:
+    """The verified circuits offered as tasks: REAL_PROFILES without REMOVED_REAL_TASKS."""
+    return {name: info for name, info in REAL_PROFILES.items() if f'real:{name}' not in REMOVED_REAL_TASKS}
+
+
+def real_task_removed(task) -> str:
+    return (f'{task} no longer exists: its example cell was deleted from Virtuoso (user request 2026-09-23). The verified '
+            'built-in tasks left are ' + ', '.join(f'real:{n}' for n in offered_real_profiles()) + '.')
+
+
 def list_tasks():
     tasks = []
     for name, info in SYNTHETIC_FIXTURES.items():
         tasks.append(dict(task_key=f'synthetic:{name}', kind='mock', circuit_class=info['circuit_class'],
                           pdk_id=info.get('pdk_id', MOCK_PDK), available=True, description=info.get('description', MOCK_DESCRIPTION)))
-    for name, info in REAL_PROFILES.items():
+    for name, info in offered_real_profiles().items():
         blocker = real_backend_blocker(None, name)               # each circuit has its own receipt and baseline
         tasks.append(dict(task_key=f'real:{name}', kind='real', circuit_class=info['circuit_class'], pdk_id='gpdk045',
                           available=blocker is None, blocker=blocker,
@@ -352,6 +370,8 @@ def load_task(circuit, *, allow_real=False, profile_id=None) -> TaskRuntime:
                                     top=circuit.dut_hierarchy)
         if key in REMOVED_MOCK_TASKS:
             raise TaskBlocked(MOCK_TASK_REMOVED.format(task=key))
+        if key in REMOVED_REAL_TASKS:
+            raise TaskBlocked(real_task_removed(key))
         if kind == 'real' and name not in REAL_PROFILES:
             from . import profiles
             if name in profiles.list_profiles():
@@ -377,7 +397,7 @@ def load_task(circuit, *, allow_real=False, profile_id=None) -> TaskRuntime:
             raise TaskBlocked((NATIVE_DRAFT_NOT_EXECUTABLE if imported else
                                'Optimizing an arbitrary native cellview needs a verified circuit profile (writable '
                                'parameters, CDF rules, analyses, measurements).') + ' Existing profiles: '
-                              + ', '.join(f'real:{n}' for n in REAL_PROFILES), contract=REAL_INTERFACE_CONTRACT)
+                              + ', '.join(f'real:{n}' for n in offered_real_profiles()), contract=REAL_INTERFACE_CONTRACT)
         return _native_draft_runtime(imported, circuit)
     raise TaskBlocked(f'Unsupported circuit source {circuit.source!r}')
 
@@ -619,6 +639,8 @@ def real_starter_config(task_key: str) -> dict:
     its requirements stay the user's to state. Probes - one row per result that carries a target; for a generated profile
     one per result a target can be set on. Run settings are left alone: a real budget is never suggested."""
     from . import profiles
+    if task_key in REMOVED_REAL_TASKS:
+        raise KeyError(task_key)
     name = task_key.partition(':')[2]
     if name in REAL_PROFILES:
         circuit_class, pdk_id = REAL_PROFILES[name]['circuit_class'], 'gpdk045'
@@ -670,7 +692,8 @@ def real_starter_config(task_key: str) -> dict:
 def starter_config(task_key: str) -> dict:
     """A valid starting configuration for a registered task. A convenience for manual editing; every field stays
     editable. The MOCK task: the groups its device mapping declares, with the toy `score` as its only target. A real
-    task: real_starter_config. A removed MOCK task (REMOVED_MOCK_TASKS) has none: KeyError, like any unknown task."""
+    task: real_starter_config. A removed MOCK or real task (REMOVED_MOCK_TASKS, REMOVED_REAL_TASKS) has none: KeyError,
+    like any unknown task."""
     from analog_optimizer.netlist.config import ParserConfig
     kind, _, name = task_key.partition(':')
     if kind == 'real' and name:

@@ -1,5 +1,5 @@
-"""The workbench has ONE MOCK task (user decision 2026-09-22, status record 7.59): synthetic:gpdk045_ota5 - the real
-GPDK045 OTA5 netlist that real:gpdk045_ota5 is verified on, evaluated by the free analytic toy backend. The four
+"""The workbench has ONE MOCK task (user decision 2026-09-22, status record 7.59): synthetic:gpdk045_ota5 - the netlist
+of the verified GPDK045 OTA5 circuit, evaluated by the free analytic toy backend. The four
 toy-fixture tasks it replaced are refused with a plain reason. A model it trains never loads into a real run: that
 guard is circuit-independent and tested in test_wb_aggregates (mock_isolation). Local files and the MOCK backend only."""
 import json
@@ -25,7 +25,7 @@ def test_there_is_one_mock_task_and_it_is_the_real_ota5_circuit():
     listed = [t for t in tasks.list_tasks() if t['kind'] == 'mock']
     assert [t['task_key'] for t in listed] == [MOCK_TASK]
     assert listed[0]['pdk_id'] == 'gpdk045' and listed[0]['circuit_class'] == 'opamp'
-    assert 'MOCK' in listed[0]['description'] and 'real:gpdk045_ota5' in listed[0]['description']
+    assert 'MOCK' in listed[0]['description'] and 'OTA5' in listed[0]['description']
     mock, real = tasks.load_task(reference(MOCK_TASK)), tasks.REAL_PROFILES['gpdk045_ota5']
     assert mock.mock and 'MOCK' in mock.circuit['evaluation_backend']
     assert (mock.circuit['netlist_file'], mock.circuit['parser_config_file']) == (str(REPO / real['structure']), str(REPO / real['mapping']))

@@ -88,13 +88,13 @@ def test_a_working_run_is_not_checked(tmp_path):
 
 
 def test_only_profiles_that_accept_the_corners_can_be_checked():
-    assert cc.checkable_real_tasks() == ('real:gpdk045_ota5', 'real:gpdk045_ota7')
+    assert cc.checkable_real_tasks() == ('real:gpdk045_ota7',)                  # the OTA5 was removed (status record 7.73)
     corners = cc.screening_corners()[0]
-    for name in ('gpdk045_ldo', 'gpdk045_vco'):
+    for name in ('gpdk045_ldo',):
         problem = cc._corner_problem(tasks._verified_profile(name), corners)
         assert problem and 'nominal' in problem
         text = cc._unsupported(f'real:{name}', problem)
-        assert 'normal condition only' in text and 'real:gpdk045_ota5, real:gpdk045_ota7' in text
+        assert 'normal condition only' in text and 'real:gpdk045_ota7' in text
 
 
 # ------------------------------------------------------------------------------------------------ a MOCK check
@@ -196,7 +196,7 @@ class FakeAdapter:
 
     def connect(self):
         FakeAdapter.calls.append(('connect',))
-        self.cell = {key: 4.4e-6 for key in self.circuit.writable_keys}
+        self.cell = dict(self.circuit.assignments(4.4e-6))                    # a complete, valid OTA7 sizing
         self.initial = dict(self.cell)
 
     def read_parameters(self):
@@ -219,8 +219,8 @@ class FakeAdapter:
         FakeAdapter.calls.append(('simulate', request.condition.corner.id))
         status = FakeAdapter.script.get(self.simulations, SimulationStatus.OK)
         corner, width = request.condition.corner, request.parameters[('XU1/M1', 'w')]
-        metrics = dict(gain_db_at_start=30.0, unity_gain_hz=4.0e6 * (0.8 if corner.id == 'ss_hot_low' and width < 4.1e-6 else 1),
-                       phase_margin_estimate_deg=91.0, supply_power_w=1.5e-6 * corner.supply_v, output_dc_v=0.5,
+        metrics = dict(gain_db_at_start=60.0, unity_gain_hz=4.0e6 * (0.8 if corner.id == 'ss_hot_low' and width < 4.1e-6 else 1),
+                       phase_margin_estimate_deg=91.0, supply_power_w=2.8e-6 * corner.supply_v, output_dc_v=0.5,   # near the 3.24 uW limit
                        unity_downward_crossings=1.0)
         ok = status == SimulationStatus.OK
         directory = Path(request.work_root) / f'job-{self.simulations}'
@@ -240,31 +240,32 @@ class FakeAdapter:
 
 
 def real_context():
-    raw = dict(tasks.real_starter_config('real:gpdk045_ota5'), run=dict(max_evaluations=5, seed=1))
+    raw = dict(tasks.real_starter_config('real:gpdk045_ota7'), run=dict(max_evaluations=5, seed=1))
     config = schema.WorkbenchConfig.model_validate(raw)
-    profile = tasks._verified_profile('gpdk045_ota5')
+    profile = tasks._verified_profile('gpdk045_ota7')
     compiled = compile_task(config, profile.optimization_graph())
     corners, nominal, post = cc.screening_corners(profile)
     FakeAdapter.units = {s.metric_id: s.unit for s in compiled.specs}
     return SimpleNamespace(config=config, compiled=compiled, profile=profile, corners=corners, nominal=nominal, post=post,
                            evaluator=SpecificationEvaluator(compiled.specs), expected_keys=set(profile.writable_keys),
-                           task_key='real:gpdk045_ota5', mock=False, origin='real')
+                           task_key='real:gpdk045_ota7', mock=False, origin='real')
 
 
 @pytest.fixture
 def real_check(tmp_path, monkeypatch):
-    """A check folder of a real OTA5 run with two designs (4.0 um fails the ss corner, 4.2 um passes everything)."""
+    """A check folder of a real OTA7 run with two designs (4.0 um fails the ss corner, 4.2 um passes everything)."""
     context = real_context()
     run_dir = tmp_path / 'run'
     run_dir.mkdir()
     write_json(run_dir / 'run_manifest.json', dict(run_id='r1', mock=False, task_definition_hash='h'))
     designs = [dict(evaluation_id=f'e{i}', reward=0.0, min_margin=0.1, tightest_spec='unity_gain_hz',
-                    spec_values=dict(gain_db_at_start=30.0, unity_gain_hz=4.0e6),
-                    assignment=[dict(device=d, parameter=p, value=width) for d, p in sorted(context.profile.writable_keys)])
+                    spec_values=dict(gain_db_at_start=60.0, unity_gain_hz=4.0e6),
+                    assignment=[dict(device=d, parameter=p, value=value)
+                                for (d, p), value in sorted(context.profile.assignments(width).items())])
                for i, width in enumerate((4.0e-6, 4.2e-6))]
     directory = run_dir / cc.CHECK_DIR / '20260922T000000Z-0000abcd'
     write_json(directory / 'request.json', dict(
-        check_id=directory.name, run_id='r1', run_dir=str(run_dir), task_key='real:gpdk045_ota5', mock=False,
+        check_id=directory.name, run_id='r1', run_dir=str(run_dir), task_key='real:gpdk045_ota7', mock=False,
         task_definition_hash='h', corners=[cc.corner_record(c) for c in context.corners], designs=designs,
         simulations=10, authorization=dict(real_simulation=True, authorized_simulations=10)))
     write_json(directory / 'status.json', dict(state='starting'))

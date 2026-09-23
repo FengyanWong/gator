@@ -79,13 +79,13 @@ def test_tasks_and_circuit_loading(client):
     listed = client.get('/api/tasks').json()
     kinds = {t['task_key']: t for t in listed['tasks']}
     assert kinds['synthetic:gpdk045_ota5']['kind'] == 'mock' and 'MOCK' in kinds['synthetic:gpdk045_ota5']['description']
-    real = kinds['real:gpdk045_ota5']
+    real = kinds['real:gpdk045_ota7']
     assert real['available'] is False and real['blocker']                      # the specific blocker, not a fake backend
     assert 'NativeEnvironmentFactory' in listed['real_interface_contract']['environment_factory']
     loaded = client.post('/api/circuit/load', json=dict(circuit=dict(source='registered_task', task_id='synthetic:gpdk045_ota5'))).json()
     assert loaded['loaded'] and loaded['mock'] and set(loaded['hierarchy']) >= {'XU1', 'CL'}
     assert 'MOCK' in loaded['evaluation_backend'] and loaded['provided_metrics'] == ['score']
-    blocked = client.post('/api/circuit/load', json=dict(circuit=dict(source='registered_task', task_id='real:gpdk045_ota5'))).json()
+    blocked = client.post('/api/circuit/load', json=dict(circuit=dict(source='registered_task', task_id='real:gpdk045_ota7'))).json()
     assert blocked['loaded'] is False and blocked['blocker'] and blocked['interface_contract']
     native = client.post('/api/circuit/load', json=dict(circuit=dict(source='virtuoso', library='L', cell='C'))).json()
     assert native['loaded'] is False and 'verified circuit profile' in native['blocker']
@@ -253,7 +253,7 @@ def test_blocked_and_rejected_starts(client, tmp_path):
     rejected = client.post('/api/runs/start', json=dict(config=raw))
     assert rejected.status_code == 409 and rejected.json()['detail']['code'] == 'validation'
     real = config_json(tmp_path)
-    real['circuit'] = dict(source='registered_task', task_id='real:gpdk045_ota5')
+    real['circuit'] = dict(source='registered_task', task_id='real:gpdk045_ota7')
     blocked = client.post('/api/runs/start', json=dict(config=real, authorize_real_simulation=True))
     detail = blocked.json()['detail']
     assert blocked.status_code == 409 and detail['code'] == 'task_blocked' and detail['report']['interface_contract']

@@ -1,3 +1,4 @@
+import { Icon } from './Icons';
 import { useMemo, useRef, useState } from 'react';
 import { api, Json, num, saveJson } from '../api';
 import { migrateConfig } from '../store';
@@ -92,16 +93,16 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
       <div className="tabs">{(Object.keys(TITLES) as Section[]).map(s => <button key={s} className={s === tab ? 'active' : ''} onClick={() => { setTab(s); setSelected({}); }}>{TITLES[s]} ({(config[s] ?? []).length})</button>)}
         <span className="tab-actions" ref={taskSlot} /></div>
       <div className="toolbar">
-        <button onClick={add}>Add</button>
-        <button disabled={!selection.length} onClick={remove}>Delete selected</button>
-        <button disabled={!canUndo} onClick={undo}>Undo</button>
-        <button disabled={!canRedo} onClick={redo}>Redo</button>
-        <button onClick={() => saveJson(`${config.project.task_name}.config.json`, config)}>Export JSON</button>
-        <button onClick={() => file.current?.click()}>Import JSON...</button>
+        <button onClick={add} title="Add: A new row at the end, with a free ID."><Icon name="add" label="Add" /></button>
+        <button disabled={!selection.length} onClick={remove} title="Delete selected: The rows whose box is ticked. Undo takes them back."><Icon name="delete" label="Delete selected" /></button>
+        <button disabled={!canUndo} onClick={undo} title="Undo: The last change to the rows of this tab."><Icon name="undo" label="Undo" /></button>
+        <button disabled={!canRedo} onClick={redo} title="Redo: The change Undo took back."><Icon name="redo" label="Redo" /></button>
+        <button onClick={() => saveJson(`${config.project.task_name}.config.json`, config)} title="Export JSON: The rows of all three tabs as one JSON file, downloaded."><Icon name="export" label="Export JSON" /></button>
+        <button onClick={() => file.current?.click()} title="Import JSON...: Read a JSON file (a whole configuration, or this tab's rows). You review a diff first."><Icon name="import" label="Import JSON..." /></button>
         <input ref={file} type="file" accept="application/json" hidden onChange={e => e.target.files?.[0] && importJson(e.target.files[0])} />
         <span className="spacer" />
-        <button onClick={() => onAgent(tab, [])} title="Ask the agent for a proposal for this tab. You review a diff; nothing is applied automatically.">Draft with agent...</button>
-        <button disabled={!selection.length} onClick={() => onAgent('modify_fields', selection)}>Modify selected with agent...</button>
+        <button onClick={() => onAgent(tab, [])} title="Draft with agent...: Ask the agent for a proposal for this tab. You review a diff; nothing is applied automatically."><Icon name="agent-draft" label="Draft with agent..." /></button>
+        <button disabled={!selection.length} onClick={() => onAgent('modify_fields', selection)} title="Modify selected with agent...: Ask the agent for a change to the ticked rows. You review a diff; nothing is applied automatically."><Icon name="agent-modify" label="Modify selected with agent..." /></button>
       </div>
       <div className="task-notes" ref={taskNotes} />
       {tab === 'parameters' && <p className="fact">Independent action variables: <b>{validation?.facts?.independent_action_variables ?? '?'}</b> of {rows.length} rows.

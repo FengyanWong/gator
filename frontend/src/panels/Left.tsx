@@ -1,3 +1,4 @@
+import { Icon } from './Icons';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, Json, OLDER_BACKEND, problemText } from '../api';
@@ -422,12 +423,12 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
             its rows; "Delete task" at the right end, for a task that can leave the list - one saved from a cell, or an ngspice
             netlist; the built-in circuits and the MOCK task cannot. What Delete does is in its tooltip; it asks once more. */}
         {ref.task_id && !removedMock && <div className="row task-buttons">
-          <button onClick={useStarter} title="Replaces the rows of Parameters, Probes and Specs with this task's own. The MOCK task: the width groups of its circuit and the toy score. A real circuit: the parameters its profile fixes and its targets of record. Everything stays editable, and Undo takes it back.">Load task</button>
+          <button onClick={useStarter} title="Load task: Replaces the rows of Parameters, Probes and Specs with this task's own. The MOCK task: the width groups of its circuit and the toy score. A real circuit: the parameters its profile fixes and its targets of record. Everything stays editable, and Undo takes it back."><Icon name="load" label="Load task" /></button>
           <span className="spacer" />
           {(deletableName || ngspiceTask) && <button disabled={!!profileBusy} onClick={ngspiceTask ? deleteNgspice : deleteProfile}
-            title={ngspiceTask ? 'Asks once more. The task leaves the Registered task list; its deck and task file are kept aside on the backend machine, and runs already made keep their data.'
-              : 'Asks once more. The task leaves the Registered task list and its cell can get a new one; its files are kept aside on the backend machine, and runs already made keep their data.'}>
-            {profileBusy === 'delete' ? 'Deleting...' : 'Delete task'}</button>}
+            title={ngspiceTask ? 'Delete task: Asks once more. The task leaves the Registered task list; its deck and task file are kept aside on the backend machine, and runs already made keep their data.'
+              : 'Delete task: Asks once more. The task leaves the Registered task list and its cell can get a new one; its files are kept aside on the backend machine, and runs already made keep their data.'}>
+            <Icon name="delete-task" label={profileBusy === 'delete' ? 'Deleting...' : 'Delete task'} /></button>}
         </div>}
         {profileMessage?.what === 'delete' && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
         {taskRows?.task === ref.task_id && (

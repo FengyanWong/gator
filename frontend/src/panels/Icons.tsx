@@ -1,0 +1,58 @@
+/** Icon-only buttons (user request 2026-09-24, in two steps: icons next to the words, then "remove the text"): the
+ *  header's Save now / Start-Pause-Resume / Abort, "Save task" in the editors' tab line, the editors' Add / Delete
+ *  selected / Undo / Redo, and the Project column's Load task / Delete task. Each icon is a 16 x 16 stroke drawing in
+ *  the button's own colour (currentColor), the same style as the tab pop-out arrow in Bottom.tsx.
+ *
+ *  The label is still there, only not on screen: `<Icon name label />` puts it in a visually hidden span, so a screen
+ *  reader names the button, and the button's textContent stays exactly its label ("Pause", "Save now", "Load task",
+ *  ...), which the page checks under scripts/ read and compare. A sighted user gets the label from the tooltip: every
+ *  icon-only button's title starts with its label. */
+
+export type IconName = 'save' | 'play' | 'pause' | 'wait' | 'stop' | 'force-stop' | 'task' | 'add' | 'delete' | 'undo' | 'redo' | 'load' | 'delete-task' | 'export' | 'import' | 'agent-draft' | 'agent-modify' | 'task-file';
+
+const DRAWINGS: Record<IconName, JSX.Element> = {
+  // A floppy disk: the model is written to disk while the run goes on.
+  save: <><path d="M3 2.5h8l2.5 2.5v8.5H3z" /><path d="M5 2.5v3.5h5V2.5" /><rect x="5" y="9" width="6" height="4.5" /></>,
+  // Start and Resume: a play triangle.
+  play: <path d="M4.5 2.5l8 5.5-8 5.5z" fill="currentColor" />,
+  // Pause: two bars.
+  pause: <><rect x="3.5" y="2.5" width="3.2" height="11" fill="currentColor" /><rect x="9.3" y="2.5" width="3.2" height="11" fill="currentColor" /></>,
+  // Starting... / Pausing... / Resuming... / Aborting... / Finishing...: an hourglass, the request is on its way.
+  wait: <><path d="M4 2.5h8M4 13.5h8" /><path d="M5 2.5c0 3 6 4 6 5.5s-6 2.5-6 5.5M11 2.5c0 3-6 4-6 5.5s6 2.5 6 5.5" /></>,
+  // Abort: a stop square.
+  stop: <rect x="3" y="3" width="10" height="10" rx="1" fill="currentColor" />,
+  // Force abort: the stop square struck through, it does not wait.
+  'force-stop': <><rect x="3" y="3" width="10" height="10" rx="1" /><path d="M5.5 5.5l5 5M10.5 5.5l-5 5" /></>,
+  // Save task: a document with a check mark, the rows become the task's next revision.
+  task: <><path d="M4 1.5h5.5L13 5v9.5H4z" /><path d="M9.5 1.5V5H13" /><path d="M6 10l2 2 3.5-3.5" /></>,
+  // Add: a plus, one new row.
+  add: <path d="M8 3v10M3 8h10" strokeWidth="1.8" />,
+  // Delete selected: a waste bin, the chosen rows go.
+  delete: <><path d="M3 4.5h10M6.5 4.5V3h3v1.5" /><path d="M4.5 4.5l.7 9h5.6l.7-9" /><path d="M6.8 7v4.5M9.2 7v4.5" /></>,
+  // Undo / Redo: an arrow curling back, and its mirror.
+  undo: <><path d="M5.5 4.5H2.5v-3" /><path d="M2.6 4.4a5.5 5.5 0 1 1-1 5" /></>,
+  redo: <><path d="M10.5 4.5h3v-3" /><path d="M13.4 4.4a5.5 5.5 0 1 0 1 5" /></>,
+  // Load task: a tray with an arrow into it, the task's rows come into the editors.
+  load: <><path d="M8 2v7.5" /><path d="M5 6.5l3 3 3-3" /><path d="M2.5 10v3.5h11V10" /></>,
+  // Delete task: the tray struck out, the task leaves the list.
+  'delete-task': <><path d="M2.5 10v3.5h11V10" /><path d="M5 2.5l6 6M11 2.5l-6 6" /></>,
+  // Export JSON: an arrow up out of the tray, the rows leave as a file.
+  export: <><path d="M8 9.5V2" /><path d="M5 5l3-3 3 3" /><path d="M2.5 10v3.5h11V10" /></>,
+  // Import JSON...: an arrow into a document, a file's rows come in.
+  import: <><path d="M8 1.5h2.5L13 4v10.5H4V10" /><path d="M10.5 1.5V4H13" /><path d="M1.5 7h7M6.5 4.5L9 7l-2.5 2.5" /></>,
+  // Draft with agent...: a sparkle, the agent proposes.
+  'agent-draft': <><path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4z" fill="currentColor" stroke="none" /><path d="M3 2.5v2.5M1.75 3.75h2.5" /></>,
+  // Modify selected with agent...: a pencil with a sparkle, the agent changes the ticked rows.
+  'agent-modify': <><path d="M11.5 3.5l2 2-7.5 7.5H4v-2z" /><path d="M10 5l2 2" /><path d="M3.5 1.5v3M2 3h3" /></>,
+  // Task file: a document with lines, the task as one readable file.
+  'task-file': <><path d="M4 1.5h5.5L13 5v9.5H4z" /><path d="M9.5 1.5V5H13" /><path d="M6 8.5h4.5M6 11h4.5" /></>,
+};
+
+/** `label`: the button's words, kept for screen readers and for the page checks but not drawn (`.sr-only`). */
+export function Icon({ name, label }: { name: IconName; label?: string }) {
+  return (<>
+    <svg className="icon" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{DRAWINGS[name]}</svg>
+    {label !== undefined && <span className="sr-only">{label}</span>}
+  </>);
+}

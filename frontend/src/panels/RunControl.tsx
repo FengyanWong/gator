@@ -1,3 +1,4 @@
+import { Icon, IconName } from './Icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, Json } from '../api';
 
@@ -185,6 +186,8 @@ const TITLES: Record<Phase, string> = {
   aborting: 'Abort requested. The simulation in flight is finishing; then everything is saved and the run ends.',
   finishing: 'The run has ended and is writing its last files.',
 };
+const ICONS: Record<Phase, IconName> = { idle: 'play', checking: 'play', starting: 'wait', running: 'pause', pausing: 'wait', paused: 'play',
+  resuming: 'wait', aborting: 'wait', finishing: 'wait' };
 const LABELS: Record<Phase, string> = { idle: 'Start', checking: 'Start', starting: 'Starting...', running: 'Pause', pausing: 'Pausing...', paused: 'Resume',
   resuming: 'Resuming...', aborting: 'Aborting...', finishing: 'Finishing...' };
 
@@ -268,13 +271,13 @@ export function RunButtons({ control, blocked, onStart, onResumed, onMessage, on
   return (<>
     {dir && note && <button className={`run-chip ${phase}`} onClick={() => onShow(dir)} title={`The current run: ${dir}\nPress to show it under Run status.`}>{note}</button>}
     <button className="run-save" disabled={phase !== 'running' || !!saving} onClick={saveNow}
-      title={phase === 'running' ? 'Save the model now, without pausing: the simulation in flight finishes first (with several in parallel, all of them), the model is written as a new save point, '
+      title={phase === 'running' ? 'Save now: The model is saved now, without pausing: the simulation in flight finishes first (with several in parallel, all of them), the model is written as a new save point, '
         + 'and the run goes on by itself. The save point can be chosen later under "RL model to load".'
-        : 'Only while a run is running. A paused or ended run has already saved everything.'}>{saving ? 'Saving...' : 'Save now'}</button>
-    <button className="primary run-main" disabled={!main || (phase === 'idle' && blocked)} onClick={main} title={TITLES[phase]}>{LABELS[phase]}</button>
+        : 'Save now: Only while a run is running. A paused or ended run has already saved everything.'}><Icon name="save" label={saving ? 'Saving...' : 'Save now'} /></button>
+    <button className="primary run-main" disabled={!main || (phase === 'idle' && blocked)} onClick={main} title={`${LABELS[phase]}: ${TITLES[phase]}`}><Icon name={ICONS[phase]} label={LABELS[phase]} /></button>
     <button className="run-abort" disabled={!(phase === 'running' || phase === 'paused' || (waiting && !forced))} onClick={abort}
-      title={phase === 'paused' ? 'Let go of the paused run: nothing is deleted, the main button goes back to Start.'
-        : waiting ? 'Do not wait for the simulation in flight. Only for a run that is stuck.'
-        : 'End the current run: the simulation in flight finishes, everything is saved, the run ends.'}>{waiting ? 'Force abort' : 'Abort'}</button>
+      title={phase === 'paused' ? 'Abort: Let go of the paused run: nothing is deleted, the main button goes back to Start.'
+        : waiting ? 'Force abort: Do not wait for the simulation in flight. Only for a run that is stuck.'
+        : 'Abort: End the current run: the simulation in flight finishes, everything is saved, the run ends.'}><Icon name={waiting ? 'force-stop' : 'stop'} label={waiting ? 'Force abort' : 'Abort'} /></button>
   </>);
 }

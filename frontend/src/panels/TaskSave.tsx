@@ -1,3 +1,4 @@
+import { Icon } from './Icons';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, Json, problemText, virtuosoGateText } from '../api';
@@ -93,19 +94,19 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
           <input value={name} placeholder={suggested} onChange={e => setName(e.target.value)} /></label>}
         {task && <span className="hint">Task <code>real:{task}</code>{revision ? `, revision ${revision}` : ''}</span>}
         <button className="primary" disabled={!canSave} onClick={() => save()}
-          title={(task ? 'Stores the rows of Parameters, Probes and Specs as this task (its next revision). ' : hasCopy
+          title={'Save task: ' + (task ? 'Stores the rows of Parameters, Probes and Specs as this task (its next revision). ' : hasCopy
             ? 'Stores the rows of Parameters, Probes and Specs as a new task of this cell. '
             : 'Read the cell in the Virtuoso window first and confirm that it is a copy you made: the task is saved into that cell. ')
             + 'It writes the cell in Virtuoso to match and reads it back; no simulation. Only you can press it.'}>
-          {busy === 'save' ? 'Saving...' : 'Save task'}</button>
-        <button disabled={!!busy} onClick={openFile} title="The task as one readable file, in a window of its own: open it, change it, apply it to the editors.">Task file</button>
+          <Icon name="task" label={busy === 'save' ? 'Saving...' : 'Save task'} /></button>
+        <button disabled={!!busy} onClick={openFile} title="Task file: The task as one readable file, in a window of its own: open it, change it, apply it to the editors."><Icon name="task-file" label="Task file" /></button>
       </div>, bar)}
     {notes && said && createPortal(
       <div className="task-save-notes">
         {askFrequency && <div className="row">
           <label title="Rough is enough: it only sizes the transient (60 periods, measured after 20).">Rough oscillation frequency
             <input value={frequency} placeholder="e.g. 1.2G" onChange={e => setFrequency(e.target.value)} /></label>
-          <button className="primary" disabled={!(frequencyValue > 0) || !!busy} onClick={() => save({ expected_frequency_hz: frequencyValue })}>Save task</button></div>}
+          <button className="primary" disabled={!(frequencyValue > 0) || !!busy} onClick={() => save({ expected_frequency_hz: frequencyValue })} title="Save task: With this frequency."><Icon name="task" label="Save task" /></button></div>}
         {message && <p className={message.level === 'ok' ? 'ok' : message.level === 'warn' ? 'warn' : 'error'}>{message.text}</p>}
       </div>, notes)}
     {file && <TaskFileWindow text={file.text} title={file.title} onApply={applyFile} onClose={() => setFile(null)} />}

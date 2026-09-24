@@ -14,11 +14,12 @@ import json
 import re
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from . import CONFIG_SCHEMA_VERSION
 
-ENCODER_TYPES = ('graph_transformer', 'mlp', 'rgcn', 'gat', 'port_gnn', 'gcn')
+ENCODER_TYPES = ('graph_transformer', 'mlp', 'rgcn', 'gat', 'gcn')
+REMOVED_ENCODERS = ('port_gnn',)          # removed from the optimizer on 2026-09-24 (record 7.83); refused in words
 RUN_MODES = ('scratch', 'resume', 'fine_tune', 'frozen')
 UNSPECIFIED = 'unspecified'
 
@@ -211,7 +212,7 @@ STANDARD_VOCABULARY = 'standard'
 
 
 class NetworkConfig(_Model):
-    encoder_type: Literal['graph_transformer', 'mlp', 'rgcn', 'gat', 'port_gnn', 'gcn'] = 'graph_transformer'
+    encoder_type: Literal['graph_transformer', 'mlp', 'rgcn', 'gat', 'gcn'] = 'graph_transformer'
     hidden_dim: int = Field(32, ge=4, le=1024)
     heads: int = Field(4, ge=1, le=32)
     layers: int = Field(2, ge=1, le=16)
@@ -220,6 +221,16 @@ class NetworkConfig(_Model):
                     'model saved before 2026-09-21 was trained with; other parts are "unknown". pdk:<technology '
                     'library>: every component of that PDK, loaded with "Load PDK..." (gator_workbench.pdk). A model '
                     'trained with one list loads only with the same list.')
+
+    @field_validator('encoder_type', mode='before')
+    @classmethod
+    def _refuse_removed_encoder(cls, value):
+        if value in REMOVED_ENCODERS:
+            raise ValueError(f'{value} was removed from the optimizer on 2026-09-24: it answered the same question as rgcn '
+                             '(edge-typed message passing without attention) and had no published reference. Choose '
+                             'graph_transformer, gat, rgcn, gcn or mlp. Models trained with it load only from source '
+                             'commit bbdfe36.')
+        return value
 
 
 class SpecRegistryEntry(_Model):

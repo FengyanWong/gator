@@ -47,6 +47,8 @@ try {
   // ---- a fresh configuration takes the backend's values for the default encoder ------------------------------
   const gt = settings.settings.graph_transformer.network;
   check('fresh page shows the backend values of the default encoder', JSON.stringify(await numbers()) === JSON.stringify([gt.hidden_dim, gt.heads, gt.layers].map(String)), JSON.stringify(await numbers()));
+  const options = await evaluate(`[...[...document.querySelectorAll('.right .panel label')].find(l => l.firstChild?.textContent === 'Encoder').querySelectorAll('option')].map(o => o.value)`);
+  check('the encoder list offers the five encoders and no port_gnn (removed 2026-09-24)', JSON.stringify(options) === JSON.stringify(['graph_transformer', 'mlp', 'rgcn', 'gat', 'gcn']), JSON.stringify(options));
   check('heads is editable for graph_transformer', !(await evaluate(`${box('heads')}.querySelector('input').disabled`)));
 
   // ---- the two reset buttons form one aligned pair ------------------------------------------------------------

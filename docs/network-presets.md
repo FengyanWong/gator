@@ -40,7 +40,7 @@ click **GATOR baseline**.
 | `gat` | 192 | 3 | 4 | 1e-3 | 0.9 | 0.005 | 32 | 8 | 50 | 30 |
 | `gcn` | 32 | (4) | 7 | 3e-4 | 0.99 | 0.005 | 128 | 1000 | 100000 | 50 |
 | `rgcn` | 32 | (4) | 4 | 3e-4 | 0.99 | 0.005 | 128 | 1000 | 100000 | 50 |
-| `port_gnn` | 32 | (4) | 5 | 3e-4 | 0.99 | 0.005 | 128 | 1000 | 100000 | 50 |
+| `port_gnn` (removed 2026-09-24) | 32 | (4) | 5 | 3e-4 | 0.99 | 0.005 | 128 | 1000 | 100000 | 50 |
 | `mlp` | 256 | (4) | 4 | 3e-3 | 0.8 | 0.005 | 256 | 120 | 1000000 | 30 |
 | GATOR baseline (all) | 32 | 4 | 2 | 3e-4 | 0.99 | 0.005 | 8 | 8 | 10000 | 4 |
 
@@ -120,7 +120,7 @@ documented **soft actor-critic** sizing paper (GATOR's own algorithm), with full
   with "three layers with 50 neurons each" (its code says `[64, 64]`) and a 30-step horizon, and states
   no learning rate, so it cannot fill SAC settings.
 
-### `port_gnn`
+### `port_gnn` (removed from the optimizer on 2026-09-24, record 7.83; kept as the provenance of the preset that existed)
 No sizing paper uses this exact network (an MLP message over the source node and a terminal-role edge
 feature, mean-aggregated, no attention). Everything here is marked "closest network".
 * **layers 5, hidden 32** - paper. Ren, Kokai, Turner, Ku, *ParaGraph*, DAC 2020,
@@ -155,7 +155,7 @@ feature, mean-aggregated, no attention). Everything here is marked "closest netw
   | `gat` | 3,858,820 | 87,044 |
   | `gcn` | 159,524 | 78,884 |
   | `rgcn` | 270,884 | 158,756 |
-  | `port_gnn` | 159,908 | 92,804 |
+  | `port_gnn` (removed 2026-09-24) | 159,908 | 92,804 |
   | `mlp` | 5,197,060 | 72,164 |
 
   The `graph_transformer` figures include weights that are never used: PyG's `TransformerConv` always

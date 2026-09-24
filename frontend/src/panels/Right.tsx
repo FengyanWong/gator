@@ -121,6 +121,7 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
   const advFields: string[] = netSettings?.advanced_fields ?? ADVANCED_FIELDS;
   const encoder: string = net.encoder_type ?? netSettings?.default_encoder ?? 'graph_transformer';
   const entry: Json = netSettings?.settings?.[encoder] ?? null;
+  const offeredEncoders: string[] = netSettings?.encoders ?? ['graph_transformer', 'mlp', 'rgcn', 'gat', 'gcn'];   // port_gnn was removed 2026-09-24
   const usesHeads: boolean = entry ? !!entry.uses_heads : ['graph_transformer', 'gat'].includes(encoder);
   const remember = (e: Json) => setNetSettings((s: Json) => s && ({ ...s, settings: { ...s.settings, [e.encoder_type]: e } }));
   // The component list is not a per-encoder setting: another encoder keeps the list that was chosen.
@@ -250,7 +251,9 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
       <p className="hint">Independent of the agent language model. "No weights" means scratch, but an architecture is still required.
         Every encoder keeps its own settings in the backend: choosing one loads them, editing a value (here or under Advanced) saves it for that encoder.</p>
       <label>Encoder<select value={encoder} onChange={e => chooseEncoder(e.target.value)}>
-        {(netSettings?.encoders ?? ['graph_transformer', 'mlp', 'rgcn', 'gat', 'port_gnn', 'gcn']).map((m: string) => <option key={m}>{m}</option>)}</select></label>
+        {offeredEncoders.map((m: string) => <option key={m} value={m}>{m}</option>)}
+        {!offeredEncoders.includes(encoder) && <option value={encoder}>{encoder} (removed from the optimizer)</option>}</select></label>
+      {!offeredEncoders.includes(encoder) && <p className="error">{encoder} was removed from the optimizer on 2026-09-24. Choose another encoder; models trained with it load only from source commit bbdfe36.</p>}
       <div className="row"><Num label="hidden" value={net.hidden_dim ?? entry?.network?.hidden_dim ?? 32} onChange={v => editNet({ hidden_dim: v })} />
         <Num label="heads" value={net.heads ?? entry?.network?.heads ?? 4} onChange={v => editNet({ heads: v })} disabled={!usesHeads} note={usesHeads ? undefined : 'ignored by this encoder'}
           title={usesHeads ? 'Attention heads. hidden must be divisible by heads.' : 'Only graph_transformer and gat have attention heads. The number is still written into the checkpoint, so it is kept fixed here.'} />

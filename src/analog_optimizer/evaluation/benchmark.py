@@ -12,7 +12,7 @@ from time import perf_counter
 import torch
 
 from analog_optimizer.envs.sizing import graph_contract, write_record
-from analog_optimizer.models import ENCODER_TYPES, ModelConfig
+from analog_optimizer.models import ENCODER_TYPES, REMOVED_ENCODERS, ModelConfig
 from analog_optimizer.models.inputs import SpecSchema
 from analog_optimizer.training.replay import ReplayBuffer, Transition
 from analog_optimizer.training.sac import SACLearner, source_digest
@@ -20,19 +20,23 @@ from analog_optimizer.training.runtime import write_report_preserving_error
 from .transfer import aggregate_runs, digest, freeze_protocol, validate_split
 
 
-METHODS = ('gt_scratch', 'gt_frozen', 'gt_adapt', 'random', 'pattern_search', 'gnn_adapt')
-ENCODER_LABELS = dict(graph_transformer='gt', mlp='mlp', rgcn='rgcn', gat='gat', port_gnn='gnn', gcn='gcn')
+ENCODER_LABELS = dict(graph_transformer='gt', mlp='mlp', rgcn='rgcn', gat='gat', gcn='gcn')
 
 
 def benchmark_models(settings):
-    """Explicit selections get scratch/frozen/adapt for EVERY encoder.
+    """The selected encoders get scratch/frozen/adapt each, plus random and pattern search.
 
-    Omitted selection retains the six-method M5 protocol and its call budget.
+    `settings['encoders']` is required. Until 2026-09-24 an omitted selection meant the six-method M5 protocol
+    (graph_transformer + port_gnn); port_gnn was removed that day, so that protocol runs only from source commit bbdfe36.
     """
     selected = settings.get('encoders')
-    legacy = selected is None
-    if legacy:
-        selected = ('graph_transformer', 'port_gnn')
+    if selected is None:
+        raise ValueError("settings['encoders'] is required: the omitted selection used to mean the M5 six-method "
+                         'protocol with port_gnn, which was removed on 2026-09-24 (source commit bbdfe36 still runs it)')
+    if isinstance(selected, (list, tuple)):
+        for name in selected:
+            if isinstance(name, str) and name in REMOVED_ENCODERS:
+                raise ValueError(f'encoders: {REMOVED_ENCODERS[name]}')
     if (not isinstance(selected, (list, tuple)) or not selected
             or any(not isinstance(name, str) or name not in ENCODER_TYPES for name in selected)
             or len(set(selected)) != len(selected)):
@@ -40,8 +44,7 @@ def benchmark_models(settings):
     models = {ENCODER_LABELS[name]: ModelConfig(
         encoder_type=name, hidden_dim=settings.get('hidden_dim', 32),
         heads=settings.get('heads', 4), layers=settings.get('layers', 2)) for name in selected}
-    names = METHODS if legacy else tuple(f'{key}_{phase}' for key in models
-                                         for phase in ('scratch', 'frozen', 'adapt')) + ('random', 'pattern_search')
+    names = tuple(f'{key}_{phase}' for key in models for phase in ('scratch', 'frozen', 'adapt')) + ('random', 'pattern_search')
     methods = {}
     for name in names:
         if name in ('random', 'pattern_search'):
@@ -49,7 +52,7 @@ def benchmark_models(settings):
         else:
             model, suffix = name.rsplit('_', 1)
             methods[name] = (model, 'adaptation' if suffix == 'adapt' else suffix)
-    return models, methods, ('gt',) if legacy else tuple(models)
+    return models, methods, tuple(models)
 
 
 def benchmark_call_budget(tasks, settings):

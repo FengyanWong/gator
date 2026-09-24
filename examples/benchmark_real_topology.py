@@ -33,7 +33,8 @@ def main():
     parser.add_argument('--pretrain-steps', type=int, default=16)
     parser.add_argument('--test-steps', type=int, default=12)
     parser.add_argument('--max-calls', type=int, default=600)
-    parser.add_argument('--encoders', nargs='+', choices=['graph_transformer','mlp','gcn','rgcn','gat','port_gnn'])
+    parser.add_argument('--encoders', nargs='+', choices=['graph_transformer','mlp','gcn','rgcn','gat'],
+                        default=['graph_transformer'], help='Encoders to run, each as scratch / frozen / adapt. port_gnn was removed on 2026-09-24; the former default protocol (graph_transformer + port_gnn, six methods) runs only from source commit bbdfe36.')
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
     config, source_profile = configure(args)

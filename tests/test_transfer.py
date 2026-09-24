@@ -1,4 +1,4 @@
-"""M5 leakage, isolation, cost accounting and port-GNN behavioral acceptance."""
+"""M5 leakage, isolation and cost accounting acceptance (the port-GNN behavioural test left with port_gnn, 2026-09-24)."""
 from copy import deepcopy
 from dataclasses import replace
 import json
@@ -12,7 +12,7 @@ from analog_optimizer.backends.backend import SimulationStatus
 from analog_optimizer.backends.synthetic_sizing import SyntheticSizingBackend
 from analog_optimizer.envs.sizing import CircuitSizingEnv
 from analog_optimizer.evaluation.benchmark import (
-    METHODS, PatternSearch, admit_transition, benchmark_models, run_benchmark, run_episode, transfer_weights, weight_digest)
+    PatternSearch, admit_transition, benchmark_models, run_benchmark, run_episode, transfer_weights, weight_digest)
 from analog_optimizer.evaluation.transfer import (
     TransferTask, aggregate_runs, freeze_protocol, same_topology, summarize_run, validate_split)
 from analog_optimizer.measurements.specs import MetricSpec
@@ -35,9 +35,10 @@ def task(graph, name='train', partition='train', target=.99, transfer='specifica
                         (MetricSpec('score', 'fixture', 'min', 1, lower=target),))
 
 
-def learner(origin='synthetic', mode='local_port_attention'):
+def learner(origin='synthetic', mode='local_port_attention', encoder=None):
     return SACLearner(experiment=dict(origin=origin, split='unit-test', designs=['fixture']),
-                      model_config=ModelConfig(hidden_dim=16, heads=2, layers=2, attention_mode=mode))
+                      model_config=ModelConfig(hidden_dim=16, heads=2, layers=2, attention_mode=None if encoder else mode,
+                                               encoder_type=encoder))
 
 
 def make_env(t, steps, output):
@@ -149,7 +150,7 @@ def test_transfer_copies_weights_without_optimizer_replay_or_aliasing(opamp, tmp
     assert weight_digest(source) != weight_digest(destination)
     assert len(source_replay) == 3
     with pytest.raises(ValueError, match='Incompatible'):
-        transfer_weights(source, learner(mode='port_message_passing'))
+        transfer_weights(source, learner(encoder='rgcn'))                     # another architecture is refused
 
 
 def test_infrastructure_failure_is_censored_and_charged(opamp, tmp_path):
@@ -198,28 +199,6 @@ def test_pattern_search_polls_bounds_then_improves(opamp):
     assert search.best > initial
 
 
-def test_gnn_uses_ports_and_supports_mixed_action_gradients(opamp, ldo, tmp_path):
-    observations = []
-    for graph in [opamp, ldo]:
-        t = task(graph)
-        with make_env(t, 2, tmp_path) as env:
-            observations.append(env.reset()[0])
-    batch = batch_observations(observations)
-    config = ModelConfig(hidden_dim=16, heads=2, layers=2, attention_mode='port_message_passing')
-    actor, critic = GroupActor(config=config), GraphCritic(config=config)
-    first = actor.distribution(batch)[0]
-    individual = torch.cat([actor.distribution(batch_observations([o]))[0] for o in observations])
-    torch.testing.assert_close(first, individual)
-    changed = deepcopy(batch)
-    changed.edge_role = (changed.edge_role + 1) % actor.encoder.port_role.num_embeddings
-    assert not torch.allclose(first, actor.distribution(changed)[0])
-    sample = actor.sample(batch)
-    critic(batch, sample.actions).sum().backward()
-    assert actor.encoder.port_role.weight.grad.abs().sum() > 0
-    assert actor.head[-1].weight.grad.abs().sum() > 0
-    assert actor.encoder.blocks[0].message[0].weight.grad.abs().sum() > 0
-
-
 def test_multi_seed_report_keeps_censoring():
     rows = [dict(task='test', method='random', seed=seed, success=success, calls=4, wall_seconds=.1,
                  best_reward=0 if success else -.2, first_feasible_call=2 if success else None,
@@ -235,19 +214,19 @@ def test_multi_seed_report_keeps_censoring():
 def test_suite_budget_replay_and_pretrain_isolation(opamp, tmp_path):
     tasks = [task(opamp, target=.9), task(opamp, 'validation', 'validation', .95),
              task(opamp, 'test', 'test', .999)]
-    settings = dict(seeds=[17], pretrain_steps=2, test_steps=3, batch_size=2, max_calls=32)
+    settings = dict(seeds=[17], pretrain_steps=2, test_steps=3, batch_size=2, max_calls=25, encoders=['graph_transformer'])
     report = run_benchmark(tasks, make_env, tmp_path, origin='synthetic', settings=settings,
                            provenance={'test': True}, progress=lambda x: None)
-    assert report['completed'] and report['calls'] == report['planned_calls'] == 32
-    assert report['synthetic_calls'] == 32 and report['real_simulation_calls'] == 0
-    assert len(report['test_runs']) == len(METHODS)
+    assert report['completed'] and report['calls'] == report['planned_calls'] == 25    # 3 pretrain + 2 validation + 5 x 4
+    assert report['synthetic_calls'] == 25 and report['real_simulation_calls'] == 0
+    assert len(report['test_runs']) == 5                # gt scratch/frozen/adapt, random, pattern search
     assert all(r['calls'] == 4 for r in report['test_runs'])
-    for method in ('gt_scratch', 'gt_adapt', 'gnn_adapt'):
+    for method in ('gt_scratch', 'gt_adapt'):
         row = next(r for r in report['test_runs'] if r['method'] == method)
         assert row['updates'] == 2 and row['replay_insertions'] == 3
         payload = torch.load(tmp_path / f'test-{method}-17.pt', weights_only=False)
         assert all(t.observation.specs == tasks[-1].specs for t in payload['replay']['items'])
-    for model in ('gt', 'gnn'):
+    for model in ('gt',):
         payload = torch.load(tmp_path / f'{model}-17-pretrain.pt', weights_only=False)
         assert all(t.observation.specs == tasks[0].specs for t in payload['replay']['items'])
     random_run = next(r for r in report['test_runs'] if r['method'] == 'random')
@@ -262,8 +241,8 @@ def test_suite_rejects_budget_before_backend_creation(opamp, tmp_path):
     tasks = [task(opamp), task(opamp, 'validation', 'validation', .95), task(opamp, 'test', 'test', .98)]
     with pytest.raises(ValueError, match='exceed'):
         run_benchmark(tasks, lambda *a: pytest.fail('Should not create backend'), tmp_path,
-                      origin='synthetic', settings=dict(seeds=[1], pretrain_steps=2, test_steps=3,
-                                                       batch_size=2, max_calls=31), provenance={})
+                      origin='synthetic', settings=dict(seeds=[1], pretrain_steps=2, test_steps=3, batch_size=2,
+                                                       max_calls=24, encoders=['graph_transformer']), provenance={})
 
 
 def test_aborted_suite_keeps_failed_run_and_unexecuted_runs(opamp, tmp_path):
@@ -277,16 +256,16 @@ def test_aborted_suite_keeps_failed_run_and_unexecuted_runs(opamp, tmp_path):
         return env
     with pytest.raises(RuntimeError, match='test phase failure'):
         run_benchmark(tasks, factory, tmp_path, origin='synthetic', settings=dict(
-            seeds=[17], pretrain_steps=2, test_steps=3, batch_size=2, max_calls=32),
+            seeds=[17], pretrain_steps=2, test_steps=3, batch_size=2, max_calls=25, encoders=['graph_transformer']),
             provenance={}, progress=lambda x: None)
     report = json.loads((tmp_path / 'report.json').read_text())
-    assert not report['completed'] and report['calls'] == 9
+    assert not report['completed'] and report['calls'] == 6      # 3 pretrain + 2 validation + the failing test call
     assert len(report['test_runs']) == 1 and report['test_runs'][0]['right_censored']
-    assert len(report['unexecuted_test_runs']) == 5
+    assert len(report['unexecuted_test_runs']) == 4
     assert report['aggregate'][0]['censored_runs'] == 1
 
 
-@pytest.mark.parametrize('encoders', [[], ['gat', 'gat'], ['unknown'], 'mlp'])
+@pytest.mark.parametrize('encoders', [[], ['gat', 'gat'], ['unknown'], 'mlp', ['port_gnn'], None])
 def test_invalid_encoder_selection_fails_before_backend_creation(opamp, tmp_path, encoders):
     tasks = [task(opamp), task(opamp, 'validation', 'validation', .95), task(opamp, 'test', 'test', .98)]
     with pytest.raises(ValueError, match='encoders'):

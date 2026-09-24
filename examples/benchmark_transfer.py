@@ -60,7 +60,8 @@ def main():
     parser.add_argument('--pretrain-steps', type=int)
     parser.add_argument('--test-steps', type=int)
     parser.add_argument('--max-calls', type=int)
-    parser.add_argument('--encoders', nargs='+', choices=['graph_transformer', 'mlp', 'rgcn', 'gat', 'port_gnn', 'gcn'])
+    parser.add_argument('--encoders', nargs='+', choices=['graph_transformer', 'mlp', 'rgcn', 'gat', 'gcn'],
+                        default=['graph_transformer'], help='Encoders to run, each as scratch / frozen / adapt. port_gnn was removed on 2026-09-24; the former default protocol (graph_transformer + port_gnn, six methods) runs only from source commit bbdfe36.')
     parser.add_argument('--hidden-dim', type=int, default=32)
     parser.add_argument('--heads', type=int, default=4)
     parser.add_argument('--layers', type=int, default=2)

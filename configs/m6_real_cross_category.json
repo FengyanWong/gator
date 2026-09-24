@@ -134,8 +134,7 @@
       "mlp",
       "gcn",
       "rgcn",
-      "gat",
-      "port_gnn"
+      "gat"
     ],
     "seeds": [
       17,

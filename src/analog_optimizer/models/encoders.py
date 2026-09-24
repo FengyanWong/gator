@@ -9,8 +9,15 @@ from torch import nn
 from torch_geometric.nn import TransformerConv, RGCNConv, GATConv, GCNConv
 
 
-ENCODER_TYPES = ('graph_transformer', 'mlp', 'rgcn', 'gat', 'port_gnn', 'gcn')
-LEGACY_MODES = {'local_port_attention': 'graph_transformer', 'port_message_passing': 'port_gnn'}
+ENCODER_TYPES = ('graph_transformer', 'mlp', 'rgcn', 'gat', 'gcn')
+LEGACY_MODES = {'local_port_attention': 'graph_transformer'}
+# Encoders that existed and were removed. Naming one is refused in words: the models trained with it load only from
+# the last source commit that still has it (the checkpoint contract pins the source digest).
+REMOVED_ENCODERS = {'port_gnn': 'port_gnn (legacy attention_mode port_message_passing) was removed from the optimizer '
+                                'on 2026-09-24: it answered the same question as rgcn (edge-typed message passing '
+                                'without attention) and had no published reference. Models trained with it load only '
+                                'from source commit bbdfe36 (source digest 02127bc3...).'}
+REMOVED_LEGACY_MODES = {'port_message_passing': 'port_gnn'}
 
 
 @dataclass(frozen=True)
@@ -26,6 +33,9 @@ class ModelConfig:
     def __post_init__(self):
         if any(type(v) is not int or v < 1 for v in (self.hidden_dim, self.heads, self.layers)):
             raise ValueError('Model sizes must be positive integers')
+        removed = REMOVED_ENCODERS.get(self.encoder_type) or REMOVED_ENCODERS.get(REMOVED_LEGACY_MODES.get(self.attention_mode))
+        if removed:
+            raise ValueError(removed)
         legacy = None
         if self.attention_mode is not None:
             if self.attention_mode not in LEGACY_MODES:
@@ -70,23 +80,6 @@ class PortAttentionBlock(nn.Module):
 
     def forward(self, nodes, edges, edge_features, edge_role):
         nodes = nodes + self.attention(self.norm_attention(nodes), edges, edge_features)
-        return nodes + self.ff(self.norm_ff(nodes))
-
-
-class PortMessageBlock(nn.Module):
-    """Non-attention GNN control: typed edge messages and destination mean."""
-    def __init__(self, config):
-        super().__init__()
-        h = config.hidden_dim
-        self.norm_message = nn.LayerNorm(h)
-        self.message = mlp(2 * h, h, h)
-        self.norm_ff = nn.LayerNorm(h)
-        self.ff = mlp(h, 2 * h, h)
-
-    def forward(self, nodes, edges, edge_features, edge_role):
-        source, destination = edges
-        messages = self.message(torch.cat((self.norm_message(nodes)[source], edge_features), dim=-1))
-        nodes = nodes + segment_mean(messages, destination, nodes.shape[0])
         return nodes + self.ff(self.norm_ff(nodes))
 
 
@@ -153,8 +146,7 @@ def build_block(config, num_relations):
     """Architecture selection is confined to the representation layer."""
     if config.encoder_type == 'rgcn':
         return PortRGCNBlock(config, num_relations)
-    blocks = dict(graph_transformer=PortAttentionBlock, mlp=NodeMLPBlock,
-                  gat=PortGATBlock, port_gnn=PortMessageBlock, gcn=GCNBlock)
+    blocks = dict(graph_transformer=PortAttentionBlock, mlp=NodeMLPBlock, gat=PortGATBlock, gcn=GCNBlock)
     return blocks[config.encoder_type](config)
 
 
@@ -174,7 +166,7 @@ class CircuitEncoder(nn.Module):
         self.device_kind = nn.Embedding(len(feature_schema.device_kinds), h)
         self.net_values = nn.Linear(len(feature_schema.net_roles), h)
         self.context = mlp(spec_schema.width, h, h)
-        self.uses_edge_features = config.encoder_type in ('graph_transformer', 'gat', 'port_gnn')
+        self.uses_edge_features = config.encoder_type in ('graph_transformer', 'gat')
         if self.uses_edge_features:
             self.port_role = nn.Embedding(2 * len(feature_schema.terminal_roles), h)
             self.port_ordinal = nn.Linear(1, h, bias=False)

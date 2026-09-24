@@ -826,7 +826,7 @@ How to read it - and how not to: attention is normalized per RECEIVING node (ove
 node a head's values sum to 1), so a node with a single connection always shows 1.0; such lines are drawn thin and
 dashed, and every value comes with the uniform share 1/k. Attention shows where the network looked, not why it
 chose an action: **a debugging aid, not evidence** of anything about graph transformers. Encoders without attention
-(`rgcn`, `gcn`, `mlp`, `port_gnn`) show the circuit and the proposed sizes only. Bulk ties can be hidden to tidy the
+(`rgcn`, `gcn`, `mlp`; `port_gnn` until its removal on 2026-09-24) show the circuit and the proposed sizes only. Bulk ties can be hidden to tidy the
 picture (the numbers do not change); nodes can be dragged, "Spread out" and "Fit" rearrange. A run that kept no
 transition archive cannot be shown. The drawing library (cytoscape 3.34.3, MIT, no further dependencies) is a
 separate file that the browser fetches only when the view is opened. Browser check:
@@ -848,7 +848,8 @@ anode / cathode, ...) and all its numeric parameters (28 columns).
 **Why this does not touch the protected package.** The list is not code in `src/analog_optimizer/`: it is the
 `FeatureSchema` the package's `SACLearner` takes as an argument and records in every saved model's contract. A PDK list
 is built by the workbench (`src/gator_workbench/pdk.py`) and handed to the unchanged package. So the source digest stays
-`02127bc3...`, every model saved so far keeps its standard list and still loads, and the M6 audit re-runs unchanged. A
+`02127bc3...`, every model saved so far keeps its standard list and still loads, and the M6 audit re-runs unchanged (so it was until 2026-09-24: entry 7.83 removed `port_gnn` from the package, the
+digest changed, and models and audits from before load only from source commit bbdfe36). A
 model trained with a PDK list loads only with that same list, and a standard model not with a PDK list: the package's
 own contract check refuses the mix, and the compatibility report says it in words ("this model knows the PDK gpdk045
 (54 components, version fa5c3946) component list; this run uses the standard list").

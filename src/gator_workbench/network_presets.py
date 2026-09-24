@@ -240,16 +240,6 @@ PRESETS: dict = {
         replay_capacity=_field(1000000, 'official_code', 'kim2025ppaas', 'Stable-Baselines3 default; the authors '
                                'set no buffer size. Runs of 8,000 to 24,000 steps never fill it.'),
         episode_length=_field(30, 'paper', 'kim2025ppaas', '"The episode horizon is fixed to H=30".')),
-    'port_gnn': _preset(
-        'No sizing paper uses this exact network (an MLP message over the source node and a terminal-role edge '
-        'feature, mean-aggregated). Size from ParaGraph, whose device/net graph types its edges by terminal and '
-        'direction like GATOR\'s; it is a supervised model, so the training numbers come from the only RL sizing '
-        'work with edge-typed message passing.',
-        layers=_field(5, 'paper', 'ren2020paragraph', '"the dimension of embedding and number of layers were set '
-                      'to F = 32 and L = 5 ... plateaus at 5".', 'closest'),
-        hidden_dim=_field(32, 'paper', 'ren2020paragraph', 'Embedding dimension F = 32 (see layers).', 'closest'),
-        heads=_NOT_USED, **_li2023_training(' Borrowed from an R-GCN agent: ParaGraph is supervised (Adam, learning '
-                                            'rate 0.01, 300 epochs) and has no RL settings.', 'closest')),
 }
 
 

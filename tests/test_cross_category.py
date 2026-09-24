@@ -103,10 +103,10 @@ def test_unknown_metrics_and_over_budget_fail_before_backend(categories, tmp_pat
 def test_suite_budget_is_global_and_dry_run_creates_no_output(tmp_path):
     command = [sys.executable, str(ROOT/'examples/benchmark_cross_category.py'), '--dry-run',
                '--seeds', '17', '--pretrain-steps', '2', '--test-steps', '2', '--output', str(tmp_path/'output')]
-    result = subprocess.run(command+['--max-calls', '360'], capture_output=True, text=True)
+    result = subprocess.run(command+['--max-calls', '303'], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)['planned_calls'] == 360
-    result = subprocess.run(command+['--max-calls', '359'], capture_output=True, text=True)
+    assert json.loads(result.stdout)['planned_calls'] == 303            # five encoders since 2026-09-24 (six: 360)
+    result = subprocess.run(command+['--max-calls', '302'], capture_output=True, text=True)
     assert result.returncode != 0 and 'across all folds' in result.stderr
     assert not (tmp_path/'output').exists()
 
@@ -154,8 +154,8 @@ def test_cross_category_matrix_isolated_shared_source_and_frozen_target(categori
     config = settings(schema, ENCODER_TYPES)
     report = run_benchmark(tasks, factory, tmp_path, origin='synthetic', settings=config,
                            provenance=provenance, progress=lambda message: None)
-    assert report['completed'] and report['calls'] == report['planned_calls'] == 120
-    assert report['real_simulation_calls'] == 0 and len(report['test_runs']) == 20
+    assert report['completed'] and report['calls'] == report['planned_calls'] == 101   # five encoders since 2026-09-24 (six: 120)
+    assert report['real_simulation_calls'] == 0 and len(report['test_runs']) == 17
     source_tasks = [t for t in tasks if t.partition == 'train']
     target = next(t for t in tasks if t.partition == 'test')
     for cost in report['pretraining_costs']:

@@ -58,11 +58,11 @@ PyG `TransformerConv` 是基于邻域的 message-passing attention，并支持 e
 | `mlp` | 共享逐节点 MLP；忽略电路边/端口/ordinal，保留器件与参数组特征和组绑定 |
 | `rgcn` | `RGCNConv`，terminal role × direction 为 relation，逐关系 mean；不额外编码 ordinal |
 | `gat` | `GATConv` 加性多头注意力，端口边特征进入 logits；不增加自环，以 residual 保留自身表示 |
-| `port_gnn` | M5 原有的端口 MLP message 与 destination mean |
+| ~~`port_gnn`~~ | 已于 2026-09-24 删除（原 M5 端口 MLP message 与 destination mean）；仅源码提交 bbdfe36 及之前可用 |
 | `gcn` | 普通 `GCNConv`，`cached=False`；保留多重边与连通性，忽略 role/ordinal，用 residual 保留自身信息 |
 
 - MLP 是适配可变节点数/动作数的无连接信息消融，不等同于固定拓扑展平 MLP；不能把缺少图 message passing 当作其实现错误。
-- GT/GAT 的 hidden_dim 须能被 heads 整除；MLP/GCN/RGCN/port-GNN 不使用 heads。同宽度/层数不保证参数量匹配。
+- GT/GAT 的 hidden_dim 须能被 heads 整除；MLP/GCN/RGCN 不使用 heads。同宽度/层数不保证参数量匹配。
 - 不为新拓扑创建专用最终层。验证混合 batch 与单图输出一致、重命名/重排等变、动作归属及梯度、精确恢复；另验证 MLP 对删边/换端口不变，普通 GCN 对结构变化敏感但对换端口标签不变，端口感知图编码器对结构/端口变化敏感。
 - 原 `models.graph_transformer` 导入与旧 `attention_mode` 两个取值保留兼容；新调用使用 `encoder_type`。冲突配置拒绝，不能静默回退到 GT。
 - checkpoint 保存编码器配置。不同架构不能直接互载；代码摘要/schema/依赖仍严格校验，不默认兼容改码前的 checkpoint。

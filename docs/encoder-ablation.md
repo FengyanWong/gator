@@ -16,7 +16,7 @@ learner = SACLearner(
 )
 ```
 
-`encoder_type` 可选 `graph_transformer`、`mlp`、`rgcn`、`gat`、`port_gnn`、`gcn`。后续 M1 输入复核已补上普通 GCN 及统一同构/dense 导出，见 [M1 通用输入契约](m1-neural-inputs.md)；下面四架构的 296 项测试/116 次评价是该次初始验收记录，最新为 319 项/六架构 168 次评价。`models/encoders.py` 的 `build_encoder()` 是 actor 和两个 critic 的共同构造入口。所有编码器遵循：
+`encoder_type` 可选 `graph_transformer`、`mlp`、`rgcn`、`gat`、`gcn`（`port_gnn` 已于 2026-09-24 删除，见 docs/decisions.md；下文关于它的记录为历史）。后续 M1 输入复核已补上普通 GCN 及统一同构/dense 导出，见 [M1 通用输入契约](m1-neural-inputs.md)；下面四架构的 296 项测试/116 次评价是该次初始验收记录，最新为 319 项/六架构 168 次评价。`models/encoders.py` 的 `build_encoder()` 是 actor 和两个 critic 的共同构造入口。所有编码器遵循：
 
 ```text
 encoder(GraphBatch, actions=None)
@@ -33,7 +33,7 @@ encoder(GraphBatch, actions=None)
 | `mlp` | 共享逐节点 MLP + residual/LayerNorm，随后使用共同参数组 readout | 忽略电路边、端口角色和 ordinal；保留器件特征、规格和参数组绑定 |
 | `rgcn` | `RGCNConv` 逐关系 mean 消息 + residual/LayerNorm/FFN | 每个 terminal role × direction 是独立 relation；本实现不额外编码 ordinal |
 | `gat` | `GATConv` 多头加性邻域注意力 + residual/LayerNorm/FFN | role/direction/ordinal 特征进入 attention logits；不生成虚构端口的 self-loop |
-| `port_gnn` | M5 已有的端口 MLP 消息 + destination mean | role/direction/ordinal 参与 message |
+| ~~`port_gnn`~~（2026-09-24 删除） | M5 已有的端口 MLP 消息 + destination mean | role/direction/ordinal 参与 message |
 | `gcn` | 普通 `GCNConv` + residual/LayerNorm/FFN，`cached=False` | 使用连通性及多重边数量；忽略端口标签/ordinal，原数据仍保留这些字段 |
 
 MLP 是为可变节点数和动作数设计的无连接信息消融，**不是将固定拓扑展平的普通全连接策略**。actor 按绑定成员读取表示；critic 另外聚合所有节点和动作组。它检验这些输入下使用电路连接信息的收益，不能代表所有 MLP 设计的能力。
@@ -71,7 +71,7 @@ python examples/train_synthetic_sac.py --encoder rgcn
 ## 兼容与恢复
 
 - 原 `models.graph_transformer` 下的 `ModelConfig`、`GroupActor`、`GraphCritic` 和 `PortGraphEncoder` 导入仍保留，新的入口可直接从 `models` 导入。
-- 旧 `attention_mode='local_port_attention'/'port_message_passing'` 分别映射到 GT/port-GNN。新代码使用 `encoder_type`；同时指定且冲突时拒绝。
+- 旧 `attention_mode='local_port_attention'` 映射到 GT；`'port_message_passing'`（port-GNN）自 2026-09-24 起被拒绝并说明原因。新代码使用 `encoder_type`；同时指定且冲突时拒绝。
 - checkpoint 保留既有的代码摘要、schema、配置和依赖严格匹配规则，并保存明确的 `encoder_type`；加载时需提供匹配的 `model_config`。每种编码器通过精确下一次更新恢复测试。
 - 改码前的 M4/M5 checkpoint 因代码摘要/配置变化不会被当前代码无提示恢复。本次没有历史 checkpoint 迁移工具；旧实验产物未被修改。跨架构加载/权重迁移显式报错。
 - 停用新对照只需不传 `--encoders`，训练默认仍为 GT；后端、动作权限和 nominal-only 限制不变。

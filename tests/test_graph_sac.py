@@ -461,7 +461,9 @@ def test_encoder_topology_and_port_ablation(opamp, encoder):
 
 def test_encoder_configuration_roundtrip_and_legacy_aliases():
     assert ModelConfig().encoder_type == 'graph_transformer'
-    assert ModelConfig(attention_mode='port_message_passing') == ModelConfig(encoder_type='port_gnn')
+    for removed in (dict(attention_mode='port_message_passing'), dict(encoder_type='port_gnn')):
+        with pytest.raises(ValueError, match='removed from the optimizer on 2026-09-24'):
+            ModelConfig(**removed)                                    # the M5 port-GNN: refused by name, in words
     for encoder in ENCODER_TYPES:
         config = model_config(encoder)
         assert ModelConfig(**json.loads(json.dumps(asdict(config)))) == config
@@ -470,11 +472,11 @@ def test_encoder_configuration_roundtrip_and_legacy_aliases():
                    dict(encoder_type='gat', hidden_dim=15, heads=2)):
         with pytest.raises(ValueError):
             ModelConfig(**config)
-    for encoder in ('mlp', 'rgcn', 'port_gnn', 'gcn'):
+    for encoder in ('mlp', 'rgcn', 'gcn'):
         assert ModelConfig(encoder_type=encoder, hidden_dim=15, heads=2).hidden_dim == 15
 
 
-@pytest.mark.parametrize('encoder', ['mlp', 'rgcn', 'gat', 'port_gnn', 'gcn'])
+@pytest.mark.parametrize('encoder', ['mlp', 'rgcn', 'gat', 'gcn'])
 def test_checkpoint_rejects_different_encoder_before_loading(transitions, tmp_path, encoder):
     source = learner(encoder)
     replay = ReplayBuffer(origin='synthetic')

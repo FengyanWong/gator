@@ -11,7 +11,7 @@
 | 电路平台 | Cadence Virtuoso + Spectre | 真实 PDK/测试台以本地为准 |
 | 接口选择 | 用户指定 Virtuoso bridge；讨论的仓库是 `Arcadia-1/virtuoso-bridge-lite` | 不自动迁回 SkillBridge，不引入 LLM agent 内环 |
 | 电路表示 | 统一、端口感知的 device-net 图 | 保存端口信息并传到模型；不是简单 adjacency |
-| Encoder | 默认局部端口 Graph Transformer，可选 MLP/GCN/RGCN/GAT/port-GNN | 统一节点/参数组接口；可运行不等于迁移效果已证实 |
+| Encoder | 默认局部端口 Graph Transformer，可选 MLP/GCN/RGCN/GAT（port-GNN 已于 2026-09-24 删除） | 统一节点/参数组接口；可运行不等于迁移效果已证实 |
 | 优化器 | Goal-conditioned SAC | 可以做其他算法基线，但不默认替换 |
 | 初版 surrogate | 不使用 | 以后只能作为单独实验加入 |
 | 当前训练工况 | 已验证 nominal only | PVT/MC 结果不进入 reward、replay 或 normalizer |

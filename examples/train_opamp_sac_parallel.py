@@ -64,7 +64,7 @@ def main():
     parser.add_argument('--warmup', type=int, default=8)
     parser.add_argument('--timeout-seconds', type=float, default=120)
     parser.add_argument('--seed', type=int, default=20260919)
-    parser.add_argument('--encoder', choices=('graph_transformer', 'mlp', 'gcn', 'rgcn', 'gat', 'port_gnn'),
+    parser.add_argument('--encoder', choices=('graph_transformer', 'mlp', 'gcn', 'rgcn', 'gat'),          # port_gnn removed 2026-09-24
                         default='graph_transformer')
     parser.add_argument('--specs', type=Path, default=ROOT / 'configs/gpdk045_opamp_smoke_specs.json')
     parser.add_argument('--reference-measurements', type=Path, required=True)

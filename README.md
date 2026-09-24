@@ -29,7 +29,7 @@ M3 已补充 typed PVT/Monte Carlo 工况接口、GPDK045 来源配置、nominal
 
 **M5 真实新拓扑补验已完成**：新增独立 GPDK045 七管 Miller 两级 OTA，真实动作维度 1→2；3 seeds × 6 methods 完成同拓扑规格及新拓扑对照。本轮 **585 次真实 Spectre、288 次 SAC 更新**，完整回归 **440 passed，0 failed，0 skipped**；24 个 checkpoint 审计及两个电路完整 CDF/网表/指标恢复均通过。新拓扑 GT 微调 1/3、随机 1/3、坐标搜索 3/3、port-GNN 微调 2/3 达标，仍没有 GT 迁移优势证据。详见 [M5 真实拓扑验收](docs/m5-real-topology.md)。
 
-**M6 前编码器接口**已支持 `graph_transformer / mlp / rgcn / gat` 切换，并保留 M5 的 `port_gnn`。共用参数组 actor、动作条件化 critics 和 SAC；显式选择编码器后，每种都运行从零／冻结／微调三种模式，记录独立成本与参数量。完整离线回归 **296 项通过，零失败、零跳过**；四架构 synthetic smoke 已完成 116 次解析评价，没有新增真实仿真或迁移优势结论。接口、命令、兼容边界见 [编码器对照说明](docs/encoder-ablation.md)。
+**M6 前编码器接口**已支持 `graph_transformer / mlp / rgcn / gat` 切换，并保留 M5 的 `port_gnn`（`port_gnn` 已于 2026-09-24 从包中删除，见 docs/decisions.md；最后含它的源码提交为 bbdfe36）。共用参数组 actor、动作条件化 critics 和 SAC；显式选择编码器后，每种都运行从零／冻结／微调三种模式，记录独立成本与参数量。完整离线回归 **296 项通过，零失败、零跳过**；四架构 synthetic smoke 已完成 116 次解析评价，没有新增真实仿真或迁移优势结论。接口、命令、兼容边界见 [编码器对照说明](docs/encoder-ablation.md)。
 
 **M1 神经网络输入复核**进一步增加 `to_homogeneous_pyg()`：固定语义的 `x / edge_index / edge_type / edge_attr / edge_weight`、正确的参数组 batch 偏移，以及带 mask 的 dense 节点视图；训练层复用同一端口边转换。新增普通 `gcn` 对照，与 `rgcn` 分开。该次验收 **319 项离线测试通过，零失败、零跳过**，六编码器完成 168 次 synthetic 流程评价。原 parser/HeteroData 保持兼容，详见 [M1 通用输入契约](docs/m1-neural-inputs.md)。
 
@@ -58,7 +58,8 @@ python -m pytest -q
 python examples/netlist_demo.py tests/fixtures/synthetic/opamp.scs --config configs/opamp.json
 # 无 Cadence：两个 analytic toy 环境、一个 SAC learner、checkpoint 验收。
 python examples/train_synthetic_sac.py
-# M5：固定划分、3 seeds、6 methods，使用解析 toy 后端。
+# M5 的六方法协议（graph_transformer + port_gnn）自 2026-09-24 起不可用：port_gnn 已删除，只有源码提交 bbdfe36 仍能运行它。
+# 不带 --encoders 时现在只跑 graph_transformer 的 scratch/frozen/adapt + random + pattern search（解析 toy 后端）。
 python examples/benchmark_transfer.py
 # M6 前：四架构的最小迁移流程验收。
 python examples/benchmark_transfer.py --encoders graph_transformer mlp rgcn gat --seeds 17 --pretrain-steps 2 --test-steps 2 --max-calls 120
@@ -91,7 +92,7 @@ PYTHONPATH=src python3 -m analog_optimizer.demo tests/fixtures/synthetic/vco.scs
 | `src/analog_optimizer/measurements/specs.py` | 单位、有效性、min/max/range 规格和有限奖励 |
 | `src/analog_optimizer/envs/` | 单 worker 环境、有限步数、失败处理、候选日志和恢复 |
 | `src/analog_optimizer/evaluation/` | nominal top-k/corner 汇总纯函数，以及 M5 划分检查、定额迁移实验和成本汇总；不调度 PVT/MC |
-| `src/analog_optimizer/models/` | 固定特征/规格注册表、packed batch、可切换 GT/MLP/GCN/RGCN/GAT/port-GNN 编码器、group actor/critic |
+| `src/analog_optimizer/models/` | 固定特征/规格注册表、packed batch、可切换 GT/MLP/GCN/RGCN/GAT 编码器（port-GNN 已于 2026-09-24 删除）、group actor/critic |
 | `src/analog_optimizer/training/` | nominal replay、连续 SAC、串行/并行 collector、checkpoint 保存/恢复 |
 | `src/analog_optimizer/recording/` | 单 writer SQLite、静态去重、动态状态、摘要、容量/附件清理、checkpoint、只读查询与导出 |
 | `tests/fixtures/synthetic/` | 三个合成网表，使用同一个解析器 |

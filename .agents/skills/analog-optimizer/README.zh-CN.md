@@ -2,7 +2,7 @@
 
 版本：0.3；同步日期：2026-09-22。
 按照近期模拟电路优化讨论编写，保留当前方向：**端口感知 Graph Transformer + goal-conditioned SAC + Virtuoso bridge / Spectre**。
-默认**不加 surrogate、LLM、Mamba**。项目已完成 M1–M5 与编码器接口（MLP/GCN/RGCN/GAT 与默认 GT 的统一 SAC 迁移对照，保留 port-GNN）；M6 已于 2026-09-20 以试点规模收尾（流程跑通并经独立审计，迁移或 GT 优势未得出结论）。此后的工作是 Web 工作台（`src/gator_workbench/`、`frontend/`）。最新状态以仓库的 `docs/decisions.md`、`CLAUDE.md` 与 `docs/workbench.md` 为准；[项目决策](references/project-decisions.md) 记录研究侧的约定。
+默认**不加 surrogate、LLM、Mamba**。项目已完成 M1–M5 与编码器接口（MLP/GCN/RGCN/GAT 与默认 GT 的统一 SAC 迁移对照，port-GNN 已于 2026-09-24 删除）；M6 已于 2026-09-20 以试点规模收尾（流程跑通并经独立审计，迁移或 GT 优势未得出结论）。此后的工作是 Web 工作台（`src/gator_workbench/`、`frontend/`）。最新状态以仓库的 `docs/decisions.md`、`CLAUDE.md` 与 `docs/workbench.md` 为准；[项目决策](references/project-decisions.md) 记录研究侧的约定。
 
 本包是给 Codex 的指令和参考材料，**不是优化器代码、已训练模型或已接通的 Virtuoso 插件**。
 安装不会安装 Python 依赖、连接 VM、修改原理图或运行 Spectre。

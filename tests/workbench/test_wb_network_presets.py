@@ -3,6 +3,7 @@ operator's saved values behind the panel's encoder drop-down. No simulator, no n
 import json
 
 import pytest
+from pydantic import ValidationError
 from fastapi.testclient import TestClient
 
 from gator_workbench import modes, network_presets as presets, schema, tasks, validation
@@ -46,15 +47,15 @@ def test_the_preset_numbers_are_the_ones_verified_in_the_primary_sources():
     """Pinned on purpose: a changed number must come with a changed citation (docs/network-presets.md)."""
     sizes = {name: tuple(presets.publication(name)['network'].values()) for name in schema.ENCODER_TYPES}
     assert sizes == dict(graph_transformer=(48, 4, 4), mlp=(256, 4, 4), rgcn=(32, 4, 4), gat=(192, 3, 4),
-                         port_gnn=(32, 4, 5), gcn=(32, 4, 7))                       # (hidden, heads, layers)
+                         gcn=(32, 4, 7))                                            # (hidden, heads, layers)
     keys = ('learning_rate', 'gamma', 'tau', 'batch_size', 'warmup_transitions', 'replay_capacity', 'episode_length')
     training = {name: tuple(presets.publication(name)['advanced'][k] for k in keys) for name in schema.ENCODER_TYPES}
     li2023, attention = (3e-4, 0.99, 0.005, 128, 1000, 100000, 50), (1e-3, 0.9, 0.005, 32, 8, 50, 30)
-    assert training == dict(graph_transformer=attention, gat=attention, gcn=li2023, rgcn=li2023, port_gnn=li2023,
+    assert training == dict(graph_transformer=attention, gat=attention, gcn=li2023, rgcn=li2023,
                             mlp=(3e-3, 0.8, 0.005, 256, 120, 1000000, 30))
     borrowed = {name for name, preset in presets.PRESETS.items()
                 if any(field['match'] == 'closest' for field in preset['fields'].values())}
-    assert borrowed == {'graph_transformer', 'port_gnn'}          # no publication trains these networks as sizing agents
+    assert borrowed == {'graph_transformer'}          # no publication trains this network as a sizing agent (port_gnn, the other one, was removed 2026-09-24)
 
 
 def test_a_value_without_a_publication_is_the_gator_default_and_says_so():
@@ -143,8 +144,8 @@ def test_the_whole_value_set_is_validated_not_one_field_at_a_time():
                 dict(advanced=dict(gamma=1.5)), dict(advanced=dict(batch_size=1.5)),
                 dict(advanced=dict(freeze_encoder=True)), dict(network=dict(encoder_type='gat'))):
         with pytest.raises(presets.InvalidNetworkSettings):
-            presets.save('port_gnn', bad.get('network'), bad.get('advanced'))
-    assert presets.entry('port_gnn')['origin'] == 'publication'                  # a rejected edit stores nothing
+            presets.save('rgcn', bad.get('network'), bad.get('advanced'))
+    assert presets.entry('rgcn')['origin'] == 'publication'                      # a rejected edit stores nothing
 
 
 def test_a_damaged_settings_file_falls_back_to_the_preset_and_says_why():
@@ -221,3 +222,20 @@ def test_a_budget_that_never_leaves_warm_up_is_reported(tmp_path):
     starved = codes(make_config(tmp_path, run=dict(max_evaluations=20), advanced=dict(warmup_transitions=20)))
     assert starved['budget_within_warmup'] == 'warning'
     assert 'budget_within_warmup' not in codes(make_config(tmp_path, run=dict(max_evaluations=21), advanced=dict(warmup_transitions=20)))
+
+
+# ------------------------------------------------------------------------------- removed encoder (2026-09-24)
+def test_port_gnn_is_gone_from_the_list_and_refused_in_words(client):
+    """port_gnn left the optimizer package on 2026-09-24 (record 7.83): not offered, not editable, and a configuration
+    naming it is refused with the reason and the last source commit that still has it."""
+    data = client.get('/api/network-settings').json()
+    assert 'port_gnn' not in data['encoders'] and 'port_gnn' not in data['settings'] and data['encoders'] == list(schema.ENCODER_TYPES)
+    assert client.put('/api/network-settings/port_gnn', json=dict(network=dict(hidden_dim=32))).status_code == 404
+    assert client.post('/api/network-settings/port_gnn/reset', json=dict(to='publication')).status_code == 404
+    with pytest.raises(KeyError):
+        presets.entry('port_gnn')
+    with pytest.raises(ValidationError) as caught:
+        schema.NetworkConfig(encoder_type='port_gnn')
+    message = str(caught.value)
+    assert 'removed from the optimizer on 2026-09-24' in message and 'bbdfe36' in message and 'rgcn' in message
+    assert schema.NetworkConfig(encoder_type='rgcn').encoder_type == 'rgcn'

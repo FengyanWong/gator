@@ -38,7 +38,7 @@ Virtuoso schematic / exported Spectre netlist
   → validated measurements + status → observation / reward / replay
 ```
 
-- 默认使用 **Graph Transformer + goal-conditioned SAC**。用户已要求用 MLP、GCN、RGCN、GAT 比较迁移效果，通过统一编码器接口切换；保留已有 port-GNN 对照。不要将编码器消融扩展为更换 SAC 或增加 surrogate。
+- 默认使用 **Graph Transformer + goal-conditioned SAC**。用户已要求用 MLP、GCN、RGCN、GAT 比较迁移效果，通过统一编码器接口切换；原有 port-GNN 对照已于 2026-09-24 删除（源码提交 bbdfe36 及之前仍可运行它）。不要将编码器消融扩展为更换 SAC 或增加 surrogate。
 - 首版**不加入 surrogate**，也不把 surrogate 插成 encoder 与 SAC 之间的必经层。
 - 优化范围先是固定拓扑的器件尺寸、偏置及被明确允许的参数；不是拓扑搜索或自动布局布线。
 - 初始目标是可靠单电路闭环；之后验证同类电路的规格与拓扑迁移，再研究 LDO/VCO/OpAmp 跨类别迁移。

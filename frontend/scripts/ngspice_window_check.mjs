@@ -15,7 +15,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/ngspice_window_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, fail, finish, launchEdge, outDir, PAGE_OPEN_TEST, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -76,6 +76,7 @@ try {
     if (name === '/api/tasks/starter' && new URL(request.url).searchParams.get('task_key') === 'ngspice:fixture_ota') return page.fulfil(requestId, 200, STARTER);
     if (name === '/api/circuit/load' && body?.circuit?.task_id === 'ngspice:fixture_ota') return page.fulfil(requestId, 200, LOADED);
     if (request.method === 'GET' || name === '/api/config/validate' || name === '/api/circuit/load') return page.pass(requestId);
+    if (name === '/api/connection/check') return page.fulfil(requestId, 200, PAGE_OPEN_TEST(body?.profile_id ?? null));   // the page's one test when it opens (7.80): canned, not a write of its own
     if (name !== '/api/output/check') refused.push(`${request.method} ${name}`);
     return page.refuse(requestId, 'FIXTURE: this check lets no other request through');
   };

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { api, Json } from '../api';
@@ -23,8 +23,9 @@ const testedAt = (iso: string) => {
  *  ngspice over SSH. The steps and their wording follow the kind; the backend names the kinds, this file only words them.
  *
  *  Unchanged rules (section 2.1, user request 2026-09-20): a TEST only observes; a tunnel or a local bridge is set up by
- *  its explicit button alone; nothing is ever stopped or restarted; and nothing is checked on page load, on a timer or
- *  when the window opens - page load reads the profiles and the backend's LAST result once, a probe runs only on a press. */
+ *  its explicit button alone; nothing is ever stopped or restarted; nothing is checked on a timer, when the window opens
+ *  or when a connection is chosen (that reads the backend's LAST result once). ONE exception since 2026-09-24 (user
+ *  request, status record 7.80): when the page opens it tests the connection in use once - the same test as the button. */
 export function ConnectionButton({ profileId, setProfileId }: { profileId: string | null; setProfileId: (id: string | null) => void }) {
   const [profiles, setProfiles] = useState<Json>(null);
   const [setup, setSetup] = useState<Json>(null);
@@ -47,25 +48,34 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
     if (p.profiles.length === 0) { setAdding(true); loadSetup(); }
   }).catch(e => setError(e.message));
   useEffect(() => { loadProfiles(); }, []);
-  useEffect(() => {
-    setConnected(null);
-    if (!profileId) { setStatus(null); return; }
-    // Profile change / page load: show the last result the backend remembers. This READS the cache and probes nothing.
-    // A check runs only on a button press below (user request 2026-09-20): no automatic check, no timer.
-    let live = true;
-    api.connectionStatus(profileId).then(s => { if (live) setStatus(s); }).catch(e => { if (live) setError(e.message); });
-    return () => { live = false; };
-  }, [profileId]);
 
-  // ---- the window ------------------------------------------------------------------------------------------------
-
-  // ---- actions: every one of them is a button press ----------------------------------------------------------------
+  // ---- actions: every one of them is a button press, but for the one test when the page opens (below) ---------------
   const run = async (name: string, action: () => Promise<void>) => {
     setBusy(name); setError(null);
     try { await action(); } catch (e: any) { setError(e.message); } finally { setBusy(null); }
   };
   const connect = () => run('connect', async () => { const answer = await api.connectionConnect(profileId!); setConnected(answer.connect); setStatus(answer.status); });
   const check = (scope: string) => run(scope, async () => { setStatus(await api.connectionCheck(profileId!, scope)); });
+  // The page opened: ONE test of the connection in use, as soon as the connection list is read and names it - the same as
+  // pressing "Test connection" (interactive scope: one read-only SKILL round trip, for ngspice the built-in test circuit;
+  // zero-cost, starts nothing; while a run is active the probe does not touch Virtuoso). User request 2026-09-24 (status
+  // record 7.80); from 2026-09-20 until then the page checked nothing on its own (7.9). Once per page: a connection chosen
+  // later shows the last result the backend remembers (a cache read, no probe), and nothing runs on a timer or when the
+  // window opens. While the test runs the button's badge reads "testing...".
+  const testedOnOpen = useRef(false);
+  useEffect(() => {
+    setConnected(null);
+    if (!profileId) { setStatus(null); return; }
+    if (!profiles) return;                                   // the connection list is on its way: it says whether the profile exists
+    let live = true;
+    if (!testedOnOpen.current && profiles.profiles.some((p: Json) => p.profile_id === profileId)) {
+      testedOnOpen.current = true;
+      run('interactive', async () => { const tested = await api.connectionCheck(profileId, 'interactive'); if (live) setStatus(tested); });
+    } else {
+      api.connectionStatus(profileId).then(s => { if (live) setStatus(s); }).catch(e => { if (live) setError(e.message); });
+    }
+    return () => { live = false; };
+  }, [profileId, profiles]);
   // The click happens in the connection window, so ITS clipboard is the one a browser lets this gesture write to.
   const copyText = (key: string, text: string) => { (popup ?? window).navigator.clipboard?.writeText(text); setCopied(key); setTimeout(() => setCopied(c => (c === key ? null : c)), 1500); };
 
@@ -103,9 +113,12 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
         title={popup ? 'The connection window is open: press to bring it to the front.' : 'Opens the connection window: choose or add a connection (Virtuoso or ngspice, on this machine or over SSH), connect and test it. Opening it checks nothing.'}>
         <span className="connection-button-name">Connection</span>
         <span className="connection-button-what">{profileId ? `${profileId}${entry?.kind_label ? ` - ${entry.kind_label}` : ''}` : profiles && profiles.profiles.length === 0 ? 'none set up yet' : 'none selected'}{popup ? ' (window open)' : ''}</span>
-        {profileId && <span className={`badge state-${overall}`} title={status?.checked_utc ? `Last test: ${testedAt(status.checked_utc)}` : 'Never tested'}>{STATE_LABEL[overall] ?? overall}</span>}
+        {profileId && (busy === 'interactive' || busy === 'full'
+          ? <span className="badge state-not_checked" title="The connection is being tested">testing...</span>
+          : <span className={`badge state-${overall}`} title={status?.checked_utc ? `Last test: ${testedAt(status.checked_utc)}` : 'Never tested'}>{STATE_LABEL[overall] ?? overall}</span>)}
       </button>
       {blocked && <p className="error">{BLOCKED}</p>}
+      {error && !popup && <p className="error">{error}</p>}
     </section>
   );
 

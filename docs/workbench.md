@@ -494,11 +494,17 @@ the browser sends only the profile name; an existing connection file is never ov
 Real-simulation tasks also need `library`, `model_file` and the per-circuit `circuits` entries
 shown above, added by hand.
 
-**A check runs only when you press a button** (user request, 2026-09-20 night): Connect SSH,
-Test connection or + Spectre / license. The panel no longer checks on page load or profile change
-and no longer polls every 15 s; on load it reads the backend's last result once (a cache read, no
-probe). `serve` no longer checks at start either (`--connection-check-on-start` brings that one
-cheap check back). A result stays on screen with the clock time of its test ("tested at 21:04:13")
+**One test when the page opens, then only on a press** (user request 2026-09-24, status record
+7.80; from 2026-09-20 until then nothing ran on load - "only check connection when I press the
+button"): when the page opens it tests the connection in use once, as soon as the connection list is
+read and names it - the same test as **Test connection** (read-only, zero-cost, one SKILL round
+trip; for ngspice the built-in test circuit; with a run active the probe does not touch Virtuoso) -
+and the button in the column reads "testing..." meanwhile, then the result. Nothing else runs on
+its own: a connection chosen later shows the backend's last result once (a cache read, no probe),
+opening the window checks nothing, and no timer polls (the old panel polled every 15 s). A press -
+Connect SSH, Test connection or + Spectre / license - runs a check as before. `serve` does not
+check at start either (`--connection-check-on-start` brings that one cheap check back). A result
+stays on screen with the clock time of its test ("tested at 21:04:13")
 until the next press - it is the result of that moment, not a live indicator, and it no longer
 turns to `unknown` by itself after `--connection-stale-seconds` (a page reload still shows an old
 result as `unknown`). Unchanged and independent of the panel: the gate probes the link afresh

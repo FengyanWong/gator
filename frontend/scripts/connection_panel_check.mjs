@@ -9,8 +9,10 @@
 //     2026-09-21); the window is a second browser window, found by its title and driven over a second DevTools session;
 //   * the four kinds of connection - Virtuoso over SSH / on this machine, ngspice on this machine / over SSH - each with
 //     its own steps and wording, and "Add a connection" sending names only;
-//   * (user request 2026-09-20) NO check on page load, NO check when the window opens, NO timer (the old panel polled
-//     every 15 s, so each quiet period here lasts 17 s), one check per button press, a result that stays until the next.
+//   * (user request 2026-09-24, status record 7.80) ONE interactive test of the connection in use when the page opens -
+//     the same as a press - and (user request 2026-09-20) nothing else on its own: NO check when the window opens or a
+//     connection is chosen, NO timer (the old panel polled every 15 s, so each quiet period here lasts 17 s), one check
+//     per button press, a result that stays until the next.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/connection_panel_check.mjs)" [screenshot-dir]
 // With GATOR_CONNECTION_LIVE=1 a last section lets the requests THROUGH to the backend: only ever against a scratch
@@ -121,12 +123,17 @@ try {
     controls: panel.querySelectorAll('button, select, input, a, summary').length, headings: [...document.querySelectorAll('.left h3')].map(h => h.textContent.trim()),
     height: Math.round(panel.getBoundingClientRect().height), first: panel === document.querySelector('.left').firstElementChild } : null; })()`);
   check('the connection block of the left column is ONE button', !!block && block.controls === 1 && block.first, JSON.stringify(block));
-  check('it is called "Connection" and names the connection in use, its kind and the last state', !!block && /^Connection\s*lab - Virtuoso over SSH\s*UNKNOWN$/.test(block.text), block?.text);
+  check('it is called "Connection" and names the connection in use, its kind and the state the test made when the page opened found', !!block && /^Connection\s*lab - Virtuoso over SSH\s*OK$/.test(block.text), block?.text);
   check('the old panel (heading, steps, profile select) is gone from the column', !!block && !block.headings.some(h => /connection/i.test(h)) && block.height < 90, JSON.stringify(block));   // two lines of text; the old panel was > 300 px
   // Since 7.76 the Project column reads the connection list too (the family of the connection in use): a read of the
   // workbench's own file, no probe - so the page load is two GET profiles + one GET status, and nothing else.
-  check('page load reads the profiles (twice: the button and the Project column) and the cached status once, and checks nothing', JSON.stringify(names().sort()) === JSON.stringify(['GET profiles', 'GET profiles', 'GET status']), names().join(', '));
-  check('page load starts NO check', !seen.some(s => s.method === 'POST'), names().join(', '));
+  // Since 2026-09-24 (status record 7.80, user request) the page tests the connection in use ONCE when it opens - the same
+  // interactive test as the button - and nothing else on its own; no cached read then (the test's answer is fresher).
+  check('page load reads the profiles (twice: the button and the Project column) and tests the connection in use once, nothing else',
+    JSON.stringify(names().sort()) === JSON.stringify(['GET profiles', 'GET profiles', 'POST check']), names().join(', '));
+  const opened = seen.find(s => s.method === 'POST');
+  check('the test when the page opens is the interactive test of the connection in use, as a press sends it', JSON.stringify(opened?.body) === JSON.stringify({ profile_id: 'lab', scope: 'interactive', trigger: 'user' }), JSON.stringify(opened?.body));
+  check('the button shows its result', (await evaluate(`${BUTTON}.querySelector('.badge').textContent`)) === 'OK', await evaluate(`${BUTTON}.querySelector('.badge').textContent`));
   await shot('main', '.left', 'connection-1-left-column.png');
 
   // ---- pressing it opens the connection window; opening checks nothing ----------------------------------------------
@@ -135,15 +142,16 @@ try {
   check('pressing the button opens a window of its own, titled "GATOR - connection"', !!farPage && farPage.title === 'GATOR - connection');
   check('the window shows the block under the heading "Connection"', (await far.evaluate(`${WINDOW}.querySelector('h2')?.textContent`)) === 'Connection');
   check('opening the window sends NO request at all', seen.length === mark, names(mark).join(', '));
-  check('an untested link reads "never tested" / UNKNOWN', (await hint()) === 'never tested' && (await badge()) === 'UNKNOWN', `${await badge()} | ${await hint()}`);
+  check('the window shows the test made when the page opened: its clock time and OK', /^tested at \d/.test(await hint()) && (await badge()) === 'OK', `${await badge()} | ${await hint()}`);
   check('the button says the window is open', (await evaluate(`${BUTTON}.textContent`)).includes('(window open)'));
   const styled = await far.evaluate(`(() => { const s = getComputedStyle(${WINDOW}.querySelector('.step-no')); return s.borderRadius !== '0px' && s.color === 'rgb(255, 255, 255)'; })()`);
   check('the window carries the workbench style sheet', styled);
 
   // ---- Virtuoso over SSH: the three steps, as before ----------------------------------------------------------------
   let shown = await text();
+  // The test made when the page opened found the (canned) tunnel up, so step 1 reads "Connect SSH (already up)".
   check('Virtuoso over SSH: 1 Connect SSH, 2 CIW line, 3 Test', shown.includes('Connect to the target over SSH') && shown.includes('Load the bridge in the Virtuoso CIW')
-    && shown.includes('Test the connection') && (await buttons()).includes('Connect SSH') && (await buttons()).includes('+ Spectre / license'));
+    && shown.includes('Test the connection') && (await buttons()).includes('Connect SSH (already up)') && (await buttons()).includes('+ Spectre / license'), (await buttons()).join(' | '));
   check('a connection written before kinds existed says so', shown.includes('written before kinds existed'));
   await shot('window', '.connection-window', 'connection-2-window-virtuoso-ssh.png');
 
@@ -175,6 +183,7 @@ try {
   const select = async id => { const before = seen.length; await choose('select', id); await settle(before); return seen.slice(before); };
   let switched = await select('here');
   shown = await text();
+  check('a connection never tested reads "never tested" / UNKNOWN', (await hint()) === 'never tested' && (await badge()) === 'UNKNOWN', `${await badge()} | ${await hint()}`);
   check('choosing another connection reads its cached status once (and the Project column the connection list) and checks nothing',
     switched.every(s => s.method === 'GET' && ['status', 'profiles'].includes(s.name)) && switched.filter(s => s.name === 'status').length === 1, switched.map(s => `${s.method} ${s.name}`).join(', '));
   check('Virtuoso on this machine: "Set up local bridge", no SSH wording in the steps', shown.includes('Set up the bridge on this machine') && (await buttons()).includes('Set up local bridge')
@@ -253,8 +262,11 @@ try {
   try { await windowTarget(false); } catch { closedByReload = false; }
   far.close();
   check('a reload closes the window (no dead window is left behind)', closedByReload);
-  check('a reload reads the profiles (the button and the Project column) and the cached status once, and checks nothing', JSON.stringify(names(mark).sort()) === JSON.stringify(['GET profiles', 'GET profiles', 'GET status']), names(mark).join(', '));
+  check('a reload reads the profiles (the button and the Project column) and tests the connection chosen last once, nothing else', JSON.stringify(names(mark).sort()) === JSON.stringify(['GET profiles', 'GET profiles', 'POST check'])
+    && JSON.stringify(seen.find((s, i) => i >= mark && s.method === 'POST')?.body) === JSON.stringify({ profile_id: 'ngspice-ssh', scope: 'interactive', trigger: 'user' }), names(mark).join(', '));
   await openWindow();
+  check('the window shows that fresh test, not the old cached result', /^tested at \d/.test(await hint()) && !/too old/.test(await hint()) && (await badge()) === 'OK', `${await badge()} | ${await hint()}`);
+  await select('sim');                                                        // a connection chosen later: its cached result, here an old one
   check('an old cached result is labelled as too old', /^tested at .* - too old to trust, shown as unknown$/.test(await hint()) && (await badge()) === 'UNKNOWN', `${await badge()} | ${await hint()}`);
   await shot('window', '.connection-window', 'connection-7-window-old-result.png');
 

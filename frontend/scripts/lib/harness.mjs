@@ -34,6 +34,12 @@ export const LIVE_PORT = '8765';                                  // the user's 
 export const CONFIG_KEY = 'gator-workbench-config-v1';            // the page's saved configuration (store.ts)
 export const RUN_KEY = 'gator-workbench-current-run-v1';          // the run this browser remembers
 export const NO_WRITES = 'FIXTURE: this check lets no writing request through';
+/** The page tests the connection in use ONCE when it opens (status record 7.80, user request 2026-09-24): a hermetic check
+ *  answers that one POST /api/connection/check here, as "not tested" - nothing is probed, and it is not a request the page
+ *  made beyond what the user asked for, so it is not counted among the refused ones. */
+export const PAGE_OPEN_TEST = profile_id => ({ profile_id, scope: 'interactive', trigger: 'user', checked_utc: null, age_seconds: null, stale: true,
+  overall: 'unknown', run_active: false, layers: [], ciw: null,
+  summary: { level: 'unknown', headline: 'FIXTURE: the test of the connection when the page opened was answered by this check; nothing was probed.', broken_layer: null, next_step: null } });
 export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const text = value => JSON.stringify(value);                      // a JS literal for code sent into the page
 
@@ -215,10 +221,16 @@ async function connect(target, { errors = [], prefix = '', consoleApi = true } =
     pass: requestId => send('Fetch.continueRequest', { requestId }),
     refuse: (requestId, message = NO_WRITES) => session.fulfil(requestId, 418, { detail: { message } }),
     /** The last word of a hermetic answer: a GET passes (with `reads`: any read-only request), anything else is refused
-     *  with 418 and recorded in `refused` as "METHOD /path". */
+     *  with 418 and recorded in `refused` as "METHOD /path" - except the page's one test of the connection when it opens,
+     *  answered as PAGE_OPEN_TEST (a check that fixtures /api/connection/* itself sees that request in its own answer). */
     readOrRefuse(params, refused = session.refused, { reads = false, message = NO_WRITES } = {}) {
       const { requestId, request } = params;
       if (request.method === 'GET' || (reads && readOnly(request))) return session.pass(requestId);
+      if (request.method === 'POST' && /\/api\/connection\/check$/.test(new URL(request.url).pathname)) {
+        let profile = null;
+        try { profile = JSON.parse(request.postData ?? '{}').profile_id ?? null; } catch { /* answered as unknown */ }
+        return session.fulfil(requestId, 200, PAGE_OPEN_TEST(profile));
+      }
       refused.push(`${request.method} ${new URL(request.url).pathname}`);
       return session.refuse(requestId, message);
     },

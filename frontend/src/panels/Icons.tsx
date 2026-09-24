@@ -8,7 +8,8 @@
  *  ...), which the page checks under scripts/ read and compare. A sighted user gets the label from the tooltip: every
  *  icon-only button's title starts with its label. */
 
-export type IconName = 'save' | 'play' | 'pause' | 'wait' | 'stop' | 'force-stop' | 'task' | 'add' | 'delete' | 'undo' | 'redo' | 'load' | 'delete-task' | 'export' | 'import' | 'agent-draft' | 'agent-modify' | 'task-file';
+export type IconName = 'save' | 'play' | 'pause' | 'wait' | 'stop' | 'force-stop' | 'task' | 'add' | 'delete' | 'undo' | 'redo' | 'load' | 'delete-task' | 'export' | 'import' | 'agent-draft' | 'agent-modify' | 'task-file'
+  | 'refresh' | 'download' | 'csv' | 'zip' | 'copy' | 'check';
 
 const DRAWINGS: Record<IconName, JSX.Element> = {
   // A floppy disk: the model is written to disk while the run goes on.
@@ -46,6 +47,18 @@ const DRAWINGS: Record<IconName, JSX.Element> = {
   'agent-modify': <><path d="M11.5 3.5l2 2-7.5 7.5H4v-2z" /><path d="M10 5l2 2" /><path d="M3.5 1.5v3M2 3h3" /></>,
   // Task file: a document with lines, the task as one readable file.
   'task-file': <><path d="M4 1.5h5.5L13 5v9.5H4z" /><path d="M9.5 1.5V5H13" /><path d="M6 8.5h4.5M6 11h4.5" /></>,
+  // Refresh: an arrow around, read again.
+  refresh: <><path d="M13 8A5 5 0 1 1 11.6 4.5" /><path d="M13.5 1.5v3.2h-3.2" /></>,
+  // Download ...: an arrow down onto a line, a file comes to this computer.
+  download: <><path d="M8 2v8" /><path d="M5 7l3 3 3-3" /><path d="M2.5 13.5h11" /></>,
+  // Export detailed CSV: a table.
+  csv: <><rect x="2" y="3" width="12" height="10" rx="1" /><path d="M2 6.5h12M2 9.5h12M6 6.5v6.5M10 6.5v6.5" /></>,
+  // Export research CSVs (one zip): an archive box.
+  zip: <><rect x="2" y="2.5" width="12" height="11" rx="1" /><path d="M2 5.5h12" /><path d="M6.5 5.5v2h3v2h-3v2h3" /></>,
+  // Copy run path: two sheets, one over the other.
+  copy: <><rect x="5.5" y="5.5" width="8" height="8" rx="1" /><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2" /></>,
+  // Check (the corner check): a check mark, the run's designs are tried at the corners.
+  check: <path d="M3 8.5l3.2 3.2L13 4.5" strokeWidth="1.8" />,
 };
 
 /** `label`: the button's words, kept for screen readers and for the page checks but not drawn (`.sr-only`). */

@@ -1,3 +1,4 @@
+import { Icon } from './Icons';
 import { useEffect, useRef, useState } from 'react';
 import { api, Json, si } from '../api';
 import { launchWithConsent } from './RunControl';
@@ -89,9 +90,9 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
       <span className="hint">{plan?.supported ? `${plan.designs.length} design${plan.designs.length > 1 ? 's' : ''} x ${plan.corners.length} corners = ${plan.simulations} ${real
         ? 'REAL Spectre simulations (asks for your authorization first)' : 'MOCK simulations (free)'}` : plan ? 'Nothing to check in this run.' : 'Reading the run...'}</span>
       {live ? <button disabled={busy === 'stop' || status?.state === 'stopping'} onClick={stop}
-          title="The simulation in flight finishes, then the check ends; for a real circuit the recorded widths are written back.">Stop</button>
-        : <button className="primary" disabled={!plan?.supported || !!busy} onClick={start}>{busy === 'start' ? 'Starting...' : 'Check'}</button>}
-      <button onClick={() => { readPlan(); readCheck(); }}>Refresh</button>
+          title="Stop: The simulation in flight finishes, then the check ends; for a real circuit the recorded widths are written back."><Icon name="stop" label="Stop" /></button>
+        : <button className="primary" disabled={!plan?.supported || !!busy} onClick={start} title="Check: Simulate the designs chosen above at every corner of the PDK; the table below fills as results come in."><Icon name={busy === 'start' ? 'wait' : 'check'} label={busy === 'start' ? 'Starting...' : 'Check'} /></button>}
+      <button onClick={() => { readPlan(); readCheck(); }} title="Refresh: Read the plan and the results again."><Icon name="refresh" label="Refresh" /></button>
     </div>
     {note && <p className={note.level === 'error' ? 'error' : 'hint'}>{note.text}</p>}
     {plan && !plan.supported && plan.reason && <p className="note">{plan.reason}</p>}

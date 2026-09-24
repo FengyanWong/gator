@@ -1,3 +1,4 @@
+import { Icon } from './Icons';
 import { Fragment, ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, ApiError, bytes, copy, download, downloadPackage, Json, num, saveJson, short } from '../api';
@@ -453,17 +454,20 @@ export function StatusTab({ status, onCommand, onContinue }: { status: Json; onC
     </tbody></table>
     <div className="row">
       <button disabled={!status.worker_alive || ['pausing', 'stopping'].includes(status.state) || status.manual_save?.state === 'waiting'} onClick={() => onCommand('checkpoint')}
-        title="Save the model now without pausing. The simulation in flight finishes first, the model is written as a new save point, and the run goes on by itself.">Save now</button>
+        title="Save now: The model is saved now without pausing. The simulation in flight finishes first, the model is written as a new save point, and the run goes on by itself."><Icon name="save" label="Save now" /></button>
       {/* The same questions and the same rule as the header's Pause / Abort / Force abort (RunControl.tsx). */}
       <button disabled={!status.worker_alive || ['pausing', 'stopping'].includes(status.state)}
-        onClick={async () => { if (await pauseConfirmed(status.run_dir)) onCommand('pause'); }}>Pause and save</button>
+        onClick={async () => { if (await pauseConfirmed(status.run_dir)) onCommand('pause'); }}
+        title="Pause and save: No new simulation is started, the one in flight finishes, everything is saved. Continue takes it up from exactly there."><Icon name="pause" label="Pause and save" /></button>
       <button disabled={!status.worker_alive || ['pausing', 'stopping'].includes(status.state)}
-        onClick={() => { if (abortConfirmed(status)) onCommand('stop'); }}>Stop and save</button>
+        onClick={() => { if (abortConfirmed(status)) onCommand('stop'); }}
+        title="Stop and save: The simulation in flight finishes, everything is saved, the run ends."><Icon name="stop" label="Stop and save" /></button>
       <button disabled={!forceAllowed(status)} onClick={() => { if (forceAbortConfirmed()) onCommand('cancel'); }}
-        title="Only while a pause or a stop is waiting for the simulation in flight, for a run that is stuck: unfinished evaluations are recorded as cancelled and stay charged.">Force cancel</button>
-      <button disabled={status.worker_alive || !['paused', 'stopped', 'interrupted'].includes(status.state)} onClick={onContinue}>Continue</button>
+        title="Force cancel: Only while a pause or a stop is waiting for the simulation in flight, for a run that is stuck: unfinished evaluations are recorded as cancelled and stay charged."><Icon name="force-stop" label="Force cancel" /></button>
+      <button disabled={status.worker_alive || !['paused', 'stopped', 'interrupted'].includes(status.state)} onClick={onContinue}
+        title="Continue: A paused, stopped or interrupted run goes on in the same run folder, from its saved state, with its own saved configuration."><Icon name="play" label="Continue" /></button>
       <button onClick={() => saveJson(`${runName(status.run_dir)}__status.json`, { exported_utc: new Date().toISOString(), ...status })}
-        title="Everything this tab shows, as it is right now, in one JSON file: state, budget, best design, connection, the run's manifest and summary.">Export status (JSON)</button>
+        title="Export status (JSON): Everything this tab shows, as it is right now, in one JSON file: state, budget, best design, connection, the run's manifest and summary."><Icon name="export" label="Export status (JSON)" /></button>
     </div>
   </div>);
 }
@@ -485,9 +489,9 @@ export function DataTab({ runDir }: { runDir: string | null }) {
     return `Downloaded ${await download(api.aggregatesUrl(runDir), 'aggregates.zip')} (${Object.keys(written.files).length} tables). Also kept in ${written.experiment_dir}/aggregates`; });
   return (<div>
     <div className="row"><select value={table} onChange={e => setTable(e.target.value)}>{TABLES.map(t => <option key={t}>{t}</option>)}</select>
-      <button onClick={() => api.table(runDir, table).then(setData)}>Refresh</button>
-      <button disabled={!!busy} onClick={exportCsv} title="The whole table, every row and not only the ones shown here. Written to the run folder (exports/) and downloaded.">{busy === 'csv' ? 'Exporting...' : 'Export detailed CSV'}</button>
-      <button disabled={!!busy} onClick={exportResearch} title="The summary tables over every run of this experiment: run summary, success per budget, paired runs, transfer summary, cumulative cost. Written to the experiment's aggregates folder and downloaded as one zip.">{busy === 'research' ? 'Exporting...' : 'Export research CSVs'}</button>
+      <button onClick={() => api.table(runDir, table).then(setData)} title="Refresh: Read this table again."><Icon name="refresh" label="Refresh" /></button>
+      <button disabled={!!busy} onClick={exportCsv} title="Export detailed CSV: The whole table, every row and not only the ones shown here. Written to the run folder (exports/) and downloaded."><Icon name={busy === 'csv' ? 'wait' : 'csv'} label={busy === 'csv' ? 'Exporting...' : 'Export detailed CSV'} /></button>
+      <button disabled={!!busy} onClick={exportResearch} title="Export research CSVs: The summary tables over every run of this experiment: run summary, success per budget, paired runs, transfer summary, cumulative cost. Written to the experiment's aggregates folder and downloaded as one zip."><Icon name={busy === 'research' ? 'wait' : 'zip'} label={busy === 'research' ? 'Exporting...' : 'Export research CSVs'} /></button>
       <span className="hint">{data ? `${data.total_rows} rows (snapshot at commit ${data.cutoff_commit_seq}); last ${data.rows.length} shown.` : ''} {note}</span></div>
     {data && <div className="scroll"><table className="grid small"><thead><tr>{data.columns.map((c: string) => <th key={c}>{c}</th>)}</tr></thead>
       <tbody>{data.rows.map((r: Json, i: number) => <tr key={i}>{data.columns.map((c: string) => <td key={c}>{typeof r[c] === 'object' && r[c] !== null ? JSON.stringify(r[c]) : num(r[c])}</td>)}</tr>)}</tbody></table></div>}
@@ -501,8 +505,9 @@ export function FilesTab({ runDir }: { runDir: string | null }) {
   useEffect(() => { refresh(); setNote(null); }, [runDir]);
   if (!runDir) return <p className="hint">No run selected.</p>;
   const pack = () => { setNote('Packing...'); downloadPackage(runDir).then(name => setNote(`Downloaded ${name}.`), e => setNote(e.message)); };
-  return (<div><div className="row"><button onClick={refresh}>Refresh</button><button disabled={note === 'Packing...'} onClick={pack}>Download data-only package (.zip)</button>
-    <button onClick={() => copy(runDir)}>Copy run path</button><span className="hint">{files && `${files.files.length} files, ${bytes(files.total_bytes)}.`} {note} "Open local folder" is not offered: no desktop integration is available from a browser.</span></div>
+  return (<div><div className="row"><button onClick={refresh} title="Refresh: Read the run folder again."><Icon name="refresh" label="Refresh" /></button>
+    <button disabled={note === 'Packing...'} onClick={pack} title="Download data-only package (.zip): Every data file of this run in one zip, named after the run; no plots, nothing drawn."><Icon name={note === 'Packing...' ? 'wait' : 'download'} label="Download data-only package (.zip)" /></button>
+    <button onClick={() => copy(runDir)} title="Copy run path: The run folder's path, as text, to the clipboard."><Icon name="copy" label="Copy run path" /></button><span className="hint">{files && `${files.files.length} files, ${bytes(files.total_bytes)}.`} {note} "Open local folder" is not offered: no desktop integration is available from a browser.</span></div>
     <div className="scroll"><table className="grid small"><thead><tr><th>File</th><th>Size</th><th>Modified (UTC)</th><th></th></tr></thead>
       <tbody>{files?.files.map((f: Json) => <tr key={f.path}><td>{f.path}</td><td>{bytes(f.bytes)}</td><td>{f.modified_utc.slice(0, 19)}</td><td><a href={api.downloadUrl(runDir, f.path)}>download</a></td></tr>)}</tbody></table></div></div>);
 }
@@ -519,7 +524,7 @@ export function LogsTab({ runDir, alive }: { runDir: string | null; alive: boole
   const save = () => value?.kind === kind && !value.entries.length ? setNote(nothing)
     : download(api.downloadUrl(runDir, `logs/${kind}.jsonl`), `${kind}.jsonl`).then(name => setNote(`Downloaded ${name}.`), e => setNote(e.status === 404 ? nothing : e.message));
   return (<div><div className="row"><select value={kind} onChange={e => setKind(e.target.value)}><option>events</option><option>errors</option></select>
-    <button onClick={save} title="The whole log file of this run, not only the newest 200 entries listed here. One JSON record per line.">Download full log ({kind}.jsonl)</button>
+    <button onClick={save} title={`Download full log (${kind}.jsonl): The whole log file of this run, not only the newest 200 entries listed here. One JSON record per line.`}><Icon name="download" label={`Download full log (${kind}.jsonl)`} /></button>
     <span className="hint">{note ?? 'Newest first, the newest 200 entries at most.'}</span></div>
     <div className="scroll log">{(value?.entries ?? []).slice().reverse().map((e: Json, i: number) => <div key={i} className={kind === 'errors' ? 'error' : ''}>
       <b>{(e.time_utc ?? '').slice(11, 19)} {e.event ?? e.error}</b> {JSON.stringify(Object.fromEntries(Object.entries(e).filter(([k]) => !['time_utc', 'event', 'error', 'run_id', 'traceback'].includes(k))))}</div>)}</div></div>);

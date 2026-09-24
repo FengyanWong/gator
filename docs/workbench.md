@@ -30,16 +30,22 @@ package and gates checkpoint loading and the M5/M6 audits.
 ## Start
 
 ```bash
-# once: backend dependencies into the project environment
-/tmp/analog-optimizer-venv/bin/python -m pip install -c constraints.txt -e '.[graph,test,web,webtest]'
+# once: the project environment. It lives in the HOME folder (persistent, ext4): /tmp is emptied at every WSL
+# boot - on 2026-09-24 that deleted the previous /tmp/analog-optimizer-venv - and /mnt/d would pay the 9p per-file
+# toll on torch's thousands of files at every start. This host has no ensurepip and no sudo, so pip is bootstrapped.
+python3 -m venv --without-pip ~/analog-optimizer-venv
+curl -sS -o /tmp/get-pip.py https://bootstrap.pypa.io/get-pip.py && ~/analog-optimizer-venv/bin/python /tmp/get-pip.py
+~/analog-optimizer-venv/bin/python -m pip install -c constraints.txt 'torch==2.14.0+cpu' --index-url https://download.pytorch.org/whl/cpu
+~/analog-optimizer-venv/bin/python -m pip install -c constraints.txt -e '.[graph,test,export,web,webtest]'
 # the pin file is not optional: a saved model loads only under the torch / torch-geometric it was saved with
+# (check: torch 2.14.0+cpu, torch-geometric 2.8.0.post1, numpy 2.2.6, networkx 3.4.2 - constraints.txt)
 
 # once (and after UI changes): build the UI. This machine has no Linux node; the Windows
 # toolchain works through WSL interop. A native Linux node works the same way.
 cd frontend && npm install && npm run build && cd ..
 
 # run (local-only listening by default)
-PYTHONPATH=src /tmp/analog-optimizer-venv/bin/python -m gator_workbench.cli serve --port 8765
+PYTHONPATH=src ~/analog-optimizer-venv/bin/python -m gator_workbench.cli serve --port 8765
 # then open http://127.0.0.1:8765 in the Windows browser
 ```
 
@@ -1403,7 +1409,7 @@ load one, and a skill would not reach Codex or the exported task.
 ## Tests
 
 ```bash
-/tmp/analog-optimizer-venv/bin/python -m pytest tests/workbench -q
+~/analog-optimizer-venv/bin/python -m pytest tests/workbench -q
 ```
 
 Provider tests use a fake CLI fixture; connection tests use fake bridge clients and a fake probe

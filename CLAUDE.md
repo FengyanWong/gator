@@ -40,10 +40,12 @@ documentation; it is not auto-loaded by Claude Code). Decisions: `docs/decisions
 ## Commands
 
 ```bash
-/tmp/analog-optimizer-venv/bin/python -m pytest -q                    # full regression (~5 min)
-OMP_NUM_THREADS=1 /tmp/analog-optimizer-venv/bin/python -m pytest -q -n 12 --dist load   # the same in ~1 min
-/tmp/analog-optimizer-venv/bin/python -m pytest tests/workbench -q    # workbench only
-PYTHONPATH=src /tmp/analog-optimizer-venv/bin/python -m gator_workbench.cli serve
+# Environment: ~/analog-optimizer-venv (home folder). /tmp is emptied at every WSL boot - on 2026-09-24 that deleted
+# the previous /tmp/analog-optimizer-venv, which older docs still quote. Rebuild recipe: docs/workbench.md, "Start".
+~/analog-optimizer-venv/bin/python -m pytest -q                    # full regression (~5 min)
+OMP_NUM_THREADS=1 ~/analog-optimizer-venv/bin/python -m pytest -q -n 12 --dist load   # the same in ~1 min
+~/analog-optimizer-venv/bin/python -m pytest tests/workbench -q    # workbench only
+PYTHONPATH=src ~/analog-optimizer-venv/bin/python -m gator_workbench.cli serve
 cd frontend && npx tsc --noEmit     # ALWAYS before a build: vite does NOT type-check
 cd frontend && npm run build        # Windows node via WSL interop on this machine
 node frontend/scripts/<name>.mjs    # a browser check; without GATOR_WORKBENCH_URL it drives the LIVE 8765

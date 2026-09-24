@@ -60,7 +60,7 @@ export function finish() {
 
 // ---- the URL, and the guard for checks that write -----------------------------------------------------------------------
 const liveHow = 'Start a scratch backend with its own settings folder, e.g.\n'
-  + '  GATOR_WORKBENCH_SETTINGS_DIR=<empty dir> PYTHONPATH=src /tmp/analog-optimizer-venv/bin/python -m gator_workbench.cli serve --port 8768\n'
+  + '  GATOR_WORKBENCH_SETTINGS_DIR=<empty dir> PYTHONPATH=src ~/analog-optimizer-venv/bin/python -m gator_workbench.cli serve --port 8768\n'
   + 'and run the check with BOTH variables (WSLENV carries the URL into the Windows process):\n'
   + '  WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:8768/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/<check>.mjs)"';
 /** The settings the live backend keeps in this repository: paths.local_settings_dir() without GATOR_WORKBENCH_SETTINGS_DIR. */

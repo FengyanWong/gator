@@ -11,7 +11,7 @@
 // It starts one small run on the synthetic MOCK task (free, no bridge, no Virtuoso) and writes exports, so it REFUSES
 // the default backend: give it a SCRATCH backend and a scratch output root, e.g.
 //   S=<empty scratch dir>; mkdir -p $S/settings $S/out
-//   GATOR_WORKBENCH_SETTINGS_DIR=$S/settings PYTHONPATH=src /tmp/analog-optimizer-venv/bin/python -m gator_workbench.cli serve --port 8769 --allow-root $S/out &
+//   GATOR_WORKBENCH_SETTINGS_DIR=$S/settings PYTHONPATH=src ~/analog-optimizer-venv/bin/python -m gator_workbench.cli serve --port 8769 --allow-root $S/out &
 //   WSLENV=GATOR_WORKBENCH_URL:GATOR_SCRATCH_OUT GATOR_WORKBENCH_URL=http://127.0.0.1:8769/ GATOR_SCRATCH_OUT=$S/out \
 //     "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/export_check.mjs)" [screenshot-dir]
 // (WSLENV carries the two variables into the Windows process.) Takes about 60 s. Exit code 1 if any check fails.

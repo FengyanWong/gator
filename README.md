@@ -75,7 +75,7 @@ analog-graph-demo tests/fixtures/synthetic/opamp.scs --config configs/opamp.json
 PYTHONPATH=src python3 -m analog_optimizer.demo tests/fixtures/synthetic/vco.scs --config configs/synthetic.json --no-pyg
 ```
 
-本次验收使用 `/tmp/analog-optimizer-venv`，没有修改系统 Python。临时环境可能被系统清理；上面的安装步骤用于建立持久环境。实际版本和结果见 [验收记录](docs/verification.md)。未安装图依赖时，pytest 会明确 skip `test_pyg.py`；完整验收必须安装 graph extra 并确认 **零 skip**。
+本次验收使用 `/tmp/analog-optimizer-venv`，没有修改系统 Python。该临时目录已在 2026-09-24 的 WSL 重启中被清空（`/tmp` 每次启动都会清空），环境已按 `constraints.txt` 的原版本重建于 `~/analog-optimizer-venv`（步骤见 `docs/workbench.md` 的 Start）；上面的安装步骤用于建立持久环境。实际版本和结果见 [验收记录](docs/verification.md)。未安装图依赖时，pytest 会明确 skip `test_pyg.py`；完整验收必须安装 graph extra 并确认 **零 skip**。
 
 ## 目录与接口
 

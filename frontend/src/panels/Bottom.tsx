@@ -501,15 +501,21 @@ export function DataTab({ runDir }: { runDir: string | null }) {
 export function FilesTab({ runDir }: { runDir: string | null }) {
   const [files, setFiles] = useState<Json>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);          // the file whose download is on its way
   const refresh = () => runDir && api.files(runDir).then(setFiles);
   useEffect(() => { refresh(); setNote(null); }, [runDir]);
   if (!runDir) return <p className="hint">No run selected.</p>;
   const pack = () => { setNote('Packing...'); downloadPackage(runDir).then(name => setNote(`Downloaded ${name}.`), e => setNote(e.message)); };
+  // One file (user request 2026-09-26: a button with the download icon in each row, not a "download" text link), saved
+  // like the package and the logs: the browser's own download, named by the backend, and said in the hint.
+  const save = (file: string) => { setSaving(file); download(api.downloadUrl(runDir, file), file.split('/').pop() ?? file)
+    .then(name => setNote(`Downloaded ${name}.`), e => setNote(e.message)).finally(() => setSaving(null)); };
   return (<div><div className="row"><button onClick={refresh} title="Refresh: Read the run folder again."><Icon name="refresh" label="Refresh" /></button>
     <button disabled={note === 'Packing...'} onClick={pack} title="Download data-only package (.zip): Every data file of this run in one zip, named after the run; no plots, nothing drawn."><Icon name={note === 'Packing...' ? 'wait' : 'download'} label="Download data-only package (.zip)" /></button>
     <button onClick={() => copy(runDir)} title="Copy run path: The run folder's path, as text, to the clipboard."><Icon name="copy" label="Copy run path" /></button><span className="hint">{files && `${files.files.length} files, ${bytes(files.total_bytes)}.`} {note} "Open local folder" is not offered: no desktop integration is available from a browser.</span></div>
     <div className="scroll"><table className="grid small"><thead><tr><th>File</th><th>Size</th><th>Modified (UTC)</th><th></th></tr></thead>
-      <tbody>{files?.files.map((f: Json) => <tr key={f.path}><td>{f.path}</td><td>{bytes(f.bytes)}</td><td>{f.modified_utc.slice(0, 19)}</td><td><a href={api.downloadUrl(runDir, f.path)}>download</a></td></tr>)}</tbody></table></div></div>);
+      <tbody>{files?.files.map((f: Json) => <tr key={f.path}><td>{f.path}</td><td>{bytes(f.bytes)}</td><td>{f.modified_utc.slice(0, 19)}</td><td><button disabled={saving === f.path} onClick={() => save(f.path)}
+        title={`Download ${f.path}: This file as it is now, to the browser's download folder.`}><Icon name={saving === f.path ? 'wait' : 'download'} label={`Download ${f.path}`} /></button></td></tr>)}</tbody></table></div></div>);
 }
 
 export function LogsTab({ runDir, alive }: { runDir: string | null; alive: boolean }) {

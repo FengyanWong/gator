@@ -234,8 +234,9 @@ export function RunPanel({ config, setConfig, runs, circuit }: { config: Json; s
       <label title="scratch: random init, new run. resume: same task, same run, full state. fine_tune: compatible weights, new task, new run with a parent. frozen: no updates at all.">Mode
         <select value={run.mode} onChange={e => set({ mode: e.target.value })}>
           {['scratch', 'resume', 'fine_tune', 'frozen'].map(m => <option key={m} value={m}>{m}</option>)}</select></label>
-      {model?.suggestion && model.suggestion.mode !== run.mode && <p className="warn">Suggested: <b>{model.suggestion.mode}</b> - {model.suggestion.reason}
-        {model.suggestion.requires_confirmation ? ' (needs your confirmation)' : ''} <button onClick={() => set({ mode: model.suggestion.mode })}>Use</button></p>}
+      {model?.suggestion && model.suggestion.mode !== run.mode && <p className="warn">Suggested: <button className="text-link mode-suggestion"
+        title={`Set Mode to ${model.suggestion.mode}`} onClick={() => set({ mode: model.suggestion.mode })}>{model.suggestion.mode}</button> - {model.suggestion.reason}
+        {model.suggestion.requires_confirmation ? ' (needs your confirmation)' : ''}</p>}
       <Num label="Concurrent Spectre jobs" value={run.concurrency} onChange={v => set({ concurrency: v })} title="Independent simulation jobs at once. NOT the thread count of one simulation." />
       {circuit?.max_concurrency && run.concurrency > circuit.max_concurrency && <p className="error">This task supports at most {circuit.max_concurrency} jobs.</p>}
       <Num label="Threads per job" value={run.threads_per_job} onChange={v => set({ threads_per_job: v })} title="Simulator threads inside each job. Recorded; applied only by backends that support it." />

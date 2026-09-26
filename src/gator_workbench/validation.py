@@ -98,41 +98,6 @@ def _integral(value):
     return value is not None and math.isclose(value, round(value), abs_tol=1e-9)
 
 
-def uniform_grid(candidates):
-    """Return (lower, upper, step) when sorted unique candidates form a uniform grid, else None."""
-    values = sorted(set(candidates))
-    if len(values) < 2 or len(values) != len(candidates):
-        return None
-    step = values[1] - values[0]
-    if step <= 0 or any(not math.isclose(b - a, step, rel_tol=1e-9, abs_tol=1e-18)
-                        for a, b in zip(values, values[1:])):
-        return None
-    return values[0], values[-1], step
-
-
-def linear_ratio(expression):
-    """ratio r when `expression` in the symbol `leader` equals r*leader with r > 0, else None.
-
-    Uses the optimizer's whitelist AST evaluator; nothing is ever eval()'d.
-    """
-    from analog_optimizer.netlist.expressions import evaluate, UnresolvedExpression
-
-    def at(x):
-        def lookup(name):
-            if name != 'leader':
-                raise UnresolvedExpression(f'Unknown symbol {name!r}; only `leader` is allowed')
-            return x
-        return evaluate(expression, lookup)
-    try:
-        f0, f1, f2, f3 = at(0.0), at(1.0), at(2.0), at(3.5)
-    except (UnresolvedExpression, ZeroDivisionError):
-        return None
-    if (abs(f0) > 1e-15 or f1 <= 0 or not math.isclose(f2, 2 * f1, rel_tol=1e-9)
-            or not math.isclose(f3, 3.5 * f1, rel_tol=1e-9)):
-        return None
-    return f1
-
-
 def resolve_leaders(parameters):
     """Map variable_id -> (leader_id, cumulative_ratio) or raise ValueError on a cycle/dangling link."""
     by_id = {p.variable_id: p for p in parameters}
@@ -142,7 +107,7 @@ def resolve_leaders(parameters):
         while current.binding_group:
             if current.binding_group not in by_id:
                 raise ValueError(f'{current.variable_id}: binding_group {current.binding_group!r} does not exist')
-            step_ratio = current.ratio if current.relation == 'ratio' else linear_ratio(current.expression or '')
+            step_ratio = current.ratio
             if step_ratio is None:
                 raise ValueError(f'{current.variable_id}: expression is not an executable positive ratio')
             ratio *= step_ratio
@@ -205,64 +170,33 @@ def _check_parameters(config, report, graph):
             continue
         if units.is_affine(p.unit):
             report.add('error', 'affine_unit', path + '.unit', 'Offset units cannot be used for sizing variables')
-        if p.target_kind == 'instance_parameter':
-            if not p.instance_path:
-                report.add('error', 'missing_instance_path', path + '.instance_path',
-                           'instance_parameter needs the instance path read from the circuit')
-            key = (p.instance_path, p.parameter_name)
-            if key in targets:
-                report.add('error', 'conflicting_targets', path,
-                           f'{p.variable_id} and {targets[key]} both write {p.instance_path}.{p.parameter_name}')
-            targets[key] = p.variable_id
-            facts = _pdk_facts(record, graph, p)
-            if facts is not None:                       # a component of the PDK the network is built with
-                _check_pdk_parameter(report, path, p, facts, record)
-            else:
-                expected = units.PARAMETER_KIND_UNITS.get(p.parameter_name)
-                if expected and units.canonical_unit(p.unit) != expected:
-                    report.add('error', 'unit_mismatch', path + '.unit',
-                               f'Parameter {p.parameter_name!r} is measured in {expected}, not {p.unit!r}')
-                if p.parameter_name not in FEATURE_PARAMETER_KINDS:
-                    knowing = _loaded_pdk_knowing(graph, p) if record is None else None
-                    report.add('blocker', 'parameter_kind_unsupported', path + '.parameter_name',
-                               f'{p.parameter_name!r} is not in the optimizer feature vocabulary '
-                               f'{FEATURE_PARAMETER_KINDS}; the graph encoder cannot represent it'
-                               + (f'. The loaded PDK {knowing} knows it: choose the component list "PDK {knowing}" in the '
-                                  'RL network block to vary it.' if knowing else ''))
+        if not p.instance_path:
+            report.add('error', 'missing_instance_path', path + '.instance_path',
+                       'The row needs the instance path read from the circuit')
+        key = (p.instance_path, p.parameter_name)
+        if key in targets:
+            report.add('error', 'conflicting_targets', path,
+                       f'{p.variable_id} and {targets[key]} both write {p.instance_path}.{p.parameter_name}')
+        targets[key] = p.variable_id
+        facts = _pdk_facts(record, graph, p)
+        if facts is not None:                       # a component of the PDK the network is built with
+            _check_pdk_parameter(report, path, p, facts, record)
         else:
-            report.add('blocker', 'design_variable_writeback_unsupported', path + '.target_kind',
-                       'Existing adapters write instance parameters only; global/ADE design-variable writeback '
-                       'is not implemented. Kept in the configuration, but it blocks a run.')
+            expected = units.PARAMETER_KIND_UNITS.get(p.parameter_name)
+            if expected and units.canonical_unit(p.unit) != expected:
+                report.add('error', 'unit_mismatch', path + '.unit',
+                           f'Parameter {p.parameter_name!r} is measured in {expected}, not {p.unit!r}')
+            if p.parameter_name not in FEATURE_PARAMETER_KINDS:
+                knowing = _loaded_pdk_knowing(graph, p) if record is None else None
+                report.add('blocker', 'parameter_kind_unsupported', path + '.parameter_name',
+                           f'{p.parameter_name!r} is not in the optimizer feature vocabulary '
+                           f'{FEATURE_PARAMETER_KINDS}; the graph encoder cannot represent it'
+                           + (f'. The loaded PDK {knowing} knows it: choose the component list "PDK {knowing}" in the '
+                              'RL network block to vary it.' if knowing else ''))
         if p.binding_group == p.variable_id:
             report.add('error', 'self_binding', path + '.binding_group', 'A variable cannot be bound to itself')
-        if p.relation == 'expression':
-            if not p.expression:
-                report.add('error', 'missing_expression', path + '.expression', 'relation=expression needs one')
-            elif linear_ratio(p.expression) is None:
-                report.add('blocker', 'expression_not_executable', path + '.expression',
-                           'Only expressions equal to a positive constant times `leader` can be executed by the '
-                           'action mapper (members follow their group by a fixed ratio). Rejected, not evaluated.')
-        if p.relation == 'expression' and not p.binding_group:
-            report.add('error', 'expression_without_leader', path, 'An expression relation needs a binding_group')
         leader_like = not p.binding_group
-        if p.value_type == 'discrete':
-            if not p.candidates:
-                report.add('error', 'missing_candidates', path + '.candidates', 'discrete needs candidate values')
-            else:
-                grid = uniform_grid(p.candidates)
-                if grid is None:
-                    report.add('blocker', 'nonuniform_candidates', path + '.candidates',
-                               'The action mapper projects onto lower + k*step. A non-uniform candidate list has '
-                               'no equivalent and is not approximated.')
-                elif any(v is not None and not math.isclose(v, g, rel_tol=1e-9, abs_tol=1e-18)
-                         for v, g in zip((p.lower, p.upper, p.step), grid)):
-                    report.add('error', 'candidates_conflict', path,
-                               'lower/upper/step disagree with the candidate grid; leave them empty or match')
-        elif p.candidates:
-            report.add('warning', 'candidates_ignored', path + '.candidates', 'Used only for value_type=discrete')
         lower, upper, step = p.lower, p.upper, p.step
-        if p.value_type == 'discrete' and p.candidates and uniform_grid(p.candidates):
-            lower, upper, step = uniform_grid(p.candidates)
         if p.optimized and leader_like:
             if lower is None or upper is None:
                 report.add('error', 'missing_bounds', path, 'An optimized independent variable needs both bounds')
@@ -361,7 +295,7 @@ def _check_parameters_against_circuit(config, report, graph):
     _check_bindings_against_circuit(config, report, graph)
     devices = {d.id: d for d in graph.devices}
     for i, p in enumerate(config.parameters):
-        if p.target_kind != 'instance_parameter' or not p.instance_path:
+        if not p.instance_path:
             continue
         path = f'parameters[{i}]'
         device = devices.get(p.instance_path)
@@ -396,14 +330,6 @@ def _check_measurements(config, report, *, provided_metrics):
         ids[m.measurement_id] = m
         if not units.known(m.unit):
             report.add('error', 'unknown_unit', path + '.unit', f'Unknown unit {m.unit!r}')
-        if m.window is not None:
-            if not m.window.start < m.window.stop:
-                report.add('error', 'invalid_window', path + '.window', 'window start must be below stop')
-            if not units.known(m.window.unit) or units.canonical_unit(m.window.unit) not in ('s', 'Hz'):
-                report.add('error', 'invalid_window_unit', path + '.window.unit', 'window unit must be time or Hz')
-        for j, condition in enumerate(m.validity):
-            if condition.kind in ('min', 'max') and condition.value is None:
-                report.add('error', 'validity_needs_value', f'{path}.validity[{j}]', 'min/max need a value')
         if m.result_source == 'backend_profile':
             if not m.source_name:
                 report.add('error', 'missing_source_name', path + '.source_name',
@@ -412,9 +338,6 @@ def _check_measurements(config, report, *, provided_metrics):
                 report.add('error', 'metric_not_provided', path + '.source_name',
                            f'The selected task backend does not produce {m.source_name!r}; it provides '
                            f'{sorted(provided_metrics)}')
-            if m.function is not None:
-                report.add('warning', 'function_ignored_for_profile', path + '.function',
-                           'The verified profile analyzer defines this extraction; `function` is documentation only')
         elif m.result_source == 'ade_output':
             if not m.source_name:
                 report.add('error', 'missing_source_name', path + '.source_name', 'ade_output needs the output name')
@@ -427,41 +350,6 @@ def _check_measurements(config, report, *, provided_metrics):
         elif m.result_source == 'expression':
             if not m.expression:
                 report.add('error', 'missing_expression', path + '.expression', 'expression source needs one')
-        # Domain rules for user-defined extraction functions (Section 3 of the specification).
-        if m.function is not None and m.result_source != 'backend_profile':
-            if m.function in ('frequency', 'period'):
-                if m.analysis not in ('tran', 'pss'):
-                    report.add('error', 'frequency_needs_time_domain', path + '.analysis',
-                               'Frequency/period extraction needs a tran or pss analysis')
-                if m.analysis == 'tran' and m.window is None:
-                    report.add('error', 'frequency_needs_window', path + '.window',
-                               'A frequency measurement needs a defined steady-state window')
-            if m.function == 'average_power':
-                if not m.signal:
-                    report.add('error', 'power_needs_branch', path + '.signal', 'Power needs a supply branch')
-                if m.branch_direction is None:
-                    report.add('error', 'power_needs_direction', path + '.branch_direction',
-                               'Power needs an explicit branch-direction convention; the sign is not guessed')
-            if m.function in ('phase_margin', 'gain_margin'):
-                if not m.loop_definition:
-                    report.add('error', 'margin_needs_loop', path + '.loop_definition',
-                               'Phase/gain margin needs a loop-gain definition')
-                if m.function == 'phase_margin' and m.crossover is None:
-                    report.add('error', 'margin_needs_crossover', path + '.crossover',
-                               'Phase margin needs the unity-gain crossover definition')
-            if m.function in ('spot_noise', 'gain_at') and m.at_frequency_hz is None:
-                report.add('error', 'needs_frequency_point', path + '.at_frequency_hz',
-                           f'{m.function} needs a frequency point')
-            if m.function == 'integrated_noise':
-                band = m.integration_band_hz
-                if band is None or not 0 < band[0] < band[1]:
-                    report.add('error', 'noise_needs_band', path + '.integration_band_hz',
-                               'Integrated noise needs 0 < f_low < f_high')
-            if m.function in ('spot_noise', 'integrated_noise') and m.analysis not in ('noise', 'pnoise'):
-                report.add('error', 'noise_needs_noise_analysis', path + '.analysis', 'Noise needs noise/pnoise')
-            report.add('blocker', 'generic_extraction_not_wired', path + '.function',
-                       'The existing backends have no generic waveform extractor; user-defined extraction '
-                       'functions are validated and stored but cannot be executed yet.')
         if list(m.conditions) != ['nominal'] or m.aggregation != 'nominal_only':
             report.add('blocker', 'nominal_only_backend', path + '.conditions',
                        'The sizing environment is nominal-only; PVT/Monte-Carlo scheduling is not implemented. '

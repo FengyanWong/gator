@@ -2,6 +2,7 @@
 the network's goal input, the independent pass/fail check and the tables. MOCK backend only; no Virtuoso, no Spectre."""
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+import copy
 import hashlib
 import math
 
@@ -75,6 +76,10 @@ def test_a_configuration_from_before_equations_loads_and_keeps_both_hashes(tmp_p
     for row in legacy_dump['targets']:                                                   # exactly what the old schema dumped
         row['measurement_id'] = row.pop('equation')
     del legacy_dump['run']['network']['vocabulary']              # added later (7.54); the old schema had no such field
+    for row in legacy_dump['parameters']:                        # the columns retired on 2026-09-26 (7.92), at their defaults
+        row.update(copy.deepcopy(schema.RETIRED_PARAMETER_FIELDS))
+    for row in legacy_dump['measurements']:
+        row.update(copy.deepcopy(schema.RETIRED_MEASUREMENT_FIELDS))
     old = schema.WorkbenchConfig.model_validate(legacy_dump)
     assert old.targets[0].equation == 'm_score' and old == new
     # the hashes an old run, checkpoint, approval or proposal recorded are the hashes computed now

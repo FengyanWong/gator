@@ -32,6 +32,8 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 table.grid { border-collapse: collapse; width: 100%; } table.grid th, table.grid td { border: 1px solid var(--line); padding: 2px 5px; text-align: left; vertical-align: top; white-space: nowrap; }
 table.grid th { background: #eef0f3; position: sticky; top: 0; cursor: help; font-weight: 600; } table.grid.small td { white-space: normal; word-break: break-word; }
 table.editor td { padding: 0; } table.editor td input, table.editor td select { border: none; min-width: 84px; background: transparent; }
+table.editor td input.readonly { color: var(--muted); }
+.toolbar button.text { font-size: 11.5px; }
 tr.has-error td { background: #fdf1f0; }
 .hint { color: var(--muted); font-size: 11.5px; } .fact { margin: 2px 0 6px; } .error { color: var(--bad); } .warn { color: var(--warn); } .ok { color: var(--ok); }
 .guidance { background: #eef3fb; border: 1px solid #c4d5ee; padding: 5px 8px; margin: 6px 0 0; cursor: pointer; }

@@ -212,6 +212,32 @@ then read the unity-gain frequency while pass/fail read the bandwidth, and valid
 
 Code: `src/gator_workbench/spec_equations.py`; tests: `tests/workbench/test_wb_spec_equations.py`.
 
+### Fewer columns in Parameters, Probes and Specs (2026-09-26, user request)
+
+Fourteen columns went, because no run ever read them - and for several the only value besides the default was a run
+blocker. Parameters lost `name`, `target_kind` (its other value, a design variable, blocked the run), `candidates` with the
+`discrete` value type (a candidate list ran only when it was a uniform grid, which is `lower`, `upper` and `step`), and
+`relation` with `expression` (an expression ran only when it equalled a constant times the leader, which is `ratio`).
+Probes lost `function`, `window`, `at_frequency_hz`, `integration_band_hz`, `branch_direction`, `loop_definition` and
+`crossover` (no backend extracts anything from them; a filled `function` blocked the run), `on_failure` (one allowed value)
+and `validity` (checked for form only; run-time validity comes from the simulator's own flags). Specs kept every column.
+
+What stays but steps back: `soft_weight`, `active` and `basis` of Specs, and `conditions` and `aggregation` of Probes, are
+shown after **More columns** at the right of the toolbar (the choice is kept in the browser). They keep their values either
+way: Add fills them, the agent may set them, a task file stores them. `initial_value` is shown and not typed: the circuit
+read fills it, and a typed value could only differ from the circuit. `normalization_scale` may be left empty: the violation
+is then divided by the size of the threshold (the largest of |lower|, |upper| and |target|, or 1).
+
+Old rows still load. A task file, a run's `effective_config.json` or an imported JSON written with the retired columns is
+read as before: the schema drops them when it reads a row (`schema.RETIRED_PARAMETER_FIELDS`,
+`RETIRED_MEASUREMENT_FIELDS`), keeps what they meant (an expression relation becomes the ratio, a uniform candidate grid
+becomes lower/upper/step) and refuses in plain words what the run refused before (a design variable, a non-uniform candidate
+list, any other expression). Both hashes see the retired columns at their old defaults (`schema._hashed`), so every earlier
+run resumes, its checkpoints load, its task keeps its `task_id` and approvals still bind - checked against the three runs on
+this machine and the MOCK starter's documented task hash (`5f181ef3...`). The browser's copy of the rows is migrated the
+same way when the page loads (`store.ts migrateConfig`), so the editors' rows equal the rows the backend serves; a value the
+browser cannot keep is written into the row's notes.
+
 ### Spectre netlist import: removed
 
 The Project column offers the **Registered task** list; a Virtuoso cell is read in the **Virtuoso cell...**

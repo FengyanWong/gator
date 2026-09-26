@@ -184,8 +184,6 @@ def _adjust_rows(config, graph, core):
     """Rows of the parameter editor -> the rows a real run can honour. Raises ProfileError with the reason."""
     from .validation import resolve_leaders
     rows = [row.model_copy() for row in config.parameters]
-    if any(row.target_kind != 'instance_parameter' for row in rows):
-        raise ProfileError('Design variables cannot be written by the real backend: use instance parameters only')
     try:
         leaders = resolve_leaders(rows)
     except ValueError as exc:
@@ -725,12 +723,13 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
             extra['maestro_deck_sha256'] = deck['sha256']
             # The network's result registry: exactly the task's outputs, each with the scale its spec normalizes by.
             from . import units
+            from .compile import normalization_scale
             by_probe = {t.equation.strip(): t for t in config.targets}
             registry = []
             for output in deck['outputs']:
                 probe = probes.get(output['name'])
                 spec = by_probe.get(probe.measurement_id) if probe is not None else None
-                scale = units.scale_to_canonical(spec.normalization_scale, spec.unit) if spec is not None and spec.normalization_scale else 1.0
+                scale = units.scale_to_canonical(normalization_scale(spec), spec.unit) if spec is not None else 1.0
                 registry.append(dict(metric_id=output['name'], unit=units.canonical_unit(output['unit']) if units.known(output['unit'])
                                      else output['unit'], reference=abs(float(scale)) or 1.0))
             extra['spec_registry'] = registry

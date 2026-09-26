@@ -117,36 +117,6 @@ def test_integer_constraints(tmp_path):
     assert 'integer_constraint' in issues(report, 'error')
 
 
-def test_expression_relations_only_execute_as_positive_ratios(tmp_path):
-    assert validation.linear_ratio('2*leader') == pytest.approx(2)
-    assert validation.linear_ratio('leader/4') == pytest.approx(0.25)
-    assert validation.linear_ratio('leader + 1e-6') is None
-    assert validation.linear_ratio('leader**2') is None
-    assert validation.linear_ratio('-leader') is None
-    assert validation.linear_ratio('__import__("os").system("x")') is None      # never evaluated as code
-    report, _ = check(make_config(tmp_path, mutate=lambda raw: raw['parameters'][1].update(
-        relation='expression', expression='leader**2')))
-    assert 'expression_not_executable' in issues(report, 'blocker')
-
-
-def test_discrete_candidates_need_a_uniform_grid(tmp_path):
-    grid = lambda raw: raw['parameters'][0].update(value_type='discrete', candidates=[1e-6, 2e-6, 3e-6, 4e-6],
-                                                   lower=None, upper=None, scale='linear')
-    report, runtime = check(make_config(tmp_path, mutate=grid))
-    assert not report.blocks_run
-    group = comp.compile_task(make_config(tmp_path, mutate=grid), runtime.base_graph).graph.parameter_groups[0]
-    assert (group.lower, group.upper, group.step) == pytest.approx((1e-6, 4e-6, 1e-6))
-    report, _ = check(make_config(tmp_path, mutate=lambda raw: raw['parameters'][0].update(
-        value_type='discrete', candidates=[1e-6, 2e-6, 5e-6], lower=None, upper=None)))
-    assert 'nonuniform_candidates' in issues(report, 'blocker')
-
-
-def test_design_variable_targets_are_kept_but_block_a_run(tmp_path):
-    report, _ = check(make_config(tmp_path, mutate=lambda raw: raw['parameters'].append(dict(
-        variable_id='vbias', target_kind='design_variable', parameter_name='vbias', unit='V', lower=0.3, upper=0.7))))
-    assert 'design_variable_writeback_unsupported' in issues(report, 'blocker')
-
-
 # ------------------------------------------------------------------------------- targets
 @pytest.mark.parametrize('target, code', [
     (dict(constraint='>=', lower=None), 'missing_threshold'),
@@ -192,22 +162,6 @@ def measurement(**fields):
     return lambda raw: raw['measurements'].append(base)
 
 
-@pytest.mark.parametrize('fields, code', [
-    (dict(function='frequency'), 'frequency_needs_window'),
-    (dict(function='frequency', analysis='ac'), 'frequency_needs_time_domain'),
-    (dict(function='average_power', unit='W', signal='VDD:p'), 'power_needs_direction'),
-    (dict(function='phase_margin', unit='deg', analysis='stb'), 'margin_needs_loop'),
-    (dict(function='phase_margin', unit='deg', analysis='stb', loop_definition='stb probe IPRB0'), 'margin_needs_crossover'),
-    (dict(function='spot_noise', unit='V/sqrt(Hz)', analysis='noise'), 'needs_frequency_point'),
-    (dict(function='integrated_noise', unit='Vrms', analysis='noise'), 'noise_needs_band'),
-    (dict(function='integrated_noise', unit='Vrms', analysis='noise', integration_band_hz=[1e6, 10]), 'noise_needs_band'),
-    (dict(window=dict(start=2e-9, stop=1e-9, unit='s')), 'invalid_window'),
-])
-def test_measurement_domain_rules(tmp_path, fields, code):
-    report, _ = check(make_config(tmp_path, mutate=measurement(**fields)))
-    assert code in issues(report, 'error'), [i.as_dict() for i in report.issues]
-
-
 def test_unsupported_measurement_sources_are_rejected_not_faked(tmp_path):
     report, _ = check(make_config(tmp_path, mutate=measurement()))
     assert 'ade_outputs_not_wired' in issues(report, 'blocker')
@@ -216,8 +170,6 @@ def test_unsupported_measurement_sources_are_rejected_not_faked(tmp_path):
     report, _ = check(make_config(tmp_path, mutate=lambda raw: raw['measurements'][0].update(
         conditions=['nominal', 'ss_125c'], aggregation='worst_case')))
     assert 'nominal_only_backend' in issues(report, 'blocker')
-    with pytest.raises(ValidationError):            # there is no "treat a failure as feasible" option at all
-        make_config(tmp_path, mutate=lambda raw: raw['measurements'][0].update(on_failure='feasible'))
 
 
 def test_restricted_expressions_never_execute_code(tmp_path):

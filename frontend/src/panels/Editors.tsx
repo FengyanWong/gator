@@ -7,8 +7,12 @@ import { Typed } from './Typed';
 export type Section = 'parameters' | 'targets' | 'measurements';
 const TITLES: Record<Section, string> = { parameters: 'Parameters', measurements: 'Probes', targets: 'Specs' };   // key order = tab order
 
+const MORE_KEY = 'gator-workbench-editor-more-columns';
+
 function Cell({ column, value, onChange }: { column: Json; value: Json; onChange: (v: Json) => void }) {
   const title = column.guidance;
+  // A column the circuit read fills (initial_value): shown, never typed - a typed value could only differ from the circuit.
+  if (column.readonly) return <input title={title} className="readonly" readOnly value={value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value)} />;
   if (column.options) {
     return <select title={title} value={value ?? ''} onChange={e => onChange(e.target.value === '' && column.nullable ? null : e.target.value)}>
       {column.nullable && <option value="">(none)</option>}{column.options.map((o: string) => <option key={o} value={o}>{o}</option>)}</select>;
@@ -47,10 +51,16 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
   const [tab, setTab] = useState<Section>('parameters');
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [help, setHelp] = useState<Json>(null);
+  // "More columns" shows the columns most rows leave at their default (Specs: soft_weight, active, basis; Probes: conditions,
+  // aggregation). They exist whether shown or not: Add fills them, the agent may set them, a task file keeps them.
+  const [more, setMore] = useState<boolean>(() => { try { return localStorage.getItem(MORE_KEY) === 'shown'; } catch { return false; } });
+  const showMore = (now: boolean) => { setMore(now); try { localStorage.setItem(MORE_KEY, now ? 'shown' : 'hidden'); } catch { /* no storage: the choice lasts for this page */ } };
   const [pending, setPending] = useState<{ next: Json; diff: Json[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
   const columns: Json[] = schema.editors[tab];
+  const hidden = columns.filter(c => c.advanced);
+  const visible = columns.filter(c => more || !c.advanced);
   const keyField: string = schema.section_keys[tab];
   const rows: Json[] = config[tab] ?? [];
   const issues = useMemo(() => (validation?.issues ?? []).filter((i: Json) => i.path.startsWith(tab)), [validation, tab]);
@@ -101,20 +111,22 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
         <button onClick={() => file.current?.click()} title="Import JSON...: Read a JSON file (a whole configuration, or this tab's rows). You review a diff first."><Icon name="import" label="Import JSON..." /></button>
         <input ref={file} type="file" accept="application/json" hidden onChange={e => e.target.files?.[0] && importJson(e.target.files[0])} />
         <span className="spacer" />
+        {hidden.length > 0 && <button className="text" onClick={() => showMore(!more)} title={(more ? 'Fewer columns: hide ' : 'More columns: also show ') + hidden.map(c => c.name).join(', ') + '. They keep their values either way.'}>{more ? 'Fewer columns' : `More columns (${hidden.length})`}</button>}
         <button onClick={() => onAgent(tab, [])} title="Draft with agent...: Ask the agent for a proposal for this tab. You review a diff; nothing is applied automatically."><Icon name="agent-draft" label="Draft with agent..." /></button>
         <button disabled={!selection.length} onClick={() => onAgent('modify_fields', selection)} title="Modify selected with agent...: Ask the agent for a change to the ticked rows. You review a diff; nothing is applied automatically."><Icon name="agent-modify" label="Modify selected with agent..." /></button>
       </div>
       <div className="task-notes" ref={taskNotes} />
       {tab === 'parameters' && <p className="fact">Independent action variables: <b>{validation?.facts?.independent_action_variables ?? '?'}</b> of {rows.length} rows.
-        Equal initial values do not imply a binding. The policy's proposed action and the executed (projected/quantized) value are both recorded.</p>}
+        The initial value is the one read from the circuit. Equal initial values do not imply a binding. The policy's proposed action and the executed (projected/quantized) value are both recorded.</p>}
       {tab === 'targets' && <p className="fact spec-probes">Each spec judges its <b>equation</b>, written with Probe IDs, numbers, + - * / ** and brackets
-        (e.g. m_supply_power_w / m_osc_frequency_hz). Probes: {(config.measurements ?? []).map((m: Json) => m.measurement_id).filter(Boolean).join(', ') || 'none yet - fill in the Probes tab first'}.</p>}
+        (e.g. m_supply_power_w / m_osc_frequency_hz). Probes: {(config.measurements ?? []).map((m: Json) => m.measurement_id).filter(Boolean).join(', ') || 'none yet - fill in the Probes tab first'}.
+        An empty normalization_scale divides the violation by the size of the threshold.</p>}
       {error && <p className="error">{error}</p>}
       {pending && <div className="confirm"><h4>Confirm import: {pending.diff.length} changed rows</h4><DiffView diff={pending.diff} />
         <button onClick={() => { setConfig(pending.next); setPending(null); }}>Apply</button><button onClick={() => setPending(null)}>Cancel</button></div>}
       <div className="scroll">
         <table className="grid editor">
-          <thead><tr><th></th>{columns.map(c => <th key={c.name} title={c.guidance} onClick={() => setHelp(c)}>{c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
+          <thead><tr><th></th>{visible.map(c => <th key={c.name} title={c.guidance} onClick={() => setHelp(c)}>{c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
           <tbody>{rows.map((row, index) => {
             const found = rowIssues(index);
             return <tr key={index} className={found.some((i: Json) => i.level === 'error' || i.level === 'blocker') ? 'has-error' : ''}>
@@ -122,7 +134,7 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
               {/* A field the row does not STATE is shown with the value the backend uses for it (hard = on, tolerance = 0 ...): a
                   starter row's absent `hard` used to look unchecked although the target is hard. A box the user cleared is null,
                   not absent, and stays empty. */}
-              {columns.map(c => <td key={c.name}><Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)} /></td>)}
+              {visible.map(c => <td key={c.name}><Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)} /></td>)}
               <td className="issues">{found.map((i: Json, n: number) => <div key={n} className={`issue ${i.level}`} title={i.message}>{i.level}: {i.code}</div>)}</td>
             </tr>; })}</tbody>
         </table>

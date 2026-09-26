@@ -180,11 +180,9 @@ def _short(value):
 def adjust(config, graph, core, facts, reference):
     """Rows of the parameter editor -> (rows a real run honours, optimized leader ids, leaders, {key: spec}).
     Raises RowError with the reason."""
-    from .compile import _canonical_bounds, group_unit
+    from .compile import group_unit
     from .validation import resolve_leaders
     rows = [row.model_copy() for row in config.parameters]
-    if any(row.target_kind != 'instance_parameter' for row in rows):
-        raise RowError('Design variables cannot be written by the real backend: use instance parameters only')
     try:
         leaders = resolve_leaders(rows)
     except ValueError as exc:
@@ -226,16 +224,10 @@ def adjust(config, graph, core, facts, reference):
                            or len({tuple(m['choices']) for m in choice}) != 1):
                 raise RowError(f'{row.variable_id}: a choice list can only be bound to the same choice list, ratio 1')
             integer = any(m['integer'] for _, m in members)
-            if row.value_type == 'discrete':
-                try:
-                    lower, upper, step = _canonical_bounds(row)
-                except Exception as exc:
-                    raise RowError(f'{row.variable_id}: {exc}')
-            else:
-                if row.lower is None or row.upper is None:
-                    raise RowError(f'{row.variable_id}: a lower and an upper bound are required')
-                lower, upper = units.to_canonical(row.lower, row.unit), units.to_canonical(row.upper, row.unit)
-                step = None if row.step is None else units.scale_to_canonical(row.step, row.unit)
+            if row.lower is None or row.upper is None:
+                raise RowError(f'{row.variable_id}: a lower and an upper bound are required')
+            lower, upper = units.to_canonical(row.lower, row.unit), units.to_canonical(row.upper, row.unit)
+            step = None if row.step is None else units.scale_to_canonical(row.step, row.unit)
             if row.scale == 'log' and lower <= 0:
                 raise RowError(f'{row.variable_id}: a logarithmic range needs a positive lower bound')
             # The PDK's own declared range, when it states one: the property form refuses a value outside it, so a row
@@ -257,13 +249,13 @@ def adjust(config, graph, core, facts, reference):
                 raise RowError(f'{row.variable_id}: {exc}')
             if integer and step is not None and step != int(step):
                 raise RowError(f'{row.variable_id}: a count moves in whole steps')
-            if choice and row.value_type != 'discrete':                   # snapped INWARD onto the choices
+            if choice:                                                    # snapped INWARD onto the choices
                 inside = [a for a in sorted(_number(c) for c in spec['choices'])
                           if lower - 1e-12 * abs(lower) <= a <= upper + 1e-12 * abs(upper)]
                 if len(inside) < 2:
                     raise RowError(f'{row.variable_id}: the range holds fewer than two of the choices {spec["choices"]}')
                 lower, upper = inside[0], inside[-1]
-            elif step is not None and row.value_type != 'discrete':      # snapped INWARD onto the grid
+            elif step is not None:                                       # snapped INWARD onto the grid
                 lower = math.ceil(lower / step - 1e-7) * step
                 upper = math.floor(upper / step + 1e-7) * step
             current = spec['value']
@@ -290,13 +282,10 @@ def adjust(config, graph, core, facts, reference):
                 grid_points = [lower + k * step for k in range(int(round((upper - lower) / step)) + 1)]
                 if any(not any(math.isclose(p, a, rel_tol=1e-9, abs_tol=1e-18) for a in allowed) for p in grid_points):
                     raise RowError(f'{row.variable_id}: every value of the range must be one of the choices {spec["choices"]}')
-            if row.value_type != 'discrete':
-                scale = units.scale_to_canonical(1.0, row.unit)
-                row = row.model_copy(update=dict(
-                    lower=_short(lower / scale), upper=_short(upper / scale), step=None if step is None else _short(step / scale),
-                    initial_value=None, value_type='integer' if integer else row.value_type if row.value_type != 'integer' else 'continuous'))
-            else:
-                row = row.model_copy(update=dict(initial_value=None))
+            scale = units.scale_to_canonical(1.0, row.unit)
+            row = row.model_copy(update=dict(
+                lower=_short(lower / scale), upper=_short(upper / scale), step=None if step is None else _short(step / scale),
+                initial_value=None, value_type='integer' if integer else 'continuous'))
         adjusted.append(row)
     return adjusted, optimized, leaders, specs
 

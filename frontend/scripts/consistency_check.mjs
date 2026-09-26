@@ -18,7 +18,7 @@ const consoleErrors = [];
 // ---- canned answers ------------------------------------------------------------------------------------------
 const TASK = 'real:ring_osc';
 const ROW = { variable_id: 'wn', instance_path: 'XU1/MN1', parameter_name: 'w', unit: 'um', optimized: true, lower: 0.6, upper: 1.6, step: 0.005,
-  target_kind: 'instance_parameter', value_type: 'continuous', scale: 'linear', relation: 'independent', name: '', notes: '' };
+  value_type: 'continuous', scale: 'linear', notes: '' };
 const PROBE = { measurement_id: 'm_osc_frequency_hz', analysis: 'tran', result_source: 'backend_profile', source_name: 'osc_frequency_hz', unit: 'Hz' };
 const SPEC = { metric_id: 'osc_frequency_hz', equation: 'm_osc_frequency_hz', unit: 'Hz', constraint: '>=', lower: 1.1e9, normalization_scale: 1e9 };
 const CONFIG = { schema_version: 'gator-workbench-config-v1', project: { name: 'ring-osc', task_name: 'ring_osc', notes: '' },

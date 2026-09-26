@@ -90,14 +90,24 @@ try {
   await blur(CELL(0, 'lower'));
   await shot('typing-1-numbers.png', `document.querySelector('section.editors')`);
 
-  // ---- (a) a JSON cell --------------------------------------------------------------------------------------------------------
-  await focusAll(CELL(0, 'candidates')); await typeKeys('[1,');
-  check('a JSON cell keeps "[1," (not valid JSON yet) while it has focus', (await valueOf(CELL(0, 'candidates'))) === '[1,', await valueOf(CELL(0, 'candidates')));
-  await typeKeys(' 2]');
+  // ---- (a) a JSON cell: the Probes tab's conditions, one of the columns "More columns" shows (record 7.92) -------------------
+  await openTab('Probes');
+  const MORE = `[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => /^More columns/.test(b.textContent.trim()))`;
+  check('(set-up) the Probes tab offers "More columns (2)" and shows no conditions column before it is pressed',
+    (await evaluate(`${MORE}?.textContent.trim()`)) === 'More columns (2)' && (await evaluate(`${CELL(0, 'conditions')} ?? null`)) === null);
+  await evaluate(`${MORE}.click()`);
+  check('(set-up) after "More columns" the conditions column is there and the button reads "Fewer columns"',
+    (await evaluate(`!!${CELL(0, 'conditions')}`)) && (await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].some(b => b.textContent.trim() === 'Fewer columns')`)));
+  await focusAll(CELL(0, 'conditions')); await typeKeys('["a",');
+  check('a JSON cell keeps \'["a",\' (not valid JSON yet) while it has focus', (await valueOf(CELL(0, 'conditions'))) === '["a",', await valueOf(CELL(0, 'conditions')));
+  await typeKeys(' "b"]');
   config = await saved();
-  check('"[1, 2]" typed key by key into a JSON cell is stored as [1, 2]', JSON.stringify(config.parameters[0].candidates) === '[1,2]', JSON.stringify(config.parameters[0].candidates));
-  await blur(CELL(0, 'candidates'));
-  check('... and reads [1,2] once the cell is left', (await valueOf(CELL(0, 'candidates'))) === '[1,2]', await valueOf(CELL(0, 'candidates')));
+  check('\'["a", "b"]\' typed key by key into a JSON cell is stored as ["a","b"]', JSON.stringify(config.measurements[0].conditions) === '["a","b"]', JSON.stringify(config.measurements[0].conditions));
+  await blur(CELL(0, 'conditions'));
+  check('... and reads ["a","b"] once the cell is left', (await valueOf(CELL(0, 'conditions'))) === '["a","b"]', await valueOf(CELL(0, 'conditions')));
+  await focusAll(CELL(0, 'conditions')); await typeKeys('["nominal"]'); await blur(CELL(0, 'conditions'));   // back to the runnable value
+  await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Fewer columns').click()`);
+  await openTab('Parameters');
 
   // ---- (a) an emptied cell, and Undo while a cell has focus --------------------------------------------------------------------
   await focusAll(CELL(0, 'ratio')); await deleteKey();

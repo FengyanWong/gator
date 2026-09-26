@@ -15,7 +15,7 @@ import math
 
 from . import spec_equations, units
 from .schema import WorkbenchConfig
-from .validation import resolve_leaders, uniform_grid
+from .validation import resolve_leaders
 
 
 class CompileError(ValueError):
@@ -35,13 +35,16 @@ class CompiledTask:
 
 def _canonical_bounds(parameter):
     lower, upper, step = parameter.lower, parameter.upper, parameter.step
-    if parameter.value_type == 'discrete':
-        grid = uniform_grid(parameter.candidates or [])
-        if grid is None:
-            raise CompileError(f'{parameter.variable_id}: non-uniform candidates are not executable')
-        lower, upper, step = grid
     convert = lambda v: None if v is None else units.to_canonical(v, parameter.unit)
     return convert(lower), convert(upper), (None if step is None else units.scale_to_canonical(step, parameter.unit))
+
+
+def normalization_scale(target) -> float:
+    """The scale a spec's violation is divided by: the one stated, else the size of its threshold (the largest of |lower|,
+    |upper| and |target|), else 1 - the same rule the Specs column states."""
+    if target.normalization_scale:
+        return float(target.normalization_scale)
+    return max([abs(v) for v in (target.lower, target.upper, target.target) if v is not None] or [0.0]) or 1.0
 
 
 # The optimizer's eight parameter kinds and the one unit each is varied in (analog_optimizer.models.inputs: counts are
@@ -69,9 +72,7 @@ def build_graph(config: WorkbenchConfig, graph):
     """Return a deep copy of `graph` whose parameter_groups are the configured variables."""
     from analog_optimizer.graph.circuit_graph import ParameterBinding, ParameterGroup
     graph = deepcopy(graph)
-    parameters = [p for p in config.parameters if p.target_kind == 'instance_parameter']
-    if len(parameters) != len(config.parameters):
-        raise CompileError('Design-variable targets cannot be executed by the current adapters')
+    parameters = list(config.parameters)
     leaders = resolve_leaders(parameters)
     by_id = {p.variable_id: p for p in parameters}
     members = {}
@@ -145,7 +146,7 @@ def build_specs(config: WorkbenchConfig):
         comparator = 'range' if (lower is not None and upper is not None) else 'min' if lower is not None else 'max'
         unit = units.canonical_unit(t.unit)
         specs.append(MetricSpec(metric_id=t.metric_id, unit=unit, comparator=comparator,
-                                scale=units.scale_to_canonical(t.normalization_scale, t.unit),
+                                scale=units.scale_to_canonical(normalization_scale(t), t.unit),
                                 lower=lower, upper=upper, weight=t.soft_weight, required=t.hard, active=t.active))
         equation = t.equation.strip()
         targets.append(dict(metric_id=t.metric_id, equation=equation,

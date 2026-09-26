@@ -39,7 +39,7 @@ const generated = task => ({ loaded: true, task_key: task, mock: false, native_d
   diagnostics: [], circuit: {}, hierarchy: { XU1: { M1: {} } }, analysis_context: null, evaluation_backend: 'FIXTURE', max_concurrency: 4,
   summary: { device_count: 1, unknown_devices: [], devices: [] }, notes: [NOTE, 'FIXTURE NOTE: a second one.'] });
 const ROWS = [{ variable_id: 'wn_fixture', instance_path: 'XU1/M1', parameter_name: 'w', unit: 'um', optimized: true, lower: 0.6, upper: 1.6, step: 0.005,
-  target_kind: 'instance_parameter', value_type: 'continuous', scale: 'linear', relation: 'ratio', ratio: 1, name: '', notes: '' }];
+  value_type: 'continuous', scale: 'linear', ratio: 1, notes: '' }];
 
 try {
   // The connection profile comes from the configuration: seeded, so the check does not depend on the connection UI.

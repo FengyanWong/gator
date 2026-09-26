@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from typing import Literal, Optional
 
@@ -31,48 +32,114 @@ class _Model(BaseModel):
 
 
 # --------------------------------------------------------------------------- parameters
+# Row fields retired on 2026-09-26 (record 7.92), each with the default it had. A row written with them still loads:
+# the before-validators below take them out - what they meant is kept in the fields that remain, what never ran is
+# dropped, what a run refused is refused there, in plain words. Both hashes still see them at these defaults
+# (`_hashed`), so every run, checkpoint, task file and approval made before keeps its identity.
+RETIRED_PARAMETER_FIELDS = {'name': '', 'target_kind': 'instance_parameter', 'candidates': None, 'relation': 'ratio',
+                            'expression': None}
+RETIRED_MEASUREMENT_FIELDS = {'function': None, 'window': None, 'at_frequency_hz': None, 'integration_band_hz': None,
+                              'branch_direction': None, 'loop_definition': None, 'crossover': None,
+                              'on_failure': 'invalid', 'validity': [{'kind': 'finite', 'value': None, 'note': ''}]}
+
+
+def uniform_grid(candidates):
+    """Return (lower, upper, step) when sorted unique candidates form a uniform grid, else None."""
+    values = sorted(set(candidates))
+    if len(values) < 2 or len(values) != len(candidates):
+        return None
+    step = values[1] - values[0]
+    if step <= 0 or any(not math.isclose(b - a, step, rel_tol=1e-9, abs_tol=1e-18)
+                        for a, b in zip(values, values[1:])):
+        return None
+    return values[0], values[-1], step
+
+
+def linear_ratio(expression):
+    """ratio r when `expression` in the symbol `leader` equals r*leader with r > 0, else None.
+
+    Uses the optimizer's whitelist AST evaluator; nothing is ever eval()'d.
+    """
+    from analog_optimizer.netlist.expressions import evaluate, UnresolvedExpression
+
+    def at(x):
+        def lookup(name):
+            if name != 'leader':
+                raise UnresolvedExpression(f'Unknown symbol {name!r}; only `leader` is allowed')
+            return x
+        return evaluate(expression, lookup)
+    try:
+        f0, f1, f2, f3 = at(0.0), at(1.0), at(2.0), at(3.5)
+    except (UnresolvedExpression, ZeroDivisionError):
+        return None
+    if (abs(f0) > 1e-15 or f1 <= 0 or not math.isclose(f2, 2 * f1, rel_tol=1e-9)
+            or not math.isclose(f3, 3.5 * f1, rel_tol=1e-9)):
+        return None
+    return f1
+
+
 class OptimizationParameter(_Model):
     variable_id: str = Field(min_length=1, max_length=120, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
         description='Stable ID of this variable. Used in data tables; it is an identifier, never a learned feature.')
-    name: str = Field('', max_length=200, description='Optional display name.')
-    target_kind: Literal['instance_parameter', 'design_variable'] = Field('instance_parameter',
-        description='instance_parameter: a parameter of one circuit instance. design_variable: a global/ADE design '
-                    'variable. Current optimizer adapters can only write instance parameters; design variables are '
-                    'kept in the configuration but block a run until an adapter supports them.')
     instance_path: Optional[str] = Field(None, max_length=400,
-        description='Full hierarchical instance path exactly as read from the circuit (e.g. XU1/M1). Required for '
-                    'instance_parameter. Never inferred from a name prefix.')
+        description='Full hierarchical instance path exactly as read from the circuit (e.g. XU1/M1). Never inferred '
+                    'from a name prefix.')
     parameter_name: str = Field(min_length=1, max_length=120,
-        description='Canonical parameter name as reported by the circuit reader (e.g. w, l, c, r) or the design '
-                    'variable name.')
+        description='Canonical parameter name as reported by the circuit reader (e.g. w, l, c, r).')
     initial_value: Optional[float] = Field(None,
-        description='Current/initial value in `unit`. Leave empty to take the value read from the circuit. It is '
-                    'checked against the circuit at validation; a mismatch is an error, not silently overwritten.')
+        description='The value read from the circuit, in `unit`. The editors show it and take no typed value; empty '
+                    'means the value the circuit has. A stated value is checked against the circuit at validation; a '
+                    'mismatch is an error, not silently overwritten.')
     unit: str = Field(min_length=0, max_length=32,
-        description='Unit of initial value, bounds, step and candidates (e.g. um, nm, pF, kohm, count).')
+        description='Unit of initial value, bounds and step (e.g. um, nm, pF, kohm, count).')
     optimized: bool = Field(True, description='Whether the optimizer may change this variable.')
-    value_type: Literal['continuous', 'integer', 'discrete'] = Field('continuous',
-        description='continuous; integer (multiplicity, fingers); discrete (explicit candidate list). The policy '
-                    'always proposes a continuous action that is projected; this is not a discrete-action SAC.')
+    value_type: Literal['continuous', 'integer'] = Field('continuous',
+        description='continuous; integer (multiplicity, fingers). The policy always proposes a continuous action that '
+                    'is projected onto lower + k*step; this is not a discrete-action SAC.')
     lower: Optional[float] = Field(None, description='Lower bound in `unit`. Required for optimized leaders.')
     upper: Optional[float] = Field(None, description='Upper bound in `unit`. Required for optimized leaders.')
     step: Optional[float] = Field(None, gt=0,
         description='Quantization step in `unit` (manufacturing grid). Values are projected to lower + k*step.')
-    candidates: Optional[list[float]] = Field(None, max_length=4096,
-        description='Candidate values for value_type=discrete. Supported for execution only when they form a '
-                    'uniform grid (then equivalent to lower/upper/step); otherwise reported as unsupported.')
     scale: Literal['linear', 'log'] = Field('linear',
         description='How the normalized action maps to the physical range. log requires lower > 0.')
     binding_group: Optional[str] = Field(None, max_length=120,
         description='variable_id of the leader this variable is tied to. Empty = independent action variable. '
                     'Equal initial values never imply a binding; bindings must be declared here.')
-    relation: Literal['ratio', 'expression'] = Field('ratio',
-        description='How a bound variable follows its leader.')
-    ratio: float = Field(1.0, gt=0, description='follower = ratio * leader (relation=ratio). Must be positive.')
-    expression: Optional[str] = Field(None, max_length=512,
-        description='Restricted arithmetic in the symbol `leader` (relation=expression). Evaluated by a whitelist '
-                    'AST, never eval(). Only expressions equivalent to a positive constant ratio are executable.')
+    ratio: float = Field(1.0, gt=0, description='follower = ratio * leader. Must be positive.')
     notes: str = Field('', max_length=1000, description='Free text; not used by the optimizer.')
+
+    @model_validator(mode='before')
+    @classmethod
+    def _retired_fields(cls, data):
+        """A row written before 2026-09-26 may carry name, target_kind, candidates, relation and expression, and its
+        value_type may be discrete (RETIRED_PARAMETER_FIELDS). A display name is dropped; an expression that is a
+        constant times the leader becomes the ratio; a discrete row whose candidates form a uniform grid becomes
+        lower/upper/step. A design-variable target, a non-uniform candidate list and any other expression never ran
+        (each was a blocker) and are refused in plain words."""
+        if not isinstance(data, dict) or not (RETIRED_PARAMETER_FIELDS.keys() & data.keys()
+                                              or data.get('value_type') == 'discrete'):
+            return data
+        row, who = dict(data), data.get('variable_id') or 'this row'
+        if row.pop('target_kind', None) not in (None, 'instance_parameter'):
+            raise ValueError(f'{who}: target_kind design_variable is no longer offered; the optimizer writes instance '
+                             'parameters only. Give the row the instance path and parameter name of one instance.')
+        row.pop('name', None)
+        expression, relation = row.pop('expression', None), row.pop('relation', None)
+        if relation == 'expression':
+            ratio = linear_ratio(expression or '')
+            if ratio is None:
+                raise ValueError(f'{who}: relation expression is no longer offered, and {expression!r} is not a constant '
+                                 'times the leader. Give the ratio instead.')
+            row['ratio'] = ratio
+        candidates = row.pop('candidates', None)
+        if row.get('value_type') == 'discrete':
+            grid = uniform_grid(candidates or [])
+            if grid is None:
+                raise ValueError(f'{who}: value_type discrete is no longer offered, and its candidates are not a uniform '
+                                 'grid. Give lower, upper and step instead.')
+            row['lower'], row['upper'], row['step'] = grid
+            row['value_type'] = 'continuous'
+        return row
 
 
 # --------------------------------------------------------------------------- targets
@@ -103,8 +170,10 @@ class PerformanceTarget(_Model):
         description='Preference among feasible designs. At most one target may set it; it selects the best design '
                     'and does not change the reward.')
     soft_weight: float = Field(1.0, gt=0, description='Relative weight of this target in the reward.')
-    normalization_scale: float = Field(gt=0,
-        description='Violation is (threshold distance)/scale, capped at 1. Use a physically meaningful scale.')
+    normalization_scale: Optional[float] = Field(None, gt=0,
+        description='Violation is (threshold distance)/scale, capped at 1. Empty = the size of the threshold: the largest '
+                    'of |lower|, |upper| and |target|, or 1 when they are all zero. Give a physically meaningful scale to '
+                    'use another.')
     active: bool = Field(True, description='Inactive targets affect neither reward nor feasibility.')
     basis: str = Field('', max_length=1000,
         description='Where this requirement comes from (datasheet, user statement...). Agent suggestions must '
@@ -122,19 +191,6 @@ class PerformanceTarget(_Model):
 
 
 # --------------------------------------------------------------------------- measurements
-class MeasurementWindow(_Model):
-    start: float
-    stop: float
-    unit: str = Field(description='s for time windows, Hz for frequency windows.')
-
-
-class ValidityCondition(_Model):
-    kind: Literal['finite', 'min', 'max', 'oscillating', 'settled', 'crossing_exists'] = Field(
-        description='A condition that must hold for the measurement to be valid.')
-    value: Optional[float] = Field(None, description='Threshold for min/max in the measurement unit.')
-    note: str = Field('', max_length=300)
-
-
 class MeasurementDefinition(_Model):
     measurement_id: str = Field(min_length=1, max_length=120, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
         description='Stable ID. Targets refer to it, and expression measurements may use it as a symbol.')
@@ -147,39 +203,27 @@ class MeasurementDefinition(_Model):
     source_name: Optional[str] = Field(None, max_length=200,
         description='Metric name in the backend profile, or the ADE output name.')
     signal: Optional[str] = Field(None, max_length=300, description='Node, branch or signal, e.g. VOUT or VDD:p.')
-    function: Optional[Literal['value_at', 'average', 'rms', 'peak_to_peak', 'frequency', 'period', 'dc_gain',
-                               'gain_at', 'unity_gain_frequency', 'phase_margin', 'gain_margin', 'bandwidth',
-                               'slew_rate', 'settling_time', 'average_power', 'spot_noise',
-                               'integrated_noise']] = Field(None,
-        description='Extraction function from a fixed whitelist. Anything else is rejected, never evaluated.')
     expression: Optional[str] = Field(None, max_length=512,
         description='Restricted arithmetic (+ - * / ** and parentheses) over other measurement IDs. No function '
                     'calls, no attribute access, never eval().')
-    window: Optional[MeasurementWindow] = Field(None,
-        description='Time/frequency window. A frequency measurement needs a defined steady-state window.')
-    at_frequency_hz: Optional[float] = Field(None, gt=0, description='Frequency point for gain_at / spot_noise.')
-    integration_band_hz: Optional[tuple[float, float]] = Field(None,
-        description='[f_low, f_high] for integrated_noise.')
-    branch_direction: Optional[Literal['into_source_positive', 'out_of_source_positive']] = Field(None,
-        description='Sign convention for power from a supply branch current. Required for average_power.')
-    loop_definition: Optional[str] = Field(None, max_length=300,
-        description='How loop gain is obtained for phase/gain margin (stb probe name, or open-loop AC path).')
-    crossover: Optional[Literal['first_unity_gain_downward', 'last_unity_gain_downward']] = Field(None,
-        description='Which unity-gain crossing defines phase margin.')
     unit: str = Field(max_length=32,
         description='Unit of the measured value. A target using this measurement must have a compatible unit.')
-    validity: list[ValidityCondition] = Field(default_factory=lambda: [ValidityCondition(kind='finite')],
-        description='Conditions that must ALL hold for the value to count (finite, min/max, oscillating, settled, '
-                    'crossing_exists). A measurement failing any of them is invalid and can never be feasible.')
-    on_failure: Literal['invalid'] = Field('invalid',
-        description='A failed/missing/NaN measurement is always invalid. There is deliberately no option that '
-                    'treats a failure as a feasible result.')
     conditions: list[str] = Field(default_factory=lambda: ['nominal'],
         description='Corner/test-condition IDs this measurement is evaluated under.')
     aggregation: Literal['nominal_only', 'worst_case', 'mean', 'min', 'max'] = Field('nominal_only',
         description='How per-condition values combine into the value used for reward/feasibility. Per-condition '
                     'raw values are always stored as well.')
     notes: str = Field('', max_length=1000, description='Free text; not used by the optimizer.')
+
+    @model_validator(mode='before')
+    @classmethod
+    def _retired_fields(cls, data):
+        """A row written before 2026-09-26 may carry function, window, at_frequency_hz, integration_band_hz,
+        branch_direction, loop_definition, crossover, on_failure and validity (RETIRED_MEASUREMENT_FIELDS). No backend
+        ever read them - a set `function` even blocked the run - so they are dropped, whatever they say."""
+        if isinstance(data, dict) and RETIRED_MEASUREMENT_FIELDS.keys() & data.keys():
+            data = {key: value for key, value in data.items() if key not in RETIRED_MEASUREMENT_FIELDS}
+        return data
 
 
 # --------------------------------------------------------------------------- circuit
@@ -405,11 +449,18 @@ def _hashed(data):
     """What both hashes see. A spec whose equation is one Probe ID is hashed in the form every configuration had before
     specs were equations (`measurement_id`), so a configuration written earlier keeps its hashes: its runs still
     resume, its checkpoints still load, and approvals and proposals made for it still bind. The network's component list
-    (`run.network.vocabulary`, added later) is hashed as absent while it is the standard one, for the same reason."""
+    (`run.network.vocabulary`, added later) is hashed as absent while it is the standard one, for the same reason. The
+    Parameters and Probes fields retired on 2026-09-26 (record 7.92) are hashed as present at their old defaults, for the
+    same reason again; a row that stated another value for one of them (it never ran, or the run refused it) hashes
+    differently since."""
     run = data.get('run') if isinstance(data, dict) else None
     network = run.get('network') if isinstance(run, dict) else None
     if isinstance(network, dict) and network.get('vocabulary') == STANDARD_VOCABULARY:
         data = dict(data, run=dict(run, network={k: v for k, v in network.items() if k != 'vocabulary'}))
+    for section, retired in (('parameters', RETIRED_PARAMETER_FIELDS), ('measurements', RETIRED_MEASUREMENT_FIELDS)):
+        rows = data.get(section) if isinstance(data, dict) else None
+        if isinstance(rows, list):
+            data = dict(data, **{section: [dict(retired, **row) if isinstance(row, dict) else row for row in rows]})
     targets = data.get('targets') if isinstance(data, dict) else None
     if not isinstance(targets, list):
         return data
@@ -442,6 +493,12 @@ def json_schema(section: str | None = None) -> dict:
     return SECTIONS[section].model_json_schema()
 
 
+# Columns the editors show only after "More columns": they exist, an agent may set them, a task file keeps them.
+ADVANCED_COLUMNS = {'targets': ('soft_weight', 'active', 'basis'), 'measurements': ('conditions', 'aggregation')}
+# Columns the editors show but take no typing in: the circuit read fills them, and a typed value could only differ.
+READ_ONLY_COLUMNS = {'parameters': ('initial_value',)}
+
+
 def editor_columns(section: str) -> list[dict]:
     """Column descriptors derived from the schema so the UI has no second field list."""
     model = SECTIONS[section]
@@ -462,7 +519,9 @@ def editor_columns(section: str) -> list[dict]:
             kind = 'object'
         columns.append(dict(name=name, type=kind or 'string', options=options, required=name in required,
                             nullable=any(b.get('type') == 'null' for b in prop.get('anyOf', [])),
-                            guidance=info.description or '', default=prop.get('default')))
+                            guidance=info.description or '', default=prop.get('default'),
+                            advanced=name in ADVANCED_COLUMNS.get(section, ()),
+                            readonly=name in READ_ONLY_COLUMNS.get(section, ())))
     return columns
 
 

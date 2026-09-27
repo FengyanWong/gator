@@ -125,6 +125,22 @@ budget).
 | `0fea6b1` | 09-23 02:07 | 7.53 | the departed session's netlist removal, committed on the user's decision |
 | `bfcfb2d` | 09-23 03:10 | 7.69 | review round 2; also the rollover rule and the lists in this file |
 | `e4ef6b4` | 09-23 03:54 | 7.70 | review round 3: identical code merged only; nothing under `src/analog_optimizer` |
+| `8bb464e` | 09-23 03:55 | - | record only: names the commit of 7.70 |
+| `043386a` | 09-23 16:25 | 7.72 | Virtuoso cellview import in a window; the user's copy declared on the read |
+| `cbace5b` | 09-23 16:34 | 7.71 | a task keeps its initial conditions when saved again |
+| `a9d84f1` | 09-23 16:41 | 7.73 | OTA5 and VCO examples removed |
+| `30a3ac7` | 09-23 18:28 | 7.74 | ngspice netlist tasks |
+| `eb51e05` | 09-23 19:36 | 7.75, 7.76 | Project column launchers |
+| `bfc624d` | 09-24 00:32 | 7.77, 7.78, 7.79 | baseline records itself; Load task / Delete task; ngspice tasks follow the connection |
+| `9ea7f44` | 09-24 13:34 | 7.80 | one connection test when the page opens |
+| `b7aa607` | 09-24 13:34 | 7.81 | venv at ~/analog-optimizer-venv |
+| `bbdfe36` | 09-24 14:22 | 7.82 | icon-only buttons (header, toolbar, task row); last commit with the M6 digest `02127bc3...` |
+| `8d647cd` | 09-24 15:46 | 7.83 | `port_gnn` removed from the package; digest `aa987cf0...` |
+| `9bc488f` | 09-24 19:04 | 7.84 | icon-only buttons in the bottom tabs |
+| `134a4a5` | 09-26 18:38 | - | docs only: the robust-reward plan and the Astra brief with the reward's shape |
+| `db8a966` | 09-26 19:53 | 7.92 | fourteen columns deleted from Parameters and Probes |
+| `59245dd` | 09-26 20:03 | 7.90, 7.91, 7.93 | clickable Mode suggestion; per-file download buttons; live build |
+| `1135b8b` | 09-27 04:25 | 7.85-7.89, 7.94-7.98 | three authors in one commit (their hunks interleaved): MLP/GCN removed, GATv2, API/frontend split (Codex); reward v2 + real qualification (Astra); audit and fixes (Claude); package digest `75c7cfac...` -> `5e8a1bc1...` -> `3473ed9c...` -> `f087a4ce...` |
 
 ## Entries
 

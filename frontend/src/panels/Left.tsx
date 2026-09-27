@@ -1,7 +1,9 @@
+import { useAsyncAction, useRequest } from '../store';
+import { CircuitDetails, gateText, namedTestbench, NativeSchematic, useVirtuosoBrowser } from './CircuitBrowser';
 import { Icon } from './Icons';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, Json, OLDER_BACKEND, problemText } from '../api';
+import { api, Json, problemText } from '../api';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { WorkingCopy } from './WorkingCopy';
 import { NgspiceButton } from './Ngspice';
@@ -19,29 +21,11 @@ import { Typed } from './Typed';
  *  The workbench makes no working copy of its own any more: reading a cell asks whether it is a copy the user made, and
  *  then works in THAT cell (the backend records it as the cell's working copy: import with `work_here`). */
 
-/** A gate refusal in the words of this column. A connection of the wrong KIND (ngspice asked for a Virtuoso cell) is not
- *  a link that is down: the backend's own sentence says what to choose instead. */
-const gateText = (gate: Json) => gate.blocking?.includes('connection_kind') ? (gate.next_steps?.[0] ?? 'This kind of connection cannot do that.')
-  : `Virtuoso cannot be reached (${[...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') || gate.status}). Bring the link up in the Connection window (the "Connection" button in the workbench), then try again.`;
-
-function Tree({ node, path = '' }: { node: Json; path?: string }) {
-  const keys = Object.keys(node);
-  if (!keys.length) return null;
-  return <ul className="tree">{keys.map(k => <li key={path + k}><span>{k}</span><Tree node={node[k]} path={path + k + '/'} /></li>)}</ul>;
-}
-
 /** The circuit sources: a registered task (the column) and a Virtuoso cell (the window). "Import Spectre netlist" was
  *  removed (user request, status record 7.53): a configuration saved before still names `netlist`; the column then says so. */
 const SOURCES = ['registered_task', 'virtuoso'];
 /** A dropdown must be able to show the configured value even when the list does not (yet) contain it. */
 const withCurrent = (names: string[], current?: string | null) => (current && !names.includes(current) ? [current, ...names] : names);
-/** The testbench a cell's NAME points to: `tb_<cell>` in the listed library (the prefix in any case, the cell name exact),
- *  with a schematic. null when there is none. */
-const namedTestbench = (cells: Json, cell?: string | null): string | null => {
-  if (!cells || !cell) return null;
-  const found = (cells.cells ?? []).filter((c: Json) => c.has_schematic && /^tb_/i.test(c.name) && c.name.slice(3) === cell).map((c: Json) => c.name);
-  return found.find((name: string) => name === `tb_${cell}`) ?? found[0] ?? null;
-};
 const sameJson = (a: Json, b: Json) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
 
 /** What the Agent tab is asked once a cell was read from Virtuoso. Shown in the message box first: editable, never sent by
@@ -70,14 +54,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     onAgent: (kind: string, selection: Json[], prompt?: string) => void; taskSlot: HTMLElement | null; taskNotes: HTMLElement | null; taskEpoch?: number }) {
   const [tasks, setTasks] = useState<Json[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [native, setNative] = useState<Json>(null);
   const [nativeOpen, setNativeOpen] = useState(false);                    // closed until asked for; the choice then lasts across cells and Refresh
   const [hierarchyOpen, setHierarchyOpen] = useState(false);              // the whole Hierarchy block is one closed line; same rule
-  const [libraries, setLibraries] = useState<string[] | null>(null);      // null = not listed (yet)
-  const [cells, setCells] = useState<Json>(null);                         // { library, technology_library, cells: [{ name, views, has_schematic }] }
-  const [listing, setListing] = useState<string | null>(null);            // what is being fetched from Virtuoso right now
-  const [nativeError, setNativeError] = useState<Json>(null);             // { step, text, outdated }
-  const [refresh, setRefresh] = useState(0);                              // repeats the whole chain
   const ref = config.circuit;
   const offered = SOURCES.includes(ref.source);     // false: a saved configuration names the removed netlist source
   const virtuosoOn = ref.source === 'virtuoso';     // the page follows a Virtuoso cell (the window's work), not a task
@@ -123,50 +101,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // simulation records the task's reference by itself (status record 7.78) - so the task is read again: local files, free.
   useEffect(() => { if (taskEpoch && offered && ref.source === 'registered_task') load(ref); }, [taskEpoch]);
 
-  // The window: libraries -> cells -> schematic follow each other without a button (user request 2026-09-20). Each step
-  // starts from an explicit choice (opening the window, a library, a cell), waits for the step before it, and is a
-  // gated, read-only, zero-cost bridge call. Refresh repeats the chain, e.g. after the link came up.
-  const browsing = !!popup && !!profileId;
-  const nativeProblem = (step: string, e: any) => {
-    const gate = e.detail?.gate, outdated = e.status === 404 || e.status === 405 || (e.status === 422 && /work_here/.test(e.message ?? ''));
-    setNativeError({ step, outdated, text: outdated ? OLDER_BACKEND
-      : gate ? gateText(gate) : e.message });
-  };
-  const nativeStep = (step: string, call: () => Promise<Json>, done: (answer: Json) => void) => {
-    let live = true;
-    setListing(step); setNativeError(null);
-    call().then(answer => { if (live) done(answer); })
-      .catch((e: any) => { if (live) nativeProblem(step, e); })
-      .finally(() => { if (live) setListing(current => (current === step ? null : current)); });
-    return () => { live = false; setListing(current => (current === step ? null : current)); };
-  };
-  useEffect(() => {
-    setLibraries(null);
-    if (!browsing) return;
-    return nativeStep('libraries', () => api.nativeLibraries(profileId!), answer => setLibraries(answer.libraries));
-  }, [browsing, profileId, refresh]);
-  useEffect(() => {
-    setCells(null);
-    if (!browsing || !libraries || !chosen.library) return;
-    return nativeStep('cells', () => api.nativeCells(profileId!, chosen.library), answer => {
-      setCells(answer);
-      // The technology library a design library is attached to IS its PDK: offered as the label, never over a typed one.
-      // An empty Testbench box takes the cell's `tb_<cell>`, as choosing the cell does - never over a chosen testbench.
-      setConfig(c => {
-        let circuit = c.circuit;
-        if (answer.technology_library && (circuit.pdk_id ?? 'unspecified') === 'unspecified') circuit = { ...circuit, pdk_id: answer.technology_library };
-        const named = !circuit.testbench_cell && circuit.library === answer.library ? namedTestbench(answer, circuit.cell) : null;
-        if (named) circuit = { ...circuit, testbench_cell: named };
-        return circuit === c.circuit ? c : { ...c, circuit };
-      });
-    });
-  }, [browsing, profileId, libraries, chosen.library]);
-  const chosenCell = cells && cells.library === chosen.library ? cells.cells.find((c: Json) => c.name === chosen.cell) : null;
-  useEffect(() => {                                   // Refresh reaches this step through the two above: the cell list comes back first
-    setNative(null);
-    if (!browsing || !chosenCell?.has_schematic) return;
-    return nativeStep('schematic', () => api.nativeRead(profileId!, chosen.library, chosen.cell), setNative);
-  }, [browsing, profileId, chosen.library, chosen.cell, !!chosenCell?.has_schematic]);
+  const { native, setNative, libraries, cells, chosenCell, listing, nativeError, setNativeError, nativeProblem, nativeStep, setRefresh } =
+    useVirtuosoBrowser(!!popup, profileId, chosen, setConfig);
   // Save task (TaskSave.tsx): the editors' rows become the task real:<name>, which runs in the cell that was read. After a
   // first save the column switches to the task; after saving the open task again it is loaded again (its baseline may no
   // longer hold).
@@ -184,7 +120,6 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // A check result goes as soon as the rows change: it was about the rows before. A message says which press it answers
   // (`what`): the answer to Delete task stands by that button, in the task row at the top of the column.
   const [taskCheck, setTaskCheck] = useState<Json>(null);
-  const [profileBusy, setProfileBusy] = useState<string | null>(null);
   const [profileMessage, setProfileMessage] = useState<Json>(null);
   const generatedName = ref.source === 'registered_task' && circuit?.generated_profile ? String(ref.task_id ?? '').replace(/^real:/, '') : null;
   // Delete task is offered for a generated task (real:<name>, saved from a cell) whether it is loaded or blocked - one
@@ -193,13 +128,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     ? String(ref.task_id ?? '').replace(/^real:/, '') : null);
   useEffect(() => { setTaskCheck(null); setProfileMessage(null); }, [generatedName]);
   useEffect(() => { setTaskCheck(null); }, [JSON.stringify([config.parameters, config.measurements, config.targets])]);
-  const profileAction = async (what: string, action: () => Promise<void>) => {
-    setProfileBusy(what); setProfileMessage(null);
-    try { await action(); }
-    catch (e: any) {
-      setProfileMessage({ level: 'error', what, text: problemText(e, gateText) });
-    } finally { setProfileBusy(null); }
-  };
+  const { busy: profileBusy, run: profileAction } = useAsyncAction((e, what) =>
+    setProfileMessage({ level: 'error', what, text: problemText(e, gateText) }), () => setProfileMessage(null));
   const checkTask = () => profileAction('check', async () => { setTaskCheck(await api.taskCheck(profileId, config)); });
   const recordReference = () => profileAction('reference', async () => {
     const recorded = await api.profileReference(generatedName!);
@@ -226,14 +156,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // The launchers follow the connection in use (user request 2026-09-23): a Virtuoso connection shows "Virtuoso cell..."
   // only, an ngspice connection "ngspice netlist..." only; no connection (or one of a kind this page does not know) shows
   // both. The family is read from the profile list - the workbench's own file, no probe - when the connection changes.
-  const [family, setFamily] = useState<string | null>(null);
-  useEffect(() => {
-    if (!profileId) { setFamily(null); return; }
-    let live = true;
-    api.connectionProfiles().then(p => { if (live) setFamily((p.profiles ?? []).find((x: Json) => x.profile_id === profileId)?.family ?? null); })
-      .catch(() => { if (live) setFamily(null); });
-    return () => { live = false; };
-  }, [profileId]);
+  const { value: family } = useRequest<string>(() => api.connectionProfiles()
+    .then(p => (p.profiles ?? []).find((x: Json) => x.profile_id === profileId)?.family ?? null), [profileId], { enabled: !!profileId });
   const showVirtuoso = family !== 'ngspice', showNgspice = family !== 'virtuoso';
   // The Task list follows the same rule for the ngspice tasks (user request 2026-09-24: the ngspice OTA example is to show
   // only while ngspice is connected): while a Virtuoso connection is in use they are left out of the list, except the task
@@ -368,28 +292,9 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     </div>) : null;
   // What was read straight from Virtuoso. It is a line of the Hierarchy block; while no circuit is loaded (browse only)
   // there is no such block and it stands alone at the end of the window.
-  const nativeSchematic = native && (
-    <details open={nativeOpen} onToggle={e => setNativeOpen(e.currentTarget.open)}><summary>Native schematic {native.library}/{native.cell} ({native.instance_count} instances, as read)</summary>
-      <p className="warn">Requires confirmation: {native.requires_confirmation.join('; ')}</p>
-      <table className="grid small"><tbody>{native.instances.map((i: Json) => <tr key={i.instance_path}><td>{i.instance_path}</td><td>{i.master.library}/{i.master.cell}</td>
-        <td>{Object.entries(i.parameters).map(([k, v]: [string, any]) => `${k}=${v.raw}`).join('  ')}</td></tr>)}</tbody></table></details>);
-  // The loaded circuit, wherever it is shown: in the column for a task, in the window for a cell read from Virtuoso.
-  const circuitInfo = circuit?.loaded && (<>
-    {circuit.notes?.length > 0 && <details className="more hint"><summary>{circuit.notes.length === 1 ? '1 note' : `${circuit.notes.length} notes`} on this circuit</summary>
-      {circuit.notes.map((n: string) => <p key={n}>{n}</p>)}</details>}
-    <details className="section" open={hierarchyOpen} onToggle={e => setHierarchyOpen(e.currentTarget.open)}>
-      <summary><h3>Hierarchy ({circuit.summary.device_count} instances)</h3></summary>
-      <Tree node={circuit.hierarchy} />
-      <details><summary>Instances and parameters</summary>
-        <table className="grid small"><thead><tr><th>Instance</th><th>Kind</th><th>Parameters (canonical units)</th></tr></thead>
-          <tbody>{circuit.summary.devices.map((d: Json) => <tr key={d.instance_path}><td>{d.instance_path}</td><td>{d.kind}</td>
-            <td>{Object.entries(d.parameters).map(([k, v]: [string, any]) => `${k}=${v.value ?? v.expression ?? '?'}`).join('  ')}</td></tr>)}</tbody></table>
-      </details>
-      {virtuosoOn && nativeSchematic}
-    </details>
-    {circuit.summary.unknown_devices.length > 0 && <p className="warn">Unmapped devices need confirmation: {circuit.summary.unknown_devices.join(', ')}</p>}
-    {circuit.diagnostics.length > 0 && <details><summary>{circuit.diagnostics.length} diagnostics</summary><ul>{circuit.diagnostics.map((d: Json, i: number) => <li key={i} className={d.severity}>{d.code}: {d.message}</li>)}</ul></details>}
-  </>);
+  const nativeSchematic = <NativeSchematic native={native} open={nativeOpen} setOpen={setNativeOpen} />;
+  const circuitInfo = <CircuitDetails circuit={circuit} open={hierarchyOpen} setOpen={setHierarchyOpen}>
+    {virtuosoOn && nativeSchematic}</CircuitDetails>;
   const readable = !!profileId && !!chosenCell?.has_schematic && !importing && !listing;
   // The warning stays in view (never folded): the confirm repeats it once, when Read is pressed.
   const copyWarning = (

@@ -21,8 +21,8 @@ GOOD = dict(kind='targets', patch=[dict(op='replace', section='targets', key='sc
 
 
 REVIEW = dict(kind='settings_review', patch=[], reasoning='Two settings stand out for a 60-evaluation budget.', warnings=[], unresolved=[],
-              suggestions=[dict(path='run.advanced.batch_size', value='16', reason='Fits the budget.', source='GATOR preset for gat (Lighthouse RL)'),
-                           dict(path='run.network.encoder_type', value='"gat"', reason='Published for SAC sizing.', source='Lighthouse RL',
+              suggestions=[dict(path='run.advanced.batch_size', value='16', reason='Fits the budget.', source='GATOR preset for gatv2 (Lighthouse RL)'),
+                           dict(path='run.network.encoder_type', value='"gatv2"', reason='Borrowed starting settings from GAT sizing.', source='Lighthouse RL',
                                 url='https://arxiv.org/abs/2607.14008', quote='We use a graph attention network'),
                            dict(path='output.output_root', value='"/tmp/elsewhere"', reason='tidier', source='none')],
               encoder_ideas=[dict(name='GPS graph transformer', source='Rampasek et al., NeurIPS 2022', url='https://arxiv.org/abs/2205.12454',

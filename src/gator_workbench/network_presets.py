@@ -30,7 +30,7 @@ from .storage.dataset import utcnow
 SETTINGS_FILE = 'network_settings.json'
 SETTINGS_SCHEMA = 'gator-workbench-network-settings-v1'
 DEFAULT_ENCODER = 'graph_transformer'
-ATTENTION_ENCODERS = ('graph_transformer', 'gat')           # the only blocks that read `heads`
+ATTENTION_ENCODERS = ('graph_transformer', 'gatv2')         # the only blocks that read `heads`
 NETWORK_FIELDS = ('hidden_dim', 'heads', 'layers')
 ADVANCED_FIELDS = ('learning_rate', 'gamma', 'tau', 'initial_alpha', 'target_entropy_per_action', 'max_grad_norm',
                    'batch_size', 'warmup_transitions', 'update_every', 'updates_per_transition', 'replay_capacity',
@@ -74,11 +74,6 @@ def _reference(short, authors, title, venue, year, url, algorithm, budget, code=
 
 
 REFERENCES: dict = {
-    'wang2020gcnrl': _reference(
-        'Wang et al., DAC 2020 (GCN-RL)', 'H. Wang, K. Wang, J. Yang, L. Shen, N. Sun, H.-S. Lee, S. Han',
-        'GCN-RL Circuit Designer: Transferable Transistor Sizing with Graph Neural Networks and Reinforcement Learning',
-        'DAC', 2020, 'https://arxiv.org/abs/2005.00406', 'DDPG',
-        '10,000 simulations per run; 300 in the transfer experiments. No public agent code.'),
     'li2023rgcn': _reference(
         'Li & Chan Carusone, ICCAD 2023', 'Z. Li, A. Chan Carusone',
         'Design and Optimization of Low-Dropout Voltage Regulator Using Relational Graph Neural Network and '
@@ -107,11 +102,6 @@ REFERENCES: dict = {
         'A Circuit Attention Network-Based Actor-Critic Learning Approach to Robust Analog Transistor Sizing',
         'MLCAD', 2021, 'https://doi.org/10.1109/MLCAD52597.2021.9531156', 'DDPG',
         '300 training steps, each reward averaged over 100 Monte-Carlo simulations.'),
-    'kim2025ppaas': _reference(
-        'Kim et al., ICCAD 2025 (PPAAS)', 'S. Kim, Z. Wang, S. Lee, Y. Oh, H. Zhu, D. Kim, D. Z. Pan',
-        'PPAAS: PVT and Pareto Aware Analog Sizing via Goal-conditioned Reinforcement Learning',
-        'ICCAD', 2025, 'https://arxiv.org/abs/2507.17003', 'SAC with hindsight relabeling',
-        '8,000 to 24,000 Ngspice steps per benchmark.', code='https://github.com/SeunggeunKimkr/PPAAS'),
     'fan2024gtn': _reference(
         'Fan et al., DAC 2024 (GTN)', 'S. Fan, H. Lu, S. Zhang, N. Cao, X. Zhang, J. Li',
         'Graph-Transformer-based Surrogate Model for Accelerated Converter Circuit Topology Design',
@@ -179,7 +169,7 @@ PRESETS: dict = {
         'Size from the only published analog graph transformer whose attention is restricted to graph neighbours, '
         'like the GATOR block (GTN, a supervised surrogate for power converters). No publication uses a graph '
         'transformer as the RL sizing agent, so the training numbers are those reported for attention-network '
-        'sizing agents (the gat preset); the GATOR graph_transformer and gat blocks differ only in the attention '
+        'sizing agents (also borrowed by the gatv2 preset); the GATOR graph_transformer and gatv2 blocks differ in the attention '
         'function.',
         layers=_field(4, 'paper', 'fan2024gtn', '"we construct GTN by comprising a total of 4 layers with ReLU '
                       'activation".'),
@@ -187,16 +177,6 @@ PRESETS: dict = {
         heads=_field(4, 'paper', 'fan2024gtn', '"we configure the number of heads as 4 and D_k as 6".'),
         **_attention_training(' Borrowed from a GAT-style agent: no graph-transformer sizing agent is published.',
                               'closest')),
-    'gcn': _preset(
-        'Depth from the canonical GCN sizing paper (GCN-RL), which states seven layers and nothing else about its '
-        'agent and has no public code. Width and all training numbers come from the GCN+DDPG benchmark of Li & '
-        'Chan Carusone, the best documented off-policy sizing setup with a graph network.',
-        layers=_field(7, 'paper', 'wang2020gcnrl', '"we apply seven GCN layers to make sure the last layer have a '
-                      'global receptive field over the entire topology graph". GATOR graphs alternate device and '
-                      'net nodes, so seven layers reach about three devices away.'),
-        hidden_dim=_field(32, 'adapted', 'li2023rgcn', 'GCN-RL reports no width. The GCN benchmark code uses '
-                          'GCNConv widths 32-32-16-16; GATOR blocks have one width, the first is used.'),
-        heads=_NOT_USED, **_li2023_training(' Stated for the paper\'s GCN+DDPG benchmark as well as its RGCN.')),
     'rgcn': _preset(
         'All values from the one published line of work that puts an R-GCN inside a transistor-sizing RL loop '
         '(DDPG on two LDOs). Its two edge types are hand-annotated signal/bias paths; GATOR types edges by '
@@ -206,40 +186,20 @@ PRESETS: dict = {
         hidden_dim=_field(32, 'adapted', 'li2023rgcn', 'RGCNConv widths 32-32-16-16 with num_bases = 32; GATOR '
                           'blocks have one width, the first is used.'),
         heads=_NOT_USED, **_li2023_training()),
-    'gat': _preset(
-        'No single GAT sizing paper reports a complete agent. Depth and episode length come from the closest '
-        'published setup (SAC with four residual, layer-normalized GAT layers); heads and width from the code of '
-        'the canonical GAT sizing paper, which uses PPO; the replay-side numbers from the only off-policy '
-        'attention-network sizing paper, whose whole budget was 300 steps.',
+    'gatv2': _preset(
+        'GATv2 replaces GATv1 with dynamic attention. These starting values are borrowed from the previous '
+        'GAT preset; they are not a verified GATv2 circuit-sizing recipe. Depth and episode length come from '
+        'a SAC agent with residual, layer-normalized GAT layers; heads and width from GAT sizing code using PPO; '
+        'the replay-side numbers from an off-policy attention-network sizing study with a 300-step budget.',
         layers=_field(4, 'paper', 'gursoy2026lighthouse', '"four Graph Attention Network (GAT) layers with '
-                      'residual connections and layer normalization", the structure of the GATOR block. CAN also '
-                      'uses four attention layers; the Cao et al. code uses three.'),
+                      'residual connections and layer normalization". Borrowed depth for GATv2, not a GATv2 '
+                      'result. CAN also uses four attention layers; the Cao et al. code uses three.', 'closest'),
         heads=_field(3, 'official_code', 'cao2022gat', 'num_heads = 3 in main_train_gan_fc.py. The paper states '
-                     'no head count; ParaGraph used one head only because of GPU memory.'),
+                     'no head count; borrowed from GAT for GATv2.', 'closest'),
         hidden_dim=_field(192, 'official_code', 'cao2022gat', 'n_latent_var = 64 * num_heads: 64 per head, '
-                          'concatenated, exactly how the GATOR block splits its width.'),
-        **_attention_training()),
-    'mlp': _preset(
-        'All values from the best documented soft actor-critic sizing paper, which uses fully connected networks '
-        '(actor 4 x 256). The classic MLP reference, AutoCkt (DATE 2020), uses PPO with three layers of 50 '
-        'neurons and states no learning rate, so it cannot fill the SAC settings.',
-        layers=_field(4, 'paper', 'kim2025ppaas', '"hidden dimensions of [256,256,256,256] for the actor and '
-                      '[256,256,128] for the critics". GATOR builds actor and critics at one size.'),
-        hidden_dim=_field(256, 'paper', 'kim2025ppaas', 'Actor width 256 (see layers).'),
-        heads=_NOT_USED,
-        learning_rate=_field(3e-3, 'paper', 'kim2025ppaas', '"we set learning rate lr=0.003".'),
-        gamma=_field(0.8, 'paper', 'kim2025ppaas', '"discount factor gamma=0.8".'),
-        tau=_field(0.005, 'official_code', 'kim2025ppaas', 'train.py default tau = 0.005; not in the paper.'),
-        batch_size=_field(256, 'paper', 'kim2025ppaas', '"batch size B=256".'),
-        warmup_transitions=_field(120, 'official_code', 'kim2025ppaas', '--learning_starts 120 in scripts/TSA.sh; '
-                                  'not in the paper.'),
-        update_every=_field(1, 'official_code', 'kim2025ppaas', 'Stable-Baselines3 default, not changed by the '
-                            'authors.'),
-        updates_per_transition=_field(1, 'official_code', 'kim2025ppaas', 'Stable-Baselines3 default, not changed '
-                                      'by the authors.'),
-        replay_capacity=_field(1000000, 'official_code', 'kim2025ppaas', 'Stable-Baselines3 default; the authors '
-                               'set no buffer size. Runs of 8,000 to 24,000 steps never fill it.'),
-        episode_length=_field(30, 'paper', 'kim2025ppaas', '"The episode horizon is fixed to H=30".')),
+                          'concatenated. Borrowed width for GATv2; separate source/target projections increase '
+                          'parameter count at the same width.', 'closest'),
+        **_attention_training(' Borrowed attention-network settings, not verified GATv2 sizing settings.', 'closest')),
 }
 
 

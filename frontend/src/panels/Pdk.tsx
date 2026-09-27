@@ -1,3 +1,4 @@
+import { useAsyncAction } from '../store';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
@@ -63,20 +64,17 @@ export function ComponentList({ value, onChoose, profileId, circuitPdk }: { valu
 function PdkWindow({ list, refresh, profileId, circuitPdk }: { list: Json; refresh: () => Promise<void>; profileId: string | null; circuitPdk?: string | null }) {
   const [library, setLibrary] = useState(USABLE_PDK_ID(circuitPdk) ? String(circuitPdk) : '');
   const [modelFile, setModelFile] = useState('');
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shown, setShown] = useState<Json>(null);
   const [showing, setShowing] = useState<string | null>(null);
   const pdks: Json[] = list?.pdks ?? [];
   const show = (id: string) => { setShowing(id); setError(null); api.pdk(id).then(setShown).catch(e => setError(e.message)); };
-  const load = async () => {
-    setBusy(true); setError(null);
-    try {
+  const { busy, run } = useAsyncAction(e => setError(e.message), () => setError(null));
+  const load = () => run('load', async () => {
       const loaded = await api.loadPdk(profileId!, library.trim() || null, modelFile.trim() || null);
       setShown(loaded); setShowing(loaded.pdk_id);
       await refresh();
-    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
-  };
+  });
   const libraryProblem = library.trim() && !/^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$/.test(library.trim()) ? 'A plain Cadence library name.' : null;
   const fileProblem = modelFile.trim() && !/^\/[A-Za-z0-9_./+\-]+$/.test(modelFile.trim()) ? 'An absolute path on the simulator host (letters, digits, / . _ - +).' : null;
   const devices: Json[] = (shown?.devices ?? []).slice().sort((a: Json, b: Json) =>
@@ -96,7 +94,7 @@ function PdkWindow({ list, refresh, profileId, circuitPdk }: { list: Json; refre
       <div className="row pdk-form">
         <label>Technology library<input value={library} placeholder="empty = the connection's design library's" onChange={e => setLibrary(e.target.value)} /></label>
         <label>Model file on the simulator host<input value={modelFile} placeholder="empty = the connection's model file" onChange={e => setModelFile(e.target.value)} /></label>
-        <button className="pdk-load" disabled={busy || !profileId || !!libraryProblem || !!fileProblem} onClick={load}
+        <button className="pdk-load" disabled={!!busy || !profileId || !!libraryProblem || !!fileProblem} onClick={load}
           title="Read-only and zero-cost: one query of the library's description, and the model files downloaded, scanned and deleted.">{busy ? 'Reading...' : 'Load'}</button>
       </div>
       <p className="hint">Through connection <b>{profileId ?? '(none chosen)'}</b>.{busy ? ' Reading the description and the model files - usually well under a minute.' : ''}</p>

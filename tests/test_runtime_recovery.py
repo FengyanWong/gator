@@ -265,7 +265,7 @@ def test_synthetic_cli_resumes_periodic_counters(tmp_path):
     config = tmp_path/'recording.json'
     config.write_text(json.dumps(dict(min_free=0, temporary_reserve=0, checkpoint_interval=3)))
     command = [sys.executable, str(ROOT/'examples/train_synthetic_sac.py'), '--episodes', '1', '--steps', '2',
-        '--batch-size', '2', '--encoder', 'mlp', '--output', str(tmp_path/'output'),
+        '--batch-size', '2', '--encoder', 'gatv2', '--output', str(tmp_path/'output'),
         '--recording-root', str(tmp_path/'records'), '--recording-config', str(config), '--history-limit', '1']
     first = subprocess.run(command, capture_output=True, text=True, timeout=60)
     assert first.returncode == 0, first.stdout + first.stderr

@@ -252,7 +252,7 @@ try {
   check('(the page has learned that the run is real)', await until(`/^paused at/.test(${CHIP}?.textContent ?? '') && !/MOCK/.test(${CHIP}.textContent)`, 60));   // the next poll, not a fixed wait
   log.length = 0; answers.push(false);
   await press(MAIN); await sleep(500);
-  check('Resume of a REAL run asks to authorize what is left of the budget', /REAL Virtuoso\/Spectre/.test(lastDialog().message) && new RegExp(`up to ${sim.max - sim.charged} more`).test(lastDialog().message), lastDialog().message);
+  check('Resume of a REAL run asks to authorize what is left of the budget', /REAL simulations \(Virtuoso\/Spectre, or ngspice/.test(lastDialog().message) && new RegExp(`up to ${sim.max - sim.charged} more`).test(lastDialog().message), lastDialog().message);
   check('answering no sends nothing; the run stays paused', log.length === 0 && await mainReads('Resume', 20) && /Not resumed/.test((await look()).banner ?? ''));
   answers.push(true); refuseNext = { name: '/api/runs/continue', detail: { code: 'connection_gate_blocked', message: 'FIXTURE: the connection gate blocked this action.' } };
   await press(MAIN);

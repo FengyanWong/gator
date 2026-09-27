@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRequest } from '../store';
+import { useRef, useState } from 'react';
 import { api, Json } from '../api';
 
 // The structure of the chosen saved RL model as TABLES (no plot, no library): a short summary in the narrow run panel
@@ -12,18 +13,9 @@ const share = (value: unknown) => typeof value === 'number' ? `${(100 * value).t
 // The fold-out stays mounted - and open - while another save point or model is chosen, and then re-reads.
 export function ModelStructure({ runDir, checkpointId, label }: { runDir: string; checkpointId: string | null; label?: string }) {
   const [open, setOpen] = useState(false);
-  const [table, setTable] = useState<Json>(null);
-  const [error, setError] = useState<string | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
-  const request = useRef(0);
-  useEffect(() => {
-    setTable(null); setError(null);
-    const mine = ++request.current;                 // an answer for the model chosen before is dropped
-    if (!open || !checkpointId) return;
-    api.modelStructure(runDir, checkpointId)
-      .then(t => { if (mine === request.current) setTable(t); })
-      .catch(e => { if (mine === request.current) setError(e.message); });
-  }, [open, runDir, checkpointId]);
+  const { value: table, error } = useRequest<Json>(() => api.modelStructure(runDir, checkpointId!), [runDir, checkpointId],
+    { enabled: open && !!checkpointId });
 
   const totals = table?.totals;
   const perNetwork = table ? table.parts[0].unused_parameters : 0;

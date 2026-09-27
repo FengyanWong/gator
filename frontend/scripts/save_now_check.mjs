@@ -14,7 +14,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/save_now_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -31,7 +31,7 @@ const statusOf = () => ({ state: sim.state, run_id: 'fixture-run', mode: 'scratc
     failed: 0, released: 0, remaining: sim.max - sim.charged, launches: sim.charged, retries: 0, cache_hits: 0, first_feasible: null },
   best_design: null, persistence: null, last_checkpoint_utc: sim.last_checkpoint_utc, manual_save: sim.manual_save, paths: { run_dir: DIR }, connection: { overall: 'not_applicable' }, summary: null,
   manifest: { mode: 'scratch', mock: true, task_id: 'fixture_task:0000', seeds: { target_seed: 0 }, source_model: null, budgets: { max_evaluations: sim.max }, mock_notice: 'FIXTURE MOCK DATA: nothing was started.' } });
-const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: true };
+const VALID = validConfiguration({ mock: true });
 
 try {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();

@@ -20,6 +20,7 @@ loaded from inside an allowed output root after its SHA-256 matched ``metadata.j
 from __future__ import annotations
 
 from contextlib import contextmanager
+from functools import lru_cache
 from pathlib import Path
 import shutil
 from uuid import uuid4
@@ -78,6 +79,9 @@ def contract_summary(learner) -> dict:
 
 def _contract_fields(contract) -> dict:
     return dict(checkpoint_version=contract['checkpoint_version'], graph_schema=contract['graph_schema'],
+                reward_version=contract.get('reward_version'), reward_settings=contract.get('reward_settings'),
+                clearance_rule=contract.get('clearance_rule'), failure_policy=contract.get('failure_policy'),
+                condition_policy=contract.get('condition_policy'), planned_conditions=contract.get('planned_conditions'),
                 feature_schema=contract['feature_schema'], spec_schema=contract['spec_schema'],
                 normalizer=contract['normalizer'], action_version=contract['action_version'],
                 critic_action=contract['critic_action'], budget_semantics=contract['budget'],
@@ -259,14 +263,26 @@ def read_metadata(directory) -> dict:
     return read_json(Path(directory) / 'metadata.json')
 
 
-def verify_files(directory) -> list[str]:
+@lru_cache(maxsize=128)
+def _display_digest(path, identity):
+    """Display-only checksum reuse. Actual model loading always hashes the files again."""
+    return sha256_file(path)
+
+
+def verify_files(directory, *, cached=False) -> list[str]:
     directory, problems = Path(directory), []
     for relative, info in read_metadata(directory)['files'].items():
         path = directory / relative
         if not path.is_file():
             problems.append(f'missing {relative}')
-        elif sha256_file(path) != info['sha256']:
-            problems.append(f'checksum mismatch {relative}')
+        else:
+            if cached:
+                st = path.stat()
+                digest = _display_digest(str(path.resolve()), (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns))
+            else:
+                digest = sha256_file(path)
+            if digest != info['sha256']:
+                problems.append(f'checksum mismatch {relative}')
     return problems
 
 
@@ -282,6 +298,12 @@ def check_compatibility(metadata, *, mode, task_definition_hash, contract) -> di
         checks.append(dict(component=component, detail=detail,
                            status='ok' if ok else 'incompatible' if fatal else 'warning'))
     strict = mode == 'resume'
+    add('checkpoint version', saved.get('checkpoint_version') == contract.get('checkpoint_version') == 'graph-sac-v2',
+        'Reward v2 requires graph-sac-v2; v1 input/checkpoint migration is not implemented.')
+    for key in ('reward_version', 'reward_settings', 'clearance_rule', 'failure_policy', 'condition_policy', 'planned_conditions'):
+        same = saved.get(key) == contract.get(key)
+        add(key, same, 'identical' if same else 'Different reward/condition contract; fine-tune resets critics, targets and replay.',
+            fatal=strict)
     from .pdk import schema_label
     same = saved['feature_schema'] == contract['feature_schema']
     add('graph feature schema (components the network knows)', same,
@@ -347,7 +369,7 @@ def describe(run_dir, checkpoint_id='latest') -> dict:
                 created_utc=meta['created_utc'], metadata_version=meta['metadata_version'],
                 counters=meta['counters'], restoration_capability=meta['restoration_capability'],
                 restorable_components=meta['restorable_components'], missing_components=meta['missing_components'],
-                contract=meta['contract'], file_problems=verify_files(directory))
+                contract=meta['contract'], file_problems=verify_files(directory, cached=True))
 
 
 # ---------------------------------------------------------------------- choosing a model

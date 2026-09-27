@@ -97,7 +97,7 @@ def test_best_policy_needs_an_explicit_validation_rule_and_records_its_cost(tmp_
 # ------------------------------------------------------------------------------- compatibility
 def test_compatibility_failures_are_visible_per_component_and_never_fall_back(tmp_path, source_run):
     root, layout = source_run
-    config = transfer_config(root, layout, 'fine_tune', run=dict(network=dict(encoder_type='mlp', hidden_dim=16, heads=2, layers=1)))
+    config = transfer_config(root, layout, 'fine_tune', run=dict(network=dict(encoder_type='gatv2', hidden_dim=16, heads=2, layers=1)))
     with pytest.raises(runs.RunRejected) as error:
         runs.prepare_run(config, roots_for(root), confirm_transfer=True)
     assert error.value.code == 'incompatible_checkpoint'

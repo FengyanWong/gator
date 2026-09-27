@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRequest } from '../store';
+import { useState } from 'react';
 import { api, copy, Json } from '../api';
 
 // Which saved RL model a resume / fine_tune / frozen run loads. Plain words on purpose: a "run" is one training
@@ -17,24 +18,10 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 export function ModelChooser({ mode, source, onChoose, runs, outputRoot, lookOnly }: {
   mode: string; source: Json; onChoose: (run_dir: string | null, checkpoint_id: string) => void;
   runs: Json[]; outputRoot?: string | null; lookOnly?: boolean }) {
-  const [models, setModels] = useState<Json[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('');
-  const request = useRef(0);
-  const load = () => {
-    const mine = ++request.current;
-    setLoading(true);
-    api.savedModels(outputRoot ?? undefined)
-      .then(r => { if (mine === request.current) { setModels(r.models ?? []); setError(null); } })
-      .catch(e => { if (mine === request.current) { setModels([]); setError(e.message); } })
-      .finally(() => { if (mine === request.current) setLoading(false); });
-  };
   const wanted = mode !== 'scratch';
-  // Read when the block opens, and again whenever the application refreshed its run list (a run started or ended).
-  // No timer: the "Refresh list" button is the only other trigger.
-  useEffect(() => { if (wanted) load(); }, [wanted, runs, outputRoot]);
-
+  const { value: models, error, loading, refresh: load } = useRequest<Json[]>(
+    () => api.savedModels(outputRoot ?? undefined).then(r => r.models ?? []), [runs, outputRoot], { enabled: wanted, keepPrevious: true });
   if (!wanted) return (<>
     <h3>RL model to load</h3>
     <p className="hint model-none">None. Mode is <b>scratch</b>, so training starts from random weights and no saved model is loaded.

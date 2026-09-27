@@ -186,12 +186,8 @@ class Context:
 # ================================================================================ which designs
 def _margin(target, value):
     """Distance to the nearest limit in units of the spec's scale: >= 0 inside, < 0 outside."""
-    sides = []
-    if target['lower'] is not None:
-        sides.append((value - target['lower']) / target['scale'])
-    if target['upper'] is not None:
-        sides.append((target['upper'] - value) / target['scale'])
-    return min(sides) if sides else math.inf
+    from analog_optimizer.measurements.specs import spec_margin
+    return spec_margin(target['lower'], target['upper'], target['scale'], value)
 
 
 def candidates(context: Context):

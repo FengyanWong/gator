@@ -80,10 +80,11 @@ def test_physical_holdout_has_qualified_actions_and_disjoint_classes(suite,heldo
 
 def test_global_budget_counts_all_folds_and_final_baselines(suite):
     budget=suite_budget(suite)
-    assert budget['total_calls']==2370 and budget['benchmark_calls']==2367
+    assert budget['total_calls']==1488 and budget['benchmark_calls']==1485
     assert budget['final_baseline_calls']==3
-    assert budget['folds']['vco']==dict(source=270,validation=60,target=459,total=789)   # five encoders since 2026-09-24 (six: 324/72/540/936)
-    suite.definition['settings']['max_calls']=2369
+    assert budget['cap']==1488
+    assert budget['folds']['vco']==dict(source=162,validation=36,target=297,total=495)
+    suite.definition['settings']['max_calls']=1487
     with pytest.raises(ValueError,match='Global budget'):
         suite_budget(suite)
 
@@ -155,7 +156,7 @@ def test_physical_metric_masks_and_variable_action_batch(suite,encoder):
             observation=Observation(task.graph,task.specs,metrics,{k:True for k in metrics},
                 {s.metric_id:s.unit for s in task.specs},'ok','real',8,'offline-model-input',
                 SimulationCondition(suite.profiles[name].nominal_corner))
-            contexts=context_features(observation,suite.schema)[:-7].reshape(-1,13)
+            contexts=context_features(observation,suite.schema)[:-11].reshape(-1,21)   # spec-input-v2 layout
             for index,(metric,_,_) in enumerate(suite.schema.metrics):
                 if metric not in metrics: assert not contexts[index].any()
             observations.append(observation)
@@ -224,7 +225,7 @@ def test_suite_final_resets_are_counted_and_inspection_can_fail(suite,fixture_bi
             runner.execute_suite(suite,plan,factory,checks,run,inspect=inspect)
     else:runner.execute_suite(suite,plan,factory,checks,run,inspect=inspect)
     report=json.loads((run/'report.json').read_text())
-    assert report['calls']==2370 and len(report['final_checks'])==3
+    assert report['calls']==1488 and len(report['final_checks'])==3
     assert report['completed'] is (not inspection_failure)
 
 
@@ -236,5 +237,22 @@ def test_cli_planning_has_no_runtime_factory_or_output(fixture_bindings,tmp_path
         '--bindings',str(fixture_bindings),'--output',str(tmp_path/'must-not-exist')])
     runner.main()
     result=json.loads(capsys.readouterr().out)
-    assert result['planned_calls']['total_calls']==2370 and result['new_simulator_calls']==0
+    assert result['planned_calls']['total_calls']==1488 and result['new_simulator_calls']==0
+    assert result['encoders']==['graph_transformer','rgcn','gatv2']
     assert not (tmp_path/'must-not-exist').exists()
+
+
+@pytest.mark.parametrize('encoder',['mlp','gcn'])
+def test_m6_cli_rejects_excluded_manifest_encoders_before_freeze(fixture_bindings,tmp_path,monkeypatch,encoder):
+    runner=runner_module()
+    def forbidden(*args,**kwargs):pytest.fail('Rejected manifest attempted to construct a runtime factory')
+    monkeypatch.setattr(runner,'runtime_factory',forbidden)
+    definition=json.loads(MANIFEST.read_text())
+    definition['settings']['encoders']=[encoder]
+    manifest=tmp_path/'manifest.json';write(manifest,definition)
+    frozen=tmp_path/'protocol.json'
+    monkeypatch.setattr('sys.argv',['benchmark_real_cross_category.py','--manifest',str(manifest),
+        '--bindings',str(fixture_bindings),'--freeze',str(frozen),'--output',str(tmp_path/'output')])
+    with pytest.raises(ValueError,match=f'{encoder} was removed from the optimizer'):
+        runner.main()
+    assert not frozen.exists() and not (tmp_path/'output').exists()

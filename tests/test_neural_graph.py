@@ -7,7 +7,7 @@ import pytest
 
 torch = pytest.importorskip('torch')
 pytest.importorskip('torch_geometric')
-from torch_geometric.nn import GCNConv, GATConv, RGCNConv, TransformerConv
+from torch_geometric.nn import GCNConv, GATv2Conv, RGCNConv, TransformerConv
 
 from analog_optimizer.graph.neural import (
     as_homogeneous, batch_homogeneous, dense_node_features, node_feature_slices,
@@ -89,7 +89,7 @@ def test_group_and_node_offsets_roundtrip_and_dense_mask(opamp, ldo, parser):
         assert dense[i, ~mask[i]].count_nonzero() == 0
 
 
-@pytest.mark.parametrize('operator', ['gcn', 'gat', 'rgcn', 'graph_transformer', 'mlp'])
+@pytest.mark.parametrize('operator', ['gcn', 'gatv2', 'rgcn', 'graph_transformer', 'mlp'])
 def test_m1_tensors_feed_real_operators_forward_backward_and_batch(opamp, ldo, operator):
     root = Path(__file__).resolve().parents[1]
     graphs = [opamp, ldo]
@@ -106,8 +106,8 @@ def test_m1_tensors_feed_real_operators_forward_backward_and_batch(opamp, ldo, o
     if operator == 'gcn':
         layer = GCNConv(width, 16, cached=False)
         apply = lambda d: layer(d.x, d.edge_index, d.edge_weight)
-    elif operator == 'gat':
-        layer = GATConv(width, 8, heads=2, edge_dim=edge_width, add_self_loops=False)
+    elif operator == 'gatv2':
+        layer = GATv2Conv(width, 8, heads=2, edge_dim=edge_width, add_self_loops=False)
         apply = lambda d: layer(d.x, d.edge_index, d.edge_attr)
     elif operator == 'rgcn':
         layer = RGCNConv(width, 16, 2 * len(FeatureSchema().terminal_roles))
@@ -220,7 +220,7 @@ def test_node_reordering_renaming_preserves_features_and_operator(opamp):
     nd, nn = len(opamp.devices), len(opamp.nets)
     permutation = torch.cat((torch.arange(nd).flip(0), nd + torch.arange(nn).flip(0)))
     assert torch.equal(before.x, after.x[permutation])
-    layer = GATConv(before.x.shape[1], 8, edge_dim=before.edge_attr.shape[1], add_self_loops=False)
+    layer = GATv2Conv(before.x.shape[1], 8, edge_dim=before.edge_attr.shape[1], add_self_loops=False)
     torch.testing.assert_close(layer(before.x, before.edge_index, before.edge_attr),
                                layer(after.x, after.edge_index, after.edge_attr)[permutation],
                                atol=2e-6, rtol=2e-5)

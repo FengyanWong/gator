@@ -23,9 +23,32 @@ diagnostic picture; nothing drawn is written into a run folder or an export, so 
 [Agent providers](#agent-providers) ·
 [Tests](#tests)
 
-All code lives in `src/gator_workbench/` and `frontend/`. **Nothing under
-`src/analog_optimizer/` is modified**, because `training/sac.py::source_digest()` hashes that
-package and gates checkpoint loading and the M5/M6 audits.
+Workbench code lives in `src/gator_workbench/` and `frontend/`. Optimizer edits require explicit
+permission because `training/sac.py::source_digest()` gates checkpoint loading and the M5/M6 audits.
+The user explicitly granted the scoped [reward-v2 exception](plan-reward-v2-real-flow.md) and requested
+implementation on 2026-09-26. [Current reward-v2 status](reward-v2.md): bounded real A/B/C acceptance
+passed with 73 Spectre calls (A 21, B 44 including one failed-at-recording call, C 8; total ceiling 77).
+The user acknowledged unknown license visibility; normal Spectre licensing was used, not bypassed.
+70 selected non-MOCK checks, six encoder/OP combinations on B's real replay, TypeScript and 18
+current-source browser checks against real data passed. Physical restoration was verified.
+Defaults preserve nominal reward arithmetic and task/config hashes; old checkpoints still require
+their own source/schema and are not silently migrated. Current UI source exposes reward, condition
+coverage and nominal OP settings. The SQLite overview/report also uses stored v2 condition data,
+not nominal-only reconstruction. No robust-feasible design or reward superiority was demonstrated.
+This task used scratch ports 5187/8837 only, then stopped them; no live frontend build or 8765 action.
+
+Frontend follow-up (record 7.96): reward coefficients have the backend's 0..1 bounds; training
+conditions include a fixed nominal entry, at least one selected corner in `always`, and separate
+step/reset launch costs with one shared cap. Missing caps and nonzero robust retries are explicit
+errors. Specs shows **Objective** and **Judged at** as selects while retaining the backend's enum
+and boolean field types. Saved-model facts show all coefficients and condition identities.
+Compatibility now rechecks the entire current configuration (debounced), including reward,
+conditions and probe edits; an old compatible result is cleared while checking. The status table
+separates first nominal from full-plan feasibility, nominal from adverse values, and draft settings
+from the executed reward in the saved summary. Historical missing coverage stays unknown.
+40 current-source checks passed against the actual B run/API with zero new simulator calls, plus
+TypeScript and desktop layout checks. This follow-up leaves an isolated source preview at
+`http://127.0.0.1:5187/` (API 8837), not an update to the live bundle on 8765.
 
 ## Start
 
@@ -698,6 +721,10 @@ it). The window lists every run under the output folder, newest first, one row p
 Browser check: `frontend/scripts/run_list_check.mjs` (every run request answered by FIXTURE runs; safe against the
 live backend). Backend test: `tests/workbench/test_wb_run_list.py`.
 
+Changing the selected run immediately hides the previous run's status, table and file list. Replies arriving late
+cannot put them back, and status commands carry the identity of the run whose status was displayed. Polling waits
+for each response before scheduling the next read; a slow backend cannot accumulate overlapping timer requests.
+
 ### Getting a run's data out of the browser (added 2026-09-21, user request)
 
 Each of the four run tabs at the bottom has its own export. Every one of them is a button press; the browser saves
@@ -713,6 +740,10 @@ the file into its normal download folder, under a name that says which run (or e
 
 A log can be downloaded while the run is still writing it: the download is the file as it was at the moment of the
 press, cut at the last complete line. Parquet stays the source of truth; every CSV is a derived copy.
+The on-screen log reads backwards only far enough to collect the requested entries, skipping malformed lines and
+an unfinished final line. The journal reader used for recovery still stops at its first malformed record.
+ZIP downloads spill beyond 1 MiB to a temporary file, send 1 MiB chunks, and close the file on completion or
+disconnect. File listings and packages prune excluded work directories before descending into them.
 Browser check: `frontend/scripts/export_check.mjs` (real MOCK run; needs a scratch backend, refuses port 8765).
 
 ### Corner check: a run's best designs at five corners (added 2026-09-22, user request)
@@ -784,6 +815,13 @@ default, and when set it prunes older periodic saves only (never the latest, a p
 selected best policy). Models from outside the workbench (the M6 pilot checkpoints) cannot be chosen, and there
 is no upload: `training_state.pt` is a pickle and is only loaded from a trusted local output root.
 
+The selected model is compared again when a contract field changes (including circuit, rows, seed, network,
+learning settings, reward or conditions). Editing project labels, output options or the evaluation budget does not
+repeat that inspection. Display checksums are reused while the resolved file identity, size and modification/change
+timestamps match; `latest` is resolved on each description. Actual model loading always verifies fresh checksums.
+
+**Available encoders (2026-09-26):** Graph Transformer, RGCN and GATv2 (`gatv2`). GATv1 (`gat`) was replaced on this date; old configurations are rejected explicitly and old GAT weights cannot load into GATv2. MLP and GCN were deleted from the optimizer and workbench by user request; port-GNN was removed earlier. An old configuration naming a removed encoder is rejected explicitly. Exact resume of checkpoints saved before this package change needs matching historical optimizer source and dependencies (`9bc488f` for the preceding five-encoder version, `bbdfe36` for the recorded six-encoder physical M6 pilot). Workbench `fine_tune` and `frozen` retain their existing compatibility checks: a source-digest difference is a provenance warning if the retained architecture and all other required contracts match; this does not make deleted encoders loadable.
+
 **The network comes with the model (2026-09-21, user request).** The "RL network" block - encoder list, sizes,
 presets - sets up a NEW network and is shown in Mode `scratch` only. In `resume`, `fine_tune` and `frozen` it is not
 shown: a saved model only loads into the network it was trained with (the backend refuses any other one in all three
@@ -806,7 +844,7 @@ settings recorded in the save point and found exactly the saved tensors (same na
 tensor is still listed, without types. A layer is marked **never used** only when the forward pass never touches
 its weights - today that is `lin_skip` of PyG's `TransformerConv`, which the graph transformer allocates but switches
 off (`root_weight=False`): 272 of 7,314 actor parameters at 16/2/1. A test pins the flag against real gradients for
-all six encoders; a layer whose gradient is merely zero for the DATA at hand (`binding_ratio` when every ratio is 1)
+all three supported encoders; a layer whose gradient is merely zero for the DATA at hand (`binding_ratio` when every ratio is 1)
 is used and is not flagged. Browser check: `frontend/scripts/model_structure_check.mjs`.
 
 ### Circuit graph view (added 2026-09-21, user decision: one on-screen diagnostic picture)
@@ -852,7 +890,7 @@ How to read it - and how not to: attention is normalized per RECEIVING node (ove
 node a head's values sum to 1), so a node with a single connection always shows 1.0; such lines are drawn thin and
 dashed, and every value comes with the uniform share 1/k. Attention shows where the network looked, not why it
 chose an action: **a debugging aid, not evidence** of anything about graph transformers. Encoders without attention
-(`rgcn`, `gcn`, `mlp`; `port_gnn` until its removal on 2026-09-24) show the circuit and the proposed sizes only. Bulk ties can be hidden to tidy the
+(`rgcn`) show the circuit and the proposed sizes only. Bulk ties can be hidden to tidy the
 picture (the numbers do not change); nodes can be dragged, "Spread out" and "Fit" rearrange. A run that kept no
 transition archive cannot be shown. The drawing library (cytoscape 3.34.3, MIT, no further dependencies) is a
 separate file that the browser fetches only when the view is opened. Browser check:
@@ -1432,6 +1470,27 @@ for each request, so an edit needs no restart. Keep it short (it is paid for on 
 what the workbench does. It is guidance below the fixed rules: it cannot widen what an agent may change.
 This is deliberately not a Claude `SKILL.md`: the agent runs in an empty directory with no tool that could
 load one, and a skill would not reach Codex or the exported task.
+
+## Code organization
+
+`src/gator_workbench/api/app.py` initializes the app and registers four feature modules: settings and
+connections, circuits and tasks, runs and exports, and agents. `api/models.py` owns HTTP request schemas;
+`api/context.py` shares input/output authorization, configuration loading and the cached readiness
+checklist; `api/support.py` shares response and streaming helpers. The HTTP routes and schemas are unchanged.
+The legacy copy route still refuses copying; Save-as remains a supported backend request.
+
+The frontend keeps the agent conversation in `panels/AgentTab.tsx` and the run tabs in `panels/RunTabs.tsx`.
+`CircuitBrowser.tsx` owns the Virtuoso browsing chain and circuit details; `Left.tsx` coordinates task selection.
+Shared async actions and stale-response handling live in `store.ts`. Ordinary advanced numeric fields use
+one descriptor list and defaults from the backend schema; byte units and checkpoint intervals retain their
+specialized controls. The Agent tab stays mounted when another tab is selected.
+
+Tests share fake CLI installation and isolated HTTP servers in `tests/workbench/helpers.py`, plus controlled
+browser input, passing validation replies, and optional connection fixtures in `frontend/scripts/lib/harness.mjs`.
+`frontend/scripts/request_lifecycle_check.mjs` runs against a Vite source preview with controlled in-memory replies
+and React StrictMode; it checks slow polls, reversed replies, run/table changes and command identity.
+`tests/workbench/test_wb_read_efficiency.py` covers tail-read bounds, excluded directories, archive cleanup and
+display-cache invalidation separately from execution integrity checks.
 
 ## Tests
 

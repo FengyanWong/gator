@@ -265,7 +265,7 @@ def test_aborted_suite_keeps_failed_run_and_unexecuted_runs(opamp, tmp_path):
     assert report['aggregate'][0]['censored_runs'] == 1
 
 
-@pytest.mark.parametrize('encoders', [[], ['gat', 'gat'], ['unknown'], 'mlp', ['port_gnn'], None])
+@pytest.mark.parametrize('encoders', [[], ['gatv2', 'gatv2'], ['unknown'], 'gatv2', ['gat'], ['port_gnn'], ['mlp'], ['gcn'], None])
 def test_invalid_encoder_selection_fails_before_backend_creation(opamp, tmp_path, encoders):
     tasks = [task(opamp), task(opamp, 'validation', 'validation', .95), task(opamp, 'test', 'test', .98)]
     with pytest.raises(ValueError, match='encoders'):
@@ -277,16 +277,16 @@ def test_invalid_encoder_selection_fails_before_backend_creation(opamp, tmp_path
 def test_selected_encoders_have_complete_isolated_transfer_matrix(opamp, tmp_path):
     tasks = [task(opamp, target=.9), task(opamp, 'validation', 'validation', .95),
              task(opamp, 'test', 'test', .999)]
-    settings = dict(seeds=[17], pretrain_steps=2, test_steps=2, batch_size=2, max_calls=62,
-                    encoders=['graph_transformer', 'mlp', 'rgcn', 'gat'], hidden_dim=16, heads=2, layers=2)
+    settings = dict(seeds=[17], pretrain_steps=2, test_steps=2, batch_size=2, max_calls=48,
+                    encoders=['graph_transformer', 'rgcn', 'gatv2'], hidden_dim=16, heads=2, layers=2)
     report = run_benchmark(tasks, make_env, tmp_path, origin='synthetic', settings=settings,
                            provenance={'test': True}, progress=lambda x: None)
-    assert report['completed'] and report['calls'] == report['planned_calls'] == 62
-    assert len(report['test_runs']) == 14 and report['unexecuted_test_runs'] == []
-    assert report['cost_by_partition']['train']['calls'] == 12
-    assert report['cost_by_partition']['validation']['calls'] == 8
-    assert report['cost_by_partition']['test']['calls'] == 42
-    for label, encoder in zip(('gt', 'mlp', 'rgcn', 'gat'), settings['encoders']):
+    assert report['completed'] and report['calls'] == report['planned_calls'] == 48
+    assert len(report['test_runs']) == 11 and report['unexecuted_test_runs'] == []
+    assert report['cost_by_partition']['train']['calls'] == 9
+    assert report['cost_by_partition']['validation']['calls'] == 6
+    assert report['cost_by_partition']['test']['calls'] == 33
+    for label, encoder in zip(('gt', 'rgcn', 'gatv2'), settings['encoders']):
         source = torch.load(tmp_path / f'{label}-17-pretrain.pt', weights_only=False)
         assert source['contract']['model_config']['encoder_type'] == encoder
         assert all(t.observation.specs == tasks[0].specs for t in source['replay']['items'])
@@ -303,16 +303,16 @@ def test_selected_encoders_have_complete_isolated_transfer_matrix(opamp, tmp_pat
             else:
                 payload = torch.load(tmp_path / f'test-{label}_{phase}-17.pt', weights_only=False)
                 assert all(t.observation.specs == tasks[-1].specs for t in payload['replay']['items'])
-    settings['max_calls'] = 61
+    settings['max_calls'] = 47
     with pytest.raises(ValueError, match='exceed'):
         run_benchmark(tasks, lambda *a: pytest.fail('Should not create backend'), tmp_path / 'over-budget',
                       origin='synthetic', settings=settings, provenance={})
-    models, methods, validation = benchmark_models({'encoders': ['mlp']})
-    assert list(models) == ['mlp'] and validation == ('mlp',)
-    assert set(methods) == {'mlp_scratch', 'mlp_frozen', 'mlp_adapt', 'random', 'pattern_search'}
+    models, methods, validation = benchmark_models({'encoders': ['rgcn']})
+    assert list(models) == ['rgcn'] and validation == ('rgcn',)
+    assert set(methods) == {'rgcn_scratch', 'rgcn_frozen', 'rgcn_adapt', 'random', 'pattern_search'}
 
 
-@pytest.mark.parametrize('encoder', ['mlp', 'rgcn', 'gat'])
+@pytest.mark.parametrize('encoder', ['rgcn', 'gatv2'])
 def test_weight_transfer_rejects_cross_architecture(encoder):
     destination = SACLearner(experiment=dict(origin='synthetic', split='unit-test', designs=['fixture']),
                              model_config=ModelConfig(hidden_dim=16, heads=2, layers=2, encoder_type=encoder))

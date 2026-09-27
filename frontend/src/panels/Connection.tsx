@@ -1,3 +1,4 @@
+import { useAsyncAction } from '../store';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
@@ -32,7 +33,6 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
   const [status, setStatus] = useState<Json>(null);
   const [connected, setConnected] = useState<Json>(null);
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   // While `popup` is set, the connection window is open (one pop-up window for the whole page: `popupWindow.ts`).
@@ -50,10 +50,7 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
   useEffect(() => { loadProfiles(); }, []);
 
   // ---- actions: every one of them is a button press, but for the one test when the page opens (below) ---------------
-  const run = async (name: string, action: () => Promise<void>) => {
-    setBusy(name); setError(null);
-    try { await action(); } catch (e: any) { setError(e.message); } finally { setBusy(null); }
-  };
+  const { busy, run } = useAsyncAction(e => setError(e.message), () => setError(null));
   const connect = () => run('connect', async () => { const answer = await api.connectionConnect(profileId!); setConnected(answer.connect); setStatus(answer.status); });
   const check = (scope: string) => run(scope, async () => { setStatus(await api.connectionCheck(profileId!, scope)); });
   // The page opened: ONE test of the connection in use, as soon as the connection list is read and names it - the same as

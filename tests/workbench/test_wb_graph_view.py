@@ -25,10 +25,10 @@ def trained(root, encoder, name, **output):
     return config, layout
 
 
-@pytest.fixture(scope='module')
-def transformer(tmp_path_factory):
+@pytest.fixture(scope='module', params=['graph_transformer', 'gatv2'])
+def transformer(tmp_path_factory, request):
     root = tmp_path_factory.mktemp('graph_view')
-    return (root, *trained(root, 'graph_transformer', 'view_gt'))
+    return (root, *trained(root, request.param, f'view_{request.param}'))
 
 
 def test_the_circuit_and_both_directions_of_attention_are_complete_and_normalized(transformer):

@@ -28,32 +28,44 @@ class BestDesignTracker:
     def __init__(self, preference=None, state=None):
         self.preference = preference
         self.feasible = self.infeasible = None
+        self.nominal_feasible = None
         if state:
             self.feasible, self.infeasible = state.get('feasible'), state.get('infeasible')
+            self.nominal_feasible = state.get('nominal_feasible')
 
     def state_dict(self):
-        return dict(feasible=self.feasible, infeasible=self.infeasible)
+        return dict(feasible=self.feasible, nominal_feasible=self.nominal_feasible, infeasible=self.infeasible)
 
     def _better_feasible(self, new, old):
         if old is None:
             return True
         if self.preference:
-            a, b = new['metrics'].get(self.preference['metric']), old['metrics'].get(self.preference['metric'])
-            if a is None or b is None:
+            def value(candidate):
+                values = (candidate.get('worst_metrics') if candidate.get('robust_feasible') else
+                          candidate.get('nominal_metrics') or candidate['metrics'])
+                return (values or {}).get(self.preference['metric'])
+            a, b = value(new), value(old)
+            if (a is None) != (b is None):
                 return b is None and a is not None
-            return a < b if self.preference['direction'] == 'min' else a > b
+            if a is not None and a != b:
+                return a < b if self.preference['direction'] == 'min' else a > b
         if new['reward'] is not None and old['reward'] is not None and not math.isclose(new['reward'], old['reward']):
             return new['reward'] > old['reward']
         return False
 
     def offer(self, candidate) -> str | None:
         """candidate: dict(evaluation_id, valid, feasible, violation, reward, metrics, ...). Returns role."""
-        if not candidate['valid']:
+        if not candidate['valid'] and not candidate.get('nominal_feasible'):
             return None
         if candidate['feasible']:
             if self._better_feasible(candidate, self.feasible):
                 self.feasible = candidate
                 return 'best_feasible'
+            return None
+        if candidate.get('nominal_feasible'):
+            if self._better_feasible(candidate, self.nominal_feasible):
+                self.nominal_feasible = candidate
+                return 'best_nominal_feasible'
             return None
         if self.infeasible is None or candidate['violation'] < self.infeasible['violation']:
             self.infeasible = candidate
@@ -62,10 +74,12 @@ class BestDesignTracker:
 
     @property
     def best(self):
-        return self.feasible or self.infeasible
+        return self.feasible or self.nominal_feasible or self.infeasible
 
     def selection_rule(self):
         return dict(feasible_over_infeasible=True, preference=self.preference,
+                    classes=['complete_feasible', 'nominal_feasible', 'valid_infeasible'],
+                    robust_objective='adverse measured value across applicable conditions',
                     feasible_tiebreak='existing reward (soft targets), then earliest',
                     infeasible='smallest normalized hard-constraint violation',
                     scope='best OBSERVED design; no claim of global optimality')
@@ -82,8 +96,17 @@ def _record(candidate, *, status, tracker, task, config_summary):
                             metrics=candidate['metrics'], metric_units=candidate['metric_units'],
                             constraints=candidate['constraints'], test_conditions=candidate['conditions'],
                             provenance=candidate['provenance'],
-                            validation_status='nominal evaluation only; no PVT/Monte-Carlo post-validation '
-                                              'has been performed'),
+                            nominal_feasible=candidate.get('nominal_feasible', candidate['feasible']),
+                            robust_feasible=candidate.get('robust_feasible'),
+                            conditions_complete=candidate.get('conditions_complete'),
+                            clearance_margin=candidate.get('clearance_margin'),
+                            tightest_clearance_spec=candidate.get('tightest_clearance_spec'),
+                            clearance_rule=candidate.get('clearance_rule'),
+                            validation_status=('complete declared deterministic training plan; no Monte Carlo'
+                                               if candidate.get('robust_feasible') else
+                                               'nominal evaluation only; no PVT/Monte-Carlo post-validation has been performed'
+                                               if (candidate.get('conditions_planned') or 1) <= 1 else
+                                               'nominal evidence or incomplete/infeasible deterministic plan; no Monte Carlo')),
                 task=task, specification=config_summary)
 
 
@@ -100,7 +123,11 @@ def write_outputs(directory, tracker: BestDesignTracker, *, task, config_summary
     write_json(directory / 'best_infeasible.json', _record(
         tracker.infeasible, status='found' if tracker.infeasible else 'none_found', tracker=tracker, task=task,
         config_summary=config_summary))
+    write_json(directory / 'best_nominal_feasible.json', _record(
+        tracker.nominal_feasible, status='found' if tracker.nominal_feasible else 'none_found', tracker=tracker,
+        task=task, config_summary=config_summary))
     for name in ('parameters.csv', netlist_name):
+        # The robust-feasible output never silently substitutes a nominal-only design.
         stale = directory / name
         if feasible is None and stale.exists():
             stale.unlink()

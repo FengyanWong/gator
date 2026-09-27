@@ -76,6 +76,10 @@ def test_a_configuration_from_before_equations_loads_and_keeps_both_hashes(tmp_p
     for row in legacy_dump['targets']:                                                   # exactly what the old schema dumped
         row['measurement_id'] = row.pop('equation')
     del legacy_dump['run']['network']['vocabulary']              # added later (7.54); the old schema had no such field
+    for row in legacy_dump['targets']:
+        row.pop('nominal_only', None)                            # added 2026-09-26 (reward v2); the old schema had no such field
+    del legacy_dump['run']['reward'], legacy_dump['run']['conditions']          # reward v2 run fields: the old schema had none
+    del legacy_dump['run']['network']['operating_points']
     for row in legacy_dump['parameters']:                        # the columns retired on 2026-09-26 (7.92), at their defaults
         row.update(copy.deepcopy(schema.RETIRED_PARAMETER_FIELDS))
     for row in legacy_dump['measurements']:
@@ -173,7 +177,7 @@ def test_a_computed_spec_gets_a_registry_entry_sized_by_what_it_computes_not_by_
         schemas.append(comp.build_spec_schema(schema.WorkbenchConfig.model_validate(raw)))
     first, second = schemas
     assert first == second                                               # a changed limit keeps saved models loadable
-    assert first.version == 'spec-input-v1' + se.REGISTRY_SUFFIX
+    assert first.version == comp.build_spec_schema(base).version + se.REGISTRY_SUFFIX   # the registry's name, suffixed
     assert first.metrics[:7] == comp.build_spec_schema(base).metrics     # the known entries keep their places
     name, unit, reference = first.metrics[-1]
     assert (name, unit) == ('hz_per_watt', 'Hz') and math.isclose(reference, 1e6 / 1e-6)   # default registry: 1 MHz / 1 uW

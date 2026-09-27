@@ -176,6 +176,7 @@ class SyntheticEnvFactory:
     timeout_seconds: float
     stop_on_success: bool
     plan: object = None               # spec_equations.SpecPlan: the specs computed from the probes are added to each result
+    reward_settings: object = None    # measurements.specs.RewardSettings: the run's settings, the same ones the learner enforces
 
     def __call__(self, lane):
         from analog_optimizer.backends.synthetic_sizing import SyntheticSizingBackend
@@ -186,14 +187,17 @@ class SyntheticEnvFactory:
             self.plan.wrap(backend)
         return CircuitSizingEnv(backend, self.graph, self.specs, Path(self.work_root) / f'worker-{lane}',
                                 max_steps=self.max_steps, timeout_seconds=self.timeout_seconds,
-                                stop_on_success=self.stop_on_success, expected_origin='synthetic')
+                                stop_on_success=self.stop_on_success, expected_origin='synthetic',
+                                reward_settings=self.reward_settings)
 
 
 def _synthetic_builder(compiled, work_root, run_settings):
+    from analog_optimizer.measurements.specs import RewardSettings
     adv = run_settings.advanced
     return SyntheticEnvFactory(compiled.graph, compiled.specs, dict(MOCK_TARGETS), str(work_root),
                                adv.episode_length, adv.simulation_timeout_seconds,
-                               adv.episode_terminates_on_success, compiled.plan)
+                               adv.episode_terminates_on_success, compiled.plan,
+                               RewardSettings(**run_settings.reward.model_dump()))
 
 
 def _with_computed_specs(factory, compiled):
@@ -506,8 +510,10 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
             raise TaskBlocked('This task fixes which values may change, their ranges and their grid. The rows of the parameter '
                               'editor differ from what was saved; press "Save task" to save the new rows first.')
         adv = run_settings.advanced
+        from analog_optimizer.measurements.specs import RewardSettings
         return _with_computed_specs(factory_class(profile)(config, profile, compiled.specs, Path(work_root), adv.episode_length,
-                                                           adv.simulation_timeout_seconds, reference), compiled)
+                                                           adv.simulation_timeout_seconds, reference,
+                                                           reward_settings=RewardSettings(**run_settings.reward.model_dump())), compiled)
     structure, mapping = directory / profiles.FILES['structure'], directory / profiles.FILES['mapping']
     circuit = dict(circuit_class=entry['circuit_class'], pdk_id=entry.get('pdk_id') or 'gpdk045', dut_hierarchy=None,
                    netlist_sha256=_sha256(structure), parser_config_sha256=_sha256(mapping), netlist_file=str(structure),
@@ -576,8 +582,14 @@ def _real_runtime(task_key, name, profile_id=None, *, authorized=False):
             raise TaskBlocked('A real profile fixes its writable parameters and legal grid. The configured variables '
                               'differ from the verified profile; real action permissions are not widened from the UI.')
         adv = run_settings.advanced
+        from analog_optimizer.measurements.specs import RewardSettings
+        from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
+        corners = {row['id']: PVTCorner(**row) for row in profile.condition_config['screening_corners']}
+        selected = tuple(SimulationCondition(corners[key], 'pvt_training') for key in run_settings.conditions.corners)
         return _with_computed_specs(NativeEnvironmentFactory(config, profile, compiled.specs, Path(work_root), adv.episode_length,
-                                                             adv.simulation_timeout_seconds, reference['metrics']), compiled)
+                                                             adv.simulation_timeout_seconds, reference['metrics'],
+                                                             reward_settings=RewardSettings(**run_settings.reward.model_dump()),
+                                                             condition_policy=run_settings.conditions.policy, corners=selected), compiled)
     circuit = dict(circuit_class=info['circuit_class'], pdk_id='gpdk045', dut_hierarchy=None,
                    netlist_sha256=_sha256(root / info['structure']), parser_config_sha256=_sha256(root / info['mapping']),
                    netlist_file=str(root / info['structure']), parser_config_file=str(root / info['mapping']),

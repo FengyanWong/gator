@@ -112,7 +112,7 @@ you change nothing.
   comparison (`experiment_group`, `comparison_pair_id`), do not suggest different presets per encoder.
 * Changing `encoder_type`, `hidden_dim`, `heads` or `layers` makes saved models of the old network
   unusable for `resume`, `fine_tune` and `frozen`: say so whenever `run.mode` is not `scratch`.
-  `heads` matters for `graph_transformer` and `gat` only, and must divide `hidden_dim`.
+  `heads` matters for `graph_transformer` and `gatv2` only, and must divide `hidden_dim`.
 * On a real circuit every evaluation is a real Spectre run that the user authorizes at Start, and at
   most 4 run at once. Never suggest a larger `max_evaluations` without saying what it costs.
 * `checkpoint_every_evaluations` and `checkpoint_every_seconds` are one setting in two units: a

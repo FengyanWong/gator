@@ -125,14 +125,18 @@ class TrajectoryLoader:
         for row in self.transition_rows():
             if not row['replay_eligible_archive']:
                 continue
+            if row.get('reward_version') != 'constraint_violation_v2':
+                raise ValueError('Legacy transition archive needs an explicit migration; inspect raw tables without training')
+            observation = self.observation(row['state_ref'])
             transition = Transition(
-                observation=self.observation(row['state_ref']), proposal=map_to_dict(row['action']),
+                observation=observation, proposal=map_to_dict(row['action']),
                 reward=row['reward'], next_observation=self.observation(row['next_state_ref']),
                 terminated=row['terminated'], truncated=row['truncated'], bootstrap=row['bootstrap'],
                 applied_parameters={(m['instance_path'], m['parameter']): m['value']
                                     for m in row['applied_parameters']},
                 candidate_id=row['candidate_id'], record_path=row['record_path'],
-                action_version=row['action_version'])
+                action_version=row['action_version'], reward_settings=observation.reward_settings,
+                reward_version=row['reward_version'])
             if validate:
                 transition.validate()
             result.append(transition)
@@ -151,7 +155,7 @@ class TrajectoryLoader:
         from analog_optimizer.graph.pyg_converter import FeatureSchema
         from analog_optimizer.models.inputs import SpecSchema, batch_observations
         if vocabulary is not None:
-            feature_schema, see = vocabulary.schema, vocabulary.view
+            feature_schema, see = feature_schema or vocabulary.schema, vocabulary.view
         else:
             see = lambda observation: observation                      # noqa: E731 - the standard list sees states as stored
         feature_schema, spec_schema = feature_schema or FeatureSchema(), spec_schema or SpecSchema()

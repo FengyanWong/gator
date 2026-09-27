@@ -101,8 +101,7 @@ try {
     const click = expression => session.evaluate(`${expression}.click()`, true);
     const openLines = () => session.evaluate(`[...${ROOT}.querySelectorAll('details')].filter(d => d.open).map(d => d.querySelector('summary').textContent.trim())`);
     const buttonShown = text => session.evaluate(`!!(${BUTTON(text)}) && ${BUTTON(text)}.checkVisibility()`);
-    const choose = (label, v) => session.evaluate(`(() => { const s = ${FIELD(label)}; const w = s.ownerDocument.defaultView;
-      Object.getOwnPropertyDescriptor(w.HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(v)}); s.dispatchEvent(new w.Event('change', { bubbles: true })); })()`);
+    const choose = (label, v) => session.setValue(`${FIELD(label)}`, v);
     const height = () => session.evaluate(`Math.round(${ROOT}.getBoundingClientRect().height)`);
     return { FIELD, BUTTON, present, shown, folded, SUMMARY, isOpen, click, openLines, buttonShown, choose, height, text: () => session.evaluate(`${ROOT}.textContent`) };
   };

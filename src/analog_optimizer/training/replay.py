@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 import json
 import math
 from pathlib import Path
 import random
 
 from analog_optimizer.envs.sizing import Observation, graph_contract, same_parameters, parameter_rows
-from analog_optimizer.measurements.specs import SpecificationEvaluator
+from analog_optimizer.measurements.specs import REWARD_VERSION, RewardSettings
 from analog_optimizer.models.inputs import validate_observation
 from analog_optimizer.parameters.actions import ActionMapper
 
@@ -27,22 +27,31 @@ class Transition:
     candidate_id: str
     record_path: str
     action_version: str = 'absolute-group-v1'
+    reward_version: str = REWARD_VERSION
+    reward_settings: RewardSettings = field(default_factory=RewardSettings)
 
     def fingerprint(self):
         """Hash every replay field, including exact dynamic arrays and provenance."""
         from analog_optimizer.recording.codec import identity
-        return 'transition-v1:' + identity(vars(self))
+        return 'transition-v2:' + identity(vars(self))
 
     def validate(self):
         first, last = self.observation, self.next_observation
         validate_observation(first)
         validate_observation(last)
-        if first.status != 'ok' or first.remaining_steps < 1:
+        robust = first.condition_policy == 'always'
+        allowed = ('ok', 'invalid_design', 'nonconverged') if robust else ('ok',)
+        if first.status not in allowed or first.remaining_steps < 1:
             raise ValueError('Cannot act from a terminal or failed state')
         if first.origin != last.origin or first.condition != last.condition:
             raise ValueError('Transition origin/nominal condition changed')
         if first.specs != last.specs or graph_contract(first.graph) != graph_contract(last.graph):
             raise ValueError('Transition changed topology, action contract or goal')
+        if (self.reward_version != REWARD_VERSION or first.reward_settings != last.reward_settings
+                or self.reward_settings != first.reward_settings
+                or first.planned_conditions != last.planned_conditions
+                or first.condition_policy != last.condition_policy):
+            raise ValueError('Transition changed reward settings, failure policy or condition plan')
         if self.action_version != 'absolute-group-v1':
             raise ValueError('Unsupported action semantics')
         if any(type(flag) is not bool for flag in (self.terminated, self.truncated, self.bootstrap)):
@@ -55,14 +64,16 @@ class Transition:
         actual = last.graph.assignments({g.id: g.value for g in last.graph.parameter_groups if g.mutable})
         if not same_parameters(actual, action.assignments) or not same_parameters(actual, self.applied_parameters):
             raise ValueError('Proposed, executed and next-state parameters differ')
-        initial_evaluation = SpecificationEvaluator(first.specs).evaluate(
-            first.metrics, first.metric_units, first.metric_validity)
+        initial_evaluation = first.evaluation
         if not initial_evaluation.valid:
             raise ValueError('Initial observation has no valid required measurements')
-        evaluation = SpecificationEvaluator(last.specs).evaluate(last.metrics, last.metric_units, last.metric_validity)
-        expected = evaluation.reward if last.status == 'ok' and evaluation.valid else None
-        if last.status in ('invalid_design', 'nonconverged') and self.terminated:
+        evaluation = last.evaluation
+        expected = evaluation.reward if evaluation.valid and (robust or last.status == 'ok') else None
+        if not robust and last.status in ('invalid_design', 'nonconverged') and self.terminated:
             expected = -1.0
+        if robust and not evaluation.complete and not any(
+                r.candidate_evaluated and r.status in ('invalid_design', 'nonconverged') for r in last.condition_results):
+            raise ValueError('Incomplete non-failed candidate cannot enter replay')
         if (expected is None or isinstance(self.reward, bool) or not math.isfinite(self.reward)
                 or not math.isclose(self.reward, expected, rel_tol=1e-10, abs_tol=1e-12)):
             raise ValueError('Reward/status/measurement contract mismatch')
@@ -80,9 +91,9 @@ class Transition:
             record = json.loads(Path(path).read_text())
         applied = {(p['device'], p['parameter']): p['value'] for p in record['applied_parameters']}
         transition = cls(deepcopy(observation), dict(proposal), reward, deepcopy(next_observation),
-                         terminated, truncated, info['bootstrap'], applied, info['candidate_id'], str(path))
+                         terminated, truncated, info['bootstrap'], applied, info['candidate_id'], str(path),
+                         reward_settings=next_observation.reward_settings)
         transition.validate()
-        from dataclasses import asdict
         expected = {
             'state': 'completed', 'kind': 'step', 'replay_eligible': True,
             'evaluation_purpose': 'nominal', 'origin': observation.origin,
@@ -93,6 +104,12 @@ class Transition:
             'status': next_observation.status, 'metrics': next_observation.metrics,
             'metric_validity': next_observation.metric_validity,
             'applied_parameters': parameter_rows(applied),
+            'reward_version': REWARD_VERSION, 'reward_settings': asdict(transition.reward_settings),
+            'condition_policy': next_observation.condition_policy,
+            'planned_conditions': [None if c is None else asdict(c) for c in next_observation.planned_conditions],
+            'condition_results': [asdict(r) for r in next_observation.condition_results],
+            'success': next_observation.evaluation.success,
+            'conditions_complete': next_observation.evaluation.complete,
         }
         if any(record.get(key) != value for key, value in expected.items()):
             raise ValueError('Candidate journal differs from the replay transition')

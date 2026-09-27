@@ -5,12 +5,8 @@ The end-to-end test starts the workbench under uvicorn and lets the FAKE CLI do 
 server named in `--mcp-config` and speak MCP to it. So the chain protocol -> server -> backend route -> session ->
 workbench function is exercised as it runs in production; only the CLI and Virtuoso are doubles."""
 import json
-import os
 from pathlib import Path
-import socket
-import stat
 import sys
-import threading
 import time
 
 import pytest
@@ -21,10 +17,9 @@ from gator_workbench import bridge_read, working_copy
 from gator_workbench.agents import AgentError, AgentRequest, AgentSettings, ClaudeCodeProvider
 from gator_workbench.agents import base, tools as catalog
 from gator_workbench.api import create_app
-from helpers import make_config
+from helpers import cli, workbench_server, make_config
 
 FIXTURES = Path(__file__).parent / 'fixtures'
-FAKE = FIXTURES / 'fake_cli.py'
 sys.path.insert(0, str(FIXTURES))
 import fake_cli                                                        # noqa: E402
 
@@ -281,38 +276,17 @@ def test_a_denied_tool_outside_the_grant_is_counted_not_fatal(tmp_path):
 
 # ------------------------------------------------------------------------------- the whole chain, over a real socket
 @pytest.fixture
-def cli(tmp_path, monkeypatch):
-    bin_dir = tmp_path / 'bin'
-    bin_dir.mkdir()
-    target = bin_dir / 'claude'
-    target.write_text(f'#!{sys.executable}\n' + FAKE.read_text())
-    target.chmod(target.stat().st_mode | stat.S_IXUSR)
-    record = tmp_path / 'record.json'
-    monkeypatch.setenv('PATH', f'{bin_dir}{os.pathsep}{os.environ["PATH"]}')
-    monkeypatch.setenv('FAKE_CLI_RECORD', str(record))
-    monkeypatch.setenv('FAKE_CLI_SCENARIO', 'tools')
-    return record
+def tools_cli(cli):
+    return cli('tools')
 
 
 @pytest.fixture
 def server(tmp_path):
-    import uvicorn
-    sock = socket.socket()
-    sock.bind(('127.0.0.1', 0))
-    app = create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False)
-    instance = uvicorn.Server(uvicorn.Config(app, log_level='warning', lifespan='off'))
-    thread = threading.Thread(target=instance.run, kwargs=dict(sockets=[sock]), daemon=True)
-    thread.start()
-    for _ in range(300):
-        if instance.started:
-            break
-        time.sleep(0.02)
-    yield f'http://127.0.0.1:{sock.getsockname()[1]}'
-    instance.should_exit = True
-    thread.join(timeout=10)
+    with workbench_server(tmp_path) as port:
+        yield f'http://127.0.0.1:{port}'
 
 
-def test_the_agent_reads_and_writes_through_the_running_workbench(server, cli, tmp_path, fake_virtuoso, monkeypatch):
+def test_the_agent_reads_and_writes_through_the_running_workbench(server, tools_cli, tmp_path, fake_virtuoso, monkeypatch):
     import urllib.request
     calls = [['working_copy_facts', {}], ['virtuoso_cells', dict(library='RING_GATOR')],
              ['working_copy_write_setup', dict(analyses={'tran': {'stop': '50n'}},
@@ -331,7 +305,7 @@ def test_the_agent_reads_and_writes_through_the_running_workbench(server, cli, t
     assert [c['tool'] for c in proposal['tool_calls']] == ['working_copy_facts', 'virtuoso_cells', 'working_copy_write_setup',
                                                            'working_copy_read_sizes']
     assert [c['ok'] for c in proposal['tool_calls']] == [True, True, True, False]
-    seen = json.loads(Path(str(cli)).read_text())['tools']
+    seen = json.loads(Path(str(tools_cli)).read_text())['tools']
     assert seen[0]['initialize']['result']['serverInfo']['name'] == 'gator'
     assert seen[1]['tools'] == list(catalog.TOOLS)                       # the server offers exactly this request's grant
     assert json.loads(seen[2]['text'])['copy']['library'] == 'RING_GATOR'
@@ -340,7 +314,7 @@ def test_the_agent_reads_and_writes_through_the_running_workbench(server, cli, t
     assert [a['op'] for a in fake_virtuoso if a['op'] == 'write_setup'], 'the setup reached the workbench function'
 
 
-def test_the_tools_are_closed_when_the_request_is_over(server, cli, tmp_path, fake_virtuoso, monkeypatch):
+def test_the_tools_are_closed_when_the_request_is_over(server, tools_cli, tmp_path, fake_virtuoso, monkeypatch):
     import urllib.error
     import urllib.request
     monkeypatch.setenv('FAKE_CLI_TOOL_CALLS', json.dumps([['working_copy_facts', {}]]))
@@ -357,7 +331,7 @@ def test_the_tools_are_closed_when_the_request_is_over(server, cli, tmp_path, fa
     assert error.value.code == 403                                       # no token works once the request has ended
 
 
-def test_the_request_directory_stays_empty(server, cli, tmp_path, fake_virtuoso, monkeypatch):
+def test_the_request_directory_stays_empty(server, tools_cli, tmp_path, fake_virtuoso, monkeypatch):
     import urllib.request
     monkeypatch.setenv('FAKE_CLI_TOOL_CALLS', json.dumps([]))
     config = make_config(tmp_path).model_dump(mode='json')
@@ -365,12 +339,12 @@ def test_the_request_directory_stays_empty(server, cli, tmp_path, fake_virtuoso,
     body = json.dumps(dict(kind='virtuoso_work', prompt='Set this up', config=config)).encode()
     urllib.request.urlopen(urllib.request.Request(f'{server}/api/agent/propose', data=body,
                                                   headers={'Content-Type': 'application/json'}), timeout=120).read()
-    seen = json.loads(Path(str(cli)).read_text())
+    seen = json.loads(Path(str(tools_cli)).read_text())
     assert seen['files_in_cwd'] == []                                    # the MCP config lives elsewhere and is deleted
     assert not Path(seen['argv'][seen['argv'].index('--mcp-config') + 1]).exists()
 
 
-def test_the_json_and_the_live_answer_both_close_the_tools(tmp_path, fake_virtuoso, cli, monkeypatch):
+def test_the_json_and_the_live_answer_both_close_the_tools(tmp_path, fake_virtuoso, tools_cli, monkeypatch):
     """Whatever the answer looked like, no token survives the request (the live path closes them in its own thread)."""
     monkeypatch.setenv('FAKE_CLI_TOOL_CALLS', json.dumps([['working_copy_facts', {}]]))
     client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False))

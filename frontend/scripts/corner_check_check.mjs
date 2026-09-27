@@ -15,7 +15,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/corner_check_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -63,7 +63,7 @@ const checkOf = id => {
 const RUN_STATUS = { state: 'completed', run_id: 'fixture-run', mode: 'scratch', provenance: 'mock', mock: true, worker_alive: false, run_dir: DIR, active_workers: [], concurrency: 1,
   budget: { max_evaluations: 30, charged: 30, in_flight: 0, completed: 30, failed: 0, remaining: 0, launches: 30, retries: 0, cache_hits: 0 }, best_design: null, first_feasible: null,
   paths: { run_dir: DIR }, connection: { overall: 'not_applicable' }, summary: null, manifest: { mode: 'scratch', mock: true, mock_notice: 'FIXTURE MOCK DATA' } };
-const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: true };
+const VALID = validConfiguration({ mock: true });
 
 try {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
@@ -85,6 +85,7 @@ try {
     if (name === '/api/runs/corner-check/status') {
       const id = url.searchParams.get('check_id');
       sim.statusReads[id] = (sim.statusReads[id] ?? 0) + 1;
+      if (sim.failStatus) return fulfil(requestId, 503, { detail: 'FIXTURE: check status unavailable' });
       return fulfil(requestId, 200, checkOf(id));
     }
     if (name === '/api/runs/corner-check/start') {
@@ -129,9 +130,9 @@ try {
   check('the counts and the corners are said in one line', now.includes('12 feasible evaluations, 9 different designs') && now.includes('ss_hot_low (SS, 125 \u00b0C, 0.9 V)'));
   check('the explanation is folded (one click away)', await evaluate(`(() => { const d = [...document.querySelectorAll('.corner-check details')].find(x => x.querySelector('summary')?.textContent === 'What the corner check does');
     return !!d && !d.open && ![...d.querySelectorAll('p')].some(p => p.checkVisibility()); })()`));
-  await evaluate(`(() => { const s = document.querySelector('.corner-check select'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, '1'); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await page.setValue(`document.querySelector('.corner-check select')`, '1');
   check('"Designs 1" reads the plan again and costs 5 simulations', await until(`${TAB}.innerText.includes('1 design x 5 corners = 5 MOCK simulations')`) && sim.planRequests.at(-1) === 1);
-  await evaluate(`(() => { const s = document.querySelector('.corner-check select'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, '3'); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await page.setValue(`document.querySelector('.corner-check select')`, '3');
   await until(`${TAB}.innerText.includes('3 designs x 5 corners = 15')`);
   await shot('corners-1-plan.png');
 
@@ -148,6 +149,11 @@ try {
   check('finished corners say pass / FAIL with the spec and its value; the corner in flight says running', grid[0].slice(1, 6).every(c => c === 'pass')
     && grid[1][3] === 'FAIL supply_power_w 2.6 \u00b5W' && grid[1][4] === 'running...' && grid[2][2] === '-' && grid[0][6] === 'checking...', JSON.stringify(grid[1]));
   check('the check is read again while it works', await waitFor(() => (sim.statusReads[C1] ?? 0) >= 3, 50), String(sim.statusReads[C1]));
+  sim.failStatus = true;
+  await evaluate(`${BUTTON('Refresh')}.click()`);
+  check('a failed status read cannot enable a second check', await until(`${TAB}.innerText.includes('FIXTURE: check status unavailable') && (${BUTTON('Check')})?.disabled`));
+  sim.failStatus = false;
+  check('status polling recovers after a read error', await until(`!!(${BUTTON('Stop')}) && !${TAB}.innerText.includes('FIXTURE: check status unavailable')`));
   await shot('corners-2-running.png');
   await evaluate(`${BUTTON('Stop')}.click()`);
   check('Stop sends one stop for this check', await waitFor(() => sim.stops.length === 1) && sim.stops[0].check_id === C1 && sim.stops[0].run_dir === DIR, JSON.stringify(sim.stops));

@@ -30,8 +30,7 @@ try {
     await page.shot(path.join(out, name), await evaluate(`(() => { const items = ${BLOCK}; const a = items[0].getBoundingClientRect(), b = items[items.length - 1].getBoundingClientRect();
       const p = document.querySelector('.right .panel').getBoundingClientRect(); return { x: p.x, y: a.y - 4, width: p.width, height: b.bottom - a.y + 8, scale: 2 }; })()`));
   };
-  const select = name => evaluate(`(() => { const s = [...document.querySelectorAll('.right .panel label')].find(l => l.firstChild?.textContent === 'Encoder').querySelector('select');
-    const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set; set.call(s, ${JSON.stringify(name)}); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  const select = name => page.setValue(`[...document.querySelectorAll('.right .panel label')].find(l => l.firstChild?.textContent === 'Encoder').querySelector('select')`, name);
   const box = label => `[...document.querySelectorAll('.right .panel .row label')].find(l => l.querySelector('span')?.firstChild?.textContent === ${JSON.stringify(label)})`;
   const numbers = () => evaluate(`['hidden', 'heads', 'layers'].map(n => [...document.querySelectorAll('.right .panel .row label')].find(l => l.querySelector('span')?.firstChild?.textContent === n).querySelector('input').value)`);
   const buttons = () => evaluate(`['Publication preset', 'GATOR baseline'].map(t => { const b = [...document.querySelectorAll('.right .panel button')].find(x => x.textContent === t);
@@ -48,7 +47,7 @@ try {
   const gt = settings.settings.graph_transformer.network;
   check('fresh page shows the backend values of the default encoder', JSON.stringify(await numbers()) === JSON.stringify([gt.hidden_dim, gt.heads, gt.layers].map(String)), JSON.stringify(await numbers()));
   const options = await evaluate(`[...[...document.querySelectorAll('.right .panel label')].find(l => l.firstChild?.textContent === 'Encoder').querySelectorAll('option')].map(o => o.value)`);
-  check('the encoder list offers the five encoders and no port_gnn (removed 2026-09-24)', JSON.stringify(options) === JSON.stringify(['graph_transformer', 'mlp', 'rgcn', 'gat', 'gcn']), JSON.stringify(options));
+  check('the encoder list offers only Graph Transformer, RGCN and GATv2', JSON.stringify(options) === JSON.stringify(['graph_transformer', 'rgcn', 'gatv2']), JSON.stringify(options));
   check('heads is editable for graph_transformer', !(await evaluate(`${box('heads')}.querySelector('input').disabled`)));
 
   // ---- the two reset buttons form one aligned pair ------------------------------------------------------------
@@ -61,37 +60,37 @@ try {
   await shot('network-1-graph-transformer.png');
 
   // ---- choosing an encoder reads that encoder's backend values; heads greys out -------------------------------
-  await select('gcn'); await sleep(500);
-  const gcn = settings.settings.gcn.network;
-  check('choosing gcn loads the gcn values', JSON.stringify(await numbers()) === JSON.stringify([gcn.hidden_dim, gcn.heads, gcn.layers].map(String)), JSON.stringify(await numbers()));
-  check('heads is greyed out for gcn', await evaluate(`${box('heads')}.querySelector('input').disabled && ${box('heads')}.classList.contains('disabled')`));
+  await select('rgcn'); await sleep(500);
+  const rgcn = settings.settings.rgcn.network;
+  check('choosing rgcn loads the rgcn values', JSON.stringify(await numbers()) === JSON.stringify([rgcn.hidden_dim, rgcn.heads, rgcn.layers].map(String)), JSON.stringify(await numbers()));
+  check('heads is greyed out for rgcn', await evaluate(`${box('heads')}.querySelector('input').disabled && ${box('heads')}.classList.contains('disabled')`));
   check('heads carries the "ignored by this encoder" hint', await evaluate(`${box('heads')}.textContent.includes('ignored by this encoder')`));
   [pub, base] = await buttons();
   check('reset buttons stay aligned when the heads hint is shown', pub.y === base.y && pub.w === base.w, JSON.stringify([pub, base]));
   check('no write happened by only choosing an encoder', paused.length === 0, JSON.stringify(paused.map(p => p.method + ' ' + p.url)));
-  await shot('network-2-gcn.png');
+  await shot('network-2-rgcn.png');
 
   // ---- editing a value writes it to the backend for THAT encoder (intercepted here) ---------------------------
   await evaluate(`(() => { const i = ${box('hidden')}.querySelector('input'); i.focus(); i.select(); })()`);
   await send('Input.insertText', { text: '64' });
   const write = await nextWrite();
-  check('an edit is sent to the backend for the chosen encoder', !!write && write.method === 'PUT' && write.url.endsWith('/api/network-settings/gcn'), write ? `${write.method} ${write.url}` : 'no request');
+  check('an edit is sent to the backend for the chosen encoder', !!write && write.method === 'PUT' && write.url.endsWith('/api/network-settings/rgcn'), write ? `${write.method} ${write.url}` : 'no request');
   const body = write ? JSON.parse(write.postData) : {};
-  check('the complete value set is sent, not one field', body.network?.hidden_dim === 64 && body.network?.layers === gcn.layers && typeof body.advanced?.batch_size === 'number', JSON.stringify(body.network));
-  if (write) await fulfil(write.requestId, 200, { ...settings.settings.gcn, origin: 'custom', network: { ...gcn, hidden_dim: 64 } });
+  check('the complete value set is sent, not one field', body.network?.hidden_dim === 64 && body.network?.layers === rgcn.layers && typeof body.advanced?.batch_size === 'number', JSON.stringify(body.network));
+  if (write) await fulfil(write.requestId, 200, { ...settings.settings.rgcn, origin: 'custom', network: { ...rgcn, hidden_dim: 64 } });
   await sleep(400);
   check('the panel reports the edited state', await evaluate(`document.querySelector('.right .panel').textContent.includes('edited, saved in the backend')`));
-  await shot('network-3-gcn-edited.png');
+  await shot('network-3-rgcn-edited.png');
 
   // ---- GATOR baseline asks the backend (intercepted) and applies what it answers ------------------------------
   await evaluate(`[...document.querySelectorAll('.right .panel button')].find(b => b.textContent === 'GATOR baseline').click()`);
   const reset = await nextWrite();
-  check('GATOR baseline posts a reset for the chosen encoder', !!reset && reset.method === 'POST' && reset.url.endsWith('/api/network-settings/gcn/reset') && JSON.parse(reset.postData).to === 'gator_baseline', reset ? `${reset.method} ${reset.url} ${reset.postData}` : 'no request');
-  if (reset) await fulfil(reset.requestId, 200, { ...settings.settings.gcn, origin: 'gator_baseline', network: settings.gator_baseline.network, advanced: settings.gator_baseline.advanced });
+  check('GATOR baseline posts a reset for the chosen encoder', !!reset && reset.method === 'POST' && reset.url.endsWith('/api/network-settings/rgcn/reset') && JSON.parse(reset.postData).to === 'gator_baseline', reset ? `${reset.method} ${reset.url} ${reset.postData}` : 'no request');
+  if (reset) await fulfil(reset.requestId, 200, { ...settings.settings.rgcn, origin: 'gator_baseline', network: settings.gator_baseline.network, advanced: settings.gator_baseline.advanced });
   await sleep(400);
   const b = settings.gator_baseline.network;
   check('the baseline values are shown', JSON.stringify(await numbers()) === JSON.stringify([b.hidden_dim, b.heads, b.layers].map(String)), JSON.stringify(await numbers()));
-  await shot('network-4-gcn-baseline.png');
+  await shot('network-4-rgcn-baseline.png');
 
   console.log(`INFO  other writing requests the page sent on its own, all refused here: ${[...new Set(page.refused)].join(', ') || 'none'}`);
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

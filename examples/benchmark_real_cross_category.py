@@ -143,7 +143,7 @@ def main():
         if args.bindings is None:
             parser.error('--bindings is required to prepare a physical plan')
         suite,plan=build_plan(ROOT,args.manifest,args.bindings)
-    summary=dict(origin='real',planned_calls=plan['budget'],metric_count=len(suite.schema.metrics),
+    summary=dict(origin='real',encoders=plan['settings']['encoders'],planned_calls=plan['budget'],metric_count=len(suite.schema.metrics),
         action_counts={k:sum(g.mutable for g in p.optimization_graph().parameter_groups) for k,p in suite.profiles.items()},
         plan_sha256=plan['sha256'],new_simulator_calls=0)
     if not args.execute:

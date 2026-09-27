@@ -20,7 +20,7 @@ from analog_optimizer.training.runtime import write_report_preserving_error
 from .transfer import aggregate_runs, digest, freeze_protocol, validate_split
 
 
-ENCODER_LABELS = dict(graph_transformer='gt', mlp='mlp', rgcn='rgcn', gat='gat', gcn='gcn')
+ENCODER_LABELS = dict(graph_transformer='gt', rgcn='rgcn', gatv2='gatv2')
 
 
 def benchmark_models(settings):

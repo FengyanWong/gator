@@ -464,6 +464,11 @@ def _check_targets(config, report, measurement_ids, *, registry, extensible=True
                        'target-with-tolerance needs a positive tolerance')
         if t.direction_after_feasible != 'none' and t.active:
             preference.append(t.metric_id)
+            needed = 'upper' if t.direction_after_feasible == 'minimize' else 'lower'
+            if t.constraint != 'target' and getattr(t, needed) is None:
+                report.add('error', 'objective_without_limit', path + f'.{needed}',
+                           f'{t.metric_id}: a {t.direction_after_feasible} objective needs its {needed} limit - the objective '
+                           'bonus measures how far inside that limit the design is')
         if t.active and t.hard:
             active_hard += 1
         if units.known(t.unit) and units.is_affine(t.unit):
@@ -520,7 +525,7 @@ def _check_run(config, report):
                    'encoder_only_transfer already leaves critic heads random; critic encoders are still loaded '
                    'unless reset_critic is set')
     net = run.network
-    if net.encoder_type in ('graph_transformer', 'gat') and net.hidden_dim % net.heads:
+    if net.encoder_type in ('graph_transformer', 'gatv2') and net.hidden_dim % net.heads:
         report.add('error', 'heads_divisibility', 'run.network', 'hidden_dim must be divisible by heads')
     if run.mode != 'frozen' and run.max_evaluations < adv.batch_size + 1:
         report.add('warning', 'budget_below_batch', 'run.max_evaluations',

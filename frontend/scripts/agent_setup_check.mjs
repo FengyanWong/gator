@@ -105,7 +105,7 @@ try {
   };
   const chatText = () => evaluate(`document.querySelector('.chat')?.textContent ?? ''`);
 
-  await page.intercept(['*/api/*'], answer);
+  await page.intercept(['*/api/*'], answer, { connection: 'lab' });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   for (let i = 0; i < 50 && !(await stored()); i++) await sleep(100);

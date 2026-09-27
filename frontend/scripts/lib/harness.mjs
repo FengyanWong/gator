@@ -40,6 +40,9 @@ export const NO_WRITES = 'FIXTURE: this check lets no writing request through';
 export const PAGE_OPEN_TEST = profile_id => ({ profile_id, scope: 'interactive', trigger: 'user', checked_utc: null, age_seconds: null, stale: true,
   overall: 'unknown', run_active: false, layers: [], ciw: null,
   summary: { level: 'unknown', headline: 'FIXTURE: the test of the connection when the page opened was answered by this check; nothing was probed.', broken_layer: null, next_step: null } });
+/** A fresh passing validation reply; each scenario can override its facts without sharing mutable state. */
+export const validConfiguration = (overrides = {}) => ({ blocks_run: false, counts: {}, facts: { circuit_checked: false },
+  issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: null, ...overrides });
 export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const text = value => JSON.stringify(value);                      // a JS literal for code sent into the page
 
@@ -179,6 +182,14 @@ async function connect(target, { errors = [], prefix = '', consoleApi = true } =
       if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
       return r.result.value;
     },
+    /** Update a React-controlled field through its native setter, including fields in a pop-up's realm. */
+    setValue(expression, value, { event = 'change', focus = false, userGesture = false } = {}) {
+      return session.evaluate(`(() => { const el = ${expression}; if (!el) return false;
+        if (${focus}) el.focus();
+        Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value').set.call(el, ${text(value)});
+        el.dispatchEvent(new el.ownerDocument.defaultView.Event(${text(event)}, { bubbles: true }));
+        return el.value; })()`, userGesture);
+    },
     /** True as soon as `expression` is truthy, false after `tries` looks `every` ms apart. */
     async until(expression, tries = 80, every = 100) {
       for (let i = 0; i < tries; i++) { if (await session.evaluate(expression)) return true; await sleep(every); }
@@ -190,11 +201,19 @@ async function connect(target, { errors = [], prefix = '', consoleApi = true } =
     /** Pauses the requests matching `patterns` (CDP url patterns, * and ?) and hands each to `answer(params)`. With
      *  `others: 'read'` EVERY /api request pauses: the matching ones go to `answer`, the rest pass when they only read
      *  (readOnly) and are refused with 418 otherwise, listed in `session.refused`: the check is hermetic. */
-    async intercept(patterns, answer, { others = null } = {}) {
+    async intercept(patterns, answer, { others = null, connection = null } = {}) {
       const mine = patterns.map(p => glob(typeof p === 'string' ? p : p.urlPattern));
-      session.on('Fetch.requestPaused', params => !others || mine.some(re => re.test(params.request.url)) ? answer(params)
-        : session.readOrRefuse(params, session.refused, { reads: true }));
-      const list = others ? ['*/api/*'] : patterns;
+      session.on('Fetch.requestPaused', params => {
+        // Tests of Virtuoso controls need a selected profile even on a scratch backend with empty settings.
+        const name = new URL(params.request.url).pathname;
+        if (connection && name === '/api/connection/profiles') return session.fulfil(params.requestId, 200, { active: connection,
+          profiles: [{ profile_id: connection, family: 'virtuoso', kind: 'virtuoso_ssh', kind_label: 'FIXTURE Virtuoso' }] });
+        if (connection && ['/api/connection/check', '/api/connection/status'].includes(name))
+          return session.fulfil(params.requestId, 200, PAGE_OPEN_TEST(connection));
+        return !others || mine.some(re => re.test(params.request.url)) ? answer(params)
+          : session.readOrRefuse(params, session.refused, { reads: true });
+      });
+      const list = others ? ['*/api/*'] : [...patterns, ...(connection ? ['*/api/connection/*'] : [])];
       await send('Fetch.enable', { patterns: list.map(p => typeof p === 'string' ? { urlPattern: p, requestStage: 'Request' } : p) });
     },
     /** Pauses the matching requests and keeps them in `session.paused` until the check answers them (nextPaused, fulfil);

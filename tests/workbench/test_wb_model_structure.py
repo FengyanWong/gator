@@ -15,7 +15,7 @@ from gator_workbench.engine import learner_experiment
 from gator_workbench.schema import task_definition_hash
 from helpers import SMALL_NET, ScriptedEnvFactory, execute, make_config
 
-ENCODERS = ('graph_transformer', 'gat', 'rgcn', 'gcn', 'mlp')          # port_gnn removed 2026-09-24
+ENCODERS = ('graph_transformer', 'rgcn', 'gatv2')
 
 
 @pytest.fixture(scope='module')

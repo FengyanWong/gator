@@ -20,8 +20,9 @@ def format_overview(data):
     first = summary['first_feasible']
     if first:
         lines.append(f"首次达标: {first['seconds']:.2f} s / 已确认真实调用 {first['real_simulations']}；eval {first['eval_id']}")
-    for key, label in [('initial', '初始设计'), ('best_feasible', '最佳可行设计'), ('best_infeasible', '最小约束违反设计')]:
-        candidate = summary[key]
+    for key, label in [('initial', '初始设计'), ('best_feasible', '最佳完整可行设计'),
+                       ('best_nominal_feasible', '最佳 nominal 可行设计'), ('best_infeasible', '最小约束违反设计')]:
+        candidate = summary.get(key)
         lines.append(f"{label}: {'无' if candidate is None else candidate['eval_id']}")
         if candidate is None:
             continue
@@ -29,12 +30,22 @@ def format_overview(data):
         if isinstance(parameters, dict):
             parameters = {('/'.join(k) if isinstance(k, tuple) else str(k)): v for k, v in parameters.items()}
         lines.append('  实际参数: ' + json.dumps(parameters, ensure_ascii=False))
+        verdict = lambda value: '未知' if value is None else '是' if value else '否'
+        lines.append(f"  nominal 达标: {verdict(candidate.get('nominal_feasible'))}；"
+                     f"robust 达标: {verdict(candidate.get('robust_feasible'))}；"
+                     f"覆盖完整: {verdict(candidate.get('coverage_complete'))}")
+        lines.append(f"  最紧硬约束余量: {candidate.get('clearance_margin')}；"
+                     f"约束: {candidate.get('tightest_clearance_spec')}")
         for constraint in candidate['constraints']:
             c = constraint
             status = '无效/缺失' if not c['valid'] else '满足' if c['met'] else '未满足'
             bounds = f"[{c['lower']}, {c['upper']}]"
             role = '停用' if not c['active'] else '必需' if c['required'] else '可选'
             lines.append(f"  {c['metric']}: {c['value']} {c['unit']}；范围 {bounds}；{role}，{status}")
+            if c.get('binding_condition'):
+                lines.append(f"    绑定工况: {c['binding_condition']}")
+            if c.get('missing_coverage'):
+                lines.append('    缺失工况: ' + ', '.join(c['missing_coverage']))
     checkpoint = data['latest_checkpoint']
     lines.append('最新完整 checkpoint: ' + ('无' if checkpoint is None else f"step {checkpoint['step']} / {checkpoint['path']}"))
     lines.append('最近评价（新到旧）:')

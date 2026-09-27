@@ -1,3 +1,4 @@
+import { useAsyncAction } from '../store';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, Json, OLDER_BACKEND } from '../api';
@@ -27,11 +28,12 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged }:
   const [sourcePath, setSourcePath] = useState<string | null>(null);   // where the deck was loaded from (relative includes resolve there)
   const [labels, setLabels] = useState({ circuit_class: 'unspecified', pdk_id: 'unspecified' });
   const [checked, setChecked] = useState<Json>(null);
-  const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<Json>(null);             // { level: ok | error | hint, text }
   const [loadedFrom, setLoadedFrom] = useState<string | null>(null);  // the task whose deck the window holds
   const repo = useRef<string | null>(null);
   const problem = (e: any) => ({ level: 'error', text: e.status === 404 || e.status === 405 ? OLDER_BACKEND : e.message });
+
+  const { busy, run } = useAsyncAction(e => setMessage(problem(e)), () => setMessage(null));
 
   // The window holds the deck of the task the page follows (its saved text), read when it opens or the task changes.
   useEffect(() => {
@@ -49,36 +51,26 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged }:
     return () => { live = false; };
   }, [popup, followed]);
 
-  const load = async (which: 'path' | 'example') => {
-    setBusy('load'); setMessage(null);
-    try {
-      let target = backendPath(path);
-      if (which === 'example') {
-        if (!repo.current) repo.current = (await api.meta()).repo_root;
-        target = `${repo.current}/${EXAMPLE}`;
-      }
-      const file = await api.ngspiceRead(target);
-      setText(file.text); setSourcePath(file.path); setPath(file.path); setChecked(null);
-      if (!name || (loadedFrom && name === loadedFrom && which === 'example')) setName(which === 'example' ? 'ota5_level1' : (file.path.split('/').pop() ?? '').replace(/\.[^.]*$/, '').toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^[^a-z]+/, '') || 'netlist');
-      setMessage({ level: 'ok', text: `Loaded ${file.path} (${file.size} bytes). Check it, then save it as a task.` });
-    } catch (e: any) { setMessage(problem(e)); } finally { setBusy(null); }
-  };
-  const check = async () => {
-    setBusy('check'); setMessage(null);
-    try { setChecked(await api.ngspiceCheck({ text, device_kinds: kinds, source_path: sourcePath })); }
-    catch (e: any) { setMessage(problem(e)); } finally { setBusy(null); }
-  };
-  const save = async () => {
-    setBusy('save'); setMessage(null);
-    try {
-      const made = await api.ngspiceSave({ name, text, device_kinds: kinds, source_path: sourcePath, ...labels });
-      setChecked(made.check ?? null); setLoadedFrom(made.name);
-      onTasksChanged();
-      await chooseTask(made.task_key);
-      setMessage({ level: 'ok', text: `${made.created ? 'Saved the new task' : `Saved revision ${made.revision} of`} ${made.task_key}. The Project column follows it; `
-        + 'Parameters and Probes show its rows (Specs are yours to fill). It runs on an ngspice connection: choose one in the Connection window.' });
-    } catch (e: any) { setMessage(problem(e)); } finally { setBusy(null); }
-  };
+  const load = (which: 'path' | 'example') => run('load', async () => {
+    let target = backendPath(path);
+    if (which === 'example') {
+      if (!repo.current) repo.current = (await api.meta()).repo_root;
+      target = `${repo.current}/${EXAMPLE}`;
+    }
+    const file = await api.ngspiceRead(target);
+    setText(file.text); setSourcePath(file.path); setPath(file.path); setChecked(null);
+    if (!name || (loadedFrom && name === loadedFrom && which === 'example')) setName(which === 'example' ? 'ota5_level1' : (file.path.split('/').pop() ?? '').replace(/\.[^.]*$/, '').toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^[^a-z]+/, '') || 'netlist');
+    setMessage({ level: 'ok', text: `Loaded ${file.path} (${file.size} bytes). Check it, then save it as a task.` });
+  });
+  const check = () => run('check', async () => { setChecked(await api.ngspiceCheck({ text, device_kinds: kinds, source_path: sourcePath })); });
+  const save = () => run('save', async () => {
+    const made = await api.ngspiceSave({ name, text, device_kinds: kinds, source_path: sourcePath, ...labels });
+    setChecked(made.check ?? null); setLoadedFrom(made.name);
+    onTasksChanged();
+    await chooseTask(made.task_key);
+    setMessage({ level: 'ok', text: `${made.created ? 'Saved the new task' : `Saved revision ${made.revision} of`} ${made.task_key}. The Project column follows it; `
+      + 'Parameters and Probes show its rows (Specs are yours to fill). It runs on an ngspice connection: choose one in the Connection window.' });
+  });
   const nameOk = NAME.test(name);
   const revision = followed && name === followed ? (circuit?.circuit?.revision ?? null) : null;
 

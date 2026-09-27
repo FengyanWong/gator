@@ -1,5 +1,10 @@
 # Plan: a robust reward and a wider RL-network input (PVT corners, Monte Carlo, the PDK component list)
 
+**Superseded for implementation on 2026-09-26:**
+[Reward v2 with real-flow qualification](plan-reward-v2-real-flow.md) is the current plan.
+It records permission for the scoped optimizer changes and replaces MOCK validation with bounded
+real-flow qualification. This older document remains the historical reasoning, not an execution brief.
+
 Status: **PLAN, written 2026-09-24. Nothing in it is built.** Every stage that edits `src/analog_optimizer/` or
 spends Spectre calls needs an explicit user decision (section 8). The facts in section 1 were checked in the working
 tree at commit `bbdfe36` (branch `workbench`), whose optimizer digest is the M6 pin `02127bc3…`; line numbers refer to

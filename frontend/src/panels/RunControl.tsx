@@ -1,5 +1,6 @@
 import { Icon, IconName } from './Icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRequest } from '../store';
 import { api, ApiError, Json } from '../api';
 
 /** The header's run buttons (user request 2026-09-21): ONE main button that reads Start -> Pause -> Resume, and
@@ -54,6 +55,7 @@ export function useRunControl(viewedStatus: Json, looked: boolean) {
   const [forced, setForced] = useState(false);
   const [epoch, setEpoch] = useState(0);
   const current = useRef({ dir, epoch });
+  const reading = useRef<{ key: typeof current.current; promise: Promise<void> } | null>(null);
 
   /** Hold another run, or none. Whatever was known belongs to the run held before (or to the time before a launch),
    *  so it is dropped, and an answer that is still on its way for it is ignored when it arrives. */
@@ -71,10 +73,14 @@ export function useRunControl(viewedStatus: Json, looked: boolean) {
   const refresh = useCallback((): Promise<void> => {
     const asked = current.current;
     if (!asked.dir) return Promise.resolve();
-    return api.status(asked.dir).then(next => { if (current.current === asked) accept(next); }, e => {
+    if (reading.current?.key === asked) return reading.current.promise;
+    const promise = api.status(asked.dir).then(next => { if (current.current === asked) accept(next); }, e => {
       // The remembered run is gone (deleted, or outside the allowed roots by now): let go instead of showing a dead Pause.
       if (e instanceof ApiError && (e.status === 403 || e.status === 404) && current.current === asked) hold(null, null);
-    }).then(() => { if (current.current === asked) setChecked(true); });
+    }).then(() => { if (current.current === asked) setChecked(true); })
+      .finally(() => { if (reading.current?.key === asked) reading.current = null; });
+    reading.current = { key: asked, promise };
+    return promise;
   }, [accept, hold]);
 
   // Just after a launch only answers asked for AFTER it count: the page's own poll may still deliver "paused, no worker".
@@ -82,11 +88,7 @@ export function useRunControl(viewedStatus: Json, looked: boolean) {
   const live = pending !== null || launched !== null || !!status?.worker_alive;
   useEffect(() => { refresh(); }, [epoch, refresh]);            // once per held run; on page load for the remembered one
   useEffect(() => { if (fed) { accept(viewedStatus); setChecked(true); } }, [fed, viewedStatus, accept]);
-  useEffect(() => {
-    if (!dir || !live || fed) return;
-    const id = window.setInterval(refresh, 1500);
-    return () => window.clearInterval(id);
-  }, [dir, live, fed, refresh]);
+  useRequest(refresh, [dir, epoch], { enabled: !!dir && live && !fed, delay: 1500, pollEvery: 1500 });
   // A request of this page stays "pending" until the run itself shows that it arrived.
   useEffect(() => {
     if (!status) return;

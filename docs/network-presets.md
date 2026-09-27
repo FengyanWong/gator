@@ -3,7 +3,7 @@
 Added 2026-09-20. Code: `src/gator_workbench/network_presets.py`, panel `frontend/src/panels/Right.tsx`,
 tests `tests/workbench/test_wb_network_presets.py`, browser check `frontend/scripts/network_panel_check.mjs`
 (headless Edge, 16 checks; writes are intercepted, so it never changes your saved settings).
-Nothing under `src/analog_optimizer/` changed.
+The initial preset implementation did not change `src/analog_optimizer/`. Since 2026-09-26, the optimizer and this panel offer only `graph_transformer`, `rgcn` and `gatv2`. GATv1 was replaced by GATv2 on that date; its historical preset settings are borrowed as starting values, not a published GATv2 sizing recipe. MLP/GCN were deleted on that date, and port-GNN on 2026-09-24. Their entries below retain historical preset provenance; they are no longer selectable or editable. Old configurations are rejected explicitly, and existing checkpoints require their matching historical source and dependencies.
 
 ## In plain words
 
@@ -20,7 +20,7 @@ Now the backend keeps **one setting per network type**:
 * Two buttons bring you back: **Publication preset** (forget my edits) and **GATOR baseline** (the old
   32 / 4 / 2 setting that every existing GATOR result and checkpoint was made with).
 * The **heads** box is greyed out with "ignored by this encoder" unless the network is
-  `graph_transformer` or `gat`. Only those two have attention heads.
+  `graph_transformer` or `gatv2`. Only those two have attention heads.
 
 **The one thing to keep in mind:** the papers ran thousands of simulations per run; GATOR's real runs
 used tens. A published batch size of 128 with 1,000 warm-up steps means that in a 60-evaluation run the
@@ -32,16 +32,16 @@ click **GATOR baseline**.
 
 `hidden / heads / layers`, then the training numbers. Anything not listed is the GATOR default
 (`update_every` 1, `updates_per_transition` 1, `initial_alpha` 0.2, `target_entropy_per_action` 1,
-`max_grad_norm` 10; for `gat` and `graph_transformer` also `tau` 0.005 and `warmup_transitions` 8).
+`max_grad_norm` 10; for `gatv2` and `graph_transformer` also `tau` 0.005 and `warmup_transitions` 8).
 
 | Encoder | hidden | heads | layers | lr | gamma | tau | batch | warm-up | replay | episode |
 |---|---|---|---|---|---|---|---|---|---|---|
 | `graph_transformer` | 48 | 4 | 4 | 1e-3 | 0.9 | 0.005 | 32 | 8 | 50 | 30 |
-| `gat` | 192 | 3 | 4 | 1e-3 | 0.9 | 0.005 | 32 | 8 | 50 | 30 |
-| `gcn` | 32 | (4) | 7 | 3e-4 | 0.99 | 0.005 | 128 | 1000 | 100000 | 50 |
+| `gatv2` (borrowed GAT settings) | 192 | 3 | 4 | 1e-3 | 0.9 | 0.005 | 32 | 8 | 50 | 30 |
+| `gcn` (removed 2026-09-26) | 32 | (4) | 7 | 3e-4 | 0.99 | 0.005 | 128 | 1000 | 100000 | 50 |
 | `rgcn` | 32 | (4) | 4 | 3e-4 | 0.99 | 0.005 | 128 | 1000 | 100000 | 50 |
 | `port_gnn` (removed 2026-09-24) | 32 | (4) | 5 | 3e-4 | 0.99 | 0.005 | 128 | 1000 | 100000 | 50 |
-| `mlp` | 256 | (4) | 4 | 3e-3 | 0.8 | 0.005 | 256 | 120 | 1000000 | 30 |
+| `mlp` (removed 2026-09-26) | 256 | (4) | 4 | 3e-3 | 0.8 | 0.005 | 256 | 120 | 1000000 | 30 |
 | GATOR baseline (all) | 32 | 4 | 2 | 3e-4 | 0.99 | 0.005 | 8 | 8 | 10000 | 4 |
 
 `(4)` = ignored by that network; kept at 4 because the number is written into every checkpoint.
@@ -51,7 +51,7 @@ click **GATOR baseline**.
 Every quote below was read in the primary source on 2026-09-20 (paper text or the authors' code), not
 taken from a summary. "Paper" = stated in the publication; "code" = only in the authors' released code.
 
-### `gcn`
+### `gcn` (removed 2026-09-26; historical preset provenance)
 * **layers 7** - paper. Wang et al., *GCN-RL Circuit Designer*, DAC 2020, arXiv:2005.00406: "we apply
   seven GCN layers to make sure the last layer have a global receptive field over the entire topology
   graph". The paper states nothing else about its agent (no width, learning rate, batch or replay size)
@@ -73,7 +73,11 @@ published line of work with an R-GCN inside a transistor-sizing RL loop (DDPG).
   and direction; tapering widths; no normalization or residuals; weight decay (GATOR has none); updates
   start only after warm-up (GATOR updates as soon as one batch is stored).
 
-### `gat`
+### `gatv2` (replacement on 2026-09-26)
+
+The operator is PyG `GATv2Conv`, following [Brody et al., ICLR 2022](https://arxiv.org/abs/2105.14491). It uses independent source/target projections, port edge features, no inserted self-loops, and the existing outer residual/LayerNorm/feed-forward block. Every cited numerical setting is marked **closest network**: the settings below were gathered for the old GAT preset and have not been validated as a GATv2 sizing recipe. Saved `gat` settings are preserved in their old entry and are not copied to `gatv2`.
+
+### Historical `gat` preset sources (now borrowed by `gatv2`)
 No single GAT sizing paper reports a complete agent.
 * **layers 4, episode 30** - paper. Gursoy et al., *Lighthouse RL*, arXiv:2607.14008 (2026), the closest
   published setup to GATOR (SAC + GAT): "four Graph Attention Network (GAT) layers with residual
@@ -104,9 +108,9 @@ No single GAT sizing paper reports a complete agent.
   "closest network" in the panel. **No publication uses a graph transformer as the RL sizing agent**
   (searched 2023-2026; the nearest are ZeroSim, which uses a transformer as the simulator surrogate, and
   ARCS, an unreviewed preprint with a GPT policy for fixed templates). GATOR's `graph_transformer` and
-  `gat` blocks differ only in the attention function.
+  `gatv2` blocks use different attention operators and projection parameterizations.
 
-### `mlp`
+### `mlp` (removed 2026-09-26; historical preset provenance)
 All from Kim et al., *PPAAS: PVT and Pareto Aware Analog Sizing via Goal-conditioned Reinforcement
 Learning*, ICCAD 2025, arXiv:2507.17003, code `github.com/SeunggeunKimkr/PPAAS`. It is the best
 documented **soft actor-critic** sizing paper (GATOR's own algorithm), with fully connected networks.
@@ -152,7 +156,7 @@ feature, mean-aggregated, no attention). Everything here is marked "closest netw
   | Encoder | preset | GATOR baseline |
   |---|---|---|
   | `graph_transformer` | 349,540 | 105,476 |
-  | `gat` | 3,858,820 | 87,044 |
+  | `gat` (historical GATv1) | 3,858,820 | 87,044 |
   | `gcn` | 159,524 | 78,884 |
   | `rgcn` | 270,884 | 158,756 |
   | `port_gnn` (removed 2026-09-24) | 159,908 | 92,804 |

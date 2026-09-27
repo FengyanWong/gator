@@ -1,5 +1,6 @@
 """Read-only run inspection and streaming on-demand Parquet+ZSTD export."""
 from pathlib import Path
+import math
 import shutil
 import sqlite3
 import time
@@ -76,8 +77,10 @@ class RunReader:
                     if task_id not in evaluators:
                         task = self.call('read', 'asset', task_id)
                         evaluators[task_id] = SpecificationEvaluator(self.call('read', 'asset', task['spec_id']))
-                    verdict = evaluators[task_id].evaluate(result['metrics'], result.get('metric_units', {}),
-                                                          result['metric_validity'])
+                    observation = self._decoder._load_state(result.get('state_id'))
+                    verdict = (observation.evaluation if observation is not None else
+                               evaluators[task_id].evaluate(result['metrics'], result.get('metric_units', {}),
+                                                            result['metric_validity']))
                     valid = verdict.valid and result['status'] == 'ok'
                     ExperimentStore._count_result(summary, result, evaluation['request'], valid, valid and verdict.success)
             pending = {r['state']: r['n'] for r in self.db.execute(
@@ -90,21 +93,54 @@ class RunReader:
                     **{k: request.get(k) for k in ('worker_id', 'episode_id', 'step', 'phase', 'source')},
                     **{k: result.get(k) for k in ('status', 'error_class', 'error_summary', 'metrics', 'metric_validity')}))
             # Include units and bounds for the few selected designs, not whole configs/graphs.
-            for name in ('initial', 'best_feasible', 'best_infeasible'):
-                candidate = summary[name]
+            for name in ('initial', 'best_feasible', 'best_nominal_feasible', 'best_infeasible'):
+                candidate = summary.get(name)
                 if candidate is None:
                     continue
                 evaluation = self.call('read', 'evaluation', candidate['eval_id'])
                 task = self.call('read', 'asset', candidate['task_id'])
                 result = evaluation['result']
+                observation = self._decoder._load_state(result.get('state_id'))
+                recorded_conditions = observation is not None and bool(observation.condition_results)
+                verdict = observation.evaluation if recorded_conditions else None
+                candidate.update(coverage_complete=verdict.complete if verdict else None,
+                    condition_policy=observation.condition_policy if recorded_conditions else 'off',
+                    robust_feasible=verdict.success if recorded_conditions and observation.condition_policy == 'always' else None,
+                    missing_coverage=verdict.missing_coverage if verdict else {})
+                if verdict:
+                    candidate.update(nominal_feasible=verdict.nominal_success,
+                        clearance_margin=verdict.clearance_margin,
+                        tightest_clearance_spec=verdict.tightest_clearance_spec)
                 candidate['constraints'] = []
                 for spec in self.call('read', 'asset', task['spec_id']):
-                    value = result['metrics'].get(spec.metric_id)
-                    valid = (result['metric_validity'].get(spec.metric_id, False) and value is not None
-                             and result.get('metric_units', {}).get(spec.metric_id) == spec.unit)
-                    met = (spec.lower is None or value >= spec.lower) and (spec.upper is None or value <= spec.upper) if valid else None
+                    def measured(metrics, validity, units, available=True):
+                        value = metrics.get(spec.metric_id)
+                        valid = (available and validity.get(spec.metric_id, False) and value is not None
+                                 and math.isfinite(value) and units.get(spec.metric_id) == spec.unit)
+                        met = ((spec.lower is None or value >= spec.lower) and
+                               (spec.upper is None or value <= spec.upper)) if valid else None
+                        return dict(value=value, valid=bool(valid), met=met)
+
+                    details = []
+                    aggregate = measured(result['metrics'], result['metric_validity'], result.get('metric_units', {}),
+                                         result['status'] == 'ok')
+                    if recorded_conditions and spec.active:
+                        rows = observation.condition_results[:1] if spec.nominal_only else observation.condition_results
+                        for condition_result in rows:
+                            condition = condition_result.condition
+                            details.append(dict(condition=condition.corner.id if condition else 'nominal',
+                                **measured(condition_result.metrics, condition_result.metric_validity,
+                                           condition_result.metric_units,
+                                           condition_result.status == 'ok' and condition_result.candidate_evaluated)))
+                        valid = verdict.worst_valid[spec.metric_id] and not verdict.missing_coverage[spec.metric_id]
+                        # Bounds on every actual value are authoritative, not rounded reward penalties.
+                        aggregate = dict(value=verdict.worst_values[spec.metric_id], valid=valid,
+                                         met=all(item['met'] is True for item in details) if valid else None)
                     candidate['constraints'].append(dict(metric=spec.metric_id, unit=spec.unit, lower=spec.lower,
-                        upper=spec.upper, value=value, valid=valid, met=met, required=spec.required, active=spec.active))
+                        upper=spec.upper, **aggregate, required=spec.required, active=spec.active,
+                        nominal_only=spec.nominal_only, conditions=details,
+                        binding_condition=verdict.worst_conditions.get(spec.metric_id) if verdict else None,
+                        missing_coverage=verdict.missing_coverage.get(spec.metric_id, ()) if verdict else ()))
             summary['wall_seconds'] = (row['ended'] or time.time()) - row['started']
             full = self.db.execute("SELECT step,path FROM checkpoints WHERE run_id=? AND kind='full' AND status='retained' "
                                    'ORDER BY step DESC,rowid DESC LIMIT 1', (run_id,)).fetchone()
@@ -136,6 +172,9 @@ class RunReader:
             'evaluations': ('SELECT * FROM evaluations WHERE run_id=? ORDER BY seq', (run_id,)),
             'transitions': ('SELECT t.* FROM transitions t JOIN evaluations e ON t.eval_id=e.id WHERE e.run_id=? ORDER BY t.seq', (run_id,)),
         }
+        if self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='simulation_jobs'").fetchone():
+            queries['simulation_jobs'] = ('SELECT j.* FROM simulation_jobs j JOIN evaluations e ON j.eval_id=e.id '
+                                          'WHERE e.run_id=? ORDER BY e.seq,j.job_index', (run_id,))
         self.db.execute('BEGIN')
         try:
             # Include only this run's static definitions and their explicit references.

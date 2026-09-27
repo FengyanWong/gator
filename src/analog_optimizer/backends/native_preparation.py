@@ -78,6 +78,8 @@ class PreparationService:
                         raise RuntimeError('Preparation service stopped after a failed candidate') from self._failure
                     parameters, root, condition, candidate_id, submitted = args
                     # One transaction: no other lane can interleave a write or export.
+                    if condition != backend.nominal_condition():
+                        raise ValueError('Native candidate preparation must be nominal; derive training corners from its export')
                     backend.validate_condition(condition)
                     backend.circuit.validate_assignment(parameters)
                     started = perf_counter()
@@ -231,13 +233,15 @@ class NativeCandidateBackend(VirtuosoBridgeBackend):
     def validate_condition(self, condition):
         condition = condition or self.nominal_condition()
         self.circuit.validate_condition(condition)
-        if condition != self.nominal_condition():
-            raise UnsupportedCapability('Native parallel training is nominal-only')
+        if condition != self.nominal_condition() and condition.purpose != 'pvt_training':
+            raise UnsupportedCapability('Native workers accept only nominal or explicit training corners')
 
     def prepare_candidate(self, work_root, parameters, *, condition=None, candidate_id):
         self._require_connection()
         condition = condition or self.nominal_condition()
         self.validate_condition(condition)
+        if condition != self.nominal_condition():
+            raise UnsupportedCapability('Candidate preparation is nominal-only; derive corners from its original export')
         self.circuit.validate_assignment(parameters)
         artifact, applied, metadata = self.preparation.prepare(parameters, str(work_root), condition, candidate_id)
         if (metadata['candidate_id'] != candidate_id or artifact.condition != condition

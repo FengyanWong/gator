@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .codec import VERSION, identity
+from analog_optimizer.measurements.specs import REWARD_VERSION, RewardSettings
 
 
 @dataclass
@@ -49,6 +50,12 @@ class RunRecorder:
         return self.store.call('start', eval_id, parameters,
                                dict(netlist_sha256=record['netlist_sha256'], job_id=record['export_job_id']))
 
+    def launch_intent(self, eval_id, intent):
+        return self.store.call('launch_intent', eval_id, intent)
+
+    def launch_result(self, eval_id, result):
+        return self.store.call('launch_result', eval_id, result)
+
     def finish(self, record, result, observation, previous, action, operating_points=None):
         # These fields already have authoritative result/request/condition entries.
         # Keep diagnostics, projection details and timings, not a second raw result.
@@ -82,6 +89,10 @@ class RunRecorder:
                 data.update(underlying_status=data['status'], status='execution_error',
                             error_class=record.get('exception_type'), error_summary=record.get('error', ''))
         data.update(environment=environment, elapsed_seconds=record['elapsed_seconds'])
+        if record.get('jobs'):
+            data['simulator_invocations'] = sum(job.get('confirmed_calls', 0) for job in record['jobs'])
+            data['unconfirmed_invocations'] = sum(job.get('uncertain_calls', 0) for job in record['jobs'])
+            data['invocation_uncertain'] = bool(data['unconfirmed_invocations'])
         transition = None
         if action is not None:
             transition = dict(observation=previous, next_observation=observation, proposal=dict(action.proposal),
@@ -91,7 +102,8 @@ class RunRecorder:
                                                   if isinstance(data['applied_parameters'], dict) else data['applied_parameters']),
                               candidate_id=record['candidate_id'],
                               record_path=f"sqlite:{self.run_id}/{record['candidate_id']}",
-                              action_version='absolute-group-v1', reward_version='negative_weighted_mean_capped_violation-v1',
+                              action_version='absolute-group-v1', reward_version=REWARD_VERSION,
+                              reward_settings=observation.reward_settings if observation is not None else RewardSettings(**record['reward_settings']),
                               reward_components=dict(violations=record.get('violations'), evaluation_errors=record.get('evaluation_errors')),
                               replay_eligible=record.get('replay_eligible', False),
                               episode=record['episode'], step=record['step'], worker_id=self.worker_id,

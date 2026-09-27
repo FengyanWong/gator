@@ -1,3 +1,4 @@
+import { useAsyncAction } from '../store';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePopupWindow } from './popupWindow';
@@ -17,24 +18,19 @@ export function TaskFileWindow({ text, title, onApply, onClose }: {
   const [draft, setDraft] = useState(text);
   const [problems, setProblems] = useState<string[] | null>(null);
   const [message, setMessage] = useState<Json>(null);
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => { setDraft(text); setProblems(null); setMessage(null); }, [text]);
   useEffect(() => { open(); }, []);
 
-  const apply = async () => {
-    setBusy(true); setMessage(null);
-    try {
-      const checked = await api.taskFileCheck(draft);
-      setProblems(checked.problems);
-      if (checked.ok) {
-        onApply(checked.rows, checked.extras);
-        setMessage({ level: 'ok', text: 'Applied: the editors now hold these rows. Press "Save task" to store them; Undo takes them back.' });
-      }
-    } catch (e: any) {
-      setMessage({ level: 'error', text: problemText(e) });
-    } finally { setBusy(false); }
-  };
+  const { busy, run } = useAsyncAction(e => setMessage({ level: 'error', text: problemText(e) }), () => setMessage(null));
+  const apply = () => run('apply', async () => {
+    const checked = await api.taskFileCheck(draft);
+    setProblems(checked.problems);
+    if (checked.ok) {
+      onApply(checked.rows, checked.extras);
+      setMessage({ level: 'ok', text: 'Applied: the editors now hold these rows. Press "Save task" to store them; Undo takes them back.' });
+    }
+  });
 
   if (blocked) return <p className="error">The browser blocked the new window. Allow pop-ups for this page, then press "Task file" again.</p>;
   if (!popup || !root) return null;
@@ -45,8 +41,8 @@ export function TaskFileWindow({ text, title, onApply, onClose }: {
         <b> Save task</b>. The <code>_help</code> part says what each part is.</p>
       <textarea spellCheck={false} value={draft} onChange={e => { setDraft(e.target.value); setProblems(null); setMessage(null); }} />
       <div className="row">
-        <button className="primary" disabled={busy} onClick={apply}>{busy ? 'Checking...' : 'Apply to editors'}</button>
-        <button disabled={busy || draft === text} onClick={() => { setDraft(text); setProblems(null); setMessage(null); }}
+        <button className="primary" disabled={!!busy} onClick={apply}>{busy ? 'Checking...' : 'Apply to editors'}</button>
+        <button disabled={!!busy || draft === text} onClick={() => { setDraft(text); setProblems(null); setMessage(null); }}
           title="Back to the file as it was opened: the editors' rows at that moment.">Revert</button>
         <button onClick={onClose}>Close</button>
       </div>

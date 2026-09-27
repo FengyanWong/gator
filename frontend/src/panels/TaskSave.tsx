@@ -1,3 +1,4 @@
+import { useAsyncAction } from '../store';
 import { Icon } from './Icons';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -35,7 +36,6 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   hasCopy: boolean; config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; onSaved: (made: Json) => void;
   bar: HTMLElement | null; notes: HTMLElement | null }) {
   const [name, setName] = useState('');
-  const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<Json>(null);
   const [extras, setExtras] = useState<Json>({});
   const [askFrequency, setAskFrequency] = useState(false);                    // the save asked for the ring oscillator's rough frequency
@@ -59,20 +59,18 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   const report = (e: any) => {
     setMessage({ level: 'error', text: problemText(e, virtuosoGateText) });
   };
-  const save = async (more: Json = {}) => {
-    setBusy('save'); setMessage(null);
+  const { busy, run } = useAsyncAction(e => {
+    if (e.detail?.code === 'needs_expected_frequency') { setAskFrequency(true); setMessage({ level: 'warn', text: e.detail.message }); }
+    else report(e);
+  }, () => setMessage(null));
+  const save = (more: Json = {}) => run('save', async () => {
     const sent = { ...extras, ...more };
-    try {
-      const made = await api.taskSave({ profile_id: profileId, name: taskName, config, library, cell, task, as_new: false, extras: sent });
-      setExtras(sent); setAskFrequency(false);
-      const kept = made.created ? '' : made.baseline_kept ? ' The recorded baseline still holds.' : made.changed?.length ? ' The recorded baseline no longer holds (what is measured changed): run a new baseline.' : '';
-      setMessage({ level: 'ok', text: `${made.created ? `Saved the new task ${made.task_key}.` : `Saved ${made.task_key}, revision ${made.revision}.`}${made.runnable ? '' : ' It can be opened and edited; running Maestro-measured tasks comes with the next part.'}${kept}` });
-      onSaved(made);
-    } catch (e: any) {
-      if (e.detail?.code === 'needs_expected_frequency') { setAskFrequency(true); setMessage({ level: 'warn', text: e.detail.message }); }
-      else report(e);
-    } finally { setBusy(null); }
-  };
+    const made = await api.taskSave({ profile_id: profileId, name: taskName, config, library, cell, task, as_new: false, extras: sent });
+    setExtras(sent); setAskFrequency(false);
+    const kept = made.created ? '' : made.baseline_kept ? ' The recorded baseline still holds.' : made.changed?.length ? ' The recorded baseline no longer holds (what is measured changed): run a new baseline.' : '';
+    setMessage({ level: 'ok', text: `${made.created ? `Saved the new task ${made.task_key}.` : `Saved ${made.task_key}, revision ${made.revision}.`}${made.runnable ? '' : ' It can be opened and edited; running Maestro-measured tasks comes with the next part.'}${kept}` });
+    onSaved(made);
+  });
   const openFile = async () => {
     setMessage(null);
     try {

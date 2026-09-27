@@ -1,8 +1,8 @@
 """Simulation conditions are evaluation inputs, never sizing action dimensions.
 
-M3 keeps training nominal. PVT and Monte Carlo carry an explicit validation role
-so their results cannot accidentally be admitted to nominal replay. The MC types
-reserve sample identity; a backend must explicitly implement statistical runs.
+Training uses explicit nominal and pvt_training identities. Post-validation
+and Monte Carlo retain separate purposes and cannot enter training replay.
+The MC types reserve sample identity; statistical execution is not implemented.
 """
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ class SimulationCondition:
     def __post_init__(self):
         if not isinstance(self.corner, PVTCorner):
             raise ValueError('A typed PVT corner is required')
-        if self.purpose not in ('nominal', 'pvt_validation', 'mc_validation'):
+        if self.purpose not in ('nominal', 'pvt_training', 'pvt_validation', 'mc_validation'):
             raise ValueError('Unsupported evaluation purpose')
         if self.monte_carlo is not None and not isinstance(self.monte_carlo, MonteCarloConfig):
             raise ValueError('A typed Monte Carlo configuration is required')

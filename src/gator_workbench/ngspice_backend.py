@@ -25,7 +25,7 @@ patterns before anything runs) and are passed as argv entries, never through a s
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 import hashlib
 import math
 import os
@@ -39,6 +39,7 @@ from uuid import uuid4
 from analog_optimizer.backends.backend import (BackendNotConnected, NetlistArtifact, SimulationResult, SimulationStatus,
                                                UnsupportedCapability, VirtuosoBackend)
 from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
+from analog_optimizer.measurements.specs import RewardSettings
 
 from . import ngspice_netlist
 from .ngspice_link import PROGRAM, SSH_HOST, ssh_argv
@@ -326,6 +327,7 @@ class NgspiceEnvFactory:
     circuit_id: str
     source: str
     plan: object = None              # spec_equations.SpecPlan: computed specs added to every result
+    reward_settings: RewardSettings = field(default_factory=RewardSettings)
 
     def __call__(self, lane):
         from analog_optimizer.envs.sizing import CircuitSizingEnv
@@ -335,4 +337,5 @@ class NgspiceEnvFactory:
             self.plan.wrap(backend)
         return CircuitSizingEnv(backend, self.graph, self.specs, Path(self.work_root) / f'worker-{lane}',
                                 max_steps=self.max_steps, timeout_seconds=self.timeout_seconds,
-                                stop_on_success=self.stop_on_success, expected_origin='real')
+                                stop_on_success=self.stop_on_success, expected_origin='real',
+                                reward_settings=self.reward_settings)

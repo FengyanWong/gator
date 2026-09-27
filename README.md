@@ -2,6 +2,8 @@
 
 **M6 is closed at pilot scale (2026-09-20):** the cross-category pipeline was built, run on real circuits and independently audited, while the question of whether transfer or a graph transformer helps is not answered at this scale; see the closing entry in [project decisions](docs/decisions.md). In the pilot, the [three category holdouts](docs/m6-real-results.md) used exactly 2,811 Spectre calls and 1,566 SAC updates, with final circuit/baseline restoration passed. The independent audit verified all 2,811 saved candidate packages and 162 learner checkpoints with zero new simulator calls, and the regression suite of that closure passed 544 tests (the workbench, built afterwards, has its own suite - see its record for the current count). GT adaptation achieved 2/3 OTA, 3/3 LDO and 3/3 VCO successes; coordinate search achieved 3/3 in every class without pretraining. This short experiment on known circuits does not establish a GT advantage. The [frozen protocol](docs/m6-real-protocol.md), [VCO runtime qualification](docs/m6-vco-runtime.md) and earlier [synthetic benchmark](docs/m6-cross-category.md) remain separate evidence.
 
+**Current encoders (2026-09-26):** `graph_transformer`, `rgcn` and `gatv2` only. GATv2 replaces GATv1 for new training; old `gat` configurations and weights are not silently migrated. MLP and GCN have been removed from the optimizer, CLI and workbench; port-GNN was removed earlier. New M6 defaults plan 873 synthetic evaluations or 1,488 real calls. The six-encoder results above are historical. Checkpoints from before this change require their matching historical source and dependencies; see [decisions](docs/decisions.md).
+
 ## Workbench (web UI, since 2026-09-20)
 
 `src/gator_workbench/` (FastAPI backend) and `frontend/` (React/TypeScript) make the optimizer usable from a browser: circuits from registered tasks or read from Virtuoso, the Parameters / Probes / Specs editors, run control, data-only outputs, an optional agent that proposes configurations, and a check of a run's best designs at five PVT corners. Real simulations stay a user-authorized budget. What each feature does: [docs/workbench.md](docs/workbench.md); its development record: the index [docs/frontend_implementation_status.md](docs/frontend_implementation_status.md) and [docs/workbench-log/](docs/workbench-log/).
@@ -61,8 +63,8 @@ python examples/train_synthetic_sac.py
 # M5 的六方法协议（graph_transformer + port_gnn）自 2026-09-24 起不可用：port_gnn 已删除，只有源码提交 bbdfe36 仍能运行它。
 # 不带 --encoders 时现在只跑 graph_transformer 的 scratch/frozen/adapt + random + pattern search（解析 toy 后端）。
 python examples/benchmark_transfer.py
-# M6 前：四架构的最小迁移流程验收。
-python examples/benchmark_transfer.py --encoders graph_transformer mlp rgcn gat --seeds 17 --pretrain-steps 2 --test-steps 2 --max-calls 120
+# 三种保留架构的最小迁移流程验收。
+python examples/benchmark_transfer.py --encoders graph_transformer rgcn gatv2 --seeds 17 --pretrain-steps 2 --test-steps 2 --max-calls 120
 # M6: validate the cross-category suite and its total budget, without evaluations.
 python examples/benchmark_cross_category.py --dry-run
 ```
@@ -92,7 +94,7 @@ PYTHONPATH=src python3 -m analog_optimizer.demo tests/fixtures/synthetic/vco.scs
 | `src/analog_optimizer/measurements/specs.py` | 单位、有效性、min/max/range 规格和有限奖励 |
 | `src/analog_optimizer/envs/` | 单 worker 环境、有限步数、失败处理、候选日志和恢复 |
 | `src/analog_optimizer/evaluation/` | nominal top-k/corner 汇总纯函数，以及 M5 划分检查、定额迁移实验和成本汇总；不调度 PVT/MC |
-| `src/analog_optimizer/models/` | 固定特征/规格注册表、packed batch、可切换 GT/MLP/GCN/RGCN/GAT 编码器（port-GNN 已于 2026-09-24 删除）、group actor/critic |
+| `src/analog_optimizer/models/` | 固定特征/规格注册表、packed batch、可切换 GT/RGCN/GATv2 编码器、group actor/critic |
 | `src/analog_optimizer/training/` | nominal replay、连续 SAC、串行/并行 collector、checkpoint 保存/恢复 |
 | `src/analog_optimizer/recording/` | 单 writer SQLite、静态去重、动态状态、摘要、容量/附件清理、checkpoint、只读查询与导出 |
 | `tests/fixtures/synthetic/` | 三个合成网表，使用同一个解析器 |

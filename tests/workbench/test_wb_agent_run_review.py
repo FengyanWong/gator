@@ -1,19 +1,12 @@
 """What a run produced, as the digest an agent is given (it reads no file), and the request built on it.
 Fake CLI fixtures and a real MOCK run only - no model is called."""
 import json
-import os
-from pathlib import Path
-import stat
-import sys
 
 from fastapi.testclient import TestClient
 import pytest
 
 from gator_workbench.agents import AgentError, AgentRequest, prompts, run_digest
-from gator_workbench.api.app import create_app
-from helpers import execute, make_config
-
-FIXTURE = Path(__file__).parent / 'fixtures' / 'fake_cli.py'
+from helpers import cli, execute, make_config, workbench_app
 
 
 def evaluation(i, *, feasible=False, violation=0.1, status='ok', source='sac_policy', reward=-0.1, valid=True):
@@ -83,16 +76,9 @@ def test_a_run_review_needs_a_run_and_shows_its_results_as_data(tmp_path):
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    bin_dir = tmp_path / 'bin'
-    bin_dir.mkdir()
-    target = bin_dir / 'claude'
-    target.write_text(f'#!{sys.executable}\n' + FIXTURE.read_text())
-    target.chmod(target.stat().st_mode | stat.S_IXUSR)
-    monkeypatch.setenv('PATH', f'{bin_dir}{os.pathsep}{os.environ["PATH"]}')
-    monkeypatch.setenv('FAKE_CLI_SCENARIO', 'settings_review')
-    monkeypatch.setenv('FAKE_CLI_RECORD', str(tmp_path / 'record.json'))
-    return TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False))
+def client(tmp_path, cli):
+    cli('settings_review')
+    return TestClient(workbench_app(tmp_path))
 
 
 def test_a_real_mock_run_is_condensed_and_handed_to_the_agent_over_http(client, tmp_path):

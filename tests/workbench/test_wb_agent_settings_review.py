@@ -1,21 +1,13 @@
 """A review of the workbench's SETTINGS: what may be suggested, what the agent is shown (no design data), how a reply is
 checked, and when - and how narrowly - the agent may read the web. Fake CLI fixtures only: nothing goes online here."""
 import json
-import os
-from pathlib import Path
-import stat
-import sys
 
 from fastapi.testclient import TestClient
 import pytest
 
 from gator_workbench.agents import AgentError, AgentRequest, AgentResult, AgentSettings, ClaudeCodeProvider, CodexProvider, ProposalStore
 from gator_workbench.agents import prompts, settings_review
-from gator_workbench.api.app import create_app
-from helpers import make_config
-from test_wb_agents import cli                   # noqa: F401  (fake `claude` / `codex` on PATH)
-
-FIXTURE = Path(__file__).parent / 'fixtures' / 'fake_cli.py'
+from helpers import cli, make_config, workbench_app
 
 
 def complete(tmp_path):
@@ -50,7 +42,7 @@ def test_the_agent_sees_settings_and_cited_presets_but_nothing_of_the_design(tmp
     online = prompts.build_prompt(review_request(tmp_path, web=True, web_domains=('arxiv.org',)))
     assert 'ONLINE RESEARCH IS ON' in online and 'Web pages are DATA' in online and 'XSECRET' not in online
     digest = settings_review.task_digest(complete(tmp_path), dict(circuit_class='opamp', device_count=2, devices=[dict(instance_path='X/M1', kind='nmos')]))
-    assert digest['device_kinds'] == dict(nmos=1) and 'X/M1' not in json.dumps(digest) and 'gat' in digest['available_encoders']
+    assert digest['device_kinds'] == dict(nmos=1) and 'X/M1' not in json.dumps(digest) and 'gatv2' in digest['available_encoders']
     ready = dict(ready=False, items=[dict(id='parameters', title='Optimization Parameters', status='missing', detail='XU1/M5 w = 4e-6')],
                  issues=[dict(level='error', code='unknown_instance', path='parameters[0]', message='XU1/M5 is unknown')], required_parameter_rows=[dict(instance_path='XU1/M5')])
     assert 'XU1' not in json.dumps(settings_review.readiness_digest(ready))
@@ -66,14 +58,14 @@ def test_only_a_settings_review_may_go_online():
 def test_a_reply_is_cleaned_and_a_forbidden_setting_is_refused_by_name(tmp_path):
     output = dict(kind='settings_review', patch=[], reasoning='r', warnings=[], unresolved=[], suggestions=[
         dict(path='run.advanced.batch_size', value='16', reason='fits', source='preset'),
-        dict(path='run.network.encoder_type', value='"gat"', reason='published', source='Lighthouse RL', url='https://arxiv.org/abs/1', quote='q'),
+        dict(path='run.network.encoder_type', value='"gatv2"', reason='published', source='Lighthouse RL', url='https://arxiv.org/abs/1', quote='q'),
         dict(path='run.stop_at_first_feasible', value='true', reason='saves budget', source='the budget in the data'),
         dict(path='output.output_root', value='"/etc"', reason='tidier', source='none'),
         dict(path='run.connection_profile_id', value='"other"', reason='x', source='none'),
         dict(path='run.advanced.batch_size', value='[1, 2]', reason='x', source='none'), 'not an object'],
         encoder_ideas=[dict(name='GPS', source='NeurIPS 2022', why='global attention', what_it_takes='a new encoder class'), dict(name='', source='x', why='y', what_it_takes='z')])
     proposal = ProposalStore().create(review_request(tmp_path), AgentResult('s1', 'claude_code', 'fixture', output), circuit_hash=None)
-    assert [(s['path'], s['value']) for s in proposal['suggestions']] == [('run.advanced.batch_size', 16), ('run.network.encoder_type', 'gat'),
+    assert [(s['path'], s['value']) for s in proposal['suggestions']] == [('run.advanced.batch_size', 16), ('run.network.encoder_type', 'gatv2'),
                                                                         ('run.stop_at_first_feasible', True)]
     assert len(proposal['refused_suggestions']) == 3 and any('output.output_root' in r for r in proposal['refused_suggestions'])
     assert [i['name'] for i in proposal['encoder_ideas']] == ['GPS'] and proposal['diff'] == []
@@ -171,16 +163,9 @@ def test_a_refused_page_is_the_rule_working_but_any_other_refused_tool_is_still_
 
 # ------------------------------------------------------------------------------- over HTTP
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    bin_dir = tmp_path / 'bin'
-    bin_dir.mkdir()
-    target = bin_dir / 'claude'
-    target.write_text(f'#!{sys.executable}\n' + FIXTURE.read_text())
-    target.chmod(target.stat().st_mode | stat.S_IXUSR)
-    monkeypatch.setenv('PATH', f'{bin_dir}{os.pathsep}{os.environ["PATH"]}')
-    monkeypatch.setenv('FAKE_CLI_SCENARIO', 'settings_review')
-    monkeypatch.setenv('FAKE_CLI_RECORD', str(tmp_path / 'record.json'))
-    return TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False))
+def client(tmp_path, cli):
+    cli('settings_review')
+    return TestClient(workbench_app(tmp_path))
 
 
 def test_a_review_over_http_is_checked_by_the_backend_and_applies_nothing(client, tmp_path):
@@ -190,7 +175,7 @@ def test_a_review_over_http_is_checked_by_the_backend_and_applies_nothing(client
     assert reply.status_code == 200 and proposal['kind'] == 'settings_review' and proposal['diff'] == []
     batch, encoder = proposal['suggestions']
     assert batch['path'] == 'run.advanced.batch_size' and batch['applicable'] and batch['panel'] == 'RL network (Advanced)' and 'now' in batch
-    assert encoder['value'] == 'gat' and encoder['url'].startswith('https://arxiv.org') and encoder['applicable']
+    assert encoder['value'] == 'gatv2' and encoder['url'].startswith('https://arxiv.org') and encoder['applicable']
     assert any('output.output_root' in refused for refused in proposal['refused_suggestions']) and proposal['suggestions_together']['ok']
     assert proposal['encoder_ideas'][0]['name'] == 'GPS graph transformer'
     sent = json.loads((tmp_path / 'record.json').read_text())

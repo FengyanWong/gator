@@ -2,8 +2,8 @@
 
 Nothing here re-implements optimizer behaviour. Variables become the existing
 ``ParameterGroup``/``ParameterBinding`` (so ``ActionMapper`` legalizes actions
-exactly as before) and targets become the existing ``MetricSpec`` (so the reward
-is the existing negative weighted mean capped violation). Feasibility is checked
+exactly as before) and targets become ``MetricSpec`` with the v2 reward contract.
+Feasibility is checked
 separately, from raw values and thresholds, by ``hard_constraints``. Each spec
 judges the value of its equation over the probes (``spec_equations``).
 """
@@ -147,12 +147,15 @@ def build_specs(config: WorkbenchConfig):
         unit = units.canonical_unit(t.unit)
         specs.append(MetricSpec(metric_id=t.metric_id, unit=unit, comparator=comparator,
                                 scale=units.scale_to_canonical(normalization_scale(t), t.unit),
-                                lower=lower, upper=upper, weight=t.soft_weight, required=t.hard, active=t.active))
+                                lower=lower, upper=upper, weight=t.soft_weight, required=t.hard, active=t.active,
+                                objective={'none': 'none', 'minimize': 'min', 'maximize': 'max'}[t.direction_after_feasible],
+                                nominal_only=t.nominal_only))
         equation = t.equation.strip()
         targets.append(dict(metric_id=t.metric_id, equation=equation,
                             probe=equation if equation in {m.measurement_id for m in config.measurements} else None,
                             unit=unit, lower=lower, upper=upper, hard=t.hard, active=t.active, constraint=t.constraint,
-                            tolerance_applied=tolerance, scale=specs[-1].scale))
+                            tolerance_applied=tolerance, scale=specs[-1].scale, nominal_only=t.nominal_only,
+                            objective=specs[-1].objective))
         if t.active and t.direction_after_feasible != 'none':
             preference = dict(metric=t.metric_id,
                               direction='min' if t.direction_after_feasible == 'minimize' else 'max')
@@ -173,6 +176,7 @@ def build_spec_schema(config: WorkbenchConfig):
 
 
 def _task_spec_schema(config: WorkbenchConfig):
+    """The registry's `version` is its name (identity); the column layout is the code's (`SpecSchema.layout`)."""
     from analog_optimizer.models.inputs import SpecSchema
     custom = config.run.advanced.spec_registry
     if custom is None:
@@ -189,6 +193,24 @@ def _task_spec_schema(config: WorkbenchConfig):
                           metrics=tuple((e['metric_id'], units.canonical_unit(e['unit']), float(e['reference'])) for e in generated))
     return SpecSchema(version='spec-input-custom-v1',
                       metrics=tuple((e.metric_id, units.canonical_unit(e.unit), float(e.reference)) for e in custom))
+
+
+def reward_settings(config):
+    from analog_optimizer.measurements.specs import RewardSettings
+    return RewardSettings(**config.run.reward.model_dump())
+
+
+def training_conditions(config):
+    if config.run.conditions.policy == 'off':
+        return ()
+    from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
+    from .tasks import _verified_profile
+    if config.circuit.task_id != 'real:gpdk045_ota7':
+        raise CompileError('Only the real OTA7 profile supports training corners')
+    profile = _verified_profile('gpdk045_ota7')
+    corners = {row['id']: PVTCorner(**row) for row in profile.condition_config['screening_corners']}
+    return (SimulationCondition(profile.nominal_corner),) + tuple(
+        SimulationCondition(corners[key], 'pvt_training') for key in config.run.conditions.corners)
 
 
 def compile_task(config: WorkbenchConfig, graph) -> CompiledTask:

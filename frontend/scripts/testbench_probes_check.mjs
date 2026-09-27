@@ -102,8 +102,7 @@ try {
   const shown = selector => far.evaluate(`(() => { const e = ${WIN}.querySelector(${JSON.stringify(selector)}); return e && e.checkVisibility() ? e.textContent.replace(/\\s+/g, ' ').trim() : null; })()`);
   const value = label => far.evaluate(`${FIELD(label)}?.value`);
   const options = label => far.evaluate(`[...${FIELD(label)}.options].map(o => o.value)`);
-  const choose = async (label, v) => { await far.evaluate(`(() => { const s = ${FIELD(label)}; const w = s.ownerDocument.defaultView;
-    Object.getOwnPropertyDescriptor(w.HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(v)}); s.dispatchEvent(new w.Event('change', { bubbles: true })); })()`); await quiet(); };
+  const choose = async (label, v) => { await far.setValue(`${FIELD(label)}`, v); await quiet(); };
   const press = async (label, where = BUTTON) => { await (where === BUTTON ? far : page).evaluate(`${where(label)}.click()`, true); await quiet(); };
   const quiet = async (ms = 700) => { let seen = -1; while (seen !== calls.length) { seen = calls.length; await sleep(ms); } };
   const counts = () => evaluate(`Object.fromEntries([...document.querySelectorAll('section.editors .tabs button')].map(b => /^(\\w+) \\((\\d+)\\)$/.exec(b.textContent.trim())).filter(Boolean).map(m => [m[1], Number(m[2])]))`);
@@ -112,7 +111,7 @@ try {
   const imports = (from = 0) => calls.slice(from).filter(c => c.op === 'import').map(c => `${c.cell} ${c.testbench ?? '-'}`);
   const shot = name => far.shot(path.join(out, name), WIN, { scale: 2, maxHeight: 1400, beyond: true });
 
-  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose'], answer, { others: 'read' });
+  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose'], answer, { others: 'read', connection: 'lab' });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   for (let i = 0; i < 100 && !(await evaluate(`!!(${COLUMN_BUTTON('Load task')})`)); i++) await sleep(100);

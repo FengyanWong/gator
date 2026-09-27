@@ -278,3 +278,115 @@
 - User decision after the review "which encoders can be ignored or deleted": `port_gnn` (the M5 port message-passing control, legacy `attention_mode='port_message_passing'`) is deleted from `src/analog_optimizer/models/encoders.py`, from the benchmark runner and from the M6 protocol configuration. It answered the same question as `rgcn` (edge-typed message passing without attention), had no published reference behind its exact form, and every encoder scored alike in the M6 real pilot (adaptation 2/3, 3/3, 3/3 for all six).
 - Consequence accepted by the user, stated before the decision: the source digest changed from `02127bc3...` to `aa987cf0e3033d9c87b16693e10f8632eb69942d0d8d182ad7e3ac61ce9aecd1`. Every checkpoint saved before, and the M6 audit re-runs, load only from source commit `bbdfe365718bd0e780aecafd60eabd8f1306fdf0`, the last that carries port_gnn. The executed M6 protocol keeps its six-encoder definition inside `artifacts/local/m6-real-protocol/protocol.json` (with `source_sha256`); `configs/m6_real_cross_category.json` now lists five encoders, so a re-run of that protocol plans 2,370 calls instead of the 2,811 of record.
 - Naming the encoder is refused in words everywhere it could be typed: `ModelConfig` (both spellings), `benchmark_models` (`settings['encoders']` is now required; the omitted-selection M5 six-method protocol went with port_gnn) and the workbench run schema. Five encoders remain: `graph_transformer` (default), `gat`, `rgcn`, `gcn`, `mlp`. The test that exercised port-GNN's port gradients (`tests/test_transfer.py`) left with it; the per-encoder gradient tests in `tests/test_graph_sac.py` cover the five.
+
+## Only Graph Transformer, RGCN and GAT remain (2026-09-26)
+
+- User first restricted M6 to RGCN, GAT and Graph Transformer, then explicitly requested deletion of the other encoders. Removed `NodeMLPBlock` and `GCNBlock`, their optimizer registrations, CLI choices, workbench schema options and publication presets. `port_gnn` was already removed. The shared feed-forward `mlp()` helper remains part of the retained encoders and SAC heads; it is not an encoder option.
+- `ModelConfig`, the benchmark configuration and the workbench reject removed encoder names explicitly. The workbench offers only `graph_transformer`, `rgcn` and `gat`, including its frontend fallback. Existing settings and experiment artifacts are preserved. Generic PyG graph-export tests remain independent of optimizer encoder availability.
+- New M6 runs use three encoders, each with scratch/frozen/adaptation, plus random and coordinate search: 11 target methods. The default synthetic suite plans 873 evaluations; the one-seed/two-step smoke plans 189. The physical manifest plans and caps 1,488 candidate packages (486 source + 108 validation + 891 target + 3 final baselines). No real run or new physical frozen protocol was created.
+- Source digest changed from `aa987cf0e3033d9c87b16693e10f8632eb69942d0d8d182ad7e3ac61ce9aecd1` to `75c7cfaccd163604760a6e0c1a71e79e69b80e2c125381d092c117e15a9ef43f`. Exact `SACLearner.load`/workbench resume needs matching historical source and dependencies: `9bc488f` is the last five-encoder source, and `bbdfe36` matches the recorded six-encoder physical M6 pilot. Workbench fine-tune/frozen modes retain their existing shape/schema checks and source-difference warning for supported architectures; deleted encoders cannot be reconstructed. No compatibility check was bypassed.
+- Historical six-encoder result tables, checkpoints, audits and strict VCO requalification evidence were not changed. Current run instructions and budgets now identify the three-encoder configuration; historical plans must be checked with their pinned source/configuration. M6 remains closed at pilot scale, without a new transfer-performance claim.
+- Validation: full regression **1,223 passed**, zero failures/skips, in 117.29 s with local IPC enabled; after the final error-message clarification, all **12 focused rejection tests passed**. TypeScript `tsc --noEmit` passed. The first sandboxed targeted run was interrupted after 161 passes when it stalled; the complete rerun passed. Only synthetic/test-fixture execution was used, with zero new real simulator or paid agent calls. Frontend browser checks were updated for RGCN, but this session did not rebuild the live dist or rerun the browser script.
+
+Final-source synthetic smoke and independent audit: **189 evaluations, 45 SAC updates and 27 checkpoints**, all restoration/isolation/exact-recovery checks passed, zero real calls. Scratch evidence: `/tmp/gator-three-encoders-final/db9586935928441dbda2159769239794/audit.json`; the source digest matches the final value above.
+
+## Replace GATv1 with GATv2 (2026-09-26)
+
+- User explicitly requested replacing the old GAT after discussing its attention and checkpoint compatibility. The only encoder choices are now `graph_transformer`, `rgcn` and `gatv2`; GT remains the default. `PortGATv2Block` uses PyG `GATv2Conv` with port edge features, separate source/target projections (`share_weights=False`), no inserted self-loops and no additional internal residual. The existing outer residual, LayerNorm/feed-forward, goal inputs, parameter-group actions, critics and SAC semantics are unchanged.
+- Optimizer/CLI/workbench selections, M6 manifest, benchmark labels, attention capture and agent settings guidance all use `gatv2`. Old `gat` configurations are rejected with an explicit replacement message; old GAT weights are not migrated. Saved `gat` preset entries are left untouched and are not read as `gatv2` settings. Preset numbers retain the former GAT starting values, with every cited field marked as borrowed from a different architecture. Historical GAT paper quotations, parameter counts, results and artifacts retain their original meaning.
+- At hidden 32/four heads, the attention convolution has 3,200 parameters versus the former GATv1 convolution's 2,176. This is not a parameter-matched comparison or evidence of improved optimization/generalization. The three-encoder M6 budgets remain 873 default synthetic evaluations and 1,488 planned real calls. No real run or new physical frozen protocol was created.
+- Optimizer source digest changed from `75c7cfaccd163604760a6e0c1a71e79e69b80e2c125381d092c117e15a9ef43f` to `5e8a1bc155e60233d1bfa5eb8ec20e7d3d9c6fbd57b70eadfbec8a192e4ada54`. A verified snapshot of the preceding optimizer source, constraints and package declaration is preserved at `artifacts/local/optimizer-source-snapshots/75c7cfaccd163604760a6e0c1a71e79e69b80e2c125381d092c117e15a9ef43f/`; its `snapshot.json` records the matching digest. Exact resume still requires the checkpoint's source/dependency contract. Existing workbench transfer compatibility checks are unchanged; they do not make GATv1 weights compatible with GATv2. No historical checkpoint or frozen evidence was rewritten.
+- Validation: **1,230 tests passed**, zero failures/skips (139.62 s, 12 workers with local IPC), including GATv2 SAC updates, exact next-update restoration, mixed graph batches, port/action gradients, saved-model structure and graph-view attention normalization. Legacy configuration/settings rejection is covered. `tsc --noEmit` passed; browser fixtures were updated, but the live frontend was not rebuilt or the backend restarted. Full-suite JUnit: `/tmp/gator-gatv2-tests.xml`.
+- Final-source M6 smoke and independent audit: **189 synthetic evaluations, 45 SAC updates, 27 checkpoints**, all environments restored, train/validation/test isolated and checkpoint recovery verified. Evidence: `/tmp/gator-gatv2-smoke/39b99aaaf550426a8621a2df353afdc9/audit.json`. Synthetic CLI dry-run lists exactly the three retained encoders and 873 evaluations. Physical planning is tested with fixture bindings; a direct CLI dry-run without bindings correctly refuses to prepare a plan. Zero real simulator or paid agent calls.
+
+The initial sandboxed focused test run stalled after 149 passes on local IPC. Automatic approval review first rejected the interrupt because it mistook the sandbox wrapper PID for pytest; a targeted process check confirmed the child PID, and the stop was approved. SIGINT did not end the blocked process, so an approved SIGTERM stopped only that run. The complete regression rerun above passed with local IPC enabled.
+
+## Reward v2: worst case across test conditions - preflight stopped (2026-09-26)
+
+- The reward design decision of 2026-09-24 ("write the plan with permission of changing the optimizer part for astra for the reward design plan") was invoked for implementation on 2026-09-26. The user required section 6 order, no commit/push/live frontend build/backend on 8765, and a stop when a requirement cannot be met as written. Step 1 is complete; implementation stopped before step 2, pending clarification of S2/G11 and P5/G10.
+- S2 at worst-spec share 1 ignores soft-spec violations, contradicting G11's universal "0 iff every active spec is met". A checked two-spec example has hard violation 0, soft violation 1, equal weights: nominal reward -0.5, S2 reward at share 1 is 0. Separately, P5/G10 demand five encoders but the current package has only Graph Transformer, RGCN and GATv2 after the user's changes in records 7.86-7.87. Proposed corrections are recorded but not applied; no gate was relaxed.
+- Exact list of optimizer files changed by this task: **none (`[]`)**. Before and after digest are both `5e8a1bc155e60233d1bfa5eb8ec20e7d3d9c6fbd57b70eadfbec8a192e4ada54`. The brief's `aa987cf0e3033d9c87b16693e10f8632eb69942d0d8d182ad7e3ac61ce9aecd1` is historical, not this task's measured baseline. Existing uncommitted work was preserved.
+- G7 baseline, using the default `synthetic:gpdk045_ota5` starter: task hash `5f181ef30c4ba6b5a1663871f07d48c9ed976334b6b8babd9870a7157c8a978a`, config hash `8d242d6799322f37853cde5e13613ef9c99fc4c027c9cd6a3e6d748f510d241d`. Full configuration saved in `artifacts/local/reward-v2-baseline.json`; no post-implementation comparison or end-to-end G7 run. G9 baseline recorded. G1 **not run** (0 candidates compared, differences not assessed). G8 **not run** (0 suite tests, duration not applicable); TypeScript and browser checks not run. G2-G6/G10/G11 execution not started; G11 has the specification contradiction above, not a passing result.
+- Not done: section 6 steps 2-7, including evaluator, observation/replay/checkpoint, operating-point input, condition scheduling/adapters, workbench/UI, identity script, implementation docs and acceptance suite. The user-required stop precedes these changes. Optional migration is not authorized. Cost: **zero simulator calls**, including synthetic; zero bridge/SSH/agent CLI calls; no backend started, live build, commit or push. All real Spectre behavior remains unverified.
+- Findings: `artifacts/local/reviews/astra-reward-v2.md` (git-ignored, requirement IDs and the proposed resolution). Workbench record **7.88**, the next free number under D3; 7.84 was already occupied and the rollover already completed. This entry records a blocked preflight, not delivery of reward v2.
+
+## Reward v2 replacement plan: real-flow validation and optimizer permission (2026-09-26)
+
+- The user said: "Dont use fictional MOCK, run real flow if test is needed. Consider the project, give a new plan with permission to modify optimizer code." Delivered [the replacement plan](plan-reward-v2-real-flow.md), with explicit permission for its listed optimizer modules. It supersedes the earlier plan/brief for implementation, including their no-simulation rule and MOCK acceptance stages. The earlier documents now point to it. This turn writes a plan; it does not implement or execute it.
+- Proposed reward: preserve the exact legacy default; explicitly select compressed violations and a 0.5 worst-hard-spec share for initial robust runs; evaluate all four additional corners for valid nominal candidates, including nominal failures to meet specs. Skip-on-fail training is deferred because its unmeasured corners make the comparison optimistic. Feasibility is a separate complete-coverage hard-spec verdict. Correct the lambda=1 property, preserve optional-coverage semantics and use the current GT/RGCN/GATv2 set.
+- Proposed margin revision: reward the tightest eligible hard-spec clearance, excluding zero-width equality constraints from the bonus but not from feasibility. The real OTA7 target `unity_downward_crossings == 1` would otherwise force the minimum margin to zero. Keep objective/margin bonuses off in the initial live learning smoke; preserve operating-point inputs from actual nominal DC measurements. Exact resume must refuse changed reward/condition contracts; permitted fine-tuning starts new replay/critics for changed rewards. Legacy failure termination stays in compatibility mode; robust attributed failures may continue with masked observations, without inventing new failure attribution.
+- Real qualification starts with the dedicated `real:gpdk045_ota7` flow and its existing two width groups. The plan proposes stage ceilings of **21 + 43 + 13 = 77** new Spectre invocations, including baseline/repeat/restoration confirmations, real save/resume and shared launch-budget validation. These are proposed engineering ceilings, not user-supplied numbers or spent calls. Launch capacity is reserved before dispatch for the whole candidate. A separate optional three-arm/three-seed reward study is costed at at most **999** calls and is not automatically launched as a software test. No MOCK or fake-backend result qualifies either stage. Pure calculations and replay of recorded real measurements remain explicitly labeled checks; unrun legacy synthetic-suite coverage must be disclosed.
+- Exact optimizer files changed by this planning turn: **[]**. Re-measured source digest remains `5e8a1bc155e60233d1bfa5eb8ec20e7d3d9c6fbd57b70eadfbec8a192e4ada54`; no checkpoint contract changed yet. Zero real or synthetic simulator calls, zero bridge/SSH/agent CLI calls, no backend started, no live frontend build, no commit or push. Budget arithmetic and source/encoder identity were checked locally; no implementation acceptance gates were run. Current simulator availability and all new real-flow behavior remain unverified. Workbench planning record: **7.89**.
+
+## Reward v2 implementation: real acceptance blocked by license visibility (2026-09-26)
+
+- The user invoked the replacement plan with "go on build the reward". Its explicitly permitted
+  optimizer changes are now integrated: versioned reward/coverage, tightest eligible clearance,
+  nominal operating points, v2 inputs/replay/checkpoints, derived OTA7 decks, whole-candidate launch
+  reservations, recording and workbench/UI plumbing. GT/RGCN/GATv2 blocks and SAC update equations
+  are retained. Current details and exact scope are in [reward-v2.md](reward-v2.md).
+- The pre-edit optimizer source was snapshotted without a commit. Digest changed from
+  `5e8a1bc155e60233d1bfa5eb8ec20e7d3d9c6fbd57b70eadfbec8a192e4ada54` to
+  `11e6265703332c3479072d76be3ebb771a345d3639f4b5486b4cd918b1e0cf98`; exactly 17 permitted
+  package files differ. Protected configs/examples and both default real OTA7 hashes are unchanged.
+  V1 checkpoints are refused, not migrated. Shared peer commits/builds were preserved; this task
+  did not commit, push, build live dist or operate the backend on 8765.
+- Final selected non-MOCK checks: 66 passed, 0 failed/errors/skips, 12.81 s; TypeScript passed.
+  Final-source identity checks all 2,811 historical REAL M6 records (2,808 fold + 3 final): bitwise
+  reward, absolute 1e-12, verdict and violation agreement all 2,811; zero exclusions. Historical-real
+  transitions exercise all three encoders with OP on/off, actual updates and exact next-update
+  recovery. These are not new on-policy runs or an old-checkpoint/PSF requalification.
+- A frozen no-call preflight passed bridge/profile/tunnel/daemon/readiness/Spectre, but license
+  visibility is `unknown / license_not_checkable`. Per the user's stop-and-ask instruction, real
+  stages A/B/C are unstarted: **0 new Spectre calls, 0 physical mutations, no restoration required**.
+  The user was asked to resolve the prerequisite or explicitly acknowledge unknown license status.
+  Final-source re-freeze, real stages, current-source scratch browser checks and physical failure/
+  success coverage remain outstanding. No optional study or replacement MOCK flow was run.
+- Section-8 gate results and raw paths:
+  `artifacts/local/reward-v2-real/20260926-implementation-01/acceptance-summary.json`.
+  A1/A2 pass their no-call checks; A3-A8 are blocked/partial, not full acceptance. Record **7.94**.
+- Final scope audit also found that `recording/reader.py`, absent from the permission list, still
+  rebuilds overview constraint rows from nominal metrics. The file was not edited; explicit limited
+  permission was requested. Core recording preserves all v2 data, but that legacy display remains
+  an implementation gap, not a passing robust report.
+
+## Reward v2: bounded real qualification completed (2026-09-26)
+
+- Follow-up authorization acknowledged `license_not_checkable` through the existing gate and
+  permitted the `recording/reader.py` repair. Spectre used normal licensing; no licensing bypass.
+  The reader/report now use stored condition results, actual bounds and explicit coverage.
+- A passed with 21 real calls. The first B attempt spent one nominal call before a missing `json`
+  import in the workbench commit path stopped persistence. Raw result and charged ledger survive;
+  there was no evaluation/job row or transition. Fixed the import, added regression coverage, and
+  asked before increasing B. User reply: **"允许 B 上限 44，总上限仍 77"**. The replacement freeze
+  pins passed A, the failed B evidence and repaired source. B then used 43 calls; C used 8.
+- Total **73 confirmed Spectre calls, 0 uncertain**, including all baseline/reset/restoration calls
+  and the failed-at-recording call. No automatic physical retries. B pause/save/resume produced
+  10 evaluations, 42 job rows, 8 transitions and 7 SAC updates. C produced 3 evaluations, 7 jobs,
+  1 transition and no update; its shared 11-call training cap refused another five-job candidate
+  when only four slots remained. All preparation restores and final baseline confirmations passed.
+- Preserved and resolved acceptance-driver faults: pre-dispatch counting of `None` (zero calls),
+  same-process resume lock handoff (continued the already prepared segment), and cross-encoder
+  legacy attention alias (recorded replay only). Browser text assertion and scratch-service
+  interruption were repaired without any simulation. Reports retain the earlier failures.
+- Final checks: **70 selected non-MOCK tests**, zero failures/errors/skips; 2,811/2,811 historical
+  real reward identities are bitwise equal (also within 1e-12, no exclusions); six GT/RGCN/GATv2
+  x OP on/off checks on B's real replay pass exact next-update recovery. TypeScript and 18 browser
+  checks pass against current source on isolated 5187/8837 with actual real API/results, no route
+  interception. Scratch services stopped; no live dist build, 8765 operation, commit or push.
+- Final optimizer digest `3473ed9c8336e0a01e82bb84d13f4ea416961024092810c22cd4ce8ce58f8731`;
+  19 files differ from the recoverable baseline snapshot. All 63 protected hashes and default real
+  config/task hashes are unchanged. Final manifest SHA-256:
+  `dd0c2355f25801e73d21614715b313e827a314a436af3eab23f9acdeb796e88c`.
+- Gates A1-A8 pass as bounded engineering qualification, with declared physical coverage gaps.
+  One B nominal-feasible candidate, no robust-feasible design; no reward superiority conclusion.
+  Physical bonus/failure/cancellation/uncertain-launch/worker-loss cases were not induced; legacy
+  full suite, MC, v1 migration, skip-on-fail and the separately proposed 999-call study remain undone.
+  [Status and exact file list](reward-v2.md), machine evidence:
+  `artifacts/local/reward-v2-real/20260926-qualification-05/acceptance-summary.json`. Record **7.95**.
+
+## Reward v2 audit fixes (2026-09-26)
+
+- The audit of the reward-v2 implementation (workbench record 7.97) ran the repository's full regression suite, which the qualification had replaced by a 70-test selection, and found it red: 130 failed, 115 errors. Two behaviour regressions and one plumbing gap were fixed on the user's instruction ("fix the three issues") under the standing reward-v2 permission: (1) `envs/sizing.py` treated a result without `simulator_invocations` as an uncertain physical launch and truncated the candidate, which made every synthetic / MOCK evaluation fail; a synthetic result is now a complete call with zero real invocations and only a real task's launch can be left unresolved (`recording/store.py` accepts an intent with 0 or 1 uncertain calls); (2) `models/inputs.py` refused every `SpecSchema.version` but `spec-input-v2`, which broke the untouched M6 modules that name their registries; the version is identity again and the layout is a separate validated field `layout = 'spec-input-v2'` in every checkpoint contract; (3) MOCK runs now receive the run's reward settings (the learner enforces them on every replay batch).
+- Source digest changed from `3473ed9c8336e0a01e82bb84d13f4ea416961024092810c22cd4ce8ce58f8731` (the digest of the real A/B/C qualification) to `f087a4ce40d9a1bd7db5c0c756851b5f46be71f659f3e2365d691ddb707b004a`. Exactly three package files changed: `envs/sizing.py`, `models/inputs.py`, `recording/store.py`. The reward arithmetic is unchanged: the recorded-real identity check on the final source gives 2,811 / 2,811 bitwise, 0 exclusions. Checkpoints written at `3473ed9c...` (the qualification's B run) load only from a source with that digest, as every earlier digest step.
+- Validation: full suite on a clean snapshot **1,266 passed, 7 failed, 15 errors**, all 22 being the evidence-dependent reward-v2 tests that cannot see `artifacts/` from a snapshot; on the working tree those 143 tests pass, so every collected test passes. Eleven adversarial environment tests of the audit pass on the fixed tree. Zero simulator, bridge or agent calls; nothing committed or pushed. Details: workbench record 7.98, `docs/reward-v2.md` "Audit Fixes", `artifacts/local/reviews/fable-audit-reward-v2.md`.

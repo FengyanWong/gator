@@ -33,8 +33,7 @@ try {
   const shot = name => page.shot(path.join(out, name), `document.querySelector('footer')`);
   const BOX = `document.querySelector('.compose-main textarea')`;
   const ask = async text => {
-    await evaluate(`(() => { const box = ${BOX}; box.focus(); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, ${JSON.stringify(text)});
-      box.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await page.setValue(`${BOX}`, text, { event: 'input', focus: true });
     await sleep(150);
     await evaluate(`${BOX}.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))`);
   };

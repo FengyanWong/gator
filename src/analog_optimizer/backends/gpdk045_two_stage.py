@@ -12,6 +12,7 @@ from .gpdk045 import Gpdk045OtaProfile, GEOMETRY, equal, number
 class Gpdk045TwoStageProfile(Gpdk045OtaProfile):
     writable_keys = tuple((f'XU1/{name}', 'w') for name in ('M1', 'M2', 'M6', 'M7'))
     mos_names = tuple(f'M{i}' for i in range(1, 8))
+    training_corners_supported = True
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

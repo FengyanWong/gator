@@ -14,7 +14,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/module_fold_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -23,7 +23,7 @@ const browser = await launchEdge('fold');
 const ROOT = '/fixture/some/long/way/down/to/the/output-root';
 const REPORT = { resolved: ROOT, allowed: true, writable: true, error: null, host: 'FIXTURE', environment: 'fixture', filesystem: 'fixture',
   free_bytes: 400 * 1024 ** 3, bytes_used: 3 * 1024 ** 3, windows_path: null, windows_mapping: 'fixture', mock_data_root: '/fixture/mock' };
-const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: null };
+const VALID = validConfiguration();
 
 try {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
@@ -104,9 +104,9 @@ try {
   check('the summary sits on its own line under the heading, inside the narrow panel', fits.noSideScroll && fits.below && fits.inside, JSON.stringify(fits));
 
   // ---- folded is not switched off: the line follows the configuration ------------------------------------------------------------
-  await evaluate(`(() => { const s = ${MODE}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'frozen'); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await page.setValue(`${MODE}`, 'frozen');
   check('a change of the configuration shows on the folded line (Mode frozen)', await until(`${fold(RUN)}.querySelector('.module-summary')?.textContent.startsWith('frozen - ${BUDGET} evaluations')`, 30), (await state(RUN)).line);
-  await evaluate(`(() => { const s = ${MODE}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'scratch'); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await page.setValue(`${MODE}`, 'scratch');
   await until(`${fold(RUN)}.querySelector('.module-summary')?.textContent.startsWith('scratch')`, 30);
 
   // ---- remembered across a reload ---------------------------------------------------------------------------------------------------

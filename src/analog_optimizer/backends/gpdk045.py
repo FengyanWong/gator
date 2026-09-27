@@ -31,6 +31,7 @@ class Gpdk045OtaProfile:
 
     writable_keys = INPUT_KEYS
     mos_names = tuple(f'M{i}' for i in range(1, 6))
+    training_corners_supported = False
 
     def __init__(self, *, design_file: Path, mapping_file: Path,
                  reference_structure: Path, reference_readback: Path,
@@ -65,6 +66,8 @@ class Gpdk045OtaProfile:
             raise ValueError('Explicit typed simulation condition required')
         if condition.monte_carlo is not None:
             raise UnsupportedCapability('GPDK045 MC interface reserved; statistical execution and sample parsing are not validated')
+        if condition.purpose == 'pvt_training' and not self.training_corners_supported:
+            raise UnsupportedCapability('Training corners are enabled only for the explicit OTA7 profile')
         policy, corner = self.condition_config['model_policy'], condition.corner
         if corner.model_section not in policy['deterministic_sections']:
             raise ValueError('Model section is not a verified GPDK045 deterministic corner')

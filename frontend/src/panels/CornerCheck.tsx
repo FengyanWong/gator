@@ -2,6 +2,7 @@ import { Icon } from './Icons';
 import { useEffect, useRef, useState } from 'react';
 import { api, Json, si } from '../api';
 import { launchWithConsent } from './RunControl';
+import { useRequest } from '../store';
 
 /** Corner check (status record 7.62; backend corner_check.py): the shown run's safest feasible designs, simulated again at
  *  the five fixed corners. The plan is read from the run's own files when the tab opens (free); the check starts only on
@@ -12,6 +13,8 @@ const VERDICT: Record<string, [string, string]> = { accepted: ['accepted', 'ok']
 const STATE_TEXT: Record<string, string> = { starting: 'Starting', running: 'Running', stopping: 'Stopping after the simulation in flight',
   completed: 'Completed', stopped: 'Stopped', failed: 'Failed', interrupted: 'Interrupted' };
 const LIVE = ['starting', 'running', 'stopping'];
+const isLive = (check: Json) => !!check && (check.alive || LIVE.includes(check.status?.state)) && check.status?.state !== 'interrupted';
+const pollCheck = (check: Json) => !check || isLive(check) ? 1500 : 0;
 
 /** One cell of the grid: what that corner said about that design. */
 function Cell({ record, running }: { record?: Json; running: boolean }) {
@@ -30,34 +33,26 @@ function Cell({ record, running }: { record?: Json; running: boolean }) {
 
 export function CornerCheckTab({ runDir }: { runDir: string | null }) {
   const [designs, setDesigns] = useState(3);
-  const [plan, setPlan] = useState<Json>(null);
-  const [checkId, setCheckId] = useState<string | null>(null);
-  const [check, setCheck] = useState<Json>(null);
+  const { value: plan, error: planError, refresh: readPlan } = useRequest<Json>(() => api.cornerPlan(runDir!, designs), [runDir, designs], { enabled: !!runDir });
+  const [selected, select] = useState<{ runDir: string | null; id: string | null } | null>(null);
+  const checkId = selected?.runDir === runDir ? selected?.id : null;
+  const setCheckId = (id: string | null) => select({ runDir, id });
+  const { value: check, error: checkError, refresh: readCheck } = useRequest<Json>(() => api.cornerStatus(runDir!, checkId!),
+    [runDir, checkId], { enabled: !!runDir && !!checkId, pollEvery: pollCheck });
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<Json>(null);
-  const planRequest = useRef(0);
-
-  const readPlan = (count = designs) => {
-    if (!runDir) return;
-    const mine = ++planRequest.current;
-    api.cornerPlan(runDir, count).then(p => {
-      if (mine !== planRequest.current) return;
-      setPlan(p);
-      setCheckId(id => id && p.checks.some((c: Json) => c.check_id === id) ? id : p.checks[0]?.check_id ?? null);
-    }, e => mine === planRequest.current && setNote({ level: 'error', text: e.message }));
-  };
-  const readCheck = (id = checkId) => {
-    if (runDir && id) api.cornerStatus(runDir, id).then(setCheck, e => setNote({ level: 'error', text: e.message }));
-  };
-  useEffect(() => { setPlan(null); setCheck(null); setCheckId(null); setNote(null); readPlan(); }, [runDir]);
-  useEffect(() => { setCheck(null); readCheck(); }, [checkId]);
-  // Progress of a check that works: every 1.5 s until it has ended, then the plan once more (its list of checks).
-  const live = !!check && (check.alive || LIVE.includes(check.status?.state)) && check.status?.state !== 'interrupted';
+  useEffect(() => { setNote(null); }, [runDir]);
   useEffect(() => {
-    if (!live) return;
-    const id = window.setInterval(() => readCheck(), 1500);
-    return () => { window.clearInterval(id); readPlan(); };
-  }, [live, checkId]);
+    if (plan) setCheckId(checkId && plan.checks.some((c: Json) => c.check_id === checkId) ? checkId : plan.checks[0]?.check_id ?? null);
+  }, [plan]);
+  // Progress of a check that works: every 1.5 s until it has ended, then the plan once more (its list of checks).
+  const live = isLive(check);
+  const previous = useRef({ runDir, checkId, live });
+  useEffect(() => {
+    const same = previous.current.runDir === runDir && previous.current.checkId === checkId;
+    if (check && !live && same && previous.current.live) readPlan();
+    if (check || !same) previous.current = { runDir, checkId, live };
+  }, [live, check, runDir, checkId, readPlan]);
 
   if (!runDir) return <p className="hint">No run selected.</p>;
   const real = plan && plan.mock === false;
@@ -69,7 +64,7 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
         authorizeText: `This runs ${plan.simulations} REAL Spectre simulations of ${plan.task_key}: ${plan.designs.length} design(s) x ${plan.corners.length} corners.\n`
           + 'Each design\'s widths are written into the cell; the recorded widths are written back and read back at the end.\n'
           + `Authorize ${plan.simulations} simulations?` });
-      if (started) { setCheckId(started.check_id); readCheck(started.check_id); readPlan(); }
+      if (started) { setCheckId(started.check_id); readPlan(); }
       else setNote({ level: 'info', text: 'Not started: you answered no, so nothing was created.' });
     } catch (e: any) { setNote({ level: 'error', text: e.message }); } finally { setBusy(null); }
   };
@@ -85,15 +80,16 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
   return (<div className="corner-check">
     {plan?.notice && <p className="mock">{plan.notice}</p>}
     <div className="row">
-      <label>Designs <select value={designs} disabled={!!busy || live} onChange={e => { const n = Number(e.target.value); setDesigns(n); readPlan(n); }}>
+      <label>Designs <select value={designs} disabled={!!busy || live} onChange={e => setDesigns(Number(e.target.value))}>
         {Array.from({ length: plan?.max_designs ?? 3 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}</select></label>
       <span className="hint">{plan?.supported ? `${plan.designs.length} design${plan.designs.length > 1 ? 's' : ''} x ${plan.corners.length} corners = ${plan.simulations} ${real
         ? 'REAL Spectre simulations (asks for your authorization first)' : 'MOCK simulations (free)'}` : plan ? 'Nothing to check in this run.' : 'Reading the run...'}</span>
       {live ? <button disabled={busy === 'stop' || status?.state === 'stopping'} onClick={stop}
           title="Stop: The simulation in flight finishes, then the check ends; for a real circuit the recorded widths are written back."><Icon name="stop" label="Stop" /></button>
-        : <button className="primary" disabled={!plan?.supported || !!busy} onClick={start} title="Check: Simulate the designs chosen above at every corner of the PDK; the table below fills as results come in."><Icon name={busy === 'start' ? 'wait' : 'check'} label={busy === 'start' ? 'Starting...' : 'Check'} /></button>}
+        : <button className="primary" disabled={!plan?.supported || !!busy || (!!checkId && !check)} onClick={start} title="Check: Simulate the designs chosen above at every corner of the PDK; the table below fills as results come in."><Icon name={busy === 'start' ? 'wait' : 'check'} label={busy === 'start' ? 'Starting...' : 'Check'} /></button>}
       <button onClick={() => { readPlan(); readCheck(); }} title="Refresh: Read the plan and the results again."><Icon name="refresh" label="Refresh" /></button>
     </div>
+    {(planError || checkError) && <p className="error">{planError || checkError}</p>}
     {note && <p className={note.level === 'error' ? 'error' : 'hint'}>{note.text}</p>}
     {plan && !plan.supported && plan.reason && <p className="note">{plan.reason}</p>}
     <details className="more"><summary>What the corner check does</summary>

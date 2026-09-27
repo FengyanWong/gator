@@ -11,6 +11,12 @@ const MORE_KEY = 'gator-workbench-editor-more-columns';
 
 function Cell({ column, value, onChange }: { column: Json; value: Json; onChange: (v: Json) => void }) {
   const title = column.guidance;
+  if (column.name === 'nominal_only') return <select aria-label="Judged at" title={title}
+    value={value ? 'nominal' : 'all'} onChange={e => onChange(e.target.value === 'nominal')}>
+    <option value="all">All planned conditions</option><option value="nominal">Nominal only</option></select>;
+  if (column.name === 'direction_after_feasible') return <select aria-label="Objective" title={title}
+    value={value ?? 'none'} onChange={e => onChange(e.target.value)}>
+    <option value="none">None</option><option value="minimize">Minimize</option><option value="maximize">Maximize</option></select>;
   // A column the circuit read fills (initial_value): shown, never typed - a typed value could only differ from the circuit.
   if (column.readonly) return <input title={title} className="readonly" readOnly value={value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value)} />;
   if (column.options) {
@@ -58,7 +64,9 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
   const [pending, setPending] = useState<{ next: Json; diff: Json[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
-  const columns: Json[] = schema.editors[tab];
+  const columns: Json[] = schema.editors[tab].map((c: Json) => tab !== 'targets' ? c : c.name === 'nominal_only'
+    ? { ...c, label: 'Judged at' } : c.name === 'direction_after_feasible' ? { ...c, label: 'Objective' }
+    : c.name === 'normalization_scale' ? { ...c, guidance: 'Threshold distance divided by this positive scale, then shaped by the selected capped or compressed reward. Empty uses the threshold size. Feasibility uses the actual bounds, not the reward.' } : c);
   const hidden = columns.filter(c => c.advanced);
   const visible = columns.filter(c => more || !c.advanced);
   const keyField: string = schema.section_keys[tab];
@@ -126,7 +134,7 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
         <button onClick={() => { setConfig(pending.next); setPending(null); }}>Apply</button><button onClick={() => setPending(null)}>Cancel</button></div>}
       <div className="scroll">
         <table className="grid editor">
-          <thead><tr><th></th>{visible.map(c => <th key={c.name} title={c.guidance} onClick={() => setHelp(c)}>{c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
+          <thead><tr><th></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
           <tbody>{rows.map((row, index) => {
             const found = rowIssues(index);
             return <tr key={index} className={found.some((i: Json) => i.level === 'error' || i.level === 'blocker') ? 'has-error' : ''}>

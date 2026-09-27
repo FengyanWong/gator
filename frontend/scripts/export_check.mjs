@@ -86,7 +86,7 @@ try {
   const listed = (await get('runs/logs', { run_dir: DIR, kind: 'events', limit: 1000 })).entries;
   check('it saves events.jsonl with every record of the run, one JSON object per line', lines.length > 0 && lines.length === listed.length && lines.every(l => { try { return !!JSON.parse(l).event; } catch { return false; } }), `${lines.length} lines, ${listed.length} entries`);
   check('... and says so', await until(`${HINT(row)} === 'Downloaded events.jsonl.'`, 40), await hint());
-  await evaluate(`(() => { const s = [...document.querySelectorAll('footer .bottom-body select')].find(e => [...e.options].some(o => o.value === 'errors')); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'errors'); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await page.setValue(`[...document.querySelectorAll('footer .bottom-body select')].find(e => [...e.options].some(o => o.value === 'errors'))`, 'errors');
   row = 'Download full log (errors.jsonl)';
   check('choosing "errors" renames the button and clears the note', await until(`!!(${button(row)})`, 40) && /newest 200 entries/.test(await hint()), await hint());
   const hasErrors = (await get('runs/logs', { run_dir: DIR, kind: 'errors' })).entries.length > 0;      // a healthy run keeps an EMPTY errors.jsonl

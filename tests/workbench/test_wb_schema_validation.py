@@ -243,7 +243,7 @@ def test_run_setting_rules(tmp_path):
         assert clash.level == 'error' and report.blocks_run and 'every 50 evaluations OR every 600 seconds' in clash.message
     for one in (dict(checkpoint_every_evaluations=50), dict(checkpoint_every_seconds=600.0), dict(checkpoint_every_evaluations=None)):
         assert 'checkpoint_interval_both' not in issues(check(make_config(tmp_path, output=one))[0])
-    report, _ = check(make_config(tmp_path, run=dict(network=dict(encoder_type='gat', hidden_dim=30, heads=4, layers=1))))
+    report, _ = check(make_config(tmp_path, run=dict(network=dict(encoder_type='gatv2', hidden_dim=30, heads=4, layers=1))))
     assert 'heads_divisibility' in issues(report, 'error')
 
 

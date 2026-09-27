@@ -230,6 +230,14 @@ class EquationNativeFactory:
     inner: object
     plan: SpecPlan
 
+    @property
+    def condition_policy(self):
+        return self.inner.condition_policy
+
+    @property
+    def output(self):
+        return self.inner.output
+
     @contextmanager
     def preparation_context(self, limits, report):
         with self.inner.preparation_context(limits, report) as prepared:

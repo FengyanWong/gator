@@ -10,7 +10,11 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 import os
 from pathlib import Path
+import socket
+import stat
+import sys
 import tempfile
+import threading
 import time
 from uuid import uuid4
 
@@ -31,6 +35,53 @@ from gator_workbench.paths import OutputRoots
 from gator_workbench.storage import DatasetReader, read_json
 
 SMALL_NET = dict(encoder_type='graph_transformer', hidden_dim=16, heads=2, layers=1)
+
+
+@pytest.fixture
+def cli(tmp_path, monkeypatch):
+    """Install the recorded fake agent CLIs; return a scenario selector and its output path."""
+    directory = tmp_path / 'bin'
+    directory.mkdir(exist_ok=True)
+    source = (Path(__file__).parent / 'fixtures' / 'fake_cli.py').read_text()
+    for name in ('claude', 'codex'):
+        target = directory / name
+        target.write_text(f'#!{sys.executable}\n' + source)
+        target.chmod(target.stat().st_mode | stat.S_IXUSR)
+    record = tmp_path / 'record.json'
+    monkeypatch.setenv('PATH', f'{directory}{os.pathsep}{os.environ["PATH"]}')
+    monkeypatch.setenv('FAKE_CLI_RECORD', str(record))
+
+    def scenario(name):
+        monkeypatch.setenv('FAKE_CLI_SCENARIO', name)
+        return record
+    return scenario
+
+
+def workbench_app(root, **options):
+    from gator_workbench.api import create_app
+    return create_app(**{'extra_output_roots': [str(root)], 'serve_frontend': False, 'auto_check_on_start': False, **options})
+
+
+@contextmanager
+def workbench_server(root):
+    """Serve the isolated test app on loopback, including streaming responses."""
+    import uvicorn
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        instance = uvicorn.Server(uvicorn.Config(workbench_app(root), log_level='warning', lifespan='off'))
+        thread = threading.Thread(target=instance.run, kwargs=dict(sockets=[sock]), daemon=True)
+        thread.start()
+        try:
+            for _ in range(300):
+                if instance.started:
+                    break
+                time.sleep(0.02)
+            else:
+                raise RuntimeError('The test HTTP server did not start')
+            yield sock.getsockname()[1]
+        finally:
+            instance.should_exit = True
+            thread.join(timeout=10)
 
 
 # Two fixtures that several test modules used to write out for themselves (review of 2026-09-23). A module gets one by

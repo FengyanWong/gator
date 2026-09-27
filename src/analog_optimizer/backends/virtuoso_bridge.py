@@ -322,6 +322,41 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         self._exports[job_id] = (artifact, deepcopy(parameters), metadata)
         return artifact
 
+    def derive_condition_artifact(self, base, work_root, *, condition):
+        self.validate_condition(condition)
+        self._require_connection()
+        saved, parameters, metadata = self._exports.get(base.job_id, (None, None, None))
+        if saved != base or base.origin != 'real' or base.condition != self.nominal_condition():
+            raise ValueError('Derivation requires this candidate\'s registered nominal export')
+        if condition.purpose != 'pvt_training' or condition.monte_carlo is not None:
+            raise UnsupportedCapability('Derived candidate decks require a deterministic training condition')
+        if digest(base.path) != base.sha256:
+            raise ValueError('Nominal deck changed before derivation')
+        original = Path(metadata['original_structure_path'])
+        if digest(original) != metadata['original_structure_sha256']:
+            raise ValueError('Original native export changed before derivation')
+        self.circuit.validate_assignment(parameters)
+        prepared = self.circuit.structure_for_condition(original.read_text(), condition)
+        job_id = uuid4().hex
+        directory = Path(work_root).resolve() / job_id
+        directory.mkdir(parents=True, exist_ok=False)
+        structure = directory / 'conditioned_structure.scs'
+        structure.write_text(prepared)
+        deck = directory / getattr(self.circuit, 'deck_name', 'opamp.scs')
+        corner = condition.corner
+        builder = getattr(self.circuit, 'build_deck', build_deck)
+        deck.write_text(builder(prepared, self.config.model_file, corner.model_section, temperature_c=corner.temperature_c))
+        artifact = NetlistArtifact(deck, job_id, digest(deck), 'real', condition)
+        derived = dict(metadata, job_id=job_id, derived_from_export_job_id=base.job_id,
+                       section=corner.model_section, temperature_c=corner.temperature_c, supply_v=corner.supply_v,
+                       condition=asdict(condition), condition_fingerprint=condition.fingerprint,
+                       source_sha256=digest(structure), executed_sha256=artifact.sha256,
+                       structure_path=str(structure),
+                       files={p.name: digest(p) for p in (structure, deck)})
+        write_json(directory / 'manifest.json', derived)
+        self._exports[job_id] = (artifact, deepcopy(parameters), derived)
+        return artifact
+
     def get_circuit_graph(self, artifact):
         self._require_connection()
         saved, _, metadata = self._exports.get(artifact.job_id, (None, None, None))
@@ -336,6 +371,12 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
 
     def _new_simulator(self, work_dir, timeout):
         if getattr(self, '_recording_scratch', None) is not None:
+            if self._recording_scratch_used:
+                from analog_optimizer.recording.remote import BridgeScratch
+                recorder, eval_id = self._recording_binding
+                self._recording_scratch = BridgeScratch(recorder, eval_id, profile=self.config.profile)
+                self._recording_workspaces.append(self._recording_scratch)
+            self._recording_scratch_used = True
             return self._recording_scratch.simulator(work_dir, math.ceil(timeout))
         from virtuoso_bridge.spectre.runner import SpectreSimulator
         return SpectreSimulator.from_env(work_dir=work_dir, timeout=math.ceil(timeout),
@@ -345,10 +386,15 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
     def prepare_recording(self, recorder, eval_id):
         from analog_optimizer.recording.remote import BridgeScratch
         self._recording_scratch = BridgeScratch(recorder, eval_id, profile=self.config.profile)
+        self._recording_binding = (recorder, eval_id)
+        self._recording_scratch_used = False
+        self._recording_workspaces = [self._recording_scratch]
 
     def finish_recording(self, receipt):
         if getattr(self, '_recording_scratch', None) is not None:
-            self._recording_scratch.cleanup(receipt)
+            for workspace in self._recording_workspaces:
+                workspace.cleanup(receipt)
+            self._recording_workspaces = []
             self._recording_scratch = None
 
     def run_simulation(self, request: SimulationRequest):

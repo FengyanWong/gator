@@ -43,7 +43,7 @@ PROPOSAL_SCHEMA = {
         'suggestions': {'type': 'array', 'maxItems': 40, 'items': {     # only a `settings_review` request is asked for these
             'type': 'object', 'additionalProperties': False, 'required': ['path', 'value', 'reason', 'source'],
             'properties': {'path': {'type': 'string', 'maxLength': 80},
-                           'value': {'type': 'string', 'maxLength': 120},     # JSON text: "0.0003", "true", "\"gat\""
+                           'value': {'type': 'string', 'maxLength': 120},     # JSON text: "0.0003", "true", "\"gatv2\""
                            'reason': {'type': 'string', 'maxLength': 800}, 'source': {'type': 'string', 'maxLength': 600},
                            'url': {'type': 'string', 'maxLength': 300}, 'quote': {'type': 'string', 'maxLength': 400}}}},
         'encoder_ideas': {'type': 'array', 'maxItems': 10, 'items': {

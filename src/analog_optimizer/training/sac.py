@@ -65,7 +65,15 @@ class SACLearner:
     dataclasses and must never be loaded from untrusted sources.
     """
     def __init__(self, *, experiment, feature_schema=None, spec_schema=None, model_config=None, config=None,
-                 input_cache_capacity=2048, topology_cache_capacity=64):
+                 input_cache_capacity=2048, topology_cache_capacity=64, reward_settings=None,
+                 condition_policy='off', planned_conditions=()):
+        from analog_optimizer.measurements.specs import RewardSettings
+        self.reward_settings = RewardSettings() if reward_settings is None else reward_settings
+        if not isinstance(self.reward_settings, RewardSettings) or condition_policy not in ('off', 'always'):
+            raise ValueError('Typed reward settings and a supported condition policy are required')
+        self.condition_policy, self.planned_conditions = condition_policy, tuple(planned_conditions)
+        if condition_policy == 'always' and len(self.planned_conditions) < 2:
+            raise ValueError('Robust learner requires the complete condition plan')
         self.feature_schema, self.spec_schema = feature_schema or FeatureSchema(), spec_schema or SpecSchema()
         self.model_config, self.config = model_config or ModelConfig(), config or SACConfig()
         if (experiment.get('origin') not in ('real', 'synthetic') or not experiment.get('split')
@@ -110,6 +118,10 @@ class SACLearner:
             raise ValueError('Empty SAC update')
         for transition in transitions:
             transition.validate()
+            observation = transition.observation
+            if (transition.reward_settings != self.reward_settings or observation.condition_policy != self.condition_policy
+                    or (self.planned_conditions and observation.planned_conditions != self.planned_conditions)):
+                raise ValueError('Replay reward/condition contract differs from learner')
             if transition.observation.origin != self.experiment['origin']:
                 raise ValueError('Experiment/replay origin mismatch')
         current = self.batch([t.observation for t in transitions])
@@ -147,7 +159,12 @@ class SACLearner:
                     action_counts=current.action_counts.tolist())
 
     def contract(self):
-        return dict(checkpoint_version='graph-sac-v1', graph_schema='1.0',
+        from analog_optimizer.measurements.specs import REWARD_VERSION, CLEARANCE_RULE
+        return dict(checkpoint_version='graph-sac-v2', graph_schema='1.0',
+                    reward_version=REWARD_VERSION, reward_settings=asdict(self.reward_settings),
+                    clearance_rule=CLEARANCE_RULE, condition_policy=self.condition_policy,
+                    planned_conditions=[None if c is None else asdict(c) for c in self.planned_conditions],
+                    failure_policy='continue_attributed' if self.condition_policy == 'always' else 'nominal_terminate',
                     feature_schema=asdict(self.feature_schema), spec_schema=asdict(self.spec_schema),
                     normalizer='fixed-references-signed-log1p-v1', action_version='absolute-group-v1',
                     critic_action='normalized_proposal', budget='finite_horizon_termination',
@@ -173,12 +190,16 @@ class SACLearner:
 
     @classmethod
     def load(cls, path, *, experiment, feature_schema=None, spec_schema=None, model_config=None, config=None,
-             input_cache_capacity=2048, topology_cache_capacity=64, store=None):
+             input_cache_capacity=2048, topology_cache_capacity=64, store=None, reward_settings=None,
+             condition_policy='off', planned_conditions=()):
         # This API intentionally accepts trusted checkpoints only (see class docstring).
         payload = torch.load(path, map_location='cpu', weights_only=False)
+        if payload.get('contract', {}).get('checkpoint_version') != 'graph-sac-v2':
+            raise ValueError('Checkpoint v1 is not supported by reward v2; explicit migration is required')
         learner = cls(experiment=experiment, feature_schema=feature_schema, spec_schema=spec_schema,
                       model_config=model_config, config=config, input_cache_capacity=input_cache_capacity,
-                      topology_cache_capacity=topology_cache_capacity)
+                      topology_cache_capacity=topology_cache_capacity, reward_settings=reward_settings,
+                      condition_policy=condition_policy, planned_conditions=planned_conditions)
         if payload['contract'] != learner.contract():
             raise ValueError('Checkpoint schema/action/config/experiment/code/dependency mismatch')
         learner.actor.load_state_dict(payload['actor'])

@@ -69,8 +69,7 @@ try {
 
   // ---- model and effort lists (saved through the real settings API; restored in `finally`) -------------------------
   const FIELD = name => `[...document.querySelectorAll('.agent-side label')].find(l => l.firstChild.textContent.trim() === ${JSON.stringify(name)})`;
-  const pick = async (name, value) => { await evaluate(`(() => { const s = ${FIELD(name)}.querySelector('select');
-    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)}); s.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(700); };
+  const pick = async (name, value) => { await session.setValue(`${FIELD(name)}.querySelector('select')`, value); await sleep(700); };
   const options = name => evaluate(`[...${FIELD(name)}.querySelectorAll('option')].map(o => o.value)`);
   const shownOption = name => evaluate(`(() => { const s = ${FIELD(name)}.querySelector('select'); return { text: s.selectedOptions[0].textContent, disabled: s.disabled }; })()`);
   const sideHint = () => evaluate(`document.querySelector('.agent-side p.hint').textContent`);
@@ -237,7 +236,7 @@ try {
   await shot('6a-selection.png');
   await evaluate(`document.querySelector('.compose-main > .row button.notes-link').click()`); await sleep(200);
   check('a second click closes the list again', !(await evaluate(`!!document.querySelector('.selection-info')`)));
-  await evaluate(`(() => { const s = document.querySelector('.compose-main > .row select'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'draft_config'); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await session.setValue(`document.querySelector('.compose-main > .row select')`, 'draft_config');
   await sleep(200);
   check('the count belongs to modify_fields only', !(await evaluate(`!!document.querySelector('.compose-main > .row button.notes-link')`)));
   const kinds = await evaluate(`[...document.querySelectorAll('.compose-main > .row select option')].map(o => o.value)`);

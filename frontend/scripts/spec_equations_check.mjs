@@ -32,8 +32,7 @@ try {
   const CELL = (row, name) => `(() => { const at = [...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.textContent.replace(' *', '').trim()).indexOf(${JSON.stringify(name)});
     return ${EDITORS}.querySelectorAll('table.editor tbody tr')[${row}].children[at].querySelector('input, select'); })()`;
   const cell = (row, name) => evaluate(`${CELL(row, name)}.value`);
-  const type = (row, name, v) => evaluate(`(() => { const i = ${CELL(row, name)}; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(v)});
-    i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  const type = (row, name, v) => page.setValue(`${CELL(row, name)}`, v, { event: 'input' });
   const issues = row => evaluate(`[...${EDITORS}.querySelectorAll('table.editor tbody tr')[${row}].querySelectorAll('td.issues .issue')].map(d => d.textContent.trim())`);
   const issuesUntil = async (row, wanted, absent = []) => {
     for (let i = 0; i < 60; i++) {

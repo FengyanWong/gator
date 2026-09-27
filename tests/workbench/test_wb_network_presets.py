@@ -46,16 +46,16 @@ def test_every_encoder_has_a_complete_valid_preset_with_provenance():
 def test_the_preset_numbers_are_the_ones_verified_in_the_primary_sources():
     """Pinned on purpose: a changed number must come with a changed citation (docs/network-presets.md)."""
     sizes = {name: tuple(presets.publication(name)['network'].values()) for name in schema.ENCODER_TYPES}
-    assert sizes == dict(graph_transformer=(48, 4, 4), mlp=(256, 4, 4), rgcn=(32, 4, 4), gat=(192, 3, 4),
-                         gcn=(32, 4, 7))                                            # (hidden, heads, layers)
+    assert sizes == dict(graph_transformer=(48, 4, 4), rgcn=(32, 4, 4), gatv2=(192, 3, 4))
     keys = ('learning_rate', 'gamma', 'tau', 'batch_size', 'warmup_transitions', 'replay_capacity', 'episode_length')
     training = {name: tuple(presets.publication(name)['advanced'][k] for k in keys) for name in schema.ENCODER_TYPES}
     li2023, attention = (3e-4, 0.99, 0.005, 128, 1000, 100000, 50), (1e-3, 0.9, 0.005, 32, 8, 50, 30)
-    assert training == dict(graph_transformer=attention, gat=attention, gcn=li2023, rgcn=li2023,
-                            mlp=(3e-3, 0.8, 0.005, 256, 120, 1000000, 30))
+    assert training == dict(graph_transformer=attention, gatv2=attention, rgcn=li2023)
     borrowed = {name for name, preset in presets.PRESETS.items()
                 if any(field['match'] == 'closest' for field in preset['fields'].values())}
-    assert borrowed == {'graph_transformer'}          # no publication trains this network as a sizing agent (port_gnn, the other one, was removed 2026-09-24)
+    assert borrowed == {'graph_transformer', 'gatv2'}  # settings borrowed from other architectures
+    assert all(field['match'] == 'closest' for field in presets.PRESETS['gatv2']['fields'].values()
+               if field['source'])                  # GAT papers must not become GATv2 sizing evidence
 
 
 def test_a_value_without_a_publication_is_the_gator_default_and_says_so():
@@ -83,7 +83,8 @@ def test_the_gator_baseline_is_the_schema_default_and_stays_the_fallback_of_a_ba
     del raw['run']['network'], raw['run']['advanced']
     bare = schema.WorkbenchConfig.model_validate(raw)             # old configurations keep their meaning
     # (the component list, added later, defaults to the standard one every old configuration was built with)
-    assert bare.run.network.model_dump() == dict(encoder_type='graph_transformer', **baseline['network'], vocabulary='standard')
+    assert bare.run.network.model_dump() == dict(encoder_type='graph_transformer', **baseline['network'], vocabulary='standard',
+                                                 operating_points=False)          # added 2026-09-26 (reward v2), off = as before
     assert {k: v for k, v in bare.run.advanced.model_dump().items() if k in baseline['advanced']} == baseline['advanced']
 
 
@@ -101,16 +102,16 @@ def test_every_preset_builds_the_real_network_and_sac_configuration():
 
 # ------------------------------------------------------------------------------- choose / edit / reset
 def test_editing_is_stored_per_encoder_and_choosing_reads_it_back():
-    before = presets.entry('gcn')
+    before = presets.entry('rgcn')
     assert before['origin'] == 'publication' and before['saved_utc'] is None and not saved_file().exists()
-    after = presets.save('gcn', dict(hidden_dim=48), dict(batch_size=16))
+    after = presets.save('rgcn', dict(hidden_dim=48), dict(batch_size=16))
     assert after['origin'] == 'custom' and after['network']['hidden_dim'] == 48 and after['advanced']['batch_size'] == 16
     assert after['network']['layers'] == before['network']['layers']            # untouched fields keep their value
     assert after['publication'] == before['publication']                         # the preset itself never changes
-    assert presets.entry('gcn')['network']['hidden_dim'] == 48                   # what the drop-down loads next time
-    assert presets.entry('gat')['origin'] == 'publication'                       # other encoders are untouched
+    assert presets.entry('rgcn')['network']['hidden_dim'] == 48                   # what the drop-down loads next time
+    assert presets.entry('gatv2')['origin'] == 'publication'                       # other encoders are untouched
     stored = json.loads(saved_file().read_text())
-    assert stored['schema'] == presets.SETTINGS_SCHEMA and set(stored['encoders']) == {'gcn'}
+    assert stored['schema'] == presets.SETTINGS_SCHEMA and set(stored['encoders']) == {'rgcn'}
 
 
 def test_reset_returns_to_the_publication_preset_or_stores_the_gator_baseline():
@@ -128,38 +129,39 @@ def test_reset_returns_to_the_publication_preset_or_stores_the_gator_baseline():
 
 
 def test_editing_back_to_the_preset_values_forgets_the_saved_copy():
-    preset = presets.publication('mlp')
-    presets.save('mlp', dict(hidden_dim=preset['network']['hidden_dim'] + 4))
-    assert presets.save('mlp', dict(hidden_dim=preset['network']['hidden_dim']))['origin'] == 'publication'
-    assert 'mlp' not in json.loads(saved_file().read_text())['encoders']
+    preset = presets.publication('rgcn')
+    presets.save('rgcn', dict(hidden_dim=preset['network']['hidden_dim'] + 4))
+    assert presets.save('rgcn', dict(hidden_dim=preset['network']['hidden_dim']))['origin'] == 'publication'
+    assert 'rgcn' not in json.loads(saved_file().read_text())['encoders']
 
 
 def test_the_whole_value_set_is_validated_not_one_field_at_a_time():
     with pytest.raises(presets.InvalidNetworkSettings, match='divisible'):
-        presets.save('gat', dict(hidden_dim=30, heads=4))
-    assert presets.save('gat', dict(hidden_dim=30, heads=5))['network'] == dict(
-        hidden_dim=30, heads=5, layers=presets.publication('gat')['network']['layers'])
-    assert presets.save('gcn', dict(hidden_dim=30, heads=4))['network']['hidden_dim'] == 30      # heads is ignored there
+        presets.save('gatv2', dict(hidden_dim=30, heads=4))
+    assert presets.save('gatv2', dict(hidden_dim=30, heads=5))['network'] == dict(
+        hidden_dim=30, heads=5, layers=presets.publication('gatv2')['network']['layers'])
+    assert presets.save('rgcn', dict(hidden_dim=30, heads=4))['network']['hidden_dim'] == 30      # heads is ignored there
+    previous = presets.entry('rgcn')
     for bad in (dict(network=dict(hidden_dim=2)), dict(network=dict(layers=0)), dict(advanced=dict(tau=0)),
                 dict(advanced=dict(gamma=1.5)), dict(advanced=dict(batch_size=1.5)),
-                dict(advanced=dict(freeze_encoder=True)), dict(network=dict(encoder_type='gat'))):
+                dict(advanced=dict(freeze_encoder=True)), dict(network=dict(encoder_type='gatv2'))):
         with pytest.raises(presets.InvalidNetworkSettings):
             presets.save('rgcn', bad.get('network'), bad.get('advanced'))
-    assert presets.entry('rgcn')['origin'] == 'publication'                      # a rejected edit stores nothing
+    assert presets.entry('rgcn') == previous                                    # a rejected edit stores nothing
 
 
 def test_a_damaged_settings_file_falls_back_to_the_preset_and_says_why():
     saved_file().parent.mkdir(parents=True, exist_ok=True)
     saved_file().write_text(json.dumps(dict(schema=presets.SETTINGS_SCHEMA, encoders=dict(
-        gat=dict(network=dict(hidden_dim=30, heads=4), advanced={}), gcn='oops'))))
-    gat, gcn = presets.entry('gat'), presets.entry('gcn')
-    assert gat['origin'] == 'publication' and 'ignored' in gat['problem'] and gat['network'] == gat['publication']['network']
-    assert gcn['origin'] == 'publication' and 'ignored' in gcn['problem']
+        gatv2=dict(network=dict(hidden_dim=30, heads=4), advanced={}), rgcn='oops'))))
+    gatv2, rgcn = presets.entry('gatv2'), presets.entry('rgcn')
+    assert gatv2['origin'] == 'publication' and 'ignored' in gatv2['problem'] and gatv2['network'] == gatv2['publication']['network']
+    assert rgcn['origin'] == 'publication' and 'ignored' in rgcn['problem']
     saved_file().write_text('not json at all {')
-    torn = presets.entry('gat')
+    torn = presets.entry('gatv2')
     assert torn['origin'] == 'publication' and 'not valid JSON' in torn['problem']
     with pytest.raises(presets.InvalidNetworkSettings, match='not valid JSON'):
-        presets.save('gat', dict(layers=3))                                      # never overwritten behind the operator's back
+        presets.save('gatv2', dict(layers=3))                                      # never overwritten behind the operator's back
     assert saved_file().read_text() == 'not json at all {'
 
 
@@ -167,25 +169,25 @@ def test_a_damaged_settings_file_falls_back_to_the_preset_and_says_why():
 def test_api_serves_the_settings_the_panel_needs(client):
     data = client.get('/api/network-settings').json()
     assert data['encoders'] == list(schema.ENCODER_TYPES) and data['default_encoder'] == 'graph_transformer'
-    assert data['attention_encoders'] == ['graph_transformer', 'gat'] and data['scale_note']
+    assert data['attention_encoders'] == ['graph_transformer', 'gatv2'] and data['scale_note']
     assert data['network_fields'] == list(presets.NETWORK_FIELDS) and data['advanced_fields'] == list(presets.ADVANCED_FIELDS)
     for encoder, entry in data['settings'].items():
-        assert entry['uses_heads'] == (encoder in ('graph_transformer', 'gat'))
+        assert entry['uses_heads'] == (encoder in ('graph_transformer', 'gatv2'))
         assert set(entry['network']) == set(presets.NETWORK_FIELDS) and set(entry['advanced']) == set(presets.ADVANCED_FIELDS)
         assert set(entry['provenance']) == set(ALL_FIELDS) and entry['origin'] == 'publication'
 
 
 def test_api_edit_reset_and_rejections(client):
-    put = client.put('/api/network-settings/gat', json=dict(network=dict(hidden_dim=48, heads=6), advanced=dict(learning_rate=1e-3)))
+    put = client.put('/api/network-settings/gatv2', json=dict(network=dict(hidden_dim=48, heads=6), advanced=dict(learning_rate=1e-3)))
     assert put.status_code == 200 and put.json()['origin'] == 'custom' and put.json()['advanced']['learning_rate'] == 1e-3
-    assert client.get('/api/network-settings').json()['settings']['gat']['network']['heads'] == 6
-    bad = client.put('/api/network-settings/gat', json=dict(network=dict(hidden_dim=50, heads=6)))
+    assert client.get('/api/network-settings').json()['settings']['gatv2']['network']['heads'] == 6
+    bad = client.put('/api/network-settings/gatv2', json=dict(network=dict(hidden_dim=50, heads=6)))
     assert bad.status_code == 422 and 'divisible' in bad.json()['detail']['message']
-    assert client.put('/api/network-settings/gat', json=dict(network=dict(hidden_dim=48), host='x')).status_code == 422
+    assert client.put('/api/network-settings/gatv2', json=dict(network=dict(hidden_dim=48), host='x')).status_code == 422
     assert client.put('/api/network-settings/lstm', json=dict(network=dict(hidden_dim=48))).status_code == 404
-    assert client.post('/api/network-settings/gat/reset', json=dict(to='factory')).status_code == 422
+    assert client.post('/api/network-settings/gatv2/reset', json=dict(to='factory')).status_code == 422
     assert client.post('/api/network-settings/lstm/reset', json=dict(to='publication')).status_code == 404
-    reset = client.post('/api/network-settings/gat/reset', json=dict(to='publication'))
+    reset = client.post('/api/network-settings/gatv2/reset', json=dict(to='publication'))
     assert reset.status_code == 200 and reset.json()['origin'] == 'publication'
 
 
@@ -224,18 +226,36 @@ def test_a_budget_that_never_leaves_warm_up_is_reported(tmp_path):
     assert 'budget_within_warmup' not in codes(make_config(tmp_path, run=dict(max_evaluations=21), advanced=dict(warmup_transitions=20)))
 
 
-# ------------------------------------------------------------------------------- removed encoder (2026-09-24)
-def test_port_gnn_is_gone_from_the_list_and_refused_in_words(client):
-    """port_gnn left the optimizer package on 2026-09-24 (record 7.83): not offered, not editable, and a configuration
-    naming it is refused with the reason and the last source commit that still has it."""
+# ------------------------------------------------------------------------------- removed encoders
+def test_gat_v1_is_rejected_without_migrating_saved_settings(client):
+    legacy = dict(network=dict(hidden_dim=64, heads=4, layers=2), advanced={})
+    saved_file().parent.mkdir(parents=True, exist_ok=True)
+    saved_file().write_text(json.dumps(dict(encoders=dict(gat=legacy))))
+    before = saved_file().read_bytes()
+    current = client.get('/api/network-settings').json()
+    assert 'gat' not in current['encoders'] and 'gat' not in current['settings']
+    assert current['settings']['gatv2']['origin'] == 'publication'
+    assert current['settings']['gatv2']['network'] == presets.publication('gatv2')['network']
+    assert saved_file().read_bytes() == before
+    assert client.put('/api/network-settings/gat', json=dict(network=dict(hidden_dim=32))).status_code == 404
+    assert client.post('/api/network-settings/gat/reset', json=dict(to='publication')).status_code == 404
+    with pytest.raises(ValidationError, match=r'gat \(GATv1\) was replaced by gatv2'):
+        schema.NetworkConfig(encoder_type='gat')
+
+
+@pytest.mark.parametrize('encoder,date,commit', [('port_gnn','2026-09-24','bbdfe36'),
+                                                ('mlp','2026-09-26','9bc488f'), ('gcn','2026-09-26','9bc488f')])
+def test_removed_encoders_are_gone_from_the_list_and_refused_in_words(client,encoder,date,commit):
+    """Removed encoders are not offered or editable; imports explain the matching historical source."""
     data = client.get('/api/network-settings').json()
-    assert 'port_gnn' not in data['encoders'] and 'port_gnn' not in data['settings'] and data['encoders'] == list(schema.ENCODER_TYPES)
-    assert client.put('/api/network-settings/port_gnn', json=dict(network=dict(hidden_dim=32))).status_code == 404
-    assert client.post('/api/network-settings/port_gnn/reset', json=dict(to='publication')).status_code == 404
+    assert data['encoders'] == list(schema.ENCODER_TYPES) == ['graph_transformer','rgcn','gatv2']
+    assert encoder not in data['settings'] and encoder not in presets.PRESETS
+    assert client.put(f'/api/network-settings/{encoder}', json=dict(network=dict(hidden_dim=32))).status_code == 404
+    assert client.post(f'/api/network-settings/{encoder}/reset', json=dict(to='publication')).status_code == 404
     with pytest.raises(KeyError):
-        presets.entry('port_gnn')
+        presets.entry(encoder)
     with pytest.raises(ValidationError) as caught:
-        schema.NetworkConfig(encoder_type='port_gnn')
+        schema.NetworkConfig(encoder_type=encoder)
     message = str(caught.value)
-    assert 'removed from the optimizer on 2026-09-24' in message and 'bbdfe36' in message and 'rgcn' in message
+    assert f'removed from the optimizer on {date}' in message and commit in message and 'rgcn' in message
     assert schema.NetworkConfig(encoder_type='rgcn').encoder_type == 'rgcn'

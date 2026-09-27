@@ -19,7 +19,7 @@
 // Exit code 1 if any check fails.
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 // Optional: the output folder whose saved models the last section lists (default: the backend's own default root).
@@ -29,7 +29,7 @@ const out = outDir();
 const browser = await launchEdge('models');
 
 // ---- canned answers ------------------------------------------------------------------------------------------
-const NET = { encoder_type: 'graph_transformer', hidden_dim: 16, heads: 2, layers: 1 }, GAT = { ...NET, encoder_type: 'gat' }, RGCN = { ...NET, encoder_type: 'rgcn' };
+const NET = { encoder_type: 'graph_transformer', hidden_dim: 16, heads: 2, layers: 1 }, GATV2 = { ...NET, encoder_type: 'gatv2' }, RGCN = { ...NET, encoder_type: 'rgcn' };
 const point = (tag, evaluations, kind, minute, extra = {}) => ({ checkpoint_id: `ckpt-${String(evaluations).padStart(8, '0')}-${tag}`, kind,
   created_utc: `2026-09-21T10:${String(minute).padStart(2, '0')}:00+00:00`, mode: 'scratch', evaluations, learner_updates: Math.max(0, evaluations - 4),
   replay_size: evaluations, restoration_capability: 'full_state', missing_components: [], network: NET, is_latest: false, is_best_policy: false, ...extra });
@@ -42,7 +42,7 @@ const model = (name, circuit, points, extra = {}) => { const newest = points.fin
   checkpoints: points, network: newest.network, saved_utc: newest.created_utc, trained_evaluations: newest.evaluations,
   learner_updates: newest.learner_updates, restoration_capability: newest.restoration_capability, ...extra }; };
 const A = model('FIXTURE_opamp_gt', 'synthetic:gpdk045_ota5', [point('a1', 6, 'periodic', 1), point('a2', 12, 'periodic', 2), point('a3', 18, 'periodic', 3), point('a4', 20, 'final', 4, { is_latest: true })]);
-const B = model('FIXTURE_ldo_gat', 'synthetic:ldo', [point('b1', 8, 'stop', 5, { is_latest: true, network: GAT })]);
+const B = model('FIXTURE_ldo_gat', 'synthetic:ldo', [point('b1', 8, 'stop', 5, { is_latest: true, network: GATV2 })]);
 const C = model('FIXTURE_weights_only', 'synthetic:vco', [point('c1', 10, 'pause', 6, { is_latest: true, restoration_capability: 'weights_only', missing_components: ['replay_snapshot (disabled in output settings)'] })]);
 const D = model('FIXTURE_real_ota5', 'real:gpdk045_ota5', [point('d1', 30, 'periodic', 7, { is_best_policy: true, network: RGCN }), point('d2', 40, 'final', 8, { is_latest: true, network: RGCN })], { mock: false });
 const FILLERS = ['e', 'f', 'g'].map((t, n) => model(`FIXTURE_filler_${t}`, 'synthetic:gpdk045_ota5', [point(`${t}1`, 5 + n, 'final', 9 + n, { is_latest: true })]));
@@ -57,7 +57,7 @@ const describe = (run_dir, checkpoint_id) => {
     compatibility: { mode: 'fine_tune', compatible: true, checks: [{ component: 'FIXTURE check', status: 'ok', detail: 'identical' }], checkpoint_id: p.checkpoint_id, source_run_id: m.run_id,
       restoration_capability: p.restoration_capability, suggestion: null }, suggestion: null };
 };
-const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: null };
+const VALID = validConfiguration();
 
 try {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
@@ -84,8 +84,7 @@ try {
   const until = (expression, tries = 60) => page.until(expression, tries);
   const RIGHT = `document.querySelector('.right')`;
   const labelled = text => `[...(${RIGHT}?.querySelectorAll('label') ?? [])].find(l => l.firstChild?.textContent?.trim() === ${JSON.stringify(text)})?.querySelector('select')`;
-  const setSelect = (expression, value) => evaluate(`(() => { const s = ${expression}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)});
-    s.dispatchEvent(new Event('change', { bubbles: true })); return s.value; })()`);
+  const setSelect = (expression, value) => page.setValue(`${expression}`, value);
   const cards = () => evaluate(`[...${RIGHT}.querySelectorAll('button.model-card')].map(b => ({ title: b.querySelector('.model-title b')?.textContent, tags: [...b.querySelectorAll('.model-tag')].map(t => t.textContent),
     lines: [...b.children].slice(1).map(s => s.textContent), active: b.getAttribute('aria-checked') === 'true', fits: b.scrollWidth <= b.clientWidth + 1 }))`);
   const card = name => `[...${RIGHT}.querySelectorAll('button.model-card')].find(b => b.querySelector('.model-title b')?.textContent === ${JSON.stringify(name)})`;
@@ -158,7 +157,7 @@ try {
   check('one save point is singular', byName(B.task_name).lines[1] === '8 evaluations of training - 1 save point', byName(B.task_name).lines[1]);
   check('MOCK models are tagged, the real one is not', byName(A.task_name).tags.includes('MOCK') && !byName(D.task_name).tags.includes('MOCK'), JSON.stringify([byName(A.task_name).tags, byName(D.task_name).tags]));
   check('every card names ITS network (the list of existing model encoders); no card is tagged "other network" any more',
-    byName(B.task_name).lines[0] === 'synthetic:ldo - gat 16/2/1' && shown.every(c => !c.tags.includes('other network'))
+    byName(B.task_name).lines[0] === 'synthetic:ldo - gatv2 16/2/1' && shown.every(c => !c.tags.includes('other network'))
     && (await evaluate(`[...${RIGHT}.querySelectorAll('button.model-card b.model-net')].map(b => b.textContent).join('|')`)) === MODELS.map(m => `${m.network.encoder_type} 16/2/1`).join('|'));
   check('a model saved without its replay is tagged "weights only"', byName(C.task_name).tags.includes('weights only') && !byName(A.task_name).tags.includes('weights only'));
   check('no card is selected yet and no save point is offered', shown.every(c => !c.active) && (await options()).length === 0);
@@ -176,6 +175,19 @@ try {
     && /^6 evaluations - .+ - automatic save$/.test(offered[4].text), JSON.stringify([offered[0].text, offered[4].text]));
   check('no "best policy" is offered where none was selected', !offered.some(o => o.value === 'best_policy'));
   check('the chosen model is described below (its evaluations)', await until(`/20 evaluations, 16 updates/.test(${RIGHT}.innerText) && /Trained on/.test(${RIGHT}.innerText)`, 40));
+  // Editing labels/budgets does not alter the saved model's contract. A seed edit does.
+  await sleep(600);
+  const numeric = name => `[...${RIGHT}.querySelectorAll('label')].find(l => l.firstChild?.textContent?.trim() === ${JSON.stringify(name)})?.querySelector('input')`;
+  const beforeUnrelated = asked.length;
+  await page.setValue(numeric('Evaluation budget (max_evaluations)'), '123');
+  await page.setValue(`[...document.querySelectorAll('.left label')].find(l => l.firstChild?.textContent?.trim() === 'Name')?.querySelector('input')`, 'fixture-renamed');
+  await sleep(800);
+  check('budget and project label edits do not re-inspect the checkpoint', asked.length === beforeUnrelated, `${beforeUnrelated} -> ${asked.length}`);
+  await page.setValue(numeric('Random seed (target task)'), '19');
+  check('a contract-affecting seed edit still refreshes compatibility', await (async () => {
+    for (let i = 0; i < 30 && asked.length === beforeUnrelated; i++) await sleep(100);
+    return asked.length > beforeUnrelated;
+  })());
   const early = A.checkpoints[0].checkpoint_id;
   await setSelect(`${RIGHT}.querySelector('select.model-point')`, early);
   check('choosing the OLDEST save point asks the backend about exactly that one', await (async () => { for (let i = 0; i < 40 && lastAsked().checkpoint_id !== early; i++) await sleep(100); return lastAsked().run_dir === A.run_dir && lastAsked().checkpoint_id === early; })(), JSON.stringify(lastAsked()));
@@ -190,17 +202,17 @@ try {
   await evaluate(`${card(B.task_name)}.click()`);
   check('choosing another model starts at its latest save', await (async () => { for (let i = 0; i < 40 && lastAsked().run_dir !== B.run_dir; i++) await sleep(100); return lastAsked().checkpoint_id === 'latest'; })()
     && (await evaluate(`${RIGHT}.querySelector('select.model-point').value`)) === 'latest', JSON.stringify(lastAsked()));
-  check('the chosen model\'s network is named with its facts, as the network this run uses', await until(`/^Network\\s+gat, hidden 16, heads 2, layers 1 - this run uses it as it is/.test(${RIGHT}.querySelector('tr.model-network')?.innerText ?? '')`, 40),
+  check('the chosen model\'s network is named with its facts, as the network this run uses', await until(`/^Network\\s+gatv2, hidden 16, heads 2, layers 1 - this run uses it as it is/.test(${RIGHT}.querySelector('tr.model-network')?.innerText ?? '')`, 40),
     await evaluate(`${RIGHT}.querySelector('tr.model-network')?.innerText ?? 'no row'`));
   await sleep(1100);
-  check('... and the configuration took it by itself: gat, without a button', sameNet(await storedNetwork(), GAT) && !(await evaluate(`!!(${button("Use the checkpoint's network")})`))
+  check('... and the configuration took it by itself: gatv2, without a button', sameNet(await storedNetwork(), GATV2) && !(await evaluate(`!!(${button("Use the checkpoint's network")})`))
     && !(await evaluate(`/This checkpoint was trained with/.test(${RIGHT}.innerText)`)), JSON.stringify(await storedNetwork()));
-  check('... the backend was asked again with that network, so the compatibility shown is the one of the run', await (async () => { for (let i = 0; i < 40 && lastConfigNet()?.encoder_type !== 'gat'; i++) await sleep(100);
-    return lastConfigNet()?.encoder_type === 'gat' && lastAsked().run_dir === B.run_dir; })(), JSON.stringify(lastConfigNet()));
+  check('... the backend was asked again with that network, so the compatibility shown is the one of the run', await (async () => { for (let i = 0; i < 40 && lastConfigNet()?.encoder_type !== 'gatv2'; i++) await sleep(100);
+    return lastConfigNet()?.encoder_type === 'gatv2' && lastAsked().run_dir === B.run_dir; })(), JSON.stringify(lastConfigNet()));
   await evaluate(`${card(A.task_name)}.click()`);
   check('choosing a graph_transformer model takes the network back to graph_transformer', await (async () => { for (let i = 0; i < 40 && !sameNet(await storedNetwork(), NET); i++) await sleep(100); return sameNet(await storedNetwork(), NET); })(), JSON.stringify(await storedNetwork()));
   await evaluate(`${card(B.task_name)}.click()`);
-  await until(`/^Network\\s+gat/.test(${RIGHT}.querySelector('tr.model-network')?.innerText ?? '')`, 40); await sleep(1100);
+  await until(`/^Network\\s+gatv2/.test(${RIGHT}.querySelector('tr.model-network')?.innerText ?? '')`, 40); await sleep(1100);
   // A network that arrives from ELSEWHERE while the model is loaded (an imported configuration, an applied agent
   // suggestion) is taken back as well - and that is said, because a silent revert reads as a button that does nothing.
   check('no note about the network so far: following a newly chosen model needs no words', !(await evaluate(`!!${RIGHT}.querySelector('.net-message.warn')`)));
@@ -214,10 +226,10 @@ try {
   const APPLY = `[...document.querySelectorAll('.editors .confirm button')].find(b => b.textContent.trim() === 'Apply')`;
   check('(set-up) a configuration with another network is imported through "Import JSON..."', await until(`!!(${APPLY})`, 60), await evaluate(`document.querySelector('.editors .confirm')?.innerText.slice(0, 200) ?? 'no confirmation'`));
   await evaluate(`${APPLY}.click()`);
-  check('a network from elsewhere is taken back while the model is loaded, and that is SAID', await until(`/The network stays gat 16\\/2\\/1: this run loads a saved model/.test(${RIGHT}.querySelector('.net-message.warn')?.textContent ?? '')`, 60),
+  check('a network from elsewhere is taken back while the model is loaded, and that is SAID', await until(`/The network stays gatv2 16\\/2\\/1: this run loads a saved model/.test(${RIGHT}.querySelector('.net-message.warn')?.textContent ?? '')`, 60),
     await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? 'no message'`));
   await sleep(1100);
-  check('... the configuration holds the model\'s network again', sameNet(await storedNetwork(), GAT), JSON.stringify(await storedNetwork()));
+  check('... the configuration holds the model\'s network again', sameNet(await storedNetwork(), GATV2), JSON.stringify(await storedNetwork()));
 
   // ---- an incomplete configuration on the page never hides the saved model (user report: "CompileError: mp1_w: bounds are required") ------------
   await evaluate(`${card(C.task_name)}.click()`);
@@ -234,7 +246,7 @@ try {
 
   // ---- filter, refresh, no timer ---------------------------------------------------------------------------------------------------
   check('with more than 5 models a filter box is shown', await evaluate(`!!${RIGHT}.querySelector('input.model-filter')`));
-  await evaluate(`${RIGHT}.querySelector('input.model-filter').focus()`); await send('Input.insertText', { text: 'ldo gat' }); await sleep(300);
+  await evaluate(`${RIGHT}.querySelector('input.model-filter').focus()`); await send('Input.insertText', { text: 'ldo gatv2' }); await sleep(300);
   shown = await cards();
   check('the filter keeps the matching model and the selected one', shown.map(c => c.title).sort().join() === [B.task_name, D.task_name].sort().join(), shown.map(c => c.title).join());
   await evaluate(`(() => { const i = ${RIGHT}.querySelector('input.model-filter'); i.focus(); i.select(); })()`); await send('Input.insertText', { text: 'nothing-like-this' }); await sleep(300);

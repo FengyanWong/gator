@@ -1,3 +1,4 @@
+import { useAsyncAction } from '../store';
 import { useState } from 'react';
 import { api, Json, problemText, virtuosoGateText } from '../api';
 
@@ -54,16 +55,9 @@ const declaredAt = (iso?: string | null) => { const d = iso ? new Date(iso) : nu
 export function WorkingCopy({ profileId, library, cell, record, config, setConfig }: {
   profileId: string | null; library: string; cell: string; record: Json;
   config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void }) {
-  const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<Json>(null);                   // { level, text }
   const [setup, setSetup] = useState<Json>(null);                       // the last setup read, with its rows and `changed`
-  const act = async (what: string, action: () => Promise<void>) => {
-    setBusy(what); setMessage(null);
-    try { await action(); }
-    catch (e: any) {
-      setMessage({ level: 'error', text: problemText(e, virtuosoGateText) });
-    } finally { setBusy(null); }
-  };
+  const { busy, run: act } = useAsyncAction(e => setMessage({ level: 'error', text: problemText(e, virtuosoGateText) }), () => setMessage(null));
   // Read and take in one press: the rows as they were when pressed are what the backend compared with, so the same
   // rows decide whether anything changes (a test without outputs gives nothing to take). Undo brings the rows back.
   // What the press says about the editors holds only while Probes and Specs are the rows it left (`after`).

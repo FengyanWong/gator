@@ -16,7 +16,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_rows_check.mjs)" [--live] [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const LIVE = process.argv.includes('--live');                 // reads go to the backend; writing requests are refused either way
 const APP = await workbenchUrl();
@@ -60,7 +60,7 @@ const gone = taskId => ({ loaded: false, blocker: `${taskId} no longer exists: t
 const loaded = taskId => REMOVED.includes(taskId) ? gone(taskId) : ({ loaded: true, task_key: taskId, mock: taskId.startsWith('synthetic:'), circuit: {}, content_sha256: null, provided_metrics: [], hierarchy: {},
   summary: { device_count: 0, devices: [], unknown_devices: [] }, complete: true, diagnostics: [], analysis_context: null, notes: [], evaluation_backend: 'FIXTURE',
   max_concurrency: 1, native_draft: false, generated_profile: false, baseline_recorded: null });
-const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: true, independent_action_variables: 1 }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: null };
+const VALID = validConfiguration({ facts: { circuit_checked: true, independent_action_variables: 1 } });
 
 try {
   const page = await browser.open();
@@ -83,10 +83,8 @@ try {
   const BUTTON = (scope, text) => `[...${scope}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const EDITORS = `document.querySelector('.editors')`;
   const value = label => evaluate(`${FIELD(label)}.value`);
-  const choose = (label, v) => evaluate(`(() => { const s = ${FIELD(label)}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(v)});
-    s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
-  const setInput = (element, v) => evaluate(`(() => { const i = ${element}; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(v)});
-    i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  const choose = (label, v) => page.setValue(`${FIELD(label)}`, v);
+  const setInput = (element, v) => page.setValue(`${element}`, v, { event: 'input' });
   const strip = () => evaluate(`[...${EDITORS}.querySelectorAll('.tabs button')].map(b => b.textContent.trim()).join(' | ')`);
   const openTab = name => evaluate(`[...${EDITORS}.querySelectorAll('.tabs button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(name)})).click()`);
   const column = name => evaluate(`(() => { const head = [...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.textContent.replace(' *', '').trim()), at = head.indexOf(${JSON.stringify(name)});

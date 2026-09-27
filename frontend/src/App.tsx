@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, Json } from './api';
-import { useConfig, usePolling } from './store';
+import { useConfig, usePolling, useRequest } from './store';
 import { CircuitPanel } from './panels/Left';
 import { ConnectionButton } from './panels/Connection';
 import { CheckSteps } from './panels/Consistency';
@@ -9,7 +9,8 @@ import { ValidationStatus } from './panels/Issues';
 import { LIVE_STATES, RunButtons, launchWithConsent, resumeRun, useRunControl } from './panels/RunControl';
 import { RunListButton } from './panels/RunList';
 import { OutputPanel, ResearchPanel, RunPanel } from './panels/Right';
-import { AgentTab, DataTab, FilesTab, LogsTab, StatusTab } from './panels/Bottom';
+import { AgentTab } from './panels/AgentTab';
+import { DataTab, FilesTab, LogsTab, StatusTab } from './panels/RunTabs';
 import { CornerCheckTab } from './panels/CornerCheck';
 
 type BottomTab = 'agent' | 'status' | 'logs' | 'data' | 'files' | 'corners';
@@ -35,7 +36,6 @@ export function App() {
   const [schema, setSchema] = useState<Json>(null);
   const [meta, setMeta] = useState<Json>(null);
   const [circuit, setCircuit] = useState<Json>(null);
-  const [validation, setValidation] = useState<Json>(null);
   const [runs, setRuns] = useState<Json[]>([]);
   const [runDir, setRunDir] = useState<string | null>(() => { try { return localStorage.getItem('gator-workbench-current-run-v1') || null; } catch { return null; } });
   const [tab, setTab] = useState<BottomTab>('status');
@@ -58,16 +58,15 @@ export function App() {
   }, []);
   const refreshRuns = (): Promise<Json[]> => api.runs(config.output.output_root ?? undefined).then(r => { setRuns(r.runs); return r.runs; }).catch(() => { setRuns([]); return []; });
 
-  // Static validation follows every edit (debounced); it never starts anything.
-  useEffect(() => {
-    const id = setTimeout(() => api.validate(config).then(setValidation).catch(e => setValidation(rejected(e))), 500);
-    return () => clearTimeout(id);
-  }, [JSON.stringify(config)]);
+  // Debounce validation and ignore replies for a configuration that has since changed.
+  const { value: validation, refresh: refreshValidation } = useRequest<Json>(() => api.validate(config).catch(rejected), [JSON.stringify(config)],
+    { delay: 500, keepPrevious: true });
 
   // A run that has ended for good (completed, failed, cancelled: none of them can be continued) changes no more, so its
   // status is read once a minute instead of every 1.5 s. A paused or stopped run can come back, and keeps the quick poll.
   const [statusEvery, setStatusEvery] = useState(1500);
-  const { value: status } = usePolling(() => api.status(runDir!), statusEvery, !!runDir, [runDir]);
+  const { value: polledStatus } = usePolling(() => api.status(runDir!), statusEvery, !!runDir, [runDir]);
+  const status = polledStatus?.run_dir === runDir ? polledStatus : null;
   useEffect(() => setStatusEvery(status && !status.worker_alive && ['completed', 'failed', 'cancelled'].includes(status.state) ? 60000 : 1500),
     [status?.worker_alive, status?.state]);
   const isReal = circuit?.loaded && circuit.mock === false;
@@ -130,7 +129,7 @@ export function App() {
       else { refreshRuns(); setMessage({ level: 'info', text: `Continuing in the original run directory: ${started.run_dir}` }); }
     } catch (e: any) { failed(e); }
   };
-  const sendCommand = (name: string) => runDir && api.command(runDir, name).then(() => control.refresh()).catch(failed);
+  const sendCommand = (dir: string, name: string) => api.command(dir, name).then(() => control.refresh()).catch(failed);
 
   if (fatal) return <p className="error">Backend not reachable: {fatal}</p>;
   if (!schema) return <p>Loading schema...</p>;
@@ -140,7 +139,7 @@ export function App() {
         <b>GATOR workbench</b><span className="hint"> {meta?.version} | {meta?.environment?.environment} | data-only outputs (no plots)</span>
         <span className="spacer" />
         <ValidationStatus validation={validation} config={config} schema={schema} />
-        <button onClick={() => api.validate(config).then(setValidation).catch(e => setValidation(rejected(e)))}>Static validation</button>
+        <button onClick={refreshValidation}>Static validation</button>
         <button disabled={!!validation?.blocks_run || control.phase !== 'idle'} onClick={() => start(true)}
           title={control.phase === 'idle' ? 'ONE costed evaluation of the initial design. It is a preflight record, not free.' : 'Not while the header holds a run that is active or paused. Abort lets go of a paused run.'}>Single baseline simulation</button>
         <RunButtons control={control} blocked={!!validation?.blocks_run} onStart={() => start(false)} onResumed={started => showRun(started, 'resume')}
@@ -161,7 +160,7 @@ export function App() {
           validation={validation} onAgent={(kind, selection) => { setAgentRequest({ kind, selection }); setTab('agent'); }} taskSlot={setTaskSlot} taskNotes={setTaskNotes} />
       </main>
       <aside className="right">
-        <RunPanel config={config} setConfig={setConfig} runs={runs} circuit={circuit} />
+        <RunPanel schema={schema.json_schema} config={config} setConfig={setConfig} runs={runs} circuit={circuit} />
         <OutputPanel config={config} setConfig={setConfig} meta={meta} activeRun={status} />
         <ResearchPanel config={config} setConfig={setConfig} />
       </aside>

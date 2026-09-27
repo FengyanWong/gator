@@ -137,16 +137,70 @@ export function useConfig() {
 }
 
 export function usePolling<T>(fn: () => Promise<T>, ms: number, enabled: boolean, deps: unknown[]) {
-  const [value, setValue] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  return useRequest(fn, deps, { enabled, pollEvery: ms });
+}
+
+/** Button actions keep their feature's confirmations and messages; only the pending lifecycle is shared. */
+export function useAsyncAction(onError: (error: any, name: string) => void, onStart: () => void) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const generation = useRef(0);
+  const run = async (name: string, action: () => Promise<unknown>) => {
+    const mine = ++generation.current;
+    setBusy(name); onStart();
+    try { await action(); } catch (error) { onError(error, name); }
+    finally { if (mine === generation.current) setBusy(null); }
+  };
+  return { busy, run };
+}
+
+/** A read follows explicit dependencies. Replies to an earlier selection or an unmounted view are discarded. */
+const sameDependencies = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
+
+export function useRequest<T>(fn: () => Promise<T>, deps: unknown[], { enabled = true, delay = 0, keepPrevious = false, pollEvery = 0 }:
+  { enabled?: boolean; delay?: number; keepPrevious?: boolean; pollEvery?: number | ((value: T | null) => number) } = {}) {
+  const [result, setResult] = useState<{ deps: unknown[]; value: T | null; error: string | null }>({ deps: [], value: null, error: null });
+  const [loading, setLoading] = useState(false);
+  const [revision, refresh] = useState(0);
+  const immediate = useRef(false);
+  const inFlight = useRef<{ deps: unknown[]; promise: Promise<T> } | null>(null);
   useEffect(() => {
-    if (!enabled) { setValue(null); return; }
-    let alive = true;
-    const tick = () => fn().then(v => { if (alive) { setValue(v); setError(null); } }).catch(e => alive && setError(String(e.message || e)));
-    tick();
-    const id = setInterval(tick, ms);
-    return () => { alive = false; clearInterval(id); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, ms, ...deps]);
-  return { value, error };
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if ((!keepPrevious && !pollEvery) || !enabled) setResult({ deps, value: null, error: null });
+    setLoading(enabled);
+    if (!enabled) return;
+    const read = async () => {
+      let value: T | null = null;
+      try {
+        // A refresh or interval change can reuse an outstanding read of the same selection.
+        if (!inFlight.current || !sameDependencies(inFlight.current.deps, deps)) {
+          const promise = Promise.resolve().then(fn).finally(() => {
+            if (inFlight.current?.promise === promise) inFlight.current = null;
+          });
+          inFlight.current = { deps, promise };
+        }
+        value = await inFlight.current.promise;
+        if (live) setResult({ deps, value, error: null });
+      }
+      catch (e: any) { if (live) setResult({ deps, value: null, error: String(e.message ?? e) }); }
+      finally {
+        if (live) {
+          setLoading(false);
+          const interval = typeof pollEvery === 'function' ? pollEvery(value) : pollEvery;
+          if (interval) timer = setTimeout(read, interval);
+        }
+      }
+    };
+    const wait = immediate.current ? 0 : delay;
+    immediate.current = false;
+    // Even a zero delay lets StrictMode's setup/cleanup replay cancel the first scheduled read.
+    timer = setTimeout(read, wait);
+    return () => { live = false; clearTimeout(timer); };
+  }, [enabled, delay, keepPrevious, pollEvery, revision, ...deps]);
+  // Hide the old selection during render, before effect cleanup/reset has run. A changed polling interval
+  // retains the same run's result; a changed run/table never inherits it. Validation opts into keepPrevious.
+  const current = sameDependencies(deps, result.deps);
+  return { value: enabled && (current || keepPrevious) ? result.value : null,
+    error: enabled && current ? result.error : null, loading: enabled && (loading || !current),
+    refresh: useCallback(() => { immediate.current = true; refresh(n => n + 1); }, []) };
 }

@@ -131,10 +131,8 @@
   "settings": {
     "encoders": [
       "graph_transformer",
-      "mlp",
-      "gcn",
       "rgcn",
-      "gat"
+      "gatv2"
     ],
     "seeds": [
       17,
@@ -148,7 +146,7 @@
     "heads": 4,
     "layers": 2,
     "max_workers": 1,
-    "max_calls": 2811
+    "max_calls": 1488
   },
   "classes": {
     "opamp": {

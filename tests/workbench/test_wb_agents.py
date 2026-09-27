@@ -3,7 +3,6 @@ No real Claude/Codex session is ever started by these tests."""
 import json
 import os
 from pathlib import Path
-import stat
 import sys
 import threading
 import time
@@ -14,28 +13,9 @@ from gator_workbench import agents, schema
 from gator_workbench.agents import (AgentError, AgentRequest, AgentSettings, ClaudeCodeProvider, CodexProvider,
                                     DisabledProvider, ProposalRejected, ProposalStore)
 from gator_workbench.agents import base, diagnostics, prompts
-from helpers import make_config
+from helpers import cli, make_config
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'fake_cli.py'
-
-
-@pytest.fixture
-def cli(tmp_path, monkeypatch):
-    """Put fake `claude` and `codex` executables first on PATH."""
-    bin_dir = tmp_path / 'bin'
-    bin_dir.mkdir()
-    for name in ('claude', 'codex'):
-        target = bin_dir / name
-        target.write_text(f'#!{sys.executable}\n' + FIXTURE.read_text())
-        target.chmod(target.stat().st_mode | stat.S_IXUSR)
-    record = tmp_path / 'record.json'
-    monkeypatch.setenv('PATH', f'{bin_dir}{os.pathsep}{os.environ["PATH"]}')
-    monkeypatch.setenv('FAKE_CLI_RECORD', str(record))
-
-    def scenario(name):
-        monkeypatch.setenv('FAKE_CLI_SCENARIO', name)
-        return record
-    return scenario
 
 
 def request(tmp_path, kind='targets', prompt='Raise the score target to 0.97', **kwargs):

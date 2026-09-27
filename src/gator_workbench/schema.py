@@ -19,8 +19,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from . import CONFIG_SCHEMA_VERSION
 
-ENCODER_TYPES = ('graph_transformer', 'mlp', 'rgcn', 'gat', 'gcn')
-REMOVED_ENCODERS = ('port_gnn',)          # removed from the optimizer on 2026-09-24 (record 7.83); refused in words
+ENCODER_TYPES = ('graph_transformer', 'rgcn', 'gatv2')
+REMOVED_ENCODERS = {'port_gnn': ('2026-09-24', 'bbdfe36'),
+                    'mlp': ('2026-09-26', '9bc488f'), 'gcn': ('2026-09-26', '9bc488f')}
 RUN_MODES = ('scratch', 'resume', 'fine_tune', 'frozen')
 UNSPECIFIED = 'unspecified'
 
@@ -168,7 +169,8 @@ class PerformanceTarget(_Model):
                     'values and thresholds, independently of the reward.')
     direction_after_feasible: Literal['none', 'minimize', 'maximize'] = Field('none',
         description='Preference among feasible designs. At most one target may set it; it selects the best design '
-                    'and does not change the reward.')
+                    'and defines the optional objective bonus when its reward weight is nonzero.')
+    nominal_only: bool = Field(False, description='Judge this spec at nominal only; otherwise use every planned condition.')
     soft_weight: float = Field(1.0, gt=0, description='Relative weight of this target in the reward.')
     normalization_scale: Optional[float] = Field(None, gt=0,
         description='Violation is (threshold distance)/scale, capped at 1. Empty = the size of the threshold: the largest '
@@ -256,10 +258,11 @@ STANDARD_VOCABULARY = 'standard'
 
 
 class NetworkConfig(_Model):
-    encoder_type: Literal['graph_transformer', 'mlp', 'rgcn', 'gat', 'gcn'] = 'graph_transformer'
+    encoder_type: Literal['graph_transformer', 'rgcn', 'gatv2'] = 'graph_transformer'
     hidden_dim: int = Field(32, ge=4, le=1024)
     heads: int = Field(4, ge=1, le=32)
     layers: int = Field(2, ge=1, le=16)
+    operating_points: bool = Field(False, description='Include measured nominal device operating points and missing-value masks.')
     vocabulary: str = Field(STANDARD_VOCABULARY, max_length=80, pattern=r'^(standard|pdk:[A-Za-z_][A-Za-z0-9_.\-]{0,63})$',
         description='Which components the network knows. standard: the 8 generic kinds (MOS, R, C, L, sources) every '
                     'model saved before 2026-09-21 was trained with; other parts are "unknown". pdk:<technology '
@@ -269,11 +272,15 @@ class NetworkConfig(_Model):
     @field_validator('encoder_type', mode='before')
     @classmethod
     def _refuse_removed_encoder(cls, value):
-        if value in REMOVED_ENCODERS:
-            raise ValueError(f'{value} was removed from the optimizer on 2026-09-24: it answered the same question as rgcn '
-                             '(edge-typed message passing without attention) and had no published reference. Choose '
-                             'graph_transformer, gat, rgcn, gcn or mlp. Models trained with it load only from source '
-                             'commit bbdfe36.')
+        if value == 'gat':
+            raise ValueError('gat (GATv1) was replaced by gatv2 on 2026-09-26. Select gatv2 for new training; '
+                             'GATv1 weights cannot be loaded into GATv2. Use the historical source matching '
+                             'the checkpoint for GATv1 runs.')
+        if isinstance(value, str) and value in REMOVED_ENCODERS:
+            date, commit = REMOVED_ENCODERS[value]
+            raise ValueError(f'{value} was removed from the optimizer on {date}. Choose graph_transformer, rgcn or gatv2. '
+                             f'Use the historical source matching the checkpoint; the last version with this encoder '
+                             f'is commit {commit}.')
         return value
 
 
@@ -321,6 +328,26 @@ class ModelSource(_Model):
                     '(recorded as unknown, never as 0).')
 
 
+class RewardConfig(_Model):
+    violation_shape: Literal['capped', 'compressed'] = 'capped'
+    worst_spec_share: float = Field(0.0, ge=0, le=1)
+    objective_weight: float = Field(0.0, ge=0, le=1)
+    margin_weight: float = Field(0.0, ge=0, le=1)
+
+
+class ConditionsConfig(_Model):
+    policy: Literal['off', 'always'] = 'off'
+    corners: list[Literal['ss_hot_low', 'ff_cold_high', 'fs_nominal', 'sf_nominal']] = Field(default_factory=list)
+
+    @model_validator(mode='after')
+    def _plan(self):
+        if len(set(self.corners)) != len(self.corners):
+            raise ValueError('Corner IDs must be unique')
+        if (self.policy == 'always') != bool(self.corners):
+            raise ValueError('Always needs a nonempty corner plan; off must have no corners')
+        return self
+
+
 class RunSettings(_Model):
     mode: Literal['scratch', 'resume', 'fine_tune', 'frozen'] = 'scratch'
     concurrency: int = Field(1, ge=1, le=64,
@@ -352,6 +379,8 @@ class RunSettings(_Model):
     frozen_action: Literal['deterministic', 'sampled'] = Field('deterministic',
         description='frozen mode only: mean action or a sample from the fixed policy.')
     network: NetworkConfig = Field(default_factory=NetworkConfig)
+    reward: RewardConfig = Field(default_factory=RewardConfig)
+    conditions: ConditionsConfig = Field(default_factory=ConditionsConfig)
     model_source: ModelSource = Field(default_factory=ModelSource)
     advanced: AdvancedRL = Field(default_factory=AdvancedRL)
     cache_policy: Literal['disabled'] = Field('disabled',
@@ -431,6 +460,17 @@ class WorkbenchConfig(_Model):
     output: OutputSettings = Field(default_factory=OutputSettings)
     research: ResearchLabels = Field(default_factory=ResearchLabels)
 
+    @model_validator(mode='after')
+    def _reward_contract(self):
+        # The objective rows (one at most, with the limit its direction needs) are checked by validation.py as
+        # plain-language errors of the checklist, not here: a half-edited table must still load and be shown.
+        if self.run.conditions.policy == 'always':
+            if self.circuit.source != 'registered_task' or self.circuit.task_id != 'real:gpdk045_ota7':
+                raise ValueError('Training corners are supported only for the explicit real OTA7 task')
+            if self.run.max_spectre_launches is None or self.run.max_retries:
+                raise ValueError('Robust training needs a finite launch cap and zero automatic retries')
+        return self
+
 
 # --------------------------------------------------------------------------- helpers
 SECTIONS = {'parameters': OptimizationParameter, 'targets': PerformanceTarget,
@@ -453,10 +493,23 @@ def _hashed(data):
     Parameters and Probes fields retired on 2026-09-26 (record 7.92) are hashed as present at their old defaults, for the
     same reason again; a row that stated another value for one of them (it never ran, or the run refused it) hashes
     differently since."""
+    data = dict(data)
     run = data.get('run') if isinstance(data, dict) else None
+    if isinstance(run, dict):
+        run = dict(run)
+        if run.get('reward') == RewardConfig().model_dump(mode='json'):
+            run.pop('reward')
+        if run.get('conditions') == ConditionsConfig().model_dump(mode='json'):
+            run.pop('conditions')
+        data['run'] = run
     network = run.get('network') if isinstance(run, dict) else None
-    if isinstance(network, dict) and network.get('vocabulary') == STANDARD_VOCABULARY:
-        data = dict(data, run=dict(run, network={k: v for k, v in network.items() if k != 'vocabulary'}))
+    if isinstance(network, dict):
+        network = dict(network)
+        if network.get('vocabulary') == STANDARD_VOCABULARY:
+            network.pop('vocabulary')
+        if network.get('operating_points') is False:
+            network.pop('operating_points')
+        data['run'] = dict(run, network=network)
     for section, retired in (('parameters', RETIRED_PARAMETER_FIELDS), ('measurements', RETIRED_MEASUREMENT_FIELDS)):
         rows = data.get(section) if isinstance(data, dict) else None
         if isinstance(rows, list):
@@ -464,6 +517,8 @@ def _hashed(data):
     targets = data.get('targets') if isinstance(data, dict) else None
     if not isinstance(targets, list):
         return data
+    targets = [{k: v for k, v in row.items() if k != 'nominal_only' or v is not False}
+               if isinstance(row, dict) else row for row in targets]
     return dict(data, targets=[
         {('measurement_id' if key == 'equation' else key): value for key, value in row.items()}
         if isinstance(row, dict) and 'measurement_id' not in row and isinstance(row.get('equation'), str)

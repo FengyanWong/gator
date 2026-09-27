@@ -1,10 +1,22 @@
 # 工况、Monte Carlo 与算力预算
 
+2026-09-26 更新：`docs/plan-reward-v2-real-flow.md` 授权 OTA7 的显式 `always`
+训练计划（nominal + 四个 screening corners），其他 profile 拒绝训练 corners；post-validation
+仍独立。reward-v2 已通过 OTA7 有界真实 A/B/C 验收：73 次 Spectre（A21、B44 含一次
+记录失败、C8），0 次不确定调用，全部物理恢复和基线复验通过。用户确认 unknown license，
+并明确批准 B44/总77；正常许可流程未被绕过。A 的原生派生/独立导出网表、PSF/供电
+检查通过；C 的共享预算拒绝剩余四槽时启动五工况。默认仍是 corners off；MC 未实现。
+无 robust-feasible 设计，不证明 reward 优势、worst-case 完整性或良率。见 `docs/reward-v2.md`。
+
 ## 当前生效的范围
 
-早期工况接口任务限定在 M3；用户后来已授权并完成 M4/M5 与 M6 前编码器接口，nominal Graph Transformer/SAC 和训练流程已实现。PVT/MC 仍只保留配置、数据契约与汇总纯函数；top-k 后验证调度及 MC 执行尚未实现。以下“以后”建议是扩展参考，不因已有训练或编码器接口而自动启用。
+早期工况接口任务限定在 M3；后来的 M4/M5/M6 和 reward-v2 授权不受该历史范围限制。
+nominal SAC、独立 Corner check 与显式 OTA7 五工况训练已实现。通用 top-k 批处理和 MC
+执行仍未实现。以下“以后”建议不自动启动实验，研究调用预算仍需单独决定。
 
-默认流程约定仍为：在已验证 nominal 优化 → 保存 nominal top 3 独立设计 → 以后每个设计仅检查 5 个代表性 corners → 统计 worst-case/pass rate 并筛选。PVT/MC 结果不进入当前 nominal 的 reward、replay、normalizer 或梯度。
+默认 nominal 模式不吸收事后 PVT/MC 结果。显式 `always` 模式按整个计划预留调用，
+每步都执行五工况并进入 v2 reward/replay；reset 只跑 nominal，不冒充完整覆盖。
+两种模式不可在 exact resume 中混用。五个筛选点仍不是全组合或 yield 检验。
 
 ## 工况来源与当前 GPDK045
 

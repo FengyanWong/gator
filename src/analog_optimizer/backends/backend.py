@@ -131,6 +131,11 @@ class VirtuosoBackend(ABC):
         """None is reserved for legacy synthetic fixtures, not an implicit PVT default."""
         return None
 
+    def derive_condition_artifact(self, base: NetlistArtifact, work_root: Path,
+                                  *, condition: SimulationCondition) -> NetlistArtifact:
+        """Create an immutable deck from the verified original export, without sizing writes."""
+        raise UnsupportedCapability('Derived training-condition artifacts are not implemented by this backend')
+
     def validate_condition(self, condition: SimulationCondition | None) -> None:
         """Preflight BEFORE writing parameters or exporting; fail explicitly if unsupported."""
         if condition is not None:

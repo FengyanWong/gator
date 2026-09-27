@@ -137,8 +137,7 @@ try {
   await win.shot(path.join(out, 'ngspice-2-checked.png'), W);
 
   // ---- Save: the task is stored, the column follows it, the editors hold its rows ----------------------------------------------------
-  await win.evaluate(`(() => { const i = [...${W}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'Task name').querySelector('input');
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'fixture_ota'); i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await win.setValue(`[...${W}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'Task name').querySelector('input')`, 'fixture_ota', { event: 'input' });
   await sleep(200);
   await win.evaluate(`[...${W}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save as task').click()`, true);
   for (let i = 0; i < 80 && !sent.some(s => s.name === '/api/ngspice/task/save'); i++) await sleep(100);

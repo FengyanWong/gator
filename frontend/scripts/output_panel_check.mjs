@@ -16,7 +16,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/output_panel_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -26,7 +26,7 @@ const ROOT = '/fixture/output-root';
 const GIB = 1024 ** 3, MIB = 1024 ** 2;
 const OUTPUT_CHECK = { resolved: ROOT, allowed: true, writable: true, error: null, host: 'FIXTURE', environment: 'fixture', filesystem: 'fixture',
   free_bytes: 400 * GIB, bytes_used: 3 * GIB, windows_path: null, windows_mapping: 'fixture', mock_data_root: '/fixture/mock' };
-const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: null };
+const VALID = validConfiguration();
 
 try {
   const listed = (await (await fetch(new URL('api/tasks', APP))).json()).tasks.map(t => t.task_key);
@@ -73,12 +73,12 @@ try {
     else await send('Input.insertText', { text });
     await evaluate(`${CP_BOX}.blur()`);
   };
-  const chooseCp = unit => evaluate(`(() => { const s = ${CP_UNIT}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(unit)}); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  const chooseCp = unit => page.setValue(`${CP_UNIT}`, unit);
   const editStored = async change => {
     await evaluate(`(() => { const c = JSON.parse(localStorage.getItem('gator-workbench-config-v1')); (${change})(c.output); localStorage.setItem('gator-workbench-config-v1', JSON.stringify(c)); })()`);
     await send('Page.reload'); await until(`!!(${PANEL}) && !!(${CP})`, 150);
   };
-  const choose = unit => evaluate(`(() => { const s = ${UNIT}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(unit)}); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  const choose = unit => page.setValue(`${UNIT}`, unit);
   const shot = async name => {
     await evaluate(`${PANEL}.scrollIntoView({ block: 'start' })`); await sleep(150);
     await page.shot(path.join(out, name), await evaluate(`(() => { const r = ${PANEL}.getBoundingClientRect(); return { x: r.x - 4, y: Math.max(0, r.y - 4), width: r.width + 8, height: r.height + 8, scale: 2 }; })()`), { beyond: true });

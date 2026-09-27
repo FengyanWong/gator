@@ -91,11 +91,10 @@ try {
   const stored = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')`);
   const POPUP = `window.open('', 'gator-task-file')`;                             // the same name returns the open window, unchanged
   const popupEval = body => evaluate(`(() => { const w = ${POPUP}; const d = w.document; ${body} })()`, true);
-  const typeInto = async (selector, text) => evaluate(`(() => { const el = ${selector};
-    Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value').set.call(el, ${JSON.stringify(text)}); el.dispatchEvent(new Event('input', { bubbles: true })); })()`, true);
+  const typeInto = async (selector, text) => page.setValue(`${selector}`, text, { event: 'input', userGesture: true });
   const settle = (ms = 900) => sleep(ms);
 
-  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/tasks', '*/api/tasks/starter*'], answer, { others: 'read' });
+  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/tasks', '*/api/tasks/starter*'], answer, { others: 'read', connection: 'lab' });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   for (let i = 0; i < 50 && !(await stored()); i++) await sleep(100);

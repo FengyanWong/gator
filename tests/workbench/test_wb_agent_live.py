@@ -8,11 +8,9 @@ thinking message of the recording was cut to the same text - and with session id
 import asyncio
 import http.client
 import json
-import os
 from pathlib import Path
 import random
 import socket
-import stat
 import sys
 import threading
 import time
@@ -25,30 +23,11 @@ from gator_workbench.agents import base
 from gator_workbench.agents.live import CodexTranslator, LiveTranslator, PartialAnswer
 from gator_workbench.api import create_app
 from gator_workbench.api.app import live_answer
-from helpers import make_config
+from helpers import cli, make_config, workbench_server
 
 FIXTURES = Path(__file__).parent / 'fixtures'
-FAKE = FIXTURES / 'fake_cli.py'
 sys.path.insert(0, str(FIXTURES))
 import fake_cli                                                     # noqa: E402  (its GOOD / THINKING / REPLY_ONLY)
-
-
-@pytest.fixture
-def cli(tmp_path, monkeypatch):
-    bin_dir = tmp_path / 'bin'
-    bin_dir.mkdir()
-    for name in ('claude', 'codex'):
-        target = bin_dir / name
-        target.write_text(f'#!{sys.executable}\n' + FAKE.read_text())
-        target.chmod(target.stat().st_mode | stat.S_IXUSR)
-    record = tmp_path / 'record.json'
-    monkeypatch.setenv('PATH', f'{bin_dir}{os.pathsep}{os.environ["PATH"]}')
-    monkeypatch.setenv('FAKE_CLI_RECORD', str(record))
-
-    def scenario(name):
-        monkeypatch.setenv('FAKE_CLI_SCENARIO', name)
-        return record
-    return scenario
 
 
 def request(tmp_path, kind='targets', prompt='Raise the score target to 0.97'):
@@ -396,21 +375,8 @@ def test_the_saved_time_limit_is_gone(client, tmp_path):
 # ------------------------------------------------------------------------------- over a real socket
 @pytest.fixture
 def server(tmp_path):
-    """The app under uvicorn on a free local port: TestClient hands a streamed body over only when it is complete."""
-    import uvicorn
-    sock = socket.socket()
-    sock.bind(('127.0.0.1', 0))
-    app = create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False)
-    instance = uvicorn.Server(uvicorn.Config(app, log_level='warning', lifespan='off'))
-    thread = threading.Thread(target=instance.run, kwargs=dict(sockets=[sock]), daemon=True)
-    thread.start()
-    for _ in range(200):
-        if instance.started:
-            break
-        time.sleep(0.02)
-    yield sock.getsockname()[1]
-    instance.should_exit = True
-    thread.join(timeout=10)
+    with workbench_server(tmp_path) as port:
+        yield port
 
 
 def open_live(port, body):

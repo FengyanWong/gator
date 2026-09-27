@@ -16,7 +16,7 @@
 // Optional: GATOR_WORKBENCH_OUTPUT_ROOT = the output folder whose real models the last section uses
 // (from WSL: WSLENV=GATOR_WORKBENCH_URL:GATOR_WORKBENCH_OUTPUT_ROOT). Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const ROOT = process.env.GATOR_WORKBENCH_OUTPUT_ROOT || undefined;
@@ -57,7 +57,7 @@ const structure = (id, { typed = true, withUnused = true, scale = 1 } = {}) => {
     totals: { trained, actor: actor.parameters, critic_each: critic.parameters, temperature: 1, target_copies: 2 * critic.parameters, saved: trained + 2 * critic.parameters,
       never_used: actor.unused_parameters + 2 * critic.unused_parameters, never_used_in_targets: 2 * critic.unused_parameters }, explanation: 'FIXTURE explanation: trained = actor + 2 critics + 1.' };
 };
-const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: null };
+const VALID = validConfiguration();
 
 try {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
@@ -81,8 +81,7 @@ try {
   };
   const until = (expression, tries = 60) => page.until(expression, tries);
   const RIGHT = `document.querySelector('.right')`, FOLD = `document.querySelector('.right details.structure')`, DIALOG = `document.querySelector('dialog.structure-dialog')`;
-  const setSelect = (expression, value) => evaluate(`(() => { const s = ${expression}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)});
-    s.dispatchEvent(new Event('change', { bubbles: true })); return s.value; })()`);
+  const setSelect = (expression, value) => page.setValue(`${expression}`, value);
   const toggle = () => evaluate(`${FOLD}.querySelector('summary').click()`);
   const foldText = () => evaluate(`${FOLD}?.innerText ?? ''`);
   const sections = () => evaluate(`[...${FOLD}.querySelectorAll('table.structure-sections')].map(t => [...t.tBodies[0].rows].map(r => [...r.cells].map(c => c.textContent.trim())))`);

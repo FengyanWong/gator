@@ -7,7 +7,7 @@ exactly the saved tensors), and one forward pass of the actor is run on the CPU.
 runs alike and costs no evaluation.
 
 Attention is read WITHOUT touching ``src/analog_optimizer``: a forward hook on each attention convolution
-(``TransformerConv`` / ``GATConv``) repeats that layer's own computation on its own inputs with
+(``TransformerConv`` / ``GATv2Conv``) repeats that layer's own computation on its own inputs with
 ``return_attention_weights=True``. The layers are deterministic (dropout 0), so these are the weights the pass used;
 a test compares the policy's output with and without the hooks.
 
@@ -84,7 +84,7 @@ def _step(loader, wanted, saved_at):
 def capture_attention(actor, run):
     """Run `run()` and return (its result, [per attention layer: (edge_index [2,E], alpha [E,H])])."""
     import torch
-    from torch_geometric.nn import GATConv, TransformerConv
+    from torch_geometric.nn import GATv2Conv, TransformerConv
     captured, handles = [], []
 
     def hook(module, inputs, output):
@@ -92,7 +92,7 @@ def capture_attention(actor, run):
             _, (edge_index, alpha) = module.forward(*inputs, return_attention_weights=True)
         captured.append((edge_index, alpha))
     for module in actor.modules():
-        if isinstance(module, (TransformerConv, GATConv)):
+        if isinstance(module, (TransformerConv, GATv2Conv)):
             handles.append(module.register_forward_hook(hook))
     try:
         with torch.no_grad():

@@ -210,6 +210,47 @@ def read_jsonl(path):
     return records
 
 
+def read_jsonl_tail(path, limit, *, block_size=65536):
+    """Newest complete log records, without scanning the journal's entire history.
+
+    Display only: skip malformed log lines and an unfinished final line. Recovery still
+    uses read_jsonl, which stops at the first malformed record in the journal.
+    """
+    if limit <= 0:
+        return []
+    try:
+        stream = Path(path).open('rb')
+    except FileNotFoundError:
+        return []
+    records, pending, at_end = [], b'', True
+
+    def take(line):
+        if line.strip():
+            try:
+                records.append(json.loads(line))
+            except (ValueError, UnicodeError):
+                pass
+
+    with stream:
+        position = stream.seek(0, os.SEEK_END)
+        while position and len(records) < limit:
+            size = min(position, block_size)
+            position -= size
+            stream.seek(position)
+            pieces = (stream.read(size) + pending).split(b'\n')
+            pending = pieces.pop(0)
+            if at_end and pieces:
+                pieces.pop()                         # bytes after the final newline are not a committed record
+                at_end = False
+            for line in reversed(pieces):
+                take(line)
+                if len(records) == limit:
+                    break
+        if not position and not at_end and len(records) < limit:
+            take(pending)
+    return records[::-1]
+
+
 def remove_registered_temporaries(directory) -> list[str]:
     """Delete only this package's own temporary files. Never models or primary data."""
     removed = []

@@ -111,7 +111,7 @@ try {
   const settle = async (ms = 900) => { await sleep(ms); };
   const shot = async name => far.shot(path.join(out, name), BLOCK, { scale: 2, pad: 12, maxHeight: 1200, beyond: true });
 
-  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load'], answer, { others: 'read' });
+  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load'], answer, { others: 'read', connection: 'lab' });
   // A configuration that already holds a Probes row and a Specs row of the user's own for "freq": their unit and optimizer
   // settings must survive "Read setup". Started from the live starter configuration, so it passes the schema.
   await send('Page.navigate', { url: APP });

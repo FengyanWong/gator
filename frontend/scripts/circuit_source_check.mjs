@@ -48,8 +48,7 @@ try {
   const SOURCE = FIELD('Task');
   const text = () => evaluate(`${PANEL}.textContent`);
   const options = () => evaluate(`[...${SOURCE}.options].map(o => ({ value: o.value, text: o.textContent.trim(), disabled: o.disabled }))`);
-  const choose = (label, v) => evaluate(`(() => { const s = ${FIELD(label)}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(v)});
-    s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  const choose = (label, v) => page.setValue(`${FIELD(label)}`, v);
   const settle = async (mark, ms = 6000) => { for (let waited = 0; waited < ms && loads.length === mark; waited += 100) await sleep(100); await sleep(900); };
   const saved = () => evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)}) || 'null')?.circuit ?? null`);
   const shot = async name => {                                                      // the left column scrolls: bring the task into view, clip to what is visible

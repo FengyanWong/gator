@@ -20,7 +20,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/pdk_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -47,7 +47,7 @@ const FIXLOAD = entry('fixload', 2, { resistor: 2 }, 'b'.repeat(64));
 const details = (e, devices) => ({ ...e, devices, not_netlisted: [{ cell: 'ringfx', reason: 'FIXTURE: no Spectre entry' }], layout_only: [{ cell: 'crossfx', views: ['layout'] }],
   not_used: ['fx_core'], parameters: [], terminal_roles: [] });
 const STANDARD = { vocabulary: 'standard', label: 'standard (8 generic kinds)', kinds: [], parameters: [] };
-const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: null };
+const VALID = validConfiguration();
 
 try {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
@@ -86,7 +86,7 @@ try {
   const LIST = `${RUN}.querySelector('.component-list')`;
   const SELECT = `${LIST}.querySelector('select')`;
   const ENCODER = `[...${RUN}.querySelectorAll('label')].find(l => l.firstChild?.textContent?.trim() === 'Encoder')?.querySelector('select')`;
-  const choose = (select, value) => evaluate(`(() => { const s = ${select}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)}); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  const choose = (select, value) => page.setValue(`${select}`, value);
   const storedNetwork = async () => (await page.stored())?.run?.network ?? null;
   // The page keeps its configuration in this browser 800 ms after the last change (store.ts): wait for it, then read it.
   const storedWhen = async test => { for (let i = 0; i < 40; i++) { const n = await storedNetwork(); if (test(n)) return n; await sleep(100); } return storedNetwork(); };

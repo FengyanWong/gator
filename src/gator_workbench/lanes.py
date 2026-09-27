@@ -49,6 +49,7 @@ class _EnvDriver:
         env = self.env
         return dict(lane_id=self.lane_id, directory=str(env.directory), origin=env.expected_origin,
                     group_ids=list(env.mapper.group_ids), max_steps=env.max_steps,
+                    step_launches=len(env.planned_conditions),
                     config_sha256=env.config_sha256, supports_retry=hasattr(env, '_evaluate'))
 
     def _new_records(self):
@@ -73,12 +74,13 @@ class _EnvDriver:
                 pass
         return records
 
-    def run(self, op, proposal=None):
+    def run(self, op, proposal=None, allowance=1, stop_file=None):
         env = self.env
         calls_before, started = env.simulation_calls, _now()
         result = dict(op=op, lane_id=self.lane_id, started_at=started, ok=False, step=None, exception=None,
                       episode=None, episode_step=None)
         try:
+            env.authorize_launches(allowance, stop_file=stop_file)
             if op == 'reset':
                 observation, info = env.reset()
                 self._last = ('reset', None)
@@ -157,17 +159,17 @@ class ThreadLane:
             item = self._commands.get()
             if item is None:
                 return
-            (op, proposal), future = item
+            (op, proposal, allowance, stop_file), future = item
             try:
-                future.set_result(driver.close() if op == 'close' else driver.run(op, proposal))
+                future.set_result(driver.close() if op == 'close' else driver.run(op, proposal, allowance, stop_file))
             except BaseException as exc:
                 future.set_exception(exc)
             if op == 'close':
                 return
 
-    def submit(self, op, proposal=None):
+    def submit(self, op, proposal=None, *, allowance=1, stop_file=None):
         future = Future()
-        self._commands.put(((op, proposal), future))
+        self._commands.put(((op, proposal, allowance, stop_file), future))
         return _Handle(future)
 
     def close(self, timeout=30.0):
@@ -190,8 +192,8 @@ def _process_open(factory, lane_id):
     return _DRIVER.describe()
 
 
-def _process_run(op, proposal=None):
-    return _DRIVER.run(op, proposal)
+def _process_run(op, proposal=None, allowance=1, stop_file=None):
+    return _DRIVER.run(op, proposal, allowance, stop_file)
 
 
 def _process_close():
@@ -214,8 +216,8 @@ class ProcessLane:
             self._worker.shutdown()
             raise
 
-    def submit(self, op, proposal=None):
-        return self._worker.submit(_process_run, op, proposal)
+    def submit(self, op, proposal=None, *, allowance=1, stop_file=None):
+        return self._worker.submit(_process_run, op, proposal, allowance, stop_file)
 
     def close(self, timeout=None):
         outcome = dict(lane_id=self.lane_id, state='unknown')

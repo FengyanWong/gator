@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import fcntl
+import json
 import math
 import os
 from pathlib import Path
@@ -171,6 +172,8 @@ class RunEngine:
         self.lanes, self.dataset = [], None
         self._preparation, self.preparation_report = None, None
         try:
+            self._condition_stop_file = self.layout.control / 'stop-condition-jobs.json'
+            self._condition_stop_file.unlink(missing_ok=True)
             self._write_status('starting')
             self._prepare()
             self._event('segment_started', entry=self.entry, mode=self.mode, pid=os.getpid(),
@@ -225,7 +228,8 @@ class RunEngine:
                             model_config=modes.model_config_from(cfg.run.network),
                             sac_config=modes.sac_config_from(adv), spec_schema=self.compiled.spec_schema,
                             advanced=adv, seed=cfg.run.seed, origin=self.task.origin, source_dir=source_dir,
-                            source_metadata=source_meta, task_definition_hash=self.task_hash, vocabulary=self.vocabulary)
+                            source_metadata=source_meta, task_definition_hash=self.task_hash, vocabulary=self.vocabulary,
+                            runtime=modes.runtime_options(cfg, self.vocabulary))
         self.learner, self.replay, self.freeze = built['learner'], built['replay'], built['freeze']
         self.load_policy = built['policy']
         if self.frozen:
@@ -259,6 +263,9 @@ class RunEngine:
                                         spec_schema_version=self.compiled.spec_schema.version)
         if self.entry == 'resume':
             self._restore(built['run_state'])
+        if self.ledger.uncertain_launches:
+            write_json(self._condition_stop_file, dict(reason='unresolved_launch_intent'))
+            raise RuntimeError('Unresolved physical launch intents/leases must be reconciled before resume; no lanes opened')
         self.checkpoints = ckpt.CheckpointStore(self.layout.run_dir, run_id=self.run_id, task_id=self.task_id,
                                                 task_definition_hash=self.task_hash,
                                                 save_replay=out.save_replay_snapshots, keep_last=out.keep_last_checkpoints)
@@ -276,7 +283,9 @@ class RunEngine:
             self._preparation = ExitStack()
             factory = self._preparation.enter_context(prepare_context(WorkerLimits(), self.preparation_report))
             self._event('preparation_service_started', session=(self.preparation_report.get('preparation') or {}).get('session_dir'))
-        self.lanes = open_lanes(factory, count, use_processes=self.use_processes)
+        from analog_optimizer.training.workers import WorkerLimits
+        limits = WorkerLimits(operation_seconds=max(300., (1 + len(run.conditions.corners)) * adv.simulation_timeout_seconds + 180.))
+        self.lanes = open_lanes(factory, count, use_processes=self.use_processes, limits=limits)
         self.lane_state = {lane.lane_id: dict(observation=None, needs_reset=True, busy=None, finished=False,
                                               episode_id=None) for lane in self.lanes}
         for lane in self.lanes:
@@ -322,11 +331,14 @@ class RunEngine:
         if post or interrupted:
             reader = DatasetReader(self.layout.data)
             evaluations = reader.rows('evaluations', ['evaluation_id', 'status', 'cache_hit', 'attempts', 'valid'])
-            jobs = reader.rows('simulator_jobs', ['launch_counted'])
+            jobs = reader.rows('simulator_jobs', ['launch_counted', 'invocation_confirmed'])
+            unresolved = read_json(self.layout.data / '_journal' / 'unresolved-launch-leases.json', default={})
+            unknown = sum(item['allowance'] for item in unresolved.values())
             report['reconciled'] = self.ledger.reconcile(
                 charged=len(evaluations), completed=len(evaluations),
                 failed=sum(1 for e in evaluations if not e['valid']),
-                launches=sum(1 for j in jobs if j['launch_counted']),
+                launches=sum(1 for j in jobs if j['launch_counted']) + unknown,
+                uncertain=sum(1 for j in jobs if j['launch_counted'] and j['invocation_confirmed'] is None) + unknown,
                 retries=sum(max(0, e['attempts'] - 1) for e in evaluations),
                 cache_hits=sum(1 for e in evaluations if e['cache_hit']))
             self.counters['completion_index'] = max(self.counters['completion_index'], len(evaluations))
@@ -351,7 +363,15 @@ class RunEngine:
         """Evaluations that STARTED (budget charged) but were never committed because the process died."""
         started = {r['evaluation_id']: r for r in read_jsonl(self.layout.data / '_journal' / 'dispatch.jsonl')}
         lost = [r for key, r in started.items() if not self.dataset.has(key)]
+        lease_path = self.layout.data / '_journal' / 'unresolved-launch-leases.json'
+        leases = read_json(lease_path, default={})
         for record in sorted(lost, key=lambda r: r['dispatch_index']):
+            if not self.task.mock:
+                # A real dispatch without a coordinator receipt cannot release its allocation: an unknown lease,
+                # not a fabricated simulator job or confirmed call. The toy backend launches nothing: no lease.
+                leases[record['evaluation_id']] = dict(allowance=record.get('launch_allowance', 1),
+                                                      dispatch=record, state='unresolved')
+                write_json(lease_path, leases)
             seq, now = self.dataset.next_seq(), iso()
             self.counters['completion_index'] += 1
             row = dict(run_id=self.run_id, evaluation_id=record['evaluation_id'], task_id=self.task_id,
@@ -374,12 +394,14 @@ class RunEngine:
                        cumulative_completed=self.ledger.completed, cumulative_launches=self.ledger.launches,
                        in_flight_at_commit=0, after_first_feasible=self.ledger.first_feasible is not None,
                        in_flight_at_first_feasible=False, status='interrupted', failure_type='interrupted_by_crash',
-                       diagnostics='The worker process ended while this evaluation was running. It stays charged. '
-                                   'Whether the simulator was launched is unknown and is not counted as a launch.',
+                       diagnostics='The worker process ended while this evaluation was running. It stays charged. ' + (
+                                   'Whether the toy backend was called is unknown; nothing physical happened.' if self.task.mock else
+                                   'Its full launch allowance remains charged as unresolved, separately from confirmed '
+                                   'jobs. Reconcile the worker launch journals before any resume.'),
                        terminated=False, truncated=True, replay_eligible=False, duplicate_of=None)
             self.dataset.commit(dict(evaluation_id=record['evaluation_id'], commit_seq=seq, rows=dict(evaluations=[row])))
             self.counters['interrupted_evaluations'] += 1
-            self.counters['launches_unconfirmed_after_crash'] += 1
+            self.counters['launches_unconfirmed_after_crash'] += record.get('launch_allowance', 1)
         if lost:
             self.dataset.flush()
         return len(lost)
@@ -392,6 +414,8 @@ class RunEngine:
         while True:
             self._poll_control()
             self._check_limits()
+            if self.stop_reason is not None and not self._condition_stop_file.exists():
+                write_json(self._condition_stop_file, dict(reason=self.stop_reason))
             busy = [l for l in self.lanes if self.lane_state[l.lane_id]['busy']]
             if self.checkpoint_due and not busy and self.stop_reason is None:
                 self._checkpoint(self.checkpoint_kind)
@@ -428,10 +452,12 @@ class RunEngine:
         name = command.get('command')
         if name in ('pause', 'stop') and self.stop_reason is None:
             self.requested, self.stop_reason = name, f'user_{name}'
+            write_json(self._condition_stop_file, dict(reason=self.stop_reason))
             self._event('control', command=name, note='dispatch stopped; waiting for in-flight jobs')
             self._write_status('pausing' if name == 'pause' else 'stopping')
         elif name == 'cancel':
             self.requested, self.stop_reason, self.forced = 'cancel', 'user_cancel', True
+            write_json(self._condition_stop_file, dict(reason=self.stop_reason))
             self._event('control', command='cancel', note='forced cancellation')
         elif name == 'checkpoint' and self.stop_reason is None and self.config.output.save_checkpoints:
             # "Save now": taken like a periodic save, at the next boundary with nothing in flight (dispatch waits
@@ -487,7 +513,8 @@ class RunEngine:
     # ------------------------------------------------------------------ dispatch
     def _dispatch(self, lane):
         state = self.lane_state[lane.lane_id]
-        evaluation_id = self.ledger.reserve()
+        allowance = 1 if state['needs_reset'] else lane.info.get('step_launches', 1)
+        evaluation_id = self.ledger.reserve(launches=allowance)
         if evaluation_id is None:
             state['finished'] = True
             return
@@ -524,14 +551,15 @@ class RunEngine:
         busy = dict(evaluation_id=evaluation_id, proposal_id=uuid4().hex, op=op, proposal=proposal,
                     action_source=source, phase=phase, policy_version=policy_version, proposed_at=proposed_at,
                     started_at=started_at, dispatch_index=dispatch_index, attempts=[],
-                    previous=state['observation'], episode_id=state['episode_id'])
+                    previous=state['observation'], episode_id=state['episode_id'], launch_allowance=allowance)
         self.dispatch_log.append(dict(evaluation_id=evaluation_id, proposal_id=busy['proposal_id'],
                                       dispatch_index=dispatch_index, worker_id=lane.lane_id, phase=phase,
                                       action_source=source, policy_version=policy_version,
                                       episode_id=state['episode_id'], proposed_at=iso(proposed_at),
-                                      started_at=iso(started_at)))
+                                      started_at=iso(started_at), launch_allowance=allowance,
+                                      worker_directory=lane.info['directory']))
         self.ledger.begin_attempt(evaluation_id)
-        busy['handle'] = lane.submit(op, proposal)
+        busy['handle'] = lane.submit(op, proposal, allowance=allowance, stop_file=str(self._condition_stop_file))
         busy['attempt_dispatched_at'] = utcnow()
         state['busy'] = busy
 
@@ -546,16 +574,28 @@ class RunEngine:
                           started_at=iso(busy['attempt_dispatched_at']), ended_at=iso(),
                           exception=dict(type=type(exc).__name__, message=str(exc)[:4000]), lane_failure=True,
                           episode=None, episode_step=None)
-        self.ledger.end_attempt(busy['evaluation_id'], launches=int(result['launches']))
+        if result.get('lane_failure') and not self.task.mock:
+            result['launches'] = busy['launch_allowance']         # conservative: the physical launch state is unknown
+            result['launch_unknown'] = True
+            uncertain = busy['launch_allowance']
+        elif result.get('lane_failure'):
+            uncertain = 0                                          # the toy backend launched nothing
+        else:
+            uncertain = sum(job.get('uncertain_calls', 0) for job in (result.get('record') or {}).get('jobs', []))
+        self.ledger.end_attempt(busy['evaluation_id'], launches=int(result['launches']), uncertain=uncertain)
+        if uncertain:
+            self.stop_reason = 'unresolved_launch_intent'
+            self.error = 'Physical launch state is unresolved; automatic continuation is blocked pending reconciliation'
+            write_json(self._condition_stop_file, dict(reason=self.stop_reason))
         result['dispatched_at'] = iso(busy['attempt_dispatched_at'])
         busy['attempts'].append(result)
         record = result.get('record') or {}
         retryable = (result['ok'] and result['step'][3] and record.get('retryable') is True
                      and record.get('status') in INFRASTRUCTURE_FAILURES and lane.info.get('supports_retry'))
-        if retryable and not self.forced and self.ledger.may_retry(busy['evaluation_id']):
+        if retryable and self.stop_reason is None and not self.forced and self.ledger.may_retry(busy['evaluation_id']):
             self.ledger.begin_attempt(busy['evaluation_id'])
             busy['retry_reason'] = f"retryable {record.get('status')}: {record.get('reason_code')}"
-            busy['handle'] = lane.submit('retry')
+            busy['handle'] = lane.submit('retry', allowance=busy['launch_allowance'], stop_file=str(self._condition_stop_file))
             busy['attempt_dispatched_at'] = utcnow()
             return
         state['busy'] = None
@@ -569,10 +609,11 @@ class RunEngine:
             if busy['handle'].done():
                 self._on_attempt(lane, busy['handle'])
                 continue
-            self.ledger.end_attempt(busy['evaluation_id'], launches=0)
-            result = dict(op=busy['op'], ok=False, step=None, record=None, records=[], launches=0, cancelled=True,
+            unknown = 0 if self.task.mock else busy['launch_allowance']     # only a real launch can be left unresolved
+            self.ledger.end_attempt(busy['evaluation_id'], launches=unknown, uncertain=unknown)
+            result = dict(op=busy['op'], ok=False, step=None, record=None, records=[], launches=unknown, cancelled=True,
                           started_at=iso(busy['attempt_dispatched_at']), ended_at=iso(),
-                          dispatched_at=iso(busy['attempt_dispatched_at']), launch_unknown=True,
+                          dispatched_at=iso(busy['attempt_dispatched_at']), launch_unknown=not self.task.mock,
                           exception=dict(type='Cancelled', message='Forced cancellation while the job was running; '
                                                                    'the remote job state is unknown'),
                           episode=None, episode_step=None)
@@ -611,17 +652,47 @@ class RunEngine:
             ok = value is not None and status == 'ok'
             metric_values[target['metric_id']], metric_valid[target['metric_id']] = (value if ok else None), ok
         valid, feasible, constraint_rows, violation = hard_constraints(self.compiled.targets, metric_values, metric_valid)
+        nominal_feasible = feasible
+        if observation is not None and observation.condition_results:
+            evaluation = observation.evaluation
+            checks = []
+            for index, row in enumerate(observation.condition_results):
+                targets = tuple(t for t in self.compiled.targets if index == 0 or not t['nominal_only'])
+                validity = {t['metric_id']: row.metric_validity.get(t['metric_id']) is True
+                            and row.metric_units.get(t['metric_id']) == t['unit'] and row.status == 'ok'
+                            and row.candidate_evaluated for t in targets}
+                checks.append(hard_constraints(targets, row.metrics, validity))
+            valid = all(check[0] for check in checks) and not truncated
+            feasible = valid and evaluation.complete and all(check[1] for check in checks)
+            nominal_feasible = checks[0][1]
+            violation = max((check[3] or 0 for check in checks), default=0) if valid else None
+            metric_values = evaluation.worst_values
+            spec_values = metric_values
+            by_metric = {}
+            for _, _, checked, _ in checks:
+                for row in checked:
+                    old = by_metric.get(row['metric_id'])
+                    if old is None or (row.get('normalized_violation') or 0) > (old.get('normalized_violation') or 0):
+                        by_metric[row['metric_id']] = row
+            constraint_rows = list(by_metric.values())
         if op_is_step := busy['op'] != 'reset':
             self.counters['global_env_step'] += 1
         failed = not valid
         from .connection import classify_infrastructure_failure
         infrastructure = None if valid else classify_infrastructure_failure(
             status, record.get('reason_code'), ' '.join(str(x) for x in (record.get('error'), (result.get('exception') or {}).get('message')) if x))
-        if infrastructure and not result.get('cancelled'):
-            self.counters['consecutive_infrastructure_failures'] += 1      # completion order, across all workers
-            self.counters['infrastructure_failures'] += 1
-        else:
-            self.counters['consecutive_infrastructure_failures'] = 0
+        receipts = record.get('jobs') or [dict(status=status, reason_code=record.get('reason_code'))]
+        for receipt_index, job in enumerate(receipts):
+            job_failure = classify_infrastructure_failure(job.get('status'), job.get('reason_code'), '')
+            if job_failure and not result.get('cancelled'):
+                infrastructure = job_failure
+                self.counters['consecutive_infrastructure_failures'] += 1
+                self.counters['infrastructure_failures'] += 1
+            else:
+                self.counters['consecutive_infrastructure_failures'] = 0
+            self._event('condition_receipt', evaluation_id=evaluation_id, job_id=job.get('job_id'),
+                        candidate_receipt_index=self.counters['completion_index'], condition_receipt_index=receipt_index,
+                        status=job.get('status'), infrastructure_failure=job_failure)
         if valid:
             self.counters['last_successful_evaluation_utc'] = iso(completed_at)
         self.ledger.complete(evaluation_id, failed=failed)
@@ -651,6 +722,11 @@ class RunEngine:
         # ---- first feasibility: decided when the scheduler receives the result
         in_flight_before = set(self.ledger.first_feasible['in_flight_evaluation_ids']) if self.ledger.first_feasible else set()
         after_first = self.ledger.first_feasible is not None
+        if nominal_feasible and self.ledger.first_nominal_feasible is None:
+            first = self.ledger.mark_first_feasible(evaluation_id, dispatch_index=busy['dispatch_index'],
+                commit_seq=commit_seq, active_seconds=self._active_seconds(),
+                wall_seconds=(utcnow() - self._run_created()).total_seconds(), nominal=True)
+            self._event('first_nominal_feasible', **first)
         if feasible and not after_first:
             first = self.ledger.mark_first_feasible(evaluation_id, dispatch_index=busy['dispatch_index'],
                                                     commit_seq=commit_seq, active_seconds=self._active_seconds(),
@@ -660,6 +736,23 @@ class RunEngine:
                 self.stop_reason = 'first_feasible'
         candidate = self._candidate(busy, record, metric_values, raw_units, constraint_rows, valid, feasible,
                                     violation, reward, commit_seq)
+        candidate.update(nominal_feasible=nominal_feasible, nominal_metrics=record.get('metrics'),
+                         robust_feasible=feasible if self.config.run.conditions.policy == 'always' else None,
+                         worst_metrics=metric_values, conditions_complete=info.get('conditions_complete'),
+                         conditions_evaluated=info.get('conditions_evaluated'), conditions_planned=info.get('conditions_planned'),
+                         clearance_margin=info.get('clearance_margin'), tightest_clearance_spec=info.get('tightest_clearance_spec'),
+                         clearance_rule=record.get('clearance_rule'),
+                         conditions=[row['condition']['corner']['id'] if row['condition'] else 'nominal'
+                                     for row in record.get('condition_results', [])] or ['nominal'])
+        if candidate['robust_feasible'] and self.compiled.preference and observation is not None:
+            preference = self.compiled.preference
+            spec = next(s for s in observation.specs if s.metric_id == preference['metric'])
+            applicable = observation.condition_results[:1] if spec.nominal_only else observation.condition_results
+            values = [row.metrics.get(spec.metric_id) for row in applicable
+                      if row.metric_validity.get(spec.metric_id) is True]
+            candidate['worst_metrics'] = dict(metric_values)
+            candidate['worst_metrics'][spec.metric_id] = ((max(values) if preference['direction'] == 'min' else min(values))
+                                                         if len(values) == len(applicable) else None)
         role = self.tracker.offer(candidate)
         best = self.tracker.best
         job_rows, retention_plan = self._job_rows(busy, lane, role, failed)
@@ -688,6 +781,13 @@ class RunEngine:
                                                            if v is not None},
             valid=valid, all_hard_constraints_satisfied=feasible, normalized_constraint_violation=violation,
             env_success=None if env_success is None else bool(env_success),
+            reward_version=record.get('reward_version'), condition_policy=record.get('condition_policy'),
+            conditions_planned=info.get('conditions_planned'), conditions_evaluated=info.get('conditions_evaluated'),
+            conditions_complete=info.get('conditions_complete'), nominal_feasible=nominal_feasible,
+            robust_feasible=feasible if self.config.run.conditions.policy == 'always' else None,
+            clearance_margin=info.get('clearance_margin'), tightest_clearance_spec=info.get('tightest_clearance_spec'),
+            clearance_rule=record.get('clearance_rule'),
+            condition_results_json=json.dumps(record['condition_results']) if record.get('condition_results') else None,
             best_so_far_evaluation_id=None if best is None else best['evaluation_id'],
             best_so_far_feasible=bool(self.tracker.feasible),
             best_so_far_violation=None if best is None else best['violation'],
@@ -696,13 +796,13 @@ class RunEngine:
             cumulative_launches=self.ledger.launches, in_flight_at_commit=len(self.ledger.in_flight_ids()),
             after_first_feasible=after_first, in_flight_at_first_feasible=evaluation_id in in_flight_before,
             status=status, failure_type=None if valid else (
-                'invalid_measurement' if status == 'ok' else (infrastructure or record.get('reason_code') or status)),
+                infrastructure or ('invalid_measurement' if status == 'ok' else (record.get('reason_code') or status))),
             diagnostics=redact(diagnostics, 2000), terminated=terminated, truncated=truncated,
             replay_eligible=eligible, duplicate_of=record.get('duplicate_of'))
         bundle = dict(evaluation_id=evaluation_id, commit_seq=commit_seq, rows=dict(
             evaluations=[evaluation], parameters=self._parameter_rows(busy, record, evaluation_id),
             metrics=self._metric_rows(evaluation_id, raw_metrics, raw_validity, raw_units, derived, spec_values,
-                                      constraint_rows, status),
+                                      constraint_rows, status, record.get('condition_results')),
             simulator_jobs=job_rows, learner_updates=update_rows, states=state_rows, transitions=transition_rows))
         self.dataset.commit(bundle)                              # <- durable acknowledgement
         if role is not None:
@@ -804,7 +904,7 @@ class RunEngine:
                                  lower=variable['lower'], upper=variable['upper'], step=variable['step']))
         return rows
 
-    def _metric_rows(self, evaluation_id, raw, validity, units_map, derived, spec_values, constraints, status):
+    def _metric_rows(self, evaluation_id, raw, validity, units_map, derived, spec_values, constraints, status, conditions=None):
         """Raw simulator results (condition rows), then one aggregate row per spec - the value of its equation, with its
         thresholds - and one per probe that no spec shows whole. A spec whose equation is one probe is that probe's row
         (measurement_id = the probe), exactly as before specs had equations; a formula's row has no single probe."""
@@ -851,14 +951,53 @@ class RunEngine:
                              raw_value=value if ok else None, unit=definition.unit, valid=ok,
                              failure_reason=reason(value, ok), threshold_lower=None, threshold_upper=None, hard=None,
                              satisfied=None, violation=None, aggregation_level='aggregate', aggregation=definition.aggregation))
+        for condition in (conditions or [])[1:]:
+            label = condition['condition']['corner']['id']
+            for name in sorted(set(condition['metrics']) | set(condition['metric_validity'])):
+                value = condition['metrics'].get(name)
+                ok = (condition['status'] == 'ok' and condition['metric_validity'].get(name) is True
+                      and isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value))
+                target = next((t for t in self.compiled.targets if t['metric_id'] == name and not t['nominal_only']), None)
+                checked = hard_constraints((target,), {name: value}, {name: ok})[2][0] if target and target['active'] else None
+                rows.append(dict(run_id=self.run_id, evaluation_id=evaluation_id, measurement_id=None, metric_name=name,
+                                 analysis=None, condition=label, raw_value=value if ok else None,
+                                 unit=condition['metric_units'].get(name), valid=ok,
+                                 failure_reason=None if ok else condition['reason_code'],
+                                 threshold_lower=target['lower'] if target else None, threshold_upper=target['upper'] if target else None,
+                                 hard=target['hard'] if target else None, satisfied=checked['satisfied'] if checked else None,
+                                 violation=checked['normalized_violation'] if checked else None,
+                                 aggregation_level='condition', aggregation=None))
         return rows
 
     def _job_rows(self, busy, lane, role, failed):
         policy = self.config.output.waveform_retention
         rows, plan = [], []
-        for number, attempt in enumerate(busy['attempts'], start=1):
+        attempts = []
+        for retry, attempt in enumerate(busy['attempts'], start=1):
+            record = attempt.get('record') or {}
+            if record.get('jobs'):
+                for job in record['jobs']:
+                    launches = job.get('confirmed_calls', 0) + job.get('uncertain_calls', 0)
+                    if self.task.mock and job.get('state') == 'completed':
+                        launches = 1                # one counted call of the toy backend, never a simulator launch
+                    attempts.append(dict(attempt, record=dict(record, **job), launches=launches,
+                                         launch_unknown=bool(job.get('uncertain_calls')),
+                                         started_at=job.get('started_at', attempt['started_at']),
+                                         ended_at=job.get('ended_at', attempt['ended_at']), retry=retry))
+            else:
+                if attempt.get('launch_unknown'):
+                    lease_path = self.layout.data / '_journal' / 'unresolved-launch-leases.json'
+                    leases = read_json(lease_path, default={})
+                    leases[busy['evaluation_id']] = dict(allowance=attempt['launches'],
+                        worker_directory=lane.info['directory'], state='unresolved')
+                    write_json(lease_path, leases)
+                elif attempt['launches']:
+                    attempts.append(dict(attempt, retry=retry))
+        for number, attempt in enumerate(attempts, start=1):
             record = attempt.get('record') or {}
             launched = int(attempt['launches']) > 0
+            if not launched:
+                continue
             started, ended = attempt['started_at'], attempt['ended_at']
             runtime = (datetime.fromisoformat(ended) - datetime.fromisoformat(started)).total_seconds()
             self.counters['sum_job_runtime_seconds'] += runtime
@@ -872,29 +1011,30 @@ class RunEngine:
                 decision = 'deleted_by_policy'
             elif failed:
                 decision = 'retained_failure'
-            elif role is not None and number == len(busy['attempts']):
+            elif role is not None:
                 decision = 'retained_best'
             else:
                 decision = 'deleted_by_policy'
-            job_id = record.get('job_id') or record.get('candidate_id') or f"{busy['evaluation_id']}-a{number}"
+            job_id = record.get('job_id') or record.get('export_job_id') or record.get('candidate_id') or f"{busy['evaluation_id']}-a{number}"
             relative = (f"waveforms/{busy['evaluation_id']}/attempt-{number}"
                         if decision.startswith('retained') else None)
             status = record.get('status') or ('cancelled' if attempt.get('cancelled') else 'execution_error')
             rows.append(dict(run_id=self.run_id, job_id=f'{job_id}', evaluation_id=busy['evaluation_id'],
                              worker_id=lane.lane_id, host=socket.gethostname(), analysis='task_profile_default',
-                             condition='nominal', attempt=number, dispatched_at=attempt['dispatched_at'],
+                             condition=(record.get('condition') or {}).get('corner', {}).get('id', 'nominal'),
+                             attempt=attempt['retry'], dispatched_at=attempt['dispatched_at'],
                              started_at=started, ended_at=ended, exit_status=status, timed_out=status == 'timeout',
-                             retry_reason=None if number == 1 else busy.get('retry_reason'),
+                             retry_reason=None if attempt['retry'] == 1 else busy.get('retry_reason'),
                              runtime_seconds=runtime, launch_counted=launched,
                              invocation_confirmed=(None if attempt.get('launch_unknown') or not launched else
-                                                   bool(record.get('candidate_evaluated'))) if not self.task.mock else launched,
-                             simulator_version=None, output_path=relative, retention_status=decision,
+                                                   True) if not self.task.mock else launched,
+                             simulator_version=record.get('simulator_version'), output_path=relative, retention_status=decision,
                              sync_status='local' if has_output else 'not_applicable', provenance=self.provenance))
             journal = None
             if record.get('candidate_id'):
                 journal = str(Path(lane.info['directory']) / 'candidates' / f"{record['candidate_id']}.json")
             plan.append(dict(decision=decision, source=directory, target=relative, record=record,
-                             evaluation_id=busy['evaluation_id'], journal=journal))
+                             evaluation_id=busy['evaluation_id'], job_id=job_id, journal=journal))
         return rows, plan
 
     def _transition_rows(self, busy, step, lane, commit_seq, admitted, record):
@@ -915,6 +1055,7 @@ class RunEngine:
                          policy_version=busy['policy_version'], step=int(record.get('step') or 0),
                          global_env_step=self.counters['global_env_step'], recorded_at=iso(),
                          action_version='absolute-group-v1', candidate_id=info.get('candidate_id') or busy['evaluation_id'],
+                         reward_version=record.get('reward_version'),
                          record_path=str(info.get('record_path') or ''), applied_parameters=applied,
                          replay_admitted=admitted, commit_seq=commit_seq))
         return rows, states
@@ -940,7 +1081,8 @@ class RunEngine:
                         target = self.layout.run_dir / item['target']
                         target.parent.mkdir(parents=True, exist_ok=True)
                         shutil.move(source, target)
-                        index['entries'][item['evaluation_id']] = dict(path=item['target'], status=item['decision'],
+                        index['entries'][item['job_id']] = dict(path=item['target'], status=item['decision'],
+                                                                       evaluation_id=item['evaluation_id'],
                                                                        updated_utc=iso())
                         changed = True
                     else:
@@ -958,13 +1100,13 @@ class RunEngine:
         if role is not None and self.config.output.waveform_retention == 'best_and_failures':
             previous = self.previous_best_waveform
             current = plan[-1]['evaluation_id'] if plan else None
-            if previous and previous != current and previous in index['entries'] and \
-                    index['entries'][previous]['status'] == 'retained_best':
-                shutil.rmtree(self.layout.run_dir / index['entries'][previous]['path'], ignore_errors=True)
-                index['entries'][previous].update(status='deleted_by_policy', updated_utc=iso(),
-                                                  reason='superseded by a better design')
+            if previous and previous != current:
+                for key, entry in index['entries'].items():
+                    if entry.get('evaluation_id', key) == previous and entry['status'] == 'retained_best':
+                        shutil.rmtree(self.layout.run_dir / entry['path'], ignore_errors=True)
+                        entry.update(status='deleted_by_policy', updated_utc=iso(), reason='superseded by a better design')
+                        changed = True
                 self._event('waveform_retention_changed', evaluation_id=previous, status='deleted_by_policy')
-                changed = True
             self.previous_best_waveform = current
         limit = self.config.output.waveform_storage_limit_bytes
         if limit is not None and changed:
@@ -1182,9 +1324,7 @@ class RunEngine:
             last_successful_evaluation_utc=(getattr(self, 'counters', {}) or {}).get('last_successful_evaluation_utc'),
             infrastructure_failures=(getattr(self, 'counters', {}) or {}).get('infrastructure_failures', 0),
             connection_profile_id=self.config.run.connection_profile_id,
-            best_design=None if best is None else dict(evaluation_id=best['evaluation_id'], feasible=best['feasible'],
-                                                        metrics=best['metrics'], violation=best['violation'],
-                                                        variables=best['variables']),
+            best_design=best,
             persistence=None if dataset is None else dataset.status(),
             last_checkpoint_utc=(None if not getattr(self, 'checkpoints', None) or not self.checkpoints.last_saved_at
                                  else iso(self.checkpoints.last_saved_at)),

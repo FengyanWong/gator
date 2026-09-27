@@ -1,13 +1,8 @@
-import { Icon } from './Icons';
 import { Fragment, ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, ApiError, bytes, copy, download, downloadPackage, Json, num, saveJson, short } from '../api';
-import { usePolling } from '../store';
+import { api, ApiError, Json, saveJson, short } from '../api';
 import { DiffView } from './Editors';
-import { abortConfirmed, forceAbortConfirmed, forceAllowed, pauseConfirmed } from './RunControl';
 import { COPY_SETUP_PENDING, COPY_SETUP_WRITTEN } from './TaskSave';
-
-const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'transitions', 'states'];
 
 // What a reply lists besides its text. These are shown in the side window next to the message box, not in the chat.
 const NOTE_GROUPS: { key: string; title: string; css: string; text: (item: Json) => string }[] = [
@@ -425,113 +420,4 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
       <p>The agent conversation is open in a window of its own. It keeps working while you use the other tabs here.</p>
       <div className="row"><button onClick={() => popup.focus()}>Show that window</button><button onClick={attach}>Bring it back here</button></div>
     </div></>);
-}
-
-const runName = (runDir: string) => runDir.split(/[\\/]/).filter(Boolean).pop() ?? 'run';    // the run folder's own name, unique per run
-
-export function StatusTab({ status, onCommand, onContinue }: { status: Json; onCommand: (c: string) => void; onContinue: () => void }) {
-  if (!status) return <p className="hint">No run selected.</p>;
-  const b = status.budget, best = status.best_design, first = status.first_feasible, conn = status.connection;
-  return (<div className="status-grid">
-    {status.manifest?.mock && <p className="mock">{status.manifest.mock_notice}</p>}
-    <table className="grid small"><tbody>
-      <tr><td>State</td><td><b>{status.state}</b>{status.stop_reason ? ` (${status.stop_reason})` : ''}{status.worker_alive ? ' - worker alive' : ''}</td></tr>
-      <tr><td>Mode / model</td><td>{status.mode} {status.manifest?.source_model?.run_id ? `from ${status.manifest.source_model.run_id.slice(0, 12)} / ${status.manifest.source_model.checkpoint_id}` : '(no weights loaded)'}</td></tr>
-      <tr><td>Budget</td><td>{b ? `${b.charged} charged / ${b.max_evaluations}  (in flight ${b.in_flight}, completed ${b.completed}, failed ${b.failed}, remaining ${b.remaining})` : '-'}</td></tr>
-      <tr><td>Spectre launches</td><td>{b ? `${b.launches}${b.max_launches ? ' / ' + b.max_launches : ''}  (retries ${b.retries}, cache hits ${b.cache_hits})` : '-'}</td></tr>
-      <tr><td>Active workers</td><td>{(status.active_workers ?? []).map((w: Json) => `#${w.worker_id}: ${w.phase} attempt ${w.attempt}`).join('; ') || 'none'} (concurrency {status.concurrency})</td></tr>
-      <tr><td>Learner updates</td><td>{status.learner_updates}</td></tr>
-      <tr><td>First feasibility</td><td>{first ? `at ${first.first_feasible_eval_count} evaluations charged (dispatch #${first.dispatch_index}, ${first.completed_count} completed, ${first.in_flight_count} in flight, ${first.spectre_launches} launches)` : 'not yet (null)'}</td></tr>
-      <tr><td>Best design</td><td>{best ? `${best.feasible ? 'FEASIBLE' : 'infeasible'}  ${Object.entries(best.metrics).map(([k, v]) => `${k}=${num(v)}`).join(' ')}  violation ${num(best.violation)}` : 'none'}</td></tr>
-      <tr><td>Connection</td><td><span className={`badge state-${conn?.overall}`}>{conn?.overall}</span>{conn?.age_seconds != null && ` ${Math.round(conn.age_seconds)} s old`}</td></tr>
-      <tr><td>Persistence</td><td className={status.persistence?.failed ? 'error' : ''}>{status.persistence ? `commit ${status.persistence.last_commit_seq}, flushed ${status.persistence.flushed_seq}, ${bytes(status.persistence.bytes_written)} table data; last save ${status.persistence.last_successful_save ?? '-'}` : '-'} {status.persistence?.failed ?? ''}</td></tr>
-      <tr><td>Last checkpoint</td><td>{status.last_checkpoint_utc ?? '-'}
-        {status.manual_save && <span className={status.manual_save.state === 'saved' ? 'ok' : 'warn'}> - Save now: {status.manual_save.state === 'saved'
-          ? `saved at ${status.manual_save.evaluations} evaluations (${status.manual_save.checkpoint_id})`
-          : 'requested, waiting for the simulation in flight to finish'}</span>}</td></tr>
-      <tr><td>Run directory</td><td className="path" onClick={() => copy(status.run_dir)}>{status.run_dir}</td></tr>
-      {status.error && <tr><td>Error</td><td className="error">{status.error}</td></tr>}
-    </tbody></table>
-    <div className="row">
-      <button disabled={!status.worker_alive || ['pausing', 'stopping'].includes(status.state) || status.manual_save?.state === 'waiting'} onClick={() => onCommand('checkpoint')}
-        title="Save now: The model is saved now without pausing. The simulation in flight finishes first, the model is written as a new save point, and the run goes on by itself."><Icon name="save" label="Save now" /></button>
-      {/* The same questions and the same rule as the header's Pause / Abort / Force abort (RunControl.tsx). */}
-      <button disabled={!status.worker_alive || ['pausing', 'stopping'].includes(status.state)}
-        onClick={async () => { if (await pauseConfirmed(status.run_dir)) onCommand('pause'); }}
-        title="Pause and save: No new simulation is started, the one in flight finishes, everything is saved. Continue takes it up from exactly there."><Icon name="pause" label="Pause and save" /></button>
-      <button disabled={!status.worker_alive || ['pausing', 'stopping'].includes(status.state)}
-        onClick={() => { if (abortConfirmed(status)) onCommand('stop'); }}
-        title="Stop and save: The simulation in flight finishes, everything is saved, the run ends."><Icon name="stop" label="Stop and save" /></button>
-      <button disabled={!forceAllowed(status)} onClick={() => { if (forceAbortConfirmed()) onCommand('cancel'); }}
-        title="Force cancel: Only while a pause or a stop is waiting for the simulation in flight, for a run that is stuck: unfinished evaluations are recorded as cancelled and stay charged."><Icon name="force-stop" label="Force cancel" /></button>
-      <button disabled={status.worker_alive || !['paused', 'stopped', 'interrupted'].includes(status.state)} onClick={onContinue}
-        title="Continue: A paused, stopped or interrupted run goes on in the same run folder, from its saved state, with its own saved configuration."><Icon name="play" label="Continue" /></button>
-      <button onClick={() => saveJson(`${runName(status.run_dir)}__status.json`, { exported_utc: new Date().toISOString(), ...status })}
-        title="Export status (JSON): Everything this tab shows, as it is right now, in one JSON file: state, budget, best design, connection, the run's manifest and summary."><Icon name="export" label="Export status (JSON)" /></button>
-    </div>
-  </div>);
-}
-
-export function DataTab({ runDir }: { runDir: string | null }) {
-  const [table, setTable] = useState('evaluations');
-  const [data, setData] = useState<Json>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  useEffect(() => { if (runDir) api.table(runDir, table).then(setData).catch(e => setNote(e.message)); else setData(null); }, [runDir, table]);
-  if (!runDir) return <p className="hint">No run selected.</p>;
-  // An export writes the file(s) on the backend's disk AND hands the browser a copy: nobody has to look the file up afterwards.
-  const exporting = (what: string, work: () => Promise<string>) => { setBusy(what); setNote(null); work().then(setNote, e => setNote(e.message)).finally(() => setBusy(null)); };
-  const exportCsv = () => exporting('csv', async () => {
-    const written = await api.exportCsv(runDir, table);
-    return `Downloaded ${await download(api.downloadUrl(runDir, written.relative), `${table}.csv`)}. Also kept in the run folder: ${written.relative}`; });
-  const exportResearch = () => exporting('research', async () => {
-    const written = await api.exportAggregates(runDir);
-    return `Downloaded ${await download(api.aggregatesUrl(runDir), 'aggregates.zip')} (${Object.keys(written.files).length} tables). Also kept in ${written.experiment_dir}/aggregates`; });
-  return (<div>
-    <div className="row"><select value={table} onChange={e => setTable(e.target.value)}>{TABLES.map(t => <option key={t}>{t}</option>)}</select>
-      <button onClick={() => api.table(runDir, table).then(setData)} title="Refresh: Read this table again."><Icon name="refresh" label="Refresh" /></button>
-      <button disabled={!!busy} onClick={exportCsv} title="Export detailed CSV: The whole table, every row and not only the ones shown here. Written to the run folder (exports/) and downloaded."><Icon name={busy === 'csv' ? 'wait' : 'csv'} label={busy === 'csv' ? 'Exporting...' : 'Export detailed CSV'} /></button>
-      <button disabled={!!busy} onClick={exportResearch} title="Export research CSVs: The summary tables over every run of this experiment: run summary, success per budget, paired runs, transfer summary, cumulative cost. Written to the experiment's aggregates folder and downloaded as one zip."><Icon name={busy === 'research' ? 'wait' : 'zip'} label={busy === 'research' ? 'Exporting...' : 'Export research CSVs'} /></button>
-      <span className="hint">{data ? `${data.total_rows} rows (snapshot at commit ${data.cutoff_commit_seq}); last ${data.rows.length} shown.` : ''} {note}</span></div>
-    {data && <div className="scroll"><table className="grid small"><thead><tr>{data.columns.map((c: string) => <th key={c}>{c}</th>)}</tr></thead>
-      <tbody>{data.rows.map((r: Json, i: number) => <tr key={i}>{data.columns.map((c: string) => <td key={c}>{typeof r[c] === 'object' && r[c] !== null ? JSON.stringify(r[c]) : num(r[c])}</td>)}</tr>)}</tbody></table></div>}
-  </div>);
-}
-
-export function FilesTab({ runDir }: { runDir: string | null }) {
-  const [files, setFiles] = useState<Json>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [saving, setSaving] = useState<string | null>(null);          // the file whose download is on its way
-  const refresh = () => runDir && api.files(runDir).then(setFiles);
-  useEffect(() => { refresh(); setNote(null); }, [runDir]);
-  if (!runDir) return <p className="hint">No run selected.</p>;
-  const pack = () => { setNote('Packing...'); downloadPackage(runDir).then(name => setNote(`Downloaded ${name}.`), e => setNote(e.message)); };
-  // One file (user request 2026-09-26: a button with the download icon in each row, not a "download" text link), saved
-  // like the package and the logs: the browser's own download, named by the backend, and said in the hint.
-  const save = (file: string) => { setSaving(file); download(api.downloadUrl(runDir, file), file.split('/').pop() ?? file)
-    .then(name => setNote(`Downloaded ${name}.`), e => setNote(e.message)).finally(() => setSaving(null)); };
-  return (<div><div className="row"><button onClick={refresh} title="Refresh: Read the run folder again."><Icon name="refresh" label="Refresh" /></button>
-    <button disabled={note === 'Packing...'} onClick={pack} title="Download data-only package (.zip): Every data file of this run in one zip, named after the run; no plots, nothing drawn."><Icon name={note === 'Packing...' ? 'wait' : 'download'} label="Download data-only package (.zip)" /></button>
-    <button onClick={() => copy(runDir)} title="Copy run path: The run folder's path, as text, to the clipboard."><Icon name="copy" label="Copy run path" /></button><span className="hint">{files && `${files.files.length} files, ${bytes(files.total_bytes)}.`} {note} "Open local folder" is not offered: no desktop integration is available from a browser.</span></div>
-    <div className="scroll"><table className="grid small"><thead><tr><th>File</th><th>Size</th><th>Modified (UTC)</th><th></th></tr></thead>
-      <tbody>{files?.files.map((f: Json) => <tr key={f.path}><td>{f.path}</td><td>{bytes(f.bytes)}</td><td>{f.modified_utc.slice(0, 19)}</td><td><button disabled={saving === f.path} onClick={() => save(f.path)}
-        title={`Download ${f.path}: This file as it is now, to the browser's download folder.`}><Icon name={saving === f.path ? 'wait' : 'download'} label={`Download ${f.path}`} /></button></td></tr>)}</tbody></table></div></div>);
-}
-
-export function LogsTab({ runDir, alive }: { runDir: string | null; alive: boolean }) {
-  const [kind, setKind] = useState('events');
-  const [note, setNote] = useState<string | null>(null);
-  const { value } = usePolling(() => api.logs(runDir!, kind), alive ? 2000 : 60000, !!runDir, [runDir, kind]);
-  useEffect(() => setNote(null), [runDir, kind]);
-  if (!runDir) return <p className="hint">No run selected.</p>;
-  // The list below is only the newest 200 entries; the file is the whole log, one JSON record per line. A healthy run has an
-  // errors file with nothing in it: that is said, not saved as an empty file.
-  const nothing = `Nothing to download: this run has logged no ${kind} so far.`;
-  const save = () => value?.kind === kind && !value.entries.length ? setNote(nothing)
-    : download(api.downloadUrl(runDir, `logs/${kind}.jsonl`), `${kind}.jsonl`).then(name => setNote(`Downloaded ${name}.`), e => setNote(e.status === 404 ? nothing : e.message));
-  return (<div><div className="row"><select value={kind} onChange={e => setKind(e.target.value)}><option>events</option><option>errors</option></select>
-    <button onClick={save} title={`Download full log (${kind}.jsonl): The whole log file of this run, not only the newest 200 entries listed here. One JSON record per line.`}><Icon name="download" label={`Download full log (${kind}.jsonl)`} /></button>
-    <span className="hint">{note ?? 'Newest first, the newest 200 entries at most.'}</span></div>
-    <div className="scroll log">{(value?.entries ?? []).slice().reverse().map((e: Json, i: number) => <div key={i} className={kind === 'errors' ? 'error' : ''}>
-      <b>{(e.time_utc ?? '').slice(11, 19)} {e.event ?? e.error}</b> {JSON.stringify(Object.fromEntries(Object.entries(e).filter(([k]) => !['time_utc', 'event', 'error', 'run_id', 'traceback'].includes(k))))}</div>)}</div></div>);
 }

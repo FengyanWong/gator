@@ -1,5 +1,11 @@
 # Brief for Astra: reward v2 in the optimizer package (worst case across test conditions)
 
+**Superseded for implementation on 2026-09-26:** use
+[Reward v2 with real-flow qualification](plan-reward-v2-real-flow.md). The user rejected fictional
+MOCK validation and requested a new plan with explicit permission to modify the optimizer.
+The historical launch prompt, no-simulation rule, MOCK gates and conflicting requirements below
+are no longer the implementation instructions. The new plan's scope, order and reporting apply.
+
 Written 2026-09-24 for Astra (Codex, `gpt-6-astra`) by the Claude Code session "RL reward design". It turns section 2
 (reward), the parts of sections 3–4 that the reward needs, and the workbench items that make it usable on MOCK, of
 [`plan-robust-reward-and-network.md`](plan-robust-reward-and-network.md) into work. That plan holds the reasoning;

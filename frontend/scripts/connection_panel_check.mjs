@@ -104,9 +104,7 @@ try {
   const hint = () => far.evaluate(`${WINDOW}.querySelector('.badge').nextElementSibling.textContent`);
   const buttons = () => far.evaluate(`[...${WINDOW}.querySelectorAll('button')].map(b => b.textContent.trim())`);
   const press = label => far.evaluate(`(() => { const b = [...${WINDOW}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()`, true);
-  const choose = (selector, value) => far.evaluate(`(() => { const s = ${WINDOW}.querySelector(${JSON.stringify(selector)}); if (!s) return false;
-    Object.getOwnPropertyDescriptor(s.ownerDocument.defaultView.HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)});
-    s.dispatchEvent(new s.ownerDocument.defaultView.Event('change', { bubbles: true })); return true; })()`);
+  const choose = (selector, value) => far.setValue(`${WINDOW}.querySelector(${JSON.stringify(selector)})`, value);
   const shot = (session, selector, name) => (session === 'main' ? page : far).shot(path.join(out, name), `document.querySelector(${JSON.stringify(selector)})`, { scale: 2, maxHeight: 1400, beyond: true });
   const loaded = async (connection = 'lab') => {
     for (let i = 0; i < 100 && !(await evaluate(`!!(${BUTTON})`)); i++) await sleep(100);
@@ -234,8 +232,7 @@ try {
     name: add.querySelector('input').value, inputs: add.querySelectorAll('input').length, text: add.innerText }; })()`);
   check('ngspice over SSH offers the Host names of ~/.ssh/config as a list - there is no box to type an address into', JSON.stringify(form.hosts) === JSON.stringify(['simhost', 'sim2']) && form.inputs === 1 && form.name === 'ngspice-ssh', JSON.stringify(form));
   await shot('window', '.connection-window', 'connection-6-window-add.png');
-  await far.evaluate(`(() => { const s = ${WINDOW}.querySelectorAll('.connection-add select')[1]; Object.getOwnPropertyDescriptor(s.ownerDocument.defaultView.HTMLSelectElement.prototype, 'value').set.call(s, 'sim2');
-    s.dispatchEvent(new s.ownerDocument.defaultView.Event('change', { bubbles: true })); })()`);
+  await far.setValue(`${WINDOW}.querySelectorAll('.connection-add select')[1]`, 'sim2');
   await sleep(200);
   mark = seen.length;
   await press('Create connection');

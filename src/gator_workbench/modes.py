@@ -42,12 +42,25 @@ def seed_everything(seed):
     torch.manual_seed(seed)
 
 
-def _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary=None):
+def runtime_options(config, vocabulary=None):
+    from dataclasses import replace
+    from analog_optimizer.graph.pyg_converter import FeatureSchema, OPERATING_POINT_COLUMNS, OPERATING_POINT_REFERENCES
+    from .compile import reward_settings, training_conditions
+    schema = FeatureSchema() if vocabulary is None else vocabulary.schema
+    if config.run.network.operating_points:
+        schema = replace(schema, op_columns=OPERATING_POINT_COLUMNS, op_references=OPERATING_POINT_REFERENCES)
+    return dict(feature_schema=schema, reward_settings=reward_settings(config),
+                condition_policy=config.run.conditions.policy, planned_conditions=training_conditions(config))
+
+
+def _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary=None, runtime=None):
     """`vocabulary`: None = the optimizer's standard component list; a loaded PDK's list (pdk.Vocabulary) otherwise.
     Either way the learner is the package's own SACLearner (pdk.learner_class only adds the PDK view at its input)."""
     from .pdk import learner_class
+    options = dict(feature_schema=None if vocabulary is None else vocabulary.schema)
+    options.update(runtime or {})
     return learner_class(vocabulary)(experiment=experiment, model_config=model_config, config=sac_config, spec_schema=spec_schema,
-                                     feature_schema=None if vocabulary is None else vocabulary.schema)
+                                     **options)
 
 
 def _encoder_state(state, *, only_encoder):
@@ -73,12 +86,12 @@ class EncoderFreeze:
             parameter.grad = None
 
 
-def current_contract(experiment, model_config, sac_config, spec_schema, vocabulary=None):
-    return ckpt.contract_summary(_new_learner(experiment, model_config, sac_config, spec_schema, vocabulary))
+def current_contract(experiment, model_config, sac_config, spec_schema, vocabulary=None, runtime=None):
+    return ckpt.contract_summary(_new_learner(experiment, model_config, sac_config, spec_schema, vocabulary, runtime))
 
 
 def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, seed, origin,
-          source_dir=None, source_metadata=None, task_definition_hash=None, vocabulary=None):
+          source_dir=None, source_metadata=None, task_definition_hash=None, vocabulary=None, runtime=None):
     """Returns dict(learner, replay, run_state, policy, freeze). `vocabulary`: the run's component list (None = standard)."""
     from analog_optimizer.training.replay import ReplayBuffer
     from .pdk import learner_class
@@ -87,7 +100,7 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
     policy = dict(mode=mode, source_checkpoint=None, loaded=[], reset=[], frozen_modules=[], notes=[])
     freeze = None
     if mode == 'scratch':
-        learner = _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary)
+        learner = _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary, runtime)
         replay = ReplayBuffer(advanced.replay_capacity, origin=origin, seed=seed)
         policy['reset'] = ['actor', 'critics', 'target_networks', 'temperature', 'optimizers', 'replay_buffer',
                            'task_counters']
@@ -100,7 +113,7 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
     if problems:
         raise ckpt.CheckpointIncompatible(dict(checks=[dict(component='checkpoint files', status='incompatible',
                                                             detail='; '.join(problems))]))
-    contract = current_contract(experiment, model_config, sac_config, spec_schema, vocabulary)
+    contract = current_contract(experiment, model_config, sac_config, spec_schema, vocabulary, runtime)
     report = ckpt.check_compatibility(source_metadata, mode=mode, task_definition_hash=task_definition_hash,
                                       contract=contract)
     policy.update(source_checkpoint=dict(checkpoint_id=source_metadata['checkpoint_id'], path=str(source_dir),
@@ -112,15 +125,17 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
         raise ckpt.CheckpointIncompatible(report)
 
     if mode == 'resume':
+        options = dict(feature_schema=None if vocabulary is None else vocabulary.schema)
+        options.update(runtime or {})
         learner, replay, run_state = learner_class(vocabulary).load(
             source_dir / 'training_state.pt', experiment=experiment, model_config=model_config,
-            config=sac_config, spec_schema=spec_schema, feature_schema=None if vocabulary is None else vocabulary.schema)
+            config=sac_config, spec_schema=spec_schema, **options)
         policy['loaded'] = list(ckpt.FULL_COMPONENTS)
         policy['notes'].append('Full training state restored; existing counters are retained.')
         return dict(learner=learner, replay=replay, run_state=run_state, policy=policy, freeze=None)
 
     weights = ckpt.load_weights(source_dir)
-    learner = _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary)
+    learner = _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary, runtime)
     if mode == 'fine_tune':
         only_encoder = advanced.encoder_only_transfer
         learner.actor.load_state_dict(_encoder_state(weights['actor'], only_encoder=only_encoder),
@@ -128,7 +143,11 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
         policy['loaded'].append('actor.encoder' if only_encoder else 'actor (encoder + head)')
         if only_encoder:
             policy['reset'].append('actor.head (random)')
-        if advanced.reset_critic:
+        changed_reward = any(source_metadata['contract'].get(key) != contract.get(key) for key in (
+            'reward_version', 'reward_settings', 'clearance_rule', 'failure_policy', 'condition_policy', 'planned_conditions'))
+        if changed_reward:
+            policy['notes'].append('Reward or condition contract changed: actor transfer only; critics/targets, replay and optimizers reset.')
+        if advanced.reset_critic or changed_reward:
             policy['reset'] += ['critics (random)', 'target_networks (copy of the new critics)']
         else:
             learner.critics.load_state_dict(_encoder_state(weights['critics'], only_encoder=only_encoder),

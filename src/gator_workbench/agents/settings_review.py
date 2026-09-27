@@ -142,7 +142,7 @@ def readiness_digest(readiness: dict | None) -> dict | None:
 
 def normalize(output: dict) -> dict:
     """The parts of a reply that belong to a settings review, cleaned. A suggestion for anything but a suggestible
-    setting is dropped and named; values arrive as JSON text ("0.0003", "true", "\\"gat\\"") or as plain words."""
+    setting is dropped and named; values arrive as JSON text ("0.0003", "true", "\\"gatv2\\"") or as plain words."""
     kept, refused = [], []
     for entry in (output.get('suggestions') if isinstance(output.get('suggestions'), list) else [])[:40]:
         if not isinstance(entry, dict) or not isinstance(entry.get('path'), str):

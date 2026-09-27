@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS evaluations(seq INTEGER PRIMARY KEY AUTOINCREMENT,
   started REAL NOT NULL, ended REAL, dispatched INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS evaluations_run ON evaluations(run_id,seq);
 CREATE INDEX IF NOT EXISTS evaluations_pending ON evaluations(run_id,state) WHERE result IS NULL;
+CREATE TABLE IF NOT EXISTS simulation_jobs(eval_id TEXT NOT NULL REFERENCES evaluations(id),
+  job_index INTEGER NOT NULL, state TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(eval_id,job_index));
 CREATE TABLE IF NOT EXISTS states(id TEXT PRIMARY KEY, graph_id TEXT NOT NULL REFERENCES assets(id),
   task_id TEXT NOT NULL REFERENCES assets(id), data BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS transitions(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL,
@@ -207,7 +209,7 @@ class ExperimentStore:
         task = dict(schema_version=VERSION, circuit_id=graph.circuit_id, graph_id=graph_id,
                     spec_id=spec_id, variables=groups, action_version='absolute-group-v1',
                     action_rule='absolute linear/log -> clamp -> nearest grid half up -> bindings',
-                    reward_version='negative_weighted_mean_capped_violation-v1', tolerance=0.0,
+                    reward_version='constraint_violation_v2', tolerance=0.0,
                     configuration=configuration or {})
         return self._op_asset('task', task), graph_id
 
@@ -266,6 +268,36 @@ class ExperimentStore:
 
     def _state_definition(self, graph_id, task_id):
         return tree(self._asset(graph_id)), self._asset(self._asset(task_id)['spec_id'])
+
+    def _op_launch_intent(self, eval_id, intent):
+        self._evaluation(eval_id)
+        key = (eval_id, intent['index'])
+        old = self.db.execute('SELECT data FROM simulation_jobs WHERE eval_id=? AND job_index=?', key).fetchone()
+        if old is not None:
+            if unpack(old[0]) != intent:
+                raise ValueError('Conflicting simulation launch intent')
+            return
+        if intent['state'] != 'launch_intent' or intent['uncertain_calls'] not in (0, 1):
+            raise ValueError('A physical launch must first record an uncertain intent (a synthetic call records none)')
+        self.db.execute('INSERT INTO simulation_jobs VALUES(?,?,?,?)', (*key, 'launch_intent', pack(intent)))
+
+    def _op_launch_result(self, eval_id, result):
+        key = (eval_id, result['index'])
+        old = self.db.execute('SELECT data FROM simulation_jobs WHERE eval_id=? AND job_index=?', key).fetchone()
+        if old is None:
+            raise ValueError('Cannot complete a simulation without a durable intent')
+        intent = unpack(old[0])
+        for name in ('export_job_id', 'condition', 'netlist_sha256', 'netlist_path'):
+            if intent[name] != result[name]:
+                raise ValueError('Simulation result identity differs from launch intent')
+        if intent['state'] == 'completed' and intent != result:
+            raise ValueError('Conflicting simulation result')
+        self.db.execute('UPDATE simulation_jobs SET state=?,data=? WHERE eval_id=? AND job_index=?',
+                        ('completed', pack(result), *key))
+
+    def _op_simulation_jobs(self, eval_id):
+        return [unpack(row[0]) for row in self.db.execute(
+            'SELECT data FROM simulation_jobs WHERE eval_id=? ORDER BY job_index', (eval_id,))]
 
     def _state(self, observation, graph_id, task_id):
         if observation is None:
@@ -391,27 +423,37 @@ class ExperimentStore:
         run = self.db.execute('SELECT * FROM runs WHERE id=?', (row['run_id'],)).fetchone()
         summary, result, request = unpack(run['summary']), row['result'], row['request']
         specs = self._asset(self._asset(row['task_id'])['spec_id'])
-        evaluation = SpecificationEvaluator(specs).evaluate(result['metrics'], result.get('metric_units', {}), result['metric_validity'])
-        valid = evaluation.valid and result.get('status') == 'ok'
+        observation = self._load_state(result.get('state_id'))
+        evaluation = (observation.evaluation if observation is not None else
+                      SpecificationEvaluator(specs).evaluate(result['metrics'], result.get('metric_units', {}), result['metric_validity']))
+        valid = (evaluation.valid and (observation is not None or result.get('status') == 'ok')
+                 and not result.get('environment', {}).get('truncated', False))
         feasible = valid and evaluation.success
         # Uncapped weighted violation distinguishes very bad infeasible candidates.
         violations = {}
         if valid:
             for spec in specs:
                 if spec.active and spec.required:
-                    value = result['metrics'][spec.metric_id]
-                    violations[spec.metric_id] = max(0.0, (spec.lower - value) / spec.scale if spec.lower is not None else 0.0,
-                                                      (value - spec.upper) / spec.scale if spec.upper is not None else 0.0)
+                    value = evaluation.worst_values.get(spec.metric_id, result['metrics'].get(spec.metric_id))
+                    violations[spec.metric_id] = (1.0 if value is None else max(
+                        0.0, (spec.lower - value) / spec.scale if spec.lower is not None else 0.0,
+                        (value - spec.upper) / spec.scale if spec.upper is not None else 0.0))
         weights = {s.metric_id: s.weight for s in specs if s.active and s.required}
         score = sum(violations[k] * weights[k] for k in violations) / sum(weights.values()) if valid else None
         candidate = dict(eval_id=row['id'], task_id=row['task_id'], parameters=result.get('applied_parameters'),
-                         metrics=result['metrics'], valid=valid, feasible=feasible,
+                         metrics=result['metrics'], worst_metrics=evaluation.worst_values,
+                         valid=valid, feasible=feasible, nominal_feasible=evaluation.nominal_success,
+                         coverage_complete=evaluation.complete if observation is not None else None,
+                         clearance_margin=evaluation.clearance_margin,
+                         tightest_clearance_spec=evaluation.tightest_clearance_spec,
+                         reward=evaluation.reward,
                          violations=violations if valid else evaluation.violations, violation_score=score)
         summary['evaluations'] += 1
         real = request['source'] != 'cache' and bool(result.get('simulator_invocations', 0))
         summary['real_simulations'] += int(result.get('simulator_invocations', 0)) if real else 0
         summary['real_dispatches'] = summary.get('real_dispatches', 0) + int(request['source'] == 'spectre' and row['dispatched'])
-        summary['unconfirmed_invocations'] = summary.get('unconfirmed_invocations', 0) + int(result.get('invocation_uncertain', False))
+        summary['unconfirmed_invocations'] = summary.get('unconfirmed_invocations', 0) + int(
+            result.get('unconfirmed_invocations', result.get('invocation_uncertain', False)))
         summary['cache_hits'] += request['source'] == 'cache'
         summary['failures'] += result.get('status') != 'ok' or not evaluation.valid
         self._count_result(summary, result, request, valid, feasible)
@@ -425,6 +467,14 @@ class ExperimentStore:
             if condition is not None:
                 purpose = condition.get('purpose') if isinstance(condition, dict) else condition.purpose
                 nominal = nominal and purpose == 'nominal'
+        if nominal and evaluation.nominal_success:
+            summary.setdefault('first_nominal_feasible', dict(eval_id=row['id'],
+                real_simulations=summary['real_simulations'], unconfirmed_invocations=summary['unconfirmed_invocations'],
+                seconds=summary['wall_seconds']))
+            previous = summary.get('best_nominal_feasible')
+            if previous is None or (candidate['reward'] is not None and previous.get('reward') is not None
+                                    and candidate['reward'] > previous['reward']):
+                summary['best_nominal_feasible'] = candidate
         if nominal and feasible:
             if not summary['has_feasible']:
                 summary['first_feasible'] = dict(eval_id=row['id'], real_simulations=summary['real_simulations'],
@@ -436,7 +486,7 @@ class ExperimentStore:
             better = old is None
             if objective:
                 metric, direction = objective['metric'], objective['direction']
-                value = result['metrics'].get(metric)
+                value = evaluation.worst_values.get(metric, result['metrics'].get(metric))
                 if value is None or direction not in ('min', 'max'):
                     raise ValueError('Feasible selection objective unavailable or invalid')
                 candidate['objective'] = value
@@ -508,7 +558,7 @@ class ExperimentStore:
         elif row['result']['status'] != 'ok' or row['result'].get('environment', {}).get('evaluation_valid') is False:
             role = 'failure'
         else:
-            best = summary['best_feasible'] or summary['best_infeasible']
+            best = summary['best_feasible'] or summary.get('best_nominal_feasible') or summary['best_infeasible']
             if best and best['eval_id'] == row['id']:
                 role = 'best'
         return dict(role=role, error_class=row['result'].get('error_class'))

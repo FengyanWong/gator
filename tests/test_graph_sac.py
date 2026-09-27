@@ -438,29 +438,24 @@ def test_encoder_topology_and_port_ablation(opamp, encoder):
     disconnected.edge_index = batch.edge_index[:, :0]
     disconnected.edge_role = batch.edge_role[:0]
     disconnected.edge_ordinal = batch.edge_ordinal[:0]
-    if encoder in ('mlp', 'gcn'):
-        torch.testing.assert_close(first, second, rtol=0, atol=0)
-        torch.testing.assert_close(first_q, critic(changed, actions), rtol=0, atol=0)
-        assert not hasattr(actor.encoder, 'port_role')
-        if encoder == 'mlp':
-            torch.testing.assert_close(first, actor.distribution(disconnected)[0], rtol=0, atol=0)
-            torch.testing.assert_close(first_q, critic(disconnected, actions), rtol=0, atol=0)
-        else:
-            assert not torch.allclose(first, actor.distribution(disconnected)[0], atol=1e-7, rtol=1e-7)
-            first.sum().backward()
-            assert actor.encoder.blocks[0].message.lin.weight.grad.abs().sum() > 0
+    assert not torch.allclose(first, second, atol=1e-7, rtol=1e-7)
+    assert not torch.allclose(first_q, critic(changed, actions), atol=1e-7, rtol=1e-7)
+    assert not torch.allclose(first, actor.distribution(disconnected)[0], atol=1e-7, rtol=1e-7)
+    first.sum().backward()
+    if encoder == 'rgcn':
+        assert actor.encoder.blocks[0].message.weight.grad.abs().sum() > 0
     else:
-        assert not torch.allclose(first, second, atol=1e-7, rtol=1e-7)
-        assert not torch.allclose(first, actor.distribution(disconnected)[0], atol=1e-7, rtol=1e-7)
-        first.sum().backward()
-        if encoder == 'rgcn':
-            assert actor.encoder.blocks[0].message.weight.grad.abs().sum() > 0
-        else:
-            assert actor.encoder.port_role.weight.grad.abs().sum() > 0
+        assert actor.encoder.port_role.weight.grad.abs().sum() > 0
 
 
 def test_encoder_configuration_roundtrip_and_legacy_aliases():
     assert ModelConfig().encoder_type == 'graph_transformer'
+    assert ENCODER_TYPES == ('graph_transformer', 'rgcn', 'gatv2')
+    with pytest.raises(ValueError, match=r'gat \(GATv1\) was replaced by gatv2'):
+        ModelConfig(encoder_type='gat')
+    for removed in ('mlp', 'gcn'):
+        with pytest.raises(ValueError, match=f'{removed} was removed from the optimizer on 2026-09-26'):
+            ModelConfig(encoder_type=removed)
     for removed in (dict(attention_mode='port_message_passing'), dict(encoder_type='port_gnn')):
         with pytest.raises(ValueError, match='removed from the optimizer on 2026-09-24'):
             ModelConfig(**removed)                                    # the M5 port-GNN: refused by name, in words
@@ -468,15 +463,14 @@ def test_encoder_configuration_roundtrip_and_legacy_aliases():
         config = model_config(encoder)
         assert ModelConfig(**json.loads(json.dumps(asdict(config)))) == config
     for config in (dict(encoder_type='unknown'), dict(encoder_type=''),
-                   dict(attention_mode='rgcn'), dict(encoder_type='mlp', attention_mode='local_port_attention'),
-                   dict(encoder_type='gat', hidden_dim=15, heads=2)):
+                   dict(attention_mode='rgcn'), dict(encoder_type='rgcn', attention_mode='local_port_attention'),
+                   dict(encoder_type='gatv2', hidden_dim=15, heads=2)):
         with pytest.raises(ValueError):
             ModelConfig(**config)
-    for encoder in ('mlp', 'rgcn', 'gcn'):
-        assert ModelConfig(encoder_type=encoder, hidden_dim=15, heads=2).hidden_dim == 15
+    assert ModelConfig(encoder_type='rgcn', hidden_dim=15, heads=2).hidden_dim == 15
 
 
-@pytest.mark.parametrize('encoder', ['mlp', 'rgcn', 'gat', 'gcn'])
+@pytest.mark.parametrize('encoder', ['rgcn', 'gatv2'])
 def test_checkpoint_rejects_different_encoder_before_loading(transitions, tmp_path, encoder):
     source = learner(encoder)
     replay = ReplayBuffer(origin='synthetic')

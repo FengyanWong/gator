@@ -15,7 +15,7 @@
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/typing_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -23,7 +23,7 @@ const browser = await launchEdge('typing');
 
 // ---- canned answers ------------------------------------------------------------------------------------------
 const DEFAULT_RUN = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task/scratch__seed0__0001';
-const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: true };
+const VALID = validConfiguration({ mock: true });
 
 try {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
@@ -32,9 +32,13 @@ try {
   const page = await browser.open();
   const { send, evaluate, until, consoleErrors } = page;
   const refused = []; const defaultAsks = [];
+  let holdValidation = false;
   await page.intercept(['*/api/*'], params => {
     const { requestId, request } = params, name = new URL(request.url).pathname;
-    if (name === '/api/config/validate') return page.fulfil(requestId, 200, VALID);
+    if (name === '/api/config/validate') {
+      if (holdValidation) { page.paused.push({ requestId, url: request.url, postData: request.postData }); return; }
+      return page.fulfil(requestId, 200, VALID);
+    }
     if (name === '/api/runs/default-model') { defaultAsks.push(request.url); return page.fulfil(requestId, 200, { run_dir: DEFAULT_RUN, checkpoint_id: 'latest', reason: 'FIXTURE' }); }
     if (name === '/api/runs/models') return page.fulfil(requestId, 200, { models: [] });
     if (name === '/api/runs/model') return page.fulfil(requestId, 404, { detail: { message: 'FIXTURE: no such model' } });
@@ -51,7 +55,7 @@ try {
     }
   };
   const deleteKey = async () => { for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46, nativeVirtualKeyCode: 46 }); };
-  const focusAll = expression => evaluate(`(() => { const i = ${expression}; i.scrollIntoView({ block: 'center' }); i.focus(); i.select(); return document.activeElement === i; })()`);
+  const focusAll = expression => evaluate(`(() => { const i = ${expression}; for (let parent = i.parentElement; parent; parent = parent.parentElement) { if (parent.tagName === 'DETAILS') parent.open = true; } i.scrollIntoView({ block: 'center' }); i.focus(); i.select(); return document.activeElement === i; })()`);
   const valueOf = expression => evaluate(`${expression}?.value ?? null`);
   const blur = expression => evaluate(`${expression}.blur()`);
   const saved = async () => { await page.saved(); return page.stored(); };            // the configuration once the page has written it
@@ -173,10 +177,28 @@ try {
   // ---- (d) a Mode that loads a model takes the project's default model --------------------------------------------------------------
   config = await saved();
   check('still scratch: run.model_source.run_dir is null', (config.run.model_source?.run_dir ?? null) === null, JSON.stringify(config.run.model_source ?? null));
-  await evaluate(`(() => { const s = ${LABELLED('.right', 'Mode')}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'fine_tune'); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await page.setValue(`${LABELLED('.right', 'Mode')}`, 'fine_tune');
   let model = null;
   for (let i = 0; i < 40 && model?.run_dir !== DEFAULT_RUN; i++) { model = (await saved()).run.model_source ?? null; if (model?.run_dir !== DEFAULT_RUN) await sleep(150); }
   check('once Mode is fine_tune the project\'s default model is taken (its latest save point)', model?.run_dir === DEFAULT_RUN && model?.checkpoint_id === 'latest' && defaultAsks.length >= 1, JSON.stringify(model));
+
+  // Two configurations in flight: a late success must not clear the newer configuration's blocker.
+  await sleep(700);
+  holdValidation = true;
+  await page.setValue(LABELLED('.left', 'Name'), 'fixture-old', { event: 'input' });
+  const oldValidation = await page.nextPaused('/api/config/validate');
+  await page.setValue(LABELLED('.left', 'Name'), 'fixture-new', { event: 'input' });
+  const newValidation = await page.nextPaused('/api/config/validate');
+  check('validation requests describe two different edits',
+    JSON.parse(oldValidation.postData).config.project.name === 'fixture-old' && JSON.parse(newValidation.postData).config.project.name === 'fixture-new');
+  await page.fulfil(newValidation.requestId, 200, validConfiguration({ blocks_run: true, counts: { error: 1 },
+    issues: [{ level: 'error', path: 'project.name', code: 'fixture', message: 'FIXTURE: newest configuration is blocked' }] }));
+  const blockedButton = `document.querySelector('header button[title^="ONE costed"]')?.disabled`;
+  check('the newer validation blocks starting a run', await until(blockedButton));
+  await page.fulfil(oldValidation.requestId, 200, VALID);
+  await sleep(500);
+  check('an older successful validation cannot clear the newer blocker', await evaluate(blockedButton));
+  holdValidation = false;
 
   console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
   check('the page asked to start, continue, command, connect or call an agent on its own: never',

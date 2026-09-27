@@ -37,7 +37,7 @@ def main():
     parser.add_argument('--hidden-dim', type=int, default=32)
     parser.add_argument('--heads', type=int, default=4)
     parser.add_argument('--layers', type=int, default=2)
-    parser.add_argument('--max-calls', type=int, default=1800, help='Total across ALL requested folds and seeds')
+    parser.add_argument('--max-calls', type=int, default=873, help='Total across ALL requested folds and seeds')
     parser.add_argument('--dry-run', action='store_true', help='Validate all folds and budget without evaluations')
     args = parser.parse_args()
     if len(set(args.heldout)) != len(args.heldout):
@@ -59,7 +59,7 @@ def main():
                        for name, tasks in folds.items()})
     plan['sha256'] = digest(plan)
     if args.dry_run:
-        print(json.dumps(dict(origin='synthetic', planned_calls=total, folds=budgets,
+        print(json.dumps(dict(origin='synthetic', encoders=settings['encoders'], planned_calls=total, folds=budgets,
                               action_counts={k: sum(g.mutable for g in v.parameter_groups)
                                              for k, v in factory.graphs.items()}, plan_sha256=plan['sha256']), indent=2))
         return 0

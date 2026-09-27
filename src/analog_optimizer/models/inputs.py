@@ -11,15 +11,18 @@ import pickle
 import torch
 from torch_geometric.data import Batch
 
-from analog_optimizer.envs.sizing import Observation
+from analog_optimizer.envs.sizing import ConditionResult, Observation
 from analog_optimizer.graph.pyg_converter import CircuitHeteroData, FeatureSchema, TopologyTensorCache, to_pyg
 from analog_optimizer.graph.neural import port_edge_tensors
 from analog_optimizer.measurements.specs import SpecificationEvaluator
 
 
+SPEC_INPUT_LAYOUT = 'spec-input-v2'   # 21 columns per registry slot + 11: what this code computes, whatever the registry is called
+
+
 @dataclass(frozen=True)
 class SpecSchema:
-    version: str = 'spec-input-v1'
+    version: str = 'spec-input-v1'    # the default registry's name since M4 (identity); it does not choose the column layout
     # Registry position carries metric identity; values never use instance names.
     metrics: tuple[tuple[str, str, float], ...] = (
         ('score', 'fixture', 1.0),
@@ -30,8 +33,14 @@ class SpecSchema:
         ('output_dc_v', 'V', 1.0),
         ('unity_downward_crossings', 'count', 1.0),
     )
+    layout: str = SPEC_INPUT_LAYOUT   # recorded in every checkpoint contract; a v1 checkpoint is refused by its checkpoint_version
 
     def __post_init__(self):
+        if not isinstance(self.version, str) or not self.version:
+            raise ValueError('A metric registry needs a version label')
+        if self.layout != SPEC_INPUT_LAYOUT:
+            raise ValueError(f'Unsupported spec input layout {self.layout!r}: this code computes {SPEC_INPUT_LAYOUT}; '
+                             'an older layout needs an explicit migration')
         if not self.metrics or len({m[0] for m in self.metrics}) != len(self.metrics):
             raise ValueError('Metric registry must be nonempty and unique')
         if any(not name or not unit or not math.isfinite(ref) or ref <= 0
@@ -40,11 +49,13 @@ class SpecSchema:
 
     @property
     def width(self):
-        return len(self.metrics) * 13 + 7  # budget, status (3), condition (3)
+        return len(self.metrics) * 21 + 11
 
 
 def signed_log(value, reference):
-    return math.copysign(math.log1p(abs(value / reference)), value)
+    ratio = abs(value / reference)
+    magnitude = math.log1p(ratio) if math.isfinite(ratio) else math.log(abs(value)) - math.log(reference)
+    return math.copysign(magnitude, value)
 
 
 def validate_observation(observation):
@@ -68,13 +79,43 @@ def validate_observation(observation):
     if observation.graph.schema_version != '1.0':
         raise ValueError('Unsupported circuit graph schema')
     observation.graph.validate()
-    SpecificationEvaluator(observation.specs)
+    SpecificationEvaluator(observation.specs, observation.reward_settings)
+    if observation.condition_policy not in ('off', 'always'):
+        raise ValueError('Unknown training condition policy')
+    if not isinstance(observation.planned_conditions, tuple) or not isinstance(observation.condition_results, tuple):
+        raise ValueError('Condition plans and results must be immutable ordered tuples')
+    if observation.condition_policy == 'always' and len(observation.planned_conditions) < 2:
+        raise ValueError('Robust training requires an explicit nominal-plus-corners plan')
+    if observation.condition_policy == 'off' and len(observation.planned_conditions) > 1:
+        raise ValueError('Corners require the always policy')
+    if observation.condition_results:
+        if not observation.planned_conditions or observation.planned_conditions[0] != observation.condition:
+            raise ValueError('Observation must retain its full nominal-first plan')
+        if any(not isinstance(row, ConditionResult) for row in observation.condition_results):
+            raise ValueError('Typed condition results are required')
+        if any(c is None or c.purpose != 'pvt_training' for c in observation.planned_conditions[1:]):
+            raise ValueError('Post-validation conditions cannot enter training observations')
+        nominal = observation.condition_results[0]
+        if any(getattr(nominal, key) != getattr(observation, key) for key in (
+                'condition', 'metrics', 'metric_units', 'metric_validity', 'status', 'job_id')):
+            raise ValueError('Nominal observation differs from its retained result')
+        observation.evaluation
+    elif observation.condition_policy != 'off' or observation.planned_conditions:
+        raise ValueError('A planned observation requires nominal measurement evidence')
+    device_ids = {d.id for d in observation.graph.devices}
+    if any(key not in device_ids for key in observation.operating_points):
+        raise ValueError('Operating points must be mapped to graph devices')
+    for values in observation.operating_points.values():
+        if not isinstance(values, dict) or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+                                              for v in values.values()):
+            raise ValueError('Operating points must be filtered to finite quantities')
 
 
 def context_features(observation, schema):
     validate_observation(observation)
     registry = {name: (i, unit, ref) for i, (name, unit, ref) in enumerate(schema.metrics)}
-    features = torch.zeros((len(schema.metrics), 13))
+    features = torch.zeros((len(schema.metrics), 21))
+    evaluation = observation.evaluation
     for spec in observation.specs:
         if spec.metric_id not in registry:
             raise ValueError(f'Unknown metric: {spec.metric_id}')
@@ -91,15 +132,21 @@ def context_features(observation, schema):
         features[index] = torch.tensor([
             1, spec.required, spec.comparator == 'min', spec.comparator == 'max',
             spec.comparator == 'range', signed_log(spec.lower or 0, ref),
-            signed_log(spec.upper or 0, ref), math.log1p(spec.scale / ref),
+            signed_log(spec.upper or 0, ref), signed_log(spec.scale, ref),
             math.log1p(spec.weight), signed_log(value, ref) if valid else 0,
             valid, spec.lower is not None, spec.upper is not None,
+            spec.objective == 'min', spec.objective == 'max',
+            signed_log(evaluation.worst_values[spec.metric_id], ref) if evaluation.worst_valid[spec.metric_id] else 0,
+            evaluation.worst_valid[spec.metric_id], 0, 0, 0, 0,
         ])
     condition = observation.condition
     extra = [math.log1p(observation.remaining_steps)]
     extra += [float(observation.status == s) for s in ('ok', 'invalid_design', 'nonconverged')]
     extra += ([1, condition.corner.temperature_c / 100, condition.corner.supply_v]
               if condition else [0, 0, 0])
+    planned = len(observation.planned_conditions) or 1
+    measured = len(observation.condition_results) or 1
+    extra += [math.log1p(planned - 1), measured / planned, evaluation.nominal_success, evaluation.success]
     result = torch.cat((features.flatten(), torch.tensor(extra)))
     if not torch.isfinite(result).all():
         raise ValueError('Non-finite context features')
@@ -156,7 +203,8 @@ class _PreparedObservation:
 
 def _prepare_observation(observation, feature_schema, spec_schema, topology_cache=None):
     context = context_features(observation, spec_schema)
-    graph = to_pyg(observation.graph, feature_schema, topology_cache=topology_cache)
+    graph = to_pyg(observation.graph, feature_schema, topology_cache=topology_cache,
+                   operating_points=observation.operating_points)
     group_ids = tuple(g.id for g in observation.graph.parameter_groups if g.mutable)
     if not group_ids:
         raise ValueError('SAC needs at least one active action per graph')

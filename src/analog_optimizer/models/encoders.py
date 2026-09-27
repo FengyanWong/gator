@@ -6,17 +6,24 @@ import math
 
 import torch
 from torch import nn
-from torch_geometric.nn import TransformerConv, RGCNConv, GATConv, GCNConv
+from torch_geometric.nn import TransformerConv, RGCNConv, GATv2Conv
 
 
-ENCODER_TYPES = ('graph_transformer', 'mlp', 'rgcn', 'gat', 'gcn')
+ENCODER_TYPES = ('graph_transformer', 'rgcn', 'gatv2')
 LEGACY_MODES = {'local_port_attention': 'graph_transformer'}
 # Encoders that existed and were removed. Naming one is refused in words: the models trained with it load only from
 # the last source commit that still has it (the checkpoint contract pins the source digest).
 REMOVED_ENCODERS = {'port_gnn': 'port_gnn (legacy attention_mode port_message_passing) was removed from the optimizer '
                                 'on 2026-09-24: it answered the same question as rgcn (edge-typed message passing '
                                 'without attention) and had no published reference. Models trained with it load only '
-                                'from source commit bbdfe36 (source digest 02127bc3...).'}
+                                'from source commit bbdfe36 (source digest 02127bc3...).',
+                    'gat': 'gat (GATv1) was replaced by gatv2 on 2026-09-26. Select gatv2 for new training; '
+                           'GATv1 weights cannot be loaded into GATv2. Use the historical source matching '
+                           'the checkpoint for GATv1 runs.',
+                    **{name: f'{name} was removed from the optimizer on 2026-09-26 by user request. '
+                             'Choose graph_transformer, rgcn or gatv2. Use the historical source matching the checkpoint; '
+                             'the last five-encoder version is commit 9bc488f (source digest aa987cf0...).'
+                       for name in ('mlp', 'gcn')}}
 REMOVED_LEGACY_MODES = {'port_message_passing': 'port_gnn'}
 
 
@@ -46,7 +53,7 @@ class ModelConfig:
             raise ValueError(f'Unsupported encoder_type: {encoder}')
         if legacy is not None and legacy != encoder:
             raise ValueError('encoder_type conflicts with legacy attention_mode')
-        if encoder in ('graph_transformer', 'gat') and self.hidden_dim % self.heads:
+        if encoder in ('graph_transformer', 'gatv2') and self.hidden_dim % self.heads:
             raise ValueError('Attention hidden_dim must be divisible by heads')
         object.__setattr__(self, 'encoder_type', encoder)
         object.__setattr__(self, 'attention_mode', next((k for k, v in LEGACY_MODES.items() if v == encoder), None))
@@ -83,18 +90,6 @@ class PortAttentionBlock(nn.Module):
         return nodes + self.ff(self.norm_ff(nodes))
 
 
-class NodeMLPBlock(nn.Module):
-    """Shared node-wise MLP: intentionally ignores all circuit edges."""
-    def __init__(self, config):
-        super().__init__()
-        h = config.hidden_dim
-        self.norm_ff = nn.LayerNorm(h)
-        self.ff = mlp(h, 2 * h, h)
-
-    def forward(self, nodes, edges, edge_features, edge_role):
-        return nodes + self.ff(self.norm_ff(nodes))
-
-
 class PortRGCNBlock(nn.Module):
     """One relation per terminal role and direction; no node ID embeddings."""
     def __init__(self, config, num_relations):
@@ -110,14 +105,14 @@ class PortRGCNBlock(nn.Module):
         return nodes + self.ff(self.norm_ff(nodes))
 
 
-class PortGATBlock(nn.Module):
-    """Additive GAT attention with port features, real edges and a residual."""
+class PortGATv2Block(nn.Module):
+    """Dynamic GATv2 attention with port features, real edges and a residual."""
     def __init__(self, config):
         super().__init__()
         h = config.hidden_dim
         self.norm_attention = nn.LayerNorm(h)
-        self.attention = GATConv(h, h // config.heads, heads=config.heads, edge_dim=h,
-                                 dropout=0, add_self_loops=False)
+        self.attention = GATv2Conv(h, h // config.heads, heads=config.heads, edge_dim=h,
+                                  dropout=0, add_self_loops=False, share_weights=False, residual=False)
         self.norm_ff = nn.LayerNorm(h)
         self.ff = mlp(h, 2 * h, h)
 
@@ -126,27 +121,11 @@ class PortGATBlock(nn.Module):
         return nodes + self.ff(self.norm_ff(nodes))
 
 
-class GCNBlock(nn.Module):
-    """Topology-only GCN control; keeps multiedges, ignores relation labels."""
-    def __init__(self, config):
-        super().__init__()
-        h = config.hidden_dim
-        self.norm_message = nn.LayerNorm(h)
-        # Different graphs arrive each call; caching a prior adjacency is invalid.
-        self.message = GCNConv(h, h, cached=False, add_self_loops=False)
-        self.norm_ff = nn.LayerNorm(h)
-        self.ff = mlp(h, 2 * h, h)
-
-    def forward(self, nodes, edges, edge_features, edge_role):
-        nodes = nodes + self.message(self.norm_message(nodes), edges)
-        return nodes + self.ff(self.norm_ff(nodes))
-
-
 def build_block(config, num_relations):
     """Architecture selection is confined to the representation layer."""
     if config.encoder_type == 'rgcn':
         return PortRGCNBlock(config, num_relations)
-    blocks = dict(graph_transformer=PortAttentionBlock, mlp=NodeMLPBlock, gat=PortGATBlock, gcn=GCNBlock)
+    blocks = dict(graph_transformer=PortAttentionBlock, gatv2=PortGATv2Block)
     return blocks[config.encoder_type](config)
 
 
@@ -163,10 +142,12 @@ class CircuitEncoder(nn.Module):
         self.config = config
         self.action_conditioned = action_conditioned
         self.device_values = nn.Linear(len(feature_schema.parameters) * 4, h)
+        if feature_schema.op_columns:
+            self.operating_points = nn.Linear(2 * len(feature_schema.op_columns), h)
         self.device_kind = nn.Embedding(len(feature_schema.device_kinds), h)
         self.net_values = nn.Linear(len(feature_schema.net_roles), h)
         self.context = mlp(spec_schema.width, h, h)
-        self.uses_edge_features = config.encoder_type in ('graph_transformer', 'gat')
+        self.uses_edge_features = config.encoder_type in ('graph_transformer', 'gatv2')
         if self.uses_edge_features:
             self.port_role = nn.Embedding(2 * len(feature_schema.terminal_roles), h)
             self.port_ordinal = nn.Linear(1, h, bias=False)
@@ -185,8 +166,10 @@ class CircuitEncoder(nn.Module):
         device = graph['device']
         values = torch.cat((device.x, device.parameter_mask.float(),
                             device.parameter_present.float(), device.optimizable_mask.float()), dim=-1)
-        nodes = torch.cat((self.device_values(values) + self.device_kind(device.kind),
-                           self.net_values(graph['net'].x)))
+        device_nodes = self.device_values(values) + self.device_kind(device.kind)
+        if hasattr(self, 'operating_points'):
+            device_nodes = device_nodes + self.operating_points(torch.cat((device.op, device.op_mask.float()), dim=-1))
+        nodes = torch.cat((device_nodes, self.net_values(graph['net'].x)))
         context = self.context(batch.context)
         nodes = nodes + context[batch.node_batch]
         groups = self.group_values(batch.group_features) + self.parameter_kind(graph.group_kind)

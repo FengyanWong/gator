@@ -1,18 +1,15 @@
 """The model / effort lists the Agent tab offers, and what each provider does with a choice.
 Fake CLI fixtures only: no real Claude/Codex session is started and no model is called."""
 import json
-import os
 from pathlib import Path
-import stat
-import sys
 
 from fastapi.testclient import TestClient
 import pytest
 
 from gator_workbench import agents, runs
 from gator_workbench.agents import AgentError, AgentSettings, ClaudeCodeProvider, CodexProvider, catalog
-from gator_workbench.api.app import create_app
-from test_wb_agents import cli, request          # noqa: F401  (fixture + request builder shared with the provider tests)
+from helpers import cli, workbench_app
+from test_wb_agents import request
 
 
 def test_every_listed_choice_is_one_the_settings_accept():
@@ -92,15 +89,9 @@ def test_cli_default_reads_only_model_and_effort_keys(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    bin_dir = tmp_path / 'bin'
-    bin_dir.mkdir()
-    target = bin_dir / 'claude'
-    target.write_text(f'#!{sys.executable}\n' + (Path(__file__).parent / 'fixtures' / 'fake_cli.py').read_text())
-    target.chmod(target.stat().st_mode | stat.S_IXUSR)
-    monkeypatch.setenv('PATH', f'{bin_dir}{os.pathsep}{os.environ["PATH"]}')
+def client(tmp_path, monkeypatch, cli):
     monkeypatch.setenv('CLAUDE_CONFIG_DIR', str(tmp_path / 'no-claude-settings'))
-    return TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False))
+    return TestClient(workbench_app(tmp_path))
 
 
 def test_settings_endpoint_serves_the_lists_and_survives_a_level_from_the_other_provider(client):

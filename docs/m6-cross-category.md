@@ -1,6 +1,6 @@
 # M6: cross-category protocol and offline acceptance
 
-M6 has started. This first increment makes OpAmp/LDO/VCO category holdout executable and auditable. It uses synthetic structures and analytic toy objectives; it does not establish electrical transfer performance. M5's real OTA results remain separate.
+M6 closed at pilot scale on 2026-09-20. As of 2026-09-26, new runs support only Graph Transformer, RGCN and GATv2. The commands below use that three-encoder matrix; the dated acceptance results retain the original six-encoder experiment. This suite uses synthetic structures and analytic toy objectives; it does not establish electrical transfer performance. M5's real OTA results remain separate.
 
 ## Experiment contract
 
@@ -18,7 +18,7 @@ Each encoder/seed/fold starts a fresh source learner and replay. Source tasks ru
 
 This uses the existing serial multi-environment training path. It does not add concurrent heterogeneous workers or claim a scheduling speedup. Replay sampling is uniform over stored transitions; it does not guarantee equal category counts in every minibatch. Source order and class coverage are recorded for later sampling ablations.
 
-All six encoders run the same matrix: Graph Transformer, MLP, GCN, RGCN, GAT and port-GNN, each with scratch/frozen/adapt, plus random search and coordinate pattern search. Width/depth are common, with actual parameter counts reported; models are not parameter-count matched.
+All three encoders run the same matrix: Graph Transformer, RGCN and GATv2, each with scratch/frozen/adapt, plus random search and coordinate pattern search (11 target methods). Width/depth are common, with actual parameter counts reported; models are not parameter-count matched.
 
 ## Fixtures, actions and metrics
 
@@ -32,20 +32,22 @@ The M6 specification registry is supplied explicitly to the benchmark and saved 
 
 ```bash
 # No evaluation or output directory: validate the complete suite and call ceiling.
-/tmp/analog-optimizer-venv/bin/python -B examples/benchmark_cross_category.py --dry-run
+~/analog-optimizer-venv/bin/python -B examples/benchmark_cross_category.py --dry-run
 
-# Three held-out classes, six encoders, three seeds; 1,656 analytic evaluations.
-/tmp/analog-optimizer-venv/bin/python -u -B examples/benchmark_cross_category.py
+# Three held-out classes, three encoders, three seeds; 873 analytic evaluations.
+~/analog-optimizer-venv/bin/python -u -B examples/benchmark_cross_category.py
 
-# Small end-to-end run: 360 analytic evaluations.
-/tmp/analog-optimizer-venv/bin/python -u -B examples/benchmark_cross_category.py \
-  --seeds 17 --pretrain-steps 2 --test-steps 2 --max-calls 360
+# Small end-to-end run: 189 analytic evaluations.
+~/analog-optimizer-venv/bin/python -u -B examples/benchmark_cross_category.py \
+  --seeds 17 --pretrain-steps 2 --test-steps 2 --max-calls 189
 
 # Audit trusted locally generated artifacts; no new backend evaluations.
-/tmp/analog-optimizer-venv/bin/python -B examples/audit_cross_category.py RUN_DIRECTORY
+~/analog-optimizer-venv/bin/python -B examples/audit_cross_category.py RUN_DIRECTORY
 ```
 
 `--heldout` and `--encoders` select subsets. `--max-calls` applies to the whole suite, including all selected folds and seeds, resets, source training and validation. An excessive plan is rejected before environment construction. Partial failures retain per-fold reports and completed-call accounting; there are no automatic retries. The entrypoint runs one worker and writes JSON records and complete checkpoints. It does not expose a real mode or automatically load the OTA bridge configuration.
+
+GATv1 (`gat`) has been replaced by `gatv2`; new GATv2 weights are required. MLP, GCN and port-GNN are removed from the optimizer and rejected by the entry points. Changing the source invalidates old checkpoint contracts; audits of historical runs require their exact recorded source, inputs and dependencies. New results do not replace the archived six-encoder evidence below.
 
 The suite protocol freezes all tasks, objective configuration, fixture/model mapping hashes, source digest, seeds and budgets before any fold runs. Each fold saves candidate records, restoration evidence, per-method outcomes, time and call costs, parameter counts and checkpoints. The audit independently recomputes toy metrics and rewards from executed parameters, verifies replay membership and source-class coverage, checks frozen/copied weights, and probes the next SAC update twice from each checkpoint.
 

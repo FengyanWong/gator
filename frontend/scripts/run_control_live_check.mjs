@@ -46,6 +46,8 @@ try {
   check('the real validation lets the MOCK starter configuration start', await until(`${MAIN}.textContent === 'Start' && !${MAIN}.disabled && [...document.querySelectorAll('header span.ok')].some(s => s.textContent === 'configuration valid')`, 300));
 
   // ---- Start ---------------------------------------------------------------------------------------------------------
+  // The story starts with the first press; loading and validation may change Start's disabled state before it.
+  await evaluate(`window.__seen = [[${MAIN}.textContent, ${MAIN}.disabled]]`);
   await press(MAIN);
   check('Start: a real worker is launched and the button reads "Pause"', await mainReads('Pause'));
   const dir = await evaluate(`localStorage.getItem('gator-workbench-current-run-v1')`);

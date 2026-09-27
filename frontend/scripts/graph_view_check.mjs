@@ -17,7 +17,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/graph_view_check.mjs)" [screenshot-dir]
 // Optional: GATOR_WORKBENCH_OUTPUT_ROOT (from WSL: WSLENV=GATOR_WORKBENCH_URL:GATOR_WORKBENCH_OUTPUT_ROOT). Exit code 1 on failure.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const ROOT = process.env.GATOR_WORKBENCH_OUTPUT_ROOT || undefined;
@@ -57,7 +57,7 @@ const view = (evaluation, { attention = true } = {}) => ({ checkpoint_id: POINT.
     policy_action: 0, policy_value: 2.55e-12, recorded_action: 0.1, recorded_value: 2.795e-12 }],
   attention: attention ? { available: true, layers: 2, heads: 2, reason: null } : { available: false, layers: 0, heads: 0, reason: 'FIXTURE: The rgcn encoder has no attention: the picture shows the circuit and the proposed sizes only.' },
   reading: 'FIXTURE reading: attention is normalized per RECEIVING node; a node with a single connection always shows 1.0.', actions_note: 'FIXTURE actions note.' });
-const VALID = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: null };
+const VALID = validConfiguration();
 
 try {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
@@ -81,8 +81,7 @@ try {
   };
   const until = (expression, tries = 60) => page.until(expression, tries);
   const RIGHT = `document.querySelector('.right')`, OPEN = `document.querySelector('.right button.graph-open')`, DIALOG = `document.querySelector('dialog.graph-dialog')`, CY = `document.querySelector('.graph-canvas')?.__cy`;
-  const setSelect = (expression, value) => evaluate(`(() => { const s = ${expression}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)});
-    s.dispatchEvent(new Event('change', { bubbles: true })); return s.value; })()`);
+  const setSelect = (expression, value) => page.setValue(`${expression}`, value);
   const drawn = () => evaluate(`(() => { const cy = ${CY}; if (!cy) return null; const box = cy.container().getBoundingClientRect();
     return { nodes: cy.nodes().map(n => ({ id: n.id(), label: n.data('label'), sized: n.data('sized'), kind: n.data('kind'), shape: n.style('shape'), fill: n.style('background-color'),
         x: n.renderedPosition('x'), y: n.renderedPosition('y'), box: n.renderedBoundingBox({ includeLabels: false }) })),

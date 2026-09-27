@@ -26,7 +26,7 @@ def tasks(graph):
 
 
 def settings():
-    return dict(seeds=[17, 29], encoders=['mlp'], hidden_dim=16, heads=2, layers=1,
+    return dict(seeds=[17, 29], encoders=['gatv2'], hidden_dim=16, heads=2, layers=1,
                 pretrain_steps=2, test_steps=2, batch_size=2, max_calls=40)
 
 
@@ -98,7 +98,7 @@ def test_benchmark_cli_recording_and_parallel_budget(tmp_path):
     config = tmp_path/'recording.json'
     config.write_text(json.dumps(dict(min_free=0, temporary_reserve=0)))
     command = [sys.executable, str(ROOT/'examples/benchmark_transfer.py'), '--origin', 'synthetic',
-        '--seeds', '17', '29', '--encoders', 'mlp', '--hidden-dim', '16', '--heads', '2', '--layers', '1',
+        '--seeds', '17', '29', '--encoders', 'gatv2', '--hidden-dim', '16', '--heads', '2', '--layers', '1',
         '--pretrain-steps', '2', '--test-steps', '2', '--max-calls', '76', '--max-workers', '2',
         '--recording-root', str(tmp_path/'records'), '--recording-config', str(config),
         '--history-limit', '1', '--output', str(tmp_path/'output')]

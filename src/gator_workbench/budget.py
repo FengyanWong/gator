@@ -33,7 +33,7 @@ class BudgetLedger:
             raise ValueError('max_retries must be a nonnegative integer')
         self.max_evaluations, self.max_launches, self.max_retries = max_evaluations, max_launches, max_retries
         self._lock = threading.RLock()
-        self._reserved: set[str] = set()
+        self._reserved: dict[str, int] = {}
         self._in_flight: dict[str, dict] = {}      # evaluation_id -> {dispatch_index, attempts, launches}
         self._launch_holds = 0                     # attempts running whose launch is not yet confirmed
         self.charged = 0          # evaluations started (the budget figure)
@@ -44,6 +44,8 @@ class BudgetLedger:
         self.retries = 0
         self.cache_hits = 0
         self.first_feasible = None
+        self.first_nominal_feasible = None
+        self.uncertain_launches = 0
 
     # ------------------------------------------------------------------ evaluations
     def remaining(self) -> int:
@@ -53,20 +55,22 @@ class BudgetLedger:
     def _launch_room(self, extra=0) -> bool:
         if self.max_launches is None:
             return True
-        pending_first = sum(1 for item in self._in_flight.values() if item['attempts'] == 0)
-        return self.launches + self._launch_holds + pending_first + len(self._reserved) + extra < self.max_launches + 1
+        pending_first = sum(item['allowance'] for item in self._in_flight.values() if item['attempts'] == 0)
+        return self.launches + self._launch_holds + pending_first + sum(self._reserved.values()) + extra <= self.max_launches
 
-    def reserve(self, evaluation_id=None):
+    def reserve(self, evaluation_id=None, *, launches=1):
         """Reserve one evaluation before dispatch. Returns its ID, or None when exhausted."""
         with self._lock:
+            if type(launches) is not int or launches < 1:
+                raise ValueError('Reserve a positive finite number of launches for the whole candidate')
             if self.charged + len(self._reserved) >= self.max_evaluations:
                 return None
-            if not self._launch_room(extra=1):
+            if not self._launch_room(extra=launches):
                 return None
             evaluation_id = evaluation_id or uuid4().hex
             if evaluation_id in self._reserved or evaluation_id in self._in_flight:
                 raise BudgetError(f'Evaluation {evaluation_id} is already reserved or running')
-            self._reserved.add(evaluation_id)
+            self._reserved[evaluation_id] = launches
             return evaluation_id
 
     def release(self, evaluation_id) -> None:
@@ -76,7 +80,7 @@ class BudgetLedger:
                 raise BudgetError('A started evaluation is never refunded')
             if evaluation_id not in self._reserved:
                 raise BudgetError(f'No reservation for {evaluation_id}')
-            self._reserved.remove(evaluation_id)
+            del self._reserved[evaluation_id]
             self.released += 1
 
     def start(self, evaluation_id) -> int:
@@ -84,9 +88,10 @@ class BudgetLedger:
         with self._lock:
             if evaluation_id not in self._reserved:
                 raise BudgetError(f'Cannot start {evaluation_id} without a reservation')
-            self._reserved.remove(evaluation_id)
+            allowance = self._reserved.pop(evaluation_id)
             self.charged += 1
-            self._in_flight[evaluation_id] = dict(dispatch_index=self.charged, attempts=0, launches=0)
+            self._in_flight[evaluation_id] = dict(dispatch_index=self.charged, attempts=0, launches=0,
+                                                 allowance=allowance, attempt_active=False)
             return self.charged
 
     # ------------------------------------------------------------------ attempts / launches
@@ -95,7 +100,8 @@ class BudgetLedger:
             item = self._in_flight.get(evaluation_id)
             if item is None:
                 return False
-            return item['attempts'] - 1 < self.max_retries and self._launch_room(extra=1)
+            return (not item['attempt_active'] and item['attempts'] - 1 < self.max_retries
+                    and self._launch_room(extra=item['allowance']))
 
     def begin_attempt(self, evaluation_id) -> int:
         """Returns the 1-based attempt number. Attempt > 1 is a retry of the SAME evaluation."""
@@ -103,17 +109,27 @@ class BudgetLedger:
             item = self._in_flight.get(evaluation_id)
             if item is None:
                 raise BudgetError(f'{evaluation_id} is not running')
+            if item['attempt_active']:
+                raise BudgetError('Previous attempt has not completed')
             if item['attempts'] >= 1 + self.max_retries:
                 raise BudgetError('max_retries exhausted')
-            if item['attempts'] >= 1 and not self._launch_room(extra=1):
+            if item['attempts'] >= 1 and not self._launch_room(extra=item['allowance']):
                 raise BudgetError('max_spectre_launches exhausted')
             item['attempts'] += 1
-            self._launch_holds += 1
+            item['attempt_active'] = True
+            self._launch_holds += item['allowance']
             if item['attempts'] > 1:
                 self.retries += 1
             return item['attempts']
 
-    def end_attempt(self, evaluation_id, *, launches: int) -> None:
+    def attempt_allowance(self, evaluation_id):
+        with self._lock:
+            item = self._in_flight[evaluation_id]
+            if not item['attempt_active']:
+                raise BudgetError('No active attempt allowance')
+            return item['allowance']
+
+    def end_attempt(self, evaluation_id, *, launches: int, uncertain=0) -> None:
         """Record how many simulator launches the attempt actually made (0 if it failed earlier)."""
         with self._lock:
             if type(launches) is not int or launches < 0:
@@ -121,33 +137,43 @@ class BudgetLedger:
             item = self._in_flight.get(evaluation_id)
             if item is None:
                 raise BudgetError(f'{evaluation_id} is not running')
-            self._launch_holds -= 1
+            if not item['attempt_active'] or launches > item['allowance']:
+                raise BudgetError('No active attempt or reported calls exceed its reservation')
+            if type(uncertain) is not int or not 0 <= uncertain <= launches:
+                raise ValueError('Uncertain calls must be included in conservative charged launches')
+            self._launch_holds -= item['allowance']
+            item['attempt_active'] = False
             item['launches'] += launches
             self.launches += launches
+            self.uncertain_launches += uncertain
 
     def complete(self, evaluation_id, *, failed=False, cache_hit=False) -> dict:
         with self._lock:
-            item = self._in_flight.pop(evaluation_id, None)
+            item = self._in_flight.get(evaluation_id)
             if item is None:
                 raise BudgetError(f'{evaluation_id} is not running')
             if cache_hit and item['launches']:
                 raise BudgetError('A cache hit cannot have simulator launches')
+            if item['attempt_active']:
+                raise BudgetError('Cannot finish a candidate with an outstanding attempt')
+            del self._in_flight[evaluation_id]
             self.completed += 1
             self.failed += int(failed)
             self.cache_hits += int(cache_hit)
             return item
 
     # ------------------------------------------------------------------ first feasibility
-    def mark_first_feasible(self, evaluation_id, *, dispatch_index, commit_seq, active_seconds, wall_seconds):
+    def mark_first_feasible(self, evaluation_id, *, dispatch_index, commit_seq, active_seconds, wall_seconds, nominal=False):
         """Called when the scheduler RECEIVES a result and confirms every hard constraint.
 
         Primary convention: evaluations charged at that moment, INCLUDING those started and
         still in flight. The other figures allow alternative conventions to be analysed.
         """
         with self._lock:
-            if self.first_feasible is not None:
+            field = 'first_nominal_feasible' if nominal else 'first_feasible'
+            if getattr(self, field) is not None:
                 return None
-            self.first_feasible = dict(
+            first = dict(
                 evaluation_id=evaluation_id,
                 first_feasible_eval_count=self.charged,
                 dispatch_index=dispatch_index,
@@ -159,7 +185,8 @@ class BudgetLedger:
                 active_seconds=active_seconds, wall_seconds=wall_seconds,
                 convention='evaluations charged (started) when the scheduler confirmed feasibility, '
                            'including evaluations still in flight')
-            return deepcopy(self.first_feasible)
+            setattr(self, field, first)
+            return deepcopy(first)
 
     # ------------------------------------------------------------------ views / persistence
     def in_flight_ids(self):
@@ -173,6 +200,10 @@ class BudgetLedger:
                         in_flight=len(self._in_flight), completed=self.completed, failed=self.failed,
                         released=self.released, remaining=self.max_evaluations - self.charged - len(self._reserved),
                         launches=self.launches, retries=self.retries, cache_hits=self.cache_hits,
+                        reserved_launches=sum(self._reserved.values()) + self._launch_holds,
+                        uncertain_launches=self.uncertain_launches,
+                        confirmed_launches=self.launches - self.uncertain_launches,
+                        first_nominal_feasible=deepcopy(self.first_nominal_feasible),
                         first_feasible=deepcopy(self.first_feasible))
 
     def state_dict(self) -> dict:
@@ -182,7 +213,8 @@ class BudgetLedger:
                 raise BudgetError('The ledger can only be saved at a quiescent boundary')
             return dict(version=self.VERSION, charged=self.charged, completed=self.completed, failed=self.failed,
                         released=self.released, launches=self.launches, retries=self.retries,
-                        cache_hits=self.cache_hits, first_feasible=deepcopy(self.first_feasible))
+                        cache_hits=self.cache_hits, first_feasible=deepcopy(self.first_feasible),
+                        uncertain_launches=self.uncertain_launches, first_nominal_feasible=deepcopy(self.first_nominal_feasible))
 
     def load_state(self, state) -> None:
         """resume keeps the existing counters (fine_tune creates a fresh ledger instead)."""
@@ -197,8 +229,12 @@ class BudgetLedger:
             if self.completed > self.charged:
                 raise BudgetError('Inconsistent ledger: completed exceeds charged')
             self.first_feasible = deepcopy(state.get('first_feasible'))
+            self.first_nominal_feasible = deepcopy(state.get('first_nominal_feasible'))
+            self.uncertain_launches = state.get('uncertain_launches', 0)
+            if type(self.uncertain_launches) is not int or not 0 <= self.uncertain_launches <= self.launches:
+                raise BudgetError('Invalid uncertain launch counter')
 
-    def reconcile(self, *, charged, completed, failed, launches, retries, cache_hits) -> dict:
+    def reconcile(self, *, charged, completed, failed, launches, retries, cache_hits, uncertain=0) -> dict:
         """After a crash, durable tables are the source of truth: evaluations committed after the
         last checkpoint DID consume budget. Never lowers a counter."""
         with self._lock:
@@ -206,4 +242,7 @@ class BudgetLedger:
             self.charged, self.completed = max(self.charged, charged), max(self.completed, completed)
             self.failed, self.launches = max(self.failed, failed), max(self.launches, launches)
             self.retries, self.cache_hits = max(self.retries, retries), max(self.cache_hits, cache_hits)
+            self.uncertain_launches = max(self.uncertain_launches, uncertain)
+            if not 0 <= self.uncertain_launches <= self.launches:
+                raise BudgetError('Unresolved launch holds must be included in conservative cost')
             return dict(before=before, after=self.state_dict())

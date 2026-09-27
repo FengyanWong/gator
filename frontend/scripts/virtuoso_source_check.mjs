@@ -145,8 +145,7 @@ try {
   const LAUNCH = `${PANEL}.querySelector('button.virtuoso-button')`;
   const text = () => evaluate(`${PANEL}.textContent`);
   const value = label => evaluate(`${FIELD(label)}.value`);
-  const choose = (label, v) => evaluate(`(() => { const s = ${FIELD(label)}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(v)});
-    s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  const choose = (label, v) => page.setValue(`${FIELD(label)}`, v);
   const type = async (label, textToType) => {                                       // the labels sit in a folded line: open it, then type
     await evaluate(`(() => { const d = ${PANEL}.querySelector('details.labels'); if (!d.open) d.querySelector('summary').click(); const i = ${FIELD(label)}; i.focus(); i.select(); })()`);
     await send('Input.insertText', { text: textToType });
@@ -183,14 +182,13 @@ try {
   const wButton = t => `[...${WIN}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(t)})`;
   const wValue = label => far.evaluate(`${wField(label)}.value`);
   const wOptions = label => far.evaluate(`[...${wField(label)}.options].map(o => ({ value: o.value, text: o.textContent.trim(), disabled: o.disabled }))`);
-  const wChoose = (label, v) => far.evaluate(`(() => { const s = ${wField(label)}; const w = s.ownerDocument.defaultView;
-    Object.getOwnPropertyDescriptor(w.HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(v)}); s.dispatchEvent(new w.Event('change', { bubbles: true })); })()`);
+  const wChoose = (label, v) => far.setValue(`${wField(label)}`, v);
   const wPress = t => far.evaluate(`${wButton(t)}.click()`, true);
   const wHas = t => far.evaluate(`!!(${wButton(t)})`);
   const wShown = selector => far.evaluate(`(() => { const e = ${WIN}.querySelector(${JSON.stringify(selector)}); return !!e && e.checkVisibility(); })()`);
   const shotWindow = name => far.shot(path.join(out, name), WIN, { scale: 2, maxHeight: 1600, beyond: true });
 
-  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose', '*/api/tasks', '*/api/tasks/starter*'], answer, { others: 'read' });
+  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose', '*/api/tasks', '*/api/tasks/starter*'], answer, { others: 'read', connection: 'lab' });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   // The connection in use is named on the one "Connection" button of the left column (its window is not needed here).

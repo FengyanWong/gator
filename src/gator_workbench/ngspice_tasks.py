@@ -297,10 +297,12 @@ def runtime(task_key, name, profile_id=None, *, authorized=False):
         for probe_id, source, _ in compiled.plan.probes if compiled.plan is not None else ():
             if source in parsed.result_names and source not in units:
                 units[source] = parsed.units.get(source) or '1'
+        from analog_optimizer.measurements.specs import RewardSettings
         return NgspiceEnvFactory(text, compiled.graph, compiled.specs, link, str(work_root), adv.episode_length,
                                  adv.simulation_timeout_seconds, adv.episode_terminates_on_success, units,
                                  dict(entry.get('device_kinds') or {}), _include_root(entry), name, str(netlist_file),
-                                 plan=compiled.plan if compiled.plan is not None and compiled.plan.injected else None)
+                                 plan=compiled.plan if compiled.plan is not None and compiled.plan.injected else None,
+                                 reward_settings=RewardSettings(**run_settings.reward.model_dump()))
     notes = [f'ngspice netlist task, revision {entry.get("revision")}: {len(graph.devices)} elements, '
              f'{len(parsed.measurements)} results ({", ".join(parsed.result_names[:8])}{"..." if len(parsed.result_names) > 8 else ""}).']
     if entry.get('source_path'):

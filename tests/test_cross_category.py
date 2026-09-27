@@ -103,11 +103,21 @@ def test_unknown_metrics_and_over_budget_fail_before_backend(categories, tmp_pat
 def test_suite_budget_is_global_and_dry_run_creates_no_output(tmp_path):
     command = [sys.executable, str(ROOT/'examples/benchmark_cross_category.py'), '--dry-run',
                '--seeds', '17', '--pretrain-steps', '2', '--test-steps', '2', '--output', str(tmp_path/'output')]
-    result = subprocess.run(command+['--max-calls', '303'], capture_output=True, text=True)
+    result = subprocess.run(command+['--max-calls', '189'], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)['planned_calls'] == 303            # five encoders since 2026-09-24 (six: 360)
-    result = subprocess.run(command+['--max-calls', '302'], capture_output=True, text=True)
+    summary = json.loads(result.stdout)
+    assert summary['planned_calls'] == 189
+    assert summary['encoders'] == ['graph_transformer', 'rgcn', 'gatv2']
+    result = subprocess.run(command+['--max-calls', '188'], capture_output=True, text=True)
     assert result.returncode != 0 and 'across all folds' in result.stderr
+    assert not (tmp_path/'output').exists()
+
+
+@pytest.mark.parametrize('encoder', ['mlp', 'gcn'])
+def test_m6_cli_rejects_excluded_encoders_before_output(tmp_path, encoder):
+    result = subprocess.run([sys.executable, str(ROOT/'examples/benchmark_cross_category.py'),
+        '--encoders', encoder, '--output', str(tmp_path/'output')], capture_output=True, text=True)
+    assert result.returncode != 0 and 'invalid choice' in result.stderr
     assert not (tmp_path/'output').exists()
 
 
@@ -126,7 +136,7 @@ def test_all_encoders_mix_classes_metrics_actions_and_resume(categories, encoder
             replay.add(Transition.from_step(obs, proposal, step))
             assert set(obs.metrics) == {task.specs[0].metric_id}
             assert obs.origin == 'synthetic'
-            slots = context_features(obs, schema)[:-7].reshape(len(schema.metrics), 13)
+            slots = context_features(obs, schema)[:-11].reshape(len(schema.metrics), 21)    # spec-input-v2 layout
             assert slots[:, 0].sum() == 1 and slots[:, 10].sum() == 1
             if name == 'vco':
                 for stage in ('a', 'b', 'c'):
@@ -151,11 +161,15 @@ def test_all_encoders_mix_classes_metrics_actions_and_resume(categories, encoder
 def test_cross_category_matrix_isolated_shared_source_and_frozen_target(categories, tmp_path):
     factory, schema, provenance = categories
     tasks = category_tasks(factory, 'vco')
-    config = settings(schema, ENCODER_TYPES)
+    config = settings(schema, ('graph_transformer', 'rgcn', 'gatv2'))
     report = run_benchmark(tasks, factory, tmp_path, origin='synthetic', settings=config,
                            provenance=provenance, progress=lambda message: None)
-    assert report['completed'] and report['calls'] == report['planned_calls'] == 101   # five encoders since 2026-09-24 (six: 120)
-    assert report['real_simulation_calls'] == 0 and len(report['test_runs']) == 17
+    assert report['completed'] and report['calls'] == report['planned_calls'] == 63
+    assert report['real_simulation_calls'] == 0 and len(report['test_runs']) == 11
+    assert {r['method'] for r in report['test_runs']} == {
+        f'{encoder}_{phase}' for encoder in ('gt', 'rgcn', 'gatv2')
+        for phase in ('scratch', 'frozen', 'adapt')
+    } | {'random', 'pattern_search'}
     source_tasks = [t for t in tasks if t.partition == 'train']
     target = next(t for t in tasks if t.partition == 'test')
     for cost in report['pretraining_costs']:

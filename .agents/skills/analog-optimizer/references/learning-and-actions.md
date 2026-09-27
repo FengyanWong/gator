@@ -1,5 +1,15 @@
 # 可切换编码器、SAC 与动作契约
 
+2026-09-26 reward-v2 更新优先于本文的旧 nominal-only/编码器说明：用户授权按
+`docs/plan-reward-v2-real-flow.md` 修改 optimizer；当前编码器是 GT/RGCN/GATv2。
+v2 evaluator、21N+11 输入、可选 nominal OP、完整 condition plan、replay 和 checkpoint
+契约已接入并通过 OTA7 有界真实 A/B/C 验收：73 次 Spectre（A21、B44 含一次记录失败、C8），
+总上限 77，B44 是用户另行明确批准。用户确认 unknown license 后按正常许可证流程执行，
+没有绕过许可。B 产生 8 条 transition、7 次 SAC 更新；GT/RGCN/GATv2 各 OP 开/关的
+6 项更新与精确下一次更新恢复使用 B 的真实 replay，不是六组新 on-policy 实验。
+没有发现 robust-feasible 设计，也没有证明新 reward 更优。详见 `docs/reward-v2.md`；
+不要自动迁移旧 checkpoint，不要用 MOCK 代替验收，也不要启动未授权的 999-call 研究。
+
 本文给出项目设计与验证要求；当前实现状态见 [项目决策](project-decisions.md)，不能把接口验收当作迁移效果证据。
 算法基础参考 [S5](sources.md)，图算子事实参考 [S4、S6](sources.md)；参数组化、mask、奖励和跨电路组合是本项目的设计选择。
 
@@ -23,7 +33,10 @@ LDO/VCO/OpAmp 不共用无语义的“第一个指标”。规格身份、方向
 
 先确保输入包含尺寸、目标与有效性信息，再增加 OP、偏置工作区或历史特征；每次增加有 ablation 和缺失值策略。
 
-当前策略为 nominal-only：PVT/MC context 在基础设施中保留，但只有已验证 nominal 的 transition 可以进入训练 replay 和 normalizer。后验证结果属于独立记录；robust_score 不替换 nominal_reward。M4/M5 及编码器接口已实现 nominal SAC；以后若用户明确启用工况抽样训练，才扩展条件输入、reward 与数据版本，并按 [工况与统计验证](pvt-monte-carlo.md) 单独验收。
+默认仍为 nominal-only；显式选择 reward-v2 `always` 的已验收 OTA7 可将完整五工况评价进入
+训练 reward/replay。输入图和 OP 只来自 nominal，独立保留完整工况计划和结果；缺失必需
+测量/基础设施失败不生成 reward/replay。后验证仍是独立记录，旧 `robust_score` 不替换
+训练 reward。MC、skip-on-fail 和其他 profile 的训练 corners 未获本轮物理验收。
 
 ## 2. Port-aware Graph Transformer
 

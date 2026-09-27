@@ -283,7 +283,8 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
                               'explicitly as continual learning.', code='continual_learning')
         contract = modes.current_contract(learner_experiment(config, task, task_hash),
                                           modes.model_config_from(config.run.network),
-                                          modes.sac_config_from(config.run.advanced), compiled.spec_schema, vocabulary)
+                                          modes.sac_config_from(config.run.advanced), compiled.spec_schema, vocabulary,
+                                          runtime=modes.runtime_options(config, vocabulary))
         compatibility = ckpt.check_compatibility(source_meta, mode=config.run.mode, task_definition_hash=task_hash,
                                                  contract=contract)
         if not compatibility['compatible']:
@@ -324,7 +325,8 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
         test_conditions=dict(conditions=['nominal'], note='The sizing environment is nominal-only'),
         definitions=dict(location='effective_config.json', variables=list(compiled.variables),
                          targets=list(compiled.targets), preference=compiled.preference,
-                         reward='negative_weighted_mean_capped_violation (existing optimizer reward)',
+                         reward=dict(version='constraint_violation_v2', settings=config.run.reward.model_dump(),
+                                     conditions=config.run.conditions.model_dump(), clearance_rule='tightest_eligible_hard_spec_v1'),
                          feasibility='all active hard constraints, decided from raw values independently of reward',
                          action='absolute-group-v1: normalized proposal -> legalized physical assignment'),
         architecture=dict(network=config.run.network.model_dump(), sac=config.run.advanced.model_dump(mode='json'),
@@ -394,6 +396,10 @@ def _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifes
     except FileNotFoundError as exc:
         raise RunRejected(f'Nothing to resume: {exc}', code='no_checkpoint')
     previous = WorkbenchConfig.model_validate(read_json(layout.effective_config))
+    if (config.run.reward != previous.run.reward or config.run.conditions != previous.run.conditions
+            or config.run.network.operating_points != previous.run.network.operating_points):
+        raise RunRejected('Reward settings, condition plan and operating-point inputs cannot change on exact resume. '
+                          'Use fine_tune with a compatible actor and fresh critics/replay.', code='reward_contract_changed')
     merged = previous.model_copy(deep=True)
     for name in RESUMABLE_RUN_FIELDS:
         setattr(merged.run, name, getattr(config.run, name))
@@ -405,7 +411,7 @@ def _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifes
     contract = modes.current_contract(learner_experiment(merged, task, task_hash),
                                       modes.model_config_from(merged.run.network),
                                       modes.sac_config_from(merged.run.advanced), compiled.spec_schema,
-                                      run_vocabulary(run_dir))                  # the run's own list, never a newer load
+                                      run_vocabulary(run_dir), runtime=modes.runtime_options(merged, run_vocabulary(run_dir)))
     compatibility = ckpt.check_compatibility(meta, mode='resume', task_definition_hash=task_hash, contract=contract)
     if not compatibility['compatible']:
         raise RunRejected('The latest checkpoint cannot be fully resumed. No fallback to scratch is performed.',

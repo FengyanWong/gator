@@ -9,7 +9,10 @@ import { api, Json } from '../api';
 // and every model saved before this existed was trained with it. A loaded PDK gives a list with EVERY component of
 // that PDK - its pins, its parameters and their scales, read from Virtuoso's own description of the technology library
 // and from its Spectre model files. Choosing the list is a network setting like the encoder, so it lives in the RL
-// network block; the window only loads and shows. Nothing happens on its own: a PDK is read only on "Load".
+// network block. LOADING is the Virtuoso window's work since 2026-09-27 (user: "when loading a schematic from Virtuoso,
+// shouldn't the PDK be loaded at the same time?"): reading a cell into the workbench reads its PDK in the same press
+// (backend bridge_read.pdk_with_import), and that window's "PDK window..." button opens this file's window to read one by
+// name and to see what was read. Nothing is read on its own.
 
 const FAMILY_NAME: Record<string, string> = { 'mos:n': 'n-MOS', 'mos:p': 'p-MOS', mos: 'MOS', 'bjt:npn': 'npn', 'bjt:pnp': 'pnp', bjt: 'bipolar',
   diode: 'diode', resistor: 'resistor', capacitor: 'capacitor', varactor: 'varactor', inductor: 'inductor', other: 'other' };
@@ -20,15 +23,21 @@ const familyOf = (d: Json) => (d.family === 'mos' || d.family === 'bjt') && d.po
 const loadedAt = (iso: string) => { const at = new Date(iso); return isNaN(+at) ? iso : at.toLocaleString(); };
 const USABLE_PDK_ID = (id?: string | null) => !!id && /^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$/.test(id) && !['unspecified', 'synthetic-fixture'].includes(id);
 
-/** The line of the RL network block: which components the network knows, and the button to the PDK window. */
-export function ComponentList({ value, onChoose, profileId, circuitPdk }: { value: string; onChoose: (v: string) => void; profileId: string | null; circuitPdk?: string | null }) {
+// "The loaded PDKs changed" (a cell read in the Virtuoso window brought one, a Load in the PDK window): every Components
+// list on the page reads the local list again - one GET each, no timer.
+const watchers = new Set<() => void>();
+export function pdksChanged() { watchers.forEach(w => w()); }
+const listProblem = (e: any) => e.status === 404 ? 'This workbench server is older than the page: restart it to load PDKs.' : `The loaded PDKs cannot be listed: ${e.message}`;
+
+/** The line of the RL network block: which components the network knows. It only chooses; loading is the Virtuoso window's. */
+export function ComponentList({ value, onChoose }: { value: string; onChoose: (v: string) => void }) {
   const [list, setList] = useState<Json>(null);
   const [error, setError] = useState<string | null>(null);
-  const { popup, root, blocked, open: openWindow } = usePopupWindow('gator-pdk',
-    { title: 'GATOR - PDK', features: 'popup,width=1100,height=900', rootId: 'pdk-root' });
-  const refresh = () => api.pdks().then(l => { setList(l); setError(null); }).catch(e => setError(e.status === 404
-    ? 'This workbench server is older than the page: restart it to load PDKs.' : `The loaded PDKs cannot be listed: ${e.message}`));
-  useEffect(() => { refresh(); }, []);                   // local files only: which PDKs were loaded before
+  useEffect(() => {
+    const refresh = () => api.pdks().then(l => { setList(l); setError(null); }).catch(e => setError(listProblem(e)));
+    refresh(); watchers.add(refresh);                    // local files only: which PDKs were loaded before
+    return () => { watchers.delete(refresh); };
+  }, []);
 
   const pdks: Json[] = list?.pdks ?? [];
   const chosen: Json = pdks.find(p => p.vocabulary === value) ?? null;
@@ -36,32 +45,51 @@ export function ComponentList({ value, onChoose, profileId, circuitPdk }: { valu
   return (
     <div className="component-list">
       <div className="row component-row">
-        <label title="Which components the RL network is built to know. A model trained with one list loads only with the same list.">Components
+        <label title="Which components the RL network is built to know. A model trained with one list loads only with the same list, and a parameter outside the eight standard ones can be varied only with a PDK list.">Components
           <select value={value} onChange={e => onChoose(e.target.value)}>
             <option value="standard">{list?.standard?.label ?? 'standard (8 generic kinds)'}</option>
             {pdks.map(p => <option key={p.vocabulary} value={p.vocabulary}>{p.label}</option>)}
             {missing && <option value={value}>{`PDK ${value.slice(4)} (not loaded)`}</option>}
           </select></label>
-        <button className="pdk-open" onClick={openWindow} title="Opens the PDK window: read a technology library's own description and its model files through the connection (read-only, no simulation), and see what was read.">Load PDK...</button>
       </div>
       <p className="hint component-what">{value === 'standard'
-        ? <>Knows MOS, R, C, L and sources; other parts (bipolar, diodes, S-parameter blocks, ports) are "unknown" and stay fixed. Every model saved before PDK lists existed uses this list.</>
-        : chosen ? <>Knows all {chosen.summary.devices} components of {chosen.pdk_id}: {byFamily(chosen.summary)}. Other parts keep their standard kinds.</>
+        ? <>Knows MOS, R, C, L and sources; other parts (bipolar, diodes, S-parameter blocks, ports) are "unknown" and stay fixed. Every model saved before PDK lists existed uses this list. A PDK's list appears here once the PDK was read: reading a cell in the Virtuoso window reads its PDK too.</>
+        : chosen ? <>Knows all {chosen.summary.devices} components of {chosen.pdk_id}: {byFamily(chosen.summary)}. Other parts keep their standard kinds. A model trained with this list loads only with it.</>
         : null}</p>
-      {missing && <p className="warn">PDK {value.slice(4)} is not loaded here. Load it with "Load PDK...", or choose another list.</p>}
-      {blocked && <p className="error">{BLOCKED}</p>}
+      {missing && <p className="warn">PDK {value.slice(4)} is not loaded here. Read it in the Virtuoso window (reading a cell reads its PDK; "PDK window..." reads one by name), or choose another list.</p>}
       {error && <p className="warn">{error}</p>}
       <details className="component-help"><summary>What the component list changes</summary>
         <p className="hint">The network turns every part of the circuit into a node with a kind, and every pin into a link with a role (drain,
           gate, collector...). It can only tell apart what its list names. With a PDK list, each PDK component has a kind of its own, its pins have
           their real roles, and all its numeric parameters reach the network, each on the scale the PDK declares. Its parameters can also be varied
           (lengths, counts, resistances, capacitances, inductances, voltages) - on the MOCK backend; a real circuit still writes only what its
-          profile allows. The optimizer's own code is not changed: models saved before keep loading, and the M6 audit re-runs unchanged.</p></details>
-      {popup && root && createPortal(<PdkWindow list={list} refresh={refresh} profileId={profileId} circuitPdk={circuitPdk} />, root)}
+          profile allows. Two consequences: a model trained with one list loads only with that list, and a Parameters row on a parameter outside the
+          eight standard ones (w, l, m, nf, r, c, ind, dc) can run only with a PDK list - validation says so at the row. The optimizer's own code is
+          not changed by a list.</p></details>
     </div>);
 }
 
-function PdkWindow({ list, refresh, profileId, circuitPdk }: { list: Json; refresh: () => Promise<void>; profileId: string | null; circuitPdk?: string | null }) {
+/** The button to the PDK window, in the Virtuoso window: read one PDK by name through the connection, see what was read. */
+export function PdkWindowButton({ profileId, circuitPdk }: { profileId: string | null; circuitPdk?: string | null }) {
+  const [list, setList] = useState<Json>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { popup, root, blocked, open: openWindow } = usePopupWindow('gator-pdk',
+    { title: 'GATOR - PDK', features: 'popup,width=1100,height=900', rootId: 'pdk-root' });
+  useEffect(() => {
+    if (!popup) return undefined;
+    const refresh = () => api.pdks().then(l => { setList(l); setError(null); }).catch(e => setError(listProblem(e)));
+    refresh(); watchers.add(refresh);                    // the list is read when the window opens, and again when it changes
+    return () => { watchers.delete(refresh); };
+  }, [popup]);
+  const refresh = () => api.pdks().then(l => { setList(l); setError(null); }).catch(e => setError(listProblem(e)));
+  return (<>
+    <button className="pdk-open" onClick={e => openWindow(e.currentTarget.ownerDocument.defaultView)} title="Opens the PDK window: read one technology library by name through the connection (read-only, no simulation) and see what was read. Reading a cell into the workbench reads its PDK by itself.">PDK window...</button>
+    {blocked && <span className="error">{BLOCKED}</span>}
+    {popup && root && createPortal(<PdkWindow list={list} listError={error} refresh={refresh} profileId={profileId} circuitPdk={circuitPdk} />, root)}
+  </>);
+}
+
+function PdkWindow({ list, listError, refresh, profileId, circuitPdk }: { list: Json; listError: string | null; refresh: () => Promise<void>; profileId: string | null; circuitPdk?: string | null }) {
   const [library, setLibrary] = useState(USABLE_PDK_ID(circuitPdk) ? String(circuitPdk) : '');
   const [modelFile, setModelFile] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +101,7 @@ function PdkWindow({ list, refresh, profileId, circuitPdk }: { list: Json; refre
   const load = () => run('load', async () => {
       const loaded = await api.loadPdk(profileId!, library.trim() || null, modelFile.trim() || null);
       setShown(loaded); setShowing(loaded.pdk_id);
-      await refresh();
+      await refresh(); pdksChanged();                   // the Components list in the RL network block shows it at once
   });
   const libraryProblem = library.trim() && !/^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$/.test(library.trim()) ? 'A plain Cadence library name.' : null;
   const fileProblem = modelFile.trim() && !/^\/[A-Za-z0-9_./+\-]+$/.test(modelFile.trim()) ? 'An absolute path on the simulator host (letters, digits, / . _ - +).' : null;
@@ -84,7 +112,8 @@ function PdkWindow({ list, refresh, profileId, circuitPdk }: { list: Json; refre
       <h2>Load PDK</h2>
       <p className="hint">Reads one technology library through the connection: Virtuoso's own description of every cell (pins, the parameters
         written to the netlist, their units) and the PDK's Spectre model files (what each device is). Read-only - no cellview is changed and nothing
-        is simulated. The PDK files are not kept: only what the network needs, and the files' SHA-256.</p>
+        is simulated. The PDK files are not kept: only what the network needs, and the files' SHA-256. Reading a cell into the workbench reads
+        its PDK by itself (since 2026-09-27); this window reads one again, or another one by name.</p>
       <details><summary>What is read, and how it is decided</summary>
         <p className="hint">A cell's Spectre model, pin order and netlisted parameters come from its CDF. A cell that has none of its own (a
           resistor built from a primitive) is looked into: its schematic is opened read-only and closed again. Which kind of device a model is
@@ -101,6 +130,7 @@ function PdkWindow({ list, refresh, profileId, circuitPdk }: { list: Json; refre
       {!profileId && <p className="warn">Choose a connection first: the "Connection" button in the left column.</p>}
       {(libraryProblem || fileProblem) && <p className="error">{libraryProblem ?? fileProblem}</p>}
       {error && <p className="error">{error}</p>}
+      {listError && <p className="warn">{listError}</p>}
       <h3>Loaded PDKs</h3>
       {pdks.length === 0 ? <p className="hint">None yet.</p> : <>
         <table className="grid small pdk-list"><thead><tr><th>PDK</th><th>Components</th><th>Loaded</th><th>Version</th></tr></thead><tbody>

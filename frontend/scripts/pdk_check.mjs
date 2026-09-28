@@ -8,12 +8,13 @@
 // refused here: the check is hermetic and safe against the live backend. The browser profile is new and temporary, so
 // the user's saved configuration is not touched.
 // What it pins:
-//   - the RL network block has a "Components" list (standard first) with a short "Load PDK..." button beside it, and a
-//     plain line saying what the chosen list knows;
+//   - the RL network block has a "Components" list (standard first) and a plain line saying what the chosen list knows;
+//     no load button there since 2026-09-27: the PDK is read with the cell in the Virtuoso window, whose "PDK window..."
+//     button (beside Refresh) opens the PDK window;
 //   - choosing a loaded PDK writes run.network.vocabulary; the standard list is written as NO field (old servers accept
 //     it); another encoder keeps the chosen list;
 //   - a configuration naming a PDK that is not loaded says so;
-//   - "Load PDK..." opens the PDK window: the form, the connection it reads through, the loaded PDKs (double click shows
+//   - "PDK window..." opens the PDK window: the form, the connection it reads through, the loaded PDKs (double click shows
 //     one, with every component, its pins and roles, its parameters); "Load" sends exactly the typed fields, shows that it
 //     is reading, then shows the answer and reads the list again; without a connection it cannot be pressed.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; about 25 s):
@@ -71,6 +72,7 @@ try {
       return fulfil(requestId, 200, details(FIXLOAD, [{ ...DEVICES[2], model: 'fx_res', kind: 'fixload:fx_res', family: 'resistor', cells: ['resfx'] }]));
     }
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
+    if (name === '/api/virtuoso/libraries') return fulfil(requestId, 200, { libraries: [] });      // the Virtuoso window opens; nothing reaches Virtuoso
     // No connection profile at all (FIXTURE): the page would otherwise pick the backend's active one on its own.
     if (name === '/api/connection/profiles') return fulfil(requestId, 200, { exists: false, file: 'FIXTURE', active: null, profiles: [], kinds: [] });
     // Everything else: the page's own start-up reads pass (a circuit, an output root's writability without creating it),
@@ -106,15 +108,15 @@ try {
   check('the RL network block has a "Components" list after the encoder', line.label === 'Components' && line.afterEncoder, JSON.stringify(line.label));
   check('standard is chosen and listed first, the loaded PDK after it', line.value === 'standard' && line.options[0][0] === 'standard'
     && line.options[1]?.[0] === 'pdk:fixpdk' && line.options[1][1] === FIXPDK.label, JSON.stringify(line.options));
-  check('a short "Load PDK..." button stands beside the list', line.button === 'Load PDK...' && line.sameRow, String(line.button));
-  check('the plain line says what the standard list knows and what it does not', /MOS, R, C, L and sources/.test(line.what) && /"unknown"/.test(line.what), line.what);
+  check('no load button in the block any more: the PDK comes with the cell, from the Virtuoso window', !line.button, String(line.button));
+  check('the plain line says what the standard list knows, what it does not, and where a PDK list comes from', /MOS, R, C, L and sources/.test(line.what) && /"unknown"/.test(line.what)
+    && /reading a cell in the Virtuoso window reads its PDK too/.test(line.what), line.what);
   check('the longer explanation is folded (closed <details>)', line.helpFolded);
   check('page load read the list of loaded PDKs (local files) and started no load', listReads >= 1 && loadBodies.length === 0);
-  const fits = await evaluate(`(() => { const right = document.querySelector('.right'), panel = ${RUN}.getBoundingClientRect(), row = ${LIST}.querySelector('.component-row'),
-    button = row.querySelector('button').getBoundingClientRect(), select = row.querySelector('select').getBoundingClientRect();
-    return { noSideScroll: right.scrollWidth <= right.clientWidth + 1, inside: button.right <= panel.right + 1 && select.left >= panel.left - 1,
-      oneLine: Math.abs((button.top + button.bottom) / 2 - (select.top + select.bottom) / 2) < 4 }; })()`);
-  check('the list and its button fit the narrow column on one line, with no sideways scrolling', fits.noSideScroll && fits.inside && fits.oneLine, JSON.stringify(fits));
+  const fits = await evaluate(`(() => { const right = document.querySelector('.right'), panel = ${RUN}.getBoundingClientRect(),
+    select = ${LIST}.querySelector('.component-row select').getBoundingClientRect();
+    return { noSideScroll: right.scrollWidth <= right.clientWidth + 1, inside: select.left >= panel.left - 1 && select.right <= panel.right + 1, wide: select.width > panel.width * 0.8 }; })()`);
+  check('the list spans the narrow column, with no sideways scrolling', fits.noSideScroll && fits.inside && fits.wide, JSON.stringify(fits));
 
   // ---- choosing a list --------------------------------------------------------------------------------------------------
   await choose(SELECT, 'pdk:fixpdk');
@@ -133,9 +135,25 @@ try {
   check('the standard list is written as no field at all', network && !('vocabulary' in network), JSON.stringify(network));
 
   // ---- the window ---------------------------------------------------------------------------------------------------------
-  await evaluate(`${LIST}.querySelector('button.pdk-open').click()`);
-  const target = await browser.window('GATOR - PDK', { ms: 10000 }).catch(() => null);
-  check('"Load PDK..." opens the PDK window', !!target);
+  // Since 2026-09-27 the PDK window opens from the Virtuoso window: its "PDK window..." button beside Refresh (the PDK is
+  // read with the cell there). The Virtuoso window itself opens from the Project column's "Virtuoso cell..." button; its
+  // libraries listing is answered with none, so nothing reaches Virtuoso. The click happens IN the Virtuoso window, which
+  // is what lets the browser open a second pop-up (popupWindow.ts, `open(from)`).
+  const LAUNCH = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))?.querySelector('button.virtuoso-button')`;
+  let virtuoso = null;
+  const openPdkWindow = async except => {
+    if (!virtuoso) {
+      await evaluate(`${LAUNCH}.click()`);
+      const found = await browser.window('GATOR - Virtuoso cell', { ms: 10000 }).catch(() => null);
+      if (!found) return null;
+      virtuoso = await browser.attach(found, { errors: consoleErrors, prefix: 'Virtuoso window: ' });
+      await virtuoso.until(`!!document.querySelector('.virtuoso-window button.pdk-open')`, 60);
+    }
+    await virtuoso.evaluate(`document.querySelector('.virtuoso-window button.pdk-open').click()`, true);
+    return browser.window('GATOR - PDK', { ms: 10000, ...(except ? { except } : {}) }).catch(() => null);
+  };
+  const target = await openPdkWindow();
+  check('"PDK window..." in the Virtuoso window opens the PDK window (a pop-up from a pop-up)', !!target);
   const popup = await browser.attach(target, { errors: consoleErrors, prefix: 'PDK window: ' });
   const pev = expression => popup.evaluate(expression, true);
   await popup.viewport(1100, 900);
@@ -189,9 +207,9 @@ try {
   await send('Page.reload'); await until(`!!(${LIST}) && ${SELECT}.options.length > 1`, 150); await sleep(500);
   const gone = await evaluate(`(() => { const l = ${LIST}; return { value: l.querySelector('select').value, option: [...l.querySelectorAll('option')].map(o => o.textContent).pop(), warn: l.querySelector('.warn')?.textContent ?? '' }; })()`);
   check('a configuration naming a PDK that is not loaded says so', gone.value === 'pdk:gone' && gone.option === 'PDK gone (not loaded)' && /not loaded here/.test(gone.warn), JSON.stringify(gone));
-  // The reload took the first window with it (the page closes what it opened), so the button opens another one.
-  await evaluate(`${LIST}.querySelector('button.pdk-open').click()`); await sleep(800);
-  const again = await browser.window('GATOR - PDK', { ms: 10000, except: firstWindow }).catch(() => null);
+  // The reload took both windows with it (the page closes what it opened), so the buttons open them again.
+  virtuoso = null;
+  const again = await openPdkWindow(firstWindow);
   if (again) {
     popup.close();
     const second = await browser.attach(again, { errors: consoleErrors, prefix: 'PDK window (no connection): ' });

@@ -19,10 +19,15 @@ export function usePopupWindow(name: string, options: {
   const latest = useRef(options);
   latest.current = options;
 
-  const open = () => {
+  // `from`: the window whose button was pressed, when that is itself one of these pop-ups (the PDK window opens from the
+  // Virtuoso window since 2026-09-27). A pop-up may only be opened by the window that holds the user's click: opened from
+  // the page's own `window` instead, the browser's pop-up blocker refuses it. Anything else (a click event, nothing)
+  // means the page's window.
+  const open = (from?: unknown) => {
     if (popup && !popup.closed) { popup.focus(); return popup; }
     const { title, features, rootId, rootClass } = latest.current;
-    const opened = window.open('', name, features);
+    const via = from && typeof (from as Window).open === 'function' && 'closed' in (from as Window) && !(from as Window).closed ? from as Window : window;
+    const opened = via.open('', name, features);
     if (!opened) { setBlocked(true); return null; }
     const doc = opened.document;
     doc.title = title;

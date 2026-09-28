@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, Json, problemText } from '../api';
 import { BLOCKED, usePopupWindow } from './popupWindow';
+import { PdkWindowButton, pdksChanged } from './Pdk';
 import { WorkingCopy } from './WorkingCopy';
 import { NgspiceButton } from './Ngspice';
 import { TaskSave } from './TaskSave';
@@ -183,16 +184,23 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // the user made (copyQuestion): "OK" reads it AND makes it the cell the task flow works in (import with work_here; the
   // backend records it as the cell's working copy). Reading a cell that already is that cell asks nothing.
   const [importing, setImporting] = useState(false);
+  const [pdkStep, setPdkStep] = useState<Json>(null);       // the PDK read with the last cell import (backend bridge_read.pdk_with_import)
   const declaredHere = !!circuit?.loaded && !!circuit.native_draft && circuit.circuit?.library === ref.library && circuit.circuit?.cell === ref.cell
     && !!circuit.working_copy?.verified;
   const importCell = async () => {
     const declare = !declaredHere;
     if (declare && !window.confirm(copyQuestion(ref))) return;
     setImporting(true); setNativeError(null);
-    try { await api.nativeImport(profileId!, ref.library, ref.cell, ref.testbench_cell ?? null, declare); await load(ref, 'press'); }
+    try {
+      const answer = await api.nativeImport(profileId!, ref.library, ref.cell, ref.testbench_cell ?? null, declare);
+      setPdkStep(answer?.pdk ?? null);                    // the cell's PDK, read in the same press (2026-09-27); an older server sends none
+      if (answer?.pdk?.state === 'read') pdksChanged();  // the Components list in the RL network block shows it at once
+      await load(ref, 'press');
+    }
     catch (e: any) { nativeProblem('import', e); }
     finally { setImporting(false); }
   };
+  useEffect(() => { setPdkStep(null); }, [loadKey]);       // the line is about the cell it was read with
 
   // Probes follow the testbench (user request 2026-09-21): a cell read THROUGH a testbench brings, in Probes, the results
   // of the circuit type that testbench fits, each naming the testbench net or supply branch it is read from
@@ -486,7 +494,12 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       <div className="row">
         <button disabled={!profileId || !!listing} onClick={() => setRefresh(n => n + 1)} title="Reads the libraries, the cells and the schematic again, e.g. after the link came up or the design changed in Virtuoso. Read-only and zero-cost.">Refresh</button>
         {listing && <span className="hint">Reading the {listing} from Virtuoso...</span>}
+        <PdkWindowButton profileId={profileId} circuitPdk={ref.pdk_id} />
       </div>
+      {pdkStep && <p className={`pdk-step ${pdkStep.state === 'read' ? 'hint' : 'warn'}`}>{pdkStep.state === 'read'
+        ? <>PDK <b>{pdkStep.pdk_id}</b> read with the cell: {pdkStep.summary?.devices} components (version {String(pdkStep.sha256 ?? '').slice(0, 8)}). To build the network with it, choose it under Components in the RL network block.</>
+        : pdkStep.state === 'not_read' ? <>The cell was read; its PDK <b>{pdkStep.technology_library}</b> was not: {pdkStep.reason} "PDK window..." reads it by name.</>
+        : <>No PDK read with the cell: {pdkStep.reason}</>}</p>}
       {cells?.truncated && <p className="hint">Only the first {cells.cells.length} cells are listed.</p>}
       {nativeError && <p className="error">{nativeError.text}</p>}
       {virtuosoOn && error && <p className="error">{error}</p>}

@@ -114,3 +114,70 @@ def test_the_api_shows_a_draft_and_keeps_it_from_starting(tmp_path):
     blocked = down.post('/api/virtuoso/import', json=dict(profile_id='lab', library='GATOR_TESTS', cell='ota5_v1'))
     assert blocked.status_code == 409 and blocked.json()['detail']['gate']['blocking'] == ['daemon']
     assert down.post('/api/virtuoso/import', json=dict(profile_id='lab', library='x y', cell='c')).status_code in (409, 422)
+
+
+# ---------------------------------------------------------- the cell's PDK, read in the same press (user request 2026-09-27)
+def pdk_reader(tmp_path, pdk='ok', technology_library='gpdk045'):
+    """The fake reader, answering `--op pdk` too: the demo045 material (pdk='ok') or a failure (pdk='fail'). Every call's
+    arguments are logged, so a test can see what the backend asked for and in which order."""
+    from test_wb_pdk import raw_material
+    material = tmp_path / 'pdk_material.json'
+    material.write_text(json.dumps(raw_material()))
+    script = tmp_path / 'reader_pdk.py'
+    script.write_text(f'''
+import json, sys
+from pathlib import Path
+args = dict(zip(sys.argv[1::2], sys.argv[2::2]))
+with open({str(tmp_path / 'calls.log')!r}, 'a') as log:
+    log.write(json.dumps(args) + '\\n')
+if args['--op'] == 'pdk':
+    if {pdk!r} == 'fail':
+        sys.exit('Traceback\\nRuntimeError: the model file is not on the fixture host')
+    print('progress line the bridge might print')
+    print(Path({str(material)!r}).read_text())
+    sys.exit(0)
+out = Path(args['--output'])
+out.mkdir(parents=True)
+(out / 'netlist.scs').write_text({EXPORT!r})
+(out / 'core_readback.json').write_text(json.dumps(dict(origin='fixture', instances=[])))
+print(json.dumps(dict(library=args['--library'], cell=args['--cell'], testbench_cell=args.get('--testbench'),
+                      technology_library={technology_library!r})))
+''')
+    return [sys.executable, str(script)]
+
+
+def reader_calls(tmp_path):
+    return [json.loads(line) for line in (tmp_path / 'calls.log').read_text().splitlines()]
+
+
+def test_reading_a_cell_reads_its_pdk_in_the_same_press(tmp_path):
+    from gator_workbench import pdk
+    imported = bridge_read.read(probe(tmp_path), 'lab', 'import_cell', library='GATOR_TESTS', cell='ota5_v1',
+                                testbench='tb_ota5_ac_v1', command=pdk_reader(tmp_path))
+    step = imported['pdk']
+    assert step['state'] == 'read' and step['technology_library'] == 'gpdk045'
+    assert step['pdk_id'] == 'demo045' and step['vocabulary'] == 'pdk:demo045'    # the fixture material describes demo045
+    assert step['summary']['devices'] == 8 and step['label'].startswith('PDK demo045 (8 components, version ') and step['sha256']
+    calls = reader_calls(tmp_path)
+    assert [c['--op'] for c in calls] == ['import_cell', 'pdk'] and calls[1]['--library'] == 'gpdk045'   # the cell, then ITS technology library
+    assert [p['pdk_id'] for p in pdk.list_pdks()] == ['demo045']                    # stored exactly as a press of Load stores it
+    assert imported['device_count'] == 10 and imported['exported_cell'] == 'tb_ota5_ac_v1'   # the cell itself, as before
+    assert tasks.load_task(reference(pdk_id='unspecified')).circuit['native_draft']
+
+
+def test_a_failed_pdk_read_leaves_the_cell_read(tmp_path):
+    from gator_workbench import pdk
+    imported = bridge_read.read(probe(tmp_path), 'lab', 'import_cell', library='GATOR_TESTS', cell='ota5_v1',
+                                command=pdk_reader(tmp_path, pdk='fail'))
+    step = imported['pdk']
+    assert step['state'] == 'not_read' and step['technology_library'] == 'gpdk045'
+    assert 'model file is not on the fixture host' in step['reason']
+    assert imported['library'] == 'GATOR_TESTS' and imported['cell'] == 'ota5_v1' and imported['device_count'] == 10
+    assert pdk.list_pdks() == [] and tasks.load_task(reference(pdk_id='unspecified')).circuit['native_draft']
+
+
+def test_no_technology_library_means_no_pdk_read(tmp_path):
+    imported = bridge_read.read(probe(tmp_path), 'lab', 'import_cell', library='GATOR_TESTS', cell='ota5_v1',
+                                command=pdk_reader(tmp_path, technology_library=None))
+    assert imported['pdk']['state'] == 'skipped' and 'no PDK was read with the cell' in imported['pdk']['reason']
+    assert [c['--op'] for c in reader_calls(tmp_path)] == ['import_cell']            # the reader was not asked for a PDK

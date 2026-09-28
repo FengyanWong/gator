@@ -426,7 +426,9 @@ to say.
   read-only, some seconds). The first read of a cell ASKS whether it is a copy you made (the workbench makes
   no copy of its own since 2026-09-23 - see "The cell the task flow works in" below): Cancel reads nothing,
   OK reads it and makes it the cell the task flow works in. Virtuoso exports the netlist of the testbench
-  cell and the device sizes are read. The export is kept under
+  cell and the device sizes are read. The cell's PDK is read in the same press (since 2026-09-27; see "The
+  components the network knows" below): a line under the buttons says what came of it, and the PDK's component
+  list can then be chosen in the RL network block. The export is kept under
   `configs/local/workbench/native_cells/<library>/<cell>/`, and the cell then loads from it without
   contacting Virtuoso: you can look at it, fill the three editors (the centre tabs, in this order:
   **Parameters** = what may vary, **Probes** = what is measured and how, **Specs** = equations over
@@ -918,14 +920,22 @@ model trained with a PDK list loads only with that same list, and a standard mod
 own contract check refuses the mix, and the compatibility report says it in words ("this model knows the PDK gpdk045
 (54 components, version fa5c3946) component list; this run uses the standard list").
 
-**Where.** Run configuration > RL network (Mode `scratch`): under the encoder, **Components** (standard / every loaded
-PDK) and the button **Load PDK...**, which opens the PDK window. The window loads and shows; the choice is the list in
-the RL network block. In `resume` / `fine_tune` / `frozen` the list follows the chosen model by itself, as its network
-does, and the model's facts gain a "Components" row. Saved as `run.network.vocabulary` = `standard` (written as no field
-at all, so every existing configuration keeps its hashes) or `pdk:<technology library>`.
+**Where (since 2026-09-27, user: "when loading a schematic from Virtuoso, shouldn't the PDK be loaded at the same
+time?").** The read happens in the Virtuoso window: **Read this cell into the workbench** (and **Read the cell again**)
+reads the cell's PDK in the same press - the technology library its design library is attached to, through the same
+connection and gate - and a line under the window's buttons says what came of it ("PDK gpdk045 read with the cell: 54
+components (version ...)", or why it was not read; a PDK that will not read never fails the cell). The window's button
+**PDK window...** opens the PDK window to read one by name (another library, another model file) and to see what was
+read. The CHOICE stays in the RL network block: under the encoder, **Components** (standard / every loaded PDK) - a
+network setting like the encoder, shown in Mode `scratch`; the block says when the chosen PDK is not loaded on this
+machine and points to the Virtuoso window. In `resume` / `fine_tune` / `frozen` the list follows the chosen model by
+itself, as its network does, and the model's facts gain a "Components" row. Saved as `run.network.vocabulary` =
+`standard` (written as no field at all, so every existing configuration keeps its hashes) or `pdk:<technology
+library>`. Backend: `bridge_read.pdk_with_import` (states `read` / `not_read` / `skipped`, in the import's answer as
+`pdk`); the same reader op as the window's Load, so a PDK read again unchanged makes no new version.
 
-**What "Load" reads - explicit click, read-only, no simulation** (`POST /api/pdks/load`, connection gate
-`read_cellview`, reader op `pdk`; about 3 s for GPDK045):
+**What is read - with the cell, or on the window's "Load"; read-only, no simulation** (`POST /api/virtuoso/import` and
+`POST /api/pdks/load`, connection gate `read_cellview`, reader op `pdk`; about 3 s for GPDK045):
 1. Virtuoso's own description of every cell of the technology library, in ONE query: the Spectre model a cell netlists
    to, the pin order and the Spectre pin each pin is, the parameters written on each instance line, their declared
    units and defaults (CDF `simInfo` / parameters). A cell with no Spectre entry of its own (GPDK045's resistors) is

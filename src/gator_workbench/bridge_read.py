@@ -201,8 +201,9 @@ def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, ti
             raise child_error(stderr, 'bridge read failed')
         data = json.loads(stdout.strip().splitlines()[-1])
         if op == 'import_cell':
-            return native_cells.finish_import(incoming, library=library, cell=cell, testbench_cell=testbench,
-                                              technology_library=data.get('technology_library'), profile_id=profile_id)
+            imported = native_cells.finish_import(incoming, library=library, cell=cell, testbench_cell=testbench,
+                                                  technology_library=data.get('technology_library'), profile_id=profile_id)
+            return dict(imported, pdk=pdk_with_import(monitor, profile_id, data.get('technology_library'), command=command))
         if op == 'pdk':
             from . import pdk
             return pdk.describe(pdk.finish_load(data))
@@ -213,6 +214,24 @@ def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, ti
     if op == 'read_schematic':
         return summarize_snapshot(data['snapshot'], library=library, cell=cell)
     return data
+
+
+def pdk_with_import(monitor, profile_id, technology_library, *, command=None) -> dict:
+    """The PDK of a cell that was just read, read in the same press (user request 2026-09-27): the technology library its
+    design library is attached to, through the same connection and the same gate, stored exactly as a press of "Load" in
+    the PDK window stores it (versioned by content; reading an unchanged PDK again changes nothing). Reported BESIDE the
+    cell, never instead of it: whatever fails here leaves the import as it is and says why. `state`: read / not_read /
+    skipped."""
+    if not technology_library:
+        return dict(state='skipped', reason='The design library states no technology library, so no PDK was read with the '
+                                            'cell. Name the PDK in the PDK window.')
+    try:
+        described = read(monitor, profile_id, 'pdk', library=technology_library, command=command)
+    except Exception as exc:                      # the gate, a timeout, the reader, a PDK nothing was recognized in: all in words
+        return dict(state='not_read', technology_library=technology_library, reason=str(exc) or exc.__class__.__name__)
+    return dict(state='read', technology_library=technology_library, pdk_id=described['pdk_id'], vocabulary=described['vocabulary'],
+                label=described['label'], version=described['version'], sha256=described['sha256'], summary=described['summary'],
+                loaded_utc=described['loaded_utc'])
 
 
 if __name__ == '__main__':

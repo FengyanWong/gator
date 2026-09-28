@@ -323,8 +323,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         <Num label="layers" value={net.layers ?? entry?.network?.layers ?? 2} onChange={v => editNet({ layers: v })} /></div>
       <Check label="Nominal device operating points" value={net.operating_points ?? false} onChange={v => setNet({ operating_points: v })}
         title="Measured nominal device values and validity masks. Corner operating points are recorded but never replace the nominal network input. Changing this changes the model input schema." />
-      <ComponentList value={net.vocabulary ?? 'standard'} onChoose={v => chooseList(v)} profileId={run.connection_profile_id ?? null}
-        circuitPdk={config.circuit?.pdk_id} />
+      <ComponentList value={net.vocabulary ?? 'standard'} onChoose={v => chooseList(v)} />
       {entry && <><p className="hint in-use">In use: <b>{originLabel}</b></p>
         <div className="row pair">
           <button disabled={entry.origin === 'publication' && !differs} onClick={() => reset('publication')} title="Forget the saved values of this encoder and return to the values taken from publications.">Publication preset</button>

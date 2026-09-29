@@ -245,7 +245,7 @@ Probes lost `function`, `window`, `at_frequency_hz`, `integration_band_hz`, `bra
 `crossover` (no backend extracts anything from them; a filled `function` blocked the run), `on_failure` (one allowed value)
 and `validity` (checked for form only; run-time validity comes from the simulator's own flags). Specs kept every column.
 
-What stays but steps back: `soft_weight`, `active` and `basis` of Specs, and `conditions` and `aggregation` of Probes, are
+What stays but steps back: `soft_weight`, `active` and `basis` of Specs are
 shown after **More columns** at the right of the toolbar (the choice is kept in the browser). They keep their values either
 way: Add fills them, the agent may set them, a task file stores them. `initial_value` is shown and not typed: the circuit
 read fills it, and a typed value could only differ from the circuit. `normalization_scale` may be left empty: the violation
@@ -260,6 +260,17 @@ run resumes, its checkpoints load, its task keeps its `task_id` and approvals st
 this machine and the MOCK starter's documented task hash (`5f181ef3...`). The browser's copy of the rows is migrated the
 same way when the page loads (`store.ts migrateConfig`), so the editors' rows equal the rows the backend serves; a value the
 browser cannot keep is written into the row's notes.
+
+**The Probes' `conditions` and `aggregation` went too (2026-09-29, user request, record 7.105).** They were to name the
+test conditions a probe is measured under and how its values there combine (nominal only, worst case, mean, min, max).
+No run ever used them: anything but `["nominal"]` / `nominal_only` was refused before the run (`nominal_only_backend`),
+and since reward v2 the test conditions are chosen for the whole run (**Training conditions**) and per spec (**Judged
+at**: nominal, or every planned corner with the worst one counting). They are retired like the fourteen above (in
+`RETIRED_MEASUREMENT_FIELDS`, dropped whatever they say, hashed at their old defaults), so the Probes tab has no **More
+columns** any more; a probe's aggregate row in the results tables still reads `aggregation = nominal_only`
+(`engine.PROBE_AGGREGATION`). The task and configuration hashes of all 14 workbench runs on this machine (5 in
+`outputs/`, 9 kept as evidence in `artifacts/local`), of the 4 saved task files, of the old-format fixture and of the
+registered tasks' starters are the same before and after.
 
 ### Spectre netlist import: removed
 

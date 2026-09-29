@@ -3,7 +3,9 @@ migration"): name, target_kind, candidates (with the discrete value_type), relat
 function, window, at_frequency_hz, integration_band_hz, branch_direction, loop_definition, crossover, on_failure and
 validity of a Probes row. No run ever read them, and for several the only other value was a run blocker. A configuration
 written with them still loads (the schema's before-validators keep what they meant and refuse what the run refused, in
-plain words), both hashes are unchanged for it (schema._hashed), and normalization_scale may now be left empty."""
+plain words), both hashes are unchanged for it (schema._hashed), and normalization_scale may now be left empty.
+On 2026-09-29 (record 7.105, the same decision) the Probes' conditions and aggregation followed: a run refused anything
+but [nominal] / nominal_only, and since reward v2 the test conditions are the run's and each spec's."""
 import json
 from pathlib import Path
 
@@ -81,16 +83,27 @@ def test_probe_fields_that_never_ran_are_dropped(tmp_path):
     assert not report.blocks_run and 'generic_extraction_not_wired' not in issues(report, 'blocker')
 
 
+def test_probe_conditions_and_aggregation_are_dropped_whatever_they_say(tmp_path):
+    """Another value than [nominal] / nominal_only blocked every run (`nominal_only_backend`), so it never ran either."""
+    probe = dict(conditions=['nominal', 'ss_125c'], aggregation='worst_case')
+    config = make_config(tmp_path, mutate=lambda raw: raw['measurements'][0].update(probe))
+    assert not (set(probe) & set(config.measurements[0].model_dump(mode='json')))
+    report, _ = check(config)
+    assert not report.blocks_run and 'nominal_only_backend' not in issues(report, 'blocker')
+    same = make_config(tmp_path, mutate=lambda raw: raw['measurements'][0].update(conditions=['nominal'],
+                                                                                   aggregation='nominal_only'))
+    assert schema.task_definition_hash(same) == G7_TASK_HASH                  # stated at their defaults: the same task
+
+
 def test_editor_columns_say_what_is_shown_on_request_and_what_is_read_only():
     by = {section: {c['name']: c for c in schema.editor_columns(section)} for section in schema.SECTIONS}
     assert [n for n, c in by['targets'].items() if c['advanced']] == ['missing_is_failure', 'margin_sides', 'soft_weight', 'active', 'basis']
-    assert [n for n, c in by['measurements'].items() if c['advanced']] == ['conditions', 'aggregation']
     assert [n for n, c in by['parameters'].items() if c['readonly']] == ['initial_value']
-    assert not any(c['advanced'] for c in by['parameters'].values())
+    assert not any(c['advanced'] for c in [*by['parameters'].values(), *by['measurements'].values()])
     assert list(by['parameters']) == ['variable_id', 'instance_path', 'parameter_name', 'initial_value', 'unit', 'optimized',
                                       'value_type', 'lower', 'upper', 'step', 'scale', 'binding_group', 'ratio', 'notes']
     assert list(by['measurements']) == ['measurement_id', 'analysis', 'result_source', 'source_name', 'signal', 'expression',
-                                        'unit', 'conditions', 'aggregation', 'notes']
+                                        'unit', 'notes']
 
 
 def test_normalization_scale_defaults_to_the_size_of_the_threshold(tmp_path):

@@ -350,10 +350,6 @@ def _check_measurements(config, report, *, provided_metrics):
         elif m.result_source == 'expression':
             if not m.expression:
                 report.add('error', 'missing_expression', path + '.expression', 'expression source needs one')
-        if list(m.conditions) != ['nominal'] or m.aggregation != 'nominal_only':
-            report.add('blocker', 'nominal_only_backend', path + '.conditions',
-                       'The sizing environment is nominal-only; PVT/Monte-Carlo scheduling is not implemented. '
-                       'Use conditions=[nominal], aggregation=nominal_only.')
     _check_expression_measurements(config, report, ids)
     return ids
 

@@ -167,9 +167,6 @@ def test_unsupported_measurement_sources_are_rejected_not_faked(tmp_path):
     assert 'ade_outputs_not_wired' in issues(report, 'blocker')
     report, _ = check(make_config(tmp_path, mutate=lambda raw: raw['measurements'][0].update(source_name='gain_db')))
     assert 'metric_not_provided' in issues(report, 'error')
-    report, _ = check(make_config(tmp_path, mutate=lambda raw: raw['measurements'][0].update(
-        conditions=['nominal', 'ss_125c'], aggregation='worst_case')))
-    assert 'nominal_only_backend' in issues(report, 'blocker')
 
 
 def test_restricted_expressions_never_execute_code(tmp_path):

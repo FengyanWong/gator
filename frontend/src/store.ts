@@ -32,11 +32,13 @@ export function migrateConfig(config: Json): Json {
   return out;
 }
 
-/** Columns retired on 2026-09-26 (record 7.92). The backend drops them the same way when it reads a row, so a row here
+/** Columns retired on 2026-09-26 (record 7.92), and the Probes' conditions and aggregation on 2026-09-29 (record 7.105).
+ *  The backend drops them the same way when it reads a row, so a row here
  *  equals the row it serves back; what they meant is kept in the columns that remain (an expression relation as the
  *  ratio, a discrete candidate grid as lower/upper/step), and a value that cannot be kept goes into the notes. */
 const RETIRED_PARAMETER_KEYS = ['name', 'target_kind', 'candidates', 'relation', 'expression'];
-const RETIRED_MEASUREMENT_KEYS = ['function', 'window', 'at_frequency_hz', 'integration_band_hz', 'branch_direction', 'loop_definition', 'crossover', 'on_failure', 'validity'];
+const RETIRED_MEASUREMENT_KEYS = ['function', 'window', 'at_frequency_hz', 'integration_band_hz', 'branch_direction', 'loop_definition', 'crossover', 'on_failure', 'validity',
+  'conditions', 'aggregation'];
 
 function without(row: Json, keys: string[]): Json {
   if (!row || typeof row !== 'object' || !keys.some(key => key in row)) return row;

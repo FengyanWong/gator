@@ -33,7 +33,8 @@ class _Model(BaseModel):
 
 
 # --------------------------------------------------------------------------- parameters
-# Row fields retired on 2026-09-26 (record 7.92), each with the default it had. A row written with them still loads:
+# Row fields retired on 2026-09-26 (record 7.92), and the Probes' conditions and aggregation on 2026-09-29 (record
+# 7.105), each with the default it had. A row written with them still loads:
 # the before-validators below take them out - what they meant is kept in the fields that remain, what never ran is
 # dropped, what a run refused is refused there, in plain words. Both hashes still see them at these defaults
 # (`_hashed`), so every run, checkpoint, task file and approval made before keeps its identity.
@@ -41,7 +42,8 @@ RETIRED_PARAMETER_FIELDS = {'name': '', 'target_kind': 'instance_parameter', 'ca
                             'expression': None}
 RETIRED_MEASUREMENT_FIELDS = {'function': None, 'window': None, 'at_frequency_hz': None, 'integration_band_hz': None,
                               'branch_direction': None, 'loop_definition': None, 'crossover': None,
-                              'on_failure': 'invalid', 'validity': [{'kind': 'finite', 'value': None, 'note': ''}]}
+                              'on_failure': 'invalid', 'validity': [{'kind': 'finite', 'value': None, 'note': ''}],
+                              'conditions': ['nominal'], 'aggregation': 'nominal_only'}
 
 
 def uniform_grid(candidates):
@@ -212,19 +214,17 @@ class MeasurementDefinition(_Model):
                     'calls, no attribute access, never eval().')
     unit: str = Field(max_length=32,
         description='Unit of the measured value. A target using this measurement must have a compatible unit.')
-    conditions: list[str] = Field(default_factory=lambda: ['nominal'],
-        description='Corner/test-condition IDs this measurement is evaluated under.')
-    aggregation: Literal['nominal_only', 'worst_case', 'mean', 'min', 'max'] = Field('nominal_only',
-        description='How per-condition values combine into the value used for reward/feasibility. Per-condition '
-                    'raw values are always stored as well.')
     notes: str = Field('', max_length=1000, description='Free text; not used by the optimizer.')
 
     @model_validator(mode='before')
     @classmethod
     def _retired_fields(cls, data):
         """A row written before 2026-09-26 may carry function, window, at_frequency_hz, integration_band_hz,
-        branch_direction, loop_definition, crossover, on_failure and validity (RETIRED_MEASUREMENT_FIELDS). No backend
-        ever read them - a set `function` even blocked the run - so they are dropped, whatever they say."""
+        branch_direction, loop_definition, crossover, on_failure and validity, and one written before 2026-09-29
+        conditions and aggregation (RETIRED_MEASUREMENT_FIELDS). No backend ever read them - a set `function`, like
+        conditions other than [nominal] or an aggregation other than nominal_only, even blocked the run - so they are
+        dropped, whatever they say. The test conditions are the run's (`run.conditions`) and each spec's
+        (`PerformanceTarget.nominal_only`), since reward v2."""
         if isinstance(data, dict) and RETIRED_MEASUREMENT_FIELDS.keys() & data.keys():
             data = {key: value for key, value in data.items() if key not in RETIRED_MEASUREMENT_FIELDS}
         return data
@@ -495,7 +495,8 @@ def _hashed(data):
     specs were equations (`measurement_id`), so a configuration written earlier keeps its hashes: its runs still
     resume, its checkpoints still load, and approvals and proposals made for it still bind. The network's component list
     (`run.network.vocabulary`, added later) is hashed as absent while it is the standard one, for the same reason. The
-    Parameters and Probes fields retired on 2026-09-26 (record 7.92) are hashed as present at their old defaults, for the
+    Parameters and Probes fields retired on 2026-09-26 (record 7.92) and 2026-09-29 (record 7.105, the Probes' conditions
+    and aggregation) are hashed as present at their old defaults, for the
     same reason again; a row that stated another value for one of them (it never ran, or the run refused it) hashes
     differently since."""
     data = dict(data)
@@ -565,7 +566,7 @@ def json_schema(section: str | None = None) -> dict:
 
 
 # Columns the editors show only after "More columns": they exist, an agent may set them, a task file keeps them.
-ADVANCED_COLUMNS = {'targets': ('soft_weight', 'active', 'basis', 'missing_is_failure', 'margin_sides'), 'measurements': ('conditions', 'aggregation')}
+ADVANCED_COLUMNS = {'targets': ('soft_weight', 'active', 'basis', 'missing_is_failure', 'margin_sides')}
 # Columns the editors show but take no typing in: the circuit read fills them, and a typed value could only differ.
 READ_ONLY_COLUMNS = {'parameters': ('initial_value',)}
 

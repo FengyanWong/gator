@@ -43,6 +43,9 @@ from .trajectory import StateEncoder, TrajectoryLoader
 
 INFRASTRUCTURE_FAILURES = ('timeout', 'transport_error', 'license_error', 'backend_error')
 TERMINAL_STATES = ('completed', 'paused', 'stopped', 'cancelled', 'failed')
+# `aggregation` of a probe's aggregate metrics row: what the Probes' aggregation column (retired 2026-09-29, record
+# 7.105) held in every run - a run refused any other value - so results tables read as before.
+PROBE_AGGREGATION = 'nominal_only'
 
 
 def iso(value=None):
@@ -939,7 +942,7 @@ class RunEngine:
                              threshold_upper=target['upper'], hard=target['hard'],
                              satisfied=constraint['satisfied'] if constraint else None,
                              violation=constraint['normalized_violation'] if constraint else None,
-                             aggregation_level='aggregate', aggregation=definition.aggregation if definition else 'equation'))
+                             aggregation_level='aggregate', aggregation=PROBE_AGGREGATION if definition else 'equation'))
         for measurement_id, value in derived.items():
             if measurement_id in whole:
                 continue
@@ -949,7 +952,7 @@ class RunEngine:
                              metric_name=measurement_id, analysis=definition.analysis, condition='aggregate',
                              raw_value=value if ok else None, unit=definition.unit, valid=ok,
                              failure_reason=reason(value, ok), threshold_lower=None, threshold_upper=None, hard=None,
-                             satisfied=None, violation=None, aggregation_level='aggregate', aggregation=definition.aggregation))
+                             satisfied=None, violation=None, aggregation_level='aggregate', aggregation=PROBE_AGGREGATION))
         for condition in (conditions or [])[1:]:
             label = condition['condition']['corner']['id']
             for name in sorted(set(condition['metrics']) | set(condition['metric_validity'])):

@@ -64,8 +64,9 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
   const [tab, setTab] = useState<Section>('parameters');
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [help, setHelp] = useState<Json>(null);
-  // "More columns" shows the columns most rows leave at their default (Specs: soft_weight, active, basis; Probes: conditions,
-  // aggregation). They exist whether shown or not: Add fills them, the agent may set them, a task file keeps them.
+  // "More columns" shows the columns most rows leave at their default (Specs: soft_weight, active, basis; the Probes' two,
+  // conditions and aggregation, were retired in record 7.105). They exist whether shown or not: Add fills them, the agent
+  // may set them, a task file keeps them.
   const [more, setMore] = useState<boolean>(() => { try { return localStorage.getItem(MORE_KEY) === 'shown'; } catch { return false; } });
   const showMore = (now: boolean) => { setMore(now); try { localStorage.setItem(MORE_KEY, now ? 'shown' : 'hidden'); } catch { /* no storage: the choice lasts for this page */ } };
   const [pending, setPending] = useState<{ next: Json; diff: Json[] } | null>(null);

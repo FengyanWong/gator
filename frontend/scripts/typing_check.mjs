@@ -1,8 +1,11 @@
 // Browser check of typing into the workbench's boxes (Typed.tsx; review of 2026-09-22), key by key as a person types -
 // Input.dispatchKeyEvent per character, not one insertText of the whole string, because the old boxes broke BETWEEN keys:
 //   - a number cell of Parameters / Probes / Specs keeps the typed text while it has focus: "1.5" and "4.5e-7" typed key by
-//     key are stored as 1.5 and 4.5e-7 (the old cell showed "1." as "1", so 1.5 became 15); a JSON cell takes "[1, 2]"; an
-//     emptied cell shows the stored value again on blur; Undo while a cell has focus replaces the typed text;
+//     key are stored as 1.5 and 4.5e-7 (the old cell showed "1." as "1", so 1.5 became 15); an emptied cell shows the
+//     stored value again on blur; Undo while a cell has focus replaces the typed text;
+//   - "More columns": Specs shows soft_weight after it, a value typed there stays when the columns are hidden again, and
+//     Probes has none since its conditions and aggregation were retired (record 7.105; conditions was the editors' only
+//     JSON cell, so no JSON cell is typed into any more);
 //   - a new row gets a FREE ID (rows.length + 1 repeated an existing ID after a deletion);
 //   - Research experiments: "a, b" typed key by key becomes ['a', 'b'] (the old box swallowed the comma);
 //   - Circuit class / PDK id: emptied, then typed, they take the new text (the old box put "unspecified" back at once);
@@ -94,23 +97,28 @@ await runChecks(browser, async () => {
   await blur(CELL(0, 'lower'));
   await shot('typing-1-numbers.png', `document.querySelector('section.editors')`);
 
-  // ---- (a) a JSON cell: the Probes tab's conditions, one of the columns "More columns" shows (record 7.92) -------------------
-  await openTab('Probes');
+  // ---- (a) "More columns": five on Specs, none on Probes since its conditions and aggregation went (record 7.105) ----------
   const MORE = `[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => /^More columns/.test(b.textContent.trim()))`;
-  check('(set-up) the Probes tab offers "More columns (2)" and shows no conditions column before it is pressed',
-    (await evaluate(`${MORE}?.textContent.trim()`)) === 'More columns (2)' && (await evaluate(`${CELL(0, 'conditions')} ?? null`)) === null);
+  await openTab('Probes');
+  check('the Probes tab offers no "More columns" and has no conditions or aggregation column (retired in record 7.105)',
+    (await evaluate(`${MORE} ?? null`)) === null && (await evaluate(`${CELL(0, 'conditions')} ?? null`)) === null
+    && (await evaluate(`${CELL(0, 'aggregation')} ?? null`)) === null);
+  await openTab('Specs');
+  check('(set-up) the Specs tab offers "More columns (5)" and shows no soft_weight column before it is pressed',
+    (await evaluate(`${MORE}?.textContent.trim()`)) === 'More columns (5)' && (await evaluate(`${CELL(0, 'soft_weight')} ?? null`)) === null);
   await evaluate(`${MORE}.click()`);
-  check('(set-up) after "More columns" the conditions column is there and the button reads "Fewer columns"',
-    (await evaluate(`!!${CELL(0, 'conditions')}`)) && (await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].some(b => b.textContent.trim() === 'Fewer columns')`)));
-  await focusAll(CELL(0, 'conditions')); await typeKeys('["a",');
-  check('a JSON cell keeps \'["a",\' (not valid JSON yet) while it has focus', (await valueOf(CELL(0, 'conditions'))) === '["a",', await valueOf(CELL(0, 'conditions')));
-  await typeKeys(' "b"]');
+  check('(set-up) after "More columns" the soft_weight column is there and the button reads "Fewer columns"',
+    (await evaluate(`!!${CELL(0, 'soft_weight')}`)) && (await evaluate(`!!${TOOL('Fewer columns')}`)));
+  await focusAll(CELL(0, 'soft_weight')); await typeKeys('2.');
+  check('a half-typed "2." stays in a "More columns" cell while it has focus', (await valueOf(CELL(0, 'soft_weight'))) === '2.', await valueOf(CELL(0, 'soft_weight')));
+  await typeKeys('5');
   config = await saved();
-  check('\'["a", "b"]\' typed key by key into a JSON cell is stored as ["a","b"]', JSON.stringify(config.measurements[0].conditions) === '["a","b"]', JSON.stringify(config.measurements[0].conditions));
-  await blur(CELL(0, 'conditions'));
-  check('... and reads ["a","b"] once the cell is left', (await valueOf(CELL(0, 'conditions'))) === '["a","b"]', await valueOf(CELL(0, 'conditions')));
-  await focusAll(CELL(0, 'conditions')); await typeKeys('["nominal"]'); await blur(CELL(0, 'conditions'));   // back to the runnable value
-  await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Fewer columns').click()`);
+  check('"2.5" typed key by key into soft_weight is stored as 2.5', config.targets[0].soft_weight === 2.5, `${config.targets[0].soft_weight}`);
+  await blur(CELL(0, 'soft_weight'));
+  await evaluate(`${TOOL('Fewer columns')}.click()`);
+  config = await saved();
+  check('"Fewer columns" hides soft_weight again and the value stays (2.5)',
+    (await evaluate(`${CELL(0, 'soft_weight')} ?? null`)) === null && config.targets[0].soft_weight === 2.5, `${config.targets[0].soft_weight}`);
   await openTab('Parameters');
 
   // ---- (a) an emptied cell, and Undo while a cell has focus --------------------------------------------------------------------

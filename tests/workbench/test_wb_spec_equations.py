@@ -269,6 +269,8 @@ def test_a_run_scores_and_judges_the_equation_and_records_it(tmp_path):
     raw = {(r['evaluation_id']): r for r in metrics if r['aggregation_level'] == 'condition' and r['metric_name'] == 'score'}
     computed = [r for r in metrics if r['metric_name'] == 'score_sq']
     assert len(computed) == 14 and all(r['aggregation_level'] == 'aggregate' for r in computed)
+    probes = [r for r in metrics if r['aggregation_level'] == 'aggregate' and r['measurement_id'] is not None]
+    assert probes and all(r['aggregation'] == 'nominal_only' for r in probes)    # as while Probes had the column (record 7.105)
     assert all(r['measurement_id'] is None and r['aggregation'] == 'equation' and r['threshold_lower'] == 0.8 for r in computed)
     for row in computed:
         assert math.isclose(row['raw_value'], raw[row['evaluation_id']]['raw_value'] ** 2, rel_tol=1e-12)

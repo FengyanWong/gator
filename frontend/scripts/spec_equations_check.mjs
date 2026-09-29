@@ -66,16 +66,19 @@ await runChecks(browser, async () => {
   // a formula: its own name, a unit that cannot be checked, a new entry in the network's result registry
   await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Add').click()`);
   await until(`${EDITORS}.querySelectorAll('table.editor tbody tr').length === 2`);
-  // "Add" supplies the required constraint and proposes an explicit scale since reward v2.1. Saved empty scales
-  // still use the threshold size; this fixture's new row receives the fallback scale of 1.
-  const added = (await evaluate(`new Promise(r => setTimeout(() => r(JSON.parse(localStorage.getItem('gator-workbench-config-v1'))), 1000))`)).targets[1];
-  check('a new spec row starts complete: the first probe as its equation, in its unit, a constraint, and the suggested scale',
-    added?.equation === 'm_score' && added?.unit === 'fixture' && added?.constraint === '>=' && added?.normalization_scale === 1, JSON.stringify(added));
+  // "Add" supplies the required constraint. Its scale stays empty while nothing sizes it (record 7.112): this fixture's
+  // new row has no limit and the unit 'fixture', so the backend's threshold-size rule applies until a limit is typed.
+  const saved1 = async () => (await evaluate(`new Promise(r => setTimeout(() => r(JSON.parse(localStorage.getItem('gator-workbench-config-v1'))), 1000))`)).targets[1];
+  const added = await saved1();
+  check('a new spec row starts complete: the first probe as its equation, in its unit, a constraint, and an empty scale',
+    added?.equation === 'm_score' && added?.unit === 'fixture' && added?.constraint === '>=' && added?.normalization_scale == null, JSON.stringify(added));
   await type(1, 'metric_id', 'score_sq'); await type(1, 'equation', 'm_score ** 2'); await type(1, 'unit', 'fixture'); await type(1, 'lower', '0.5');
   let [ok, found] = await issuesUntil(1, ['warning: equation_unit_unchecked', 'info: spec_adds_registry_entry'], ['error', 'blocker']);
   const row = async () => JSON.stringify((await evaluate(`new Promise(r => setTimeout(() => r(JSON.parse(localStorage.getItem('gator-workbench-config-v1'))), 1000))`)).targets[1])
     + ' | page issues: ' + JSON.stringify(await evaluate(`[...document.querySelectorAll('.editors .issue')].map(d => d.textContent.trim())`));
   check('a formula is accepted: its unit is not checkable, its name is new to the registry', ok, JSON.stringify(found) + (ok ? '' : ' ' + await row()));
+  const sized = await saved1();
+  check('typing the lower limit proposes a scale from it (0.5)', sized?.normalization_scale === 0.5, JSON.stringify(sized));
   await shot('spec_equation_formula.png');
   await type(1, 'equation', 'm_nope * 2');
   [ok, found] = await issuesUntil(1, ['error: equation_unknown_probe']);

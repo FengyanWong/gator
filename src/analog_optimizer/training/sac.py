@@ -28,14 +28,19 @@ class SACConfig:
     initial_alpha: float = 0.2
     target_entropy_per_action: float = 1.0
     max_grad_norm: float = 10.0
+    alpha_learning_rate: float | None = None
 
     def __post_init__(self):
-        if any(not math.isfinite(v) for v in asdict(self).values()):
+        if any(not math.isfinite(v) for k, v in asdict(self).items() if k != 'alpha_learning_rate'):
             raise ValueError('SAC hyperparameters must be finite')
         if not 0 <= self.gamma <= 1 or not 0 < self.tau <= 1:
             raise ValueError('Invalid discount/target mixing coefficient')
         if min(self.learning_rate, self.initial_alpha, self.target_entropy_per_action, self.max_grad_norm) <= 0:
             raise ValueError('SAC scale parameters must be positive')
+        if self.alpha_learning_rate is not None and (isinstance(self.alpha_learning_rate, bool)
+                or not isinstance(self.alpha_learning_rate, (int, float))
+                or not math.isfinite(self.alpha_learning_rate) or self.alpha_learning_rate <= 0):
+            raise ValueError('Alpha learning rate must be positive and finite, or None to use the learning rate')
 
 
 def temperature_loss(log_alpha, log_prob, action_counts, entropy_per_action):
@@ -69,10 +74,10 @@ class SACLearner:
                  condition_policy='off', planned_conditions=()):
         from analog_optimizer.measurements.specs import RewardSettings
         self.reward_settings = RewardSettings() if reward_settings is None else reward_settings
-        if not isinstance(self.reward_settings, RewardSettings) or condition_policy not in ('off', 'always'):
+        if not isinstance(self.reward_settings, RewardSettings) or condition_policy not in ('off', 'always', 'after_nominal'):
             raise ValueError('Typed reward settings and a supported condition policy are required')
         self.condition_policy, self.planned_conditions = condition_policy, tuple(planned_conditions)
-        if condition_policy == 'always' and len(self.planned_conditions) < 2:
+        if condition_policy != 'off' and len(self.planned_conditions) < 2:
             raise ValueError('Robust learner requires the complete condition plan')
         self.feature_schema, self.spec_schema = feature_schema or FeatureSchema(), spec_schema or SpecSchema()
         self.model_config, self.config = model_config or ModelConfig(), config or SACConfig()
@@ -89,7 +94,8 @@ class SACLearner:
         self.log_alpha = nn.Parameter(torch.tensor(math.log(self.config.initial_alpha)))
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=self.config.learning_rate)
         self.critic_optimizer = torch.optim.Adam(self.critics.parameters(), lr=self.config.learning_rate)
-        self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=self.config.learning_rate)
+        alpha_rate = self.config.learning_rate if self.config.alpha_learning_rate is None else self.config.alpha_learning_rate
+        self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=alpha_rate)
         self.updates = 0
 
     @property
@@ -164,7 +170,7 @@ class SACLearner:
                     reward_version=REWARD_VERSION, reward_settings=asdict(self.reward_settings),
                     clearance_rule=CLEARANCE_RULE, condition_policy=self.condition_policy,
                     planned_conditions=[None if c is None else asdict(c) for c in self.planned_conditions],
-                    failure_policy='continue_attributed' if self.condition_policy == 'always' else 'nominal_terminate',
+                    failure_policy='continue_attributed',
                     feature_schema=asdict(self.feature_schema), spec_schema=asdict(self.spec_schema),
                     normalizer='fixed-references-signed-log1p-v1', action_version='absolute-group-v1',
                     critic_action='normalized_proposal', budget='finite_horizon_termination',

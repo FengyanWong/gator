@@ -39,8 +39,8 @@ class Transition:
         first, last = self.observation, self.next_observation
         validate_observation(first)
         validate_observation(last)
-        robust = first.condition_policy == 'always'
-        allowed = ('ok', 'invalid_design', 'nonconverged') if robust else ('ok',)
+        robust = first.condition_policy != 'off'
+        allowed = ('ok', 'invalid_design', 'nonconverged', 'measurement_error')
         if first.status not in allowed or first.remaining_steps < 1:
             raise ValueError('Cannot act from a terminal or failed state')
         if first.origin != last.origin or first.condition != last.condition:
@@ -68,11 +68,14 @@ class Transition:
         if not initial_evaluation.valid:
             raise ValueError('Initial observation has no valid required measurements')
         evaluation = last.evaluation
-        expected = evaluation.reward if evaluation.valid and (robust or last.status == 'ok') else None
-        if not robust and last.status in ('invalid_design', 'nonconverged') and self.terminated:
-            expected = -1.0
+        expected = evaluation.reward if evaluation.valid else None
+        if (last.status in ('invalid_design', 'nonconverged') and self.terminated and last.remaining_steps > 0):
+            raise ValueError('Attributed failure must not terminate the episode early')
+        gated = last.condition_policy == 'after_nominal' and not evaluation.nominal_success
+        if gated and len(last.condition_results) != 1:
+            raise ValueError('A failed nominal gate must skip every corner')
         if robust and not evaluation.complete and not any(
-                r.candidate_evaluated and r.status in ('invalid_design', 'nonconverged') for r in last.condition_results):
+                r.candidate_evaluated and r.status in ('invalid_design', 'nonconverged') for r in last.condition_results) and not gated:
             raise ValueError('Incomplete non-failed candidate cannot enter replay')
         if (expected is None or isinstance(self.reward, bool) or not math.isfinite(self.reward)
                 or not math.isclose(self.reward, expected, rel_tol=1e-10, abs_tol=1e-12)):
@@ -106,6 +109,7 @@ class Transition:
             'applied_parameters': parameter_rows(applied),
             'reward_version': REWARD_VERSION, 'reward_settings': asdict(transition.reward_settings),
             'condition_policy': next_observation.condition_policy,
+            'failure_policy': 'continue_attributed',
             'planned_conditions': [None if c is None else asdict(c) for c in next_observation.planned_conditions],
             'condition_results': [asdict(r) for r in next_observation.condition_results],
             'success': next_observation.evaluation.success,

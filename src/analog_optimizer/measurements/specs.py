@@ -17,22 +17,31 @@ class RewardSettings:
     worst_spec_share: float = 0.0
     objective_weight: float = 0.0
     margin_weight: float = 0.0
+    nominal_gate_band: float = 0.5
+    objective_shape: str = 'clipped'
 
     def __post_init__(self):
         if self.violation_shape not in ('capped', 'compressed'):
             raise ValueError('Unknown violation shape')
+        if self.objective_shape not in ('clipped', 'compressed'):
+            raise ValueError('Objective shape must be clipped or compressed')
+        if (isinstance(self.nominal_gate_band, bool) or not isinstance(self.nominal_gate_band, (int, float))
+                or not math.isfinite(self.nominal_gate_band) or not 0 < self.nominal_gate_band < 1):
+            raise ValueError('Nominal gate band must be finite and strictly between 0 and 1')
         for value in (self.worst_spec_share, self.objective_weight, self.margin_weight):
             if (isinstance(value, bool) or not isinstance(value, (int, float))
                     or not math.isfinite(value) or not 0 <= value <= 1):
                 raise ValueError('Reward shares and bonus weights must be finite in [0, 1]')
 
 
-def spec_margin(lower, upper, scale, value):
+def spec_margin(lower, upper, scale, value, margin_sides='both'):
     """Signed nearest-limit distance; equality constraints deliberately have zero clearance."""
     sides = []
-    if lower is not None:
+    if margin_sides not in ('both', 'lower', 'upper'):
+        raise ValueError('Margin sides must be both, lower or upper')
+    if lower is not None and margin_sides != 'upper':
         sides.append((value - lower) / scale)
-    if upper is not None:
+    if upper is not None and margin_sides != 'lower':
         sides.append((upper - value) / scale)
     return min(sides) if sides else math.inf
 
@@ -54,6 +63,8 @@ def _satisfied(spec, value):
 
 def _measurement_error(spec, row):
     key, value = spec.metric_id, row.metrics.get(spec.metric_id)
+    if spec.missing_is_failure and key in row.metric_units and row.metric_units[key] != spec.unit:
+        return 'unit_mismatch'
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         return 'missing_or_nonfinite'
     if row.metric_validity.get(key) is not True:
@@ -76,6 +87,8 @@ class MetricSpec:
     active: bool = True
     objective: str = 'none'
     nominal_only: bool = False
+    missing_is_failure: bool = False
+    margin_sides: str = 'both'
 
     def __post_init__(self):
         if not self.metric_id or not self.unit or self.comparator not in ('min', 'max', 'range'):
@@ -91,8 +104,10 @@ class MetricSpec:
                 or (self.comparator == 'range' and
                     (None in bounds or self.lower > self.upper))):
             raise ValueError('Targets do not match the comparator')
-        if any(not isinstance(v, bool) for v in (self.required, self.active, self.nominal_only)):
+        if any(not isinstance(v, bool) for v in (self.required, self.active, self.nominal_only, self.missing_is_failure)):
             raise ValueError('Specification flags must be booleans')
+        if self.margin_sides not in ('both', 'lower', 'upper'):
+            raise ValueError('Margin sides must be both, lower or upper')
         if (self.objective not in ('none', 'min', 'max')
                 or (self.objective == 'min' and self.upper is None)
                 or (self.objective == 'max' and self.lower is None)):
@@ -119,6 +134,7 @@ class Evaluation:
     objective_improvement: float = 0.0
     clearance: float = 0.0
     saturated_margins: tuple[str, ...] = ()
+    missing_counted_as_failure: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 class SpecificationEvaluator:
@@ -145,12 +161,43 @@ class SpecificationEvaluator:
     def required_metrics(self):
         return tuple(s.metric_id for s in self.specs if s.active and s.required)
 
+    @staticmethod
+    def _missing_failure(spec, row):
+        # An explicitly reported wrong unit is a configuration fault even when
+        # the value is absent. Absence of both value and unit is still absence.
+        return (spec.required and spec.missing_is_failure and row.candidate_evaluated
+                and row.status in ('ok', 'measurement_error')
+                and _measurement_error(spec, row) in ('missing_or_nonfinite', 'invalid_measurement')
+                and (spec.metric_id not in row.metric_units or row.metric_units[spec.metric_id] == spec.unit))
+
+    def missing_failures(self, row, *, nominal=True):
+        return tuple(s.metric_id for s in self.specs if s.active and (nominal or not s.nominal_only)
+                     and self._missing_failure(s, row))
+
+    def row_scorable(self, row, *, nominal=True):
+        """Shared evaluator/execution admission; no infrastructure attribution."""
+        if not row.candidate_evaluated:
+            return False
+        if row.status in ('invalid_design', 'nonconverged'):
+            return True
+        if row.status not in ('ok', 'measurement_error'):
+            return False
+        missing = self.missing_failures(row, nominal=nominal)
+        # A measurement-error status needs explicit opted-in failure evidence;
+        # an unexplained error cannot become scorable by vacuous truth.
+        if row.status == 'measurement_error' and not missing:
+            return False
+        return all(_measurement_error(s, row) is None or s.metric_id in missing
+                   for s in self.specs if s.active and s.required and (nominal or not s.nominal_only))
+
     def evaluate(self, metrics, units, validity):
         return self.evaluate_conditions((SimpleNamespace(
             condition=None, status='ok', candidate_evaluated=True,
             metrics=metrics, metric_units=units, metric_validity=validity),))
 
-    def evaluate_conditions(self, results, *, planned_conditions=None):
+    def evaluate_conditions(self, results, *, planned_conditions=None, condition_policy='off'):
+        if condition_policy not in ('off', 'always', 'after_nominal'):
+            raise ValueError('Unknown training condition policy')
         rows = tuple(results)
         if not rows:
             raise ValueError('Nominal result is required')
@@ -176,8 +223,13 @@ class SpecificationEvaluator:
         labels = tuple(names[plan.index(c)] for c in conditions)
         complete = conditions == plan
         failed = tuple(row.candidate_evaluated and row.status in ('invalid_design', 'nonconverged') for row in rows)
-        unavailable = any(not row.candidate_evaluated or (row.status != 'ok' and not failure)
-                          for row, failure in zip(rows, failed))
+        missing_failures = {labels[i]: self.missing_failures(row, nominal=i == 0) for i, row in enumerate(rows)}
+        missing_failures = {key: value for key, value in missing_failures.items() if value}
+        scorable = tuple(self.row_scorable(row, nominal=i == 0) for i, row in enumerate(rows))
+        accepted_status = tuple(row.status == 'ok' or (row.status == 'measurement_error' and scorable[i])
+                                for i, row in enumerate(rows))
+        unavailable = any(not row.candidate_evaluated or (not accepted_status[i] and not failed[i])
+                          for i, row in enumerate(rows))
         violations, errors, worst_values, worst_valid, worst_conditions = {}, {}, {}, {}, {}
         margins, missing, satisfied = {}, {}, {}
         for spec in self.specs:
@@ -190,13 +242,14 @@ class SpecificationEvaluator:
             for i in indices:
                 row = rows[i]
                 reason = _measurement_error(spec, row)
-                if failed[i] and spec.required:
+                missing_failure = self._missing_failure(spec, row)
+                if (failed[i] and spec.required) or missing_failure:
                     scores.append(1.0)
                     penalty_without_value, passed = True, False
                     absent.append(labels[i])
-                    errors[key] = 'attributed_design_failure'
+                    errors[key] = 'missing_counted_as_failure' if missing_failure else 'attributed_design_failure'
                     continue
-                if row.status != 'ok' or not row.candidate_evaluated:
+                if not accepted_status[i] or not row.candidate_evaluated:
                     reason = 'condition_unavailable'
                 if reason:
                     absent.append(labels[i])
@@ -214,22 +267,23 @@ class SpecificationEvaluator:
                 scores.append(score)
                 values.append((value, score, labels[i]))
                 limits = []
-                if spec.lower is not None:
+                if spec.lower is not None and spec.margin_sides != 'upper':
                     limits.append(_distance(value, spec.lower, spec.scale))
-                if spec.upper is not None:
+                if spec.upper is not None and spec.margin_sides != 'lower':
                     limits.append(_distance(spec.upper, value, spec.scale))
-                distances.append(min(limits))
+                if limits:
+                    distances.append(min(limits))
                 passed = passed and _satisfied(spec, value)
             expected = names[:1] if spec.nominal_only else names
             missing[key] = tuple(name for name in expected if name not in labels or name in absent)
-            invalid = any((rows[i].status == 'ok' and _measurement_error(spec, rows[i]))
-                          or (rows[i].status != 'ok' and not (failed[i] and spec.required))
+            invalid = any((accepted_status[i] and _measurement_error(spec, rows[i]) and not self._missing_failure(spec, rows[i]))
+                          or (not accepted_status[i] and not (failed[i] and spec.required))
                           or not rows[i].candidate_evaluated for i in indices)
             violations[key] = None if invalid else max(scores, default=None)
             satisfied[key] = passed
             worst_valid[key] = bool(values) and not absent and not penalty_without_value
             worst_values[key] = worst_conditions[key] = None
-            margins[key] = min(distances) if worst_valid[key] else None
+            margins[key] = min(distances) if worst_valid[key] and distances else None
             if worst_valid[key]:
                 if spec.comparator == 'min':
                     worst = min(values, key=lambda item: item[0])
@@ -240,10 +294,12 @@ class SpecificationEvaluator:
                 worst_values[key], _, worst_conditions[key] = worst
         valid = not unavailable and all(violations[k] is not None for k in self.required_metrics)
         success = valid and complete and not any(failed) and all(satisfied[k] for k in self.required_metrics)
-        nominal_success = (rows[0].status == 'ok' and rows[0].candidate_evaluated and all(
+        nominal_success = (accepted_status[0] and rows[0].candidate_evaluated and all(
             _measurement_error(s, rows[0]) is None and _satisfied(s, rows[0].metrics[s.metric_id])
             for s in self.specs if s.active and s.required))
-        excluded = tuple(s.metric_id for s in self.specs if s.active and s.required and s.lower == s.upper)
+        excluded = tuple(s.metric_id for s in self.specs if s.active and s.required and
+                         (s.lower == s.upper or (s.margin_sides == 'lower' and s.lower is None)
+                          or (s.margin_sides == 'upper' and s.upper is None)))
         eligible = [s.metric_id for s in self.specs if s.active and s.required and s.metric_id not in excluded]
         tightest = min(eligible, key=lambda k: margins[k]) if eligible and all(margins[k] is not None for k in eligible) else None
         clearance_margin = margins[tightest] if tightest is not None else None
@@ -257,7 +313,11 @@ class SpecificationEvaluator:
                                  if objective.objective == 'min' else
                                  _distance(r.metrics[objective.metric_id], objective.lower, objective.scale))
                                 for r in applicable]
-                objective_improvement = min(max(0.0, min(1.0, v)) for v in improvements)
+                if self.settings.objective_shape == 'clipped':
+                    objective_improvement = min(max(0.0, min(1.0, v)) for v in improvements)
+                else:
+                    objective_improvement = min(min(math.nextafter(1.0, 0.0), _compressed(max(0.0, v)))
+                                                for v in improvements)
         reward = None
         if valid:
             included = [s for s in self.specs if s.active and violations[s.metric_id] is not None]
@@ -268,6 +328,14 @@ class SpecificationEvaluator:
             if self.settings.worst_spec_share:
                 share = self.settings.worst_spec_share
                 reward = (1.0 - share) * reward - share * max(violations[k] for k in self.required_metrics)
+            if condition_policy == 'after_nominal':
+                band = self.settings.nominal_gate_band
+                if nominal_success:
+                    reward *= band
+                else:
+                    if len(rows) != 1:
+                        raise ValueError('A failed nominal gate must not have corner results')
+                    reward = min(-band + (1.0 - band) * reward, math.nextafter(-band, -math.inf))
             if success and (self.settings.objective_weight or self.settings.margin_weight):
                 reward += self.settings.objective_weight * objective_improvement + self.settings.margin_weight * clearance
         # Keep diagnostic records JSON-finite even beyond representable margin size;
@@ -278,4 +346,5 @@ class SpecificationEvaluator:
         clearance_margin = margins[tightest] if tightest is not None else None
         return Evaluation(valid, success, reward, violations, errors, complete, nominal_success,
                           worst_values, worst_valid, worst_conditions, missing, margins,
-                          clearance_margin, tightest, excluded, objective_improvement, clearance, saturated)
+                          clearance_margin, tightest, excluded, objective_improvement, clearance, saturated,
+                          missing_failures)

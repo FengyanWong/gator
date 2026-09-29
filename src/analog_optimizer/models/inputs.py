@@ -72,7 +72,7 @@ def validate_observation(observation):
         from analog_optimizer.backends.conditions import SimulationCondition
         if SimulationCondition.from_dict(metadata_condition) != observation.condition:
             raise ValueError('Graph and observation conditions differ')
-    if observation.status not in ('ok', 'invalid_design', 'nonconverged'):
+    if observation.status not in ('ok', 'invalid_design', 'nonconverged', 'measurement_error'):
         raise ValueError('Infrastructure/measurement failure is not a model state')
     if type(observation.remaining_steps) is not int or observation.remaining_steps < 0:
         raise ValueError('Invalid finite-horizon budget')
@@ -80,14 +80,14 @@ def validate_observation(observation):
         raise ValueError('Unsupported circuit graph schema')
     observation.graph.validate()
     SpecificationEvaluator(observation.specs, observation.reward_settings)
-    if observation.condition_policy not in ('off', 'always'):
+    if observation.condition_policy not in ('off', 'always', 'after_nominal'):
         raise ValueError('Unknown training condition policy')
     if not isinstance(observation.planned_conditions, tuple) or not isinstance(observation.condition_results, tuple):
         raise ValueError('Condition plans and results must be immutable ordered tuples')
-    if observation.condition_policy == 'always' and len(observation.planned_conditions) < 2:
+    if observation.condition_policy != 'off' and len(observation.planned_conditions) < 2:
         raise ValueError('Robust training requires an explicit nominal-plus-corners plan')
     if observation.condition_policy == 'off' and len(observation.planned_conditions) > 1:
-        raise ValueError('Corners require the always policy')
+        raise ValueError('Corners require the always or after_nominal policy')
     if observation.condition_results:
         if not observation.planned_conditions or observation.planned_conditions[0] != observation.condition:
             raise ValueError('Observation must retain its full nominal-first plan')
@@ -102,6 +102,8 @@ def validate_observation(observation):
         observation.evaluation
     elif observation.condition_policy != 'off' or observation.planned_conditions:
         raise ValueError('A planned observation requires nominal measurement evidence')
+    if observation.status == 'measurement_error' and (not observation.condition_results or not observation.evaluation.valid):
+        raise ValueError('Only a scorable opted-in measurement failure is a model state')
     device_ids = {d.id for d in observation.graph.devices}
     if any(key not in device_ids for key in observation.operating_points):
         raise ValueError('Operating points must be mapped to graph devices')

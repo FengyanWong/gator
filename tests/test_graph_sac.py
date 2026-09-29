@@ -356,7 +356,7 @@ def test_checkpoint_exact_next_update_and_schema_rejection(encoder, transitions,
 
 
 @pytest.mark.parametrize('status', ['timeout', 'measurement_error', 'nonconverged'])
-def test_failed_environment_results_only_admit_attributed_terminal_design_failure(opamp, tmp_path, monkeypatch, status):
+def test_failed_environment_results_only_admit_attributed_continuing_design_failure(opamp, tmp_path, monkeypatch, status):
     from analog_optimizer.backends.backend import SimulationStatus
     backend = SyntheticSizingBackend(opamp, targets={'w': .4, 'c': -.3})
     with CircuitSizingEnv(backend, opamp, observation(opamp).specs, tmp_path,
@@ -371,7 +371,8 @@ def test_failed_environment_results_only_admit_attributed_terminal_design_failur
             replay = ReplayBuffer(origin='synthetic')
             replay.add(transition)
             result = learner().update(replay.sample(1))
-            assert transition.terminated and not transition.bootstrap and result['target_mean'] == -1
+            assert not transition.terminated and transition.bootstrap and transition.reward == -1
+            assert math.isfinite(result['target_mean'])
         else:
             with pytest.raises(ValueError, match='eligible'):
                 Transition.from_step(first, proposal, step)

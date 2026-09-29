@@ -105,7 +105,7 @@ class RunReader:
                 verdict = observation.evaluation if recorded_conditions else None
                 candidate.update(coverage_complete=verdict.complete if verdict else None,
                     condition_policy=observation.condition_policy if recorded_conditions else 'off',
-                    robust_feasible=verdict.success if recorded_conditions and observation.condition_policy == 'always' else None,
+                    robust_feasible=verdict.success if recorded_conditions and observation.condition_policy != 'off' else None,
                     missing_coverage=verdict.missing_coverage if verdict else {})
                 if verdict:
                     candidate.update(nominal_feasible=verdict.nominal_success,
@@ -131,7 +131,7 @@ class RunReader:
                             details.append(dict(condition=condition.corner.id if condition else 'nominal',
                                 **measured(condition_result.metrics, condition_result.metric_validity,
                                            condition_result.metric_units,
-                                           condition_result.status == 'ok' and condition_result.candidate_evaluated)))
+                                           condition_result.status in ('ok', 'measurement_error') and condition_result.candidate_evaluated)))
                         valid = verdict.worst_valid[spec.metric_id] and not verdict.missing_coverage[spec.metric_id]
                         # Bounds on every actual value are authoritative, not rounded reward penalties.
                         aggregate = dict(value=verdict.worst_values[spec.metric_id], valid=valid,

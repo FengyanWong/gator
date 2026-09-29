@@ -141,7 +141,7 @@ def collect_parallel_episodes(factory, learner, replay, rng, *, max_workers,
     history_limit = limits.history_limit if recorder is not None else None
     count = min(max_workers, episodes)
     report = report if report is not None else {}
-    if getattr(factory, 'condition_policy', 'off') == 'always' and max_simulation_calls is None:
+    if getattr(factory, 'condition_policy', 'off') != 'off' and max_simulation_calls is None:
         raise ValueError('Robust collection requires a finite global launch ceiling')
     root = getattr(factory, 'output', None)
     budget = LaunchBudget(max_simulation_calls, consumed=calls_before,

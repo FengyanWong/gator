@@ -166,13 +166,13 @@ def test_bad_measurement_cannot_become_success(fixture_backend, tmp_path, mode):
 
 
 @pytest.mark.parametrize('status', [SimulationStatus.INVALID_DESIGN, SimulationStatus.NONCONVERGED])
-def test_attributed_circuit_failure_has_finite_terminal_penalty(fixture_backend, tmp_path, status):
+def test_attributed_circuit_failure_has_finite_continuing_penalty(fixture_backend, tmp_path, status):
     with environment(fixture_backend, tmp_path) as env:
         env.reset()
         fixture_backend.status = status
         obs, reward, terminated, truncated, info = env.step({'input_pair_width': 1})
-        assert reward == -1 and terminated and not truncated and info['replay_eligible']
-        assert obs.metrics['score'] is None and not info['success'] and not info['bootstrap']
+        assert reward == -1 and not terminated and not truncated and info['replay_eligible']
+        assert obs.metrics['score'] is None and not info['success'] and info['bootstrap']
 
 
 @pytest.mark.parametrize('stage', ['write', 'graph', 'simulation'])

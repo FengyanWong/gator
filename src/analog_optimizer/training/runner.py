@@ -62,7 +62,7 @@ def collect_episode(env, learner, replay, rng, *, warmup=8, batch_size=8,
     from .workers import append_history
     base_state = deepcopy(run_state or {})
     calls_before = env.simulation_calls
-    if env.condition_policy == 'always' and max_simulation_calls is None:
+    if env.condition_policy != 'off' and max_simulation_calls is None:
         raise ValueError('Robust collection requires a finite global launch ceiling')
     budget = LaunchBudget(max_simulation_calls, consumed=base_state.get('simulation_calls', 0),
                           journal=env.directory / 'collector-launch-budget.json')

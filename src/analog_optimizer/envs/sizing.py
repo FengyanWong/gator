@@ -68,6 +68,7 @@ class ConditionResult:
     job_id: str
     reason_code: str
     operating_points: dict = field(default_factory=dict)
+    missing_failure_metrics: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         if self.condition is not None and not isinstance(self.condition, SimulationCondition):
@@ -76,7 +77,7 @@ class ConditionResult:
             raise ValueError('Condition result requires attribution and job/reason identity')
         if self.status not in {s.value for s in SimulationStatus}:
             raise ValueError('Unknown condition status')
-        for key in ('metrics', 'metric_units', 'metric_validity', 'operating_points'):
+        for key in ('metrics', 'metric_units', 'metric_validity', 'operating_points', 'missing_failure_metrics'):
             object.__setattr__(self, key, deepcopy(getattr(self, key)))
 
 
@@ -120,7 +121,8 @@ class Observation:
     def evaluation(self):
         evaluator = SpecificationEvaluator(self.specs, self.reward_settings)
         if self.condition_results:
-            return evaluator.evaluate_conditions(self.condition_results, planned_conditions=self.planned_conditions)
+            return evaluator.evaluate_conditions(self.condition_results, planned_conditions=self.planned_conditions,
+                                                 condition_policy=self.condition_policy)
         return evaluator.evaluate(self.metrics, self.metric_units, self.metric_validity)
 
 
@@ -130,7 +132,7 @@ class CircuitSizingEnv:
     The step budget is part of the finite-horizon task and of each observation;
     exhaustion terminates with bootstrap=False. Infrastructure/measurement errors
     truncate, reward=None and replay_eligible=False. Attributed circuit failures
-    terminate in compatibility mode; robust mode can continue from a masked state.
+    continue from a masked state, subject to the normal finite episode limit.
     No automatic retries or result cache: duplicates are logged and simulated.
     This is a plain Python environment, not a Gymnasium Env implementation.
     Use as a context manager; it owns and restores its backend connection.
@@ -158,9 +160,9 @@ class CircuitSizingEnv:
         backend.validate_condition(self.condition)
         self.condition_policy = condition_policy
         corners = tuple(corners)
-        if condition_policy not in ('off', 'always') or (condition_policy == 'off' and corners):
-            raise ValueError('Training conditions require off or always policy')
-        if condition_policy == 'always' and (not corners or expected_origin != 'real'):
+        if condition_policy not in ('off', 'always', 'after_nominal') or (condition_policy == 'off' and corners):
+            raise ValueError('Training conditions require off, always or after_nominal policy')
+        if condition_policy != 'off' and (not corners or expected_origin != 'real'):
             raise ValueError('Robust training requires an explicit real corner plan')
         for corner in corners:
             if not isinstance(corner, SimulationCondition) or corner.purpose != 'pvt_training':
@@ -202,7 +204,7 @@ class CircuitSizingEnv:
                   'initial_graph': asdict(graph), 'cache_enabled': False, 'automatic_retries': 0,
                   'reward': REWARD_VERSION, 'reward_settings': asdict(self.evaluator.settings),
                   'clearance_rule': CLEARANCE_RULE, 'condition_policy': self.condition_policy,
-                  'failure_policy': 'continue_attributed' if condition_policy == 'always' else 'nominal_terminate',
+                  'failure_policy': 'continue_attributed',
                   'planned_conditions': [None if c is None else asdict(c) for c in self.planned_conditions],
                   'budget_semantics': 'finite_horizon_termination',
                   'critic_action_semantics': 'normalized_proposal'}
@@ -265,7 +267,7 @@ class CircuitSizingEnv:
         allowance = self._launch_allowance
         self._launch_allowance = None
         if allowance is None:
-            if self.condition_policy == 'always':
+            if self.condition_policy != 'off':
                 raise ValueError('Robust execution requires a coordinator reservation before candidate preparation')
             allowance = 1
         if allowance < cost:
@@ -291,6 +293,7 @@ class CircuitSizingEnv:
                   'candidate_evaluations': self.candidate_evaluations,
                   'reward_version': REWARD_VERSION, 'reward_settings': asdict(self.evaluator.settings),
                   'clearance_rule': CLEARANCE_RULE, 'condition_policy': self.condition_policy,
+                  'failure_policy': 'continue_attributed',
                   'planned_conditions': [None if c is None else asdict(c) for c in self.planned_conditions],
                   'condition_results': [], 'jobs': [], 'reserved_launches': allowance,
                   'timings': {}}
@@ -418,7 +421,10 @@ class CircuitSizingEnv:
                 metrics, validity = {}, {}
                 for name in names:
                     value = result.metrics.get(name)
-                    valid = (result.status == SimulationStatus.OK and result.candidate_evaluated
+                    accept_measurement_error = (result.status == SimulationStatus.MEASUREMENT_ERROR and any(
+                        s.active and s.required and s.missing_is_failure and (index == 0 or not s.nominal_only)
+                        for s in self.evaluator.specs))
+                    valid = ((result.status == SimulationStatus.OK or accept_measurement_error) and result.candidate_evaluated
                              and result.metric_validity.get(name) is True
                              and isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value))
                     metrics[name], validity[name] = (float(value) if valid else None), valid
@@ -436,16 +442,22 @@ class CircuitSizingEnv:
                                       result.reason_code, {key: {name: float(value) for name, value in values.items()
                                           if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)}
                                           for key, values in (operating_points or {}).items() if isinstance(values, dict)})
+                missing = self.evaluator.missing_failures(row, nominal=index == 0)
+                if missing and self.evaluator.row_scorable(row, nominal=index == 0):
+                    from dataclasses import replace
+                    row = replace(row, reason_code='missing_counted_as_failure', missing_failure_metrics=list(missing))
                 rows.append(row)
                 results.append(result)
                 record['condition_results'] = [asdict(r) for r in rows]
                 if self.recorder is None:
                     write_record(path, record)
                 attributed = result.candidate_evaluated and result.status in (SimulationStatus.INVALID_DESIGN, SimulationStatus.NONCONVERGED)
-                required_valid = self.evaluator.evaluate_conditions(rows).valid
-                if invocations is None or (not attributed and (result.status != SimulationStatus.OK or not required_valid)):
+                if invocations is None or not self.evaluator.row_scorable(row, nominal=index == 0):
                     stopped = True
                     record['conditions_stop_reason'] = 'unavailable_or_uncertain_condition'
+                    break
+                if index == 0 and not reset and self.condition_policy == 'after_nominal' and not self.evaluator.evaluate_conditions(rows).nominal_success:
+                    record['conditions_stop_reason'] = 'nominal_gate_not_met'
                     break
                 if index == 0 and attributed:
                     record['conditions_stop_reason'] = 'attributed_nominal_failure'
@@ -460,7 +472,8 @@ class CircuitSizingEnv:
                           backend_kind=result.backend_kind)
             self._seen.setdefault(key, candidate_id)
             metrics, validity = rows[0].metrics, rows[0].metric_validity
-            evaluated = self.evaluator.evaluate_conditions(rows, planned_conditions=self.planned_conditions)
+            evaluated = self.evaluator.evaluate_conditions(rows, planned_conditions=self.planned_conditions,
+                                                           condition_policy=self.condition_policy)
             operating_points, unmatched = mapped_operating_points(graph, rows[0].operating_points)
             observation = Observation(deepcopy(graph), self.evaluator.specs, metrics, validity,
                                       dict(result.metric_units), result.status.value, result.origin,
@@ -468,14 +481,9 @@ class CircuitSizingEnv:
                                       tuple(rows), self.planned_conditions, self.condition_policy, self.evaluator.settings,
                                       operating_points, unmatched)
             reward, eligible, success, terminated, truncated = None, False, False, False, False
-            if self.condition_policy == 'always' and evaluated.valid and not stopped:
+            if evaluated.valid and not stopped:
                 reward, eligible, success = evaluated.reward, not reset, evaluated.success
                 terminated = (success and self.stop_on_success) or self.steps >= self.max_steps
-            elif not stopped and result.status == SimulationStatus.OK and result.candidate_evaluated and evaluated.valid:
-                reward, eligible, success = evaluated.reward, not reset, evaluated.success
-                terminated = (success and self.stop_on_success) or self.steps >= self.max_steps
-            elif not stopped and result.status in (SimulationStatus.INVALID_DESIGN, SimulationStatus.NONCONVERGED) and result.candidate_evaluated:
-                reward, eligible, terminated = -1.0, not reset, True
             else:
                 truncated = True
                 if result.status != SimulationStatus.MEASUREMENT_ERROR and result.status != SimulationStatus.OK:
@@ -497,7 +505,8 @@ class CircuitSizingEnv:
                         clearance_excluded=evaluated.clearance_excluded,
                         saturated_margins=evaluated.saturated_margins,
                         worst_values=evaluated.worst_values, worst_conditions=evaluated.worst_conditions,
-                        missing_coverage=evaluated.missing_coverage)
+                        missing_coverage=evaluated.missing_coverage,
+                        missing_counted_as_failure=evaluated.missing_counted_as_failure)
             record.update(state='completed', **{k: v for k, v in info.items() if k not in ('record_path',)},
                           reward=reward, metrics=metrics, metric_validity=validity,
                           metric_units=result.metric_units,

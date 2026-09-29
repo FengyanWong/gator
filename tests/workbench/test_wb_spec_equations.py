@@ -3,8 +3,9 @@ the network's goal input, the independent pass/fail check and the tables. MOCK b
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 import copy
-import hashlib
+import json
 import math
+from pathlib import Path
 
 import pytest
 
@@ -64,41 +65,28 @@ def test_a_failed_operation_or_a_missing_probe_is_invalid_never_a_number():
 
 
 # ------------------------------------------------------------------------------- old configurations
-def _old_hash(data, keys=None):
-    data = {k: data[k] for k in keys} if keys else data
-    return hashlib.sha256(schema.canonical_json(data).encode('utf8')).hexdigest()
+# Written by the code of commit c3b9691, the last before Specs had equations (see its `made_with`), with the two hashes that
+# code computed. It replaces an "old" configuration rebuilt from a NEW dump, which every later schema field broke again.
+PRE_EQUATIONS = json.loads((Path(__file__).parent / 'fixtures' / 'pre_equations_config.json').read_text())
 
 
-def test_a_configuration_from_before_equations_loads_and_keeps_both_hashes(tmp_path):
-    raw = tasks.starter_config('synthetic:gpdk045_ota5')
-    new = schema.WorkbenchConfig.model_validate(dict(raw, run=dict(max_evaluations=5)))
-    legacy_dump = new.model_dump(mode='json')
-    for row in legacy_dump['targets']:                                                   # exactly what the old schema dumped
-        row['measurement_id'] = row.pop('equation')
-    del legacy_dump['run']['network']['vocabulary']              # added later (7.54); the old schema had no such field
-    for row in legacy_dump['targets']:
-        row.pop('missing_is_failure', None)                  # reward v2.1 fields did not exist in that old dump
-        row.pop('margin_sides', None)
-        row.pop('nominal_only', None)                            # added 2026-09-26 (reward v2); the old schema had no such field
-    del legacy_dump['run']['reward'], legacy_dump['run']['conditions']          # reward v2 run fields: the old schema had none
-    del legacy_dump['run']['network']['operating_points']
-    del legacy_dump['run']['advanced']['alpha_learning_rate']
-    for row in legacy_dump['parameters']:                        # the columns retired on 2026-09-26 (7.92), at their defaults
-        row.update(copy.deepcopy(schema.RETIRED_PARAMETER_FIELDS))
-    for row in legacy_dump['measurements']:
-        row.update(copy.deepcopy(schema.RETIRED_MEASUREMENT_FIELDS))
-    legacy_dump['run'].update(copy.deepcopy(schema.RETIRED_RUN_FIELDS))     # the run fields retired on 2026-09-29, at their defaults
-    old = schema.WorkbenchConfig.model_validate(legacy_dump)
-    assert old.targets[0].equation == 'm_score' and old == new
+def test_a_configuration_from_before_equations_loads_and_keeps_both_hashes():
+    raw, pins = PRE_EQUATIONS['raw'], PRE_EQUATIONS['pins']
+    assert 'measurement_id' in raw['targets'][0] and 'equation' not in raw['targets'][0]      # the old form, as saved then
+    config = schema.WorkbenchConfig.model_validate(raw)
+    assert config.targets[0].equation == 'm_score'                                            # its one probe is the equation
+    today = copy.deepcopy(raw)
+    for row in today['targets']:
+        row['equation'] = row.pop('measurement_id')
+    assert schema.WorkbenchConfig.model_validate(today) == config                             # both keys mean the same
     # the hashes an old run, checkpoint, approval or proposal recorded are the hashes computed now
-    assert schema.config_hash(new) == _old_hash(legacy_dump)
-    assert schema.task_definition_hash(new) == _old_hash(legacy_dump, ('circuit', 'parameters', 'targets', 'measurements'))
-    assert schema.config_hash(legacy_dump) == schema.config_hash(new)
+    assert schema.task_definition_hash(config) == pins['task']
+    assert schema.config_hash(config) == pins['config'] == schema.config_hash(raw)            # the raw dict, keys and all
     # both keys: the equation wins; a formula is hashed as itself
-    both = schema.PerformanceTarget.model_validate(dict(legacy_dump['targets'][0], equation='m_score * 2'))
+    both = schema.PerformanceTarget.model_validate(dict(raw['targets'][0], equation='m_score * 2'))
     assert both.equation == 'm_score * 2'
-    formula = new.model_copy(update=dict(targets=[both]))
-    assert schema.task_definition_hash(formula) != schema.task_definition_hash(new)
+    formula = config.model_copy(update=dict(targets=[both]))
+    assert schema.task_definition_hash(formula) != schema.task_definition_hash(config)
     assert 'measurement_id' not in schema.PerformanceTarget.model_json_schema()['properties']
     assert [c['name'] for c in schema.editor_columns('targets')][:2] == ['metric_id', 'equation']
 

@@ -3,9 +3,14 @@ import { useMemo, useRef, useState } from 'react';
 import { api, Json, num, saveJson } from '../api';
 import { migrateConfig } from '../store';
 import { Typed } from './Typed';
+import { MatchedDevices } from './MatchedDevices';
 
 export type Section = 'parameters' | 'targets' | 'measurements';
 const TITLES: Record<Section, string> = { parameters: 'Parameters', measurements: 'Probes', targets: 'Specs' };   // key order = tab order
+/** The sections a whole-configuration import replaces beside the three tables, as the confirmation names them. */
+const IMPORTED_SECTIONS: Record<string, string> = { project: 'project name', circuit: 'circuit source', run: 'run settings',
+  output: 'output settings', research: 'research labels' };
+
 function suggestedScale(row: Json): number {
   if (row.unit === 'dB') return 3;
   if (row.unit === 'deg') return 10;
@@ -69,7 +74,8 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
   // may set them, a task file keeps them.
   const [more, setMore] = useState<boolean>(() => { try { return localStorage.getItem(MORE_KEY) === 'shown'; } catch { return false; } });
   const showMore = (now: boolean) => { setMore(now); try { localStorage.setItem(MORE_KEY, now ? 'shown' : 'hidden'); } catch { /* no storage: the choice lasts for this page */ } };
-  const [pending, setPending] = useState<{ next: Json; diff: Json[] } | null>(null);
+  const [pending, setPending] = useState<{ next: Json; diff: Json[]; others: string[] } | null>(null);
+  const [matched, setMatched] = useState(false);            // the Matched devices box of the Parameters tab (record 7.103)
   const [error, setError] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
   const columns: Json[] = schema.editors[tab].map((c: Json) => tab !== 'targets' ? c : c.name === 'nominal_only'
@@ -108,14 +114,20 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
   };
   const remove = () => { setConfig((c: Json) => ({ ...c, [tab]: c[tab].filter((r: Json) => !selected[r[keyField]]) })); setSelected({}); };
 
-  // JSON import goes through a DIFF CONFIRMATION before it replaces anything.
+  // JSON import goes through a DIFF CONFIRMATION before it replaces anything. The backend's diff covers the three tables;
+  // a whole configuration also replaces the other sections, and the confirmation names each one that changes (it used to
+  // show "0 changed rows" while it replaced the run settings - review of 2026-09-29).
   const importJson = async (f: File) => {
     setError(null);
     try {
       const incoming = JSON.parse(await f.text());
-      const next = migrateConfig(incoming.schema_version ? incoming : { ...config, [tab]: incoming[tab] ?? incoming });
+      const rowsIn = incoming?.[tab] ?? (Array.isArray(incoming) ? incoming : null);
+      if (!incoming?.schema_version && !Array.isArray(rowsIn))
+        throw new Error(`the file is neither a whole configuration nor ${TITLES[tab]} rows (a list, or an object with "${tab}")`);
+      const next = migrateConfig(incoming.schema_version ? incoming : { ...config, [tab]: rowsIn });
       const { diff } = await api.diff(config, next);
-      setPending({ next, diff });
+      const others = Object.keys(IMPORTED_SECTIONS).filter(k => JSON.stringify(config[k] ?? null) !== JSON.stringify(next[k] ?? null));
+      setPending({ next, diff, others });
     } catch (e: any) { setError(`Import failed: ${e.message}`); }
   };
   const selection = rows.filter(r => selected[r[keyField]]).map(r => ({ section: tab, key: r[keyField], fields: [] as string[] }));
@@ -127,17 +139,19 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
       <div className="toolbar">
         <button onClick={add} title="Add: A new row at the end, with a free ID."><Icon name="add" label="Add" /></button>
         <button disabled={!selection.length} onClick={remove} title="Delete selected: The rows whose box is ticked. Undo takes them back."><Icon name="delete" label="Delete selected" /></button>
-        <button disabled={!canUndo} onClick={undo} title="Undo: The last change to the rows of this tab."><Icon name="undo" label="Undo" /></button>
+        <button disabled={!canUndo} onClick={undo} title="Undo: The last change to the configuration, from any panel - rows, run and output settings, an applied proposal."><Icon name="undo" label="Undo" /></button>
         <button disabled={!canRedo} onClick={redo} title="Redo: The change Undo took back."><Icon name="redo" label="Redo" /></button>
-        <button onClick={() => saveJson(`${config.project.task_name}.config.json`, config)} title="Export JSON: The rows of all three tabs as one JSON file, downloaded."><Icon name="export" label="Export JSON" /></button>
-        <button onClick={() => file.current?.click()} title="Import JSON...: Read a JSON file (a whole configuration, or this tab's rows). You review a diff first."><Icon name="import" label="Import JSON..." /></button>
-        <input ref={file} type="file" accept="application/json" hidden onChange={e => e.target.files?.[0] && importJson(e.target.files[0])} />
+        <button onClick={() => saveJson(`${config.project.task_name}.config.json`, config)} title="Export JSON: The whole configuration - the three tables, the circuit, run and output settings, research labels - as one JSON file, downloaded."><Icon name="export" label="Export JSON" /></button>
+        <button onClick={() => file.current?.click()} title="Import JSON...: Read a JSON file - a whole configuration, or rows for this tab. You see everything it changes before anything is replaced."><Icon name="import" label="Import JSON..." /></button>
+        <input ref={file} type="file" accept="application/json" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) importJson(f); }} />
         <span className="spacer" />
         {hidden.length > 0 && <button className="text" onClick={() => showMore(!more)} title={(more ? 'Fewer columns: hide ' : 'More columns: also show ') + hidden.map(c => c.name).join(', ') + '. They keep their values either way.'}>{more ? 'Fewer columns' : `More columns (${hidden.length})`}</button>}
-        <button onClick={() => onAgent(tab, [])} title="Draft with agent...: Ask the agent for a proposal for this tab. You review a diff; nothing is applied automatically."><Icon name="agent-draft" label="Draft with agent..." /></button>
+        {tab === 'parameters' && <button className="text" disabled={matched} onClick={() => setMatched(true)} title="Matched devices...: Reads the circuit for differential pairs, current-mirror loads, matched loads and cascodes and suggests tying their sizes. You review a diff; nothing is applied automatically.">Matched devices...</button>}
+        <button onClick={() => onAgent(tab, [])} title="Draft with agent...: Opens the Agent tab set to draft this tab's rows. Nothing is sent until you write what you need there and press Enter; its proposal is a diff you approve."><Icon name="agent-draft" label="Draft with agent..." /></button>
         <button disabled={!selection.length} onClick={() => onAgent('modify_fields', selection)} title="Modify selected with agent...: Ask the agent for a change to the ticked rows. You review a diff; nothing is applied automatically."><Icon name="agent-modify" label="Modify selected with agent..." /></button>
       </div>
       <div className="task-notes" ref={taskNotes} />
+      {tab === 'parameters' && matched && <MatchedDevices config={config} setConfig={setConfig} onClose={() => setMatched(false)} />}
       {tab === 'parameters' && <p className="fact">Independent action variables: <b>{validation?.facts?.independent_action_variables ?? '?'}</b> of {rows.length} rows.
         The initial value is the one read from the circuit. Equal initial values do not imply a binding. The policy's proposed action and the executed (projected/quantized) value are both recorded.</p>}
       {tab === 'targets' && <p className="fact spec-probes">Each spec judges its <b>equation</b>, written with Probe IDs, numbers, + - * / ** and brackets
@@ -145,7 +159,9 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
         An empty normalization_scale divides the violation by the size of the threshold.</p>}
       {tab === 'targets' && rows.some(r => r.constraint === 'interval' && r.lower === 0) && <p className="hint zero-floor-hint">The margin also measures the distance to 0. If 0 is only a physical floor, choose Margin sides: upper.</p>}
       {error && <p className="error">{error}</p>}
-      {pending && <div className="confirm"><h4>Confirm import: {pending.diff.length} changed rows</h4><DiffView diff={pending.diff} />
+      {pending && <div className="confirm"><h4>Confirm import: {pending.diff.length} changed row{pending.diff.length === 1 ? '' : 's'}{pending.others.length
+        ? `, and it replaces the ${pending.others.map(k => IMPORTED_SECTIONS[k]).join(', ')}` : ''}</h4>
+        {(pending.diff.length > 0 || !pending.others.length) && <DiffView diff={pending.diff} />}
         <button onClick={() => { setConfig(pending.next); setPending(null); }}>Apply</button><button onClick={() => setPending(null)}>Cancel</button></div>}
       <div className="scroll">
         <table className="grid editor">

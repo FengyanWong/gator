@@ -24,7 +24,7 @@ from ..schema import ENCODER_TYPES, AdvancedRL, NetworkConfig, OutputSettings, R
 
 # Where a setting lives -> the fields of it that may be suggested.
 SUGGESTIBLE = {
-    'run': ('mode', 'concurrency', 'threads_per_job', 'max_evaluations', 'max_spectre_launches', 'max_wall_seconds', 'max_retries',
+    'run': ('mode', 'concurrency', 'max_evaluations', 'max_spectre_launches', 'max_wall_seconds', 'max_retries',
             'max_consecutive_failures', 'max_consecutive_infrastructure_failures', 'seed', 'stop_at_first_feasible', 'frozen_action',
             'continual_learning'),
     'run.network': tuple(NetworkConfig.model_fields),

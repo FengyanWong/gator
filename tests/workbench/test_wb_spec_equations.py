@@ -87,6 +87,7 @@ def test_a_configuration_from_before_equations_loads_and_keeps_both_hashes(tmp_p
         row.update(copy.deepcopy(schema.RETIRED_PARAMETER_FIELDS))
     for row in legacy_dump['measurements']:
         row.update(copy.deepcopy(schema.RETIRED_MEASUREMENT_FIELDS))
+    legacy_dump['run'].update(copy.deepcopy(schema.RETIRED_RUN_FIELDS))     # the run fields retired on 2026-09-29, at their defaults
     old = schema.WorkbenchConfig.model_validate(legacy_dump)
     assert old.targets[0].equation == 'm_score' and old == new
     # the hashes an old run, checkpoint, approval or proposal recorded are the hashes computed now

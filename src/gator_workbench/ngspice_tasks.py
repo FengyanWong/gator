@@ -338,7 +338,7 @@ def runtime(task_key, name, profile_id=None, *, authorized=False):
                    sizable=sorted(f'{d}.{p}' for d, p in parsed.sizables), connection_problem=problem,
                    unknown_models=list(parsed.unknown_models))
     return TaskRuntime(task_key, 'real', graph, tuple(parsed.result_names), circuit, text, str(netlist_file), None, builder,
-                       max_concurrency=concurrency, supports_threads=False, notes=notes, authorized=bool(authorized),
+                       max_concurrency=concurrency, notes=notes, authorized=bool(authorized),
                        reference_metrics=None, connection_family='ngspice')
 
 

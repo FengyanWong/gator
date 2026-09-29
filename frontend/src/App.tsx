@@ -59,7 +59,7 @@ export function App() {
   const refreshRuns = (): Promise<Json[]> => api.runs(config.output.output_root ?? undefined).then(r => { setRuns(r.runs); return r.runs; }).catch(() => { setRuns([]); return []; });
 
   // Debounce validation and ignore replies for a configuration that has since changed.
-  const { value: validation, refresh: refreshValidation } = useRequest<Json>(() => api.validate(config).catch(rejected), [JSON.stringify(config)],
+  const { value: validation } = useRequest<Json>(() => api.validate(config).catch(rejected), [JSON.stringify(config)],
     { delay: 500, keepPrevious: true });
 
   // A run that has ended for good (completed, failed, cancelled: none of them can be continued) changes no more, so its
@@ -129,7 +129,6 @@ export function App() {
       else { refreshRuns(); setMessage({ level: 'info', text: `Continuing in the original run directory: ${started.run_dir}` }); }
     } catch (e: any) { failed(e); }
   };
-  const sendCommand = (dir: string, name: string) => api.command(dir, name).then(() => control.refresh()).catch(failed);
 
   if (fatal) return <p className="error">Backend not reachable: {fatal}</p>;
   if (!schema) return <p>Loading schema...</p>;
@@ -139,7 +138,6 @@ export function App() {
         <b>GATOR workbench</b><span className="hint"> {meta?.version} | {meta?.environment?.environment} | data-only outputs (no plots)</span>
         <span className="spacer" />
         <ValidationStatus validation={validation} config={config} schema={schema} />
-        <button onClick={refreshValidation}>Static validation</button>
         <button disabled={!!validation?.blocks_run || control.phase !== 'idle'} onClick={() => start(true)}
           title={control.phase === 'idle' ? 'ONE costed evaluation of the initial design. It is a preflight record, not free.' : 'Not while the header holds a run that is active or paused. Abort lets go of a paused run.'}>Single baseline simulation</button>
         <RunButtons control={control} blocked={!!validation?.blocks_run} onStart={() => start(false)} onResumed={started => showRun(started, 'resume')}
@@ -148,7 +146,7 @@ export function App() {
       {message && <div className={`banner ${message.level}`} onClick={() => setMessage(null)}>
         {/* A start refused by the check before every run: its steps say it all (what differs, what to do). */}
         {message.detail?.code === 'consistency' && message.detail.report?.steps ? <CheckSteps result={message.detail.report} refused />
-          : <>{message.text}{message.detail?.report && <details><summary>details</summary><pre>{JSON.stringify(message.detail.report, null, 1)}</pre></details>}</>}</div>}
+          : <>{message.text}{message.detail?.report && <details onClick={e => e.stopPropagation()}><summary>details</summary><pre>{JSON.stringify(message.detail.report, null, 1)}</pre></details>}</>}</div>}
       <aside className="left">
         <ConnectionButton profileId={profileId} setProfileId={id => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }))} />
         <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId}
@@ -178,7 +176,7 @@ export function App() {
         <div className="bottom-body">
           <AgentTab hidden={tab !== 'agent'} config={config} setConfig={setConfig} request={agentRequest} clearRequest={() => setAgentRequest(null)}
             tabSlot={agentTabSlot} onDetached={setAgentDetached} runDir={runDir} />
-          {tab === 'status' && <StatusTab status={status} onCommand={sendCommand} onContinue={continueRun} />}
+          {tab === 'status' && <StatusTab status={status} onContinue={continueRun} />}
           {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
           {tab === 'data' && <DataTab runDir={runDir} />}
           {tab === 'files' && <FilesTab runDir={runDir} />}

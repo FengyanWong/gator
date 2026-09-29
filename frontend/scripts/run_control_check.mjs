@@ -237,14 +237,16 @@ await runChecks(browser, async () => {
   check('it sends NO command; the button reads "Start", the run is no longer remembered', log.length === 0 && v.main === 'Start' && v.mainOff === false && v.remembered === null && v.chip === null, JSON.stringify(v));
   check('the run stays on screen under Run status, with its own Continue', await evaluate(`[...document.querySelectorAll('.status-grid button')].some(b => b.textContent === 'Continue' && !b.disabled)`));
 
-  // ---- 9. the Run status tab's own buttons keep working, and the header follows them ------------------------------------------
+  // ---- 9. the Run status tab's Continue works, and the header follows it; the tab has no run commands of its own ------------
   log.length = 0; answers.push(true);                                           // Continue asks for a new total budget: OK with nothing typed = unchanged
   sim.steps = [{}, { state: 'running', stop_reason: null }];
   await press(`[...document.querySelectorAll('.status-grid button')].find(b => b.textContent === 'Continue')`);
   check('"Continue" of the Run status tab continues the run, and the header takes it: "Pause"', await mainReads('Pause') && log[0]?.name === '/api/runs/continue' && log[0]?.body.max_evaluations === null, JSON.stringify(log[0]));
+  check('the Run status tab offers no Save now / Pause / Stop / Force cancel of its own: the header has them (2026-09-29)',
+    await evaluate(`![...document.querySelectorAll('.status-grid button')].some(b => /Save now|Pause and save|Stop and save|Force cancel/.test(b.textContent))`));
   sim.steps = [{}, { state: 'pausing' }, {}, { state: 'paused', alive: false }];
-  await press(`[...document.querySelectorAll('.status-grid button')].find(b => b.textContent === 'Pause and save')`);
-  check('"Pause and save" there: the header reads "Pausing...", then "Resume"', await mainReads('Pausing...') && await mainReads('Resume', 150));
+  await press(MAIN);
+  check('the header\'s Pause pauses it: "Pausing...", then "Resume"', await mainReads('Pausing...') && await mainReads('Resume', 150));
 
   // ---- 10. a REAL run: Resume asks for the budget again; a refusal by the backend is shown ---------------------------------------
   sim.mock = false; sim.steps = [{}];

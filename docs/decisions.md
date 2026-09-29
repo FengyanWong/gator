@@ -453,6 +453,28 @@ failure case remains unobserved. D7 and the matched comparison are still separat
 commit or push. [Section 10 report](../artifacts/local/reviews/astra-reward-v2.1.md#step-6-completion-real-gate-check-and-restoration),
 [execution audit](../artifacts/local/reviews/astra-reward-v2.1/step6-20260929-01/execution-audit.json), record 7.108.
 
+
+## D7 replaced by an OTA7 current-reference variant plan (2026-09-29)
+
+The user declined choices 1–3 as the next step and requested **plan only**: a new OTA7 task with an ideal current
+reference into a diode-connected NMOS feeding M5/M7, reference current based on their recorded nominal operating
+point, and input common mode VDD/2 at every condition. Same targets; frozen original task and all pinned files
+untouched. The user copies the new testbench in Virtuoso. The task must not write an original DUT through a copied
+parent testbench. No code, cell write or simulation is authorized by this planning request.
+
+First proposed qualification is exactly five launches: the reference design at nominal and four existing corners,
+with a separate budget approval before execution. Report misses; only measured remaining misses may lead to a
+proposal for corner-specific limits. No automatic return to a sizing search, wider ranges or a matched study.
+
+Nine recorded designs reproduce SS gain misses 3.661441–3.860192 dB, SS UGB 0.969687–0.999504 MHz and FS power
+1.002168–1.280706 µW. The recorded reference currents are M5 1.956361054911864 µA and M7 1.165778491724812 µA.
+Their ratio differs from the width ratio; one reference-current seed does not establish a calibrated simultaneous
+match after the input common-mode change. Nominal-current tolerance was asked and remains pending.
+
+The user explicitly chose to keep the **core-only 3.24 µW power target**, with bias/reference power reported
+separately. [Variant plan](plan-ota7-current-reference-variant.md) gives the proposed topology, current seed and
+qualification/approval sequence. No new simulation or implementation; record 7.110.
+
 ## Reward v2.1 commit authorization (2026-09-29)
 
 The user explicitly requested `commit`. Reward v2.1 is committed as separate package and workbench changes under

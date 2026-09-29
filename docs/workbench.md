@@ -129,18 +129,18 @@ The header has one main run button and **Abort** next to it. The main button cha
   says "no real baseline yet".
 * A real run asks for the budget again at Resume (what is left of it). A run that was started with checkpoints or
   replay snapshots switched off cannot come back from a pause; Pause says so before it pauses.
-* The Run status tab keeps its own buttons (Pause and save, Stop and save, Force cancel, Continue with a new total
-  budget). They act on the run shown there, and ask what the header asks: Pause and save says first when the run
-  cannot come back from a pause, Stop and save asks before it ends the run, and Force cancel is offered only while
-  a pause or a stop is waiting for the simulation in flight - for a run that is stuck (entry 7.64; before, all three
-  acted on one click and Force cancel was offered while the run was simply running).
+* The run commands are in the header only (status record 7.109, 2026-09-29, user decision): the Run status tab's
+  copies - Save now, Pause and save, Stop and save, Force cancel - went, as they did what Save now, Pause, Abort and
+  Force abort do there. The tab keeps **Continue** (a paused, stopped or interrupted run, with a new total budget) and
+  **Export status**. A run that is live when the page opens - started from another browser or the CLI - is taken into
+  the header; a second run live at the same time as the header's own has no run buttons on this page.
 
 Browser checks: `frontend/scripts/run_control_check.mjs` (fixtures only, safe next to a live run) and
 `frontend/scripts/run_control_live_check.mjs` (real MOCK worker; needs a scratch backend, refuses port 8765).
 
 ### Save now (added 2026-09-21, user request)
 
-**Save now** (header, left of the main button; also in the Run status tab) saves the model of the RUNNING run
+**Save now** (header, left of the main button; the Run status tab's copy went on 2026-09-29) saves the model of the RUNNING run
 without pausing it. It is the run command `checkpoint`: the worker starts no new simulation, lets the one in
 flight finish (with several in parallel: all of them), writes a complete save point exactly like an automatic one
 (full training state, kind `manual`) and goes on by itself. Nothing is charged and nothing is lost; on a real
@@ -182,7 +182,8 @@ source -> Task** brings that task's rows:
   **Rows you edited stay**; the panel says so, and **Load task** (there for every task; was "Load starter
   configuration" until 2026-09-24, status record 7.78) exchanges
   them when you want it. One **Undo** takes back a task choice together with everything it brought.
-* Run settings are never touched by a task choice, and a real budget is never suggested.
+* Run settings are never touched by a task choice, and a real budget is never suggested. Load task keeps them too
+  since 2026-09-29 (7.109); before, it reset the MOCK task's budget to 60 and its seed to 17 without saying so.
 * The LDO and VCO results are not in the optimizer's default result registry, and the UI has no editor for it. These
   two tasks therefore bring the registry of record of the real cross-category experiment (`m6-physical-spec-input-v1`,
   23 results), as a profile created from a cell brings its own. The OTA tasks keep the default registry, so their
@@ -271,6 +272,46 @@ columns** any more; a probe's aggregate row in the results tables still reads `a
 (`engine.PROBE_AGGREGATION`). The task and configuration hashes of all 14 workbench runs on this machine (5 in
 `outputs/`, 9 kept as evidence in `artifacts/local`), of the 4 saved task files, of the old-format fixture and of the
 registered tasks' starters are the same before and after.
+
+### Matched devices: ties suggested from the circuit (added 2026-09-29, user request)
+
+**Matched devices...** in the Parameters toolbar reads the loaded circuit for the structures whose devices must be
+sized together, and suggests tying their rows: the follower row gets `binding_group` = the leader and the `ratio` the
+circuit has now. The idea comes from netlist-crawler (Token Zhang's MIT tool that labels differential pairs, mirrors, tails,
+loads and cascodes for an LLM); the rules run on the workbench's own circuit graph instead. There, the kind (nmos / pmos)
+and every pin's role come from the verified device mapping, never from an instance name, so an instance called `TAIL` or
+Virtuoso's `NM0` is read like any other. And a pair has to share a tail node, not a rail: a PMOS pair that only shares
+VDD is no differential pair. That is the mistake netlist-crawler made on the OTA7 (M6 with M3 and M4), the LDO (MP with M3
+and M4) and the VCO (three ring PMOS). Found:
+
+| Structure | Rule | Tie ticked? |
+|---|---|---|
+| differential pair | same type and model, one source, two gates, two drains; on the shared source only the pair and what is below it (a drain of the pair's type, a current source, a resistor) | yes |
+| cross-coupled pair | the same, each gate on the other's drain; may sit on a rail | yes |
+| tail current source | the transistor below a differential pair | listed only |
+| current-mirror load, matched loads | two devices sharing a gate (and a source) whose drains are the two branches of a matched pair; a mirror when one is diode-connected | yes |
+| matched cascodes | two devices sharing a gate whose sources (or, above loads, drains) are the two branches; followed on to the far side | yes |
+| bias mirror | a diode-connected reference and its copies (one gate, one source) that load no pair | offered, not ticked: its ratio sets a current, which may be a design variable |
+
+A width follows in the ratio the circuit has (a 2:1 mirror stays 2:1); a length, finger or multiplier row is tied only where
+the circuit's values are equal. A device of a pair that has no row gets a follower row right after its leader's group; a row
+that already follows the same leader is shown as kept, and one tied elsewhere by you is left alone. The box lists the
+structures in plain sentences and one line per row it would change. **Review...** shows the diff, the count of
+independent action variables before and after, and any validation error; only **Apply** changes the rows, and **Undo** in
+the toolbar takes it back. The box asks once per press: an answer about rows that changed since says so and offers **Find
+again**. Nothing is simulated or stored.
+
+Where it applies: a cell read from Virtuoso (the ties go into the task at **Save task**), a task you saved (save it again
+afterwards: a task runs with the rows it was saved with), an ngspice task (its rows start one per size, so the pair and the
+load of the example OTA go from 7 to 5 independent variables), the MOCK task. A **verified** built-in task
+(`real:gpdk045_ota7` and the others) fixes its rows: the structures are listed for information and nothing is offered.
+The agent sees the same sentences: `circuit_summary` carries them as `structures`.
+
+Backend `structures.py` (`recognize`, `plan_ties`, `apply_ties`), route `POST /api/parameters/matched` (`{config, apply}`;
+local files only). Tests: `tests/workbench/test_wb_matched_devices.py` (the circuits of record, hand-made netlists with
+non-M names and unlabelled rails, a folded cascode, a 2:1 bias mirror, kept and foreign ties, the route). Browser check:
+`frontend/scripts/matched_devices_check.mjs` (25 checks, hermetic, answered with `frontend/scripts/fixtures/matched_devices.json`
+= the real route's answers for its seed).
 
 ### Spectre netlist import: removed
 
@@ -458,8 +499,9 @@ to say.
   `configs/local/workbench/profiles/<name>/`) and stops being browse-only.
   A cell that already has a registered task - one saved from it, or one of the verified built-in
   circuits (`real:gpdk045_ldo` for `ldo_m6_v1`, ...; the library is the one the Virtuoso connection
-  states) - shows "This cell already has a registered task: `real:<name>`" with an **Open** button; open
-  it to change it (Save task); another task needs another copy of the cell, made in Virtuoso and read in
+  states) - shows "This cell already has a registered task: `real:<name>`" and says to choose it under
+  **Task** in the Project column (its **Open** button went on 2026-09-29, 7.109); change it there
+  (Save task); another task needs another copy of the cell, made in Virtuoso and read in
   the window. A built-in circuit gets no second task.
   **Delete task** (in the column's task row, at the right end next to Load task since 2026-09-24 - before
   that the last line of the task's block; asks once more; was: Delete profile):
@@ -494,8 +536,8 @@ to say.
      with its reason instead of the standing advice. A baseline made before 7.78 - or one whose worker
      could not record it - is adopted when the task is next loaded: the newest completed one of the
      task under the remembered output root, provided the task was not saved again after it.
-  3. **Record the baseline run as reference** - the same recording as a press, for a run made another
-     way: the newest run of the task (an optimization run's first evaluation is a baseline too).
+     The former third step, a **Record the baseline run as reference** button for a run made another way,
+     went on 2026-09-29 (status record 7.109); the route below stays for scripts.
 
 `POST /api/virtuoso/libraries | cells | read | import`, body `{"profile_id", "library"?, "cell"?, "testbench"?}` (import:
 `"work_here"?` - the user said the cell is a copy they made; the answer then carries the `working_copy` record);
@@ -1209,7 +1251,8 @@ and Delete task frees the cell again.
 
 **The task file.** One readable JSON file: the cell, the copy, the measurement, the Maestro part, the Parameters /
 Probes / Specs rows and notes, with a `_help` part that explains every part (JSON has no comments). **Task file** opens
-the file of the CURRENT editors in a window of its own; **Apply to editors** checks every row with the editors' schema
+the file of the CURRENT editors in a window of its own (opened within the press; a blocked pop-up is said, and the next
+press tries again; a window already open is brought forward with its draft); **Apply to editors** checks every row with the editors' schema
 and fills the editors (one Undo step) - a broken file is refused with its problems and changes nothing. What the file
 adds beside the rows (analyses, variables, bindings, the rough frequency, notes) is sent with the next Save task.
 Nothing is saved or written to Virtuoso from the window.
@@ -1417,7 +1460,8 @@ The "Agent" tab carries a small pop-out control at its right end, where a browse
 button. It moves the conversation - chat, a request in flight, an open proposal, the settings - into a browser
 window of its own, with larger type and the notes as a full-height column; nothing restarts, and the bottom panel
 stays free for the other tabs. Back again: the same control, "Bring back into the workbench" inside that window,
-"Bring it back here" in the panel, or simply closing the window. The browser must allow pop-ups for this page.
+or simply closing the window (the panel's own "Bring it back here" went on 2026-09-29, 7.109). The browser must
+allow pop-ups for this page.
 
 ### Watching the answer being written (added 2026-09-21, user request)
 

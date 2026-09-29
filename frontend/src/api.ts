@@ -71,7 +71,6 @@ export const api = {
   // flow works in (sent only then, so an older backend still reads a cell).
   nativeImport: (profile_id: string, library: string, cell: string, testbench: string | null, work_here = false) =>
     call('POST', '/api/virtuoso/import', { profile_id, library, cell, testbench, ...(work_here ? { work_here: true } : {}) }),
-  profileReference: (name: string) => call('POST', '/api/virtuoso/profile/reference', { name }),
   deleteProfile: (name: string) => call('POST', '/api/virtuoso/profile/delete', { name }),
   // The ngspice window (backend ngspice_tasks.py): a deck read from a file inside the allowed input roots, checked without
   // being kept, saved as the task ngspice:<name>; a saved task's deck for editing; a task taken out of the list.
@@ -88,6 +87,8 @@ export const api = {
   taskCheck: (profile_id: string | null, config: Json) => call('POST', '/api/virtuoso/task/check', { profile_id, config }),
   validate: (config: Json) => call('POST', '/api/config/validate', { config }),
   diff: (before: Json, after: Json) => call('POST', '/api/config/diff', { before, after }),
+  // Matched devices... (Parameters tab, record 7.103): the circuit's structures and the ties they suggest; with `apply`, the rows with those made.
+  matchedDevices: (config: Json, apply: string[] | null = null) => call('POST', '/api/parameters/matched', { config, apply }),
   browse: (path?: string) => call('GET', '/api/output/browse' + q({ path })),
   checkOutput: (path: string, create = false) => call('POST', '/api/output/check', { path, create }),
   connectionProfiles: () => call('GET', '/api/connection/profiles'),

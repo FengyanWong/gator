@@ -5,16 +5,18 @@ import { api } from '../../src/api';
 import { usePolling } from '../../src/store';
 import { DataTab, FilesTab, StatusTab } from '../../src/panels/RunTabs';
 
-const pending: any[] = [], commands: any[] = [];
+const pending: any[] = [], downloads: string[] = [];
 function read(kind: string, run: string) {
   return new Promise((resolve, reject) => pending.push({ kind, run, done: false, resolve, reject }));
 }
 api.status = run => read('status', run);
 api.table = (run, table) => read(table, run);
 api.files = run => read('files', run);
-api.command = async (run, command) => { commands.push({ run, command }); return {}; };
+// The Run status tab's one action that names a run is "Export status", which saves through a link's click: the name is
+// kept here instead of downloaded (its run commands went on 2026-09-29; they are the header's).
+HTMLAnchorElement.prototype.click = function () { downloads.push(this.download); };
 (window as any).fixture = {
-  pending, commands,
+  pending, downloads,
   finish(kind: string, run: string, value: any, error = false) {
     const request = pending.find(p => !p.done && p.kind === kind && p.run === run);
     if (!request) throw new Error(`No pending ${kind} for ${run}`);
@@ -25,8 +27,7 @@ api.command = async (run, command) => { commands.push({ run, command }); return 
 
 function Poll({ run, interval, controls }: { run: string; interval: number; controls: boolean }) {
   const result = usePolling(() => api.status(run), interval, true, [run]);
-  return <><pre id="result">{JSON.stringify(result)}</pre>{controls && <StatusTab status={result.value}
-    onCommand={(dir, name) => { api.command(dir, name); }} onContinue={() => {}} />}</>;
+  return <><pre id="result">{JSON.stringify(result)}</pre>{controls && <StatusTab status={result.value} onContinue={() => {}} />}</>;
 }
 
 function Fixture() {

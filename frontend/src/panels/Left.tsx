@@ -102,7 +102,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // simulation records the task's reference by itself (status record 7.78) - so the task is read again: local files, free.
   useEffect(() => { if (taskEpoch && offered && ref.source === 'registered_task') load(ref); }, [taskEpoch]);
 
-  const { native, setNative, libraries, cells, chosenCell, listing, nativeError, setNativeError, nativeProblem, nativeStep, setRefresh } =
+  const { native, libraries, cells, chosenCell, listing, nativeError, setNativeError, nativeProblem, setRefresh } =
     useVirtuosoBrowser(!!popup, profileId, chosen, setConfig);
   // Save task (TaskSave.tsx): the editors' rows become the task real:<name>, which runs in the cell that was read. After a
   // first save the column switches to the task; after saving the open task again it is loaded again (its baseline may no
@@ -116,8 +116,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   };
   // A saved task: "Check now" runs the check Start runs by itself before every run (backend consistency.py - the editors,
   // the task file and the cell in Virtuoso must agree; the run adapter connects and exports without simulating). A
-  // finished Single baseline simulation records its result as the task's reference by itself (status record 7.78);
-  // "Record the baseline run as reference" stays for a run made another way. Explicit presses, none starts a simulation.
+  // finished Single baseline simulation records its result as the task's reference by itself (status record 7.78; the
+  // manual "Record the baseline run as reference" went on 2026-09-29). Explicit presses, none starts a simulation.
   // A check result goes as soon as the rows change: it was about the rows before. A message says which press it answers
   // (`what`): the answer to Delete task stands by that button, in the task row at the top of the column.
   const [taskCheck, setTaskCheck] = useState<Json>(null);
@@ -132,11 +132,6 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   const { busy: profileBusy, run: profileAction } = useAsyncAction((e, what) =>
     setProfileMessage({ level: 'error', what, text: problemText(e, gateText) }), () => setProfileMessage(null));
   const checkTask = () => profileAction('check', async () => { setTaskCheck(await api.taskCheck(profileId, config)); });
-  const recordReference = () => profileAction('reference', async () => {
-    const recorded = await api.profileReference(generatedName!);
-    setProfileMessage({ level: 'ok', what: 'reference', text: `Baseline recorded from run ${recorded.run_id ?? recorded.run_dir}. Every later run compares its first evaluation with it.` });
-    await load(ref);
-  });
   // Delete task: takes a saved task out of the list. Asked once more, because the task leaves the list. The backend keeps
   // the files aside and refuses while a run of the task is working. The page then follows the cell the task was saved
   // from, which is free again for a new task.
@@ -281,8 +276,10 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     following.current++;
     try {
       const starter = await api.starter(taskId);
+      // The task's rows and its circuit reference; the run, output and research settings stay the user's - the MOCK
+      // task's starter used to reset the budget to 60 and the seed to 17 here, which the tooltip never said (2026-09-29).
       setConfig(c => ({ ...c, ...starter, project: starterNamed(c.project) ? { ...c.project, ...starter.project } : c.project,
-        run: { ...c.run, ...starter.run }, output: c.output, research: c.research }));
+        run: c.run, output: c.output, research: c.research }));
       setTaskRows({ task: taskId, state: 'brought', starter });
     } catch (e: any) { setError(starterProblem(e, taskId ?? '')); }
   };
@@ -293,7 +290,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   const taskNote = circuit?.profile_task && virtuosoOn ? (
     <div className="note">
       <p><b>This cell already has a registered task:</b> <code>{circuit.profile_task}</code>{builtIn ? ' (a verified built-in circuit)' : ''}{' '}
-        <button onClick={() => chooseTask(circuit.profile_task)} title="The Project column then shows this task.">Open</button></p>
+        Choose it under <b>Task</b> in the Project column.</p>
       <details className="more"><summary>What this means</summary>
         <p>The workbench can already optimize this cell - through that task, in the Project column.{builtIn ? ' A verified built-in circuit gets no second task.'
           : ' Open it to change it (Save task). Another task needs another copy of the cell: make one in Virtuoso and read it here. To start over from this cell, open the task and press Delete task.'}</p></details>
@@ -336,7 +333,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
             its rows; "Delete task" at the right end, for a task that can leave the list - one saved from a cell, or an ngspice
             netlist; the built-in circuits and the MOCK task cannot. What Delete does is in its tooltip; it asks once more. */}
         {ref.task_id && !removedMock && <div className="row task-buttons">
-          <button onClick={useStarter} title="Load task: Replaces the rows of Parameters, Probes and Specs with this task's own. The MOCK task: the width groups of its circuit and the toy score. A real circuit: the parameters its profile fixes and its targets of record. Everything stays editable, and Undo takes it back."><Icon name="load" label="Load task" /></button>
+          <button onClick={useStarter} title="Load task: Replaces the rows of Parameters, Probes and Specs with this task's own. The MOCK task: the width groups of its circuit and the toy score. A real circuit: the parameters its profile fixes and its targets of record. Your run and output settings stay. Everything stays editable, and Undo takes it back."><Icon name="load" label="Load task" /></button>
           <span className="spacer" />
           {(deletableName || ngspiceTask) && <button disabled={!!profileBusy} onClick={ngspiceTask ? deleteNgspice : deleteProfile}
             title={ngspiceTask ? 'Delete task: Asks once more. The task leaves the Registered task list; its deck and task file are kept aside on the backend machine, and runs already made keep their data.'
@@ -436,9 +433,6 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
             <div className="row">
               <button disabled={!!profileBusy} onClick={checkTask} title="The check Start runs by itself before every run. Read-only, no simulation.">
                 {profileBusy === 'check' ? 'Checking...' : 'Check now'}</button>
-              {!circuit.baseline_recorded && <button disabled={!!profileBusy} onClick={recordReference}
-                title="A finished Single baseline simulation records itself. This press is for a run made another way: the newest run of this task (an optimization run's first evaluation is a baseline too). Recorded once, never replaced.">
-                {profileBusy === 'reference' ? 'Recording...' : 'Record the baseline run as reference'}</button>}
             </div>
             {taskCheck && <CheckSteps result={taskCheck} />}
             {profileMessage && profileMessage.what !== 'delete' && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
@@ -462,35 +456,30 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           {withCurrent(libraries ?? [], chosen.library).map(l => <option key={l} value={l}>{l}</option>)}
         </select>
       </label>
-      {nativeError?.outdated && nativeError.step === 'cells' ? (<>
-        <label title="Typed, because this backend cannot list cells yet.">Cell<input value={chosen.cell ?? ''} onChange={e => patch({ source: 'virtuoso', cell: e.target.value || null, view: 'schematic' })} /></label>
-        <button disabled={!profileId || !chosen.library || !chosen.cell} onClick={() => { nativeStep('schematic', () => api.nativeRead(profileId!, chosen.library, chosen.cell), setNative); }}>Read native schematic</button>
-      </>) : (<>
-        <label title="Only a cell with a schematic view can be read.">Cell
-          {/* A new cell takes its own tb_<cell>; without one, a testbench chosen by hand stays and the old cell's tb_ goes. */}
-          <select value={chosen.cell ?? ''} disabled={!cells} onChange={e => {
-            const cell = e.target.value || null;
-            patch({ source: 'virtuoso', cell, view: cell ? 'schematic' : null,
-              testbench_cell: namedTestbench(cells, cell) ?? (chosen.testbench_cell === namedHere ? null : chosen.testbench_cell ?? null) }, 'choice');
-          }}>
-            <option value="">{!chosen.library ? '(choose a library first)' : listing === 'cells' ? 'Reading the cells...' : cells ? `(choose one of ${cells.cells.length})` : '(not listed)'}</option>
-            {withCurrent((cells?.cells ?? []).map((c: Json) => c.name), chosen.cell).map(name => {
-              const readableCell = !cells || cells.cells.find((c: Json) => c.name === name)?.has_schematic !== false;
-              return <option key={name} value={name} disabled={!readableCell}>{name}{readableCell ? '' : '  (no schematic view)'}</option>;
-            })}
-          </select>
-        </label>
-        {chosenCell && <details className="more hint"><summary>View: <b>schematic</b></summary>
-          <p>The only view the reader opens, so there is nothing to choose.
-            {chosenCell.views.length > 1 && ` This cell also has: ${chosenCell.views.filter((v: string) => v !== 'schematic').join(', ')}.`}</p></details>}
-        <label title="The cell that holds the test setup around the design (supply, stimulus, load). A task simulates it and keeps its Maestro test there, and Probes are read from it. A cell named tb_ + the cell's name is chosen by itself.">Testbench cell
-          <select value={chosen.testbench_cell ?? ''} disabled={!cells} onChange={e => patch({ source: 'virtuoso', testbench_cell: e.target.value || null }, 'choice')}>
-            <option value="">(none)</option>
-            {withCurrent((cells?.cells ?? []).filter((c: Json) => c.has_schematic).map((c: Json) => c.name), chosen.testbench_cell).map(name => <option key={name} value={name}>{name}</option>)}
-          </select>
-        </label>
-        {namedHere && chosen.testbench_cell === namedHere && <p className="hint tb-named">Found by its name: <code>tb_</code> + the cell's name.</p>}
-      </>)}
+      <label title="Only a cell with a schematic view can be read.">Cell
+        {/* A new cell takes its own tb_<cell>; without one, a testbench chosen by hand stays and the old cell's tb_ goes. */}
+        <select value={chosen.cell ?? ''} disabled={!cells} onChange={e => {
+          const cell = e.target.value || null;
+          patch({ source: 'virtuoso', cell, view: cell ? 'schematic' : null,
+            testbench_cell: namedTestbench(cells, cell) ?? (chosen.testbench_cell === namedHere ? null : chosen.testbench_cell ?? null) }, 'choice');
+        }}>
+          <option value="">{!chosen.library ? '(choose a library first)' : listing === 'cells' ? 'Reading the cells...' : cells ? `(choose one of ${cells.cells.length})` : '(not listed)'}</option>
+          {withCurrent((cells?.cells ?? []).map((c: Json) => c.name), chosen.cell).map(name => {
+            const readableCell = !cells || cells.cells.find((c: Json) => c.name === name)?.has_schematic !== false;
+            return <option key={name} value={name} disabled={!readableCell}>{name}{readableCell ? '' : '  (no schematic view)'}</option>;
+          })}
+        </select>
+      </label>
+      {chosenCell && <details className="more hint"><summary>View: <b>schematic</b></summary>
+        <p>The only view the reader opens, so there is nothing to choose.
+          {chosenCell.views.length > 1 && ` This cell also has: ${chosenCell.views.filter((v: string) => v !== 'schematic').join(', ')}.`}</p></details>}
+      <label title="The cell that holds the test setup around the design (supply, stimulus, load). A task simulates it and keeps its Maestro test there, and Probes are read from it. A cell named tb_ + the cell's name is chosen by itself.">Testbench cell
+        <select value={chosen.testbench_cell ?? ''} disabled={!cells} onChange={e => patch({ source: 'virtuoso', testbench_cell: e.target.value || null }, 'choice')}>
+          <option value="">(none)</option>
+          {withCurrent((cells?.cells ?? []).filter((c: Json) => c.has_schematic).map((c: Json) => c.name), chosen.testbench_cell).map(name => <option key={name} value={name}>{name}</option>)}
+        </select>
+      </label>
+      {namedHere && chosen.testbench_cell === namedHere && <p className="hint tb-named">Found by its name: <code>tb_</code> + the cell's name.</p>}
       <div className="row">
         <button disabled={!profileId || !!listing} onClick={() => setRefresh(n => n + 1)} title="Reads the libraries, the cells and the schematic again, e.g. after the link came up or the design changed in Virtuoso. Read-only and zero-cost.">Refresh</button>
         {listing && <span className="hint">Reading the {listing} from Virtuoso...</span>}

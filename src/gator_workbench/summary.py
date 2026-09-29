@@ -114,5 +114,4 @@ def build_run_summary(engine, final_state, checkpoint, persistence_ok):
                     data_cursor=engine.dataset.cursor()),
         termination=dict(state=final_state, reason=engine.stop_reason, forced=engine.forced,
                          normal_completion=complete, in_flight_lost=counters['interrupted_evaluations']),
-        segments=len(manifest['segments']), concurrency=engine.config.run.concurrency,
-        threads_per_job=engine.config.run.threads_per_job, research=manifest['research'])
+        segments=len(manifest['segments']), concurrency=engine.config.run.concurrency, research=manifest['research'])

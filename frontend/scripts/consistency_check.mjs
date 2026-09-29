@@ -38,6 +38,7 @@ const FAILED_CHECK = { consistency_check: true, task: TASK, revision: 2, ok: fal
   STEP('export', false, 'The working copy in Virtuoso differs from the saved task', { detail: DRIFT, fix: FIX })] };
 const REFUSED = { message: `Not started: the working copy in Virtuoso differs from the saved task. ${DRIFT} ${FIX}`, code: 'consistency',
   report: { ...FAILED_CHECK, steps: FAILED_CHECK.steps.slice(1) } };
+const OTHER_REFUSAL = { message: 'FIXTURE: not started for another reason.', code: 'fixture_refused', report: { fixture: 'FIXTURE_REPORT' } };
 
 await runChecks(browser, async () => {
   const page = await browser.open({ errors: consoleErrors });
@@ -52,7 +53,10 @@ await runChecks(browser, async () => {
     if (pathname === '/api/config/validate') return fulfil(requestId, 200, { blocks_run: false, issues: [], facts: {} });
     if (pathname === '/api/runs' && request.method === 'GET') return fulfil(requestId, 200, { runs: [] });
     if (pathname === '/api/virtuoso/task/check') { calls.push({ path: pathname, ...body }); await sleep(300); return fulfil(requestId, 200, FAILED_CHECK); }
-    if (pathname === '/api/runs/start') { calls.push({ path: pathname, ...body }); return fulfil(requestId, 409, { detail: REFUSED }); }
+    if (pathname === '/api/runs/start') {         // the first start: the check's steps; a second one: any other refusal with a report
+      calls.push({ path: pathname, ...body });
+      return fulfil(requestId, 409, { detail: calls.filter(c => c.path === pathname).length > 1 ? OTHER_REFUSAL : REFUSED });
+    }
     if (request.method === 'GET' || (pathname === '/api/output/check' && !body.create)) return send('Fetch.continueRequest', { requestId });   // reads
     return page.readOrRefuse({ requestId, request }, refused);
   };
@@ -107,6 +111,15 @@ await runChecks(browser, async () => {
   await evaluate(`[...${BANNER}.querySelectorAll('.check-steps summary')].find(x => x.textContent === 'the reason').click()`); await sleep(300);
   check('opening a reason inside the banner does not close it', await evaluate(`!!${BANNER}`) && (await shownText(BANNER)).includes('FIXTURE MN1'));
   await page.shot(path.join(out, 'consistency-2-start-refused.png'));
+  // Any other refusal folds its report under "details" - which opens without closing the banner (2026-09-29: before, the
+  // banner's own close-on-click took that click too, and the fold could never be opened).
+  const FOLD = `${BANNER}?.querySelector(':scope > details')`;
+  await evaluate(`${START}.click()`);
+  for (let i = 0; i < 40 && !(await evaluate(`!!${FOLD}`)); i++) await sleep(100);
+  await evaluate(`${FOLD}.querySelector('summary').click()`); await sleep(300);
+  check('another refusal with a report: "details" opens and the banner stays', await evaluate(`!!${FOLD} && ${FOLD}.open`)
+    && (await shownText(FOLD)).includes('FIXTURE_REPORT') && (await shownText(BANNER)).startsWith('fixture_refused: FIXTURE: not started for another reason.'),
+    (await shownText(BANNER)).replace(/\s+/g, ' ').slice(0, 200));
   check('no other writing request was made', refused.length === 0, refused.join(' | '));
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
 });

@@ -139,7 +139,6 @@ class TaskRuntime:
     parser_config_path: str | None
     env_factory_builder: object        # callable(compiled, work_root, run_settings) -> picklable env factory
     max_concurrency: int = 64
-    supports_threads: bool = False
     notes: list = field(default_factory=list)
     authorized: bool = True            # False = a real task loaded to be SHOWN and validated only: it cannot execute
     reference_metrics: dict | None = None   # verified REAL results of the INITIAL design: {metric: {value, unit}}; None if unknown

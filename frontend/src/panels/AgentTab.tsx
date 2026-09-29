@@ -417,7 +417,9 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
     {tabControl}
     {createPortal(view, root)}
     <div className="agent-away" style={hidden ? { display: 'none' } : undefined}>
-      <p>The agent conversation is open in a window of its own. It keeps working while you use the other tabs here.</p>
-      <div className="row"><button onClick={() => popup.focus()}>Show that window</button><button onClick={attach}>Bring it back here</button></div>
+      <p>The agent conversation is open in a window of its own. It keeps working while you use the other tabs here. The arrow on
+        the Agent tab, or closing that window, brings it back.</p>
+      {/* "Bring it back here" went on 2026-09-29: the arrow button on the Agent tab does the same, and so does closing the window. */}
+      <div className="row"><button onClick={() => popup.focus()}>Show that window</button></div>
     </div></>);
 }

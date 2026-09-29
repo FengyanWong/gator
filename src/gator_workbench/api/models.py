@@ -206,6 +206,12 @@ class DiffBody(Body):
     after: dict = {}
 
 
+class MatchedBody(Body):
+    """Matched devices... (status record 7.103): the configuration, and - to see the change - the suggestions to make."""
+    config: dict
+    apply: list[str] | None = Field(None, max_length=500)
+
+
 class CancelBody(Body):
     request_id: str
 

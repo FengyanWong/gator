@@ -314,3 +314,13 @@ record 7.108; naturally occurring missing-value failures, a matched optimization
 unverified or out of scope. No
 optimizer superiority, robust-feasible circuit, yield or manufacturing-readiness claim follows. The user authorized
 separate package and workbench commits after completion; pushing remains outside that authorization.
+
+
+### D7 follow-up: new testbench variant, plan only
+
+The user replaced the original D7 choices with a [new OTA7 current-reference variant plan](plan-ota7-current-reference-variant.md).
+The variant uses an ideal current reference and diode-connected NMOS for M5/M7 bias, VDD/2 input common mode,
+the same hard targets and new user-copied cells. The original task and evidence remain unchanged. The user chose
+core-only power for the existing target, with bias power reported separately. Nominal-current tolerance is pending.
+First qualification is proposed as five launches only after separate approval, followed by a miss report; any
+corner-specific limit proposal comes only after those results. No implementation or new physical calls in this plan.

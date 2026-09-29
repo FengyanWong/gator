@@ -273,7 +273,6 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         {model.suggestion.requires_confirmation ? ' (needs your confirmation)' : ''}</p>}
       <Num label="Concurrent Spectre jobs" value={run.concurrency} onChange={v => set({ concurrency: v })} title="Independent simulation jobs at once. NOT the thread count of one simulation." />
       {circuit?.max_concurrency && run.concurrency > circuit.max_concurrency && <p className="error">This task supports at most {circuit.max_concurrency} jobs.</p>}
-      <Num label="Threads per job" value={run.threads_per_job} onChange={v => set({ threads_per_job: v })} title="Simulator threads inside each job. Recorded; applied only by backends that support it." />
       <Num label="Evaluation budget (max_evaluations)" value={run.max_evaluations} onChange={v => set({ max_evaluations: v })}
         title="NEW candidate evaluations that may START in the whole run, shared by all workers. Baselines, warm-up and failures count. Episode resets do not reset it." />
       <Num label="Max Spectre launches" nullable value={run.max_spectre_launches} onChange={v => set({ max_spectre_launches: v })} title="Optional hard cap incl. retries and failures." />

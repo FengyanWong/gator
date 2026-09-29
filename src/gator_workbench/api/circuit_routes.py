@@ -4,12 +4,12 @@ from pathlib import Path
 from fastapi import FastAPI
 from pydantic import ValidationError
 from .. import bridge_read, runs, schema, tasks
-from .. import consistency, ngspice_tasks, profiles, task_files, virtuoso_setup, working_copy
+from .. import consistency, ngspice_tasks, profiles, structures, task_files, virtuoso_setup, working_copy
 from ..agents.prompts import circuit_summary
 from ..native_cells import load_import as load_cell_import
 from ..paths import PathNotAllowed
 from ..security import redact
-from .models import CircuitBody, ConfigBody, CopyBody, DiffBody, NativeReadBody, NgspiceCheckBody, NgspiceNameBody, NgspiceReadBody, NgspiceSaveBody, ProfileActionBody, SetupBody, TaskCheckBody, TaskFileBody, TaskFileTextBody, TaskSaveBody
+from .models import CircuitBody, ConfigBody, CopyBody, DiffBody, MatchedBody, NativeReadBody, NgspiceCheckBody, NgspiceNameBody, NgspiceReadBody, NgspiceSaveBody, ProfileActionBody, SetupBody, TaskCheckBody, TaskFileBody, TaskFileTextBody, TaskSaveBody
 from .support import _bridge_call, fail, load_runtime, validate_loaded
 from .context import ApiContext
 
@@ -301,3 +301,36 @@ def register(app: FastAPI, context: ApiContext):
     def config_diff(body: DiffBody):
         from ..agents.proposals import structured_diff
         return dict(diff=structured_diff(body.before, body.after))
+
+    @app.post('/api/parameters/matched')
+    def parameters_matched(body: MatchedBody):
+        """Matched devices... (status record 7.103): the structures of the loaded circuit and the ties they suggest for
+        the Parameters rows; with `apply`, also those rows with the chosen ties made, their diff and what validation says
+        about them. Local files only: nothing is simulated, nothing is stored - the page applies the rows or not."""
+        from ..agents.proposals import structured_diff
+        from ..validation import independent_action_count
+        config, runtime, blocked = context.load_config(body.config)
+        if runtime is None:
+            return dict(applicable=False, blocked=True, why_not=f'The circuit could not be read: {blocked["blocker"]}',
+                        structures=[], suggestions=[])
+        name = runtime.task_key.partition(':')[2]
+        verified = runtime.task_key.startswith('real:') and name in tasks.REAL_PROFILES and not runtime.circuit.get('generated_profile')
+        answer = structures.suggest(runtime.base_graph, list(config.parameters), None if verified else body.apply)
+        answer.update(applicable=not verified, independent_before=independent_action_count(config.parameters))
+        if verified:
+            return dict(answer, suggestions=[], why_not=f'The rows of {runtime.task_key} are fixed by its verified circuit '
+                        'profile: a run accepts exactly those. The structures are listed for information.')
+        answer['note'] = ('Save task afterwards: the task runs with the rows it was saved with.'
+                          if runtime.circuit.get('generated_profile') else 'The ties become part of the task when you '
+                          'press Save task.' if runtime.circuit.get('native_draft') else '')
+        if body.apply is not None:
+            before = config.model_dump(mode='json')
+            after = dict(before, parameters=answer['parameters'])
+            proposed = context.parse_config(after)
+            report = validate_loaded(proposed, runtime)
+            answer['parameters'] = proposed.model_dump(mode='json')['parameters']       # as the schema reads them
+            answer.update(diff=structured_diff(before, proposed.model_dump(mode='json')),
+                          independent_after=independent_action_count(proposed.parameters),
+                          problems=[i.as_dict() for i in report.issues if i.path.startswith('parameters')
+                                    and i.level in ('error', 'blocker')])
+        return answer

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Icon } from './Icons';
 import { api, bytes, copy, download, downloadPackage, Json, num, saveJson } from '../api';
 import { usePolling, useRequest } from '../store';
-import { abortConfirmed, forceAbortConfirmed, forceAllowed, pauseConfirmed } from './RunControl';
 
 const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'transitions', 'states'];
 
@@ -14,7 +13,10 @@ function SteeringCheck({ value }: { value: Json }) {
     {value?.verdict && <p className="warn">{value.verdict}</p>}</div>;
 }
 
-export function StatusTab({ status, onCommand, onContinue }: { status: Json; onCommand: (dir: string, c: string) => void; onContinue: () => void }) {
+/** The run the bottom tabs show. Its run commands live in the header only (Save now, Pause, Abort, Force abort): the
+ *  four copies this tab had went on 2026-09-29 (user: fewer duplicate buttons). Continue stays - it sets a new budget and
+ *  also continues a stopped run, which the header cannot. */
+export function StatusTab({ status, onContinue }: { status: Json; onContinue: () => void }) {
   if (!status) return <p className="hint">No run selected.</p>;
   const b = status.budget, best = status.best_design, first = status.first_feasible, conn = status.connection;
   const firstNominal = b?.first_nominal_feasible;
@@ -53,17 +55,6 @@ export function StatusTab({ status, onCommand, onContinue }: { status: Json; onC
       {status.error && <tr><td>Error</td><td className="error">{status.error}</td></tr>}
     </tbody></table>
     <div className="row">
-      <button disabled={!status.worker_alive || ['pausing', 'stopping'].includes(status.state) || status.manual_save?.state === 'waiting'} onClick={() => onCommand(status.run_dir, 'checkpoint')}
-        title="Save now: The model is saved now without pausing. The simulation in flight finishes first, the model is written as a new save point, and the run goes on by itself."><Icon name="save" label="Save now" /></button>
-      {/* The same questions and the same rule as the header's Pause / Abort / Force abort (RunControl.tsx). */}
-      <button disabled={!status.worker_alive || ['pausing', 'stopping'].includes(status.state)}
-        onClick={async () => { if (await pauseConfirmed(status.run_dir)) onCommand(status.run_dir, 'pause'); }}
-        title="Pause and save: No new simulation is started, the one in flight finishes, everything is saved. Continue takes it up from exactly there."><Icon name="pause" label="Pause and save" /></button>
-      <button disabled={!status.worker_alive || ['pausing', 'stopping'].includes(status.state)}
-        onClick={() => { if (abortConfirmed(status)) onCommand(status.run_dir, 'stop'); }}
-        title="Stop and save: The simulation in flight finishes, everything is saved, the run ends."><Icon name="stop" label="Stop and save" /></button>
-      <button disabled={!forceAllowed(status)} onClick={() => { if (forceAbortConfirmed()) onCommand(status.run_dir, 'cancel'); }}
-        title="Force cancel: Only while a pause or a stop is waiting for the simulation in flight, for a run that is stuck: unfinished evaluations are recorded as cancelled and stay charged."><Icon name="force-stop" label="Force cancel" /></button>
       <button disabled={status.worker_alive || !['paused', 'stopped', 'interrupted'].includes(status.state)} onClick={onContinue}
         title="Continue: A paused, stopped or interrupted run goes on in the same run folder, from its saved state, with its own saved configuration."><Icon name="play" label="Continue" /></button>
       <button onClick={() => saveJson(`${runName(status.run_dir)}__status.json`, { exported_utc: new Date().toISOString(), ...status })}

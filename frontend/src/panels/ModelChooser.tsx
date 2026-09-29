@@ -48,7 +48,9 @@ export function ModelChooser({ mode, source, onChoose, runs, outputRoot, lookOnl
     {error && <p className="error">The list of saved models could not be read: {error}</p>}
     {models && !models.length && !error && <p className="hint model-empty">No saved model yet under this output folder. A run saves one when it is paused, stopped or finished,
       and every N evaluations while it runs ("Model checkpoints" in the output settings must be on).</p>}
-    {models && models.length > 5 && <input className="model-filter" placeholder="Filter: task, circuit, network, mock / real ..." value={filter} onChange={e => setFilter(e.target.value)} />}
+    {/* Shown while a filter is typed too: when the list shrank to 5 or fewer the box used to vanish and leave its filter
+        hiding cards with nothing to clear it (review of 2026-09-29). */}
+    {models && (models.length > 5 || !!filter) && <input className="model-filter" placeholder="Filter: task, circuit, network, mock / real ..." value={filter} onChange={e => setFilter(e.target.value)} />}
     {source.run_dir && models && !current && !loading && <p className="warn model-missing">The selected model is not in this list: its run folder is outside the current output folder, or it no longer holds a complete save point.
       <span className="path" onClick={() => copy(source.run_dir)}> {source.run_dir}</span> <button onClick={() => onChoose(null, 'latest')}>Clear the selection</button></p>}
     {!!shown.length && <div className="model-list" role="radiogroup" aria-label="Saved models">

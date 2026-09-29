@@ -80,7 +80,7 @@ function RunDetails({ row, info, error, onCopy, copied }: { row: Json; info: Jso
     ['Model loaded at the start', info ? (source?.run_id ? `run ${String(source.run_id).slice(0, 12)} / ${source.checkpoint_id}` : 'none (random weights)') : null],
     ['Last model save', info ? stamp(info.last_checkpoint_utc) ?? 'none' : null],
     ['Saved state', summary?.output ? `${summary.output.resumability} (${summary.output.completeness} output, latest save ${summary.output.latest_checkpoint ?? 'none'})` : null],
-    ['Parallel simulations', info?.concurrency ? `${info.concurrency} (threads per job ${info.threads_per_job})` : null],
+    ['Parallel simulations', info?.concurrency ? `${info.concurrency}` : null],
     ['Connection', info?.connection_profile_id ?? (info ? 'none (not needed)' : null)],
     ['Data written', info?.bytes_written != null ? bytes(info.bytes_written) : null],
   ];

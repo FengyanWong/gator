@@ -1320,7 +1320,7 @@ class RunEngine:
             active_workers=[dict(worker_id=k, evaluation_id=v['busy']['evaluation_id'], phase=v['busy']['phase'],
                                  attempt=len(v['busy']['attempts']) + 1)
                             for k, v in getattr(self, 'lane_state', {}).items() if v['busy']],
-            concurrency=len(getattr(self, 'lanes', [])), threads_per_job=self.config.run.threads_per_job,
+            concurrency=len(getattr(self, 'lanes', [])),
             learner_updates=int(self.learner.updates) if hasattr(self, 'learner') else 0,
             first_feasible=None if ledger is None else ledger.first_feasible,
             last_successful_evaluation_utc=(getattr(self, 'counters', {}) or {}).get('last_successful_evaluation_utc'),

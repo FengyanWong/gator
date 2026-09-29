@@ -353,11 +353,25 @@ class ConditionsConfig(_Model):
         return self
 
 
+# Run settings retired on 2026-09-29, each with the default it had. `threads_per_job` never reached a simulator: no task
+# ever applied it (`supports_threads` was false for every one), so the box looked like a control that was none. A
+# configuration written with it still loads (the before-validator drops it), and both hashes still see it at this
+# default (`_hashed`), so every run, checkpoint, task file and approval made before keeps its identity - every stored
+# configuration had 1.
+RETIRED_RUN_FIELDS = {'threads_per_job': 1}
+
+
 class RunSettings(_Model):
+    @model_validator(mode='before')
+    @classmethod
+    def _retired_fields(cls, data):
+        if isinstance(data, dict) and RETIRED_RUN_FIELDS.keys() & data.keys():
+            data = {key: value for key, value in data.items() if key not in RETIRED_RUN_FIELDS}
+        return data
+
     mode: Literal['scratch', 'resume', 'fine_tune', 'frozen'] = 'scratch'
     concurrency: int = Field(1, ge=1, le=64,
         description='Number of independent simulation jobs running at once. Not the thread count of one job.')
-    threads_per_job: int = Field(1, ge=1, le=256, description='Simulator threads inside each job.')
     max_evaluations: int = Field(ge=1,
         description='Primary budget: new real candidate evaluations that may START in the whole run, shared by '
                     'all workers. Baselines, warm-up, failures all count. Episode resets do not reset it.')
@@ -498,11 +512,11 @@ def _hashed(data):
     Parameters and Probes fields retired on 2026-09-26 (record 7.92) and 2026-09-29 (record 7.105, the Probes' conditions
     and aggregation) are hashed as present at their old defaults, for the
     same reason again; a row that stated another value for one of them (it never ran, or the run refused it) hashes
-    differently since."""
+    differently since. So is the retired `run.threads_per_job` (2026-09-29, RETIRED_RUN_FIELDS)."""
     data = dict(data)
     run = data.get('run') if isinstance(data, dict) else None
     if isinstance(run, dict):
-        run = dict(run)
+        run = dict(run, **{key: run.get(key, default) for key, default in RETIRED_RUN_FIELDS.items()})
         reward = run.get('reward')
         if isinstance(reward, dict):
             reward = {k: v for k, v in reward.items() if not

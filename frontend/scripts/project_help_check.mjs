@@ -225,8 +225,8 @@ try {
   // ---- a saved task: in the column -----------------------------------------------------------------------------------------
   await evaluate(`${TASK_BUTTON('Save task')}.click()`, true); await quiet(); await until(`${PANEL}.textContent.includes('Before every run')`);
   check('saved task: the REAL banner and the missing-baseline warning stay in view, in the column', await col.shown('REAL evaluation backend') && await col.shown('This task has no real baseline yet'));
-  check('saved task: "Before every run" and both buttons stay in view', await col.shown('Before every run:') && await col.buttonShown('Check now')
-    && await col.buttonShown('Record the baseline run as reference'));
+  check('saved task: "Before every run" and "Check now" stay in view; no manual baseline button (a baseline records itself)', await col.shown('Before every run:')
+    && await col.buttonShown('Check now') && !(await col.buttonShown('Record the baseline run as reference')));
   check('saved task: what the check compares is folded', await col.shown('What the check compares') && await col.folded('no ADE/Maestro window may be open on the copy'));
   check('saved task: two notes are one closed line', await col.shown('2 notes on this circuit') && await col.folded('FIXTURE NOTE: a second one.'));
   check('saved task: Hierarchy is back in the column and stays closed, as the user left it', (await evaluate(`${HIERARCHY}.open`)) === false && await col.shown('Hierarchy (1 instances)') && await col.folded('Instances and parameters'));

@@ -66,7 +66,7 @@ try {
   const page = await browser.open({ errors: consoleErrors });
   const { send, evaluate, fulfil } = page;
   const calls = []; let mode = 'ok'; let inFlight = 0, overlap = false;
-  let agentRequests = 0; let baselineExists = false; let baselineRecorded = false; let deleteRefused = true;
+  let agentRequests = 0; let baselineRecorded = false; let deleteRefused = true;
   const dialogs = []; const answers = [];                                           // confirm(): answered as planned; an unplanned one is refused and reported
   const answer = async ({ requestId, request }) => {
     const pathname = new URL(request.url).pathname;
@@ -102,11 +102,6 @@ try {
       steps: [['editors', 'The editors hold the rows of the saved task'], ['connect', 'The run adapter reaches the working copy'],
         ['export', 'The netlist Virtuoso exports from the working copy matches the saved task'], ['deck', 'The simulation deck is written (not run)']]
         .map(([step, title]) => ({ step, ok: true, title, detail: `FIXTURE: ${step} passed` })) });
-    if (op === 'profile/reference') {
-      if (!baselineExists) return fulfil(requestId, 409, { detail: { message: 'No run of real:ota5_v1 was found under the output root. Run "Single baseline simulation" first.', code: 'no_baseline_run' } });
-      baselineRecorded = true;
-      return fulfil(requestId, 200, { origin: 'real', run_id: 'fixture-run-1', metrics: { osc_frequency_hz: 1.2e9 } });
-    }
     if (op === 'profile/delete') {
       if (deleteRefused) return fulfil(requestId, 409, { detail: { message: `Run fixture-run-2 of real:${body.name} is working right now: abort it or let it finish first`, code: 'delete_refused' } });
       created.delete(`FIXTURE_DESIGNS/${body.name}`); baselineRecorded = false;
@@ -308,7 +303,7 @@ try {
   check('the open task offers Save task and Task file - no Save as', await evaluate(`!!(${TASK_BUTTON('Save task')}) && !!(${TASK_BUTTON('Task file')}) && !(${TASK_BUTTON('Save as')})`));
   check('the window now says it follows the task and starts from a blank library', await wShown('.follows-task') && (await wText()).includes('follows the task real:ota5_v1') && (await wValue('Library')) === '');
   await shotColumn('virtuoso-2c-task-saved.png');
-  // ---- before every run: the check Start runs by itself, pressed on its own; and recording a finished baseline -----------
+  // ---- before every run: the check Start runs by itself, pressed on its own; a finished baseline records itself ----------
   check('"Check now" is in the column with "Before every run:"', !!(await evaluate(`!!(${BUTTON('Check now')})`)) && (await text()).includes('Before every run:'));
   mark = calls.length;
   await evaluate(`${BUTTON('Check now')}.click()`); await quiet();
@@ -317,12 +312,10 @@ try {
   const shownCheck = await text();
   check('its steps and the verdict are shown', ['passed: The editors hold the rows of the saved task', 'passed: The netlist Virtuoso exports from the working copy matches',
     'agree. Nothing was simulated.'].every(t => shownCheck.includes(t)), shownCheck.slice(shownCheck.indexOf('Check now'), shownCheck.indexOf('Check now') + 300));
-  await evaluate(`${BUTTON('Record the baseline run as reference')}.click()`); await quiet();
-  check('without a baseline run, recording says what to do first', (await text()).includes('Run "Single baseline simulation" first'));
-  baselineExists = true;
-  await evaluate(`${BUTTON('Record the baseline run as reference')}.click()`); await quiet();
-  check('with one, the baseline is recorded and said so', (await text()).includes('Baseline recorded from run fixture-run-1'));
-  // ---- a cell that already has a registered task says so in the window: no second task, one short "Open" ---------------------
+  check('no manual "Record the baseline run as reference": a finished baseline records itself (2026-09-29)',
+    !(await evaluate(`!!(${BUTTON('Record the baseline run as reference')})`)));
+  baselineRecorded = true;          // as a finished Single baseline simulation records itself (7.78): the task's next read says so
+  // ---- a cell that already has a registered task says so in the window: no second task; the Task list opens it ---------------
   mark = calls.length;
   await wChoose('Library', 'FIXTURE_DESIGNS'); await quiet();
   await wChoose('Cell', 'ota5_v1'); await quiet();
@@ -330,7 +323,8 @@ try {
   check('the cell is no longer browse-only: the window names its task', shown.includes('This cell already has a registered task: real:ota5_v1') && !shown.includes('built-in')
     && !shown.includes('Not optimizable yet') && !shown.includes('Browse only'), ops(mark).join(' | '));
   check('no second draft is offered for it', !(await evaluate(`!!(${TASK_BUTTON('Save task')})`)) && !(await wHas('Read the cell again')) && !(await wHas('Read this cell into the workbench')));
-  check('the button is short; the task name is text beside it', JSON.stringify(await far.evaluate(`[...${WIN}.querySelectorAll('.note button')].map(b => b.textContent.trim())`)) === JSON.stringify(['Open']));
+  check('no "Open" shortcut (it repeated the Task list): the note says where to choose the task', JSON.stringify(await far.evaluate(`[...${WIN}.querySelectorAll('.note button')].map(b => b.textContent.trim())`)) === '[]'
+    && shown.includes('Choose it under Task in the Project column.'));
   await shotWindow('virtuoso-2d-cell-has-task.png');
   await wChoose('Cell', 'vco_fixture'); await quiet();
   shown = await wText();
@@ -339,15 +333,15 @@ try {
   check('it is not offered for reading or for a task', !(await wHas('Read this cell into the workbench')) && !(await evaluate(`!!(${TASK_BUTTON('Save task')})`)));
   check('what that means is one folded line', await far.evaluate(`(() => { const d = [...${WIN}.querySelectorAll('.note details')].find(x => x.querySelector('summary').textContent === 'What this means');
     return !!d && !d.open && d.textContent.includes('gets no second task'); })()`));
-  await wPress('Open'); await quiet();
-  check('"Open" chooses the task in the column', (await stored()).circuit.source === 'registered_task' && (await value('Task')) === 'real:gpdk045_ota7', await value('Task'));
+  await choose('Task', 'real:gpdk045_ota7'); await quiet();
+  check('choosing it in the Task list opens it', (await stored()).circuit.source === 'registered_task' && (await value('Task')) === 'real:gpdk045_ota7', await value('Task'));
   check('a built-in circuit has no Delete task', !(await evaluate(`!!(${BUTTON('Delete task')})`)));
 
   // ---- Delete task: asked once more, refused while a run works, then back at the cell with Save task -----------------------
   await wChoose('Library', 'FIXTURE_DESIGNS'); await quiet();
   await wChoose('Cell', 'ota5_v1'); await quiet();
-  await wPress('Open'); await quiet();
-  check('the saved task is opened from its cell', (await value('Task')) === 'real:ota5_v1', await value('Task'));
+  await choose('Task', 'real:ota5_v1'); await quiet();
+  check('the saved task is opened in the Task list', (await value('Task')) === 'real:ota5_v1', await value('Task'));
   // Since 2026-09-24 (status record 7.78) Delete task stands in the task row at the top of the column, at the right end,
   // next to "Load task" (was: Load starter configuration); what it does is its tooltip.
   const taskRow = await evaluate(`(() => { const d = ${BUTTON('Delete task')}, l = ${BUTTON('Load task')}; if (!d || !l) return 'missing';
@@ -405,14 +399,13 @@ try {
   await wPress('Refresh'); await quiet();
   check('after the link is back, Refresh recovers everything', ops(mark).length === 3 && (await wText()).includes('Native schematic FIXTURE_OTHER/inv') && !(await wText()).includes('cannot be reached'), ops(mark).join(' | '));
 
-  // ---- an older backend (no /api/virtuoso/cells): the cell can still be typed ----------------------------------------------
+  // ---- an older backend (no /api/virtuoso/cells): named as the reason; the typed-cell fallback went on 2026-09-29 --------------
   mode = 'outdated'; mark = calls.length;
   await wPress('Refresh'); await quiet();
   check('an older backend is named as the reason', (await wText()).includes('older than the page'));
-  check('the cell can then be typed and read with a button', (await far.evaluate(`${wField('Cell')}.tagName`)) === 'INPUT' && await wHas('Read native schematic'));
-  mark = calls.length;
-  await wPress('Read native schematic'); await quiet();
-  check('that button reads once', JSON.stringify(ops(mark)) === JSON.stringify(['read FIXTURE_OTHER inv']) && (await wText()).includes('Native schematic FIXTURE_OTHER/inv'), ops(mark).join(' | '));
+  check('no typed Cell box and no "Read native schematic" (the fallback went)', (await far.evaluate(`${wField('Cell')}?.tagName ?? ''`)) !== 'INPUT' && !(await wHas('Read native schematic')));
+  mode = 'ok';
+  await wPress('Refresh'); await quiet();
 
   // ---- the limit is explained in plain words; circuits that already have a task are NOT suggested (user, 2026-09-22) --------
   check('the limit is a neutral note in plain words, not a red box', (await far.evaluate(`!!${WIN}.querySelector('.note') && !${WIN}.querySelector('.blocker')`))

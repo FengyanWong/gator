@@ -161,20 +161,18 @@ async function cannotResume(dir: string): Promise<string | null> {
   return null;
 }
 
-/** The questions asked before a pause, an abort and a forced abort - by the header's buttons AND by the Run status tab's,
- *  which used to act on one click and offered a forced cancel while nothing was waiting (review of 2026-09-22). */
-export async function pauseConfirmed(dir: string): Promise<boolean> {
+/** The questions asked before a pause, an abort and a forced abort by the header's buttons (the Run status tab's copies
+ *  of these buttons went on 2026-09-29). */
+async function pauseConfirmed(dir: string): Promise<boolean> {
   const reason = await cannotResume(dir);
   return !reason || window.confirm(`This run cannot be resumed after a pause: ${reason} for it.\n\nPause anyway? It is saved and simply ends here.`);
 }
-export const abortConfirmed = (status: Json) => window.confirm(`Abort this run?\n\nThe simulation that is running now is allowed to finish, so nothing already paid for is lost and the circuit is put back `
+const abortConfirmed = (status: Json) => window.confirm(`Abort this run?\n\nThe simulation that is running now is allowed to finish, so nothing already paid for is lost and the circuit is put back `
   + `as it was. Then everything is saved and the run ends.${status?.budget ? `\nUsed so far: ${status.budget.charged} of ${status.budget.max_evaluations} evaluations.` : ''}`
   + '\n\nTo continue this run later, use Pause instead.');
-export const forceAbortConfirmed = () => window.confirm('Force abort?\n\nThis does not wait for the simulation that is running. Its evaluation is recorded as cancelled and still counts against the '
+const forceAbortConfirmed = () => window.confirm('Force abort?\n\nThis does not wait for the simulation that is running. Its evaluation is recorded as cancelled and still counts against the '
   + 'budget. On a real circuit a Spectre job that has already started on the server is not stopped, and the schematic can be left with the sizes '
   + 'that were being tried instead of the original ones.\n\nUse this only when the run is stuck.');
-/** A forced abort is offered only while a pause or an abort is waiting for the simulation in flight. */
-export const forceAllowed = (status: Json) => !!status?.worker_alive && ['pausing', 'stopping'].includes(status?.state);
 
 const TITLES: Record<Phase, string> = {
   idle: 'Start a new run with the configuration on this page.',

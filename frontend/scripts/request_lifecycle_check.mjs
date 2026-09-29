@@ -14,7 +14,7 @@ try {
   const select = (id, value) => page.setValue(`document.querySelector('#${id}')`, value);
   const panel = 'document.querySelector("#panel").textContent';
   const state = 'JSON.parse(document.querySelector("#result").textContent)';
-  const saveButton = `document.querySelector('button[title^="Save now"]')`;
+  const exportButton = `document.querySelector('button[title^="Export status"]')`;   // the tab's run commands went on 2026-09-29
   const status = (run, phase = 'running') => ({ run_dir: run, state: phase, worker_alive: phase === 'running', active_workers: [] });
 
   await sleep(350);
@@ -64,14 +64,15 @@ try {
   await select('tab', 'status');
   await wait('status', 'B');
   await resolve('status', 'B', status('B'));
-  check('status controls use the displayed run', await page.until(`!!${saveButton}`));
-  await page.evaluate(`${saveButton}.click()`);
-  check('command carries displayed run identity', await page.evaluate("fixture.commands.length === 1 && fixture.commands[0].run === 'B'"));
+  check('status controls use the displayed run', await page.until(`!!${exportButton}`));
+  await page.evaluate(`${exportButton}.click()`);
+  check('Export status carries displayed run identity', await page.evaluate("fixture.downloads.length === 1 && fixture.downloads[0] === 'B__status.json'"),
+    await page.evaluate('JSON.stringify(fixture.downloads)'));
   await select('run', 'A');
-  check('old controls disappear while new run loads', await page.until(`!${saveButton}`));
+  check('old controls disappear while new run loads', await page.until(`!${exportButton}`));
   await wait('status', 'A');
   await page.evaluate(`fixture.finish('status', 'A', null, true)`);
-  check('failed new status leaves controls unavailable', await page.until(`${state}.error === 'FIXTURE read failed' && !${saveButton}`));
+  check('failed new status leaves controls unavailable', await page.until(`${state}.error === 'FIXTURE read failed' && !${exportButton}`));
   check('no browser exceptions', page.consoleErrors.length === 0, JSON.stringify(page.consoleErrors));
 } catch (error) { fail(error); } finally { await browser.close(); }
 finish();

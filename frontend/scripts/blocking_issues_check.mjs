@@ -62,10 +62,16 @@ await runChecks(browser, async () => {
   const LIST = `document.querySelector('#blocking-issues')`;
   const rows = () => evaluate(`[...(${LIST}?.querySelectorAll('tbody tr') ?? [])].map(tr => [...tr.cells].map(td => td.textContent.trim()))`);
   const headerButton = label => `[...document.querySelectorAll('header button')].find(b => b.textContent === ${JSON.stringify(label)})`;
-  const revalidate = async fixture => {                                            // the header's "Static validation" button asks again
-    answerWith = fixture; const before = validations;
-    await evaluate(`${headerButton('Static validation')}.click()`);
-    for (let i = 0; i < 50 && validations === before; i++) await sleep(100);
+  // The page validates by itself half a second after any change ("Static validation", the button that asked at once, went
+  // on 2026-09-29): a change of the project name makes it ask again, alternating between two names.
+  const NAME_BOX = `[...document.querySelectorAll('.left label')].find(l => l.firstChild?.textContent.trim() === 'Name')?.querySelector('input')`;
+  let flip = false;
+  const revalidate = async fixture => {
+    answerWith = fixture; const before = validations; flip = !flip;
+    const name = flip ? 'check-a' : 'check-b';
+    await evaluate(`(() => { const el = ${NAME_BOX}; Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value').set.call(el, ${JSON.stringify(name)});
+      el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    for (let i = 0; i < 60 && validations === before; i++) await sleep(100);
     await sleep(300);
   };
   const mouse = (type, at) => send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 });

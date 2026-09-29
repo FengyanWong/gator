@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, Json, problemText, virtuosoGateText } from '../api';
 import { TaskFileWindow } from './TaskFile';
+import { usePopupWindow } from './popupWindow';
 
 /** "Save task" - a person's press only - and the task file. `task` = the open task (Save task updates it); without one,
  *  the first save of the cell read from Virtuoso (the cell the user declared as their copy is then the task's). The
@@ -40,8 +41,13 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   const [extras, setExtras] = useState<Json>({});
   const [askFrequency, setAskFrequency] = useState(false);                    // the save asked for the ring oscillator's rough frequency
   const [frequency, setFrequency] = useState('');
-  const [file, setFile] = useState<Json>(null);                               // { text, title } while the window is open
-  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); }, [task, library, cell]);
+  const [file, setFile] = useState<Json>(null);                               // { text, title } while the window is open (text null: reading)
+  // The task file's window. It is opened INSIDE the click on "Task file" - the browser's pop-up rule refuses a window
+  // opened later, when the file has arrived - so a blocked window can be tried again with the next press.
+  const fileWindow = usePopupWindow('gator-task-file', { title: 'GATOR - Task file', features: 'popup,width=760,height=900',
+    rootId: 'task-file-root', rootClass: 'task-file-window', onClose: () => setFile(null), closeOnUnmount: true });
+  // Another task or cell: its extras, its messages and an open task file (the old task's) go.
+  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); setFile(null); fileWindow.popup?.close(); }, [task, library, cell]);
   useEffect(() => {
     const written = (e: Event) => setExtras((x: Json) => {
       const next = { ...x };
@@ -68,15 +74,22 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
     const made = await api.taskSave({ profile_id: profileId, name: taskName, config, library, cell, task, as_new: false, extras: sent });
     setExtras(sent); setAskFrequency(false);
     const kept = made.created ? '' : made.baseline_kept ? ' The recorded baseline still holds.' : made.changed?.length ? ' The recorded baseline no longer holds (what is measured changed): run a new baseline.' : '';
-    setMessage({ level: 'ok', text: `${made.created ? `Saved the new task ${made.task_key}.` : `Saved ${made.task_key}, revision ${made.revision}.`}${made.runnable ? '' : ' It can be opened and edited; running Maestro-measured tasks comes with the next part.'}${kept}` });
+    setMessage({ level: 'ok', text: `${made.created ? `Saved the new task ${made.task_key}.` : `Saved ${made.task_key}, revision ${made.revision}.`}${kept}` });
     onSaved(made);
   });
   const openFile = async () => {
     setMessage(null);
+    // Already open: bring it forward and keep what is typed in it (a second press used to replace the draft silently).
+    if (file && fileWindow.popup && !fileWindow.popup.closed) { fileWindow.popup.focus(); return; }
+    const opened = fileWindow.open();
+    if (!opened) { setMessage({ level: 'error', text: 'The browser blocked the task file window. Allow pop-ups for this page, then press "Task file" again.' }); return; }
+    setFile({ text: null, title: 'Task file' });
     try {
       const answer = await api.taskFile({ config, library, cell, task, extras });
-      setFile({ text: answer.text, title: task ? `Task file of real:${task}${answer.revision ? ` (revision ${answer.revision})` : ''}` : `Task file of ${cell} (not saved yet)` });
-    } catch (e: any) { report(e); }
+      const title = task ? `Task file of real:${task}${answer.revision ? ` (revision ${answer.revision})` : ''}` : `Task file of ${cell} (not saved yet)`;
+      opened.document.title = `GATOR - ${title}`;
+      setFile({ text: answer.text, title });
+    } catch (e: any) { setFile(null); opened.close(); report(e); }
   };
   const applyFile = (rows: Json, more: Json) => {
     setConfig(c => ({ ...c, parameters: rows.parameters ?? c.parameters, measurements: rows.measurements ?? c.measurements, targets: rows.targets ?? c.targets }), true);
@@ -91,7 +104,7 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
         {!task && <label title="Lowercase letters, digits and _. It becomes the task real:<name>.">New task name
           <input value={name} placeholder={suggested} onChange={e => setName(e.target.value)} /></label>}
         {task && <span className="hint">Task <code>real:{task}</code>{revision ? `, revision ${revision}` : ''}</span>}
-        <button className="primary" disabled={!canSave} onClick={() => save()}
+        <button className="primary" disabled={!canSave || askFrequency} onClick={() => save()}
           title={'Save task: ' + (task ? 'Stores the rows of Parameters, Probes and Specs as this task (its next revision). ' : hasCopy
             ? 'Stores the rows of Parameters, Probes and Specs as a new task of this cell. '
             : 'Read the cell in the Virtuoso window first and confirm that it is a copy you made: the task is saved into that cell. ')
@@ -104,9 +117,10 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
         {askFrequency && <div className="row">
           <label title="Rough is enough: it only sizes the transient (60 periods, measured after 20).">Rough oscillation frequency
             <input value={frequency} placeholder="e.g. 1.2G" onChange={e => setFrequency(e.target.value)} /></label>
-          <button className="primary" disabled={!(frequencyValue > 0) || !!busy} onClick={() => save({ expected_frequency_hz: frequencyValue })} title="Save task: With this frequency."><Icon name="task" label="Save task" /></button></div>}
+          <button className="primary" disabled={!(frequencyValue > 0) || !canSave} onClick={() => save({ expected_frequency_hz: frequencyValue })} title="Save task: With this frequency."><Icon name="task" label="Save task" /></button></div>}
         {message && <p className={message.level === 'ok' ? 'ok' : message.level === 'warn' ? 'warn' : 'error'}>{message.text}</p>}
       </div>, notes)}
-    {file && <TaskFileWindow text={file.text} title={file.title} onApply={applyFile} onClose={() => setFile(null)} />}
+    {file && <TaskFileWindow root={fileWindow.root} text={file.text} title={file.title} onApply={applyFile}
+      onClose={() => { setFile(null); fileWindow.popup?.close(); }} />}
   </>);
 }

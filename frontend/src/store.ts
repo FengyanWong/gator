@@ -9,7 +9,7 @@ const emptyConfig = (): Json => ({
   project: { name: 'gator-project', task_name: 'task', notes: '' },
   circuit: { source: 'registered_task', task_id: 'synthetic:gpdk045_ota5', circuit_class: 'unspecified', pdk_id: 'unspecified' },
   parameters: [], targets: [], measurements: [],
-  run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, threads_per_job: 1, seed: 0, reward: { violation_shape: 'compressed', worst_spec_share: 0.5 } },
+  run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, seed: 0, reward: { violation_shape: 'compressed', worst_spec_share: 0.5 } },
   output: { experiment_name: 'experiment' },
   research: {},
 });
@@ -29,6 +29,8 @@ export function migrateConfig(config: Json): Json {
   }
   if (Array.isArray(config.parameters)) out = { ...out, parameters: config.parameters.map(migrateParameter) };
   if (Array.isArray(config.measurements)) out = { ...out, measurements: config.measurements.map((row: Json) => without(row, RETIRED_MEASUREMENT_KEYS)) };
+  // "Threads per job" retired on 2026-09-29: no simulator ever used it. The backend drops it too and hashes it at 1.
+  if (config.run && typeof config.run === 'object' && 'threads_per_job' in config.run) out = { ...out, run: without(config.run, ['threads_per_job']) };
   return out;
 }
 

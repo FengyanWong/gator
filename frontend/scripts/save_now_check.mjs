@@ -1,4 +1,4 @@
-// Browser check of "Save now" (header, and the Run status tab): save the RUNNING run's model without pausing
+// Browser check of "Save now" (header): save the RUNNING run's model without pausing
 // (run command `checkpoint`; there is no frontend test runner in this project).
 // Same approach as run_control_check.mjs: a throwaway headless Edge over the DevTools protocol against a RUNNING
 // workbench (default http://127.0.0.1:8765/). EVERY /api/runs/* request and every validation is answered HERE by a small
@@ -8,8 +8,8 @@
 // What it pins (user request 2026-09-21, "add a save now button"): the button exists left of the main button (Abort
 // stays directly right of it) and is off unless a run is RUNNING; one press = one `checkpoint` command, no pause - the
 // main button keeps reading Pause; it reads "Saving..." until the RUN reports that request as saved, then says where it
-// was saved; a refusal is shown in the backend's plain words; the header does not shift; the Run status tab has the
-// same button and shows the request in its "Last checkpoint" row.
+// was saved; a refusal is shown in the backend's plain words; the header does not shift; the Run status tab shows the
+// request in its "Last checkpoint" row and has NO copy of the button any more (its four run buttons went on 2026-09-29).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/save_now_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -104,67 +104,26 @@ await runChecks(browser, async () => {
   check('a refusal is shown as the backend worded it', await banner('This run was started with "Model checkpoints" switched off'));
   check('... and the button is back at once', await until(`${SAVE}.textContent === 'Save now' && !${SAVE}.disabled`, 40));
 
-  // ---- the Run status tab: the same command, and the request in the "Last checkpoint" row -------------------------------------------------
+  // ---- the Run status tab: no Save now of its own, the request in its "Last checkpoint" row ------------------------------------------------
   await evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Run status')?.click()`);
-  const TAB_SAVE = `[...document.querySelectorAll('.status-grid button')].find(b => b.textContent === 'Save now')`;
-  check('the Run status tab has "Save now" next to "Pause and save"', await until(`!!(${TAB_SAVE}) && ${TAB_SAVE}.nextElementSibling?.textContent === 'Pause and save'`, 60));
+  const TAB_COMMANDS = `[...document.querySelectorAll('.status-grid button')].filter(b => /Save now|Pause and save|Stop and save|Force cancel/.test(b.textContent)).length`;
+  check('the Run status tab has no Save now, Pause, Stop or Force cancel of its own: the header has them', await until(`!!document.querySelector('.status-grid') && ${TAB_COMMANDS} === 0`, 60));
   const ROW = `[...document.querySelectorAll('.status-grid tr')].find(r => r.cells[0]?.textContent === 'Last checkpoint')?.cells[1]?.textContent ?? ''`;
   check('its "Last checkpoint" row shows the answered request', await until(`/Save now: saved at 14 evaluations \\(ckpt-00000014-fixture\\)/.test(${ROW})`, 40), await evaluate(ROW));
-  const before = commands.length;
-  await evaluate(`${TAB_SAVE}.click()`);
-  check('pressing it sends one `checkpoint` command for the run shown there', await (async () => { for (let i = 0; i < 40 && commands.length === before; i++) await sleep(100); return commands.length === before + 1 && commands[before] === 'checkpoint'; })(), commands.join());
   sim.manual_save = { id: 'fixture-request-3', state: 'waiting', requested_utc: '2026-09-21T00:00:30+00:00', checkpoint_id: null, saved_utc: null, evaluations: null };
-  check('while a request is waiting the row says so and the tab button is off', await until(`/Save now: requested, waiting for the simulation in flight to finish/.test(${ROW}) && ${TAB_SAVE}.disabled`, 60), await evaluate(ROW));
+  check('while a request is waiting the row says so', await until(`/Save now: requested, waiting for the simulation in flight to finish/.test(${ROW})`, 40), await evaluate(ROW));
   await shot('save-now-4-status-tab.png');
 
   // ---- not running: off, with the reason -----------------------------------------------------------------------------------------------------------
   sim.state = 'pausing';
-  check('while the run is pausing "Save now" is off (the pause saves everything)', await until(`${MAIN}.textContent === 'Pausing...' && ${SAVE}.disabled && ${TAB_SAVE}.disabled`, 60));
+  check('while the run is pausing "Save now" is off (the pause saves everything)', await until(`${MAIN}.textContent === 'Pausing...' && ${SAVE}.disabled`, 60));
   Object.assign(sim, { state: 'paused', alive: false, manual_save: null });
-  check('on a paused run it is off and says why', await until(`${MAIN}.textContent === 'Resume' && ${SAVE}.disabled && /Only while a run is running/.test(${SAVE}.title) && ${TAB_SAVE}.disabled`, 60), (await look()).title);
+  check('on a paused run it is off and says why', await until(`${MAIN}.textContent === 'Resume' && ${SAVE}.disabled && /Only while a run is running/.test(${SAVE}.title)`, 60), (await look()).title);
   await shot('save-now-5-paused.png');
 
   reportRefused(refused);
   check('no confirmation dialog was needed for a save', dialogs.length === 0, dialogs.join(' | ').slice(0, 200));
 
-  // ---- the Run status tab asks the header's questions (review of 2026-09-22) ------------------------------------------------------------------------
-  // "Pause and save", "Stop and save" and "Force cancel" acted on one click, and "Force cancel" was on whenever a worker lived.
-  const STATUS_BUTTON = text => `[...document.querySelectorAll('.status-grid button')].find(b => b.textContent === ${JSON.stringify(text)})`;
-  const sentSince = async (mark, ms = 3000) => { for (let waited = 0; waited < ms && commands.length === mark; waited += 100) await sleep(100); return commands.slice(mark); };
-  const askedSince = async (mark, ms = 3000) => { for (let waited = 0; waited < ms && dialogs.length === mark; waited += 100) await sleep(100); return dialogs.slice(mark); };
-  Object.assign(sim, { state: 'running', alive: true });
-  check('(set-up) the run is running again: the tab\'s "Stop and save" is on', await until(`!!(${STATUS_BUTTON('Stop and save')}) && !${STATUS_BUTTON('Stop and save')}.disabled`, 60));
-  check('"Force cancel" is off while the run is simply running: nothing waits to be forced', await evaluate(`${STATUS_BUTTON('Force cancel')}.disabled`));
-  let mark = commands.length, seen = dialogs.length;
-  answers.push(false); await evaluate(`${STATUS_BUTTON('Stop and save')}.click()`);
-  let asked = await askedSince(seen);
-  check('"Stop and save" asks the header\'s Abort question first', asked.length === 1 && /^Abort this run\?/.test(asked[0]), asked.join(' | ').slice(0, 120));
-  check('... answered "Cancel", no command is sent', (await sentSince(mark, 1500)).length === 0, commands.slice(mark).join());
-  answers.push(true); await evaluate(`${STATUS_BUTTON('Stop and save')}.click()`);
-  check('... answered "OK", one stop is sent', JSON.stringify(await sentSince(mark)) === '["stop"]', commands.slice(mark).join());
-  sim.output = { save_checkpoints: true, save_replay_snapshots: false };                      // a run that cannot come back after a pause
-  mark = commands.length; seen = dialogs.length;
-  answers.push(false); await evaluate(`${STATUS_BUTTON('Pause and save')}.click()`);
-  asked = await askedSince(seen);
-  check('"Pause and save" on a run that cannot come back asks the header\'s Pause question', asked.length === 1 && /cannot be resumed after a pause: replay snapshots are switched off/.test(asked[0]), asked.join(' | ').slice(0, 120));
-  check('... answered "Cancel", no command is sent', (await sentSince(mark, 1500)).length === 0, commands.slice(mark).join());
-  answers.push(true); await evaluate(`${STATUS_BUTTON('Pause and save')}.click()`);
-  check('... answered "OK", one pause is sent', JSON.stringify(await sentSince(mark)) === '["pause"]', commands.slice(mark).join());
-  sim.output = { save_checkpoints: true };
-  sim.state = 'stopping';
-  check('"Force cancel" is on while a stop waits for the simulation in flight', await until(`!${STATUS_BUTTON('Force cancel')}.disabled`, 60));
-  mark = commands.length; seen = dialogs.length;
-  answers.push(false); await evaluate(`${STATUS_BUTTON('Force cancel')}.click()`);
-  asked = await askedSince(seen);
-  check('"Force cancel" asks the header\'s Force abort question; answered "Cancel", nothing is sent', asked.length === 1 && /^Force abort\?/.test(asked[0])
-    && (await sentSince(mark, 1500)).length === 0, `${asked.join(' | ').slice(0, 80)} / ${commands.slice(mark).join()}`);
-  answers.push(true); await evaluate(`${STATUS_BUTTON('Force cancel')}.click()`);
-  check('... answered "OK", one cancel is sent', JSON.stringify(await sentSince(mark)) === '["cancel"]', commands.slice(mark).join());
-  sim.state = 'pausing';
-  check('"Force cancel" is on while a pause waits, too', await until(`!${STATUS_BUTTON('Force cancel')}.disabled`, 60));
-  Object.assign(sim, { state: 'paused', alive: false });
-  check('... and off again once the worker is gone', await until(`${STATUS_BUTTON('Force cancel')}.disabled`, 60));
-  await shot('save-now-6-status-questions.png');
   check('every answer this check planned was used by a question on screen', answers.length === 0, `${answers.length} left`);
   check('no console exception', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
 });

@@ -1,26 +1,22 @@
 import { useAsyncAction } from '../store';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { usePopupWindow } from './popupWindow';
 import { api, Json, problemText } from '../api';
 
 /** The task file in a window of its own: everything a task is, as one readable file (its own `_help` part explains each
  *  part). The person - or someone pasting the agent's text - edits it here; "Apply to editors" checks it with the same
  *  schema as the editors and puts its rows into them. Nothing is saved or written to Virtuoso from here: that is "Save
  *  task". Opened by a press, closed with its own button or the window's. */
-export function TaskFileWindow({ text, title, onApply, onClose }: {
-  text: string; title: string; onApply: (rows: Json, extras: Json) => void; onClose: () => void }) {
-  // The same pop-up window as the connection, run and PDK windows (`popupWindow.ts`); this one opens with the panel
-  // and takes the panel with it when the viewer closes it.
-  const { popup, root, blocked, open } = usePopupWindow('gator-task-file',
-    { title: `GATOR - ${title}`, features: 'popup,width=760,height=900', rootId: 'task-file-root',
-      rootClass: 'task-file-window', onClose, closeOnUnmount: true });
-  const [draft, setDraft] = useState(text);
+export function TaskFileWindow({ root, text, title, onApply, onClose }: {
+  root: HTMLElement | null; text: string | null; title: string; onApply: (rows: Json, extras: Json) => void; onClose: () => void }) {
+  // The window itself belongs to TaskSave, which opens it INSIDE the click on "Task file" (`popupWindow.ts`): opened here,
+  // after the file had arrived, a slow answer came too late for the browser's pop-up rule and the window was blocked -
+  // and a second press could not try again, because this component stayed mounted (review of 2026-09-29).
+  const [draft, setDraft] = useState(text ?? '');
   const [problems, setProblems] = useState<string[] | null>(null);
   const [message, setMessage] = useState<Json>(null);
 
-  useEffect(() => { setDraft(text); setProblems(null); setMessage(null); }, [text]);
-  useEffect(() => { open(); }, []);
+  useEffect(() => { setDraft(text ?? ''); setProblems(null); setMessage(null); }, [text]);
 
   const { busy, run } = useAsyncAction(e => setMessage({ level: 'error', text: problemText(e) }), () => setMessage(null));
   const apply = () => run('apply', async () => {
@@ -32,8 +28,8 @@ export function TaskFileWindow({ text, title, onApply, onClose }: {
     }
   });
 
-  if (blocked) return <p className="error">The browser blocked the new window. Allow pop-ups for this page, then press "Task file" again.</p>;
-  if (!popup || !root) return null;
+  if (!root) return null;
+  if (text === null) return createPortal(<div className="task-file"><h3>{title}</h3><p className="hint">Reading the task file...</p></div>, root);
   return createPortal(
     <div className="task-file">
       <h3>{title}</h3>

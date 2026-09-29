@@ -30,7 +30,7 @@ from .validation import validate
 
 # Settings a resume may change. Everything that defines the task or the learner contract is fixed.
 RESUMABLE_RUN_FIELDS = ('max_evaluations', 'max_spectre_launches', 'max_wall_seconds', 'max_retries',
-                        'concurrency', 'threads_per_job', 'stop_at_first_feasible', 'max_consecutive_failures')
+                        'concurrency', 'stop_at_first_feasible', 'max_consecutive_failures')
 
 
 _HELD_LOCKS: dict = {}          # run_dir -> RunLock taken during preparation, handed to the worker
@@ -344,8 +344,7 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
         initial_dimensions=initial, initial_dimensions_sha256=initial_hash,
         budgets=dict(max_evaluations=config.run.max_evaluations, max_spectre_launches=config.run.max_spectre_launches,
                      max_wall_seconds=config.run.max_wall_seconds, max_retries=config.run.max_retries),
-        execution=dict(concurrency=config.run.concurrency, threads_per_job=config.run.threads_per_job,
-                       threads_applied=task.supports_threads, cache_policy=config.run.cache_policy,
+        execution=dict(concurrency=config.run.concurrency, cache_policy=config.run.cache_policy,
                        frozen_action=config.run.frozen_action if config.run.mode == 'frozen' else None),
         connection_gate=gate, consistency_check=consistency,
         authorization=dict(real_simulation=bool(allow_real and not task.mock),

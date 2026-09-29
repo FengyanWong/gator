@@ -93,7 +93,19 @@ def circuit_summary(graph, *, circuit: dict | None = None) -> dict:
                 truncated=len(graph.devices) > MAX_SUMMARY_DEVICES, devices=devices,
                 nets=[dict(net=n.id, roles=list(n.roles)) for n in graph.nets],
                 unknown_devices=[d.id for d in graph.devices if d.kind == 'unknown'],
-                note='Port order and parameter semantics come from the verified device mapping.')
+                structures=_structures(graph),
+                note='Port order and parameter semantics come from the verified device mapping. Structures are read from '
+                     'the device types and pin roles (differential pairs, current mirrors, loads, cascodes, tails).')
+
+
+def _structures(graph) -> list:
+    """The matched structures of the circuit (structures.recognize, status record 7.103), one sentence each. A circuit
+    they cannot be read from is summarized without them: the summary never fails because of this list."""
+    from ..structures import recognize
+    try:
+        return [s.text for s in recognize(graph)]
+    except Exception:                                   # a graph without the usual pins: no structures, not no summary
+        return []
 
 
 def _is_number(text) -> bool:

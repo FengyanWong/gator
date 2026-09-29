@@ -62,7 +62,7 @@ export function useVirtuosoBrowser(enabled: boolean, profileId: string | null, c
     if (!browsing || !chosenCell?.has_schematic) return;
     return nativeStep('schematic', () => api.nativeRead(profileId!, chosen.library, chosen.cell), setNative);
   }, [browsing, profileId, chosen.library, chosen.cell, !!chosenCell?.has_schematic]);
-  return { native, setNative, libraries, cells, chosenCell, listing, nativeError, setNativeError, nativeProblem, nativeStep, setRefresh };
+  return { native, libraries, cells, chosenCell, listing, nativeError, setNativeError, nativeProblem, setRefresh };
 }
 
 function Tree({ node, path = '' }: { node: Json; path?: string }) {

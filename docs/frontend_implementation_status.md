@@ -162,6 +162,9 @@ budget).
 | `7d365c3` | 09-29 23:49 | 7.112 | audit fixes to reward v2.1: the Specs scale suggestion follows the limits; equation specs keep their values on a measurement_error row (session "Analog design bench review and reward improvements") |
 | `5ee0c1f` | 09-29 23:49 | - | record only: names the commit of 7.112, and the table row for 63883d3 |
 | `7359287` | 09-29 23:55 | 7.112 | follow-up: `spec_equations_check` expects an empty scale for a new row with no limit, and 0.5 once the limit is typed |
+| `6c6cc3e` | 09-29 23:55 | - | record only: names the commit of the 7.112 follow-up, and the table row for 5ee0c1f |
+| `6080079` | 09-29 23:56 | - | record only: corrects the time of 5ee0c1f in this table (23:49, not 23:52) |
+| `9dedc81` | 09-30 00:39 | 7.113 | the Specs equations' old-configuration hash test reads a frozen configuration written by the pre-equations code, with its hashes (session "Parameters, specs, and probes linking in Virtuoso") |
 
 ## Entries
 

@@ -149,7 +149,15 @@ budget).
 | `eedbb3f` | 09-27 04:26 | - | record only: names the commit of 7.85-7.89 and 7.94-7.98, and the table rows since 7.70 |
 | `ce4cc4a` | 09-28 14:30 | 7.100 | a cell's PDK is read with the cell; "Load PDK..." moves to the Virtuoso window |
 | `c8fdc5c` | 09-29 15:45 | 7.101, 7.102 | review round 4: repeated code merged, behaviour unchanged (nothing under `src/analog_optimizer`, no test changed); `task_rows_check` fixed; the record file rolled over to `7.101-and-later.md` |
+| `73f1668` | 09-29 15:46 | - | record only: names the commit of 7.101 and 7.102, and the table rows since 1135b8b |
+| `2835ba3` | 09-29 17:59 | - | docs only: the Astra brief for reward v2.1 (`docs/brief-reward-v2.1-for-astra.md`) |
+| `f3fc5af` | 09-29 20:34 | - | docs only: the Astra brief for LLM-driven sizing (`docs/brief-llm-sizing-for-astra.md`) |
+| `6238dda` | 09-29 22:53 | - | docs only: the finalist Monte Carlo plan of 7.103 / 7.104 (`docs/plan-finalist-monte-carlo.md`); their entries went in with `5a39f89` |
+| `8cf53ae` | 09-29 23:00 | 7.106 | reward v2.1, the optimizer part (`src/analog_optimizer/`, digest `3f00832c...`) and its tests (Astra) |
+| `8db46b8` | 09-29 23:03 | 7.106-7.108, 7.111 | reward v2.1, the workbench part: controls, diagnostics, reachability warning, `reward_v21_check` (Astra) |
 | `8838dd7` | 09-29 23:10 | 7.105 | Probes lose `conditions` and `aggregation` with the migration (the hashes of all 14 runs unchanged); only this session's hunks, on top of reward v2.1 |
+| `d5087c2` | 09-29 23:12 | - | record only: names the commit of 7.105, and its table row |
+| `5a39f89` | 09-29 23:13 | 7.103, 7.104, 7.109, 7.110 | all shared work still uncommitted, in one commit "before LLM sizing" (another session): Matched devices, the frontend clean-up of 7.109 (duplicate and dead entries, `threads_per_job` retired), the OTA7 variant plan |
 
 ## Entries
 

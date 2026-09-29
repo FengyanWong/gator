@@ -160,7 +160,7 @@ budget).
 | `5a39f89` | 09-29 23:13 | 7.103, 7.104, 7.109, 7.110 | all shared work still uncommitted, in one commit "before LLM sizing" (another session): Matched devices, the frontend clean-up of 7.109 (duplicate and dead entries, `threads_per_job` retired), the OTA7 variant plan |
 | `63883d3` | 09-29 23:16 | - | record only: names the commit of 7.109, and the table rows since c8fdc5c |
 | `7d365c3` | 09-29 23:49 | 7.112 | audit fixes to reward v2.1: the Specs scale suggestion follows the limits; equation specs keep their values on a measurement_error row (session "Analog design bench review and reward improvements") |
-| `5ee0c1f` | 09-29 23:52 | - | record only: names the commit of 7.112, and the table row for 63883d3 |
+| `5ee0c1f` | 09-29 23:49 | - | record only: names the commit of 7.112, and the table row for 63883d3 |
 | `7359287` | 09-29 23:55 | 7.112 | follow-up: `spec_equations_check` expects an empty scale for a new row with no limit, and 0.5 once the limit is typed |
 
 ## Entries

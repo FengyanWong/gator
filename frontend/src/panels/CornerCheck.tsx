@@ -111,7 +111,7 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
         <tbody>{(request?.designs ?? []).map((d: Json, i: number) => {
           const verdict = summary?.designs?.[i];
           const [text, css] = verdict ? VERDICT[verdict.disposition] ?? [verdict.disposition, ''] : [live ? 'checking...' : '-', 'hint'];
-          return <tr key={d.evaluation_id}><td title={d.evaluation_id}>#{i + 1} <span className="hint">{d.evaluation_id.slice(0, 8)}</span></td>
+          return <tr key={d.evaluation_id}><td title={d.evaluation_id}>#{i + 1} <span className="hint">{d.label ?? d.evaluation_id.slice(0, 8)}</span></td>
             {corners.map(c => <Cell key={c.id} record={byCell.get(`${i}|${c.id}`)} running={live && current?.design === i && current?.corner === c.id} />)}
             <td className={css}><b>{text}</b>{verdict?.pass_rate != null && <span className="hint"> {Math.round(verdict.pass_rate * 5)}/5</span>}
               {verdict?.grading_error && <span className="error"> {verdict.grading_error}</span>}</td></tr>;
@@ -136,11 +136,11 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
           }))}</tbody></table></details>}
     </div>}
     {plan?.supported && <>
-      <h4>Designs for the next check <span className="hint">- feasible at the normal condition, safest first</span></h4>
+      <h4>Designs for the next check <span className="hint">- safest feasible designs first; the real task reference can also be checked</span></h4>
       <table className="grid small corner-designs"><thead><tr><th>#</th><th>Evaluation</th><th title="Distance to the nearest limit divided by that spec's scale: 0 = on the limit.">Smallest margin</th>
         <th>Sizes</th></tr></thead>
         <tbody>{plan.designs.map((d: Json, i: number) => <tr key={d.evaluation_id}><td>{i + 1}</td>
-          <td title={d.evaluation_id}>{d.evaluation_id.slice(0, 8)} <span className="hint">(evaluation #{d.completion_index})</span></td>
+          <td title={d.evaluation_id}>{d.label ?? d.evaluation_id.slice(0, 8)} {d.completion_index != null && <span className="hint">(evaluation #{d.completion_index})</span>}</td>
           <td>{d.min_margin == null ? '-' : String(+d.min_margin.toPrecision(3))} <span className="hint">({d.tightest_spec})</span></td><td>{variables(d)}</td></tr>)}</tbody></table>
       <p className="hint">This run has {plan.counts.feasible} feasible evaluation{plan.counts.feasible === 1 ? '' : 's'}, {plan.counts.distinct} different
         design{plan.counts.distinct === 1 ? '' : 's'}. Corners: {plan.corners.map((c: Json) => `${c.id} (${c.label})`).join(' · ')}.</p>

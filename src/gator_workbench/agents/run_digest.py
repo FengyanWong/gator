@@ -44,6 +44,7 @@ def _trend(values):
 
 
 def build(*, status: dict, config: dict, evaluations: list, parameters: list, metrics: list, updates: list, errors: list) -> dict:
+    from ..reward_diagnostics import steering
     order = sorted(evaluations, key=lambda row: (row.get('completion_index') or 0, row.get('dispatch_index') or 0))
     by_eval_parameters, by_eval_metrics = {}, {}
     for row in parameters:
@@ -111,11 +112,12 @@ def build(*, status: dict, config: dict, evaluations: list, parameters: list, me
                  active_seconds=_num(status.get('active_seconds'))),
         budget=dict(max_evaluations=budget.get('max_evaluations'), charged=budget.get('charged'), completed=budget.get('completed'),
                     failed=budget.get('failed'), launches=budget.get('launches'), retries=budget.get('retries'), remaining=budget.get('remaining')),
-        training=dict(settings={k: (run.get('advanced') or {}).get(k) for k in ('learning_rate', 'batch_size', 'warmup_transitions', 'update_every',
+        training=dict(settings={k: (run.get('advanced') or {}).get(k) for k in ('learning_rate', 'alpha_learning_rate', 'batch_size', 'warmup_transitions', 'update_every',
                                                                            'updates_per_transition', 'replay_capacity', 'episode_length', 'gamma')},
                       learner_updates=status.get('learner_updates'), evaluations_by_how_chosen=dict(Counter(str(row.get('action_source')) for row in order)),
                       policy_reward_trend=_trend(policy), critic_loss_trend=_trend([row.get('critic_loss') for row in updates]),
                       alpha_trend=_trend([row.get('alpha') for row in updates])),
+        steering=steering(evaluations, updates),
         first_feasible=status.get('first_feasible'),
         feasible_evaluations=sum(1 for row in order if row.get('all_hard_constraints_satisfied')), valid_evaluations=len(valid), evaluations=len(order),
         best=picture(best) if best else None, targets=targets, variables=variables,

@@ -235,6 +235,10 @@ def real_task_removed(task) -> str:
             'built-in tasks left are ' + ', '.join(f'real:{n}' for n in offered_real_profiles()) + '.')
 
 
+def training_capabilities(task_key):
+    return dict(corners=task_key == 'real:gpdk045_ota7', policies=['off', 'after_nominal', 'always'] if task_key == 'real:gpdk045_ota7' else ['off'])
+
+
 def list_tasks():
     tasks = []
     for name, info in SYNTHETIC_FIXTURES.items():
@@ -259,6 +263,7 @@ def list_tasks():
     tasks.extend(ngspice_tasks.task_entries())                 # SPICE decks saved in the ngspice window
     for task in tasks:
         task['starter_project'] = starter_project(task['task_key'])
+        task['training_capabilities'] = training_capabilities(task['task_key'])
     return tasks
 
 

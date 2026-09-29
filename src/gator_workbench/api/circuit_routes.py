@@ -71,7 +71,7 @@ def register(app: FastAPI, context: ApiContext):
             node = tree
             for part in device.id.split('/'):
                 node = node.setdefault(part, {})
-        return dict(loaded=True, task_key=runtime.task_key, mock=runtime.mock, circuit=runtime.circuit,
+        return dict(loaded=True, training_capabilities=tasks.training_capabilities(runtime.task_key), task_key=runtime.task_key, mock=runtime.mock, circuit=runtime.circuit,
                     simulator=runtime.circuit.get('simulator') or ('mock' if runtime.mock else 'spectre'),
                     content_sha256=runtime.circuit.get('netlist_sha256'), provided_metrics=list(runtime.provided_metrics),
                     hierarchy=tree, summary=circuit_summary(graph, circuit=runtime.circuit), complete=graph.complete,
@@ -290,7 +290,7 @@ def register(app: FastAPI, context: ApiContext):
     @app.post('/api/config/validate')
     def config_validate(body: ConfigBody):
         config, runtime, blocked = context.load_config(body.config)
-        report = validate_loaded(config, runtime)
+        report = validate_loaded(config, runtime, roots=context.roots)
         if runtime is not None and runtime.circuit.get('native_draft'):          # it must never look startable
             report.add('blocker', 'circuit_profile_missing', 'circuit', tasks.NATIVE_DRAFT_NOT_EXECUTABLE)
         return dict(report.as_dict(), config_hash=schema.config_hash(config),

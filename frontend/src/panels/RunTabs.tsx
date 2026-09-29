@@ -8,6 +8,12 @@ const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learn
 
 const runName = (runDir: string) => runDir.split(/[\\/]/).filter(Boolean).pop() ?? 'run';    // the run folder's own name, unique per run
 
+function SteeringCheck({ value }: { value: Json }) {
+  return <div className="steering-check"><p>Reward spread (p90 − p10, last {value?.scored_designs ?? 0} scored designs): <b>{num(value?.reward_spread)}</b>;
+    exploration bonus (latest update): <b>{num(value?.exploration_bonus)}</b>.</p>
+    {value?.verdict && <p className="warn">{value.verdict}</p>}</div>;
+}
+
 export function StatusTab({ status, onCommand, onContinue }: { status: Json; onCommand: (dir: string, c: string) => void; onContinue: () => void }) {
   if (!status) return <p className="hint">No run selected.</p>;
   const b = status.budget, best = status.best_design, first = status.first_feasible, conn = status.connection;
@@ -18,6 +24,7 @@ export function StatusTab({ status, onCommand, onContinue }: { status: Json; onC
   const executedReward = status.summary?.reward;
   const hasV2 = Object.prototype.hasOwnProperty.call(b ?? {}, 'first_nominal_feasible');
   return (<div className="status-grid">
+    <SteeringCheck value={status.steering} />
     {status.manifest?.mock && <p className="mock">{status.manifest.mock_notice}</p>}
     <table className="grid small"><tbody>
       <tr><td>State</td><td><b>{status.state}</b>{status.stop_reason ? ` (${status.stop_reason})` : ''}{status.worker_alive ? ' - worker alive' : ''}</td></tr>
@@ -67,6 +74,7 @@ export function StatusTab({ status, onCommand, onContinue }: { status: Json; onC
 
 export function DataTab({ runDir }: { runDir: string | null }) {
   const [table, setTable] = useState('evaluations');
+  const { value: status } = usePolling<Json>(() => api.status(runDir!), 2000, !!runDir, [runDir]);
   const { value: data, error, refresh } = useRequest<Json>(() => api.table(runDir!, table), [runDir, table], { enabled: !!runDir });
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -81,6 +89,7 @@ export function DataTab({ runDir }: { runDir: string | null }) {
     const written = await api.exportAggregates(runDir);
     return `Downloaded ${await download(api.aggregatesUrl(runDir), 'aggregates.zip')} (${Object.keys(written.files).length} tables). Also kept in ${written.experiment_dir}/aggregates`; });
   return (<div>
+    <SteeringCheck value={status?.steering} />
     <div className="row"><select value={table} onChange={e => setTable(e.target.value)}>{TABLES.map(t => <option key={t}>{t}</option>)}</select>
       <button onClick={refresh} title="Refresh: Read this table again."><Icon name="refresh" label="Refresh" /></button>
       <button disabled={!!busy} onClick={exportCsv} title="Export detailed CSV: The whole table, every row and not only the ones shown here. Written to the run folder (exports/) and downloaded."><Icon name={busy === 'csv' ? 'wait' : 'csv'} label={busy === 'csv' ? 'Exporting...' : 'Export detailed CSV'} /></button>

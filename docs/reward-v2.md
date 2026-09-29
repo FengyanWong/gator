@@ -1,5 +1,7 @@
 # Reward v2: Implementation and Qualification Status
 
+Latest: [Reward v2.1](#reward-v21-2026-09-29) is implemented, verified offline and checked physically under the approved 30-launch ceiling. The original v2 real qualification below is historical.
+
 Status, 2026-09-26: **implemented; bounded real-flow engineering qualification passed**. The user authorized
 implementation with "go on build the reward", under [the real-flow plan](plan-reward-v2-real-flow.md).
 Its package-edit permission and no-MOCK requirement control this work. No claim of a better optimizer,
@@ -244,3 +246,71 @@ re-run on the final source: 2,811 / 2,811 bitwise, 0 exclusions. New tests: `tes
 (the invocation rule on both origins, the label/layout rule, the M6 registries load) and
 `tests/workbench/test_wb_reward_v2_mock.py` (a MOCK run with a compressed ramp, share and bonus completes, its
 learner accepts the replay, one job row per toy call). The full-suite result is in record 7.98.
+
+## Reward v2.1 (2026-09-29)
+
+The [reward v2.1 brief](brief-reward-v2.1-for-astra.md), section 7 steps 1–5, is implemented and verified offline.
+The older qualification above remains historical evidence. The offline work made no physical calls (record 7.106).
+The user subsequently approved D6 with a 30-launch ceiling. Its first full workbench connection check passed all
+layers except unknown license status (`license_not_checkable`), so the physical check stopped with zero simulations
+and zero parameter writes (record 7.107). The user then approved proceeding with that unknown status. The real
+after_nominal check completed with 10/30 launches: two nominal failures skipped their corners and qualification-05
+stage B’s last design ran nominal plus all four corners. Cumulative reservations were 18, charges/made 10, unused
+slots released 8, retries/uncertain/outstanding 0. All six rewards recompute exactly, and the starting snapshot plus
+six nominal metrics were restored exactly (record 7.108). This fixed-action check made no learner updates; the
+last design still fails the full corner plan, and no missing-value failure was forced.
+The [section 10 report](../artifacts/local/reviews/astra-reward-v2.1.md) gives the changes, decisions and retained failures.
+
+A completed simulation may count a missing required value as violation 1 only when that spec opts into
+`missing_is_failure`. Other measured specs retain their values. Unit errors, unflagged missing values and
+infrastructure faults remain unavailable. The row keeps its honest status, reason and affected metric IDs.
+Attributed design failures now continue the episode in every policy. The user explicitly retained normal termination
+without bootstrap at the final allowed step and existing configured success termination.
+
+`after_nominal` runs corners only when nominal passes every active hard spec. Resets cost one launch; a failing
+nominal step costs one, and a passing step costs 1 + K. Admission reserves the full plan before preparation and charges
+only launches made. With gate band b (default 0.5), failed nominal rewards lie below −b, while scored gate-passing
+rewards start at −b. The approved next-representable-float guard prevents a rounded tie. Complete feasible designs
+retain their bonuses. Coverage uses existing inputs; no network column or Monte Carlo behavior was added.
+
+`objective_shape='compressed'` keeps paying for further improvement, using the least improvement over applicable
+conditions. It is capped at the representable value below 1; monotonicity is non-decreasing everywhere and strict
+where precision distinguishes results. The compatibility default is still `clipped`. `margin_sides` selects both,
+lower or upper for clearance and Corner check ranking; both applicable bounds still govern violations/feasibility.
+
+New browser configurations start with compressed violations and worst-spec share 0.5 (D3). Saved configurations and
+schema compatibility defaults stay unchanged. Optional Specs columns expose the two per-spec settings and a zero-floor
+hint. Creating a row or editing its unit/limits with an empty scale suggests 3 dB, 10 degrees, the target tolerance,
+half an interval width, or the existing threshold fallback. Loading a saved empty scale does not fill it (D5).
+
+SAC now accepts an independent `alpha_learning_rate`; empty means the actor's rate. **No separate starting rate is
+shipped.** The user rejected 0.0065 from the preliminary 500-update check. A 1,000-update repeat on fixed algebraic
+synthetic transitions tested 0.003, 0.005, 0.0065 and 0.01. None reached the ±0.15-nat target band by update 500 and
+kept every later trailing-50 mean in it through 1,000 without any individual entropy below −2. The 0.005 rate settles
+in band only after update 695; 0.0065 leaves the band after crossing it. These are unit-check observations, not circuit
+tuning. Every update and the superseded preliminary evidence are retained in the report's evidence directory.
+
+Status, Data tables and the reward-review digest show p90−p10 over the last 50 scored designs and the latest
+alpha*(−mean log probability). The brief's warning appears when the former is smaller. Both come from existing tables.
+A separate, non-blocking corner-target warning rejudges recorded measurements and names worst misses of the best
+recorded design. Corner check can include the real task reference even if nominal fails. No observed full-plan pass
+is not a proof of infeasibility; D7, changing targets or ranges, remains outside this build.
+
+Validation: **1,414 passed, 24 warnings**, 134.82 seconds, full `-n 12 --dist load` suite on the shared tree with scratch
+settings; `npx tsc --noEmit` clean; **27/27** hermetic checks against current Vite source on 5191 and scratch API 8841.
+Both services stopped; no live frontend build or 8765 operation. An existing cancellation timing test failed once
+under concurrent validation, passed alone unchanged, and passed in the final full suite. Earlier failures remain logged.
+
+G1: **2,811/2,811 bitwise identities**, zero exclusions. G2: 3 A aggregates + 8 B + 1 C transitions, maximum delta 0.
+G3: both pinned OTA7 hashes, 68 protected files, 16 saved configurations and 12 task files unchanged. G5/G6 property,
+fuzz and scripted episode checks pass; G7 recorded review numbers reproduce. G8: exactly eight package files changed
+against the pre-edit snapshot. One digest step:
+
+`f087a4ce40d9a1bd7db5c0c756851b5f46be71f659f3e2365d691ddb707b004a` →
+`3f00832c89c1cf7af5cbc5ab6dac74c20250a76ea7bfa3a2df06717087fdd6f4`.
+
+Old checkpoints still need their exact source/dependency contract. Physical after-nominal execution is verified by
+record 7.108; naturally occurring missing-value failures, a matched optimization comparison and Monte Carlo remain
+unverified or out of scope. No
+optimizer superiority, robust-feasible circuit, yield or manufacturing-readiness claim follows. The user authorized
+separate package and workbench commits after completion; pushing remains outside that authorization.

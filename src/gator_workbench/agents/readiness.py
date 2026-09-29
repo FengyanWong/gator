@@ -121,6 +121,11 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
     else:
         items.append(_item('run', 'Run configuration', 'done', 'you', detail))
 
+    reachability = [i for i in issues if i.get('code') == 'corner_reachability']
+    if reachability:
+        items.append(_item('corner_reachability', 'Corner targets', 'warning', 'you',
+                           ' '.join(i['message'] for i in reachability), 'Open Corner check.'))
+
     # 7. output folder
     if output is None:
         items.append(_item('output', 'Output folder', 'unknown', 'you', 'Not checked.'))

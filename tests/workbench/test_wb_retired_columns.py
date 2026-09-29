@@ -83,7 +83,7 @@ def test_probe_fields_that_never_ran_are_dropped(tmp_path):
 
 def test_editor_columns_say_what_is_shown_on_request_and_what_is_read_only():
     by = {section: {c['name']: c for c in schema.editor_columns(section)} for section in schema.SECTIONS}
-    assert [n for n, c in by['targets'].items() if c['advanced']] == ['soft_weight', 'active', 'basis']
+    assert [n for n, c in by['targets'].items() if c['advanced']] == ['missing_is_failure', 'margin_sides', 'soft_weight', 'active', 'basis']
     assert [n for n, c in by['measurements'].items() if c['advanced']] == ['conditions', 'aggregation']
     assert [n for n, c in by['parameters'].items() if c['readonly']] == ['initial_value']
     assert not any(c['advanced'] for c in by['parameters'].values())

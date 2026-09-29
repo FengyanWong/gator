@@ -13,7 +13,7 @@ def test_a_mock_run_uses_the_configured_reward_settings(tmp_path):
     assert state == 'completed'
     effective = json.loads(Path(layout.effective_config).read_text())
     assert effective['run']['reward'] == dict(violation_shape='compressed', worst_spec_share=0.5,
-                                              objective_weight=0.0, margin_weight=0.1)
+                                              objective_weight=0.0, margin_weight=0.1, nominal_gate_band=0.5, objective_shape='clipped')
     transitions = rows(layout, 'transitions', ['reward_version', 'replay_admitted'])
     assert transitions and all(t['reward_version'] == 'constraint_violation_v2' for t in transitions)
     # the learner refuses a replay whose settings differ from its own: its updates prove the environment used the same

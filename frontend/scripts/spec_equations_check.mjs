@@ -66,11 +66,11 @@ await runChecks(browser, async () => {
   // a formula: its own name, a unit that cannot be checked, a new entry in the network's result registry
   await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Add').click()`);
   await until(`${EDITORS}.querySelectorAll('table.editor tbody tr').length === 2`);
-  // "Add" used to give a required field the schema's `default: null` (constraint): the row was invalid. normalization_scale
-  // may be empty since 7.92 (2026-09-26): the violation is then divided by the size of the threshold.
+  // "Add" supplies the required constraint and proposes an explicit scale since reward v2.1. Saved empty scales
+  // still use the threshold size; this fixture's new row receives the fallback scale of 1.
   const added = (await evaluate(`new Promise(r => setTimeout(() => r(JSON.parse(localStorage.getItem('gator-workbench-config-v1'))), 1000))`)).targets[1];
-  check('a new spec row starts complete: the first probe as its equation, in its unit, a constraint, and an empty scale (the threshold size)',
-    added?.equation === 'm_score' && added?.unit === 'fixture' && added?.constraint === '>=' && added?.normalization_scale === null, JSON.stringify(added));
+  check('a new spec row starts complete: the first probe as its equation, in its unit, a constraint, and the suggested scale',
+    added?.equation === 'm_score' && added?.unit === 'fixture' && added?.constraint === '>=' && added?.normalization_scale === 1, JSON.stringify(added));
   await type(1, 'metric_id', 'score_sq'); await type(1, 'equation', 'm_score ** 2'); await type(1, 'unit', 'fixture'); await type(1, 'lower', '0.5');
   let [ok, found] = await issuesUntil(1, ['warning: equation_unit_unchecked', 'info: spec_adds_registry_entry'], ['error', 'blocker']);
   const row = async () => JSON.stringify((await evaluate(`new Promise(r => setTimeout(() => r(JSON.parse(localStorage.getItem('gator-workbench-config-v1'))), 1000))`)).targets[1])

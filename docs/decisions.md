@@ -390,3 +390,73 @@ The initial sandboxed focused test run stalled after 149 passes on local IPC. Au
 - The audit of the reward-v2 implementation (workbench record 7.97) ran the repository's full regression suite, which the qualification had replaced by a 70-test selection, and found it red: 130 failed, 115 errors. Two behaviour regressions and one plumbing gap were fixed on the user's instruction ("fix the three issues") under the standing reward-v2 permission: (1) `envs/sizing.py` treated a result without `simulator_invocations` as an uncertain physical launch and truncated the candidate, which made every synthetic / MOCK evaluation fail; a synthetic result is now a complete call with zero real invocations and only a real task's launch can be left unresolved (`recording/store.py` accepts an intent with 0 or 1 uncertain calls); (2) `models/inputs.py` refused every `SpecSchema.version` but `spec-input-v2`, which broke the untouched M6 modules that name their registries; the version is identity again and the layout is a separate validated field `layout = 'spec-input-v2'` in every checkpoint contract; (3) MOCK runs now receive the run's reward settings (the learner enforces them on every replay batch).
 - Source digest changed from `3473ed9c8336e0a01e82bb84d13f4ea416961024092810c22cd4ce8ce58f8731` (the digest of the real A/B/C qualification) to `f087a4ce40d9a1bd7db5c0c756851b5f46be71f659f3e2365d691ddb707b004a`. Exactly three package files changed: `envs/sizing.py`, `models/inputs.py`, `recording/store.py`. The reward arithmetic is unchanged: the recorded-real identity check on the final source gives 2,811 / 2,811 bitwise, 0 exclusions. Checkpoints written at `3473ed9c...` (the qualification's B run) load only from a source with that digest, as every earlier digest step.
 - Validation: full suite on a clean snapshot **1,266 passed, 7 failed, 15 errors**, all 22 being the evidence-dependent reward-v2 tests that cannot see `artifacts/` from a snapshot; on the working tree those 143 tests pass, so every collected test passes. Eleven adversarial environment tests of the audit pass on the fixed tree. Zero simulator, bridge or agent calls; nothing committed or pushed. Details: workbench record 7.98, `docs/reward-v2.md` "Audit Fixes", `artifacts/local/reviews/fable-audit-reward-v2.md`.
+
+## Reward v2.1 (2026-09-29)
+
+The user authorized only section 4 package changes of `docs/brief-reward-v2.1-for-astra.md`, as one digest step, and
+workbench steps in section 7 order. D1: continue attributed failures; D2: band 0.5; D3: compressed violations/share 0.5
+only for new configurations; D4: separate optional alpha learning rate; D5: the brief's explicit scale suggestions,
+without backfilling saved empty scales. Approved numerical guards preserve strict gate ordering and objective <1 under
+floating-point rounding. Approved episode clarification preserves termination without bootstrap at the normal horizon
+and configured success termination; only the failure-caused early ending is removed.
+
+Package digest before: `f087a4ce40d9a1bd7db5c0c756851b5f46be71f659f3e2365d691ddb707b004a`.
+After: `3f00832c89c1cf7af5cbc5ab6dac74c20250a76ea7bfa3a2df06717087fdd6f4`.
+Exactly eight package files differ from the pre-edit snapshot: `measurements/specs.py`, `envs/sizing.py`, `models/inputs.py`,
+`training/replay.py`, `training/sac.py`, `training/runner.py`, `training/parallel.py`, `recording/reader.py`. The workbench
+step makes no further digest change. Historical exact-resume source/dependency checks are not bypassed.
+
+The user rejected shipping 0.0065 based on a transient 500-update entropy crossing and requested a 1,000-update repeat
+at 0.003, 0.005, 0.0065 and 0.01. None meets the declared sustained ±0.15-nat criterion with arrival by 500 and no
+individual dip below −2. New configurations therefore leave alpha learning rate empty, inheriting the actor's rate.
+This is an algebraic synthetic-transition unit check, not tuning on circuits; all original and extended results remain.
+
+Offline gates pass: 2,811/2,811 bitwise identities, all 12 recorded A/B/C rewards exact, pinned OTA7/default/protected
+and saved-file hashes unchanged, full suite 1,414 passed, TypeScript clean, 27 hermetic scratch browser checks.
+The corner-target warning identifies recorded misses without blocking a start; no target or parameter range was changed.
+Section 7 stops after step 5. D6 launch ceiling is unapproved and D7 is deferred; no physical call, live build,
+backend-8765 action, commit or push. [Full report](../artifacts/local/reviews/astra-reward-v2.1.md),
+[contract and limits](reward-v2.md#reward-v21-2026-09-29), workbench record 7.106.
+
+
+## Reward v2.1 real-check ceiling and connection stop (2026-09-29)
+
+D6 is approved for at most 30 OTA7 Spectre launches: first run the workbench connection test, stop if it does not
+pass and never repair the tunnel/daemon; state the sequence first; include qualification-05 stage B’s last design;
+no retries; restore the captured starting design and confirm it nominally inside the cap; audit reservations,
+charges, actual launches and all rewards. Planned 10 expected / 18 maximum launches, including restoration.
+
+The first full connection check passed every layer except `spectre_license`, which returned unknown /
+`license_not_checkable`. Execution stopped before any parameter write or simulation. Reservations / charged / made
+are 0 / 0 / 0. This is an unverified license status, not an observed license denial. Proceeding with that unknown
+status awaits the user’s decision. No tunnel/daemon changes or retries. Package digest remains the one above.
+[Evidence and report](../artifacts/local/reviews/astra-reward-v2.1.md#step-6-follow-up-approved-ceiling-stopped-at-connection-test),
+workbench record 7.107.
+
+
+## Reward v2.1 real check completed (2026-09-29)
+
+After the assistant explicitly asked whether to proceed with license status unverified, the user answered “go on”.
+All other D6 conditions remained: the stated fixed-action sequence, 30-launch ceiling, no retries or tunnel/daemon
+repair, stage B’s last nominal-passing design, starting-design restoration and a final nominal run inside the cap.
+
+Completed in 32.519 s with **10 real Spectre launches**. Cumulative reserved capacity **18**, charged/made **10**,
+unused released **8**, outstanding/uncertain/retries **0**. Stage B steps 1 and 2 each failed nominal and skipped all
+corners; its last design passed nominal and ran all four corners, but did not pass the complete specification plan.
+Three transitions passed replay admission; the final step respected the normal horizon without bootstrap.
+All six recorded rewards independently recompute exactly (maximum difference 0.0); ten independent PSF reparses match.
+Starting/restored full snapshots and all six nominal metrics match exactly, including the final confirmation as launch 10.
+
+This is a fixed-action physical gate check, with zero learner updates. No broken design was forced; A1’s physical
+failure case remains unobserved. D7 and the matched comparison are still separate decisions. Package digest remains
+`3f00832c89c1cf7af5cbc5ab6dac74c20250a76ea7bfa3a2df06717087fdd6f4`; no implementation change, live build, 8765 action,
+commit or push. [Section 10 report](../artifacts/local/reviews/astra-reward-v2.1.md#step-6-completion-real-gate-check-and-restoration),
+[execution audit](../artifacts/local/reviews/astra-reward-v2.1/step6-20260929-01/execution-audit.json), record 7.108.
+
+## Reward v2.1 commit authorization (2026-09-29)
+
+The user explicitly requested `commit`. Reward v2.1 is committed as separate package and workbench changes under
+the brief's rule; pushing is not authorized. Package commit `8cf53ae` retains the audited final digest above.
+Fresh full shared-tree regression: 1,417 passed; the selected workbench snapshot: 727 passed. TypeScript passes on
+both trees; selected reward and Specs browser checks pass 27 and 15 cases. Shared-file selections exclude unrelated
+sessions' edits. The OTA7 variant follow-up is stopped and remains outside these commits. Record 7.111.

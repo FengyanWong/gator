@@ -209,14 +209,21 @@ def load_runtime(config, *, allow_real=False):
         return None, dict(blocker=redact(f'{type(exc).__name__}: {exc}', 1000), interface_contract=None)
 
 
-def validate_loaded(config, runtime):
+def validate_loaded(config, runtime, *, roots=None):
     """Static validation against the loaded circuit, the SAME way for the page, the start checklist, the settings
     review and an applied proposal. A cell read from Virtuoso that has no task yet (a native draft) provides metrics
     nobody knows: they are not checked - an empty list reported every probe as `metric_not_provided` in the agent's
     checklist while the page showed none."""
     draft = runtime is not None and bool(runtime.circuit.get('native_draft'))
-    return validate(config, graph=None if runtime is None else runtime.base_graph,
-                    provided_metrics=None if runtime is None or draft else set(runtime.provided_metrics))
+    report = validate(config, graph=None if runtime is None else runtime.base_graph,
+                      provided_metrics=None if runtime is None or draft else set(runtime.provided_metrics))
+    if config.run.conditions.policy != 'off' and not report.blocks_run:
+        from ..reachability import check
+        evidence = check(config, roots=roots)
+        report.facts['corner_reachability'] = evidence
+        if evidence and evidence['warning']:
+            report.add('warning', 'corner_reachability', 'run.conditions', evidence['warning'])
+    return report
 
 
 def agent_settings() -> AgentSettings:

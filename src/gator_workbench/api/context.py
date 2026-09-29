@@ -55,7 +55,7 @@ class ApiContext:
     def run_readiness(self, config, runtime, blocked) -> dict:
         """The start checklist. Free: static validation, the output-root check and the monitor's CACHED connection
         status - no bridge contact, no simulator, no agent. A fresh connection test stays the user's button."""
-        report = validate_loaded(config, runtime).as_dict()
+        report = validate_loaded(config, runtime, roots=self.roots).as_dict()
         profile_id = config.run.connection_profile_id
         try:
             link = self.monitor.status(profile_id) if profile_id and runtime is not None and not runtime.mock else None

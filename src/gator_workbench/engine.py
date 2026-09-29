@@ -648,7 +648,7 @@ class RunEngine:
         metric_values, metric_valid = {}, {}
         for target in self.compiled.targets:
             value = spec_values.get(target['metric_id'])
-            ok = value is not None and status == 'ok'
+            ok = value is not None and status in ('ok', 'measurement_error')
             metric_values[target['metric_id']], metric_valid[target['metric_id']] = (value if ok else None), ok
         valid, feasible, constraint_rows, violation = hard_constraints(self.compiled.targets, metric_values, metric_valid)
         nominal_feasible = feasible
@@ -658,7 +658,7 @@ class RunEngine:
             for index, row in enumerate(observation.condition_results):
                 targets = tuple(t for t in self.compiled.targets if index == 0 or not t['nominal_only'])
                 validity = {t['metric_id']: row.metric_validity.get(t['metric_id']) is True
-                            and row.metric_units.get(t['metric_id']) == t['unit'] and row.status == 'ok'
+                            and row.metric_units.get(t['metric_id']) == t['unit'] and row.status in ('ok', 'measurement_error')
                             and row.candidate_evaluated for t in targets}
                 checks.append(hard_constraints(targets, row.metrics, validity))
             valid = all(check[0] for check in checks) and not truncated
@@ -736,7 +736,7 @@ class RunEngine:
         candidate = self._candidate(busy, record, metric_values, raw_units, constraint_rows, valid, feasible,
                                     violation, reward, commit_seq)
         candidate.update(nominal_feasible=nominal_feasible, nominal_metrics=record.get('metrics'),
-                         robust_feasible=feasible if self.config.run.conditions.policy == 'always' else None,
+                         robust_feasible=feasible if self.config.run.conditions.policy != 'off' else None,
                          worst_metrics=metric_values, conditions_complete=info.get('conditions_complete'),
                          conditions_evaluated=info.get('conditions_evaluated'), conditions_planned=info.get('conditions_planned'),
                          clearance_margin=info.get('clearance_margin'), tightest_clearance_spec=info.get('tightest_clearance_spec'),
@@ -783,7 +783,7 @@ class RunEngine:
             reward_version=record.get('reward_version'), condition_policy=record.get('condition_policy'),
             conditions_planned=info.get('conditions_planned'), conditions_evaluated=info.get('conditions_evaluated'),
             conditions_complete=info.get('conditions_complete'), nominal_feasible=nominal_feasible,
-            robust_feasible=feasible if self.config.run.conditions.policy == 'always' else None,
+            robust_feasible=feasible if self.config.run.conditions.policy != 'off' else None,
             clearance_margin=info.get('clearance_margin'), tightest_clearance_spec=info.get('tightest_clearance_spec'),
             clearance_rule=record.get('clearance_rule'),
             condition_results_json=json.dumps(record['condition_results']) if record.get('condition_results') else None,
@@ -917,7 +917,7 @@ class RunEngine:
                 return f'evaluation_status_{status}'
             return 'missing_or_nonfinite' if value is None else 'invalid_measurement'
         for name in sorted(set(raw) | set(validity)):
-            value, ok = raw.get(name), validity.get(name) is True and status == 'ok'
+            value, ok = raw.get(name), validity.get(name) is True and status in ('ok', 'measurement_error')
             finite = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
             rows.append(dict(run_id=self.run_id, evaluation_id=evaluation_id, measurement_id=None, metric_name=name,
                              analysis=None, condition='nominal', raw_value=value if finite and ok else None,
@@ -931,7 +931,7 @@ class RunEngine:
             definition = measurements.get(probe) if probe is not None else None
             whole.add(probe)
             constraint = by_metric.get(target['metric_id'])
-            ok = value is not None and status == 'ok'
+            ok = value is not None and status in ('ok', 'measurement_error')
             rows.append(dict(run_id=self.run_id, evaluation_id=evaluation_id, measurement_id=probe,
                              metric_name=target['metric_id'], analysis=definition.analysis if definition else None,
                              condition='aggregate', raw_value=value if ok else None, unit=target['unit'], valid=ok,
@@ -944,7 +944,7 @@ class RunEngine:
             if measurement_id in whole:
                 continue
             definition = measurements[measurement_id]
-            ok = value is not None and status == 'ok'
+            ok = value is not None and status in ('ok', 'measurement_error')
             rows.append(dict(run_id=self.run_id, evaluation_id=evaluation_id, measurement_id=measurement_id,
                              metric_name=measurement_id, analysis=definition.analysis, condition='aggregate',
                              raw_value=value if ok else None, unit=definition.unit, valid=ok,
@@ -954,7 +954,7 @@ class RunEngine:
             label = condition['condition']['corner']['id']
             for name in sorted(set(condition['metrics']) | set(condition['metric_validity'])):
                 value = condition['metrics'].get(name)
-                ok = (condition['status'] == 'ok' and condition['metric_validity'].get(name) is True
+                ok = (condition['status'] in ('ok', 'measurement_error') and condition['metric_validity'].get(name) is True
                       and isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value))
                 target = next((t for t in self.compiled.targets if t['metric_id'] == name and not t['nominal_only']), None)
                 checked = hard_constraints((target,), {name: value}, {name: ok})[2][0] if target and target['active'] else None

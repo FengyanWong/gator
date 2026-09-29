@@ -149,13 +149,13 @@ def build_specs(config: WorkbenchConfig):
                                 scale=units.scale_to_canonical(normalization_scale(t), t.unit),
                                 lower=lower, upper=upper, weight=t.soft_weight, required=t.hard, active=t.active,
                                 objective={'none': 'none', 'minimize': 'min', 'maximize': 'max'}[t.direction_after_feasible],
-                                nominal_only=t.nominal_only))
+                                nominal_only=t.nominal_only, missing_is_failure=t.missing_is_failure, margin_sides=t.margin_sides))
         equation = t.equation.strip()
         targets.append(dict(metric_id=t.metric_id, equation=equation,
                             probe=equation if equation in {m.measurement_id for m in config.measurements} else None,
                             unit=unit, lower=lower, upper=upper, hard=t.hard, active=t.active, constraint=t.constraint,
                             tolerance_applied=tolerance, scale=specs[-1].scale, nominal_only=t.nominal_only,
-                            objective=specs[-1].objective))
+                            objective=specs[-1].objective, margin_sides=t.margin_sides))
         if t.active and t.direction_after_feasible != 'none':
             preference = dict(metric=t.metric_id,
                               direction='min' if t.direction_after_feasible == 'minimize' else 'max')

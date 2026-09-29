@@ -164,6 +164,8 @@ def register(app: FastAPI, context: ApiContext):
         path = context.run_path(run_dir)
         layout = RunLayout(path)
         result = runs.run_status(path)
+        from ..reward_diagnostics import load as steering_check
+        result['steering'] = steering_check(path)
         manifest = read_json(layout.manifest, default={}) or {}
         result.update(manifest=dict(mode=manifest.get('mode'), mock=manifest.get('mock'), task_id=manifest.get('task_id'),
                                     seeds=manifest.get('seeds'), source_model=manifest.get('source_model'),

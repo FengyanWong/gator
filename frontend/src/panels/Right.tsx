@@ -137,9 +137,10 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       run.connection_profile_id, run.seed, run.network, run.advanced, run.reward, run.conditions, config.research?.split])],
     { enabled: !!source.run_dir, delay: 250 });
   const cornerIds: string[] = schema.$defs.ConditionsConfig.properties.corners.items.enum;
-  const robust = run.conditions?.policy === 'always';
+  const robust = (run.conditions?.policy ?? 'off') !== 'off';
+  const gated = run.conditions?.policy === 'after_nominal';
   const corners: string[] = run.conditions?.corners ?? [];
-  const supportsCorners = config.circuit?.source === 'registered_task' && config.circuit?.task_id === 'real:gpdk045_ota7';
+  const supportsCorners = circuit?.loaded && circuit?.task_key === config.circuit?.task_id && circuit?.training_capabilities?.corners === true;
   const launchesPerStep = robust ? 1 + corners.length : 1;
   const objective = (config.targets ?? []).filter((t: Json) => t.active !== false && t.direction_after_feasible && t.direction_after_feasible !== 'none');
   const toggleCorner = (id: string, checked: boolean) => set({ conditions: { ...run.conditions,
@@ -282,8 +283,8 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       <Check label="Stop at the first feasible design" value={run.stop_at_first_feasible} onChange={v => set({ stop_at_first_feasible: v })} />
       <h3>Reward and conditions</h3>
       <label>Training conditions<select value={run.conditions?.policy ?? 'off'} onChange={e => set({ conditions: {
-        policy: e.target.value, corners: e.target.value === 'always' ? cornerIds : [] } })}>
-        <option value="off">Nominal only</option><option value="always" disabled={!supportsCorners}>Every planned corner</option></select></label>
+        policy: e.target.value, corners: e.target.value !== 'off' ? cornerIds : [] } })}>
+        <option value="off">Nominal only</option><option value="after_nominal" disabled={!supportsCorners}>Corners after nominal passes</option><option value="always" disabled={!supportsCorners}>Every planned corner</option></select></label>
       {robust && <div className="training-corners">
         <Check label="nominal" value disabled onChange={() => undefined} title="Nominal is required in every training plan and is the only reset condition." />
         {cornerIds.map(id => <Check key={id} label={id} value={corners.includes(id)}
@@ -292,7 +293,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
           onChange={checked => toggleCorner(id, checked)} />)}
       </div>}
       <table className="grid small reward-costs"><tbody>
-        <tr><td>Launches / step</td><td>{launchesPerStep}</td></tr>
+        <tr><td>Launches / step</td><td>{gated ? `1 per design that fails nominal, 1 + ${corners.length} per design that passes` : launchesPerStep}</td></tr>
         <tr><td>Launches / reset</td><td>1</td></tr>
         <tr><td>Launch cap</td><td>{run.max_spectre_launches ?? (robust ? 'Required' : 'Not set')}</td></tr>
       </tbody></table>
@@ -301,6 +302,8 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       {robust && (run.max_retries ?? 0) !== 0 && <p className="error">Training corners require zero automatic retries.</p>}
       <label title="Capped: min(1, distance/scale). Compressed: (distance/scale)/(1 + distance/scale). Neither determines feasibility by reward sign.">Violation shape<select value={run.reward?.violation_shape ?? 'capped'} onChange={e => set({ reward: { ...run.reward, violation_shape: e.target.value } })}>
         <option value="capped">Capped</option><option value="compressed">Compressed</option></select></label>
+      {gated && <Num label="Nominal gate band" value={run.reward?.nominal_gate_band ?? 0.5} onChange={v => set({ reward: { ...run.reward, nominal_gate_band: v } })} title="Strictly between 0 and 1. Gate-passing designs always rank above gate-failing designs." />}
+      <label>Objective shape<select value={run.reward?.objective_shape ?? 'clipped'} onChange={e => set({ reward: { ...run.reward, objective_shape: e.target.value } })}><option value="clipped">Clipped</option><option value="compressed">Compressed</option></select></label>
       <Num label="Worst hard-spec share" bounded value={run.reward?.worst_spec_share ?? 0} onChange={v => set({ reward: { ...run.reward, worst_spec_share: v } })}
         title="0 to 1. Mix the weighted mean violation with the worst hard-spec violation. At 1, soft violations do not contribute to the penalty." />
       <Num label="Objective bonus weight" bounded value={run.reward?.objective_weight ?? 0} onChange={v => set({ reward: { ...run.reward, objective_weight: v } })}
@@ -386,7 +389,8 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         {run.mode === 'fine_tune' && <Check label="Continual learning (inherit weights fine-tuned on a previous test task)" value={run.continual_learning} onChange={v => set({ continual_learning: v })} />}
       </>)}
       <details><summary>Advanced (stored per encoder, like the network sizes)</summary>
-        <p className="hint">These belong to the selected encoder's backend setting. The algorithm stays soft actor-critic; only its numbers change.</p>
+        <p className="hint">Alpha learning rate belongs to this configuration; the other settings belong to the selected encoder. The algorithm stays soft actor-critic; only its numbers change.</p>
+        <Num label="Alpha learning rate" nullable value={adv.alpha_learning_rate} onChange={v => setAdv({ alpha_learning_rate: v })} title="Empty uses the actor learning rate. A separate rate is stored in this configuration." />
         {ADVANCED_ROWS.map((fields, i) => {
           const inputs = fields.map(([name, label, title]) => <Num key={name} label={label} title={title}
             value={adv[name] ?? entry?.advanced?.[name] ?? schema.$defs.AdvancedRL.properties[name].default}

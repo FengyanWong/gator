@@ -23,7 +23,7 @@ from . import checkpoints as ckpt
 def sac_config_from(advanced):
     from analog_optimizer.training.sac import SACConfig
     return SACConfig(gamma=advanced.gamma, tau=advanced.tau, learning_rate=advanced.learning_rate,
-                     initial_alpha=advanced.initial_alpha,
+                     initial_alpha=advanced.initial_alpha, alpha_learning_rate=advanced.alpha_learning_rate,
                      target_entropy_per_action=advanced.target_entropy_per_action,
                      max_grad_norm=advanced.max_grad_norm)
 

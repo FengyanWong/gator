@@ -6,6 +6,13 @@ import { Typed } from './Typed';
 
 export type Section = 'parameters' | 'targets' | 'measurements';
 const TITLES: Record<Section, string> = { parameters: 'Parameters', measurements: 'Probes', targets: 'Specs' };   // key order = tab order
+function suggestedScale(row: Json): number {
+  if (row.unit === 'dB') return 3;
+  if (row.unit === 'deg') return 10;
+  if (row.constraint === 'target' && row.tolerance > 0) return row.tolerance;
+  if (row.constraint === 'interval' && row.lower != null && row.upper != null && row.upper > row.lower) return (row.upper - row.lower) / 2;
+  return Math.max(...[row.lower, row.upper, row.target].filter(v => typeof v === 'number').map(Math.abs), 0) || 1;
+}
 
 const MORE_KEY = 'gator-workbench-editor-more-columns';
 
@@ -66,6 +73,7 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
   const file = useRef<HTMLInputElement>(null);
   const columns: Json[] = schema.editors[tab].map((c: Json) => tab !== 'targets' ? c : c.name === 'nominal_only'
     ? { ...c, label: 'Judged at' } : c.name === 'direction_after_feasible' ? { ...c, label: 'Objective' }
+    : c.name === 'missing_is_failure' ? { ...c, label: 'Missing value = failed' } : c.name === 'margin_sides' ? { ...c, label: 'Margin sides' }
     : c.name === 'normalization_scale' ? { ...c, guidance: 'Threshold distance divided by this positive scale, then shaped by the selected capped or compressed reward. Empty uses the threshold size. Feasibility uses the actual bounds, not the reward.' } : c);
   const hidden = columns.filter(c => c.advanced);
   const visible = columns.filter(c => more || !c.advanced);
@@ -75,7 +83,11 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
   const rowIssues = (index: number) => issues.filter((i: Json) => i.path.startsWith(`${tab}[${index}]`));
 
   const update = (index: number, name: string, value: Json) =>
-    setConfig((c: Json) => ({ ...c, [tab]: c[tab].map((r: Json, i: number) => i === index ? { ...r, [name]: value } : r) }));
+    setConfig((c: Json) => ({ ...c, [tab]: c[tab].map((r: Json, i: number) => i === index ? (() => {
+      const row = { ...r, [name]: value };
+      if (tab === 'targets' && row.normalization_scale == null && ['unit', 'lower', 'upper', 'target', 'tolerance', 'constraint'].includes(name)) row.normalization_scale = suggestedScale(row);
+      return row;
+    })() : r) }));
   const add = () => {
     const row: Json = {};
     // A required field without a default comes as `default: null` from the schema: that means "none", not null - a new
@@ -90,6 +102,7 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
     // A new spec starts as the simplest equation over the probes: the first probe, in its unit.
     const first = config.measurements?.[0];
     if (tab === 'targets' && first && !row.equation) Object.assign(row, { equation: first.measurement_id ?? '', unit: row.unit || first.unit || '' });
+    if (tab === 'targets' && row.normalization_scale == null) row.normalization_scale = suggestedScale(row);
     setConfig((c: Json) => ({ ...c, [tab]: [...(c[tab] ?? []), row] }));
   };
   const remove = () => { setConfig((c: Json) => ({ ...c, [tab]: c[tab].filter((r: Json) => !selected[r[keyField]]) })); setSelected({}); };
@@ -129,6 +142,7 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
       {tab === 'targets' && <p className="fact spec-probes">Each spec judges its <b>equation</b>, written with Probe IDs, numbers, + - * / ** and brackets
         (e.g. m_supply_power_w / m_osc_frequency_hz). Probes: {(config.measurements ?? []).map((m: Json) => m.measurement_id).filter(Boolean).join(', ') || 'none yet - fill in the Probes tab first'}.
         An empty normalization_scale divides the violation by the size of the threshold.</p>}
+      {tab === 'targets' && rows.some(r => r.constraint === 'interval' && r.lower === 0) && <p className="hint zero-floor-hint">The margin also measures the distance to 0. If 0 is only a physical floor, choose Margin sides: upper.</p>}
       {error && <p className="error">{error}</p>}
       {pending && <div className="confirm"><h4>Confirm import: {pending.diff.length} changed rows</h4><DiffView diff={pending.diff} />
         <button onClick={() => { setConfig(pending.next); setPending(null); }}>Apply</button><button onClick={() => setPending(null)}>Cancel</button></div>}

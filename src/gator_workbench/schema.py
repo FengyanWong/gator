@@ -171,6 +171,8 @@ class PerformanceTarget(_Model):
         description='Preference among feasible designs. At most one target may set it; it selects the best design '
                     'and defines the optional objective bonus when its reward weight is nonzero.')
     nominal_only: bool = Field(False, description='Judge this spec at nominal only; otherwise use every planned condition.')
+    missing_is_failure: bool = Field(False, description='Missing value = failed: a completed simulation with this required value missing scores a failure. Wrong units and infrastructure errors remain errors.')
+    margin_sides: Literal['both', 'lower', 'upper'] = Field('both', description='Margin sides: which limits contribute to the clearance bonus and Corner check ranking. Feasibility still checks every limit.')
     soft_weight: float = Field(1.0, gt=0, description='Relative weight of this target in the reward.')
     normalization_scale: Optional[float] = Field(None, gt=0,
         description='Violation is (threshold distance)/scale, capped at 1. Empty = the size of the threshold: the largest '
@@ -295,6 +297,7 @@ class AdvancedRL(_Model):
     learning_rate: float = Field(3e-4, gt=0)
     gamma: float = Field(0.99, ge=0, le=1)
     tau: float = Field(0.005, gt=0, le=1)
+    alpha_learning_rate: Optional[float] = Field(None, gt=0, description='Alpha learning rate. Empty uses the learning rate above; a positive value gives the entropy temperature its own Adam rate.')
     initial_alpha: float = Field(0.2, gt=0)
     target_entropy_per_action: float = Field(1.0, gt=0)
     max_grad_norm: float = Field(10.0, gt=0)
@@ -329,6 +332,8 @@ class ModelSource(_Model):
 
 
 class RewardConfig(_Model):
+    nominal_gate_band: float = Field(0.5, gt=0, lt=1, description='Nominal gate band: strictly between 0 and 1. Every scored design that passes nominal ranks above one that fails nominal under after_nominal.')
+    objective_shape: Literal['clipped', 'compressed'] = Field('clipped', description='Clipped stops the objective bonus at one scale; compressed keeps rewarding improvement below 1.')
     violation_shape: Literal['capped', 'compressed'] = 'capped'
     worst_spec_share: float = Field(0.0, ge=0, le=1)
     objective_weight: float = Field(0.0, ge=0, le=1)
@@ -336,15 +341,15 @@ class RewardConfig(_Model):
 
 
 class ConditionsConfig(_Model):
-    policy: Literal['off', 'always'] = 'off'
+    policy: Literal['off', 'always', 'after_nominal'] = 'off'
     corners: list[Literal['ss_hot_low', 'ff_cold_high', 'fs_nominal', 'sf_nominal']] = Field(default_factory=list)
 
     @model_validator(mode='after')
     def _plan(self):
         if len(set(self.corners)) != len(self.corners):
             raise ValueError('Corner IDs must be unique')
-        if (self.policy == 'always') != bool(self.corners):
-            raise ValueError('Always needs a nonempty corner plan; off must have no corners')
+        if (self.policy != 'off') != bool(self.corners):
+            raise ValueError('Every planned corner and Corners after nominal passes need a nonempty corner plan; Nominal only must have no corners')
         return self
 
 
@@ -464,7 +469,7 @@ class WorkbenchConfig(_Model):
     def _reward_contract(self):
         # The objective rows (one at most, with the limit its direction needs) are checked by validation.py as
         # plain-language errors of the checklist, not here: a half-edited table must still load and be shown.
-        if self.run.conditions.policy == 'always':
+        if self.run.conditions.policy != 'off':
             if self.circuit.source != 'registered_task' or self.circuit.task_id != 'real:gpdk045_ota7':
                 raise ValueError('Training corners are supported only for the explicit real OTA7 task')
             if self.run.max_spectre_launches is None or self.run.max_retries:
@@ -497,8 +502,19 @@ def _hashed(data):
     run = data.get('run') if isinstance(data, dict) else None
     if isinstance(run, dict):
         run = dict(run)
-        if run.get('reward') == RewardConfig().model_dump(mode='json'):
-            run.pop('reward')
+        reward = run.get('reward')
+        if isinstance(reward, dict):
+            reward = {k: v for k, v in reward.items() if not
+                      (k == 'nominal_gate_band' and v == 0.5 or k == 'objective_shape' and v == 'clipped')}
+            legacy_default = {k: v for k, v in RewardConfig().model_dump(mode='json').items()
+                              if k not in ('nominal_gate_band', 'objective_shape')}
+            if reward == legacy_default:
+                run.pop('reward')
+            else:
+                run['reward'] = reward
+        advanced = run.get('advanced')
+        if isinstance(advanced, dict) and advanced.get('alpha_learning_rate') is None:
+            run['advanced'] = {k: v for k, v in advanced.items() if k != 'alpha_learning_rate'}
         if run.get('conditions') == ConditionsConfig().model_dump(mode='json'):
             run.pop('conditions')
         data['run'] = run
@@ -517,7 +533,7 @@ def _hashed(data):
     targets = data.get('targets') if isinstance(data, dict) else None
     if not isinstance(targets, list):
         return data
-    targets = [{k: v for k, v in row.items() if k != 'nominal_only' or v is not False}
+    targets = [{k: v for k, v in row.items() if not (k in ('nominal_only', 'missing_is_failure') and v is False or k == 'margin_sides' and v == 'both')}
                if isinstance(row, dict) else row for row in targets]
     return dict(data, targets=[
         {('measurement_id' if key == 'equation' else key): value for key, value in row.items()}
@@ -549,7 +565,7 @@ def json_schema(section: str | None = None) -> dict:
 
 
 # Columns the editors show only after "More columns": they exist, an agent may set them, a task file keeps them.
-ADVANCED_COLUMNS = {'targets': ('soft_weight', 'active', 'basis'), 'measurements': ('conditions', 'aggregation')}
+ADVANCED_COLUMNS = {'targets': ('soft_weight', 'active', 'basis', 'missing_is_failure', 'margin_sides'), 'measurements': ('conditions', 'aggregation')}
 # Columns the editors show but take no typing in: the circuit read fills them, and a typed value could only differ.
 READ_ONLY_COLUMNS = {'parameters': ('initial_value',)}
 

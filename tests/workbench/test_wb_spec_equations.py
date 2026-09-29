@@ -77,9 +77,12 @@ def test_a_configuration_from_before_equations_loads_and_keeps_both_hashes(tmp_p
         row['measurement_id'] = row.pop('equation')
     del legacy_dump['run']['network']['vocabulary']              # added later (7.54); the old schema had no such field
     for row in legacy_dump['targets']:
+        row.pop('missing_is_failure', None)                  # reward v2.1 fields did not exist in that old dump
+        row.pop('margin_sides', None)
         row.pop('nominal_only', None)                            # added 2026-09-26 (reward v2); the old schema had no such field
     del legacy_dump['run']['reward'], legacy_dump['run']['conditions']          # reward v2 run fields: the old schema had none
     del legacy_dump['run']['network']['operating_points']
+    del legacy_dump['run']['advanced']['alpha_learning_rate']
     for row in legacy_dump['parameters']:                        # the columns retired on 2026-09-26 (7.92), at their defaults
         row.update(copy.deepcopy(schema.RETIRED_PARAMETER_FIELDS))
     for row in legacy_dump['measurements']:

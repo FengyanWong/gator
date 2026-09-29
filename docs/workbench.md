@@ -748,17 +748,45 @@ ZIP downloads spill beyond 1 MiB to a temporary file, send 1 MiB chunks, and clo
 disconnect. File listings and packages prune excluded work directories before descending into them.
 Browser check: `frontend/scripts/export_check.mjs` (real MOCK run; needs a scratch backend, refuses port 8765).
 
+### Reward v2.1 controls and checks (2026-09-29, record 7.106)
+
+New configurations start with compressed violations and worst-spec share 0.5; saved ones retain their settings.
+Training conditions offers Nominal only, Corners after nominal passes, and Every planned corner. The backend reports
+whether the task supports corners (currently real OTA7). For after_nominal, a nominal failure costs one launch, a
+pass costs 1 + K, and a reset costs one; the full step plan must fit the launch ceiling before preparation.
+
+Under Specs → More columns, **Missing value = failed** opts a required spec into treating its absence after a completed
+simulation as failure; wrong units and infrastructure faults stay errors. **Margin sides** selects the limits counted
+by clearance and Corner check ranking; feasibility still checks all limits. The zero-floor hint explains the upper-only
+choice. New rows and explicit unit/limit edits with an empty scale suggest 3 dB, 10 degrees, target tolerance, half an
+interval or the threshold-size fallback. Saved empty scales are not filled on load.
+
+Reward and conditions exposes the nominal gate band and objective shape. Advanced exposes **Alpha learning rate**,
+stored per configuration; empty inherits the actor learning rate. No separate starting rate passed the extended
+1,000-update unit check, so new configurations leave it empty. Attributed failures continue the episode, while its normal
+horizon and configured success ending still apply.
+
+Run status, Data tables and the agent's reward-review digest show the last 50 scored designs' p90−p10 reward spread
+and latest exploration bonus. When the spread is smaller, they show the brief's plain-language steering warning.
+The start checklist also warns when recorded evidence has no design meeting all hard specs at all planned conditions,
+names the best recorded design's worst misses and points to Corner check. This is a warning, not a start blocker or
+proof that the targets are impossible. It reads existing tables/checks and explicitly named historical OTA7 qualification
+folders; it never launches a simulation or changes targets.
+
+[Reward contract and validation](reward-v2.md#reward-v21-2026-09-29). These controls were checked on source previews
+only: the user's live frontend/backend were not rebuilt or restarted. The subsequent fixed-action physical check used
+10 of the approved 30 launches, exercised both gate paths and restored the starting design (record 7.108).
+
 ### Corner check: a run's best designs at five corners (added 2026-09-22, user request)
 
 The **Corner check** tab (after Output files) simulates the shown run's best designs again at five fixed conditions and
 says, per design, whether it holds up. It is a check AFTER the optimization: nothing of it goes back into the run, its
 replay, its model or its best design.
 
-* **Which designs.** Only designs that met every hard spec at the normal condition (a design that fails there would
-  only fail again), identical widths counted once, the SAFEST first: the largest smallest margin, i.e. the distance to
-  the nearest limit divided by that spec's scale. (The optimizer's reward is 0 for every feasible design, so ranking by
-  reward would pick at random.) **Designs** chooses 1 to 3; the text beside it says what a press costs: designs x 5
-  corners.
+* **Which designs.** Recorded feasible designs first, identical widths counted once, ranked by the largest smallest
+  margin under each spec's **Margin sides** setting. The real task reference is also eligible even when it fails nominal,
+  after the feasible recorded designs; when none passes, the reference can still be checked. Its sizes are shown and
+  no nominal reward is invented before measurement. **Designs** chooses 1 to 3; the cost is designs x 5 corners.
 * **Which corners.** The project's screening set, `configs/gpdk045_conditions.json`: TT 27 °C 1.0 V (the normal one,
   simulated again), SS 125 °C 0.9 V, FF -40 °C 1.1 V, FS and SF at 27 °C 1.0 V. The testbench's supply changes with the
   corner; its input common mode (0.6 V), bias (0.4 V) and load stay as they are.

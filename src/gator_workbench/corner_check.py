@@ -12,7 +12,7 @@ Used unchanged from the optimizer (src/analog_optimizer/ is not touched):
 * the grading: analog_optimizer.evaluation.corners.summarize_corners (docs/pvt-mc-interfaces.md, M3).
 
 Decided here:
-* WHICH designs: feasible ones only - a design that fails at nominal would only fail again -, identical executed widths
+* WHICH designs: feasible recorded designs, plus the real task reference even if nominal fails; identical executed widths
   counted once, the SAFEST first: the largest smallest spec margin (distance to the nearest limit / that spec's scale).
   The optimizer's select_top_designs ranks by reward, which is 0 for every feasible design, and breaks that tie by a
   random candidate ID;
@@ -68,7 +68,7 @@ BRIDGE_STATE = 'artifacts/local/bridge-state'       # tasks.py: every real task'
 MOCK_CORNER_SHIFT = {'nominal': 0.0, 'ss_hot_low': 0.35, 'ff_cold_high': -0.35, 'fs_nominal': 0.15, 'sf_nominal': -0.15}
 MOCK_NOTICE = ('MOCK: the toy score has its optimum moved at each corner. This exercises the corner check; it says '
                'nothing about a circuit.')
-SELECTION_RULE = ('Designs that met every hard spec at the normal condition; identical widths counted once; the safest '
+SELECTION_RULE = ('The real task reference is also available even when nominal fails. Recorded designs that met every hard spec at the normal condition; identical widths counted once; the safest '
                   'first - the largest smallest spec margin (distance to the nearest limit divided by that spec\'s scale); '
                   'ties: the earlier evaluation.')
 REAL_AUTHORIZATION = ('A corner check of a real circuit runs real Spectre simulations and writes each design\'s widths '
@@ -186,7 +186,7 @@ class Context:
 def _margin(target, value):
     """Distance to the nearest limit in units of the spec's scale: >= 0 inside, < 0 outside."""
     from analog_optimizer.measurements.specs import spec_margin
-    return spec_margin(target['lower'], target['upper'], target['scale'], value)
+    return spec_margin(target['lower'], target['upper'], target['scale'], value, target.get('margin_sides', 'both'))
 
 
 def candidates(context: Context):
@@ -236,7 +236,29 @@ def candidates(context: Context):
                            assignment=[dict(device=d, parameter=p, value=v) for (d, p), v in sorted(assignment.items())]))
     ranked.sort(key=lambda d: (-(d['min_margin'] if d['min_margin'] is not None else math.inf),
                                d['completion_index'] or 0))
+    # A reference check diagnoses unreachable targets even when no search design passes nominal.
+    if not context.mock:
+        reference = reference_candidate(context)
+        key = tuple(sorted(((a['device'], a['parameter']), float(f"{a['value']:.12g}")) for a in reference['assignment']))
+        if key not in seen:
+            ranked.append(reference)
     return ranked, dict(evaluations=len(evaluations), feasible=feasible, distinct=len(ranked), skipped=skipped)
+
+
+def reference_candidate(context):
+    graph = context.compiled.graph
+    values = {g.id: g.value for g in graph.parameter_groups if g.mutable}
+    assignment = graph.assignments(values)
+    assignment = {(d, context.source_name(d, p) or p): v for (d, p), v in assignment.items()}
+    if set(assignment) != context.expected_keys:
+        raise CheckRefused('The reference does not specify exactly the writable parameters.', code='reference_parameters')
+    return dict(evaluation_id='task_reference', label='Task reference (nominal feasibility not required)',
+                completion_index=None, reward=None, min_margin=None, tightest_spec=None, spec_values={},
+                widths=[dict(variable_id=m['variable_id'], instance_path=m['instance_path'],
+                             parameter_name=m['parameter_name'], unit=v['unit'],
+                             value=graph.parameters[m['instance_path']][m['parameter_name']].value)
+                        for v in context.compiled.variables for m in v['members']],
+                assignment=[dict(device=d, parameter=p, value=v) for (d, p), v in sorted(assignment.items())])
 
 
 # ================================================================================ the plan (free)
@@ -457,7 +479,7 @@ def grade(result, evaluator, targets):
         for t in targets:
             value = result.metrics.get(t['metric_id'])
             if t['active'] and t['hard'] and value is not None:
-                margin = _margin(t, value)
+                margin = _margin(dict(t, margin_sides='both'), value)
                 if margin < 0:
                     failing.append(dict(metric_id=t['metric_id'], value=value, unit=t['unit'], lower=t['lower'],
                                         upper=t['upper'], violation=-margin))
@@ -695,7 +717,15 @@ class Worker:
         for index, (design, assignment) in enumerate(self.designs):
             results = tuple(r for i, r in self.results if i == index)
             try:
-                entry = NominalDesign(design['evaluation_id'], problem, float(design['reward']),
+                nominal_reward = design['reward']
+                if nominal_reward is None:
+                    measured = next((r for r in results if r.condition.corner.id == context.nominal.id), None)
+                    if measured is None:
+                        raise ValueError('No measured nominal result for the reference')
+                    nominal_reward = context.evaluator.evaluate(measured.metrics, measured.metric_units, measured.metric_validity).reward
+                    if nominal_reward is None:
+                        raise ValueError('The reference nominal result is unavailable')
+                entry = NominalDesign(design['evaluation_id'], problem, float(nominal_reward),
                                       tuple((d, p, v) for (d, p), v in sorted(assignment.items())), nominal, context.origin)
                 outcome = summarize_corners(entry, context.corners, results, context.compiled.specs, lambda_failed=lam)
             except ValueError as exc:                      # a result that is not this design's: never graded

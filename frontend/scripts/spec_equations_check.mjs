@@ -29,7 +29,8 @@ await runChecks(browser, async () => {
   const EDITORS = `document.querySelector('.editors')`;
   const openTab = name => evaluate(`[...${EDITORS}.querySelectorAll('.tabs button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(name)})).click()`);
   const headers = () => evaluate(`[...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.textContent.replace(' *', '').trim())`);
-  const CELL = (row, name) => `(() => { const at = [...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.textContent.replace(' *', '').trim()).indexOf(${JSON.stringify(name)});
+  // A column by its field name (the header's data-field): a header may show a label instead ("Missing value = failed").
+  const CELL = (row, name) => `(() => { const at = [...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.dataset.field).indexOf(${JSON.stringify(name)});
     return ${EDITORS}.querySelectorAll('table.editor tbody tr')[${row}].children[at].querySelector('input, select'); })()`;
   const cell = (row, name) => evaluate(`${CELL(row, name)}.value`);
   const type = (row, name, v) => page.setValue(`${CELL(row, name)}`, v, { event: 'input' });
@@ -45,6 +46,7 @@ await runChecks(browser, async () => {
   const shot = name => page.shot(path.join(out, name));
 
   await page.intercept(['*/api/*'], answer);
+  await page.trackSaves();                                  // the page saves 800 ms after the last change: read it with saved()
   // The page opens as a browser that saved its configuration BEFORE specs had equations: one probe in `measurement_id`.
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   const legacy = starter.targets.map(t => Object.fromEntries(Object.entries(t).map(([k, v]) => [k === 'equation' ? 'measurement_id' : k, v])));
@@ -57,7 +59,8 @@ await runChecks(browser, async () => {
   await openTab('Specs');
   check('the Specs tab edits an equation, right after the spec name', JSON.stringify((await headers()).slice(1, 3)) === '["metric_id","equation"]', JSON.stringify(await headers()));
   check('an older saved row shows its probe as the equation', await until(`${CELL(0, 'equation')}?.value === 'm_score'`), await cell(0, 'equation'));
-  const saved = await evaluate(`new Promise(r => setTimeout(() => r(JSON.parse(localStorage.getItem('gator-workbench-config-v1'))), 1200))`);
+  await page.saved();
+  const saved = await page.stored();
   check('...and is saved back in the new form, in the same place', JSON.stringify(Object.keys(saved.targets[0]).slice(0, 2)) === '["metric_id","equation"]'
     && !('measurement_id' in saved.targets[0]), JSON.stringify(saved.targets[0]));
   check('the old row is valid as it is', (await issuesUntil(0, [], ['error', 'blocker']))[0], JSON.stringify(await issues(0)));
@@ -68,18 +71,28 @@ await runChecks(browser, async () => {
   await until(`${EDITORS}.querySelectorAll('table.editor tbody tr').length === 2`);
   // "Add" supplies the required constraint. Its scale stays empty while nothing sizes it (record 7.112): this fixture's
   // new row has no limit and the unit 'fixture', so the backend's threshold-size rule applies until a limit is typed.
-  const saved1 = async () => (await evaluate(`new Promise(r => setTimeout(() => r(JSON.parse(localStorage.getItem('gator-workbench-config-v1'))), 1000))`)).targets[1];
+  const saved1 = async () => { await page.saved(); return (await page.stored())?.targets?.[1]; };
   const added = await saved1();
   check('a new spec row starts complete: the first probe as its equation, in its unit, a constraint, and an empty scale',
     added?.equation === 'm_score' && added?.unit === 'fixture' && added?.constraint === '>=' && added?.normalization_scale == null, JSON.stringify(added));
   await type(1, 'metric_id', 'score_sq'); await type(1, 'equation', 'm_score ** 2'); await type(1, 'unit', 'fixture'); await type(1, 'lower', '0.5');
   let [ok, found] = await issuesUntil(1, ['warning: equation_unit_unchecked', 'info: spec_adds_registry_entry'], ['error', 'blocker']);
-  const row = async () => JSON.stringify((await evaluate(`new Promise(r => setTimeout(() => r(JSON.parse(localStorage.getItem('gator-workbench-config-v1'))), 1000))`)).targets[1])
+  const row = async () => JSON.stringify(await saved1())
     + ' | page issues: ' + JSON.stringify(await evaluate(`[...document.querySelectorAll('.editors .issue')].map(d => d.textContent.trim())`));
   check('a formula is accepted: its unit is not checkable, its name is new to the registry', ok, JSON.stringify(found) + (ok ? '' : ' ' + await row()));
   const sized = await saved1();
   check('typing the lower limit proposes a scale from it (0.5)', sized?.normalization_scale === 0.5, JSON.stringify(sized));
   await shot('spec_equation_formula.png');
+  // "Missing value = failed" does nothing on a soft spec (the optimizer honours it only on a hard one): the row says so (7.114)
+  await evaluate(`[...${EDITORS}.querySelectorAll('button')].find(b => b.textContent.startsWith('More columns')).click()`);
+  await until(`!!${EDITORS}.querySelector('th[data-field="missing_is_failure"]')`);
+  await evaluate(`${CELL(1, 'hard')}.click()`);
+  await evaluate(`${CELL(1, 'missing_is_failure')}.click()`);
+  [ok, found] = await issuesUntil(1, ['warning: missing_is_failure_on_soft_spec']);
+  check('"Missing value = failed" ticked on a soft spec is named on its row', ok, JSON.stringify(found));
+  await evaluate(`${CELL(1, 'hard')}.click()`);
+  [ok, found] = await issuesUntil(1, [], ['missing_is_failure_on_soft_spec']);
+  check('...and no longer once that spec is hard again', ok, JSON.stringify(found));
   await type(1, 'equation', 'm_nope * 2');
   [ok, found] = await issuesUntil(1, ['error: equation_unknown_probe']);
   check('a probe that does not exist is named as an error', ok, JSON.stringify(found));

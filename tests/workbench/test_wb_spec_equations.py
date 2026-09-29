@@ -271,6 +271,32 @@ def test_the_real_factory_keeps_its_baseline_check_on_the_simulator_results(tmp_
         assert isinstance(prepared, se.EquationNativeFactory) and prepared.inner.preparation == 'service'
 
 
+def test_a_formula_spec_at_a_training_corner_is_marked_not_passed_off_as_a_result(tmp_path):
+    """Training corners run only on the real OTA7, so this calls the engine's row builder directly with the conditions as the
+    environment records them (`record['condition_results']`): the lane added the formula's value to each corner's result.
+    That value is recorded as the corner's value of the formula, aggregation = equation (7.114); the simulator's own
+    results stay unmarked."""
+    from types import SimpleNamespace
+    from gator_workbench.engine import RunEngine
+    config = mock(tmp_path, specs=[spec('score_sq', 'm_score ** 2', lower=0.8)])
+    compiled = comp.compile_task(config, tasks.load_task(config.circuit).base_graph)
+    condition = lambda corner, score: dict(condition=dict(corner=dict(id=corner)), status='ok', reason_code='ok',
+                                           metrics={'score': score, 'score_sq': score ** 2},
+                                           metric_units={'score': 'fixture', 'score_sq': 'fixture'},
+                                           metric_validity={'score': True, 'score_sq': True})
+    rows = RunEngine._metric_rows(SimpleNamespace(run_id='r', config=config, compiled=compiled), 'e1', {'score': 0.95},
+                                  {'score': True}, {'score': 'fixture'}, {'m_score': 0.95}, {'score': 0.95, 'score_sq': 0.9025},
+                                  [], 'ok', [condition('nominal', 0.95), condition('ss', 0.85)])
+    at_corner = {r['metric_name']: r for r in rows if r['condition'] == 'ss'}
+    assert set(at_corner) == {'score', 'score_sq'}
+    assert at_corner['score']['aggregation'] is None and at_corner['score_sq']['aggregation'] == 'equation'
+    assert all(r['aggregation_level'] == 'condition' and r['measurement_id'] is None for r in at_corner.values())
+    assert at_corner['score_sq']['raw_value'] == pytest.approx(0.7225) and at_corner['score_sq']['satisfied'] is False
+    # nominal: the simulator's own result only, unmarked; the formula has its aggregate row, as before
+    assert [(r['metric_name'], r['aggregation']) for r in rows if r['condition'] == 'nominal'] == [('score', None)]
+    assert [r['aggregation'] for r in rows if r['metric_name'] == 'score_sq' and r['aggregation_level'] == 'aggregate'] == ['equation']
+
+
 # ------------------------------------------------------------------------------- a whole run
 def test_a_run_scores_and_judges_the_equation_and_records_it(tmp_path):
     # the toy score's own limit always holds, so pass/fail is decided by the formula alone (scores span ~0.74-0.97)

@@ -155,6 +155,25 @@ def test_only_one_post_feasibility_preference(tmp_path):
     assert 'multiple_preferences' in issues(report, 'error')
 
 
+@pytest.mark.parametrize('hard, active, missing_is_failure, warned', [
+    (False, True, True, True),                     # the one case: ticked on an active soft spec, where it does nothing
+    (True, True, True, False),                     # a hard spec: the optimizer honours it
+    (False, False, True, False),                   # an inactive spec affects nothing anyway
+    (False, True, False, False),
+])
+def test_missing_value_failed_on_a_soft_spec_is_named(tmp_path, hard, active, missing_is_failure, warned):
+    """The optimizer counts a missing value as failed only on a hard spec (measurements.specs._missing_failure); on a
+    soft spec a missing value just leaves the spec out of the reward, so the tick is named instead of ignored (7.114)."""
+    def second(raw):
+        raw['targets'].append(dict(raw['targets'][0], metric_id='score_again', hard=hard, active=active,
+                                   missing_is_failure=missing_is_failure))
+    report, _ = check(make_config(tmp_path, mutate=second))
+    found = [i for i in report.issues if i.code == 'missing_is_failure_on_soft_spec']
+    assert bool(found) == warned
+    if warned:
+        assert found[0].level == 'warning' and found[0].path == 'targets[1].missing_is_failure' and not report.blocks_run
+
+
 # ------------------------------------------------------------------------------- measurements
 def measurement(**fields):
     base = dict(measurement_id='m_x', analysis='tran', result_source='ade_output', source_name='x', unit='Hz')

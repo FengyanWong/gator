@@ -160,10 +160,12 @@ TABLES: dict[str, dict] = {
             C('hard', 'bool', 'Hard constraint.', null='metric has no target'),
             C('satisfied', 'bool', 'Constraint satisfied.', null='no target or invalid measurement'),
             C('violation', 'float64', 'Uncapped violation/scale.', null='no target or invalid measurement'),
-            C('aggregation_level', 'string', 'condition = raw per-condition value; aggregate = value used for '
-                                             'reward/feasibility.', enum=('condition', 'aggregate')),
-            C('aggregation', 'string', 'Rule that produced an aggregate row (equation = a spec computed by its formula).',
-              null='condition row'),
+            C('aggregation_level', 'string', 'condition = the value at one test condition (a simulator result; at a training '
+                                             'corner also each formula spec, marked aggregation = equation); aggregate = '
+                                             'value used for reward/feasibility.', enum=('condition', 'aggregate')),
+            C('aggregation', 'string', 'Rule that produced the value (equation = a spec computed by its formula; on a '
+                                       'condition row, that formula at a training corner).',
+              null='a simulator result (condition row)'),
         ]),
     'simulator_jobs': dict(
         primary_key=('job_id',), purpose='One row per actual simulation launch attempt, incl. failures/retries.',

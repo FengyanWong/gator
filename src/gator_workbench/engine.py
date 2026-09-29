@@ -953,6 +953,9 @@ class RunEngine:
                              raw_value=value if ok else None, unit=definition.unit, valid=ok,
                              failure_reason=reason(value, ok), threshold_lower=None, threshold_upper=None, hard=None,
                              satisfied=None, violation=None, aggregation_level='aggregate', aggregation=PROBE_AGGREGATION))
+        # A training corner's result also carries the specs the lane computed from it (spec_equations): recorded here as that
+        # corner's value of the formula, marked aggregation = equation, so it never passes for a simulator result.
+        computed = set(self.compiled.plan.injected)
         for condition in (conditions or [])[1:]:
             label = condition['condition']['corner']['id']
             for name in sorted(set(condition['metrics']) | set(condition['metric_validity'])):
@@ -968,7 +971,7 @@ class RunEngine:
                                  threshold_lower=target['lower'] if target else None, threshold_upper=target['upper'] if target else None,
                                  hard=target['hard'] if target else None, satisfied=checked['satisfied'] if checked else None,
                                  violation=checked['normalized_violation'] if checked else None,
-                                 aggregation_level='condition', aggregation=None))
+                                 aggregation_level='condition', aggregation='equation' if name in computed else None))
         return rows
 
     def _job_rows(self, busy, lane, role, failed):

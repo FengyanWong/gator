@@ -11,12 +11,22 @@ const TITLES: Record<Section, string> = { parameters: 'Parameters', measurements
 const IMPORTED_SECTIONS: Record<string, string> = { project: 'project name', circuit: 'circuit source', run: 'run settings',
   output: 'output settings', research: 'research labels' };
 
-function suggestedScale(row: Json): number {
+/** The scale offered while nobody has typed one, or null when the row gives nothing to size it by yet: then the scale stays
+ * empty and the backend sizes it from the limits (the size of the threshold, else 1), instead of freezing a bare 1 W or
+ * 1 Hz into a row whose limits are typed afterwards (record 7.112). */
+function suggestedScale(row: Json): number | null {
   if (row.unit === 'dB') return 3;
   if (row.unit === 'deg') return 10;
   if (row.constraint === 'target' && row.tolerance > 0) return row.tolerance;
   if (row.constraint === 'interval' && row.lower != null && row.upper != null && row.upper > row.lower) return (row.upper - row.lower) / 2;
-  return Math.max(...[row.lower, row.upper, row.target].filter(v => typeof v === 'number').map(Math.abs), 0) || 1;
+  return Math.max(...[row.lower, row.upper, row.target].filter(v => typeof v === 'number').map(Math.abs), 0) || null;
+}
+const SCALE_FIELDS = ['unit', 'lower', 'upper', 'target', 'tolerance', 'constraint'];
+/** The scale after an edit of a field it depends on: an empty scale, or one still equal to the row's suggestion before the
+ * edit, follows the edit; a scale the user typed stays. */
+function followScale(before: Json, after: Json): number | null {
+  const untouched = before.normalization_scale == null || before.normalization_scale === suggestedScale(before);
+  return untouched ? suggestedScale(after) : after.normalization_scale;
 }
 
 const MORE_KEY = 'gator-workbench-editor-more-columns';
@@ -92,7 +102,7 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
   const update = (index: number, name: string, value: Json) =>
     setConfig((c: Json) => ({ ...c, [tab]: c[tab].map((r: Json, i: number) => i === index ? (() => {
       const row = { ...r, [name]: value };
-      if (tab === 'targets' && row.normalization_scale == null && ['unit', 'lower', 'upper', 'target', 'tolerance', 'constraint'].includes(name)) row.normalization_scale = suggestedScale(row);
+      if (tab === 'targets' && SCALE_FIELDS.includes(name)) row.normalization_scale = followScale(r, row);
       return row;
     })() : r) }));
   const add = () => {

@@ -202,7 +202,9 @@ class SpecPlan:
         usable = {name: value for name, value in result.metrics.items()
                   if result.metric_validity.get(name) is True and _finite(value)}
         values = self.spec_values(usable)
-        evaluated = result.status == 'ok' and bool(result.candidate_evaluated)
+        # A completed simulation with a missing probe (measurement_error) blanks only the specs that read that probe; the
+        # others keep their measured values, which a spec's "Missing value = failed" relies on (record 7.112).
+        evaluated = result.status in ('ok', 'measurement_error') and bool(result.candidate_evaluated)
         metrics, units, validity = dict(result.metrics), dict(result.metric_units), dict(result.metric_validity)
         for spec in injected:
             value = values[spec.spec_id] if evaluated else None

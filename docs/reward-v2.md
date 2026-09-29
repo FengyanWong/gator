@@ -315,6 +315,13 @@ unverified or out of scope. No
 optimizer superiority, robust-feasible circuit, yield or manufacturing-readiness claim follows. The user authorized
 separate package and workbench commits after completion; pushing remains outside that authorization.
 
+**Audit and fixes (2026-09-29, record 7.112).** The commits were later pushed on the user's request (`63883d3`). An
+independent audit (`artifacts/local/reviews/audit-reward-v2.1.md`) re-ran the suite (1,417) and the M6 identity
+(2,811 / 2,811 bitwise) and re-derived the step-6 rewards; "old checkpoints" above means exact resume only, since
+fine-tune and frozen still load older models with warnings. It found two workbench faults, now fixed: a new Specs row
+froze the fallback scale 1 (1 W, 1 Hz) before its limits were typed, and equation specs were blanked on any
+measurement_error row, which defeated "Missing value = failed" for specs computed from probes.
+
 
 ### D7 follow-up: new testbench variant, plan only
 

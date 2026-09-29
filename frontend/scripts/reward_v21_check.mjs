@@ -49,7 +49,7 @@ try {
  await page.evaluate(`${cell(0,'missing_is_failure')}.click()`,true);await page.setValue(cell(0,'margin_sides'),'upper');
  await page.setValue(cell(0,'lower'),'54');await sleep(950);
  let saved=await page.stored();check('flags persist and editing dB limit proposes 3',saved.targets[0].missing_is_failure===true && saved.targets[0].margin_sides==='upper' && saved.targets[0].normalization_scale===3);
- // Each suggestion runs only on an explicit edit while scale is empty.
+ // A suggestion runs only on an explicit edit, while the scale is empty or still the untouched suggestion.
  for (const [unit,constraint,lower,upper,tolerance,expected] of [
   ['deg','>=',30,null,0,10],['V','target',null,null,.2,.2],['V','interval',2,6,0,2],['V','>=',8,null,0,8]]) {
   await page.setValue(cell(0,'unit'),'');await page.setValue(cell(0,'constraint'),constraint);
@@ -61,6 +61,16 @@ try {
  check('explicit scale is retained',(await page.stored()).targets[0].normalization_scale===7);
  await page.evaluate("document.querySelector('.editors button[title^=\"Add:\"]').click()",true);await sleep(850);
  check('new spec receives editable scale',(await page.stored()).targets.at(-1).normalization_scale!=null);
+ // Record 7.112: a new row's suggestion must follow the limits typed AFTER it was added, not freeze the bare 1 (1 W).
+ const last=(await page.stored()).targets.length-1, scaleOf=async()=>(await page.stored()).targets[last].normalization_scale;
+ await page.setValue(cell(last,'unit'),'W');await sleep(850);
+ check('new row switched to W without limits stays empty',(await scaleOf())===null);
+ await page.setValue(cell(last,'constraint'),'<=');await page.setValue(cell(last,'upper'),'3.24e-6');await sleep(850);
+ check('typed upper limit sizes the new row (3.24e-6 W, not 1 W)',(await scaleOf())===3.24e-6);
+ await page.setValue(cell(last,'upper'),'5e-6');await sleep(850);
+ check('untouched suggestion follows the next limit edit',(await scaleOf())===5e-6);
+ await page.setValue(cell(last,'normalization_scale'),'1e-6');await page.setValue(cell(last,'upper'),'4e-6');await sleep(850);
+ check('scale typed by the user stays after a limit edit',(await scaleOf())===1e-6);
  await page.evaluate("Array.from(document.querySelectorAll('aside.right details')).find(d=>d.querySelector('summary')?.textContent.startsWith('Advanced')).open=true",true);
  check('alpha rate starts empty',await page.evaluate(`${control('Alpha learning rate','input')}.value===''`));
  await page.setValue(control('Alpha learning rate','input'),'0.003');await sleep(850);check('alpha field accepts independent rate',(await page.stored()).run.advanced.alpha_learning_rate===.003);

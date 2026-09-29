@@ -218,6 +218,30 @@ def test_a_result_gets_the_computed_specs_and_nothing_it_measured_changes(tmp_pa
     assert plan.request_names(('score', 'score_sq')) == ('score',)
 
 
+def test_a_missing_probe_blanks_only_the_specs_that_read_it(tmp_path):
+    """A completed simulation with one probe missing (measurement_error) keeps every computed spec whose probes were
+    measured, so "Missing value = failed" fails only the spec that really lacks its value (record 7.112)."""
+    from types import SimpleNamespace
+    from analog_optimizer.measurements.specs import MetricSpec, SpecificationEvaluator
+    plan = plan_for(tmp_path, [spec('score_sq', 'm_score ** 2'), spec('other_x2', 'm_other * 2')],
+                    probes=[probe('m_other', 'other')])
+    result = Result({'score': 0.9, 'other': None}, {'score': 'fixture', 'other': 'fixture'},
+                    {'score': True, 'other': False}, status='measurement_error')
+    extended = plan.extend(result)
+    assert extended.metrics['score_sq'] == pytest.approx(0.81) and extended.metric_validity['score_sq'] is True
+    assert extended.metrics['other_x2'] is None and extended.metric_validity['other_x2'] is False
+    flagged = [MetricSpec('score_sq', 'fixture', 'max', 1.0, upper=1.0, missing_is_failure=True),
+               MetricSpec('other_x2', 'fixture', 'max', 1.0, upper=1.0, missing_is_failure=True)]
+    row = SimpleNamespace(condition=None, status='measurement_error', candidate_evaluated=True, job_id='fixture',
+                          metrics=extended.metrics, metric_units=extended.metric_units,
+                          metric_validity=extended.metric_validity)
+    evaluation = SpecificationEvaluator(flagged).evaluate_conditions((row,))
+    assert evaluation.valid and evaluation.violations == {'score_sq': 0.0, 'other_x2': 1.0}
+    # an infrastructure failure, or a simulation that never judged the candidate, still computes nothing
+    assert plan.extend(replace(result, status='timeout')).metrics['score_sq'] is None
+    assert plan.extend(replace(result, candidate_evaluated=False)).metrics['score_sq'] is None
+
+
 def test_wrapping_a_backend_that_needs_nothing_leaves_it_alone(tmp_path):
     class Backend:
         def run_simulation(self, request):

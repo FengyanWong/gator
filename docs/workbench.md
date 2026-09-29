@@ -809,10 +809,14 @@ whether the task supports corners (currently real OTA7). For after_nominal, a no
 pass costs 1 + K, and a reset costs one; the full step plan must fit the launch ceiling before preparation.
 
 Under Specs → More columns, **Missing value = failed** opts a required spec into treating its absence after a completed
-simulation as failure; wrong units and infrastructure faults stay errors. **Margin sides** selects the limits counted
-by clearance and Corner check ranking; feasibility still checks all limits. The zero-floor hint explains the upper-only
-choice. New rows and explicit unit/limit edits with an empty scale suggest 3 dB, 10 degrees, target tolerance, half an
-interval or the threshold-size fallback. Saved empty scales are not filled on load.
+simulation as failure; wrong units and infrastructure faults stay errors. A spec computed by an equation is missing only
+when a probe it reads is missing; the other equation specs keep their values (record 7.112). **Margin sides** selects
+the limits counted by clearance and Corner check ranking; feasibility still checks all limits. The zero-floor hint
+explains the upper-only choice. A new row, and an edit of its unit, limits, constraint or tolerance, suggests a scale:
+3 dB, 10 degrees, a target's tolerance, half an interval, else the size of the threshold. The suggestion follows later
+edits until you type a scale of your own; a row with nothing to size it by yet (no dB/deg unit, tolerance or limit)
+keeps an empty scale, which the backend sizes from the threshold. Saved empty scales are not filled on load. (Record
+7.112 fixed a suggestion that froze at 1 - e.g. 1 W - when a row was added before its limits were typed.)
 
 Reward and conditions exposes the nominal gate band and objective shape. Advanced exposes **Alpha learning rate**,
 stored per configuration; empty inherits the actor learning rate. No separate starting rate passed the extended

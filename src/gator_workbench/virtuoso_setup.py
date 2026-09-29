@@ -199,14 +199,16 @@ def differences(expected, found) -> list[str]:
     """What the Virtuoso side (`found`, read back) says differently from `expected`, as plain sentences. Analysis
     options Maestro adds by itself are not differences: only the options `expected` states are compared."""
     e, f, out = normalize(expected), normalize(found), []
+
+    def compare(what, left, right):
+        for name in sorted(set(left) | set(right)):
+            if left.get(name) != right.get(name):
+                out.append(f'{what} {name}: the task says {left.get(name, "(none)")}, Virtuoso has {right.get(name, "(none)")}')
     if e['simulator_mode'] != f['simulator_mode']:
         out.append(f'Simulator mode: the task says {e["simulator_mode"]}, Virtuoso has {f["simulator_mode"]}')
     if e['model_files'] != f['model_files']:
         out.append(f'Model files: the task says {e["model_files"]}, Virtuoso has {f["model_files"]}')
-    for net in sorted(set(e['initial_conditions']) | set(f['initial_conditions'])):
-        if e['initial_conditions'].get(net) != f['initial_conditions'].get(net):
-            out.append(f'Initial condition on {net}: the task says {e["initial_conditions"].get(net, "(none)")}, '
-                       f'Virtuoso has {f["initial_conditions"].get(net, "(none)")}')
+    compare('Initial condition on', e['initial_conditions'], f['initial_conditions'])
     for name in sorted(set(e['analyses']) | set(f['analyses'])):
         if name not in f['analyses']:
             out.append(f'Analysis {name} is not enabled in Virtuoso')
@@ -216,23 +218,14 @@ def differences(expected, found) -> list[str]:
             for key, value in e['analyses'][name].items():
                 if f['analyses'][name].get(key) != value:
                     out.append(f'{name} {key}: the task says {value}, Virtuoso has {f["analyses"][name].get(key)}')
-    for label, left, right in (('variable', e['variables'], f['variables']),):
-        for name in sorted(set(left) | set(right)):
-            if left.get(name) != right.get(name):
-                out.append(f'Design {label} {name}: the task says {left.get(name, "(none)")}, Virtuoso has {right.get(name, "(none)")}')
+    compare('Design variable', e['variables'], f['variables'])
     key = lambda b: (b['cell'], b['instance'], b['parameter'])
     eb, fb = {key(b): b['variable'] for b in e['bindings']}, {key(b): b['variable'] for b in f['bindings']}
     for k in sorted(set(eb) | set(fb)):
         if eb.get(k) != fb.get(k):
             out.append(f'{k[1]}.{k[2]} in {k[0]}: the task binds it to {eb.get(k, "(nothing)")}, Virtuoso to {fb.get(k, "(nothing)")}')
-    eo, fo = {o['name']: o['expression'] for o in e['outputs']}, {o['name']: o['expression'] for o in f['outputs']}
-    for name in sorted(set(eo) | set(fo)):
-        if eo.get(name) != fo.get(name):
-            out.append(f'Output {name}: the task says {eo.get(name, "(none)")}, Virtuoso has {fo.get(name, "(none)")}')
-    es, fs = {s['output']: (s['op'], s['value']) for s in e['specs']}, {s['output']: (s['op'], s['value']) for s in f['specs']}
-    for name in sorted(set(es) | set(fs)):
-        if es.get(name) != fs.get(name):
-            out.append(f'Spec on {name}: the task says {es.get(name, "(none)")}, Virtuoso has {fs.get(name, "(none)")}')
+    compare('Output', {o['name']: o['expression'] for o in e['outputs']}, {o['name']: o['expression'] for o in f['outputs']})
+    compare('Spec on', {s['output']: (s['op'], s['value']) for s in e['specs']}, {s['output']: (s['op'], s['value']) for s in f['specs']})
     return out
 
 

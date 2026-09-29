@@ -10,7 +10,7 @@
 // Exit code 1 if any check fails.
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -33,9 +33,8 @@ const VALID = validConfiguration({ mock: true });
 // A finished download: the named file is there and Edge's temporary ".crdownload" twin is gone.
 const savedFile = async name => { for (let i = 0; i < 100; i++) { const names = readdirSync(saved); if (names.includes(name) && !names.some(n => n.endsWith('.crdownload'))) return readFileSync(path.join(saved, name), 'utf8'); await sleep(100); } return null; };
 
-try {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
-  const CONFIG = { ...starter, output: { experiment_name: 'fixture' }, research: {} };
+await runChecks(browser, async () => {
+  const CONFIG = await starterConfig(APP);
   const page = await browser.open({ consoleApi: false });
   const { send, evaluate, fulfil, consoleErrors } = page;
   const refused = []; const held = []; let listed = 0;
@@ -120,13 +119,6 @@ try {
   check('a file the backend no longer has is said in the hint, in the backend\'s words, and nothing is saved', (await until(`${HINT}.includes('No such file')`, 40)) && !readdirSync(saved).includes('dispatch.jsonl'), await evaluate(HINT));
   check('... and its button is ready again', await until(`!(${BUTTON('journal/dispatch.jsonl')}).disabled`, 30), JSON.stringify(await describe('journal/dispatch.jsonl')));
 
-  console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
-  check('the page asked to start, continue, command, connect, save settings or call an agent on its own: never',
-    !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/|network-settings)/.test(r)), refused.join(', '));
+  reportRefused(refused, NEVER_ASKED_OR_SAVED);
   check('no console exception', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();                                                     // the download folder goes with it
-}
-finish();
+});                                                                            // Edge closes at the end, and the download folder goes with it

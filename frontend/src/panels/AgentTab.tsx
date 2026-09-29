@@ -194,7 +194,7 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
   };
   // What a live request leaves in the chat besides its answer: the thinking summary, folded into one line.
   const thought = (l: Live, started: number) => l.thinking.trim() ? { thinking: l.thinking.trim(), thinking_seconds: Math.round(((l.answerAt ?? Date.now()) - started) / 1000) } : {};
-  const runLabel = (runDir ?? '').split(/[\\/]/).filter(Boolean).pop() ?? '';       // the run folder's own name (the file has a `runName` helper further down)
+  const runLabel = (runDir ?? '').split(/[\\/]/).filter(Boolean).pop() ?? '';       // the run folder's own name (RunTabs.tsx has a `runName` helper)
   const body = () => ({ kind, prompt, config, selection, web: kind === 'settings_review' && online, run_dir: kind === 'run_review' ? runDir ?? null : null });
   // Only an ApiError is an answer from the backend; anything else means no answer arrived at all.
   // A bare "Not Found" / "Method Not Allowed" comes from the web framework, not from an endpoint: the running server has

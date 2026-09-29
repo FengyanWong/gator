@@ -9,13 +9,13 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/spec_equations_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
 const browser = await launchEdge('specs');
 
-try {
+await runChecks(browser, async () => {
   const page = await browser.open();
   const { send, evaluate, consoleErrors } = page;
   const refused = [];
@@ -92,9 +92,4 @@ try {
 
   check('the page sent no writing request but validations', refused.length === 0, JSON.stringify(refused));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | '));
-} catch (e) {
-  fail(e);
-} finally {
-  await browser.close();
-}
-finish();
+});

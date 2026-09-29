@@ -19,7 +19,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/virtuoso_source_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { answerDialogs, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -136,11 +136,7 @@ try {
     }
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${op} is not expected` } });
   };
-  const onDialog = session => session.on('Page.javascriptDialogOpening', p => {
-    const accept = answers.length ? answers.shift() : null;
-    dialogs.push({ message: p.message, planned: accept !== null });
-    return session.send('Page.handleJavaScriptDialog', { accept: !!accept });
-  });
+  const onDialog = session => answerDialogs(session, answers, dialogs);
   onDialog(page);
   // ---- the column ------------------------------------------------------------------------------------------------------
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;

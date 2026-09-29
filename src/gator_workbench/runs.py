@@ -171,6 +171,13 @@ def vocabulary_record(vocabulary) -> dict:
                 sha256=vocabulary.sha256, file=pdk.RUN_FILE)
 
 
+def learner_contract(config, task, task_hash, spec_schema, vocabulary) -> dict:
+    """The contract a learner built from this configuration has: what a saved model is checked against."""
+    return modes.current_contract(learner_experiment(config, task, task_hash), modes.model_config_from(config.run.network),
+                                  modes.sac_config_from(config.run.advanced), spec_schema, vocabulary,
+                                  runtime=modes.runtime_options(config, vocabulary))
+
+
 def connection_gate(task, config, monitor, *, acknowledge_unknown=False):
     """Pre-dispatch gate (section 2.1). Runs BEFORE any directory, reservation or manifest exists, so a
     blocked start leaves nothing behind. Mock runs need no bridge layer: not_applicable."""
@@ -281,10 +288,7 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
             raise RunRejected('The selected source was itself fine-tuned on a test task. Each test task starts from the '
                               'fixed source checkpoint by default; enable run.continual_learning to label this '
                               'explicitly as continual learning.', code='continual_learning')
-        contract = modes.current_contract(learner_experiment(config, task, task_hash),
-                                          modes.model_config_from(config.run.network),
-                                          modes.sac_config_from(config.run.advanced), compiled.spec_schema, vocabulary,
-                                          runtime=modes.runtime_options(config, vocabulary))
+        contract = learner_contract(config, task, task_hash, compiled.spec_schema, vocabulary)
         compatibility = ckpt.check_compatibility(source_meta, mode=config.run.mode, task_definition_hash=task_hash,
                                                  contract=contract)
         if not compatibility['compatible']:

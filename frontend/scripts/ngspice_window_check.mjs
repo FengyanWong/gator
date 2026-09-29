@@ -15,7 +15,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/ngspice_window_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, PAGE_OPEN_TEST, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, PAGE_OPEN_TEST, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -38,7 +38,7 @@ const LOADED = { loaded: true, task_key: 'ngspice:fixture_ota', mock: false, sim
   complete: true, diagnostics: [], analysis_context: [], notes: ['ngspice netlist task, revision 1: 2 elements, 1 result (vout_v).'], evaluation_backend: 'ngspice (REAL circuit simulation)',
   max_concurrency: 4, native_draft: false, generated_profile: false, baseline_recorded: null };
 
-try {
+await runChecks(browser, async () => {
   const meta = await (await fetch(new URL('api/meta', APP))).json();
   const page = await browser.open();
   const { send, evaluate, until, consoleErrors } = page;
@@ -198,9 +198,4 @@ try {
 
   check('the page asked nothing else of the backend (every request besides reads is refused here)', refused.length === 0, refused.join(' | '));
   check('no console errors in the page', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

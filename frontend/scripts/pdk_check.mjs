@@ -21,7 +21,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/pdk_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -50,7 +50,7 @@ const details = (e, devices) => ({ ...e, devices, not_netlisted: [{ cell: 'ringf
 const STANDARD = { vocabulary: 'standard', label: 'standard (8 generic kinds)', kinds: [], parameters: [] };
 const VALID = validConfiguration();
 
-try {
+await runChecks(browser, async () => {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   const stored = await (await fetch(new URL('api/network-settings', APP))).json();
   const net = { encoder_type: stored.default_encoder, ...stored.settings[stored.default_encoder].network };
@@ -220,9 +220,4 @@ try {
 
   check('no writing request other than the canned ones reached the backend', refused.length === 0, refused.join(', '));
   check('no uncaught error in the page', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 400));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

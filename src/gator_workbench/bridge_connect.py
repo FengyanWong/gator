@@ -28,7 +28,6 @@ Capabilities used, confirmed against the local virtuoso-bridge 0.8.0 source on 2
 """
 from __future__ import annotations
 
-from concurrent.futures import Future
 from dataclasses import dataclass, field
 import importlib.util
 import json
@@ -36,7 +35,6 @@ import os
 from pathlib import Path
 import re
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -44,9 +42,9 @@ import threading
 import time
 
 from . import connection, ngspice_link
-from .paths import local_settings_dir, repo_root
-from .security import redact
-from .storage.atomic import JsonlAppender, read_json, write_json
+from .paths import append_local_log, repo_root
+from .security import redact, skill_string
+from .storage.atomic import read_json, write_json
 from .storage.dataset import utcnow
 
 DEFAULT_PROFILE_ID = 'lab'
@@ -68,8 +66,7 @@ def ciw_lines(setup_path) -> dict | None:
     """The text to show beside "Load in Virtuoso CIW". Mirrors the hints of `virtuoso-bridge start/status`."""
     if not setup_path or not isinstance(setup_path, str) or any(c in setup_path for c in '\x00\n\r'):
         return None
-    escaped = setup_path.replace('\\', '\\\\').replace('"', '\\"')       # a SKILL string literal
-    load = f'load("{escaped}")'
+    load = f'load({skill_string(setup_path)})'
     notes = ['If the CIW answers "already running", the old daemon was not replaced: run the two lines under '
              '"replace a running daemon" instead.',
              'To load it on every Virtuoso start, add the same load(...) line to your .cdsinit.']
@@ -455,23 +452,7 @@ class BridgeConnector:
     def connect(self, profile_id) -> dict:
         if not isinstance(profile_id, str) or not connection.PROFILE_ID.match(profile_id):
             raise ValueError('profile_id must be the identifier of a configured profile')
-        with self._lock:
-            future = self._inflight.get(profile_id)
-            owner = future is None
-            if owner:
-                future = self._inflight[profile_id] = Future()
-        if not owner:
-            return future.result()
-        try:
-            result = self._attempt(profile_id)
-            future.set_result(result)
-            return result
-        except BaseException as exc:
-            future.set_exception(exc)
-            raise
-        finally:
-            with self._lock:
-                self._inflight.pop(profile_id, None)
+        return connection.single_flight(self._lock, self._inflight, profile_id, lambda: self._attempt(profile_id))
 
     def _attempt(self, profile_id):
         started, began = utcnow(), time.monotonic()
@@ -488,10 +469,7 @@ class BridgeConnector:
                 outcome = self._parse(out.read()) or _outcome(False, 'failed', 'unparseable_output',
                                                               err.read()[-300:] or 'no JSON on stdout')
             except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(os.getpgid(process.pid), signal.SIGKILL)       # only the connect process's own group
-                except (ProcessLookupError, PermissionError):
-                    pass
+                connection.kill_group(process)                               # only the connect process's own group
                 process.wait()
                 outcome = _outcome(False, 'failed', 'connect_timeout', f'no result within {self.timeout_seconds:g} s')
         result = dict(outcome, profile_id=profile_id, started_utc=started.isoformat(),
@@ -502,11 +480,7 @@ class BridgeConnector:
 
     @staticmethod
     def _parse(stdout):
-        for line in reversed((stdout or '').strip().splitlines()):           # upstream may print progress lines first
-            try:
-                data = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+        for data in connection.json_lines(stdout):                          # upstream may print progress lines first
             if isinstance(data, dict) and data.get('bridge_connect') is True and isinstance(data.get('ok'), bool) \
                     and data.get('action') in ('started', 'already_running', 'failed') and isinstance(data.get('details'), dict):
                 return data
@@ -515,14 +489,10 @@ class BridgeConnector:
     @staticmethod
     def _log(result):
         """Application-level log of user-triggered connection actions. Never a research table."""
-        try:
-            log = JsonlAppender(local_settings_dir() / 'connection_actions.jsonl')
-            log.append(dict(timestamp_utc=result['started_utc'], profile_id=result['profile_id'], trigger='user',
-                            action=result['action'], ok=result['ok'], reason_code=result['reason_code'],
-                            duration_seconds=result['duration_seconds'], diagnostic=redact(result['diagnostic'], 300)))
-            log.close()
-        except OSError:
-            pass
+        append_local_log('connection_actions.jsonl', lambda: dict(
+            timestamp_utc=result['started_utc'], profile_id=result['profile_id'], trigger='user', action=result['action'],
+            ok=result['ok'], reason_code=result['reason_code'], duration_seconds=result['duration_seconds'],
+            diagnostic=redact(result['diagnostic'], 300)))
 
 
 if __name__ == '__main__':

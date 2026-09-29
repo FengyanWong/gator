@@ -7,13 +7,13 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/network_panel_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
 const browser = await launchEdge('net');
 
-try {
+await runChecks(browser, async () => {
   const page = await browser.open();
   const { send, evaluate, fulfil, consoleErrors, paused } = page;
   const nextWrite = async (ms = 4000) => {
@@ -94,9 +94,4 @@ try {
 
   console.log(`INFO  other writing requests the page sent on its own, all refused here: ${[...new Set(page.refused)].join(', ') || 'none'}`);
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

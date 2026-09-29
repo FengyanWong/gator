@@ -15,7 +15,7 @@
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/typing_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, launchEdge, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -25,7 +25,7 @@ const browser = await launchEdge('typing');
 const DEFAULT_RUN = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task/scratch__seed0__0001';
 const VALID = validConfiguration({ mock: true });
 
-try {
+await runChecks(browser, async () => {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   const CONFIG = { schema_version: 'gator-workbench-config-v1', ...starter, run: { ...starter.run, mode: 'scratch' }, output: { experiment_name: 'fixture' }, research: {} };
   delete CONFIG.run.model_source;                                                  // no model chosen: the page may fill in a default
@@ -200,13 +200,8 @@ try {
   check('an older successful validation cannot clear the newer blocker', await evaluate(blockedButton));
   holdValidation = false;
 
-  console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
+  reportRefused(refused);
   check('the page asked to start, continue, command, connect or call an agent on its own: never',
     !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|virtuoso\/|network-settings)/.test(r)), refused.join(', '));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

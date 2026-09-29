@@ -272,18 +272,17 @@ class RunEngine:
         self._record_load_policy()
         count = min(run.concurrency, self.task.max_concurrency)
         factory = self._lane_factory or self.task.env_factory_builder(self.compiled, self.layout.work, run)
+        from analog_optimizer.training.workers import WorkerLimits
         # A real (native) factory needs ONE owner of the Virtuoso session, alive from before the first lane opens until
         # after the last one closed: the optimizer's preparation service. Entered here exactly as its own training loop
         # does (training/parallel.py); without it a real lane cannot even connect. Closed in _finalize, after the lanes.
         prepare_context = getattr(factory, 'preparation_context', None)
         if callable(prepare_context):
             from contextlib import ExitStack
-            from analog_optimizer.training.workers import WorkerLimits
             self.preparation_report = {}
             self._preparation = ExitStack()
             factory = self._preparation.enter_context(prepare_context(WorkerLimits(), self.preparation_report))
             self._event('preparation_service_started', session=(self.preparation_report.get('preparation') or {}).get('session_dir'))
-        from analog_optimizer.training.workers import WorkerLimits
         limits = WorkerLimits(operation_seconds=max(300., (1 + len(run.conditions.corners)) * adv.simulation_timeout_seconds + 180.))
         self.lanes = open_lanes(factory, count, use_processes=self.use_processes, limits=limits)
         self.lane_state = {lane.lane_id: dict(observation=None, needs_reset=True, busy=None, finished=False,

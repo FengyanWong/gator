@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -27,6 +26,7 @@ import re
 import sys
 
 from .paths import repo_root
+from .storage.atomic import sha256_file as _sha256
 
 # Normalized toy optimum per parameter kind for the analytic mock objective. Arbitrary by
 # construction: the mock backend checks plumbing, never electrical behaviour.
@@ -148,10 +148,6 @@ class TaskRuntime:
     @property
     def mock(self) -> bool:
         return self.origin == 'synthetic'
-
-
-def _sha256(path) -> str:
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def parse_netlist(netlist_path, parser_config_path, *, top=None):

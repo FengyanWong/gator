@@ -13,6 +13,7 @@ from ..agents import settings_review as agent_review
 from ..agents import diagnostics as agent_diagnostics
 from ..agents import tools as agent_tool_catalog
 from ..agents.prompts import circuit_summary
+from ..paths import append_local_log
 from ..security import redact
 from ..storage.dataset import utcnow
 from .models import AgentSettingsBody, ApplyBody, ApproveBody, CancelBody, ConfigBody, ImportBody, ProposeBody, RejectBody
@@ -228,14 +229,7 @@ def register(app: FastAPI, context: ApiContext):
 
     def _log_line(file, note, /, **entry):          # positional-only: an entry may carry any key
         """One line of a local agent log. A log that cannot be written never fails the request or its tool call."""
-        from ..paths import local_settings_dir
-        from ..storage.atomic import JsonlAppender
-        try:
-            log = JsonlAppender(local_settings_dir() / file)
-            log.append(dict(time_utc=utcnow().isoformat(), **entry, note=note))
-            log.close()
-        except OSError:
-            pass
+        append_local_log(file, lambda: dict(time_utc=utcnow().isoformat(), **entry, note=note))
 
     def _tool_record(entry):
         _log_line('agent_tool_calls.jsonl', "One workbench tool call of an agent request: a read, or a Maestro setup written "
@@ -320,27 +314,26 @@ def register(app: FastAPI, context: ApiContext):
         runtime, _ = load_runtime(config)
         return None if runtime is None else runtime.circuit.get('netlist_sha256')
 
-    @app.post('/api/agent/approve')
-    def approve(body: ApproveBody):
-        config = context.parse_config(body.config)
+    def _proposal_call(action, **refused):
+        """A call on the proposal store: an unknown proposal is a 404, a refused one a 409 that says why."""
         try:
-            return context.proposals.approve(body.proposal_id, proposal_hash=body.proposal_hash,
-                                     config=config.model_dump(mode='json'), circuit_hash=_circuit_hash(config))
+            return action()
         except KeyError:
             fail(404, 'Unknown proposal')
         except ProposalRejected as exc:
-            raise HTTPException(409, detail=dict(message=str(exc), problems=exc.problems))
+            raise HTTPException(409, detail=dict(message=str(exc), problems=exc.problems, **refused))
+
+    @app.post('/api/agent/approve')
+    def approve(body: ApproveBody):
+        config = context.parse_config(body.config)
+        return _proposal_call(lambda: context.proposals.approve(body.proposal_id, proposal_hash=body.proposal_hash,
+                                                                config=config.model_dump(mode='json'), circuit_hash=_circuit_hash(config)))
 
     @app.post('/api/agent/apply')
     def apply(body: ApplyBody):
         config = context.parse_config(body.config)
-        try:
-            updated = context.proposals.apply(body.proposal_id, config=config.model_dump(mode='json'),
-                                      circuit_hash=_circuit_hash(config))
-        except KeyError:
-            fail(404, 'Unknown proposal')
-        except ProposalRejected as exc:
-            raise HTTPException(409, detail=dict(message=str(exc), problems=exc.problems, configuration_unchanged=True))
+        updated = _proposal_call(lambda: context.proposals.apply(body.proposal_id, config=config.model_dump(mode='json'),
+                                                                 circuit_hash=_circuit_hash(config)), configuration_unchanged=True)
         new_config = context.parse_config(updated)
         runtime, _ = load_runtime(new_config)
         report = validate_loaded(new_config, runtime)
@@ -375,10 +368,7 @@ def register(app: FastAPI, context: ApiContext):
 
     @app.post('/api/agent/reject')
     def reject(body: RejectBody):
-        try:
-            return context.proposals.reject(body.proposal_id)
-        except KeyError:
-            fail(404, 'Unknown proposal')
+        return _proposal_call(lambda: context.proposals.reject(body.proposal_id))
 
     def _audit(proposal):
         _log_line('agent_audit.jsonl', 'Agent request audit only. Never an RL run id, checkpoint or simulation budget.',

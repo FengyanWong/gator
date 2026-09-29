@@ -15,7 +15,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/corner_check_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, launchEdge, outDir, reportRefused, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -65,9 +65,8 @@ const RUN_STATUS = { state: 'completed', run_id: 'fixture-run', mode: 'scratch',
   paths: { run_dir: DIR }, connection: { overall: 'not_applicable' }, summary: null, manifest: { mode: 'scratch', mock: true, mock_notice: 'FIXTURE MOCK DATA' } };
 const VALID = validConfiguration({ mock: true });
 
-try {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
-  const CONFIG = { ...starter, output: { experiment_name: 'fixture' }, research: {} };
+await runChecks(browser, async () => {
+  const CONFIG = await starterConfig(APP);
   const page = await browser.open({ consoleApi: false });
   const { send, fulfil, consoleErrors } = page;
   const refused = []; const dialogs = []; const answers = [];
@@ -213,11 +212,6 @@ try {
   check('... and Check is off', await evaluate(`${BUTTON('Check')}.disabled`));
   await shot('corners-5-unsupported.png');
 
-  console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
+  reportRefused(refused);
   check('no console exception', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

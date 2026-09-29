@@ -15,7 +15,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/project_help_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, fail, finish, launchEdge, outDir, reportRefused, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -233,7 +233,7 @@ try {
   check('saved task: the window follows it and shows no cell note', await win.shown('follows the task real:ring_a') && !(await win.present('Not optimizable yet')));
   await shotColumn('help-5-generated-profile.png');
 
-  console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
+  reportRefused(refused);
   check('the page asked to start, continue, command, connect or call an agent on its own: never', !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify)/.test(r)), refused.join(', '));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
 } catch (error) {

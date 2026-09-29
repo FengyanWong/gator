@@ -16,7 +16,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/output_panel_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -28,7 +28,7 @@ const OUTPUT_CHECK = { resolved: ROOT, allowed: true, writable: true, error: nul
   free_bytes: 400 * GIB, bytes_used: 3 * GIB, windows_path: null, windows_mapping: 'fixture', mock_data_root: '/fixture/mock' };
 const VALID = validConfiguration();
 
-try {
+await runChecks(browser, async () => {
   const listed = (await (await fetch(new URL('api/tasks', APP))).json()).tasks.map(t => t.task_key);
   const mockTask = listed.find(key => key.startsWith('synthetic:'));
   if (!mockTask) throw new Error(`the backend lists no MOCK task: ${listed.join(', ')}`);
@@ -223,12 +223,6 @@ try {
   await send('Page.reload'); await until(`!!(${PANEL}) && !!(${LIMIT})`, 150); s = await settled();
   check('a configuration without the field shows the backend default, 2 GiB, and writes nothing by itself', s.box === '2' && s.unit === 'GiB' && s.bytes === undefined, JSON.stringify(s));
 
-  console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
-  check('the page asked to start, continue, command, connect or call an agent on its own: never', !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/)/.test(r)), refused.join(', '));
+  reportRefused(refused, NEVER_ASKED);
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

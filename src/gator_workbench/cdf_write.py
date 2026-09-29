@@ -444,14 +444,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
                 raise RuntimeError(f'Restoration mismatch: {name}.{changed[0]}')
 
     def validate_export(self, structure, snapshot):
-        graph = self.parser.parse_file(structure)
-        graph.validate()
-
-        def topology(g):
-            return (sorted((d.id, d.model_ref, d.terminals) for d in g.devices),
-                    sorted((c.device_id, c.terminal, c.net_id) for c in g.connections))
-        if topology(graph) != topology(self.graph):
-            raise ValueError('Exported topology differs from the recorded reference')
+        graph = self._exported_graph(structure)
         read = self.validate_readback(snapshot)
         actual = self.instances(snapshot)
         for device, params in graph.parameters.items():

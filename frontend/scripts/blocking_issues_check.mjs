@@ -14,7 +14,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/blocking_issues_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -33,12 +33,11 @@ const report = issues => ({ blocks_run: issues.some(i => i.level === 'error' || 
   issues, config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: null });
 const fixtures = { three: report([OTHERS[0], BLOCKING[0], OTHERS[1], BLOCKING[1], BLOCKING[2], OTHERS[2]]), one: report([BLOCKING[1], OTHERS[0]]), valid: report(OTHERS) };
 
-try {
+await runChecks(browser, async () => {
   // The MOCK task's starter configuration (a read-only GET), so that "Where" can name a parameter row. It is put into
   // the temporary browser profile only, and never validated for real: the reports above are what the page is told.
   // The one MOCK task (status record 7.59), the real OTA5: five rows, the followers of its two pairs at rows 1 and 3.
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
-  const CONFIG = { ...starter, output: { experiment_name: 'fixture' }, research: {} };  // as "Load task" merges it
+  const CONFIG = await starterConfig(APP);  // as "Load task" merges it
   const ROW_KEY = CONFIG.parameters[0].variable_id;
   // What a backend answers when the schema rejects the configuration (HTTP 422, schema.describe_errors); an older backend
   // sent pydantic's text at parameters.1.variable_id; anything else is one plain failure.
@@ -166,12 +165,6 @@ try {
   await revalidate(fixtures.valid);
   check('a valid answer clears them', !(await evaluate(`!!(${BUTTON})`)) && (await evaluate(`${EDITOR_ROWS}.filter(tr => tr.classList.contains('has-error')).length`)) === 0);
 
-  console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
-  check('the page asked to start, continue, command, connect or call an agent on its own: never', !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/)/.test(r)), refused.join(', '));
+  reportRefused(refused, NEVER_ASKED);
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

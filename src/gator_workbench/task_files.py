@@ -58,6 +58,10 @@ HELP = {
 }
 
 
+# The parts of a task's Maestro setup, each with the type of its empty value.
+_MAESTRO_PARTS = dict(initial_conditions=dict, analyses=dict, variables=dict, bindings=list, model_files=list)
+
+
 def build(*, name, revision, cell, copy, measurement, maestro, parameters, probes, specs, notes='', saved_utc=None,
           virtuoso=None) -> dict:
     return dict(_help=HELP, format=FORMAT, name=name, revision=revision, saved_utc=saved_utc, cell=cell, copy=copy,
@@ -72,16 +76,8 @@ def draft(config, *, name, cell, copy, saved=None, extras=None, setup=None) -> d
     saved, extras = saved or {}, extras or {}
     base_maestro = saved.get('maestro') or {}
     if setup and setup.get('test'):
-        base_maestro = dict(base_maestro, initial_conditions=base_maestro.get('initial_conditions') or setup.get('initial_conditions'),
-                            analyses=base_maestro.get('analyses') or setup.get('analyses'),
-                            variables=base_maestro.get('variables') or setup.get('variables'),
-                            bindings=base_maestro.get('bindings') or setup.get('bindings'),
-                            model_files=base_maestro.get('model_files') or setup.get('model_files'))
-    maestro = dict(initial_conditions=extras.get('initial_conditions', base_maestro.get('initial_conditions') or {}),
-                   analyses=extras.get('analyses', base_maestro.get('analyses') or {}),
-                   variables=extras.get('variables', base_maestro.get('variables') or {}),
-                   bindings=extras.get('bindings', base_maestro.get('bindings') or []),
-                   model_files=extras.get('model_files', base_maestro.get('model_files') or []))
+        base_maestro = dict(base_maestro, **{part: base_maestro.get(part) or setup.get(part) for part in _MAESTRO_PARTS})
+    maestro = {part: extras.get(part, base_maestro.get(part) or empty()) for part, empty in _MAESTRO_PARTS.items()}
     measurement = dict(saved.get('measurement') or {})
     if 'expected_frequency_hz' in extras:
         measurement['expected_frequency_hz'] = extras['expected_frequency_hz']

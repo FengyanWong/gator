@@ -119,6 +119,13 @@ def _tail(*texts, lines=3):
     return ' | '.join(kept[-lines:])
 
 
+def scrub_host(text, host):
+    """`text` without the ssh destination, whole or either side of its `@`: it never leaves in a diagnostic."""
+    for secret in sorted({part for part in [host, *str(host or '').split('@')] if part}, key=len, reverse=True):
+        text = text.replace(secret, '<ssh host>')
+    return text
+
+
 def run_layers(runner, settings, *, scope='interactive', timeout=5.0):
     """Check the ngspice layers in dependency order. `timeout` is accepted for symmetry with the Virtuoso check;
     the limits that matter here are the constants above."""
@@ -131,10 +138,7 @@ def run_layers(runner, settings, *, scope='interactive', timeout=5.0):
 
     def scrub(text):
         """The ssh destination never leaves in a diagnostic (ssh names it in its own error lines)."""
-        text = str(text or '')
-        for secret in sorted({part for part in [host, *str(host or '').split('@')] if part}, key=len, reverse=True):
-            text = text.replace(secret, '<ssh host>')
-        return text
+        return scrub_host(str(text or ''), host)
 
     def fail(name, state, reason, diagnostic=None, *, step=None, **details):
         results[name] = layer(name, state, reason, scrub(diagnostic) if diagnostic else None,

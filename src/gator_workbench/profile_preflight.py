@@ -24,7 +24,7 @@ from pathlib import Path
 import sys
 import traceback
 
-from .connection import child_error, require_gate, run_child
+from .connection import child_error, json_lines, require_gate, run_child
 from .security import redact
 from .storage.dataset import utcnow
 
@@ -115,11 +115,7 @@ def preflight(monitor, name, profile_id, *, timeout=300.0, command=None, acknowl
     if finished is None:
         raise TimeoutError('The check did not finish in time')
     stdout, stderr, _ = finished
-    for line in reversed((stdout or '').strip().splitlines()):
-        try:
-            data = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+    for data in json_lines(stdout):
         if isinstance(data, dict) and data.get('profile_preflight') is True:
             (work_root / 'preflight.json').write_text(json.dumps(data, indent=1))
             return dict(data, work_root=str(work_root))

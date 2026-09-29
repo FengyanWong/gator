@@ -2,13 +2,12 @@
 from __future__ import annotations
 import mimetypes
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
 from .. import aggregates, checkpoints as ckpt, runs, schema
 from .. import corner_check
 from ..layout import RunLayout
 from ..paths import PathNotAllowed, safe_child
-from ..security import redact
 from ..storage.atomic import read_json, read_jsonl_tail
 from ..storage.dataset import DatasetReader, map_to_dict, utcnow
 from ..storage.tables import TABLES
@@ -44,8 +43,6 @@ def register(app: FastAPI, context: ApiContext):
             config, runtime, blocked = context.load_config(body['config'])
             if runtime is not None:
                 from ..compile import CompileError, compile_task
-                from ..engine import learner_experiment
-                from .. import modes
                 config = runs.with_circuit_content(config, runtime)
                 task_hash = schema.task_definition_hash(config)
                 try:
@@ -64,10 +61,7 @@ def register(app: FastAPI, context: ApiContext):
                             what=str(exc), note='Load that PDK with "Load PDK..." in the RL network block, or choose the '
                             'standard list. The saved model itself is fine.', technical=f'{exc.code}: {exc}')
                     else:
-                        contract = modes.current_contract(learner_experiment(config, runtime, task_hash),
-                                                          modes.model_config_from(config.run.network),
-                                                          modes.sac_config_from(config.run.advanced), compiled.spec_schema,
-                                                          vocabulary, runtime=modes.runtime_options(config, vocabulary))
+                        contract = runs.learner_contract(config, runtime, task_hash, compiled.spec_schema, vocabulary)
                         meta_ = ckpt.read_metadata(description['path'])
                         mode = config.run.mode if config.run.mode != 'scratch' else 'fine_tune'
                         result['compatibility'] = ckpt.check_compatibility(meta_, mode=mode, task_definition_hash=task_hash,
@@ -132,7 +126,7 @@ def register(app: FastAPI, context: ApiContext):
                                                 confirm_transfer=getattr(body, 'confirm_transfer', False), monitor=context.monitor,
                                                 acknowledge_unknown=body.acknowledge_unknown_connection)
         except runs.RunRejected as exc:
-            raise HTTPException(409, detail=dict(message=redact(str(exc), 2000), code=exc.code, report=exc.report))
+            fail(409, exc, code=exc.code, report=exc.report)
         except PathNotAllowed as exc:
             fail(403, exc)
         if baseline_only:
@@ -163,7 +157,7 @@ def register(app: FastAPI, context: ApiContext):
         try:
             return runs.send_command(context.run_path(body.run_dir), body.command)
         except runs.RunRejected as exc:            # "Save now" on a run that cannot or need not save: said, not done
-            raise HTTPException(409, detail=dict(message=redact(str(exc), 2000), code=exc.code))
+            fail(409, exc, code=exc.code)
 
     @app.get('/api/runs/status')
     def status(run_dir: str):
@@ -194,7 +188,7 @@ def register(app: FastAPI, context: ApiContext):
                                              simulations=body.simulations, allow_real=body.authorize_real_simulation,
                                              acknowledge_unknown=body.acknowledge_unknown_connection, monitor=context.monitor)
         except (corner_check.CheckRefused, runs.RunRejected) as exc:
-            raise HTTPException(409, detail=dict(message=redact(str(exc), 2000), code=exc.code, report=exc.report))
+            fail(409, exc, code=exc.code, report=exc.report)
         request = read_json(directory / 'request.json')
         pid = corner_check.launch(directory, allow_real=body.authorize_real_simulation and not request['mock'])
         return dict(check_id=request['check_id'], worker_pid=pid, simulations=request['simulations'], mock=request['mock'])
@@ -214,7 +208,7 @@ def register(app: FastAPI, context: ApiContext):
         try:
             return corner_check.request_stop(context.run_path(body.run_dir), body.check_id)
         except corner_check.CheckRefused as exc:
-            raise HTTPException(409, detail=dict(message=redact(str(exc), 2000), code=exc.code))
+            fail(409, exc, code=exc.code)
         except FileNotFoundError:
             fail(404, 'This run has no corner check with that identifier.')
 

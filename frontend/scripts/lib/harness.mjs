@@ -22,6 +22,9 @@
 //   page.shot(file, element | clip)             a PNG of one element (or of the page), brought to the front first
 //   keepAgentSettings(url)        the agent settings before a check changes them, and restore() for `finally`
 //   check / fail / finish, outDir PASS / FAIL lines, the summary, exit code 1 on any failure; the screenshot folder
+//   runChecks(browser, body)      a check's body, then its end: an exception is counted (fail), Edge closed, finish()
+//   reportRefused(refused, never) the INFO line of the writing requests refused, and the check that none is a NEVER_* one
+//   answerDialogs / starterConfig the page's confirm dialogs answered as planned; the MOCK task as "Load task" merges it
 //   browser.close()               Edge ends, and every temporary folder of the check is removed (also after a failure, and
 //                                 by the watchdog when a check hangs: GATOR_CHECK_LIMIT_S, default 600 s)
 import { spawn } from 'node:child_process';
@@ -60,6 +63,40 @@ export function finish() {
   console.log(failed ? `${failed} of ${passed + failed} check(s) FAILED` : stopped ? `the check stopped early (${passed} check(s) passed before)` : `all ${passed} checks passed`);
   process.exit(failures() ? 1 : 0);
 }
+/** A check's body, then the end every check has: an exception stops it (counted by `fail`), Edge is closed whatever
+ *  happened, and `finish` prints the summary and sets the exit code. */
+export async function runChecks(browser, body) {
+  try {
+    await body();
+  } catch (error) {
+    fail(error);
+  } finally {
+    await browser.close();
+  }
+  finish();
+}
+/** The writing requests the page sent on its own (the check refused them all) as an INFO line; with `never` =
+ *  [check name, pattern], the check that none of them is a request the page may never send by itself. */
+export function reportRefused(refused, never = null) {
+  console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
+  if (never) check(never[0], !refused.some(r => never[1].test(r)), refused.join(', '));
+}
+export const NEVER_ASKED = ['the page asked to start, continue, command, connect or call an agent on its own: never',
+  /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/)/];
+export const NEVER_ASKED_OR_SAVED = ['the page asked to start, continue, command, connect, save settings or call an agent on its own: never',
+  /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/|network-settings)/];
+/** The page's confirm/alert dialogs on `session` answered from `answers` in order (true = OK; none left = Cancel), each
+ *  recorded in `dialogs` with whether this check planned it. */
+export function answerDialogs(session, answers, dialogs) {
+  return session.on('Page.javascriptDialogOpening', p => {
+    const accept = answers.length ? answers.shift() : null;
+    dialogs.push({ message: p.message, planned: accept !== null });
+    return session.send('Page.handleJavaScriptDialog', { accept: !!accept });
+  });
+}
+/** The MOCK task's starter configuration, as "Load task" merges it (the page needs `output` and `research`). */
+export const starterConfig = async base => ({ ...(await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', base))).json()),
+  output: { experiment_name: 'fixture' }, research: {} });
 
 // ---- the URL, and the guard for checks that write -----------------------------------------------------------------------
 const liveHow = 'Start a scratch backend with its own settings folder, e.g.\n'

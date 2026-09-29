@@ -116,16 +116,12 @@ def write_outputs(directory, tracker: BestDesignTracker, *, task, config_summary
     directory.mkdir(parents=True, exist_ok=True)
     notes = {}
     feasible = tracker.feasible
-    write_json(directory / 'best_feasible.json', _record(
-        feasible, status='found' if feasible else 'none_found', tracker=tracker, task=task,
-        config_summary=config_summary) | ({} if feasible else {
-            'reason': 'No evaluated design satisfied every hard constraint. This is an explicit null, not a result.'}))
-    write_json(directory / 'best_infeasible.json', _record(
-        tracker.infeasible, status='found' if tracker.infeasible else 'none_found', tracker=tracker, task=task,
-        config_summary=config_summary))
-    write_json(directory / 'best_nominal_feasible.json', _record(
-        tracker.nominal_feasible, status='found' if tracker.nominal_feasible else 'none_found', tracker=tracker,
-        task=task, config_summary=config_summary))
+    reason = {} if feasible else {
+        'reason': 'No evaluated design satisfied every hard constraint. This is an explicit null, not a result.'}
+    for name, candidate, extra in (('best_feasible', feasible, reason), ('best_infeasible', tracker.infeasible, {}),
+                                   ('best_nominal_feasible', tracker.nominal_feasible, {})):
+        write_json(directory / f'{name}.json', _record(candidate, status='found' if candidate else 'none_found',
+                                                        tracker=tracker, task=task, config_summary=config_summary) | extra)
     for name in ('parameters.csv', netlist_name):
         # The robust-feasible output never silently substitutes a nominal-only design.
         stale = directory / name

@@ -13,7 +13,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, RUN_KEY, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, reportRefused, RUN_KEY, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -41,9 +41,8 @@ const started = () => ({ run_dir: sim.dir, run_id: 'fixture-run', mock: sim.mock
   mock_notice: sim.mock ? 'FIXTURE MOCK DATA: nothing was started.' : null });
 const validReport = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: true };
 
-try {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
-  const CONFIG = { ...starter, output: { experiment_name: 'fixture' }, research: {} };     // as "Load task" merges it
+await runChecks(browser, async () => {
+  const CONFIG = await starterConfig(APP);     // as "Load task" merges it
   const page = await browser.open();
   const { send, evaluate, until, fulfil, consoleErrors } = page;
   const refused = []; const log = []; const dialogs = []; const answers = [];
@@ -267,12 +266,7 @@ try {
   check('"Start" was never offered while it was looked up', !(await seen()).some(s => s[0] === 'Start' && s[1] === false), JSON.stringify(await seen()));
   await shot('run-7-taken-over.png');
 
-  console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
+  reportRefused(refused);
   check('every question on screen was planned by this check', dialogs.every(d => d.planned), JSON.stringify(dialogs.filter(d => !d.planned)));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 400));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

@@ -15,7 +15,7 @@
 // Run (Windows node sees a WSL variable only when WSLENV names it):
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/agent_setup_check.mjs)"
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -38,7 +38,7 @@ const PROPOSAL = { proposal_id: 'setup-1', proposal_hash: 'fixture', origin: 'fi
   setup: { analyses: { tran: { stop: '50n', errpreset: 'conservative' } }, variables: { VSUP: '1.0' }, bindings: [{ cell: TB, instance: 'V0', parameter: 'vdc', variable: 'VSUP' }] },
   virtuoso_copy: { library: COPY, cell: CELL, testbench: TB } };
 
-try {
+await runChecks(browser, async () => {
   const page = await browser.open({ errors: consoleErrors });
   const { send, evaluate, fulfil } = page;
   const calls = []; const refused = [];
@@ -172,9 +172,4 @@ try {
     && saved.extras.variables?.VSUP === '1.0' && saved.extras.bindings?.[0]?.instance === 'V0' && saved.extras.expected_frequency_hz === 1.2e9, JSON.stringify(saved?.extras));
   check('no other writing request was made', refused.length === 0, refused.join(' | '));
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

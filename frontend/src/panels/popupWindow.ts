@@ -9,7 +9,7 @@ export const BLOCKED = 'The browser blocked the new window. Allow pop-ups for th
  *  second one; `blocked` says the browser refused to open it (`BLOCKED` says so; the task file names its own button).
  *
  *  Written in the review of 2026-09-23: these same twenty lines stood in four panels. The Agent tab's conversation
- *  window (`Bottom.tsx`) deliberately stays outside this hook - it carries handlers of its own in both directions. */
+ *  window (`AgentTab.tsx`) deliberately stays outside this hook - it carries handlers of its own in both directions. */
 export function usePopupWindow(name: string, options: {
   title: string; features: string; rootId: string; rootClass?: string; onClose?: () => void; closeOnUnmount?: boolean;
 }) {

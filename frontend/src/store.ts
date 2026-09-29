@@ -111,25 +111,18 @@ export function useConfig() {
     bump(n => n + 1);
   }, []);
 
-  const undo = useCallback(() => {
+  // Undo and redo are one move between the two histories, in opposite directions.
+  const move = (from: { current: Json[] }, to: { current: Json[] }) => {
     setConfigState((current: Json) => {
-      const previous = past.current.pop();
-      if (previous === undefined) return current;
-      future.current.push(current);
-      return previous;
+      const taken = from.current.pop();
+      if (taken === undefined) return current;
+      to.current.push(current);
+      return taken;
     });
     bump(n => n + 1);
-  }, []);
-
-  const redo = useCallback(() => {
-    setConfigState((current: Json) => {
-      const next = future.current.pop();
-      if (next === undefined) return current;
-      past.current.push(current);
-      return next;
-    });
-    bump(n => n + 1);
-  }, []);
+  };
+  const undo = useCallback(() => move(past, future), []);
+  const redo = useCallback(() => move(future, past), []);
 
   useEffect(() => { const id = setTimeout(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(config)), 800); return () => clearTimeout(id); }, [config]);
 

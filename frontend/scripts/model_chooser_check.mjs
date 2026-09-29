@@ -19,7 +19,7 @@
 // Exit code 1 if any check fails.
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 // Optional: the output folder whose saved models the last section lists (default: the backend's own default root).
@@ -59,7 +59,7 @@ const describe = (run_dir, checkpoint_id) => {
 };
 const VALID = validConfiguration();
 
-try {
+await runChecks(browser, async () => {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   const CONFIG = { ...starter, run: { ...starter.run, mode: 'scratch', network: NET }, output: { experiment_name: 'fixture', ...(ROOT ? { output_root: ROOT } : {}) }, research: {} };
   const page = await browser.open({ consoleApi: false });
@@ -294,13 +294,6 @@ try {
     await shot('models-4-real.png');
   }
 
-  console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
-  check('the page asked to start, continue, command, connect, save settings or call an agent on its own: never',
-    !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/|network-settings)/.test(r)), refused.join(', '));
+  reportRefused(refused, NEVER_ASKED_OR_SAVED);
   check('no console exception', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

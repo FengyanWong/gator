@@ -48,7 +48,7 @@ from analog_optimizer.measurements.specs import SpecificationEvaluator
 
 from . import tasks
 from .compile import CompileError, compile_task
-from .engine import RunLock
+from .engine import INFRASTRUCTURE_FAILURES as INFRASTRUCTURE, RunLock
 from .layout import RunLayout
 from .paths import repo_root
 from .schema import WorkbenchConfig, task_definition_hash
@@ -59,7 +59,6 @@ from .storage.dataset import DatasetReader
 CHECK_DIR = 'corner_checks'
 MAX_DESIGNS = 3
 LIVE = ('starting', 'running', 'stopping')
-INFRASTRUCTURE = ('timeout', 'transport_error', 'license_error', 'backend_error')
 MAX_INFRASTRUCTURE_FAILURES = 2          # in a row: the link is broken, not the design
 CHECK_ID = re.compile(r'^\d{8}T\d{6}Z-[0-9a-f]{8}$')
 CONDITIONS_FILE = 'configs/gpdk045_conditions.json'
@@ -284,7 +283,6 @@ def prepare(run_dir, *, designs, expected=None, simulations=None, allow_real=Fal
             monitor=None):
     """Checks, the connection gate for a real circuit, then the check's folder with its request. Returns the folder.
     Refuses (CheckRefused, or runs.RunRejected from the gate) before anything is created."""
-    from .runs import connection_gate
     proposal = plan(run_dir, designs=designs)
     if not proposal['supported']:
         raise CheckRefused(proposal['reason'], code=proposal['code'] or 'unsupported')
@@ -313,7 +311,6 @@ def prepare(run_dir, *, designs, expected=None, simulations=None, allow_real=Fal
 def _start_lock(run_dir):
     """One start at a time per run. Held by `prepare` and handed to `launch`, which releases it once the check's own
     worker lock is taken."""
-    from .engine import RunLock
     key = str(Path(run_dir).resolve())
     if key in _STARTING:
         raise CheckRefused('A corner check of this run is being started right now.', code='already_starting')

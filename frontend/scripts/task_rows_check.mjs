@@ -16,7 +16,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_rows_check.mjs)" [--live] [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const LIVE = process.argv.includes('--live');                 // reads go to the backend; writing requests are refused either way
 const APP = await workbenchUrl();
@@ -62,7 +62,7 @@ const loaded = taskId => REMOVED.includes(taskId) ? gone(taskId) : ({ loaded: tr
   max_concurrency: 1, native_draft: false, generated_profile: false, baseline_recorded: null });
 const VALID = validConfiguration({ facts: { circuit_checked: true, independent_action_variables: 1 } });
 
-try {
+await runChecks(browser, async () => {
   const page = await browser.open();
   const { send, evaluate, fulfil, consoleErrors } = page;
   const refused = []; const starters = []; const loads = [];
@@ -121,7 +121,13 @@ try {
   const hard = await evaluate(`(() => { const at = [...${EDITORS}.querySelectorAll('table.editor thead th')].findIndex(h => h.textContent.trim() === 'hard');
     return [...${EDITORS}.querySelectorAll('table.editor tbody tr')].map(r => r.children[at].querySelector('input').checked); })()`);
   check('what a row does not state is shown as the backend will take it: hard = on, tolerance = 0', hard.length > 0 && hard.every(Boolean) && (await column('tolerance')).every(t => t === '0'), `${JSON.stringify(hard)} ${JSON.stringify(await column('tolerance'))}`);
-  check('every target states where it comes from', (await column('basis')).every(b => /of record/.test(b)), JSON.stringify((await column('basis')).slice(0, 1)));
+  // basis is one of the columns "More columns" shows (record 7.92): shown for this read, then hidden again
+  const moreColumns = `[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => /^(More|Fewer) columns/.test(b.textContent.trim()))`;
+  await evaluate(`${moreColumns}.click()`);
+  await until(`[...${EDITORS}.querySelectorAll('table.editor thead th')].some(h => h.textContent.trim() === 'basis')`);
+  const basis = await column('basis');
+  await evaluate(`${moreColumns}.click()`);
+  check('every target states where it comes from', basis.every(b => /of record/.test(b)), JSON.stringify(basis.slice(0, 1)));
   check('a starter-made project name follows, so a real run is not filed under mock_*', (await value('Name')) === 'gpdk045-ota5' && (await value('Task name')) === 'gpdk045_ota5', `${await value('Name')} / ${await value('Task name')}`);
   await openTab('Probes');
   check('Probes read the circuit\'s results', !(await column('source_name')).includes('score') && (await column('source_name')).includes('gain_db_at_start'), JSON.stringify(await column('source_name')));
@@ -201,12 +207,6 @@ try {
     && !(await evaluate(`[...${PANEL}.querySelectorAll('.note')].some(n => n.textContent.includes('no longer exists'))`)));
   await evaluate(`${BUTTON(EDITORS, 'Undo')}.click()`);
   check('one Undo brings the saved state back', await until(`${FIELD('Task')}.value === 'synthetic:vco'`) && (await value('Name')) === 'mock-vco' && (await strip()).startsWith('Parameters (2)'), `${await value('Task')} ${await strip()}`);
-  console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
-  check('the page asked to start, continue, command, connect or call an agent on its own: never', !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/)/.test(r)), refused.join(', '));
+  reportRefused(refused, NEVER_ASKED);
   check('no console errors', consoleErrors.filter(e => !/404|418/.test(e)).length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

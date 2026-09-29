@@ -7,7 +7,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/mode_suggestion_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -33,7 +33,7 @@ const DESCRIBED = { description: { checkpoint_id: POINT.checkpoint_id, path: `${
   compatibility: { mode: 'frozen', compatible: true, checks: [{ component: 'FIXTURE check', status: 'ok', detail: 'identical' }], checkpoint_id: POINT.checkpoint_id,
     source_run_id: MODEL.run_id, restoration_capability: 'full_state', suggestion: SUGGESTION }, suggestion: SUGGESTION };
 
-try {
+await runChecks(browser, async () => {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   // Mode frozen with that model chosen: the suggestion (fine_tune) differs from the Mode, so it is shown.
   const CONFIG = { ...starter, run: { ...starter.run, mode: 'frozen', network: NET, model_source: { run_dir: RUN_DIR, checkpoint_id: 'latest' } },
@@ -102,13 +102,6 @@ try {
   check('... with the chosen model kept', (await page.stored())?.run?.model_source?.run_dir === RUN_DIR, JSON.stringify((await page.stored())?.run?.model_source));
   await page.shot(path.join(out, 'mode-suggestion-3-after.png'), `(${MODE}).closest('label')`, { scale: 2, pad: 8 });
 
-  console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
-  check('the page asked to start, continue, command, connect, save settings or call an agent on its own: never',
-    !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/|network-settings)/.test(r)), refused.join(', '));
+  reportRefused(refused, NEVER_ASKED_OR_SAVED);
   check('no console exception', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

@@ -18,7 +18,7 @@
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/working_copy_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { answerDialogs, check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -55,7 +55,7 @@ const setupAnswer = config => {
 };
 const gateBlocked = { message: 'The connection gate blocked reading the Maestro setup', gate: { allowed: false, status: 'blocked', blocking: ['tunnel'], uncertain: [] } };
 
-try {
+await runChecks(browser, async () => {
   const page = await browser.open({ errors: consoleErrors });
   const { send, evaluate, fulfil } = page;
   const calls = []; let mode = 'ok';
@@ -82,11 +82,7 @@ try {
     if (op === 'setup/read') return fulfil(requestId, 200, setupAnswer(body.config));
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${op} is not expected` } });
   };
-  const onDialog = session => session.on('Page.javascriptDialogOpening', p => {
-    const accept = answers.length ? answers.shift() : null;
-    dialogs.push({ message: p.message, planned: accept !== null });
-    return session.send('Page.handleJavaScriptDialog', { accept: !!accept });
-  });
+  const onDialog = session => answerDialogs(session, answers, dialogs);
   onDialog(page);
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
   const LAUNCH = `${PANEL}?.querySelector('button.virtuoso-button')`;
@@ -210,9 +206,4 @@ try {
   check('every question on screen was planned', dialogs.every(d => d.planned), JSON.stringify(dialogs));
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
   console.log(`INFO  other writing requests the page sent on its own, all refused here: ${[...new Set(page.refused)].join(', ') || 'none'}`);
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

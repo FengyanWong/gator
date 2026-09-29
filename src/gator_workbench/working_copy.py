@@ -71,11 +71,16 @@ def load(library, cell) -> dict | None:
     return record if record.get('format') == FORMAT else None
 
 
-def own_libraries() -> dict:
+def _json_or_empty(path) -> dict:
+    """A JSON file's content, or {} when it cannot be read."""
     try:
-        return json.loads((store_root() / LIBRARIES).read_text())
+        return json.loads(Path(path).read_text())
     except (OSError, ValueError):
         return {}
+
+
+def own_libraries() -> dict:
+    return _json_or_empty(store_root() / LIBRARIES)
 
 
 # ---------------------------------------------------------------------------------- checks of what came back
@@ -266,10 +271,7 @@ def make(monitor, profile_id, library, cell, *, command=None, timeout=600.0) -> 
     require_gate(monitor, 'write_cellview', profile_id, 'writing into Virtuoso')
     target = record_dir(library, cell)
     attempt_file = target.parent / f'{cell}.{ATTEMPT}'
-    try:
-        attempt = json.loads(attempt_file.read_text())
-    except (OSError, ValueError):
-        attempt = {}
+    attempt = _json_or_empty(attempt_file)
     incoming = target.parent / f'.incoming-{uuid4().hex}'
     incoming.mkdir(parents=True)
     try:
@@ -400,10 +402,7 @@ def make_task_copy(monitor, profile_id, source, task, *, source_netlist, command
     require_gate(monitor, 'write_cellview', profile_id, 'writing into Virtuoso')
     directory = task_copy_dir(task)
     attempt_file = directory.parent / f'{task}.{ATTEMPT}'
-    try:
-        attempt = json.loads(attempt_file.read_text())
-    except (OSError, ValueError):
-        attempt = {}
+    attempt = _json_or_empty(attempt_file)
     incoming = directory.parent / f'.incoming-{uuid4().hex}'
     incoming.mkdir(parents=True)
     library = source['copy']['library']
@@ -498,10 +497,7 @@ def write_setup_on(monitor, profile_id, target, setup, *, command=None) -> dict:
         raise virtuoso_setup.SetupError('The setup cannot be written: ' + '; '.join(problems))
     require_gate(monitor, 'write_cellview', profile_id, 'writing the Maestro setup')
     last_file = Path(target['state_dir']) / 'last_written_setup.json'
-    try:
-        last = json.loads(last_file.read_text())
-    except (OSError, ValueError):
-        last = {}
+    last = _json_or_empty(last_file)
     # None = leave as the copy has it. `initial_conditions` belongs here too: without it a setup that simply does not
     # mention them (every plain "Save task" of an open task) would be read as "this test has none" and DELETE them - it
     # did, to the user's ring task on 2026-09-22 23:08, and the next save then stored a task file without them.

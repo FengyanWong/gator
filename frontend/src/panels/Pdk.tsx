@@ -29,16 +29,23 @@ const watchers = new Set<() => void>();
 export function pdksChanged() { watchers.forEach(w => w()); }
 const listProblem = (e: any) => e.status === 404 ? 'This workbench server is older than the page: restart it to load PDKs.' : `The loaded PDKs cannot be listed: ${e.message}`;
 
-/** The line of the RL network block: which components the network knows. It only chooses; loading is the Virtuoso window's. */
-export function ComponentList({ value, onChoose }: { value: string; onChoose: (v: string) => void }) {
+/** The loaded PDKs (local files only), read while `watch` is set - a list on the page, an open window - and again
+ *  whenever they change. */
+function usePdkList(watch: unknown) {
   const [list, setList] = useState<Json>(null);
   const [error, setError] = useState<string | null>(null);
+  const refresh = () => api.pdks().then(l => { setList(l); setError(null); }).catch(e => setError(listProblem(e)));
   useEffect(() => {
-    const refresh = () => api.pdks().then(l => { setList(l); setError(null); }).catch(e => setError(listProblem(e)));
-    refresh(); watchers.add(refresh);                    // local files only: which PDKs were loaded before
+    if (!watch) return undefined;
+    refresh(); watchers.add(refresh);
     return () => { watchers.delete(refresh); };
-  }, []);
+  }, [watch]);
+  return { list, error, refresh };
+}
 
+/** The line of the RL network block: which components the network knows. It only chooses; loading is the Virtuoso window's. */
+export function ComponentList({ value, onChoose }: { value: string; onChoose: (v: string) => void }) {
+  const { list, error } = usePdkList(true);
   const pdks: Json[] = list?.pdks ?? [];
   const chosen: Json = pdks.find(p => p.vocabulary === value) ?? null;
   const missing = value !== 'standard' && list && !chosen;
@@ -71,17 +78,9 @@ export function ComponentList({ value, onChoose }: { value: string; onChoose: (v
 
 /** The button to the PDK window, in the Virtuoso window: read one PDK by name through the connection, see what was read. */
 export function PdkWindowButton({ profileId, circuitPdk }: { profileId: string | null; circuitPdk?: string | null }) {
-  const [list, setList] = useState<Json>(null);
-  const [error, setError] = useState<string | null>(null);
   const { popup, root, blocked, open: openWindow } = usePopupWindow('gator-pdk',
     { title: 'GATOR - PDK', features: 'popup,width=1100,height=900', rootId: 'pdk-root' });
-  useEffect(() => {
-    if (!popup) return undefined;
-    const refresh = () => api.pdks().then(l => { setList(l); setError(null); }).catch(e => setError(listProblem(e)));
-    refresh(); watchers.add(refresh);                    // the list is read when the window opens, and again when it changes
-    return () => { watchers.delete(refresh); };
-  }, [popup]);
-  const refresh = () => api.pdks().then(l => { setList(l); setError(null); }).catch(e => setError(listProblem(e)));
+  const { list, error, refresh } = usePdkList(popup);
   return (<>
     <button className="pdk-open" onClick={e => openWindow(e.currentTarget.ownerDocument.defaultView)} title="Opens the PDK window: read one technology library by name through the connection (read-only, no simulation) and see what was read. Reading a cell into the workbench reads its PDK by itself.">PDK window...</button>
     {blocked && <span className="error">{BLOCKED}</span>}

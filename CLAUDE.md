@@ -9,7 +9,7 @@ documentation; it is not auto-loaded by Claude Code). Decisions: `docs/decisions
 1. Read `docs/frontend_implementation_status.md` - the INDEX of the workbench's development record -
    then `docs/workbench.md` for the feature you touch and only the entries of that area in
    `docs/workbench-log/`; `git status` / `git diff`, and the relevant spec. Do not redo finished modules
-   from memory. A new entry goes at the end of `docs/workbench-log/7.81-and-later.md`, plus its row in the index.
+   from memory. A new entry goes at the end of `docs/workbench-log/7.101-and-later.md`, plus its row in the index.
 2. Preserve uncommitted user work. Never commit, push or reset without being asked. Several sessions
    share this working tree and its git index: stage explicit paths only, never `git add -A`.
 

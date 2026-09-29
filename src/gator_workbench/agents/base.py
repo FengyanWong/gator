@@ -23,6 +23,7 @@ import subprocess
 import threading
 from uuid import uuid4
 
+from ..connection import kill_group
 from .catalog import efforts_for
 
 REQUEST_KINDS = ('draft_config', 'parameters', 'targets', 'measurements', 'modify_fields', 'readiness',
@@ -240,10 +241,7 @@ def _stop(process, grace=3.0):
     try:
         process.wait(timeout=grace)
     except subprocess.TimeoutExpired:
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
+        kill_group(process)
         process.wait(timeout=grace)
 
 

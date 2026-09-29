@@ -21,7 +21,6 @@ The import also records what the property form of every instance lets a user typ
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -29,7 +28,7 @@ import re
 import shutil
 
 from .paths import local_settings_dir, repo_root
-from .storage.atomic import write_json
+from .storage.atomic import sha256_file as _sha256, write_json
 from .storage.dataset import utcnow
 
 NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')          # a plain Cadence name; the same rule as bridge_read.NAME
@@ -47,10 +46,6 @@ def cell_dir(library, cell) -> Path:
         if not isinstance(value, str) or not NAME.match(value):
             raise ValueError('library and cell must be plain Cadence names')
     return store_root() / library / cell
-
-
-def _sha256(path) -> str:
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def verified_models() -> dict:

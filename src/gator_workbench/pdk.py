@@ -351,6 +351,14 @@ def includes_of(text):
     return sorted({m.group(1) for line in text.splitlines() for m in [_INCLUDE.match(_strip_comment(line))] if m})
 
 
+def _define(into, name, item, models, subckts, duplicates):
+    """The first definition of a name wins, across models and subcircuits; a later one is listed."""
+    if name in models or name in subckts:
+        duplicates.append(dict(name=name, file=item['file'], line=item['line']))
+    else:
+        into[name] = item
+
+
 def scan_model_text(text, file):
     """Top-level definitions of one Spectre model file: {'models': {name: {...}}, 'subckts': {name: {...}}}.
     Only what classifying a device needs is kept: a model's primitive and `type`; a subcircuit's pins, parameters,
@@ -390,10 +398,7 @@ def scan_model_text(text, file):
             pins = (found.group(2) if found.group(2) is not None else found.group(3) or '').split()
             scope = dict(name=name, inline=inline, pins=pins, parameters={}, elements=[], models={}, file=file,
                          line=number)
-            if name in subckts or name in models:
-                duplicates.append(dict(name=name, file=file, line=number))
-            else:
-                subckts[name] = scope
+            _define(subckts, name, scope, models, subckts, duplicates)
             continue
         if head == 'ends':
             scope = None
@@ -414,10 +419,8 @@ def scan_model_text(text, file):
                     brace = 0
             if scope is not None:
                 scope['models'][model['name']] = model
-            elif model['name'] in models or model['name'] in subckts:
-                duplicates.append(dict(name=model['name'], file=file, line=number))
             else:
-                models[model['name']] = model
+                _define(models, model['name'], model, models, subckts, duplicates)
             continue
         if '{' in line:                                           # statistics { ... } and other blocks
             brace = line.count('{') - line.count('}')
@@ -440,10 +443,7 @@ def _spice_statement(words, line, number, file, scope, models, subckts, duplicat
         pins = [w for w in words[2:] if '=' not in w and w.lower() != 'params:']
         scope = dict(name=words[1], inline=False, pins=pins, parameters=_assignments(line.split(None, 2)[2] if len(words) > 2 else ''),
                      elements=[], models={}, file=file, line=number)
-        if words[1] in subckts or words[1] in models:
-            duplicates.append(dict(name=words[1], file=file, line=number))
-        else:
-            subckts[words[1]] = scope
+        _define(subckts, words[1], scope, models, subckts, duplicates)
         return scope
     if head == '.ends':
         return None
@@ -475,15 +475,9 @@ def merge_scans(scans):
     models, subckts, duplicates = {}, {}, []
     for scan in scans:
         for name, model in scan['models'].items():
-            if name in models or name in subckts:
-                duplicates.append(dict(name=name, file=model['file'], line=model['line']))
-            else:
-                models[name] = model
+            _define(models, name, model, models, subckts, duplicates)
         for name, subckt in scan['subckts'].items():
-            if name in models or name in subckts:
-                duplicates.append(dict(name=name, file=subckt['file'], line=subckt['line']))
-            else:
-                subckts[name] = subckt
+            _define(subckts, name, subckt, models, subckts, duplicates)
         duplicates += scan['duplicates']
     return dict(models=models, subckts=subckts, duplicates=duplicates)
 

@@ -55,9 +55,9 @@ import threading
 import time
 from types import SimpleNamespace
 
-from .paths import local_settings_dir, repo_root
+from .paths import append_local_log, local_settings_dir, repo_root
 from .security import redact
-from .storage.atomic import JsonlAppender, read_json
+from .storage.atomic import read_json
 from .storage.dataset import utcnow
 
 VERIFIED_BRIDGE_VERSION = '0.8.0'      # mirrors the pin in analog_optimizer/backends/virtuoso_bridge.py (a test pins both)
@@ -270,6 +270,38 @@ def child_error(stderr, default, limit=400) -> RuntimeError:
     """What a failed child said last on stderr (redacted), as the error to raise."""
     lines = (stderr or '').strip().splitlines()
     return RuntimeError(redact(lines[-1] if lines else default, limit))
+
+
+def json_lines(stdout):
+    """The lines of a child's stdout that are JSON, parsed, from the last line up (a child may print other lines first)."""
+    for line in reversed((stdout or '').strip().splitlines()):
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        yield data
+
+
+def single_flight(lock, inflight, key, work):
+    """`work()` once per `key` at a time: a caller that finds one running shares its result or its exception.
+    `inflight` maps a key to the Future of the call running for it and is guarded by `lock`."""
+    with lock:
+        future = inflight.get(key)
+        owner = future is None
+        if owner:
+            future = inflight[key] = Future()
+    if not owner:
+        return future.result()
+    try:
+        result = work()
+        future.set_result(result)
+        return result
+    except BaseException as exc:
+        future.set_exception(exc)
+        raise
+    finally:
+        with lock:
+            inflight.pop(key, None)
 
 
 # ---------------------------------------------------------------------------- bridge facade
@@ -540,24 +572,8 @@ class ConnectionMonitor:
             raise ValueError('Automatic checks are limited to the cheap layers')
         if not isinstance(profile_id, str) or not PROFILE_ID.match(profile_id):
             raise ValueError('profile_id must be the identifier of a configured profile')
-        key = (profile_id, scope)
-        with self._lock:
-            future = self._inflight.get(key)
-            owner = future is None
-            if owner:
-                future = self._inflight[key] = Future()
-        if not owner:
-            return future.result()                       # coalesced: share the probe already running
-        try:
-            result = self._probe(profile_id, scope, trigger)
-            future.set_result(result)
-            return result
-        except BaseException as exc:
-            future.set_exception(exc)
-            raise
-        finally:
-            with self._lock:
-                self._inflight.pop(key, None)
+        # coalesced: a second check of the same profile and scope shares the probe already running
+        return single_flight(self._lock, self._inflight, (profile_id, scope), lambda: self._probe(profile_id, scope, trigger))
 
     def _probe(self, profile_id, scope, trigger):
         active = self.active_run_lookup(profile_id) if self.active_run_lookup else None
@@ -590,11 +606,7 @@ class ConnectionMonitor:
 
     @staticmethod
     def _parse(stdout, names=LAYERS):
-        for line in reversed((stdout or '').strip().splitlines()):
-            try:
-                data = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+        for data in json_lines(stdout):
             layers = data.get('layers') if isinstance(data, dict) else None
             if isinstance(layers, list) and all(isinstance(item, dict) for item in layers) \
                     and [item.get('layer') for item in layers] == list(names) \
@@ -665,16 +677,11 @@ class ConnectionMonitor:
 
     def _log(self, result):
         """Application-level diagnostics log. Never a research table, never an aggregate."""
-        try:
-            log = JsonlAppender(local_settings_dir() / 'connection_checks.jsonl')
-            log.append(dict(timestamp_utc=result['checked_utc'], profile_id=result['profile_id'], trigger=result['trigger'],
-                            duration_seconds=result['duration_seconds'], overall=result['overall'],
-                            refusal=result.get('refusal'),
-                            layers=[dict(layer=i['layer'], state=i['state'], reason_code=i['reason_code'],
-                                         diagnostic=redact(i['diagnostic'], 300)) for i in result['layers']]))
-            log.close()
-        except OSError:
-            pass
+        append_local_log('connection_checks.jsonl', lambda: dict(
+            timestamp_utc=result['checked_utc'], profile_id=result['profile_id'], trigger=result['trigger'],
+            duration_seconds=result['duration_seconds'], overall=result['overall'], refusal=result.get('refusal'),
+            layers=[dict(layer=i['layer'], state=i['state'], reason_code=i['reason_code'],
+                         diagnostic=redact(i['diagnostic'], 300)) for i in result['layers']]))
 
 
 def _parse_time(text):

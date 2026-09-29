@@ -15,7 +15,7 @@
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; WSLENV carries the URL into it):
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_save_check.mjs)" [screenshot-dir]
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { answerDialogs, check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -36,7 +36,7 @@ const fileText = (task, rows) => JSON.stringify({ _help: { 'what this is': 'The 
   measurement: { kind: 'ring_oscillator', expected_frequency_hz: 1.2e9 }, maestro: { analyses: {}, variables: {}, bindings: [], model_files: [] },
   parameters: rows.parameters, probes: rows.measurements, specs: rows.targets, notes: '' }, null, 2);
 
-try {
+await runChecks(browser, async () => {
   const page = await browser.open({ errors: consoleErrors });
   const { send, evaluate, fulfil } = page;
   const calls = []; const dialogs = []; const answers = [];
@@ -76,11 +76,7 @@ try {
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${op} is not expected` } });
   };
   let revision = 1;
-  page.on('Page.javascriptDialogOpening', p => {
-    const accept = answers.length ? answers.shift() : null;
-    dialogs.push({ message: p.message, planned: accept !== null });
-    return send('Page.handleJavaScriptDialog', { accept: !!accept });
-  });
+  answerDialogs(page, answers, dialogs);
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
   const BLOCK = `document.querySelector('.editors .tabs .task-save')`;          // the bar: right end of the editors' tab line
   const NOTES = `document.querySelector('.editors .task-notes')`;              // its messages and questions, under the toolbar
@@ -159,9 +155,4 @@ try {
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
   await page.shot(path.join(out, 'task-save-1.png'));
   console.log(`INFO  other writing requests the page sent on its own, all refused here: ${[...new Set(page.refused)].join(', ') || 'none'}`);
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

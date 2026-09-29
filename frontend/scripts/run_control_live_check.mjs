@@ -10,7 +10,7 @@
 //     "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_live_check.mjs)" [screenshot-dir]
 // (WSLENV carries the two variables into the Windows process.) Takes about 90 s. Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl({ writes: true }), OUT_ROOT = process.env.GATOR_SCRATCH_OUT;
 if (!OUT_ROOT) {
@@ -21,7 +21,7 @@ const out = outDir();
 const browser = await launchEdge('runlive');
 const get = async (route, params) => (await fetch(new URL(`api/${route}?` + new URLSearchParams(params), APP))).json();
 
-try {
+await runChecks(browser, async () => {
   const starter = await get('tasks/starter', { task_key: 'synthetic:gpdk045_ota5' });
   // A budget the run cannot reach during the check, so that every ending below is the button's doing.
   const CONFIG = { ...starter, run: { ...starter.run, max_evaluations: 20000, concurrency: 1 }, output: { experiment_name: 'run_control_live', output_root: OUT_ROOT }, research: {} };
@@ -107,9 +107,4 @@ try {
   await press(ABORT);
   check('cleanup: aborted', await mainReads('Start', 600));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 400));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

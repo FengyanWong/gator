@@ -8,7 +8,7 @@
 // Run (Windows node sees a WSL variable only when WSLENV names it):
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/consistency_check.mjs)"
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -39,7 +39,7 @@ const FAILED_CHECK = { consistency_check: true, task: TASK, revision: 2, ok: fal
 const REFUSED = { message: `Not started: the working copy in Virtuoso differs from the saved task. ${DRIFT} ${FIX}`, code: 'consistency',
   report: { ...FAILED_CHECK, steps: FAILED_CHECK.steps.slice(1) } };
 
-try {
+await runChecks(browser, async () => {
   const page = await browser.open({ errors: consoleErrors });
   const { send, evaluate, fulfil } = page;
   const calls = []; const refused = []; const dialogs = [];
@@ -109,9 +109,4 @@ try {
   await page.shot(path.join(out, 'consistency-2-start-refused.png'));
   check('no other writing request was made', refused.length === 0, refused.join(' | '));
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

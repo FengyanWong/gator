@@ -1,7 +1,7 @@
 /** Icon-only buttons (user request 2026-09-24, in two steps: icons next to the words, then "remove the text"): the
  *  header's Save now / Start-Pause-Resume / Abort, "Save task" in the editors' tab line, the editors' Add / Delete
  *  selected / Undo / Redo, and the Project column's Load task / Delete task. Each icon is a 16 x 16 stroke drawing in
- *  the button's own colour (currentColor), the same style as the tab pop-out arrow in Bottom.tsx.
+ *  the button's own colour (currentColor), the same style as the tab pop-out arrow in AgentTab.tsx.
  *
  *  The label is still there, only not on screen: `<Icon name label />` puts it in a visually hidden span, so a screen
  *  reader names the button, and the button's textContent stays exactly its label ("Pause", "Save now", "Load task",

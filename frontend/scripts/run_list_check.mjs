@@ -13,7 +13,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, reportRefused, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -58,9 +58,8 @@ const statusOf = r => ({ state: r.state, run_id: r.run_id, mode: r.mode, entry: 
     mock_notice: r.mock ? 'FIXTURE MOCK DATA: nothing was run.' : null } });
 const validReport = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: true };
 
-try {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
-  const CONFIG = { ...starter, output: { experiment_name: 'fixture' }, research: {} };     // as "Load task" merges it
+await runChecks(browser, async () => {
+  const CONFIG = await starterConfig(APP);     // as "Load task" merges it
   const page = await browser.open();
   const { send, evaluate, until, fulfil, consoleErrors } = page;
   const refused = []; const seen = [];
@@ -270,11 +269,6 @@ try {
   await shot('main', 'footer', 'runs-4-footer-with-run.png');
   await send('Target.closeTarget', { targetId: farPage.id }); await windowTarget(false); far.close();
 
-  console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
+  reportRefused(refused);
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 400));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

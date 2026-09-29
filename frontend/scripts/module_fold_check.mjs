@@ -14,7 +14,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/module_fold_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -25,7 +25,7 @@ const REPORT = { resolved: ROOT, allowed: true, writable: true, error: null, hos
   free_bytes: 400 * 1024 ** 3, bytes_used: 3 * 1024 ** 3, windows_path: null, windows_mapping: 'fixture', mock_data_root: '/fixture/mock' };
 const VALID = validConfiguration();
 
-try {
+await runChecks(browser, async () => {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   // The network and training numbers are the ones this backend has stored, and the budget is well above its warm-up: a
   // configuration that raises no warning of its own (a differing network or a starved budget would be a warning inside).
@@ -150,13 +150,6 @@ try {
   await sleep(300);
   check('the fold line works from the keyboard (Enter)', !(await state(OUTPUT)).open);
 
-  console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
-  check('the page asked to start, continue, command, connect, save settings or call an agent on its own: never',
-    !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/|network-settings)/.test(r)), refused.join(', '));
+  reportRefused(refused, NEVER_ASKED_OR_SAVED);
   check('no console exception', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

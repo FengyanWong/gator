@@ -199,7 +199,8 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
                     if equal(number(a[key]), number(b[key])):
                         raise ValueError(f'Stale derived geometry {name}.{key}')
 
-    def validate_export(self, structure, snapshot):
+    def _exported_graph(self, structure):
+        """The exported netlist's graph, refused unless its topology is the recorded reference's."""
         graph = self.parser.parse_file(structure)
         graph.validate()
 
@@ -208,6 +209,10 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
                     sorted((c.device_id, c.terminal, c.net_id) for c in g.connections))
         if topology(graph) != topology(self.graph):
             raise ValueError('Exported topology differs from the recorded reference')
+        return graph
+
+    def validate_export(self, structure, snapshot):
+        graph = self._exported_graph(structure)
         actual = self.instances(snapshot)
         writable = {device for device, _ in self.writable_keys}
         for device, params in graph.parameters.items():

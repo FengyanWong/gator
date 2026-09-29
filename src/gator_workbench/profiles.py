@@ -26,7 +26,6 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime
-import hashlib
 import json
 import math
 from pathlib import Path
@@ -36,7 +35,7 @@ import shutil
 from . import native_cells, recipes, units
 from .generic_profile import RULES_FORMAT, VERIFIED_WIDTH_STEP, check_writable_record
 from .paths import local_settings_dir, repo_root
-from .storage.atomic import write_json
+from .storage.atomic import sha256_file as _sha256, write_json
 from .storage.dataset import utcnow
 
 NAME = re.compile(r'^[a-z][a-z0-9_]{1,39}$')
@@ -55,10 +54,6 @@ class ProfileError(ValueError):
 
 def store_root() -> Path:
     return local_settings_dir() / 'profiles'
-
-
-def _sha256(path) -> str:
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def profile_dir(name) -> Path:

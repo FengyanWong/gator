@@ -42,13 +42,12 @@ from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
 from analog_optimizer.measurements.specs import RewardSettings
 
 from . import ngspice_netlist
-from .ngspice_link import PROGRAM, SSH_HOST, ssh_argv
+from .ngspice_link import PROGRAM, SSH_HOST, VERSION, scrub_host as _scrub, ssh_argv
 
 BACKEND_KIND = 'ngspice-batch-v1'
 LOCAL_CONCURRENCY = max(1, min(8, (os.cpu_count() or 2) // 2))     # ngspice jobs on this machine at once
 SSH_CONCURRENCY = 4                                                 # ssh sessions at once
 SSH_COMMAND_SECONDS = 20                                            # on top of the simulation timeout: connect + copy
-VERSION = re.compile(r'ngspice-(\d+(?:\.\d+)*)')
 TEMPERATURE = re.compile(r'(?im)^\s*\.(?:temp\s+([-+0-9.eE]+)|options?\b.*?\btemp\s*=\s*([-+0-9.eE]+))')
 
 
@@ -301,13 +300,6 @@ class NgspiceBackend(VirtuosoBackend):
 def _last_line(text):
     lines = [line.strip() for line in (text or '').splitlines() if line.strip()]
     return lines[-1] if lines else ''
-
-
-def _scrub(text, host):
-    """The ssh destination never leaves in an error summary."""
-    for secret in sorted({part for part in [host, *str(host or '').split('@')] if part}, key=len, reverse=True):
-        text = text.replace(secret, '<ssh host>')
-    return text
 
 
 @dataclass(frozen=True)

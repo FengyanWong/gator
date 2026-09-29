@@ -14,14 +14,14 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/circuit_source_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const STORAGE_KEY = 'gator-workbench-config-v1';
 const out = outDir();
 const browser = await launchEdge('src');
 
-try {
+await runChecks(browser, async () => {
   const meta = await (await fetch(new URL('api/meta', APP))).json();
   const NETLIST = `${meta.repo_root}/tests/fixtures/synthetic/opamp.scs`, MAPPING = `${meta.repo_root}/configs/opamp.json`;
   // What the removed form left in a saved configuration: the source, the two paths, and the task id the page started with.
@@ -107,9 +107,4 @@ try {
 
   check('the page asked nothing else of the backend (every request besides reads is refused here)', refused.length === 0, refused.join(' | '));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

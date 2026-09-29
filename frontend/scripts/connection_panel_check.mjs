@@ -20,7 +20,7 @@
 // the check then refuses the live backend (port 8765). From WSL: WSLENV=GATOR_WORKBENCH_URL:GATOR_CONNECTION_LIVE.
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const LIVE = process.env.GATOR_CONNECTION_LIVE === '1';
 const APP = await workbenchUrl({ writes: LIVE });
@@ -63,7 +63,7 @@ const fixtures = {
       checks: [{ ok: true, text: `FIXTURE found for ${k.kind}` }], ...(k.kind === 'ngspice_ssh' ? { ssh_hosts: ['simhost', 'sim2'] } : {}) })) },
 };
 
-try {
+await runChecks(browser, async () => {
   const page = await browser.open();
   const { send, evaluate, fulfil, consoleErrors } = page;
   const seen = []; let statusAnswer = fixtures.never; let live = false;
@@ -294,9 +294,4 @@ try {
   }
 
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

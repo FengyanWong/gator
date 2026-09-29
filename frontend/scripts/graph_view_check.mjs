@@ -17,7 +17,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/graph_view_check.mjs)" [screenshot-dir]
 // Optional: GATOR_WORKBENCH_OUTPUT_ROOT (from WSL: WSLENV=GATOR_WORKBENCH_URL:GATOR_WORKBENCH_OUTPUT_ROOT). Exit code 1 on failure.
 import path from 'node:path';
-import { validConfiguration, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const ROOT = process.env.GATOR_WORKBENCH_OUTPUT_ROOT || undefined;
@@ -59,7 +59,7 @@ const view = (evaluation, { attention = true } = {}) => ({ checkpoint_id: POINT.
   reading: 'FIXTURE reading: attention is normalized per RECEIVING node; a node with a single connection always shows 1.0.', actions_note: 'FIXTURE actions note.' });
 const VALID = validConfiguration();
 
-try {
+await runChecks(browser, async () => {
   const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
   const CONFIG = { ...starter, run: { ...starter.run, mode: 'fine_tune', network: { ...NET, layers: 2 }, model_source: { run_dir: RUN, checkpoint_id: 'latest' } }, output: { experiment_name: 'fixture', ...(ROOT ? { output_root: ROOT } : {}) }, research: {} };
   const page = await browser.open({ consoleApi: false });
@@ -271,13 +271,6 @@ try {
     await evaluate(`${DIALOG}.querySelector('button.dialog-close').click()`);
   }
 
-  console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
-  check('the page asked to start, continue, command, connect, save settings or call an agent on its own: never',
-    !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/|network-settings)/.test(r)), refused.join(', '));
+  reportRefused(refused, NEVER_ASKED_OR_SAVED);
   check('no console exception', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-} finally {
-  await browser.close();
-}
-finish();
+});

@@ -17,7 +17,7 @@ import socket
 import subprocess
 from uuid import uuid4
 
-from .storage.atomic import TEMP_MARKER, fsync_directory
+from .storage.atomic import TEMP_MARKER, JsonlAppender, fsync_directory
 
 MOCK_SUBDIR = 'mock'
 ENV_ALLOWED_ROOTS = 'GATOR_WORKBENCH_ALLOWED_ROOTS'
@@ -47,6 +47,17 @@ def local_settings_dir() -> Path:
     if override:
         return Path(override)
     return repo_root() / 'configs' / 'local' / 'workbench'
+
+
+def append_local_log(name, record) -> None:
+    """One line of an application log in the settings folder: `record()`, built once the file is open. A log that
+    cannot be written is skipped - it never fails what it records."""
+    try:
+        log = JsonlAppender(local_settings_dir() / name)
+        log.append(record())
+        log.close()
+    except OSError:
+        pass
 
 
 class OutputRoots:

@@ -165,6 +165,8 @@ budget).
 | `6c6cc3e` | 09-29 23:55 | - | record only: names the commit of the 7.112 follow-up, and the table row for 5ee0c1f |
 | `6080079` | 09-29 23:56 | - | record only: corrects the time of 5ee0c1f in this table (23:49, not 23:52) |
 | `9dedc81` | 09-30 00:39 | 7.113 | the Specs equations' old-configuration hash test reads a frozen configuration written by the pre-equations code, with its hashes (session "Parameters, specs, and probes linking in Virtuoso") |
+| `44a48a2` | 09-30 00:40 | - | record only: names the commit of 7.113, and the table rows for 6c6cc3e, 6080079 and 9dedc81 |
+| `d88b247` | 09-30 00:52 | 7.114 | formula specs marked at training corners, a warning for "Missing value = failed" on a soft spec, save tracking in `spec_equations_check` (only this session's hunks of engine.py / tables.py; Astra's stay uncommitted) |
 
 ## Entries
 

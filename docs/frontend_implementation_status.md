@@ -162,3 +162,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.118 | Audit of the LLM-sizing build (7.116): sound, four small fixes before its commit; report under artifacts/local/reviews |
 | 7.119 | Fixed-bias feasibility calibration: 80 runs, zero passes; full suite passes; current/schema findings recorded |
 | 7.120 | Audit finding F1 fixed: the LLM duplicate check compares sizes to a tolerance; optimizer digest 27a36b2b → 100945fb |
+| 7.121 | Audit of the fixed-bias calibration: the zero passes come from the settling-time target, made worse by fixed low bias currents; tree green |

@@ -175,3 +175,5 @@ One row per commit, newest last.
 | `9dedc81` | 09-30 00:39 | 7.113 | the Specs equations' old-configuration hash test reads a frozen configuration written by the pre-equations code, with its hashes (session "Parameters, specs, and probes linking in Virtuoso") |
 | `44a48a2` | 09-30 00:40 | - | record only: names the commit of 7.113, and the table rows for 6c6cc3e, 6080079 and 9dedc81 |
 | `d88b247` | 09-30 00:52 | 7.114 | formula specs marked at training corners, a warning for "Missing value = failed" on a soft spec, save tracking in `spec_equations_check` (only this session's hunks of engine.py / tables.py; Astra's stay uncommitted) |
+| `dc33d7e` | 09-30 00:53 | - | record only: names the commit of 7.114, and the table rows for 44a48a2 and d88b247 |
+| `1a3f4a7` | 09-30 02:52 | 7.117 | repository review round 5: bugs, speed-ups, session-start docs, test fixes (this review's hunks only; the uncommitted work of 7.115 and 7.116 in the same files left in the working tree) |

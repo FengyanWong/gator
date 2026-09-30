@@ -9,7 +9,8 @@
 // validation, closes when nothing blocks, and does not reopen by itself. Since status record 7.56 (user report
 // 2026-09-21): a configuration the schema rejects (HTTP 422) is listed one issue per field, at its row, in the backend's
 // plain words, with the schema's own text folded under "Technical details" - also for an older backend's answer. It seeds
-// the one MOCK task, synthetic:gpdk045_ota5 (status record 7.59).
+// the one MOCK task, synthetic:gpdk045_ota5 (status record 7.59). Since 2026-09-29: a settings.json the backend cannot read
+// (/api/meta `settings_problem`, answered here) is a full-width line of the header that a click does not dismiss.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 15 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/blocking_issues_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -52,9 +53,12 @@ await runChecks(browser, async () => {
   const page = await browser.open();
   const { send, evaluate, fulfil, consoleErrors } = page;
   const refused = []; let validations = 0, answerWith = fixtures.three;
+  const META = await (await fetch(new URL('api/meta', APP))).json();
+  let settingsProblem = null;                                                     // the last section: /api/meta says settings.json is unreadable
   const answer = params => {
     const name = new URL(params.request.url).pathname;
     if (name === '/api/config/validate') { validations++; return answerWith.status ? fulfil(params.requestId, answerWith.status, answerWith.body) : fulfil(params.requestId, 200, answerWith); }
+    if (name === '/api/meta' && settingsProblem) return fulfil(params.requestId, 200, { ...META, settings_problem: settingsProblem });
     return page.readOrRefuse(params, refused);                                    // a panel asking on its own; never a start
   };
   const until = (expression, tries = 60) => page.until(expression, tries);
@@ -170,6 +174,21 @@ await runChecks(browser, async () => {
   check('any other failure is one issue with its text only', failedRows.length === 1 && failedRows[0][3] === '(whole configuration)' && failedRows[0][4] === 'FIXTURE: the backend failed', JSON.stringify(failedRows));
   await revalidate(fixtures.valid);
   check('a valid answer clears them', !(await evaluate(`!!(${BUTTON})`)) && (await evaluate(`${EDITOR_ROWS}.filter(tr => tr.classList.contains('has-error')).length`)) === 0);
+
+  // ---- a hand-edited settings.json that is not valid JSON (review of 2026-09-29, A12): said in the header, never hidden ------
+  const PROBLEM = 'FIXTURE: settings.json is not valid JSON (line 3, column 5): the workbench runs on its defaults and leaves the file as it is.';
+  check('(without a problem the header has no such line)', !(await evaluate(`!!document.querySelector('header .settings-problem')`)));
+  settingsProblem = PROBLEM; answerWith = fixtures.three;
+  await send('Page.reload');
+  await until(`!!(${BUTTON})`, 150);
+  const line = await evaluate(`(() => { const p = document.querySelector('header .settings-problem'), h = document.querySelector('header'); if (!p) return null;
+    const r = p.getBoundingClientRect(), b = h.getBoundingClientRect(); return { text: p.textContent, inside: r.top >= b.top && r.bottom <= b.bottom + 1, width: r.width, headerWidth: b.width,
+    below: r.top > ${BUTTON}.getBoundingClientRect().bottom - 1, warn: p.classList.contains('warn') }; })()`);
+  check('an unreadable settings.json is said in the header, on a full-width line of its own under the buttons', !!line && line.text === PROBLEM && line.inside && line.below
+    && line.width > line.headerWidth - 40 && line.warn, JSON.stringify(line));
+  await evaluate(`document.querySelector('header .settings-problem').click()`); await sleep(300);
+  check('it stays: a click does not dismiss it (the page otherwise works as before)', await evaluate(`!!document.querySelector('header .settings-problem') && !!(${BUTTON})`));
+  await shot('issues-6-settings-problem.png');
 
   reportRefused(refused, NEVER_ASKED);
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

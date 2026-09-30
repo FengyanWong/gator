@@ -1,5 +1,9 @@
 # Plan: reward v2 with real-flow qualification
 
+> **Status (2026-09-30): DONE.** Stage A/B/C qualification passed on 2026-09-26 with 73 Spectre calls (A 21, B 44,
+> C 8; record 7.95); audit fixes in records 7.97-7.98; committed in `1135b8b`. The current reward is v2.1
+> ([reward-v2.md](reward-v2.md)).
+
 Status: **implementation plan, 2026-09-26**. It was subsequently invoked by "go on build the reward".
 The code is integrated, but physical acceptance stopped before Stage A at `license_not_checkable`;
 see [implementation status and evidence](reward-v2.md). This plan itself remains the frozen scope,

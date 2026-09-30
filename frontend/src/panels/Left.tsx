@@ -192,7 +192,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       if (answer?.pdk?.state === 'read') pdksChanged();  // the Components list in the RL network block shows it at once
       await load(ref, 'press');
     }
-    catch (e: any) { nativeProblem('import', e); }
+    catch (e: any) { nativeProblem(e); }
     finally { setImporting(false); }
   };
   useEffect(() => { setPdkStep(null); }, [loadKey]);       // the line is about the cell it was read with
@@ -490,7 +490,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
         : pdkStep.state === 'not_read' ? <>The cell was read; its PDK <b>{pdkStep.technology_library}</b> was not: {pdkStep.reason} "PDK window..." reads it by name.</>
         : <>No PDK read with the cell: {pdkStep.reason}</>}</p>}
       {cells?.truncated && <p className="hint">Only the first {cells.cells.length} cells are listed.</p>}
-      {nativeError && <p className="error">{nativeError.text}</p>}
+      {nativeError && <p className="error">{nativeError}</p>}
       {virtuosoOn && error && <p className="error">{error}</p>}
       {circuit && taskNote}
       {virtuosoOn && circuit && !circuit.loaded && !taskNote && (

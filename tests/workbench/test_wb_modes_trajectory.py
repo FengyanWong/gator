@@ -12,6 +12,9 @@ from gator_workbench.storage import read_json
 from gator_workbench.trajectory import TrajectoryLoader
 from helpers import execute, make_config, other_circuits, roots_for, rows, summary
 
+# Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
+pytestmark = pytest.mark.xdist_group('test_wb_modes_trajectory')
+
 
 def latest(layout):
     directory = ckpt.resolve_checkpoint(layout.run_dir, 'latest')

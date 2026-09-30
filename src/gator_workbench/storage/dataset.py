@@ -39,6 +39,9 @@ TIMESTAMP_COLUMNS = {table: [c.name for c in spec['columns'] if c.type == 'times
 # once; the rows are identical (zoneinfo either way). An installed pytz is left alone.
 if 'pytz' not in sys.modules and importlib.util.find_spec('pytz') is None:
     sys.modules['pytz'] = None
+# Likewise `dateutil`: pyarrow retries `import dateutil.relativedelta` for each scalar it makes (a parquet filter's).
+if 'dateutil' not in sys.modules and importlib.util.find_spec('dateutil') is None:
+    sys.modules['dateutil'] = None
 
 
 def utcnow():

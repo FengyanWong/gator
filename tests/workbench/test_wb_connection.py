@@ -135,7 +135,7 @@ def test_bridge_in_another_virtualenv_is_not_a_virtuoso_failure(settings):
 
 
 def test_no_profile_still_checks_the_package_layer_first(settings):
-    layers, bridge = run_layers(FakeBridge(), None, profile_error=('connection_file_missing', 'no file')), None
+    layers = run_layers(FakeBridge(), None, profile_error=('connection_file_missing', 'no file'))
     assert states(layers)['bridge_package'] == 'ok' and reasons(layers) == {'connection_profile': 'connection_file_missing'}
     downstream_not_checked(layers, 'connection_profile')
     layers = run_layers(FakeBridge(import_error=True), None, profile_error=('connection_file_missing', 'no file'))

@@ -121,7 +121,7 @@ const ADVANCED_ROWS: NumberField[][] = [
 
 export function RunPanel({ config, setConfig, runs, circuit, schema }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json; schema: Json }) {
   const run = config.run;
-  const set = (fields: Json) => setConfig(c => ({ ...c, run: { ...c.run, ...fields } }));
+  const set = (fields: Json, record = true) => setConfig(c => ({ ...c, run: { ...c.run, ...fields } }), record);
   const setAdv = (fields: Json) => setConfig(c => ({ ...c, run: { ...c.run, advanced: { ...(c.run.advanced ?? {}), ...fields } } }));
   const setNet = (fields: Json) => setConfig(c => ({ ...c, run: { ...c.run, network: { ...(c.run.network ?? {}), ...fields } } }));
   const source = run.model_source ?? {};
@@ -253,10 +253,11 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
 
   // Default the RL model to the last model used by this project, and its `latest` checkpoint (not `best`) - in a Mode that
   // loads a model. In scratch it used to be written into the configuration on page load: a validation warning
-  // (source_ignored_in_scratch), an undo step nobody made and a model compile on every edit.
+  // (source_ignored_in_scratch), an undo step nobody made and a model compile on every edit. Filled by itself, it is no
+  // Undo step either: one Undo takes back the Mode choice and the model it brought.
   useEffect(() => {
     if (source.run_dir || !loads) return;
-    api.defaultModel(config.project.name).then(d => d.run_dir && set({ model_source: { ...source, run_dir: d.run_dir, checkpoint_id: 'latest' } })).catch(() => undefined);
+    api.defaultModel(config.project.name).then(d => d.run_dir && set({ model_source: { ...source, run_dir: d.run_dir, checkpoint_id: 'latest' } }, false)).catch(() => undefined);
   }, [config.project.name, loads]);
 
 
@@ -400,6 +401,12 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         <Check label="Encoder-only transfer (fine_tune)" value={adv.encoder_only_transfer} onChange={v => setAdv({ encoder_only_transfer: v })} />
         <Check label="Reset critic (fine_tune)" value={adv.reset_critic} onChange={v => setAdv({ reset_critic: v })} />
         <Num label="Pause after N consecutive infrastructure failures" value={run.max_consecutive_infrastructure_failures ?? 3} onChange={v => set({ max_consecutive_infrastructure_failures: v })} />
+        {/* The engine's other stop rule (schema max_consecutive_failures, engine._check_limits), which had no field here
+            (decision of 2026-09-29: keep the rule and say what it means for reward v2.1). */}
+        <Num label="Stop after N consecutive failed evaluations" value={run.max_consecutive_failures ?? 5} onChange={v => set({ max_consecutive_failures: v })}
+          title={'When this many evaluations in a row fail (no valid result), the run stops safely: everything is saved and it ends as "failed", '
+            + 'which Continue cannot pick up again. Reward v2.1 scores broken designs and learns from them, so a run exploring a region where many '
+            + 'designs break may need a higher limit (1-1000).'} />
       </details>
     </Module>
   );
@@ -409,10 +416,17 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
   const out = config.output;
   const set = (fields: Json) => setConfig(c => ({ ...c, output: { ...c.output, ...fields } }));
   const root = out.output_root ?? meta?.output_root ?? '';
-  const [check, setCheck] = useState<Json>(null);
   const [browse, setBrowse] = useState<Json>(null);
   const locked = !!activeRun?.worker_alive;
-  useEffect(() => { if (root) api.checkOutput(root).then(setCheck).catch(() => setCheck(null)); }, [root]);
+  // The root is looked at 0.5 s after the last keystroke, and an answer for text typed before is dropped (useRequest): each
+  // look walks the folder for its size, and whichever answer came last used to win, a half-typed path's too.
+  const { value: looked } = useRequest<Json>(() => api.checkOutput(root), [root], { enabled: !!root, delay: 500 });
+  const [tested, setTested] = useState<{ root: string; value: Json } | null>(null);     // "Test writability", for the root it was pressed for
+  useEffect(() => setTested(null), [root]);                                             // another root: its own look replaces it, as before
+  const check: Json = tested && tested.root === root ? tested.value : looked;
+  // Browse, a folder of its list and Test writability say what went wrong, as the other panels do (they used to say nothing).
+  const [problem, setProblem] = useState<string | null>(null);
+  const ask = <T,>(work: () => Promise<T>, done: (value: T) => void) => { setProblem(null); work().then(done, e => setProblem(e.message)); };
   const paths = activeRun?.paths;
   const tail = String(root).split(/[\\/]/).filter(Boolean).slice(-2).join('/');
   // ONE checkpoint interval, counted in evaluations OR in seconds (user request 2026-09-22). The number goes into the field
@@ -432,11 +446,12 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
       <div className="field-head"><label htmlFor="output-root" title="A backend directory inside an allowed root. Not a browser upload folder.">Output root</label>
         <button className="text-link" title="Copy the output root to the clipboard" onClick={() => copy(root)}>Copy path</button></div>
       <input id="output-root" value={root} disabled={locked} onChange={e => set({ output_root: e.target.value })} />
-      <div className="row"><button disabled={locked} onClick={() => api.browse().then(setBrowse)}>Browse allowed roots...</button>
-        <button onClick={() => root && api.checkOutput(root, true).then(setCheck)}>Test writability</button></div>
+      <div className="row"><button disabled={locked} onClick={() => ask(() => api.browse(), setBrowse)}>Browse allowed roots...</button>
+        <button onClick={() => { const at = root; if (at) ask(() => api.checkOutput(at, true), value => setTested({ root: at, value })); }}>Test writability</button></div>
+      {problem && <p className="error">{problem}</p>}
       {locked && <p className="hint">The run directory is locked while a run is active. A resumed run writes back to its original directory.</p>}
-      {browse && <ul className="tree">{browse.parent && <li onClick={() => api.browse(browse.parent).then(setBrowse)}>..</li>}
-        {browse.entries.map((e: Json) => <li key={e.path}><span onClick={() => api.browse(e.path).then(setBrowse)}>{e.name}</span> <button onClick={() => { set({ output_root: e.path }); setBrowse(null); }}>select</button></li>)}</ul>}
+      {browse && <ul className="tree">{browse.parent && <li onClick={() => ask(() => api.browse(browse.parent), setBrowse)}>..</li>}
+        {browse.entries.map((e: Json) => <li key={e.path}><span onClick={() => ask(() => api.browse(e.path), setBrowse)}>{e.name}</span> <button onClick={() => { set({ output_root: e.path }); setBrowse(null); }}>select</button></li>)}</ul>}
       {check && <table className="grid small"><tbody>
         <tr><td>Resolved</td><td className="path">{check.resolved ?? '-'}</td></tr>
         <tr><td>Allowed / writable</td><td className={check.allowed && check.writable ? '' : 'error'}>{String(check.allowed)} / {String(check.writable)} {check.error ?? ''}</td></tr>

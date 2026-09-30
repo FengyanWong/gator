@@ -1086,8 +1086,6 @@ def learner_class(vocabulary):
         return SACLearner
 
     class PdkViewLearner(SACLearner):
-        network_vocabulary = vocabulary
-
         def batch(self, observations):
             return super().batch([vocabulary.view(o) for o in observations])
     return PdkViewLearner

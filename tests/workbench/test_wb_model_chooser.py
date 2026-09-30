@@ -12,6 +12,9 @@ from gator_workbench.api import create_app
 from gator_workbench.storage import read_json
 from helpers import SMALL_NET, execute, make_config, roots_for
 
+# Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
+pytestmark = pytest.mark.xdist_group('test_wb_model_chooser')
+
 
 @pytest.fixture(scope='module')
 def trained(tmp_path_factory):

@@ -48,18 +48,26 @@ def _pdk_facts(record, graph, p):
     return parameter_facts(record, device.model_ref, p.parameter_name)
 
 
-def _loaded_pdk_knowing(graph, p):
-    """The id of a LOADED PDK that knows this row's device and parameter, for a hint under the standard list."""
+def _loaded_pdk_knowing(graph, p, loaded=None):
+    """The id of a LOADED PDK that knows this row's device and parameter, for a hint under the standard list.
+    `loaded`: a dict the caller keeps over one validation, so the PDKs are listed once and each record is read at most
+    once for all such rows (list_pdks and more loads for every row were 18 ms a row on the 9p-mounted repo)."""
     if graph is None or not p.instance_path:
         return None
     device = next((d for d in graph.devices if d.id == p.instance_path), None)
     if device is None:
         return None
     from .pdk import list_pdks, load_record, parameter_facts
-    for entry in list_pdks():
-        facts = parameter_facts(load_record(entry['pdk_id']), device.model_ref, p.parameter_name)
+    loaded = {} if loaded is None else loaded
+    if 'ids' not in loaded:
+        loaded.update(ids=[entry['pdk_id'] for entry in list_pdks()], records={})
+    records = loaded['records']
+    for pdk_id in loaded['ids']:
+        if pdk_id not in records:                 # read when first needed, as before: the first PDK that knows it ends the search
+            records[pdk_id] = load_record(pdk_id)
+        facts = parameter_facts(records[pdk_id], device.model_ref, p.parameter_name)
         if facts and facts.get('numeric'):
-            return entry['pdk_id']
+            return pdk_id
     return None
 
 
@@ -156,10 +164,10 @@ def _check_pdk_parameter(report, path, p, facts, record):
                    f"default there is {facts.get('default')!r} - check that the unit is right.")
 
 
-def _check_parameters(config, report, graph):
+def _check_parameters(config, report, graph, record):
+    """`record`: the PDK the network is built with (_pdk_record), loaded once by validate() for every check."""
     parameters = config.parameters
-    seen, targets = set(), {}
-    record = _pdk_record(config)
+    seen, targets, loaded = set(), {}, {}
     for i, p in enumerate(parameters):
         path = f'parameters[{i}]'
         if p.variable_id in seen:
@@ -187,7 +195,7 @@ def _check_parameters(config, report, graph):
                 report.add('error', 'unit_mismatch', path + '.unit',
                            f'Parameter {p.parameter_name!r} is measured in {expected}, not {p.unit!r}')
             if p.parameter_name not in FEATURE_PARAMETER_KINDS:
-                knowing = _loaded_pdk_knowing(graph, p) if record is None else None
+                knowing = _loaded_pdk_knowing(graph, p, loaded) if record is None else None
                 report.add('blocker', 'parameter_kind_unsupported', path + '.parameter_name',
                            f'{p.parameter_name!r} is not in the optimizer feature vocabulary '
                            f'{FEATURE_PARAMETER_KINDS}; the graph encoder cannot represent it'
@@ -264,7 +272,7 @@ def _check_parameters(config, report, graph):
     if not any(p.optimized for p in parameters):
         report.add('error', 'nothing_to_optimize', 'parameters', 'At least one optimized variable is required')
     if graph is not None:
-        _check_parameters_against_circuit(config, report, graph)
+        _check_parameters_against_circuit(config, report, graph, record)
 
 
 def _check_bindings_against_circuit(config, report, graph):
@@ -290,8 +298,7 @@ def _check_bindings_against_circuit(config, report, graph):
                        f'({leader_id}) = {lead * ratio:g}. Change the ratio, or modify the circuit first.')
 
 
-def _check_parameters_against_circuit(config, report, graph):
-    record = _pdk_record(config)
+def _check_parameters_against_circuit(config, report, graph, record):
     _check_bindings_against_circuit(config, report, graph)
     devices = {d.id: d for d in graph.devices}
     for i, p in enumerate(config.parameters):
@@ -506,7 +513,7 @@ def _check_targets(config, report, measurement_ids, *, registry, extensible=True
             report.add('warning', 'unused_measurement', f'measurements[{i}]', 'No spec equation uses this probe')
 
 
-def _check_run(config, report):
+def _check_run(config, report, record):
     run, adv = config.run, config.run.advanced
     if run.mode in ('resume', 'fine_tune', 'frozen') and not run.model_source.run_dir:
         report.add('error', 'missing_model_source', 'run.model_source.run_dir',
@@ -535,9 +542,8 @@ def _check_run(config, report):
                    'The whole budget is random warm-up exploration; the policy never chooses an action. Published '
                    'settings assume thousands of simulations: lower the warm-up or raise the budget')
     vocabulary = getattr(run.network, 'vocabulary', 'standard') or 'standard'
-    if vocabulary != 'standard':
-        from .pdk import label, load_record
-        record = load_record(vocabulary[4:])
+    if vocabulary != 'standard':                  # the schema admits 'pdk:<name>' only: `record` is _pdk_record's load of <name>
+        from .pdk import label
         if record is None:
             report.add('blocker', 'pdk_not_loaded', 'run.network.vocabulary',
                        f'The network is to know the components of PDK {vocabulary[4:]}, but that PDK is not loaded. Load it '
@@ -622,13 +628,13 @@ def validate(config: WorkbenchConfig, *, graph=None, provided_metrics=None,
     """Full semantic validation. `graph` enables circuit-aware checks; without one they are
     reported as not performed rather than assumed to pass."""
     report = Report()
-    _check_parameters(config, report, graph)
+    record = _pdk_record(config)                  # one read of the PDK record for every check below (it was four)
+    _check_parameters(config, report, graph, record)
     measurement_ids = _check_measurements(config, report, provided_metrics=provided_metrics)
     _check_targets(config, report, measurement_ids, registry=registry_for(config),
                    extensible=config.run.advanced.spec_registry is None, provided_metrics=provided_metrics)
-    _check_run(config, report)
+    _check_run(config, report, record)
     _check_research(config, report, for_generalization=for_generalization)
-    record = _pdk_record(config)
     if record is not None and graph is not None and not any(d.model_ref in record['devices'] for d in graph.devices):
         report.add('warning', 'pdk_not_in_circuit', 'run.network.vocabulary',
                    f"No part of this circuit is a component of PDK {record['pdk_id']}: the network is built with that PDK's "

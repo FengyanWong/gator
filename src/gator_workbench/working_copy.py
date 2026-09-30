@@ -10,7 +10,8 @@ Until then a cell read into the workbench (``native_cells``, through its testben
 workbench created itself, in Virtuoso's working directory, bound to the same technology library - accepted only when
 the copy's netlist was the original's, every copied cell came from the copy library, and the originals read back
 unchanged. Tasks saved on such a copy keep running on it: their records name it, and nothing migrates them.
-``make`` itself is still what "Save as" through the API and the tests use; the page no longer offers it.
+Only the tests still call ``make``; the page no longer offers it, and "Save as" through the API makes its copy with
+``make_task_copy``, which does not go through ``make``.
 
 Cell and instance names are the same in a copy as in the original, so every Parameters row and Probes signal names
 the same instance path either way. The record of each working copy lives under
@@ -255,8 +256,8 @@ def declare(profile_id, library, cell) -> dict:
 def make(monitor, profile_id, library, cell, *, command=None, timeout=600.0) -> dict:
     """Copy the cell that was read into the workbench, with its testbench, into the workbench's own library. Returns
     the record; an existing copy is returned as it is (a copy is made once). The page no longer offers this (user
-    request 2026-09-23: the user makes the copy, see `declare`); `make_task_copy` (Save as through the API) and the
-    tests still go this way, and tasks saved on a made copy keep running on it."""
+    request 2026-09-23: the user makes the copy, see `declare`); only the tests still call it - Save as through the API
+    copies with `make_task_copy`, which does not go through here - and tasks saved on a made copy keep running on it."""
     existing = load(library, cell)
     if existing:
         return dict(existing, already=True)

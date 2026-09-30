@@ -25,6 +25,7 @@ lets a user type is written by ``cdf_write``, rules of format 2 - this class sta
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 import json
 import math
 from pathlib import Path
@@ -40,6 +41,18 @@ MOS_SIZE = ('w', 'fw') + GEOMETRY                       # follow the width of a 
 
 class RulesError(ValueError):
     """The rule file does not describe something the verified real backend can do."""
+
+
+def _to_grid_top(group):
+    """`group` with the optimizer's top grid point as its upper bound when that lands above it (compile.grid_top), a
+    member clamp at that range moved with it - what compile.build_graph makes of the same row; else `group` itself."""
+    from .compile import grid_top
+    top = grid_top(group.lower, group.upper, group.step, group.domain == 'integer') if group.mutable else group.upper
+    if not top > group.upper:
+        return group
+    members = tuple(replace(m, upper=top * m.ratio) if m.upper is not None and group.upper * m.ratio <= m.upper < top * m.ratio
+                    else m for m in group.members)
+    return replace(group, upper=top, members=members)
 
 
 def _same(a, b) -> bool:
@@ -92,9 +105,23 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
                          conditions_file=conditions_file)
         if any(not self._on_width_grid(v) for bounds in self.bounds.values() for v in bounds):
             raise RulesError('Every width bound must lie on the width grid')
+        self._bounds_to_grid_top()
         self._check_group_contract()
 
     # ------------------------------------------------------------------ contract between rules and mapping
+    def _bounds_to_grid_top(self):
+        """A group's top grid point can land a hair above an upper bound typed in decimals (compile.grid_top: 1.84 ..
+        42.38 um in 0.02 um steps tops out at 4.2380000000000004e-05 m), and a task saved before compile took that point
+        as the group's upper bound kept rules bounds a hair below it: the profile refused its own top value at load
+        ("outside its bounds or off the CDF-compatible grid"). A member bound AT the group's upper moves to that point,
+        as compile moves the group's (_to_grid_top); where the point is not above, nothing moves."""
+        for group in self.graph.parameter_groups:
+            top = _to_grid_top(group).upper
+            for member in group.members if top > group.upper else ():
+                lower, upper = self.bounds.get(member.device_id, (None, None))
+                if upper is not None and group.upper * member.ratio <= upper < top * member.ratio:
+                    self.bounds[member.device_id] = (lower, top * member.ratio)
+
     def _check_group_contract(self):
         """The mapping's mutable groups must BE the rules: widths of writable transistors only, each exactly once,
         linear on the grid, inside the bounds of every member. (The hand-written classes pin the same thing.)"""
@@ -156,6 +183,9 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
 
     def optimization_graph(self, structure=None):
         graph = self.parser.parse_file(structure) if structure is not None else deepcopy(self.graph)
+        # The groups a run gets are the ones compile makes from the task's rows, also from a mapping saved before compile
+        # took a group's top grid point as its upper bound: otherwise such a task's own rows no longer matched it at Start.
+        graph.parameter_groups = [_to_grid_top(group) for group in graph.parameter_groups]
         graph.validate()
         self.validate_assignment(graph.assignments({g.id: g.value for g in graph.parameter_groups if g.mutable}))
         return graph

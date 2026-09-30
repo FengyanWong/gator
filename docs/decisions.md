@@ -1,3 +1,22 @@
+# Current state (2026-09-30)
+
+A summary for new sessions; everything below is the chronological record, oldest first, left as written.
+
+- **Optimizer source digest:** `3f00832c89c1cf7af5cbc5ab6dac74c20250a76ea7bfa3a2df06717087fdd6f4`, set by commit
+  `8cf53ae` (reward v2.1, 2026-09-29).
+- **Encoders:** `graph_transformer` (default), `rgcn`, `gatv2`. `port_gnn` was removed on 2026-09-24; `mlp` and `gcn`
+  on 2026-09-26, when `gatv2` replaced `gat` (GATv1).
+- **Reward:** v2.1 ([reward-v2.md](reward-v2.md)). Schema defaults keep the old arithmetic: capped violations,
+  worst-spec share 0, objective and margin weights 0, conditions `off` (nominal only), gate band 0.5, objective shape
+  `clipped`. New workbench configurations start with compressed violations and share 0.5. Corner training
+  (`always`, `after_nominal`) is offered for `real:gpdk045_ota7` only.
+- **Older checkpoints** resume exactly only under their own source: digest `02127bc3...` (M6 pilot, six encoders) from
+  `bbdfe36`; `aa987cf0...` (five encoders incl. MLP, GCN, GATv1) from `9bc488f`; `f087a4ce...` (reward v2) from
+  `1135b8b` up to the commit before `8cf53ae`. Digests never committed (`75c7cfac...`, `5e8a1bc1...`, `11e62657...`,
+  `3473ed9c...`) are in the entries below.
+- **Monte Carlo:** not implemented; a plan only ([plan-finalist-monte-carlo.md](plan-finalist-monte-carlo.md)).
+- **Next planned:** LLM-driven sizing ([brief-llm-sizing-for-astra.md](brief-llm-sizing-for-astra.md)), not started.
+
 # M1 决策 — 2026-09-19
 
 - 范围严格限制于附件最后的 First Coding Task：后端抽象、解析、规范图、PyG、离线测试与 demo。后续 Graph Transformer + goal-conditioned SAC 方向保持不变，此次不生成模型或训练骨架。

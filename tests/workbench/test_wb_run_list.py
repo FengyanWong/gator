@@ -12,6 +12,9 @@ from gator_workbench.api import create_app
 from gator_workbench.storage import read_json
 from helpers import execute, make_config, roots_for
 
+# Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
+pytestmark = pytest.mark.xdist_group('test_wb_run_list')
+
 
 def segment(number, started, ended=None, *, active=None, state=None, entry='start'):
     return dict(segment=number, entry=entry, requested_utc=started, started_utc=started, ended_utc=ended, end_state=state,

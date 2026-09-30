@@ -16,6 +16,9 @@ from gator_workbench.trajectory import StateEncoder
 from test_reward_v2_real_data import real_transition  # Actual M6 measurements, no simulator implementation.
 
 ROOT = Path(__file__).resolve().parents[1]
+# Every test here reads recorded REAL evidence (artifacts/ is not in git); skipped where it is absent.
+pytestmark = pytest.mark.requires_evidence('artifacts/local/reward-v2-real/20260926-implementation-01/baseline.json',
+                                           'artifacts/local/m6-real-cross-category/eedb54fe59d642edaff93ba9def27649')
 
 
 def baseline():

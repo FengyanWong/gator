@@ -84,7 +84,8 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
   // may set them, a task file keeps them.
   const [more, setMore] = useState<boolean>(() => { try { return localStorage.getItem(MORE_KEY) === 'shown'; } catch { return false; } });
   const showMore = (now: boolean) => { setMore(now); try { localStorage.setItem(MORE_KEY, now ? 'shown' : 'hidden'); } catch { /* no storage: the choice lasts for this page */ } };
-  const [pending, setPending] = useState<{ next: Json; diff: Json[]; others: string[] } | null>(null);
+  // `rows`: an import of one table's rows - Apply writes that table alone; null = a whole configuration, which replaces all.
+  const [pending, setPending] = useState<{ next: Json; diff: Json[]; others: string[]; rows: { section: Section; value: Json[] } | null } | null>(null);
   const [matched, setMatched] = useState(false);            // the Matched devices box of the Parameters tab (record 7.103)
   const [error, setError] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
@@ -126,7 +127,9 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
 
   // JSON import goes through a DIFF CONFIRMATION before it replaces anything. The backend's diff covers the three tables;
   // a whole configuration also replaces the other sections, and the confirmation names each one that changes (it used to
-  // show "0 changed rows" while it replaced the run settings - review of 2026-09-29).
+  // show "0 changed rows" while it replaced the run settings - review of 2026-09-29). Rows for one table write only that
+  // table on Apply: the rest of the configuration as it is THEN, so an edit made while the box was open stays (it used to
+  // be put back to the configuration of the moment of the import).
   const importJson = async (f: File) => {
     setError(null);
     try {
@@ -137,14 +140,21 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
       const next = migrateConfig(incoming.schema_version ? incoming : { ...config, [tab]: rowsIn });
       const { diff } = await api.diff(config, next);
       const others = Object.keys(IMPORTED_SECTIONS).filter(k => JSON.stringify(config[k] ?? null) !== JSON.stringify(next[k] ?? null));
-      setPending({ next, diff, others });
+      setPending({ next, diff, others, rows: incoming.schema_version ? null : { section: tab, value: next[tab] } });
     } catch (e: any) { setError(`Import failed: ${e.message}`); }
+  };
+  const applyImport = (p: NonNullable<typeof pending>) => {
+    const { rows } = p;
+    setConfig(rows ? (c: Json) => ({ ...c, [rows.section]: rows.value }) : p.next);
+    setPending(null);
   };
   const selection = rows.filter(r => selected[r[keyField]]).map(r => ({ section: tab, key: r[keyField], fields: [] as string[] }));
 
   return (
     <section className="panel editors">
-      <div className="tabs">{(Object.keys(TITLES) as Section[]).map(s => <button key={s} className={s === tab ? 'active' : ''} onClick={() => { setTab(s); setSelected({}); }}>{TITLES[s]} ({(config[s] ?? []).length})</button>)}
+      {/* Another tab closes the Matched devices box: kept "open", coming back to Parameters mounted it again, and mounting
+          is its press - it asked the backend with nobody pressing anything, and a reviewed diff was gone. */}
+      <div className="tabs">{(Object.keys(TITLES) as Section[]).map(s => <button key={s} className={s === tab ? 'active' : ''} onClick={() => { if (s !== tab) setMatched(false); setTab(s); setSelected({}); }}>{TITLES[s]} ({(config[s] ?? []).length})</button>)}
         <span className="tab-actions" ref={taskSlot} /></div>
       <div className="toolbar">
         <button onClick={add} title="Add: A new row at the end, with a free ID."><Icon name="add" label="Add" /></button>
@@ -172,7 +182,7 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
       {pending && <div className="confirm"><h4>Confirm import: {pending.diff.length} changed row{pending.diff.length === 1 ? '' : 's'}{pending.others.length
         ? `, and it replaces the ${pending.others.map(k => IMPORTED_SECTIONS[k]).join(', ')}` : ''}</h4>
         {(pending.diff.length > 0 || !pending.others.length) && <DiffView diff={pending.diff} />}
-        <button onClick={() => { setConfig(pending.next); setPending(null); }}>Apply</button><button onClick={() => setPending(null)}>Cancel</button></div>}
+        <button onClick={() => applyImport(pending)}>Apply</button><button onClick={() => setPending(null)}>Cancel</button></div>}
       <div className="scroll">
         <table className="grid editor">
           <thead><tr><th></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>

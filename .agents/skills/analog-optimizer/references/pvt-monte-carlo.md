@@ -7,6 +7,9 @@
 并明确批准 B44/总77；正常许可流程未被绕过。A 的原生派生/独立导出网表、PSF/供电
 检查通过；C 的共享预算拒绝剩余四槽时启动五工况。默认仍是 corners off；MC 未实现。
 无 robust-feasible 设计，不证明 reward 优势、worst-case 完整性或良率。见 `docs/reward-v2.md`。
+2026-09-29 reward v2.1 加入 `after_nominal`：nominal 通过全部 hard spec 后才跑四个 corners（nominal 失败的一步只花
+1 次调用），OTA7 物理门检用了 10 次调用（记录 7.108）。MC 仍未实现，只有计划 `docs/plan-finalist-monte-carlo.md`
+（2026-09-30 同步）。
 
 ## 当前生效的范围
 

@@ -10,45 +10,27 @@ One exception ON SCREEN, by user decision of 2026-09-21: the **circuit graph vie
 below), drawn in the browser with cytoscape (MIT, frontend only, loaded when the view is opened). It is a
 diagnostic picture; nothing drawn is written into a run folder or an export, so the outputs stay data-only.
 
-**Where things are described** (this file is long; a section says what its feature does NOW):
+**Where things are described** (this file is long: read only the section you need - `grep -n '^##' docs/workbench.md`
+lists every section with its line number; a section says what its feature does NOW):
 [Start](#start) ·
 [Start, Pause, Resume, Abort](#start-pause-resume-abort-added-2026-09-21-user-request) ·
 [What is real and what is mock](#what-is-real-and-what-is-mock) ·
 [Connection profiles](#connection-profiles-section-21) ·
 [Output layout](#output-layout) ·
+[Reward and training conditions](#reward-and-training-conditions) ·
 [The right column](#the-right-column-settings-saved-models-and-the-graph-view) ·
 [The PDK and what a run writes back](#the-pdk-and-what-a-real-run-writes-back-into-virtuoso) ·
-[A task's Virtuoso side](#a-tasks-virtuoso-side-the-working-copy-saving-the-agent-the-run) ·
+[A task's Virtuoso side](#a-tasks-virtuoso-side-the-cell-it-works-in-saving-the-agent-the-run) ·
 [Reload saved data](#reload-saved-data) ·
 [Agent providers](#agent-providers) ·
+[Code organization](#code-organization) ·
 [Tests](#tests)
 
 Workbench code lives in `src/gator_workbench/` and `frontend/`. Optimizer edits require explicit
 permission because `training/sac.py::source_digest()` gates checkpoint loading and the M5/M6 audits.
-The user explicitly granted the scoped [reward-v2 exception](plan-reward-v2-real-flow.md) and requested
-implementation on 2026-09-26. [Current reward-v2 status](reward-v2.md): bounded real A/B/C acceptance
-passed with 73 Spectre calls (A 21, B 44 including one failed-at-recording call, C 8; total ceiling 77).
-The user acknowledged unknown license visibility; normal Spectre licensing was used, not bypassed.
-70 selected non-MOCK checks, six encoder/OP combinations on B's real replay, TypeScript and 18
-current-source browser checks against real data passed. Physical restoration was verified.
-Defaults preserve nominal reward arithmetic and task/config hashes; old checkpoints still require
-their own source/schema and are not silently migrated. Current UI source exposes reward, condition
-coverage and nominal OP settings. The SQLite overview/report also uses stored v2 condition data,
-not nominal-only reconstruction. No robust-feasible design or reward superiority was demonstrated.
-This task used scratch ports 5187/8837 only, then stopped them; no live frontend build or 8765 action.
-
-Frontend follow-up (record 7.96): reward coefficients have the backend's 0..1 bounds; training
-conditions include a fixed nominal entry, at least one selected corner in `always`, and separate
-step/reset launch costs with one shared cap. Missing caps and nonzero robust retries are explicit
-errors. Specs shows **Objective** and **Judged at** as selects while retaining the backend's enum
-and boolean field types. Saved-model facts show all coefficients and condition identities.
-Compatibility now rechecks the entire current configuration (debounced), including reward,
-conditions and probe edits; an old compatible result is cleared while checking. The status table
-separates first nominal from full-plan feasibility, nominal from adverse values, and draft settings
-from the executed reward in the saved summary. Historical missing coverage stays unknown.
-40 current-source checks passed against the actual B run/API with zero new simulator calls, plus
-TypeScript and desktop layout checks. This follow-up leaves an isolated source preview at
-`http://127.0.0.1:5187/` (API 8837), not an update to the live bundle on 8765.
+The user granted it for reward v2 (2026-09-26, [plan](plan-reward-v2-real-flow.md)) and reward v2.1
+(2026-09-29): their status and evidence are in [reward-v2.md](reward-v2.md), what the page offers is under
+"Reward and training conditions" below.
 
 ## Start
 
@@ -159,14 +141,14 @@ is never replaced), or it was started with "Model checkpoints" switched off. Bro
 | Path | Status |
 |---|---|
 | `synthetic:gpdk045_ota5` (the one MOCK task) | **MOCK**: the optimizer's analytic toy backend (`origin=synthetic`) on a REAL circuit - the netlist and device mapping of the verified GPDK045 OTA5 (`examples/circuits/gpdk045_ota5.scs`, `configs/gpdk045_opamp.json`). Free: no Virtuoso, no Spectre. Every row says `provenance=mock`, data lives under `<output_root>/mock/`, and it is excluded from real-experiment aggregates. The `score` is not a circuit metric, and a model it trains never loads into a real run. Until 2026-09-22 there were four MOCK tasks on toy netlists (`synthetic:opamp`, `_opamp_two_stage`, `_ldo`, `_vco`); they were removed (status record 7.59). A configuration that still names one opens with a plain note and cannot start. |
-| `real:gpdk045_*` tasks | The verified bridge profiles through the existing `NativeEnvironmentFactory`. Need virtuoso-bridge 0.8.0 importable by the backend interpreter, a connection profile, a passing connection gate and an explicit budget authorization. **Not exercised in this delivery** (see the status record). Nothing ever falls back to mock. Two of the four were removed on user request on 2026-09-23 (status record 7.73): `real:gpdk045_ota5` and `real:gpdk045_vco`, whose example cells were deleted from Virtuoso (a backup is kept). Left: `real:gpdk045_ota7` and `real:gpdk045_ldo`. A configuration that still names a removed one opens with a plain note and cannot start. |
+| `real:gpdk045_*` tasks | The verified bridge profiles through the existing `NativeEnvironmentFactory`. Need virtuoso-bridge 0.8.0 importable by the backend interpreter, a connection profile, a passing connection gate and an explicit budget authorization. `real:gpdk045_ota7` has run through the workbench for real (reward v2's qualification, 2026-09-26, status record 7.95); no workbench run of `real:gpdk045_ldo` is recorded. Nothing ever falls back to mock. Two of the four were removed on user request on 2026-09-23 (status record 7.73): `real:gpdk045_ota5` and `real:gpdk045_vco`, whose example cells were deleted from Virtuoso (a backup is kept). Left: `real:gpdk045_ota7` and `real:gpdk045_ldo`. A configuration that still names a removed one opens with a plain note and cannot start. |
 | `ngspice:<name>` tasks (added 2026-09-23) | A SPICE deck pasted or loaded in the **ngspice netlist...** window and saved as a task. **REAL** circuit simulations by ngspice (`origin=real`, `provenance=real`), on this machine or over SSH through an ngspice connection - no license, no Virtuoso, but counted, authorized (Start asks) and recorded exactly like every real run, so the data is never mistaken for mock data. Its models never load into a MOCK run and the other way round; they are interchangeable with Virtuoso real runs as far as the network contract allows. |
-| Arbitrary native cellviews | Read-only browsing through the bridge. Optimizing one needs a saved task, which runs on a WORKING COPY of the cell: a run writes instance values into that copy (the form writer since 7.66), never into the cell you drew, and no cellview is created or redrawn. |
+| Arbitrary native cellviews | Read-only browsing through the bridge. Optimizing one needs a saved task, which runs on a WORKING COPY of the cell - since 2026-09-23 the copy you made in Virtuoso and declared on the read; the workbench makes no copy of its own (status record 7.72): a run writes instance values into that copy (the form writer since 7.66), never into your original design, and no cellview is created or redrawn. |
 
 ### Choosing a registered task: whose rows Parameters, Probes and Specs show
 
-The three tabs hold rows of the *configuration*, so they belong to a task. Choosing another task in **Circuit
-source -> Task** brings that task's rows:
+The three tabs hold rows of the *configuration*, so they belong to a task. Choosing another task in the Project
+column (**Registered task -> Task**) brings that task's rows:
 
 | Task | Parameters | Probes | Specs |
 |---|---|---|---|
@@ -184,11 +166,12 @@ source -> Task** brings that task's rows:
   them when you want it. One **Undo** takes back a task choice together with everything it brought.
 * Run settings are never touched by a task choice, and a real budget is never suggested. Load task keeps them too
   since 2026-09-29 (7.109); before, it reset the MOCK task's budget to 60 and its seed to 17 without saying so.
-* The LDO and VCO results are not in the optimizer's default result registry, and the UI has no editor for it. These
-  two tasks therefore bring the registry of record of the real cross-category experiment (`m6-physical-spec-input-v1`,
-  23 results), as a profile created from a cell brings its own. The OTA tasks keep the default registry, so their
-  models stay interchangeable with the MOCK tasks' and with earlier runs. A registry stated in the configuration
-  (`run.advanced.spec_registry`) still wins. Units `V/V` and `V/A` (line / load regulation) are accepted.
+* The LDO results are not in the optimizer's default result registry, and the UI has no editor for it. The LDO task
+  therefore brings the registry of record of the real cross-category experiment (`m6-physical-spec-input-v1`,
+  23 results), as a profile created from a cell brings its own (so did the VCO task until it was withdrawn on
+  2026-09-23, status record 7.73). The OTA7 task keeps the default registry, so its models stay interchangeable with
+  the MOCK task's and with earlier runs. A registry stated in the configuration (`run.advanced.spec_registry`) still
+  wins. Units `V/V` and `V/A` (line / load regulation) are accepted.
 * In the three editors a field a row does not state is shown with the value the backend uses for it (`hard` on,
   `tolerance` 0, ...), not as an empty or unchecked box.
 
@@ -491,10 +474,12 @@ to say.
   with unnamed pins. Such a cell still cannot run: Start stays disabled (`circuit_profile_missing`) until
   it is saved as a task.
 * **Save task** (at the right end of the editors' tab line since 2026-09-22; the note points there) replaced the
-  former **Create profile** form on 2026-09-22 - see "Saving a task" below. What the form checked still holds: only what the verified real
-  backend can do is accepted as a Parameters row - **widths of single-finger, m = 1 transistors directly
-  inside the cell**, linear ranges that contain the present width, snapped onto Virtuoso's 5 nm width grid
-  (the editor then shows them exactly as registered); anything else is refused with the reason. The cell
+  former **Create profile** form on 2026-09-22 - see "Saving a task" below. A Parameters row is accepted only
+  when a real run can write it, for instances directly inside the cell: widths of single-finger, m = 1
+  transistors keep the verified width writer, and since 2026-09-22 (status record 7.66) any other value the
+  PDK's property form lets a user type goes to the form writer (see "What a real run writes" below). A range
+  must contain the present value and is snapped onto the grid the PDK keeps (the editor then shows it exactly
+  as registered); anything else is refused with the reason. The cell
   becomes the task `real:<name>` under **Registered task** (files in
   `configs/local/workbench/profiles/<name>/`) and stops being browse-only.
   A cell that already has a registered task - one saved from it, or one of the verified built-in
@@ -542,9 +527,9 @@ to say.
 `POST /api/virtuoso/libraries | cells | read | import`, body `{"profile_id", "library"?, "cell"?, "testbench"?}` (import:
 `"work_here"?` - the user said the cell is a copy they made; the answer then carries the `working_copy` record);
 `POST /api/virtuoso/profile/reference` `{"name", "run_dir"?}`; `POST /api/virtuoso/profile/delete` `{"name"}` (answers
-with the task's own cell - never its working copy - for the Circuit source). A task is saved with
-`POST /api/virtuoso/task/save` (section "Saving a task"); the older `POST /api/virtuoso/profile` (Create profile) and
-`/profile/preflight` routes are gone (entries 7.57, 7.64).
+with the task's own cell - never a working copy the workbench made - and the page then follows that cell). A task is
+saved with `POST /api/virtuoso/task/save` (section "Saving a task"); the older `POST /api/virtuoso/profile` (Create
+profile) and `/profile/preflight` routes are gone (entries 7.57, 7.64).
 
 ## Connection profiles (section 2.1)
 
@@ -597,12 +582,14 @@ The left panel walks through the three steps of bringing the link up:
    "SSH is connected, but the Virtuoso CIW does not answer - load the command below...") with the
    next step; **Details** lists every layer.
 
-With no connection file, the panel offers **Create profile "lab" from this bridge setup**: it
-locates `~/.virtuoso-bridge/.env` and the bridge's site-packages on the backend host and writes the
-file (`env_file`, `profile: null`, `bridge_site_packages`). The env file is located, never read;
-the browser sends only the profile name; an existing connection file is never overwritten.
-Real-simulation tasks also need `library`, `model_file` and the per-circuit `circuits` entries
-shown above, added by hand.
+With no connection yet, the connection window opens with its **Add a connection** form (the same form
+**Add a connection...** opens later; see the kinds below). For a Virtuoso kind it locates
+`~/.virtuoso-bridge/.env` and the bridge's site-packages on the backend host (the name it suggests for
+"Virtuoso over SSH", the preselected kind, is `lab`), and **Create connection** writes
+the profile (`kind`, `env_file`, `profile` - `null` unless a bridge profile is named - and
+`bridge_site_packages`). The env file is located, never read; the browser sends only names; connections that
+exist are never changed (see "Changed promise" below). Real-simulation tasks also need `library`,
+`model_file` and the per-circuit `circuits` entries shown above, added by hand.
 
 **One test when the page opens, then only on a press** (user request 2026-09-24, status record
 7.80; from 2026-09-20 until then nothing ran on load - "only check connection when I press the
@@ -801,39 +788,6 @@ ZIP downloads spill beyond 1 MiB to a temporary file, send 1 MiB chunks, and clo
 disconnect. File listings and packages prune excluded work directories before descending into them.
 Browser check: `frontend/scripts/export_check.mjs` (real MOCK run; needs a scratch backend, refuses port 8765).
 
-### Reward v2.1 controls and checks (2026-09-29, record 7.106)
-
-New configurations start with compressed violations and worst-spec share 0.5; saved ones retain their settings.
-Training conditions offers Nominal only, Corners after nominal passes, and Every planned corner. The backend reports
-whether the task supports corners (currently real OTA7). For after_nominal, a nominal failure costs one launch, a
-pass costs 1 + K, and a reset costs one; the full step plan must fit the launch ceiling before preparation.
-
-Under Specs → More columns, **Missing value = failed** opts a required spec into treating its absence after a completed
-simulation as failure; wrong units and infrastructure faults stay errors. A spec computed by an equation is missing only
-when a probe it reads is missing; the other equation specs keep their values (record 7.112). **Margin sides** selects
-the limits counted by clearance and Corner check ranking; feasibility still checks all limits. The zero-floor hint
-explains the upper-only choice. A new row, and an edit of its unit, limits, constraint or tolerance, suggests a scale:
-3 dB, 10 degrees, a target's tolerance, half an interval, else the size of the threshold. The suggestion follows later
-edits until you type a scale of your own; a row with nothing to size it by yet (no dB/deg unit, tolerance or limit)
-keeps an empty scale, which the backend sizes from the threshold. Saved empty scales are not filled on load. (Record
-7.112 fixed a suggestion that froze at 1 - e.g. 1 W - when a row was added before its limits were typed.)
-
-Reward and conditions exposes the nominal gate band and objective shape. Advanced exposes **Alpha learning rate**,
-stored per configuration; empty inherits the actor learning rate. No separate starting rate passed the extended
-1,000-update unit check, so new configurations leave it empty. Attributed failures continue the episode, while its normal
-horizon and configured success ending still apply.
-
-Run status, Data tables and the agent's reward-review digest show the last 50 scored designs' p90−p10 reward spread
-and latest exploration bonus. When the spread is smaller, they show the brief's plain-language steering warning.
-The start checklist also warns when recorded evidence has no design meeting all hard specs at all planned conditions,
-names the best recorded design's worst misses and points to Corner check. This is a warning, not a start blocker or
-proof that the targets are impossible. It reads existing tables/checks and explicitly named historical OTA7 qualification
-folders; it never launches a simulation or changes targets.
-
-[Reward contract and validation](reward-v2.md#reward-v21-2026-09-29). These controls were checked on source previews
-only: the user's live frontend/backend were not rebuilt or restarted. The subsequent fixed-action physical check used
-10 of the approved 30 launches, exercised both gate paths and restored the starting design (record 7.108).
-
 ### Corner check: a run's best designs at five corners (added 2026-09-22, user request)
 
 The **Corner check** tab (after Output files) simulates the shown run's best designs again at five fixed conditions and
@@ -872,11 +826,82 @@ replay, its model or its best design.
   API: `GET /api/runs/corner-check/plan` (free, local files only), `POST .../start`, `GET .../status`, `POST .../stop`.
 * Limits, bluntly: five corners are an engineering sample, not a proven worst case; 0.9 V is a project choice (-10 %),
   not a PDK minimum; the OTA testbenches set the tail current with a fixed 0.4 V gate voltage, so corners move that
-  current more than a real bias circuit would; passing all five says nothing about mismatch (no Monte Carlo). The real
-  path has so far run only against a fake adapter in the tests: no real Spectre simulation of a corner has been made.
+  current more than a real bias circuit would; passing all five says nothing about mismatch (no Monte Carlo). This
+  tab's real path has so far run only against a fake adapter in the tests: the Corner check itself has not yet
+  simulated a real corner. Real OTA7 corners have been simulated outside this tab: in reward v2's qualification
+  (status record 7.95) and in the reward v2.1 gate check (7.108).
 
 Backend: `src/gator_workbench/corner_check.py`; tests `tests/workbench/test_wb_corner_check.py`. Browser check:
 `frontend/scripts/corner_check_check.mjs` (fixtures only; safe against the live backend).
+
+## Reward and training conditions
+
+The reward and its settings belong to the optimizer package: reward v2 (2026-09-26) and reward v2.1 (2026-09-29), both
+made under the user's explicit permission to change `src/analog_optimizer/`. Their contract, qualification and evidence
+are in [reward-v2.md](reward-v2.md); this section says what the page offers. The schema defaults keep the old
+arithmetic (Nominal only, capped violations, no worst-spec share, no bonuses), so saved configurations and task hashes
+are unchanged. Training at corners is offered for `real:gpdk045_ota7` only and needs a finite launch cap and zero
+automatic retries.
+
+### Reward, conditions and the saved model on the page (record 7.96)
+
+Reward coefficients have the backend's 0..1 bounds; training conditions include a fixed nominal entry, at least one
+selected corner in `always`, and separate step/reset launch costs with one shared cap. Missing caps and nonzero robust
+retries are explicit errors. Specs shows **Objective** and **Judged at** as selects while retaining the backend's enum
+and boolean field types. Saved-model facts show all coefficients and condition identities. Compatibility rechecks the
+entire current configuration (debounced), including reward, conditions and probe edits; an old compatible result is
+cleared while checking. The status table separates first nominal from full-plan feasibility, nominal from adverse
+values, and draft settings from the executed reward in the saved summary. Historical missing coverage stays unknown.
+
+### Reward v2.1 controls and checks (2026-09-29, record 7.106)
+
+New configurations start with compressed violations and worst-spec share 0.5; saved ones retain their settings.
+Training conditions offers Nominal only, Corners after nominal passes, and Every planned corner. The backend reports
+whether the task supports corners (currently real OTA7). For after_nominal, a nominal failure costs one launch, a
+pass costs 1 + K, and a reset costs one; the full step plan must fit the launch ceiling before preparation.
+
+Under Specs → More columns, **Missing value = failed** opts a required spec into treating its absence after a completed
+simulation as failure; wrong units and infrastructure faults stay errors. A spec computed by an equation is missing only
+when a probe it reads is missing; the other equation specs keep their values (record 7.112). **Margin sides** selects
+the limits counted by clearance and Corner check ranking; feasibility still checks all limits. The zero-floor hint
+explains the upper-only choice. A new row, and an edit of its unit, limits, constraint or tolerance, suggests a scale:
+3 dB, 10 degrees, a target's tolerance, half an interval, else the size of the threshold. The suggestion follows later
+edits until you type a scale of your own; a row with nothing to size it by yet (no dB/deg unit, tolerance or limit)
+keeps an empty scale, which the backend sizes from the threshold. Saved empty scales are not filled on load. (Record
+7.112 fixed a suggestion that froze at 1 - e.g. 1 W - when a row was added before its limits were typed.)
+
+Reward and conditions exposes the nominal gate band and objective shape. Advanced exposes **Alpha learning rate**,
+stored per configuration; empty inherits the actor learning rate. No separate starting rate passed the extended
+1,000-update unit check, so new configurations leave it empty. Attributed failures continue the episode, while its normal
+horizon and configured success ending still apply.
+
+Run status, Data tables and the agent's reward-review digest show the last 50 scored designs' p90−p10 reward spread
+and latest exploration bonus. When the spread is smaller, they show the brief's plain-language steering warning.
+The start checklist also warns when recorded evidence has no design meeting all hard specs at all planned conditions,
+names the best recorded design's worst misses and points to Corner check. This is a warning, not a start blocker or
+proof that the targets are impossible. It reads existing tables/checks and explicitly named historical OTA7 qualification
+folders; it never launches a simulation or changes targets.
+
+Code: the steering check is `src/gator_workbench/reward_diagnostics.py` (`steering`, over the evaluations and learner
+updates tables; `load` feeds `steering` in `GET /api/runs/status`, and `agents/run_digest.py` uses `steering` too). The
+corner warning is `src/gator_workbench/reachability.py` (`check`, then `assess`): static validation runs it when the
+training conditions are not Nominal only and nothing else blocks the start, so the page, the start checklist, the
+settings review and an applied proposal all see the same warning (code `corner_reachability`). It rejudges recorded
+designs against the current hard specs: those of earlier runs of the same task with unchanged probes under the output
+root (the configured one, else the remembered one), their Corner check results, and for `real:gpdk045_ota7` the
+reference and designs of reward v2's qualification (folders named in the code, never a scan of `artifacts/`).
+
+**Failure limits.** Run configuration has a field **Stop after N consecutive failed evaluations**
+(`run.max_consecutive_failures`, default 5). A design the simulator reports as invalid or not converging is still
+scored (reward -1) and kept in replay, and since reward v2.1 the episode goes on, so the network learns where the
+circuit breaks. The stop rule counts it as a failed evaluation all the same: 5 in a row end the run as `failed`
+(stop reason `consecutive_failures`), so a run that explores a region where many designs break may need a higher
+limit. A dead backend has its own limit, **Pause after N consecutive infrastructure failures** (default 3, under
+Advanced): it pauses the run, resumable once the connection gate passes again, instead of failing it.
+
+[Reward contract and validation](reward-v2.md#reward-v21-2026-09-29). These controls were checked on source previews
+only: the user's live frontend/backend were not rebuilt or restarted. The subsequent fixed-action physical check used
+10 of the approved 30 launches, exercised both gate paths and restored the starting design (record 7.108).
 
 ## The right column: settings, saved models and the graph view
 
@@ -897,17 +922,17 @@ load" block lists every run that holds a model as a card (task, circuit, **netwo
 save; tags `MOCK`, `weights only`) and then offers every save point of the chosen run: "Latest
 save" (follows the run) or a dated one (always the same model). Runs without a save point are not listed. The list
 is `GET /api/runs/models`: small metadata files only, read when the block opens, when a run starts and on
-"Refresh list" - never on a timer. Nothing is deleted automatically: `output.keep_last_checkpoints` is empty by
-default, and when set it prunes older periodic saves only (never the latest, a pause / stop / final save or a
-selected best policy). Models from outside the workbench (the M6 pilot checkpoints) cannot be chosen, and there
-is no upload: `training_state.pt` is a pickle and is only loaded from a trusted local output root.
+"Refresh list" - never on a timer. Older periodic save points are pruned: `output.keep_last_checkpoints` keeps the
+newest 10 periodic ones by default, and empty keeps every one. Save now, pause, stop and final save points, the latest
+one and a selected best policy are never removed. Models from outside the workbench (the M6 pilot checkpoints) cannot
+be chosen, and there is no upload: `training_state.pt` is a pickle and is only loaded from a trusted local output root.
 
 The selected model is compared again when a contract field changes (including circuit, rows, seed, network,
 learning settings, reward or conditions). Editing project labels, output options or the evaluation budget does not
 repeat that inspection. Display checksums are reused while the resolved file identity, size and modification/change
 timestamps match; `latest` is resolved on each description. Actual model loading always verifies fresh checksums.
 
-**Available encoders (2026-09-26):** Graph Transformer, RGCN and GATv2 (`gatv2`). GATv1 (`gat`) was replaced on this date; old configurations are rejected explicitly and old GAT weights cannot load into GATv2. MLP and GCN were deleted from the optimizer and workbench by user request; port-GNN was removed earlier. An old configuration naming a removed encoder is rejected explicitly. Exact resume of checkpoints saved before this package change needs matching historical optimizer source and dependencies (`9bc488f` for the preceding five-encoder version, `bbdfe36` for the recorded six-encoder physical M6 pilot). Workbench `fine_tune` and `frozen` retain their existing compatibility checks: a source-digest difference is a provenance warning if the retained architecture and all other required contracts match; this does not make deleted encoders loadable.
+**Available encoders (2026-09-26):** Graph Transformer, RGCN and GATv2 (`gatv2`). GATv1 (`gat`) was replaced on this date; old configurations are rejected explicitly and old GAT weights cannot load into GATv2. MLP and GCN were deleted from the optimizer and workbench by user request; port-GNN was removed earlier. An old configuration naming a removed encoder is rejected explicitly. Exact resume of checkpoints saved before this package change needs matching historical optimizer source and dependencies (`9bc488f` for the preceding five-encoder version, `bbdfe36` for the recorded six-encoder physical M6 pilot). Workbench `fine_tune` and `frozen` retain their existing compatibility checks: a source-digest difference is a provenance warning if the retained architecture and all other required contracts match; this does not make deleted encoders loadable. The package changed again since (reward v2 in `1135b8b`, reward v2.1 in `8cf53ae`): the current digest, and which commit loads which older checkpoint, are at the top of `docs/decisions.md`.
 
 **The network comes with the model (2026-09-21, user request).** The "RL network" block - encoder list, sizes,
 presets - sets up a NEW network and is shown in Mode `scratch` only. In `resume`, `fine_tune` and `frozen` it is not
@@ -998,9 +1023,10 @@ anode / cathode, ...) and all its numeric parameters (28 columns).
 
 **Why this does not touch the protected package.** The list is not code in `src/analog_optimizer/`: it is the
 `FeatureSchema` the package's `SACLearner` takes as an argument and records in every saved model's contract. A PDK list
-is built by the workbench (`src/gator_workbench/pdk.py`) and handed to the unchanged package. So the source digest stays
-`02127bc3...`, every model saved so far keeps its standard list and still loads, and the M6 audit re-runs unchanged (so it was until 2026-09-24: entry 7.83 removed `port_gnn` from the package, the
-digest changed, and models and audits from before load only from source commit bbdfe36). A
+is built by the workbench (`src/gator_workbench/pdk.py`) and handed to the unchanged package. So loading a PDK changes no
+source digest and no saved model's list. (The digest has moved since for other reasons: `02127bc3...`, the M6 pin, until
+entry 7.83 removed `port_gnn` on 2026-09-24 - models and audits from before load only from source commit bbdfe36 - and
+`3f00832c...` since reward v2.1, commit `8cf53ae`; see the top of `docs/decisions.md`.) A
 model trained with a PDK list loads only with that same list, and a standard model not with a PDK list: the package's
 own contract check refuses the mix, and the compatibility report says it in words ("this model knows the PDK gpdk045
 (54 components, version fa5c3946) component list; this run uses the standard list").
@@ -1066,7 +1092,7 @@ may WRITE in Virtuoso is decided by the property form of each instance (next sec
 network input accepts a count only as `1`; a group in `count` failed at the first action. Counts are now handed to the
 optimizer as `1`.
 
-**When reading a Virtuoso cell** (Circuit source "Virtuoso library / cell / view"), a loaded PDK of the cell's
+**When reading a Virtuoso cell** (in the Virtuoso window), a loaded PDK of the cell's
 technology library also names the pins of the PDK components the repository has no verified mapping for (bipolar,
 diodes, all resistor types ...): the copy parses completely instead of listing them as unverified. "Save task" takes
 them too (since 2026-09-22): pins as the PDK itself states them.
@@ -1213,7 +1239,8 @@ only, safe against the live backend).
 
 The second part of the flow. **Save task** replaces the former Create profile form (user decision: the form, its Circuit
 type box and its expected-frequency field went once Save task worked). Only a person presses it: the agent has no tool
-that reaches the backend.
+that saves a task (its `virtuoso_work` tools, relayed through `POST /api/agent/tools`, read Virtuoso and write the
+working copy's Maestro setup only; see "The agent works in Virtuoso itself").
 
 **Where.** At the right end of the editors' tab line (Parameters | Probes | Specs), above "Modify selected with
 agent..." - the save sits with the rows it stores (user request 2026-09-22; it used to be in the note "Read from
@@ -1383,8 +1410,9 @@ close). A passed check is kept in the run's manifest (`consistency_check`, for a
 part 2 alone) runs all three parts on its own: free, read-only, no simulation. Its result goes as soon as a row changes.
 Without a connection it compares the rows and says the rest needs one.
 
-Not compared: your own cell against the working copy. A copy is made once, and a change of your cell after it is not
-taken over.
+Not compared: an original cell against a copy the workbench made of it before 2026-09-23. Such a copy was made once,
+and a later change of the original is not taken over. Since then the working copy is the cell you declared, so there
+is nothing else to compare.
 
 `POST /api/virtuoso/task/check`, body `{"profile_id", "config"}`: `{ok, task, revision, steps: [{step, ok, title, detail,
 fix}], simulated: false}`; 409 `not_a_saved_task` for anything else. Tests: `tests/workbench/test_wb_consistency.py`.
@@ -1497,8 +1525,10 @@ server started before this change answers in one piece (the page accepts both) a
 places: each reasoning summary as its paragraph is done, commands it runs and web searches as steps, and the reply when
 the answer is complete. Codex reports whole steps, not words, so its reply appears in one piece at the end.
 Reasoning summaries are Codex's default; a `model_reasoning_summary = "none"` in your Codex configuration switches them
-off. This is built from the Codex documentation and has not been tried with a real `codex`, which was never
-installed here. It needs `--json` in `codex exec --help` (the SDK's older name `--experimental-json` also works);
+off. This is built from the Codex documentation and has not been tried with a real `codex`: none is on the
+backend's PATH. (The Codex desktop app on this machine ships a Linux CLI inside its settings folder, so the provider
+could be tried for real; a request costs usage, so that is the user's decision.) It needs `--json` in
+`codex exec --help` (the SDK's older name `--experimental-json` also works);
 otherwise the answer arrives in one piece, as before, and the bubble says so. Online research stays Claude Code only.
 
 How it works: the page asks `POST /api/agent/propose` for a stream (`Accept: text/event-stream`, Server-Sent Events:

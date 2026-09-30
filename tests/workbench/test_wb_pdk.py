@@ -13,6 +13,9 @@ from gator_workbench import checkpoints as ckpt, pdk, runs, schema, tasks, valid
 from gator_workbench.storage import read_json
 from helpers import SMALL_NET, execute, make_config, roots_for, run_prepared
 
+# Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
+pytestmark = pytest.mark.xdist_group('test_wb_pdk')
+
 FIXTURE = Path(__file__).parent / 'fixtures' / 'pdk_demo'
 MODEL_FILES = ('demo045.scs', 'demo045_mos.scs', 'demo045_passive.scs')
 

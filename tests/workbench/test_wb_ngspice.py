@@ -3,8 +3,6 @@ and its starter rows (ngspice_tasks), the evaluation backend (ngspice_backend), 
 
 Fake runners and a fake probe process everywhere, except the tests marked REAL: they run the ngspice installed on this
 machine on the example deck (skipped when there is none). No Virtuoso, no network, no agent CLI."""
-from dataclasses import replace
-import json
 from pathlib import Path
 import shutil
 import subprocess

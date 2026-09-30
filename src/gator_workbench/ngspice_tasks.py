@@ -16,7 +16,6 @@ lengths / counts / sources fixed; Probes = one row per result; Specs = none (req
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
@@ -281,7 +280,6 @@ def runtime(task_key, name, profile_id=None, *, authorized=False):
     netlist_file = directory / FILES['netlist']
 
     def builder(compiled, work_root, run_settings):
-        from . import units as units_module
         from .ngspice_backend import NgspiceEnvFactory, NgspiceLinkError
         if not authorized:
             raise TaskBlocked(REAL_AUTHORIZATION_REQUIRED)

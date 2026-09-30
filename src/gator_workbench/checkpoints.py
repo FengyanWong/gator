@@ -419,7 +419,9 @@ def saved_models(run_entries) -> list[dict]:
         if not listing['checkpoints']:
             continue
         newest = next((p for p in listing['checkpoints'] if p['is_latest']), listing['checkpoints'][-1])
-        manifest = read_json(Path(entry['run_dir']) / 'run_manifest.json', default=None) or {}
+        manifest = getattr(entry, 'manifest', None)          # a list_runs row keeps the manifest it was built from
+        if manifest is None:
+            manifest = read_json(Path(entry['run_dir']) / 'run_manifest.json', default=None) or {}
         circuit = manifest.get('circuit') or {}
         models.append(dict(
             entry, task_name=manifest.get('task_name'), circuit_task=circuit.get('task_key'),

@@ -44,7 +44,8 @@ def register(app: FastAPI, context: ApiContext):
         saved = dict(vars(settings), allowed_tools=list(settings.allowed_tools))
         saved.pop('timeout_seconds')
         runs.save_settings(agent=saved)
-        return dict(saved=True, provider=settings.provider)
+        # save_settings never overwrites a settings.json it could not read (a hand-edit with a typo): then nothing was saved
+        return dict(saved=runs.read_settings()[1] is None, provider=settings.provider)
 
     def check_suggestions(request, proposal):
         """Every suggested setting is tried on a COPY of the configuration - schema, then static validation with the loaded
@@ -58,7 +59,8 @@ def register(app: FastAPI, context: ApiContext):
                 parsed = schema.WorkbenchConfig.model_validate(raw)
             except ValidationError as exc:
                 return '; '.join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()[:3]), []
-            report = validate_loaded(parsed, runtime)
+            # Only errors and blockers count here: the corner reachability warning is not worked out for every suggestion.
+            report = validate_loaded(parsed, runtime, reachability=False)
             return None, [issue.code for issue in report.issues if issue.level in ('error', 'blocker')]
         checked = agent_review.check(request.config, proposal['suggestions'], validate_config=validate_config)
         proposal['suggestions'], proposal['suggestions_together'] = checked['suggestions'], checked['all_together']

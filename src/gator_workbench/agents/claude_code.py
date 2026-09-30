@@ -39,7 +39,7 @@ import sys
 import tempfile
 
 from ..security import redact
-from .base import (AgentError, AgentRequest, AgentResult, CliProvider, WRITE_OR_EXEC_TOOLS, run_cli)
+from .base import (AgentError, AgentRequest, AgentResult, CliProvider, REGISTRY, WRITE_OR_EXEC_TOOLS, run_cli)
 from .catalog import supports_effort
 from .live import LiveTranslator
 from .settings_review import WEB_MAX_TURNS
@@ -123,6 +123,12 @@ class ClaudeCodeProvider(CliProvider):
         return argv
 
     def propose(self, request: AgentRequest, on_event=None) -> AgentResult:
+        try:
+            return self._propose(request, on_event)
+        finally:
+            REGISTRY.done(request.request_id)     # no CLI of this request starts after this: a cancel of it is spent
+
+    def _propose(self, request, on_event):
         request.validate()
         executable = self.executable()
         if executable is None:

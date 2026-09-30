@@ -1,4 +1,4 @@
-# Exact versions of the libraries that saved models depend on. Install with:  pip install -c constraints.txt -e '.[graph,test]'
+# Exact versions of the libraries that saved models depend on. Install torch first (CPU index, below), then:  pip install -c constraints.txt -e '.[graph,test,web,webtest]'
 #
 # Why exact: every saved model (SACLearner.contract() in src/analog_optimizer/training/sac.py) records torch.__version__ and
 # torch_geometric.__version__, and loading it requires the SAME strings. The frozen M6 plan also records torch,

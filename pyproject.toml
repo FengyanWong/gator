@@ -12,7 +12,8 @@ dependencies = []
 [project.optional-dependencies]
 # Ranges for a fresh project. The EXACT versions that existing saved models need are in constraints.txt (pip install -c).
 graph = ["torch>=2.2,<3", "torch-geometric>=2.5,<3", "numpy>=1.24,<3", "networkx>=3,<4"]
-# pytest-xdist: the whole suite in about a minute with `-n 12 --dist load` (OMP_NUM_THREADS=1), instead of about five.
+# pytest-xdist: the whole suite in about 50 s with `-n 12 --dist loadgroup` (OMP_NUM_THREADS=1), 65-95 s with -n 6 on a
+# busy machine, about 5 min serially (measured 2026-09-30, 24 cores). loadgroup: see the xdist_group marker below.
 test = ["pytest>=8,<10", "pytest-xdist>=3.8,<4"]
 export = ["pyarrow>=14,<24"]
 # Local engineering workbench (src/gator_workbench): FastAPI backend + Parquet raw tables.
@@ -30,3 +31,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "requires_evidence(*paths): reads recorded local evidence (artifacts/, not in git); skipped where a path is absent",
+    "xdist_group(name): pytest-xdist keeps the group on one worker under --dist loadgroup (a costly module fixture is built once)",
+]

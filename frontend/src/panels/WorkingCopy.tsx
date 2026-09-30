@@ -1,5 +1,5 @@
 import { useAsyncAction } from '../store';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, Json, problemText, virtuosoGateText } from '../api';
 
 /** The Virtuoso side of a cell read into the workbench: the cell the task flow WORKS IN and the Maestro setup of that
@@ -58,12 +58,19 @@ export function WorkingCopy({ profileId, library, cell, record, config, setConfi
   const [message, setMessage] = useState<Json>(null);                   // { level, text }
   const [setup, setSetup] = useState<Json>(null);                       // the last setup read, with its rows and `changed`
   const { busy, run: act } = useAsyncAction(e => setMessage({ level: 'error', text: problemText(e, virtuosoGateText) }), () => setMessage(null));
+  // The panel stays on screen when another cell is read: the last cell's "Read setup" line and message go (as in
+  // TaskSave), and a read still on its way for that cell is dropped - its rows belong to it, not to the cell now shown.
+  const shown = useRef({ library, cell });
+  shown.current = { library, cell };
+  const stillShown = () => shown.current.library === library && shown.current.cell === cell;
+  useEffect(() => { setSetup(null); setMessage(null); }, [library, cell]);
   // Read and take in one press: the rows as they were when pressed are what the backend compared with, so the same
   // rows decide whether anything changes (a test without outputs gives nothing to take). Undo brings the rows back.
   // What the press says about the editors holds only while Probes and Specs are the rows it left (`after`).
   const rowsNow = (c: Json) => JSON.stringify([c.measurements ?? [], c.targets ?? []]);
   const read = () => act('read', async () => {
-    const found = await api.setupRead(profileId!, library, cell, config);
+    const found = await api.setupRead(profileId!, library, cell, config).catch(e => { if (stillShown()) throw e; return null; });
+    if (!found || !stillShown()) return;
     const next = found.test && found.rows?.measurements?.length ? withSetupRows(config, found.rows) : null;
     const changed = !!next && rowsNow(next) !== rowsNow(config);
     if (changed) setConfig(c => withSetupRows(c, found.rows), true);

@@ -46,6 +46,14 @@ RETIRED_MEASUREMENT_FIELDS = {'function': None, 'window': None, 'at_frequency_hz
                               'conditions': ['nominal'], 'aggregation': 'nominal_only'}
 
 
+def _without_retired(data, retired):
+    """The body of a plain retired-field before-validator (Probes rows, run settings): a dict loses the keys of
+    `retired`; anything else - and a dict without them - is passed on as it came."""
+    if isinstance(data, dict) and retired.keys() & data.keys():
+        data = {key: value for key, value in data.items() if key not in retired}
+    return data
+
+
 def uniform_grid(candidates):
     """Return (lower, upper, step) when sorted unique candidates form a uniform grid, else None."""
     values = sorted(set(candidates))
@@ -225,9 +233,7 @@ class MeasurementDefinition(_Model):
         conditions other than [nominal] or an aggregation other than nominal_only, even blocked the run - so they are
         dropped, whatever they say. The test conditions are the run's (`run.conditions`) and each spec's
         (`PerformanceTarget.nominal_only`), since reward v2."""
-        if isinstance(data, dict) and RETIRED_MEASUREMENT_FIELDS.keys() & data.keys():
-            data = {key: value for key, value in data.items() if key not in RETIRED_MEASUREMENT_FIELDS}
-        return data
+        return _without_retired(data, RETIRED_MEASUREMENT_FIELDS)
 
 
 # --------------------------------------------------------------------------- circuit
@@ -365,9 +371,7 @@ class RunSettings(_Model):
     @model_validator(mode='before')
     @classmethod
     def _retired_fields(cls, data):
-        if isinstance(data, dict) and RETIRED_RUN_FIELDS.keys() & data.keys():
-            data = {key: value for key, value in data.items() if key not in RETIRED_RUN_FIELDS}
-        return data
+        return _without_retired(data, RETIRED_RUN_FIELDS)
 
     mode: Literal['scratch', 'resume', 'fine_tune', 'frozen'] = 'scratch'
     concurrency: int = Field(1, ge=1, le=64,

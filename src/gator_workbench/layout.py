@@ -107,7 +107,9 @@ def code_provenance():
                                   check=True).stdout.strip()
         except (OSError, subprocess.SubprocessError):
             return None
-    commit, status = git('rev-parse', 'HEAD'), git('status', '--porcelain')
+    # --no-optional-locks: a plain `git status` may take .git/index.lock and rewrite the index to refresh its stat cache -
+    # on every run start, in a working tree and index that several sessions share. The answer is the same without it.
+    commit, status = git('rev-parse', 'HEAD'), git('--no-optional-locks', 'status', '--porcelain')
     try:
         from analog_optimizer.training.sac import source_digest
         optimizer_digest = source_digest()
@@ -187,7 +189,12 @@ def find_runs(data_root) -> list[Path]:
     return sorted(p.parent for p in data_root.glob('*__*/runs/*/*/run_manifest.json'))
 
 
-def read_run(run_dir) -> dict:
+def read_run(run_dir, *, status=True) -> dict:
+    """`status=False` leaves status.json out, for a caller that reads it through runs.run_status (which adds the lock
+    check) anyway: the run list read every status file twice."""
     layout = RunLayout(Path(run_dir))
-    return dict(run_dir=str(layout.run_dir), manifest=read_json(layout.manifest, default={}),
-                summary=read_json(layout.summary, default={}), status=read_json(layout.status, default={}))
+    info = dict(run_dir=str(layout.run_dir), manifest=read_json(layout.manifest, default={}),
+                summary=read_json(layout.summary, default={}))
+    if status:
+        info['status'] = read_json(layout.status, default={})
+    return info

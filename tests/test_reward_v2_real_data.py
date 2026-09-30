@@ -72,6 +72,7 @@ def real_transition():
     return transition
 
 
+@pytest.mark.requires_evidence(EVIDENCE)
 def test_recorded_observation_roundtrip_and_columns(real_transition):
     observation = real_transition.observation
     assert raw(unpack(pack(observation))) == raw(observation)
@@ -87,6 +88,8 @@ def test_recorded_observation_roundtrip_and_columns(real_transition):
             assert metrics[i, 9] == metrics[i, 15]
 
 
+@pytest.mark.requires_evidence(
+    EVIDENCE, ROOT / 'artifacts/local/reward-v2-real/20260926-implementation-01/source/analog_optimizer/models/inputs.py')
 def test_v1_columns_identical_to_frozen_function(real_transition):
     import importlib.util
     import sys
@@ -102,6 +105,7 @@ def test_v1_columns_identical_to_frozen_function(real_transition):
         assert torch.equal(old[-7:], new[-11:-4])
 
 
+@pytest.mark.requires_evidence(EVIDENCE)
 def test_operating_points_are_real_masked_and_cache_sensitive(real_transition):
     observation = real_transition.observation
     assert observation.operating_points
@@ -120,6 +124,7 @@ def test_operating_points_are_real_masked_and_cache_sensitive(real_transition):
     assert disabled.graph['device'].op.shape[1] == 0
 
 
+@pytest.mark.requires_evidence(EVIDENCE)
 @pytest.mark.parametrize('encoder', ['graph_transformer', 'rgcn', 'gatv2'])
 @pytest.mark.parametrize('operating_points', [False, True])
 def test_real_replay_update_and_exact_recovery(real_transition, encoder, operating_points, tmp_path):
@@ -148,6 +153,7 @@ def test_real_replay_update_and_exact_recovery(real_transition, encoder, operati
         SACLearner.load(checkpoint, **args, reward_settings=RewardSettings(violation_shape='compressed'))
 
 
+@pytest.mark.requires_evidence(EVIDENCE)
 def test_persistent_transition_restores_all_fields(real_transition, tmp_path):
     transition = real_transition
     with ExperimentStore(tmp_path / 'recorded-real', RecordingConfig(min_free=0, temporary_reserve=0)) as store:
@@ -165,6 +171,7 @@ def test_persistent_transition_restores_all_fields(real_transition, tmp_path):
         assert restored.fingerprint() == transition.fingerprint()
 
 
+@pytest.mark.requires_evidence(EVIDENCE)
 def test_dropped_corner_plan_cannot_be_replayed(real_transition):
     corner = SimulationCondition(PVTCorner('ss_hot_low', 'ss', 125, .9), purpose='pvt_training')
     plan = (real_transition.observation.condition, corner)
@@ -175,6 +182,7 @@ def test_dropped_corner_plan_cannot_be_replayed(real_transition):
         replace(real_transition, observation=first, next_observation=last).validate()
 
 
+@pytest.mark.requires_evidence(EVIDENCE)
 @pytest.mark.parametrize('missing_corner', [False, True])
 def test_reader_uses_recorded_condition_coverage(real_transition, tmp_path, missing_corner):
     from analog_optimizer.recording.reader import RunReader
@@ -219,6 +227,7 @@ def test_any_registry_label_keeps_the_v2_layout():
         SpecSchema(layout='spec-input-v1')
 
 
+@pytest.mark.requires_evidence(EVIDENCE)
 def test_bonus_arithmetic_on_an_observed_feasible_real_record():
     report = read(EVIDENCE / 'vco/report.json')
     record = next(row for phase in report['phases'] for path in phase['records']

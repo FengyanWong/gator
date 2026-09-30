@@ -51,6 +51,7 @@ from .compile import CompileError, compile_task
 from .engine import INFRASTRUCTURE_FAILURES as INFRASTRUCTURE, RunLock
 from .layout import RunLayout
 from .paths import repo_root
+from .reward_diagnostics import kept, tables_version
 from .schema import WorkbenchConfig, task_definition_hash
 from .security import redact
 from .storage.atomic import JsonlAppender, read_json, read_jsonl, write_json
@@ -189,16 +190,30 @@ def _margin(target, value):
     return spec_margin(target['lower'], target['upper'], target['scale'], value, target.get('margin_sides', 'both'))
 
 
+_TABLES: dict = {}                      # data folder -> (tables_version, the rows `candidates` ranks)
+
+
+def _recorded(data):
+    """The evaluations, parameters and metrics rows of a run, read again only when a flush changed its tables. A plan read
+    every part of all three (96 for a 400-evaluation run; 30 parts took 1.3 s on the 9p mount), and the page asks for one
+    on every change of the design count and again on Start. Nobody changes the rows: `candidates` only reads them."""
+    def read():
+        reader = DatasetReader(data)
+        return (reader.rows('evaluations', ['evaluation_id', 'completion_index', 'reward', 'valid',
+                                            'all_hard_constraints_satisfied', 'status']),
+                reader.rows('parameters', ['evaluation_id', 'variable_id', 'instance_path', 'parameter_name', 'unit',
+                                           'executed_value']),
+                reader.rows('metrics', ['evaluation_id', 'metric_name', 'raw_value', 'aggregation_level']))
+    return kept(_TABLES, str(data), tables_version(data), read)
+
+
 def candidates(context: Context):
     """(ranked distinct feasible designs, counts). Read-only: the run's evaluations, parameters and metrics tables."""
-    reader = DatasetReader(context.layout.data)
-    evaluations = reader.rows('evaluations', ['evaluation_id', 'completion_index', 'reward', 'valid',
-                                              'all_hard_constraints_satisfied', 'status'])
+    evaluations, parameters, metrics = _recorded(context.layout.data)
     widths, values = {}, {}
-    for row in reader.rows('parameters', ['evaluation_id', 'variable_id', 'instance_path', 'parameter_name', 'unit',
-                                          'executed_value']):
+    for row in parameters:
         widths.setdefault(row['evaluation_id'], []).append(row)
-    for row in reader.rows('metrics', ['evaluation_id', 'metric_name', 'raw_value', 'aggregation_level']):
+    for row in metrics:
         if row['aggregation_level'] == 'aggregate':
             values.setdefault(row['evaluation_id'], {})[row['metric_name']] = row['raw_value']
     hard = [t for t in context.compiled.targets if t['active'] and t['hard']]
@@ -236,13 +251,14 @@ def candidates(context: Context):
                            assignment=[dict(device=d, parameter=p, value=v) for (d, p), v in sorted(assignment.items())]))
     ranked.sort(key=lambda d: (-(d['min_margin'] if d['min_margin'] is not None else math.inf),
                                d['completion_index'] or 0))
+    distinct = len(ranked)              # the run's own designs: the page said "0 feasible evaluations, 1 different design"
     # A reference check diagnoses unreachable targets even when no search design passes nominal.
     if not context.mock:
         reference = reference_candidate(context)
         key = tuple(sorted(((a['device'], a['parameter']), float(f"{a['value']:.12g}")) for a in reference['assignment']))
         if key not in seen:
             ranked.append(reference)
-    return ranked, dict(evaluations=len(evaluations), feasible=feasible, distinct=len(ranked), skipped=skipped)
+    return ranked, dict(evaluations=len(evaluations), feasible=feasible, distinct=distinct, skipped=skipped)
 
 
 def reference_candidate(context):
@@ -319,7 +335,7 @@ def prepare(run_dir, *, designs, expected=None, simulations=None, allow_real=Fal
     # presses could both pass and two workers then size the SAME Virtuoso cell - the loser restoring against sizes the
     # winner had already overwritten (review of 2026-09-23). This run-scoped lock is held from here until `launch` has
     # the worker's lock, so the second press sees the first check.
-    start = _start_lock(run_dir)
+    _start_lock(run_dir)
     try:
         if live_checks(run_dir):
             raise CheckRefused('A corner check of this run is already running.', code='already_running')
@@ -728,9 +744,15 @@ class Worker:
                 entry = NominalDesign(design['evaluation_id'], problem, float(nominal_reward),
                                       tuple((d, p, v) for (d, p), v in sorted(assignment.items())), nominal, context.origin)
                 outcome = summarize_corners(entry, context.corners, results, context.compiled.specs, lambda_failed=lam)
-            except ValueError as exc:                      # a result that is not this design's: never graded
+            except (ValueError, TypeError) as exc:         # a result that is not this design's: never graded
+                # TypeError: the optimizer's grading subtracts a value that is not there - an OK corner result without the
+                # value of a spec marked "Missing value = failed" (evaluation/corners.py; its own guard waits for a source
+                # digest change). Raised here, inside the worker's `finally`, it lost summary.json and the check's verdicts.
+                why = str(exc) if isinstance(exc, ValueError) else (
+                    f'The corner grading could not judge these results ({type(exc).__name__}: {exc}). A spec marked '
+                    '"Missing value = failed" that has no value at a corner causes this.')
                 summary['designs'].append(dict(evaluation_id=design['evaluation_id'], rank=index + 1,
-                                               disposition='inconclusive', grading_error=redact(str(exc), 500)))
+                                               disposition='inconclusive', grading_error=redact(why, 500)))
                 verdicts['inconclusive'] += 1
                 continue
             verdicts[outcome.disposition] += 1

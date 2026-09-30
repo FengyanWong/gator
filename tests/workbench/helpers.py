@@ -21,8 +21,10 @@ from uuid import uuid4
 # A script that imports these helpers OUTSIDE pytest (a scratch smoke run) must not write the user's remembered settings:
 # prepare_run() saves output_root / concurrency / last_run into the settings folder, and conftest.py only redirects it under
 # pytest. On 2026-09-22 a smoke script rewrote the live configs/local/workbench/settings.json this way. Under pytest the
-# variable is already set and this line does nothing.
-os.environ.setdefault('GATOR_WORKBENCH_SETTINGS_DIR', tempfile.mkdtemp(prefix='gator-wb-helpers-settings-'))
+# variable is already set and nothing happens: `setdefault(..., mkdtemp())` made the folder anyway and left 2 per test
+# process in /tmp (review round 5: 1,384 of them).
+if not os.environ.get('GATOR_WORKBENCH_SETTINGS_DIR'):
+    os.environ['GATOR_WORKBENCH_SETTINGS_DIR'] = tempfile.mkdtemp(prefix='gator-wb-helpers-settings-')
 
 import pytest
 

@@ -1,5 +1,5 @@
 import { Icon } from './Icons';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, Json, si } from '../api';
 import { launchWithConsent } from './RunControl';
 import { useRequest } from '../store';
@@ -14,7 +14,6 @@ const STATE_TEXT: Record<string, string> = { starting: 'Starting', running: 'Run
   completed: 'Completed', stopped: 'Stopped', failed: 'Failed', interrupted: 'Interrupted' };
 const LIVE = ['starting', 'running', 'stopping'];
 const isLive = (check: Json) => !!check && (check.alive || LIVE.includes(check.status?.state)) && check.status?.state !== 'interrupted';
-const pollCheck = (check: Json) => !check || isLive(check) ? 1500 : 0;
 
 /** One cell of the grid: what that corner said about that design. */
 function Cell({ record, running }: { record?: Json; running: boolean }) {
@@ -37,6 +36,16 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
   const [selected, select] = useState<{ runDir: string | null; id: string | null } | null>(null);
   const checkId = selected?.runDir === runDir ? selected?.id : null;
   const setCheckId = (id: string | null) => select({ runDir, id });
+  // A read that failed (no answer) is tried again later and later - 3, 6, 12, 24 s - and then no more: the error stays on
+  // screen and Refresh reads again. It used to be asked every 1.5 s for as long as it failed, for ever for a check that is
+  // gone. One stable function: useRequest reads again whenever `pollEvery` changes.
+  const failedReads = useRef(0);
+  useEffect(() => { failedReads.current = 0; }, [runDir, checkId]);
+  const pollCheck = useCallback((value: Json) => {
+    if (value) { failedReads.current = 0; return isLive(value) ? 1500 : 0; }
+    failedReads.current += 1;
+    return failedReads.current < 5 ? 1500 * 2 ** failedReads.current : 0;
+  }, []);
   const { value: check, error: checkError, refresh: readCheck } = useRequest<Json>(() => api.cornerStatus(runDir!, checkId!),
     [runDir, checkId], { enabled: !!runDir && !!checkId, pollEvery: pollCheck });
   const [busy, setBusy] = useState<string | null>(null);

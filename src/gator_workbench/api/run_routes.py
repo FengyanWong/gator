@@ -16,6 +16,12 @@ from .support import attachment, compatibility_unchecked, fail, file_snapshot, r
 from .context import ApiContext
 
 
+# /api/runs/model took any dict: {}, a numeric checkpoint_id or a list as run_dir failed with HTTP 500 (review of 2026-09-29).
+class ModelBody(ModelStructureBody):
+    """A saved model and, optionally, the page's configuration to compare it with."""
+    config: dict | None = None
+
+
 def register(app: FastAPI, context: ApiContext):
     @app.get('/api/runs')
     def get_runs(output_root: str | None = None, include_mock: bool = True):
@@ -25,12 +31,12 @@ def register(app: FastAPI, context: ApiContext):
             fail(403, exc)
 
     @app.post('/api/runs/model')
-    def describe_model(body: dict):
+    def describe_model(body: ModelBody):
         """The selected RL model: source task, save time, schema, counters, actual path, restorable
         components and compatibility with the CURRENT configuration. Independent of the agent model."""
-        run_dir = context.run_path(body.get('run_dir'))
+        run_dir = context.run_path(body.run_dir)
         try:
-            description = ckpt.describe(run_dir, body.get('checkpoint_id') or 'latest')
+            description = ckpt.describe(run_dir, body.checkpoint_id or 'latest')
         except FileNotFoundError as exc:
             fail(404, exc)
         result = dict(description=description)
@@ -39,8 +45,8 @@ def register(app: FastAPI, context: ApiContext):
         result['vocabulary'] = dict(name=own.name if own else pdk.STANDARD, label=own.label if own else pdk.label(None),
                                     pdk_id=own.pdk_id if own else None, sha256=own.sha256 if own else None,
                                     loaded=bool(own is None or pdk.load_record(own.pdk_id) is not None))
-        if body.get('config'):
-            config, runtime, blocked = context.load_config(body['config'])
+        if body.config:
+            config, runtime, blocked = context.load_config(body.config)
             if runtime is not None:
                 from ..compile import CompileError, compile_task
                 config = runs.with_circuit_content(config, runtime)
@@ -165,7 +171,10 @@ def register(app: FastAPI, context: ApiContext):
         layout = RunLayout(path)
         result = runs.run_status(path)
         from ..reward_diagnostics import load as steering_check
-        result['steering'] = steering_check(path)
+        try:
+            result['steering'] = steering_check(path)
+        except Exception:                   # a diagnostic line: a missing or damaged data part leaves it empty, never the status
+            result['steering'] = None
         manifest = read_json(layout.manifest, default={}) or {}
         result.update(manifest=dict(mode=manifest.get('mode'), mock=manifest.get('mock'), task_id=manifest.get('task_id'),
                                     seeds=manifest.get('seeds'), source_model=manifest.get('source_model'),

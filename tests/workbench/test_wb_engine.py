@@ -1,6 +1,7 @@
 """Run engine: shared budgets under several workers, retry accounting, asynchronous first
 feasibility / failure / null, pause-resume, forced cancellation and real crash recovery.
 All evaluations use the MOCK analytic backend (optionally scripted to fail)."""
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -11,11 +12,11 @@ import time
 
 import pytest
 
-from gator_workbench import runs
-from gator_workbench.engine import RunLock
+from gator_workbench import runs, schema, tasks
+from gator_workbench.engine import RunEngine, RunLock
 from gator_workbench.storage import DatasetReader, read_json
 from gator_workbench.storage.atomic import read_jsonl
-from helpers import execute, make_config, roots_for, rows, run_prepared, summary
+from helpers import ScriptedEnvFactory, execute, make_config, roots_for, rows, run_prepared, summary
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -317,14 +318,50 @@ def test_resume_refuses_a_changed_task_and_a_running_run(tmp_path):
         lock.release()
 
 
+@dataclass
+class CancelHeldFactory(ScriptedEnvFactory):
+    """Lane 1's first step (its second simulation, after its reset) does not end on its own: it waits until the engine
+    has read the cancel (the run's stop/condition file exists) AND has recorded an evaluation as cancelled (a cancelled
+    condition receipt in events.jsonl). The stop file alone would not do: the engine writes it before it looks at the
+    jobs, so a job released by it could still end first. No delay decides anything (review round 5, E2: with timed
+    jobs, 2 of 56 parallel copies had both jobs end before the cancel was read - status.json is written at most once a
+    second)."""
+    stop_file: str = ''
+    events: str = ''
+    deadline: float = 60.0                     # only if the engine never records the cancel; the test then fails
+
+    def __call__(self, lane):
+        env = super().__call__(lane)
+        if str(lane) == '1':
+            simulate, calls = env.backend.run_simulation, []
+
+            def held(request):
+                calls.append(request)
+                if len(calls) == 2:
+                    end = time.time() + self.deadline
+                    while time.time() < end and not (Path(self.stop_file).exists() and any(
+                            e.get('event') == 'condition_receipt' and e.get('status') == 'cancelled'
+                            for e in read_jsonl(self.events))):
+                        time.sleep(0.01)
+                return simulate(request)
+            env.backend.run_simulation = held
+        return env
+
+
 def test_forced_cancel_records_unfinished_evaluations_as_charged(tmp_path):
     config = make_config(tmp_path, threshold=1.5, run=dict(max_evaluations=40, concurrency=2))
     layout, _ = runs.prepare_run(config, roots_for(tmp_path))
     request_after(layout, 'cancel', 4, in_flight=True)
-    # different delays keep the lanes out of lockstep, so a job is genuinely mid-flight at cancel time; each job is long
-    # next to the status file's throttle (<= 1 s) and a learner step on a busy machine (a parallel test run), else both
-    # jobs could end before the command is read and nothing would be left to cancel
-    assert run_prepared(layout, delays={'0': 1.5, '1': 2.0}) == 'cancelled'
+    # lane 1's first step is still running when the cancel is read, whatever the machine's load (CancelHeldFactory)
+    effective = schema.WorkbenchConfig.model_validate(read_json(layout.effective_config))
+    engine = RunEngine(layout.run_dir, task=tasks.load_task(effective.circuit), use_processes=False,
+                       lock=runs.take_lock(layout.run_dir))
+    engine._lane_factory = CancelHeldFactory(engine.compiled.graph, engine.compiled.specs, str(layout.work),
+                                             effective.run.advanced.episode_length, {}, {},
+                                             effective.run.advanced.episode_terminates_on_success,
+                                             stop_file=str(layout.control / 'stop-condition-jobs.json'),
+                                             events=str(layout.logs / 'events.jsonl'))
+    assert engine.run() == 'cancelled'
     s = summary(layout)
     evaluations = by_seq(layout)
     assert s['termination']['forced'] and not s['termination']['normal_completion']

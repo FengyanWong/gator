@@ -111,7 +111,15 @@ await runChecks(browser, async () => {
   check('the caption still belongs to the path box (a click on it puts the cursor in the box, and copies nothing)', await evaluate(`(() => { window.__copied = null; ${HEAD}.querySelector('label').click();
     return document.activeElement === ${ROOT_INPUT} && window.__copied === null; })()`));
   check('the path box is still editable and full width', await evaluate(`(() => { const b = ${ROOT_INPUT}.getBoundingClientRect(), p = ${PANEL}.getBoundingClientRect(); return !${ROOT_INPUT}.disabled && b.width > p.width - 40; })()`));
+  for (let i = 0; i < 30 && !probes.length; i++) await sleep(100);             // the root is looked at 0.5 s after it is shown (2026-09-29)
   check('opening the page only LOOKED at the output root (create: false), it probed nothing', probes.length >= 1 && probes.every(p => p.create === false), JSON.stringify(probes));
+  // Review of 2026-09-29: each look walks the folder for its size, and each keystroke used to send one (the last answer won).
+  const looks = probes.length;
+  await evaluate(`(() => { const i = ${ROOT_INPUT}; i.focus(); i.setSelectionRange(i.value.length, i.value.length); })()`);
+  for (const ch of '/sub') await send('Input.insertText', { text: ch });
+  await sleep(1500);
+  check('typing four characters into the output root looks at it ONCE, 0.5 s after the last one, for the whole text', probes.length - looks === 1
+    && probes.at(-1)?.path === `${ROOT}/sub` && probes.at(-1)?.create === false, JSON.stringify(probes.slice(looks)));
 
   // ---- "Waveform storage limit": a number and a unit -----------------------------------------------------------------
   check('the caption no longer says "(bytes)"', !(await evaluate(`${PANEL}.textContent.includes('(bytes)')`)));

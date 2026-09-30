@@ -207,10 +207,11 @@ def _with_computed_specs(factory, compiled):
 def _netlist_runtime(task_key, netlist, parser_config, *, circuit_class, pdk_id, top=None, notes=()):
     netlist, parser_config = Path(netlist), Path(parser_config)
     graph = parse_netlist(netlist, parser_config, top=top)
+    digest = _sha256(netlist)                          # one hash for both fields: each read of the netlist is a 9p round trip
     circuit = dict(circuit_class=circuit_class, pdk_id=pdk_id, dut_hierarchy=top,
-                   netlist_sha256=_sha256(netlist), parser_config_sha256=_sha256(parser_config),
+                   netlist_sha256=digest, parser_config_sha256=_sha256(parser_config),
                    netlist_file=str(netlist), parser_config_file=str(parser_config),
-                   topology_id=f'netlist-sha256:{_sha256(netlist)[:16]}', complete=graph.complete,
+                   topology_id=f'netlist-sha256:{digest[:16]}', complete=graph.complete,
                    evaluation_backend='analytic-toy-sizing-v1 (MOCK: quadratic score, not a circuit simulation)')
     return TaskRuntime(task_key, 'synthetic', graph, ('score',), circuit, netlist.read_text(), str(netlist),
                        str(parser_config), _synthetic_builder, notes=list(notes))

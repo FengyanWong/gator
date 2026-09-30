@@ -48,6 +48,7 @@ PUBLICATION_DOMAINS = ('arxiv.org', '*.arxiv.org', 'ieeexplore.ieee.org', 'dl.ac
                        'www.nature.com', 'www.mdpi.com', 'doi.org', 'www.semanticscholar.org', 'api.semanticscholar.org',
                        'github.com', 'raw.githubusercontent.com', 'pytorch-geometric.readthedocs.io')
 HOST = re.compile(r'^(\*\.)?[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)+$')
+WEB_LINK = re.compile(r'^https?://', re.IGNORECASE)
 WEB_MAX_TURNS = 40                   # bounds what one research request can cost (there is no time limit: status record 7.48)
 
 
@@ -140,6 +141,13 @@ def readiness_digest(readiness: dict | None) -> dict | None:
                 issues=[dict(level=issue.get('level'), code=issue.get('code'), path=issue.get('path')) for issue in readiness.get('issues') or []])
 
 
+def _web_link(value) -> str:
+    """A reply's link, kept only when it is a web address: the page renders it as a link, and a reply that read web pages
+    could carry a `javascript:` one (review of 2026-09-29). Anything else becomes empty."""
+    url = str(value or '')[:300]
+    return url if WEB_LINK.match(url) else ''
+
+
 def normalize(output: dict) -> dict:
     """The parts of a reply that belong to a settings review, cleaned. A suggestion for anything but a suggestible
     setting is dropped and named; values arrive as JSON text ("0.0003", "true", "\\"gatv2\\"") or as plain words."""
@@ -163,8 +171,8 @@ def normalize(output: dict) -> dict:
             refused.append(f'{path}: a suggested value must be a single number, word or true/false')
             continue
         text = lambda key, limit: str(entry.get(key) or '')[:limit]                     # noqa: E731
-        kept.append(dict(path=path, value=value, reason=text('reason', 800), source=text('source', 600), url=text('url', 300), quote=text('quote', 400)))
-    ideas = [dict(name=str(idea.get('name') or '')[:120], source=str(idea.get('source') or '')[:600], url=str(idea.get('url') or '')[:300],
+        kept.append(dict(path=path, value=value, reason=text('reason', 800), source=text('source', 600), url=_web_link(entry.get('url')), quote=text('quote', 400)))
+    ideas = [dict(name=str(idea.get('name') or '')[:120], source=str(idea.get('source') or '')[:600], url=_web_link(idea.get('url')),
                   why=str(idea.get('why') or '')[:800], what_it_takes=str(idea.get('what_it_takes') or '')[:800])
              for idea in (output.get('encoder_ideas') if isinstance(output.get('encoder_ideas'), list) else [])[:10]
              if isinstance(idea, dict) and str(idea.get('name') or '').strip()]

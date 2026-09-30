@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, Json } from './api';
+import { api, ApiError, Json } from './api';
 import { useConfig, usePolling, useRequest } from './store';
 import { CircuitPanel } from './panels/Left';
 import { ConnectionButton } from './panels/Connection';
@@ -51,12 +51,21 @@ export function App() {
   useEffect(() => {
     Promise.all([api.schema(), api.meta()]).then(([s, m]) => {
       setSchema(s); setMeta(m);
-      // Restore the previous concurrency on a fresh browser (default 1 when none was ever used).
+      // Restore the previous concurrency on a fresh browser (default 1 when none was ever used). Blocked site storage
+      // counts as a fresh browser: the page then starts from the default configuration too (useConfig).
       const remembered = m.remembered?.concurrency;
-      if (remembered && !localStorage.getItem('gator-workbench-config-v1')) setConfig((c: Json) => ({ ...c, run: { ...c.run, concurrency: remembered } }), false);
+      const saved = (() => { try { return localStorage.getItem('gator-workbench-config-v1'); } catch { return null; } })();
+      if (remembered && !saved) setConfig((c: Json) => ({ ...c, run: { ...c.run, concurrency: remembered } }), false);
     }).catch(e => setFatal(e.message));
   }, []);
-  const refreshRuns = (): Promise<Json[]> => api.runs(config.output.output_root ?? undefined).then(r => { setRuns(r.runs); return r.runs; }).catch(() => { setRuns([]); return []; });
+  // Only the newest read of the run list may answer: while the output root is typed, a half-typed path outside the roots
+  // (403) used to empty the list when its answer came last.
+  const listing = useRef(0);
+  const refreshRuns = (): Promise<Json[]> => {
+    const mine = ++listing.current;
+    return api.runs(config.output.output_root ?? undefined).then(r => r.runs as Json[], () => [] as Json[])
+      .then(list => { if (mine === listing.current) setRuns(list); return list; });
+  };
 
   // Debounce validation and ignore replies for a configuration that has since changed.
   const { value: validation } = useRequest<Json>(() => api.validate(config).catch(rejected), [JSON.stringify(config)],
@@ -65,7 +74,17 @@ export function App() {
   // A run that has ended for good (completed, failed, cancelled: none of them can be continued) changes no more, so its
   // status is read once a minute instead of every 1.5 s. A paused or stopped run can come back, and keeps the quick poll.
   const [statusEvery, setStatusEvery] = useState(1500);
-  const { value: polledStatus } = usePolling(() => api.status(runDir!), statusEvery, !!runDir, [runDir]);
+  // The run shown is gone (deleted, or outside the allowed roots by now - it may be the remembered one the page opened
+  // with): it is let go, as the header lets go of its own, instead of being asked for every 1.5 s for ever while the strip
+  // still names its folder. Two answers in a row: on the 9p-mounted D: drive a stat right after a rename can fail once,
+  // and one 404 of a run that is there must not take it off the page.
+  const gone = useRef(0);
+  useEffect(() => { gone.current = 0; }, [runDir]);
+  const readStatus = (dir: string) => api.status(dir).then(value => { gone.current = 0; return value; }, e => {
+    if (e instanceof ApiError && (e.status === 403 || e.status === 404) && ++gone.current >= 2) setRunDir(shown => (shown === dir ? null : shown));
+    throw e;
+  });
+  const { value: polledStatus } = usePolling(() => readStatus(runDir!), statusEvery, !!runDir, [runDir]);
   const status = polledStatus?.run_dir === runDir ? polledStatus : null;
   useEffect(() => setStatusEvery(status && !status.worker_alive && ['completed', 'failed', 'cancelled'].includes(status.state) ? 60000 : 1500),
     [status?.worker_alive, status?.state]);
@@ -83,7 +102,9 @@ export function App() {
   }, [control.phase]);
   const adopted = useRef(false);
   useEffect(() => {
-    refreshRuns().then(list => {
+    // The list follows the output root while it is typed: read 0.5 s after the last keystroke, not once per key (each read
+    // looks at every run under the root). The first read, when the page opens, goes at once.
+    const timer = setTimeout(() => refreshRuns().then(list => {
       // Once, when the page opens: a run that is live although this page does not hold it (started from another browser or
       // the CLI, or the browser's memory was cleared) is taken over, so the header offers Pause and Abort, not a second Start.
       if (adopted.current) return;
@@ -92,7 +113,8 @@ export function App() {
       const running = list.some(r => r.run_dir === control.dir && isLive(r)) ? null : list.find(isLive);
       if (running) { control.take(running.run_dir); setRunDir(running.run_dir); }
       setLooked(true);
-    });
+    }), adopted.current ? 500 : 0);
+    return () => clearTimeout(timer);
   }, [config.output.output_root]);
 
   const showRun = (started: Json, as: 'start' | 'resume') => {
@@ -129,6 +151,12 @@ export function App() {
       else { refreshRuns(); setMessage({ level: 'info', text: `Continuing in the original run directory: ${started.run_dir}` }); }
     } catch (e: any) { failed(e); }
   };
+  // ...but not while the header is busy with ANOTHER run (the case above that does not hand the run to the header): the
+  // continued run would have no Pause or Abort anywhere - the tab's run buttons went on 2026-09-29 - and two real runs
+  // would drive the one Virtuoso session. A paused run there is no hindrance: the header takes the continued run instead.
+  const continueBlocked: string | null = control.dir === runDir || control.phase === 'idle' || control.phase === 'paused' ? null
+    : control.phase === 'checking' ? 'The header is still looking up which run is live; a moment.'
+    : 'Another run is live in the header: pause it or let it finish first (a second live run would have no Pause or Abort on this page).';
 
   if (fatal) return <p className="error">Backend not reachable: {fatal}</p>;
   if (!schema) return <p>Loading schema...</p>;
@@ -136,6 +164,9 @@ export function App() {
     <div className="layout">
       <header>
         <b>GATOR workbench</b><span className="hint"> {meta?.version} | {meta?.environment?.environment} | data-only outputs (no plots)</span>
+        {/* The hand-edited settings.json is not valid JSON: the backend works on defaults and leaves the file alone. Said on a
+            line of its own under the header, as /api/meta said it when the page opened - never hidden, not dismissable. */}
+        {meta?.settings_problem && <p className="settings-problem warn">{meta.settings_problem}</p>}
         <span className="spacer" />
         <ValidationStatus validation={validation} config={config} schema={schema} />
         <button disabled={!!validation?.blocks_run || control.phase !== 'idle'} onClick={() => start(true)}
@@ -148,7 +179,7 @@ export function App() {
         {message.detail?.code === 'consistency' && message.detail.report?.steps ? <CheckSteps result={message.detail.report} refused />
           : <>{message.text}{message.detail?.report && <details onClick={e => e.stopPropagation()}><summary>details</summary><pre>{JSON.stringify(message.detail.report, null, 1)}</pre></details>}</>}</div>}
       <aside className="left">
-        <ConnectionButton profileId={profileId} setProfileId={id => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }))} />
+        <ConnectionButton profileId={profileId} setProfileId={(id, record) => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }), record)} />
         <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId}
           onAgent={(kind, selection, prompt) => { setAgentRequest({ kind, selection, prompt }); setTab('agent'); }} taskSlot={taskSlot} taskNotes={taskNotes}
           taskEpoch={taskEpoch} />
@@ -176,9 +207,9 @@ export function App() {
         <div className="bottom-body">
           <AgentTab hidden={tab !== 'agent'} config={config} setConfig={setConfig} request={agentRequest} clearRequest={() => setAgentRequest(null)}
             tabSlot={agentTabSlot} onDetached={setAgentDetached} runDir={runDir} />
-          {tab === 'status' && <StatusTab status={status} onContinue={continueRun} />}
+          {tab === 'status' && <StatusTab status={status} onContinue={continueRun} continueBlocked={continueBlocked} />}
           {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
-          {tab === 'data' && <DataTab runDir={runDir} />}
+          {tab === 'data' && <DataTab runDir={runDir} status={status} />}
           {tab === 'files' && <FilesTab runDir={runDir} />}
           {tab === 'corners' && <CornerCheckTab runDir={runDir} />}
         </div>

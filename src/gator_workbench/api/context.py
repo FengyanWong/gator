@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from .. import bridge_connect, connection, runs, schema, tasks
 from ..agents import ProposalStore
 from ..agents import readiness as agent_readiness
-from ..paths import OutputRoots, PathNotAllowed
+from ..paths import OutputRoots, PathNotAllowed, refuse_nul
 from ..security import redact
 from .support import fail, load_runtime, validate_loaded
 from dataclasses import dataclass, field
@@ -38,6 +38,10 @@ class ApiContext:
         for name in ('netlist_path', 'parser_config_path'):
             value = getattr(circuit, name)
             if value:
+                try:
+                    refuse_nul(value)                # the OS refuses a NUL byte with ValueError: it was an HTTP 500
+                except PathNotAllowed as exc:
+                    fail(403, exc)
                 resolved = Path(value).expanduser().resolve()
                 if not any(resolved == r or r in resolved.parents for r in self.input_roots):
                     fail(403, f'{name} is outside the allowed input roots. Roots are added by the backend operator '

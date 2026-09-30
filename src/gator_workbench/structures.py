@@ -129,15 +129,22 @@ def recognize(graph) -> list:
 
     # Spread along the two branches of every matched pair.
     matched = {tuple(s[0]) for s in seeds}
+    # A cascode or a load of a branch pair has its source or its drain on the two branches, so only the transistors that
+    # touch those two nets are tried - in natural order, the same pairs in the same order as trying every pair, which was
+    # quadratic per pair found (800 transistors: 12 s).
+    touching: dict = {}                          # net -> the transistors whose source or drain is on it
+    for x in order:
+        for net in dict.fromkeys((mos[x][2]['source'], mos[x][2]['drain'])):
+            touching.setdefault(net, []).append(x)
     work, visited = list(seeds), set()
     while work:
         pair, (left, right) = work.pop(0)
         if (left, right) in visited or left == right:
             continue
         visited.add((left, right))
-        for c in order:
+        for c in touching.get(left, ()):
             kc, mc, pc = mos[c]
-            for d in order:
+            for d in touching.get(right, ()):
                 if d == c or c in pair or d in pair:
                     continue
                 kd, md, pd = mos[d]

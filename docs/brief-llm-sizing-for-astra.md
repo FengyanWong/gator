@@ -1,5 +1,9 @@
 # Brief for Astra: LLM-driven sizing methods in the optimizer, with a free SKY130 benchmark
 
+> **Status (2026-09-30): NOT STARTED.** Its precondition, reward v2.1 finished and committed, was met on 2026-09-29
+> (`8cf53ae`, `8db46b8`, audit fixes `7d365c3`). For this work it overrides the no-LLM rule ("no LLM search / no LLM inner
+> loop") of the Codex skill `.agents/skills/analog-optimizer`.
+
 Written 2026-09-29 for Astra (Codex, `gpt-6-astra`) by the Claude Code session "LLM+RL sizing plan", on the user's
 requests "Give a plan over current repo to add LLM support over sizing", then "modify the plan: options from the Codex
 or Claude list (so you can choose Fable 5.1 and Astra), add the recommended SKY130 benchmark, the code should go to

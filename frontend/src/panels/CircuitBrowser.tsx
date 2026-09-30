@@ -11,27 +11,26 @@ export const namedTestbench = (cells: Json, cell?: string | null): string | null
 };
 
 /** The read-only library → cell → schematic chain, active only while the Virtuoso window is open. */
-export function useVirtuosoBrowser(enabled: boolean, profileId: string | null, chosen: Json, setConfig: (f: (c: Json) => Json) => void) {
+export function useVirtuosoBrowser(enabled: boolean, profileId: string | null, chosen: Json, setConfig: (f: (c: Json) => Json, record?: boolean) => void) {
   const [native, setNative] = useState<Json>(null);
   const [libraries, setLibraries] = useState<string[] | null>(null);      // null = not listed (yet)
   const [cells, setCells] = useState<Json>(null);                         // { library, technology_library, cells: [{ name, views, has_schematic }] }
   const [listing, setListing] = useState<string | null>(null);            // what is being fetched from Virtuoso right now
-  const [nativeError, setNativeError] = useState<Json>(null);             // { step, text, outdated }
+  const [nativeError, setNativeError] = useState<string | null>(null);    // what the last failed step says
   const [refresh, setRefresh] = useState(0);                              // repeats the whole chain
   // The window: libraries -> cells -> schematic follow each other without a button (user request 2026-09-20). Each step
   // starts from an explicit choice (opening the window, a library, a cell), waits for the step before it, and is a
   // gated, read-only, zero-cost bridge call. Refresh repeats the chain, e.g. after the link came up.
   const browsing = enabled && !!profileId;
-  const nativeProblem = (step: string, e: any) => {
+  const nativeProblem = (e: any) => {
     const gate = e.detail?.gate, outdated = e.status === 404 || e.status === 405 || (e.status === 422 && /work_here/.test(e.message ?? ''));
-    setNativeError({ step, outdated, text: outdated ? OLDER_BACKEND
-      : gate ? gateText(gate) : e.message });
+    setNativeError(outdated ? OLDER_BACKEND : gate ? gateText(gate) : e.message);
   };
   const nativeStep = (step: string, call: () => Promise<Json>, done: (answer: Json) => void) => {
     let live = true;
     setListing(step); setNativeError(null);
     call().then(answer => { if (live) done(answer); })
-      .catch((e: any) => { if (live) nativeProblem(step, e); })
+      .catch((e: any) => { if (live) nativeProblem(e); })
       .finally(() => { if (live) setListing(current => (current === step ? null : current)); });
     return () => { live = false; setListing(current => (current === step ? null : current)); };
   };
@@ -47,13 +46,14 @@ export function useVirtuosoBrowser(enabled: boolean, profileId: string | null, c
       setCells(answer);
       // The technology library a design library is attached to IS its PDK: offered as the label, never over a typed one.
       // An empty Testbench box takes the cell's `tb_<cell>`, as choosing the cell does - never over a chosen testbench.
+      // Filled by itself, so no Undo step of its own: one Undo takes back the library choice and what it brought.
       setConfig(c => {
         let circuit = c.circuit;
         if (answer.technology_library && (circuit.pdk_id ?? 'unspecified') === 'unspecified') circuit = { ...circuit, pdk_id: answer.technology_library };
         const named = !circuit.testbench_cell && circuit.library === answer.library ? namedTestbench(answer, circuit.cell) : null;
         if (named) circuit = { ...circuit, testbench_cell: named };
         return circuit === c.circuit ? c : { ...c, circuit };
-      });
+      }, false);
     });
   }, [browsing, profileId, libraries, chosen.library]);
   const chosenCell = cells && cells.library === chosen.library ? cells.cells.find((c: Json) => c.name === chosen.cell) : null;

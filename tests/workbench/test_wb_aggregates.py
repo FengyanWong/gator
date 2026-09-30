@@ -11,6 +11,9 @@ from gator_workbench import aggregates, runs
 from gator_workbench.storage import read_json
 from helpers import execute, make_config, other_circuits, roots_for, summary
 
+# Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
+pytestmark = pytest.mark.xdist_group('test_wb_aggregates')
+
 
 def table(experiment_dir, name):
     with (Path(experiment_dir) / 'aggregates' / f'{name}.csv').open(newline='') as stream:
@@ -90,7 +93,7 @@ def test_budget_success_distinguishes_observed_unknown_and_censored(workflow):
         if row['success_within_budget'] == 'true':
             assert int(row['cost_evaluations']) <= budget and row['observation_status'] == 'observed'
         if row['success_within_budget'] == 'false':
-            assert row['cost_evaluations'] == '' and row['observation_status'] == 'observed' and limit >= budget or row['cost_evaluations'] == ''
+            assert row['cost_evaluations'] == '' and row['observation_status'] == 'observed' and limit >= budget
     infeasible = [r for r in rows if 'two_stage' in r['task_id'] and r['budget'] == '14']
     assert infeasible and all(r['success_within_budget'] == 'false' for r in infeasible)
     grouped = table(experiment_dir, 'budget_success_grouped')
@@ -186,7 +189,7 @@ def test_tables_regenerate_identically_from_saved_data(workflow):
 
 def test_summary_is_reconstructable_from_raw_tables(workflow):
     _, experiment_dir, made = workflow
-    for layout in list(made.values())[:4]:
+    for layout in made.values():
         saved = summary(layout)
         rebuilt = aggregates.reconstruct_from_tables(layout.run_dir, read_json(layout.manifest))
         assert rebuilt['totals']['candidate_evaluations_charged'] == saved['totals']['candidate_evaluations_charged']
@@ -210,7 +213,7 @@ def test_empty_experiment_exports_schema_defined_empty_tables(tmp_path):
     experiment = tmp_path / 'empty__000000000000'
     experiment.mkdir()
     (experiment / 'experiment.json').write_text(json.dumps(dict(experiment_id='000000000000', mock=False, runs=[])))
-    paths = aggregates.export_aggregates(experiment)
+    aggregates.export_aggregates(experiment)
     for name in ('run_summary', 'budget_success', 'paired_runs', 'transfer_summary', 'cumulative_cost'):
         rows = table(experiment, name)
         assert rows == []                                          # header only: no demonstration results

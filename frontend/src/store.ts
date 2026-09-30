@@ -128,7 +128,7 @@ export function useConfig() {
   const undo = useCallback(() => move(past, future), []);
   const redo = useCallback(() => move(future, past), []);
 
-  useEffect(() => { const id = setTimeout(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(config)), 800); return () => clearTimeout(id); }, [config]);
+  useEffect(() => { const id = setTimeout(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(config)); } catch { /* site storage blocked or full: the configuration lasts for this page */ } }, 800); return () => clearTimeout(id); }, [config]);
 
   return { config, setConfig, undo, redo, canUndo: past.current.length > 0, canRedo: future.current.length > 0 };
 }

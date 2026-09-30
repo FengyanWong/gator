@@ -144,13 +144,13 @@ feature_schema / masks / per_graph_context
 
 ### 当前训练输入缓存
 
-`SACLearner` 已默认启用两层 CPU LRU：2048 条完整观测输入、64 个静态拓扑模板。六编码器共用同一机制，各 learner 独立持有；缓存不属于学习权重或 replay 原始记录。
+`SACLearner` 已默认启用两层 CPU LRU：2048 条完整观测输入、64 个静态拓扑模板。各编码器（当时六种，2026-09-26 起只剩 GT/RGCN/GATv2）共用同一机制，各 learner 独立持有；缓存不属于学习权重或 replay 原始记录。
 
 - `TopologyTensorCache` 复用 kind/net roles/端口正反向边/ordinal/组绑定/mutable；有序节点、边、组、关系、绑定、schema 改变即失效。`to_pyg(..., topology_cache=cache)` 每次仍校验并刷新动态尺寸、mask、组域及来源/回写 metadata。
 - `ObservationTensorCache` 复用完整原始输入、context 和组特征。键为完整 Observation 与 FeatureSchema/SpecSchema 的本地内容摘要，覆盖尺寸、目标、测量/mask、预算、status、origin、工况及来源，不能只用对象地址或 job ID。replay 深拷贝仍应命中；名字仅用于索引和回写一致性，不是学习语义或图同构证明。
 - `batch_observations(..., cache=cache)` 每次拼接新 batch、调整索引并复制 opaque metadata；调用方修改返回张量或 metadata 不应污染缓存。静态模板对外返回独立张量。
 - 容量按条目计，超限 LRU 淘汰；两项容量均设为 0 可关闭，`learner.input_cache.info()/clear()` 用于检查与释放。缓存淘汰/重启后允许重新转换，不承诺无限期“只转换一次”。
-- 不缓存 embedding、attention、Q、动作或梯度；每次按当前参数执行网络前向/反向。GCNConv 仍 `cached=False`，避免混合拓扑误用上一批邻接。缓存不写入 checkpoint，冷恢复按需重建且下一步训练应精确一致。
+- 不缓存 embedding、attention、Q、动作或梯度；每次按当前参数执行网络前向/反向。带邻接缓存的算子必须关闭跨批缓存（已删除的 GCN 编码器用 `GCNConv(cached=False)`），避免混合拓扑误用上一批邻接。缓存不写入 checkpoint，冷恢复按需重建且下一步训练应精确一致。
 - 真实候选的参数回读、网表导出/解析与一致性核验保留；这不是仿真结果缓存。转换阶段计时与完整 SAC 更新分别记录，不把训练端提速当成 Spectre 或端到端提速。
 
 项目 `docs/input-tensor-cache.md` 记录接口、复现命令与验收；测试必须覆盖内容变更失效、混合 batch、返回值隔离、有限容量及六编码器缓存开/关的训练等价性。
@@ -161,7 +161,7 @@ feature_schema / masks / per_graph_context
 
 - `x[N,49]` float32：node type one-hot(2)、device kind one-hot(8)、参数值/有效/存在/可调各 8 列、net role(7)。使用 `node_feature_slices(schema)` 获取列，宽度为 `2 + K_device + 4P + R_net`，不随图大小变化。device/net 不适用字段填有限零，类型和缺失 mask 明确保留；不把原 device.x 的参数与 net.x 的角色按同一列混用。
 - `edge_index[2,E]`、`edge_type[E]`、`edge_ordinal[E]` 均为 int64。relation 编号为 `2 * role_id + direction`（0=device→net，1=net→device）；正反向/并联端口不合并。`edge_attr[E,15]` 为 relation one-hot + log1p(ordinal)，`edge_weight[E]` 为单位权重。不能用端口类别编号冒充 GCN 连续边权重。
-- GCN 消费 x/index/weight，RGCN 消费 x/index/type，GAT/GT 消费 x/index/attr；MLP 只处理节点特征并按组读取。普通 GCN 刻意忽略端口标签，但原图仍保存全部端口信息。
+- GCN 消费 x/index/weight，RGCN 消费 x/index/type，GAT/GT 消费 x/index/attr；MLP 只处理节点特征并按组读取。普通 GCN 刻意忽略端口标签，但原图仍保存全部端口信息。（这里指通用 PyG 算子；优化器的编码器自 2026-09-26 起只有 GT/RGCN/GATv2，2026-09-30 同步。）
 - 单图先转换，再 `batch_homogeneous([data,...])`，得到按图连续的节点 batch/ptr 和 group_x_batch/ptr。组绑定第一行按 G 偏移，第二行按全图 N 偏移；成员必须为 device，拒绝跨图边/绑定及不同 schema 混批。
 - `dense_node_features()` 返回 `[B,Nmax,F]` 与 `[B,Nmax]` 布尔 mask，不截断节点。padding 不产生动作，attention/pooling 须使用 mask；固定长度展平 MLP 不因此变成通用拓扑模型。
 - SAC 保留已有按类型学习投影及组归一化，只将端口边打包复用同一 `port_edge_tensors()`。其 all-devices-then-all-nets 排列与导出 batch 的按图排列不同，索引不得交叉使用。

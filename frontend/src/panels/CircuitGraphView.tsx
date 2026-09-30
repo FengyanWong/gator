@@ -116,6 +116,8 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
       layout('hints', view);
       paint(cy, view, layer, head, direction);
       cy.edges('[bulk = 1]').toggleClass('hidden', !bulk);
+    }, (e: any) => {               // the drawing package is fetched on first use: a failed fetch left the picture blank, unexplained
+      if (!cancelled) setError(`the drawing package could not be loaded (${e?.message ?? e}). Reload the page, then open the view again.`);
     });
     return () => { cancelled = true; };
   }, [view]);

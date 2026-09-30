@@ -13,8 +13,21 @@ from collections import Counter
 import math
 import statistics
 
+from ..connection import INFRASTRUCTURE_PATTERNS
+
 EDGE = 0.02            # a value within 2 % of its range from a bound counts as "at the bound"
 KEEP_BEST, KEEP_LAST, CURVE_POINTS = 8, 5, 20
+# License-server raw output never goes to an agent (CLAUDE.md): it names license servers, hosts and users. A failure
+# classified as a license failure - or whose text reads like one - is given as that classification only.
+LICENSE_TEXT = dict(INFRASTRUCTURE_PATTERNS)['license_unavailable']
+LICENSE_WITHHELD = 'license failure (text withheld)'
+
+
+def _shown(text, failure_type=None):
+    """Raw failure text as the agent may see it."""
+    if text and (failure_type == 'license_unavailable' or LICENSE_TEXT.search(str(text))):
+        return LICENSE_WITHHELD
+    return text
 
 
 def _num(value, digits=6):
@@ -108,7 +121,7 @@ def build(*, status: dict, config: dict, evaluations: list, parameters: list, me
         caveats.append('The run is still going: this is a snapshot.')
     return dict(
         run=dict(state=status.get('state'), stop_reason=status.get('stop_reason'), mode=status.get('mode') or run.get('mode'), mock=mock,
-                 seed=run.get('seed'), network=run.get('network'), concurrency=run.get('concurrency'), error=status.get('error'),
+                 seed=run.get('seed'), network=run.get('network'), concurrency=run.get('concurrency'), error=_shown(status.get('error')),
                  active_seconds=_num(status.get('active_seconds'))),
         budget=dict(max_evaluations=budget.get('max_evaluations'), charged=budget.get('charged'), completed=budget.get('completed'),
                     failed=budget.get('failed'), launches=budget.get('launches'), retries=budget.get('retries'), remaining=budget.get('remaining')),
@@ -123,11 +136,13 @@ def build(*, status: dict, config: dict, evaluations: list, parameters: list, me
         best=picture(best) if best else None, targets=targets, variables=variables,
         failures=dict(count=len(failed), by_status=dict(Counter(str(row.get('status')) for row in failed)),
                       by_type=dict(Counter(str(row.get('failure_type')) for row in failed if row.get('failure_type'))),
-                      typical=[str(text)[:200] for text, _ in Counter(row.get('diagnostics') for row in failed if row.get('diagnostics')).most_common(3)]),
+                      typical=[str(text)[:200] for text, _ in Counter(_shown(row.get('diagnostics'), row.get('failure_type'))
+                                                                      for row in failed if row.get('diagnostics')).most_common(3)]),
         progress=[dict(charged=row.get('cumulative_evaluations_charged'), best_feasible=row.get('best_so_far_feasible'),
                        best_violation=_num(row.get('best_so_far_violation'))) for row in curve_rows],
         best_evaluations=[picture(row) for row in ranked[:KEEP_BEST]], last_evaluations=[picture(row) for row in order[-KEEP_LAST:]],
-        errors=[dict(error=str(entry.get('error'))[:120], message=str(entry.get('message') or entry.get('detail') or '')[:240]) for entry in errors[-5:]],
+        errors=[dict(error=str(entry.get('error'))[:120], message=str(_shown(entry.get('message') or entry.get('detail') or ''))[:240])
+                for entry in errors[-5:]],
         caveats=caveats)
 
 

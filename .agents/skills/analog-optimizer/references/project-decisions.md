@@ -1,6 +1,6 @@
 # 项目决策与上下文
 
-同步日期：2026-09-19。依据用户后续授权及项目 `docs/decisions.md`、`docs/encoder-ablation.md` 更新。
+同步日期：2026-09-19。依据用户后续授权及项目 `docs/decisions.md`、`docs/encoder-ablation.md` 更新。2026-09-30 同步了编码器、训练工况、PVT/MC 与 LLM 规则（第 1、4、8、9、10 节）；当前状态见项目 `docs/decisions.md` 开头。
 这是项目状态快照；最新用户请求、真实代码和对应验收记录优先。历史 M3 范围不再限制已经获准并完成的 M4/M5。
 
 ## 1. 当前工作方向
@@ -9,14 +9,14 @@
 |---|---|---|
 | 优化任务 | 模拟/混合信号电路 sizing 与明确允许的偏置参数 | 首版不做拓扑生成和版图优化 |
 | 电路平台 | Cadence Virtuoso + Spectre | 真实 PDK/测试台以本地为准 |
-| 接口选择 | 用户指定 Virtuoso bridge；讨论的仓库是 `Arcadia-1/virtuoso-bridge-lite` | 不自动迁回 SkillBridge，不引入 LLM agent 内环 |
+| 接口选择 | 用户指定 Virtuoso bridge；讨论的仓库是 `Arcadia-1/virtuoso-bridge-lite` | 不自动迁回 SkillBridge；LLM 内环只按 `docs/brief-llm-sizing-for-astra.md`（2026-09-29 用户决定，对这项工作取代原先“不引入 LLM agent 内环”） |
 | 电路表示 | 统一、端口感知的 device-net 图 | 保存端口信息并传到模型；不是简单 adjacency |
-| Encoder | 默认局部端口 Graph Transformer，可选 MLP/GCN/RGCN/GAT（port-GNN 已于 2026-09-24 删除） | 统一节点/参数组接口；可运行不等于迁移效果已证实 |
+| Encoder | 默认局部端口 Graph Transformer，可选 RGCN、GATv2（port-GNN 2026-09-24 删除；MLP/GCN 2026-09-26 删除，GATv1 同日由 GATv2 取代） | 统一节点/参数组接口；可运行不等于迁移效果已证实 |
 | 优化器 | Goal-conditioned SAC | 可以做其他算法基线，但不默认替换 |
 | 初版 surrogate | 不使用 | 以后只能作为单独实验加入 |
-| 当前训练工况 | 已验证 nominal only | PVT/MC 结果不进入 reward、replay 或 normalizer |
-| PVT 筛选 | nominal top 3 独立设计 × 5 个代表性工况 | 已有配置、数据契约和汇总纯函数；执行调度尚未实现 |
-| Monte Carlo | 保留类型、样本身份和显式不支持接口 | 未来先后验证，再考虑有限预算的训练扩展 |
+| 当前训练工况 | 默认 nominal only；reward v2 / v2.1 起 `real:gpdk045_ota7` 可显式选 `always` 或 `after_nominal`，各工况结果进入 reward 与 replay（真实验收见 `docs/reward-v2.md`） | 事后验证（Corner check）结果不进入 reward、replay 或 normalizer；MC 未实现 |
+| PVT 筛选 | nominal top 3 独立设计 × 5 个代表性工况 | 已有配置、数据契约和汇总纯函数；工作台 Corner check（2026-09-22）对一次 run 的 1-3 个最佳设计执行 5 工况复仿真；包内通用 top-k 调度尚未实现 |
+| Monte Carlo | 保留类型、样本身份和显式不支持接口 | 未来先后验证，再考虑有限预算的训练扩展；目前只有计划 `docs/plan-finalist-monte-carlo.md` |
 | 可迁移目标 | 参数组级动作、统一 schema、规格条件化 | 不承诺任意电路 zero-shot |
 | 当前阶段 | M1–M5、M6 前编码器接口已完成；M6 于 2026-09-20 在试点规模收尾 | 跨类别迁移仅有试点证据，GT/迁移优势仍未证实；更大规模前瞻实验与可选扩展未开始 |
 
@@ -52,7 +52,7 @@ B. Python 与 Virtuoso / Spectre 同在 Linux VM
 
 ## 4. 首版不默认做的事情
 
-- 不加入 surrogate、diffusion、Mamba、LLM 搜索、多智能体竞赛、分布式训练集群。
+- 不加入 surrogate、diffusion、Mamba、多智能体竞赛、分布式训练集群。LLM 搜索只按 `docs/brief-llm-sizing-for-astra.md` 进行（2026-09-29 用户决定；对这项工作，该 brief 取代本条原先的“不加入 LLM 搜索”）。
 - 不把所有器件尺寸、偏置、整数参数一次性全部放开。
 - 不强行把不同电路补成同一种固定拓扑，或为每种电路维护独立模型输出层。
 - 不把 Graph Transformer 换成“更省事”的 GNN 后仍称原方案已完成。
@@ -80,7 +80,7 @@ GT 使用局部 `TransformerConv`；基准入口默认 32 hidden、2 layers、4 
 
 ## 8. M3 工况接口决策（2026-09-19 用户修订）
 
-历史上用户将该次工况接口修改限定在 M3 及之前；后来已明确授权并完成 M4/M5。仍然有效的工况约束是：新增工况接口不改变动作维度，不启用 PVT/MC training，主优化器继续使用 goal-conditioned SAC。
+历史上用户将该次工况接口修改限定在 M3 及之前；后来已明确授权并完成 M4/M5。仍然有效的工况约束是：新增工况接口不改变动作维度，不启用 PVT/MC training，主优化器继续使用 goal-conditioned SAC。（2026-09-30 注：用户后来授权 reward v2 / v2.1，`real:gpdk045_ota7` 可显式启用 PVT 训练工况，见第 1 节；MC training 仍未启用。）
 
 实际项目已用 `SimulationCondition/PVTCorner/MonteCarloConfig` 表达工况，并为统计批次保留逐样本结果接口。当前默认仍为 TT/27°C/1.0 V；这是已验证的 OTA 基线，不能因为器件名或文档表格而自动更换 nominal。
 
@@ -91,8 +91,8 @@ GT 使用局部 `TransformerConv`；基准入口默认 32 hidden、2 layers、4 
 ## 9. M4/M5 与 M6 前编码器接口（当前状态）
 
 - M4 已实现 nominal SAC、参数组 actor、动作条件化独立 twin critics、replay 及完整 checkpoint。M5 已实现冻结任务划分、防泄漏、独立任务微调和成本报告；真实规格 pilot 没有证明迁移优势，真实新拓扑与跨类别迁移尚未验证。
-- 用户要求在 M6 之前支持 GT/MLP/RGCN/GAT 对照。`ModelConfig.encoder_type` 与 `CircuitEncoder/build_encoder` 已接好；`port_gnn` 保留兼容。定义与共同契约见 [学习与动作](learning-and-actions.md)，公平比较见 [实验与审查](evaluation.md)。
-- `examples/benchmark_transfer.py --encoders ...` 对每种显式选择的架构运行 scratch/frozen/adapt，并给每种架构冻结 validation 诊断；不传该参数保留 M5 六方法。`examples/train_synthetic_sac.py --encoder ...` 选择单 learner 编码器。
+- 用户要求在 M6 之前支持 GT/MLP/RGCN/GAT 对照。`ModelConfig.encoder_type` 与 `CircuitEncoder/build_encoder` 已接好；当时 `port_gnn` 保留兼容。2026-09-30 同步：现在只有 `graph_transformer`、`rgcn`、`gatv2`；`port_gnn`（2026-09-24）、`mlp`、`gcn`（2026-09-26）已删除，`gat` 同日由 `gatv2` 取代，这些名称都被明确拒绝。定义与共同契约见 [学习与动作](learning-and-actions.md)，公平比较见 [实验与审查](evaluation.md)。
+- `examples/benchmark_transfer.py --encoders ...` 对每种显式选择的架构运行 scratch/frozen/adapt，并给每种架构冻结 validation 诊断；不传该参数时只运行 `graph_transformer` 的 scratch/frozen/adapt 加随机搜索与坐标模式搜索（M5 六方法含已删除的 port-GNN，只能在源码提交 bbdfe36 运行；2026-09-30 同步）。`examples/train_synthetic_sac.py --encoder ...` 选择单 learner 编码器。
 - 各架构分别预训练；迁移复制同架构网络与 alpha，优化器/replay 重新创建。checkpoint 保存编码器与配置并严格匹配代码/schema/依赖；改码前的 M4/M5 checkpoint 不会自动迁移，跨架构权重加载拒绝。
 - 此次代码验收为 296 项离线测试通过、零失败、零跳过；四架构 smoke 完成 116 次 synthetic 评价，覆盖同拓扑规格和 2→3 维动作的新拓扑，新增真实调用为 0。记录和复现命令在项目 `docs/encoder-ablation.md`；这些是接口证据，不是电路知识迁移优势。
 - 该次文档和 skill 同步没有启动 M6 或新的训练/仿真。后续阶段依用户新请求及实际验收情况推进。
@@ -101,7 +101,7 @@ GT 使用局部 `TransformerConv`；基准入口默认 32 hidden、2 layers、4 
 
 用户随后要求检查 M1 是否支持 GCN/GAT 等网络。原图信息足够，补齐了普通算子的固定语义同构视图 `circuit-neural-v1`（默认节点 49 列、边特征 15 列）、带 mask 的 dense 节点输入与正确组 batch 偏移；不重写 parser。SAC 与新导出复用端口打包逻辑，细节见 [图契约](graph-contract.md)。
 
-新增普通 `gcn`，作为只读连接、不读端口标签的对照，区别于 `rgcn`。最新验收为 319 项离线测试通过、零失败、零跳过；六编码器 smoke 共 168 次 synthetic 评价，全部恢复，新增真实调用 0。直接输入测试覆盖 opamp/LDO/VCO、两级 opamp 和现有真实 OTA 导出快照。记录在项目 `docs/m1-neural-inputs.md`，不代表 M6 或真实迁移效果验证完成。
+新增普通 `gcn`，作为只读连接、不读端口标签的对照，区别于 `rgcn`（`gcn` 已于 2026-09-26 删除）。最新验收为 319 项离线测试通过、零失败、零跳过；六编码器 smoke 共 168 次 synthetic 评价，全部恢复，新增真实调用 0。直接输入测试覆盖 opamp/LDO/VCO、两级 opamp 和现有真实 OTA 导出快照。记录在项目 `docs/m1-neural-inputs.md`，不代表 M6 或真实迁移效果验证完成。
 
 ## 11. 训练输入缓存（最新补充）
 

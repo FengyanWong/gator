@@ -39,25 +39,23 @@
 先有可复现随机搜索，再按代码可用性选一个合适的非 RL 优化器（如 CMA-ES、CEM 或 BO）。
 选择依据是参数域、预算与可维护性，不要求首版一次实现所有算法。
 
-当前项目已实现随机搜索与坐标模式搜索。用户要求的编码器对照通过统一 SAC 接口比较：
+当前项目已实现随机搜索与坐标模式搜索。用户要求的编码器对照通过统一 SAC 接口比较（2026-09-30 同步：只剩下面三种编码器；
+node-wise MLP、topology-only GCN、GATv1 与 M5 的 port-aware message-passing GNN 已删除，历史结果仍以各自记录为准）：
 
 ```text
 port-aware Graph Transformer + SAC       # 主方案
-node-wise MLP + SAC                      # 忽略电路连接的消融，保留组绑定
-topology-only GCN + SAC                  # 使用连接，忽略关系标签
 port-relational RGCN + SAC               # role × direction 关系
-port-aware GAT + SAC                     # 加性邻域注意力
-port-aware message-passing GNN + SAC     # 保留 M5 对照
+port-aware GATv2 + SAC                   # GATv2Conv 动态注意力，端口边特征进入注意力
 scratch / frozen / adapt                 # 每种显式选择的编码器均运行三种模式
 ```
 
-显式使用 `--encoders` 时，每种架构独立预训练并做冻结 validation 诊断；不传时保留 M5 六方法。固定划分、规格、动作合法域、seed、预训练/在线预算和更新规则；各策略采集的候选可能不同，同样的预算不等于同一数据集。
+显式使用 `--encoders` 时，每种架构独立预训练并做冻结 validation 诊断；不传时只运行 `graph_transformer` 的三种模式加随机搜索与坐标模式搜索（`examples/benchmark_transfer.py` 的默认；M5 六方法含已删除的 port-GNN，只能在源码提交 bbdfe36 运行）。固定划分、规格、动作合法域、seed、预训练/在线预算和更新规则；各策略采集的候选可能不同，同样的预算不等于同一数据集。
 
 `scratch` 随机初始化；`frozen` 复制同架构权重并冻结，以均值策略做多步评价；`adapt` 复制同架构网络/alpha，但重新创建优化器与空 replay。每个测试任务独立，数据不回流源模型。当前 validation 仅作诊断，不做模型或超参数选择。
 
 分别比较每种架构的 frozen/adapt 与其自己的 scratch，再跨架构比较；保留随机与非 RL 对照。报告实际 actor+Q1+Q2 参数数、预训练和在线成本，同宽度/深度不宣称参数量匹配。预算按选择矩阵计算，超出上限在创建后端前拒绝；切换编码器不自动增加真实仿真预算。
 
-固定拓扑展平 MLP 或用户旧 DDPG/RGCN 是另外的参考，不能与当前共享逐节点 MLP/RGCN-SAC 混称；须说明动作维度与优化器差异。端口语义/规格条件化的额外消融仍需单独实现和验收。
+固定拓扑展平 MLP 或用户旧 DDPG/RGCN 是另外的参考，不能与当前共享的 RGCN-SAC（或已删除的逐节点 MLP-SAC）混称；须说明动作维度与优化器差异。端口语义/规格条件化的额外消融仍需单独实现和验收。
 TD3、surrogate、global attention、gated residual、额外 OP 特征和并行采样均是后续单独消融。
 一次改变多个因素后，不把提升全部归因于一个新模块。
 
@@ -78,7 +76,7 @@ TD3、surrogate、global attention、gated residual、额外 OP 特征和并行�
 仿真预算需定义“一次调用”是单 analysis、单 corner 还是完整候选测试包；同时保存底层调用和候选评价计数。
 cache hit 不当作新仿真，warm-start 数据和实际失败调用不能从成本里消失。
 
-当前只预留 nominal top 3 的固定 5-corner 后验证接口，不跑全组合。必须先按 nominal reward 对实际执行参数去重、固定 top-k，再做后验证；不得用 PVT 结果反选 nominal top-k 或混入训练。`pass_rate` 的分母是全部配置 corners；有未知结果时不给完整通过率。对 min/max/range 按约束方向报告最差指标与对应 corner。robust_score 只在结果完整时计算，任何已知失败 corner 都排除通过资格。
+优化器包只预留 nominal top 3 的固定 5-corner 后验证接口（工作台 Corner check 对 1-3 个最佳设计执行 5 工况复仿真），不跑全组合。必须先按 nominal reward 对实际执行参数去重、固定 top-k，再做后验证；不得用事后 PVT 结果反选 nominal top-k 或混入训练（reward v2 / v2.1 为 OTA7 显式选择的训练工况是另一回事，见 [工况与统计验证](pvt-monte-carlo.md)）。`pass_rate` 的分母是全部配置 corners；有未知结果时不给完整通过率。对 min/max/range 按约束方向报告最差指标与对应 corner。robust_score 只在结果完整时计算，任何已知失败 corner 都排除通过资格。
 
 这五个 corners 用于选择候选，属于 validation，不是独立 test。未来重复依据它们调参时仍需独立留出验证条件/统计种子再报告泛化或良率。MC 样本通过率、corner pass rate 和真实制造良率不是同一个指标。更多预算规则见 [工况与统计验证](pvt-monte-carlo.md)。
 

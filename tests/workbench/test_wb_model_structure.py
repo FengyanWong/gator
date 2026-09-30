@@ -15,6 +15,9 @@ from gator_workbench.engine import learner_experiment
 from gator_workbench.schema import task_definition_hash
 from helpers import SMALL_NET, ScriptedEnvFactory, execute, make_config
 
+# Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
+pytestmark = pytest.mark.xdist_group('test_wb_model_structure')
+
 ENCODERS = ('graph_transformer', 'rgcn', 'gatv2')
 
 

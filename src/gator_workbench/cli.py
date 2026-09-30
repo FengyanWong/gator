@@ -52,7 +52,7 @@ def main(argv=None):
                   'authentication layer; use only on a trusted network.', file=sys.stderr)
         app = create_app(extra_output_roots=args.allow_root, extra_input_roots=args.allow_input_root,
                          connection_stale_seconds=args.connection_stale_seconds,
-                         auto_check_on_start=args.connection_check_on_start)
+                         auto_check_on_start=args.connection_check_on_start, host=args.host)
         print(f'GATOR workbench: http://{args.host}:{args.port}   (API docs: /api/docs)', flush=True)
         uvicorn.run(app, host=args.host, port=args.port, log_level='info')
         return 0

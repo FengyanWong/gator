@@ -8,7 +8,8 @@
 // What it pins (user request 2026-09-21): after Start the button reads Pause, after Pause it reads Resume; Abort sits
 // next to it; a pause/abort waits for the simulation in flight (Force abort is the second step); Resume continues the
 // SAME run without asking for a budget; a real run asks for the budget again; the header keeps a live run's Pause
-// whatever run the bottom tabs show, also across a reload, and never offers a second Start meanwhile.
+// whatever run the bottom tabs show, also across a reload, and never offers a second Start meanwhile - nor, in the Run
+// status tab, a Continue of another run (2026-09-29); a remembered run that is gone is let go of, not polled for ever.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -39,6 +40,19 @@ const statusOf = () => {
 };
 const started = () => ({ run_dir: sim.dir, run_id: 'fixture-run', mock: sim.mock, worker_pid: 1, paths: { run_dir: sim.dir }, connection_gate: { status: 'not_applicable' },
   mock_notice: sim.mock ? 'FIXTURE MOCK DATA: nothing was started.' : null });
+// Section 12: a second, PAUSED run that the bottom tabs can show while the header's run is live (listed from then on).
+const OTHER = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task__scratch__seed1__0002';
+let otherListed = false;
+// Section 13: a run this browser remembers that is gone (deleted, or outside the allowed roots): its status is a 404.
+const GONE = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task__scratch__seed9__0009';
+let goneAsked = 0;
+const otherRow = () => ({ run_dir: OTHER, run_id: 'fixture-run-2', task_id: 'fixture_task:0000', task_definition_hash: 'fixture', mode: 'scratch', mock: true, seed: 1,
+  created_utc: '2026-09-20T00:00:00+00:00', state: 'paused', experiment: 'fixture_experiment__0001', evaluations: 7, first_feasible_eval_count: null, resumability: 'full_state' });
+const otherStatus = () => ({ state: 'paused', run_id: 'fixture-run-2', mode: 'scratch', entry: 'start', provenance: 'mock', mock: true, worker_alive: false, run_dir: OTHER,
+  heartbeat_utc: '2026-09-20T00:10:00+00:00', stop_reason: 'user_pause', error: null, active_workers: [], concurrency: 1, learner_updates: 0, first_feasible: null,
+  budget: { max_evaluations: 60, max_launches: null, max_retries: 0, charged: 7, reserved: 0, in_flight: 0, completed: 7, failed: 0, released: 0, remaining: 53, launches: 7, retries: 0, cache_hits: 0, first_feasible: null },
+  best_design: null, persistence: null, last_checkpoint_utc: null, paths: { run_dir: OTHER }, connection: { overall: 'not_applicable' }, summary: null,
+  manifest: { mode: 'scratch', mock: true, task_id: 'fixture_task:0000', seeds: { target_seed: 1 }, source_model: null, budgets: { max_evaluations: 60 }, mock_notice: 'FIXTURE MOCK DATA: nothing was started.' } });
 const validReport = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: true };
 
 await runChecks(browser, async () => {
@@ -50,8 +64,9 @@ await runChecks(browser, async () => {
   const answer = ({ requestId, request }) => {
     const url = new URL(request.url), name = url.pathname, body = request.postData ? JSON.parse(request.postData) : null;
     if (name === '/api/config/validate') return fulfil(requestId, 200, validReport);
-    if (name === '/api/runs/status') { statusRequests++; return url.searchParams.get('run_dir') === sim.dir ? fulfil(requestId, 200, statusOf()) : fulfil(requestId, 404, { detail: 'Not a run directory' }); }
-    if (name === '/api/runs') return fulfil(requestId, 200, { runs: listed() });
+    if (name === '/api/runs/status') { statusRequests++; const asked = url.searchParams.get('run_dir'); if (asked === GONE) goneAsked++;
+      return asked === sim.dir ? fulfil(requestId, 200, statusOf()) : asked === OTHER && otherListed ? fulfil(requestId, 200, otherStatus()) : fulfil(requestId, 404, { detail: 'Not a run directory' }); }
+    if (name === '/api/runs') return fulfil(requestId, 200, { runs: [...listed(), ...(otherListed ? [otherRow()] : [])] });
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
     if (name === '/api/runs/download') return fulfil(requestId, 200, { output: sim.output });
     if (['/api/runs/start', '/api/runs/continue', '/api/runs/command'].includes(name)) {
@@ -267,6 +282,43 @@ await runChecks(browser, async () => {
   check('a live run found in the run list is taken over: "Pause", not "Start"', await mainReads('Pause') && (await look()).remembered === DIR);
   check('"Start" was never offered while it was looked up', !(await seen()).some(s => s[0] === 'Start' && s[1] === false), JSON.stringify(await seen()));
   await shot('run-7-taken-over.png');
+
+  // ---- 12. Continue of ANOTHER run waits while the header's run is live (review of 2026-09-29, A9) ----------------------------------
+  // It used to start a second live run that had no Pause or Abort anywhere on the page (the tab's run buttons went on 2026-09-29).
+  const showInTabs = async dir => {                                               // the run window: a double click on the run's row
+    await evaluate(`document.querySelector('footer .tabs button.run-list-button').click()`, true);
+    const target = await browser.window('GATOR - runs').catch(() => null);
+    if (!target) throw new Error('the run window did not open');
+    const far = await browser.attach(target);
+    const ok = await far.evaluate(`new Promise(done => { let tries = 0; const tick = () => {
+      const row = [...document.querySelectorAll('.run-window table.run-table tbody > tr')].find(r => r.title === ${JSON.stringify(dir)});
+      if (row) { row.children[4].dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); done(true); } else if (++tries > 50) done(false); else setTimeout(tick, 100); }; tick(); })`);
+    far.close();
+    await send('Target.closeTarget', { targetId: target.id });
+    if (!ok) throw new Error(`the run ${dir} was not in the run window`);
+  };
+  otherListed = true; log.length = 0;
+  await showInTabs(OTHER);
+  check('(the Run status tab shows another run, a paused one, while the header\'s run is live)', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(OTHER)})`)
+    && (await look()).main === 'Pause');
+  const CONTINUE = `[...document.querySelectorAll('.status-grid button')].find(b => b.textContent === 'Continue')`;
+  const other = await evaluate(`({ off: ${CONTINUE}?.disabled, title: ${CONTINUE}?.title ?? '' })`);
+  check('its Continue is off while the header\'s run is live, and its tooltip says why', other.off === true && other.title.startsWith('Continue: ') && /another run is live in the header/i.test(other.title), JSON.stringify(other));
+  sim.steps = [{}, { state: 'pausing' }, {}, { state: 'paused', alive: false }];
+  await press(MAIN);
+  check('(the header\'s run is paused)', await mainReads('Resume', 150));
+  check('once the header\'s run is paused, Continue of the other run is offered again', await until(`!!(${CONTINUE}) && !${CONTINUE}.disabled && ${CONTINUE}.title.startsWith('Continue: A paused')`),
+    await evaluate(`${CONTINUE}?.title ?? ''`));
+  check('nothing was continued meanwhile', !log.some(l => l.name === '/api/runs/continue'), JSON.stringify(log.map(l => l.name)));
+
+  // ---- 13. a remembered run that is gone is let go of - not asked for every 1.5 s for ever (review of 2026-09-29) -----------------
+  await forget();
+  Object.assign(sim, { dir: DIR, state: null, alive: false, steps: [] }); otherListed = false;   // nothing live in the list to take over
+  await open(GONE);
+  check('a remembered run that is gone (404): the bottom tabs let go of it too, "No run selected"', await until(`document.querySelector('footer .tabs .run-list-current')?.textContent === 'No run selected'`, 60)
+    && (await look()).main === 'Start', await evaluate(`document.querySelector('footer .tabs .run-list-current')?.textContent ?? ''`));
+  const goneBefore = goneAsked; await sleep(4000);
+  check('... and it is asked for no more', goneAsked === goneBefore && goneAsked >= 1, `${goneAsked - goneBefore} request(s) in 4 s, ${goneAsked} in all`);
 
   reportRefused(refused);
   check('every question on screen was planned by this check', dialogs.every(d => d.planned), JSON.stringify(dialogs.filter(d => !d.planned)));

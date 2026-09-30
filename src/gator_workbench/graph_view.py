@@ -46,14 +46,16 @@ def _actor(meta, weights):
     return actor.eval()
 
 
-def _one_row(reader, table, column, value, columns=None):
+def _one_row(reader, table, column, value, columns=None, flushes=None):
     """The ONE row of an archive table with `column == value`, read with a parquet filter: the other rows are never
-    turned into Python objects (a long run holds thousands of states with their JSON patches)."""
+    turned into Python objects (a long run holds thousands of states with their JSON patches). `flushes`: the flush
+    records whose parts are searched, in that order; all of them, oldest first, when not given."""
     import pyarrow.parquet as pq
-    for path in reader.parts(table):
-        found = pq.read_table(path, columns=columns, filters=[(column, '=', value)])
-        if found.num_rows:
-            return found.to_pylist()[0]
+    for flush in reader.flushes if flushes is None else flushes:
+        if table in flush['parts']:
+            found = pq.read_table(reader.root / table / flush['parts'][table], columns=columns, filters=[(column, '=', value)])
+            if found.num_rows:
+                return found.to_pylist()[0]
     return None
 
 
@@ -73,8 +75,18 @@ def _step(loader, wanted, saved_at):
         chosen = wanted
     else:
         raise GraphViewUnavailable(f'This run has no archived evaluation {wanted}: it holds {first} to {last}.')
-    row = _one_row(loader.reader, 'transitions', 'commit_seq', chosen, ['commit_seq', 'state_ref', 'action', 'policy_version'])
-    state = _one_row(loader.reader, 'states', 'state_id', row['state_ref'])
+    # A transition is committed with its evaluation number, so it sits in the part of the flush whose range holds that
+    # number; its state was written in that flush or an earlier one (once, with the first transition that saw it). One read
+    # for the transition and the states newest first from there, instead of every part of a long run oldest first (the
+    # default view of a 400-evaluation run: 96 parquet reads, ~1.2 s on the 9p mount). Anything not found there is looked
+    # for in the other parts, as before.
+    flushes = loader.reader.flushes
+    at = next((i for i, f in enumerate(flushes) if f['first_seq'] <= chosen <= f['last_seq']), len(flushes) - 1)
+    columns = ['commit_seq', 'state_ref', 'action', 'policy_version']
+    row = (_one_row(loader.reader, 'transitions', 'commit_seq', chosen, columns, flushes[at:at + 1])
+           or _one_row(loader.reader, 'transitions', 'commit_seq', chosen, columns))
+    state = (_one_row(loader.reader, 'states', 'state_id', row['state_ref'], flushes=flushes[at::-1])
+             or _one_row(loader.reader, 'states', 'state_id', row['state_ref'], flushes=flushes[at + 1:]))
     if state is None:
         raise GraphViewUnavailable(f'The archive of this run holds no state for evaluation {chosen}.')
     loader._states = {state['state_id']: state}           # what TrajectoryLoader.observation() looks the state up in

@@ -27,6 +27,13 @@ class PathNotAllowed(PermissionError):
     pass
 
 
+def refuse_nul(path) -> None:
+    """A NUL byte is no path at all: the OS refuses it with ValueError, which surfaced as HTTP 500 on every route that
+    takes a path (review of 2026-09-29). It is refused like any other path that is not allowed."""
+    if '\x00' in str(path):
+        raise PathNotAllowed('A path cannot contain a NUL character')
+
+
 def repo_root() -> Path:
     """Repository that contains this package (src/gator_workbench/..)."""
     return Path(__file__).resolve().parents[2]
@@ -75,6 +82,7 @@ class OutputRoots:
     # ---------------------------------------------------------------- allowlist
     def resolve(self, path) -> Path:
         """Resolve symlinks/.. and require the result to be inside an allowed root."""
+        refuse_nul(path)
         candidate = Path(path).expanduser()
         if not candidate.is_absolute():
             raise PathNotAllowed('An absolute backend path is required')
@@ -219,21 +227,33 @@ def environment_label() -> str:
 
 
 def directory_bytes(path) -> int:
+    """Bytes of the regular files under `path`; symlinks are neither counted nor followed, an unreadable folder counts
+    nothing. One os.scandir pass and one stat per file: rglob + is_file + is_symlink + stat listed every folder twice
+    and took 4.4 s for the 406 files of the D: output folder, on every page open (review of 2026-09-29)."""
     total = 0
     path = Path(path)
-    if not path.exists():
+    if not path.is_dir():
         return 0
-    for child in path.rglob('*'):
+    pending = [path]
+    while pending:
         try:
-            if child.is_file() and not child.is_symlink():
-                total += child.stat().st_size
-        except OSError:
+            with os.scandir(pending.pop()) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            pending.append(entry.path)
+                        elif entry.is_file(follow_symlinks=False):
+                            total += entry.stat(follow_symlinks=False).st_size
+                    except OSError:
+                        pass
+        except PermissionError:          # as rglob did: a folder that cannot be listed is skipped
             pass
     return total
 
 
 def safe_child(base: Path, relative: str) -> Path:
     """Resolve `relative` under `base`, refusing traversal and symlink escapes (file downloads)."""
+    refuse_nul(relative)
     base = Path(base).resolve()
     target = (base / relative).resolve()
     if target != base and base not in target.parents:

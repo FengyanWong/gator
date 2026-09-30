@@ -11,7 +11,9 @@
 //   - approving says what happened in Virtuoso: written and read back, or rows applied and the copy not reachable;
 //   - what the agent wrote into the copy wins over the same parts a task file set on the page earlier: Save task sends
 //     them no more (it takes them from the copy); a failed write hands the approved setup to Save task instead (it writes
-//     the copy later - "Write to Virtuoso" is gone, 2026-09-22). Save task sits in the editors' tab line.
+//     the copy later - "Write to Virtuoso" is gone, 2026-09-22). Save task sits in the editors' tab line;
+//   - (2026-09-29) Approve reads "Applying..." and cannot be pressed twice; a Reject that a restarted backend answers 404
+//     is said in the chat and the box closes.
 // Run (Windows node sees a WSL variable only when WSLENV names it):
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/agent_setup_check.mjs)"
 import path from 'node:path';
@@ -23,7 +25,7 @@ const browser = await launchEdge('setup');
 const consoleErrors = [];
 
 const LIB = 'GPDK045_RINGOSC', CELL = 'ring_osc_3stage', TB = 'tb_ring_osc_3stage', COPY = 'GPDK045_RINGOSC_GATOR';
-let withCopy = false, applyOutcome = 'written';
+let withCopy = false, applyOutcome = 'written', approveDelay = 0;
 // The cell the user declared as their copy (2026-09-23): the record names the cell itself. COPY is what the agent's answer names.
 const draft = () => ({ loaded: true, task_key: `virtuoso:${LIB}/${CELL}`, mock: false, native_draft: true, complete: true, diagnostics: [], profile_task: null, profile_task_generated: null,
   working_copy: withCopy ? { declared: true, verified: true, problems: [], created_utc: '2026-09-23T10:00:00+00:00', copy: { library: LIB, cell: CELL, testbench: TB, path: null }, original: { library: LIB, cell: CELL, testbench: TB } } : null,
@@ -62,7 +64,9 @@ await runChecks(browser, async () => {
       extras: { analyses: { tran: { stop: '99n' } }, expected_frequency_hz: 1.2e9 } });
     if (pathname === '/api/virtuoso/task/save') return fulfil(requestId, 409, { detail: { code: 'refused', message: 'FIXTURE: nothing is saved by this check' } });
     if (pathname === '/api/agent/propose') { await sleep(300); return fulfil(requestId, 200, PROPOSAL); }
-    if (pathname === '/api/agent/approve') return fulfil(requestId, 200, { ...PROPOSAL, status: 'approved' });
+    if (pathname === '/api/agent/approve') { await sleep(approveDelay); return fulfil(requestId, 200, { ...PROPOSAL, status: 'approved' }); }
+    // A backend restarted since the proposal came keeps no proposals (they live in its memory): its answer to Reject.
+    if (pathname === '/api/agent/reject') return fulfil(requestId, 404, { detail: { message: 'Unknown proposal' } });
     if (pathname === '/api/agent/apply') {
       const config = { ...body.config, measurements: PROBES };
       return fulfil(requestId, 200, applyOutcome === 'written'
@@ -149,9 +153,18 @@ await runChecks(browser, async () => {
     && shown.includes('variable VSUP') && shown.includes('V0.vdc in tb_ring_osc_3stage') && shown.includes('the cell you read as your copy'), shown.slice(0, 200));
   check('its button says it writes the copy', await evaluate(`[...document.querySelectorAll('.confirm button')].some(b => b.textContent.trim() === 'Approve, apply and write the copy')`));
   await page.shot(path.join(out, 'agent-setup-1-proposal.png'));
-  await evaluate(`[...document.querySelectorAll('.confirm button')].find(b => b.textContent.trim() === 'Approve, apply and write the copy').click()`); await sleep(1200);
+  approveDelay = 1500;                                                        // the approval takes a moment: its busy state is observable
+  await evaluate(`[...document.querySelectorAll('.confirm button')].find(b => b.textContent.trim() === 'Approve, apply and write the copy').click()`); await sleep(400);
+  const during = await evaluate(`(() => { const buttons = [...document.querySelectorAll('.confirm button')], busy = buttons.find(b => b.textContent.trim() === 'Applying...'),
+    reject = buttons.find(b => b.textContent.trim() === 'Reject'); busy?.click(); return { busy: !!busy && busy.disabled, reject: !!reject && reject.disabled }; })()`);
+  check('while the approval is on its way the button reads "Applying..." and is off, and so is Reject', during.busy && during.reject, JSON.stringify(during));
+  for (let i = 0; i < 40 && (await evaluate(`!!document.querySelector('.confirm')`)); i++) await sleep(150);
+  await sleep(1200);                                                          // the page keeps the configuration 0.8 s after a change
+  approveDelay = 0;
   check('approving applies and then says it was written into the copy and read back', (await chatText()).includes('written into the working copy') && (await chatText()).includes('it matches')
     && calls.some(c => c.path === '/api/agent/approve') && calls.some(c => c.path === '/api/agent/apply'));
+  check('a second press meanwhile sent nothing: ONE approval, ONE apply', calls.filter(c => c.path === '/api/agent/approve').length === 1 && calls.filter(c => c.path === '/api/agent/apply').length === 1,
+    calls.map(c => c.path).join(', '));
   const config = await stored();
   check('the editors hold the proposed probe', (config.measurements ?? []).some(m => m.measurement_id === 'm_freq' && m.result_source === 'ade_output'), JSON.stringify(config.measurements));
   let saved = await saveTask();
@@ -170,6 +183,15 @@ await runChecks(browser, async () => {
   saved = await saveTask();
   check('a write that failed hands the approved setup to Save task, over the file\'s analyses; the rest stays', saved?.extras?.analyses?.tran?.stop === '50n'
     && saved.extras.variables?.VSUP === '1.0' && saved.extras.bindings?.[0]?.instance === 'V0' && saved.extras.expected_frequency_hz === 1.2e9, JSON.stringify(saved?.extras));
+  // Reject after a backend restart (review of 2026-09-29): its 404 went uncaught and the box could not be dismissed.
+  await evaluate(`(() => { const b = ${BOX}; b.focus(); })()`);
+  await send('Input.insertText', { text: 'And once more.' });
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  for (let i = 0; i < 40 && !(await evaluate(`!!document.querySelector('.setup-proposal')`)); i++) await sleep(150);
+  await evaluate(`[...document.querySelectorAll('.confirm button')].find(b => b.textContent.trim() === 'Reject').click()`); await sleep(800);
+  check('Reject answered 404 by a restarted backend says so in the chat, and the box closes all the same', (await chatText()).includes('Unknown proposal')
+    && calls.some(c => c.path === '/api/agent/reject') && !(await evaluate(`!!document.querySelector('.confirm')`)));
   check('no other writing request was made', refused.length === 0, refused.join(' | '));
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
 });

@@ -1,7 +1,7 @@
 import { useAsyncAction } from '../store';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, Json, OLDER_BACKEND } from '../api';
+import { api, Json, problemText } from '../api';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 
 /** The ngspice window (user request 2026-09-23): a SPICE deck pasted or loaded from a file on the backend machine, checked,
@@ -19,8 +19,9 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged }:
   { config: Json; circuit: Json; chooseTask: (taskKey: string) => Promise<void> | void; onTasksChanged: () => void }) {
   const ref = config.circuit;
   const followed: string | null = ref.source === 'registered_task' && /^ngspice:/.test(ref.task_id ?? '') ? ref.task_id.slice('ngspice:'.length) : null;
+  // A Virtuoso connection hides this button (Left.tsx): the window closes with it instead of staying blank and orphaned.
   const { popup, root, blocked, open: openWindow } = usePopupWindow('gator-ngspice',
-    { title: 'GATOR - ngspice netlist', features: 'popup,width=760,height=980', rootId: 'ngspice-root' });
+    { title: 'GATOR - ngspice netlist', features: 'popup,width=760,height=980', rootId: 'ngspice-root', closeOnUnmount: true });
   const [name, setName] = useState('');
   const [text, setText] = useState('');
   const [kinds, setKinds] = useState('');
@@ -31,7 +32,7 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged }:
   const [message, setMessage] = useState<Json>(null);             // { level: ok | error | hint, text }
   const [loadedFrom, setLoadedFrom] = useState<string | null>(null);  // the task whose deck the window holds
   const repo = useRef<string | null>(null);
-  const problem = (e: any) => ({ level: 'error', text: e.status === 404 || e.status === 405 ? OLDER_BACKEND : e.message });
+  const problem = (e: any) => ({ level: 'error', text: problemText(e) });
 
   const { busy, run } = useAsyncAction(e => setMessage(problem(e)), () => setMessage(null));
 

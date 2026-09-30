@@ -15,6 +15,9 @@ from gator_workbench.storage.dataset import map_to_dict
 from gator_workbench.trajectory import TrajectoryLoader
 from helpers import execute, make_config
 
+# Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
+pytestmark = pytest.mark.xdist_group('test_wb_graph_view')
+
 
 def trained(root, encoder, name, **output):
     network = dict(encoder_type=encoder, hidden_dim=16, heads=2, layers=2)

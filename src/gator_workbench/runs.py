@@ -10,9 +10,11 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import hashlib
+import json
 from pathlib import Path
 import subprocess
 import sys
+import threading
 from uuid import uuid4
 
 from . import CONFIG_SCHEMA_VERSION, OUTPUT_LAYOUT_VERSION, checkpoints as ckpt, modes
@@ -48,15 +50,37 @@ class RunRejected(ValueError):
 
 
 # ---------------------------------------------------------------------------- settings memory
+# One writer at a time: two saves at once (Agent settings and a run start) each read the file, and the later write
+# dropped the earlier one's keys (review of 2026-09-29). Reentrant, so prepare_run can hold it across its last_run merge.
+_SETTINGS_LOCK = threading.RLock()
+
+
+def read_settings() -> tuple[dict, str | None]:
+    """(settings, problem). The user edits this file by hand (agent_web_domains): a typo in it used to take /api/meta,
+    /api/runs and the Agent tab down with HTTP 500. It now reads as empty, and `problem` says why in plain words."""
+    path = local_settings_dir() / 'settings.json'
+    try:
+        settings = read_json(path, default={})
+    except json.JSONDecodeError as exc:
+        return {}, f'{path} is not valid JSON (line {exc.lineno}): fix or remove it; nothing is saved to it until then.'
+    except (OSError, ValueError) as exc:                # unreadable, or not UTF-8 text
+        return {}, f'{path} cannot be read ({type(exc).__name__}): fix or remove it; nothing is saved to it until then.'
+    if not isinstance(settings, dict):
+        return {}, f'{path} does not hold a JSON object: fix or remove it; nothing is saved to it until then.'
+    return settings, None
+
+
 def load_settings() -> dict:
-    return read_json(local_settings_dir() / 'settings.json', default={}) or {}
+    return read_settings()[0]
 
 
 def save_settings(**updates) -> dict:
-    settings = load_settings()
-    settings.update(updates)
-    write_json(local_settings_dir() / 'settings.json', settings)
-    return settings
+    with _SETTINGS_LOCK:
+        settings, problem = read_settings()
+        settings.update(updates)
+        if problem is None:          # never overwrite a file that could not be read: it holds the user's own edits
+            write_json(local_settings_dir() / 'settings.json', settings)
+        return settings
 
 
 def remembered_output_root() -> str:
@@ -226,6 +250,17 @@ def _check_consistency(config, task, monitor, acknowledge_unknown):
     return result
 
 
+def manifest_conditions(conditions) -> dict:
+    """What the manifest says about the conditions the run's designs are simulated at. Every manifest used to say
+    "nominal-only", runs that train at corners too (review of 2026-09-29); the plan is `run.conditions`."""
+    if conditions.policy == 'off':
+        return dict(conditions=['nominal'], note='The sizing environment is nominal-only')
+    when = 'every design' if conditions.policy == 'always' else 'designs that pass nominal'
+    return dict(conditions=['nominal', *conditions.corners],
+                note=f'Training at nominal and, for {when}, at the planned corners (policy {conditions.policy}); '
+                     'resets are simulated at nominal only')
+
+
 def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False, confirm_transfer=False,
                 monitor=None, acknowledge_unknown=False):
     """Returns (RunLayout, manifest). Raises RunRejected with the validation/compatibility report."""
@@ -326,7 +361,7 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
         mock_notice=('MOCK DATA: produced by a synthetic analytic backend. Not a circuit result; excluded from '
                      'real-experiment aggregates by default.') if task.mock else None,
         circuit=dict(task.circuit, task_key=task.task_key, source=config.circuit.source),
-        test_conditions=dict(conditions=['nominal'], note='The sizing environment is nominal-only'),
+        test_conditions=manifest_conditions(config.run.conditions),
         definitions=dict(location='effective_config.json', variables=list(compiled.variables),
                          targets=list(compiled.targets), preference=compiled.preference,
                          reward=dict(version='constraint_violation_v2', settings=config.run.reward.model_dump(),
@@ -360,8 +395,9 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
     write_json(layout.status, dict(state='created', run_id=run_id, mode=config.run.mode, mock=task.mock,
                                    paths=layout.subpaths(), heartbeat_utc=now))
     _register_in_experiment(experiment_dir, manifest, compiled, task, created)
-    save_settings(output_root=config.output.output_root, concurrency=config.run.concurrency,
-                  last_run={**load_settings().get('last_run', {}), config.project.name: str(layout.run_dir)})
+    with _SETTINGS_LOCK:             # the last_run merge reads and writes under the lock every other save takes
+        save_settings(output_root=config.output.output_root, concurrency=config.run.concurrency,
+                      last_run={**load_settings().get('last_run', {}), config.project.name: str(layout.run_dir)})
     return layout, manifest
 
 
@@ -610,6 +646,16 @@ def run_timing(manifest, status) -> dict:
                 segments=[{fact: s.get(fact) for fact in SEGMENT_FACTS} for s in segments])
 
 
+class _RunRow(dict):
+    """A row of list_runs - plain JSON as ever - that also keeps the manifest it was built from, as an attribute that is
+    never serialized: checkpoints.saved_models is handed these rows and used to read every manifest a second time."""
+    __slots__ = ('manifest',)
+
+    def __init__(self, manifest, **fields):
+        super().__init__(**fields)
+        self.manifest = manifest
+
+
 def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True):
     root = roots.resolve(output_root or remembered_output_root())
     runs = []
@@ -617,19 +663,19 @@ def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True):
         if mock and not include_mock:
             continue
         for run_dir in find_runs(data_root):
-            info = read_run(run_dir)
+            info = read_run(run_dir, status=False)          # run_status reads status.json itself, with the lock check
             manifest, summary, status = info['manifest'], info['summary'], run_status(run_dir)
             budget = status.get('budget') or {}     # current while a worker is on the run; the summary is written when it rests
-            runs.append(dict(run_dir=str(run_dir), run_id=manifest.get('run_id'), task_id=manifest.get('task_id'),
-                             task_definition_hash=manifest.get('task_definition_hash'), mode=manifest.get('mode'),
-                             mock=manifest.get('mock'), seed=(manifest.get('seeds') or {}).get('target_seed'),
-                             created_utc=manifest.get('created_utc'), state=status.get('state'),
-                             experiment=f"{manifest.get('experiment_name')}__{manifest.get('experiment_id')}",
-                             evaluations=budget.get('charged', (summary.get('totals') or {}).get('candidate_evaluations_charged')),
-                             first_feasible_eval_count=summary.get('first_feasible_eval_count'),
-                             resumability=(summary.get('output') or {}).get('resumability'),
-                             # The run window (frontend RunList.tsx): what a run was, how it ended and how long it took.
-                             task_name=manifest.get('task_name'), stop_reason=status.get('stop_reason'), error=status.get('error'),
-                             max_evaluations=(manifest.get('budgets') or {}).get('max_evaluations'),
-                             **run_timing(manifest, status)))
+            runs.append(_RunRow(manifest, run_dir=str(run_dir), run_id=manifest.get('run_id'), task_id=manifest.get('task_id'),
+                                task_definition_hash=manifest.get('task_definition_hash'), mode=manifest.get('mode'),
+                                mock=manifest.get('mock'), seed=(manifest.get('seeds') or {}).get('target_seed'),
+                                created_utc=manifest.get('created_utc'), state=status.get('state'),
+                                experiment=f"{manifest.get('experiment_name')}__{manifest.get('experiment_id')}",
+                                evaluations=budget.get('charged', (summary.get('totals') or {}).get('candidate_evaluations_charged')),
+                                first_feasible_eval_count=summary.get('first_feasible_eval_count'),
+                                resumability=(summary.get('output') or {}).get('resumability'),
+                                # The run window (frontend RunList.tsx): what a run was, how it ended and how long it took.
+                                task_name=manifest.get('task_name'), stop_reason=status.get('stop_reason'), error=status.get('error'),
+                                max_evaluations=(manifest.get('budgets') or {}).get('max_evaluations'),
+                                **run_timing(manifest, status)))
     return sorted(runs, key=lambda r: r['created_utc'] or '', reverse=True)

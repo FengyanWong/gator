@@ -326,9 +326,10 @@ try {
   await fulfil(reviewCall.requestId, 200, { proposal_id: 'fixture-6', proposal_hash: 'fixture', origin: 'fixture', kind: 'settings_review', reasoning: 'Three settings stand out for this budget.',
     warnings: [], unresolved: [], diff: [], patch: [], suggestions_together: { ok: true, problem: null },
     suggestions: [suggestion('run.advanced.batch_size', 12, 8), suggestion('run.network.hidden_dim', 56, 32, { alone: 'Applied alone it raises a blocking issue (heads_divisibility); apply it together with the related rows.' }),
-      suggestion('run.advanced.gamma', 1.5, 0.99, { applicable: false, problem: 'run.advanced.gamma: Input should be less than or equal to 1' })],
+      suggestion('run.advanced.gamma', 1.5, 0.99, { applicable: false, problem: 'run.advanced.gamma: Input should be less than or equal to 1', url: 'javascript:alert(document.domain)' })],
     refused_suggestions: ['output.output_root: not a setting an agent may suggest'],
-    encoder_ideas: [{ name: 'GPS graph transformer', source: 'Rampasek et al., NeurIPS 2022', url: 'https://arxiv.org/abs/2205.12454', why: 'Global attention next to message passing.', what_it_takes: 'A new encoder class in the optimizer package.' }] });
+    encoder_ideas: [{ name: 'GPS graph transformer', source: 'Rampasek et al., NeurIPS 2022', url: 'https://arxiv.org/abs/2205.12454', why: 'Global attention next to message passing.', what_it_takes: 'A new encoder class in the optimizer package.' },
+      { name: 'FIXTURE unsafe idea', source: 'a page the agent read', url: 'JAVASCRIPT:alert(1)', why: 'A link that is not a web address.', what_it_takes: 'Nothing.' }] });
   await sleep(500);
   const table = () => evaluate(`(() => { const box = [...document.querySelectorAll('.msg.reply .suggestions')].at(-1); const rows = [...box.querySelectorAll('tbody tr')];
     return { rows: rows.map(r => ({ cells: [...r.children].map(td => td.innerText.replace(/\\s+/g, ' ').trim()), canApply: !!r.querySelector('button') && !r.querySelector('button').disabled, applied: r.classList.contains('applied') })),
@@ -338,6 +339,11 @@ try {
     && /^\d+$/.test(review.rows[0].cells[1]) && review.rows[0].cells[1] !== '12' && review.rows[0].cells[2] === '12' && review.rows[0].cells[3].includes('Source: Lighthouse RL') && review.rows[0].cells[3].includes('batch size of 32') && review.link === 'https://arxiv.org/abs/2607.14008', JSON.stringify(review.rows[0].cells));
   check('an illegal value cannot be applied and says why; a row that needs its partner says so', !review.rows[2].canApply && review.rows[2].cells[3].includes('less than or equal to 1') && review.rows[1].canApply && review.rows[1].cells[3].includes('together with the related rows'));
   check('what an agent may not suggest is named, and a new encoder is an idea with the reason it cannot be added from here', review.left && review.ideas.includes('GPS graph transformer') && review.ideas.includes('The agent cannot add an encoder') && review.all === 'Apply all (2)');
+  // Review of 2026-09-29 (A5): React 18 does not block `javascript:` links, and an agent reading web pages could be steered into one.
+  const links = await evaluate(`(() => { const box = [...document.querySelectorAll('.msg.reply .suggestions')].at(-1);
+    return { hrefs: [...box.querySelectorAll('a')].map(a => a.getAttribute('href')), idea: box.querySelector('.ideas')?.innerText.includes('FIXTURE unsafe idea') }; })()`);
+  check('a source link that is not a web address (javascript:, any case) becomes no link; the row and the idea stay', links.hrefs.length === 3 && links.hrefs.every(h => /^https?:\/\//i.test(h))
+    && links.idea && review.rows[2].cells[3].includes('Source: Lighthouse RL'), JSON.stringify(links));
   await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 2400, deviceScaleFactor: 1, mobile: false });      // tall enough to show the whole reply
   await sleep(300); await evaluate(`[...document.querySelectorAll('.msg.reply .suggestions')].at(-1).scrollIntoView({ block: 'start' })`); await sleep(200);
   await shot('6d-settings-review.png', '.chat');

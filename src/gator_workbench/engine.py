@@ -162,6 +162,10 @@ class RunEngine:
         self.forced = False
         self.error = None
         self._status_written = 0.0
+        # Raw-output retention, read once per engine: the work folder does not move during a run, and waveforms/index.json
+        # has no writer but this engine (_apply_retention) while it holds the run lock. A MOCK evaluation re-resolved the
+        # folder three times and re-read the index every time.
+        self._work_resolved = self._waveform_index = None
 
     # ================================================================== lifecycle
     def run(self):
@@ -1068,15 +1072,19 @@ class RunEngine:
     # ------------------------------------------------------------------ raw-output retention
     def _inside_work(self, path):
         try:
-            resolved, work = Path(path).resolve(), self.layout.work.resolve()
-            return work in resolved.parents and not Path(path).is_symlink()
+            resolved = Path(path).resolve()
+            if self._work_resolved is None:
+                self._work_resolved = self.layout.work.resolve()
+            return self._work_resolved in resolved.parents and not Path(path).is_symlink()
         except OSError:
             return False
 
     def _apply_retention(self, plan, role):
         """Acts only AFTER the result is durable, and only on registered paths inside work/."""
         index_path = self.layout.waveforms / 'index.json'
-        index = read_json(index_path, default=dict(entries={}))
+        if self._waveform_index is None:
+            self._waveform_index = read_json(index_path, default=dict(entries={}))
+        index = self._waveform_index                      # every change below is written at once, as before
         changed = False
         for item in plan:
             source, record = item['source'], item['record']

@@ -46,6 +46,10 @@ const setIn = (config: Json, path: string, value: Json): Json => { const [head, 
 // A suggested value may empty a setting that is one with it (the two checkpoint intervals: every N evaluations OR every
 // S seconds). The backend names those in `clears` and tried the suggestion that way.
 const applyRow = (config: Json, s: Json): Json => (s.clears ?? []).reduce((c: Json, path: string) => setIn(c, path, null), setIn(config, s.path, s.value));
+// A source link the agent wrote becomes a link only when it is a web address. React 18 does not block `javascript:` in a
+// production build, and an agent that reads web pages ("check publications online") could be steered into writing one:
+// it would run with the page's full access to this API. Anything else shows no link (the source's name stays).
+const webLink = (url: unknown): string | null => typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null;
 
 // Suggestions of a settings review. Nothing is applied by the agent or the backend: "Apply" is the user's own edit of that
 // setting, the same as typing the value into its panel, and the page's static validation follows it as usual.
@@ -57,7 +61,7 @@ function Suggestions({ extra, config, setConfig }: { extra: Json; config: Json; 
       {rows.map((s, i) => { const live = getIn(config, s.path), applied = live === s.value, now = live ?? s.now;      // a setting the page never touched shows the backend's default
         return <tr key={i} className={applied ? 'applied' : ''}>
         <td><span className="hint">{s.panel}</span><br /><b>{s.path.split('.').pop()}</b></td><td>{short(now)}</td><td><b>{short(s.value)}</b></td>
-        <td>{s.reason} <span className="hint">Source: {s.source || 'none given'}</span>{s.url && <> <a href={s.url} target="_blank" rel="noreferrer">open</a></>}
+        <td>{s.reason} <span className="hint">Source: {s.source || 'none given'}</span>{webLink(s.url) && <> <a href={webLink(s.url)!} target="_blank" rel="noreferrer">open</a></>}
           {s.quote && <div className="quote">"{s.quote}"</div>}{s.problem && !applied && <div className="error">{s.problem}</div>}{s.alone && !applied && <div className="warn">{s.alone}</div>}
           {s.clears?.length > 0 && !applied && <div className="hint">Applying it also empties {s.clears.map((path: string) => path.split('.').pop()).join(', ')}: only one of the two can be set.</div>}</td>
         <td>{applied ? <span className="ok">applied</span> : <button disabled={!s.applicable} onClick={() => setConfig(applyRow(config, s))}>Apply</button>}</td></tr>; })}</tbody></table>}
@@ -66,7 +70,7 @@ function Suggestions({ extra, config, setConfig }: { extra: Json; config: Json; 
       <span className="hint">Each row was tried on a copy of your configuration by the workbench. Applying is your own edit of that setting; nothing else changes.</span></div>}
     {extra.refused_suggestions?.length > 0 && <p className="hint">Left out - not something an agent may suggest: {extra.refused_suggestions.join('; ')}</p>}
     {extra.encoder_ideas?.length > 0 && <div className="ideas"><b>Encoders that do not exist here yet</b>
-      <ul>{extra.encoder_ideas.map((e: Json, i: number) => <li key={i}><b>{e.name}</b> <span className="hint">{e.source}</span>{e.url && <> <a href={e.url} target="_blank" rel="noreferrer">open</a></>}<br />{e.why} <span className="hint">What it takes: {e.what_it_takes}</span></li>)}</ul>
+      <ul>{extra.encoder_ideas.map((e: Json, i: number) => <li key={i}><b>{e.name}</b> <span className="hint">{e.source}</span>{webLink(e.url) && <> <a href={webLink(e.url)!} target="_blank" rel="noreferrer">open</a></>}<br />{e.why} <span className="hint">What it takes: {e.what_it_takes}</span></li>)}</ul>
       <p className="hint">The agent cannot add an encoder. It is a change of the optimizer's code, and that changes the fingerprint every saved model and the recorded audits are checked against - a decision for you, carried out in a development session.</p></div>}
   </div>;
 }
@@ -236,7 +240,11 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
   const cancel = () => busy && api.cancelAgent(busy).then(r => {
     if (!r.cancelled) say('system', 'Nothing to cancel: the backend has no running agent process for this request (it may have just finished).');
   }).catch(fail);
+  // `approving`: the approval and its write are on their way - a second press used to get 409 "Proposal is applied" while
+  // the first write carried on. Reject waits too.
+  const [approving, setApproving] = useState(false);
   const approveAndApply = async () => {
+    setApproving(true);
     try {
       await api.approve({ proposal_id: proposal.proposal_id, proposal_hash: proposal.proposal_hash, config });
       const applied = await api.apply({ proposal_id: proposal.proposal_id, config });
@@ -247,8 +255,11 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
       // Not written (Virtuoso out of reach): the approved setup waits for the next Save task, which writes the copy.
       else if (applied.virtuoso && proposal.setup) window.dispatchEvent(new CustomEvent(COPY_SETUP_PENDING,
         { detail: Object.fromEntries(Object.entries(proposal.setup).filter(([, value]) => value != null)) }));
-    } catch (e) { fail(e); setProposal(null); }
+    } catch (e) { fail(e); setProposal(null); } finally { setApproving(false); }
   };
+  // A backend restarted since the proposal came knows it no more (404): said in the chat, and the box closes all the same.
+  const reject = () => { const id = proposal.proposal_id;
+    api.reject(id).catch(e => fail(e)).finally(() => setProposal((p: Json) => (p?.proposal_id === id ? null : p))); };
   // Model / effort lists of the selected provider (served by the backend; absent until it is restarted with them).
   const catalog: Json = settings?.catalog?.[settings?.provider];
   const listed: Json = catalog?.models.find((m: Json) => m.id === settings?.model);
@@ -365,8 +376,9 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
             </tbody></table>
             <p className="hint">Approving fills the editors and writes this, with the outputs and specs of the rows, into the working copy - the cell
               you read as your copy - then reads it back. {Object.keys(proposal.setup.analyses ?? {}).length ? '' : 'The analyses the copy has stay as they are.'}</p></div>}
-          <button disabled={!proposal.diff.length} onClick={approveAndApply}>{proposal.kind === 'virtuoso_setup' ? 'Approve, apply and write the copy' : 'Approve and apply to the configuration'}</button>
-          <button onClick={() => api.reject(proposal.proposal_id).then(() => setProposal(null))}>Reject</button>
+          <button disabled={!proposal.diff.length || approving} onClick={approveAndApply}>{approving ? 'Applying...'
+            : proposal.kind === 'virtuoso_setup' ? 'Approve, apply and write the copy' : 'Approve and apply to the configuration'}</button>
+          <button disabled={approving} onClick={reject}>Reject</button>
           <span className="hint"> The approval is bound to this exact proposal, configuration and circuit; any later change invalidates it.</span></div>}
         {/* Enter sends, Shift+Enter breaks the line. An Enter that confirms an IME candidate (isComposing / 229) must not send. */}
         <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={3}

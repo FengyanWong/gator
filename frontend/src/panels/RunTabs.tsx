@@ -7,16 +7,21 @@ const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learn
 
 const runName = (runDir: string) => runDir.split(/[\\/]/).filter(Boolean).pop() ?? 'run';    // the run folder's own name, unique per run
 
+// The spread needs two scored designs and the bonus a learner update: before that the line said "last 0 scored designs): ;".
+// No check at all (a backend that sent none) shows nothing.
 function SteeringCheck({ value }: { value: Json }) {
-  return <div className="steering-check"><p>Reward spread (p90 − p10, last {value?.scored_designs ?? 0} scored designs): <b>{num(value?.reward_spread)}</b>;
-    exploration bonus (latest update): <b>{num(value?.exploration_bonus)}</b>.</p>
-    {value?.verdict && <p className="warn">{value.verdict}</p>}</div>;
+  if (!value) return null;
+  if (value.reward_spread == null) return <div className="steering-check"><p className="hint">Reward spread: not enough scored designs yet.</p></div>;
+  return <div className="steering-check"><p>Reward spread (p90 − p10, last {value.scored_designs} scored designs): <b>{num(value.reward_spread)}</b>;
+    exploration bonus (latest update): <b>{value.exploration_bonus == null ? 'no update yet' : num(value.exploration_bonus)}</b>.</p>
+    {value.verdict && <p className="warn">{value.verdict}</p>}</div>;
 }
 
 /** The run the bottom tabs show. Its run commands live in the header only (Save now, Pause, Abort, Force abort): the
  *  four copies this tab had went on 2026-09-29 (user: fewer duplicate buttons). Continue stays - it sets a new budget and
- *  also continues a stopped run, which the header cannot. */
-export function StatusTab({ status, onContinue }: { status: Json; onContinue: () => void }) {
+ *  also continues a stopped run, which the header cannot. `continueBlocked`: why Continue waits (the header is busy with
+ *  another run), or null. */
+export function StatusTab({ status, onContinue, continueBlocked }: { status: Json; onContinue: () => void; continueBlocked: string | null }) {
   if (!status) return <p className="hint">No run selected.</p>;
   const b = status.budget, best = status.best_design, first = status.first_feasible, conn = status.connection;
   const firstNominal = b?.first_nominal_feasible;
@@ -25,6 +30,7 @@ export function StatusTab({ status, onContinue }: { status: Json; onContinue: ()
     : 'not observed';
   const executedReward = status.summary?.reward;
   const hasV2 = Object.prototype.hasOwnProperty.call(b ?? {}, 'first_nominal_feasible');
+  const continuable = !status.worker_alive && ['paused', 'stopped', 'interrupted'].includes(status.state);
   return (<div className="status-grid">
     <SteeringCheck value={status.steering} />
     {status.manifest?.mock && <p className="mock">{status.manifest.mock_notice}</p>}
@@ -55,17 +61,19 @@ export function StatusTab({ status, onContinue }: { status: Json; onContinue: ()
       {status.error && <tr><td>Error</td><td className="error">{status.error}</td></tr>}
     </tbody></table>
     <div className="row">
-      <button disabled={status.worker_alive || !['paused', 'stopped', 'interrupted'].includes(status.state)} onClick={onContinue}
-        title="Continue: A paused, stopped or interrupted run goes on in the same run folder, from its saved state, with its own saved configuration."><Icon name="play" label="Continue" /></button>
+      <button disabled={!continuable || !!continueBlocked} onClick={onContinue}
+        title={continuable && continueBlocked ? `Continue: ${continueBlocked}`
+          : 'Continue: A paused, stopped or interrupted run goes on in the same run folder, from its saved state, with its own saved configuration.'}><Icon name="play" label="Continue" /></button>
       <button onClick={() => saveJson(`${runName(status.run_dir)}__status.json`, { exported_utc: new Date().toISOString(), ...status })}
         title="Export status (JSON): Everything this tab shows, as it is right now, in one JSON file: state, budget, best design, connection, the run's manifest and summary."><Icon name="export" label="Export status (JSON)" /></button>
     </div>
   </div>);
 }
 
-export function DataTab({ runDir }: { runDir: string | null }) {
+/** `status`: the shown run's status as the page already polls it (App.tsx) - for the steering line only. This tab used to
+ *  poll the same file again every 2 s, finished runs too. */
+export function DataTab({ runDir, status }: { runDir: string | null; status: Json }) {
   const [table, setTable] = useState('evaluations');
-  const { value: status } = usePolling<Json>(() => api.status(runDir!), 2000, !!runDir, [runDir]);
   const { value: data, error, refresh } = useRequest<Json>(() => api.table(runDir!, table), [runDir, table], { enabled: !!runDir });
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);

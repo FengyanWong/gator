@@ -140,7 +140,7 @@ def test_data_dictionary_documents_types_units_enums_and_null(tmp_path):
 # ------------------------------------------------------------------------------- budget ledger
 def test_reserve_charge_release_semantics():
     ledger = BudgetLedger(3)
-    a, b, c = ledger.reserve(), ledger.reserve(), ledger.reserve()
+    a, b, _ = ledger.reserve(), ledger.reserve(), ledger.reserve()
     assert ledger.reserve() is None and ledger.remaining() == 0          # all workers share one budget
     assert ledger.charged == 0                                            # a reservation is not a charge
     assert ledger.start(a) == 1 and ledger.charged == 1                   # charged when execution begins

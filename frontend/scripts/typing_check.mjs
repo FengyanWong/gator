@@ -10,7 +10,9 @@
 //   - Research experiments: "a, b" typed key by key becomes ['a', 'b'] (the old box swallowed the comma);
 //   - Circuit class / PDK id: emptied, then typed, they take the new text (the old box put "unspecified" back at once);
 //   - in Mode scratch the page no longer writes the project's default model into run.model_source on page load; it does
-//     once Mode is switched to one that loads a model (fine_tune).
+//     once Mode is switched to one that loads a model (fine_tune), and one Undo takes both back;
+//   - "Stop after N consecutive failed evaluations" (Advanced) shows the engine's limit of 5 and takes a typed one;
+//   - "Import JSON..." of one table's rows writes that table alone: an edit made while its box was open stays.
 // A throwaway headless Edge over the DevTools protocol (lib/harness.mjs). HERMETIC: validation, the default model and the
 // model list are answered here with canned data labelled FIXTURE; other reads pass; every other writing request is
 // refused. The browser profile is new and temporary: the user's saved configuration is not touched. So it is safe on the
@@ -18,6 +20,7 @@
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/typing_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
+import { writeFileSync } from 'node:fs';
 import { validConfiguration, check, launchEdge, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
@@ -189,6 +192,42 @@ await runChecks(browser, async () => {
   let model = null;
   for (let i = 0; i < 40 && model?.run_dir !== DEFAULT_RUN; i++) { model = (await saved()).run.model_source ?? null; if (model?.run_dir !== DEFAULT_RUN) await sleep(150); }
   check('once Mode is fine_tune the project\'s default model is taken (its latest save point)', model?.run_dir === DEFAULT_RUN && model?.checkpoint_id === 'latest' && defaultAsks.length >= 1, JSON.stringify(model));
+  // The page filled the model by itself: no Undo step of its own (review of 2026-09-29) - one Undo takes back the choice and what it brought.
+  await evaluate(`${TOOL('Undo')}.click()`);
+  config = await saved();
+  check('one Undo takes back Mode fine_tune together with the default model it brought', config.run.mode === 'scratch' && (config.run.model_source?.run_dir ?? null) === null,
+    JSON.stringify({ mode: config.run.mode, model: config.run.model_source ?? null }));
+
+  // ---- (e) "Import JSON..." of one table's rows writes that table alone (review of 2026-09-29) ------------------------------------
+  // Apply used to put back the whole configuration of the moment of the import: an edit made while the box was open was undone.
+  await openTab('Parameters');
+  const importedRows = (await saved()).parameters.map(r => ({ ...r, notes: 'FIXTURE imported' }));
+  const rowsFile = path.join(browser.tempDir('import'), 'parameters.json');
+  writeFileSync(rowsFile, JSON.stringify(importedRows));                            // a list of rows: no schema_version, so rows only
+  const { root } = await send('DOM.getDocument', { depth: 1 });
+  const { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: '.editors input[type=file]' });
+  await send('DOM.setFileInputFiles', { nodeId, files: [rowsFile] });
+  const APPLY = `[...document.querySelectorAll('.editors .confirm button')].find(b => b.textContent.trim() === 'Apply')`;
+  check('(set-up) rows for the Parameters tab wait in the confirmation box', await until(`!!(${APPLY})`, 60));
+  await page.setValue(LABELLED('.left', 'Name'), 'fixture-edited-meanwhile', { event: 'input' });
+  await sleep(300);
+  await evaluate(`${APPLY}.click()`);
+  config = await saved();
+  check('Apply writes the imported Parameters rows and keeps an edit made while the box was open', config.project.name === 'fixture-edited-meanwhile'
+    && config.parameters.length === importedRows.length && config.parameters.every(r => r.notes === 'FIXTURE imported'),
+    JSON.stringify({ name: config.project.name, notes: config.parameters.map(r => r.notes) }));
+
+  // ---- (f) the stop rule's own field (decision of 2026-09-29): it had none, so its limit of 5 could not be seen or changed ------------
+  const STOP_AFTER = LABELLED('.right', 'Stop after N consecutive failed evaluations');
+  await focusAll(STOP_AFTER);
+  check('Run configuration > Advanced has "Stop after N consecutive failed evaluations", showing the default 5', (await valueOf(STOP_AFTER)) === '5', String(await valueOf(STOP_AFTER)));
+  const stopTitle = await evaluate(`${STOP_AFTER}.closest('label').title`);
+  check('its tooltip says the run stops safely and ends as failed (Continue cannot pick it up), and why reward v2.1 may need more (1-1000)',
+    /stops safely/.test(stopTitle) && /"failed"/.test(stopTitle) && /Continue cannot/.test(stopTitle) && /v2\.1/.test(stopTitle) && /1-1000/.test(stopTitle), stopTitle);
+  await typeKeys('12');
+  config = await saved();
+  check('"12" typed key by key is stored as run.max_consecutive_failures = 12', config.run.max_consecutive_failures === 12, String(config.run.max_consecutive_failures));
+  await blur(STOP_AFTER);
 
   // Two configurations in flight: a late success must not clear the newer configuration's blocker.
   await sleep(700);

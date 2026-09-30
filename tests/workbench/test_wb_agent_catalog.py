@@ -1,7 +1,6 @@
 """The model / effort lists the Agent tab offers, and what each provider does with a choice.
 Fake CLI fixtures only: no real Claude/Codex session is started and no model is called."""
 import json
-from pathlib import Path
 
 from fastapi.testclient import TestClient
 import pytest

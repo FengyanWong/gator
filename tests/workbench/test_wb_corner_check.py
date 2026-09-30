@@ -22,6 +22,9 @@ from gator_workbench.engine import RunLock
 from gator_workbench.storage.atomic import read_json, write_json
 from helpers import execute, make_config
 
+# Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
+pytestmark = pytest.mark.xdist_group('test_wb_corner_check')
+
 CORNERS = ('nominal', 'ss_hot_low', 'ff_cold_high', 'fs_nominal', 'sf_nominal')
 
 

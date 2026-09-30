@@ -8,8 +8,10 @@ header { grid-area: head; display: flex; flex-wrap: wrap; gap: 8px; align-items:
 button.issues-button { color: var(--bad); border-color: var(--bad); font-weight: 600; } button.issues-button.active { background: #fdecea; border-color: var(--bad); }
 .issue-list { order: 1; flex: 0 0 100%; min-width: 0; border-top: 1px solid var(--line); padding-top: 6px; } .issue-list-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
 .issue-list-body { max-height: 30vh; overflow: auto; } .issue-list code { font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
+/* settings.json unreadable (backend runs.load_settings): a full-width line of the header too, in the notice colours below. */
+.settings-problem { order: 1; flex: 0 0 100%; margin: 0; }
 .banner { grid-area: msg; padding: 6px 10px; border: 1px solid var(--line); background: #eef3fb; cursor: pointer; }
-.banner.error { background: #fdecea; border-color: var(--bad); } .banner.mock, .mock { background: #fff6dc; border: 1px solid #d9a400; padding: 4px 8px; font-weight: 600; }
+.banner.error { background: #fdecea; border-color: var(--bad); } .banner.mock, .mock, .settings-problem { background: #fff6dc; border: 1px solid #d9a400; padding: 4px 8px; font-weight: 600; }
 .left { grid-area: left; overflow: auto; } main { grid-area: main; min-width: 0; overflow: hidden; display: flex; } .right { grid-area: right; overflow: auto; }
 footer { grid-area: foot; background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
 .bottom-body { flex: 1; overflow: auto; padding: 8px; min-height: 0; }

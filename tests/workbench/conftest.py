@@ -1,4 +1,6 @@
+import atexit
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -10,7 +12,18 @@ import pytest
 # lazily, after the session has started, and module-scoped fixtures are set up BEFORE any
 # function-scoped override - so they would write into the user's real configs/local/workbench.
 # The variable is inherited by child processes (run workers, connection probes).
-_settings_base = os.environ.setdefault('GATOR_WORKBENCH_SETTINGS_DIR', tempfile.mkdtemp(prefix='gator-wb-test-settings-'))
+_settings_base = os.environ.get('GATOR_WORKBENCH_SETTINGS_DIR')
+if not _settings_base:
+    # A folder of this process's own, removed when the process ends: one was left in /tmp by every run and every xdist
+    # worker (review round 5, E5: 810 of them). A folder passed in by the caller, or inherited from the xdist controller
+    # (which made it and removes it), is not this process's to remove.
+    _settings_base = tempfile.mkdtemp(prefix='gator-wb-test-settings-')
+    os.environ['GATOR_WORKBENCH_SETTINGS_DIR'] = _settings_base
+
+    def _remove_own_settings(path=_settings_base, pid=os.getpid()):
+        if os.getpid() == pid:                                  # never from a forked child that inherited the hook
+            shutil.rmtree(path, ignore_errors=True)
+    atexit.register(_remove_own_settings)
 # Under pytest-xdist every worker INHERITS that one folder from the controller process, and a module-scoped
 # fixture (which runs before the per-test redirect below) then has several workers writing settings.json at once:
 # 'Published file is not visible/complete'. Each worker gets a folder of its own inside it (review of 2026-09-23).

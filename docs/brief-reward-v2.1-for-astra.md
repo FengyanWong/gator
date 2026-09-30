@@ -1,5 +1,10 @@
 # Brief for Astra: reward improvements after the 2026-09-29 review (reward v2.1)
 
+> **Status (2026-09-30): DONE through step 6** (records 7.106-7.108, 7.111, 7.112; commits `8cf53ae` package, `8db46b8`
+> workbench, `7d365c3` + `7359287` audit fixes). D7 was replaced by
+> [plan-ota7-current-reference-variant.md](plan-ota7-current-reference-variant.md); step 7, the matched comparison, is a
+> separate decision and has not started.
+
 Written 2026-09-29 for Astra (Codex, `gpt-6-astra`) by the Claude Code session "Analog design bench review and reward
 improvements", on the user's request "write an overall plan for the reward improvements based on the information for
 astra to fix". It turns two reviews of that day into work: the reward review (section 1; every number comes from

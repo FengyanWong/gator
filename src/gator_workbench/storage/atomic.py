@@ -39,14 +39,20 @@ def fsync_directory(path) -> None:
         os.close(fd)
 
 
-def _await_visible(path: Path, size: int | None, attempts=8, delay=0.025) -> None:
+def _await_visible(path: Path, size: int | None, attempts=8, delay=0.025, identity=None) -> None:
+    """`identity` = (st_dev, st_ino) of the file this writer renamed into place. When another writer's rename landed
+    after ours, the path holds a DIFFERENT file of another size: that is no failure of ours - every writer publishes a
+    whole, fsynced file by rename, so the newer one is complete too - and it used to be reported as one (two saves of
+    settings.json at once, review of 2026-09-29). A missing file (the 9p stat right after a rename) is still retried."""
     last = None
     for attempt in range(attempts):
         try:
-            actual = path.stat().st_size
-            if size is None or actual == size:
+            info = path.stat()
+            if size is None or info.st_size == size:
                 return
-            last = f'size {actual} != expected {size}'
+            if identity is not None and (info.st_dev, info.st_ino) != identity:
+                return
+            last = f'size {info.st_size} != expected {size}'
         except FileNotFoundError as exc:
             last = str(exc)
         time.sleep(delay * (attempt + 1))
@@ -64,11 +70,12 @@ def publish(temporary: Path, destination: Path) -> int:
     try:
         with temporary.open('rb') as stream:
             os.fsync(stream.fileno())
-        size = temporary.stat().st_size
+        info = temporary.stat()             # a rename keeps the inode: this is the identity the published file has
+        size = info.st_size
         temporary.replace(destination)
         renamed = True
         fsync_directory(destination.parent)
-        _await_visible(destination, size)
+        _await_visible(destination, size, identity=(info.st_dev, info.st_ino))
         return size
     except PersistenceError:
         raise

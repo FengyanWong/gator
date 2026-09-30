@@ -264,7 +264,6 @@ def test_modify_fields_cannot_touch_unselected_rows_or_fields(tmp_path, cli):
 # ------------------------------------------------------------------------------- providers
 def test_switching_among_providers_keeps_one_contract(tmp_path, cli):
     cli('success')
-    req = request(tmp_path)
     outputs = {}
     for name in ('claude_code', 'codex'):
         provider = agents.make_provider(AgentSettings(provider=name))

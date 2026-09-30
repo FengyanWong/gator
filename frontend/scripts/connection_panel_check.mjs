@@ -12,7 +12,8 @@
 //   * (user request 2026-09-24, status record 7.80) ONE interactive test of the connection in use when the page opens -
 //     the same as a press - and (user request 2026-09-20) nothing else on its own: NO check when the window opens or a
 //     connection is chosen, NO timer (the old panel polled every 15 s, so each quiet period here lasts 17 s), one check
-//     per button press, a result that stays until the next.
+//     per button press, a result that stays until the next;
+//   * (2026-09-29) a test answer that arrives after another connection was chosen is dropped, not shown under it.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/connection_panel_check.mjs)" [screenshot-dir]
 // With GATOR_CONNECTION_LIVE=1 a last section lets the requests THROUGH to the backend: only ever against a scratch
@@ -67,11 +68,15 @@ await runChecks(browser, async () => {
   const page = await browser.open();
   const { send, evaluate, fulfil, consoleErrors } = page;
   const seen = []; let statusAnswer = fixtures.never; let live = false;
+  let holdNextCheck = false, heldCheck = null;                                    // one test answer kept back, to arrive late
   const answer = ({ requestId, request }) => {                                    // every connection request: log it, answer it here
     const url = new URL(request.url), name = url.pathname.replace('/api/connection/', '');
     const body = request.postData ? JSON.parse(request.postData) : null;
     seen.push({ method: request.method, name, body, at: Date.now() });
     if (live) return send('Fetch.continueRequest', { requestId });                // the last section only: a scratch backend answers
+    if (request.method === 'POST' && name === 'check' && holdNextCheck) {
+      holdNextCheck = false; heldCheck = () => fulfil(requestId, 200, fixtures.tested(body.profile_id, body.scope)); return Promise.resolve();
+    }
     if (request.method === 'GET' && name === 'profiles') return fulfil(requestId, 200, fixtures.profiles());
     if (request.method === 'GET' && name === 'status') return fulfil(requestId, 200, statusAnswer(url.searchParams.get('profile_id')));
     if (request.method === 'GET' && name === 'setup') return fulfil(requestId, 200, fixtures.setup);
@@ -218,6 +223,16 @@ await runChecks(browser, async () => {
   await select('far');
   shown = await text();
   check('ngspice over SSH: says that it needs key-based login', shown.includes('Test ngspice over SSH') && shown.includes('key-based login') && !(await buttons()).includes('Connect SSH'));
+
+  // ---- a test answer that arrives after another connection was chosen (review of 2026-09-29) ---------------------------------------
+  holdNextCheck = true;
+  await press('Test connection'); await sleep(300);                             // the test of `far` is on its way ...
+  await select('sim');                                                          // ... and another connection is chosen meanwhile
+  const beforeLate = { badge: await badge(), hint: await hint() };
+  await heldCheck(); heldCheck = null; await sleep(600);                        // now the answer for `far` arrives
+  shown = await text();
+  check('a test answer for a connection that is no longer chosen is dropped: the window keeps the chosen one\'s state',
+    !shown.includes('FIXTURE: far connected') && (await badge()) === beforeLate.badge && (await hint()) === beforeLate.hint, `${JSON.stringify(beforeLate)} -> ${await badge()} | ${await hint()}`);
 
   // ---- add a connection: names only ------------------------------------------------------------------------------------
   mark = seen.length;

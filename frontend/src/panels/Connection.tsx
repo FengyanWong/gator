@@ -27,7 +27,7 @@ const testedAt = (iso: string) => {
  *  its explicit button alone; nothing is ever stopped or restarted; nothing is checked on a timer, when the window opens
  *  or when a connection is chosen (that reads the backend's LAST result once). ONE exception since 2026-09-24 (user
  *  request, status record 7.80): when the page opens it tests the connection in use once - the same test as the button. */
-export function ConnectionButton({ profileId, setProfileId }: { profileId: string | null; setProfileId: (id: string | null) => void }) {
+export function ConnectionButton({ profileId, setProfileId }: { profileId: string | null; setProfileId: (id: string | null, record?: boolean) => void }) {
   const [profiles, setProfiles] = useState<Json>(null);
   const [setup, setSetup] = useState<Json>(null);
   const [status, setStatus] = useState<Json>(null);
@@ -43,16 +43,23 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
   const [created, setCreated] = useState<Json>(null);
 
   const loadSetup = () => api.connectionSetup().then(setSetup).catch(e => setError(e.message));          // locates and names; contacts nothing
+  // The connection file's active profile fills an empty choice by itself: not an Undo step (nobody chose it).
   const loadProfiles = () => api.connectionProfiles().then(p => {
-    setProfiles(p); if (!profileId && p.active) setProfileId(p.active);
+    setProfiles(p); if (!profileId && p.active) setProfileId(p.active, false);
     if (p.profiles.length === 0) { setAdding(true); loadSetup(); }
   }).catch(e => setError(e.message));
   useEffect(() => { loadProfiles(); }, []);
 
   // ---- actions: every one of them is a button press, but for the one test when the page opens (below) ---------------
   const { busy, run } = useAsyncAction(e => setError(e.message), () => setError(null));
-  const connect = () => run('connect', async () => { const answer = await api.connectionConnect(profileId!); setConnected(answer.connect); setStatus(answer.status); });
-  const check = (scope: string) => run(scope, async () => { setStatus(await api.connectionCheck(profileId!, scope)); });
+  // The connection list stays usable while a slow test runs: an answer - or a failure - for a connection that is no longer
+  // the chosen one is dropped (null), so it never shows under another connection.
+  const chosen = useRef(profileId);
+  chosen.current = profileId;
+  const forChosen = <T,>(asked: string, call: Promise<T>): Promise<T | null> =>
+    call.then(answer => (asked === chosen.current ? answer : null), e => { if (asked === chosen.current) throw e; return null; });
+  const connect = () => run('connect', async () => { const answer = await forChosen(profileId!, api.connectionConnect(profileId!)); if (answer) { setConnected(answer.connect); setStatus(answer.status); } });
+  const check = (scope: string) => run(scope, async () => { const answer = await forChosen(profileId!, api.connectionCheck(profileId!, scope)); if (answer) setStatus(answer); });
   // The page opened: ONE test of the connection in use, as soon as the connection list is read and names it - the same as
   // pressing "Test connection" (interactive scope: one read-only SKILL round trip, for ngspice the built-in test circuit;
   // zero-cost, starts nothing; while a run is active the probe does not touch Virtuoso). User request 2026-09-24 (status

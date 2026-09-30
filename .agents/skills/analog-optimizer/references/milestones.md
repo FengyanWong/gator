@@ -57,7 +57,7 @@ Backend Protocol + explicit MockBackend
 
 M3 的工况接口范围：增加 typed PVT/Monte Carlo 请求、逐样本身份、来源与预算接口；`reset/step` 强制 nominal-only。另提供纯函数按 nominal reward 去重选 top 3、汇总固定 5 corners 的 worst-case/pass rate/robust score，并记录淘汰或未完成原因。没有模型输出时，不把随机候选称为 SAC 优化结果。top-k 后验证调度和 MC 执行不属于该接口交付，当前仍未实现。
 
-验收还包括：非 nominal 结果无法进入 replay；错误工况/尺寸的结果被拒绝；任何失败 corner 都排除通过资格；缺失/基础设施故障不虚构通过率；MC 未实现明确拒绝；原 nominal 网表及动作语义保持兼容。未来可选复杂度见 [工况与统计验证](pvt-monte-carlo.md)，不因接口存在而自动启用。
+验收还包括：非 nominal 结果无法进入 replay；错误工况/尺寸的结果被拒绝；任何失败 corner 都排除通过资格；缺失/基础设施故障不虚构通过率；MC 未实现明确拒绝；原 nominal 网表及动作语义保持兼容。未来可选复杂度见 [工况与统计验证](pvt-monte-carlo.md)，不因接口存在而自动启用。（2026-09-30 注：M3 的 nominal-only 训练约束后来由用户授权的 reward v2 / v2.1 放开：`real:gpdk045_ota7` 可显式选择训练工况，其结果进入 replay；默认仍是 nominal，MC 仍未实现。）
 
 验收：有限预算的小实验能完整恢复/复盘，成功不会漏过必需约束，失败成本有记录。
 之后才引入神经网络；不要用训练曲线调试测量公式。
@@ -80,7 +80,7 @@ mock 学会某个 synthetic 函数不构成电路优化效果证据。
 
 ## M6：跨类别、可选加速与扩展
 
-进入 M6 前，用户要求的 GT/MLP/GCN/RGCN/GAT 可替换接口已实现：统一模型契约、每架构 scratch/frozen/adapt、配置/checkpoint 隔离与动态预算。保留 M5 port-GNN 和默认六方法。验收包括混合图/动作、端口消融、精确恢复及四架构合成迁移流程；该接口验收本身不构成 M6 或真实新拓扑证据；后续真实新拓扑补验见上面的 M5 记录。
+进入 M6 前，用户要求的 GT/MLP/GCN/RGCN/GAT 可替换接口已实现：统一模型契约、每架构 scratch/frozen/adapt、配置/checkpoint 隔离与动态预算。当时保留 M5 port-GNN 和默认六方法（2026-09-30 注：port-GNN 于 2026-09-24 删除，默认六方法随之取消，现默认只跑 GT；MLP、GCN 于 2026-09-26 删除，GAT 同日由 GATv2 取代，现编码器为 GT/RGCN/GATv2）。验收包括混合图/动作、端口消融、精确恢复及四架构合成迁移流程；该接口验收本身不构成 M6 或真实新拓扑证据；后续真实新拓扑补验见上面的 M5 记录。
 
 基础有效后，再研究 LDO/VCO/OpAmp 跨类别迁移与单策略多环境采样。
 之后才按明确假设引入 surrogate、结构全局 attention、更多参数域或其他优化器。

@@ -15,13 +15,14 @@ from .context import ApiContext
 def register(app: FastAPI, context: ApiContext):
     @app.get('/api/meta')
     def meta():
-        settings = runs.load_settings()
+        settings, settings_problem = runs.read_settings()      # a hand-edited file with a typo: said, not an HTTP 500
         return dict(version=__version__, repo_root=str(repo_root()), environment=environment_versions(),
                     default_output_root=str(default_output_root()), remembered=settings,
                     output_root=runs.remembered_output_root(), allowed_output_roots=[str(r) for r in context.roots.roots],
                     allowed_input_roots=[str(r) for r in context.input_roots],
                     produces='data, configurations, models, netlists and logs only - no plots, images or reports',
-                    agent_provider_default=agents.default_provider_name((settings.get('agent') or {}).get('provider')))
+                    agent_provider_default=agents.default_provider_name((settings.get('agent') or {}).get('provider')),
+                    settings_problem=settings_problem)
 
     @app.get('/api/schema')
     def get_schema():

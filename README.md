@@ -9,15 +9,16 @@
 `src/gator_workbench/` (FastAPI backend) and `frontend/` (React/TypeScript) make the optimizer usable from a browser: circuits from registered tasks or read from Virtuoso, the Parameters / Probes / Specs editors, run control, data-only outputs, an optional agent that proposes configurations, and a check of a run's best designs at five PVT corners. Real simulations stay a user-authorized budget. What each feature does: [docs/workbench.md](docs/workbench.md); its development record: the index [docs/frontend_implementation_status.md](docs/frontend_implementation_status.md) and [docs/workbench-log/](docs/workbench-log/).
 
 ```bash
+python -m pip install -c constraints.txt torch --index-url https://download.pytorch.org/whl/cpu   # first: the pinned +cpu torch
 python -m pip install -c constraints.txt -e '.[graph,test,web,webtest]'
 PYTHONPATH=src python -m gator_workbench.cli serve               # http://127.0.0.1:8765/
 cd frontend && npm run build                                     # the page the backend serves
-OMP_NUM_THREADS=1 python -m pytest -q -n 12 --dist load          # every test, in about a minute
+OMP_NUM_THREADS=1 python -m pytest -q -n 12 --dist loadgroup     # every test, about 1 min on a quiet machine
 ```
 
-`constraints.txt` holds the exact torch / torch-geometric / numpy / networkx versions: a saved model only loads under the versions it was saved with.
+`constraints.txt` holds the exact torch / torch-geometric / numpy / networkx versions: a saved model only loads under the versions it was saved with. Its `torch==2.14.0+cpu` exists only on PyTorch's CPU index, so torch is installed from there first; without that line the second install cannot resolve it on a fresh machine.
 
-已实现离线基础链路：`VirtuosoBackend` 抽象 → synthetic `MockBackend` 导出网表 → Spectre 子集解析器 → `CircuitGraph` → PyTorch Geometric `HeteroData`。包含 op-amp、LDO、VCO 三个小型 synthetic fixture。另外已在真实 Virtuoso 中创建 GPDK045 五管 OTA 和测试台，完成 Spectre DC/AC、负载扰动、原参数复跑以及真实网表到 PyG 的验收；见 [运放基线](docs/opamp-baseline.md)。
+已实现离线基础链路：`VirtuosoBackend` 抽象 → synthetic `MockBackend` 导出网表 → Spectre 子集解析器 → `CircuitGraph` → PyTorch Geometric `HeteroData`。包含 op-amp、两级 op-amp、LDO、VCO 四个小型 synthetic fixture。另外已在真实 Virtuoso 中创建 GPDK045 五管 OTA 和测试台，完成 Spectre DC/AC、负载扰动、原参数复跑以及真实网表到 PyG 的验收；见 [运放基线](docs/opamp-baseline.md)。
 
 真实接口使用已有的 **Virtuoso Bridge**（发行包 `virtuoso-bridge`，import `virtuoso_bridge`）。已实现专用于当前 GPDK045 OTA 的 `VirtuosoBridgeBackend` 薄适配层，完成 M1/M2 宽度 4 → 4.4 → 4 µm 的真实回写、仿真和恢复；见 [后端验收](docs/opamp-backend.md)。本项目的 `VirtuosoBackend` 方法属于自有接口，底层继续调用上游连接、导出和 Spectre API；尚未实现通用 PDK 适配。
 
@@ -53,9 +54,9 @@ Python 3.10+。解析器、数据类和 MockBackend 只依赖标准库；PyG 为
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-# CPU 环境可先按 PyTorch 官方源安装，避免默认下载 CUDA 依赖：
+# 先从 PyTorch 的 CPU 源安装 torch：constraints.txt 固定的 torch==2.14.0+cpu 只在这个源上（也避免下载 CUDA 依赖）：
 python -m pip install -c constraints.txt torch --index-url https://download.pytorch.org/whl/cpu
-python -m pip install -c constraints.txt -e '.[graph,test]'     # exact versions: saved models need them
+python -m pip install -c constraints.txt -e '.[graph,test,web,webtest]'   # exact versions: saved models need them
 python -m pytest -q
 python examples/netlist_demo.py tests/fixtures/synthetic/opamp.scs --config configs/opamp.json
 # 无 Cadence：两个 analytic toy 环境、一个 SAC learner、checkpoint 验收。
@@ -78,7 +79,7 @@ analog-graph-demo tests/fixtures/synthetic/opamp.scs --config configs/opamp.json
 PYTHONPATH=src python3 -m analog_optimizer.demo tests/fixtures/synthetic/vco.scs --config configs/synthetic.json --no-pyg
 ```
 
-本次验收使用 `/tmp/analog-optimizer-venv`，没有修改系统 Python。该临时目录已在 2026-09-24 的 WSL 重启中被清空（`/tmp` 每次启动都会清空），环境已按 `constraints.txt` 的原版本重建于 `~/analog-optimizer-venv`（步骤见 `docs/workbench.md` 的 Start）；上面的安装步骤用于建立持久环境。实际版本和结果见 [验收记录](docs/verification.md)。未安装图依赖时，pytest 会明确 skip `test_pyg.py`；完整验收必须安装 graph extra 并确认 **零 skip**。
+本次验收使用 `/tmp/analog-optimizer-venv`，没有修改系统 Python。该临时目录已在 2026-09-24 的 WSL 重启中被清空（`/tmp` 每次启动都会清空），环境已按 `constraints.txt` 的原版本重建于 `~/analog-optimizer-venv`（步骤见 `docs/workbench.md` 的 Start）；上面的安装步骤用于建立持久环境。实际版本和结果见 [验收记录](docs/verification.md)。未安装图依赖时，pytest 会明确 skip `test_pyg.py`；未安装 web/webtest extra 时，工作台测试（`tests/workbench`）同样被 skip。完整验收必须安装这些 extra 并确认 **零 skip**。
 
 ## 目录与接口
 
@@ -95,9 +96,9 @@ PYTHONPATH=src python3 -m analog_optimizer.demo tests/fixtures/synthetic/vco.scs
 | `src/analog_optimizer/envs/` | 单 worker 环境、有限步数、失败处理、候选日志和恢复 |
 | `src/analog_optimizer/evaluation/` | nominal top-k/corner 汇总纯函数，以及 M5 划分检查、定额迁移实验和成本汇总；不调度 PVT/MC |
 | `src/analog_optimizer/models/` | 固定特征/规格注册表、packed batch、可切换 GT/RGCN/GATv2 编码器、group actor/critic |
-| `src/analog_optimizer/training/` | nominal replay、连续 SAC、串行/并行 collector、checkpoint 保存/恢复 |
+| `src/analog_optimizer/training/` | replay（reward v2 起可含各 PVT 工况的结果）、连续 SAC、串行/并行 collector、checkpoint 保存/恢复 |
 | `src/analog_optimizer/recording/` | 单 writer SQLite、静态去重、动态状态、摘要、容量/附件清理、checkpoint、只读查询与导出 |
-| `tests/fixtures/synthetic/` | 三个合成网表，使用同一个解析器 |
+| `tests/fixtures/synthetic/` | 四个合成网表，使用同一个解析器 |
 | `examples/netlist_demo.py` | 命令行 demo |
 
 `MockBackend` 生成唯一 job 目录、网表摘要和 provenance。`run_simulation` **只返回调用者显式注入的测试指标/状态**，不执行电路求解，`origin=synthetic` 且 `candidate_evaluated=False`。缺失/非有限指标使用 `None` 和 validity mask；基础设施失败、非收敛和测量失败有不同状态。参数读写与 OP 提取会抛出 `UnsupportedCapability`；没有静默 mock fallback、重试或自动安装 bridge。
@@ -133,4 +134,4 @@ M4 新增的 `SyntheticSizingBackend` 是独立、显式的解析二次函数测
 
 真实环境只开放 `input_pair_width`，范围 3.6–4.4 µm、linear 映射、5 nm 网格；镜像与尾管参数组在环境图中为 `mutable=False`。通用图解析配置 `gpdk045_opamp.json` 中较宽的参数范围仅用于表示，不能直接作为真实动作权限。提议动作和实际执行值分开记录；连续提议加网格投影不等于严格的离散 SAC。
 
-M5's same-class real topology verification and encoder interfaces are complete. M6 now has an offline cross-category protocol, qualified nominal LDO/VCO baselines and one executed, audited physical cross-category pilot; the pilot does not establish transfer or encoder superiority, a [strict-mode requalification](docs/m6-vco-requalification.md) confirmed the first feasible design of all 36 successful VCO runs with the reference deck (28 further Spectre calls), and M6 was then closed at pilot scale. A larger prospectively defined circuit set, the experiment that could answer the transfer question, was not run and needs a new decision and budget. Training stays nominal-only. The existing real parallel path serializes native CDF preparation and permits at most four Spectre workers; the M5 multi-circuit and M6 category experiments run sequentially. PVT scheduling, Monte Carlo and surrogate extensions remain unverified. The latest milestone status is recorded in [project decisions](docs/decisions.md), [M6 protocol](docs/m6-cross-category.md), [LDO qualification](docs/m6-ldo-baseline.md), [VCO qualification](docs/m6-vco-baseline.md) and [physical pilot results](docs/m6-real-results.md).
+M5's same-class real topology verification and encoder interfaces are complete. M6 now has an offline cross-category protocol, qualified nominal LDO/VCO baselines and one executed, audited physical cross-category pilot; the pilot does not establish transfer or encoder superiority, a [strict-mode requalification](docs/m6-vco-requalification.md) confirmed the first feasible design of all 36 successful VCO runs with the reference deck (28 further Spectre calls), and M6 was then closed at pilot scale. A larger prospectively defined circuit set, the experiment that could answer the transfer question, was not run and needs a new decision and budget. Training is nominal-only by default; since reward v2 (2026-09-26) the `real:gpdk045_ota7` task can also train at the four PVT screening corners (`always`, and since reward v2.1 `after_nominal`), qualified on real Spectre runs (workbench records 7.95 and 7.108; see [reward v2](docs/reward-v2.md)). The existing real parallel path serializes native CDF preparation and permits at most four Spectre workers; the M5 multi-circuit and M6 category experiments run sequentially. Monte Carlo and surrogate extensions are not implemented. The latest milestone status is recorded in [project decisions](docs/decisions.md), [M6 protocol](docs/m6-cross-category.md), [LDO qualification](docs/m6-ldo-baseline.md), [VCO qualification](docs/m6-vco-baseline.md) and [physical pilot results](docs/m6-real-results.md).

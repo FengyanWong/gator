@@ -5,6 +5,7 @@ import threading
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .. import __version__, bridge_connect, connection, runs
 from ..agents import ProposalStore
 from ..paths import OutputRoots, repo_root
@@ -14,13 +15,29 @@ from .context import ApiContext
 from . import agent_routes, circuit_routes, run_routes, settings_routes
 from .support import attachment, file_snapshot, live_answer  # compatibility exports
 
+LOOPBACK_HOSTS = ('127.0.0.1', 'localhost', '::1')
+WILDCARD_HOSTS = ('0.0.0.0', '::', '')
+
+
+def trusted_hosts(host=None) -> list[str]:
+    """The names a request's Host header may carry. A page on a hostile domain whose name is made to resolve to 127.0.0.1
+    (DNS rebinding) would reach this API with the browser's trust, but its Host header still names that domain (review of
+    2026-09-29). Allowed: loopback, the test client's `testserver`, and the --host the backend is served on. Starlette
+    compares an IPv6 literal with its brackets ("[::1]:8765" -> "[::1]"). A wildcard --host is reached under names this
+    process cannot know (the machine's network address or name): the operator has chosen exposure, and nothing is checked."""
+    if host in WILDCARD_HOSTS:
+        return ['*']
+    names = [*LOOPBACK_HOSTS, 'testserver'] + ([host, host.lower()] if host else [])      # browsers send a name in lower case
+    return list(dict.fromkeys(f'[{name}]' if ':' in name else name for name in names))
+
 
 def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=True, monitor=None,
-               auto_check_on_start=True, connection_stale_seconds=120.0, connector=None) -> FastAPI:
+               auto_check_on_start=True, connection_stale_seconds=120.0, connector=None, host=None) -> FastAPI:
     # Endpoints run in a thread pool and import the optimizer lazily: two first imports at once corrupt
     # torch_geometric for the life of the process. Import it here, before any thread or request exists.
     preload()
     app = FastAPI(title='GATOR workbench', version=__version__, docs_url='/api/docs', openapi_url='/api/openapi.json')
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts(host))
     roots = OutputRoots(extra_output_roots)
     input_roots = [repo_root().resolve()] + [Path(p).expanduser().resolve() for p in extra_input_roots]
     proposals = ProposalStore()

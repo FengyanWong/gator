@@ -9,6 +9,8 @@ v2 evaluator、21N+11 输入、可选 nominal OP、完整 condition plan、repla
 6 项更新与精确下一次更新恢复使用 B 的真实 replay，不是六组新 on-policy 实验。
 没有发现 robust-feasible 设计，也没有证明新 reward 更优。详见 `docs/reward-v2.md`；
 不要自动迁移旧 checkpoint，不要用 MOCK 代替验收，也不要启动未授权的 999-call 研究。
+2026-09-29 reward v2.1（摘要 `3f00832c...`，提交 `8cf53ae`）又加入 `after_nominal`、可选的缺失值失败、
+失败后 episode 继续、objective 形状与 margin sides、独立 alpha 学习率；OTA7 物理门检用 10 次 Spectre（记录 7.108）。
 
 本文给出项目设计与验证要求；当前实现状态见 [项目决策](project-decisions.md)，不能把接口验收当作迁移效果证据。
 算法基础参考 [S5](sources.md)，图算子事实参考 [S4、S6](sources.md)；参数组化、mask、奖励和跨电路组合是本项目的设计选择。
@@ -37,6 +39,8 @@ LDO/VCO/OpAmp 不共用无语义的“第一个指标”。规格身份、方向
 训练 reward/replay。输入图和 OP 只来自 nominal，独立保留完整工况计划和结果；缺失必需
 测量/基础设施失败不生成 reward/replay。后验证仍是独立记录，旧 `robust_score` 不替换
 训练 reward。MC、skip-on-fail 和其他 profile 的训练 corners 未获本轮物理验收。
+（2026-09-30 同步：reward v2.1 的 `after_nominal` 只在 nominal 通过全部 hard spec 后才跑 corners，
+已在 OTA7 上做过物理门检；MC 与其他 profile 的训练 corners 仍未实现。）
 
 ## 2. Port-aware Graph Transformer
 
@@ -65,24 +69,27 @@ PyG `TransformerConv` 是基于邻域的 message-passing attention，并支持 e
 
 通过 `models.ModelConfig(encoder_type=...)` 和 `models.build_encoder()` 选择。共同接口为 `encoder(GraphBatch, actions=None) → (nodes[N,H], groups[G,H], context[B,H])`。actor/Q1/Q2 使用同一种配置但独立权重；保留共同特征、规格、动作注入、参数组 readout 和 SAC heads，仅替换节点处理。
 
+当前（2026-09-30 同步，见 `src/analog_optimizer/models/encoders.py` 的 `ENCODER_TYPES`）只有前三行；其余已删除，名称被明确拒绝，旧权重不迁移：
+
 | encoder_type | 当前节点处理与语义 |
 |---|---|
 | `graph_transformer`（默认） | `TransformerConv` 局部多头注意力，role/direction/ordinal 进入边特征 |
-| `mlp` | 共享逐节点 MLP；忽略电路边/端口/ordinal，保留器件与参数组特征和组绑定 |
 | `rgcn` | `RGCNConv`，terminal role × direction 为 relation，逐关系 mean；不额外编码 ordinal |
-| `gat` | `GATConv` 加性多头注意力，端口边特征进入 logits；不增加自环，以 residual 保留自身表示 |
+| `gatv2` | `GATv2Conv` 多头注意力（`share_weights=False`），端口边特征进入注意力；不增加自环，以外层 residual 保留自身表示 |
 | ~~`port_gnn`~~ | 已于 2026-09-24 删除（原 M5 端口 MLP message 与 destination mean）；仅源码提交 bbdfe36 及之前可用 |
-| `gcn` | 普通 `GCNConv`，`cached=False`；保留多重边与连通性，忽略 role/ordinal，用 residual 保留自身信息 |
+| ~~`mlp`~~ | 已于 2026-09-26 删除（原共享逐节点 MLP，忽略电路边/端口/ordinal）；最后含它的五编码器源码为提交 9bc488f |
+| ~~`gcn`~~ | 已于 2026-09-26 删除（原普通 `GCNConv`，忽略 role/ordinal）；同上 |
+| ~~`gat`~~ | GATv1（`GATConv`），2026-09-26 由 `gatv2` 取代；GATv1 权重不能载入 GATv2 |
 
-- MLP 是适配可变节点数/动作数的无连接信息消融，不等同于固定拓扑展平 MLP；不能把缺少图 message passing 当作其实现错误。
-- GT/GAT 的 hidden_dim 须能被 heads 整除；MLP/GCN/RGCN 不使用 heads。同宽度/层数不保证参数量匹配。
-- 不为新拓扑创建专用最终层。验证混合 batch 与单图输出一致、重命名/重排等变、动作归属及梯度、精确恢复；另验证 MLP 对删边/换端口不变，普通 GCN 对结构变化敏感但对换端口标签不变，端口感知图编码器对结构/端口变化敏感。
-- 原 `models.graph_transformer` 导入与旧 `attention_mode` 两个取值保留兼容；新调用使用 `encoder_type`。冲突配置拒绝，不能静默回退到 GT。
+- 原 MLP 对照（已删除）是适配可变节点数/动作数的无连接信息消融，不等同于固定拓扑展平 MLP。
+- GT/GATv2 的 hidden_dim 须能被 heads 整除；RGCN 不使用 heads。同宽度/层数不保证参数量匹配。
+- 不为新拓扑创建专用最终层。验证混合 batch 与单图输出一致、重命名/重排等变、动作归属及梯度、精确恢复；另验证端口感知图编码器（GT/RGCN/GATv2）对结构/端口变化敏感。
+- 原 `models.graph_transformer` 导入保留，旧 `attention_mode='local_port_attention'` 仍映射到 GT；`port_message_passing`（port-GNN）已被拒绝。新调用使用 `encoder_type`。冲突配置拒绝，不能静默回退到 GT。
 - checkpoint 保存编码器配置。不同架构不能直接互载；代码摘要/schema/依赖仍严格校验，不默认兼容改码前的 checkpoint。
 
 具体命令与验收记录以项目 `docs/encoder-ablation.md` 为准；迁移模式与比较规则见 [实验与审查](evaluation.md)。
 
-M1 已补齐独立于 RL 的同构张量导出、dense 节点 mask 与 batch 组索引校验，详见 [图契约](graph-contract.md)。通用原始 x 的列宽与模型 hidden_dim 不同，使用相应输入投影；不要修改 canonical 图去适应某个网络的最终层。GCN 必须关闭跨调用的邻接缓存，避免混合拓扑误用上一张图。
+M1 已补齐独立于 RL 的同构张量导出、dense 节点 mask 与 batch 组索引校验，详见 [图契约](graph-contract.md)。通用原始 x 的列宽与模型 hidden_dim 不同，使用相应输入投影；不要修改 canonical 图去适应某个网络的最终层。任何带邻接缓存的算子（如已删除的 GCN）必须关闭跨调用缓存，避免混合拓扑误用上一张图。
 
 训练输入现已使用 learner 内有界缓存：静态模板及完整历史观测的原始张量可以复用；batch、当前参数下的网络表示/attention 与梯度仍每次重新计算。缓存容量不改变学习契约，冷 checkpoint 恢复保持精确训练结果；不可把原始输入缓存扩展为 stale embedding 或跨任务 fitted statistics。实现与失效约定见 [图契约](graph-contract.md)，项目计时见 `docs/input-tensor-cache.md`。
 
@@ -141,7 +148,7 @@ replay 存储该 `z` 和实际参数，policy loss 也以同一 `z` 语义查询
 
 ## 5. Action-conditioned Twin Critics
 
-每个 critic 接收 `s, g, z`，先将组动作绑定到参数 token 或其器件成员，再做 action-conditioned 节点处理和图级 pooling，输出每图一个 Q。图编码器传播邻域消息；MLP 对照只做逐节点处理，动作归属与组 readout 同样保留。
+每个 critic 接收 `s, g, z`，先将组动作绑定到参数 token 或其器件成员，再做 action-conditioned 节点处理和图级 pooling，输出每图一个 Q。图编码器传播邻域消息，动作归属与组 readout 保留。
 动作的归属关系不可丢失；不能把任意顺序动作向量拼在 pooled graph 后，随后声称天然跨拓扑。
 同一图改变动作应有可追踪的 critic 输入变化；梯度测试应能检测 actor→action→Q 通路。
 

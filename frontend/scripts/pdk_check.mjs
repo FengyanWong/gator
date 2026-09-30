@@ -16,7 +16,8 @@
 //   - a configuration naming a PDK that is not loaded says so;
 //   - "PDK window..." opens the PDK window: the form, the connection it reads through, the loaded PDKs (double click shows
 //     one, with every component, its pins and roles, its parameters); "Load" sends exactly the typed fields, shows that it
-//     is reading, then shows the answer and reads the list again; without a connection it cannot be pressed.
+//     is reading, then shows the answer and reads the list again; without a connection it cannot be pressed; closing the
+//     Virtuoso window closes it too (2026-09-29).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/pdk_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -216,6 +217,11 @@ await runChecks(browser, async () => {
     await second.until(`!!document.querySelector('.pdk-window')`, 40);
     const none = await second.evaluate(`({ disabled: document.querySelector('button.pdk-load')?.disabled, warn: document.querySelector('.pdk-window .warn')?.textContent ?? '' })`);
     check('without a connection, Load cannot be pressed and the window says what to do', none.disabled === true && /Choose a connection first/.test(none.warn), JSON.stringify(none));
+    // The PDK window belongs to the Virtuoso window it was opened from (review of 2026-09-29): closing that one closes it too,
+    // instead of leaving it blank, with nothing left to draw it.
+    second.close();
+    await send('Target.closeTarget', { targetId: virtuoso.target.id });
+    check('closing the Virtuoso window closes the PDK window opened from it', await browser.window('GATOR - PDK', { present: false, ms: 5000 }).then(() => true, () => false));
   } else check('without a connection, the window opens again after a reload', false, 'no second window');
 
   check('no writing request other than the canned ones reached the backend', refused.length === 0, refused.join(', '));

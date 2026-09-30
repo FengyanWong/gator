@@ -1,6 +1,7 @@
 // Browser check of "Matched devices..." in the Parameters tab (status record 7.103): the box opens on the press with
 // the structures of the circuit and the ties they suggest, a tie is made only after "Review..." and Apply, Undo
-// takes it back, an answer about rows that changed since says so, and a verified task's rows are shown as fixed.
+// takes it back, an answer about rows that changed since says so, another tab closes the box (it does not come back and
+// ask by itself), and a verified task's rows are shown as fixed.
 // Requests: /api/parameters/matched is answered with fixtures/matched_devices.json - the REAL route's answers for the seeded
 // rows (a MOCK OTA5 whose five widths are each their own variable), made with a backend of record 7.103 - so the check does
 // not need a restarted backend; GET, POST /api/circuit/load and POST /api/config/validate pass through (read-only: local
@@ -103,6 +104,15 @@ await runChecks(browser, async () => {
 
   await press(BOX, 'Close');
   check('Close takes the box away and gives the button back', await until(`!${BOX} && !${BUTTON(TOOLBAR, 'Matched devices...')}.disabled`));
+
+  // Another tab closes the box (review of 2026-09-29): coming back to Parameters used to open it again - and ask by itself.
+  await press(TOOLBAR, 'Matched devices...');
+  await until(`${BOX}?.querySelectorAll('li').length === 3`);
+  const askedBefore = asked.length;
+  const tab = name => evaluate(`[...${EDITORS}.querySelectorAll('.tabs > button')].find(b => b.textContent.startsWith(${JSON.stringify(name)})).click()`);
+  await tab('Probes'); await sleep(200); await tab('Parameters'); await sleep(800);
+  check('another tab closes the box: back on Parameters it stays closed and nothing was asked by itself',
+    !(await evaluate(`!!${BOX}`)) && asked.length === askedBefore && !(await evaluate(`${BUTTON(TOOLBAR, 'Matched devices...')}.disabled`)), `${asked.length - askedBefore} request(s)`);
 
   verified = true;
   await press(TOOLBAR, 'Matched devices...');

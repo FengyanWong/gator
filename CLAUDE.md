@@ -2,16 +2,23 @@
 
 Concise project guidance. The research-side rules (milestones M1-M6, the optimizer package) live in
 `.agents/skills/analog-optimizer/SKILL.md` and its `references/` (a Codex-convention skill: read it as
-documentation; it is not auto-loaded by Claude Code). Decisions: `docs/decisions.md`. There is no `AGENTS.md`.
+documentation; it is not auto-loaded by Claude Code). Decisions: `docs/decisions.md` (the current state is at
+its top). There is no `AGENTS.md`.
 
 ## Before changing anything
 
-1. Read `docs/frontend_implementation_status.md` - the INDEX of the workbench's development record -
-   then `docs/workbench.md` for the feature you touch and only the entries of that area in
-   `docs/workbench-log/`; `git status` / `git diff`, and the relevant spec. Do not redo finished modules
-   from memory. A new entry goes at the end of `docs/workbench-log/7.101-and-later.md`, plus its row in the index.
+1. Read `docs/frontend_implementation_status.md`, the short INDEX of the workbench's development record. Then
+   `grep -n '^##' docs/workbench.md` (its heading map) and read ONLY the section(s) of the feature you touch, with
+   Read offset/limit: the whole file is ~145 kB, more than one Read returns. Then read only the log entries of that
+   area (`grep -n '<feature words>' docs/workbench-log/*.md`). Also `git status` / `git diff`, and the spec of the
+   area: for the workbench the untracked `gator_claude_code_fable51_frontend_data_outputs_en.md` at the repository
+   root, otherwise the plan or brief of the area in `docs/`. Do not redo finished modules from memory. A new entry
+   goes at the end of the open log file `docs/workbench-log/7.101-and-later.md`, plus its one-line row in the index;
+   a new commit row goes at the end of the commit table in `docs/workbench-log/record-history.md`.
 2. Preserve uncommitted user work. Never commit, push or reset without being asked. Several sessions
-   share this working tree and its git index: stage explicit paths only, never `git add -A`.
+   share this working tree and its git index: stage explicit paths only, never `git add -A`. A bare `git commit`
+   still commits everything other sessions have staged: use `git commit --only -- <paths>` or the private-index
+   recipe (a temporary `GIT_INDEX_FILE`), and check `git diff --cached --stat` right before.
 
 ## Hard rules
 
@@ -42,17 +49,23 @@ documentation; it is not auto-loaded by Claude Code). Decisions: `docs/decisions
 ```bash
 # Environment: ~/analog-optimizer-venv (home folder). /tmp is emptied at every WSL boot - on 2026-09-24 that deleted
 # the previous /tmp/analog-optimizer-venv, which older docs still quote. Rebuild recipe: docs/workbench.md, "Start".
-~/analog-optimizer-venv/bin/python -m pytest -q                    # full regression (~5 min)
-OMP_NUM_THREADS=1 ~/analog-optimizer-venv/bin/python -m pytest -q -n 12 --dist load   # the same in ~1 min
+OMP_NUM_THREADS=1 ~/analog-optimizer-venv/bin/python -m pytest -q -n 12 --dist loadgroup   # full regression, ~1 min
+~/analog-optimizer-venv/bin/python -m pytest -q                    # the same without -n: much longer
 ~/analog-optimizer-venv/bin/python -m pytest tests/workbench -q    # workbench only
 PYTHONPATH=src ~/analog-optimizer-venv/bin/python -m gator_workbench.cli serve
-cd frontend && npx tsc --noEmit     # ALWAYS before a build: vite does NOT type-check
-cd frontend && npm run build        # Windows node via WSL interop on this machine
-node frontend/scripts/<name>.mjs    # a browser check; without GATOR_WORKBENCH_URL it drives the LIVE 8765
+cd frontend && npx tsc --noEmit     # type-check only (Windows npx through WSL interop)
+cd frontend && npm run build        # = tsc --noEmit && vite build (a bare `npx vite build` does NOT type-check)
+"/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/<name>.mjs)"   # a browser check (no `node` in WSL)
 ```
 
-`npm run build` overwrites the `dist/` the user's backend serves, so never build while another
-session's edit leaves `tsc` failing, and never while a real run is being watched in the browser.
+The full regression takes about 1 min with `-n 12 --dist loadgroup` on a quiet machine (53 s on 2026-09-30) and
+2-3 min while other sessions load it (86-196 s measured with `--dist load` on 2026-09-29), more than the Bash tool's
+default 120 s timeout: run it in the background or pass a 600000 ms timeout. `--dist loadgroup` keeps each module
+marked `xdist_group` on one worker, so its costly module fixture is built once: give a new module with such a fixture
+that mark too, or loadgroup hands its tests out one by one.
+`npm run build` stops at a type error, but it overwrites the `dist/` the user's backend serves with whatever
+the working tree holds, other sessions' unfinished edits included when they type-check: look at
+`git status -- frontend/src` first, and never build while a real run is being watched in the browser.
 Most checks in `frontend/scripts/` default to the live backend on 8765: to point one at a scratch
 backend, export `GATOR_WORKBENCH_URL` AND add it to `WSLENV` (`WSLENV=GATOR_WORKBENCH_URL` - without
 that the Windows-side browser never receives it and the check silently uses 8765).

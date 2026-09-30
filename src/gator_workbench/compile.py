@@ -39,6 +39,20 @@ def _canonical_bounds(parameter):
     return convert(lower), convert(upper), (None if step is None else units.scale_to_canonical(step, parameter.unit))
 
 
+def grid_top(lower, upper, step, integer=False):
+    """The highest value the optimizer gives a stepped group, when it lands ABOVE `upper`; else `upper` itself.
+    `ParameterGroup.project` quantizes to lower + n*step with n = floor((upper - lower)/step + 1e-12) and does not clamp
+    afterwards, so for about a quarter of ranges typed in decimals (1.84 .. 42.38 um in steps of 0.02 um) that top point
+    is a hair above `upper` (4.2380000000000004e-05 > 4.238e-05) and the group refuses its own top value: a MOCK run
+    failed "invalid bounds/current value" whenever the policy chose it. Computed exactly as `project` computes it, so
+    taking it as the upper bound makes the top value legal and leaves every other grid point where it was."""
+    grid = step or (1.0 if integer else None)
+    if not grid or not all(math.isfinite(v) for v in (lower, upper, grid)):
+        return upper                                  # no grid, or a domain the group's own check refuses
+    top = lower + math.floor((upper - lower) / grid + 1e-12) * grid
+    return top if top > upper else upper
+
+
 def normalization_scale(target) -> float:
     """The scale a spec's violation is divided by: the one stated, else the size of its threshold (the largest of |lower|,
     |upper| and |target|), else 1 - the same rule the Specs column states."""
@@ -97,13 +111,19 @@ def build_graph(config: WorkbenchConfig, graph):
                 step = None
         if lower is None or upper is None:
             raise CompileError(f'{leader_id}: bounds are required')
+        # A varied group's upper bound is the optimizer's own top grid point when that lands above the typed bound
+        # (grid_top), and a follower's own clamp at that same range moves with it; with the point not above, nothing moves.
+        top = grid_top(lower, upper, step, leader.value_type == 'integer') if leader.optimized else upper
         bindings = []
         for row, ratio in rows:
             convert = lambda v, r=row: None if v is None else units.to_canonical(v, r.unit)
             own = row is not leader
+            clamp = convert(row.upper) if own else None
+            if clamp is not None and upper * ratio <= clamp < top * ratio:
+                clamp = top * ratio
             bindings.append(ParameterBinding(row.instance_path, row.parameter_name, ratio,
-                                             convert(row.lower) if own else None,
-                                             convert(row.upper) if own else None))
+                                             convert(row.lower) if own else None, clamp))
+        upper = top
         unit = group_unit(units.canonical_unit(leader.unit))
         kind = _group_kind(leader.parameter_name, unit)
         if kind is None:

@@ -192,25 +192,42 @@ def assert_safe_arguments(argv):
 
 
 class ProcessRegistry:
-    """Tracks only the subprocesses this backend started for agent requests."""
-    def __init__(self):
-        self._lock, self._processes, self._cancelled = threading.Lock(), {}, set()
+    """Tracks only the subprocesses this backend started for agent requests.
 
-    def register(self, request_id, process):
+    A cancel is remembered by request id even when no process is registered yet: the page can leave, or "Cancel request"
+    can come, while the backend still builds the request - and that cancel used to be forgotten, so the CLI then ran to
+    its end unseen (a `virtuoso_work` request with its tools open). The CLI is stopped the moment it registers. The mark
+    outlives one CLI (claude_code repeats a refused live attempt) and goes with `done`, when the whole request is over."""
+    REMEMBERED = 256          # cancels of requests that never reach (or already left) their CLI: only the newest are kept
+
+    def __init__(self):
+        self._lock, self._processes, self._cancelled = threading.Lock(), {}, {}
+
+    def register(self, request_id, process) -> bool:
+        """True when the request was cancelled already: the caller stops `process` at once."""
         with self._lock:
             self._processes[request_id] = process
+            return request_id in self._cancelled
 
     def forget(self, request_id):
+        """The request's CLI has ended; a cancel of the request stays remembered until `done`."""
         with self._lock:
             self._processes.pop(request_id, None)
-            self._cancelled.discard(request_id)
+
+    def done(self, request_id):
+        with self._lock:
+            self._processes.pop(request_id, None)
+            self._cancelled.pop(request_id, None)
 
     def cancel(self, request_id) -> bool:
+        """True when a running CLI of the request was stopped. False when there is none (yet): the cancel still counts."""
         with self._lock:
+            self._cancelled[request_id] = None
+            while len(self._cancelled) > self.REMEMBERED:
+                del self._cancelled[next(iter(self._cancelled))]
             process = self._processes.get(request_id)
-            if process is None:
-                return False
-            self._cancelled.add(request_id)
+        if process is None:
+            return False
         _stop(process)
         return True
 
@@ -262,8 +279,12 @@ def run_cli(argv, *, stdin_text, cwd, timeout, request_id, registry=REGISTRY, en
         raise AgentError('cli_missing', f'{argv[0]!r} was not found by the backend process')
     except PermissionError:
         raise AgentError('cli_missing', f'{argv[0]!r} is not executable by the backend process')
-    registry.register(request_id, process)
+    cancelled_already = registry.register(request_id, process)
     try:
+        if cancelled_already:            # cancelled while the request was being built: the CLI does no work unseen
+            _stop(process)
+            process.communicate()
+            raise AgentError('cancelled')
         if on_line is not None:
             stdout, stderr = _read_live(process, stdin_text.replace('\x00', ''), timeout, on_line, max_output)
         else:

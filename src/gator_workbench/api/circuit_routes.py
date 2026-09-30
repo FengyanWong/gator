@@ -7,7 +7,7 @@ from .. import bridge_read, runs, schema, tasks
 from .. import consistency, ngspice_tasks, profiles, structures, task_files, virtuoso_setup, working_copy
 from ..agents.prompts import circuit_summary
 from ..native_cells import load_import as load_cell_import
-from ..paths import PathNotAllowed
+from ..paths import PathNotAllowed, refuse_nul
 from ..security import redact
 from .models import CircuitBody, ConfigBody, CopyBody, DiffBody, MatchedBody, NativeReadBody, NgspiceCheckBody, NgspiceNameBody, NgspiceReadBody, NgspiceSaveBody, ProfileActionBody, SetupBody, TaskCheckBody, TaskFileBody, TaskFileTextBody, TaskSaveBody
 from .support import _bridge_call, fail, load_runtime, validate_loaded
@@ -148,7 +148,7 @@ def register(app: FastAPI, context: ApiContext):
     def _ngspice_source(path):
         """The file a deck was loaded from, for its relative includes: only a path under the input roots counts - the
         browser names no other file (it got this one from /api/ngspice/read)."""
-        if not path:
+        if not path or '\x00' in str(path):         # a NUL byte is no file (the OS refuses it with ValueError)
             return None
         resolved = Path(path).expanduser().resolve()
         return str(resolved) if any(resolved == r or r in resolved.parents for r in context.input_roots) else None
@@ -157,6 +157,7 @@ def register(app: FastAPI, context: ApiContext):
     def ngspice_read(body: NgspiceReadBody):
         """A deck read from a file on the backend machine (inside an allowed input root) into the window's text box."""
         try:
+            refuse_nul(body.path)                  # refused like any path outside the input roots, not an HTTP 500
             return ngspice_tasks.read_file(body.path, context.input_roots)
         except PermissionError as exc:
             fail(403, exc)
@@ -203,7 +204,8 @@ def register(app: FastAPI, context: ApiContext):
     def virtuoso_copy(body: CopyBody):
         """Refused since 2026-09-23 (user request): the workbench makes no copy of a cell any more. The user copies the
         cell and its testbench in Virtuoso and reads the copy (`/api/virtuoso/import` with `work_here`: the page asks
-        whether it is a copy they made). `working_copy.make` stays for Save as through the API and for the tests."""
+        whether it is a copy they made). `working_copy.make` stays for the tests only: Save as through the API makes its
+        copy with `working_copy.make_task_copy`, which does not call it."""
         fail(409, f'The workbench no longer makes copies of your cells ({body.library}/{body.cell} was not copied): copy the cell '
                   'and its testbench in Virtuoso yourself, then read the copy in the Virtuoso window - it asks whether the cell '
                   'is a copy you made and works in it.', code='copies_not_made')
@@ -327,7 +329,7 @@ def register(app: FastAPI, context: ApiContext):
             before = config.model_dump(mode='json')
             after = dict(before, parameters=answer['parameters'])
             proposed = context.parse_config(after)
-            report = validate_loaded(proposed, runtime)
+            report = validate_loaded(proposed, runtime, reachability=False)     # only the rows' errors are used
             answer['parameters'] = proposed.model_dump(mode='json')['parameters']       # as the schema reads them
             answer.update(diff=structured_diff(before, proposed.model_dump(mode='json')),
                           independent_after=independent_action_count(proposed.parameters),

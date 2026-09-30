@@ -90,6 +90,7 @@ def test_steering_missing_latest_update_does_not_use_stale_bonus():
     assert check['reward_spread'] is None and check['exploration_bonus'] is None and check['verdict'] is None
 
 
+@pytest.mark.requires_evidence('artifacts/local/reward-v2-real/20260926-qualification-04/stage-a/report.json')
 def test_real_reference_warning_recomputes_current_targets():
     c = ota(max_spectre_launches=20, conditions=dict(policy='after_nominal', corners=['ss_hot_low', 'fs_nominal']))
     records = _qualification_reference(c)
@@ -143,6 +144,7 @@ def test_reference_can_be_planned_without_nominal_feasibility(tmp_path, monkeypa
     assert {(a['device'], a['parameter']) for a in chosen[0]['assignment']} == expected
 
 
+@pytest.mark.requires_evidence('artifacts/local/reward-v2-real/20260926-qualification-04/stage-a/report.json')
 def test_missing_corner_never_proves_reachability_even_for_nominal_only_specs():
     c = ota(max_spectre_launches=20, conditions=dict(policy='after_nominal', corners=['ss_hot_low']))
     records = _qualification_reference(c)

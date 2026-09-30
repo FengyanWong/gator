@@ -2,9 +2,8 @@
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
-- **Optimizer source digest:** `100945fb780852ea3776a2395f83474bd208ed2f1ee5a27aff7cdf28b0d2651b`, set by the
-  optimizer commit of LLM sizing (the search package with the audit's duplicate-check fix, records 7.116 and 7.120,
-  2026-09-30). Before it: `3f00832c89c1cf7af5cbc5ab6dac74c20250a76ea7bfa3a2df06717087fdd6f4`, set by `8cf53ae`
+- **Optimizer source digest:** `100945fb780852ea3776a2395f83474bd208ed2f1ee5a27aff7cdf28b0d2651b`, set by `4634200`
+  (LLM sizing: the search package with the audit's duplicate-check fix, records 7.116 and 7.120, 2026-09-30). Before it: `3f00832c89c1cf7af5cbc5ab6dac74c20250a76ea7bfa3a2df06717087fdd6f4`, set by `8cf53ae`
   (reward v2.1).
 - **Encoders:** `graph_transformer` (default), `rgcn`, `gatv2`. `port_gnn` was removed on 2026-09-24; `mlp` and `gcn`
   on 2026-09-26, when `gatv2` replaced `gat` (GATv1).
@@ -14,8 +13,7 @@ A summary for new sessions; everything below is the chronological record, oldest
   (`always`, `after_nominal`) is offered for `real:gpdk045_ota7` only.
 - **Older checkpoints** resume exactly only under their own source: digest `02127bc3...` (M6 pilot, six encoders) from
   `bbdfe36`; `aa987cf0...` (five encoders incl. MLP, GCN, GATv1) from `9bc488f`; `f087a4ce...` (reward v2) from
-  `1135b8b` up to the commit before `8cf53ae`; `3f00832c...` (reward v2.1) from `8cf53ae` up to the commit before the
-  LLM sizing optimizer commit. Digests never committed (`75c7cfac...`, `5e8a1bc1...`, `11e62657...`, `3473ed9c...`, and
+  `1135b8b` up to the commit before `8cf53ae`; `3f00832c...` (reward v2.1) from `8cf53ae` up to the commit before `4634200`. Digests never committed (`75c7cfac...`, `5e8a1bc1...`, `11e62657...`, `3473ed9c...`, and
   `27a36b2b...`, the LLM sizing build before the duplicate-check fix, which Astra's acceptance evidence names) are in
   the entries below.
 - **Monte Carlo:** not implemented; a plan only ([plan-finalist-monte-carlo.md](plan-finalist-monte-carlo.md)).

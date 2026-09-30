@@ -86,8 +86,12 @@ def _include_root(entry) -> str | None:
 
 
 def parse_entry(entry, text) -> Parsed:
-    return parse_text(text, source=str(Path(entry['directory']) / FILES['netlist']) if entry.get('directory') else 'netlist.cir',
+    parsed = parse_text(text, source=str(Path(entry['directory']) / FILES['netlist']) if entry.get('directory') else 'netlist.cir',
                       circuit_id=entry['name'], device_kinds=entry.get('device_kinds') or {}, include_root=_include_root(entry))
+    if entry.get('analoggym'):
+        from .analoggym import physical_graph
+        physical_graph(parsed)
+    return parsed
 
 
 def check(text, *, device_kinds=None, include_root=None) -> dict:
@@ -296,11 +300,15 @@ def runtime(task_key, name, profile_id=None, *, authorized=False):
             if source in parsed.result_names and source not in units:
                 units[source] = parsed.units.get(source) or '1'
         from analog_optimizer.measurements.specs import RewardSettings
-        return NgspiceEnvFactory(text, compiled.graph, compiled.specs, link, str(work_root), adv.episode_length,
+        factory, options = NgspiceEnvFactory, {}
+        if entry.get('analoggym'):
+            from .analoggym import AnalogGymFactory
+            factory, options = AnalogGymFactory, dict(bundle=entry['analoggym'])
+        return factory(text, compiled.graph, compiled.specs, link, str(work_root), adv.episode_length,
                                  adv.simulation_timeout_seconds, adv.episode_terminates_on_success, units,
                                  dict(entry.get('device_kinds') or {}), _include_root(entry), name, str(netlist_file),
                                  plan=compiled.plan if compiled.plan is not None and compiled.plan.injected else None,
-                                 reward_settings=RewardSettings(**run_settings.reward.model_dump()))
+                                 reward_settings=RewardSettings(**run_settings.reward.model_dump()), **options)
     notes = [f'ngspice netlist task, revision {entry.get("revision")}: {len(graph.devices)} elements, '
              f'{len(parsed.measurements)} results ({", ".join(parsed.result_names[:8])}{"..." if len(parsed.result_names) > 8 else ""}).']
     if entry.get('source_path'):
@@ -327,15 +335,17 @@ def runtime(task_key, name, profile_id=None, *, authorized=False):
     except Exception:
         from .ngspice_backend import LOCAL_CONCURRENCY
         concurrency = LOCAL_CONCURRENCY
+    provided = tuple(entry['analoggym']['metric_units']) if entry.get('analoggym') else tuple(parsed.result_names)
     circuit = dict(circuit_class=entry.get('circuit_class') or 'unspecified', pdk_id=entry.get('pdk_id') or 'unspecified',
                    dut_hierarchy=None, netlist_sha256=entry['netlist_sha256'], parser_config_sha256=None,
                    netlist_file=str(netlist_file), parser_config_file=None, topology_id=f'ngspice:{name}',
                    complete=graph.complete, evaluation_backend=EVALUATION_BACKEND, simulator='ngspice', ngspice_task=True,
+                   analoggym_task=bool(entry.get('analoggym')),
                    title=entry.get('title'), revision=entry.get('revision'), source_path=entry.get('source_path'),
-                   device_kinds=dict(entry.get('device_kinds') or {}), measurements=list(parsed.result_names),
+                   device_kinds=dict(entry.get('device_kinds') or {}), measurements=list(provided),
                    sizable=sorted(f'{d}.{p}' for d, p in parsed.sizables), connection_problem=problem,
                    unknown_models=list(parsed.unknown_models))
-    return TaskRuntime(task_key, 'real', graph, tuple(parsed.result_names), circuit, text, str(netlist_file), None, builder,
+    return TaskRuntime(task_key, 'real', graph, provided, circuit, text, str(netlist_file), None, builder,
                        max_concurrency=concurrency, notes=notes, authorized=bool(authorized),
                        reference_metrics=None, connection_family='ngspice')
 
@@ -345,6 +355,14 @@ def export_deck(task):
     """The best design's deck for best_design.write_outputs: (netlist text, graph, members) -> the outcome contract of
     export_netlist. Values are written into their own tokens (a once-used subcircuit included) and read back."""
     import math
+
+    if (task.circuit or {}).get('analoggym_task'):
+        from .analoggym import export_best_decks
+        entry, _ = load(task.task_key.partition(':')[2])
+        def benchmark_exporter(netlist_text, graph, members):
+            return export_best_decks(netlist_text, entry['analoggym'], entry['device_kinds'], members)
+        benchmark_exporter.additional_filenames = ('transient.cir',)
+        return benchmark_exporter
 
     def exporter(netlist_text, graph, members):
         from .ngspice_netlist import rewrite
@@ -408,6 +426,8 @@ def starter_config(task_key) -> dict:
     from .tasks import starter_project
     name = task_key.partition(':')[2]
     entry, text = load(name)
+    if entry.get('starter') and entry.get('analoggym'):
+        return entry['starter']
     parsed = parse_entry(entry, text)
     return dict(project=starter_project(task_key),
                 circuit=dict(source='registered_task', task_id=task_key, circuit_class=entry.get('circuit_class') or 'unspecified',

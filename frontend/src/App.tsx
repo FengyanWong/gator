@@ -127,14 +127,17 @@ export function App() {
   const start = async (baseline_only: boolean) => {
     setMessage(null);
     const budget = baseline_only ? 1 : config.run.max_evaluations;
+    const search = config.run.search;
+    const llm = !baseline_only && !!search && search.method !== 'sac';
+    const llmText = llm ? `\nAI sizing: up to ${search.max_llm_calls ?? 'unset'} model calls${search.max_llm_notional_usd != null ? `, notional cost ceiling $${search.max_llm_notional_usd}` : ' (no reported dollar cost for Codex)'}.` : '';
     control.setPending('start');
     try {
       // A refusal creates nothing; what the backend asks for (real budget, a model from another task, unknown
       // connection layers) is put to the user and the start is repeated with the answers.
       // An ngspice netlist task is real too (circuit simulations, counted and recorded as such), only without a license.
-      const started = await launchWithConsent(flags => api.start({ config, baseline_only, ...flags }), { real: !!isReal, transfer: true,
-        authorizeText: circuit?.simulator === 'ngspice' ? `This starts ngspice simulations of the task (no license; every one is counted as a real evaluation).\nRun a budget of ${budget} candidate evaluation(s)?`
-          : `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?` });
+      const started = await launchWithConsent(flags => api.start({ config, baseline_only, ...flags }), { real: !!isReal, transfer: true, llm,
+        authorizeText: (!isReal ? `Start ${budget} synthetic MOCK evaluations?` : circuit?.simulator === 'ngspice' ? `This starts ngspice simulations of the task (no license; every one is counted as a real evaluation).\nRun a budget of ${budget} candidate evaluation(s)?`
+          : `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?`) + llmText });
       if (started) launchedRun(started, 'start'); else setMessage({ level: 'info', text: 'Not started: you answered no, so nothing was created.' });
     } catch (e: any) { failed(e); } finally { control.setPending(null); }
   };
@@ -206,7 +209,7 @@ export function App() {
         </div>
         <div className="bottom-body">
           <AgentTab hidden={tab !== 'agent'} config={config} setConfig={setConfig} request={agentRequest} clearRequest={() => setAgentRequest(null)}
-            tabSlot={agentTabSlot} onDetached={setAgentDetached} runDir={runDir} />
+            tabSlot={agentTabSlot} onDetached={setAgentDetached} runDir={runDir} runActive={!!status?.worker_alive} />
           {tab === 'status' && <StatusTab status={status} onContinue={continueRun} continueBlocked={continueBlocked} />}
           {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
           {tab === 'data' && <DataTab runDir={runDir} status={status} />}

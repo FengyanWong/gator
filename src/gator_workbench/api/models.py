@@ -42,6 +42,11 @@ class ContinueBody(Body):
     acknowledge_unknown_connection: bool = False
 
 
+class HintBody(Body):
+    run_dir: str
+    text: str = Field(min_length=1, max_length=1500)
+
+
 class CornerCheckBody(Body):
     run_dir: str
     designs: int = Field(corner_check.MAX_DESIGNS, ge=1, le=corner_check.MAX_DESIGNS)

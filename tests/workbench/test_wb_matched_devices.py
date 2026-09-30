@@ -150,7 +150,10 @@ def test_the_ngspice_rows_get_the_pair_and_the_load_tied_and_the_bias_mirror_off
     assert [r.variable_id for r in after] == [r.variable_id for r in before]           # tied in place, no row added or moved
     config = schema.WorkbenchConfig.model_validate(dict(nt_config(after)))
     report = validate(config, graph=graph, provided_metrics=None)
-    assert [(i.level, i.code) for i in report.issues if i.path.startswith('parameters') and i.level != 'info'] == []
+    # Ties remain valid; SAC's existing current-unit limitation is now reported
+    # before starting instead of crashing when the first learning batch is made.
+    assert [(i.level, i.code) for i in report.issues if i.path.startswith('parameters') and i.level != 'info'] == [
+        ('blocker', 'current_group_not_supported_by_sac')]
     again = structures.plan_ties(graph, after)                                         # applying twice changes nothing
     assert [s['id'] for s in again if s['acts']] == ['current_mirror:xota/m6+xota/m5']
 
@@ -218,7 +221,8 @@ def test_the_route_suggests_for_an_ngspice_task_and_shows_the_change(tmp_path):
     assert [s['kind'] for s in answer['structures']] == ['differential_pair', 'tail_source', 'active_load', 'current_mirror']
     chosen = [s['id'] for s in answer['suggestions'] if s['default']]
     shown = post(client, config, chosen)
-    assert shown['independent_after'] == 5 and shown['problems'] == []
+    assert shown['independent_after'] == 5
+    assert [p['code'] for p in shown['problems']] == ['current_group_not_supported_by_sac']
     changed = {(d['key'], f['field']) for d in shown['diff'] for f in d['fields']}
     assert ('xota_m2_w', 'binding_group') in changed and ('xota_m4_w', 'binding_group') in changed
     assert {d['section'] for d in shown['diff']} == {'parameters'} and {d['change'] for d in shown['diff']} == {'modified'}

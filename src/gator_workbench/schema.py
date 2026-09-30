@@ -367,6 +367,22 @@ class ConditionsConfig(_Model):
 RETIRED_RUN_FIELDS = {'threads_per_job': 1}
 
 
+class SearchSettings(_Model):
+    method: Literal['sac', 'llm_warmstart', 'llm', 'sac_llm_rescue'] = 'sac'
+    provider: Optional[Literal['claude_code', 'codex']] = None
+    model: Optional[str] = Field(None, max_length=120)
+    effort: Optional[str] = Field(None, max_length=32)
+    candidates_per_call: int = Field(4, ge=1, le=32, strict=True)
+    max_llm_calls: Optional[int] = Field(None, ge=1, le=10000, strict=True)
+    max_llm_notional_usd: Optional[float] = Field(None, gt=0, allow_inf_nan=False)
+    llm_call_timeout_seconds: float = Field(600, gt=0, le=7200, allow_inf_nan=False)
+    warm_start_count: Optional[int] = Field(None, ge=1, le=100000, strict=True)
+    initial_sac_updates: int = Field(8, ge=1, le=1024, strict=True)
+    rescue_stagnation_evaluations: int = Field(8, ge=1, le=100000, strict=True)
+    rescue_max_rounds: int = Field(2, ge=1, le=10000, strict=True)
+    hints_allowed: bool = True
+
+
 class RunSettings(_Model):
     @model_validator(mode='before')
     @classmethod
@@ -402,6 +418,7 @@ class RunSettings(_Model):
     frozen_action: Literal['deterministic', 'sampled'] = Field('deterministic',
         description='frozen mode only: mean action or a sample from the fixed policy.')
     network: NetworkConfig = Field(default_factory=NetworkConfig)
+    search: SearchSettings = Field(default_factory=SearchSettings)
     reward: RewardConfig = Field(default_factory=RewardConfig)
     conditions: ConditionsConfig = Field(default_factory=ConditionsConfig)
     model_source: ModelSource = Field(default_factory=ModelSource)
@@ -411,6 +428,28 @@ class RunSettings(_Model):
     continual_learning: bool = Field(False,
         description='Explicit opt-in to inherit weights fine-tuned on a previous test task. Default starts every '
                     'test task from the fixed source checkpoint.')
+
+    @model_validator(mode='after')
+    def _search_contract(self):
+        search = self.search
+        if search.method == 'sac':
+            return self
+        if search.max_llm_calls is None:
+            raise ValueError('Choose a maximum number of AI calls before starting an LLM search')
+        if search.provider == 'claude_code' and search.max_llm_notional_usd is None:
+            raise ValueError('Claude sizing needs a notional cost ceiling')
+        if self.mode == 'frozen':
+            raise ValueError('A frozen policy supports SAC only')
+        if search.method == 'llm':
+            if self.mode == 'fine_tune' or self.concurrency != 1:
+                raise ValueError('LLM only uses one simulation lane and supports scratch or resume, without an RL model')
+            if self.mode == 'scratch' and self.model_source.run_dir:
+                raise ValueError('LLM only does not load a saved RL model; clear the model source or resume AI search progress')
+        if search.method == 'llm_warmstart':
+            count = search.warm_start_count or max(8, self.advanced.batch_size, self.advanced.warmup_transitions)
+            if count < self.advanced.batch_size or self.advanced.replay_capacity < count:
+                raise ValueError('Starting designs must fill one training batch and fit in the replay buffer')
+        return self
 
 
 # --------------------------------------------------------------------------- output
@@ -522,6 +561,8 @@ def _hashed(data):
     if isinstance(run, dict):
         run = dict(run, **{key: run.get(key, default) for key, default in RETIRED_RUN_FIELDS.items()})
         reward = run.get('reward')
+        if run.get('search') == SearchSettings().model_dump(mode='json'):
+            run.pop('search')
         if isinstance(reward, dict):
             reward = {k: v for k, v in reward.items() if not
                       (k == 'nominal_gate_band' and v == 0.5 or k == 'objective_shape' and v == 'clipped')}

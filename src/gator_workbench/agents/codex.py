@@ -40,6 +40,22 @@ def listed(option, help_text) -> bool:
 class CodexProvider(CliProvider):
     name = cli = 'codex'
 
+    def build_argv(self, executable, help_text, schema_file, answer_file, events=None):
+        missing = [option for option in WANTED_OPTIONS if not listed(option, help_text)]
+        if missing:
+            raise AgentError('unsupported_cli', f'The installed codex CLI is missing {missing}')
+        argv = [executable, 'exec', *([events] if events else []), '--sandbox', 'read-only', '--output-schema', str(schema_file),
+                '--output-last-message', str(answer_file)]
+        if listed('--skip-git-repo-check', help_text):
+            argv.append('--skip-git-repo-check')
+        if self.settings.model:
+            argv += ['--model', self.settings.model]
+        if self.settings.effort:
+            if not listed('--config', help_text):
+                raise AgentError('unsupported_cli', 'The installed codex CLI cannot set reasoning effort without --config')
+            argv += ['--config', f'model_reasoning_effort="{self.settings.effort}"']
+        return argv + ['-']
+
     def help_text(self, executable):
         try:
             done = subprocess.run([executable, 'exec', '--help'], capture_output=True, text=True, timeout=30,
@@ -72,18 +88,7 @@ class CodexProvider(CliProvider):
         try:
             schema_file, answer_file = scratch / 'schema.json', scratch / 'answer.json'
             schema_file.write_text(json.dumps(PROPOSAL_SCHEMA))
-            argv = [executable, 'exec', *([events] if events else []), '--sandbox', 'read-only', '--output-schema', str(schema_file),
-                    '--output-last-message', str(answer_file)]
-            if '--skip-git-repo-check' in help_text:
-                argv.append('--skip-git-repo-check')            # the scratch directory is not a repository
-            if self.settings.model:
-                argv += ['--model', self.settings.model]
-            if self.settings.effort:                               # codex has no effort flag: it is a config override
-                if '--config' not in help_text:
-                    raise AgentError('unsupported_cli', 'The installed codex CLI does not list `--config` under `codex '
-                                                        'exec --help`, so the reasoning effort cannot be set; clear it.')
-                argv += ['--config', f'model_reasoning_effort="{self.settings.effort}"']
-            argv.append('-')                                       # prompt on stdin
+            argv = self.build_argv(executable, help_text, schema_file, answer_file, events)
             code, stdout, stderr = run_cli(argv, stdin_text=build_prompt(request), cwd=scratch,
                                            timeout=self.settings.timeout_seconds, request_id=request.request_id,
                                            on_line=translator.feed if translator else None)

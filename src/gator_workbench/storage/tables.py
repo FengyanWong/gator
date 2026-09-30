@@ -9,8 +9,9 @@ from dataclasses import dataclass
 
 from .. import TABLE_SCHEMA_VERSION
 
-PHASES = ('baseline', 'episode_reset', 'warmup', 'adapt', 'search', 'validation', 'frozen_eval', 'preflight')
-ACTION_SOURCES = ('reset', 'random_warmup', 'sac_policy', 'mean_policy', 'sampled_policy')
+PHASES = ('baseline', 'episode_reset', 'warmup', 'adapt', 'search', 'validation', 'frozen_eval', 'preflight',
+          'llm_warmup', 'llm_search', 'llm_rescue')
+ACTION_SOURCES = ('reset', 'random_warmup', 'sac_policy', 'mean_policy', 'sampled_policy', 'llm_proposal', 'seeded_warmup')
 RETENTION = ('pending', 'retained_best', 'retained_failure', 'retained_all', 'deleted_by_policy',
              'deleted_storage_limit', 'not_produced')
 
@@ -58,6 +59,7 @@ TABLES: dict[str, dict] = {
             C('commit_seq', 'int64', 'Unified commit/event sequence number. Learner receipt order.'),
             C('phase', 'string', 'Why the evaluation was run.', enum=PHASES),
             C('action_source', 'string', 'How the action was chosen.', enum=ACTION_SOURCES),
+            C('llm_call_id', 'string', 'Sizing call that selected this design.', null='not selected by an LLM'),
             C('policy_version', 'int64', 'Cumulative learner updates when the action was proposed.',
               null='no policy produced this action (reset or random warm-up)'),
             C('proposed_at', 'timestamp', 'UTC time the proposal was created.'),
@@ -172,7 +174,7 @@ TABLES: dict[str, dict] = {
         columns=IDS + [
             C('job_id', 'string', 'Launch attempt ID.'), C('evaluation_id', 'string', 'Evaluation it served.'),
             C('worker_id', 'string', 'Lane.'), C('host', 'string', 'Execution host label.'),
-            C('analysis', 'string', 'Analysis set.'), C('condition', 'string', 'Corner/test condition.'),
+            C('analysis', 'string', 'Analysis set, or ngspice: followed by JSON with reached command counts and output completeness.'), C('condition', 'string', 'Corner/test condition.'),
             C('attempt', 'int32', 'Attempt number within the evaluation (1-based).'),
             C('dispatched_at', 'timestamp', 'UTC dispatch time.'), C('started_at', 'timestamp', 'UTC start time.'),
             C('ended_at', 'timestamp', 'UTC end time.'),
@@ -194,6 +196,8 @@ TABLES: dict[str, dict] = {
         primary_key=('update_id',), purpose='Training updates that actually occurred. Empty in frozen mode.',
         columns=IDS + [
             C('update_id', 'string', 'Update ID.'), C('updated_at', 'timestamp', 'UTC time.'),
+            C('update_phase', 'string', 'Initial learning or online learning.', enum=('initial', 'online'),
+              null='historical/default SAC online update'),
             C('evaluations_collected', 'int64', 'Evaluations committed when the update ran.'),
             C('actor_loss', 'float64', 'Actor loss.'), C('critic_loss', 'float64', 'Twin critic loss.'),
             C('alpha_loss', 'float64', 'Temperature loss.'), C('alpha', 'float64', 'Entropy coefficient.'),
@@ -261,7 +265,22 @@ TABLES: dict[str, dict] = {
 }
 
 # Evaluations are published LAST in a flush: their presence proves the other tables are complete.
-FLUSH_ORDER = ('parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'states', 'transitions', 'evaluations')
+TABLES['llm_calls'] = dict(primary_key=('call_id',), purpose='Every sizing request, including rejected and cancelled calls.',
+    columns=IDS + [
+        C('call_id', 'string', 'Sizing request ID.'),
+        *[C(name, 'string', name.replace('_', ' '), null='unavailable') for name in
+          ('method', 'provider', 'model', 'effort', 'prompt_sha256', 'reply_sha256', 'status', 'record_path')],
+        *[C(name, 'timestamp', name.replace('_', ' '), null='unavailable') for name in ('started_at', 'ended_at')],
+        *[C(name, 'int64', name.replace('_', ' '), null='provider did not report or not applicable') for name in
+          ('input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens', 'returned', 'accepted',
+           'notes_kept', 'notes_dropped', 'hints_included', 'request_position', 'release_position', 'round')],
+        C('notional_cost_usd', 'float64', 'Provider-reported cost; never estimated as zero.', unit='USD', null='not reported'),
+        C('latency_seconds', 'float64', 'Request duration.', unit='s', null='not finished'),
+        C('repair', 'bool', 'This request repairs one invalid answer.'),
+        C('rejected_json', 'string', 'Candidate rejections and reasons.'),
+    ])
+
+FLUSH_ORDER = ('parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'llm_calls', 'states', 'transitions', 'evaluations')
 
 
 def arrow_schema(table):

@@ -5,6 +5,7 @@ import { ModelChooser } from './ModelChooser';
 import { CircuitGraphView } from './CircuitGraphView';
 import { ModelStructure } from './ModelStructure';
 import { ComponentList } from './Pdk';
+import { SearchSettings } from './SearchSettings';
 import { Typed } from './Typed';
 
 function Num({ label, value, onChange, title, nullable, disabled, note, after, placeholder, bounded }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; nullable?: boolean; disabled?: boolean; note?: string; after?: ReactNode; placeholder?: string; bounded?: boolean }) {
@@ -121,6 +122,7 @@ const ADVANCED_ROWS: NumberField[][] = [
 
 export function RunPanel({ config, setConfig, runs, circuit, schema }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json; schema: Json }) {
   const run = config.run;
+  const llmOnly = run.search?.method === 'llm';
   const set = (fields: Json, record = true) => setConfig(c => ({ ...c, run: { ...c.run, ...fields } }), record);
   const setAdv = (fields: Json) => setConfig(c => ({ ...c, run: { ...c.run, advanced: { ...(c.run.advanced ?? {}), ...fields } } }));
   const setNet = (fields: Json) => setConfig(c => ({ ...c, run: { ...c.run, network: { ...(c.run.network ?? {}), ...fields } } }));
@@ -135,7 +137,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const { value: model, error, loading: modelLoading } = useRequest<Json>(() => api.model(source.run_dir, source.checkpoint_id ?? 'latest', config),
     [JSON.stringify([config.circuit, config.parameters, config.targets, config.measurements, run.mode, source,
       run.connection_profile_id, run.seed, run.network, run.advanced, run.reward, run.conditions, config.research?.split])],
-    { enabled: !!source.run_dir, delay: 250 });
+    { enabled: !!source.run_dir && !llmOnly, delay: 250 });
   const cornerIds: string[] = schema.$defs.ConditionsConfig.properties.corners.items.enum;
   const robust = (run.conditions?.policy ?? 'off') !== 'off';
   const gated = run.conditions?.policy === 'after_nominal';
@@ -266,13 +268,14 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
     net.vocabulary && net.vocabulary !== 'standard' ? `knows ${net.vocabulary.slice(4)}` : null].filter(Boolean).join(' - ');
   return (
     <Module id="run" title="Run configuration" summary={folded}>
+      <SearchSettings run={run} schema={schema} set={set} />
       <label title="scratch: random init, new run. resume: same task, same run, full state. fine_tune: compatible weights, new task, new run with a parent. frozen: no updates at all.">Mode
         <select value={run.mode} onChange={e => set({ mode: e.target.value })}>
-          {['scratch', 'resume', 'fine_tune', 'frozen'].map(m => <option key={m} value={m}>{m}</option>)}</select></label>
+          {(llmOnly ? ['scratch', 'resume'] : run.search?.method && run.search.method !== 'sac' ? ['scratch', 'resume', 'fine_tune'] : ['scratch', 'resume', 'fine_tune', 'frozen']).map(m => <option key={m} value={m}>{m}</option>)}</select></label>
       {model?.suggestion && model.suggestion.mode !== run.mode && <p className="warn">Suggested: <button className="text-link mode-suggestion"
         title={`Set Mode to ${model.suggestion.mode}`} onClick={() => set({ mode: model.suggestion.mode })}>{model.suggestion.mode}</button> - {model.suggestion.reason}
         {model.suggestion.requires_confirmation ? ' (needs your confirmation)' : ''}</p>}
-      <Num label="Concurrent Spectre jobs" value={run.concurrency} onChange={v => set({ concurrency: v })} title="Independent simulation jobs at once. NOT the thread count of one simulation." />
+      <Num label="Concurrent Spectre jobs" disabled={llmOnly} value={run.concurrency} onChange={v => set({ concurrency: v })} title="Independent simulation jobs at once. NOT the thread count of one simulation." />
       {circuit?.max_concurrency && run.concurrency > circuit.max_concurrency && <p className="error">This task supports at most {circuit.max_concurrency} jobs.</p>}
       <Num label="Evaluation budget (max_evaluations)" value={run.max_evaluations} onChange={v => set({ max_evaluations: v })}
         title="NEW candidate evaluations that may START in the whole run, shared by all workers. Baselines, warm-up and failures count. Episode resets do not reset it." />
@@ -312,6 +315,11 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       {(run.reward?.objective_weight ?? 0) > 0 && !objective.length && <p className="warn">No active objective; the objective bonus is zero.</p>}
       <Num label="Tightest-margin bonus weight" bounded value={run.reward?.margin_weight ?? 0} onChange={v => set({ reward: { ...run.reward, margin_weight: v } })}
         title="Complete hard-feasible plans only. Equality constraints remain mandatory but do not contribute clearance." />
+      {llmOnly && run.mode === 'resume' && <label>AI run to resume<select value={source.run_dir ?? ''}
+        onChange={e => set({ model_source: { run_dir: e.target.value, checkpoint_id: 'latest' } })}>
+        <option value="">Choose an AI-only run</option>{runs.filter((r: Json) => r.search?.method === 'llm' || r.manifest?.search_settings?.method === 'llm').map((r: Json) =>
+          <option key={r.run_dir} value={r.run_dir}>{r.task_name ?? r.run_dir}</option>)}</select></label>}
+      {!llmOnly && <>
       {!loads && <>
       <h3>RL network</h3>
       <p className="hint">Independent of the agent language model. "No weights" means scratch, but an architecture is still required.
@@ -335,7 +343,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         <button onClick={() => applyEntry(entry)}>Load backend values</button> <button onClick={() => { queueSave(net, adv); flush(); }}>Save these to the backend</button></p>}
       {entry?.problem && <p className="warn">{entry.problem}</p>}</>}
       {netMessage && <p className={`net-message ${netMessage.level === 'error' ? 'error' : netMessage.level === 'warn' ? 'warn' : 'hint'}`}>{netMessage.text}</p>}
-      {starved && <p className="warn">Budget {budget} with warm-up {adv.warmup_transitions} and batch size {adv.batch_size}: {budget <= (adv.warmup_transitions ?? 0) ? 'every evaluation is a random warm-up action, so the policy never acts' : 'one batch is never filled, so the network never learns'}.
+      {starved && run.search?.method !== 'llm_warmstart' && <p className="warn">Budget {budget} with warm-up {adv.warmup_transitions} and batch size {adv.batch_size}: {budget <= (adv.warmup_transitions ?? 0) ? 'every evaluation is a random warm-up action, so the policy never acts' : 'one batch is never filled, so the network never learns'}.
         Published settings assume thousands of simulations. Lower them under Advanced{loads ? ' or raise the budget' : ', raise the budget, or use the GATOR baseline'}.</p>}
       {!loads && entry && <details><summary>Where the {encoder} values come from</summary>
         <p className="hint">{entry.summary}</p>
@@ -408,12 +416,14 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
             + 'which Continue cannot pick up again. Reward v2.1 scores broken designs and learns from them, so a run exploring a region where many '
             + 'designs break may need a higher limit (1-1000).'} />
       </details>
+      </>}
     </Module>
   );
 }
 
 export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Json; setConfig: (f: (c: Json) => Json) => void; meta: Json; activeRun: Json }) {
   const out = config.output;
+  const llmOnly = config.run.search?.method === 'llm';
   const set = (fields: Json) => setConfig(c => ({ ...c, output: { ...c.output, ...fields } }));
   const root = out.output_root ?? meta?.output_root ?? '';
   const [browse, setBrowse] = useState<Json>(null);
@@ -469,10 +479,10 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
         <tr><td>remote Spectre work dir</td><td className="hint">local work/ for this task; final files are written directly here (sync: local)</td></tr>
       </tbody></table></details>}
       <h4>Always saved</h4><p className="hint">Configuration/provenance snapshots, per-evaluation records, actual parameters, metrics, simulator-job accounting, run summary, event/error logs (Parquet + JSON).</p>
-      <Check label="Learner-update log" value={out.save_learner_updates ?? true} onChange={v => set({ save_learner_updates: v })} />
-      <Check label="Model checkpoints" value={out.save_checkpoints ?? true} onChange={v => set({ save_checkpoints: v })} />
-      <Check label="Replay snapshots (needed for a FULL resume)" value={out.save_replay_snapshots ?? true} onChange={v => set({ save_replay_snapshots: v })} />
-      {out.save_replay_snapshots === false && <p className="warn">Without replay snapshots checkpoints are weights_only: a full training-state resume of this run will NOT be possible.</p>}
+      {!llmOnly && <Check label="Learner-update log" value={out.save_learner_updates ?? true} onChange={v => set({ save_learner_updates: v })} />}
+      <Check label={llmOnly ? 'Search progress (needed to resume)' : 'Model checkpoints'} value={out.save_checkpoints ?? true} onChange={v => set({ save_checkpoints: v })} />
+      {!llmOnly && <Check label="Replay snapshots (needed for a FULL resume)" value={out.save_replay_snapshots ?? true} onChange={v => set({ save_replay_snapshots: v })} />}
+      {!llmOnly && out.save_replay_snapshots === false && <p className="warn">Without replay snapshots checkpoints are weights_only: a full training-state resume of this run will NOT be possible.</p>}
       <Check label="Complete transition archive (independent of replay snapshots)" value={out.save_transition_archive ?? true} onChange={v => set({ save_transition_archive: v })} />
       <Check label="Experiment summary CSVs" value={out.export_summary_csv ?? true} onChange={v => set({ export_summary_csv: v })} />
       <Num label="Checkpoint every" nullable value={interval} placeholder="only at pause, stop, end" onChange={v => setEvery(by, v)}

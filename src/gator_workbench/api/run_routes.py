@@ -8,10 +8,10 @@ from .. import aggregates, checkpoints as ckpt, runs, schema
 from .. import corner_check
 from ..layout import RunLayout
 from ..paths import PathNotAllowed, safe_child
-from ..storage.atomic import read_json, read_jsonl_tail
+from ..storage.atomic import read_json, read_jsonl_tail, JsonlAppender
 from ..storage.dataset import DatasetReader, map_to_dict, utcnow
 from ..storage.tables import TABLES
-from .models import CommandBody, ContinueBody, CornerCheckBody, CornerStopBody, ExportBody, GraphViewBody, ModelStructureBody, StartBody
+from .models import CommandBody, ContinueBody, CornerCheckBody, CornerStopBody, ExportBody, GraphViewBody, HintBody, ModelStructureBody, StartBody
 from .support import attachment, compatibility_unchecked, fail, file_snapshot, run_files, zip_download
 from .context import ApiContext
 
@@ -23,6 +23,34 @@ class ModelBody(ModelStructureBody):
 
 
 def register(app: FastAPI, context: ApiContext):
+    @app.get('/api/runs/llm-thread')
+    def llm_thread(run_dir: str):
+        directory = context.run_path(run_dir)
+        status = read_json(directory / 'status.json', default={})
+        manifest = read_json(directory / 'run_manifest.json', default={})
+        search = status.get('search') or manifest.get('search')
+        return dict(run_dir=str(directory), search=search, state=status.get('state'),
+                    events=read_jsonl_tail(directory / 'llm/live.jsonl', 5000))
+
+    @app.post('/api/runs/llm-hint')
+    def llm_hint(body: HintBody):
+        directory = context.run_path(body.run_dir)
+        status = read_json(directory / 'status.json', default={})
+        if status.get('state') != 'running' or not (status.get('search') or {}).get('hints_available'):
+            fail(409, 'This run cannot accept another AI hint in its current phase')
+        text = body.text
+        if not isinstance(text, str) or not 1 <= len(text.strip()) <= 1500:
+            fail(422, 'A hint needs 1–1500 characters')
+        path = directory / 'control/llm_hints.jsonl'
+        if len(read_jsonl_tail(path, 51)) >= 50:
+            fail(409, 'This run has reached its 50-hint limit')
+        log = JsonlAppender(path)
+        try:
+            log.append(dict(text=text.strip(), utc=utcnow().isoformat()))
+        finally:
+            log.close()
+        return dict(accepted=True, note='Included in the next eligible call; does not trigger a rescue or change budgets.')
+
     @app.get('/api/runs')
     def get_runs(output_root: str | None = None, include_mock: bool = True):
         try:
@@ -124,6 +152,7 @@ def register(app: FastAPI, context: ApiContext):
         allow_real = bool(body.authorize_real_simulation)
         if baseline_only:
             config = config.model_copy(deep=True)
+            config.run.search = schema.SearchSettings()
             config.run.mode, config.run.max_evaluations = 'scratch', 1         # exactly ONE costed evaluation
             config.output.save_checkpoints = False
             config.project.task_name = f'{config.project.task_name}.baseline'

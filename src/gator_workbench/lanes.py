@@ -76,6 +76,15 @@ class _EnvDriver:
 
     def run(self, op, proposal=None, allowance=1, stop_file=None):
         env = self.env
+        if op == 'continue':
+            # Absolute sizing actions need no simulator state from the previous process.
+            # Restore the logical episode only; this operation performs no evaluation.
+            env._require_connection()
+            env.steps, env.episode = proposal['steps'], proposal['episode']
+            env.max_steps = proposal['max_steps']
+            env._recording_observation = proposal['observation']
+            env._done = False
+            return dict(ok=True)
         calls_before, started = env.simulation_calls, _now()
         result = dict(op=op, lane_id=self.lane_id, started_at=started, ok=False, step=None, exception=None,
                       episode=None, episode_step=None)

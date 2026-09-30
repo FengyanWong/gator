@@ -126,7 +126,7 @@ def test_a_failed_writer_refuses_further_commits(tmp_path, monkeypatch):
 def test_data_dictionary_documents_types_units_enums_and_null(tmp_path):
     dictionary = data_dictionary()
     assert set(dictionary['tables']) == {'evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates',
-                                         'transitions', 'states'}
+                                         'transitions', 'states', 'llm_calls'}
     for name, table in dictionary['tables'].items():
         assert [c['name'] for c in table['columns']] == arrow_schema(name).names
         for column in table['columns']:
@@ -134,6 +134,7 @@ def test_data_dictionary_documents_types_units_enums_and_null(tmp_path):
     columns = {c['name']: c for c in dictionary['tables']['evaluations']['columns']}
     assert 'baseline' in columns['phase']['enum'] and columns['provenance']['enum'] == ['real', 'mock']
     assert columns['queue_seconds']['unit'] == 's'
+    assert columns['llm_call_id']['nullable'] and columns['llm_call_id']['null_meaning']
     assert 'never' in columns['all_hard_constraints_satisfied']['description'].lower()
 
 

@@ -28,6 +28,14 @@ BLOCKING = ('error', 'blocker')
 VARIABLE_UNITS = ('m', 'count', '1', 'ohm', 'F', 'H', 'V')
 
 
+def native_count_columns(config):
+    """Extra ngspice multiplicity names, shared by validation and the saved learner schema."""
+    if not (config.circuit.task_id or '').startswith('ngspice:'):
+        return ()
+    return tuple(sorted({p.parameter_name for p in config.parameters
+                         if p.parameter_name in ('mf', 'mult') and p.unit == 'count'}))
+
+
 def _pdk_record(config):
     """The loaded PDK the configuration's network is built with, or None (standard list, or a PDK not loaded)."""
     name = getattr(config.run.network, 'vocabulary', 'standard') or 'standard'
@@ -166,6 +174,8 @@ def _check_pdk_parameter(report, path, p, facts, record):
 
 def _check_parameters(config, report, graph, record):
     """`record`: the PDK the network is built with (_pdk_record), loaded once by validate() for every check."""
+    count_columns = native_count_columns(config)
+    feature_columns = FEATURE_PARAMETER_KINDS + count_columns
     parameters = config.parameters
     seen, targets, loaded = set(), {}, {}
     for i, p in enumerate(parameters):
@@ -186,19 +196,25 @@ def _check_parameters(config, report, graph, record):
             report.add('error', 'conflicting_targets', path,
                        f'{p.variable_id} and {targets[key]} both write {p.instance_path}.{p.parameter_name}')
         targets[key] = p.variable_id
+        if p.parameter_name == 'dc' and units.canonical_unit(p.unit) == 'A' and config.run.search.method != 'llm':
+            report.add('blocker', 'current_group_not_supported_by_sac', path + '.unit',
+                       'The SAC encoder cannot represent current-source values in amperes yet. '
+                       'Remove this parameter row to keep the circuit\'s current fixed, or choose LLM only. '
+                       'Marking this row fixed still leaves an unsupported group in the encoder input.')
         facts = _pdk_facts(record, graph, p)
         if facts is not None:                       # a component of the PDK the network is built with
             _check_pdk_parameter(report, path, p, facts, record)
         else:
-            expected = units.PARAMETER_KIND_UNITS.get(p.parameter_name)
+            expected = ('count' if p.parameter_name in count_columns else
+                        units.PARAMETER_KIND_UNITS.get(p.parameter_name))
             if expected and units.canonical_unit(p.unit) != expected:
                 report.add('error', 'unit_mismatch', path + '.unit',
                            f'Parameter {p.parameter_name!r} is measured in {expected}, not {p.unit!r}')
-            if p.parameter_name not in FEATURE_PARAMETER_KINDS:
+            if p.parameter_name not in feature_columns:
                 knowing = _loaded_pdk_knowing(graph, p, loaded) if record is None else None
                 report.add('blocker', 'parameter_kind_unsupported', path + '.parameter_name',
                            f'{p.parameter_name!r} is not in the optimizer feature vocabulary '
-                           f'{FEATURE_PARAMETER_KINDS}; the graph encoder cannot represent it'
+                           f'{feature_columns}; the graph encoder cannot represent it'
                            + (f'. The loaded PDK {knowing} knows it: choose the component list "PDK {knowing}" in the '
                               'RL network block to vary it.' if knowing else ''))
         if p.binding_group == p.variable_id:
@@ -245,7 +261,10 @@ def _check_parameters(config, report, graph, record):
             if p.optimized != leader.optimized:
                 report.add('warning', 'follower_flag_ignored', path + '.optimized',
                            f'A bound variable follows its leader {leader_id}; its own optimized flag has no effect')
-            if p.parameter_name != leader.parameter_name:
+            same_native_count = (p.unit == leader.unit == 'count' and
+                                 p.parameter_name in ('m', *count_columns) and
+                                 leader.parameter_name in ('m', *count_columns))
+            if p.parameter_name != leader.parameter_name and not same_native_count:
                 report.add('blocker', 'mixed_parameter_kind_group', path,
                            'The optimizer groups members of one parameter kind; binding different parameter '
                            'names in one group is not supported')

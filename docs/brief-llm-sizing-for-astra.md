@@ -1,6 +1,7 @@
-# Brief for Astra: LLM-driven sizing methods in the optimizer, with a free SKY130 benchmark
+# Brief for Astra: SAC and LLM sizing modes, with a free SKY130 benchmark
 
-> **Status (2026-09-30): NOT STARTED.** Its precondition, reward v2.1 finished and committed, was met on 2026-09-29
+> **Status (2026-09-30): IMPLEMENTED; free calibration complete, comparison qualification unresolved; paid slices unapproved.**
+> Its precondition, reward v2.1 finished and committed, was met on 2026-09-29
 > (`8cf53ae`, `8db46b8`, audit fixes `7d365c3`). For this work it overrides the no-LLM rule ("no LLM search / no LLM inner
 > loop") of the Codex skill `.agents/skills/analog-optimizer`.
 
@@ -9,6 +10,26 @@ requests "Give a plan over current repo to add LLM support over sizing", then "m
 or Claude list (so you can choose Fable 5.1 and Astra), add the recommended SKY130 benchmark, the code should go to
 analog_optimizer", then "what file should I give to astra". The plan also exists as a private claude.ai page that you
 cannot open; this file carries everything you need. Where the page and this brief differ, this brief wins.
+
+**Revised 2026-09-30 after the user added LLM only and SAC with LLM rescue.**
+There are exactly four workbench search choices: **SAC**, **LLM warm start → SAC**, **LLM only**, and
+**SAC with LLM rescue**. Warm start collects simulated LLM designs, explicitly trains SAC on that experience,
+then hands control to SAC. LLM only proposes every search design. Rescue keeps SAC running and asks the LLM
+for suggestions when progress stalls. This supersedes the previous two-mode scope and its rescue deferral.
+This is an implementation plan, not a claim that the feature or its performance has been verified.
+
+**User's calibration decisions, 2026-09-30:** calibration and comparison use feasibility-only scoring and the
+upstream pass rule. There is no after-feasible objective and no reward change. Every metric remains a Probe;
+FOML, FOMS, Power, GBW and all other outputs are descriptive on the best feasible design. With feasible rewards
+tied at zero, the existing workbench selects the earliest passing design. Bias currents are fixed at upstream
+starting values for **every** arm, including every LLM arm; record this benchmark deviation in `plan-benchmark.json`.
+Do not extend the optimizer package for current units. Separately assess a workbench-created current FeatureSchema
+read-only. Before/during calibration independently re-simulate **every** GATOR-passing design in the original
+upstream evaluator: all values must agree at 1e-9 relative tolerance and verdicts must match. Any disagreement stops
+calibration; report the positive-design checks under G9 (the original 205 comparisons contained zero passes).
+Before any commit, run the complete suite on the final tree. Audit all sizing and Agent-tab Codex schemas for
+strict object rules; sizing must pass, while Agent-tab changes are only to be listed, not implemented. G10's earlier
+unauthorized, server-rejected request remains a failed gate; an offline schema audit does not erase it.
 
 It comes AFTER [brief-reward-v2.1-for-astra.md](brief-reward-v2.1-for-astra.md). Both change `src/analog_optimizer/`,
 and both touch `ngspice_backend.py`, `frontend/src/panels/Right.tsx` and `agents/run_digest.py`. Start this brief only
@@ -28,11 +49,21 @@ Report as section 10 says.
 
 ## 1. Goal and decisions of record
 
-**Goal.** Let an LLM propose circuit designs inside GATOR's sizing loop, alone or together with SAC and pattern search.
-Then compare it fairly with the existing methods on a free SKY130 benchmark, with every run recorded the way GATOR
-records runs today.
+**Goal.** Compare plain SAC, LLM warm start followed by SAC, LLM-only sizing, and SAC with occasional LLM rescue.
+Every proposed design is simulated and judged by the existing evaluation contract. SAC-based modes keep the
+selected graph encoder and learn from eligible simulated experience. Compare fairly on a free SKY130 benchmark.
 
-**User decisions of 2026-09-29.**
+**User decisions of 2026-09-29, extended 2026-09-30.**
+- **Four search choices.** `sac` stays the default; add `llm_warmstart`, `llm`, and `sac_llm_rescue`. These search
+  choices are separate from the existing scratch / fine_tune / frozen / resume model-loading modes.
+- **Learning before warm-start handover.** LLM examples produce explicit SAC updates before SAC selects its first action.
+  A successful LLM start replaces random warm-up; there is no second random warm-up block afterward.
+- **LLM only.** After the task's baseline measurement, the LLM proposes every search design. There is no SAC training
+  or numeric fallback. Simulation feedback informs the next batch.
+- **SAC with LLM rescue.** Keep normal SAC warm-up and learning. When progress stalls, request suggestions
+  asynchronously; SAC keeps searching while the LLM works. Eligible rescue results enter the same replay buffer.
+- **Scope.** Keep the existing graph encoder, SAC losses, reward, replay eligibility and action semantics. Random
+  search, pattern search and matched initialization controls belong in benchmark scripts, not the method selector.
 - **Code location.** The method logic goes in `src/analog_optimizer/`, as ONE digest step.
 - **Models.** Each run chooses its model from either CLI's current list. The measured runs use Fable 5.1 (through
   Claude Code) and `gpt-6-astra` (through Codex) as two separate arms.
@@ -42,33 +73,45 @@ records runs today.
   thread per run. The user may type hints into that thread, which marks the run "steered". A run never continues the
   tab's own CLI session.
 
-**Why this design.** It follows the strongest published evidence, all read on 2026-09-29.
-- An LLM alone reaches good designs in few simulations, but stalls just short of the specs.
-- The best-controlled analog results come from letting the LLM lead and handing over to a numeric optimiser when
-  progress stalls:
-  - [TopoSizing](https://arxiv.org/abs/2509.14169): Spectre, SMIC 55 nm, 10 runs; 18/32/18/22 simulations against
-    TuRBO's 25/66/107/37.
-  - [AnaFlow](https://arxiv.org/abs/2511.03697), ICCAD 2025: 9 and 64 simulations against 1,035 and 1,808 for its RL
-    optimiser alone.
-- The strongest cross-domain hybrid is [Centaur](https://arxiv.org/abs/2603.24647). CMA-ES leads, and the LLM supplies
-  about 30 % of the trials while seeing CMA-ES's state.
-- [Rodrigues 2026](https://arxiv.org/abs/2606.21641): a claimed "LLM warm start" gain came from the default design,
-  so a warm start needs a matched non-LLM control.
-- [StateTune](https://arxiv.org/abs/2608.23601): LLM memory must be backed by evidence.
-- [SABLE](https://arxiv.org/abs/2607.03701) and [AaLLM](https://arxiv.org/abs/2608.13472): LLM agents need operating
-  points, worst-corner values, a strict output contract and stall rules.
+**Evidence and limits, checked 2026-09-29.** No inspected paper establishes a universally best LLM/RL combination.
+- [LORO (2025)](https://arxiv.org/html/2505.10861v1) collects experience using an LLM, pretrains a separate RL agent,
+  then continues online learning; continuous-action experiments use SAC. Its ablations found initial training
+  important compared with simply mixing the examples into replay. These are control/game tasks, not analog circuits.
+  This supports testing a learning-before-handover schedule; it does not establish a suitable circuit sample count
+  or justify copying its training budget.
+- [ORACLE (August 2026 preprint)](https://arxiv.org/html/2608.04999v1) uses LLM action masking for discrete circuit
+  adjustments. LLM guidance helps its cosine variant, but its non-LLM normalized-weight variant also beats the LLM
+  variant on reported metrics. This is evidence to test LLM contributions, not a reason to assume they always help
+  or to change GATOR's continuous SAC action contract.
+- AnaFlow-RF appears in the [MLCAD 2026 program](https://mlcad.org/symposium/2026/program/). Its
+  [author's description](https://www.linkedin.com/posts/kaichang-chen_mlcad-analogdesign-rfic-activity-7503354074961080322-tNtR)
+  describes initial sizing guidance and selective help when RL stagnates. The full paper was not available for
+  inspection here; its experimental comparisons remain unverified. It motivates testing the requested rescue mode.
+- [TopoSizing](https://arxiv.org/abs/2509.14169) combines LLM guidance with Bayesian optimization. It is not evidence
+  for LLM + SAC or LLM + pattern search. The earlier brief's blanket superiority claims are withdrawn.
+
+**Project hypothesis.** Diverse, simulation-verified starting experience plus bounded initial SAC training may help
+under a small simulation budget. This remains to be measured against controls with the same data and update budgets.
+Eight starting transitions and eight initial updates below are engineering defaults, not publication-backed optima.
+Handover is based on completed experience and training, never a 30-second timer.
+Rescue is a separate experiment with bounded interventions; neither it nor LLM-only sizing is assumed to beat SAC.
 
 ## 2. What exists (facts, line numbers at commit `73f1668`; they will have moved after reward v2.1)
 
 - `src/gator_workbench/engine.py:513` `_dispatch` picks every candidate: a reset, a random warm-up action, SAC's action,
   or a frozen policy's action.
-- `engine.py:706-715`: every step with a valid reward becomes a SAC transition (`Transition.from_step` →
-  `replay.add`), whoever chose the action. So LLM-chosen steps are learnable by SAC with no change to SAC.
+- `engine.py` `_commit`: steps marked `replay_eligible` become SAC transitions (`Transition.from_step` →
+  `replay.add`), whoever chose the action. A finite reward alone is not the admission rule. LLM steps must follow
+  the same rule, including eligible simulation failures; they are not automatically successful demonstrations.
+- `_maybe_update` requires at least `advanced.batch_size` replay entries. `ReplayBuffer.sample` samples without
+  replacement. Current defaults are batch size 8, warm-up 8, and one update per admitted transition. Merely queuing
+  LLM designs does not initialize the policy; S6 defines an explicit initial learning phase.
 - `src/analog_optimizer/parameters/actions.py:35` `ActionMapper`: actions are absolute, one value in [-1, 1] per
   mutable parameter group, mapped linearly or logarithmically onto its bounds and snapped to its grid
   (`ParameterGroup.project`). `engine.decode_action` mirrors it.
-- `src/analog_optimizer/evaluation/benchmark.py:119` `PatternSearch`: M6's coordinate search. It was the strongest M6
-  method: 3/3 successes in every class.
+- `src/analog_optimizer/evaluation/benchmark.py:119` `PatternSearch`: existing coordinate-search benchmark. M6's
+  small pilot does not establish superiority over SAC or LLM-assisted SAC; repeated deterministic trajectories are
+  not independent success evidence. Leave it as a benchmark baseline.
 - `src/gator_workbench/agents/`:
   - `claude_code.py` runs `claude -p` with `--json-schema`, no tools and an empty strict MCP config.
   - `codex.py` runs `codex exec` with `--output-schema` and `--output-last-message`, and `--json` if
@@ -154,11 +197,11 @@ or CLI code in the package, and no import of `gator_workbench`. With its default
 **S2 `RandomProposer`.** Seeded and uniform in [-1, 1]. Used as SAC's warm-up, it must draw exactly what the engine
 draws today: `rng.uniform(-1, 1)` per group, in `group_ids` order. Gate G1 depends on it.
 
-**S3 `PatternSearchProposer`.**
-- It wraps `evaluation.benchmark.PatternSearch`, leaving that class unchanged. Moving the class is allowed only if the
-  old import keeps working.
-- It re-centres on ANY better result it observes, including LLM candidates.
-- Its starting radius is configurable (default 0.5, as in M6), so it can do fine closure from a given design.
+**S3 Benchmark initialization helper.** A deterministic source of initial candidates for matched controls: either
+uniform normalized actions or the task's starting design followed by a seeded Latin hypercube in normalized group
+space. This uses the same S6 schedule and legal mapping as the LLM arm, through dependency injection in the benchmark
+driver. It is not an additional workbench method or a hidden production setting. Leave the existing `PatternSearch` and
+its benchmark API unchanged; do not add a pattern-search wrapper to this package change.
 
 **S4 `SacProposer`.** An adapter around `learner.act` (sampled, or deterministic when frozen). SAC itself does not
 change.
@@ -167,24 +210,89 @@ change.
 - It builds the context (S7), calls an injected `LlmClient` (S11), checks the answer (S8), maps values to actions (S9)
   and queues the accepted candidates.
 - Invalid output gets at most ONE repair request. It is counted, and a second failure is recorded as `invalid_output`.
-- A refusal, a timeout or a cancellation is recorded as such. The method then falls back as S6 says for that method,
-  and never silently.
+- A refusal, timeout or cancellation is recorded. Apply the method-specific stop or fallback rules in S6;
+  never silently change methods.
 
-**S6 Methods (hybrid schedules).** All of these land in this one digest step, so that phase-3 comparisons need no
-second one.
+**S6 Methods and handover.** These four methods are implemented in this digest step.
 
 | method | behaviour |
 |---|---|
-| `sac` | Today's behaviour. The default. |
-| `random`, `pattern_search` | The M6 baselines, now available to the workbench engine. |
-| `llm` | Every candidate from the LLM, k per call. Stops when the simulation budget or the LLM ceiling is reached. |
-| `llm_first` | The LLM proposes until the best normalized violation has not improved for S evaluations (default 8). Then pattern search starts from the LLM's best design, with a closure radius (default 0.125). If pattern search stalls for S evaluations, the LLM is asked once more, at most R times (default 2). |
-| `llm_advisor` | Pattern search leads and never waits. LLM calls run asynchronously and their candidates jump the queue; the target LLM share of dispatched candidates is about 1/3. The LLM's context includes pattern search's centre, radius, best 5 and last 20. |
-| `llm_warmstart` | The first W candidates (default 8, the same as `warmup_transitions`) come from the LLM; then SAC continues with those transitions in replay. |
-| `seeded_warmstart` | The control for `llm_warmstart`: the first W are the starting design plus a seeded Latin hypercube, no LLM; then SAC. |
-| `sac_llm_rescue` | SAC runs; when the best violation has not improved for S evaluations, the LLM is asked for k candidates. |
+| `sac` | Today's random warm-up, ordinary update scheduling and SAC exploration, unchanged. The default. |
+| `llm_warmstart` | Collect W admitted transitions using LLM designs; run U initial SAC updates; then continue normal SAC exploration and online learning. |
+| `llm` | The LLM proposes every search design, k per call, using simulation feedback from earlier batches. No SAC learner. |
+| `sac_llm_rescue` | Normal SAC runs; after S evaluations without progress, request k LLM suggestions while SAC continues. Simulate accepted suggestions and learn from eligible results, then continue SAC. |
 
-Not built: `llm_bounds`, where the LLM narrows the bounds. It would change task definitions, and it stays for later.
+**Warm start (`llm_warmstart`).** Three persisted phases; the workbench executes learner and simulation operations:
+
+1. **Collect starting designs.** Ask for varied, legal designs, k per call (default 4), and simulate them. Resolve W
+   from `warm_start_count`; when unset, use `max(8, advanced.batch_size, advanced.warmup_transitions)`. Explicit W
+   must be at least the batch size, and replay capacity must accommodate W. Count only newly admitted transitions,
+   not proposals, rejected outputs, reset evaluations or infrastructure failures. Preserve normal eligibility for
+   failed circuit simulations. Do not train during this phase; defer the ordinary per-transition updates.
+2. **Learn from the starting designs.** When W transitions have committed and their in-flight work has drained,
+   run U calls to the existing `learner.update(replay.sample(batch_size))` (default U = 8, positive and bounded).
+   These are the initial updates, not additions to deferred updates. Reuse the existing encoder-freeze handling,
+   losses, sampling and update logs. No simulation or LLM call is needed in this phase. Do not copy LORO's update
+   count onto a tiny circuit dataset or claim that this schedule is a reproduction of LORO.
+3. **SAC search.** Only after all U updates commit may SAC choose its first policy action. There is no second
+   uniform warm-up, even if the ordinary warm-up setting is larger than an explicitly chosen W. Keep the LLM
+   transitions in replay and restore the ordinary online update schedule for subsequent admitted transitions.
+   SAC's stochastic policy continues exploring. No further LLM calls occur in this mode.
+
+Resolve W and U before the run starts and record them. Reserve remaining seed slots across lanes so dispatch cannot
+overshoot W; an ineligible result releases its slot. Check simulation, call and wall-clock budgets throughout.
+Request at most the remaining unreserved slots from the LLM. Wait for a batch's outcomes before requesting the
+next batch, so its prompt includes feedback and collection cannot leave an unnecessary call running at handover.
+If a limit or `stop_at_first_feasible` ends the run before handover, record that phase as incomplete; do not invent
+data, exceed the budget or claim that SAC took control.
+
+**Warm-start failure fallback.** After a terminal provider error, refusal, timeout, exhausted repair, or exhausted LLM ceiling,
+retain completed LLM experience and finish accepted queued/in-flight designs within remaining slots and budgets.
+If W is still incomplete, fill only its remaining slots using the seeded uniform source, then perform the same
+initial learning phase. Record `warmstart_degraded`, the reason
+and the LLM/random counts; report such runs separately. This is a fallback, not a second warm-up after success.
+Pause/Stop/Force cancellation never activates fallback or starts new work; resume uses the saved phase and budgets.
+Warm start supports scratch and fine_tune; resume restores its phase. Reject frozen evaluation because the required
+initial learning would violate the frozen-policy contract.
+
+**LLM only (`llm`).**
+- Measure the task's starting design once as a baseline, then use only accepted LLM candidates. The baseline is
+  labelled `reset`; every search design is labelled `llm_proposal`. No random warm-up, SAC updates or policy checkpoint.
+- Use one lane and one long episode in this first version, avoiding SAC's repeated resets. Reject concurrency > 1
+  explicitly for this mode. Run the same reward/spec evaluation without constructing an unused SAC learner.
+- Simulate each accepted batch before asking again so the next prompt includes its outcomes. Wait responsively when
+  no candidate is ready. All baselines, candidates, failures, repairs and calls count against their respective budgets.
+- When the LLM ceiling is exhausted, evaluate any accepted queued candidates within the remaining simulation budget,
+  then stop with the reason recorded. A terminal provider error, refusal, timeout or exhausted repair also stops
+  the mode after already accepted work; it never falls back to SAC or random search. User cancellation starts no new work.
+- Persist the queue, history/notes, budgets, current environment state and call records for resume without needing
+  neural-network weights. New runs use scratch; resume restores this method's saved state. Reject fine_tune/frozen
+  and saved RL model inputs because this method has no policy to load or train.
+
+**SAC with LLM rescue (`sac_llm_rescue`).**
+- Start with today's SAC random warm-up and ordinary online updates. There is no LLM warm-start phase and no extra
+  U-update block. Arm stall detection only after SAC starts choosing policy actions, using the best result already
+  observed during baseline/warm-up as its initial reference.
+- Progress means a first valid result, lower best normalized violation before feasibility, first feasibility, or
+  higher best reward after feasibility under the fixed reward configuration. Invalid results cannot count as progress.
+  Count completed non-reset search evaluations without such progress; circuit failures count, infrastructure errors
+  do not. Reset the counter on progress. The threshold S defaults to 8; record the trigger and its best-design snapshot.
+- After S consecutive evaluations without progress, request up to k candidates in the background. SAC continues
+  dispatching and learning while the call runs. Once ready, valid LLM candidates take the next available search slots;
+  required episode resets still run normally. All suggestions use the unchanged action mapping and actual current
+  transition state, and eligible results use the ordinary replay admission and update schedule.
+- Allow at most one rescue batch pending or in flight. A round includes its initial request and at most one repair;
+  both consume call budget. Default maximum R = 2 rounds per run. After its queued/in-flight candidates finish, or a
+  failed round ends, require a fresh S-evaluation window before another request. No repeated calls on every stalled step.
+- A failed request, exhausted round/call/cost ceiling or rejected candidate leaves SAC running. Never reserve a
+  simulation slot while waiting for text. If the run ends before suggestions arrive or can be evaluated, cancel the
+  call, record unused candidates and end normally; do not prolong the run or exceed its budget to consume suggestions.
+- Persist stall counters, best progress, round/call counts, queue and the learner/replay/RNG together. Scratch and
+  fine_tune may use rescue; resume restores progress. Reject rescue with frozen evaluation. Pause/Stop/Force still
+  cancel the call and block new work, rather than continuing SAC as a provider-error fallback.
+
+Not built: LLM-to-pattern handover, continuous advisor scheduling, combined warm-start-plus-rescue mode, LLM action
+masking, LLM-generated rewards or narrowed bounds. Keep these four choices distinct for interpretable comparisons.
 
 **S7 Context builder.** Inputs:
 - the circuit graph (devices, terminals, nets, sizes);
@@ -203,7 +311,9 @@ Output: bounded, deterministic prompt sections.
 - The operating points of the best design: region and vds − vdsat per device. Wrong-region devices are listed first,
   and the instructions ask the LLM to fix the bias before chasing AC or transient specs.
 - Repeated designs flagged.
-- In the hybrids, the numeric search's latest ± results as directional hints.
+- The method and current phase; starting-transition count for warm start, or stall/round counts and trigger snapshot
+  for rescue. Describe observed parameter changes and outcomes
+  when available; do not manufacture coordinate-poll evidence or imply causal sensitivities from unrelated designs.
 - The budget left.
 
 Keep it under about 12 k tokens (use a character-based estimate) and truncate the history, never the rules.
@@ -219,6 +329,8 @@ The checks:
   shown to the LLM on the next call. Never clip or rescale silently.
 - Snapping to the grid is recorded as snapped.
 - Duplicates of an evaluated design are rejected as repeats.
+- Check duplicates after legal grid projection, including already queued or in-flight candidates. Request variation
+  among starting designs; diversity is a design requirement, not a guarantee that the proposals are useful.
 
 **S9 Inverse mapping.** Add `ActionMapper.encode(values) -> {group_id: z}`, the exact inverse of `legalize`'s mapping
 for values inside the bounds, for linear and log scales. Tests:
@@ -233,35 +345,52 @@ Kept notes are returned to the LLM next call, 1,500 characters at most.
 - `complete(prompt, schema, *, on_event) -> reply`.
 - `ReplayClient` serves the recorded replies in call order. It checks that each prompt's SHA-256 equals the recorded
   one; a mismatch is an error ("the run diverged").
+- For asynchronous rescue, record request and reply-release positions in the scheduler event sequence. Deterministic
+  replay uses those positions, not real elapsed time, to reproduce interleaving with SAC and the prompt snapshots.
 - `FakeClient` serves scripted replies for tests.
 - `CallRecord` holds call_id, method, provider, model, effort, timestamps, latency, prompt and reply SHA-256, tokens
   (input, output, cache read, cache write, each null when unknown), notional cost (null when unknown, never 0),
   candidates returned / accepted / rejected with reasons, status, repair flag, notes kept / dropped, and hints included.
 
 **S12 Package tests** under `tests/`: every item above, determinism, replay, and the "defaults change nothing" rule. No
-network and no CLI.
+network and no CLI. Include phase transitions, seed-slot accounting, insufficient data, fallback, cancellation and
+restored progress. Include LLM-only stopping and rescue progress/round logic. Actual engine behavior is checked
+by G11, G13 and G14.
 
 ## 5. Workbench requirements (commit B, no digest change)
 
 **W1 Engine.**
 - `_dispatch` takes the next candidate from the configured method (S1/S6) through a queue.
 - Method `sac` must reproduce today's runs row for row (G1).
-- LLM calls run in a background thread, with at most one call in flight per run. Lanes wait for the LLM only in
-  method `llm`.
+- LLM calls run in a background thread, with at most one call in flight per run. Wait for candidates in `llm` and
+  `llm_warmstart`'s collection phase; `sac_llm_rescue` continues SAC while waiting. Waiting never consumes a simulation
+  reservation or starts a timer-based handover. This resolves the earlier S6/W1 conflict about waiting.
 - Pause, Stop and Force cancel an in-flight LLM call by stopping its process. No simulation starts after that, and the
   call is recorded as `cancelled`.
-- Replay admission is unchanged.
-- Methods that do not learn from episodes (`llm`, `random`, `pattern_search`, `llm_first` while the LLM or pattern
-  search leads) run one long episode: one baseline evaluation, no repeated resets. SAC-based methods keep
-  `episode_length`.
-- Record the method and the episode handling in the run manifest.
+- Replay admission in SAC-based methods is unchanged; warm start changes update scheduling only as S6 defines. Plain SAC's
+  dispatch, random-number sequence and update triggers stay unchanged.
+- The three SAC-based methods retain `episode_length`, starting-design resets and stop rules. Resets count toward the
+  simulation budget but not W; no synthetic transition is created for a reset.
+- During initial learning, keep control polling responsive and dispatch no simulation. Record phase, W, U, completed
+  initial updates, source counts, fallback status and episode handling in the run manifest/status and checkpoints.
+  Save phase progress with the learner, replay and RNG state. Resume from the same durable boundary without repeating
+  acknowledged updates or losing queued candidates; test interruption at every phase, including mid-training.
+- LLM-only runs use a single baseline and one long episode, no learner/replay updates, and a durable search-state
+  save for resume. Preserve evaluation/history records and make all run tabs work without a policy checkpoint.
+- Rescue runs persist stall/round state and request/reply event positions along with their normal learner state.
+  Cancel unfinished LLM calls on normal run completion too; accepted but unused proposals are recorded as unused.
 
 **W2 Tables.**
-- `ACTION_SOURCES` gains `llm_proposal`, `coordinate_poll`, `random_search` and `seeded_warmup`.
+- `ACTION_SOURCES` gains `llm_proposal` and the benchmark-only `seeded_warmup`; fallback and the uniform control
+  keep `random_warmup`. These source labels do not add workbench methods.
 - `evaluations` gains a nullable `llm_call_id` (null means "not chosen by an LLM").
 - A new `llm_calls` table follows S11, declared in `storage/tables.py` style so the data dictionary follows.
 - Old run folders still load in every tab.
 - `agents/run_digest.py` counts rewards by the new sources.
+- Tag initial versus online learner updates so U and the first policy version can be audited. Initial updates
+  reference the existing data cursor; never create fake evaluations to log training. Old update rows remain readable.
+- Rescue records link each round's trigger, call IDs and suggested/evaluated/unused candidates. LLM-only runs have
+  zero learner updates and no learning replay admissions; do not fabricate policy versions or weights.
 
 **W3 Run folder.**
 - `llm/calls/<call_id>/prompt.txt`, `response.json` and `record.json`.
@@ -270,10 +399,14 @@ network and no CLI.
 
 **W4 Settings.** A `run.search` block:
 - method; provider; model; effort; candidates per call (default 4); `max_llm_calls`; `max_llm_notional_usd`;
-  `llm_call_timeout_seconds` (default 600); stagnation window; closure radius; advisor share; warm-start count;
-  `hints_allowed` (default true).
+  `llm_call_timeout_seconds` (default 600); `warm_start_count` (unset resolves as S6); `initial_sac_updates`
+  (default 8, integer 1-1024); `rescue_stagnation_evaluations` (default 8, positive integer);
+  `rescue_max_rounds` (default 2, positive integer); `hints_allowed` (default true).
 - It is hashed as absent while at its defaults, added to `_hashed` like `run.reward`.
-- Validation: an LLM method needs a provider other than `disabled`, and both LLM ceilings.
+- All three LLM methods require an enabled provider and both LLM ceilings. W/U and seed capacity checks apply only
+  to warm start; stall/round settings only to rescue. Enforce S6's model-loading and concurrency restrictions and
+  reject unknown methods. There are no radius, advisor-share or masking settings. Show the resolved W/U and a budget
+  warning if warm-start collection plus resets cannot fit; never silently increase simulation authorization.
 
 **W5 Authorization.**
 - The Start question states the LLM ceiling (calls, and notional cost where known) next to the simulation budget.
@@ -306,12 +439,21 @@ network and no CLI.
 **W8 UI** (in `frontend/src/panels/Right.tsx`, Run configuration). Re-read the file first: reward v2.1 and the Monte
 Carlo plan also edit it.
 - A "Search method" module with short captions and a closed "▸ What each method does" line:
-  - The method select: SAC (default), Random search, Pattern search, LLM only, LLM first then pattern search, Pattern
-    search with LLM advice, LLM warm start then SAC, Seeded warm start then SAC (control), SAC with LLM rescue.
+  - The method select contains exactly **SAC** (default), **LLM warm start → SAC**, **LLM only**, and
+    **SAC with LLM rescue**.
+  - Captions: "Random starting designs, then SAC learns and explores" and "LLM starting designs, initial SAC
+    training, then SAC learns and explores" for the first two; "AI proposes every search design" and
+    "SAC runs; AI contributes suggestions when progress stalls" for the new modes.
+  - SAC-based modes use the selected graph encoder. LLM only hides inactive RL settings/model controls and policy
+    checkpoint actions; it still supports saving search progress and resuming the run.
   - Provider, Model and Effort drop-downs from the catalog, with "Same as the Agent tab" as the default.
   - The two ceilings.
   - The rest under a closed "More settings".
 - The header shows "LLM n / N" during an LLM run.
+- Show the current phase in plain language: "Collecting starting designs", "Learning from starting designs" or
+  "SAC search" for warm start, "AI proposing designs" / "Simulating AI designs" for LLM only, and
+  "SAC search — AI suggestions pending" while a rescue call runs. Show rescue rounds used and stall progress under
+  details. Counts and completed updates explain handover and rescue; elapsed time is not their trigger.
 - The user's style rules:
   - Buttons, not timers.
   - Headlines, warnings and buttons stay visible; explanations fold.
@@ -327,6 +469,9 @@ Carlo plan also edit it.
 - A text box in the thread appends to `control/llm_hints.jsonl` through a new route.
 - The next call includes the unread hints as the user's own messages. They cannot change bounds, specs or budget:
   S8 still applies.
+- Accept hints only while another LLM call is possible. For warm start, disable hints after handover. For LLM only,
+  use them in the next batch; for rescue, in the next stall-triggered call. Hints never force a rescue call, bypass
+  the stall/round limits or add rescue behavior to warm start.
 - The run manifest and summary say `steered: true`, with the hint count.
 - The comparison reports steered runs separately.
 
@@ -363,7 +508,8 @@ Carlo plan also edit it.
 - Parameter rows: W and L on their grid; multipliers as `integer` rows; bias currents on a `log` scale.
 - Probe rows: every value the benchmark measures.
 - Spec rows: the benchmark's own pass rule, read from its evaluator code (`AmpEnv.py`, `LdoEnv.py`), not guessed from
-  the YAML. Max/min objectives become the after-feasible direction.
+  the YAML. Under the 2026-09-30 decision, all after-feasible directions are `none`; former objective metrics
+  remain Probes and are reported descriptively for the best feasible design.
 
 If a circuit needs both of its decks in one evaluation, merge them into one control block if parity holds. Otherwise
 extend the ngspice backend to run several decks per candidate (a W item, covered by tests).
@@ -387,16 +533,67 @@ circuits and why.
 **B5 Where the data goes.** Imported tasks stay in `configs/local` and are not committed; committing them is decision L3.
 Do not clone, copy or run anything from AMS-SizingBench (`yuxi120407/AutoSizer`). It has no licence file.
 
+**B6 Matched warm-start comparison.** A NEW benchmark driver, `examples/benchmark_llm_sizing.py`, uses the same
+collection / initial learning / SAC schedule with an injected candidate source for controls. It does not add public
+workbench method values or fabricate LLM call records for controls. Its internal setup records the benchmark arm
+and uses the shared scheduler without requiring a real provider. Freeze these arms in `plan-benchmark.json` before
+measuring LLM performance:
+
+| arm | initial data | learning schedule |
+|---|---|---|
+| Plain SAC | Existing uniform random warm-up | Existing scheduling, unchanged |
+| Matched random start | W uniform random transitions | U initial updates, then normal SAC |
+| Matched seeded start | Starting design, then seeded Latin-hypercube proposals until W admissions | Same U initial updates, then normal SAC |
+| LLM warm start → SAC, each provider separately | W LLM transitions, with any fallback disclosed | Same U initial updates, then normal SAC |
+
+The matched random arm separates the effect of LLM data from the extra initial training. The seeded arm tests
+whether a simple designed initialization suffices. The starting design already measured by a reset is not free
+replay data: the seeded control's action and resulting transition require an actual, budgeted step. Uniform controls
+retain the baseline's distribution, including any projected repeats; report duplicate rates for all arms.
+
+Use the same circuit, starting design, parameter domain, targets, reward, episode/reset rules, graph encoder, model
+initialization seed, batch size, W, U, online update schedule, concurrency and stopping rules across matched arms.
+Keep plain SAC's existing schedule intact and disclose that difference. Report initial and online updates separately.
+Pin W/U on development runs before held-out comparisons; do not tune them on the reported evaluation runs. Calibration
+chooses difficult reachable tasks and must be disclosed; it is not evidence of general superiority.
+
+Count all candidate evaluations, including resets, initial data and failures. A retry retains its evaluation ID;
+count every actual simulator launch/analysis and retry separately. Report feasibility, simulations and time to first feasible,
+best violation/quality at the budget, LLM calls/tokens/cost, LLM waiting time, initial training time and total runtime.
+Unknown token/cost values remain null. An unfinished or unsuccessful run stays in the report. Keep steered and
+degraded starts separate and visible. Also retain standalone random and pattern-search benchmark references.
+
+Build and verify this harness with FakeClient/ReplayClient and free non-LLM simulations before requesting paid calls.
+
+**B7 LLM-only and rescue comparison.** Extend that driver to run `llm` and `sac_llm_rescue` against the same plain
+SAC reference, with providers reported separately. Keep task/spec/reward settings, seeds, concurrency 1 and total
+evaluation budget fixed. Disclose the one-baseline LLM-only episode policy and its zero learner updates. Rescue
+keeps plain SAC's warm-up, resets and online learning; freeze S/R and the call ceilings before measuring outcomes.
+Count suggestions that arrive too late, failed calls, actual rescue evaluations and time spent waiting for proposals.
+Do not slow SAC artificially to let a rescue reply arrive; whether latency leaves useful intervention time is part
+of the result. All B6 cost, feasibility, failure and steering reporting rules also apply. Free checks use fake or
+replayed responses; paid runs remain behind section 7's explicit authorization.
+
 ## 7. Order of work
+
+**Preflight already completed before this plan revision.** Reward v2.1 commits are `8cf53ae` and `8db46b8`; the
+user-authorized shared baseline is `5a39f89`. The full suite passed 1,417 tests and TypeScript passed. The frozen
+baseline and seeded SAC output are under `artifacts/local/llm-sizing/baseline/` and `g1-before/`; the historical
+`acceptance-summary.json` records pre-implementation checks, not acceptance of this revised feature. Its old
+scheduling question is resolved by S6/W1 here. No LLM-sizing implementation or paid call has been made. Recheck
+status and relevant source hashes before reusing this evidence; if they match, continue from step 2 without
+repeating completed preflight work. Preserve the historical record and update the acceptance summary when resuming.
 
 1. **Preflight.**
    - Confirm that reward v2.1 is committed.
    - Run `git status`. Stop on another session's uncommitted edits in files you need.
    - Record `source_digest()`, and snapshot `src/analog_optimizer/` and the tree for G1.
    - Run the full suite once, and write down any failures that already exist.
-2. **Package (commit A).** S1-S12, with gates G2 and G5, and G1's package half.
-3. **Workbench (commit B).** W1-W12, with gates G1, G3, G4, G6 and G7.
-4. **Benchmark.** B1-B5, with gate G9.
+2. **Package (future commit A).** S1-S12 for the four methods, with gates G2 and G5, G1's package half and
+   G11/G13/G14 schedule tests. Initial training uses existing SAC operations; do not edit SAC or replay algorithms.
+3. **Workbench (future commit B).** W1-W12, including warm-start learning, LLM-only state and asynchronous rescue,
+   with gates G1, G3, G4, G6, G7, G11, G13 and G14.
+4. **Benchmark.** B1-B7, with gates G9 and G12. Prepare the controls and all four modes before any paid experiment.
 5. **Checks and docs.**
    - Full suite and `tsc`.
    - Browser checks for W8-W10 against a scratch backend (G8), then G10.
@@ -406,41 +603,58 @@ Do not clone, copy or run anything from AMS-SizingBench (`yuxi120407/AutoSizer`)
    - (a) **Measured calls.** At most 2 calls with Fable 5.1 through Claude Code, and at most 2 with `gpt-6-astra`
      through Codex, from the fixed working directory. The second call of each shows whether the prompt was cached.
      Record latency, tokens and notional cost. The first Codex call is also the provider's first real request.
-   - (b) **The phase-2 first slice.** One chosen circuit, 3 repeats, methods `llm` and `llm_first`, each with Fable 5.1
-     and with Astra: about 70 LLM calls and free simulations. Also random, pattern search and SAC (GT) with the same
-     60-simulation budget and seeds 17, 29, 43.
+   - (b) **Warm-start pilot.** One chosen circuit, seeds 17, 29, 43; `llm_warmstart` with each of the two providers
+     is six runs. Proposed settings: W = 8, U = 8, batch size 8, k = 4, concurrency 1, 60 candidate evaluations per
+     run (including resets), and no early stop, so handover and subsequent SAC behavior can be observed. The planned
+     successful path needs two LLM calls per run; propose a hard ceiling of four per run, including repairs and
+     replacements: **24 calls total**, separate from 7a's four. These are proposed limits, not authorization. If
+     data are insufficient inside the ceiling, apply and disclose S6 fallback; do not expand the limit.
+   - Run B6's plain SAC and both matched non-LLM controls on the same circuit and seeds. Include standalone random
+     and pattern search with the same candidate-evaluation budget. Report their reset/update differences.
+   - (c) **LLM-only and rescue pilot, separately approved.** Use the same circuit, seeds, providers, k = 4,
+     concurrency 1 and 60-evaluation budget, with no early stop. Each added method has six runs. Propose at most
+     16 calls per LLM-only run (96 total, including repairs), and S = 8, R = 2 with four calls per rescue run
+     (24 total, including repairs). That is at most **120 additional calls**, not included in 7a/7b. Stop or
+     continue SAC at exhausted ceilings as S6 specifies. User approval can authorize a smaller slice; this plan
+     does not authorize any calls. Report the actual evaluated candidates if a call ceiling ends LLM-only early.
    - Report per run, with no pooling and no ranking claim at n = 3. Then stop.
 
 Not in this brief:
-- The full phase-2 set (about 420 LLM calls).
-- Phase-3 comparisons (`llm_advisor`, `llm_warmstart` against `seeded_warmstart`, `sac_llm_rescue`, mixed replay, and
-  ablations without operating points, without notes, k = 1 against 4, and model strength).
-- Any Spectre run (phase 4: OTA7 and LDO, on a budget the user sets).
+- A larger multi-circuit paid study or a claim of superiority from three repeats.
+- Pattern-search hybrids, combined warm-start-plus-rescue, continuous LLM advice, action masking and reward/bounds generation.
+- Additional ablations of W/U, operating points, notes, batch proposal size or model strength. A later study can
+  include a no-initial-training control; it is not an additional UI mode or a reason to omit the required initial phase.
+- Any Spectre run (a later stage: OTA7 and LDO, on a budget the user sets).
 - AMS-SizingBench.
 
 ## 8. Decisions for the user (ask before the step that needs them)
 
-- **L1**, before step 7: the LLM ceilings for 7a (proposed: 4 calls) and 7b (proposed: 70 calls). Fable 5.1 is the
-  model heaviest on the user's Max usage; they hit its limit on 2026-09-29.
-- **L2**, before step 5: the development model and the measured effort. Defaults: Sonnet 5.5 or `gpt-6-luna` for
-  development; effort `high` for both measured models, with higher efforts only as an ablation.
-- **L3**, at step 4: may imported benchmark tasks be committed? Default: no.
+- **L1**, before each paid slice: explicit call and notional-cost ceilings. Proposed call caps are 4 for 7a,
+  24 for 7b, and 120 for 7c (96 LLM-only plus 24 rescue). These are separate ceilings; approving one does not
+  approve the others. A notional-cost cap must be agreed where cost is known. No paid calls are yet approved.
+- **L2**, with L1: confirm the measured model IDs and effort after checking CLI support; proposed effort is `high`
+  for both requested models. Free implementation and fake/replay checks do not need a development-model decision
+  or real sizing-model calls; keep the current coding session's settings.
+- **L3**: imported benchmark tasks remain uncommitted by default. Ask only if the user later requests a change to
+  that choice; do not block free import or calibration on it.
 
 Defaults already chosen; do not ask:
 - Specs are calibrated harder (B4).
 - Operating points go to the LLM; no PDK-derived tables.
 - Resets are kept for SAC methods.
 - Hints are allowed and mark the run steered.
-- `llm_first` before `llm_advisor` in comparisons.
-- `llm_bounds` is not built.
+- Exactly four workbench search choices, with waiting, initial learning and rescue scheduling as S6/W1 specify.
+- W/U are counts, not a handover timer; defaults are provisional and recorded.
+- Rescue is included as a separate mode; LLM action masks and bound/reward changes are not built.
 
 ## 9. Acceptance gates
 
 - **G1: SAC unchanged.** Two scratch settings folders run the same seeded MOCK config (method `sac`) on the pre-change
   snapshot and on the new tree. The raw tables must be equal row for row. Ignore only timestamps, durations, run IDs,
   paths and the recorded code digest.
-- **G2: Replay.** A MOCK run with `FakeClient` for each LLM method, replayed with `ReplayClient`, gives identical
-  proposals and rows.
+- **G2: Replay.** Each of `llm_warmstart`, `llm` and `sac_llm_rescue` runs on MOCK with `FakeClient`, then with
+  `ReplayClient`, with identical proposals, phases, update counts and rows under a deterministic scheduler.
+  Rescue replays recorded request/reply-release event positions, not provider wall-clock timing.
 - **G3: Ceilings and cancelling.** Calls never exceed the ceilings. Pause, Stop and Force during an in-flight call start
   no simulation, and the call is recorded as `cancelled`.
 - **G4: Links.** Every LLM-chosen evaluation links to a complete call record.
@@ -451,16 +665,38 @@ Defaults already chosen; do not ask:
 - **G7: Old data.** An existing MOCK run folder loads in every tab. `fine_tune` and `frozen` load a pre-change
   checkpoint with the warning recorded; `resume` refuses it in words.
 - **G8: Suites.** The full suite and `tests/workbench` pass, `tsc --noEmit` is clean, and the browser checks for W8-W10
-  pass on scratch ports.
-- **G9: Benchmark.** B3 parity and B4 calibration are recorded.
-- **G10: Nothing paid.** Before step 7, no real `claude` or `codex` process ran, `agent_audit.jsonl` is unchanged, and
-  no bridge or Spectre call was made.
+  pass on scratch ports. The method selector has exactly four choices; phase progress, rescue status, hint rules
+  and LLM-only tabs without policy checkpoints are verified. S6 compatibility rules hold in both schema and UI.
+- **G9: Benchmark.** B3 parity and B4 calibration are recorded, including failed/excluded circuits and the selection rule.
+- **G10: Nothing paid.** Before step 7, no real `claude` or `codex` model request ran, `agent_audit.jsonl` is unchanged,
+  and no bridge or Spectre call was made. W7's local `--help` inspection is allowed; it must not invoke a model.
+- **G11: Learning before handover.** A real SACLearner on synthetic MOCK results receives W eligible initial
+  transitions, completes exactly U initial updates, then supplies its first policy action with the corresponding
+  policy version. Verify finite updates and actual weight changes, source counts, normal online updates afterward,
+  no automatic second random warm-up, no fake reset transitions, no early handover when replies/data are delayed,
+  and no seed overshoot with parallel lanes. Cover insufficient data/budget, provider fallback, all control actions,
+  scratch/fine_tune and resume in each phase. Weights and phase counters restore together. These tests establish
+  correct integration, not improved circuit performance.
+- **G12: Fair controls.** Benchmark controls use the same collection/handover code and effective W/U as the LLM arm.
+  Recorded plans and outputs expose seeds, source labels, resets, duplicate rates, updates and all cost counters.
+  B7 runs expose LLM-only episode differences and rescue latency/unused suggestions. An offline control run cannot
+  invoke a real LLM. Plain SAC still satisfies G1.
+- **G13: LLM only.** On MOCK, exactly one baseline precedes only LLM-proposed search designs, with no random/SAC
+  candidate or learner update. Verify feedback between batches, ceilings, refusal/timeout/invalid-output stopping,
+  responsive controls and faithful resume without model weights. No fallback silently changes the method.
+- **G14: Rescue.** On MOCK with controlled progress and delayed replies, verify S-evaluation triggers, no requests
+  during random warm-up, resets/infrastructure failures excluded, and progress resetting the counter before/after
+  feasibility. SAC must dispatch and learn while a reply is pending; accepted suggestions use normal replay and
+  updates. Check fresh stall windows, one pending batch, R-round/call ceilings, failure continuation, cancellation,
+  late/unused replies, total evaluation budget and resume with identical counters. No rescue means the SAC sequence
+  matches the plain SAC control. Fake timing tests establish scheduling correctness, not a performance benefit.
 
 ## 10. Reporting back
 
 - **Docs.**
-  - A new page `docs/llm-sizing.md`: what each method does, how to run one, what is recorded, and the limits.
-  - A `docs/decisions.md` entry: the user decisions of 2026-09-29 and both digests.
+  - A new page `docs/llm-sizing.md`: the four methods, warm-start learning/handover, LLM-only stopping/resume,
+    asynchronous rescue, how to run each, recorded data, literature limits and the benchmark controls.
+  - A `docs/decisions.md` entry: the user decisions of 2026-09-29/30 and both digests.
   - The next free entry in `docs/workbench-log/7.101-and-later.md`, plus its row in the index.
   - `artifacts/local/llm-sizing/acceptance-summary.json`: the gates, the digest, the counts, the benchmark commit, and
     the parity and calibration results.

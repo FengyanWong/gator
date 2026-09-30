@@ -103,8 +103,8 @@ try {
   listed = await options('Agent model');
   const codexEfforts = await options('Effort');
   check('another provider brings its own lists and starts from its CLI default', saved.provider === 'codex' && saved.model === null && saved.effort === null
-    && listed.includes('gpt-5.6-sol') && !listed.includes('sonnet') && codexEfforts.includes('minimal') && !codexEfforts.includes('max'), codexEfforts.join(' '));
-  check('the Codex list says it was never exercised', (await sideHint()).includes('never been installed'));
+    && listed.includes('gpt-6-astra') && !listed.includes('sonnet') && codexEfforts.includes('ultra') && !codexEfforts.includes('minimal'), codexEfforts.join(' '));
+  check('the Codex list describes local help verification and account-dependent access', (await sideHint()).includes('Local CLI help') && (await sideHint()).includes('account'));
   await shot('0c-codex.png', '.agent-side');
   await pick('Provider', 'claude_code');
   saved = await readSettings();

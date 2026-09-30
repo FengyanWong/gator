@@ -56,7 +56,8 @@ def _trend(values):
     return dict(first_third_mean=_num(statistics.fmean(clean[:third])), last_third_mean=_num(statistics.fmean(clean[-third:])), n=len(clean))
 
 
-def build(*, status: dict, config: dict, evaluations: list, parameters: list, metrics: list, updates: list, errors: list) -> dict:
+def build(*, status: dict, config: dict, evaluations: list, parameters: list, metrics: list, updates: list, errors: list,
+          llm_calls=None, llm_outcomes=None) -> dict:
     from ..reward_diagnostics import steering
     order = sorted(evaluations, key=lambda row: (row.get('completion_index') or 0, row.get('dispatch_index') or 0))
     by_eval_parameters, by_eval_metrics = {}, {}
@@ -120,6 +121,15 @@ def build(*, status: dict, config: dict, evaluations: list, parameters: list, me
     if status.get('worker_alive'):
         caveats.append('The run is still going: this is a snapshot.')
     return dict(
+        llm=dict(search=status.get('search'), calls=[{k: r.get(k) for k in (
+                     'call_id', 'method', 'provider', 'model', 'status', 'returned', 'accepted',
+                     'latency_seconds', 'notional_cost_usd', 'input_tokens', 'output_tokens')}
+                     for r in (llm_calls or [])[-16:]],
+                 outcomes=[{k: r.get(k) for k in ('type', 'call_id', 'evaluation_id', 'source', 'valid',
+                     'feasible', 'violation', 'reward', 'accepted', 'reason') if k in r}
+                     for r in (llm_outcomes or [])[-16:]],
+                 rewards_by_source={source: _trend([r.get('reward') for r in order if r.get('action_source') == source])
+                                    for source in ('random_warmup', 'seeded_warmup', 'llm_proposal', 'sac_policy')}),
         run=dict(state=status.get('state'), stop_reason=status.get('stop_reason'), mode=status.get('mode') or run.get('mode'), mock=mock,
                  seed=run.get('seed'), network=run.get('network'), concurrency=run.get('concurrency'), error=_shown(status.get('error')),
                  active_seconds=_num(status.get('active_seconds'))),
@@ -157,4 +167,6 @@ def load(run_dir) -> dict:
     status = runs.run_status(run_dir)
     return build(status=status, config=read_json(layout.effective_config, default={}) or {},
                  evaluations=reader.rows('evaluations'), parameters=reader.rows('parameters'), metrics=reader.rows('metrics'),
-                 updates=reader.rows('learner_updates'), errors=list(read_jsonl(layout.logs / 'errors.jsonl')) if (layout.logs / 'errors.jsonl').is_file() else [])
+                 updates=reader.rows('learner_updates'), errors=list(read_jsonl(layout.logs / 'errors.jsonl')) if (layout.logs / 'errors.jsonl').is_file() else [],
+                 llm_calls=reader.rows('llm_calls'),
+                 llm_outcomes=[e for e in read_jsonl(layout.run_dir / 'llm/live.jsonl') if e.get('type') in ('reply', 'outcome', 'unused')])

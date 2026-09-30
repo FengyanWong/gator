@@ -46,7 +46,17 @@ def runtime_options(config, vocabulary=None):
     from dataclasses import replace
     from analog_optimizer.graph.pyg_converter import FeatureSchema, OPERATING_POINT_COLUMNS, OPERATING_POINT_REFERENCES
     from .compile import reward_settings, training_conditions
+    from .validation import native_count_columns
     schema = FeatureSchema() if vocabulary is None else vocabulary.schema
+    # ngspice PDK subcircuits can expose additional multiplicity parameters.
+    # The compiled action kind is already m/1; retain the native writeback names
+    # as separate numeric columns. This does not add current/A action support.
+    if vocabulary is None:
+        counts = sorted(set(native_count_columns(config)) - set(schema.parameters))
+        if counts:
+            schema = replace(schema, version=schema.version + '-counts-' + '-'.join(counts),
+                             parameters=schema.parameters + tuple(counts),
+                             references=schema.references + (1.,) * len(counts))
     if config.run.network.operating_points:
         schema = replace(schema, op_columns=OPERATING_POINT_COLUMNS, op_references=OPERATING_POINT_REFERENCES)
     return dict(feature_schema=schema, reward_settings=reward_settings(config),

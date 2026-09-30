@@ -141,7 +141,7 @@ class RunLock:
 
 
 class RunEngine:
-    def __init__(self, run_dir, *, task, use_processes=None, lane_factory=None, clock=time.monotonic, lock=None):
+    def __init__(self, run_dir, *, task, use_processes=None, lane_factory=None, clock=time.monotonic, lock=None, llm_client=None, seed_proposer=None):
         self.layout = RunLayout(Path(run_dir))
         self.manifest = read_json(self.layout.manifest)
         self.config = WorkbenchConfig.model_validate(read_json(self.layout.effective_config))
@@ -153,6 +153,9 @@ class RunEngine:
         self.compiled = compile_task(self.config, task.base_graph)
         self.mode = self.manifest['mode']                    # the run's ORIGINAL mode
         self.entry = self.manifest['segments'][-1]['entry']  # 'start' | 'resume'
+        self.search = None
+        self.llm_only = self.config.run.search.method == 'llm'
+        self._llm_client, self._seed_proposer = llm_client, seed_proposer
         self.frozen = self.mode == 'frozen'
         self.provenance = 'mock' if task.mock else 'real'
         self.use_processes = (not task.mock) if use_processes is None else use_processes
@@ -213,7 +216,9 @@ class RunEngine:
     def _prepare(self):
         cfg, out, adv = self.config, self.config.output, self.config.run.advanced
         enabled = {'evaluations', 'parameters', 'metrics', 'simulator_jobs'}
-        if out.save_learner_updates and not self.frozen:
+        if cfg.run.search.method != 'sac':
+            enabled.add('llm_calls')
+        if out.save_learner_updates and not self.frozen and not self.llm_only:
             enabled.add('learner_updates')
         if out.save_transition_archive:
             enabled |= {'transitions', 'states'}
@@ -223,6 +228,7 @@ class RunEngine:
         self.experiment = experiment
         from .pdk import run_vocabulary
         self.vocabulary = run_vocabulary(self.layout.run_dir)      # the run's own component list; None = standard
+        input_options = modes.runtime_options(cfg, self.vocabulary)
         source_dir = source_meta = None
         if self.entry == 'resume':
             source_dir = ckpt.resolve_checkpoint(self.layout.run_dir, 'latest')
@@ -231,12 +237,16 @@ class RunEngine:
             parent = self.manifest['parent']
             source_dir = ckpt.resolve_checkpoint(parent['run_dir'], parent['checkpoint_id'])
             source_meta = ckpt.read_metadata(source_dir)
-        built = modes.build('resume' if self.entry == 'resume' else self.mode, experiment=experiment,
-                            model_config=modes.model_config_from(cfg.run.network),
-                            sac_config=modes.sac_config_from(adv), spec_schema=self.compiled.spec_schema,
-                            advanced=adv, seed=cfg.run.seed, origin=self.task.origin, source_dir=source_dir,
-                            source_metadata=source_meta, task_definition_hash=self.task_hash, vocabulary=self.vocabulary,
-                            runtime=modes.runtime_options(cfg, self.vocabulary))
+        if self.llm_only:
+            built = dict(learner=None, replay=None, freeze=None, policy=dict(method='llm', weights='not_applicable'),
+                         run_state=ckpt.load_search_state(source_dir) if source_dir else None)
+        else:
+            built = modes.build('resume' if self.entry == 'resume' else self.mode, experiment=experiment,
+                                model_config=modes.model_config_from(cfg.run.network),
+                                sac_config=modes.sac_config_from(adv), spec_schema=self.compiled.spec_schema,
+                                advanced=adv, seed=cfg.run.seed, origin=self.task.origin, source_dir=source_dir,
+                                source_metadata=source_meta, task_definition_hash=self.task_hash, vocabulary=self.vocabulary,
+                                runtime=input_options)
         self.learner, self.replay, self.freeze = built['learner'], built['replay'], built['freeze']
         self.load_policy = built['policy']
         if self.frozen:
@@ -262,11 +272,9 @@ class RunEngine:
         self.previous_best_waveform = None
         self.encoder = None
         if self.archive:
-            from analog_optimizer.graph.pyg_converter import FeatureSchema
             self.encoder = StateEncoder(self.layout.data / 'states' / 'static', task_id=self.task_id,
                                         graph=self.compiled.graph, specs=self.compiled.specs,
-                                        feature_schema_version=(FeatureSchema() if self.vocabulary is None
-                                                                else self.vocabulary.schema).version,
+                                        feature_schema_version=input_options['feature_schema'].version,
                                         spec_schema_version=self.compiled.spec_schema.version)
         if self.entry == 'resume':
             self._restore(built['run_state'])
@@ -278,7 +286,10 @@ class RunEngine:
                                                 save_replay=out.save_replay_snapshots, keep_last=out.keep_last_checkpoints)
         self._record_load_policy()
         count = min(run.concurrency, self.task.max_concurrency)
-        factory = self._lane_factory or self.task.env_factory_builder(self.compiled, self.layout.work, run)
+        env_run = run.model_copy(deep=True)
+        if self.llm_only:
+            env_run.advanced.episode_length = run.max_evaluations + 1
+        factory = self._lane_factory or self.task.env_factory_builder(self.compiled, self.layout.work, env_run)
         from analog_optimizer.training.workers import WorkerLimits
         # A real (native) factory needs ONE owner of the Virtuoso session, alive from before the first lane opens until
         # after the last one closed: the optimizer's preparation service. Entered here exactly as its own training loop
@@ -297,6 +308,23 @@ class RunEngine:
         for lane in self.lanes:
             if lane.info['origin'] != self.task.origin:
                 raise RuntimeError('Lane origin differs from the task origin')
+        if cfg.run.search.method != 'sac':
+            from .search import SearchSession
+            collector = (built.get('run_state') or {}).get('collector', {})
+            collector = getattr(self, '_recovered_search_collector', collector)
+            self.search = SearchSession(self, self._llm_client, collector.get('search'), self._seed_proposer)
+            pending_update = collector.get('pending_initial_update')
+            if pending_update:
+                self.dataset.append_auxiliary(pending_update['update_id'], {'learner_updates': [pending_update]})
+            if self.llm_only and collector.get('llm_lane'):
+                saved = collector['llm_lane']
+                lane = self.lanes[0]
+                result = lane.submit('continue', dict(saved, max_steps=run.max_evaluations + 1)).result()
+                if not result.get('ok'):
+                    raise RuntimeError('The AI search episode could not be restored')
+                self.lane_state[lane.lane_id].update(observation=saved['observation'], needs_reset=False,
+                                                   episode_id=saved['episode_id'])
+            self.search.tick()
         self.last_checkpoint_time = self._clock()
         self.checkpoint_due = False
         # "Save now" (command `checkpoint`): the next due save is of kind `manual`, and the request is answered in
@@ -333,6 +361,30 @@ class RunEngine:
             report['best_design_after_checkpoint'] = later['last_commit_seq']
         self.dataset.flush()
         interrupted = self._record_interrupted()
+        if self.config.run.search.method != 'sac':
+            from analog_optimizer.recording import codec
+            # Written before a result is acknowledged; only a matching durable
+            # evaluation may advance search state beyond the learner checkpoint.
+            receipts = [read_json(p) for p in (self.layout.run_dir / 'llm/receipts').glob('*.json')]
+            receipts = [r for r in receipts if r['commit_seq'] > cursor['commit_seq']
+                        and self.dataset.has(r['evaluation_id'])]
+            if receipts:
+                latest = max(receipts, key=lambda r: r['commit_seq'])
+                recovered = codec.untree(latest['collector'])
+                recovered['search']['schedule']['trained'] = collector['search']['schedule']['trained']
+                recovered['pending_initial_update'] = collector.get('pending_initial_update')
+                if not self.archive and self.replay is not None:
+                    schedule = recovered['search']['schedule']
+                    if schedule['method'] == 'llm_warmstart' and schedule['admitted'] > len(self.replay):
+                        report['warm_start_replay_recovery'] = dict(
+                            admitted_before=schedule['admitted'], admitted_recovered=len(self.replay),
+                            note='Transitions after the checkpoint were not archived. Collect missing starting '
+                                 'designs within the remaining evaluation and model-call budgets before learning.')
+                        schedule['admitted'] = len(self.replay)
+                self._recovered_search_collector = recovered
+                self.rng.setstate(recovered['rng_state'])
+                self.counters.update(latest['counters'])
+                report['search_receipt_commit_seq'] = latest['commit_seq']
         post = self.dataset.last_seq - cursor['commit_seq']
         if post or interrupted:
             reader = DatasetReader(self.layout.data)
@@ -386,6 +438,7 @@ class RunEngine:
                        global_env_step=self.counters['global_env_step'], dispatch_index=record['dispatch_index'],
                        completion_index=self.counters['completion_index'], commit_seq=seq, phase=record['phase'],
                        action_source=record['action_source'], policy_version=record.get('policy_version'),
+                       llm_call_id=record.get('llm_call_id'),
                        proposed_at=record['proposed_at'], started_at=record['started_at'], completed_at=now,
                        committed_at=now, queue_seconds=0.0, execution_seconds=0.0, provenance=self.provenance,
                        result_source='simulation', cache_hit=False, attempts=1,
@@ -420,12 +473,22 @@ class RunEngine:
         while True:
             self._poll_control()
             self._check_limits()
+            if self.search:
+                if self.stop_reason:
+                    self.search.cancel()
+                self.search.tick()
+                if self.search.replay_barrier():
+                    time.sleep(idle_sleep)
+                    continue
             if self.stop_reason is not None and not self._condition_stop_file.exists():
                 write_json(self._condition_stop_file, dict(reason=self.stop_reason))
             busy = [l for l in self.lanes if self.lane_state[l.lane_id]['busy']]
             if self.checkpoint_due and not busy and self.stop_reason is None:
                 self._checkpoint(self.checkpoint_kind)
-            if self.stop_reason is None and not self.checkpoint_due:
+            learning = bool(self.search and self.search.schedule.phase == 'initial_learning')
+            if learning and not busy and self.stop_reason is None and not self.checkpoint_due:
+                self._initial_update()
+            if self.stop_reason is None and not self.checkpoint_due and not learning:
                 for lane in self.lanes:
                     state = self.lane_state[lane.lane_id]
                     if state['busy'] is None and not state['finished'] and self.stop_reason is None:
@@ -436,7 +499,13 @@ class RunEngine:
                     self.stop_reason = 'budget_exhausted'
                 if self.stop_reason is not None:
                     return
+                if self.search:
+                    self.search.account_wait(self.search.future is not None)
+                    self._write_status('running', throttle=0.5)
+                    time.sleep(idle_sleep)
                 continue
+            if self.search:
+                self.search.account_wait(False)
             if self.forced:
                 self._cancel_in_flight(busy)
                 return
@@ -518,15 +587,39 @@ class RunEngine:
 
     # ------------------------------------------------------------------ dispatch
     def _dispatch(self, lane):
+        if self.search and self.search.replay_barrier():
+            return
         state = self.lane_state[lane.lane_id]
+        chosen = None
+        if self.search:
+            if self.ledger.remaining() <= 0:
+                state['finished'] = True
+                return
+            # Never dispatch additional resets while the initial learning block is pending.
+            if self.search.schedule.phase == 'initial_learning':
+                return
+            if (self.search.schedule.phase == 'llm_warmup'
+                    and not self.search.schedule.available_seeds(self.search.pending_designs())):
+                return
+            if self.llm_only and state['needs_reset'] and self.counters['baseline_done']:
+                self.stop_reason = 'llm_episode_ended'
+                return
+            if not state['needs_reset']:
+                chosen = self.search.choose()
+                if chosen is None:
+                    return
         allowance = 1 if state['needs_reset'] else lane.info.get('step_launches', 1)
         evaluation_id = self.ledger.reserve(launches=allowance)
         if evaluation_id is None:
             state['finished'] = True
+            if chosen and chosen.source != 'sac':
+                self.search.queue.insert(0, chosen)
             return
         self._poll_control()
         if self.stop_reason is not None:            # cancelled before it started: refund the reservation
             self.ledger.release(evaluation_id)
+            if chosen and chosen.source != 'sac':
+                self.search.queue.insert(0, chosen)
             return
         proposed_at = utcnow()
         policy_version = None
@@ -539,13 +632,17 @@ class RunEngine:
         else:
             op = 'step'
             group_ids = lane.info['group_ids']
-            if self.frozen:
+            if chosen and chosen.source != 'sac':
+                proposal, source = chosen.proposal, chosen.source
+                phase = 'llm_rescue' if self.config.run.search.method == 'sac_llm_rescue' else self.search.schedule.phase
+            elif self.frozen:
                 deterministic = self.config.run.frozen_action == 'deterministic'
                 proposal = self.learner.act([state['observation']], deterministic=deterministic)[0]
                 source, phase, policy_version = ('mean_policy' if deterministic else 'sampled_policy'), 'frozen_eval', self.learner.updates
             else:
                 pending = sum(1 for s in self.lane_state.values() if s['busy'] and s['busy']['op'] != 'reset')
-                if self.replay.insertions + pending < self.config.run.advanced.warmup_transitions:
+                if (self.config.run.search.method != 'llm_warmstart'
+                        and self.replay.insertions + pending < self.config.run.advanced.warmup_transitions):
                     proposal = {g: self.rng.uniform(-1, 1) for g in group_ids}
                     source, phase = 'random_warmup', 'warmup'
                 else:
@@ -558,11 +655,14 @@ class RunEngine:
                     action_source=source, phase=phase, policy_version=policy_version, proposed_at=proposed_at,
                     started_at=started_at, dispatch_index=dispatch_index, attempts=[],
                     previous=state['observation'], episode_id=state['episode_id'], launch_allowance=allowance)
+        if chosen and chosen.metadata.get('call_id'):
+            busy['llm_call_id'] = chosen.metadata['call_id']
         self.dispatch_log.append(dict(evaluation_id=evaluation_id, proposal_id=busy['proposal_id'],
                                       dispatch_index=dispatch_index, worker_id=lane.lane_id, phase=phase,
                                       action_source=source, policy_version=policy_version,
                                       episode_id=state['episode_id'], proposed_at=iso(proposed_at),
                                       started_at=iso(started_at), launch_allowance=allowance,
+                                      **({'llm_call_id': busy['llm_call_id']} if busy.get('llm_call_id') else {}),
                                       worker_directory=lane.info['directory']))
         self.ledger.begin_attempt(evaluation_id)
         busy['handle'] = lane.submit(op, proposal, allowance=allowance, stop_file=str(self._condition_stop_file))
@@ -718,12 +818,12 @@ class RunEngine:
             if eligible:
                 from analog_optimizer.training.replay import Transition
                 transition = Transition.from_step(busy['previous'], busy['proposal'], step)
-                if not self.frozen:
+                if not self.frozen and not self.llm_only:
                     self.replay.add(transition)
                     admitted = True
             if self.archive:
                 transition_rows, state_rows = self._transition_rows(busy, step, lane, commit_seq, admitted, record)
-            if admitted:
+            if admitted and not (self.search and self.search.schedule.phase in ('llm_warmup', 'initial_learning')):
                 update_rows = self._maybe_update(commit_seq)
         # ---- first feasibility: decided when the scheduler receives the result
         in_flight_before = set(self.ledger.first_feasible['in_flight_evaluation_ids']) if self.ledger.first_feasible else set()
@@ -805,11 +905,33 @@ class RunEngine:
                 infrastructure or ('invalid_measurement' if status == 'ok' else (record.get('reason_code') or status))),
             diagnostics=redact(diagnostics, 2000), terminated=terminated, truncated=truncated,
             replay_eligible=eligible, duplicate_of=record.get('duplicate_of'))
+        if busy.get('llm_call_id'):
+            evaluation['llm_call_id'] = busy['llm_call_id']
         bundle = dict(evaluation_id=evaluation_id, commit_seq=commit_seq, rows=dict(
             evaluations=[evaluation], parameters=self._parameter_rows(busy, record, evaluation_id),
             metrics=self._metric_rows(evaluation_id, raw_metrics, raw_validity, raw_units, derived, spec_values,
                                       constraint_rows, status, record.get('condition_results')),
             simulator_jobs=job_rows, learner_updates=update_rows, states=state_rows, transitions=transition_rows))
+        if self.search:
+            from .search import failure_summary
+            self.search.observe(dict(evaluation_id=evaluation_id, source=busy['action_source'],
+                reset=not op_is_step, infrastructure=bool(infrastructure), admitted=admitted,
+                valid=candidate['valid'], feasible=candidate['feasible'], violation=violation, reward=reward,
+                metrics=metric_values, values={v['variable_id']: v['value'] for v in candidate['variables']
+                                              if v['optimized'] and v['value'] is not None},
+                spec_violations=constraint_rows,
+                condition_results=[{key: row.get(key) for key in ('condition_id', 'metrics', 'metric_validity', 'operating_points')}
+                                   for row in record.get('condition_results', [])],
+                operating_points=None if observation is None else observation.operating_points,
+                failure=failure_summary(diagnostics, evaluation['failure_type'])), busy.get('llm_call_id'))
+            from analog_optimizer.recording import codec
+            collector = self._collector_state()
+            if self.llm_only and observation is not None:
+                collector['llm_lane'] = dict(observation=observation, episode_id=busy['episode_id'],
+                    steps=self.counters['global_env_step'], episode=self.counters['episodes'])
+            write_json(self.search.root / 'receipts' / (evaluation_id + '.json'), dict(
+                evaluation_id=evaluation_id, commit_seq=commit_seq, collector=codec.tree(collector),
+                counters={k: self.counters[k] for k in ('global_env_step', 'episodes', 'baseline_done')}))
         self.dataset.commit(bundle)                              # <- durable acknowledgement
         if role is not None:
             write_json(self.layout.best_design / 'tracker_state.json',
@@ -847,7 +969,7 @@ class RunEngine:
             update = self.learner.update(self.replay.sample(adv.batch_size))
             if update['updates'] % every == 0:
                 rows.append(dict(run_id=self.run_id, update_id=f"{self.run_id}:u{update['updates']:09d}",
-                                 updated_at=iso(), evaluations_collected=commit_seq,
+                                 updated_at=iso(), evaluations_collected=self.ledger.completed if self.search else commit_seq,
                                  actor_loss=update['actor_loss'], critic_loss=update['critic_loss'],
                                  alpha_loss=update['alpha_loss'], alpha=update['alpha'],
                                  mean_log_prob=update['mean_log_prob'], target_mean=update['target_mean'],
@@ -855,7 +977,34 @@ class RunEngine:
                                  learning_rate=adv.learning_rate, replay_size=len(self.replay),
                                  batch_size=adv.batch_size, cumulative_updates=update['updates'],
                                  policy_version=update['updates'], update_seconds=self._clock() - started))
+                if self.search:
+                    rows[-1]['update_phase'] = 'online'
         return rows
+
+    def _initial_update(self):
+        """One bounded update per loop iteration, so controls are polled between updates."""
+        adv, schedule = self.config.run.advanced, self.search.schedule
+        if len(self.replay) < adv.batch_size:
+            raise RuntimeError('Starting transitions did not fill a training batch')
+        if self.freeze is not None:
+            self.freeze.apply()
+        started = self._clock()
+        update = self.learner.update(self.replay.sample(adv.batch_size))
+        schedule.trained += 1
+        keys = ('actor_loss', 'critic_loss', 'alpha_loss', 'alpha', 'mean_log_prob', 'target_mean',
+                'critic_grad_norm', 'actor_grad_norm')
+        row = dict(run_id=self.run_id, update_id=f"{self.run_id}:u{update['updates']:09d}", updated_at=iso(),
+                   update_phase='initial', evaluations_collected=self.ledger.completed,
+                   **{key: update[key] for key in keys}, learning_rate=adv.learning_rate,
+                   replay_size=len(self.replay), batch_size=adv.batch_size, cumulative_updates=update['updates'],
+                   policy_version=update['updates'], update_seconds=self._clock() - started)
+        # Publish weights/phase and the pending audit row before acknowledging the update.
+        # Recovery appends that row idempotently if the process died between these writes.
+        self._pending_initial_update = row
+        if self.config.output.save_checkpoints:
+            self._checkpoint('initial_learning')
+        self.dataset.append_auxiliary(row['update_id'], {'learner_updates': [row]})
+        self._pending_initial_update = None
 
     # ------------------------------------------------------------------ row builders
     def _candidate(self, busy, record, metrics, units_map, constraints, valid, feasible, violation, reward, seq):
@@ -1028,8 +1177,13 @@ class RunEngine:
             relative = (f"waveforms/{busy['evaluation_id']}/attempt-{number}"
                         if decision.startswith('retained') else None)
             status = record.get('status') or ('cancelled' if attempt.get('cancelled') else 'execution_error')
+            analysis = 'task_profile_default'
+            if self.task.connection_family == 'ngspice' and directory:
+                counts = read_json(Path(directory) / 'analysis-counts.json', default=None)
+                if counts is not None:
+                    analysis = 'ngspice:' + json.dumps(counts, sort_keys=True, separators=(',', ':'))
             rows.append(dict(run_id=self.run_id, job_id=f'{job_id}', evaluation_id=busy['evaluation_id'],
-                             worker_id=lane.lane_id, host=socket.gethostname(), analysis='task_profile_default',
+                             worker_id=lane.lane_id, host=socket.gethostname(), analysis=analysis,
                              condition=(record.get('condition') or {}).get('corner', {}).get('id', 'nominal'),
                              attempt=attempt['retry'], dispatched_at=attempt['dispatched_at'],
                              started_at=started, ended_at=ended, exit_status=status, timed_out=status == 'timeout',
@@ -1140,8 +1294,17 @@ class RunEngine:
 
     # ------------------------------------------------------------------ checkpoint
     def _collector_state(self):
-        return dict(rng_state=self.rng.getstate(), best_design=self.tracker.state_dict(),
-                    previous_best_waveform=self.previous_best_waveform)
+        result = dict(rng_state=self.rng.getstate(), best_design=self.tracker.state_dict(),
+                      previous_best_waveform=self.previous_best_waveform)
+        if self.search:
+            result['search'] = self.search.state_dict()
+            result['pending_initial_update'] = getattr(self, '_pending_initial_update', None)
+            if self.llm_only:
+                lane = next(iter(self.lane_state.values()))
+                if lane['observation'] is not None and not lane['needs_reset']:
+                    result['llm_lane'] = dict(observation=lane['observation'], episode_id=lane['episode_id'],
+                                              steps=self.counters['global_env_step'], episode=self.counters['episodes'])
+        return result
 
     def _checkpoint(self, kind):
         if not self.config.output.save_checkpoints:
@@ -1149,13 +1312,15 @@ class RunEngine:
             return None
         self.dataset.flush()
         counters = dict(self.counters, active_seconds_before=self._active_seconds(),
-                        evaluations_committed=self.dataset.last_seq, learner_updates=int(self.learner.updates),
+                        evaluations_committed=self.ledger.completed if self.search else self.dataset.last_seq,
+                        learner_updates=int(getattr(self.learner, 'updates', 0)),
                         replay_size=0 if self.replay is None else len(self.replay),
                         replay_insertions=0 if self.replay is None else self.replay.insertions)
         counters['last_checkpoint_commit'] = self.dataset.last_seq
         if self.frozen and ckpt.weight_digest(self.learner) != self.frozen_digest:
             raise RuntimeError('Frozen mode changed model weights')
-        metadata = self.checkpoints.save(
+        save = self.checkpoints.save_search if self.llm_only else self.checkpoints.save
+        metadata = save(
             self.learner, self.replay, ledger_state=self.ledger.state_dict(), data_cursor=self.dataset.cursor(),
             counters=counters, collector_state=self._collector_state(), mode=self.mode, kind=kind,
             effective_experiment=self.experiment, frozen=self.frozen)
@@ -1168,7 +1333,7 @@ class RunEngine:
         if self.manual_save and self.manual_save['state'] == 'waiting':
             # ANY save written after the request holds what the user asked to keep (a pause that overtook it, too).
             self.manual_save = dict(self.manual_save, state='saved', checkpoint_id=metadata['checkpoint_id'],
-                                    saved_utc=metadata['created_utc'], evaluations=self.dataset.last_seq)
+                                    saved_utc=metadata['created_utc'], evaluations=self.ledger.completed)
             if self.stop_reason is None:                # a run on its way down writes its final status right after
                 self._write_status('running')
         return metadata
@@ -1182,8 +1347,8 @@ class RunEngine:
                 or (self.manual_save and self.manual_save['state'] == 'waiting')):
             return None
         counters = last['counters']
-        if (counters['evaluations_committed'] != self.dataset.last_seq
-                or counters['learner_updates'] != int(self.learner.updates)
+        if (last['data_cursor']['commit_seq'] != self.dataset.last_seq
+                or counters['learner_updates'] != int(getattr(self.learner, 'updates', 0))
                 or counters['replay_insertions'] != (0 if self.replay is None else self.replay.insertions)):
             return None
         metadata = self.checkpoints.relabel(last['checkpoint_id'], kind, was=last['kind'])
@@ -1195,6 +1360,9 @@ class RunEngine:
     # ------------------------------------------------------------------ finalize
     def _finalize(self, final_state):
         problems = []
+        if self.search:
+            self.search.close()
+            self.manifest['search'] = self.search.status()
         for lane in self.lanes:
             try:
                 outcome = lane.close()
@@ -1325,6 +1493,7 @@ class RunEngine:
         dataset = getattr(self, 'dataset', None)
         write_json(self.layout.status, dict(
             state=state, run_id=self.run_id, mode=self.mode, entry=self.entry, provenance=self.provenance,
+            search=self.search.status() if self.search else None,
             mock=self.task.mock, pid=os.getpid(), host=socket.gethostname(), heartbeat_utc=iso(),
             stop_reason=self.stop_reason, error=self.error,
             budget=None if ledger is None else ledger.snapshot(),
@@ -1332,7 +1501,7 @@ class RunEngine:
                                  attempt=len(v['busy']['attempts']) + 1)
                             for k, v in getattr(self, 'lane_state', {}).items() if v['busy']],
             concurrency=len(getattr(self, 'lanes', [])),
-            learner_updates=int(self.learner.updates) if hasattr(self, 'learner') else 0,
+            learner_updates=int(getattr(self.learner, 'updates', 0)) if hasattr(self, 'learner') else 0,
             first_feasible=None if ledger is None else ledger.first_feasible,
             last_successful_evaluation_utc=(getattr(self, 'counters', {}) or {}).get('last_successful_evaluation_utc'),
             infrastructure_failures=(getattr(self, 'counters', {}) or {}).get('infrastructure_failures', 0),

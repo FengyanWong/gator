@@ -1,3 +1,4 @@
+import { SizingThread } from './SizingThread';
 import { Fragment, ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, ApiError, Json, saveJson, short } from '../api';
@@ -116,9 +117,9 @@ function Thought({ extra }: { extra: Json }) {
 
 // Stays mounted while another bottom tab is shown (`hidden`): unmounting would drop the chat, a pending
 // request's indicator and the proposal it returns, while the backend keeps working on that request.
-export function AgentTab({ config, setConfig, request, clearRequest, hidden, tabSlot, onDetached, runDir }:
+export function AgentTab({ config, setConfig, request, clearRequest, hidden, tabSlot, onDetached, runDir, runActive = false }:
   { config: Json; setConfig: (c: Json) => void; request: { kind: string; selection: Json[]; prompt?: string } | null; clearRequest: () => void; hidden?: boolean;
-    tabSlot?: HTMLElement | null; onDetached?: (detached: boolean) => void; runDir?: string | null }) {
+    tabSlot?: HTMLElement | null; onDetached?: (detached: boolean) => void; runDir?: string | null; runActive?: boolean }) {
   const [settings, setSettings] = useState<Json>(null);
   const [diagnostics, setDiagnostics] = useState<Json>(null);
   const [prompt, setPrompt] = useState('');
@@ -315,6 +316,7 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
         <p className="hint">Agents prepare proposals only. Applying a configuration, writing a circuit and running a real simulation each need their own authorization. Every manual workflow works without an agent.</p>
       </div>
       <div className="agent-main">
+        <SizingThread runDir={runDir} active={runActive} />
         <div className="agent-using"><span>{using ? <>Next request: <b>{settings.provider}</b>, model <b>{modelShown}</b>, effort <b>{effortShown}</b></>
           : 'No agent is selected (provider: disabled). Choose one on the left, or use "Export task description".'}</span>
           {/* The review button closes the line at its right end; its option stands in front of it. */}

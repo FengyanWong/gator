@@ -2,8 +2,10 @@
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
-- **Optimizer source digest:** `3f00832c89c1cf7af5cbc5ab6dac74c20250a76ea7bfa3a2df06717087fdd6f4`, set by commit
-  `8cf53ae` (reward v2.1, 2026-09-29).
+- **Optimizer source digest:** `100945fb780852ea3776a2395f83474bd208ed2f1ee5a27aff7cdf28b0d2651b`, set by the
+  optimizer commit of LLM sizing (the search package with the audit's duplicate-check fix, records 7.116 and 7.120,
+  2026-09-30). Before it: `3f00832c89c1cf7af5cbc5ab6dac74c20250a76ea7bfa3a2df06717087fdd6f4`, set by `8cf53ae`
+  (reward v2.1).
 - **Encoders:** `graph_transformer` (default), `rgcn`, `gatv2`. `port_gnn` was removed on 2026-09-24; `mlp` and `gcn`
   on 2026-09-26, when `gatv2` replaced `gat` (GATv1).
 - **Reward:** v2.1 ([reward-v2.md](reward-v2.md)). Schema defaults keep the old arithmetic: capped violations,
@@ -12,10 +14,18 @@ A summary for new sessions; everything below is the chronological record, oldest
   (`always`, `after_nominal`) is offered for `real:gpdk045_ota7` only.
 - **Older checkpoints** resume exactly only under their own source: digest `02127bc3...` (M6 pilot, six encoders) from
   `bbdfe36`; `aa987cf0...` (five encoders incl. MLP, GCN, GATv1) from `9bc488f`; `f087a4ce...` (reward v2) from
-  `1135b8b` up to the commit before `8cf53ae`. Digests never committed (`75c7cfac...`, `5e8a1bc1...`, `11e62657...`,
-  `3473ed9c...`) are in the entries below.
+  `1135b8b` up to the commit before `8cf53ae`; `3f00832c...` (reward v2.1) from `8cf53ae` up to the commit before the
+  LLM sizing optimizer commit. Digests never committed (`75c7cfac...`, `5e8a1bc1...`, `11e62657...`, `3473ed9c...`, and
+  `27a36b2b...`, the LLM sizing build before the duplicate-check fix, which Astra's acceptance evidence names) are in
+  the entries below.
 - **Monte Carlo:** not implemented; a plan only ([plan-finalist-monte-carlo.md](plan-finalist-monte-carlo.md)).
-- **Next planned:** LLM-driven sizing ([brief-llm-sizing-for-astra.md](brief-llm-sizing-for-astra.md)), not started.
+- **LLM sizing:** four modes implemented; free calibration complete (80 runs / 4,800 candidates / zero passes)
+  ([brief](brief-llm-sizing-for-astra.md), [implementation](llm-sizing.md)). The user authorized feasibility-only
+  calibration with fixed starting bias currents for every arm and independent upstream rechecks of every pass.
+  No circuit qualified for the comparison, and positive-design parity remains unqualified (G9). The final full suite
+  passed 1,581 tests with one expected Agent-schema failure. The duplicate-check issue on continuous rows that kept
+  G6 partial was fixed in the package afterwards (record 7.120; 1,601 tests with its own); the gate evidence predates
+  the fix. Paid slices remain unapproved. G10 retains the historical server-rejected request.
 
 # M1 决策 — 2026-09-19
 
@@ -501,3 +511,90 @@ the brief's rule; pushing is not authorized. Package commit `8cf53ae` retains th
 Fresh full shared-tree regression: 1,417 passed; the selected workbench snapshot: 727 passed. TypeScript passes on
 both trees; selected reward and Specs browser checks pass 27 and 15 cases. Shared-file selections exclude unrelated
 sessions' edits. The OTA7 variant follow-up is stopped and remains outside these commits. Record 7.111.
+
+## LLM sizing plan reduced to two search choices (2026-09-29)
+
+After requesting the fewest modes, choosing SAC and LLM warm start → SAC, and reviewing current LLM/RL publications,
+the user requested an updated plan. The [revised brief](brief-llm-sizing-for-astra.md) replaces the nine-method design.
+Plain SAC remains unchanged. The assisted method collects simulation-verified experience, explicitly trains the
+existing SAC learner on it, then hands control to SAC without a second random warm-up. Handover depends on admitted
+transitions and completed updates, not elapsed time. The selected graph encoder, reward, replay eligibility and
+action contract remain unchanged. A failed LLM start may fill its remaining slots with recorded random fallback.
+
+Random and pattern search stay benchmark baselines. Matched random and seeded starts receive the same initial SAC
+update budget as the LLM arm to separate the value of its data from extra training. Stagnation assistance and LLM
+action masks are deferred; they add no workbench modes or placeholder implementation. Literature motivates the
+experiment, not a claim that this combination is best. Proposed counts and paid-call ceilings are documented in the
+brief; no new real LLM, Spectre or bridge call is authorized by this planning request.
+
+Plan revision only: no optimizer or workbench implementation change and no new simulation. Earlier preflight evidence
+at `5a39f89` remains historical baseline evidence; implementation acceptance is still outstanding. The brief resolves
+the old S6/W1 waiting question and keeps the section 7 order. No new commit or push requested.
+
+## LLM sizing plan expanded to four search choices (2026-09-30)
+
+The user explicitly added **LLM only** (AI proposes every design) and **SAC with LLM rescue** (SAC runs; AI
+contributes suggestions when progress stalls). This supersedes the two-choice scope and rescue deferral in the
+2026-09-29 entry above. The [brief](brief-llm-sizing-for-astra.md) now specifies exactly four methods: `sac`,
+`llm_warmstart`, `llm`, and `sac_llm_rescue`.
+
+LLM only uses one baseline and subsequent LLM-proposed designs with simulation feedback; it has no SAC learner
+and stops when proposals or authorization are exhausted. Its first implementation uses one lane and supports
+search-state resume without policy weights. Rescue keeps normal SAC warm-up and learning, requests suggestions
+asynchronously after a recorded stall, and admits eligible simulated suggestions to SAC replay. SAC keeps running
+while waiting or after provider failure; round and call limits bound intervention. Warm start retains its explicit
+initial training phase and has no later rescue. Random/pattern search remain benchmark baselines.
+
+Settings, UI captions, hints, persistence, acceptance gates and benchmark slices are updated together. Paid ceilings
+for the new benchmark slice remain proposals requiring separate approval. This change updates the plan only; no
+optimizer/workbench code, real model call or simulation was run, and nothing was committed or pushed.
+
+## Four sizing methods implemented; benchmark acceptance incomplete (2026-09-30)
+
+On the user's “ok build, note frontend backend consistency”, the four-mode brief was implemented in its section 7
+order through free verification. New package code is confined to `search/` and additive `ActionMapper.encode`;
+SAC losses, reward, replay eligibility and legalization are unchanged. The optimizer digest changes once from
+`3f00832c89c1cf7af5cbc5ab6dac74c20250a76ea7bfa3a2df06717087fdd6f4` to
+`27a36b2b74ec29f69bf916a8d6079b2cca78dea07fd9887d939211fe070d2f49`.
+The refreshed preflight snapshot at HEAD `60800796` and final plain-SAC run match in all seven raw tables after
+documented time/path normalization. New workbench settings, scheduling, provider isolation, persistence, tables and
+frontend follow one contract. User and other sessions' pre-existing changes remain preserved and uncommitted.
+
+An earlier full suite passed 1,466 tests with one benchmark subprocess timing out under parallel load; that unchanged
+test passed alone in 27.47 s. The final suite passed 1,482 with two old validation expectations failing; both were
+updated for the newly visible current-unit blocker, and all 15 affected-module tests passed on rerun. Supplemental
+checks cover prompt compaction, controls and rescue resume. The final provider/API module passed 20 tests, including
+model-specific effort inheritance. TypeScript passed, as did 31 sizing and 96 Agent browser
+checks on scratch ports. All six scheduler arms
+completed a free level-1 ngspice fixture with fake AI responses and fixed bias current. This establishes integration,
+not an improvement in circuit performance. Evidence and gate details are in
+`artifacts/local/llm-sizing/acceptance-summary.json` and [LLM sizing](llm-sizing.md).
+
+AnalogGym-Opt is outside the repository at MIT commit `10093e3496ef2c7d06494d91d131b0cc5de6c25b`. Ten amplifiers passed
+20 strict seeded parity designs each; seven circuits are excluded, without relaxed tolerances. Calibration is not
+run: the benchmark asks for several after-feasible objectives but GATOR permits one. A second blocker is the existing
+SAC input contract, which rejects `dc/A` parameter groups. Workbench validation now explains this before starting;
+extending the optimizer outside the brief's allowed files awaits the user. No benchmark variables or objectives were
+silently changed. Reached analysis commands are now recorded before raw-file retention; incomplete output keeps
+unknown totals. Both best-design testbenches are exported and re-parsed. A representative ACBC design passed strict
+parity with analysis instrumentation and again through the exported decks. Final suite results are in the acceptance
+report; no package digest changed during these workbench fixes.
+
+G10 failed: executable discovery in a regression test accidentally launched one real Codex request. The server
+rejected its configuration-proposal schema with HTTP 400 and produced no model output. Usage/cost were unreported,
+so zero cost is not proven. Discovery is now sizing-specific and tests block real model executables. The incident
+is retained at `artifacts/local/llm-sizing/provider-launch-incident.json`. No Claude, Spectre or bridge call was made
+by this work, and no paid experiment is approved. L1/L2 remain open before any paid slice. No commit, push, live
+frontend build or 8765 restart; record 7.116.
+
+## LLM duplicate check compares to a tolerance (2026-09-30)
+
+On the user's instruction ("fix the four") the one open finding of the LLM-sizing audit was fixed in the optimizer
+package: `LlmProposer` compared proposed, evaluated and queued designs as exact floats, and a size on a group
+without a grid step comes back from `legalize(encode(v))` a few ulp away, so 32 % of exact repeats were evaluated
+again. Designs are now the same when every group is within 1e-9 relative. The change is confined to
+`search/llm.py` (9 lines out, 10 in); SAC, reward, replay and legalization are untouched and the seeded MOCK SAC run is row-identical.
+Optimizer digest `27a36b2b…` → `100945fb780852ea3776a2395f83474bd208ed2f1ee5a27aff7cdf28b0d2651b`. It was landed only
+after Astra's calibration and its finalize step had ended (user choice), because both record and check the digest;
+Astra's evidence files keep describing the tree before the fix. Full suite 1,601 passed / 1 expected failure.
+No commit, no real simulator or model call; record 7.120.

@@ -91,7 +91,7 @@ class ClaudeCodeProvider(CliProvider):
         scratch = tempfile.mkdtemp(prefix='gator-agent-')
         return Path(scratch), scratch
 
-    def build_argv(self, executable, request: AgentRequest, live=False, mcp_config=None):
+    def build_argv(self, executable, request: AgentRequest, live=False, mcp_config=None, schema=None):
         s = self.settings
         events = live or s.stream                                  # a live request needs the event stream
         argv = [executable, '-p', '--output-format', 'stream-json' if events else 'json']
@@ -111,7 +111,8 @@ class ClaudeCodeProvider(CliProvider):
         # user's own. A request without a grant is given an EMPTY server set, so it has no tools at all either way.
         argv += ['--mcp-config', mcp_config or '{"mcpServers":{}}', '--strict-mcp-config']
         allowed += mcp_names(request.tools) if request.tools else []
-        argv += ['--json-schema', proposal_schema_json(), '--permission-mode', s.permission_mode, '--disallowedTools', ','.join(denied)]
+        argv += ['--json-schema', json.dumps(schema) if schema is not None else proposal_schema_json(),
+                 '--permission-mode', s.permission_mode, '--disallowedTools', ','.join(denied)]
         if allowed:
             argv += ['--allowedTools', ','.join(allowed)]
         if s.model:

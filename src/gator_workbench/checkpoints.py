@@ -105,6 +105,38 @@ class CheckpointStore:
         self.last_saved_at = None
 
     # ------------------------------------------------------------------ save
+    def save_search(self, learner, replay, *, ledger_state, data_cursor, counters, collector_state, mode,
+                    kind='periodic', effective_experiment, frozen=False):
+        """A search continuation has no neural weights or learning replay."""
+        import torch
+        from analog_optimizer.training.sac import source_digest
+        checkpoint_id = f"ckpt-{counters['evaluations_committed']:08d}-{uuid4().hex[:8]}"
+        directory = self.root / checkpoint_id
+        directory.mkdir()
+        state = dict(version='workbench-run-state-v1', run_id=self.run_id, task_id=self.task_id,
+                     task_definition_hash=self.task_hash, mode=mode, ledger=ledger_state,
+                     data_cursor=data_cursor, counters=counters, collector=collector_state)
+        path = directory / 'search_state.pt'
+        temporary = temporary_path(path)
+        torch.save(state, temporary)
+        publish(temporary, path)
+        metadata = dict(metadata_version=CHECKPOINT_METADATA_VERSION, checkpoint_id=checkpoint_id, kind=kind,
+            run_id=self.run_id, task_id=self.task_id, task_definition_hash=self.task_hash, mode=mode,
+            created_utc=utcnow().isoformat(), restoration_capability='search_state',
+            restorable_components=['search_history', 'candidate_queue', 'budget_ledger', 'data_cursors', 'logical_episode'],
+            missing_components=[], not_applicable_components=['policy_weights', 'learner', 'learning_replay'],
+            recoverable_boundary='Completed simulations, logical single episode, recorded call and search state.',
+            counters=counters, ledger=ledger_state, data_cursor=data_cursor, replay=dict(size=0, insertions=0, capacity=0),
+            contract=dict(code_sha256=source_digest(), search_method='llm'), experiment=effective_experiment,
+            weight_sha256=None, files={'search_state.pt': dict(bytes=path.stat().st_size, sha256=sha256_file(path))})
+        write_json(directory / 'metadata.json', metadata)
+        write_json(self.root / 'latest.json', dict(checkpoint_id=checkpoint_id, path=f'checkpoints/{checkpoint_id}',
+            created_utc=metadata['created_utc'], restoration_capability='search_state', commit_seq=data_cursor['commit_seq'],
+            kind=kind, meaning='AI search progress; contains no policy weights'))
+        self.last_saved_at = utcnow()
+        self._prune(checkpoint_id)
+        return metadata
+
     def save(self, learner, replay, *, ledger_state, data_cursor, counters, collector_state, mode,
              kind='periodic', effective_experiment, frozen=False):
         """Write a complete checkpoint, then (and only then) move the ``latest`` pointer."""
@@ -263,6 +295,20 @@ def read_metadata(directory) -> dict:
     return read_json(Path(directory) / 'metadata.json')
 
 
+def load_search_state(directory):
+    import torch
+    from analog_optimizer.training.sac import source_digest
+    metadata = read_metadata(directory)
+    if metadata.get('restoration_capability') != 'search_state':
+        raise ValueError('This checkpoint does not contain AI search progress')
+    if metadata['contract']['code_sha256'] != source_digest():
+        raise ValueError('The optimizer code changed; exact AI search resume is unavailable')
+    problems = verify_files(directory)
+    if problems:
+        raise ValueError('; '.join(problems))
+    return torch.load(Path(directory) / 'search_state.pt', map_location='cpu', weights_only=False)
+
+
 @lru_cache(maxsize=128)
 def _display_digest(path, identity):
     """Display-only checksum reuse. Actual model loading always hashes the files again."""
@@ -293,6 +339,10 @@ def check_compatibility(metadata, *, mode, task_definition_hash, contract) -> di
     targets) and the number of action dimensions (equal dimensions prove nothing).
     """
     saved, checks = metadata['contract'], []
+    if metadata.get('restoration_capability') == 'search_state':
+        return dict(mode=mode, compatible=False, checks=[dict(component='policy weights', status='incompatible',
+            detail='This save holds AI-only search progress, not an RL model. Resume it with LLM only.')],
+            checkpoint_id=metadata['checkpoint_id'], source_run_id=metadata['run_id'], restoration_capability='search_state')
 
     def add(component, ok, detail, *, fatal=True):
         checks.append(dict(component=component, detail=detail,
@@ -416,6 +466,7 @@ def saved_models(run_entries) -> list[dict]:
     models = []
     for entry in run_entries:
         listing = list_checkpoints(entry['run_dir'])
+        listing['checkpoints'] = [p for p in listing['checkpoints'] if p['restoration_capability'] != 'search_state']
         if not listing['checkpoints']:
             continue
         newest = next((p for p in listing['checkpoints'] if p['is_latest']), listing['checkpoints'][-1])

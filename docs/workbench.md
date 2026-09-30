@@ -905,6 +905,26 @@ only: the user's live frontend/backend were not rebuilt or restarted. The subseq
 
 ## The right column: settings, saved models and the graph view
 
+### SAC and LLM search methods (2026-09-30, record 7.116)
+
+**Search method** offers exactly SAC, LLM warm start → SAC, LLM only, and SAC with LLM rescue.
+The schema supplies the method identifiers; the page and API enforce the same model-loading and concurrency rules.
+Warm start collects simulated starting experience, completes initial SAC updates, then hands over without another
+random warm-up. LLM only uses one baseline and one lane, saves search progress without policy weights, and has no
+numeric fallback. Rescue leaves SAC running while a stall-triggered AI request is pending. SAC remains the default.
+
+Each AI run freezes its provider/model/effort, has explicit call/cost ceilings, and owns a sizing thread in the Agent
+tab. Hints apply to a future eligible call and mark the run steered. Phase, call and rescue counts are saved and shown
+consistently. See [LLM sizing](llm-sizing.md) for settings, failure behavior, recovery and the benchmark limits.
+
+The source implementation and scratch browser checks are complete; this work did not rebuild the live page or restart
+8765. The free SKY130 benchmark uses the user's feasibility-only decision: upstream pass targets, all metrics as
+descriptive Probes, and bias currents fixed at upstream starting values in every arm. Calibration independently
+rechecks every passing design against the original evaluator at 1e-9 relative tolerance, stopping on disagreement.
+SAC's general current-group limitation remains; a read-only FeatureSchema experiment confirmed that a static current
+column works, while a tunable current group still fails unit validation. No optimizer current-unit implementation was added.
+The development record also documents one accidentally launched, server-rejected Codex request; the no-calls gate failed.
+
 ### Folding the right column's modules (added 2026-09-21, user request)
 
 "Run configuration" and "Output settings" fold into one line with a click on their heading (the "Research

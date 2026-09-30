@@ -121,6 +121,8 @@ export const api = {
   cornerStatus: (run_dir: string, check_id: string) => call('GET', '/api/runs/corner-check/status' + q({ run_dir, check_id })),
   cornerStop: (run_dir: string, check_id: string) => call('POST', '/api/runs/corner-check/stop', { run_dir, check_id }),
   agentSettings: () => call('GET', '/api/agent/settings'),
+  llmThread: (run_dir: string) => call('GET', `/api/runs/llm-thread?run_dir=${encodeURIComponent(run_dir)}`),
+  llmHint: (run_dir: string, text: string) => call('POST', '/api/runs/llm-hint', { run_dir, text }),
   saveAgentSettings: (body: Json) => call('PUT', '/api/agent/settings', body),
   agentDiagnostics: () => call('GET', '/api/agent/diagnostics'),
   agentReadiness: (config: Json) => call('POST', '/api/agent/readiness', { config }),      // free: no model is called, nothing is probed

@@ -122,7 +122,10 @@ def write_outputs(directory, tracker: BestDesignTracker, *, task, config_summary
                                    ('best_nominal_feasible', tracker.nominal_feasible, {})):
         write_json(directory / f'{name}.json', _record(candidate, status='found' if candidate else 'none_found',
                                                         tracker=tracker, task=task, config_summary=config_summary) | extra)
-    for name in ('parameters.csv', netlist_name):
+    additional = tuple(getattr(exporter, 'additional_filenames', ()))
+    if any(Path(name).name != name for name in additional):
+        raise ValueError('Additional export files must have plain filenames')
+    for name in ('parameters.csv', netlist_name, *additional):
         # The robust-feasible output never silently substitutes a nominal-only design.
         stale = directory / name
         if feasible is None and stale.exists():
@@ -144,15 +147,24 @@ def write_outputs(directory, tracker: BestDesignTracker, *, task, config_summary
     # `exporter`: another netlist language's writer (an ngspice deck), with the same outcome contract as export_netlist.
     outcome = exporter(netlist_text, graph, feasible['members']) if exporter else export_netlist(netlist_text, graph, feasible['members'], reparse=reparse)
     if outcome['status'] == 'verified':
+        files = outcome.get('additional_files', {})
+        if set(files) != set(additional):
+            raise ValueError('Additional export files differ from the declared companion files')
+        for name, text in files.items():
+            temporary = temporary_path(directory / name)
+            temporary.write_text(text, encoding='utf8')
+            publish(temporary, directory / name)
+            notes[name] = 'companion testbench with verified best-design parameters'
         temporary = temporary_path(directory / netlist_name)
         temporary.write_text(outcome['text'], encoding='utf8')
         publish(temporary, directory / netlist_name)
         notes[netlist_name] = ('project netlist with the best parameters, verified by re-parsing. This is NOT a native '
                                'schematic; writing back to Virtuoso needs user confirmation and a new cellview.')
     else:
-        stale = directory / netlist_name
-        if stale.exists():
-            stale.unlink()
+        for name in (netlist_name, *additional):
+            stale = directory / name
+            if stale.exists():
+                stale.unlink()
         notes[netlist_name] = f"not created: {outcome['reason']}"
     return notes
 

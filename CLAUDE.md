@@ -13,7 +13,7 @@ its top). There is no `AGENTS.md`.
    area (`grep -n '<feature words>' docs/workbench-log/*.md`). Also `git status` / `git diff`, and the spec of the
    area: for the workbench the untracked `gator_claude_code_fable51_frontend_data_outputs_en.md` at the repository
    root, otherwise the plan or brief of the area in `docs/`. Do not redo finished modules from memory. A new entry
-   goes at the end of the open log file `docs/workbench-log/7.101-and-later.md`, plus its one-line row in the index;
+   goes at the end of the open log file `docs/workbench-log/7.119-and-later.md`, plus its one-line row in the index;
    a new commit row goes at the end of the commit table in `docs/workbench-log/record-history.md`.
 2. Preserve uncommitted user work. Never commit, push or reset without being asked. Several sessions
    share this working tree and its git index: stage explicit paths only, never `git add -A`. A bare `git commit`

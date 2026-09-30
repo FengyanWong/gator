@@ -57,3 +57,21 @@ def _isolated_settings(tmp_path, monkeypatch):
     """Tests never touch the user's remembered settings under configs/local/workbench."""
     monkeypatch.setenv('GATOR_WORKBENCH_SETTINGS_DIR', str(tmp_path / '_settings'))
     yield
+
+
+@pytest.fixture(autouse=True)
+def _no_real_model_requests(tmp_path, monkeypatch):
+    """CLI discovery must never turn an offline test into a real account request."""
+    import subprocess
+    import shutil
+    original = subprocess.Popen
+
+    def guarded(argv, *args, **kwargs):
+        if isinstance(argv, (list, tuple)) and argv:
+            executable = Path(shutil.which(str(argv[0])) or str(argv[0])).resolve()
+            if executable.name in ('codex', 'claude') and not any(a in argv for a in ('--help', '--version')):
+                if tmp_path.resolve() not in executable.parents:
+                    raise AssertionError(f'Offline test refused a real model CLI: {executable.name}')
+        return original(argv, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, 'Popen', guarded)

@@ -26,12 +26,12 @@ def test_every_listed_choice_is_one_the_settings_accept():
 
 def test_effort_levels_differ_per_provider():
     AgentSettings(provider='claude_code', effort='max').validate()
-    AgentSettings(provider='codex', effort='minimal').validate()
-    for provider, effort in (('claude_code', 'minimal'), ('codex', 'max'), ('claude_code', 'ludicrous')):
+    AgentSettings(provider='codex', effort='max').validate()
+    for provider, effort in (('claude_code', 'minimal'), ('codex', 'minimal'), ('claude_code', 'ludicrous')):
         with pytest.raises(AgentError) as error:
             AgentSettings(provider=provider, effort=effort).validate()
         assert error.value.code == 'invalid_request' and provider in error.value.detail
-    AgentSettings(provider='disabled', effort='minimal').validate()      # a kept level never blocks switching it off
+    AgentSettings(provider='disabled', effort='max').validate()          # a kept level never blocks switching it off
     assert catalog.supports_effort('claude_code', 'sonnet') and not catalog.supports_effort('claude_code', 'haiku')
     assert catalog.supports_effort('claude_code', None) and catalog.supports_effort('claude_code', 'some-future-model')
 
@@ -104,8 +104,9 @@ def test_settings_endpoint_serves_the_lists_and_survives_a_level_from_the_other_
     assert saved.status_code == 200
     again = client.get('/api/agent/settings').json()
     assert (again['model'], again['effort']) == ('sonnet', 'low')
-    assert client.put('/api/agent/settings', json=dict(provider='codex', effort='max')).status_code == 422
+    assert client.put('/api/agent/settings', json=dict(provider='codex', effort='max')).status_code == 200
+    assert client.put('/api/agent/settings', json=dict(provider='codex', effort='minimal')).status_code == 422
     # A file edited by hand (or kept from the other provider) must not take the Agent tab down with a 500.
-    runs.save_settings(agent=dict(provider='codex', model=None, effort='max'))
+    runs.save_settings(agent=dict(provider='codex', model=None, effort='minimal'))
     kept = client.get('/api/agent/settings')
     assert kept.status_code == 200 and kept.json()['effort'] is None and kept.json()['provider'] == 'codex'

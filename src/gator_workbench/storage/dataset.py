@@ -112,6 +112,16 @@ class RawDataset:
     def next_seq(self) -> int:
         return self.last_seq + 1
 
+    def append_auxiliary(self, key, rows):
+        """Journal a training/call event without inventing an evaluation.
+
+        The unified event cursor advances; actual evaluation counts still come from
+        the budget ledger. The same WAL, idempotence and recovery rules apply.
+        """
+        if set(rows) - {'learner_updates', 'llm_calls'}:
+            raise ValueError('Auxiliary events may contain only training updates or sizing calls')
+        return self.commit(dict(evaluation_id=f'aux:{key}', commit_seq=self.next_seq(), rows=rows))
+
     def commit(self, bundle) -> bool:
         """Durably acknowledge one evaluation bundle. Idempotent on evaluation_id.
 
@@ -251,6 +261,26 @@ class DatasetReader:
     def parts(self, table):
         return [self.root / table / f['parts'][table] for f in self.flushes if table in f['parts']]
 
+    @staticmethod
+    def _read_part(path, table, columns=None):
+        """Old Parquet parts acquire newly added nullable columns on read only."""
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        schema = arrow_schema(table)
+        if columns is not None:
+            schema = pa.schema([schema.field(c) for c in columns])
+        present = pq.read_schema(path).names
+        result = pq.read_table(path, columns=[name for name in schema.names if name in present])
+        arrays = []
+        for field in schema:
+            if field.name in result.column_names:
+                arrays.append(result[field.name])
+            elif field.nullable:
+                arrays.append(pa.nulls(result.num_rows, type=field.type))
+            else:
+                raise ValueError(f'Historical {table} part lacks required column {field.name}')
+        return pa.Table.from_arrays(arrays, schema=schema)
+
     def table(self, table, columns=None):
         import pyarrow as pa
         import pyarrow.parquet as pq
@@ -260,7 +290,7 @@ class DatasetReader:
             if columns:
                 schema = pa.schema([schema.field(c) for c in columns])
             return schema.empty_table()
-        return pa.concat_tables([pq.read_table(p, columns=columns) for p in paths])
+        return pa.concat_tables([self._read_part(p, table, columns) for p in paths])
 
     def rows(self, table, columns=None):
         return self.table(table, columns).to_pylist()
@@ -272,7 +302,7 @@ class DatasetReader:
         import pyarrow.parquet as pq
         paths, taken, have = self.parts(table), [], 0
         for path in reversed(paths):
-            part = pq.read_table(path, columns=columns)
+            part = self._read_part(path, table, columns)
             taken.append(part)
             have += part.num_rows
             if have >= limit:

@@ -205,7 +205,9 @@ class NgspiceBackend(VirtuosoBackend):
         directory = Path(work_root) / job_id
         directory.mkdir(parents=True)
         path = directory / 'deck.cir'
-        path.write_text(self.deck(), encoding='utf8')
+        from .ngspice_operating_points import instrument
+        from .ngspice_analysis import instrument as instrument_analyses
+        path.write_text(instrument_analyses(instrument(self.deck(), self.graph)), encoding='utf8')
         artifact = NetlistArtifact(path, job_id, hashlib.sha256(path.read_bytes()).hexdigest(), 'real', self.condition)
         self.exports[job_id] = (artifact, dict(self.parameters))
         self.timings['netlisting'] = perf_counter() - started
@@ -254,8 +256,11 @@ class NgspiceBackend(VirtuosoBackend):
                                                     request.timeout_seconds)
             else:
                 code, out, err = self.runner.local(self.link.program, deck, request.timeout_seconds)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
             status, reason, retryable, evaluated, invocations = SimulationStatus.TIMEOUT, 'ngspice_timeout', True, False, 1
+            out, err = exc.stdout or '', exc.stderr or ''
+            out = out.decode(errors='replace') if isinstance(out, bytes) else out
+            err = err.decode(errors='replace') if isinstance(err, bytes) else err
         except FileNotFoundError as exc:
             status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, 'program_not_found', True, False, 0
             err = str(exc)
@@ -263,6 +268,9 @@ class NgspiceBackend(VirtuosoBackend):
             status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, 'launch_failed', True, False, 0
             err = f'{type(exc).__name__}: {exc}'
         (directory / 'ngspice.log').write_text(f'# exit code: {code}\n# stdout:\n{out}\n# stderr:\n{err}\n', encoding='utf8')
+        from .ngspice_analysis import counts
+        from .storage.atomic import write_json
+        write_json(directory / 'analysis-counts.json', counts(out, complete=code is not None))
         version = VERSION.search(out + '\n' + err)
         self.version = version.group(1) if version else self.version
         found = ngspice_netlist.read_results(out, wanted) if status == SimulationStatus.OK else {}
@@ -291,10 +299,13 @@ class NgspiceBackend(VirtuosoBackend):
         metrics = {name: found.get(name) for name in wanted}
         units = {name: self.units.get(name) or self.parsed.units.get(name) or '1' for name in wanted}
         validity = {name: name in found for name in wanted}
+        from .ngspice_operating_points import read as read_operating_points
+        operating_points = read_operating_points(out, self.graph) if evaluated else {}
         return SimulationResult(directory.name, BACKEND_KIND, 'real', status, reason, retryable, evaluated, metrics, units,
                                 validity, dict(exported), directory, perf_counter() - started, condition=self.condition,
                                 simulator_invocations=invocations, error_summary=summary[:400],
-                                simulator_version=f'ngspice-{self.version}' if self.version else None)
+                                simulator_version=f'ngspice-{self.version}' if self.version else None,
+                                operating_points=operating_points)
 
 
 def _last_line(text):

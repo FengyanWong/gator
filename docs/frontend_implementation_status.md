@@ -20,18 +20,19 @@ a later one reversed, the modules each entry added, known slips) and the commit 
 | [`7.41-7.60.md`](workbench-log/7.41-7.60.md) | entries 7.41-7.60 |
 | [`7.61-7.80.md`](workbench-log/7.61-7.80.md) | entries 7.61-7.80 |
 | [`7.81-7.100.md`](workbench-log/7.81-7.100.md) | entries 7.81-7.100 |
-| [`7.101-and-later.md`](workbench-log/7.101-and-later.md) | entries 7.101 onwards: the OPEN file |
+| [`7.101-7.118.md`](workbench-log/7.101-7.118.md) | entries 7.101-7.118 |
+| [`7.119-and-later.md`](workbench-log/7.119-and-later.md) | entries 7.119 onwards: the OPEN file |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
-`7.61-and-later.md` and `7.81-and-later.md` are pointers kept for old links.
+`7.61-and-later.md`, `7.81-and-later.md` and `7.101-and-later.md` are pointers kept for old links.
 
 **Adding an entry:** append `### 7.N <title> (<date>, <session>, <request>)` at the end of the open file, with the next
 free number (look at the table below AND at that file: sessions work in parallel), and add a one-line row at the end of
 the table below: `| 7.N | <short title, at most about 110 characters> |`. A commit gets its row at the end of the commit
 table in `record-history.md`.
 
-**Rolling the open file over:** when the open file passes entry 7.120 or 60 kB, whichever comes first, move its entries
-unchanged into `docs/workbench-log/7.101-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
+**Rolling the open file over:** when the open file passes entry 7.140 or 60 kB, whichever comes first, move its entries
+unchanged into `docs/workbench-log/7.119-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
 the old name as a pointer (like the two above), change the file table above, and then update `CLAUDE.md`, which names
 the open file. One Read returns about 68 kB of text: a larger open file hides its newest entries from a default read
 (7.64).
@@ -156,4 +157,8 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.112 | Reward v2.1 audit fixes: the Specs scale suggestion follows the limits; equation specs survive a missing probe |
 | 7.113 | The Specs equations' old-configuration hash test reads a frozen pre-equations configuration |
 | 7.114 | Formula specs marked at training corners; a warning for "Missing value = failed" on a soft spec |
+| 7.116 | Four sizing methods with shared frontend/backend contracts: SAC, LLM warm start, LLM only, LLM rescue (Astra) |
 | 7.117 | Repository review, round 5: bugs, speed-ups, session-start docs and test fixes |
+| 7.118 | Audit of the LLM-sizing build (7.116): sound, four small fixes before its commit; report under artifacts/local/reviews |
+| 7.119 | Fixed-bias feasibility calibration: 80 runs, zero passes; full suite passes; current/schema findings recorded |
+| 7.120 | Audit finding F1 fixed: the LLM duplicate check compares sizes to a tolerance; optimizer digest 27a36b2b → 100945fb |

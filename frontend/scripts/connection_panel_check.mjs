@@ -128,12 +128,12 @@ await runChecks(browser, async () => {
   check('the connection block of the left column is ONE button', !!block && block.controls === 1 && block.first, JSON.stringify(block));
   check('it is called "Connection" and names the connection in use, its kind and the state the test made when the page opened found', !!block && /^Connection\s*lab - Virtuoso over SSH\s*OK$/.test(block.text), block?.text);
   check('the old panel (heading, steps, profile select) is gone from the column', !!block && !block.headings.some(h => /connection/i.test(h)) && block.height < 90, JSON.stringify(block));   // two lines of text; the old panel was > 300 px
-  // Since 7.76 the Project column reads the connection list too (the family of the connection in use): a read of the
-  // workbench's own file, no probe - so the page load is two GET profiles + one GET status, and nothing else.
+  // Since 7.76 the Project column needs the connection list too (the family of the connection in use): a read of the
+  // workbench's own file, no probe. Since 7.125 the button and the column share ONE read of it (api.ts).
   // Since 2026-09-24 (status record 7.80, user request) the page tests the connection in use ONCE when it opens - the same
   // interactive test as the button - and nothing else on its own; no cached read then (the test's answer is fresher).
-  check('page load reads the profiles (twice: the button and the Project column) and tests the connection in use once, nothing else',
-    JSON.stringify(names().sort()) === JSON.stringify(['GET profiles', 'GET profiles', 'POST check']), names().join(', '));
+  check('page load reads the profiles once (the button and the Project column share it) and tests the connection in use once, nothing else',
+    JSON.stringify(names().sort()) === JSON.stringify(['GET profiles', 'POST check']), names().join(', '));
   const opened = seen.find(s => s.method === 'POST');
   check('the test when the page opens is the interactive test of the connection in use, as a press sends it', JSON.stringify(opened?.body) === JSON.stringify({ profile_id: 'lab', scope: 'interactive', trigger: 'user' }), JSON.stringify(opened?.body));
   check('the button shows its result', (await evaluate(`${BUTTON}.querySelector('.badge').textContent`)) === 'OK', await evaluate(`${BUTTON}.querySelector('.badge').textContent`));
@@ -274,7 +274,7 @@ await runChecks(browser, async () => {
   try { await windowTarget(false); } catch { closedByReload = false; }
   far.close();
   check('a reload closes the window (no dead window is left behind)', closedByReload);
-  check('a reload reads the profiles (the button and the Project column) and tests the connection chosen last once, nothing else', JSON.stringify(names(mark).sort()) === JSON.stringify(['GET profiles', 'GET profiles', 'POST check'])
+  check('a reload reads the profiles once and tests the connection chosen last once, nothing else', JSON.stringify(names(mark).sort()) === JSON.stringify(['GET profiles', 'POST check'])
     && JSON.stringify(seen.find((s, i) => i >= mark && s.method === 'POST')?.body) === JSON.stringify({ profile_id: 'ngspice-ssh', scope: 'interactive', trigger: 'user' }), names(mark).join(', '));
   await openWindow();
   check('the window shows that fresh test, not the old cached result', /^tested at \d/.test(await hint()) && !/too old/.test(await hint()) && (await badge()) === 'OK', `${await badge()} | ${await hint()}`);

@@ -2,7 +2,7 @@ import { searchPhase } from './SearchSettings';
 import { Icon, IconName } from './Icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRequest } from '../store';
-import { api, ApiError, Json } from '../api';
+import { api, ApiError, Json, plainError } from '../api';
 
 /** The header's run buttons (user request 2026-09-21): ONE main button that reads Start -> Pause -> Resume, and
  *  Abort next to it. Nothing new happens in the backend; the buttons drive what the engine already does:
@@ -57,10 +57,15 @@ export function useRunControl(viewedStatus: Json, looked: boolean) {
   const [epoch, setEpoch] = useState(0);
   const current = useRef({ dir, epoch });
   const reading = useRef<{ key: typeof current.current; promise: Promise<void> } | null>(null);
+  // Answers "not there" in a row for the held run. Two are needed, as for the run shown (App.tsx): the engine re-writes
+  // run_manifest.json by a rename when a segment starts and ends - just when this poll reads by itself - and on the
+  // 9p-mounted D: drive one read at that moment can fail; letting go then took Pause and Abort off a live run.
+  const gone = useRef(0);
 
   /** Hold another run, or none. Whatever was known belongs to the run held before (or to the time before a launch),
    *  so it is dropped, and an answer that is still on its way for it is ignored when it arrives. */
   const hold = useCallback((next: string | null, launchedAs: Launch) => {
+    gone.current = 0;
     current.current = { dir: next, epoch: current.current.epoch + 1 };
     remember(next);
     setDir(next); setStatus(null); setChecked(false); setPending(null); setLaunched(launchedAs); setForced(false);
@@ -75,9 +80,12 @@ export function useRunControl(viewedStatus: Json, looked: boolean) {
     const asked = current.current;
     if (!asked.dir) return Promise.resolve();
     if (reading.current?.key === asked) return reading.current.promise;
-    const promise = api.status(asked.dir).then(next => { if (current.current === asked) accept(next); }, e => {
+    const promise = api.status(asked.dir).then(next => { if (current.current === asked) { gone.current = 0; accept(next); } }, e => {
       // The remembered run is gone (deleted, or outside the allowed roots by now): let go instead of showing a dead Pause.
-      if (e instanceof ApiError && (e.status === 403 || e.status === 404) && current.current === asked) hold(null, null);
+      // After a first "not there" it is read once more 1.5 s later (a run at rest is not polled otherwise).
+      if (!(e instanceof ApiError && (e.status === 403 || e.status === 404) && current.current === asked)) return;
+      if (++gone.current >= 2) hold(null, null);
+      else setTimeout(() => { if (current.current === asked) refresh(); }, 1500);
     }).then(() => { if (current.current === asked) setChecked(true); })
       .finally(() => { if (reading.current?.key === asked) reading.current = null; });
     reading.current = { key: asked, promise };
@@ -105,6 +113,12 @@ export function useRunControl(viewedStatus: Json, looked: boolean) {
 }
 export type RunControl = ReturnType<typeof useRunControl>;
 
+/** The question when the BACKEND says a run is real although the page took it for MOCK (a task chosen a moment ago
+ *  whose circuit had not been read yet, or a run whose status was not known): worded from the backend's own report,
+ *  never from the page's MOCK text - an OK here authorizes real simulations (audit 2026-09-30). */
+const realQuestion = (report: Json) => `This runs REAL simulations${report?.task_key ? ` of ${report.task_key}` : ''} (the page had taken it for a MOCK run).\n`
+  + `Authorize a total budget of ${report?.requested_max_evaluations ?? 'its'} candidate evaluation(s)?`;
+
 /** The backend never starts on a guess: it refuses, creates nothing, and names what it needs - the budget of a REAL
  *  simulation, a model trained on another task, connection layers it could not check. Each question is put to the
  *  user once and the request is repeated with the answers. Returns null when the user said no. */
@@ -118,7 +132,8 @@ export async function launchWithConsent(send: (flags: Json) => Promise<Json>, op
     try { return await send(flags); } catch (e: any) {
       const detail = e?.detail ?? {};
       let flag: string | null = null, question = '';
-      if (detail.code === 'real_authorization_required') [flag, question] = ['authorize_real_simulation', options.authorizeText];
+      if (detail.code === 'real_authorization_required')
+        [flag, question] = ['authorize_real_simulation', options.real ? options.authorizeText : realQuestion(detail.report)];
       else if (detail.code === 'confirm_transfer' && options.transfer) [flag, question] = ['confirm_transfer', `${detail.report?.reason}\n\nLoad this model for a NEW task (fine_tune creates a new run with a parent)?`];
       else if (detail.code === 'connection_gate_acknowledge') [flag, question] = ['acknowledge_unknown_connection', `Connection layers are UNKNOWN: ${detail.report?.uncertain?.join(', ')}.\nUnknown is not OK. Proceed anyway?`];
       if (!flag || flags[flag]) throw e;                                          // not a question, or already answered
@@ -200,7 +215,7 @@ export function RunButtons({ control, blocked, onStart, onResumed, onMessage, on
   control: RunControl; blocked: boolean; onStart: () => void; onResumed: (started: Json) => void;
   onMessage: (m: Json) => void; onShow: (dir: string) => void }) {
   const { dir, status, phase, forced } = control;
-  const fail = (e: any) => onMessage({ level: 'error', text: `${e?.detail?.code ?? 'rejected'}: ${e?.message ?? e}`, detail: e?.detail });
+  const fail = (e: any) => onMessage({ level: 'error', text: plainError(e), detail: e?.detail });
   const command = (name: string, waitFor: Pending, text: string) => {
     control.setPending(waitFor);
     return api.command(dir!, name).then(() => { onMessage({ level: 'info', text }); return control.refresh(); })

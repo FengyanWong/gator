@@ -134,10 +134,21 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const adv = run.advanced ?? {};
   const net = run.network ?? {};
 
-  const { value: model, error, loading: modelLoading } = useRequest<Json>(() => api.model(source.run_dir, source.checkpoint_id ?? 'latest', config),
+  // Only a Mode that loads the model asks about it: a model_source left over from fine_tune is ignored in scratch, and
+  // was compiled and checked after every edit there all the same (audit 2026-09-30).
+  const { value: fresh, error, loading: modelLoading } = useRequest<Json>(() => api.model(source.run_dir, source.checkpoint_id ?? 'latest', config),
     [JSON.stringify([config.circuit, config.parameters, config.targets, config.measurements, run.mode, source,
       run.connection_profile_id, run.seed, run.network, run.advanced, run.reward, run.conditions, config.research?.split])],
-    { enabled: !!source.run_dir && !llmOnly, delay: 250 });
+    { enabled: run.mode !== 'scratch' && !!source.run_dir && !llmOnly, delay: 250 });
+  // While the SAME saved model is checked again after an edit (0.25 s and a compile), what is known about it - its facts,
+  // network, component list, structure and graph view - stays; only the compatibility verdict waits for the new answer
+  // (an old "compatible" is never shown while checking, record 7.96). The whole block used to vanish and come back after
+  // every edit, an open compatibility list closed, and an open network structure read the saved tensors again.
+  const modelKey = `${source.run_dir}|${source.checkpoint_id ?? 'latest'}`;
+  const lastModel = useRef<{ key: string; value: Json } | null>(null);
+  if (fresh?.description && lastModel.current?.value !== fresh) lastModel.current = { key: modelKey, value: fresh };
+  const model: Json = fresh ?? (!error && lastModel.current?.key === modelKey
+    ? { ...lastModel.current.value, compatibility: null, compatibility_unchecked: null } : null);
   const cornerIds: string[] = schema.$defs.ConditionsConfig.properties.corners.items.enum;
   const robust = (run.conditions?.policy ?? 'off') !== 'off';
   const gated = run.conditions?.policy === 'after_nominal';
@@ -257,9 +268,14 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   // loads a model. In scratch it used to be written into the configuration on page load: a validation warning
   // (source_ignored_in_scratch), an undo step nobody made and a model compile on every edit. Filled by itself, it is no
   // Undo step either: one Undo takes back the Mode choice and the model it brought.
+  // Its answer never overwrites a model chosen meanwhile, and never lands in scratch (the first reading of the default
+  // hashes the checkpoint files, which takes seconds on D:).
   useEffect(() => {
     if (source.run_dir || !loads) return;
-    api.defaultModel(config.project.name).then(d => d.run_dir && set({ model_source: { ...source, run_dir: d.run_dir, checkpoint_id: 'latest' } }, false)).catch(() => undefined);
+    let live = true;
+    api.defaultModel(config.project.name).then(d => live && d.run_dir && setConfig(c => c.run.mode === 'scratch' || c.run.model_source?.run_dir ? c
+      : { ...c, run: { ...c.run, model_source: { ...(c.run.model_source ?? {}), run_dir: d.run_dir, checkpoint_id: 'latest' } } }, false)).catch(() => undefined);
+    return () => { live = false; };
   }, [config.project.name, loads]);
 
 
@@ -285,8 +301,9 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       <Num label="Random seed (target task)" value={run.seed} onChange={v => set({ seed: v })} title="Seed of THIS run. The source model's pretraining seed is recorded separately." />
       <Check label="Stop at the first feasible design" value={run.stop_at_first_feasible} onChange={v => set({ stop_at_first_feasible: v })} />
       <h3>Reward and conditions</h3>
+      {/* From Nominal only, every corner is planned; between the two corner policies the corners chosen stay chosen. */}
       <label>Training conditions<select value={run.conditions?.policy ?? 'off'} onChange={e => set({ conditions: {
-        policy: e.target.value, corners: e.target.value !== 'off' ? cornerIds : [] } })}>
+        policy: e.target.value, corners: e.target.value === 'off' ? [] : !robust || !corners.length ? cornerIds : corners } })}>
         <option value="off">Nominal only</option><option value="after_nominal" disabled={!supportsCorners}>Corners after nominal passes</option><option value="always" disabled={!supportsCorners}>Every planned corner</option></select></label>
       {robust && <div className="training-corners">
         <Check label="nominal" value disabled onChange={() => undefined} title="Nominal is required in every training plan and is the only reset condition." />
@@ -317,7 +334,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         title="Complete hard-feasible plans only. Equality constraints remain mandatory but do not contribute clearance." />
       {llmOnly && run.mode === 'resume' && <label>AI run to resume<select value={source.run_dir ?? ''}
         onChange={e => set({ model_source: { run_dir: e.target.value, checkpoint_id: 'latest' } })}>
-        <option value="">Choose an AI-only run</option>{runs.filter((r: Json) => r.search?.method === 'llm' || r.manifest?.search_settings?.method === 'llm').map((r: Json) =>
+        <option value="">Choose an AI-only run</option>{runs.filter((r: Json) => r.search?.method === 'llm').map((r: Json) =>
           <option key={r.run_dir} value={r.run_dir}>{r.task_name ?? r.run_dir}</option>)}</select></label>}
       {!llmOnly && <>
       {!loads && <>
@@ -436,7 +453,12 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
   const check: Json = tested && tested.root === root ? tested.value : looked;
   // Browse, a folder of its list and Test writability say what went wrong, as the other panels do (they used to say nothing).
   const [problem, setProblem] = useState<string | null>(null);
-  const ask = <T,>(work: () => Promise<T>, done: (value: T) => void) => { setProblem(null); work().then(done, e => setProblem(e.message)); };
+  // Only the newest press answers (two quick clicks in the folder list showed whichever came last), and a problem is
+  // about the root it was pressed for: another root clears it.
+  const pressed = useRef(0);
+  const ask = <T,>(work: () => Promise<T>, done: (value: T) => void) => { const mine = ++pressed.current; setProblem(null);
+    work().then(v => { if (mine === pressed.current) done(v); }, e => { if (mine === pressed.current) setProblem(e.message); }); };
+  useEffect(() => { pressed.current++; setProblem(null); }, [root]);
   const paths = activeRun?.paths;
   const tail = String(root).split(/[\\/]/).filter(Boolean).slice(-2).join('/');
   // ONE checkpoint interval, counted in evaluations OR in seconds (user request 2026-09-22). The number goes into the field

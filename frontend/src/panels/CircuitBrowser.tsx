@@ -1,8 +1,7 @@
-import { ReactNode, useEffect, useState } from 'react';
-import { api, Json, OLDER_BACKEND } from '../api';
+import { ReactNode, useEffect, useRef, useState } from 'react';
+import { api, gateText, Json, OLDER_BACKEND } from '../api';
 
-export const gateText = (gate: Json) => gate.blocking?.includes('connection_kind') ? (gate.next_steps?.[0] ?? 'This kind of connection cannot do that.')
-  : `Virtuoso cannot be reached (${[...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') || gate.status}). Bring the link up in the Connection window (the "Connection" button in the workbench), then try again.`;
+export { gateText };
 
 export const namedTestbench = (cells: Json, cell?: string | null): string | null => {
   if (!cells || !cell) return null;
@@ -13,8 +12,12 @@ export const namedTestbench = (cells: Json, cell?: string | null): string | null
 /** The read-only library → cell → schematic chain, active only while the Virtuoso window is open. */
 export function useVirtuosoBrowser(enabled: boolean, profileId: string | null, chosen: Json, setConfig: (f: (c: Json) => Json, record?: boolean) => void) {
   const [native, setNative] = useState<Json>(null);
-  const [libraries, setLibraries] = useState<string[] | null>(null);      // null = not listed (yet)
-  const [cells, setCells] = useState<Json>(null);                         // { library, technology_library, cells: [{ name, views, has_schematic }] }
+  // Each list remembers the connection it came from: right after another connection is chosen, the old lists no longer
+  // count (the next steps used to ask the NEW connection about the old library list before it was cleared).
+  const [listed, setListed] = useState<{ profile: string; list: string[] } | null>(null);
+  const libraries = listed && listed.profile === profileId ? listed.list : null;   // null = not listed (yet)
+  const [cellList, setCells] = useState<Json>(null);
+  const cells: Json = cellList && cellList.profile === profileId ? cellList : null;   // { library, technology_library, cells: [{ name, views, has_schematic }] }
   const [listing, setListing] = useState<string | null>(null);            // what is being fetched from Virtuoso right now
   const [nativeError, setNativeError] = useState<string | null>(null);    // what the last failed step says
   const [refresh, setRefresh] = useState(0);                              // repeats the whole chain
@@ -35,15 +38,15 @@ export function useVirtuosoBrowser(enabled: boolean, profileId: string | null, c
     return () => { live = false; setListing(current => (current === step ? null : current)); };
   };
   useEffect(() => {
-    setLibraries(null);
+    setListed(null);
     if (!browsing) return;
-    return nativeStep('libraries', () => api.nativeLibraries(profileId!), answer => setLibraries(answer.libraries));
+    return nativeStep('libraries', () => api.nativeLibraries(profileId!), answer => setListed({ profile: profileId!, list: answer.libraries }));
   }, [browsing, profileId, refresh]);
   useEffect(() => {
     setCells(null);
     if (!browsing || !libraries || !chosen.library) return;
     return nativeStep('cells', () => api.nativeCells(profileId!, chosen.library), answer => {
-      setCells(answer);
+      setCells({ ...answer, profile: profileId });
       // The technology library a design library is attached to IS its PDK: offered as the label, never over a typed one.
       // An empty Testbench box takes the cell's `tb_<cell>`, as choosing the cell does - never over a chosen testbench.
       // Filled by itself, so no Undo step of its own: one Undo takes back the library choice and what it brought.
@@ -57,10 +60,19 @@ export function useVirtuosoBrowser(enabled: boolean, profileId: string | null, c
     });
   }, [browsing, profileId, libraries, chosen.library]);
   const chosenCell = cells && cells.library === chosen.library ? cells.cells.find((c: Json) => c.name === chosen.cell) : null;
+  const readBefore = useRef(false);                   // a schematic was read in this window already
   useEffect(() => {                                   // Refresh reaches this step through the two above: the cell list comes back first
     setNative(null);
-    if (!browsing || !chosenCell?.has_schematic) return;
-    return nativeStep('schematic', () => api.nativeRead(profileId!, chosen.library, chosen.cell), setNative);
+    if (!browsing) { readBefore.current = false; return; }
+    if (!chosenCell?.has_schematic) return;
+    // The first read in the window goes at once; another cell waits 0.4 s for the choice to settle: arrowing through the
+    // Cell list chooses every cell on the way, and each read queued in the one Virtuoso session (answers to cells left
+    // behind were dropped, but the reads still ran there).
+    const wait = readBefore.current ? 400 : 0;
+    readBefore.current = true;
+    let stop: (() => void) | undefined;
+    const timer = setTimeout(() => { stop = nativeStep('schematic', () => api.nativeRead(profileId!, chosen.library, chosen.cell), setNative); }, wait);
+    return () => { clearTimeout(timer); stop?.(); };
   }, [browsing, profileId, chosen.library, chosen.cell, !!chosenCell?.has_schematic]);
   return { native, libraries, cells, chosenCell, listing, nativeError, setNativeError, nativeProblem, setRefresh };
 }

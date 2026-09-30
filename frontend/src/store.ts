@@ -92,23 +92,40 @@ function migrateParameter(row: Json): Json {
   return out;
 }
 
+/** The text field being typed in, or null (a select, a tick box, a button, another window). Changes typed into ONE field
+ *  less than MERGE_MS apart are one Undo step (user choice 2026-09-30: typing 1.5e-6 used to take six Undo presses, and
+ *  the 100 kept steps ran out while typing). */
+const MERGE_MS = 1500;
+function typingField(): Element | null {
+  const e = document.activeElement;
+  if (e instanceof HTMLTextAreaElement) return e;
+  return e instanceof HTMLInputElement && !['checkbox', 'radio', 'file', 'button', 'submit'].includes(e.type) ? e : null;
+}
+
 /** Configuration state with undo/redo and local persistence (kept in the browser by itself, 0.8 s after each change - the
  *  editors' "Save" button that did the same at once went on 2026-09-22; "Export JSON" writes a file, and a started run
- *  stores its own effective_config.json). */
+ *  stores its own effective_config.json). A change still waiting for those 0.8 s is written when the page goes away.
+ *  `fresh`: this browser had no saved configuration when the page opened (blocked site storage counts as fresh). */
 export function useConfig() {
+  const [fresh] = useState(() => { try { return localStorage.getItem(STORAGE_KEY) === null; } catch { return true; } });
   const [config, setConfigState] = useState<Json>(() => {
     try { return migrateConfig(JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')) ?? emptyConfig(); } catch { return emptyConfig(); }
   });
   const past = useRef<Json[]>([]);
   const future = useRef<Json[]>([]);
+  const typed = useRef<{ field: Element | null; at: number }>({ field: null, at: 0 });
   const [, bump] = useState(0);
 
   const setConfig = useCallback((next: Json | ((c: Json) => Json), record = true) => {
+    const field = record ? typingField() : null, now = Date.now();
     setConfigState((current: Json) => {
       const value = typeof next === 'function' ? next(current) : next;
       if (record && JSON.stringify(value) !== JSON.stringify(current)) {
-        past.current = [...past.current.slice(-HISTORY_LIMIT), current];
+        // More typing in the same field: the step taken at its first key already brings back what was there before.
+        const merge = field !== null && field === typed.current.field && now - typed.current.at < MERGE_MS && past.current.length > 0;
+        if (!merge) past.current = [...past.current.slice(-HISTORY_LIMIT), current];
         future.current = [];
+        typed.current = { field, at: now };
       }
       return value;
     });
@@ -117,6 +134,7 @@ export function useConfig() {
 
   // Undo and redo are one move between the two histories, in opposite directions.
   const move = (from: { current: Json[] }, to: { current: Json[] }) => {
+    typed.current = { field: null, at: 0 };
     setConfigState((current: Json) => {
       const taken = from.current.pop();
       if (taken === undefined) return current;
@@ -127,10 +145,32 @@ export function useConfig() {
   };
   const undo = useCallback(() => move(past, future), []);
   const redo = useCallback(() => move(future, past), []);
+  // Leaving the field ends its typing: typing there again - even at once - is an Undo step of its own.
+  useEffect(() => {
+    const left = (e: FocusEvent) => { if (e.target === typed.current.field) typed.current = { field: null, at: 0 }; };
+    document.addEventListener('focusout', left, true);
+    return () => document.removeEventListener('focusout', left, true);
+  }, []);
 
-  useEffect(() => { const id = setTimeout(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(config)); } catch { /* site storage blocked or full: the configuration lasts for this page */ } }, 800); return () => clearTimeout(id); }, [config]);
+  const latest = useRef(config), unsaved = useRef(false);
+  latest.current = config;
+  // What this page stored last (or found when it opened): the flush below only replaces that.
+  const stored = useRef<string | null>(null);
+  if (stored.current === null) { try { stored.current = localStorage.getItem(STORAGE_KEY) ?? ''; } catch { stored.current = ''; } }
+  const save = () => {
+    unsaved.current = false;
+    try { const text = JSON.stringify(latest.current); localStorage.setItem(STORAGE_KEY, text); stored.current = text; } catch { /* site storage blocked or full: the configuration lasts for this page */ }
+  };
+  useEffect(() => { unsaved.current = true; const id = setTimeout(save, 800); return () => clearTimeout(id); }, [config]);
+  // A reload or a closed tab less than 0.8 s after the last change used to lose that change. Not over a configuration
+  // another tab (or a check script) stored meanwhile: then the page leaves it as it is.
+  useEffect(() => {
+    const flush = () => { try { if (unsaved.current && (localStorage.getItem(STORAGE_KEY) ?? '') === stored.current) save(); } catch { /* no storage */ } };
+    window.addEventListener('pagehide', flush);
+    return () => window.removeEventListener('pagehide', flush);
+  }, []);
 
-  return { config, setConfig, undo, redo, canUndo: past.current.length > 0, canRedo: future.current.length > 0 };
+  return { config, setConfig, undo, redo, canUndo: past.current.length > 0, canRedo: future.current.length > 0, fresh };
 }
 
 export function usePolling<T>(fn: () => Promise<T>, ms: number, enabled: boolean, deps: unknown[]) {
@@ -160,10 +200,15 @@ export function useRequest<T>(fn: () => Promise<T>, deps: unknown[], { enabled =
   const [revision, refresh] = useState(0);
   const immediate = useRef(false);
   const inFlight = useRef<{ deps: unknown[]; promise: Promise<T> } | null>(null);
+  const asked = useRef<unknown[] | null>(null);
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    if ((!keepPrevious && !pollEvery) || !enabled) setResult({ deps, value: null, error: null });
+    // Another selection starts empty; a refresh of the SAME one keeps its answer until the new one comes (a Refresh used
+    // to blank Data tables, Output files and Corner check and lose the scroll position).
+    const another = !asked.current || !sameDependencies(asked.current, deps);
+    asked.current = deps;
+    if ((!keepPrevious && !pollEvery && another) || !enabled) setResult({ deps, value: null, error: null });
     setLoading(enabled);
     if (!enabled) return;
     const read = async () => {

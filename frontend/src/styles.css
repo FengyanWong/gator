@@ -21,6 +21,7 @@ h3 { margin: 10px 0 4px; font-size: 12px; text-transform: uppercase; letter-spac
 label { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; color: var(--muted); font-size: 11.5px; flex: 1; min-width: 0; }
 label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); }
 input, select, textarea, button { font: inherit; color: var(--text); }
+table { font: inherit; }  /* a pop-up window starts as about:blank = quirks mode, where a table does not inherit the font and falls back to 16px */
 input, select, textarea { border: 1px solid var(--line); padding: 3px 5px; background: #fff; min-width: 0; width: 100%; }
 label.check input, td input[type=checkbox] { width: auto; }
 input.numeric { text-align: right; font-variant-numeric: tabular-nums; }
@@ -36,7 +37,10 @@ table.grid th { background: #eef0f3; position: sticky; top: 0; cursor: help; fon
 table.editor td { padding: 0; } table.editor td input, table.editor td select { border: none; min-width: 84px; background: transparent; }
 table.editor td input.readonly { color: var(--muted); }
 table.editor select[aria-label="Judged at"] { min-width: 180px; }
-table.editor select[aria-label="Objective"] { min-width: 110px; }
+table.editor select[aria-label="Constraint"] { min-width: 200px; }
+/* the row-selection tick box: as narrow as the box itself (it inherited the 84 px minimum of the editor inputs) */
+table.editor th.sel, table.editor td.sel { width: 1%; padding: 0 3px; text-align: center; vertical-align: middle; }
+table.editor td.sel input { min-width: 0; margin: 0; }
 .right input[aria-invalid="true"] { border-color: var(--bad); }
 .toolbar button.text { font-size: 11.5px; }
 tr.has-error td { background: #fdf1f0; }
@@ -44,7 +48,7 @@ tr.has-error td { background: #fdf1f0; }
 .guidance { background: #eef3fb; border: 1px solid #c4d5ee; padding: 5px 8px; margin: 6px 0 0; cursor: pointer; }
 .issue { font-size: 11px; } .issue.error, .issue.blocker { color: var(--bad); } .issue.warning { color: var(--warn); } .issue.unresolved { color: #6a3fa0; } .issue.info { color: var(--muted); }
 td.issues { min-width: 170px; white-space: normal !important; }
-.blocker { border: 1px solid var(--bad); background: #fdecea; padding: 6px; margin: 6px 0; }
+.blocker { border: 1px solid var(--bad); background: #fdecea; padding: 6px; margin: 6px 0; } .issue.blocker { border: 0; background: none; padding: 0; margin: 0; }
 /* A limit explained, not a fault: neutral, unlike .blocker. */
 .note { border: 1px solid var(--line); border-left: 3px solid var(--accent); background: #eef3fb; padding: 6px 8px; margin: 6px 0; } .note p { margin: 4px 0; } .note ul { margin: 2px 0 4px; padding-left: 18px; } .note code { overflow-wrap: anywhere; }
 /* The task row of the Project column: "Load task" at the left, "Delete task" at the right end (user request 2026-09-24). */
@@ -129,7 +133,9 @@ button.notes-link { border: none; background: none; padding: 0 3px; color: var(-
 .connection-button-name { font-weight: 600; flex: 1; } .connection-button .badge { order: 1; }
 .connection-button-what { order: 2; flex: 0 0 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 11.5px; }
 .connection-launcher .error { margin: 5px 2px 0; }
-#connection-root, #virtuoso-root, #pdk-root { min-height: 100vh; background: var(--panel); }
+#connection-root, #virtuoso-root, #pdk-root, #ngspice-root, #task-file-root { min-height: 100vh; background: var(--panel); }
+/* The task file is edited in a monospace box of the window's height (it was the browser's two-line default). */
+.task-file { padding: 14px 18px; } .task-file textarea { display: block; width: 100%; height: 70vh; font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.35; }
 .connection-window, .virtuoso-window, .pdk-window { max-width: 760px; margin: 0 auto; padding: 14px 18px 24px; font-size: 13.5px; } .pdk-window { max-width: 1060px; }
 .connection-window h2, .virtuoso-window h2, .pdk-window h2 { margin: 0 0 8px; font-size: 17px; } .connection-window p, .virtuoso-window p, .pdk-window p { margin: 5px 0; }
 .connection-window .hint, .connection-window label, .connection-window .steps-list, .virtuoso-window .hint, .virtuoso-window label, .virtuoso-window .steps-list, .pdk-window .hint, .pdk-window label { font-size: 12.5px; }
@@ -144,7 +150,7 @@ button.notes-link { border: none; background: none; padding: 0 3px; color: var(-
 details.labels > summary { color: var(--muted); } details.labels > summary b { font-weight: 600; color: var(--text); }
 /* The Virtuoso cellview import of the left column is ONE button (user request 2026-09-23); pressing it opens the Virtuoso window,
    a pop-up like the connection window (about:blank = quirks mode, so its tables are told to inherit the font). */
-.virtuoso-window details > summary { cursor: pointer; } .virtuoso-window table { font: inherit; }
+.virtuoso-window details > summary { cursor: pointer; }
 .virtuoso-window .copy-warning { border: 1px solid var(--warn); background: #fff6dc; padding: 5px 8px; }
 /* The ngspice window: the deck itself is the main thing, in a monospace box that fills the width. */
 .ngspice-window .ngspice-text { width: 100%; box-sizing: border-box; font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.35; white-space: pre; overflow: auto; }
@@ -203,7 +209,6 @@ button.run-chip.running, button.run-chip.starting, button.run-chip.resuming { co
 #runs-root { height: 100vh; background: var(--panel); } .run-window { height: 100%; display: flex; flex-direction: column; padding: 12px 16px 10px; font-size: 13px; }
 .run-window h2 { margin: 0 0 4px; font-size: 17px; } .run-window p { margin: 4px 0; } .run-window .hint { font-size: 12.5px; } .run-window details > summary { cursor: pointer; }
 .run-window .row { align-items: center; } input.run-filter { width: 330px; } .run-count { flex: 1; }
-.run-window table { font: inherit; }  /* the window starts as about:blank = quirks mode, where a table does not inherit the font and falls back to 16px */
 table.run-table td { vertical-align: middle; font-variant-numeric: tabular-nums; } table.run-table th.sortable { cursor: pointer; user-select: none; } table.run-table th.plain { cursor: default; } .sort-mark { color: var(--accent); }
 table.run-table tr.current > td { background: #e6eefb; } table.run-table tbody tr:not(.run-details-row):hover > td { background: #f3f7fe; } table.run-table tr.current:hover > td { background: #dbe7fa; }
 /* A double click on a row shows that run (there is no "Show" column): the row of the run that is shown carries a bar at its left edge besides its colour. */
@@ -226,7 +231,7 @@ details.section.module { margin-top: 0; } details.module > summary { cursor: poi
 .component-row { align-items: flex-end; } .component-row > label { flex: 1; margin: 0; } .component-row > label select { width: 100%; height: 26px; }
 .component-row > button { flex: none; height: 26px; } .component-list .component-what { margin: 2px 0 4px; }
 .pdk-window h3 { margin: 14px 0 6px; font-size: 14.5px; }
-.pdk-window table { font: inherit; } .pdk-window .pdk-form { align-items: flex-end; } .pdk-window .pdk-form > label { flex: 1 1 240px; }
+.pdk-window .pdk-form { align-items: flex-end; } .pdk-window .pdk-form > label { flex: 1 1 240px; }
 .pdk-window .pdk-form > button { flex: none; } .pdk-list tr { cursor: default; } .pdk-list tr.active td { background: #eef4ff; }
 .pdk-devices td { vertical-align: top; } .pdk-devices td:first-child, .pdk-devices td:nth-child(2) { white-space: nowrap; } .pdk-window .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 /* Corner check tab (CornerCheck.tsx): the plan line, the designs, then one row per design and one column per corner with a
@@ -249,3 +254,12 @@ table.corner-checks tr { cursor: default; } table.corner-checks tr.current > td 
 .matched-devices { border: 1px solid var(--line); background: var(--panel); padding: 4px 8px 6px; margin: 6px 0; }
 .matched-devices .row { align-items: center; } .matched-devices h4 { margin: 2px 8px 2px 0; }
 .matched-devices .structures { margin: 4px 0 6px 18px; padding: 0; } .matched-devices tr.muted td { color: var(--muted); }
+/* An import confirmation or the Matched devices box scrolls by itself (its Apply / Cancel first): a long diff grew past the
+   clipped panel, the table shrank to nothing and Apply could not be reached (audit 2026-09-30). */
+.editors > .confirm, .editors > .matched-devices { flex: none; max-height: 45vh; overflow: auto; }
+/* The run's AI sizing thread has a row of its own above the conversation and scrolls there: as an unplaced grid item it
+   took an extra row and left the message box and its buttons with no height at all (audit 2026-09-30). */
+.agent-main:has(> .sizing-thread) { grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: 'using using' 'thread compose' 'chat compose'; }
+.agent.detached .agent-main:has(> .sizing-thread) { grid-template-rows: auto minmax(0, 1fr) minmax(30vh, 1fr) auto; grid-template-areas: 'using using' 'thread notes' 'chat notes' 'compose notes'; }
+.sizing-thread { grid-area: thread; min-height: 0; overflow: auto; border: 1px solid var(--line); padding: 4px 8px; }
+.sizing-thread h3 { margin-top: 2px; }

@@ -2,32 +2,50 @@ import { useEffect, useState } from 'react';
 import { api, Json } from '../api';
 import { searchPhase } from './SearchSettings';
 
-export function SizingThread({ runDir, active }: { runDir?: string | null; active: boolean }) {
+const LIVE = ['created', 'running', 'pausing', 'stopping'];
+
+/** The run's AI sizing thread in the Agent tab. `visible`: the tab is open, or the conversation is in its own window.
+ *  `hint` lives in the Agent tab, so detaching the conversation (which draws this anew) keeps what is being typed. */
+export function SizingThread({ runDir, active, visible, hint, setHint }: { runDir?: string | null; active: boolean; visible: boolean;
+  hint: string; setHint: (text: string) => void }) {
   const [thread, setThread] = useState<Json>(null);
-  const [hint, setHint] = useState('');
   const [error, setError] = useState('');
+  const [sending, setSending] = useState(false);
+  useEffect(() => { setThread(null); setError(''); }, [runDir]);
+  // Read while the thread can be seen, and again every second while the run is live AND has an AI search: a SAC run has
+  // none, and was read every second all the same, with the Agent tab closed too (audit 2026-09-30). A failed read is
+  // tried again more slowly instead of ending the updates for the rest of the run; a status read that fails for a moment
+  // (active false, then true) no longer empties the thread.
   useEffect(() => {
-    setThread(null); setHint(''); setError('');
-    if (!runDir) return;
-    let gone = false, timer: ReturnType<typeof setTimeout> | undefined;
+    if (!runDir || !visible) return;
+    let gone = false, failures = 0, timer: ReturnType<typeof setTimeout> | undefined;
     const read = async () => {
+      let again = 0;
       try {
         const data = await api.llmThread(runDir);
         if (gone) return;
-        setThread(data);
-        if (active && ['created', 'running', 'pausing', 'stopping'].includes(data.state)) timer = setTimeout(read, 1000);
-      } catch (e: any) { if (!gone) setError(e.message); }
+        failures = 0; setThread(data); setError('');
+        if (active && data.search && LIVE.includes(data.state)) again = 1000;
+      } catch (e: any) {
+        if (gone) return;
+        setError(e.message);
+        if (active && ++failures <= 5) again = 3000 * failures;
+      }
+      if (again) timer = setTimeout(read, again);
     };
     read();
     return () => { gone = true; clearTimeout(timer); };
-  }, [runDir, active]);
+  }, [runDir, active, visible]);
   if (!thread?.search) return null;
   const search = thread.search;
   const calls: Record<string, Json[]> = {};
   for (const event of thread.events ?? []) (calls[event.call_id ?? 'run'] ??= []).push(event);
+  // One hint per press: a double click used to store it twice (both counted towards the limit and went into the call).
   const send = async () => {
+    if (sending) return;
+    setSending(true);
     try { await api.llmHint(runDir!, hint); setHint(''); setError(''); }
-    catch (e: any) { setError(e.message); }
+    catch (e: any) { setError(e.message); } finally { setSending(false); }
   };
   return <section className="sizing-thread">
     <h3>Run’s AI sizing thread</h3>
@@ -38,11 +56,13 @@ export function SizingThread({ runDir, active }: { runDir?: string | null; activ
       <p>Hints accepted: {search.hint_count}; included in calls: {search.hints_included ?? 0}. {search.steered ? 'This run is marked steered.' : ''}</p>
     </details>
     {Object.entries(calls).map(([id, events], index) => {
+      // The call's own number: the thread holds the newest events only, so a position would renumber older calls.
+      const number = events.find(e => e.type === 'call_started')?.call_number ?? index + 1;
       const response = events.find(e => e.type === 'reply' && e.output);
       const finished = events.find(e => e.type === 'call_finished');
       const thinking = events.filter(e => e.type === 'thinking').map(e => e.text).join('');
       return <article className="sizing-call" key={id}>
-        <h4>AI call {index + 1}</h4>
+        <h4>AI call {number}</h4>
         {thinking && <details><summary>Thinking summary</summary><p style={{ whiteSpace: 'pre-wrap' }}>{thinking}</p></details>}
         {finished && finished.status !== 'completed' && <p className="warn">Call ended: {finished.status}</p>}
         {response && <><p>{typeof response.output.analysis === 'string' ? response.output.analysis : 'Invalid model reply'}</p>
@@ -57,7 +77,7 @@ export function SizingThread({ runDir, active }: { runDir?: string | null; activ
     })}
     <label>Hint for the next AI call<textarea value={hint} maxLength={1500} disabled={!search.hints_available || !active}
       onChange={e => setHint(e.target.value)} /></label>
-    <button disabled={!search.hints_available || !active || !hint.trim()} onClick={send}>Add hint</button>
+    <button disabled={!search.hints_available || !active || !hint.trim() || sending} onClick={send}>{sending ? 'Adding...' : 'Add hint'}</button>
     <p className="hint">Hints guide a future eligible call. They cannot change bounds, specifications or budgets, or trigger a rescue.</p>
     {error && <p className="error">{error}</p>}
   </section>;

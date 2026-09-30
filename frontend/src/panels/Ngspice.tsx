@@ -16,7 +16,7 @@ const NAME = /^[a-z][a-z0-9_]{1,39}$/;
 const backendPath = (text: string) => text.trim().replace(/^([A-Za-z]):[\\/]/, (_, d) => `/mnt/${d.toLowerCase()}/`).replace(/\\/g, '/');
 
 export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged }:
-  { config: Json; circuit: Json; chooseTask: (taskKey: string) => Promise<void> | void; onTasksChanged: () => void }) {
+  { config: Json; circuit: Json; chooseTask: (taskKey: string, labels?: { circuit_class?: string | null; pdk_id?: string | null }) => Promise<void> | void; onTasksChanged: () => void }) {
   const ref = config.circuit;
   const followed: string | null = ref.source === 'registered_task' && /^ngspice:/.test(ref.task_id ?? '') ? ref.task_id.slice('ngspice:'.length) : null;
   // A Virtuoso connection hides this button (Left.tsx): the window closes with it instead of staying blank and orphaned.
@@ -68,7 +68,7 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged }:
     const made = await api.ngspiceSave({ name, text, device_kinds: kinds, source_path: sourcePath, ...labels });
     setChecked(made.check ?? null); setLoadedFrom(made.name);
     onTasksChanged();
-    await chooseTask(made.task_key);
+    await chooseTask(made.task_key, { circuit_class: made.circuit_class, pdk_id: made.pdk_id });   // a new task is not in the list read before
     setMessage({ level: 'ok', text: `${made.created ? 'Saved the new task' : `Saved revision ${made.revision} of`} ${made.task_key}. The Project column follows it; `
       + 'Parameters and Probes show its rows (Specs are yours to fill). It runs on an ngspice connection: choose one in the Connection window.' });
   });

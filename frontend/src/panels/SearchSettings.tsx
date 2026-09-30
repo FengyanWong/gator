@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, Json } from '../api';
+import { agentSettingsShared, Json, onAgentSettings } from '../api';
 
 export const SEARCH_METHODS: Record<string, [string, string]> = {
   sac: ['SAC', 'Random starting designs, then SAC learns and explores'],
@@ -20,7 +20,8 @@ export function SearchSettings({ run, schema, set }: { run: Json; schema: Json; 
   const search = run.search ?? {}, method = search.method ?? 'sac';
   const [agent, setAgent] = useState<Json>(null);
   const [error, setError] = useState('');
-  useEffect(() => { api.agentSettings().then(setAgent).catch(e => setError(e.message)); }, []);
+  // The Agent tab's settings as it saved them last (shared, api.ts): "Same as the Agent tab (...)" follows a save there.
+  useEffect(() => { agentSettingsShared().then(setAgent).catch(e => setError(e.message)); return onAgentSettings(setAgent); }, []);
   const fields = schema.$defs.SearchSettings.properties;
   const value = (key: string) => search[key] ?? fields[key]?.default ?? '';
   const edit = (patch: Json) => set({ search: { ...search, ...patch } });
@@ -32,9 +33,12 @@ export function SearchSettings({ run, schema, set }: { run: Json; schema: Json; 
   const inheritedEffort = provider === agent?.provider && efforts.includes(agent?.effort) ? agent.effort : null;
   const count = search.warm_start_count ?? Math.max(8, run.advanced?.batch_size ?? 8, run.advanced?.warmup_transitions ?? 8);
   const requiredEvaluations = count + Math.ceil(count / (run.advanced?.episode_length ?? 4));
+  // An empty box is the default, shown greyed as its placeholder. It used to show the default as a typed value again the
+  // moment the box was emptied (typing 8 then gave 48), and stored null for a number that may not be empty.
   const number = (key: string, label: string, nullable = false) => <label>{label}<input type="number" min={fields[key]?.minimum ?? 1}
-    max={fields[key]?.maximum} step={key.includes('usd') ? '0.01' : '1'} value={value(key)} placeholder={nullable ? 'Automatic' : 'Required'}
-    onChange={e => edit({ [key]: e.target.value === '' ? null : Number(e.target.value) })} /></label>;
+    max={fields[key]?.maximum} step={key.includes('usd') ? '0.01' : '1'} value={search[key] ?? ''}
+    placeholder={nullable ? 'Automatic' : fields[key]?.default != null ? String(fields[key].default) : 'Required'}
+    onChange={e => edit({ [key]: e.target.value === '' ? (nullable ? null : undefined) : Number(e.target.value) })} /></label>;
   return <section className="search-settings">
     <h3>Search method</h3>
     <label>Search method<select aria-label="Search method" value={method} onChange={e => {

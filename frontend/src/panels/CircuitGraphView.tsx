@@ -52,7 +52,9 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
     const mine = ++request.current;
     setBusy(true); setError(null);
     api.modelGraphView(runDir, checkpointId, evaluation)
-      .then(v => { if (mine !== request.current) return; setView(v); setWanted(String(v.step.evaluation)); setPicked(null); setLayer(l => Math.min(l, Math.max(1, v.attention.layers))); })
+      .then(v => { if (mine !== request.current) return; setView(v); setWanted(String(v.step.evaluation)); setPicked(null); setLayer(l => Math.min(l, Math.max(1, v.attention.layers)));
+        // A head chosen for a model with more heads does not exist here: every edge was drawn at attention 0.
+        setHead(h => h === 'mean' || Number(h) <= (v.attention.heads ?? 0) ? h : 'mean'); })
       .catch(e => { if (mine === request.current) setError(e.status === 404 && e.message === 'Not Found'
         ? 'the backend that is running is older than this view. Restart it once (the view needs one new route), then open the view again.' : e.message); })
       .finally(() => { if (mine === request.current) setBusy(false); });
@@ -73,6 +75,9 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
     cy.fit(undefined, 30);
   };
 
+  // The dialog can go away while open (a Mode or model changed in another window): the drawing, its render loop and
+  // its window listeners go with it, as Close does.
+  useEffect(() => () => { request.current++; graph.current?.destroy(); graph.current = null; }, []);
   // Draw once per answer. cytoscape is fetched here, on first use.
   useEffect(() => {
     if (!view || !canvas.current) return;

@@ -2,7 +2,7 @@ import { useAsyncAction } from '../store';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
-import { api, Json } from '../api';
+import { api, connectionProfilesChanged, connectionProfilesShared, Json } from '../api';
 
 const STATE_LABEL: Record<string, string> = {
   ok: 'OK', failed: 'FAILED', not_ready: 'NOT READY', not_applicable: 'n/a', not_checked: 'not checked', busy: 'BUSY', unknown: 'UNKNOWN',
@@ -44,7 +44,7 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
 
   const loadSetup = () => api.connectionSetup().then(setSetup).catch(e => setError(e.message));          // locates and names; contacts nothing
   // The connection file's active profile fills an empty choice by itself: not an Undo step (nobody chose it).
-  const loadProfiles = () => api.connectionProfiles().then(p => {
+  const loadProfiles = () => connectionProfilesShared().then(p => {
     setProfiles(p); if (!profileId && p.active) setProfileId(p.active, false);
     if (p.profiles.length === 0) { setAdding(true); loadSetup(); }
   }).catch(e => setError(e.message));
@@ -52,14 +52,19 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
 
   // ---- actions: every one of them is a button press, but for the one test when the page opens (below) ---------------
   const { busy, run } = useAsyncAction(e => setError(e.message), () => setError(null));
+  // Which connection the action in progress belongs to: a test of A (it can take a minute) no longer shows B "testing..."
+  // and locks B's buttons once B is chosen (audit 2026-09-30). Adding a connection belongs to none.
+  const [busyFor, setBusyFor] = useState<string | null>(null);
+  const runFor = (name: string, action: () => Promise<unknown>) => { setBusyFor(profileId); return run(name, action); };
+  const mine = busy && (busy === 'profile' || busyFor === profileId) ? busy : null;
   // The connection list stays usable while a slow test runs: an answer - or a failure - for a connection that is no longer
   // the chosen one is dropped (null), so it never shows under another connection.
   const chosen = useRef(profileId);
   chosen.current = profileId;
   const forChosen = <T,>(asked: string, call: Promise<T>): Promise<T | null> =>
     call.then(answer => (asked === chosen.current ? answer : null), e => { if (asked === chosen.current) throw e; return null; });
-  const connect = () => run('connect', async () => { const answer = await forChosen(profileId!, api.connectionConnect(profileId!)); if (answer) { setConnected(answer.connect); setStatus(answer.status); } });
-  const check = (scope: string) => run(scope, async () => { const answer = await forChosen(profileId!, api.connectionCheck(profileId!, scope)); if (answer) setStatus(answer); });
+  const connect = () => runFor('connect', async () => { const answer = await forChosen(profileId!, api.connectionConnect(profileId!)); if (answer) { setConnected(answer.connect); setStatus(answer.status); } });
+  const check = (scope: string) => runFor(scope, async () => { const answer = await forChosen(profileId!, api.connectionCheck(profileId!, scope)); if (answer) setStatus(answer); });
   // The page opened: ONE test of the connection in use, as soon as the connection list is read and names it - the same as
   // pressing "Test connection" (interactive scope: one read-only SKILL round trip, for ngspice the built-in test circuit;
   // zero-cost, starts nothing; while a run is active the probe does not touch Virtuoso). User request 2026-09-24 (status
@@ -74,14 +79,17 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
     let live = true;
     if (!testedOnOpen.current && profiles.profiles.some((p: Json) => p.profile_id === profileId)) {
       testedOnOpen.current = true;
-      run('interactive', async () => { const tested = await api.connectionCheck(profileId, 'interactive'); if (live) setStatus(tested); });
+      // Its answer - or its failure - counts only while that connection is still the chosen one.
+      runFor('interactive', async () => { const tested = await forChosen(profileId, api.connectionCheck(profileId, 'interactive')); if (live && tested) setStatus(tested); });
     } else {
       api.connectionStatus(profileId).then(s => { if (live) setStatus(s); }).catch(e => { if (live) setError(e.message); });
     }
     return () => { live = false; };
   }, [profileId, profiles]);
   // The click happens in the connection window, so ITS clipboard is the one a browser lets this gesture write to.
-  const copyText = (key: string, text: string) => { (popup ?? window).navigator.clipboard?.writeText(text); setCopied(key); setTimeout(() => setCopied(c => (c === key ? null : c)), 1500); };
+  // "Copied" only when it was: a refused or missing clipboard used to say "Copied" all the same.
+  const copyText = (key: string, text: string) => (popup ?? window).navigator.clipboard?.writeText(text)
+    .then(() => { setCopied(key); setTimeout(() => setCopied(c => (c === key ? null : c)), 1500); }, () => undefined);
 
   const entry: Json = profiles?.profiles.find((p: Json) => p.profile_id === profileId) ?? null;
   const family: string = entry?.family ?? 'virtuoso';
@@ -107,7 +115,7 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
     if (draft.kind === 'ngspice_ssh') body.ssh_host = host;
     if (kindSetup?.family === 'virtuoso' && draft.bridge_profile.trim()) body.bridge_profile = draft.bridge_profile.trim();
     const made = await api.connectionCreateProfile(body);
-    setProfiles(made.profiles); setProfileId(made.profile_id); setCreated(made); setAdding(false);
+    connectionProfilesChanged(made.profiles); setProfiles(made.profiles); setProfileId(made.profile_id); setCreated(made); setAdding(false);
     setDraft((d: Json) => ({ ...d, name: '', bridge_profile: '' }));
   });
 
@@ -117,7 +125,7 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
         title={popup ? 'The connection window is open: press to bring it to the front.' : 'Opens the connection window: choose or add a connection (Virtuoso or ngspice, on this machine or over SSH), connect and test it. Opening it checks nothing.'}>
         <span className="connection-button-name">Connection</span>
         <span className="connection-button-what">{profileId ? `${profileId}${entry?.kind_label ? ` - ${entry.kind_label}` : ''}` : profiles && profiles.profiles.length === 0 ? 'none set up yet' : 'none selected'}{popup ? ' (window open)' : ''}</span>
-        {profileId && (busy === 'interactive' || busy === 'full'
+        {profileId && (mine === 'interactive' || mine === 'full'
           ? <span className="badge state-not_checked" title="The connection is being tested">testing...</span>
           : <span className={`badge state-${overall}`} title={status?.checked_utc ? `Last test: ${testedAt(status.checked_utc)}` : 'Never tested'}>{STATE_LABEL[overall] ?? overall}</span>)}
       </button>
@@ -154,11 +162,11 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
       <div className="step-head"><span className="step-no">1</span> {local ? 'Set up the bridge on this machine' : 'Connect to the target over SSH'}</div>
       {local && <p className="hint">Virtuoso runs on the same machine as the workbench backend, so there is no SSH and no tunnel: this step only places the bridge setup file and tells you the line to load.</p>}
       <div className="row">
-        <button disabled={!profileId || !!busy} onClick={connect}
+        <button disabled={!profileId || !!mine} onClick={connect}
           title={local ? 'Does what `virtuoso-bridge start` does for a Virtuoso on this machine: places the bridge setup file and reports the line to load in the CIW. No SSH, no tunnel. It starts nothing if the bridge env file names another machine. Nothing is ever stopped or restarted.'
             : 'Starts the SSH tunnel of this profile, exactly like `virtuoso-bridge start`. A tunnel that is already running is left untouched. Nothing is ever stopped or restarted.'}>
-          {local ? (busy === 'connect' ? 'Setting up...' : linkUp ? 'Set up local bridge (already done)' : 'Set up local bridge')
-            : (busy === 'connect' ? 'Connecting... (can take a minute)' : linkUp ? 'Connect SSH (already up)' : 'Connect SSH')}</button>
+          {local ? (mine === 'connect' ? 'Setting up...' : linkUp ? 'Set up local bridge (already done)' : 'Set up local bridge')
+            : (mine === 'connect' ? 'Connecting... (can take a minute)' : linkUp ? 'Connect SSH (already up)' : 'Connect SSH')}</button>
       </div>
       {connected && <p className={connected.ok ? 'ok' : 'error'}>
         {connected.ok ? (local ? (connected.action === 'already_running' ? 'The local bridge was already set up - left untouched.' : `Local bridge set up (${connected.duration_seconds} s).`)
@@ -187,9 +195,9 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
     <div className="step">
       <div className="step-head"><span className="step-no">3</span> Test the connection</div>
       <div className="row">
-        <button disabled={!profileId || !!busy} onClick={() => check('interactive')} title="Read-only and zero-cost: one trivial SKILL round trip. No simulation, no budget, no data rows. It never starts anything.">
-          {busy === 'interactive' ? 'Testing...' : 'Test connection'}</button>
-        <button disabled={!profileId || !!busy} onClick={() => check('full')} title="Adds Spectre and a license SNAPSHOT (can be slow)">{busy === 'full' ? 'Testing...' : '+ Spectre / license'}</button>
+        <button disabled={!profileId || !!mine} onClick={() => check('interactive')} title="Read-only and zero-cost: one trivial SKILL round trip. No simulation, no budget, no data rows. It never starts anything.">
+          {mine === 'interactive' ? 'Testing...' : 'Test connection'}</button>
+        <button disabled={!profileId || !!mine} onClick={() => check('full')} title="Adds Spectre and a license SNAPSHOT (can be slow)">{mine === 'full' ? 'Testing...' : '+ Spectre / license'}</button>
         <button onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Details'}</button>
       </div>
       {result}
@@ -202,8 +210,8 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
       <p className="hint">Finds the ngspice program, reads its version and solves one built-in three-element test circuit. None of your circuits, no budget, no license.
         {!local && ' SSH runs in batch mode: it needs key-based login to the machine and cannot ask for a password.'} There is nothing to connect or to load first.</p>
       <div className="row">
-        <button disabled={!profileId || !!busy} onClick={() => check('interactive')} title="Runs only when pressed. It installs, starts and changes nothing.">
-          {busy === 'interactive' ? 'Testing...' : 'Test connection'}</button>
+        <button disabled={!profileId || !!mine} onClick={() => check('interactive')} title="Runs only when pressed. It installs, starts and changes nothing.">
+          {mine === 'interactive' ? 'Testing...' : 'Test connection'}</button>
         <button onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Details'}</button>
       </div>
       {result}

@@ -56,6 +56,11 @@ try{
  await page.evaluate("Array.from(document.querySelectorAll('footer button')).find(b=>b.textContent==='Agent').click()",true);
  check('sizing thread loads persisted call and outcome',await page.until("document.querySelector('.sizing-thread')?.textContent.includes('Synthetic sizing reply') && document.querySelector('.sizing-thread')?.textContent.includes('specifications not met')",150));
  check('warmup progress matches status',await page.until("document.querySelector('.sizing-thread')?.textContent.includes('2 / 8')"));
+ // The thread has a row of its own (7.125): as an unplaced grid item it left the message box and its buttons 0 px high.
+ check('the thread leaves the message box and its buttons their room',await page.evaluate(`(() => { const c = document.querySelector('.compose-main');
+   const b = c && [...c.querySelectorAll('button')].find(x => x.textContent === "What's missing?"); if (!b) return false;
+   const r = c.getBoundingClientRect(), q = b.getBoundingClientRect();
+   return r.height >= 60 && q.height > 0 && document.elementFromPoint(q.left + q.width / 2, q.top + q.height / 2) === b; })()`));
  await page.setValue("document.querySelector('.sizing-thread textarea')",'Explore lower bias current');
  await page.evaluate("document.querySelector('.sizing-thread button').click()",true);await sleep(400);check('hint goes to run hint route',hinted);
  search={...search,phase:'initial_learning',admitted:8,trained:3,pending:false,hints_available:false};
@@ -68,6 +73,9 @@ try{
  const before=requests.filter(r=>r.url.includes('/api/runs/llm-thread')).length;await sleep(2400);
  check('AI thread stops polling inactive run',before===requests.filter(r=>r.url.includes('/api/runs/llm-thread')).length);
  await page.send('Page.reload',{ignoreCache:true});
+ // The thread is read while it can be seen (7.125): the page opens on Run status, so the Agent tab is opened first.
+ await page.until("Array.from(document.querySelectorAll('footer button')).some(b=>b.textContent==='Agent')",150);
+ await page.evaluate("Array.from(document.querySelectorAll('footer button')).find(b=>b.textContent==='Agent').click()",true);
  check('saved AI thread survives reload',await page.until("document.querySelector('.sizing-thread')?.textContent.includes('Synthetic sizing reply')",150));
  for(const tab of ['Run status','Data tables','Output files','Logs']){
   const exists=await page.evaluate(`Array.from(document.querySelectorAll('footer .tabs button')).some(b=>b.textContent===${JSON.stringify(tab)})`);

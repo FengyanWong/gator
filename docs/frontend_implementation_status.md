@@ -163,3 +163,5 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.119 | Fixed-bias feasibility calibration: 80 runs, zero passes; full suite passes; current/schema findings recorded |
 | 7.120 | Audit finding F1 fixed: the LLM duplicate check compares sizes to a tolerance; optimizer digest 27a36b2b → 100945fb |
 | 7.121 | Audit of the fixed-bias calibration: the zero passes come from the settling-time target, made worse by fixed low bias currents; tree green |
+| 7.124 | Specs: compact tick-box column, the objective inside the Constraint list, Judged at only with training corners |
+| 7.125 | Frontend audit and its fixes: honest real-run question, Agent message box, Import JSON, Save task without the Virtuoso window, stale answers, fewer requests; Undo per typed value |

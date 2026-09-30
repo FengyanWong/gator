@@ -131,6 +131,21 @@ await runChecks(browser, async () => {
   check('with no run held the page asks for no run status and sends no command', statusRequests === 0 && log.length === 0, `${statusRequests} status request(s)`);
   await shot('run-1-start.png');
 
+  // ---- 1b. the backend finds the task REAL although the page took it for MOCK (a task chosen a moment ago, its circuit
+  //      not read yet): the question is worded from the backend's own report - never "Start 60 synthetic MOCK
+  //      evaluations?", whose OK authorized a real run (record 7.125) ------------------------------------------------------
+  refuseNext = { name: '/api/runs/start', detail: { code: 'real_authorization_required', message: 'FIXTURE: a real simulation needs your authorization.',
+    report: { blocker: 'FIXTURE', task_key: 'real:fixture_ota', requested_max_evaluations: 60 } } };
+  answers.push(false); log.length = 0; const askedBefore = dialogs.length;
+  await press(MAIN);
+  for (let i = 0; i < 60 && dialogs.length === askedBefore; i++) await sleep(100);
+  check('a start the backend finds REAL is asked in REAL words, from its report (task, total budget), not as MOCK',
+    /^This runs REAL simulations of real:fixture_ota/.test(lastDialog().message ?? '') && /total budget of 60 candidate/.test(lastDialog().message ?? '')
+    && !/MOCK evaluations/.test(lastDialog().message ?? ''), lastDialog().message);
+  check('... and "no" starts nothing: one refused request, the button reads "Start" again', await mainReads('Start', 30) && log.length === 1, JSON.stringify(log.map(l => l.name)));
+  log.length = 0;
+  await evaluate(`window.__seen = [['Start', false]]`);            // the label history below starts from here, as before this step
+
   // ---- 2. Start -> "Starting..." -> "Pause" ----------------------------------------------------------------------------
   holdNext = '/api/runs/start';
   await press(MAIN);
@@ -272,7 +287,9 @@ await runChecks(browser, async () => {
   check('answering no sends nothing; the run stays paused', log.length === 0 && await mainReads('Resume', 20) && /Not resumed/.test((await look()).banner ?? ''));
   answers.push(true); refuseNext = { name: '/api/runs/continue', detail: { code: 'connection_gate_blocked', message: 'FIXTURE: the connection gate blocked this action.' } };
   await press(MAIN);
-  check('a refusal is shown with its reason and the button reads "Resume" again', await until(`/connection_gate_blocked: FIXTURE/.test(document.querySelector('.banner.error')?.textContent ?? '')`) && await mainReads('Resume', 20));
+  // The backend's sentence leads the banner; its code sits under "Technical details" (7.125).
+  check('a refusal is shown with its reason and the button reads "Resume" again', await until(`/^FIXTURE: the connection gate blocked this action\./.test(document.querySelector('.banner.error')?.textContent ?? '')
+    && /code: connection_gate_blocked/.test(document.querySelector('.banner.error details')?.textContent ?? '')`) && await mainReads('Resume', 20));
   check('the authorization was sent with the request', log[0]?.body.authorize_real_simulation === true, JSON.stringify(log[0]?.body));
 
   // ---- 11. a live run this browser does not remember is taken over when the page opens -------------------------------------------

@@ -26,16 +26,20 @@ await runChecks(browser, async () => {
   const page = await browser.open();
   const { send, evaluate, consoleErrors } = page;
   const refused = [], asked = [];
-  let verified = false;
+  let verified = false, invalid = false;
   const answer = ({ requestId, request }) => {
     const name = new URL(request.url).pathname;
     if (name === '/api/parameters/matched') {
       const body = JSON.parse(request.postData ?? '{}');
       asked.push(body);
+      // The backend's own 422 for a configuration it cannot read (schema.describe_errors wording).
+      if (invalid) return page.fulfil(requestId, 422, { detail: { message: 'The configuration does not match the schema', errors: [
+        { path: 'run.max_evaluations', code: 'schema', message: 'max_evaluations is missing: this field needs a value.', technical: 'Field required [missing]' }] } });
       return page.fulfil(requestId, 200, verified ? VERIFIED : body.apply ? FIXTURE.shown : FIXTURE.found);
     }
     if (request.method === 'GET' || name === '/api/config/validate' || name === '/api/circuit/load') return page.pass(requestId);
-    if (name !== '/api/output/check') refused.push(`${request.method} ${name}`);            // the output-folder look-up: refused, harmless
+    // Refused, harmless: the output-folder look-up, and the connection test the page makes once when it opens (record 7.80)
+    if (name !== '/api/output/check' && name !== '/api/connection/check') refused.push(`${request.method} ${name}`);
     return page.refuse(requestId);
   };
   const until = (expression, tries = 100) => page.until(expression, tries);
@@ -93,17 +97,29 @@ await runChecks(browser, async () => {
   check('...says so and how to take it back', /Applied: 2 rows changed\. Undo in the toolbar takes it back\./.test(await boxText()), await boxText());
   check('...and the page counts 3 independent variables', await until(`/Independent action variables: 3 of 5/.test(${EDITORS}.querySelector('.fact')?.textContent ?? '')`),
     await evaluate(`${EDITORS}.querySelector('.fact')?.textContent`));
-  check('the answer is now about other rows: Find again, no review', await until(`/changed after this was found/.test(${BOX}.textContent)`)
-    && await evaluate(`${BUTTON(BOX, 'Review...')}.disabled`));
+  // What was found is about the rows before Apply: it goes, and "the rows changed" no longer stands next to "Applied" (7.125).
+  check('the answer about the rows before goes: no stale warning next to "Applied", no review, and the box offers Find', await until(`!!${BUTTON(BOX, 'Find')}`)
+    && await evaluate(`!/changed after this was found/.test(${BOX}.textContent) && !${BUTTON(BOX, 'Review...')}`) && /Applied: 2 rows changed/.test(await boxText()), await boxText());
 
   await press(TOOLBAR, 'Undo');
   check('Undo takes the ties back', await until(`${CELL(1, 'binding_group')}.value === '' && ${CELL(3, 'binding_group')}.value === ''`));
   check('...and no request was made by that', asked.length === 2, String(asked.length));
-  await press(BOX, 'Find again');
-  check('Find again asks again', await until(`${BOX}.querySelectorAll('li').length === 3`) && asked.length === 3 && asked[2].apply === null);
+  await press(BOX, 'Find');
+  check('Find asks again', await until(`${BOX}.querySelectorAll('li').length === 3`) && asked.length === 3 && asked[2].apply === null);
 
   await press(BOX, 'Close');
   check('Close takes the box away and gives the button back', await until(`!${BOX} && !${BUTTON(TOOLBAR, 'Matched devices...')}.disabled`));
+
+  // A configuration the backend cannot read: the box names the field and where it is listed (user report 2026-09-30:
+  // "The configuration does not match the schema" alone, on real:mscr_ldo1_rgcn; record 7.125).
+  invalid = true;
+  await press(TOOLBAR, 'Matched devices...');
+  check('a configuration that is not valid yet: the box names the field, in words, and points to the header\'s list',
+    await until(`/run\\.max_evaluations: max_evaluations is missing: this field needs a value/.test(${BOX}?.textContent ?? '') && /blocking issue/.test(${BOX}?.textContent ?? '')`), await boxText());
+  await shot('matched_devices_invalid.png', BOX);
+  invalid = false;
+  await press(BOX, 'Close');
+  await until(`!${BOX}`);
 
   // Another tab closes the box (review of 2026-09-29): coming back to Parameters used to open it again - and ask by itself.
   await press(TOOLBAR, 'Matched devices...');

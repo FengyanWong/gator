@@ -22,8 +22,11 @@ function SteeringCheck({ value }: { value: Json }) {
  *  four copies this tab had went on 2026-09-29 (user: fewer duplicate buttons). Continue stays - it sets a new budget and
  *  also continues a stopped run, which the header cannot. `continueBlocked`: why Continue waits (the header is busy with
  *  another run), or null. */
-export function StatusTab({ status, onContinue, continueBlocked }: { status: Json; onContinue: () => void; continueBlocked: string | null }) {
-  if (!status) return <p className="hint">No run selected.</p>;
+export function StatusTab({ status, runDir, error, onContinue, continueBlocked }: { status: Json; runDir: string | null; error: string | null;
+  onContinue: () => void; continueBlocked: string | null }) {
+  // A run chosen whose answer is still on its way, or whose status cannot be read now, is said as such: this line used
+  // to read "No run selected." while the strip below named the run.
+  if (!status) return <p className="hint">{!runDir ? 'No run selected.' : error ? `The status of this run could not be read: ${error}` : 'Reading the run...'}</p>;
   const b = status.budget, best = status.best_design, first = status.first_feasible, conn = status.connection;
   const firstNominal = b?.first_nominal_feasible;
   const firstCost = (event: Json) => event
@@ -123,7 +126,9 @@ export function FilesTab({ runDir }: { runDir: string | null }) {
 export function LogsTab({ runDir, alive }: { runDir: string | null; alive: boolean }) {
   const [kind, setKind] = useState('events');
   const [note, setNote] = useState<string | null>(null);
-  const { value } = usePolling(() => api.logs(runDir!, kind), alive ? 2000 : 60000, !!runDir, [runDir, kind]);
+  // Read every 2 s while the worker lives; a run at rest is read once (when the tab opens, and once more when its worker
+  // ends) - it used to be re-read every minute for as long as the tab stayed open.
+  const { value } = usePolling(() => api.logs(runDir!, kind), alive ? 2000 : 0, !!runDir, [runDir, kind]);
   useEffect(() => setNote(null), [runDir, kind]);
   if (!runDir) return <p className="hint">No run selected.</p>;
   // The list below is only the newest 200 entries; the file is the whole log, one JSON record per line. A healthy run has an

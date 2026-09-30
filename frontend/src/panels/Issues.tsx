@@ -34,7 +34,7 @@ export function ValidationStatus({ validation, config, schema }: { validation: J
           <th title="Stable identifier of the check">Code</th><th title="Field of the configuration, and the key of its row in the editor">Where</th>
           <th title="What is wrong and what resolves it">Message</th></tr></thead>
         <tbody>{blocking.map((issue: Json, n: number) => {
-          const key = rowKey(issue.path ?? '', config, schema);
+          const key = rowKey(issue.path ?? '', validation.sent ?? config, schema);   // the row of the configuration the report is about (App.tsx `sent`)
           return <tr key={n}><td className="numeric">{n + 1}</td><td className="issue error">{issue.level}</td><td>{issue.code}</td>
             <td><code>{issue.path || '(whole configuration)'}</code>{key && <span className="hint"> row {key}</span>}</td>
             <td>{issue.message}{issue.technical && <details className="more"><summary>Technical details</summary><code>{issue.technical}</code></details>}</td></tr>;

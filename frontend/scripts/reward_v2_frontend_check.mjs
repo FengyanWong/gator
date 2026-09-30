@@ -49,9 +49,10 @@ try {
   check('executed reward comes from saved run', await page.evaluate(`${row('.status-grid', 'Executed reward')}?.includes('compressed; worst hard-spec share 0.5')`));
 
   await page.evaluate("Array.from(document.querySelectorAll('.editors .tabs button')).find(e => e.textContent.startsWith('Specs')).click()", true);
-  check('spec labels match objective and judgement contracts', await page.evaluate("document.querySelector('th[data-field=direction_after_feasible]').textContent === 'Objective' && document.querySelector('th[data-field=nominal_only]').textContent === 'Judged at'"));
+  // The objective is part of the constraint list (record 7.124): no Objective column; "Judged at" shows while corners are planned.
+  check('spec labels match objective and judgement contracts', await page.evaluate("!document.querySelector('th[data-field=direction_after_feasible]') && document.querySelector('th[data-field=nominal_only]').textContent === 'Judged at' && Array.from(document.querySelector('.editor select[aria-label=\"Constraint\"]').options).some(o => o.textContent === 'interval, then lower is better')"));
   const firstJudged = "document.querySelector('.editor select[aria-label=\"Judged at\"]')";
-  check('spec controls fit their option labels', await page.evaluate(`(${firstJudged}).clientWidth >= 178 && document.querySelector('.editor select[aria-label="Objective"]').clientWidth >= 108`));
+  check('spec controls fit their option labels', await page.evaluate(`(${firstJudged}).clientWidth >= 178 && document.querySelector('.editor select[aria-label="Constraint"]').clientWidth >= 198`));
   await page.evaluate(`(${firstJudged}).scrollIntoView({block:'nearest',inline:'center'})`, true);
   await page.shot(path.join(output, 'spec-objective-conditions.png'));
   await page.setValue(firstJudged, 'nominal');
@@ -60,10 +61,10 @@ try {
   await page.setValue(firstJudged, 'all');
   const powerIndex = config.targets.findIndex(t => t.metric_id === 'supply_power_w');
   if (powerIndex < 0) throw new Error('Actual B must contain its power spec');
-  const powerObjective = `document.querySelectorAll('.editor select[aria-label="Objective"]')[${powerIndex}]`;
-  await page.setValue(powerObjective, 'minimize');
+  const powerLimit = `document.querySelectorAll('.editor select[aria-label="Constraint"]')[${powerIndex}]`;   // an interval
+  await page.setValue(powerLimit, 'interval|minimize');
   check('selected objective reflected in reward controls', await page.until("document.querySelector('.reward-objective').textContent.includes('minimize supply_power_w')", 100));
-  await page.setValue(powerObjective, 'none');
+  await page.setValue(powerLimit, 'interval|none');
   await page.setValue(control('Objective bonus weight', 'input'), '0.2');
   check('inactive objective bonus is explicit', await page.until("Array.from(document.querySelectorAll('aside.right .warn')).some(e => e.textContent.includes('No active objective'))", 100));
   await page.setValue(control('Objective bonus weight', 'input'), '0');

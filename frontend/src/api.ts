@@ -171,10 +171,45 @@ export const bytes = (n?: number | null) => n == null ? '-' : n < 1024 ? `${n} B
 // with the panel's `gateText`; anything else in the backend's own words.
 export const OLDER_BACKEND = 'This backend is older than the page and cannot do this yet: restart it (gator_workbench.cli serve).';
 export const problemText = (e: any, gateText?: (gate: Json) => string): string => e.status === 404 || e.status === 405 ? OLDER_BACKEND
-  : e.detail?.gate && gateText ? gateText(e.detail.gate) : e.message;
-// Save task and the working-cell panel: the gate refused a Virtuoso read or write.
-export const virtuosoGateText = (gate: Json) => `Virtuoso cannot be reached (${[...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') || gate.status}). `
-  + 'Bring the link up in the Connection window, then try again.';
+  : e.detail?.gate && gateText ? gateText(e.detail.gate) : schemaProblem(e) ?? e.message;
+/** A configuration the backend cannot read (HTTP 422 naming its fields, backend schema.describe_errors): said field by
+ *  field, and where to fix it. "The configuration does not match the schema" alone left the reader guessing (user report
+ *  2026-09-30: Matched devices on real:mscr_ldo1_rgcn). */
+export function schemaProblem(e: any): string | null {
+  const errors: Json[] = Array.isArray(e?.detail?.errors) ? e.detail.errors : [];
+  if (!errors.length) return null;
+  const them = errors.length === 1 ? 'it' : 'them';
+  return `The configuration is not valid yet, so this cannot be done: ${errors.slice(0, 3).map(x => `${x.path || 'the configuration'}: ${String(x.message ?? '').replace(/\.\s*$/, '')}`).join('; ')}`
+    + `${errors.length > 3 ? `; and ${errors.length - 3} more` : ''}. Put ${them} right first - the red "blocking issue(s)" button in the header lists ${them} too.`;
+}
+/** A failed request in plain words: the backend's own sentence, or - when no answer came at all ("Failed to fetch") -
+ *  what that means. Where a machine code is shown at all, it goes into a folded "Technical details". */
+export const NO_ANSWER = 'The workbench backend did not answer: it may have stopped (start it again with gator_workbench.cli serve), or the connection to it dropped.';
+export const plainError = (e: any): string => e instanceof ApiError ? schemaProblem(e) ?? e.message : e instanceof TypeError ? NO_ANSWER : String(e?.message ?? e);
+/** The connection gate refused a Virtuoso read or write: ONE wording for every panel (Save task and the working cell used
+ *  a copy without the connection-kind case, and told an ngspice connection to "bring the link up"). */
+export const gateText = (gate: Json) => gate.blocking?.includes('connection_kind') ? (gate.next_steps?.[0] ?? 'This kind of connection cannot do that.')
+  : `Virtuoso cannot be reached (${[...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') || gate.status}). Bring the link up in the Connection window (the "Connection" button in the workbench), then try again.`;
+
+/** The Agent tab's settings, read ONCE for the page and shared: the AI sizing settings show what the Agent tab saved
+ *  last. They used to keep the settings read when the page opened ("Same as the Agent tab (old model)"), while a run
+ *  takes the saved ones (audit 2026-09-30), and both panels asked for them. */
+let agentSettingsRead: Promise<Json> | null = null;
+const agentSettingsReaders = new Set<(settings: Json) => void>();
+export function agentSettingsShared(): Promise<Json> {
+  if (!agentSettingsRead) agentSettingsRead = api.agentSettings().catch(e => { agentSettingsRead = null; throw e; });
+  return agentSettingsRead;
+}
+export function agentSettingsSaved(settings: Json) { agentSettingsRead = Promise.resolve(settings); agentSettingsReaders.forEach(reader => reader(settings)); }
+export function onAgentSettings(reader: (settings: Json) => void) { agentSettingsReaders.add(reader); return () => { agentSettingsReaders.delete(reader); }; }
+/** The connection list (the workbench's own file, no probe), read once and shared: the connection window and the Project
+ *  column's launchers each read it when the page opened. A connection created in the window hands its new list on. */
+let profilesRead: Promise<Json> | null = null;
+export function connectionProfilesShared(): Promise<Json> {
+  if (!profilesRead) profilesRead = api.connectionProfiles().catch(e => { profilesRead = null; throw e; });
+  return profilesRead;
+}
+export function connectionProfilesChanged(list: Json) { profilesRead = Promise.resolve(list); }
 export const num = (v: unknown) => typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toPrecision(6)) : v == null ? '' : String(v);
 
 // ONE way of writing a number in the whole page (review of 2026-09-23: the SI form was written twice, in the corner

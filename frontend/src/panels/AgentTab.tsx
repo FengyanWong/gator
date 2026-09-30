@@ -1,7 +1,8 @@
 import { SizingThread } from './SizingThread';
 import { Fragment, ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, ApiError, Json, saveJson, short } from '../api';
+import { agentSettingsSaved, agentSettingsShared, api, ApiError, Json, saveJson, short } from '../api';
+import { usePopupWindow } from './popupWindow';
 import { DiffView } from './Editors';
 import { COPY_SETUP_PENDING, COPY_SETUP_WRITTEN } from './TaskSave';
 
@@ -140,7 +141,18 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
   const [online, setOnline] = useState(false);               // settings review: THIS request may read publication sites (never saved)
   const [busyOnline, setBusyOnline] = useState(false);
   const [showSelection, setShowSelection] = useState(false);  // modify_fields: the rows the request may change, listed on demand
-  const [popup, setPopup] = useState<Window | null>(null);    // while set, the conversation is shown in its own browser window
+  // While `popup` is set, the conversation is shown in its own browser window (popupWindow.ts, as the other windows are).
+  const conversation = usePopupWindow('gator-agent-conversation', { title: 'GATOR - agent conversation', features: 'popup,width=1180,height=900', rootId: 'agent-root' });
+  const popup = conversation.popup;
+  const [sizingHint, setSizingHint] = useState('');           // the run's AI thread: a hint being typed survives detaching
+  useEffect(() => setSizingHint(''), [runDir]);
+  const latestConfig = useRef(config);                        // the configuration as it is NOW, for an approval that ends later
+  latestConfig.current = config;
+  const selectionBox = useRef<HTMLDivElement>(null);
+  const [importing, setImporting] = useState(false);          // "Validate and show diff" is on its way
+  // The list of selected rows comes into view when it is opened - not again at every redraw (each keystroke, each status
+  // poll scrolled the proposal back to it).
+  useEffect(() => { if (kind === 'modify_fields' && showSelection) selectionBox.current?.scrollIntoView({ block: 'nearest' }); }, [showSelection, kind]);
   const [manual, setManual] = useState('');
   const isReply = (m: Json) => m.role !== 'user' && m.role !== 'system' && m.role !== 'checklist';
   const say = (role: string, text: string, extra?: Json) => {
@@ -150,32 +162,12 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
 
   // Detaching moves only the DOM: the component (chat, pending request, proposal, settings) stays where it is and is
   // drawn through a portal into a window of its own, so nothing has to be synchronised between two windows.
-  const detach = () => {
-    const opened = window.open('', 'gator-agent-conversation', 'popup,width=1180,height=900');
-    if (!opened) { say('error', 'The browser blocked the new window. Allow pop-ups for this page, then detach again.'); return; }
-    const doc = opened.document;
-    doc.title = 'GATOR - agent conversation';
-    doc.head.querySelectorAll('link, style').forEach(node => node.remove());          // a window of that name may be reused
-    document.querySelectorAll<HTMLElement>('link[rel="stylesheet"], style').forEach(node => {
-      const copy = node.cloneNode(true) as HTMLElement;
-      if (node instanceof HTMLLinkElement) (copy as HTMLLinkElement).href = node.href;   // absolute: the new window is about:blank
-      doc.head.appendChild(copy);
-    });
-    doc.body.innerHTML = '<div id="agent-root"></div>';
-    setPopup(opened);
-  };
-  const attach = () => { popup?.close(); setPopup(null); };
+  const detach = () => { if (!conversation.open()) say('error', 'The browser blocked the new window. Allow pop-ups for this page, then detach again.'); };
+  const attach = conversation.close;
   useEffect(() => { onDetached?.(!!popup); }, [popup]);
-  useEffect(() => {
-    if (!popup) return;
-    const back = () => setPopup(null);                     // the window was closed with its own close button
-    const close = () => popup.close();                     // the workbench page is leaving: do not leave a dead window behind
-    popup.addEventListener('pagehide', back);
-    window.addEventListener('pagehide', close);
-    return () => { popup.removeEventListener('pagehide', back); window.removeEventListener('pagehide', close); };
-  }, [popup]);
 
-  useEffect(() => { api.agentSettings().then(setSettings).catch(e => say('error', e.message)); }, []);
+  // Read once for the page and shared with the AI sizing settings (api.ts), which follow what is saved here.
+  useEffect(() => { agentSettingsShared().then(setSettings).catch(e => say('error', e.message)); }, []);
   // A panel may hand over a written-out request (the Virtuoso source does). It only fills the box: never sent by itself,
   // and text the user is already typing is kept.
   useEffect(() => { if (request) { setKind(request.kind); setSelection(request.selection); if (request.prompt) setPrompt(current => current || request.prompt!); clearRequest(); } }, [request]);
@@ -244,19 +236,25 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
   // `approving`: the approval and its write are on their way - a second press used to get 409 "Proposal is applied" while
   // the first write carried on. Reject waits too.
   const [approving, setApproving] = useState(false);
+  // The write of a Virtuoso setup takes seconds: an edit made meanwhile is replaced by the approved configuration - said,
+  // with the way back - and only THIS proposal's box closes (a newer one that arrived meanwhile stays for its review).
   const approveAndApply = async () => {
+    const id = proposal.proposal_id, sent = config;
+    const done = () => setProposal((p: Json) => (p?.proposal_id === id ? null : p));
     setApproving(true);
     try {
-      await api.approve({ proposal_id: proposal.proposal_id, proposal_hash: proposal.proposal_hash, config });
-      const applied = await api.apply({ proposal_id: proposal.proposal_id, config });
-      setConfig(applied.config); setProposal(null); say('system', applied.note);
+      await api.approve({ proposal_id: id, proposal_hash: proposal.proposal_hash, config: sent });
+      const applied = await api.apply({ proposal_id: id, config: sent });
+      const edited = JSON.stringify(latestConfig.current) !== JSON.stringify(sent);
+      setConfig(applied.config); done(); say('system', applied.note);
+      if (edited) say('system', 'The configuration was edited while the proposal was being applied: the approved configuration replaced those edits. Undo brings them back (and takes the proposal out again).');
       if (applied.virtuoso?.differences?.length) say('system', `What the working copy reads back differently: ${applied.virtuoso.differences.join('; ')}`);
       if (applied.virtuoso?.written) window.dispatchEvent(new CustomEvent(COPY_SETUP_WRITTEN,
         { detail: Object.keys(proposal.setup ?? {}).filter(part => proposal.setup[part] != null) }));
       // Not written (Virtuoso out of reach): the approved setup waits for the next Save task, which writes the copy.
       else if (applied.virtuoso && proposal.setup) window.dispatchEvent(new CustomEvent(COPY_SETUP_PENDING,
         { detail: Object.fromEntries(Object.entries(proposal.setup).filter(([, value]) => value != null)) }));
-    } catch (e) { fail(e); setProposal(null); } finally { setApproving(false); }
+    } catch (e) { fail(e); done(); } finally { setApproving(false); }
   };
   // A backend restarted since the proposal came knows it no more (404): said in the chat, and the box closes all the same.
   const reject = () => { const id = proposal.proposal_id;
@@ -278,7 +276,7 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
     setSettings(next);
     return api.saveAgentSettings({ provider: next.provider, model: next.model ?? null, effort: next.effort ?? null,        // no time limit: "Cancel request" stops a request
       permission_mode: next.permission_mode, allowed_tools: next.allowed_tools, max_turns: next.max_turns, stream: next.stream })
-      .catch(fail).then(() => api.agentSettings().then(setSettings).catch(fail));          // always show what is actually saved
+      .catch(fail).then(() => api.agentSettings().then(s => { setSettings(s); agentSettingsSaved(s); }).catch(fail));   // always show what is actually saved - here and in the AI sizing settings
   };
   const latest = log.reduce((found, m, i) => (isReply(m) ? i : found), -1);
   const shown = focus ?? latest;
@@ -316,7 +314,7 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
         <p className="hint">Agents prepare proposals only. Applying a configuration, writing a circuit and running a real simulation each need their own authorization. Every manual workflow works without an agent.</p>
       </div>
       <div className="agent-main">
-        <SizingThread runDir={runDir} active={runActive} />
+        <SizingThread runDir={runDir} active={runActive} visible={!hidden || !!popup} hint={sizingHint} setHint={setSizingHint} />
         <div className="agent-using"><span>{using ? <>Next request: <b>{settings.provider}</b>, model <b>{modelShown}</b>, effort <b>{effortShown}</b></>
           : 'No agent is selected (provider: disabled). Choose one on the left, or use "Export task description".'}</span>
           {/* The review button closes the line at its right end; its option stands in front of it. */}
@@ -397,7 +395,7 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
           <button disabled={!!busy || !using || !runDir} onClick={() => propose({ text: `${ASK_RUN} (run ${runLabel})`, kind: 'run_review' })}
             title={!runDir ? 'Choose a run with "Runs..." first.' : using ? `One agent request (${using}). The workbench condenses what run ${runLabel} produced - outcome, budget, each target against the best design, where the search went, failures - and the agent explains it and suggests what to change. It reads no file.` : 'Select a provider first.'}>Review results</button>
         </div>
-        {kind === 'modify_fields' && showSelection && <div className="selection-info" ref={el => el?.scrollIntoView({ block: 'nearest' })}>{selection.length === 0
+        {kind === 'modify_fields' && showSelection && <div className="selection-info" ref={selectionBox}>{selection.length === 0
           ? <p className="hint">No row is selected. Tick rows in one of the editors above and press "Modify selected with agent...".</p>
           : <ul>{selection.map((s: Json, i: number) => { const row = (config[s.section] ?? []).find((r: Json) => r[ROW_KEY[s.section]] === s.key); return <li key={i}>
               <b>{s.key}</b> <span className="hint">({s.section})</span>{' '}
@@ -405,7 +403,13 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
               <span className="hint"> - may change: {s.fields?.length ? s.fields.join(', ') : 'the whole row'}</span></li>; })}</ul>}</div>}
         <details><summary>Import a structured result (manual workflow)</summary>
           <textarea value={manual} onChange={e => setManual(e.target.value)} rows={3} placeholder="Paste the JSON object returned by any assistant" />
-          <button disabled={!manual.trim() || !prompt.trim()} onClick={() => { try { api.importResult({ ...body(), result: JSON.parse(manual) }).then(p => { setProposal(p); say(p.origin, p.reasoning, p); }).catch(fail); } catch (e: any) { say('error', 'Not valid JSON: ' + e.message); } }}>Validate and show diff</button></details>
+          {/* As a live reply: a review with nothing to approve opens no box (it used to open an empty one that only Reject closed). */}
+          <button disabled={!manual.trim() || !prompt.trim() || importing} onClick={() => {
+            let result: Json;
+            try { result = JSON.parse(manual); } catch (e: any) { say('error', 'Not valid JSON: ' + e.message); return; }
+            setImporting(true);
+            api.importResult({ ...body(), result }).then(p => { if (p.kind !== 'settings_review' && !(p.kind === 'run_review' && !p.diff?.length)) setProposal(p); say(p.origin, p.reasoning, p); })
+              .catch(fail).finally(() => setImporting(false)); }}>{importing ? 'Validating...' : 'Validate and show diff'}</button></details>
         </div>
         {/* Side window: what a reply lists besides its text. The inner box is absolutely placed so a long list scrolls instead of stretching the row. */}
         <aside className="notes"><div className="notes-scroll">
@@ -425,7 +429,7 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
     <button className="tab-detach" aria-label={label} title={label} onClick={popup ? attach : detach}>
       <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M11 9.5V13H3V5h3.5" />{popup ? <path d="M13 3 8 8M8 4.5V8h3.5" /> : <path d="M9 3h4v4M13 3 7.5 8.5" />}</svg></button>, tabSlot);
-  const root = popup?.document.getElementById('agent-root');
+  const root = conversation.root;
   if (!popup || !root) return <>{tabControl}{view}</>;
   return (<>
     {tabControl}

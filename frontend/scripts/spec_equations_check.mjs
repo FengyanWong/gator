@@ -9,6 +9,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/spec_equations_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
@@ -21,8 +22,9 @@ await runChecks(browser, async () => {
   const refused = [];
   const answer = ({ requestId, request }) => {
     const name = new URL(request.url).pathname;
-    if (request.method === 'GET' || name === '/api/config/validate' || name === '/api/circuit/load') return page.pass(requestId);
-    if (name !== '/api/output/check') refused.push(`${request.method} ${name}`);            // the output-folder look-up: refused, harmless
+    if (request.method === 'GET' || ['/api/config/validate', '/api/circuit/load', '/api/config/diff'].includes(name)) return page.pass(requestId);
+    // Refused, harmless: the output-folder look-up, and the connection test the page makes once when it opens (record 7.80)
+    if (name !== '/api/output/check' && name !== '/api/connection/check') refused.push(`${request.method} ${name}`);
     return page.refuse(requestId);
   };
   const until = (expression, tries = 100) => page.until(expression, tries);
@@ -65,6 +67,27 @@ await runChecks(browser, async () => {
     && !('measurement_id' in saved.targets[0]), JSON.stringify(saved.targets[0]));
   check('the old row is valid as it is', (await issuesUntil(0, [], ['error', 'blocker']))[0], JSON.stringify(await issues(0)));
   check('the tab names the probes an equation can use', /Probes: m_score\./.test(await evaluate(`${EDITORS}.querySelector('.spec-probes')?.textContent ?? ''`)));
+  // The row-selection tick box is as narrow as the box (it inherited the 84 px minimum of the editor inputs).
+  const tickWidth = await evaluate(`${EDITORS}.querySelector('table.editor thead th.sel')?.getBoundingClientRect().width ?? 0`);
+  check('the tick-box column is narrow', tickWidth > 0 && tickWidth < 32, `${tickWidth} px`);
+  // The objective lives in the constraint list: only pairs that can work, and both fields change in ONE step (one Undo).
+  check('no Objective column: the objective is part of the constraint list', await evaluate(`!${EDITORS}.querySelector('th[data-field="direction_after_feasible"]')`));
+  const choices = await evaluate(`[...${CELL(0, 'constraint')}.options].map(o => o.textContent)`);
+  check('the list pairs a lower limit with "higher is better" and an upper one with "lower is better", never the reverse',
+    choices.includes('≥ lower, then higher is better') && choices.includes('≤ upper, then lower is better')
+    && !choices.includes('≥ lower, then lower is better') && !choices.includes('≤ upper, then higher is better'), JSON.stringify(choices));
+  await type(0, 'normalization_scale', '');                // an empty scale: the backend sizes it from the limit
+  await page.saved();
+  await page.setValue(CELL(0, 'constraint'), '>=|maximize');
+  await page.saved();
+  const maximized = (await page.stored()).targets[0];
+  check('choosing "≥ lower, then higher is better" saves the limit and the objective, and leaves an empty scale empty',
+    maximized.constraint === '>=' && maximized.direction_after_feasible === 'maximize' && maximized.normalization_scale == null, JSON.stringify(maximized));
+  await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Undo').click()`);
+  await page.saved();
+  check('one Undo takes both back', (await page.stored()).targets[0].direction_after_feasible !== 'maximize'
+    && (await cell(0, 'constraint')) === '>=|none', await cell(0, 'constraint'));
+  check('Judged at is not shown while the run plans no training corners', await evaluate(`!${EDITORS}.querySelector('th[data-field="nominal_only"]')`));
 
   // a formula: its own name, a unit that cannot be checked, a new entry in the network's result registry
   await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Add').click()`);
@@ -105,6 +128,54 @@ await runChecks(browser, async () => {
   await type(1, 'metric_id', 'score'); await type(0, 'metric_id', 'score_plain');
   [ok, found] = await issuesUntil(1, ['error: spec_name_is_a_result']);
   check('a formula may not take the name of a simulator result', ok, JSON.stringify(found));
+  // ---- record 7.125: typing into one field is ONE Undo step; an edit made just before a reload is kept -------------------
+  await type(0, 'metric_id', 'score'); await type(1, 'metric_id', 'score_sq'); await type(1, 'equation', 'm_score ** 2');
+  await page.saved();
+  const lowerBefore = (await page.stored()).targets[1].lower;
+  await evaluate(`${CELL(1, 'lower')}.focus(); ${CELL(1, 'lower')}.select()`);
+  for (const ch of '0.625') { await send('Input.insertText', { text: ch }); await sleep(60); }
+  await page.saved();
+  check('typing 0.625 into a cell stores 0.625', (await page.stored()).targets[1].lower === 0.625, JSON.stringify((await page.stored()).targets[1]));
+  await evaluate(`${CELL(1, 'lower')}.blur()`);
+  await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Undo').click()`);
+  await page.saved();
+  check('one Undo takes the whole typed value back (not one character)', (await page.stored()).targets[1].lower === lowerBefore, `${(await page.stored()).targets[1].lower} (before: ${lowerBefore})`);
+  await evaluate(`${CELL(1, 'lower')}.focus(); ${CELL(1, 'lower')}.select()`);
+  await send('Input.insertText', { text: '0.25' });
+  await send('Page.reload');                                 // at once: less than 0.8 s after the change
+  await until(`!!${EDITORS}`); await openTab('Specs');
+  check('an edit made just before a reload is kept', await until(`${CELL(1, 'lower')}?.value === '0.25'`), await cell(1, 'lower').catch(() => '?'));
+
+  // ---- record 7.125: a long import keeps Apply within reach; a JSON file that is not a workbench configuration is refused --
+  const setFile = async file => {
+    const { root } = await send('DOM.getDocument', { depth: -1 });
+    const { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: '.editors input[type=file]' });
+    await send('DOM.setFileInputFiles', { nodeId, files: [file] });
+  };
+  const template = (await page.stored()).targets[0];
+  const many = path.join(out, 'twenty-specs.json');
+  writeFileSync(many, JSON.stringify(Array.from({ length: 20 }, (_, i) => ({ ...template, metric_id: `extra_${i}` }))));
+  await setFile(many);
+  check('a 20-row import confirmation keeps Apply within reach (the box scrolls by itself)', await until(`(() => {
+    const b = [...(document.querySelector('.editors .confirm')?.querySelectorAll('button') ?? [])].find(x => x.textContent === 'Apply'); if (!b) return false;
+    const r = b.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b; })()`));
+  await shot('spec_import_confirm.png');
+  await evaluate(`[...document.querySelectorAll('.editors .confirm button')].find(b => b.textContent === 'Cancel').click()`);
+  const foreign = path.join(out, 'gpdk045_conditions.json');
+  writeFileSync(foreign, readFileSync(new URL('../../configs/gpdk045_conditions.json', import.meta.url)));
+  await setFile(foreign);
+  check('a JSON file with a schema_version that is not a workbench configuration is refused, in words (the page used to go blank on Apply)',
+    await until(`/neither a workbench configuration/.test(${EDITORS}.querySelector('.error')?.textContent ?? '') && !document.querySelector('.editors .confirm')`),
+    await evaluate(`${EDITORS}.querySelector('.error')?.textContent ?? 'no message'`));
+
+  // With training corners planned, each spec's "Judged at" matters again, and the column is there.
+  const withCorners = await page.stored();
+  withCorners.run = { ...withCorners.run, conditions: { policy: 'always', corners: ['ss_hot_low'] } };
+  await evaluate(`localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(withCorners))}); window.__beforeReload = true`);
+  await send('Page.reload');
+  await until(`!window.__beforeReload && !!${EDITORS}`);
+  await openTab('Specs');
+  check('with training corners planned, Judged at is shown', await until(`!!${EDITORS}.querySelector('th[data-field="nominal_only"]')`), JSON.stringify(await headers()));
 
   check('the page sent no writing request but validations', refused.length === 0, JSON.stringify(refused));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | '));

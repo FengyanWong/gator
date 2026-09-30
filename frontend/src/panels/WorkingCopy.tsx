@@ -1,6 +1,6 @@
 import { useAsyncAction } from '../store';
 import { useEffect, useRef, useState } from 'react';
-import { api, Json, problemText, virtuosoGateText } from '../api';
+import { api, gateText, Json, problemText } from '../api';
 
 /** The Virtuoso side of a cell read into the workbench: the cell the task flow WORKS IN and the Maestro setup of that
  *  cell (outputs = Probes, specs = the starting Specs rows). Since 2026-09-23 (user request) the workbench makes no copy
@@ -57,7 +57,7 @@ export function WorkingCopy({ profileId, library, cell, record, config, setConfi
   config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void }) {
   const [message, setMessage] = useState<Json>(null);                   // { level, text }
   const [setup, setSetup] = useState<Json>(null);                       // the last setup read, with its rows and `changed`
-  const { busy, run: act } = useAsyncAction(e => setMessage({ level: 'error', text: problemText(e, virtuosoGateText) }), () => setMessage(null));
+  const { busy, run: act } = useAsyncAction(e => setMessage({ level: 'error', text: problemText(e, gateText) }), () => setMessage(null));
   // The panel stays on screen when another cell is read: the last cell's "Read setup" line and message go (as in
   // TaskSave), and a read still on its way for that cell is dropped - its rows belong to it, not to the cell now shown.
   const shown = useRef({ library, cell });

@@ -1,8 +1,8 @@
 import { useAsyncAction } from '../store';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
-import { api, Json } from '../api';
+import { api, gateText, Json, problemText } from '../api';
 
 // Load PDK (user request 2026-09-21; backend src/gator_workbench/pdk.py). The RL network is BUILT from a list of the
 // components it knows. The standard list is the optimizer's default (MOS, R, C, L, sources; anything else "unknown")
@@ -40,7 +40,7 @@ function usePdkList(watch: unknown) {
     refresh(); watchers.add(refresh);
     return () => { watchers.delete(refresh); };
   }, [watch]);
-  return { list, error, refresh };
+  return { list, error };
 }
 
 /** The line of the RL network block: which components the network knows. It only chooses; loading is the Virtuoso window's. */
@@ -82,32 +82,35 @@ export function PdkWindowButton({ profileId, circuitPdk }: { profileId: string |
   // with nothing left to draw it.
   const { popup, root, blocked, open: openWindow } = usePopupWindow('gator-pdk',
     { title: 'GATOR - PDK', features: 'popup,width=1100,height=900', rootId: 'pdk-root', closeOnUnmount: true });
-  const { list, error, refresh } = usePdkList(popup);
+  const { list, error } = usePdkList(popup);
   return (<>
     <button className="pdk-open" onClick={e => openWindow(e.currentTarget.ownerDocument.defaultView)} title="Opens the PDK window: read one technology library by name through the connection (read-only, no simulation) and see what was read. Reading a cell into the workbench reads its PDK by itself.">PDK window...</button>
     {blocked && <span className="error">{BLOCKED}</span>}
-    {popup && root && createPortal(<PdkWindow list={list} listError={error} refresh={refresh} profileId={profileId} circuitPdk={circuitPdk} />, root)}
+    {popup && root && createPortal(<PdkWindow list={list} listError={error} profileId={profileId} circuitPdk={circuitPdk} />, root)}
   </>);
 }
 
-function PdkWindow({ list, listError, refresh, profileId, circuitPdk }: { list: Json; listError: string | null; refresh: () => Promise<void>; profileId: string | null; circuitPdk?: string | null }) {
+function PdkWindow({ list, listError, profileId, circuitPdk }: { list: Json; listError: string | null; profileId: string | null; circuitPdk?: string | null }) {
   const [library, setLibrary] = useState(USABLE_PDK_ID(circuitPdk) ? String(circuitPdk) : '');
   const [modelFile, setModelFile] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [shown, setShown] = useState<Json>(null);
   const [showing, setShowing] = useState<string | null>(null);
   const pdks: Json[] = list?.pdks ?? [];
-  const show = (id: string) => { setShowing(id); setError(null); api.pdk(id).then(setShown).catch(e => setError(e.message)); };
-  const { busy, run } = useAsyncAction(e => setError(e.message), () => setError(null));
+  // Only the newest row asked answers: a double click on A and then B showed the slower of the two under B.
+  const asked = useRef(0);
+  const show = (id: string) => { const mine = ++asked.current; setShowing(id); setError(null);
+    api.pdk(id).then(v => { if (mine === asked.current) setShown(v); }, e => { if (mine === asked.current) setError(problemText(e)); }); };
+  const { busy, run } = useAsyncAction(e => setError(problemText(e, gateText)), () => setError(null));
   const load = () => run('load', async () => {
       const loaded = await api.loadPdk(profileId!, library.trim() || null, modelFile.trim() || null);
-      setShown(loaded); setShowing(loaded.pdk_id);
-      await refresh(); pdksChanged();                   // the Components list in the RL network block shows it at once
+      asked.current++; setShown(loaded); setShowing(loaded.pdk_id);
+      pdksChanged();              // every open list reads again - this window's too - and the RL network block's Components list shows it at once
   });
   const libraryProblem = library.trim() && !/^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$/.test(library.trim()) ? 'A plain Cadence library name.' : null;
   const fileProblem = modelFile.trim() && !/^\/[A-Za-z0-9_./+\-]+$/.test(modelFile.trim()) ? 'An absolute path on the simulator host (letters, digits, / . _ - +).' : null;
-  const devices: Json[] = (shown?.devices ?? []).slice().sort((a: Json, b: Json) =>
-    FAMILY_ORDER.indexOf(familyOf(a)) - FAMILY_ORDER.indexOf(familyOf(b)) || a.model.localeCompare(b.model));
+  const devices: Json[] = useMemo(() => (shown?.devices ?? []).slice().sort((a: Json, b: Json) =>
+    FAMILY_ORDER.indexOf(familyOf(a)) - FAMILY_ORDER.indexOf(familyOf(b)) || a.model.localeCompare(b.model)), [shown]);   // sorted once per PDK shown, not per redraw
   return (
     <div className="pdk-window">
       <h2>Load PDK</h2>

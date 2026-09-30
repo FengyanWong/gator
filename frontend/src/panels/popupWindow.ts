@@ -8,8 +8,8 @@ export const BLOCKED = 'The browser blocked the new window. Allow pop-ups for th
  *  viewer closes it the panel hears of it. `open()` brings an already open window to the front instead of making a
  *  second one; `blocked` says the browser refused to open it (`BLOCKED` says so; the task file names its own button).
  *
- *  Written in the review of 2026-09-23: these same twenty lines stood in four panels. The Agent tab's conversation
- *  window (`AgentTab.tsx`) deliberately stays outside this hook - it carries handlers of its own in both directions. */
+ *  Written in the review of 2026-09-23: these same twenty lines stood in four panels. The Agent tab's conversation window
+ *  uses it too since 2026-09-30 (its own copy had the same two handlers); `close()` is its way back into the page. */
 export function usePopupWindow(name: string, options: {
   title: string; features: string; rootId: string; rootClass?: string; onClose?: () => void; closeOnUnmount?: boolean;
 }) {
@@ -59,5 +59,6 @@ export function usePopupWindow(name: string, options: {
     };
   }, [popup]);
 
-  return { popup, root, blocked, open };
+  const close = () => { popup?.close(); setPopup(null); setRoot(null); };
+  return { popup, root, blocked, open, close };
 }

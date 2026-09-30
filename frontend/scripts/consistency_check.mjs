@@ -111,14 +111,16 @@ await runChecks(browser, async () => {
   await evaluate(`[...${BANNER}.querySelectorAll('.check-steps summary')].find(x => x.textContent === 'the reason').click()`); await sleep(300);
   check('opening a reason inside the banner does not close it', await evaluate(`!!${BANNER}`) && (await shownText(BANNER)).includes('FIXTURE MN1'));
   await page.shot(path.join(out, 'consistency-2-start-refused.png'));
-  // Any other refusal folds its report under "details" - which opens without closing the banner (2026-09-29: before, the
+  // Any other refusal says the backend's sentence and folds its code and report under "Technical details" (7.125: the code
+  // used to lead the banner) - which opens without closing the banner (2026-09-29: before, the
   // banner's own close-on-click took that click too, and the fold could never be opened).
   const FOLD = `${BANNER}?.querySelector(':scope > details')`;
   await evaluate(`${START}.click()`);
   for (let i = 0; i < 40 && !(await evaluate(`!!${FOLD}`)); i++) await sleep(100);
   await evaluate(`${FOLD}.querySelector('summary').click()`); await sleep(300);
   check('another refusal with a report: "details" opens and the banner stays', await evaluate(`!!${FOLD} && ${FOLD}.open`)
-    && (await shownText(FOLD)).includes('FIXTURE_REPORT') && (await shownText(BANNER)).startsWith('fixture_refused: FIXTURE: not started for another reason.'),
+    && (await shownText(FOLD)).includes('FIXTURE_REPORT') && (await shownText(FOLD)).includes('code: fixture_refused')
+    && (await shownText(BANNER)).startsWith('FIXTURE: not started for another reason.'),
     (await shownText(BANNER)).replace(/\s+/g, ' ').slice(0, 200));
   check('no other writing request was made', refused.length === 0, refused.join(' | '));
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));

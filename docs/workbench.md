@@ -847,10 +847,11 @@ automatic retries.
 
 Reward coefficients have the backend's 0..1 bounds; training conditions include a fixed nominal entry, at least one
 selected corner in `always`, and separate step/reset launch costs with one shared cap. Missing caps and nonzero robust
-retries are explicit errors. Specs shows **Objective** and **Judged at** as selects while retaining the backend's enum
-and boolean field types. Saved-model facts show all coefficients and condition identities. Compatibility rechecks the
-entire current configuration (debounced), including reward, conditions and probe edits; an old compatible result is
-cleared while checking. The status table separates first nominal from full-plan feasibility, nominal from adverse
+retries are explicit errors. Specs keeps the objective inside the **Constraint** list ("≤ upper, then lower is better";
+only pairs that can work are offered) and shows **Judged at** only while training corners are planned (record 7.124);
+both keep the backend's enum and boolean field types. Saved-model facts show all coefficients and condition
+identities. Compatibility rechecks the entire current configuration (debounced), including reward, conditions and
+probe edits; an old compatible result is cleared while checking. The status table separates first nominal from full-plan feasibility, nominal from adverse
 values, and draft settings from the executed reward in the saved summary. Historical missing coverage stays unknown.
 
 ### Reward v2.1 controls and checks (2026-09-29, record 7.106)
@@ -914,7 +915,9 @@ random warm-up. LLM only uses one baseline and one lane, saves search progress w
 numeric fallback. Rescue leaves SAC running while a stall-triggered AI request is pending. SAC remains the default.
 
 Each AI run freezes its provider/model/effort, has explicit call/cost ceilings, and owns a sizing thread in the Agent
-tab. Hints apply to a future eligible call and mark the run steered. Phase, call and rescue counts are saved and shown
+tab. The thread is read while the Agent tab (or its own window) shows it, and followed every second only while an AI
+run is live - a SAC run has none (record 7.125); it has a scrolling row of its own above the conversation. Hints apply
+to a future eligible call and mark the run steered. Phase, call and rescue counts are saved and shown
 consistently. See [LLM sizing](llm-sizing.md) for settings, failure behavior, recovery and the benchmark limits.
 
 The source implementation and scratch browser checks are complete; this work did not rebuild the live page or restart
@@ -1271,8 +1274,8 @@ messages and questions (the saved revision, a refusal, the ring oscillator's rou
 toolbar. "Delete task" (was: Delete profile) stayed at the end of the task's block in the Project column until
 2026-09-24; it is in the column's task row now, at the right of Load task (7.78). The editors'
 own **Save** button went at the same
-time: it kept the configuration in the browser, which the page already does by itself 0.8 s after every change, and a
-second "Save" beside "Save task" only confused.
+time: it kept the configuration in the browser, which the page already does by itself 0.8 s after every change (and,
+since 7.125, when the page is closed or reloaded sooner), and a second "Save" beside "Save task" only confused.
 
 **What Save task does.** It reads from the Probes how the task measures: all Maestro outputs (`ade_output`) = measured
 by Maestro; all results of one circuit type (`backend_profile`, e.g. what the testbench brought) = that type - the
@@ -1617,6 +1620,36 @@ for each request, so an edit needs no restart. Keep it short (it is paid for on 
 what the workbench does. It is guidance below the fixed rules: it cannot widen what an agent may change.
 This is deliberately not a Claude `SKILL.md`: the agent runs in an empty directory with no tool that could
 load one, and a skill would not reach Codex or the exported task.
+
+## What the frontend audit changed (2026-09-30, record 7.125)
+
+The user chose all four groups of `artifacts/local/reviews/frontend-audit-2026-09-30.md`. What a user notices:
+
+* **A real run is never authorized with MOCK wording.** When the backend says a run is real although the page still
+  took it for MOCK (a task chosen a moment before its circuit was read), the question is built from the backend's own
+  report: "This runs REAL simulations of real:<task> ... Authorize a total budget of N candidate evaluation(s)?".
+* **Undo while typing:** keys typed into one field less than 1.5 s apart are one Undo step (user choice); leaving the
+  field ends it. An edit made less than 0.8 s before the page is closed or reloaded is saved - unless another tab stored
+  the configuration meanwhile.
+* **The Agent tab keeps its message box** while an AI run's thread is shown (the thread scrolls in a row of its own).
+* **Import JSON:** only a file this workbench exported replaces the whole configuration; other files are rows for the
+  open tab (every row with its ID) or are refused in words. The confirmation shows Apply / Cancel first and scrolls.
+* **The first Save task of a cell** lives with the Project column: closing the Virtuoso window keeps Save task, Task
+  file and an agent setup that waits for the save.
+* **Pause and Abort stay** when one read of the run fails for a moment (two misses in a row are needed, as for the
+  tabs). Banners lead with the backend's sentence; its code is under "Technical details". A configuration the backend
+  cannot read is said field by field wherever it stops something (Matched devices, Save task, a banner), with a
+  pointer to the header's blocking issues. Run status says "Reading
+  the run..." or why it cannot be read, and the Runs window says when the list could not be read.
+* **Stale answers:** the saved-model facts stay while the same model is checked again (only the verdict waits); the AI
+  sizing settings follow a model saved in the Agent tab; a Check now, Read, Load task or PDK answer for something left
+  meanwhile is not shown as current; connection tests show "testing..." only on the connection being tested.
+* **Fewer requests:** no AI-thread reads for SAC runs or a hidden Agent tab, the Agent settings and the connection list
+  read once, no task reload per keystroke in the Labels, a Virtuoso schematic read only once a Cell choice settles
+  (0.4 s), no model check in scratch, no minute-by-minute log re-reads of an ended run.
+
+Browser checks added: run_control (the real-run question), llm_sizing (the message box keeps its room),
+spec_equations (one Undo per typed value, an edit before a reload, a long import, a foreign JSON file).
 
 ## Code organization
 

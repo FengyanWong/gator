@@ -20,8 +20,10 @@ export function ModelChooser({ mode, source, onChoose, runs, outputRoot, lookOnl
   runs: Json[]; outputRoot?: string | null; lookOnly?: boolean }) {
   const [filter, setFilter] = useState('');
   const wanted = mode !== 'scratch';
+  // Read again when the page's run list is read again - which follows a typed output root 0.5 s after the last key -
+  // not at every keystroke (each read lists every run and its save points on the slow D: drive; audit 2026-09-30).
   const { value: models, error, loading, refresh: load } = useRequest<Json[]>(
-    () => api.savedModels(outputRoot ?? undefined).then(r => r.models ?? []), [runs, outputRoot], { enabled: wanted, keepPrevious: true });
+    () => api.savedModels(outputRoot ?? undefined).then(r => r.models ?? []), [runs], { enabled: wanted, keepPrevious: true });
   if (!wanted) return (<>
     <h3>RL model to load</h3>
     <p className="hint model-none">None. Mode is <b>scratch</b>, so training starts from random weights and no saved model is loaded.

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, ApiError, Json } from './api';
+import { api, ApiError, Json, NO_ANSWER, plainError } from './api';
 import { useConfig, usePolling, useRequest } from './store';
 import { CircuitPanel } from './panels/Left';
 import { ConnectionButton } from './panels/Connection';
@@ -23,9 +23,11 @@ type BottomTab = 'agent' | 'status' | 'logs' | 'data' | 'files' | 'corners';
 function rejected(e: any): Json {
   const errors: Json[] = Array.isArray(e.detail?.errors) ? e.detail.errors : [];
   const issues = errors.length ? errors.map((x: Json) => ({ level: 'error', code: x.code ?? 'schema', message: x.message, technical: x.technical,
-    path: String(x.path ?? '').replace(/\.(\d+)(?=\.|$)/g, '[$1]') })) : [{ level: 'error', code: 'schema', path: '', message: e.message }];
+    path: String(x.path ?? '').replace(/\.(\d+)(?=\.|$)/g, '[$1]') }))
+    : [e instanceof ApiError ? { level: 'error', code: 'schema', path: '', message: e.message } : { level: 'error', code: 'no_answer', path: '', message: NO_ANSWER }];
   return { blocks_run: true, issues, facts: {} };
 }
+const NO_RUNS: Json[] = [];                          // one empty list: a failed read does not make the model list read again
 
 /** Layout (specification section 2): left = project, connection, circuit; center = three editors;
  *  right = run configuration + output settings (always visible); bottom = agent, logs, status, data, files.
@@ -36,7 +38,9 @@ export function App() {
   const [schema, setSchema] = useState<Json>(null);
   const [meta, setMeta] = useState<Json>(null);
   const [circuit, setCircuit] = useState<Json>(null);
-  const [runs, setRuns] = useState<Json[]>([]);
+  const [runs, setRuns] = useState<Json[]>(NO_RUNS);
+  const [runsError, setRunsError] = useState<string | null>(null);   // the run list could not be read: said, not shown as "no run yet"
+  const [continuing, setContinuing] = useState(false);
   const [runDir, setRunDir] = useState<string | null>(() => { try { return localStorage.getItem('gator-workbench-current-run-v1') || null; } catch { return null; } });
   const [tab, setTab] = useState<BottomTab>('status');
   const [agentRequest, setAgentRequest] = useState<{ kind: string; selection: Json[]; prompt?: string } | null>(null);
@@ -53,9 +57,9 @@ export function App() {
       setSchema(s); setMeta(m);
       // Restore the previous concurrency on a fresh browser (default 1 when none was ever used). Blocked site storage
       // counts as a fresh browser: the page then starts from the default configuration too (useConfig).
+      // "Fresh" is decided when the page opens (the 0.8 s autosave may have written the default configuration by now).
       const remembered = m.remembered?.concurrency;
-      const saved = (() => { try { return localStorage.getItem('gator-workbench-config-v1'); } catch { return null; } })();
-      if (remembered && !saved) setConfig((c: Json) => ({ ...c, run: { ...c.run, concurrency: remembered } }), false);
+      if (remembered && store.fresh) setConfig((c: Json) => ({ ...c, run: { ...c.run, concurrency: remembered } }), false);
     }).catch(e => setFatal(e.message));
   }, []);
   // Only the newest read of the run list may answer: while the output root is typed, a half-typed path outside the roots
@@ -63,12 +67,14 @@ export function App() {
   const listing = useRef(0);
   const refreshRuns = (): Promise<Json[]> => {
     const mine = ++listing.current;
-    return api.runs(config.output.output_root ?? undefined).then(r => r.runs as Json[], () => [] as Json[])
-      .then(list => { if (mine === listing.current) setRuns(list); return list; });
+    return api.runs(config.output.output_root ?? undefined).then(r => ({ list: r.runs as Json[], error: null }), e => ({ list: NO_RUNS, error: plainError(e) }))
+      .then(({ list, error }) => { if (mine === listing.current) { setRuns(list); setRunsError(error); } return list; });
   };
 
-  // Debounce validation and ignore replies for a configuration that has since changed.
-  const { value: validation } = useRequest<Json>(() => api.validate(config).catch(rejected), [JSON.stringify(config)],
+  // Debounce validation and ignore replies for a configuration that has since changed. `sent`: the configuration the
+  // report is about - its row paths (targets[3]) name rows of THAT configuration, which Delete, Undo or Import may have
+  // moved by the time it is drawn (the editors check the row before they mark it).
+  const { value: validation } = useRequest<Json>(() => api.validate(config).catch(rejected).then(v => ({ ...v, sent: config })), [JSON.stringify(config)],
     { delay: 500, keepPrevious: true });
 
   // A run that has ended for good (completed, failed, cancelled: none of them can be continued) changes no more, so its
@@ -84,7 +90,7 @@ export function App() {
     if (e instanceof ApiError && (e.status === 403 || e.status === 404) && ++gone.current >= 2) setRunDir(shown => (shown === dir ? null : shown));
     throw e;
   });
-  const { value: polledStatus } = usePolling(() => readStatus(runDir!), statusEvery, !!runDir, [runDir]);
+  const { value: polledStatus, error: statusError } = usePolling(() => readStatus(runDir!), statusEvery, !!runDir, [runDir]);
   const status = polledStatus?.run_dir === runDir ? polledStatus : null;
   useEffect(() => setStatusEvery(status && !status.worker_alive && ['completed', 'failed', 'cancelled'].includes(status.state) ? 60000 : 1500),
     [status?.worker_alive, status?.state]);
@@ -93,11 +99,12 @@ export function App() {
   const [looked, setLooked] = useState(false);
   const control = useRunControl(status, looked);
   // When the header's run comes to rest, the Project column reads its task again (a finished Single baseline simulation
-  // records the task's reference by itself, status record 7.78): a counter the column follows. Not on the page's first look.
+  // records the task's reference by itself, status record 7.78): a counter the column follows. Not on the page's first look,
+  // and not after a start that never ran (refused or declined) or a paused run let go: nothing about the task changed.
   const [taskEpoch, setTaskEpoch] = useState(0);
   const lastPhase = useRef(control.phase);
   useEffect(() => {
-    if (control.phase === 'idle' && !['idle', 'checking'].includes(lastPhase.current)) setTaskEpoch(n => n + 1);
+    if (control.phase === 'idle' && ['running', 'pausing', 'aborting', 'finishing'].includes(lastPhase.current)) setTaskEpoch(n => n + 1);
     lastPhase.current = control.phase;
   }, [control.phase]);
   const adopted = useRef(false);
@@ -123,7 +130,7 @@ export function App() {
       : { level: started.mock ? 'mock' : 'info', text: `${started.mock ? started.mock_notice + ' ' : ''}Run directory: ${started.run_dir}` });
   };
   const launchedRun = (started: Json, as: 'start' | 'resume') => { control.take(started.run_dir, as); showRun(started, as); };
-  const failed = (e: any) => setMessage({ level: 'error', text: `${e.detail?.code ?? 'rejected'}: ${e.message}`, detail: e.detail });
+  const failed = (e: any) => setMessage({ level: 'error', text: plainError(e), detail: e.detail });
   const start = async (baseline_only: boolean) => {
     setMessage(null);
     const budget = baseline_only ? 1 : config.run.max_evaluations;
@@ -142,22 +149,27 @@ export function App() {
     } catch (e: any) { failed(e); } finally { control.setPending(null); }
   };
   // "Continue" of the Run status tab: the run shown there, with the question about a new total budget.
+  // While it is on its way (seconds: the check before every run may ask Virtuoso) Continue - and the header's Resume of
+  // the same run - wait: a second press repeated both questions and then failed with "already running".
   const continueRun = async () => {
-    if (!runDir) return;
+    if (!runDir || continuing) return;
     const extra = window.prompt('Continue this run. New total evaluation budget (empty = unchanged):', '');
     if (extra === null) return;
+    const held = control.dir === runDir;
+    setContinuing(true); if (held) control.setPending('resume');
     try {
       const started = await resumeRun(runDir, status?.run_dir === runDir ? status : null, Number(extra) >= 1 ? Math.floor(Number(extra)) : null);
       if (!started) return;
       // It becomes the header's run too, unless the header is busy with another live run.
       if (control.dir === runDir || control.phase === 'idle' || control.phase === 'paused') launchedRun(started, 'resume');
       else { refreshRuns(); setMessage({ level: 'info', text: `Continuing in the original run directory: ${started.run_dir}` }); }
-    } catch (e: any) { failed(e); }
+    } catch (e: any) { failed(e); } finally { setContinuing(false); if (held) control.setPending(null); }
   };
   // ...but not while the header is busy with ANOTHER run (the case above that does not hand the run to the header): the
   // continued run would have no Pause or Abort anywhere - the tab's run buttons went on 2026-09-29 - and two real runs
   // would drive the one Virtuoso session. A paused run there is no hindrance: the header takes the continued run instead.
-  const continueBlocked: string | null = control.dir === runDir || control.phase === 'idle' || control.phase === 'paused' ? null
+  const continueBlocked: string | null = continuing ? 'The run is being continued; a moment.'
+    : control.dir === runDir || control.phase === 'idle' || control.phase === 'paused' ? null
     : control.phase === 'checking' ? 'The header is still looking up which run is live; a moment.'
     : 'Another run is live in the header: pause it or let it finish first (a second live run would have no Pause or Abort on this page).';
 
@@ -180,7 +192,8 @@ export function App() {
       {message && <div className={`banner ${message.level}`} onClick={() => setMessage(null)}>
         {/* A start refused by the check before every run: its steps say it all (what differs, what to do). */}
         {message.detail?.code === 'consistency' && message.detail.report?.steps ? <CheckSteps result={message.detail.report} refused />
-          : <>{message.text}{message.detail?.report && <details onClick={e => e.stopPropagation()}><summary>details</summary><pre>{JSON.stringify(message.detail.report, null, 1)}</pre></details>}</>}</div>}
+          : <>{message.text}{(message.detail?.code || message.detail?.report) && <details onClick={e => e.stopPropagation()}><summary>Technical details</summary>
+            <pre>{[message.detail.code && `code: ${message.detail.code}`, message.detail.report && JSON.stringify(message.detail.report, null, 1)].filter(Boolean).join('\n')}</pre></details>}</>}</div>}
       <aside className="left">
         <ConnectionButton profileId={profileId} setProfileId={(id, record) => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }), record)} />
         <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId}
@@ -205,12 +218,12 @@ export function App() {
           {(['status', 'logs', 'data', 'files', 'corners'] as Exclude<BottomTab, 'agent'>[]).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => setTab(t)}>
             {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', corners: 'Corner check' }[t]}</button>)}
           <span className="spacer" />
-          <RunListButton runs={runs} runDir={runDir} onChoose={setRunDir} onRefresh={refreshRuns} />
+          <RunListButton runs={runs} runsError={runsError} runDir={runDir} status={status} onChoose={setRunDir} onRefresh={refreshRuns} />
         </div>
         <div className="bottom-body">
           <AgentTab hidden={tab !== 'agent'} config={config} setConfig={setConfig} request={agentRequest} clearRequest={() => setAgentRequest(null)}
             tabSlot={agentTabSlot} onDetached={setAgentDetached} runDir={runDir} runActive={!!status?.worker_alive} />
-          {tab === 'status' && <StatusTab status={status} onContinue={continueRun} continueBlocked={continueBlocked} />}
+          {tab === 'status' && <StatusTab status={status} runDir={runDir} error={statusError} onContinue={continueRun} continueBlocked={continueBlocked} />}
           {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
           {tab === 'data' && <DataTab runDir={runDir} status={status} />}
           {tab === 'files' && <FilesTab runDir={runDir} />}

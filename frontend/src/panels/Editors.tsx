@@ -1,12 +1,13 @@
 import { Icon } from './Icons';
-import { useMemo, useRef, useState } from 'react';
-import { api, Json, num, saveJson } from '../api';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { api, Json, saveJson } from '../api';
 import { migrateConfig } from '../store';
 import { Typed } from './Typed';
 import { MatchedDevices } from './MatchedDevices';
 
 export type Section = 'parameters' | 'targets' | 'measurements';
 const TITLES: Record<Section, string> = { parameters: 'Parameters', measurements: 'Probes', targets: 'Specs' };   // key order = tab order
+const ROW_TABS = Object.keys(TITLES);
 /** The sections a whole-configuration import replaces beside the three tables, as the confirmation names them. */
 const IMPORTED_SECTIONS: Record<string, string> = { project: 'project name', circuit: 'circuit source', run: 'run settings',
   output: 'output settings', research: 'research labels' };
@@ -31,19 +32,41 @@ function followScale(before: Json, after: Json): number | null {
 
 const MORE_KEY = 'gator-workbench-editor-more-columns';
 
+/** Specs: the limit and the objective in ONE list. An objective means "once every hard spec passes, the lower (higher) the
+ *  better" and works on the limit on its side (minimize an upper limit, maximize a lower one), so a pair that could never
+ *  work (>= then lower is better) is not offered. Saved as before: `constraint` + `direction_after_feasible`. */
+const LIMIT_CHOICES: [string, string][] = [['>=', 'none'], ['>=', 'maximize'], ['<=', 'none'], ['<=', 'minimize'],
+  ['interval', 'none'], ['interval', 'minimize'], ['interval', 'maximize'], ['target', 'none']];
+const LIMIT_TEXT: Record<string, string> = { '>=': '≥ lower', '<=': '≤ upper', interval: 'interval', target: 'target ± tolerance' };
+const limitLabel = (constraint: string, objective: string) => (LIMIT_TEXT[constraint] ?? String(constraint))
+  + (objective === 'minimize' ? ', then lower is better' : objective === 'maximize' ? ', then higher is better' : '');
+
+function LimitSelect({ row, title, onChange }: { row: Json; title: string; onChange: (fields: Json) => void }) {
+  const objective = row.direction_after_feasible ?? 'none', current = `${row.constraint}|${objective}`;
+  const offered = LIMIT_CHOICES.some(([c, o]) => `${c}|${o}` === current);
+  return <select aria-label="Constraint" title={title} value={current} onChange={e => {
+      const [constraint, direction_after_feasible] = e.target.value.split('|');
+      onChange({ constraint, direction_after_feasible });
+    }}>
+    {/* a pair this list does not offer (an older row, an import) is shown as it is; validation says what is wrong with it */}
+    {!offered && <option value={current}>{limitLabel(row.constraint, objective)}</option>}
+    {LIMIT_CHOICES.map(([c, o]) => <option key={`${c}|${o}`} value={`${c}|${o}`}>{limitLabel(c, o)}</option>)}</select>;
+}
+
 function Cell({ column, value, onChange }: { column: Json; value: Json; onChange: (v: Json) => void }) {
   const title = column.guidance;
   if (column.name === 'nominal_only') return <select aria-label="Judged at" title={title}
     value={value ? 'nominal' : 'all'} onChange={e => onChange(e.target.value === 'nominal')}>
     <option value="all">All planned conditions</option><option value="nominal">Nominal only</option></select>;
-  if (column.name === 'direction_after_feasible') return <select aria-label="Objective" title={title}
-    value={value ?? 'none'} onChange={e => onChange(e.target.value)}>
-    <option value="none">None</option><option value="minimize">Minimize</option><option value="maximize">Maximize</option></select>;
   // A column the circuit read fills (initial_value): shown, never typed - a typed value could only differ from the circuit.
   if (column.readonly) return <input title={title} className="readonly" readOnly value={value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value)} />;
   if (column.options) {
+    // A value the list does not hold - or none where one is required (a row from the agent or an import) - is shown as it
+    // is: the browser showed the first option as if it were chosen, and choosing that one then changed nothing.
+    const missing = value != null ? !column.options.includes(value) : !column.nullable;
     return <select title={title} value={value ?? ''} onChange={e => onChange(e.target.value === '' && column.nullable ? null : e.target.value)}>
-      {column.nullable && <option value="">(none)</option>}{column.options.map((o: string) => <option key={o} value={o}>{o}</option>)}</select>;
+      {column.nullable && <option value="">(none)</option>}{missing && <option value={value ?? ''} disabled={value == null}>{value ?? '(not set)'}</option>}
+      {column.options.map((o: string) => <option key={o} value={o}>{o}</option>)}</select>;
   }
   if (column.type === 'boolean') return <input type="checkbox" title={title} checked={!!value} onChange={e => onChange(e.target.checked)} />;
   if (column.type === 'number' || column.type === 'integer') {
@@ -58,13 +81,14 @@ function Cell({ column, value, onChange }: { column: Json; value: Json; onChange
   return <input title={title} value={value ?? ''} onChange={e => onChange(e.target.value === '' && column.nullable ? null : e.target.value)} />;
 }
 
+const exact = (v: Json) => (v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v));
 export function DiffView({ diff }: { diff: Json[] }) {
   if (!diff.length) return <p className="hint">No differences.</p>;
   return <table className="grid small"><thead><tr><th>Section</th><th>Row</th><th>Change</th><th>Field</th><th>Before</th><th>After</th></tr></thead>
     <tbody>{diff.flatMap((d: Json) => d.fields.map((f: Json, i: number) => (
       <tr key={`${d.section}/${d.key}/${f.field}`} className={`diff-${d.change}`}>
         {i === 0 && <><td rowSpan={d.fields.length}>{d.section}</td><td rowSpan={d.fields.length}>{d.key}</td><td rowSpan={d.fields.length}>{d.change}</td></>}
-        <td>{f.field}</td><td>{num(typeof f.before === 'object' ? JSON.stringify(f.before) : f.before)}</td><td>{num(typeof f.after === 'object' ? JSON.stringify(f.after) : f.after)}</td>
+        <td>{f.field}</td><td>{exact(f.before)}</td><td>{exact(f.after)}</td>
       </tr>)))}</tbody></table>;
 }
 
@@ -90,22 +114,42 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
   const [error, setError] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
   const columns: Json[] = schema.editors[tab].map((c: Json) => tab !== 'targets' ? c : c.name === 'nominal_only'
-    ? { ...c, label: 'Judged at' } : c.name === 'direction_after_feasible' ? { ...c, label: 'Objective' }
-    : c.name === 'missing_is_failure' ? { ...c, label: 'Missing value = failed' } : c.name === 'margin_sides' ? { ...c, label: 'Margin sides' }
+    ? { ...c, label: 'Judged at' } : c.name === 'missing_is_failure' ? { ...c, label: 'Missing value = failed' } : c.name === 'margin_sides' ? { ...c, label: 'Margin sides' }
+    : c.name === 'constraint' ? { ...c, guidance: c.guidance + ' "then lower / higher is better" is the objective: among the designs that pass '
+      + 'every hard spec, the best one is the lowest / highest here (one spec at most); with an Objective bonus weight above 0 (Reward and '
+      + 'conditions) the reward also pushes it past the limit.' }
     : c.name === 'normalization_scale' ? { ...c, guidance: 'Threshold distance divided by this positive scale, then shaped by the selected capped or compressed reward. Empty uses the threshold size. Feasibility uses the actual bounds, not the reward.' } : c);
-  const hidden = columns.filter(c => c.advanced);
-  const visible = columns.filter(c => more || !c.advanced);
+  // Specs shows the objective inside the constraint list (LimitSelect), and "Judged at" only while the run plans training
+  // corners: without corners every spec is judged at nominal, so the choice would do nothing. Both keep their values.
+  const corners = (config.run?.conditions?.policy ?? 'off') !== 'off';
+  const shown = columns.filter(c => tab !== 'targets' || (c.name !== 'direction_after_feasible' && (c.name !== 'nominal_only' || corners)));
+  const hidden = shown.filter(c => c.advanced);
+  const visible = shown.filter(c => more || !c.advanced);
   const keyField: string = schema.section_keys[tab];
   const rows: Json[] = config[tab] ?? [];
   const issues = useMemo(() => (validation?.issues ?? []).filter((i: Json) => i.path.startsWith(tab)), [validation, tab]);
-  const rowIssues = (index: number) => issues.filter((i: Json) => i.path.startsWith(`${tab}[${index}]`));
+  // The report's row paths (targets[3]) name rows of the configuration it was made for (`sent`, App.tsx). After Delete,
+  // Undo or an import moved the rows, an issue is drawn only on the row it was found for, until the new report comes.
+  const reported: Json[] | null = validation?.sent?.[tab] ?? null;
+  const rowIssues = (index: number) => reported && reported[index]?.[keyField] !== rows[index]?.[keyField] ? []
+    : issues.filter((i: Json) => i.path.startsWith(`${tab}[${index}]`));
+  // Ticks of rows that are gone (Delete, Undo, an import) go with them: a new row given a freed ID came already ticked.
+  useEffect(() => setSelected(s => {
+    const ids = new Set(rows.map(r => r[keyField]));
+    const kept = Object.fromEntries(Object.entries(s).filter(([id, on]) => on && ids.has(id)));
+    return Object.keys(kept).length === Object.keys(s).length ? s : kept;
+  }), [rows, keyField]);
 
-  const update = (index: number, name: string, value: Json) =>
+  // One change of one row, several fields at once (the constraint list sets the limit and the objective): one Undo step.
+  // The scale follows only a field that really changes: picking an objective re-sends the unchanged limit, and an empty
+  // (backend-sized) scale must not be frozen into the row by that.
+  const patch = (index: number, fields: Json) =>
     setConfig((c: Json) => ({ ...c, [tab]: c[tab].map((r: Json, i: number) => i === index ? (() => {
-      const row = { ...r, [name]: value };
-      if (tab === 'targets' && SCALE_FIELDS.includes(name)) row.normalization_scale = followScale(r, row);
+      const row = { ...r, ...fields };
+      if (tab === 'targets' && Object.keys(fields).some(name => SCALE_FIELDS.includes(name) && fields[name] !== r[name])) row.normalization_scale = followScale(r, row);
       return row;
     })() : r) }));
+  const update = (index: number, name: string, value: Json) => patch(index, { [name]: value });
   const add = () => {
     const row: Json = {};
     // A required field without a default comes as `default: null` from the schema: that means "none", not null - a new
@@ -123,7 +167,7 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
     if (tab === 'targets' && row.normalization_scale == null) row.normalization_scale = suggestedScale(row);
     setConfig((c: Json) => ({ ...c, [tab]: [...(c[tab] ?? []), row] }));
   };
-  const remove = () => { setConfig((c: Json) => ({ ...c, [tab]: c[tab].filter((r: Json) => !selected[r[keyField]]) })); setSelected({}); };
+  const remove = () => setConfig((c: Json) => ({ ...c, [tab]: c[tab].filter((r: Json) => !selected[r[keyField]]) }));
 
   // JSON import goes through a DIFF CONFIRMATION before it replaces anything. The backend's diff covers the three tables;
   // a whole configuration also replaces the other sections, and the confirmation names each one that changes (it used to
@@ -134,13 +178,21 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
     setError(null);
     try {
       const incoming = JSON.parse(await f.text());
-      const rowsIn = incoming?.[tab] ?? (Array.isArray(incoming) ? incoming : null);
-      if (!incoming?.schema_version && !Array.isArray(rowsIn))
-        throw new Error(`the file is neither a whole configuration nor ${TITLES[tab]} rows (a list, or an object with "${tab}")`);
-      const next = migrateConfig(incoming.schema_version ? incoming : { ...config, [tab]: rowsIn });
+      // A whole configuration is one this workbench wrote (Export JSON): a file that merely has a schema_version - such as
+      // configs/gpdk045_conditions.json - was taken for one, and Apply left a blank page (audit 2026-09-30).
+      const whole = incoming?.schema_version === 'gator-workbench-config-v1';
+      const rowsIn = Array.isArray(incoming?.[tab]) ? incoming[tab] : Array.isArray(incoming) ? incoming : null;
+      if (whole && !(['project', 'circuit', 'run', 'output'].every(k => incoming[k] && typeof incoming[k] === 'object')
+          && ROW_TABS.every(k => incoming[k] == null || Array.isArray(incoming[k]))))
+        throw new Error('the file says it is a workbench configuration, but its sections (project, circuit, run, output and the three tables) are not all there');
+      if (!whole && !rowsIn)
+        throw new Error(`the file is neither a workbench configuration (from Export JSON) nor ${TITLES[tab]} rows (a list, or an object with "${tab}")`);
+      if (!whole && rowsIn!.some((r: Json) => !r || typeof r !== 'object' || !r[keyField]))
+        throw new Error(`every ${TITLES[tab]} row needs its ${keyField}`);
+      const next = migrateConfig(whole ? incoming : { ...config, [tab]: rowsIn });
       const { diff } = await api.diff(config, next);
       const others = Object.keys(IMPORTED_SECTIONS).filter(k => JSON.stringify(config[k] ?? null) !== JSON.stringify(next[k] ?? null));
-      setPending({ next, diff, others, rows: incoming.schema_version ? null : { section: tab, value: next[tab] } });
+      setPending({ next, diff, others, rows: whole ? null : { section: tab, value: next[tab] } });
     } catch (e: any) { setError(`Import failed: ${e.message}`); }
   };
   const applyImport = (p: NonNullable<typeof pending>) => {
@@ -181,19 +233,21 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
       {error && <p className="error">{error}</p>}
       {pending && <div className="confirm"><h4>Confirm import: {pending.diff.length} changed row{pending.diff.length === 1 ? '' : 's'}{pending.others.length
         ? `, and it replaces the ${pending.others.map(k => IMPORTED_SECTIONS[k]).join(', ')}` : ''}</h4>
-        {(pending.diff.length > 0 || !pending.others.length) && <DiffView diff={pending.diff} />}
-        <button onClick={() => applyImport(pending)}>Apply</button><button onClick={() => setPending(null)}>Cancel</button></div>}
+        <div className="row"><button onClick={() => applyImport(pending)}>Apply</button><button onClick={() => setPending(null)}>Cancel</button></div>
+        {(pending.diff.length > 0 || !pending.others.length) && <DiffView diff={pending.diff} />}</div>}
       <div className="scroll">
         <table className="grid editor">
-          <thead><tr><th></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
+          <thead><tr><th className="sel"></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
           <tbody>{rows.map((row, index) => {
             const found = rowIssues(index);
             return <tr key={index} className={found.some((i: Json) => i.level === 'error' || i.level === 'blocker') ? 'has-error' : ''}>
-              <td><input type="checkbox" checked={!!selected[row[keyField]]} onChange={e => setSelected(s => ({ ...s, [row[keyField]]: e.target.checked }))} /></td>
+              <td className="sel"><input type="checkbox" checked={!!selected[row[keyField]]} onChange={e => setSelected(s => ({ ...s, [row[keyField]]: e.target.checked }))} /></td>
               {/* A field the row does not STATE is shown with the value the backend uses for it (hard = on, tolerance = 0 ...): a
                   starter row's absent `hard` used to look unchecked although the target is hard. A box the user cleared is null,
                   not absent, and stays empty. */}
-              {visible.map(c => <td key={c.name}><Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)} /></td>)}
+              {visible.map(c => <td key={c.name}>{tab === 'targets' && c.name === 'constraint'
+                ? <LimitSelect row={row} title={c.guidance} onChange={fields => patch(index, fields)} />
+                : <Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)} />}</td>)}
               <td className="issues">{found.map((i: Json, n: number) => <div key={n} className={`issue ${i.level}`} title={i.message}>{i.level}: {i.code}</div>)}</td>
             </tr>; })}</tbody>
         </table>

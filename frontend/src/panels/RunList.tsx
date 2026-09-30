@@ -31,7 +31,8 @@ const variables = (list: Json) => Array.isArray(list) ? list.map((v: Json) => `$
 const folder = (runDir: string) => runDir.split(/[\\/]/).filter(Boolean).pop() ?? runDir;
 const isLive = (r: Json) => LIVE_STATES.includes(r.state);
 const taskOf = (r: Json) => r.task_name ?? String(r.task_id ?? 'unknown task').split(':')[0];
-const label = (r: Json) => `${stamp(r.created_utc) ?? 'unknown time'} | ${taskOf(r)} | ${r.mode} seed${r.seed} | ${r.state ?? 'not started'}${r.mock ? ' [MOCK]' : ''}`;
+// `state`: what the page's own status poll says now - the list row keeps the state of its last read ("starting").
+const label = (r: Json, state?: string | null) => `${stamp(r.created_utc) ?? 'unknown time'} | ${taskOf(r)} | ${r.mode} seed${r.seed} | ${state ?? r.state ?? 'not started'}${r.mock ? ' [MOCK]' : ''}`;
 const STATE_CSS: Record<string, string> = { completed: 'ok', running: 'busy', starting: 'busy', pausing: 'busy', stopping: 'busy', paused: 'not_ready',
   interrupted: 'not_ready', failed: 'failed', cancelled: 'unknown', stopped: 'unknown' };
 const RESUME: Record<string, string> = { full_state: 'yes', weights_only: 'model only', none: 'no' };
@@ -46,17 +47,17 @@ function finished(r: Json): { text: string; css?: string; title?: string } {
   return { text: '-' };
 }
 
-type Column = { key: string; title: string; help: string; value?: (r: Json) => string | number | null; numeric?: boolean };
+type Column = { key: string; title: string; help: string; value?: (r: Json) => string | number | null };
 const COLUMNS: Column[] = [
   { key: 'started', title: 'Started', help: 'When the run was created (local time of this computer).', value: r => r.created_utc ?? null },
   { key: 'finished', title: 'Finished', help: 'When the run came to rest: completed, stopped, failed or paused. A run that is working has no finish time yet.', value: r => (isLive(r) ? null : r.ended_utc ?? r.last_seen_utc ?? null) },
-  { key: 'duration', title: 'Duration', help: 'How long the run was actually working. The time it sat paused is not counted; "Details" shows it.', value: r => r.active_seconds ?? null, numeric: true },
+  { key: 'duration', title: 'Duration', help: 'How long the run was actually working. The time it sat paused is not counted; "Details" shows it.', value: r => r.active_seconds ?? null },
   { key: 'state', title: 'State', help: 'How the run stands, and under it why it stopped.', value: r => r.state ?? '' },
   { key: 'task', title: 'Task', help: 'The task (circuit and its targets) the run optimizes.', value: r => taskOf(r) },
   { key: 'mode', title: 'Mode', help: 'scratch = from random weights; fine_tune / frozen / resume = from a saved model.', value: r => r.mode ?? '' },
-  { key: 'seed', title: 'Seed', help: 'The random seed of the run.', value: r => r.seed ?? null, numeric: true },
-  { key: 'evaluations', title: 'Evaluations', help: 'Candidate designs simulated so far, of the budget the run was given.', value: r => r.evaluations ?? null, numeric: true },
-  { key: 'feasible', title: 'First feasible', help: 'How many evaluations had been spent when the first design met every target. "none" = no design has met them.', value: r => r.first_feasible_eval_count ?? null, numeric: true },
+  { key: 'seed', title: 'Seed', help: 'The random seed of the run.', value: r => r.seed ?? null },
+  { key: 'evaluations', title: 'Evaluations', help: 'Candidate designs simulated so far, of the budget the run was given.', value: r => r.evaluations ?? null },
+  { key: 'feasible', title: 'First feasible', help: 'How many evaluations had been spent when the first design met every target. "none" = no design has met them.', value: r => r.first_feasible_eval_count ?? null },
   { key: 'experiment', title: 'Experiment', help: 'The experiment folder the run belongs to.', value: r => r.experiment ?? '' },
   { key: 'data', title: 'Data', help: 'MOCK = the built-in synthetic backend, not a circuit result. real = Virtuoso / Spectre simulations.', value: r => (r.mock ? 'mock' : 'real') },
   { key: 'resume', title: 'Can continue', help: 'Whether the saved state allows this run to be continued: yes (full state), model only (usable for fine_tune / frozen), no.', value: r => r.resumability ?? '' },
@@ -99,7 +100,8 @@ function RunDetails({ row, info, error, onCopy, copied }: { row: Json; info: Jso
   </div>);
 }
 
-export function RunListButton({ runs, runDir, onChoose, onRefresh }: { runs: Json[]; runDir: string | null; onChoose: (runDir: string | null) => void; onRefresh: () => Promise<Json[]> }) {
+export function RunListButton({ runs, runsError, runDir, status, onChoose, onRefresh }: { runs: Json[]; runsError: string | null; runDir: string | null;
+  status: Json; onChoose: (runDir: string | null) => void; onRefresh: () => Promise<Json[]> }) {
   // While `popup` is set, the run window is open (one pop-up window for the whole page: `popupWindow.ts`).
   const { popup, root, blocked, open: openPopup } = usePopupWindow('gator-runs',
     { title: 'GATOR - runs', features: 'popup,width=1500,height=860', rootId: 'runs-root' });
@@ -135,30 +137,33 @@ export function RunListButton({ runs, runDir, onChoose, onRefresh }: { runs: Jso
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
   const text = (r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_id, r.mode, `seed${r.seed}`, r.state, r.stop_reason, r.experiment, r.mock ? 'mock' : 'real', folder(r.run_dir)].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === sort.key) ?? COLUMNS[0];
-  // Empty cells stay at the bottom whichever way the column is sorted.
-  const shown = runs.filter(r => words.every(w => text(r).includes(w))).sort((a, b) => {
+  // Empty cells stay at the bottom whichever way the column is sorted. Only while the window is open: the page redraws
+  // on every status poll, and a closed window needs no sorted list.
+  const shown = !popup ? [] : runs.filter(r => words.every(w => text(r).includes(w))).sort((a, b) => {
     const x = column.value!(a), y = column.value!(b);
     if (x == null || x === '' || y == null || y === '') return (x == null || x === '' ? 1 : 0) - (y == null || y === '' ? 1 : 0);
     return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * (sort.down ? -1 : 1);
   });
   const timed = runs.some(r => 'active_seconds' in r);     // an older workbench server lists runs without their times
 
-  const view = (
+  const view = popup && root && (
     <div className="run-window">
       <h2>Runs</h2>
       <div className="row">
         <button onClick={refresh} disabled={loading}>Refresh list</button>
         <button onClick={() => onChoose(null)} disabled={!runDir} title="The bottom tabs of the workbench show no run. Nothing is stopped or deleted.">Clear</button>
         <input className="run-filter" placeholder="Filter: task, mode, state, mock / real, date ..." value={filter} onChange={e => setFilter(e.target.value)} />
-        <span className="hint run-count">{loading ? 'Reading the runs...' : `${runs.length} run${runs.length === 1 ? '' : 's'} under the output folder${readAt ? `, read at ${readAt}` : ''}. Nothing here updates by itself.`}</span>
+        <span className="hint run-count">{loading ? 'Reading the runs...' : runsError ? 'The list could not be read.'
+          : `${runs.length} run${runs.length === 1 ? '' : 's'} under the output folder${readAt ? `, read at ${readAt}` : ''}. Nothing here updates by itself.`}</span>
       </div>
+      {runsError && !loading && <p className="error run-list-error">The run list could not be read: {runsError}</p>}
       <p className="hint"><b>Double click</b> a run to show it in the bottom tabs of the workbench (Run status, Logs, Data tables, Output files); the run that is shown is marked. <b>Clear</b> shows no run. This window stays open until you close it.</p>
       <details className="more"><summary>What the columns mean</summary>
         <ul className="steps-list">{COLUMNS.map(c => <li key={c.key}><b>{c.title}</b>: {c.help}</li>)}
           <li>All times are the local time of this computer. Press a column title to sort by it. "Details" shows everything else the run recorded.</li></ul></details>
       {runs.length > 0 && !timed && <p className="warn">The workbench server that is running is older than this page and does not report when a run finished or how long it took.
         Restart it (Ctrl+C in its terminal, then start `serve` again) and press "Refresh list".</p>}
-      {runs.length === 0 && !loading && <p className="hint run-empty">No run yet under this output folder. A run appears here as soon as it has been started.</p>}
+      {runs.length === 0 && !loading && !runsError && <p className="hint run-empty">No run yet under this output folder. A run appears here as soon as it has been started.</p>}
       {runs.length > 0 && <div className="scroll"><table className="grid run-table">
         <thead><tr>
           {COLUMNS.map(c => <th key={c.key} className="sortable" title={`${c.help} Press to sort.`} aria-sort={sort.key === c.key ? (sort.down ? 'descending' : 'ascending') : undefined}
@@ -188,9 +193,9 @@ export function RunListButton({ runs, runDir, onChoose, onRefresh }: { runs: Jso
   return (<>
     {blocked && <span className="error run-list-blocked">{BLOCKED}</span>}
     {/* The run that is shown is said as plain text to the LEFT of the button; the button itself only reads "Runs..." (user request 2026-09-21). */}
-    <span className="run-list-current" title={runDir ?? undefined}>{current ? label(current) : runDir ? folder(runDir) : 'No run selected'}</span>
+    <span className="run-list-current" title={runDir ?? undefined}>{current ? label(current, status?.run_dir === runDir ? status.state : null) : runDir ? folder(runDir) : 'No run selected'}</span>
     <button className={`run-list-button${popup ? ' open' : ''}`} onClick={openWindow}
       title={popup ? 'The run window is open: press to bring it to the front and read the list again.' : 'Opens the run window: every run with its start and finish time, its duration and its results. Choose there which run these tabs show.'}>Runs...</button>
-    {popup && root && createPortal(view, root)}
+    {view && createPortal(view, root!)}
   </>);
 }

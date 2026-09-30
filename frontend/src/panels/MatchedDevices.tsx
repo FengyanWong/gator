@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, Json } from '../api';
+import { api, Json, problemText } from '../api';
 import { DiffView } from './Editors';
 
 /** "Matched devices..." of the Parameters tab (status record 7.103): the structures the backend reads from the loaded
@@ -25,16 +25,17 @@ export function MatchedDevices({ config, setConfig, onClose }: { config: Json; s
       const got = await api.matchedDevices(config);
       setAnswer(got); setAsked(about(config));
       setTicked(Object.fromEntries((got.suggestions ?? []).filter((s: Json) => s.acts && s.default).map((s: Json) => [s.id, true])));
-    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+    } catch (e: any) { setError(problemText(e)); } finally { setBusy(false); }
   };
   const review = async () => {
     setBusy(true); setError(null); setDone(null);
-    try { setShown(await api.matchedDevices(config, chosen)); } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+    try { setShown(await api.matchedDevices(config, chosen)); } catch (e: any) { setError(problemText(e)); } finally { setBusy(false); }
   };
   const apply = () => {
     const changed = shown.diff.length;
     setConfig((c: Json) => ({ ...c, parameters: shown.parameters }));
-    setShown(null);
+    // What was found is about the rows before: it goes, and its "the rows changed" warning no longer stands next to "Applied".
+    setShown(null); setAnswer(null); setAsked(null);
     setDone(`Applied: ${changed} row${changed === 1 ? '' : 's'} changed. Undo in the toolbar takes it back.`);
   };
   // The toolbar's "Matched devices..." is the press that asks: the box opens with the answer on its way.

@@ -2,7 +2,7 @@ import { useAsyncAction } from '../store';
 import { Icon } from './Icons';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, Json, problemText, virtuosoGateText } from '../api';
+import { api, gateText, Json, problemText } from '../api';
 import { TaskFileWindow } from './TaskFile';
 import { usePopupWindow } from './popupWindow';
 
@@ -46,8 +46,8 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   // opened later, when the file has arrived - so a blocked window can be tried again with the next press.
   const fileWindow = usePopupWindow('gator-task-file', { title: 'GATOR - Task file', features: 'popup,width=760,height=900',
     rootId: 'task-file-root', rootClass: 'task-file-window', onClose: () => setFile(null), closeOnUnmount: true });
-  // Another task or cell: its extras, its messages and an open task file (the old task's) go.
-  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); setFile(null); fileWindow.popup?.close(); }, [task, library, cell]);
+  // Another task or cell: its extras, its messages, a typed name or frequency and an open task file (the old task's) go.
+  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); setName(''); setFrequency(''); setFile(null); fileWindow.popup?.close(); }, [task, library, cell]);
   useEffect(() => {
     const written = (e: Event) => setExtras((x: Json) => {
       const next = { ...x };
@@ -63,7 +63,7 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   const suggested = suggestTaskName(cell);
   const taskName = task ?? (name || suggested);
   const report = (e: any) => {
-    setMessage({ level: 'error', text: problemText(e, virtuosoGateText) });
+    setMessage({ level: 'error', text: problemText(e, gateText) });
   };
   const { busy, run } = useAsyncAction(e => {
     if (e.detail?.code === 'needs_expected_frequency') { setAskFrequency(true); setMessage({ level: 'warn', text: e.detail.message }); }

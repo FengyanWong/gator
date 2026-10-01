@@ -345,6 +345,20 @@ def test_a_run_needs_an_authorization_and_a_connection_of_the_right_family(tmp_p
     assert read_json(layout.input_snapshot / 'hierarchy.json')['combined_netlist'] == 'netlist.cir'
 
 
+def test_a_virtuoso_task_on_an_ngspice_connection_is_refused_before_anything_is_probed(tmp_path):
+    """Shown with the built-in OTA7 until it was removed (record 7.128): a task saved from a cell is refused the same way."""
+    from test_wb_cdf_write import make
+    make(tmp_path)
+    write_profiles(lab=dict(env_file='/x/.env'), sim=dict(kind='ngspice_local'))
+    monitor = ngspice_probe(tmp_path)
+    raw = tasks.starter_config('real:ring_cdf')
+    raw['run'], raw['output'] = dict(max_evaluations=2, connection_profile_id='sim'), dict(experiment_name='x', output_root=str(tmp_path))
+    with pytest.raises(runs.RunRejected) as refused:
+        runs.prepare_run(schema.WorkbenchConfig.model_validate(raw), roots_for(tmp_path), allow_real=True, monitor=monitor)
+    assert refused.value.code == 'task_blocked' and 'ngspice on this machine' in str(refused.value)
+    assert 'Virtuoso + Spectre' in str(refused.value) and monitor.probes_started == 0
+
+
 # ------------------------------------------------------------------------------- the routes
 @pytest.fixture
 def client(tmp_path):

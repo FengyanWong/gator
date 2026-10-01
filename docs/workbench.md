@@ -932,10 +932,11 @@ simulations that tell it nothing new. MOCK runs are unchanged.
 * **Every 5th reset simulated.** A reset used to simulate the unchanged starting design again (with episode length 4,
   one evaluation in five). Now each lane simulates it at its first reset, at every 5th reset and after any failure; the
   other resets start from the lane's last simulated one and reserve, charge, launch and record nothing (event
-  `episode_reset_reused` in `logs/events.jsonl`), so the budget buys more steps. "A reset costs one" above holds for the
-  simulated resets. An AI-only run has a single episode and never resets again; warm start and rescue keep their
-  schedules, which never count resets. Code: `RESET_RECHECK_EVERY` and `_dispatch_reused_reset` in `engine.py`, lane
-  operation `reset_reused` in `lanes.py`, `CircuitSizingEnv.reset_reused`.
+  `episode_reset_reused` in `logs/events.jsonl`), so the budget buys more steps. "A reset costs one" above holds for
+  the simulated resets, and the warm-start budget note counts only those (`runs.warm_start_resets`, record 7.133). An
+  AI-only run has a single episode and never resets again; warm start and rescue keep their schedules, which never
+  count resets. Code: `RESET_RECHECK_EVERY` and `_dispatch_reused_reset` in `engine.py`, lane operation `reset_reused`
+  in `lanes.py`, `CircuitSizingEnv.reset_reused`.
 * **Maestro tasks skip the text parse.** For a task OCEAN measures, Spectre now writes its own binary results; the bridge
   still downloads the folder but no longer converts a text copy nobody reads (`VirtuosoBridgeBackend._raw_format`).
   Other real tasks still get PSF text, which they read. OCEAN's values agree with those of the text results to within

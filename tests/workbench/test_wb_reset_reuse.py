@@ -88,3 +88,11 @@ def test_a_reused_reset_in_flight_is_not_a_pending_design():
     lanes = dict(a=dict(busy=dict(op='reset_reused')), b=dict(busy=dict(op='step')), c=dict(busy=None),
                  d=dict(busy=dict(op='reset')))
     assert SearchSession.pending_designs(SimpleNamespace(engine=SimpleNamespace(lane_state=lanes))) == 1
+
+
+def test_the_warm_start_budget_note_counts_only_the_resets_a_run_pays_for():
+    """The note "cannot collect all starting transitions plus resets" counted every reset as paid until 2026-10-01."""
+    assert runs.warm_start_resets(8, 1, mock=True) == 8                       # MOCK: every reset is simulated
+    assert runs.warm_start_resets(8, 1, mock=False) == 2                      # real: resets 1 and 6 of 8
+    assert runs.warm_start_resets(10, 1, mock=False) == 2 and runs.warm_start_resets(11, 1, mock=False) == 3
+    assert runs.warm_start_resets(8, 3, mock=False) == 1 and runs.warm_start_resets(0, 3, mock=False) == 0

@@ -19,7 +19,7 @@ from uuid import uuid4
 
 from . import CONFIG_SCHEMA_VERSION, OUTPUT_LAYOUT_VERSION, checkpoints as ckpt, modes
 from .compile import CompileError, compile_task
-from .engine import RunLock, learner_experiment
+from .engine import RunEngine, RunLock, learner_experiment
 from .layout import (RunLayout, code_provenance, environment_versions, find_runs, new_experiment_dir, new_run_dir,
                      read_run)
 from .paths import OutputRoots, default_output_root, is_mock_path, local_settings_dir, repo_root
@@ -422,8 +422,7 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
             count = config.run.search.warm_start_count or max(8, config.run.advanced.batch_size,
                                                              config.run.advanced.warmup_transitions)
             manifest['search_settings']['resolved_warm_start_count'] = count
-            minimum_resets = (count + config.run.advanced.episode_length - 1) // config.run.advanced.episode_length
-            if config.run.max_evaluations < count + minimum_resets:
+            if config.run.max_evaluations < count + warm_start_resets(count, config.run.advanced.episode_length, task.mock):
                 manifest['notes'].append('The simulation budget cannot collect all starting transitions plus resets; '
                                          'SAC handover may not be reached. The budget was not increased.')
     write_json(layout.effective_config, config.model_dump(mode='json'))
@@ -435,6 +434,14 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
         save_settings(output_root=config.output.output_root, concurrency=config.run.concurrency,
                       last_run={**load_settings().get('last_run', {}), config.project.name: str(layout.run_dir)})
     return layout, manifest
+
+
+def warm_start_resets(count, episode_length, mock) -> int:
+    """The resets a warm start pays for while it collects `count` starting transitions: one per episode, but a real run
+    simulates only every RunEngine.RESET_RECHECK_EVERY-th reset and starts the others from the last simulated one, for
+    free (record 7.126; a MOCK run simulates every reset)."""
+    resets = (count + episode_length - 1) // episode_length
+    return resets if mock else -(-resets // RunEngine.RESET_RECHECK_EVERY)
 
 
 def _prepare_resume(config, roots, task, task_hash, gate):

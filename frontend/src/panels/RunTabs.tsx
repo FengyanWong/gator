@@ -79,7 +79,7 @@ export function StatusTab({ status, runDir, error, onContinue, continueBlocked }
  *  poll the same file again every 2 s, finished runs too. */
 export function DataTab({ runDir, status }: { runDir: string | null; status: Json }) {
   const [table, setTable] = useState('evaluations');
-  const { value: data, error, refresh } = useRequest<Json>(() => api.table(runDir!, table), [runDir, table], { enabled: !!runDir });
+  const { value: data, error, refresh } = useRequest<Json>(signal => api.table(runDir!, table, 25, signal), [runDir, table], { enabled: !!runDir });
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   useEffect(() => setNote(null), [runDir, table]);
@@ -105,7 +105,7 @@ export function DataTab({ runDir, status }: { runDir: string | null; status: Jso
 }
 
 export function FilesTab({ runDir }: { runDir: string | null }) {
-  const { value: files, error, refresh } = useRequest<Json>(() => api.files(runDir!), [runDir], { enabled: !!runDir });
+  const { value: files, error, refresh } = useRequest<Json>(signal => api.files(runDir!, signal), [runDir], { enabled: !!runDir });
   const [note, setNote] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);          // the file whose download is on its way
   useEffect(() => setNote(null), [runDir]);
@@ -128,7 +128,7 @@ export function LogsTab({ runDir, alive }: { runDir: string | null; alive: boole
   const [note, setNote] = useState<string | null>(null);
   // Read every 2 s while the worker lives; a run at rest is read once (when the tab opens, and once more when its worker
   // ends) - it used to be re-read every minute for as long as the tab stayed open.
-  const { value, refresh } = usePolling(() => api.logs(runDir!, kind), alive ? 2000 : 0, !!runDir, [runDir, kind]);
+  const { value, error, refresh } = usePolling(signal => api.logs(runDir!, kind, signal), alive ? 2000 : 0, !!runDir, [runDir, kind]);
   // That last read starts after the worker ended: a read already on its way then was kept, and could miss the last lines
   // (review of 2026-10-01).
   const before = useRef({ runDir, alive });
@@ -146,6 +146,7 @@ export function LogsTab({ runDir, alive }: { runDir: string | null; alive: boole
   return (<div><div className="row"><select value={kind} onChange={e => setKind(e.target.value)}><option>events</option><option>errors</option></select>
     <button onClick={save} title={`Download full log (${kind}.jsonl): The whole log file of this run, not only the newest 200 entries listed here. One JSON record per line.`}><Icon name="download" label={`Download full log (${kind}.jsonl)`} /></button>
     <span className="hint">{note ?? 'Newest first, the newest 200 entries at most.'}</span></div>
+    {error && <p className="error">{error} <button onClick={refresh}>Retry read</button></p>}
     <div className="scroll log">{(value?.entries ?? []).slice().reverse().map((e: Json, i: number) => <div key={i} className={kind === 'errors' ? 'error' : ''}>
       <b>{(e.time_utc ?? '').slice(11, 19)} {e.event ?? e.error}</b> {JSON.stringify(Object.fromEntries(Object.entries(e).filter(([k]) => !['time_utc', 'event', 'error', 'run_id', 'traceback'].includes(k))))}</div>)}</div></div>);
 }

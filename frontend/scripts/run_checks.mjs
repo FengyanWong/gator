@@ -38,7 +38,7 @@ const EXPECTED = { virtuoso_source_check: 76, connection_panel_check: 47, run_co
   agent_tab_check: 34, output_panel_check: 25, run_control_live_check: 23, typing_check: 19, model_chooser_check: 19,
   project_help_check: 17, run_list_check: 16, ngspice_window_check: 16, agent_setup_check: 16, working_copy_check: 15,
   save_now_check: 11, corner_check_check: 11, task_save_check: 10, graph_view_check: 8, blocking_issues_check: 8 };
-const WRITERS = ['export_check', 'run_control_live_check'];
+const WRITERS = ['export_check', 'run_control_live_check', 'agent_tab_check'];
 const SOURCE = ['request_lifecycle_check'];
 // Checks that insist on Vite's source preview on a port of their own and read a fixture their author made; run_checks.sh
 // passes the flag - and allows the fixture's folder on backend A - only when that fixture exists.
@@ -64,8 +64,9 @@ const portFree = port => new Promise(resolve => {
   server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)));
 });
 const answers = async (url, seconds = 60) => {
-  for (let waited = 0; waited < seconds * 1000; waited += 250) {
-    try { if ((await fetch(url)).ok) return true; } catch { /* not up yet */ }
+  const deadline = Date.now() + seconds * 1000;
+  while (Date.now() < deadline) {
+    try { if ((await fetch(url, { signal: AbortSignal.timeout(2000) })).ok) return true; } catch { /* not up yet */ }
     await new Promise(r => setTimeout(r, 250));
   }
   return false;
@@ -139,12 +140,16 @@ function runOne(name, url, env = {}) {
 async function main() {
   mkdirSync(out, { recursive: true });
   const t0 = Date.now();
+  // WSL's curl can answer before Windows localhost forwarding is ready. The browser and Vite run on Windows.
+  await Promise.all([hermeticApi, writerApi].filter(Boolean).map(async api => {
+    if (!await answers(new URL('/api/meta', api))) throw new Error(`Windows cannot reach the scratch backend at ${api}`);
+  }));
   const urls = await serve();
   const urlOf = name => WRITERS.includes(name) ? urls.writer : SOURCE.includes(name) ? urls.source : urls[name] ?? urls.hermetic;
   const envOf = name => WRITERS.includes(name) ? { GATOR_SCRATCH_OUT: scratchOut } : {};
   const pool = chosen.filter(n => !WRITERS.includes(n)).sort((a, b) => (EXPECTED[b] ?? 10) - (EXPECTED[a] ?? 10));
   const serial = chosen.filter(n => WRITERS.includes(n));
-  console.log(`${chosen.length} checks, ${lanes} lanes (+1 for the ${serial.length} that start MOCK runs); logs in ${out}`);
+  console.log(`${chosen.length} checks, ${lanes} lanes (+1 for ${serial.length} scripts that write scratch settings or start MOCK runs); logs in ${out}`);
   for (const [name, why] of Object.entries(SKIPPED)) if (all.includes(name) && !chosen.includes(name)) console.log(`skip  ${name}: ${why}`);
   const results = [];
   const report = r => { results.push(r); console.log(`[${String(results.length).padStart(2)}/${chosen.length}] ${r.status.padEnd(7)} `

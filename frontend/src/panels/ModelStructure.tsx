@@ -14,7 +14,7 @@ const share = (value: unknown) => typeof value === 'number' ? `${(100 * value).t
 export function ModelStructure({ runDir, checkpointId, label }: { runDir: string; checkpointId: string | null; label?: string }) {
   const [open, setOpen] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
-  const { value: table, error } = useRequest<Json>(() => api.modelStructure(runDir, checkpointId!), [runDir, checkpointId],
+  const { value: table, error, refresh } = useRequest<Json>(signal => api.modelStructure(runDir, checkpointId!, signal), [runDir, checkpointId],
     { enabled: open && !!checkpointId });
 
   const totals = table?.totals;
@@ -23,7 +23,7 @@ export function ModelStructure({ runDir, checkpointId, label }: { runDir: string
     <details className="structure" open={open} onToggle={e => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary>Network structure (layers and parameter counts)</summary>
       {open && !table && !error && <p className="hint">Reading the saved tensors...</p>}
-      {error && <p className="error">The structure could not be read: {error}</p>}
+      {error && <p className="error">The structure could not be read: {error} <button onClick={refresh}>Retry read</button></p>}
       {table && <>
         <p className="hint structure-totals"><b>{n(totals.trained)} trained parameters</b> = actor {n(totals.actor)} + 2 critics x {n(totals.critic_each)} + 1 (entropy temperature).
           Also saved: 2 target copies of the critics ({n(totals.target_copies)}), which follow the critics slowly and are not trained by gradients.</p>

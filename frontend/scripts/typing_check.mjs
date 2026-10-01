@@ -37,12 +37,15 @@ await runChecks(browser, async () => {
   delete CONFIG.run.model_source;                                                  // no model chosen: the page may fill in a default
   const page = await browser.open();
   const { send, evaluate, until, consoleErrors } = page;
+  const cancelled = new Set();
+  await send('Network.enable');
+  page.on('Network.loadingFailed', p => { if (p.canceled) cancelled.add(p.requestId); });
   const refused = []; const defaultAsks = [];
   let holdValidation = false;
   await page.intercept(['*/api/*'], params => {
     const { requestId, request } = params, name = new URL(request.url).pathname;
     if (name === '/api/config/validate') {
-      if (holdValidation) { page.paused.push({ requestId, url: request.url, postData: request.postData }); return; }
+      if (holdValidation) { page.paused.push({ requestId, networkId: params.networkId, url: request.url, postData: request.postData }); return; }
       return page.fulfil(requestId, 200, VALID);
     }
     if (name === '/api/runs/default-model') { defaultAsks.push(request.url); return page.fulfil(requestId, 200, { run_dir: DEFAULT_RUN, checkpoint_id: 'latest', reason: 'FIXTURE' }); }
@@ -242,7 +245,7 @@ await runChecks(browser, async () => {
     issues: [{ level: 'error', path: 'project.name', code: 'fixture', message: 'FIXTURE: newest configuration is blocked' }] }));
   const blockedButton = `document.querySelector('header button[title^="ONE costed"]')?.disabled`;
   check('the newer validation blocks starting a run', await until(blockedButton));
-  await page.fulfil(oldValidation.requestId, 200, VALID);
+  check('the superseded validation fetch is cancelled', cancelled.has(oldValidation.networkId));
   await sleep(500);
   check('an older successful validation cannot clear the newer blocker', await evaluate(blockedButton));
   holdValidation = false;

@@ -32,7 +32,7 @@ function Cell({ record, running }: { record?: Json; running: boolean }) {
 
 export function CornerCheckTab({ runDir }: { runDir: string | null }) {
   const [designs, setDesigns] = useState(3);
-  const { value: plan, error: planError, refresh: readPlan } = useRequest<Json>(() => api.cornerPlan(runDir!, designs), [runDir, designs], { enabled: !!runDir });
+  const { value: plan, error: planError, refresh: readPlan } = useRequest<Json>(signal => api.cornerPlan(runDir!, designs, signal), [runDir, designs], { enabled: !!runDir });
   const [selected, select] = useState<{ runDir: string | null; id: string | null } | null>(null);
   const checkId = selected?.runDir === runDir ? selected?.id : null;
   const setCheckId = (id: string | null) => select({ runDir, id });
@@ -46,7 +46,7 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
     failedReads.current += 1;
     return failedReads.current < 5 ? 1500 * 2 ** failedReads.current : 0;
   }, []);
-  const { value: check, error: checkError, refresh: readCheck } = useRequest<Json>(() => api.cornerStatus(runDir!, checkId!),
+  const { value: check, error: checkError, refresh: readCheck } = useRequest<Json>(signal => api.cornerStatus(runDir!, checkId!, signal),
     [runDir, checkId], { enabled: !!runDir && !!checkId, pollEvery: pollCheck });
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<Json>(null);

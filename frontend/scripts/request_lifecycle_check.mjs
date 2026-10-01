@@ -26,12 +26,30 @@ try {
   check('next slow poll also stays single', await page.evaluate(`${pending('status', 'A')} === 1`));
   await select('run', 'B');
   check('run switch hides old status before new response', await page.until(`${state}.value === null`));
+  check('run switch cancels the old transport', await page.evaluate("fixture.pending.find(p => !p.done && p.kind === 'status' && p.run === 'A').signal.aborted"));
   await wait('status', 'B');
   await resolve('status', 'B', status('B', 'completed'));
   await resolve('status', 'A', status('A'));
   check('late old-run response cannot replace new status', await page.until(`${state}.value?.run_dir === 'B' && ${state}.value.state === 'completed'`));
   await select('interval', '60000');
   check('changing polling interval keeps same-run status', await page.evaluate(`${state}.value?.run_dir === 'B'`));
+  await wait('status', 'B');
+  const held = await page.evaluate("fixture.pending.filter(p => p.kind === 'status' && p.run === 'B').length");
+  await page.evaluate("document.querySelector('#refresh').click()");
+  check('Refresh replaces a hung read for the same run', await page.until(`fixture.pending.filter(p => p.kind === 'status' && p.run === 'B').length === ${held + 1}`));
+  check('replaced read receives cancellation', await page.evaluate("fixture.pending.filter(p => !p.done && p.kind === 'status' && p.run === 'B')[0].signal.aborted"));
+  await page.evaluate(`(() => { const p = fixture.pending.filter(p => !p.done && p.kind === 'status' && p.run === 'B').at(-1); p.done = true; p.resolve(${JSON.stringify(status('B', 'paused'))}); })()`);
+  await resolve('status', 'B', status('B', 'failed'));
+  check('late same-run reply cannot replace the refreshed answer', await page.until(`${state}.value?.state === 'paused'`));
+
+  await select('timeout', '120');
+  check('a hung read has a deadline and leaves loading', await page.until(`${state}.error?.includes('timed out') && !${state}.loading`));
+  check('deadline aborts the underlying read', await page.evaluate("fixture.pending.filter(p => p.kind === 'status').at(-1).signal.aborted"));
+  await page.evaluate("fixture.pending.filter(p => !p.done && p.kind === 'status').forEach(p => { p.done = true; p.resolve(null); })");
+  await select('timeout', '30000');
+  await wait('status', 'B');
+  await resolve('status', 'B', status('B', 'completed'));
+  check('a new read recovers after timeout', await page.until(`${state}.value?.state === 'completed' && ${state}.error === null`));
 
   await select('tab', 'data');
   await wait('evaluations', 'B');
@@ -73,6 +91,13 @@ try {
   await wait('status', 'A');
   await page.evaluate(`fixture.finish('status', 'A', null, true)`);
   check('failed new status leaves controls unavailable', await page.until(`${state}.error === 'FIXTURE read failed' && !${exportButton}`));
+  await select('tab', 'logs'); await wait('events', 'A');
+  await page.evaluate(`fixture.finish('events', 'A', null, true)`);
+  check('failed log read is visible for a resting run', await page.until(`${panel}.includes('FIXTURE read failed') && ${panel}.includes('Retry read')`));
+  await page.evaluate(`[...document.querySelectorAll('#panel button')].find(b => b.textContent === 'Retry read').click()`);
+  await wait('events', 'A');
+  await resolve('events', 'A', { kind: 'events', entries: [{ event: 'FIXTURE recovered log' }] });
+  check('log retry recovers without changing the run', await page.until(`${panel}.includes('FIXTURE recovered log') && !${panel}.includes('FIXTURE read failed')`));
   check('no browser exceptions', page.consoleErrors.length === 0, JSON.stringify(page.consoleErrors));
 } catch (error) { fail(error); } finally { await browser.close(); }
 finish();

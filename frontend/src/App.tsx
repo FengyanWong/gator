@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { api, ApiError, Json, NO_ANSWER, plainError } from './api';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { api, ApiError, Json, NO_ANSWER, plainError, saveJson } from './api';
 import { useConfig, usePolling, useRequest } from './store';
 import { CircuitPanel } from './panels/Left';
 import { ConnectionButton } from './panels/Connection';
@@ -44,6 +44,7 @@ export function App() {
   const [runDir, setRunDir] = useState<string | null>(() => { try { return localStorage.getItem('gator-workbench-current-run-v1') || null; } catch { return null; } });
   const [tab, setTab] = useState<BottomTab>('status');
   const [agentRequest, setAgentRequest] = useState<{ kind: string; selection: Json[]; prompt?: string } | null>(null);
+  const requestAgent = useCallback((kind: string, selection: Json[], prompt?: string) => { setAgentRequest({ kind, selection, prompt }); setTab('agent'); }, []);
   const [agentTabSlot, setAgentTabSlot] = useState<HTMLElement | null>(null);      // on the tab itself: where AgentTab puts its pop-out control
   const [taskSlot, setTaskSlot] = useState<HTMLElement | null>(null);              // editors' tab line: where the circuit panel puts "Save task"
   const [taskNotes, setTaskNotes] = useState<HTMLElement | null>(null);            // under the editors' toolbar: its messages and questions
@@ -74,8 +75,11 @@ export function App() {
   // Debounce validation and ignore replies for a configuration that has since changed. `sent`: the configuration the
   // report is about - its row paths (targets[3]) name rows of THAT configuration, which Delete, Undo or Import may have
   // moved by the time it is drawn (the editors check the row before they mark it).
-  const { value: validation } = useRequest<Json>(() => api.validate(config).catch(rejected).then(v => ({ ...v, sent: config })), [JSON.stringify(config)],
+  const configKey = useMemo(() => JSON.stringify(config), [config]);
+  const validationRead = useRequest<Json>(signal => api.validate(config, signal).catch(rejected).then(v => ({ ...v, sent: config })), [configKey],
     { delay: 500, keepPrevious: true });
+  const validation = useMemo(() => validationRead.error ? { blocks_run: true, issues: [{ level: 'error', code: 'no_answer', path: '', message: validationRead.error }], facts: {} }
+    : validationRead.value, [validationRead.value, validationRead.error]);
 
   // How often the run shown is read: see the effect after useRunControl below.
   const [statusEvery, setStatusEvery] = useState(1500);
@@ -85,11 +89,11 @@ export function App() {
   // and one 404 of a run that is there must not take it off the page.
   const gone = useRef(0);
   useEffect(() => { gone.current = 0; }, [runDir]);
-  const readStatus = (dir: string) => api.status(dir).then(value => { gone.current = 0; return value; }, e => {
+  const readStatus = (dir: string, signal: AbortSignal) => api.status(dir, signal).then(value => { gone.current = 0; return value; }, e => {
     if (e instanceof ApiError && (e.status === 403 || e.status === 404) && ++gone.current >= 2) setRunDir(shown => (shown === dir ? null : shown));
     throw e;
   });
-  const { value: polledStatus, error: statusError } = usePolling(() => readStatus(runDir!), statusEvery, !!runDir, [runDir]);
+  const { value: polledStatus, error: statusError } = usePolling(signal => readStatus(runDir!, signal), statusEvery, !!runDir, [runDir]);
   const status = polledStatus?.run_dir === runDir ? polledStatus : null;
   const isReal = circuit?.loaded && circuit.mock === false;
   // The run the header buttons act on (Start -> Pause -> Resume, Abort). It is not the run the bottom tabs show.
@@ -191,6 +195,10 @@ export function App() {
         {/* The hand-edited settings.json is not valid JSON: the backend works on defaults and leaves the file alone. Said on a
             line of its own under the header, as /api/meta said it when the page opened - never hidden, not dismissable. */}
         {meta?.settings_problem && <p className="settings-problem warn">{meta.settings_problem}</p>}
+        {store.saveError && <div className="settings-problem persistence-problem error" role="alert">
+          <span>{store.saveError}</span><button onClick={store.retrySave}>Retry save</button>
+          <button onClick={() => saveJson(`${config.project.task_name || 'configuration'}.json`, config)}>Export JSON</button>
+        </div>}
         <span className="spacer" />
         <ValidationStatus validation={validation} config={config} schema={schema} />
         <button disabled={!!validation?.blocks_run || control.phase !== 'idle'} onClick={() => start(true)}
@@ -206,12 +214,12 @@ export function App() {
       <aside className="left">
         <ConnectionButton profileId={profileId} setProfileId={(id, record) => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }), record)} />
         <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId}
-          onAgent={(kind, selection, prompt) => { setAgentRequest({ kind, selection, prompt }); setTab('agent'); }} taskSlot={taskSlot} taskNotes={taskNotes}
+          onAgent={requestAgent} taskSlot={taskSlot} taskNotes={taskNotes}
           taskEpoch={taskEpoch} />
       </aside>
       <main>
         <Editors schema={schema} config={config} setConfig={setConfig} undo={store.undo} redo={store.redo} canUndo={store.canUndo} canRedo={store.canRedo}
-          validation={validation} onAgent={(kind, selection) => { setAgentRequest({ kind, selection }); setTab('agent'); }} taskSlot={setTaskSlot} taskNotes={setTaskNotes} />
+          validation={validation} onAgent={requestAgent} taskSlot={setTaskSlot} taskNotes={setTaskNotes} />
       </main>
       <aside className="right">
         <RunPanel schema={schema.json_schema} config={config} setConfig={setConfig} runs={runs} circuit={circuit} />

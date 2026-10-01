@@ -10,13 +10,38 @@ export class ApiError extends Error {
   }
 }
 
-async function call(method: string, url: string, body?: Json): Promise<Json> {
-  const response = await fetch(url, {
-    method,
+/** Bound reads even when a callback ignores cancellation. The fetch signal also releases the browser connection.
+ *  Writes and streamed agent work have their own lifecycle and are never retried by this helper. */
+export async function readWithDeadline<T>(read: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal, timeoutMs = 30000): Promise<T> {
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal?.reason);
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) abort();
+  const timer = setTimeout(() => controller.abort(new Error('The read timed out. Check the backend connection and retry.')), timeoutMs);
+  let rejectOnAbort: () => void = () => {};
+  try {
+    return await Promise.race([
+      new Promise<never>((_, reject) => {
+        rejectOnAbort = () => reject(controller.signal.reason);
+        if (controller.signal.aborted) rejectOnAbort(); else controller.signal.addEventListener('abort', rejectOnAbort, { once: true });
+      }),
+      Promise.resolve().then(() => { controller.signal.throwIfAborted(); return read(controller.signal); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
+    controller.signal.removeEventListener('abort', rejectOnAbort);
+  }
+}
+
+async function call(method: string, url: string, body?: Json, signal?: AbortSignal): Promise<Json> {
+  const request = async (readSignal?: AbortSignal) => answer(await fetch(url, {
+    method, signal: readSignal,
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  return answer(response);
+  }));
+  // Hooks already supply a deadline-bound signal. Direct GETs (including shared cached reads) need one here too.
+  return method === 'GET' && !signal ? readWithDeadline(request) : request(signal);
 }
 
 async function answer(response: Response): Promise<Json> {
@@ -85,12 +110,12 @@ export const api = {
   taskFile: (body: Json) => call('POST', '/api/virtuoso/task/file', body),
   taskFileCheck: (text: string) => call('POST', '/api/virtuoso/task/file/check', { text }),
   taskCheck: (profile_id: string | null, config: Json) => call('POST', '/api/virtuoso/task/check', { profile_id, config }),
-  validate: (config: Json) => call('POST', '/api/config/validate', { config }),
+  validate: (config: Json, signal?: AbortSignal) => call('POST', '/api/config/validate', { config }, signal),
   diff: (before: Json, after: Json) => call('POST', '/api/config/diff', { before, after }),
   // Matched devices... (Parameters tab, record 7.103): the circuit's structures and the ties they suggest; with `apply`, the rows with those made.
   matchedDevices: (config: Json, apply: string[] | null = null) => call('POST', '/api/parameters/matched', { config, apply }),
   browse: (path?: string) => call('GET', '/api/output/browse' + q({ path })),
-  checkOutput: (path: string, create = false) => call('POST', '/api/output/check', { path, create }),
+  checkOutput: (path: string, create = false, signal?: AbortSignal) => call('POST', '/api/output/check', { path, create }, signal),
   connectionProfiles: () => call('GET', '/api/connection/profiles'),
   connectionStatus: (profile_id: string) => call('GET', '/api/connection/status' + q({ profile_id })),
   connectionCheck: (profile_id: string, scope: string, trigger = 'user') => call('POST', '/api/connection/check', { profile_id, scope, trigger }),
@@ -99,26 +124,26 @@ export const api = {
   connectionCreateProfile: (body: Json) => call('POST', '/api/connection/profile', body),
   connectionConnect: (profile_id: string) => call('POST', '/api/connection/connect', { profile_id }),
   runs: (output_root?: string) => call('GET', '/api/runs' + q({ output_root })),
-  model: (run_dir: string, checkpoint_id: string, config?: Json) => call('POST', '/api/runs/model', { run_dir, checkpoint_id, config }),
+  model: (run_dir: string, checkpoint_id: string, config?: Json, signal?: AbortSignal) => call('POST', '/api/runs/model', { run_dir, checkpoint_id, config }, signal),
   defaultModel: (project: string) => call('GET', '/api/runs/default-model' + q({ project })),
-  savedModels: (output_root?: string) => call('GET', '/api/runs/models' + q({ output_root })),
-  modelStructure: (run_dir: string, checkpoint_id: string) => call('POST', '/api/runs/model/structure', { run_dir, checkpoint_id }),
+  savedModels: (output_root?: string, signal?: AbortSignal) => call('GET', '/api/runs/models' + q({ output_root }), undefined, signal),
+  modelStructure: (run_dir: string, checkpoint_id: string, signal?: AbortSignal) => call('POST', '/api/runs/model/structure', { run_dir, checkpoint_id }, signal),
   modelGraphView: (run_dir: string, checkpoint_id: string, evaluation: number | null) => call('POST', '/api/runs/model/graph-view', { run_dir, checkpoint_id, evaluation }),
   start: (body: Json) => call('POST', '/api/runs/start', body),
   continueRun: (body: Json) => call('POST', '/api/runs/continue', body),
   command: (run_dir: string, command: string) => call('POST', '/api/runs/command', { run_dir, command }),
-  status: (run_dir: string) => call('GET', '/api/runs/status' + q({ run_dir })),
-  files: (run_dir: string) => call('GET', '/api/runs/files' + q({ run_dir })),
-  table: (run_dir: string, table: string, limit = 25) => call('GET', '/api/runs/table' + q({ run_dir, table, limit })),
-  logs: (run_dir: string, kind: string) => call('GET', '/api/runs/logs' + q({ run_dir, kind, limit: 200 })),
+  status: (run_dir: string, signal?: AbortSignal) => call('GET', '/api/runs/status' + q({ run_dir }), undefined, signal),
+  files: (run_dir: string, signal?: AbortSignal) => call('GET', '/api/runs/files' + q({ run_dir }), undefined, signal),
+  table: (run_dir: string, table: string, limit = 25, signal?: AbortSignal) => call('GET', '/api/runs/table' + q({ run_dir, table, limit }), undefined, signal),
+  logs: (run_dir: string, kind: string, signal?: AbortSignal) => call('GET', '/api/runs/logs' + q({ run_dir, kind, limit: 200 }), undefined, signal),
   exportCsv: (run_dir: string, table: string) => call('POST', '/api/runs/export-csv', { run_dir, table }),
   exportAggregates: (run_dir: string) => call('POST', '/api/aggregates/export', { run_dir }),
   downloadUrl: (run_dir: string, path: string) => '/api/runs/download' + q({ run_dir, path }),
   aggregatesUrl: (run_dir: string) => '/api/aggregates/download' + q({ run_dir }),          // the experiment's research CSVs, one zip
   // Corner check (backend corner_check.py): the plan is free; start asks for the real budget through launchWithConsent.
-  cornerPlan: (run_dir: string, designs?: number) => call('GET', '/api/runs/corner-check/plan' + q({ run_dir, designs })),
+  cornerPlan: (run_dir: string, designs?: number, signal?: AbortSignal) => call('GET', '/api/runs/corner-check/plan' + q({ run_dir, designs }), undefined, signal),
   cornerStart: (body: Json) => call('POST', '/api/runs/corner-check/start', body),
-  cornerStatus: (run_dir: string, check_id: string) => call('GET', '/api/runs/corner-check/status' + q({ run_dir, check_id })),
+  cornerStatus: (run_dir: string, check_id: string, signal?: AbortSignal) => call('GET', '/api/runs/corner-check/status' + q({ run_dir, check_id }), undefined, signal),
   cornerStop: (run_dir: string, check_id: string) => call('POST', '/api/runs/corner-check/stop', { run_dir, check_id }),
   agentSettings: () => call('GET', '/api/agent/settings'),
   llmThread: (run_dir: string) => call('GET', `/api/runs/llm-thread?run_dir=${encodeURIComponent(run_dir)}`),

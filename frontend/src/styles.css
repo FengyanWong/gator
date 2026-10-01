@@ -263,3 +263,21 @@ table.corner-checks tr { cursor: default; } table.corner-checks tr.current > td 
 .agent.detached .agent-main:has(> .sizing-thread) { grid-template-rows: auto minmax(0, 1fr) minmax(30vh, 1fr) auto; grid-template-areas: 'using using' 'thread notes' 'chat notes' 'compose notes'; }
 .sizing-thread { grid-area: thread; min-height: 0; overflow: auto; border: 1px solid var(--line); padding: 4px 8px; }
 .sizing-thread h3 { margin-top: 2px; }
+.persistence-problem { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.persistence-problem > span { flex: 1 1 300px; }
+/* Keep the editors usable when the two fixed side columns would consume the viewport. */
+@media (max-width: 1100px) {
+  .layout { height: auto; min-height: 100%; grid-template: 'head head' auto 'msg msg' auto 'left right' minmax(240px, 45vh) 'main main' minmax(360px, 60vh) 'foot foot' minmax(420px, 65vh) / minmax(0, 1fr) minmax(0, 1fr); }
+  .left, .right, footer, header { min-width: 0; }
+  footer > .tabs { flex-wrap: wrap; }
+  .agent:not(.detached) { height: auto; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; }
+  .agent:not(.detached) .agent-side { max-height: 240px; }
+  .agent:not(.detached) .agent-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 180px auto; grid-template-areas: 'using' 'chat' 'compose'; }
+  .agent:not(.detached) .agent-main:has(> .sizing-thread) { grid-template-rows: auto 180px 180px auto; grid-template-areas: 'using' 'thread' 'chat' 'compose'; }
+  .agent-using { flex-wrap: wrap; }
+  .compose-main textarea { min-height: 100px; }
+}
+@media (max-width: 700px) {
+  .layout { grid-template: 'head' auto 'msg' auto 'left' minmax(240px, 45vh) 'main' minmax(360px, 60vh) 'right' minmax(240px, 45vh) 'foot' minmax(420px, 65vh) / minmax(0, 1fr); }
+  .agent:not(.detached) .compose { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 140px; }
+}

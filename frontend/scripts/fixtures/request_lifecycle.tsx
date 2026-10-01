@@ -2,16 +2,18 @@
 import { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { api } from '../../src/api';
-import { usePolling } from '../../src/store';
-import { DataTab, FilesTab, StatusTab } from '../../src/panels/RunTabs';
+import { useRequest } from '../../src/store';
+import { DataTab, FilesTab, LogsTab, StatusTab } from '../../src/panels/RunTabs';
 
 const pending: any[] = [], downloads: string[] = [];
-function read(kind: string, run: string) {
-  return new Promise((resolve, reject) => pending.push({ kind, run, done: false, resolve, reject }));
+function read(kind: string, run: string, signal?: AbortSignal) {
+  // Ignore abort deliberately: tests can deliver stale replies even after the transport was cancelled.
+  return new Promise((resolve, reject) => pending.push({ kind, run, signal, done: false, resolve, reject }));
 }
-api.status = run => read('status', run);
-api.table = (run, table) => read(table, run);
-api.files = run => read('files', run);
+api.status = (run, signal) => read('status', run, signal);
+api.table = (run, table, _limit, signal) => read(table, run, signal);
+api.files = (run, signal) => read('files', run, signal);
+api.logs = (run, kind, signal) => read(kind, run, signal);
 // The Run status tab's one action that names a run is "Export status", which saves through a link's click: the name is
 // kept here instead of downloaded (its run commands went on 2026-09-29; they are the header's).
 HTMLAnchorElement.prototype.click = function () { downloads.push(this.download); };
@@ -25,17 +27,19 @@ HTMLAnchorElement.prototype.click = function () { downloads.push(this.download);
   }
 };
 
-function Poll({ run, interval, controls }: { run: string; interval: number; controls: boolean }) {
-  const result = usePolling(() => api.status(run), interval, true, [run]);
-  return <><pre id="result">{JSON.stringify(result)}</pre>{controls && <StatusTab status={result.value} onContinue={() => {}} />}</>;
+function Poll({ run, interval, timeout, controls }: { run: string; interval: number; timeout: number; controls: boolean }) {
+  const result = useRequest(signal => api.status(run, signal), [run], { pollEvery: interval, timeoutMs: timeout });
+  return <><button id="refresh" onClick={result.refresh}>Refresh</button><pre id="result">{JSON.stringify(result)}</pre>{controls && <StatusTab status={result.value} onContinue={() => {}} />}</>;
 }
 
 function Fixture() {
   const [run, setRun] = useState('A'), [tab, setTab] = useState('poll'), [interval, setInterval] = useState(50);
+  const [timeout, setTimeoutMs] = useState(30000);
   return <><select id="run" value={run} onChange={e => setRun(e.target.value)}><option>A</option><option>B</option></select>
-    <select id="tab" value={tab} onChange={e => setTab(e.target.value)}>{['poll', 'data', 'files', 'status'].map(t => <option key={t}>{t}</option>)}</select>
+    <select id="tab" value={tab} onChange={e => setTab(e.target.value)}>{['poll', 'data', 'files', 'status', 'logs'].map(t => <option key={t}>{t}</option>)}</select>
     <input id="interval" type="number" value={interval} onChange={e => setInterval(Number(e.target.value))} />
-    <div id="panel">{tab === 'data' ? <DataTab runDir={run} /> : tab === 'files' ? <FilesTab runDir={run} />
-      : <Poll run={run} interval={interval} controls={tab === 'status'} />}</div></>;
+    <input id="timeout" type="number" value={timeout} onChange={e => setTimeoutMs(Number(e.target.value))} />
+    <div id="panel">{tab === 'data' ? <DataTab runDir={run} /> : tab === 'files' ? <FilesTab runDir={run} /> : tab === 'logs' ? <LogsTab runDir={run} alive={false} />
+      : <Poll run={run} interval={interval} timeout={timeout} controls={tab === 'status'} />}</div></>;
 }
 createRoot(document.getElementById('root')!).render(<StrictMode><Fixture /></StrictMode>);

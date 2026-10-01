@@ -137,7 +137,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   // Only a Mode that loads the model asks about it: a model_source left over from fine_tune is ignored in scratch, and
   // was compiled and checked after every edit there all the same (audit 2026-09-30).
   const modelChecked = run.mode !== 'scratch' && !!source.run_dir && !llmOnly;
-  const { value: fresh, error, loading: modelLoading } = useRequest<Json>(() => api.model(source.run_dir, source.checkpoint_id ?? 'latest', config),
+  const { value: fresh, error, loading: modelLoading } = useRequest<Json>(signal => api.model(source.run_dir, source.checkpoint_id ?? 'latest', config, signal),
     [JSON.stringify([config.circuit, config.parameters, config.targets, config.measurements, run.mode, source,
       run.connection_profile_id, run.seed, run.network, run.advanced, run.reward, run.conditions, config.research?.split])],
     { enabled: modelChecked, delay: 250 });
@@ -166,10 +166,18 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const [netSettings, setNetSettings] = useState<Json>(null);
   const [netMessage, setNetMessage] = useState<{ level: string; text: string } | null>(null);
   const pending = useRef<{ encoder: string; body: Json } | null>(null);
+  const netRevision = useRef(0);
+  const writing = useRef<Promise<void>>(Promise.resolve());
   const timer = useRef<number | undefined>(undefined);
   const netFields: string[] = netSettings?.network_fields ?? NETWORK_FIELDS;
   const advFields: string[] = netSettings?.advanced_fields ?? ADVANCED_ROWS.flat().map(([name]) => name);
   const encoder: string = net.encoder_type ?? netSettings?.default_encoder ?? 'graph_transformer';
+  const currentNetwork = useRef({ encoder, mode: run.mode, net, adv });
+  currentNetwork.current = { encoder, mode: run.mode, net, adv };
+  const networkKey = (mode: string, network: Json, advanced: Json) => JSON.stringify([mode, network, advanced]);
+  const currentReply = (revision: number, name: string, expected?: string) => netRevision.current === revision
+    && currentNetwork.current.encoder === name && currentNetwork.current.mode === run.mode
+    && (expected === undefined || expected === networkKey(currentNetwork.current.mode, currentNetwork.current.net, currentNetwork.current.adv));
   const entry: Json = netSettings?.settings?.[encoder] ?? null;
   const offeredEncoders: string[] = netSettings?.encoders ?? ['graph_transformer', 'rgcn', 'gatv2'];
   const usesHeads: boolean = entry ? !!entry.uses_heads : ['graph_transformer', 'gatv2'].includes(encoder);
@@ -188,10 +196,12 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const flush = (): Promise<void> => {
     window.clearTimeout(timer.current);
     const job = pending.current; pending.current = null;
-    if (!job) return Promise.resolve();
-    return api.saveNetworkSettings(job.encoder, job.body)
-      .then(e => { remember(e); setNetMessage({ level: 'ok', text: `Saved in the backend as the ${e.encoder_type} setting.` }); })
-      .catch(e => setNetMessage({ level: 'error', text: `Not saved in the backend: ${e.message}` }));
+    if (!job) return writing.current;
+    const revision = netRevision.current;
+    writing.current = writing.current.then(() => api.saveNetworkSettings(job.encoder, job.body))
+      .then(e => { remember(e); if (currentReply(revision, job.encoder)) setNetMessage({ level: 'ok', text: `Saved in the backend as the ${e.encoder_type} setting.` }); })
+      .catch(e => { if (currentReply(revision, job.encoder)) setNetMessage({ level: 'error', text: `Not saved in the backend: ${e.message}` }); });
+    return writing.current;
   };
   const queueSave = (network: Json, advanced: Json) => {
     // The complete value set is sent, so hidden and heads are judged together (one at a time could never pass).
@@ -199,31 +209,41 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(flush, 700);
   };
-  const editNet = (fields: Json) => { setNet(fields); queueSave({ ...net, ...fields }, adv); };
+  const editNet = (fields: Json) => { ++netRevision.current; setNet(fields); queueSave({ ...net, ...fields }, adv); };
   // While a saved model is loaded, `net` is THAT model's network (see `loads` below): an Advanced edit then keeps the
   // sizes already stored for the encoder instead of storing the loaded model's sizes as the setting for new networks.
-  const editAdv = (fields: Json) => { setAdv(fields); queueSave(run.mode !== 'scratch' && entry ? entry.network : net, { ...adv, ...fields }); };
+  const editAdv = (fields: Json) => { ++netRevision.current; setAdv(fields); queueSave(run.mode !== 'scratch' && entry ? entry.network : net, { ...adv, ...fields }); };
   const chooseEncoder = (name: string) => {
+    const revision = ++netRevision.current;
     setNetMessage(null);
     const cached = netSettings?.settings?.[name];
+    // Undo or Import can change these values without going through editNet/editAdv.
+    const expected = networkKey(run.mode, cached ? { ...keepList(net), encoder_type: name, ...cached.network } : { ...net, encoder_type: name },
+      cached ? { ...adv, ...cached.advanced } : adv);
     if (cached) applyEntry(cached); else setNet({ encoder_type: name });
     // An unsaved edit still belongs to the previous encoder; then read the backend again (another tab may have changed it).
     flush().then(() => api.networkSettings()).then(s => {
+      if (!currentReply(revision, name, expected)) return;
       setNetSettings(s);
       const fresh = s.settings?.[name];
       if (fresh && JSON.stringify([fresh.network, fresh.advanced]) !== JSON.stringify([cached?.network, cached?.advanced])) applyEntry(fresh, false);
     }).catch(() => undefined);
   };
   const reset = (to: string) => {
+    const revision = ++netRevision.current;
+    const expected = networkKey(run.mode, net, adv);
     pending.current = null; window.clearTimeout(timer.current);
-    api.resetNetworkSettings(encoder, to).then(e => {
+    writing.current = writing.current.then(() => api.resetNetworkSettings(encoder, to)).then(e => {
+      if (!currentReply(revision, encoder, expected)) return;
       remember(e); applyEntry(e);
       setNetMessage({ level: 'ok', text: to === 'publication' ? `${encoder}: publication preset restored in the backend.` : `${encoder}: GATOR baseline stored in the backend.` });
-    }).catch(e => setNetMessage({ level: 'error', text: e.message }));
+    }).catch(e => { if (currentReply(revision, encoder)) setNetMessage({ level: 'error', text: e.message }); });
   };
   useEffect(() => {
-    api.networkSettings().then(setNetSettings).catch(e => setNetMessage({ level: 'error', text: `Backend network settings unavailable (${e.message}).` }));
-    return () => { flush(); };
+    const revision = ++netRevision.current;
+    api.networkSettings().then(s => { if (netRevision.current === revision) setNetSettings(s); })
+      .catch(e => { if (netRevision.current === revision) setNetMessage({ level: 'error', text: `Backend network settings unavailable (${e.message}).` }); });
+    return () => { ++netRevision.current; flush(); };
   }, []);
   // A configuration that leaves a value out would silently run the schema default. Fill it from the backend instead.
   useEffect(() => {
@@ -449,7 +469,7 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
   const locked = !!activeRun?.worker_alive;
   // The root is looked at 0.5 s after the last keystroke, and an answer for text typed before is dropped (useRequest): each
   // look walks the folder for its size, and whichever answer came last used to win, a half-typed path's too.
-  const { value: looked } = useRequest<Json>(() => api.checkOutput(root), [root], { enabled: !!root, delay: 500 });
+  const { value: looked, error: lookError, refresh: retryLook } = useRequest<Json>(signal => api.checkOutput(root, false, signal), [root], { enabled: !!root, delay: 500 });
   const [tested, setTested] = useState<{ root: string; value: Json } | null>(null);     // "Test writability", for the root it was pressed for
   useEffect(() => setTested(null), [root]);                                             // another root: its own look replaces it, as before
   const check: Json = tested && tested.root === root ? tested.value : looked;
@@ -483,6 +503,7 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
       <div className="row"><button disabled={locked} onClick={() => ask(() => api.browse(), setBrowse)}>Browse allowed roots...</button>
         <button onClick={() => { const at = root; if (at) ask(() => api.checkOutput(at, true), value => setTested({ root: at, value })); }}>Test writability</button></div>
       {problem && <p className="error">{problem}</p>}
+      {!tested && lookError && <p className="error">{lookError} <button onClick={retryLook}>Retry read</button></p>}
       {locked && <p className="hint">The run directory is locked while a run is active. A resumed run writes back to its original directory.</p>}
       {browse && <ul className="tree">{browse.parent && <li onClick={() => ask(() => api.browse(browse.parent), setBrowse)}>..</li>}
         {browse.entries.map((e: Json) => <li key={e.path}><span onClick={() => ask(() => api.browse(e.path), setBrowse)}>{e.name}</span> <button onClick={() => { set({ output_root: e.path }); setBrowse(null); }}>select</button></li>)}</ul>}

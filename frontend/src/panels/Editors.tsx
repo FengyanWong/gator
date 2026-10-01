@@ -1,5 +1,5 @@
 import { Icon } from './Icons';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { api, Json, saveJson } from '../api';
 import { migrateConfig } from '../store';
 import { Typed } from './Typed';
@@ -99,7 +99,7 @@ export function DiffView({ diff }: { diff: Json[] }) {
  *  the toolbar) - the save sits with the rows it stores (user request 2026-09-22). No "Save" button of its own any more:
  *  the configuration is kept in this browser by itself (store.ts, 0.8 s after each change), and a second "Save" next to
  *  "Save task" only confused. */
-export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRedo, validation, onAgent, taskSlot, taskNotes }:
+function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, validation, onAgent, taskSlot, taskNotes }:
   { schema: Json; config: Json; setConfig: (c: Json | ((c: Json) => Json)) => void; undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean;
     validation: Json; onAgent: (kind: string, selection: Json[]) => void;
     taskSlot: (element: HTMLElement | null) => void; taskNotes: (element: HTMLElement | null) => void }) {
@@ -131,11 +131,19 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
   const keyField: string = schema.section_keys[tab];
   const rows: Json[] = config[tab] ?? [];
   const issues = useMemo(() => (validation?.issues ?? []).filter((i: Json) => i.path.startsWith(tab)), [validation, tab]);
+  const issuesByRow = useMemo(() => {
+    const grouped = new Map<number, Json[]>();
+    for (const issue of issues) {
+      const match = /^\[(\d+)\]/.exec(issue.path.slice(tab.length));
+      if (match) { const index = Number(match[1]), row = grouped.get(index) ?? []; row.push(issue); grouped.set(index, row); }
+    }
+    return grouped;
+  }, [issues, tab]);
   // The report's row paths (targets[3]) name rows of the configuration it was made for (`sent`, App.tsx). After Delete,
   // Undo or an import moved the rows, an issue is drawn only on the row it was found for, until the new report comes.
   const reported: Json[] | null = validation?.sent?.[tab] ?? null;
   const rowIssues = (index: number) => reported && reported[index]?.[keyField] !== rows[index]?.[keyField] ? []
-    : issues.filter((i: Json) => i.path.startsWith(`${tab}[${index}]`));
+    : issuesByRow.get(index) ?? [];
   // Ticks of rows that are gone (Delete, Undo, an import) go with them: a new row given a freed ID came already ticked.
   useEffect(() => setSelected(s => {
     const ids = new Set(rows.map(r => r[keyField]));
@@ -260,3 +268,6 @@ export function Editors({ schema, config, setConfig, undo, redo, canUndo, canRed
     </section>
   );
 }
+
+// Run-status ticks and bottom-tab switches do not change the editor's inputs.
+export const Editors = memo(EditorsView);

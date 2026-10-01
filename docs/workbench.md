@@ -1010,6 +1010,10 @@ Modes), so the configuration takes the network of the chosen model by itself and
 from elsewhere while a model is loaded (an imported configuration, an applied agent suggestion) is taken back too,
 and the panel says so. Back in `scratch` the block returns and shows the network that was last in use.
 
+Choosing an encoder loads its remembered settings. A delayed reply or preset reset only changes the configuration
+while that choice and its network values are still current; later choices, edits, Undo and imports take precedence.
+Preference writes and resets are ordered so an older save cannot overwrite a newer reset (record 7.130).
+
 ### Network structure of a saved model (added 2026-09-21, user request)
 
 Under the facts of the chosen model, the fold-out **Network structure** shows what the saved network consists of -
@@ -1326,6 +1330,9 @@ toolbar. "Delete task" (was: Delete profile) stayed at the end of the task's blo
 own **Save** button went at the same
 time: it kept the configuration in the browser, which the page already does by itself 0.8 s after every change (and,
 since 7.125, when the page is closed or reloaded sooner), and a second "Save" beside "Save task" only confused.
+If browser storage is full or blocked, a persistent header warning offers **Retry save** and **Export JSON** for the
+current in-memory configuration. Failed writes remain unsaved, including for the page-close retry. A successful write
+clears the warning; page-close saving still avoids replacing another tab's stored configuration (record 7.130).
 
 **What Save task does.** It reads from the Probes how the task measures: all Maestro outputs (`ade_output`) = measured
 by Maestro; all results of one circuit type (`backend_profile`, e.g. what the testbench brought) = that type - the
@@ -1713,6 +1720,10 @@ The user chose all four groups of `artifacts/local/reviews/frontend-audit-2026-0
 Browser checks added: run_control (the real-run question), llm_sizing (the message box keeps its room),
 spec_equations (one Undo per typed value, an edit before a reload, a long import, a foreign JSON file).
 
+**Narrow windows (record 7.130).** At widths of 1,100 px or less the settings columns sit above full-width editors;
+at 700 px or less they stack around the editors. The page scrolls vertically, tables keep their own horizontal scroll,
+and the Agent conversation and message box stack with usable heights instead of squeezing the editor to zero width.
+
 **Review fixes (record 7.131).** A new AI run's sizing thread appears in the open Agent tab once its search starts, and
 a refused hint stays said until the next press. Continue waits while the header starts or resumes a run. In scratch no
 Mode suggestion is left over from an earlier model check. A Specs row without a constraint reads "(not set)". Choosing
@@ -1737,10 +1748,22 @@ Shared async actions and stale-response handling live in `store.ts`. Ordinary ad
 one descriptor list and defaults from the backend schema; byte units and checkpoint intervals retain their
 specialized controls. The Agent tab stays mounted when another tab is selected.
 
+Reads managed by `useRequest` and direct JSON GETs have a 30-second deadline. Changing a selection, disabling a read
+or leaving its view cancels the hook's owned transport; shared cached reads keep their own bounded lifetime.
+Refresh replaces an outstanding hook read. Polling still allows one read at a
+time and interval changes retain the current result and outstanding request. Late replies from callbacks that ignore
+cancellation are discarded too. Writes and streaming agent responses keep their own lifecycle and are not retried by
+this mechanism. Log, output-folder and model-structure read errors offer a retry; failed validation blocks starting.
+
+The configuration validation key is serialized only when the configuration changes. The editors skip renders when
+their inputs are unchanged, and validation issues are grouped once by row rather than filtered for every row (7.130).
+
 Tests share fake CLI installation and isolated HTTP servers in `tests/workbench/helpers.py`, plus controlled
 browser input, passing validation replies, and optional connection fixtures in `frontend/scripts/lib/harness.mjs`.
 `frontend/scripts/request_lifecycle_check.mjs` runs against a Vite source preview with controlled in-memory replies
-and React StrictMode; it checks slow polls, reversed replies, run/table changes and command identity.
+and React StrictMode; it checks slow polls, reversed replies, cancellation, deadlines, hung-read replacement, retries,
+run/table changes and export identity. `reliability_check.mjs` covers failed browser persistence and recovery, unsaved
+JSON export, encoder selection/reset races, Undo during reset, narrow layouts and redundant serialization.
 `tests/workbench/test_wb_read_efficiency.py` covers tail-read bounds, excluded directories, archive cleanup and
 display-cache invalidation separately from execution integrity checks.
 
@@ -1758,6 +1781,7 @@ bash frontend/scripts/run_checks.sh
 
 What it does:
 - It starts two scratch backends with empty temporary settings folders; it never touches the backend on 8765.
+- It waits until Windows can reach those backends too: WSL's first successful response can precede localhost forwarding.
 - It builds this tree's frontend into a temporary folder and serves it.
 - It runs every `frontend/scripts/*_check.mjs` in 4 parallel lanes (`--lanes N`). Each check gets its own log and
   screenshot folder under the folder it prints, and a summary follows at the end.
@@ -1765,8 +1789,8 @@ What it does:
   if it then passes.
 
 Some checks get special handling:
-- The two that start real MOCK runs (export, run_control_live) share a backend of their own and run one after the
-  other.
+- The two that start real MOCK runs (export, run_control_live) and agent_tab, which saves provider preferences, share
+  a backend of their own and run one after the other. agent_tab explicitly seeds its provider and restores settings.
 - request_lifecycle gets Vite's source preview.
 - reward_v21 and llm_sizing run only when their fixtures exist and their fixed ports are free.
 - The reward_v2 real/frontend checks read recorded evidence and are skipped.

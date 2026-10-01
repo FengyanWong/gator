@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Json } from './api';
+import { readWithDeadline, type Json } from './api';
 
 const STORAGE_KEY = 'gator-workbench-config-v1';
 const HISTORY_LIMIT = 100;
@@ -162,11 +162,18 @@ export function useConfig() {
   // What this page stored last (or found when it opened): the flush below only replaces that.
   const stored = useRef<string | null>(null);
   if (stored.current === null) { try { stored.current = localStorage.getItem(STORAGE_KEY) ?? ''; } catch { stored.current = ''; } }
-  const save = () => {
-    unsaved.current = false;
-    try { const text = JSON.stringify(latest.current); localStorage.setItem(STORAGE_KEY, text); stored.current = text; } catch { /* site storage blocked or full: the configuration lasts for this page */ }
-  };
-  useEffect(() => { unsaved.current = true; const id = setTimeout(save, 800); return () => clearTimeout(id); }, [config]);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const save = useCallback(() => {
+    try {
+      const text = JSON.stringify(latest.current);
+      localStorage.setItem(STORAGE_KEY, text);
+      stored.current = text; unsaved.current = false; setSaveError(null);
+    } catch {
+      unsaved.current = true;
+      setSaveError('Changes could not be saved in this browser. Export JSON before closing this page, or retry saving.');
+    }
+  }, []);
+  useEffect(() => { unsaved.current = true; const id = setTimeout(save, 800); return () => clearTimeout(id); }, [config, save]);
   // A reload or a closed tab less than 0.8 s after the last change used to lose that change. Not over a configuration
   // another tab (or a check script) stored meanwhile: then the page leaves it as it is.
   useEffect(() => {
@@ -175,10 +182,10 @@ export function useConfig() {
     return () => window.removeEventListener('pagehide', flush);
   }, []);
 
-  return { config, setConfig, undo, redo, canUndo: past.current.length > 0, canRedo: future.current.length > 0, fresh };
+  return { config, setConfig, undo, redo, canUndo: past.current.length > 0, canRedo: future.current.length > 0, fresh, saveError, retrySave: save };
 }
 
-export function usePolling<T>(fn: () => Promise<T>, ms: number, enabled: boolean, deps: unknown[]) {
+export function usePolling<T>(fn: (signal: AbortSignal) => Promise<T>, ms: number, enabled: boolean, deps: unknown[]) {
   return useRequest(fn, deps, { enabled, pollEvery: ms });
 }
 
@@ -198,13 +205,16 @@ export function useAsyncAction(onError: (error: any, name: string) => void, onSt
 /** A read follows explicit dependencies. Replies to an earlier selection or an unmounted view are discarded. */
 const sameDependencies = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
 
-export function useRequest<T>(fn: () => Promise<T>, deps: unknown[], { enabled = true, delay = 0, keepPrevious = false, pollEvery = 0 }:
-  { enabled?: boolean; delay?: number; keepPrevious?: boolean; pollEvery?: number | ((value: T | null) => number) } = {}) {
+export function useRequest<T>(fn: (signal: AbortSignal) => Promise<T>, deps: unknown[], { enabled = true, delay = 0, keepPrevious = false, pollEvery = 0, timeoutMs = 30000 }:
+  { enabled?: boolean; delay?: number; keepPrevious?: boolean; pollEvery?: number | ((value: T | null) => number); timeoutMs?: number } = {}) {
   const [result, setResult] = useState<{ deps: unknown[]; value: T | null; error: string | null }>({ deps: [], value: null, error: null });
   const [loading, setLoading] = useState(false);
   const [revision, refresh] = useState(0);
   const immediate = useRef(false);
-  const inFlight = useRef<{ deps: unknown[]; promise: Promise<T> } | null>(null);
+  const inFlight = useRef<{ controller: AbortController; promise: Promise<T> } | null>(null);
+  const cancel = useCallback(() => { inFlight.current?.controller.abort(); inFlight.current = null; }, []);
+  // Interval changes can reuse a read; changing the selection, disabling or leaving cancels it.
+  useEffect(() => cancel, [enabled, timeoutMs, ...deps]);
   const asked = useRef<unknown[] | null>(null);
   useEffect(() => {
     let live = true;
@@ -218,20 +228,19 @@ export function useRequest<T>(fn: () => Promise<T>, deps: unknown[], { enabled =
     if (!enabled) return;
     const read = async () => {
       let value: T | null = null;
-      try {
-        // A refresh or interval change can reuse an outstanding read of the same selection.
-        if (!inFlight.current || !sameDependencies(inFlight.current.deps, deps)) {
-          const promise = Promise.resolve().then(fn).finally(() => {
-            if (inFlight.current?.promise === promise) inFlight.current = null;
-          });
-          inFlight.current = { deps, promise };
-        }
-        value = await inFlight.current.promise;
-        if (live) setResult({ deps, value, error: null });
+      if (!inFlight.current) {
+        const controller = new AbortController();
+        inFlight.current = { controller, promise: readWithDeadline(fn, controller.signal, timeoutMs) };
       }
-      catch (e: any) { if (live) setResult({ deps, value: null, error: String(e.message ?? e) }); }
+      const request = inFlight.current;
+      try {
+        value = await request.promise;
+        if (live && !request.controller.signal.aborted) setResult({ deps, value, error: null });
+      }
+      catch (e: any) { if (live && !request.controller.signal.aborted) setResult({ deps, value: null, error: String(e.message ?? e) }); }
       finally {
-        if (live) {
+        if (inFlight.current === request) inFlight.current = null;
+        if (live && !request.controller.signal.aborted) {
           setLoading(false);
           const interval = typeof pollEvery === 'function' ? pollEvery(value) : pollEvery;
           if (interval) timer = setTimeout(read, interval);
@@ -243,11 +252,11 @@ export function useRequest<T>(fn: () => Promise<T>, deps: unknown[], { enabled =
     // Even a zero delay lets StrictMode's setup/cleanup replay cancel the first scheduled read.
     timer = setTimeout(read, wait);
     return () => { live = false; clearTimeout(timer); };
-  }, [enabled, delay, keepPrevious, pollEvery, revision, ...deps]);
+  }, [enabled, delay, keepPrevious, pollEvery, timeoutMs, revision, ...deps]);
   // Hide the old selection during render, before effect cleanup/reset has run. A changed polling interval
   // retains the same run's result; a changed run/table never inherits it. Validation opts into keepPrevious.
   const current = sameDependencies(deps, result.deps);
   return { value: enabled && (current || keepPrevious) ? result.value : null,
     error: enabled && current ? result.error : null, loading: enabled && (loading || !current),
-    refresh: useCallback(() => { immediate.current = true; refresh(n => n + 1); }, []) };
+    refresh: useCallback(() => { cancel(); immediate.current = true; refresh(n => n + 1); }, [cancel]) };
 }

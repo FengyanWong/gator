@@ -25,6 +25,10 @@ if (!kept) {                                                         // without 
 const browser = await launchEdge('agent');
 
 try {
+  // A scratch backend defaults to disabled. Establish this test's provider explicitly, then restore it in finally.
+  const setup = await fetch(`${APP}api/agent/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: 'claude_code', model: null, effort: null }) });
+  if (!setup.ok) throw new Error(`Could not set fixture provider: HTTP ${setup.status}`);
   const session = await browser.open();                                  // (the body names the detached window "page")
   const { send, evaluate, nextPaused, fulfil, consoleErrors, paused } = session;
   const autoAnswer = [];                                              // requests answered at once, without the check waiting for them

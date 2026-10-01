@@ -44,7 +44,6 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | Entry | Title |
 |---|---|
 | 7.1 | Resolved: Virtuoso bridge connection request |
-| 7.129 | Optimizer fixes held back from round 5: top grid point, corner summary, late worker result, copies, MOCK fsync |
 | 7.2 | Coordination with the parallel "Project directory setup" session |
 | 7.3 | Connect flow in the panel |
 | 7.4 | Per-circuit bindings in a connection profile |
@@ -170,6 +169,8 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.126 | Optimization review's package changes landed: corners two at a time, every 5th reset simulated, Maestro results not parsed; optimizer digest 100945fb → f42a3098 |
 | 7.127 | The form writer types a transistor's length before its width, so GPDK045's well-proximity values follow the final length; MScR ring3 mended and re-saved |
 | 7.128 | The MOCK task and the real OTA7 and LDO tasks deleted, with the OTA7/LDO example files; the tests keep a MOCK stand-in; no task trains at corners |
+| 7.129 | Optimizer fixes held back from round 5: top grid point, corner summary, late worker result, copies, MOCK fsync |
+| 7.130 | Frontend reliability: autosave recovery, encoder races, bounded reads, narrow layouts and isolated tests |
 | 7.131 | Review after the audit: the page's loads keep a saved task while its files are unchanged (MScR validation 0.64-0.96 s → 46-71 ms), repository path resolved once; its 10 frontend findings fixed on top of 7.130 (Undo merge follows the input event, a new AI run's thread, Continue during Resume, Read vs a task choice) |
 | 7.132 | Five limits from the MScR build fixed: noise statement, analogLib and PDK resistors, iprobe, PWL in the package parser, Save task refuses equations naming no Probe; MScR noise specs and optimized resistors; optimizer digest 0d045b8e → 46327861 |
 | 7.133 | Follow-ups: the other five MScR tasks run cleanly with the fixed form writer; the ngspice refusal test back; the warm-start note counts only paid resets |

@@ -224,10 +224,10 @@ def training_conditions(config):
     if config.run.conditions.policy == 'off':
         return ()
     from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
-    from .tasks import _verified_profile
-    if config.circuit.task_id != 'real:gpdk045_ota7':
-        raise CompileError('Only the real OTA7 profile supports training corners')
-    profile = _verified_profile('gpdk045_ota7')
+    from .tasks import CORNER_TASKS, _verified_profile
+    if config.circuit.task_id not in CORNER_TASKS:
+        raise CompileError('No task trains at corners: the only one, the real OTA7 task, was removed on 2026-09-30')
+    profile = _verified_profile(config.circuit.task_id.partition(':')[2])
     corners = {row['id']: PVTCorner(**row) for row in profile.condition_config['screening_corners']}
     return (SimulationCondition(profile.nominal_corner),) + tuple(
         SimulationCondition(corners[key], 'pvt_training') for key in config.run.conditions.corners)

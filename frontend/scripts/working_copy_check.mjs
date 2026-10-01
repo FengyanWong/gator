@@ -104,7 +104,13 @@ await runChecks(browser, async () => {
   const visible = selector => far.evaluate(`(() => { const e = ${selector}; return !!e && e.checkVisibility(); })()`);
   const press = async label => { await far.evaluate(`${BUTTON(label)}.click()`, true); };
   const stored = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')`);
-  const settle = async (ms = 900) => { await sleep(ms); };
+  // Up to `ms` for the press to reach the backend; once it has, settled when 0.5 s pass with no further call (the fixture
+  // answers after 0.15 s). A press that sends nothing still waits the whole `ms`. It slept `ms` every time until 2026-09-30.
+  const settle = async (ms = 900) => {
+    const mark = calls.length;
+    for (let waited = 0; waited < ms && calls.length === mark; waited += 50) await sleep(50);
+    for (let seen = mark; calls.length !== mark && seen !== calls.length;) { seen = calls.length; await sleep(500); }
+  };
   const shot = async name => far.shot(path.join(out, name), BLOCK, { scale: 2, pad: 12, maxHeight: 1200, beyond: true });
 
   await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load'], answer, { others: 'read', connection: 'lab' });

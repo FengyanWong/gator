@@ -1,0 +1,9 @@
+{
+  "gpdk045_ota5": {
+    "netlist": "examples/circuits/gpdk045_ota5.scs",
+    "config": "configs/gpdk045_opamp.json",
+    "circuit_class": "opamp",
+    "pdk_id": "gpdk045",
+    "description": "MOCK: the netlist of the verified GPDK045 OTA5 circuit on the free analytic toy backend - no Virtuoso, no Spectre. Its score is not a circuit result."
+  }
+}

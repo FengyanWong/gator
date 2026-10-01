@@ -10,12 +10,15 @@ A summary for new sessions; everything below is the chronological record, oldest
 - **Reward:** v2.1 ([reward-v2.md](reward-v2.md)). Schema defaults keep the old arithmetic: capped violations,
   worst-spec share 0, objective and margin weights 0, conditions `off` (nominal only), gate band 0.5, objective shape
   `clipped`. New workbench configurations start with compressed violations and share 0.5. Corner training
-  (`always`, `after_nominal`) is offered for `real:gpdk045_ota7` only.
+  (`always`, `after_nominal`) was offered for `real:gpdk045_ota7` only; no task has it since 2026-09-30 (7.128).
 - **Older checkpoints** resume exactly only under their own source: digest `02127bc3...` (M6 pilot, six encoders) from
   `bbdfe36`; `aa987cf0...` (five encoders incl. MLP, GCN, GATv1) from `9bc488f`; `f087a4ce...` (reward v2) from
   `1135b8b` up to the commit before `8cf53ae`; `3f00832c...` (reward v2.1) from `8cf53ae` up to the commit before `4634200`. Digests never committed (`75c7cfac...`, `5e8a1bc1...`, `11e62657...`, `3473ed9c...`, and
   `27a36b2b...`, the LLM sizing build before the duplicate-check fix, which Astra's acceptance evidence names) are in
   the entries below.
+- **Tasks:** since 2026-09-30 (record 7.128) the workbench offers only the user's saved tasks (the MScR library) and
+  ngspice tasks: no MOCK task (the tests register a stand-in) and no built-in verified circuit; OTA7 and LDO went with
+  their example files, so the M5/M6 audits re-validate from a checkout before that commit. No task trains at corners.
 - **Monte Carlo:** not implemented; a plan only ([plan-finalist-monte-carlo.md](plan-finalist-monte-carlo.md)).
 - **LLM sizing:** four modes implemented; free calibration complete (80 runs / 4,800 candidates / zero passes)
   ([brief](brief-llm-sizing-for-astra.md), [implementation](llm-sizing.md)). The user authorized feasibility-only
@@ -596,3 +599,38 @@ Optimizer digest `27a36b2b…` → `100945fb780852ea3776a2395f83474bd208ed2f1ee5
 after Astra's calibration and its finalize step had ended (user choice), because both record and check the digest;
 Astra's evidence files keep describing the tree before the fix. Full suite 1,601 passed / 1 expected failure.
 No commit, no real simulator or model call; record 7.120.
+
+## Real runs: corners two at a time, every 5th reset simulated, Maestro results not parsed (2026-09-30)
+
+From the optimization review of 2026-09-30 (record 7.115) the user chose three changes to the optimizer package, had
+them built and tested in a scratch copy while Astra's sizing methods were in flight, and on "Land now" had them landed
+together as one digest step, without the calibration audit's `idc` fix ("Mine only"):
+
+- a candidate's corner simulations run two at a time after its nominal one when the circuit is measured from Spectre's
+  own results; circuits measured by OCEAN in the Virtuoso session keep one at a time;
+- a lane simulates the unchanged starting design at its first reset, every 5th reset and after any failure; the other
+  resets reuse the last simulated one and are not charged (MOCK runs unchanged);
+- a Maestro task's Spectre writes its own binary results and the bridge no longer parses a text copy ("fetch only when
+  kept" would have needed a rewrite of the bridge's Spectre runner, so the user chose "skip only the parse").
+
+Rows, stops and launch accounting match one-at-a-time; OCEAN values agree with the text results to within 2 ulp.
+Optimizer digest `100945fb…` → `f42a309884ec5b499f8c38e18a811fd330a0ffa4740363616aeb56104f59146e`. Landed with no
+Astra job running and a guarded script that refused any other starting digest. Full suite on a copy of the tree: 1,591
+passed without the change, 1,609 with it (18 new tests), none failed. Checked the same evening on MScR circuits (the
+user: "Run tests on MScR circuits"): on real:mscr_ota7t the same 10 evaluations bought 8 steps instead of 5 at the
+same pace; a real:mscr_ring3 run exposed stale well-proximity values in that cell, unrelated to this change. No
+commit. Record 7.126.
+
+## The MOCK task and the real OTA7 and LDO tasks deleted, with their example files (2026-09-30)
+
+On the user's request ("delete the mock OTA5 task and the two real tasks (OTA7&LDO) which are not in the mscr
+library") the workbench now offers only the user's saved tasks and ngspice tasks. The user chose "Delete everywhere"
+for the MOCK task synthetic:gpdk045_ota5 (the tests keep that circuit as a stand-in they register through
+GATOR_WORKBENCH_SYNTHETIC_FIXTURES; the product refuses it with a plain note) and "Also delete their files" for
+real:gpdk045_ota7 and real:gpdk045_ldo: their example netlists and configurations and every test that used them are
+gone, while the optimizer package's research profiles, configs/m6_real_cross_category.json and the research scripts
+stay. Told that the M5/M6 audits and the frozen M6 plan re-hash those configurations, the user chose "Delete them
+anyway": those audits re-validate from a checkout before this change, and CLAUDE.md's evidence rule says so. With OTA7
+gone no task trains at corners and Corner check has no task. No package file changed, so the optimizer digest is
+untouched. Full suite of the tree with the change 1,532 passed, none failed; 33 of 34 browser checks pass (the 34th
+fails on an old ngspice model in outputs/ with the old code too). No commit. Record 7.128.

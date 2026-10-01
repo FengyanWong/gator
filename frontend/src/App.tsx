@@ -77,8 +77,7 @@ export function App() {
   const { value: validation } = useRequest<Json>(() => api.validate(config).catch(rejected).then(v => ({ ...v, sent: config })), [JSON.stringify(config)],
     { delay: 500, keepPrevious: true });
 
-  // A run that has ended for good (completed, failed, cancelled: none of them can be continued) changes no more, so its
-  // status is read once a minute instead of every 1.5 s. A paused or stopped run can come back, and keeps the quick poll.
+  // How often the run shown is read: see the effect after useRunControl below.
   const [statusEvery, setStatusEvery] = useState(1500);
   // The run shown is gone (deleted, or outside the allowed roots by now - it may be the remembered one the page opened
   // with): it is let go, as the header lets go of its own, instead of being asked for every 1.5 s for ever while the strip
@@ -92,12 +91,19 @@ export function App() {
   });
   const { value: polledStatus, error: statusError } = usePolling(() => readStatus(runDir!), statusEvery, !!runDir, [runDir]);
   const status = polledStatus?.run_dir === runDir ? polledStatus : null;
-  useEffect(() => setStatusEvery(status && !status.worker_alive && ['completed', 'failed', 'cancelled'].includes(status.state) ? 60000 : 1500),
-    [status?.worker_alive, status?.state]);
   const isReal = circuit?.loaded && circuit.mock === false;
   // The run the header buttons act on (Start -> Pause -> Resume, Abort). It is not the run the bottom tabs show.
   const [looked, setLooked] = useState(false);
   const control = useRunControl(status, looked);
+  // The run shown is read every 1.5 s while it can change by itself: a worker is alive, its state is a live one, or the
+  // header is starting, resuming, pausing or ending a run. Otherwise it waits for a press on this page: every 15 s while
+  // it could still be continued (paused, stopped, interrupted - another browser may continue it), once a minute once it
+  // has ended for good (completed, failed, cancelled). Until 2026-09-30 a paused or stopped run was read every 1.5 s, and
+  // each read re-reads its tables. The header's phase counts only when the header's run IS the run shown (record 7.125:
+  // a finished run in the tabs was read every 1.5 s while the header paused or aborted another one).
+  const transitional = control.dir === runDir && ['starting', 'resuming', 'pausing', 'aborting', 'finishing'].includes(control.phase);
+  useEffect(() => setStatusEvery(!status || status.worker_alive || LIVE_STATES.includes(status.state) || transitional ? 1500
+    : ['completed', 'failed', 'cancelled'].includes(status.state) ? 60000 : 15000), [status?.worker_alive, status?.state, transitional]);
   // When the header's run comes to rest, the Project column reads its task again (a finished Single baseline simulation
   // records the task's reference by itself, status record 7.78): a counter the column follows. Not on the page's first look,
   // and not after a start that never ran (refused or declined) or a paused run let go: nothing about the task changed.

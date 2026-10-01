@@ -116,6 +116,11 @@ The header has one main run button and **Abort** next to it. The main button cha
   Force abort do there. The tab keeps **Continue** (a paused, stopped or interrupted run, with a new total budget) and
   **Export status**. A run that is live when the page opens - started from another browser or the CLI - is taken into
   the header; a second run live at the same time as the header's own has no run buttons on this page.
+* The run shown is read every 1.5 s while it can change by itself: a worker is alive, its state is a live one, or the
+  header is starting, resuming, pausing or ending a run and it is the run shown (status record 7.115, 2026-09-30; the
+  last condition since 7.125 - a finished run in the tabs was read every 1.5 s while the header paused another run). A paused, stopped or
+  interrupted run is read every 15 s (another browser may continue it), and an ended one once a minute. Until then a
+  paused or stopped run was read every 1.5 s, and each read re-reads its tables.
 
 Browser checks: `frontend/scripts/run_control_check.mjs` (fixtures only, safe next to a live run) and
 `frontend/scripts/run_control_live_check.mjs` (real MOCK worker; needs a scratch backend, refuses port 8765).
@@ -140,38 +145,35 @@ is never replaced), or it was started with "Model checkpoints" switched off. Bro
 
 | Path | Status |
 |---|---|
-| `synthetic:gpdk045_ota5` (the one MOCK task) | **MOCK**: the optimizer's analytic toy backend (`origin=synthetic`) on a REAL circuit - the netlist and device mapping of the verified GPDK045 OTA5 (`examples/circuits/gpdk045_ota5.scs`, `configs/gpdk045_opamp.json`). Free: no Virtuoso, no Spectre. Every row says `provenance=mock`, data lives under `<output_root>/mock/`, and it is excluded from real-experiment aggregates. The `score` is not a circuit metric, and a model it trains never loads into a real run. Until 2026-09-22 there were four MOCK tasks on toy netlists (`synthetic:opamp`, `_opamp_two_stage`, `_ldo`, `_vco`); they were removed (status record 7.59). A configuration that still names one opens with a plain note and cannot start. |
-| `real:gpdk045_*` tasks | The verified bridge profiles through the existing `NativeEnvironmentFactory`. Need virtuoso-bridge 0.8.0 importable by the backend interpreter, a connection profile, a passing connection gate and an explicit budget authorization. `real:gpdk045_ota7` has run through the workbench for real (reward v2's qualification, 2026-09-26, status record 7.95); no workbench run of `real:gpdk045_ldo` is recorded. Nothing ever falls back to mock. Two of the four were removed on user request on 2026-09-23 (status record 7.73): `real:gpdk045_ota5` and `real:gpdk045_vco`, whose example cells were deleted from Virtuoso (a backup is kept). Left: `real:gpdk045_ota7` and `real:gpdk045_ldo`. A configuration that still names a removed one opens with a plain note and cannot start. |
+| MOCK tasks: none since 2026-09-30 | The workbench offers no MOCK task since the user's request of 2026-09-30 (record 7.128). The last one, `synthetic:gpdk045_ota5` - the analytic toy backend (`origin=synthetic`) on the netlist and device mapping of the GPDK045 OTA5 - is refused with a plain note, as are the four toy tasks it had replaced on 2026-09-22 (status record 7.59). The toy backend stays for the tests: they register that circuit as their stand-in through `GATOR_WORKBENCH_SYNTHETIC_FIXTURES` (`tests/workbench/fixtures/synthetic_fixtures.json`, set in `tests/conftest.py`), and so do the browser checks' scratch backends (`frontend/scripts/run_checks.sh`). MOCK data stays labelled `provenance=mock`, under `<output_root>/mock/`, out of real aggregates; a model it trains never loads into a real run. |
+| `real:gpdk045_*` tasks: none left | The four verified built-in circuits were removed on user request: `real:gpdk045_ota5` and `real:gpdk045_vco` on 2026-09-23 (status record 7.73, their example cells deleted from Virtuoso), `real:gpdk045_ota7` and `real:gpdk045_ldo` on 2026-09-30 (record 7.128, with their example netlists and configurations - so the M5/M6 audits and the frozen M6 plan re-validate from a checkout before that commit). A configuration that names one opens with a plain note and cannot start; the names stay reserved. The real tasks are the ones saved from a Virtuoso cell (next row) and the ngspice ones. |
 | `ngspice:<name>` tasks (added 2026-09-23) | A SPICE deck pasted or loaded in the **ngspice netlist...** window and saved as a task. **REAL** circuit simulations by ngspice (`origin=real`, `provenance=real`), on this machine or over SSH through an ngspice connection - no license, no Virtuoso, but counted, authorized (Start asks) and recorded exactly like every real run, so the data is never mistaken for mock data. Its models never load into a MOCK run and the other way round; they are interchangeable with Virtuoso real runs as far as the network contract allows. |
 | Arbitrary native cellviews | Read-only browsing through the bridge. Optimizing one needs a saved task, which runs on a WORKING COPY of the cell - since 2026-09-23 the copy you made in Virtuoso and declared on the read; the workbench makes no copy of its own (status record 7.72): a run writes instance values into that copy (the form writer since 7.66), never into your original design, and no cellview is created or redrawn. |
 
 ### Choosing a registered task: whose rows Parameters, Probes and Specs show
 
 The three tabs hold rows of the *configuration*, so they belong to a task. Choosing another task in the Project
-column (**Registered task -> Task**) brings that task's rows:
+column (**Registered task -> Task**) brings that task's rows. A fresh page has no task until you choose one (the MOCK task
+that used to open there, and the verified OTA7 and LDO circuits with their targets of record, were removed on 2026-09-30,
+record 7.128):
 
 | Task | Parameters | Probes | Specs |
 |---|---|---|---|
-| `synthetic:gpdk045_ota5` (MOCK) | the three width groups of the OTA5's device mapping: input pair (M1 + M2), mirror pair (M3 + M4), tail (M5) - 5 rows, 3 action variables | `m_score` | one toy row, `score >= 0.95` (unit `fixture`): the analytic backend computes no gain, bandwidth or power, so there is nothing else to aim at |
-| `real:gpdk045_ota7`, `_ldo` | exactly the rows the circuit's profile fixes (a real run accepts no others) | one per target | the circuit's **targets of record**: the frozen specification files of the real experiments (`configs/m6_real_cross_category.json`, partition `train`; `configs/gpdk045_ota7_transfer.json` for the OTA7). For the OTA7: gain >= 53.3 dB, unity-gain frequency >= 3.24 MHz, phase margin >= 30 deg, supply power <= 3.24 uW, output DC 0.3-0.5 V, exactly one unity-gain crossing. Every row states this source in `basis`. They are pilot goals near the measured baseline, **not product specifications**: edit them to your own requirements |
 | a profile created from your own cell | the rows the profile fixes | one per result its circuit type produces, ready to carry a target | **none**: requirements are never inferred from a circuit. State yours, or press "Draft with agent..." |
 
 * The **Circuit class / PDK id** labels follow the task at once, and so does a project name that a starter had given
-  (`mock-gpdk045-ota5` -> `gpdk045-ota7`), so a real run is not filed under `runs/mock_gpdk045_ota5/`. A name you typed
-  stays. Choosing a task after one of the removed MOCK tasks brings the new task's rows and name at once: no task can run
-  the old rows any more (one Undo brings them back).
+  (`mock-gpdk045-ota5` -> `mscr-ota5t`), so a real run is not filed under `runs/mock_gpdk045_ota5/`. A name you typed
+  stays. Choosing a task after a removed MOCK task brings the new task's rows and name at once: no task can run the old
+  rows any more (one Undo brings them back).
 * Rows are exchanged only while they are nobody's work: empty, or still exactly what the task before had brought.
   **Rows you edited stay**; the panel says so, and **Load task** (there for every task; was "Load starter
   configuration" until 2026-09-24, status record 7.78) exchanges
   them when you want it. One **Undo** takes back a task choice together with everything it brought.
 * Run settings are never touched by a task choice, and a real budget is never suggested. Load task keeps them too
   since 2026-09-29 (7.109); before, it reset the MOCK task's budget to 60 and its seed to 17 without saying so.
-* The LDO results are not in the optimizer's default result registry, and the UI has no editor for it. The LDO task
-  therefore brings the registry of record of the real cross-category experiment (`m6-physical-spec-input-v1`,
-  23 results), as a profile created from a cell brings its own (so did the VCO task until it was withdrawn on
-  2026-09-23, status record 7.73). The OTA7 task keeps the default registry, so its models stay interchangeable with
-  the MOCK task's and with earlier runs. A registry stated in the configuration (`run.advanced.spec_registry`) still
-  wins. Units `V/V` and `V/A` (line / load regulation) are accepted.
+* A profile created from a cell brings its own result registry (the built-in LDO and VCO tasks brought the registry of
+  record of the real cross-category experiment until they were removed). A registry stated in the configuration
+  (`run.advanced.spec_registry`) still wins. Units `V/V` and `V/A` (line / load regulation) are accepted.
 * In the three editors a field a row does not state is shown with the value the backend uses for it (`hard` on,
   `tolerance` 0, ...), not as an empty or unchecked box.
 
@@ -287,7 +289,7 @@ again**. Nothing is simulated or stored.
 Where it applies: a cell read from Virtuoso (the ties go into the task at **Save task**), a task you saved (save it again
 afterwards: a task runs with the rows it was saved with), an ngspice task (its rows start one per size, so the pair and the
 load of the example OTA go from 7 to 5 independent variables), the MOCK task. A **verified** built-in task
-(`real:gpdk045_ota7` and the others) fixes its rows: the structures are listed for information and nothing is offered.
+(there is none left since 2026-09-30) fixed its rows: the structures were listed for information and nothing offered.
 The agent sees the same sentences: `circuit_summary` carries them as `structures`.
 
 Backend `structures.py` (`recognize`, `plan_ties`, `apply_ties`), route `POST /api/parameters/matched` (`{config, apply}`;
@@ -565,6 +567,16 @@ runs in a short-lived process with the same interpreter and environment as a run
 the broken layer, and never starts, restarts or stops the tunnel, the daemon or Virtuoso.
 Results go to `configs/local/workbench/connection_checks.jsonl`, never into research tables.
 
+The check guarding a cell read or write (the gate before an import, a Save task or a Check now) reuses a passing check
+of the same connection from the last 30 s instead of testing again (status record 7.115). Before, a single Save task
+tested the connection two or three times, about 0.9 s each. Conditions for the reuse:
+- every layer that gate needs was ok;
+- the connection kind is the same;
+- no run has started or ended in between.
+
+A failed or uncertain result is never reused, and a real simulation always tests afresh. If the link is lost within
+those seconds, the step that then works on the cell reports the bridge's own error instead of the gate's.
+
 ### Connecting from the panel (added 2026-09-20, user request)
 
 The left panel walks through the three steps of bringing the link up:
@@ -808,9 +820,9 @@ replay, its model or its best design.
   says pass, FAIL with the worst spec and its value, or unknown with the reason; the verdict column adds the pass count.
   Folded below: the worst value of each spec and the corner it came from. The normal corner is simulated again and
   compared with the run's own result; a difference is said.
-* **Which circuits.** The op-amp `real:gpdk045_ota7` and the MOCK task (the OTA5 task was removed, status record
-  7.73). The LDO and generated profiles are qualified at their normal condition only: the tab says so in a neutral note and Check
-  stays off.
+* **Which circuits.** None at the moment: the two it worked on, the op-amp `real:gpdk045_ota7` and the MOCK task, were
+  removed on 2026-09-30 (record 7.128; the OTA5 task before them, status record 7.73). A task saved from a cell is
+  qualified at its normal condition only: the tab says so in a neutral note and Check stays off.
 * **A real circuit** costs real Spectre simulations. Check first asks for exactly that budget ("Authorize 15
   simulations?"; no = nothing is created), then, as Start does, the connection gate (unknown layers are asked about).
   The check writes each design's widths into the cell with the same adapter a run uses, simulates its five corners,
@@ -840,8 +852,8 @@ The reward and its settings belong to the optimizer package: reward v2 (2026-09-
 made under the user's explicit permission to change `src/analog_optimizer/`. Their contract, qualification and evidence
 are in [reward-v2.md](reward-v2.md); this section says what the page offers. The schema defaults keep the old
 arithmetic (Nominal only, capped violations, no worst-spec share, no bonuses), so saved configurations and task hashes
-are unchanged. Training at corners is offered for `real:gpdk045_ota7` only and needs a finite launch cap and zero
-automatic retries.
+are unchanged. No task trains at corners since 2026-09-30: the only one, `real:gpdk045_ota7`, was removed (record
+7.128). Training at corners needed a finite launch cap and zero automatic retries.
 
 ### Reward, conditions and the saved model on the page (record 7.96)
 
@@ -858,7 +870,7 @@ values, and draft settings from the executed reward in the saved summary. Histor
 
 New configurations start with compressed violations and worst-spec share 0.5; saved ones retain their settings.
 Training conditions offers Nominal only, Corners after nominal passes, and Every planned corner. The backend reports
-whether the task supports corners (currently real OTA7). For after_nominal, a nominal failure costs one launch, a
+whether the task supports corners (none since 2026-09-30). For after_nominal, a nominal failure costs one launch, a
 pass costs 1 + K, and a reset costs one; the full step plan must fit the launch ceiling before preparation.
 
 Under Specs → More columns, **Missing value = failed** opts a required spec into treating its absence after a completed
@@ -903,6 +915,38 @@ Advanced): it pauses the run, resumable once the connection gate passes again, i
 [Reward contract and validation](reward-v2.md#reward-v21-2026-09-29). These controls were checked on source previews
 only: the user's live frontend/backend were not rebuilt or restarted. The subsequent fixed-action physical check used
 10 of the approved 30 launches, exercised both gate paths and restored the starting design (record 7.108).
+
+### How a real run spends its simulations: corners two at a time, reused resets (2026-09-30, record 7.126)
+
+Three changes of the optimizer package (user decisions of 2026-09-30) stop a real run from spending time and budget on
+simulations that tell it nothing new. MOCK runs are unchanged.
+
+* **Corners two at a time.** After a candidate's nominal simulation, its corner simulations run two at once when the
+  circuit is measured from Spectre's own results (no task since 2026-09-30: `real:gpdk045_ota7`, the only one with
+  training corners, was removed). Rows,
+  the stop after a failing corner and the launch accounting are those of one-at-a-time: results are taken in plan
+  order, and a corner already started when an earlier one fails is counted as launched but adds no row. A task measured
+  inside the Virtuoso session (a Maestro task, measured by OCEAN) keeps one at a time. Code: `CircuitSizingEnv`
+  (`condition_jobs`) in `envs/sizing.py`, `delegated` and the per-thread output capture in
+  `backends/virtuoso_bridge.py`, `NativeEnvironmentFactory.condition_jobs = 2` in `training/parallel.py`.
+* **Every 5th reset simulated.** A reset used to simulate the unchanged starting design again (with episode length 4,
+  one evaluation in five). Now each lane simulates it at its first reset, at every 5th reset and after any failure; the
+  other resets start from the lane's last simulated one and reserve, charge, launch and record nothing (event
+  `episode_reset_reused` in `logs/events.jsonl`), so the budget buys more steps. "A reset costs one" above holds for the
+  simulated resets. An AI-only run has a single episode and never resets again; warm start and rescue keep their
+  schedules, which never count resets. Code: `RESET_RECHECK_EVERY` and `_dispatch_reused_reset` in `engine.py`, lane
+  operation `reset_reused` in `lanes.py`, `CircuitSizingEnv.reset_reused`.
+* **Maestro tasks skip the text parse.** For a task OCEAN measures, Spectre now writes its own binary results; the bridge
+  still downloads the folder but no longer converts a text copy nobody reads (`VirtuosoBridgeBackend._raw_format`).
+  Other real tasks still get PSF text, which they read. OCEAN's values agree with those of the text results to within
+  2 units in the last place (4e-16 relative: the binary results are exact where the text copy was rounded). Fetching
+  the results only when a design's waveforms are kept would need a rewrite of the bridge's Spectre runner, so it was
+  not done.
+
+Optimizer digest `100945fb…` → `f42a3098…`, one step for all three. Tests: `tests/test_parallel_corners.py`,
+`tests/test_reset_recheck.py`, `tests/test_raw_format.py`, `tests/workbench/test_wb_reset_reuse.py`. Checked on the
+simulator on 2026-09-30 (record 7.126): on `real:mscr_ota7t` the same 10 evaluations bought 8 steps instead of 5 at the
+same pace (2.0 s against 2.1 s per evaluation), and the designs both codes proposed measured the same to within 2 ulp.
 
 ## The right column: settings, saved models and the graph view
 
@@ -1155,7 +1199,12 @@ as for widths.
 a value to change - and only those - the form's init procedure, then per field: its rule, the value, its callback; repeated
 (at most three rounds) until every requested value AND every value the task keeps as recorded reads back as it should. The
 second part matters: GPDK045 folds a wide transistor into more fingers when its total width is typed, so the recorded
-finger count is typed back, as a user would. Then the form's done procedure, `schCheck`, `dbSave`. The checks after it are
+finger count is typed back, as a user would. A length is typed before everything else of its instance (record 7.127):
+GPDK045's width callback computes the well-proximity values `sca`/`scb`/`scc` from the length the transistor has at
+that moment, and the length callback leaves them alone, so a width typed first kept the previous length's values -
+each candidate was simulated with its predecessor's, and a restoration left them wrong. For the same reason a round
+that types a length types the width again at its own value, when the task holds the width instead of writing it.
+Then the form's done procedure, `schCheck`, `dbSave`. The checks after it are
 the verified profiles' checks, generalized: an instance that is not written is compared field by field with the record; a
 written one may change what its callbacks compute, never a mode setting (a cyclic / boolean field) or a held value, and a
 transistor keeps total width = fingers x finger width with fresh areas; the exported netlist carries exactly the values the
@@ -1456,8 +1505,9 @@ callbacks - and differs only in the deck each evaluation simulates and in how it
   are not the same circuit, when an output reads an analysis the test does not run, and when the model include is not
   the connection's model file (one deck, one model).
 * **The measurement: OCEAN on the run's own results.** Spectre leaves its results on the simulator host (the bridge keeps
-  the folder); OCEAN in the Virtuoso session opens them and evaluates every output expression - the calculator Maestro
-  itself uses. Maestro writes signal names as the schematic does (`VT("/OUT")`, `IT("/V0/PLUS")`), a plain Spectre result
+  the folder; since record 7.126 in Spectre's own binary format, with no text copy parsed); OCEAN in the Virtuoso
+  session opens them and evaluates every output expression - the calculator Maestro itself uses. Maestro writes signal
+  names as the schematic does (`VT("/OUT")`, `IT("/V0/PLUS")`), a plain Spectre result
   folder as Spectre does (`OUT`, `XU1.N1`, `V0:p`); the names are translated once, at Save task, with the name maps
   Maestro's netlister writes (`amap/`, the maps ADE uses). A name the maps do not translate plainly - a terminal whose
   current is derived from another (a source's MINUS), an instance not in the maps - is refused then, in words. Values are
@@ -1677,6 +1727,29 @@ display-cache invalidation separately from execution integrity checks.
 ```bash
 ~/analog-optimizer-venv/bin/python -m pytest tests/workbench -q
 ```
+
+All browser checks at once (added 2026-09-30, status record 7.115):
+
+```bash
+bash frontend/scripts/run_checks.sh
+```
+
+What it does:
+- It starts two scratch backends with empty temporary settings folders; it never touches the backend on 8765.
+- It builds this tree's frontend into a temporary folder and serves it.
+- It runs every `frontend/scripts/*_check.mjs` in 4 parallel lanes (`--lanes N`). Each check gets its own log and
+  screenshot folder under the folder it prints, and a summary follows at the end.
+- Options: `--only a,b`, `--skip a,b`, and `--retry-failed`, which reruns a failed check alone and reports it as flaky
+  if it then passes.
+
+Some checks get special handling:
+- The two that start real MOCK runs (export, run_control_live) share a backend of their own and run one after the
+  other.
+- request_lifecycle gets Vite's source preview.
+- reward_v21 and llm_sizing run only when their fixtures exist and their fixed ports are free.
+- The reward_v2 real/frontend checks read recorded evidence and are skipped.
+
+The whole batch took 198 s, instead of about 9 minutes one check after another.
 
 Provider tests use a fake CLI fixture; connection tests use fake bridge clients and a fake probe
 process. No test starts a real agent session or contacts a real Virtuoso. The live answer is also

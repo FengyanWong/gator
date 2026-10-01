@@ -7,7 +7,8 @@ const HISTORY_LIMIT = 100;
 const emptyConfig = (): Json => ({
   schema_version: 'gator-workbench-config-v1',
   project: { name: 'gator-project', task_name: 'task', notes: '' },
-  circuit: { source: 'registered_task', task_id: 'synthetic:gpdk045_ota5', circuit_class: 'unspecified', pdk_id: 'unspecified' },
+  // No task until one is chosen: the MOCK task that used to open here was deleted on 2026-09-30 (record 7.128).
+  circuit: { source: 'registered_task', task_id: null, circuit_class: 'unspecified', pdk_id: 'unspecified' },
   parameters: [], targets: [], measurements: [],
   run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, seed: 0, reward: { violation_shape: 'compressed', worst_spec_share: 0.5 } },
   output: { experiment_name: 'experiment' },

@@ -663,10 +663,11 @@ def validate(config: WorkbenchConfig, *, graph=None, provided_metrics=None,
         report.add('unresolved', 'circuit_not_loaded', 'circuit',
                    'Instance paths, parameter names and initial values were NOT checked against a circuit')
     if config.circuit.source == 'registered_task':
-        from .tasks import MOCK_TASK_REMOVED, REMOVED_MOCK_TASKS, REMOVED_REAL_TASKS, real_task_removed
-        if config.circuit.task_id in REMOVED_MOCK_TASKS:        # status record 7.59: such a configuration can never run again
+        from .tasks import MOCK_TASK_REMOVED, REMOVED_MOCK_TASKS, REMOVED_REAL_TASKS, SYNTHETIC_FIXTURES, real_task_removed
+        # Status records 7.59 and 7.128: such a configuration can never run again - unless a test registered the circuit.
+        if config.circuit.task_id in REMOVED_MOCK_TASKS and config.circuit.task_id.partition(':')[2] not in SYNTHETIC_FIXTURES:
             report.add('error', 'task_removed', 'circuit.task_id', MOCK_TASK_REMOVED.format(task=config.circuit.task_id))
-        if config.circuit.task_id in REMOVED_REAL_TASKS:        # status record 7.73: their example cells were deleted
+        if config.circuit.task_id in REMOVED_REAL_TASKS:        # records 7.73 and 7.128: the built-in verified tasks
             report.add('error', 'task_removed', 'circuit.task_id', real_task_removed(config.circuit.task_id))
     _check_saved_task(config, report)
     return report

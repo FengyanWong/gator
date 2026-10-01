@@ -88,7 +88,13 @@ await runChecks(browser, async () => {
   const POPUP = `window.open('', 'gator-task-file')`;                             // the same name returns the open window, unchanged
   const popupEval = body => evaluate(`(() => { const w = ${POPUP}; const d = w.document; ${body} })()`, true);
   const typeInto = async (selector, text) => page.setValue(`${selector}`, text, { event: 'input', userGesture: true });
-  const settle = (ms = 900) => sleep(ms);
+  // Up to `ms` for the press to reach the backend; once it has, settled when 0.5 s pass with no further call (the fixture
+  // answers after 0.12 s). A press that sends nothing still waits the whole `ms`. It slept `ms` every time until 2026-09-30.
+  const settle = async (ms = 900) => {
+    const mark = calls.length;
+    for (let waited = 0; waited < ms && calls.length === mark; waited += 50) await sleep(50);
+    for (let seen = mark; calls.length !== mark && seen !== calls.length;) { seen = calls.length; await sleep(500); }
+  };
 
   await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/tasks', '*/api/tasks/starter*'], answer, { others: 'read', connection: 'lab' });
   await send('Page.navigate', { url: APP });

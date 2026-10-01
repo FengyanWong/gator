@@ -151,11 +151,16 @@ class ScriptedEnvFactory:
 
 MOCK_TASK = 'synthetic:gpdk045_ota5'      # 3 width groups (input pair, mirror pair, tail): 5 rows, 3 action variables
 
-# The other real GPDK045 examples, as MOCK circuits a test may add (netlist + device mapping, the mapping's groups).
+# Other circuits as MOCK circuits a test may add (netlist + device mapping, the mapping's groups): the GPDK045 VCO example
+# and the optimizer package's toy LDO and two-stage op-amp (the GPDK045 OTA7 and LDO examples were deleted on 2026-09-30,
+# record 7.128).
 OTHER_CIRCUITS = dict(
-    gpdk045_ldo=dict(netlist='examples/circuits/gpdk045_ldo.scs', config='configs/gpdk045_ldo.json', circuit_class='ldo'),
-    gpdk045_ota7=dict(netlist='examples/circuits/gpdk045_ota7.scs', config='configs/gpdk045_ota7.json', circuit_class='opamp'),
-    gpdk045_vco=dict(netlist='examples/circuits/gpdk045_vco.scs', config='configs/gpdk045_vco.json', circuit_class='vco'),
+    toy_ldo=dict(netlist='tests/fixtures/synthetic/ldo.scs', config='configs/ldo.json', circuit_class='ldo',
+                 pdk_id=tasks.MOCK_PDK),
+    toy_opamp_two_stage=dict(netlist='tests/fixtures/synthetic/opamp_two_stage.scs', config='configs/opamp_two_stage.json',
+                             circuit_class='opamp', pdk_id=tasks.MOCK_PDK),
+    gpdk045_vco=dict(netlist='examples/circuits/gpdk045_vco.scs', config='configs/gpdk045_vco.json', circuit_class='vco',
+                     pdk_id='gpdk045'),
 )
 
 
@@ -163,7 +168,7 @@ OTHER_CIRCUITS = dict(
 def other_circuits(*names):
     """synthetic:<name> for each named OTHER_CIRCUITS entry, in this process only (runs through `execute`, not a detached
     worker, which would not see them). Removed again afterwards."""
-    added = {name: dict(OTHER_CIRCUITS[name], pdk_id='gpdk045', description='test only') for name in names}
+    added = {name: dict(OTHER_CIRCUITS[name], description='test only') for name in names}
     tasks.SYNTHETIC_FIXTURES.update(added)
     try:
         yield [f'synthetic:{name}' for name in names]

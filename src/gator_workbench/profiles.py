@@ -631,7 +631,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
     * Then the profile files are generated from that copy and the task file is written. A new revision keeps the
       recorded baseline only when parameters, probes, measurement, analyses, variables and bindings are unchanged."""
     from . import bridge_read, task_files, virtuoso_setup, working_copy
-    from .tasks import REAL_PROFILES
+    from .tasks import REAL_PROFILES, REMOVED_REAL_TASKS
     commands, extras = commands or {}, dict(extras or {})
     directory = profile_dir(name)                                # validates the name
     current = list_profiles().get(task) if task else None
@@ -647,7 +647,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
         if not current.get('copy_target'):
             raise ProfileError(f'real:{name} was made before tasks had working copies: read its cell in the Virtuoso window (confirming '
                                'that it is a copy you made) and save a new task')
-    elif name in REAL_PROFILES or directory.exists():
+    elif name in REAL_PROFILES or f'real:{name}' in REMOVED_REAL_TASKS or directory.exists():   # a removed one's name stays reserved
         raise ProfileError(f'A task called real:{name} already exists: choose another name')
     kind = measurement_kind(config)
     saved = task_file(task) if current else None

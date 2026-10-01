@@ -19,7 +19,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/virtuoso_source_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { answerDialogs, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { MOCK_PAGE_CONFIG, answerDialogs, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -32,7 +32,7 @@ const CELLS = {
   FIXTURE_DESIGNS: { technology_library: 'gpdk045', cells: [
     { name: 'ota5_v1', views: ['maestro', 'schematic', 'symbol'], has_schematic: true },
     { name: 'ota5_tb', views: ['schematic'], has_schematic: true },
-    { name: 'vco_fixture', views: ['schematic', 'symbol'], has_schematic: true },           // stands for the cell of a verified built-in circuit (the OTA7 since the VCO task was withdrawn, 7.73)
+    { name: 'vco_fixture', views: ['schematic', 'symbol'], has_schematic: true },           // stands for the cell of a verified built-in circuit (none is left since 2026-09-30, record 7.128)
     { name: 'symbol_only', views: ['symbol'], has_schematic: false }] },
   FIXTURE_OTHER: { technology_library: 'otherTech', cells: [{ name: 'inv', views: ['schematic', 'symbol'], has_schematic: true }] },
 };
@@ -146,7 +146,8 @@ try {
     await evaluate(`(() => { const d = ${PANEL}.querySelector('details.labels'); if (!d.open) d.querySelector('summary').click(); const i = ${FIELD(label)}; i.focus(); i.select(); })()`);
     await send('Input.insertText', { text: textToType });
   };
-  const stored = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')`);
+  // The page saves its configuration 800 ms after the last change: read it once no save is pending, not one step behind.
+  const stored = async () => { await page.saved(); return evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')`); };
   // Save task, Task file and their messages live in the editors (tab line + under the toolbar) of the main page.
   const TASK = `document.querySelector('.editors')`;
   const TASK_BUTTON = t => `[...${TASK}.querySelectorAll('.task-save button, .task-notes button')].find(b => b.textContent.trim() === ${JSON.stringify(t)})`;
@@ -154,7 +155,10 @@ try {
   const taskText = () => evaluate(`[...${TASK}.querySelectorAll('.task-save, .task-notes')].map(e => e.textContent).join(' ')`);
   const typeTask = async (label, textToType) => { await evaluate(`(() => { const i = ${TASK_LABEL(label)}.querySelector('input'); i.focus(); i.select(); })()`); await send('Input.insertText', { text: textToType }); };
   const ops = (from = 0) => calls.slice(from).map(c => [c.op, c.library, c.cell, c.testbench, c.name, c.work_here ? 'work_here' : null].filter(Boolean).join(' '));
-  const quiet = async (ms = 1500) => { let seen = -1; while (seen !== calls.length || inFlight) { seen = calls.length; await sleep(ms); } };
+  // Settled once a whole window passes with no new bridge call and none in flight. The window only has to outlast the
+  // page's own step from one answer to its next request (it chains them without delay): 1.5 s until 2026-09-30, when 29
+  // such waits were a third of the batch's slowest script.
+  const quiet = async (ms = 800) => { let seen = -1; while (seen !== calls.length || inFlight) { seen = calls.length; await sleep(ms); } };
   const shotColumn = async name => {
     await evaluate(`${PANEL}.scrollIntoView({ block: 'start' })`); await sleep(200);
     await page.shot(path.join(out, name), `document.querySelector('.left')`, { scale: 2, maxHeight: 1400 });
@@ -185,6 +189,8 @@ try {
   const shotWindow = name => far.shot(path.join(out, name), WIN, { scale: 2, maxHeight: 1600, beyond: true });
 
   await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose', '*/api/tasks', '*/api/tasks/starter*'], answer, { others: 'read', connection: 'lab' });
+  await page.trackSaves();                                                          // stored() waits for the page's 800 ms save
+  await page.seed({ config: MOCK_PAGE_CONFIG, when: 'once' });           // on the MOCK stand-in (record 7.128)
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   // The connection in use is named on the one "Connection" button of the left column (its window is not needed here).
@@ -333,9 +339,8 @@ try {
   check('it is not offered for reading or for a task', !(await wHas('Read this cell into the workbench')) && !(await evaluate(`!!(${TASK_BUTTON('Save task')})`)));
   check('what that means is one folded line', await far.evaluate(`(() => { const d = [...${WIN}.querySelectorAll('.note details')].find(x => x.querySelector('summary').textContent === 'What this means');
     return !!d && !d.open && d.textContent.includes('gets no second task'); })()`));
-  await choose('Task', 'real:gpdk045_ota7'); await quiet();
-  check('choosing it in the Task list opens it', (await stored()).circuit.source === 'registered_task' && (await value('Task')) === 'real:gpdk045_ota7', await value('Task'));
-  check('a built-in circuit has no Delete task', !(await evaluate(`!!(${BUTTON('Delete task')})`)));
+  // Choosing that task in the Task list was checked here until 2026-09-30: no built-in circuit is offered any more (record
+  // 7.128); the window's answer for such a cell stays checked above.
 
   // ---- Delete task: asked once more, refused while a run works, then back at the cell with Save task -----------------------
   await wChoose('Library', 'FIXTURE_DESIGNS'); await quiet();

@@ -552,6 +552,9 @@ class ConnectionMonitor:
     """Runs probes off the request thread, coalesces concurrent requests per profile, caches results
     with their age and logs every check. Several browser tabs never multiply probes."""
     stale_after_seconds: float = 120.0
+    # A passing check this recent serves a cellview gate instead of a new probe (review of 2026-09-30): a Save task, an
+    # import or the window's reads gated two or three times within seconds, about 0.9 s each. See _recent_pass.
+    gate_reuse_seconds: float = 30.0
     probe_timeout_seconds: float = 45.0
     probe_command: list | None = None            # tests inject a fake probe; default = this module as a process
     active_run_lookup: object = None             # callable(profile_id) -> dict | None
@@ -656,7 +659,8 @@ class ConnectionMonitor:
                            refusal=dict(action=action, status='blocked', blocking=gate['blocking'], uncertain=[])))
             return gate
         scope = 'full' if 'spectre' in needed else 'interactive'
-        result = self.check(profile_id, scope=scope, trigger='gate')
+        reused = self._recent_pass(profile_id, kind, needed) if action != 'real_simulation' and scope == 'interactive' else None
+        result = reused or self.check(profile_id, scope=scope, trigger='gate')
         relevant = [item for item in result['layers'] if item['layer'] in needed]
         blocking = [item for item in relevant if item['state'] in ('failed', 'not_ready')]
         uncertain = [item for item in relevant if item['state'] in ('unknown', 'busy', 'not_checked')]
@@ -669,11 +673,31 @@ class ConnectionMonitor:
                     layers=[dict(layer=i['layer'], state=i['state'], reason_code=i['reason_code']) for i in relevant],
                     bridge_version=next((i['details'].get('installed_version') for i in result['layers']
                                          if i['layer'] == 'bridge_package'), None),
-                    next_steps=[i['details'].get('next_step') for i in blocking + uncertain if i['details'].get('next_step')])
+                    next_steps=[i['details'].get('next_step') for i in blocking + uncertain if i['details'].get('next_step')],
+                    check_reused=reused is not None)
         if not allowed:
             self._log(dict(result, trigger='gate', refusal=dict(action=action, status=gate['status'],
                                                                  blocking=gate['blocking'], uncertain=gate['uncertain'])))
         return gate
+
+    def _recent_pass(self, profile_id, kind, needed):
+        """The last check of this profile when it may serve a cellview gate: an interactive or full check at most
+        `gate_reuse_seconds` old, of the same connection kind, made with the same run state (active or not), in which every
+        layer the gate needs was ok. Otherwise None, and the gate probes. A failed or uncertain result is never reused -
+        the next gate tests again - and a real simulation is never gated on a reused check. What a lost link costs in those
+        seconds: the child process that then works on the cell reports the bridge's own error instead of this gate's."""
+        with self._lock:
+            result = self._results.get(profile_id)
+        if result is None or result.get('kind') != kind or result.get('scope') not in ('interactive', 'full'):
+            return None
+        active = self.active_run_lookup(profile_id) if self.active_run_lookup else None
+        if bool(active) != bool(result.get('run_active')):
+            return None
+        age = (utcnow() - _parse_time(result['checked_utc'])).total_seconds()
+        if not 0 <= age <= self.gate_reuse_seconds:
+            return None
+        states = {item['layer']: item['state'] for item in result['layers']}
+        return result if all(states.get(name) == 'ok' for name in needed) else None
 
     def _log(self, result):
         """Application-level diagnostics log. Never a research table, never an aggregate."""

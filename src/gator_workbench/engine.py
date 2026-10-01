@@ -304,7 +304,8 @@ class RunEngine:
         limits = WorkerLimits(operation_seconds=max(300., (1 + len(run.conditions.corners)) * adv.simulation_timeout_seconds + 180.))
         self.lanes = open_lanes(factory, count, use_processes=self.use_processes, limits=limits)
         self.lane_state = {lane.lane_id: dict(observation=None, needs_reset=True, busy=None, finished=False,
-                                              episode_id=None) for lane in self.lanes}
+                                              episode_id=None, reset_cache_valid=False, resets_since_check=0)
+                           for lane in self.lanes}
         for lane in self.lanes:
             if lane.info['origin'] != self.task.origin:
                 raise RuntimeError('Lane origin differs from the task origin')
@@ -586,6 +587,50 @@ class RunEngine:
         return self.counters['active_seconds_before'] + (self._clock() - self._segment_started)
 
     # ------------------------------------------------------------------ dispatch
+    # Every 5th reset of a lane simulates the starting design; the others start from the lane's last valid reset (user
+    # decision of 2026-09-30: the unchanged design used to be simulated at every reset, 1 evaluation in 5 of a
+    # one-condition task). The drift check against the verified reference runs at every simulated reset. A MOCK run
+    # simulates every reset: it costs nothing, and its data stays as it was.
+    RESET_RECHECK_EVERY = 5
+
+    def _resets_are_reused(self):
+        return not self.task.mock
+
+    def _reuse_reset(self, lane, state):
+        return (self._resets_are_reused() and self.counters['baseline_done'] and state.get('reset_cache_valid')
+                and lane.info.get('supports_reset_reuse') and state.get('resets_since_check', 0) + 1 < self.RESET_RECHECK_EVERY)
+
+    def _dispatch_reused_reset(self, lane, state):
+        """A reset from the lane's last valid one: nothing is reserved, charged, launched or recorded as an evaluation."""
+        if self.ledger.remaining() < 1:              # no step could follow it: the lane is done, as a refused reservation says
+            state['finished'] = True
+            return
+        self._poll_control()
+        if self.stop_reason is not None:
+            return
+        self.counters['episodes'] += 1
+        state['episode_id'] = f'{lane.lane_id}-{self.counters["episodes"]:06d}'
+        state['busy'] = dict(evaluation_id=None, op='reset_reused', phase='episode_reset_reused', attempts=[],
+                             episode_id=state['episode_id'], attempt_dispatched_at=utcnow(),
+                             handle=lane.submit('reset_reused', None, allowance=0, stop_file=str(self._condition_stop_file)))
+
+    def _on_reused_reset(self, lane, busy, handle):
+        state = self.lane_state[lane.lane_id]
+        state['busy'] = None
+        try:
+            result = handle.result()
+        except BaseException as exc:                 # the lane itself failed; the next (simulated) reset will say so
+            result = dict(ok=False, exception=dict(type=type(exc).__name__, message=str(exc)[:4000]))
+        if result.get('ok'):
+            state.update(observation=result['step'][0], needs_reset=False,
+                         resets_since_check=state.get('resets_since_check', 0) + 1)
+            self._event('episode_reset_reused', worker_id=lane.lane_id, episode_id=busy['episode_id'],
+                        reused_candidate_id=result['step'][4].get('reused_candidate_id'))
+        else:                                        # nothing to reuse after all: the next reset is simulated
+            state.update(reset_cache_valid=False, needs_reset=True)
+            self._event('episode_reset_reused', worker_id=lane.lane_id, episode_id=busy['episode_id'], status='refused',
+                        error=redact(str((result.get('exception') or {}).get('message')), 300))
+
     def _dispatch(self, lane):
         if self.search and self.search.replay_barrier():
             return
@@ -608,6 +653,8 @@ class RunEngine:
                 chosen = self.search.choose()
                 if chosen is None:
                     return
+        if state['needs_reset'] and self._reuse_reset(lane, state):
+            return self._dispatch_reused_reset(lane, state)
         allowance = 1 if state['needs_reset'] else lane.info.get('step_launches', 1)
         evaluation_id = self.ledger.reserve(launches=allowance)
         if evaluation_id is None:
@@ -640,7 +687,7 @@ class RunEngine:
                 proposal = self.learner.act([state['observation']], deterministic=deterministic)[0]
                 source, phase, policy_version = ('mean_policy' if deterministic else 'sampled_policy'), 'frozen_eval', self.learner.updates
             else:
-                pending = sum(1 for s in self.lane_state.values() if s['busy'] and s['busy']['op'] != 'reset')
+                pending = sum(1 for s in self.lane_state.values() if s['busy'] and s['busy']['op'] not in ('reset', 'reset_reused'))
                 if (self.config.run.search.method != 'llm_warmstart'
                         and self.replay.insertions + pending < self.config.run.advanced.warmup_transitions):
                     proposal = {g: self.rng.uniform(-1, 1) for g in group_ids}
@@ -673,6 +720,8 @@ class RunEngine:
     def _on_attempt(self, lane, handle):
         state = self.lane_state[lane.lane_id]
         busy = state['busy']
+        if busy['op'] == 'reset_reused':             # no evaluation: nothing to account, retry or commit
+            return self._on_reused_reset(lane, busy, handle)
         try:
             result = handle.result()
         except BaseException as exc:                 # the lane itself failed (worker died, deadline exceeded)
@@ -714,6 +763,9 @@ class RunEngine:
             busy = state['busy']
             if busy['handle'].done():
                 self._on_attempt(lane, busy['handle'])
+                continue
+            if busy['op'] == 'reset_reused':         # it launches nothing and charges nothing: there is nothing to record
+                state['busy'] = None
                 continue
             unknown = 0 if self.task.mock else busy['launch_allowance']     # only a real launch can be left unresolved
             self.ledger.end_attempt(busy['evaluation_id'], launches=unknown, uncertain=unknown)
@@ -947,6 +999,10 @@ class RunEngine:
         else:
             state['observation'] = observation
             state['needs_reset'] = terminated or truncated or observation is None
+            if busy['op'] == 'reset':                # the lane keeps a valid simulated reset for the next reused ones
+                state['reset_cache_valid'] = bool(result['ok'] and info.get('evaluation_valid') and observation is not None
+                                                  and not terminated and not truncated)
+                state['resets_since_check'] = 0
         every, seconds = self.config.output.checkpoint_every_evaluations, self.config.output.checkpoint_every_seconds
         if self.config.output.save_checkpoints and (
                 (every and commit_seq - self.counters['last_checkpoint_commit'] >= every)
@@ -1279,7 +1335,9 @@ class RunEngine:
         if limit is not None and changed:
             from .paths import directory_bytes
             failures = sorted((v['updated_utc'], k) for k, v in index['entries'].items() if v['status'] == 'retained_failure')
-            while directory_bytes(self.layout.waveforms) > limit and failures:
+            # Only failures may be deleted for space, so measure only while one is left: the folder walk grows with every
+            # retained job and cost seconds per evaluation on the 9p mount (review of 2026-09-30).
+            while failures and directory_bytes(self.layout.waveforms) > limit:
                 _, key = failures.pop(0)
                 shutil.rmtree(self.layout.run_dir / index['entries'][key]['path'], ignore_errors=True)
                 index['entries'][key].update(status='deleted_storage_limit', updated_utc=iso())

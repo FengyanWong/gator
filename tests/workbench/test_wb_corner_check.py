@@ -2,22 +2,18 @@
 
 MOCK runs go through the whole path, the detached worker included. The REAL path runs against a fake adapter that
 records every call: no Virtuoso, no Spectre, no budget."""
-from dataclasses import asdict
 import json
 import math
 from pathlib import Path
 import time
-from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
-from analog_optimizer.backends.backend import NetlistArtifact, SimulationResult, SimulationStatus
-from analog_optimizer.measurements.specs import SpecificationEvaluator
+from analog_optimizer.backends.backend import SimulationStatus
 
-from gator_workbench import corner_check as cc, schema, tasks
+from gator_workbench import corner_check as cc
 from gator_workbench.api import create_app
-from gator_workbench.compile import compile_task
 from gator_workbench.engine import RunLock
 from gator_workbench.storage.atomic import read_json, write_json
 from helpers import execute, make_config
@@ -90,14 +86,11 @@ def test_a_working_run_is_not_checked(tmp_path):
         lock.release()
 
 
-def test_only_profiles_that_accept_the_corners_can_be_checked():
-    assert cc.checkable_real_tasks() == ('real:gpdk045_ota7',)                  # the OTA5 was removed (status record 7.73)
-    corners = cc.screening_corners()[0]
-    for name in ('gpdk045_ldo',):
-        problem = cc._corner_problem(tasks._verified_profile(name), corners)
-        assert problem and 'nominal' in problem
-        text = cc._unsupported(f'real:{name}', problem)
-        assert 'normal condition only' in text and 'real:gpdk045_ota7' in text
+def test_no_registered_task_can_be_checked_at_corners_now():
+    """Only built-in profiles accepted the corners, and the last of them, the OTA7, was removed on 2026-09-30 (record
+    7.128), with the tests of the real check that used it."""
+    assert cc.checkable_real_tasks() == ()
+    assert cc._unsupported('real:x', 'nominal only').endswith('Circuits that can: none.')
 
 
 # ------------------------------------------------------------------------------------------------ a MOCK check
@@ -186,164 +179,6 @@ def test_a_changed_plan_or_count_is_refused(finished):
     assert refused.value.code == 'plan_changed'
     with pytest.raises(cc.CheckRefused):
         cc.check_directory(layout.run_dir, '../../etc')
-
-
-# ------------------------------------------------------------------------------------------------ the REAL path, faked
-class FakeAdapter:
-    """VirtuosoBridgeBackend's surface as the check uses it. script: {simulation number: status}; widths: the cell."""
-    calls, script, fail_readback, instances = [], {}, False, []
-
-    def __init__(self, config, circuit):
-        self.circuit, self.cell, self.simulations, self.session_dir = circuit, None, 0, Path('/fake/journal')
-        FakeAdapter.instances.append(self)
-
-    def connect(self):
-        FakeAdapter.calls.append(('connect',))
-        self.cell = dict(self.circuit.assignments(4.4e-6))                    # a complete, valid OTA7 sizing
-        self.initial = dict(self.cell)
-
-    def read_parameters(self):
-        FakeAdapter.calls.append(('read',))
-        return dict(self.cell)
-
-    def set_parameters(self, parameters):
-        FakeAdapter.calls.append(('write', parameters[('XU1/M1', 'w')]))
-        self.cell = dict(parameters)
-
-    def generate_netlist(self, work_root, *, condition=None):
-        FakeAdapter.calls.append(('export', condition.corner.id, condition.purpose))
-        path = Path(work_root) / f'deck-{len(FakeAdapter.calls)}.scs'
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(asdict(condition)))
-        return NetlistArtifact(path, path.stem, 'sha', 'real', condition)
-
-    def run_simulation(self, request):
-        self.simulations += 1
-        FakeAdapter.calls.append(('simulate', request.condition.corner.id))
-        status = FakeAdapter.script.get(self.simulations, SimulationStatus.OK)
-        corner, width = request.condition.corner, request.parameters[('XU1/M1', 'w')]
-        metrics = dict(gain_db_at_start=60.0, unity_gain_hz=4.0e6 * (0.8 if corner.id == 'ss_hot_low' and width < 4.1e-6 else 1),
-                       phase_margin_estimate_deg=91.0, supply_power_w=2.8e-6 * corner.supply_v, output_dc_v=0.5,   # near the 3.24 uW limit
-                       unity_downward_crossings=1.0)
-        ok = status == SimulationStatus.OK
-        directory = Path(request.work_root) / f'job-{self.simulations}'
-        directory.mkdir(parents=True, exist_ok=True)
-        return SimulationResult(directory.name, 'fake', 'real', status, 'fake', not ok, ok, metrics if ok else {},
-                                FakeAdapter.units, {k: True for k in metrics} if ok else {}, dict(request.parameters),
-                                directory, 0.01, request.condition, simulator_invocations=1)
-
-    def restore(self):
-        FakeAdapter.calls.append(('restore',))
-        self.cell = dict(self.initial)
-        if FakeAdapter.fail_readback:
-            self.cell[('XU1/M1', 'w')] = 4.0e-6
-
-    def close(self):
-        FakeAdapter.calls.append(('close',))
-
-
-def real_context():
-    raw = dict(tasks.real_starter_config('real:gpdk045_ota7'), run=dict(max_evaluations=5, seed=1))
-    config = schema.WorkbenchConfig.model_validate(raw)
-    profile = tasks._verified_profile('gpdk045_ota7')
-    compiled = compile_task(config, profile.optimization_graph())
-    corners, nominal, post = cc.screening_corners(profile)
-    FakeAdapter.units = {s.metric_id: s.unit for s in compiled.specs}
-    return SimpleNamespace(config=config, compiled=compiled, profile=profile, corners=corners, nominal=nominal, post=post,
-                           evaluator=SpecificationEvaluator(compiled.specs), expected_keys=set(profile.writable_keys),
-                           task_key='real:gpdk045_ota7', mock=False, origin='real')
-
-
-@pytest.fixture
-def real_check(tmp_path, monkeypatch):
-    """A check folder of a real OTA7 run with two designs (4.0 um fails the ss corner, 4.2 um passes everything)."""
-    context = real_context()
-    run_dir = tmp_path / 'run'
-    run_dir.mkdir()
-    write_json(run_dir / 'run_manifest.json', dict(run_id='r1', mock=False, task_definition_hash='h'))
-    designs = [dict(evaluation_id=f'e{i}', reward=0.0, min_margin=0.1, tightest_spec='unity_gain_hz',
-                    spec_values=dict(gain_db_at_start=60.0, unity_gain_hz=4.0e6),
-                    assignment=[dict(device=d, parameter=p, value=value)
-                                for (d, p), value in sorted(context.profile.assignments(width).items())])
-               for i, width in enumerate((4.0e-6, 4.2e-6))]
-    directory = run_dir / cc.CHECK_DIR / '20260922T000000Z-0000abcd'
-    write_json(directory / 'request.json', dict(
-        check_id=directory.name, run_id='r1', run_dir=str(run_dir), task_key='real:gpdk045_ota7', mock=False,
-        task_definition_hash='h', corners=[cc.corner_record(c) for c in context.corners], designs=designs,
-        simulations=10, authorization=dict(real_simulation=True, authorized_simulations=10)))
-    write_json(directory / 'status.json', dict(state='starting'))
-    monkeypatch.setattr(cc, 'Context', lambda layout, manifest, allow_real=False: context)
-    monkeypatch.setattr(cc.Worker, '_bridge_parts', lambda self: (None, context.profile))
-    monkeypatch.setattr('analog_optimizer.backends.virtuoso_bridge.VirtuosoBridgeBackend', FakeAdapter)
-    FakeAdapter.calls, FakeAdapter.script, FakeAdapter.fail_readback, FakeAdapter.instances = [], {}, False, []
-    return run_dir, directory
-
-
-def test_real_check_writes_each_design_once_simulates_each_corner_and_restores(real_check):
-    run_dir, directory = real_check
-    assert cc.execute(directory, allow_real=True) == 'completed'
-    calls = FakeAdapter.calls
-    assert calls[:3] == [('connect',), ('read',), ('write', 4.0e-6)]
-    per_design = [('export', c, 'pvt_validation') for c in CORNERS]
-    exports = [c for c in calls if c[0] == 'export']
-    assert exports == per_design * 2
-    assert [c for c in calls if c[0] == 'write'] == [('write', 4.0e-6), ('write', 4.2e-6)]
-    assert calls[-3:] == [('restore',), ('read',), ('close',)]
-    status = cc.check_status(run_dir, directory.name)
-    summary = status['summary']
-    assert [d['disposition'] for d in summary['designs']] == ['rejected', 'accepted']
-    assert summary['designs'][0]['corner_states']['ss_hot_low'] == 'failed'
-    failing = status['results'][1]['failing'][0]
-    assert failing['metric_id'] == 'unity_gain_hz' and failing['value'] == pytest.approx(3.2e6)
-    # the measured power follows the corner's supply (1.1 V at ff) and the worst case names its corner
-    assert summary['designs'][1]['worst_case_metrics']['supply_power_w']['corner_id'] == 'ff_cold_high'
-    assert summary['restoration']['state'] == 'restored' and status['status']['state'] == 'completed'
-    assert summary['budget'] == dict(authorized=10, simulations=10, started=10, completed=10, simulator_invocations=10)
-
-
-def test_real_check_needs_the_authorization_and_touches_nothing_without_it(real_check):
-    run_dir, directory = real_check
-    assert cc.execute(directory, allow_real=False) == 'failed'
-    assert FakeAdapter.calls == []
-    assert cc.check_status(run_dir, directory.name)['status']['error']['code'] == 'real_authorization_required'
-
-
-def test_two_infrastructure_failures_in_a_row_stop_the_check_and_restore_the_cell(real_check):
-    run_dir, directory = real_check
-    FakeAdapter.script = {3: SimulationStatus.TIMEOUT, 4: SimulationStatus.BACKEND_ERROR}
-    assert cc.execute(directory, allow_real=True) == 'failed'
-    assert len([c for c in FakeAdapter.calls if c[0] == 'simulate']) == 4, 'no budget spent after the second failure'
-    status = cc.check_status(run_dir, directory.name)
-    assert status['status']['error']['code'] == 'infrastructure'
-    assert FakeAdapter.calls[-3:] == [('restore',), ('read',), ('close',)]
-    summary = status['summary']
-    assert summary['restoration']['state'] == 'restored'
-    # design 1 already FAILED at ss before the link broke: one confirmed failure rejects, unknowns do not rescue it
-    assert [d['disposition'] for d in summary['designs']] == ['rejected', 'inconclusive']
-    assert summary['designs'][0]['unknown_corners'] == ['ff_cold_high', 'fs_nominal', 'sf_nominal']
-    assert summary['designs'][1]['unknown_corners'] == list(CORNERS) and summary['designs'][1]['pass_rate'] is None
-    assert summary['budget']['started'] == 4
-
-
-def test_a_restoration_that_does_not_read_back_is_reported_loudly(real_check):
-    run_dir, directory = real_check
-    FakeAdapter.fail_readback = True
-    assert cc.execute(directory, allow_real=True) == 'failed'
-    restoration = cc.check_status(run_dir, directory.name)['summary']['restoration']
-    assert restoration['state'] == 'recovery_required' and restoration['journal'] == '/fake/journal'
-
-
-def test_an_adapter_exception_still_restores(real_check, monkeypatch):
-    run_dir, directory = real_check
-
-    def broken(self, work_root, *, condition=None):
-        raise RuntimeError('Active ADE/Maestro window conflicts with OCEAN export')
-    monkeypatch.setattr(FakeAdapter, 'generate_netlist', broken)
-    assert cc.execute(directory, allow_real=True) == 'failed'
-    status = cc.check_status(run_dir, directory.name)
-    assert 'Maestro' in status['status']['error']['message'] and status['results'] == []
-    assert status['summary']['restoration']['state'] == 'restored'
-    assert status['summary']['budget']['started'] == 0
 
 
 # ------------------------------------------------------------------------------------------------ HTTP + detached worker

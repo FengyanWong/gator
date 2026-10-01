@@ -368,6 +368,33 @@ def test_gate_blocks_on_failure_and_needs_acknowledgement_for_unknown(tmp_path):
     assert ready.gate('read_cellview', 'lab')['allowed']                    # reading does not need readiness
 
 
+def test_a_passing_check_seconds_old_serves_the_next_cellview_gate(tmp_path):
+    """A Save task, an import or the window's reads gated two or three times within seconds, one probe each (review of
+    2026-09-30). One passing probe now serves them for `gate_reuse_seconds`; a real simulation, an older check, a check
+    from before a run started, a failed one and a cheap one never serve a gate."""
+    monitor = monitor_for(tmp_path, OK_BODY)
+    first, second = monitor.gate('write_cellview', 'lab'), monitor.gate('read_cellview', 'lab')
+    assert first['allowed'] and not first['check_reused'] and second['allowed'] and second['check_reused']
+    assert monitor.probes_started == 1 and second['checked_utc'] == first['checked_utc']      # the reused check's own time
+    assert not monitor.gate('real_simulation', 'lab')['check_reused'] and monitor.probes_started == 2   # always afresh
+    monitor.gate_reuse_seconds = 0.2
+    time.sleep(0.3)
+    assert not monitor.gate('write_cellview', 'lab')['check_reused'] and monitor.probes_started == 3   # too old
+    monitor.gate_reuse_seconds = 30.0
+    assert monitor.gate('write_cellview', 'lab')['check_reused'] and monitor.probes_started == 3
+    monitor.active_run_lookup = lambda profile_id: dict(run_id='fixture')                   # a run started since
+    assert not monitor.gate('write_cellview', 'lab')['check_reused'] and monitor.probes_started == 4
+    failing = monitor_for(tmp_path, f'print(json.dumps(dict(layers={layers_json(session_readiness="not_ready")!r})))')
+    assert failing.gate('write_cellview', 'lab')['blocking'] == ['session_readiness']
+    assert failing.gate('write_cellview', 'lab')['blocking'] == ['session_readiness'] and failing.probes_started == 2
+    opened = monitor_for(tmp_path, OK_BODY)
+    opened.check('lab', scope='interactive', trigger='user')                                # the page's test when it opens
+    assert opened.gate('read_cellview', 'lab')['check_reused'] and opened.probes_started == 1
+    cheap = monitor_for(tmp_path, OK_BODY)
+    cheap.check('lab', scope='cheap', trigger='auto')                                       # tunnel and package only
+    assert not cheap.gate('read_cellview', 'lab')['check_reused'] and cheap.probes_started == 2
+
+
 def real_task(tmp_path, monkeypatch):
     """A MOCK-evaluated task relabelled as real, to exercise the gate without any real backend."""
     config = make_config(tmp_path, run=dict(max_evaluations=6, connection_profile_id='lab'))

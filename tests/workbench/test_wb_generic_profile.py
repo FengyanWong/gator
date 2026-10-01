@@ -16,13 +16,13 @@ from analog_optimizer.backends.provenance import profile_contract
 from analog_optimizer.envs.sizing import graph_contract
 from analog_optimizer.parameters.actions import ActionMapper
 from gator_workbench import tasks
-from gator_workbench.generic_profile import GenericMosWidthProfile, RulesError, RULES_FORMAT, check_writable_record
+from gator_workbench.generic_profile import GenericMosWidthProfile, RULES_FORMAT
 
 REPO = Path(__file__).resolve().parents[2]
-BOUNDS = dict(                                             # the bounds written into the four hand-written classes
+# The bounds written into the hand-written classes whose example files remain (the OTA7 and LDO ones left with their files
+# on 2026-09-30, record 7.128, and with them the test of what the verified backend cannot honour, built on the OTA7).
+BOUNDS = dict(
     gpdk045_ota5={'M1': (3.6e-6, 4.4e-6), 'M2': (3.6e-6, 4.4e-6)},
-    gpdk045_ota7={'M1': (3.6e-6, 4.4e-6), 'M2': (3.6e-6, 4.4e-6), 'M6': (7.2e-6, 8.8e-6), 'M7': (1.8e-6, 2.2e-6)},
-    gpdk045_ldo={'M1': (3.6e-6, 4.4e-6), 'M2': (3.6e-6, 4.4e-6), 'MP': (7.2e-6, 8.8e-6)},
     gpdk045_vco={'MS1': (.9e-6, 1.1e-6), 'MS2': (.9e-6, 1.1e-6), 'MS3': (.9e-6, 1.1e-6)})
 CIRCUITS = sorted(BOUNDS)
 
@@ -151,28 +151,3 @@ def test_generated_rules_accept_and_reject_exactly_what_the_verified_class_does(
     # ---- workers receive the profile pickled ------------------------------------------------------------------------------
     clone = pickle.loads(pickle.dumps(gen))
     assert clone.validate_readback(reference) == nominal and profile_contract(clone) == profile_contract(gen)
-
-
-def test_rules_the_verified_backend_cannot_honour_are_refused(tmp_path):
-    hand = hand_written('gpdk045_ota7')
-    good = generated('gpdk045_ota7', tmp_path, hand)
-    assert good.assignments() == hand.validate_readback(good.reference)
-    assert good.assignments(dict(output_stage_width=8.8e-6))['XU1/M7', 'w'] == pytest.approx(2.2e-6)   # the 4:1 pair moves together
-    bounds = [dict(instance=k, lower=lo, upper=hi) for k, (lo, hi) in BOUNDS['gpdk045_ota7'].items()]
-    for changes in (dict(format='something-else'), dict(width_step=1e-9), dict(core_instance='X/U1'), dict(recipe='ring_oscillator'),
-                    dict(writable=[]), dict(writable=bounds + [bounds[0]]),                          # nothing / twice
-                    dict(writable=[dict(b, lower=b['lower'] + 1e-9) for b in bounds]),                 # a bound off the grid
-                    dict(writable=[dict(b, upper=b['upper'] / 2) for b in bounds]),                    # the group leaves the bounds
-                    dict(writable=bounds[:2]),                                                         # a mutable group is not writable
-                    dict(writable=bounds + [dict(instance='CC', lower=1e-6, upper=2e-6)]),             # not a transistor
-                    dict(mos_instances=['M1', 'M2'])):                                                 # instances unaccounted for
-        with pytest.raises(ValueError):
-            generated('gpdk045_ota7', tmp_path, hand, **changes)
-    from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
-    with pytest.raises(Exception, match='nominal condition only'):
-        good.validate_condition(SimulationCondition(PVTCorner('ss_hot_low', 'ss', 125.0, 0.9), 'pvt_validation'))
-    reference = deepcopy(good.reference)
-    check_writable_record(reference, ['M1', 'M6'])
-    instance(reference, 'M6')['params']['fingers'] = '4'
-    with pytest.raises(RulesError, match='fingers'):
-        check_writable_record(reference, ['M1', 'M6'])

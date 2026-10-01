@@ -9,6 +9,10 @@ from analog_optimizer.netlist.spectre_parser import SpectreParser
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures" / "synthetic"
+# The workbench has no MOCK task since 2026-09-30 (record 7.128). The tests register their stand-in - the OTA5 netlist
+# on the toy backend that was synthetic:gpdk045_ota5 - before anything imports gator_workbench.tasks; the run workers
+# and lanes a test starts inherit the variable.
+os.environ.setdefault("GATOR_WORKBENCH_SYNTHETIC_FIXTURES", str(ROOT / "tests" / "workbench" / "fixtures" / "synthetic_fixtures.json"))
 
 
 @pytest.fixture(autouse=True, scope="session")

@@ -1,4 +1,5 @@
-"""No-call checks of real task contracts and serialization of recorded REAL states."""
+"""No-call checks of real task contracts and serialization of recorded REAL states. The two checks built on the OTA7 task
+(its starter's hash identity, its corner deck) left with it on 2026-09-30 (record 7.128)."""
 from copy import deepcopy
 from dataclasses import asdict
 import json
@@ -7,11 +8,8 @@ from pathlib import Path
 import pyarrow as pa
 import pytest
 
-from gator_workbench.compile import compile_task, training_conditions
-from gator_workbench.modes import runtime_options
-from gator_workbench.schema import WorkbenchConfig, config_hash, task_definition_hash
+from gator_workbench.schema import WorkbenchConfig
 from gator_workbench.storage.tables import arrow_schema, normalize_row
-from gator_workbench.tasks import _verified_profile, real_starter_config
 from gator_workbench.trajectory import StateEncoder
 from test_reward_v2_real_data import real_transition  # Actual M6 measurements, no simulator implementation.
 
@@ -32,36 +30,6 @@ def robust_config():
                       conditions=dict(policy='always', corners=['ss_hot_low', 'ff_cold_high', 'fs_nominal', 'sf_nominal']))
     raw['run']['network']['operating_points'] = True
     return WorkbenchConfig.model_validate(raw)
-
-
-def test_default_real_task_hash_identity():
-    original = baseline()
-    config = WorkbenchConfig.model_validate(dict(real_starter_config('real:gpdk045_ota7'), run=dict(max_evaluations=10)))
-    assert config_hash(config) == original['config_hash']
-    assert task_definition_hash(config) == original['task_definition_hash']
-
-
-def test_real_profile_plan_compile_and_deck_transform():
-    config = robust_config()
-    profile = _verified_profile('gpdk045_ota7')
-    compiled = compile_task(config, profile.optimization_graph())
-    runtime = runtime_options(config)
-    assert len(runtime['feature_schema'].op_columns) == 12
-    assert compiled.spec_schema.width == 21 * len(compiled.spec_schema.metrics) + 11
-    assert runtime['reward_settings'].worst_spec_share == .5
-    assert len(runtime['planned_conditions']) == 5
-    exported = (ROOT / 'examples/circuits/gpdk045_ota7.scs').read_text()
-    before = profile.parser.parse_text(exported)
-    for condition in training_conditions(config):
-        prepared = profile.structure_for_condition(exported, condition)
-        parsed = profile.parser.parse_text(prepared)
-        assert parsed.parameters['VDD']['dc'].value == condition.corner.supply_v
-        for device, values in before.parameters.items():
-            if device == 'VDD':
-                continue
-            assert values == parsed.parameters[device]
-    # These are unsimulated deck transformations, not claimed electrical corner results.
-    assert 'nominal_only' in asdict(compiled.specs[0])
 
 
 @pytest.mark.parametrize('change', ['no_cap', 'retry', 'unsupported_profile', 'empty_corners'])

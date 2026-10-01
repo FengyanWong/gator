@@ -50,7 +50,8 @@ class _EnvDriver:
         return dict(lane_id=self.lane_id, directory=str(env.directory), origin=env.expected_origin,
                     group_ids=list(env.mapper.group_ids), max_steps=env.max_steps,
                     step_launches=len(env.planned_conditions),
-                    config_sha256=env.config_sha256, supports_retry=hasattr(env, '_evaluate'))
+                    config_sha256=env.config_sha256, supports_retry=hasattr(env, '_evaluate'),
+                    supports_reset_reuse=hasattr(env, 'reset_reused'))
 
     def _new_records(self):
         """The journal files this lane has not read yet. With waveform retention "all" the per-candidate journals are
@@ -93,6 +94,10 @@ class _EnvDriver:
             if op == 'reset':
                 observation, info = env.reset()
                 self._last = ('reset', None)
+                step = (observation, None, info['terminated'], info['truncated'], info)
+            elif op == 'reset_reused':                     # the engine's every-5th-reset rule (2026-09-30): nothing runs
+                observation, info = env.reset_reused()
+                self._last = None                          # so there is nothing to retry either
                 step = (observation, None, info['terminated'], info['truncated'], info)
             elif op == 'step':
                 action = env.mapper.legalize(proposal)      # invalid input costs nothing, as in env.step

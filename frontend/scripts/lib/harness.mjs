@@ -35,6 +35,15 @@ import path from 'node:path';
 export const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 export const LIVE_PORT = '8765';                                  // the user's own backend
 export const CONFIG_KEY = 'gator-workbench-config-v1';            // the page's saved configuration (store.ts)
+// A page that opens on the tests' MOCK stand-in, as a fresh page did until the MOCK task was deleted from the workbench
+// (2026-09-30, record 7.128: a fresh page has no task now). The check's backend must register the stand-in (run_checks.sh).
+export const MOCK_PAGE_CONFIG = {
+  schema_version: 'gator-workbench-config-v1', project: { name: 'gator-project', task_name: 'task', notes: '' },
+  circuit: { source: 'registered_task', task_id: 'synthetic:gpdk045_ota5', circuit_class: 'unspecified', pdk_id: 'unspecified' },
+  parameters: [], targets: [], measurements: [],
+  run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, seed: 0, reward: { violation_shape: 'compressed', worst_spec_share: 0.5 } },
+  output: { experiment_name: 'experiment' }, research: {},
+};
 export const RUN_KEY = 'gator-workbench-current-run-v1';          // the run this browser remembers
 export const NO_WRITES = 'FIXTURE: this check lets no writing request through';
 /** The page tests the connection in use ONCE when it opens (status record 7.80, user request 2026-09-24): a hermetic check

@@ -1,7 +1,8 @@
-"""The workbench has ONE MOCK task (user decision 2026-09-22, status record 7.59): synthetic:gpdk045_ota5 - the netlist
-of the verified GPDK045 OTA5 circuit, evaluated by the free analytic toy backend. The four
-toy-fixture tasks it replaced are refused with a plain reason. A model it trains never loads into a real run: that
-guard is circuit-independent and tested in test_wb_aggregates (mock_isolation). Local files and the MOCK backend only."""
+"""The MOCK task synthetic:gpdk045_ota5 (user decision 2026-09-22, status record 7.59) - the netlist of the verified GPDK045
+OTA5 circuit on the free analytic toy backend - was deleted from the workbench on 2026-09-30 (record 7.128). The tests
+register it themselves as their stand-in (tests/conftest.py); the workbench refuses it, and the four toy-fixture tasks it
+had replaced, with a plain reason. A model it trains never loads into a real run: that guard is circuit-independent and
+tested in test_wb_aggregates (mock_isolation). Local files and the MOCK backend only."""
 import json
 from pathlib import Path
 
@@ -51,11 +52,19 @@ def test_a_short_run_is_free_and_labelled_mock(tmp_path):
     assert {row['instance_path'] for row in rows(layout, 'parameters')} == {f'XU1/M{n}' for n in range(1, 6)}
 
 
+def test_the_workbench_itself_offers_no_mock_task(monkeypatch):
+    monkeypatch.delenv(tasks.ENV_SYNTHETIC_FIXTURES, raising=False)
+    assert tasks._registered_fixtures() == {}
+    monkeypatch.setattr(tasks, 'SYNTHETIC_FIXTURES', {})
+    assert not [t for t in tasks.list_tasks() if t['kind'] == 'mock']
+
+
 @pytest.mark.parametrize('removed', tasks.REMOVED_MOCK_TASKS)
-def test_a_removed_mock_task_is_refused_with_a_plain_reason(removed):
+def test_a_removed_mock_task_is_refused_with_a_plain_reason(removed, monkeypatch):
+    monkeypatch.setattr(tasks, 'SYNTHETIC_FIXTURES', {})                    # as in the workbench: no stand-in registered
     with pytest.raises(tasks.TaskBlocked) as caught:
         tasks.load_task(reference(removed))
-    assert str(caught.value).startswith(f'{removed} no longer exists') and MOCK_TASK in str(caught.value)
+    assert str(caught.value).startswith(f'{removed} no longer exists') and 'no MOCK task' in str(caught.value)
     with pytest.raises(KeyError):
         tasks.starter_config(removed)
 

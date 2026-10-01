@@ -157,6 +157,7 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.112 | Reward v2.1 audit fixes: the Specs scale suggestion follows the limits; equation specs survive a missing probe |
 | 7.113 | The Specs equations' old-configuration hash test reads a frozen pre-equations configuration |
 | 7.114 | Formula specs marked at training corners; a warning for "Missing value = failed" on a soft spec |
+| 7.115 | Optimization review of what round 5 left: faster Check/Start children, reused connection checks, parallel checks, a status poll that follows the run |
 | 7.116 | Four sizing methods with shared frontend/backend contracts: SAC, LLM warm start, LLM only, LLM rescue (Astra) |
 | 7.117 | Repository review, round 5: bugs, speed-ups, session-start docs and test fixes |
 | 7.118 | Audit of the LLM-sizing build (7.116): sound, four small fixes before its commit; report under artifacts/local/reviews |
@@ -165,3 +166,6 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.121 | Audit of the fixed-bias calibration: the zero passes come from the settling-time target, made worse by fixed low bias currents; tree green |
 | 7.124 | Specs: compact tick-box column, the objective inside the Constraint list, Judged at only with training corners |
 | 7.125 | Frontend audit and its fixes: honest real-run question, Agent message box, Import JSON, Save task without the Virtuoso window, stale answers, fewer requests; Undo per typed value |
+| 7.126 | Optimization review's package changes landed: corners two at a time, every 5th reset simulated, Maestro results not parsed; optimizer digest 100945fb → f42a3098 |
+| 7.127 | The form writer types a transistor's length before its width, so GPDK045's well-proximity values follow the final length; MScR ring3 mended and re-saved |
+| 7.128 | The MOCK task and the real OTA7 and LDO tasks deleted, with the OTA7/LDO example files; the tests keep a MOCK stand-in; no task trains at corners |

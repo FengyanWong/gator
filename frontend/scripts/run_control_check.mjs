@@ -277,10 +277,16 @@ await runChecks(browser, async () => {
   sim.steps = [{}, { state: 'pausing' }, {}, { state: 'paused', alive: false }];
   await press(MAIN);
   check('the header\'s Pause pauses it: "Pausing...", then "Resume"', await mainReads('Pausing...') && await mainReads('Resume', 150));
+  // A paused run changes only when it is continued: it is read every 15 s, not every 1.5 s as until 2026-09-30.
+  const readsWhenPaused = statusRequests; await sleep(3500);
+  check('a paused run is not read every 1.5 s: at most one read in 3.5 s', statusRequests - readsWhenPaused <= 1, `${statusRequests - readsWhenPaused} read(s)`);
 
   // ---- 10. a REAL run: Resume asks for the budget again; a refusal by the backend is shown ---------------------------------------
+  // A paused run is read every 15 s since 2026-09-30 (it changes only when it is continued): the page learns that this one
+  // is real when it opens, as a page shown a paused real run does.
   sim.mock = false; sim.steps = [{}];
-  check('(the page has learned that the run is real)', await until(`/^paused at/.test(${CHIP}?.textContent ?? '') && !/MOCK/.test(${CHIP}.textContent)`, 60));   // the next poll, not a fixed wait
+  await send('Page.reload'); await until(`!!(${MAIN})`, 150);
+  check('(the page has learned that the run is real)', await until(`/^paused at/.test(${CHIP}?.textContent ?? '') && !/MOCK/.test(${CHIP}.textContent)`, 60));
   log.length = 0; answers.push(false);
   await press(MAIN); await sleep(500);
   check('Resume of a REAL run asks to authorize what is left of the budget', /REAL simulations \(Virtuoso\/Spectre, or ngspice/.test(lastDialog().message) && new RegExp(`up to ${sim.max - sim.charged} more`).test(lastDialog().message), lastDialog().message);

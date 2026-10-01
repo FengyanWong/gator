@@ -11,7 +11,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/testbench_probes_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { MOCK_PAGE_CONFIG, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -112,6 +112,7 @@ try {
   const shot = name => far.shot(path.join(out, name), WIN, { scale: 2, maxHeight: 1400, beyond: true });
 
   await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose'], answer, { others: 'read', connection: 'lab' });
+  await page.seed({ config: MOCK_PAGE_CONFIG, when: 'once' });           // on the MOCK stand-in (record 7.128)
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   for (let i = 0; i < 100 && !(await evaluate(`!!(${COLUMN_BUTTON('Load task')})`)); i++) await sleep(100);

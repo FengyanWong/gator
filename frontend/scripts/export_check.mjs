@@ -86,11 +86,16 @@ await runChecks(browser, async () => {
   const listed = (await get('runs/logs', { run_dir: DIR, kind: 'events', limit: 1000 })).entries;
   check('it saves events.jsonl with every record of the run, one JSON object per line', lines.length > 0 && lines.length === listed.length && lines.every(l => { try { return !!JSON.parse(l).event; } catch { return false; } }), `${lines.length} lines, ${listed.length} entries`);
   check('... and says so', await until(`${HINT(row)} === 'Downloaded events.jsonl.'`, 40), await hint());
+  await evaluate('performance.clearResourceTimings()');      // so that the page's read of the errors log below is found
   await page.setValue(`[...document.querySelectorAll('footer .bottom-body select')].find(e => [...e.options].some(o => o.value === 'errors'))`, 'errors');
   row = 'Download full log (errors.jsonl)';
   check('choosing "errors" renames the button and clears the note', await until(`!!(${button(row)})`, 40) && /newest 200 entries/.test(await hint()), await hint());
   const hasErrors = (await get('runs/logs', { run_dir: DIR, kind: 'errors' })).entries.length > 0;      // a healthy run keeps an EMPTY errors.jsonl
+  // The list has no rows while the errors log is still being read AND once it is read and empty, and the page skips an
+  // empty download only once its answer is in: wait for the page's own read to finish, then one render (it raced, 2026-09-30).
+  await until(`performance.getEntriesByType('resource').some(e => e.name.includes('/api/runs/logs') && e.name.includes('kind=errors'))`, 80);
   await until(`document.querySelectorAll('footer .bottom-body .scroll.log > div').length === 0`, 40);      // the list now shows the errors log
+  await sleep(150);
   await press('Download full log (errors.jsonl)');
   if (hasErrors) check('the errors log is saved too', !!(await savedFile('errors.jsonl')));
   else {

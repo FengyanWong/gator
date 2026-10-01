@@ -1,5 +1,6 @@
-"""Choosing a REAL task brings that task's rows: the parameters its profile fixes and, for a verified circuit, its TARGETS
-OF RECORD - not the MOCK fixture's `score`. Local files only; nothing here contacts a bridge or starts a simulation."""
+"""Choosing a REAL task brings that task's rows: the parameters its profile fixes, and no invented target - not the MOCK
+fixture's `score`. The built-in verified circuits and their targets of record are gone (the last two, OTA7 and LDO, on
+2026-09-30, record 7.128, with their tests). Local files only; nothing here contacts a bridge or starts a simulation."""
 import json
 from pathlib import Path
 
@@ -9,71 +10,15 @@ from fastapi.testclient import TestClient
 from gator_workbench import profiles, recipes, schema, tasks
 from gator_workbench.api import create_app
 from gator_workbench.compile import compile_task
-from gator_workbench.validation import registry_for, validate
+from gator_workbench.validation import validate
 from test_wb_api import probe
 from test_wb_profiles import ROWS, config as cell_config, connection_file, read_cell
 
 REPO = Path(__file__).resolve().parents[2]
-VERIFIED = sorted(tasks.offered_real_profiles())
-
-
-def of_record(name):
-    file, *keys = tasks.REAL_TARGETS_OF_RECORD[name]
-    specs = json.loads((REPO / file).read_text())
-    for key in keys:
-        specs = specs[key]
-    return specs
 
 
 def as_config(raw, **run):
     return schema.WorkbenchConfig.model_validate(dict(raw, run=dict(dict(max_evaluations=200), **run)))
-
-
-@pytest.mark.parametrize('name', VERIFIED)
-def test_a_verified_circuit_starts_from_its_targets_of_record(name):
-    raw = tasks.starter_config(f'real:{name}')
-    assert set(raw) == {'project', 'circuit', 'parameters', 'measurements', 'targets'}       # no `run`: a real budget is never suggested
-    assert raw['circuit'] == dict(source='registered_task', task_id=f'real:{name}', pdk_id='gpdk045',
-                                  circuit_class=tasks.REAL_PROFILES[name]['circuit_class'])
-    assert raw['project'] == dict(name=name.replace('_', '-'), task_name=name)               # a real run is not filed under mock_*
-    assert 'score' not in [t['metric_id'] for t in raw['targets']] and 'fixture' not in [t['unit'] for t in raw['targets']]
-    assert all('of record' in t['basis'] and tasks.REAL_TARGETS_OF_RECORD[name][0] in t['basis'] for t in raw['targets'])
-
-    configured, graph = as_config(raw), tasks._verified_profile(name).optimization_graph()
-    report = validate(configured, graph=graph, provided_metrics={spec['metric_id'] for spec in of_record(name)})
-    assert [(i.level, i.code, i.path) for i in report.issues if i.level in ('error', 'blocker', 'warning')] == []
-    compiled = compile_task(configured, graph)
-    from analog_optimizer.envs.sizing import graph_contract
-    assert graph_contract(compiled.graph) == graph_contract(graph)                           # exactly the rows a real run accepts
-    assert [(s.metric_id, s.unit, s.comparator, s.lower, s.upper, s.scale) for s in compiled.specs] == [
-        (s['metric_id'], s['unit'], s['comparator'], s.get('lower'), s.get('upper'), s['scale']) for s in of_record(name)]
-    assert [m['source_name'] for m in raw['measurements']] == [t['metric_id'] for t in raw['targets']]
-
-
-def test_each_result_is_labelled_with_the_analysis_that_produces_it():
-    analysis = lambda name: {m['source_name']: m['analysis'] for m in tasks.starter_config(f'real:{name}')['measurements']}
-    assert analysis('gpdk045_ota7') == dict(phase_margin_estimate_deg='ac', supply_power_w='dc', output_dc_v='dc',
-                                            unity_downward_crossings='ac', gain_db_at_start='ac', unity_gain_hz='ac')
-    ldo = analysis('gpdk045_ldo')
-    assert (ldo['ldo_psrr_1khz_db'], ldo['ldo_step_deviation_v'], ldo['ldo_line_regulation_v_per_v'], ldo['supply_power_w']) == ('ac', 'tran', 'dc', 'dc')
-
-
-def test_the_ldo_brings_the_registry_of_its_experiment_and_the_ota_keeps_the_default():
-    m6 = json.loads((REPO / 'configs/m6_real_cross_category.json').read_text())['schema']
-    for name in ('gpdk045_ldo',):
-        configured = as_config(tasks.starter_config(f'real:{name}'))
-        assert registry_for(configured) == {metric: unit for metric, unit, _ in m6['metrics']}
-        spec_schema = compile_task(configured, tasks._verified_profile(name).optimization_graph()).spec_schema
-        assert spec_schema.version == m6['version'] and [list(m) for m in spec_schema.metrics] == m6['metrics']
-    for name in ('gpdk045_ota7',):                                                            # unchanged: models stay interchangeable
-        configured = as_config(tasks.starter_config(f'real:{name}'))
-        assert 'score' in registry_for(configured) and 'ldo_psrr_1khz_db' not in registry_for(configured)
-        assert compile_task(configured, tasks._verified_profile(name).optimization_graph()).spec_schema.version == 'spec-input-v1'
-    stated = as_config(tasks.starter_config('real:gpdk045_ldo'))                              # a registry stated in the configuration still wins
-    stated.run.advanced.spec_registry = [schema.SpecRegistryEntry(metric_id='supply_power_w', unit='W', reference=1e-5)]
-    assert registry_for(stated) == dict(supply_power_w='W')
-    mock = as_config(tasks.starter_config('synthetic:gpdk045_ota5'))
-    assert 'score' in registry_for(mock) and 'ldo_psrr_1khz_db' not in registry_for(mock)     # the MOCK task brings no registry of record
 
 
 def test_the_regulation_units_of_the_ldo_are_known():
@@ -118,30 +63,28 @@ def test_a_generated_profile_gets_its_parameters_and_probes_and_no_invented_targ
 def test_the_api_serves_the_rows_and_each_task_names_its_pdk(tmp_path):
     client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
     listed = {t['task_key']: t for t in client.get('/api/tasks').json()['tasks']}
-    assert listed['real:gpdk045_ota7']['pdk_id'] == 'gpdk045' and listed['synthetic:gpdk045_ota5']['pdk_id'] == 'gpdk045'
+    assert listed['synthetic:gpdk045_ota5']['pdk_id'] == 'gpdk045'                            # the tests' stand-in
     for key, row in listed.items():                                                           # the page tells a starter-made project name by these
         assert row['starter_project'] == tasks.starter_config(key)['project'], key
-    answer = client.get('/api/tasks/starter', params=dict(task_key='real:gpdk045_ota7'))
-    assert answer.status_code == 200
-    targets = {t['metric_id']: t for t in answer.json()['targets']}
-    assert targets['gain_db_at_start']['constraint'] == '>=' and targets['gain_db_at_start']['lower'] == 53.3
-    assert targets['supply_power_w']['constraint'] == 'interval' and targets['supply_power_w']['upper'] == 3.24e-06
+    answer = client.get('/api/tasks/starter', params=dict(task_key='synthetic:gpdk045_ota5'))
+    assert answer.status_code == 200 and [t['metric_id'] for t in answer.json()['targets']] == ['score']
     assert client.get('/api/tasks/starter', params=dict(task_key='real:no_such_circuit')).status_code == 404
-    assert client.get('/api/tasks/starter', params=dict(task_key='real:gpdk045_vco')).status_code == 404      # removed (7.73)
+    for removed in tasks.REMOVED_REAL_TASKS:                                                  # 7.73 and 7.128
+        assert client.get('/api/tasks/starter', params=dict(task_key=removed)).status_code == 404
 
 
 def test_the_removed_example_tasks_are_refused_in_words():
-    """real:gpdk045_ota5 and real:gpdk045_vco were removed on user request (status record 7.73): their example cells were
-    deleted from Virtuoso. Nothing lists, loads or starts them any more, and an old configuration naming one says why.
-    Their names stay reserved (test_wb_profiles: a saved task cannot take the name of a built-in circuit)."""
+    """All four built-in verified tasks were removed on user request: real:gpdk045_ota5 and real:gpdk045_vco on 2026-09-23
+    (status record 7.73, their example cells deleted from Virtuoso), real:gpdk045_ota7 and real:gpdk045_ldo on 2026-09-30
+    (record 7.128, their example files deleted too). Nothing lists, loads or starts them any more, an old configuration
+    naming one says why, and their names stay reserved (test_wb_profiles: a saved task cannot take such a name)."""
     listed = {t['task_key'] for t in tasks.list_tasks()}
-    assert {'real:gpdk045_ota7', 'real:gpdk045_ldo', 'synthetic:gpdk045_ota5'} <= listed
-    starter = tasks.starter_config('real:gpdk045_ota7')
+    starter = tasks.starter_config('synthetic:gpdk045_ota5')
     for key in tasks.REMOVED_REAL_TASKS:
         assert key not in listed
         with pytest.raises(tasks.TaskBlocked, match='no longer exists') as raised:
             tasks.load_task(schema.CircuitReference(source='registered_task', task_id=key), allow_real=True)
-        assert 'real:gpdk045_ota7, real:gpdk045_ldo' in str(raised.value)
+        assert ('2026-09-30' in str(raised.value)) == (key in ('real:gpdk045_ota7', 'real:gpdk045_ldo'))
         with pytest.raises(KeyError):
             tasks.starter_config(key)
         old = as_config(dict(starter, circuit=dict(starter['circuit'], task_id=key)))

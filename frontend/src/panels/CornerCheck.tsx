@@ -109,7 +109,8 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
         blamed on the design. Nothing of the check goes back into the run, its replay or its model.</p>
       <p>Which designs: only those that met every hard spec at the normal condition, identical widths counted once, the safest
         first (the largest smallest margin: distance to the nearest limit divided by that spec's scale).</p>
-      <p>Where it works: the op-amp circuit real:gpdk045_ota7 and the MOCK task. A real check writes each
+      <p>Where it works: at the moment on no task. The two it worked on, the op-amp circuit real:gpdk045_ota7 and the MOCK task,
+        were removed on 2026-09-30, and a task saved from a cell has no corner decks yet. A real check writes each
         design's widths into the cell and writes the recorded widths back at the end, as a run does; two connection or simulator
         failures in a row stop it so that no more budget is spent. Five corners are a sample, not a guarantee, and passing them
         says nothing about mismatch (that would be Monte Carlo).</p>

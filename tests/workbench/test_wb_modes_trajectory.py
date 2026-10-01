@@ -162,16 +162,16 @@ def test_fine_tune_needs_confirmation_for_a_new_task_and_records_its_parent(sour
 
 def test_transfer_to_a_different_topology_and_action_dimension(source_run):
     root, layout = source_run                                   # source: the OTA5, 3 action variables
-    every_group = lambda raw: [p.update(optimized=True) for p in raw['parameters'] if not p.get('binding_group')]
-    with other_circuits('gpdk045_ldo', 'gpdk045_ota7') as (ldo, ota7):                       # two more real circuits
-        for task, dimensions, mutate in ((ldo, 2, None), (ota7, 4, every_group)):
+    fix_one = lambda raw: next(p for p in raw['parameters'] if not p.get('binding_group')).update(optimized=False)
+    with other_circuits('toy_ldo', 'toy_opamp_two_stage') as (ldo, ota7):      # two other circuits (toy, record 7.128)
+        for task, dimensions, mutate in ((ldo, 1, None), (ota7, 2, fix_one)):
             config = transfer_config(root, layout, 'fine_tune', task=task, project=dict(task_name=task.split(':')[1]), mutate=mutate)
             target, state = execute(config, root, confirm_transfer=True)
             assert state == 'completed', summary(target)['error']
             step = next(t for t in rows(target, 'transitions'))
             assert len(step['action']) == dimensions
             parameters = [p for p in rows(target, 'parameters') if p['role'] == 'independent']
-            assert len({p['variable_id'] for p in parameters}) == dimensions
+            assert len({p['variable_id'] for p in parameters if p['raw_policy_action'] is not None}) == dimensions
             assert summary(target)['totals']['gradient_updates'] > 0
 
 

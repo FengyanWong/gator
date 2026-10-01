@@ -527,8 +527,10 @@ class WorkbenchConfig(_Model):
         # The objective rows (one at most, with the limit its direction needs) are checked by validation.py as
         # plain-language errors of the checklist, not here: a half-edited table must still load and be shown.
         if self.run.conditions.policy != 'off':
+            # The removed OTA7 task stays accepted HERE, so its saved runs and configurations still parse; the task itself
+            # is refused where it would load (tasks.REMOVED_REAL_TASKS, record 7.128).
             if self.circuit.source != 'registered_task' or self.circuit.task_id != 'real:gpdk045_ota7':
-                raise ValueError('Training corners are supported only for the explicit real OTA7 task')
+                raise ValueError('No task trains at corners: the only one, the real OTA7 task, was removed on 2026-09-30')
             if self.run.max_spectre_launches is None or self.run.max_retries:
                 raise ValueError('Robust training needs a finite launch cap and zero automatic retries')
         return self

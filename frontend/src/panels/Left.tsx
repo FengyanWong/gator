@@ -346,17 +346,19 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           title="The circuit the editors and a run are about. A cell read from Virtuoso becomes one of these with Save task.">
           {ref.source !== 'registered_task' && <option value="" disabled>{virtuosoOn ? (ref.cell ? `(none: ${ref.library}/${ref.cell} is read from Virtuoso)` : '(none: a Virtuoso cell is being chosen)')
             : '(none: the saved source was removed)'}</option>}
+          {ref.source === 'registered_task' && !ref.task_id && <option value="" disabled>(choose a task)</option>}
           {removedMock && <option value={ref.task_id} disabled>{ref.task_id} (removed)</option>}
           {listed.map(t => <option key={t.task_key} value={t.task_key}>{t.task_key}{t.kind === 'mock' ? '  [MOCK]' : t.kind === 'ngspice' ? (t.available ? '  [ngspice]' : '  [ngspice: choose its connection]') : t.available ? '' : '  [blocked]'}</option>)}
         </select>
       </label>
       {ref.source === 'registered_task' && (<>
-        {/* A configuration saved with one of the four removed MOCK tasks (status record 7.59): a plain note, not a red "Blocked". */}
-        {removedMock && <div className="note"><p><code>{ref.task_id}</code> no longer exists: the workbench has one MOCK task now,{' '}
-          <code>synthetic:gpdk045_ota5</code> - the real OTA5 circuit on the free toy backend. Choose it under Task; it brings its own rows.</p></div>}
+        {/* A configuration saved with a removed MOCK task (the four of status record 7.59; the last one, synthetic:gpdk045_ota5,
+            on 2026-09-30, record 7.128): a plain note, not a red "Blocked". */}
+        {removedMock && <div className="note"><p><code>{ref.task_id}</code> no longer exists: the workbench has no MOCK task since
+          2026-09-30. Choose one of your saved tasks under Task; it brings its own rows.</p></div>}
         {/* The task's two buttons in one row (user request 2026-09-24): "Load task" (was: Load starter configuration) brings
             its rows; "Delete task" at the right end, for a task that can leave the list - one saved from a cell, or an ngspice
-            netlist; the built-in circuits and the MOCK task cannot. What Delete does is in its tooltip; it asks once more. */}
+            netlist; a built-in circuit cannot. What Delete does is in its tooltip; it asks once more. */}
         {ref.task_id && !removedMock && <div className="row task-buttons">
           <button onClick={useStarter} title="Load task: Replaces the rows of Parameters, Probes and Specs with this task's own. The MOCK task: the width groups of its circuit and the toy score. A real circuit: the parameters its profile fixes and its targets of record. Your run and output settings stay. Everything stays editable, and Undo takes it back."><Icon name="load" label="Load task" /></button>
           <span className="spacer" />

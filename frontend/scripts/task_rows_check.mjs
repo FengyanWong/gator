@@ -193,7 +193,7 @@ await runChecks(browser, async () => {
   check('the page opens on the saved removed task', await until(`!!(${PANEL}) && ${FIELD('Task')}.options.length > 1 && ${FIELD('Task')}.value === 'synthetic:vco'`), await value('Task').catch(() => '?'));
   const removedOption = await evaluate(`(() => { const o = [...${FIELD('Task')}.options].find(o => o.value === 'synthetic:vco'); return o && [o.textContent, o.disabled]; })()`);
   check('the Task list shows it as removed, and it cannot be chosen again', JSON.stringify(removedOption) === JSON.stringify(['synthetic:vco (removed)', true]), JSON.stringify(removedOption));
-  check('a plain note names the one MOCK task left', await until(`[...${PANEL}.querySelectorAll('.note')].some(n => n.textContent.includes('synthetic:vco no longer exists') && n.textContent.includes('synthetic:gpdk045_ota5'))`),
+  check('a plain note says the workbench has no MOCK task now', await until(`[...${PANEL}.querySelectorAll('.note')].some(n => n.textContent.includes('synthetic:vco no longer exists') && n.textContent.includes('no MOCK task since 2026-09-30'))`),
     await evaluate(`[...${PANEL}.querySelectorAll('.note')].map(n => n.textContent).join(' | ')`));
   for (let i = 0; i < 50 && !loads.slice(mark).some(l => l.task_id === 'synthetic:vco'); i++) await sleep(100);
   await sleep(400);                                                              // the load's answer is drawn

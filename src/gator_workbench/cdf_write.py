@@ -23,14 +23,15 @@ transistor-specific methods, ``_write_widths`` and ``_verify_restored``; ``CdfBr
 ``GenericMosWidthProfile`` generalized: an instance that is not written stays exactly as recorded; a written one may
 change what its callbacks compute, never a mode or a held value; the exported netlist keeps the topology and carries,
 for every written parameter, the value the CDF reads back. The recipe classes combine with it unchanged (their deck and
-measurement stay theirs). ``CdfNativeEnvironmentFactory`` starts the preparation service - the one owner of the
-Virtuoso session - with the CDF backend; the Spectre lanes are unchanged. ``backend_class`` / ``factory_class`` pick
-the class for a profile, so the check before a run, the corner check and the run itself agree.
+measurement stay theirs). ``CdfNativeEnvironmentFactory`` (in ``cdf_factory``, so that this module does not import
+torch) starts the preparation service - the one owner of the Virtuoso session - with the CDF backend; the Spectre lanes
+are unchanged. ``backend_class`` / ``factory_class`` pick the class for a profile, so the check before a run, the
+corner check and the run itself agree.
 """
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
@@ -38,7 +39,6 @@ import re
 
 from analog_optimizer.backends.gpdk045 import GEOMETRY, Gpdk045OtaProfile, equal, number
 from analog_optimizer.backends.virtuoso_bridge import VirtuosoBridgeBackend
-from analog_optimizer.training.parallel import NativeEnvironmentFactory
 
 from .cdf_rules import RULES_FORMAT
 from .generic_profile import GenericMosWidthProfile, RulesError, _same
@@ -186,7 +186,11 @@ def write_skill(library, cell, plan) -> str | None:
             raise ValueError('library and cell must be plain Cadence names')
     blocks = []
     for item in plan:
-        targets = item['targets']
+        # A length before everything else of its instance: GPDK045's width callback computes the well-proximity values
+        # (sca/scb/scc) from the length the transistor has AT THAT MOMENT and the length callback leaves them alone, so a
+        # width typed before its length kept the previous length's values, in every candidate and in the restoration (MScR
+        # ring, 2026-09-30). Stable, so held values stay after what they correct.
+        targets = sorted(item['targets'], key=lambda target: target[0].cdf != 'l')
         if not targets:
             continue
         name, form = item['instance'], item.get('form') or {}
@@ -208,6 +212,10 @@ def write_skill(library, cell, plan) -> str | None:
                       f'funcall(stringToSymbol({_skill_string(init)}) cdfgData)']
         else:
             steps.append(f'when(cdfgData~>formInitProc error("%s" {_skill_string(f"{name}: its form has an init procedure now")}))')
+        # ... and its width typed again, at its own value, in a round that typed the length: only the width, finger width
+        # and finger count callbacks recompute those values, so a task that writes lengths and holds the widths (the MScR
+        # OTA7T, the LDO pass device) ran every candidate with the build's values (MScR session, 2026-09-30).
+        retype = any(field.cdf == 'l' for field, _ in targets) and any(field.cdf == 'w' for field, _ in targets)
         rounds = []
         for field, value in targets:
             one = []
@@ -218,9 +226,12 @@ def write_skill(library, cell, plan) -> str | None:
             if field.callback and field.callback.strip() not in ('', 'nil'):
                 one.append(f'unless(errsetstring({_skill_string(field.callback)}) '
                            f'error("%s" {_skill_string(f"the callback of {field.name} failed: {field.callback}")}))')
+            if retype and field.cdf in ('l', 'w'):
+                one.append('lengthTyped = ' + ('t' if field.cdf == 'l' else 'nil'))
             one.append('unsettled = t')
-            rounds.append(f'unless({field.holds(value)}\n          ' + '\n          '.join(one) + ')')
-        steps += ['unsettled = t', 'rounds = 0', f'while(and(unsettled rounds < {PASSES})',
+            test = f'and({field.holds(value)} !lengthTyped)' if retype and field.cdf == 'w' else field.holds(value)
+            rounds.append(f'unless({test}\n          ' + '\n          '.join(one) + ')')
+        steps += ['lengthTyped = nil', 'unsettled = t', 'rounds = 0', f'while(and(unsettled rounds < {PASSES})',
                   '  rounds = rounds + 1', '  unsettled = nil', '  ' + '\n        '.join(rounds) + ')']
         for field, value in targets:
             steps.append(f'unless({field.holds(value)} error("%s" {_skill_string(f"{field.name} did not keep the value {value:.12g} after the PDK callbacks")}))')
@@ -236,7 +247,7 @@ def write_skill(library, cell, plan) -> str | None:
         blocks.append('\n    '.join(lines))
     if not blocks:
         return None
-    return ('let((cv inst cdfgData cdfgForm rule unsettled rounds same changed)\n'
+    return ('let((cv inst cdfgData cdfgForm rule unsettled rounds same changed lengthTyped)\n'
             '  same = lambda((have want) and(numberp(have) abs(have - want) <= 1.0e-9 * abs(want) + 1.0e-30))\n'
             '  changed = nil\n'
             f'  cv = dbOpenCellViewByType({_skill_string(library)} {_skill_string(cell)} "schematic" "schematic" "a")\n'
@@ -555,18 +566,18 @@ def preparation_session(config, circuit, limits, report):
             manager.shutdown()
 
 
-@dataclass(frozen=True)
-class CdfNativeEnvironmentFactory(NativeEnvironmentFactory):
-    """`NativeEnvironmentFactory` whose preparation service writes with the CDF backend; the lanes are unchanged."""
-
-    @contextmanager
-    def preparation_context(self, limits, report):
-        with preparation_session(self.config, self.profile, limits, report) as service:
-            yield replace(self, preparation=service)
-
-
 def factory_class(profile):
     if isinstance(profile, CdfWritableProfile):
+        from .cdf_factory import CdfNativeEnvironmentFactory
         return CdfNativeEnvironmentFactory
     import analog_optimizer.training.parallel as verified
     return verified.NativeEnvironmentFactory
+
+
+def __getattr__(name):
+    # The run's factory lives in cdf_factory.py: its base class imports torch, which the processes that only prepare or
+    # check a cell never need (review of 2026-09-30). The old name still reaches it.
+    if name == 'CdfNativeEnvironmentFactory':
+        from .cdf_factory import CdfNativeEnvironmentFactory
+        return CdfNativeEnvironmentFactory
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')

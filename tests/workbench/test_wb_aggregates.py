@@ -34,7 +34,7 @@ def workflow(tmp_path_factory):
     experiment_id = read_json(source.manifest)['experiment_id']
     out = dict(experiment_id=experiment_id)
     made = dict(source=source)
-    with other_circuits('gpdk045_ldo', 'gpdk045_ota7') as (ldo, ota7):                       # two unseen real circuits
+    with other_circuits('toy_ldo', 'toy_opamp_two_stage') as (ldo, ota7):                       # two unseen real circuits
         for order, (task, name, threshold) in enumerate([(ldo, 'target_ldo', 0.9), (ota7, 'target_two_stage', 1.5)], start=1):
             for seed in (1, 2):
                 pair = f'{name}-seed{seed}'

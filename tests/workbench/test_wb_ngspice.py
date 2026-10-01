@@ -343,12 +343,6 @@ def test_a_run_needs_an_authorization_and_a_connection_of_the_right_family(tmp_p
     assert manifest['connection_gate']['needed_layers'] == list(NGSPICE_LAYERS) and manifest['authorization']['real_simulation']
     assert (layout.input_snapshot / 'netlist.cir').read_text() == DECK and not (layout.input_snapshot / 'netlist.scs').exists()
     assert read_json(layout.input_snapshot / 'hierarchy.json')['combined_netlist'] == 'netlist.cir'
-    # a Virtuoso task on an ngspice connection is refused the same way, before anything is probed
-    raw = tasks.starter_config('real:gpdk045_ota7')
-    raw['run'], raw['output'] = dict(max_evaluations=2, connection_profile_id='sim'), dict(experiment_name='x', output_root=str(tmp_path))
-    with pytest.raises(runs.RunRejected) as refused:
-        runs.prepare_run(schema.WorkbenchConfig.model_validate(raw), roots_for(tmp_path), allow_real=True, monitor=monitor)
-    assert refused.value.code == 'task_blocked' and 'ngspice on this machine' in str(refused.value) and monitor.probes_started == 1
 
 
 # ------------------------------------------------------------------------------- the routes

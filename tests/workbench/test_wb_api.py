@@ -79,14 +79,13 @@ def test_tasks_and_circuit_loading(client):
     listed = client.get('/api/tasks').json()
     kinds = {t['task_key']: t for t in listed['tasks']}
     assert kinds['synthetic:gpdk045_ota5']['kind'] == 'mock' and 'MOCK' in kinds['synthetic:gpdk045_ota5']['description']
-    real = kinds['real:gpdk045_ota7']
-    assert real['available'] is False and real['blocker']                      # the specific blocker, not a fake backend
+    assert not [key for key in kinds if key.startswith('real:gpdk045_')]      # every built-in real task was removed (7.128)
     assert 'NativeEnvironmentFactory' in listed['real_interface_contract']['environment_factory']
     loaded = client.post('/api/circuit/load', json=dict(circuit=dict(source='registered_task', task_id='synthetic:gpdk045_ota5'))).json()
     assert loaded['loaded'] and loaded['mock'] and set(loaded['hierarchy']) >= {'XU1', 'CL'}
     assert 'MOCK' in loaded['evaluation_backend'] and loaded['provided_metrics'] == ['score']
     blocked = client.post('/api/circuit/load', json=dict(circuit=dict(source='registered_task', task_id='real:gpdk045_ota7'))).json()
-    assert blocked['loaded'] is False and blocked['blocker'] and blocked['interface_contract']
+    assert blocked['loaded'] is False and 'no longer exists' in blocked['blocker']
     native = client.post('/api/circuit/load', json=dict(circuit=dict(source='virtuoso', library='L', cell='C'))).json()
     assert native['loaded'] is False and 'verified circuit profile' in native['blocker']
 
@@ -256,7 +255,7 @@ def test_blocked_and_rejected_starts(client, tmp_path):
     real['circuit'] = dict(source='registered_task', task_id='real:gpdk045_ota7')
     blocked = client.post('/api/runs/start', json=dict(config=real, authorize_real_simulation=True))
     detail = blocked.json()['detail']
-    assert blocked.status_code == 409 and detail['code'] == 'task_blocked' and detail['report']['interface_contract']
+    assert blocked.status_code == 409 and detail['code'] == 'task_blocked' and 'no longer exists' in json.dumps(detail)
     assert client.get('/api/runs', params=dict(output_root=str(tmp_path))).json()['runs'] == []   # nothing was created
 
 

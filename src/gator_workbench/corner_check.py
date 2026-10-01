@@ -142,7 +142,7 @@ def checkable_real_tasks() -> tuple:
 def _unsupported(task_key, problem) -> str:
     listed = ', '.join(checkable_real_tasks()) or 'none'
     return (f'{task_key} is qualified at its normal condition only, so its designs cannot be checked at corners yet '
-            f'(the profile says: {problem}). Circuits that can: {listed}, and the MOCK task.')
+            f'(the profile says: {problem}). Circuits that can: {listed}.')
 
 
 class Context:

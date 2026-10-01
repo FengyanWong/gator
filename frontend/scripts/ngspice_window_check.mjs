@@ -177,7 +177,14 @@ await runChecks(browser, async () => {
     await page.seed({ config: { ...stored, ...(task ? { circuit: { ...stored.circuit, source: 'registered_task', task_id: task }, parameters: [], measurements: [], targets: [] } : {}),
       run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, threads_per_job: 1, seed: 0, connection_profile_id: id } } });
     await send('Page.navigate', { url: APP });
-    await until(`!!(${PANEL})`, 150); await sleep(2000);
+    await until(`!!(${PANEL})`, 150);
+    // Settled once a launcher shows (the connection's kind is known), the task list is filled and two readings 0.3 s apart
+    // agree. It slept 2 s until 2026-09-30.
+    for (let i = 0, last = ''; i < 40; i++) {
+      const now = await launchers(), text = JSON.stringify(now);
+      if (text === last && (now.virtuoso || now.ngspice) && now.tasks.length) break;
+      last = text; await sleep(300);
+    }
     return launchers();
   };
   const ngspiceListed = shown => shown.tasks.filter(t => t.startsWith('ngspice:'));

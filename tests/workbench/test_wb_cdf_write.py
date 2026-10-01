@@ -223,11 +223,17 @@ def num(text):
     return number(text)
 
 
+def wpe(length):
+    """Stand-in for a GPDK045 well-proximity value (sca): its width callback computes it from the current length."""
+    return format(3.25e-6 / length, '.7g')
+
+
 class FakeVirtuoso:
     """Runs the writer's SKILL as the form would: the fields it sets, then the callbacks. Test model only."""
 
-    def __init__(self, reference, netlist, *, clamp=5.6e-6, fold_above=None, keep_capacitance=False):
+    def __init__(self, reference, netlist, *, clamp=5.6e-6, fold_above=None, keep_capacitance=False, proximity=False):
         self.state, self.netlist, self.clamp, self.fold_above = deepcopy(reference), netlist, clamp, fold_above
+        self.proximity = proximity                                           # model the well-proximity value (sca)
         self.keep_capacitance = keep_capacitance
         self.skill, self.saves, self.opened, self.form_calls, self.rounds = [], 0, [], [], {}
         self.schematic = SimpleNamespace(read=lambda *a, **kw: deepcopy(self.state), export_netlist=self.export)
@@ -258,6 +264,8 @@ class FakeVirtuoso:
                 p[key] = format(2 * w + 2.8e-7, '.12g')
             for key in ('nrd', 'nrs'):
                 p[key] = format(1.4e-7 / w, '.12g')
+            if field == 'w' and self.proximity:                              # from the length it has NOW (GPDK045's does)
+                p['sca'] = wpe(num(p['l']))
         elif text.startswith('gpdk045_capCB'):
             if field == 'm' and self.keep_capacitance:                       # a form that keeps the total capacitance
                 p['w'] = format(num(p['w']) * 0.5, '.12g')                   # moves a value written before it
@@ -292,6 +300,8 @@ class FakeVirtuoso:
             found = ROUNDS.search(line)
             if found:
                 current['rounds'] = int(found.group(1))
+            if 'lengthTyped = t' in line:
+                current['retype'] = True                                     # the width is typed again after a length
             if line.strip().startswith('unless(') and holds_of(line) and 'error(' not in line:
                 current['test'] = holds_of(line)                             # the round's "unless it already holds"
             setter = SET.search(line)
@@ -321,13 +331,15 @@ class FakeVirtuoso:
                 self.form_calls.append((name, block['init']))
             for round_number in range(block['rounds']):
                 self.rounds[name] = round_number + 1
-                wrote = False
+                wrote, length_typed = False, False
                 for target in block['targets']:
-                    if self.holds(name, target['test']):
+                    again = block.get('retype') and target['field'] == 'w' and length_typed
+                    if self.holds(name, target['test']) and not again:
                         continue
                     self.params(name)[target['field']] = target['value']
                     if target['callback']:
                         self.callback(name, target['callback'])
+                    length_typed = target['field'] == 'l' or (length_typed and target['field'] != 'w')
                     wrote = True
                 if not wrote:
                     break
@@ -471,6 +483,38 @@ def test_a_restoration_that_left_a_computed_value_behind_is_refused(tmp_path):
     with pytest.raises(RuntimeError, match=r'Restoration mismatch: MN1\.ad'):
         profile.compare_written(snapshot, profile.reference)                  # but the cell must come back as it was
     profile.compare_written(profile.reference, profile.reference)
+
+
+def test_the_width_callback_sees_the_final_length_in_a_candidate_and_in_the_restoration():
+    """GPDK045's width callback computes the well-proximity values from the length the transistor has at that moment and
+    the length callback leaves them alone. Found on the MScR ring (2026-09-30): with the width typed first, a restoration
+    left values for the last candidate's length and every candidate ran with the previous one's. The writer types a
+    length before everything else of its instance, so the values belong to the final length."""
+    start = dict(w='1e-06', l='4.5e-08', fingers='1', fw='1e-06', sca=wpe(4.5e-8))
+    client = FakeVirtuoso(dict(instances=[dict(name='MN1', cell='nmos1v', params=dict(start))]), '', proximity=True)
+    width = cdf_write.Field('MN1', 'w', 'string', True, "gpdk045_mosCB('w)")
+    length = cdf_write.Field('MN1', 'l', 'string', True, "gpdk045_mosCB('l)")
+
+    def write(w, l):
+        skill = cdf_write.write_skill('LIB', 'cell', [dict(instance='MN1', form={}, targets=[(width, w), (length, l)])])
+        assert client.execute_skill(skill).ok
+    write(2e-6, 6e-8)
+    assert client.params('MN1')['sca'] == wpe(6e-8)                           # not the value for 45 nm
+    write(1e-6, 4.5e-8)                                                       # the restoration
+    assert {key: client.params('MN1')[key] for key in start} == start
+
+
+def test_a_written_length_types_the_held_width_again_so_the_values_follow_it():
+    """Only the width, finger width and finger count callbacks recompute the well-proximity values; the length and count
+    callbacks never do. A task that writes lengths and holds the widths (the MScR OTA7T) therefore ran every candidate
+    with the build's values (MScR session, 2026-09-30): a round that types a length types the width again, unchanged."""
+    start = dict(w='5e-07', l='4.5e-08', fingers='1', fw='5e-07', sca=wpe(4.5e-8))
+    client = FakeVirtuoso(dict(instances=[dict(name='M1', cell='nmos1v', params=dict(start))]), '', proximity=True)
+    length = cdf_write.Field('M1', 'l', 'string', True, "gpdk045_mosCB('l)")
+    held = cdf_write.Field('M1', 'w', 'string', True, "gpdk045_mosCB('w)")    # held: the task keeps it as recorded
+    skill = cdf_write.write_skill('LIB', 'cell', [dict(instance='M1', form={}, targets=[(length, 6e-8), (held, 5e-7)])])
+    assert client.execute_skill(skill).ok
+    assert client.params('M1')['sca'] == wpe(6e-8) and client.params('M1')['w'] == '5e-07'
 
 
 def test_the_form_must_still_have_the_procedures_the_task_recorded():

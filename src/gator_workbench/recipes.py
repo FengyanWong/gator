@@ -176,6 +176,9 @@ class GenericMaestroProfile(GenericMosWidthProfile):
     translated by Maestro's own name maps. The deck is read when a run needs it, so a task saved before this part still
     opens (its builder says to save it once)."""
     recipe = MAESTRO
+    # OCEAN measures in the Virtuoso session, which takes one command at a time: this task's condition jobs never run
+    # side by side (native_preparation.NativeCandidateBackend.concurrent_condition_jobs, 2026-09-30).
+    measures_in_virtuoso = True
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

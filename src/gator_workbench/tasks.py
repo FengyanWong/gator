@@ -3,8 +3,10 @@
 * ``synthetic:*`` tasks use the optimizer's explicit analytic toy backend
   (``SyntheticSizingBackend``). They are MOCK: origin=synthetic, provenance=mock, their
   ``score`` is not a circuit metric, and their data is confined to the mock output root.
-  There is ONE (status record 7.59): ``synthetic:gpdk045_ota5``, a real circuit's netlist
-  on that toy backend. The four toy-fixture tasks it replaced are ``REMOVED_MOCK_TASKS``.
+  The workbench offers NONE since 2026-09-30 (user request, status record 7.128): the last
+  one, ``synthetic:gpdk045_ota5``, is in ``REMOVED_MOCK_TASKS`` with the four it had replaced.
+  A test, or a browser check's scratch backend, registers its own through the file named by
+  ``GATOR_WORKBENCH_SYNTHETIC_FIXTURES`` (``tests/workbench/fixtures/synthetic_fixtures.json``).
 * The ``netlist`` source (a Spectre netlist file imported by path) was removed on user
   request (status record 7.53). The schema still reads it, so configurations and runs
   saved before stay readable, but no circuit is loaded from it: ``NETLIST_SOURCE_REMOVED``.
@@ -13,14 +15,17 @@
 * ``real:*`` tasks describe the verified GPDK045 bridge profiles. They are only
   runnable when the backend interpreter can import ``virtuoso_bridge`` and the operator
   supplied a connection file. Otherwise the precise blocker and the interface contract
-  are returned. Nothing falls back to mock. Two were removed on user request (status
-  record 7.73, their example cells deleted from Virtuoso): ``REMOVED_REAL_TASKS``.
+  are returned. Nothing falls back to mock. All four were removed on user request:
+  OTA5 and VCO on 2026-09-23 (status record 7.73, their example cells deleted from
+  Virtuoso), OTA7 and LDO on 2026-09-30 (record 7.128, their example files deleted too):
+  ``REMOVED_REAL_TASKS``. The real tasks are the ones saved from a Virtuoso cell.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -32,64 +37,60 @@ from .storage.atomic import sha256_file as _sha256
 # construction: the mock backend checks plumbing, never electrical behaviour.
 MOCK_TARGETS = {'w': 0.4, 'l': -0.2, 'm': 0.0, 'nf': 0.0, 'r': 0.3, 'c': -0.3, 'ind': 0.1, 'dc': 0.2}
 
-# The ONE MOCK task (user decision 2026-09-22, status record 7.59): the free analytic toy backend on a REAL circuit - the
-# GPDK045 OTA5 netlist and device mapping that real:gpdk045_ota5 is verified on, with the mapping's three width groups
-# (input pair, mirror pair, tail) as its Parameters rows. It runs the whole workbench with no Virtuoso and no Spectre; its
-# `score` is still not a circuit metric, and a model it trains can never load into a real run (runs: mock_isolation). The
-# four toy-fixture tasks it replaced stay loadable nowhere; their files stay for the optimizer package's own tests.
-SYNTHETIC_FIXTURES = {
-    'gpdk045_ota5': dict(netlist='examples/circuits/gpdk045_ota5.scs', config='configs/gpdk045_opamp.json',
-                         circuit_class='opamp', pdk_id='gpdk045',
-                         description='MOCK: the netlist of the verified GPDK045 OTA5 circuit on the free analytic toy '
-                                     'backend - no Virtuoso, no Spectre. Its score is not a circuit result.'),
-}
+# No MOCK task in the workbench (user request 2026-09-30, status record 7.128; before it the one MOCK task was
+# synthetic:gpdk045_ota5, the GPDK045 OTA5 netlist and mapping on the free toy backend). The toy backend stays for the
+# tests: they register their stand-in - that same circuit - through a JSON file ({name: dict(netlist, config,
+# circuit_class, pdk_id, description)}) named by this variable, which every child process (run worker, lane) inherits.
+# A model a MOCK run trains can never load into a real run (runs: mock_isolation).
+ENV_SYNTHETIC_FIXTURES = 'GATOR_WORKBENCH_SYNTHETIC_FIXTURES'
+
+
+def _registered_fixtures() -> dict:
+    path = os.environ.get(ENV_SYNTHETIC_FIXTURES)
+    return json.loads(Path(path).read_text()) if path else {}
+
+
+SYNTHETIC_FIXTURES = _registered_fixtures()
 # What an entry that names no PDK / description gets (a circuit a test registers for itself, e.g. test_wb_pdk's demo).
 MOCK_PDK, MOCK_DESCRIPTION = 'synthetic-fixture', 'MOCK: the analytic toy backend on a fixture netlist. Its score is not a circuit result.'
-REMOVED_MOCK_TASKS = ('synthetic:opamp', 'synthetic:opamp_two_stage', 'synthetic:ldo', 'synthetic:vco')
-MOCK_TASK_REMOVED = ('{task} no longer exists: the workbench has one MOCK task now, synthetic:gpdk045_ota5 - the real OTA5 '
-                     'circuit on the free toy backend. Choose it under "Task".')
+REMOVED_MOCK_TASKS = ('synthetic:opamp', 'synthetic:opamp_two_stage', 'synthetic:ldo', 'synthetic:vco', 'synthetic:gpdk045_ota5')
+MOCK_TASK_REMOVED = ('{task} no longer exists: the workbench has no MOCK task since 2026-09-30 (user request). Choose one of '
+                     'your saved tasks under "Task".')
 
 REAL_PROFILES = {
     'gpdk045_ota5': dict(profile='analog_optimizer.backends.gpdk045:Gpdk045OtaProfile', circuit_class='opamp',
                          design='configs/gpdk045_opamp_design.json', mapping='configs/gpdk045_opamp.json',
                          structure='examples/circuits/gpdk045_ota5.scs',
                          readback='examples/circuits/gpdk045_ota5.cdf.json'),
-    'gpdk045_ota7': dict(profile='analog_optimizer.backends.gpdk045_two_stage', circuit_class='opamp',
-                         design='configs/gpdk045_ota7_design.json', mapping='configs/gpdk045_ota7.json',
-                         structure='examples/circuits/gpdk045_ota7.scs',
-                         readback='examples/circuits/gpdk045_ota7.cdf.json'),
-    'gpdk045_ldo': dict(profile='analog_optimizer.backends.gpdk045_ldo', circuit_class='ldo',
-                        design='configs/gpdk045_ldo_design.json', mapping='configs/gpdk045_ldo.json',
-                        structure='examples/circuits/gpdk045_ldo.scs',
-                        readback='examples/circuits/gpdk045_ldo.cdf.json'),
     'gpdk045_vco': dict(profile='analog_optimizer.backends.gpdk045_vco', circuit_class='vco',
                         design='configs/gpdk045_vco_design.json', mapping='configs/gpdk045_vco.json',
                         structure='examples/circuits/gpdk045_vco.scs',
                         readback='examples/circuits/gpdk045_vco.cdf.json'),
 }
-# Built-in tasks REMOVED on user request (2026-09-23, status record 7.73): their example cells - GATOR_TESTS/ota5_v1 and
-# vco_m6_v1 with their testbenches - were deleted from Virtuoso (backup: artifacts/local/example-cells-deleted-2026-09-23/).
-# Their entries stay in REAL_PROFILES on purpose: the names stay reserved (a saved task cannot take over a name that old
-# runs and the M5/M6 record use), the MOCK task runs on the OTA5 netlist and mapping, and test_wb_generic_profile still
-# compares the generated profile with all four hand-written ones. What offers, starts or checks a task goes through
-# offered_real_profiles() and refuses these in words, like REMOVED_MOCK_TASKS.
-REMOVED_REAL_TASKS = ('real:gpdk045_ota5', 'real:gpdk045_vco')
+# Built-in tasks REMOVED on user request (2026-09-23, status record 7.73): their example cells - GATOR_TESTS/ota5_v1
+# and vco_m6_v1 with their testbenches - were deleted from Virtuoso (backup:
+# artifacts/local/example-cells-deleted-2026-09-23/). Their entries stay in REAL_PROFILES on purpose: the names stay
+# reserved (a saved task cannot take over a name that old runs and the M5/M6 record use), the tests' MOCK stand-in
+# runs on the OTA5 netlist and mapping, and test_wb_generic_profile still compares the generated profile with the
+# hand-written ones. What offers, starts or checks a task goes through offered_real_profiles() and refuses these in
+# words, like REMOVED_MOCK_TASKS. OTA7 and LDO followed on 2026-09-30 (user request, record 7.128) with their example
+# netlists and configurations, so their entries left REAL_PROFILES too; their names stay reserved all the same
+# (profiles.save_task refuses every name in REMOVED_REAL_TASKS). The optimizer package's own profiles for them stay,
+# as research code, and run from a checkout before that commit.
+REMOVED_REAL_TASKS = ('real:gpdk045_ota5', 'real:gpdk045_vco', 'real:gpdk045_ota7', 'real:gpdk045_ldo')
 
 # The TARGETS OF RECORD of the verified circuits: the frozen specification files of the real experiments, as (file, keys
 # down to the list of specs). Pilot goals near each circuit's measured baseline - not product specifications. They are what
 # the Specs tab shows when such a task is chosen (starter_config); `train` is the partition a run from scratch belongs to.
 REAL_TARGETS_OF_RECORD = {
     'gpdk045_ota5': ('configs/m6_real_cross_category.json', 'classes', 'opamp', 'specs', 'train'),
-    'gpdk045_ota7': ('configs/gpdk045_ota7_transfer.json', 'specs'),
-    'gpdk045_ldo': ('configs/m6_real_cross_category.json', 'classes', 'ldo', 'specs', 'train'),
     'gpdk045_vco': ('configs/m6_real_cross_category.json', 'classes', 'vco', 'specs', 'train'),
 }
-# The LDO and VCO results are not in the optimizer's default result registry (score + the op-amp results) and the UI has no
-# editor for the registry, so a target on them could not even be stated. These two tasks bring the registry of record of
-# the real cross-category experiment, the way a generated profile brings its own (profiles.task_spec_registry). The OTA
-# tasks stay on the default registry: their models, the MOCK tasks' and earlier workbench runs' remain interchangeable.
-REAL_REGISTRY_OF_RECORD = {'gpdk045_ldo': 'configs/m6_real_cross_category.json',
-                           'gpdk045_vco': 'configs/m6_real_cross_category.json'}
+# The VCO results are not in the optimizer's default result registry (score + the op-amp results) and the UI has no editor
+# for the registry, so a target on them could not even be stated. That task brought the registry of record of the real
+# cross-category experiment (so did the LDO task until 2026-09-30), the way a generated profile brings its own
+# (profiles.task_spec_registry). The OTA task stayed on the default registry.
+REAL_REGISTRY_OF_RECORD = {'gpdk045_vco': 'configs/m6_real_cross_category.json'}
 # Which analysis of the circuit profiles produces a result: the label on its Probes row. Everything else is a DC operating
 # point, except that an oscillator's results all come from its transient run.
 RESULT_ANALYSIS = dict.fromkeys(('gain_db_at_start', 'gain_reference_hz', 'bandwidth_3db_hz', 'unity_gain_hz',
@@ -104,7 +105,7 @@ REAL_INTERFACE_CONTRACT = dict(
     connection_file=str(Path('configs/local/workbench/bridge_connection.json')),
     connection_file_format='{"active": "<id>", "profiles": {"<id>": {...keys below...}}}',
     connection_file_keys=['env_file', 'library', 'model_file', 'profile (optional)', 'bridge_site_packages (optional)',
-                          'circuits: {"<task name, e.g. gpdk045_ota7>": {"creation_receipt": ..., '
+                          'circuits: {"<task name, e.g. gpdk045_vco>": {"creation_receipt": ..., '
                           '"reference_measurements": ...}}',
                           'creation_receipt + reference_measurements at the top level (older single-circuit form; used '
                           'only for a circuit without its own "circuits" entry)'],
@@ -231,12 +232,18 @@ def offered_real_profiles() -> dict:
 
 
 def real_task_removed(task) -> str:
-    return (f'{task} no longer exists: its example cell was deleted from Virtuoso (user request 2026-09-23). The verified '
-            'built-in tasks left are ' + ', '.join(f'real:{n}' for n in offered_real_profiles()) + '.')
+    when = '2026-09-30' if task in ('real:gpdk045_ota7', 'real:gpdk045_ldo') else '2026-09-23'
+    return (f'{task} no longer exists: the built-in verified tasks were removed on user request (this one on {when}). The '
+            'real tasks are the ones you save from a Virtuoso cell; choose one under "Task".')
+
+
+# The tasks that train at corners. None since 2026-09-30: the only one, real:gpdk045_ota7, was removed (record 7.128).
+CORNER_TASKS = frozenset()
 
 
 def training_capabilities(task_key):
-    return dict(corners=task_key == 'real:gpdk045_ota7', policies=['off', 'after_nominal', 'always'] if task_key == 'real:gpdk045_ota7' else ['off'])
+    corners = task_key in CORNER_TASKS
+    return dict(corners=corners, policies=['off', 'after_nominal', 'always'] if corners else ['off'])
 
 
 def list_tasks():
@@ -373,6 +380,8 @@ def load_task(circuit, *, allow_real=False, profile_id=None) -> TaskRuntime:
     root = repo_root()
     if circuit.source == 'registered_task':
         key = circuit.task_id or ''
+        if not key:
+            raise TaskBlocked('No task is chosen: choose one under "Task".')
         kind, _, name = key.partition(':')
         if kind == 'synthetic' and name in SYNTHETIC_FIXTURES:
             info = SYNTHETIC_FIXTURES[name]
@@ -609,7 +618,7 @@ def profile_parameter_rows(runtime) -> list:
     """The Parameters-tab rows a REAL circuit profile fixes, written from its own parameter groups (the same
     mapping as starter_config). A real profile accepts exactly these variables, ranges and grid: the engine compares the
     compiled configuration with the profile (`graph_contract`) and refuses anything else when the run starts. Empty for
-    a task that fixes nothing (the MOCK task, a cell without a profile)."""
+    a task that fixes nothing (a MOCK circuit, a cell without a profile)."""
     return [] if runtime is None or runtime.mock else _graph_parameter_rows(runtime.base_graph)
 
 
@@ -715,9 +724,9 @@ def real_starter_config(task_key: str) -> dict:
 
 def starter_config(task_key: str) -> dict:
     """A valid starting configuration for a registered task. A convenience for manual editing; every field stays
-    editable. The MOCK task: the groups its device mapping declares, with the toy `score` as its only target. A real
-    task: real_starter_config. A removed MOCK or real task (REMOVED_MOCK_TASKS, REMOVED_REAL_TASKS) has none: KeyError,
-    like any unknown task."""
+    editable. A MOCK circuit a test registered: the groups its device mapping declares, with the toy `score` as its only
+    target. A real task: real_starter_config. A removed MOCK or real task (REMOVED_MOCK_TASKS, REMOVED_REAL_TASKS) has
+    none: KeyError, like any unknown task."""
     from analog_optimizer.netlist.config import ParserConfig
     kind, _, name = task_key.partition(':')
     if kind == 'real' and name:

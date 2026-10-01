@@ -189,7 +189,8 @@ class SearchSession:
                 self.schedule.round_pending = bool(self.queue)
 
     def pending_designs(self):
-        return sum(bool(s['busy'] and s['busy']['op'] != 'reset') for s in self.engine.lane_state.values())
+        # A reused reset (engine op `reset_reused`) is no design either: it launches nothing (2026-09-30).
+        return sum(bool(s['busy'] and s['busy']['op'] not in ('reset', 'reset_reused')) for s in self.engine.lane_state.values())
 
     def position(self):
         # Dispatch and completion are distinct events. A reply arriving while a

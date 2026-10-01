@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from gator_workbench import consistency, profile_preflight, runs, schema, tasks, virtuoso_setup as vs
 from gator_workbench.api import create_app
 from gator_workbench.validation import validate
-from helpers import bridge_is_importable, roots_for  # noqa: F401 - an imported fixture belongs to this module
+from helpers import MOCK_TASK, bridge_is_importable, roots_for  # noqa: F401 - an imported fixture belongs to this module
 from test_wb_api import probe
 from test_wb_task_save import config as cell_config, maestro_netlister, ready, save
 from test_wb_virtuoso_setup import SETUP, setup_writer
@@ -61,8 +61,8 @@ def test_static_validation_says_when_the_editors_differ_from_the_saved_task(tmp_
     resumed = tighter.model_copy(deep=True)
     resumed.run.mode = 'resume'                                                # a resume runs the run's own saved rows
     assert issues(resumed) == []
-    mock = schema.WorkbenchConfig.model_validate(dict(tasks.starter_config('real:gpdk045_ota7'), run=dict(max_evaluations=3)))
-    assert issues(mock) == []                                                  # a built-in circuit has no task file
+    mock = schema.WorkbenchConfig.model_validate(dict(tasks.starter_config(MOCK_TASK), run=dict(max_evaluations=3)))
+    assert issues(mock) == []                                     # a registered circuit without a task file (record 7.128)
 
 
 def test_the_check_compares_the_three_sides_and_says_what_to_do(tmp_path):
@@ -175,7 +175,7 @@ def test_the_check_route_replaces_check_against_virtuoso(tmp_path, monkeypatch):
     client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
     answer = client.post('/api/virtuoso/task/check', json=dict(profile_id='lab', config=cfg.model_dump(mode='json'))).json()
     assert answer['ok'] and answer['task'] == 'real:ring_osc' and answer['steps'][0]['step'] == 'editors'
-    mock = schema.WorkbenchConfig.model_validate(dict(tasks.starter_config('real:gpdk045_ota7'), run=dict(max_evaluations=3)))
+    mock = schema.WorkbenchConfig.model_validate(dict(tasks.starter_config(MOCK_TASK), run=dict(max_evaluations=3)))
     refused = client.post('/api/virtuoso/task/check', json=dict(profile_id='lab', config=mock.model_dump(mode='json')))
     assert refused.status_code == 409 and refused.json()['detail']['code'] == 'not_a_saved_task'
     assert client.post('/api/virtuoso/profile/preflight', json=dict(name='ring_osc', profile_id='lab')).status_code in (404, 405)

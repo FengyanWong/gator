@@ -45,7 +45,7 @@ def width_rows(graph, devices, lower=0.1, upper=100.0):
 
 
 # ------------------------------------------------------------------------------ recognition
-@pytest.mark.parametrize('name', ['gpdk045_ota7', 'gpdk045_ldo'])
+@pytest.mark.parametrize('name', ['gpdk045_ota5'])        # the OTA7 and LDO left with their files (7.128)
 def test_the_amplifiers_of_record_have_their_pair_tail_and_mirror_load_and_no_rail_pairs(name):
     graph = tasks._verified_profile(name).optimization_graph()
     assert found(graph) == [('differential_pair', ('XU1/M1', 'XU1/M2')), ('tail_source', ('XU1/M5',)),
@@ -123,9 +123,9 @@ I1 (s 0) isource dc=10u
 
 
 def test_the_agent_summary_lists_the_structures():
-    summary = circuit_summary(tasks._verified_profile('gpdk045_ota7').optimization_graph())
+    summary = circuit_summary(tasks._verified_profile('gpdk045_ota5').optimization_graph())
     assert summary['structures'] == [
-        'XU1/M1 and XU1/M2 are a differential pair (gates VINN / VINP, shared source XU1/NTAIL).',
+        'XU1/M1 and XU1/M2 are a differential pair (gates VINP / VINN, shared source XU1/NTAIL).',
         'XU1/M5 is the tail current source of the pair XU1/M1 / XU1/M2.',
         'XU1/M3 (diode-connected) and XU1/M4 are the current-mirror load of XU1/M1 / XU1/M2.']
 
@@ -227,21 +227,6 @@ def test_the_route_suggests_for_an_ngspice_task_and_shows_the_change(tmp_path):
     assert ('xota_m2_w', 'binding_group') in changed and ('xota_m4_w', 'binding_group') in changed
     assert {d['section'] for d in shown['diff']} == {'parameters'} and {d['change'] for d in shown['diff']} == {'modified'}
     assert {r['variable_id']: r['binding_group'] for r in shown['parameters']}['xota_m2_w'] == 'xota_m1_w'
-
-
-def test_the_route_lists_a_verified_task_for_information_only(tmp_path, monkeypatch):
-    """A verified built-in task loads through its connection bindings; here the load is stood in for with the task's own
-    optimization graph (local files), which is what the route reads."""
-    from types import SimpleNamespace
-    graph = tasks._verified_profile('gpdk045_ota7').optimization_graph()
-    monkeypatch.setattr(tasks, 'load_task', lambda circuit, **_: SimpleNamespace(
-        task_key='real:gpdk045_ota7', circuit=dict(generated_profile=False), base_graph=graph))
-    client = TestClient(workbench_app(tmp_path))
-    config = dict(tasks.starter_config('real:gpdk045_ota7'), run=dict(max_evaluations=10))
-    answer = post(client, config, apply=['differential_pair:XU1/M1+XU1/M2'])
-    assert not answer['applicable'] and answer['suggestions'] == [] and 'parameters' not in answer and 'blocked' not in answer
-    assert 'fixed by its verified circuit profile' in answer['why_not']
-    assert [s['kind'] for s in answer['structures']] == ['differential_pair', 'tail_source', 'active_load']
 
 
 def test_the_route_says_plainly_when_the_circuit_cannot_be_read(tmp_path):

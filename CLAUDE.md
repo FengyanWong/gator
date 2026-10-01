@@ -30,7 +30,10 @@ its top). There is no `AGENTS.md`.
 - **Evidence files are pinned by hash**: the M5/M6 audits re-hash `configs/*.json`, several
   `examples/*.py` and `tests/fixtures/synthetic/*.scs`, keyed by ABSOLUTE path. Do not edit, reformat
   (no `ruff --fix` over `examples/`), rename or move them; moving the repository breaks re-validation of
-  the frozen M6 plan.
+  the frozen M6 plan. Exception, by the user's explicit choice (2026-09-30, record 7.128): the OTA7 and LDO
+  example netlists and configurations (`configs/gpdk045_ota7*.json`, `configs/gpdk045_ldo*.json`,
+  `examples/circuits/gpdk045_{ota7,ldo}.*`) were deleted with their tasks, so the M5/M6 audits and the frozen
+  M6 plan re-validate from a checkout before that commit (git keeps the files).
 - **Saved models load only under the exact library versions they were saved with** (the checkpoint
   contract records torch and torch-geometric): install with `pip install -c constraints.txt ...`.
 - Do not change the SAC algorithm, the reward, or the action semantics to make a feature easier.

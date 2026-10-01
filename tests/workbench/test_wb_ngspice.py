@@ -210,7 +210,7 @@ def test_the_backend_writes_the_deck_reads_it_back_and_reports_each_outcome(tmp_
                          (1, '', 'Error: Could not find include file x.lib\n'), subprocess.TimeoutExpired('ngspice', 5), FileNotFoundError('no ngspice')])
     graph = sized_graph(DECK, {'r1': ('r', 500.0, 4000.0)})
     backend = NgspiceBackend(DECK, graph, NgspiceLink('ngspice_local'), units={'vout_v': 'V'}, runner=runner)
-    with pytest.raises(Exception):
+    with pytest.raises(ngspice_backend.BackendNotConnected):
         backend.read_parameters()                                     # not connected yet
     backend.connect()
     assert backend.read_parameters() == {('r1', 'r'): 1000.0} and backend.nominal_condition().corner.supply_v == 1.0

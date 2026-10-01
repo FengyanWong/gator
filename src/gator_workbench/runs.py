@@ -313,7 +313,11 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
         layout, manifest = _prepare_resume(config, roots, task, task_hash, gate)
         if consistency is not None:
             manifest['segments'][-1]['consistency_check'] = consistency
-            write_json(layout.manifest, manifest)
+            try:
+                write_json(layout.manifest, manifest)
+            except BaseException:         # the run lock taken for this resume goes too: kept, it refused every later Resume
+                take_lock(layout.run_dir).release()             # as "already running" until the backend restarted
+                raise
         return layout, manifest
     output_root = config.output.output_root or remembered_output_root()
     check = roots.check(output_root, create=True, verify_windows=False)

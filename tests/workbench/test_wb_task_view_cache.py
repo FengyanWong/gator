@@ -97,6 +97,7 @@ def test_other_tasks_load_as_before(monkeypatch):
     """Only a task saved from a cell is kept: any other reference - MOCK, ngspice, a built-in profile, a Virtuoso draft -
     goes to load_task at every call (whichever of them the registry still has)."""
     calls = []
+    tasks._view_cache.clear()        # an earlier test in this process may have kept a saved task (test_wb_profiles does)
     monkeypatch.setattr(tasks, 'load_task', lambda circuit, **kwargs: calls.append(circuit.task_id) or circuit.task_id)
     keys = ['synthetic:gpdk045_ota5', 'ngspice:ota5_level1', f'real:{next(iter(tasks.REAL_PROFILES))}']
     for key in keys:

@@ -479,6 +479,8 @@ def test_consecutive_infrastructure_failures_pause_safely_instead_of_burning_bud
     assert s['totals']['candidate_evaluations_charged'] < 15                            # the budget was NOT spent on a dead link
     assert s['output']['resumability'] == 'full_state' and 'gate' in s['error']
     evaluations = sorted(rows(layout, 'evaluations'), key=lambda r: r['commit_seq'])
+    while evaluations[-1]['status'] == 'cancelled':       # dispatched just before the pause, which stopped it before its launch
+        assert evaluations.pop()['failure_type'] == 'cancelled'
     assert [e['failure_type'] for e in evaluations[-3:]] == ['infrastructure_unclassified'] * 3
     assert all(e['status'] == 'timeout' for e in evaluations[-3:])                     # started => still charged, not refunded
     jobs = [j for j in rows(layout, 'simulator_jobs') if ':' in j['exit_status']]

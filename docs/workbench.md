@@ -99,7 +99,9 @@ The header has one main run button and **Abort** next to it. The main button cha
   everything and ends the run (`stopped`). Only while a pause or an abort is waiting for that simulation the button
   reads **Force abort**: it waits for nothing, the evaluation in flight is recorded as cancelled and stays charged,
   and on a real circuit a Spectre job already running on the server is not stopped and the schematic can be left
-  with the sizes that were being tried. It is for a run that is stuck.
+  with the sizes that were being tried. It is for a run that is stuck. A candidate handed out just before a pause or
+  an abort, and stopped by it before its first simulation, is recorded the same way: cancelled, charged, nothing
+  simulated, not counted as a failure of the link.
 * **Abort on a paused run** deletes nothing and sends nothing: the header lets go of the run and returns to Start.
   The run stays paused on disk and can still be continued from Run status > Continue.
 * The header controls ONE run - the one started or resumed from this page, remembered across a reload - and shows
@@ -914,7 +916,8 @@ scored (reward -1) and kept in replay, and since reward v2.1 the episode goes on
 circuit breaks. The stop rule counts it as a failed evaluation all the same: 5 in a row end the run as `failed`
 (stop reason `consecutive_failures`), so a run that explores a region where many designs break may need a higher
 limit. A dead backend has its own limit, **Pause after N consecutive infrastructure failures** (default 3, under
-Advanced): it pauses the run, resumable once the connection gate passes again, instead of failing it.
+Advanced): it pauses the run, resumable once the connection gate passes again, instead of failing it. A resume starts
+that count over (before record 7.135 it was restored at the limit, and every Resume paused again at once).
 
 [Reward contract and validation](reward-v2.md#reward-v21-2026-09-29). These controls were checked on source previews
 only: the user's live frontend/backend were not rebuilt or restarted. The subsequent fixed-action physical check used

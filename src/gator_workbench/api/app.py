@@ -1,5 +1,6 @@
 """Local same-origin FastAPI backend. Compose feature routes after preloading the optimizer."""
 from __future__ import annotations
+from contextlib import asynccontextmanager
 from pathlib import Path
 import threading
 from fastapi import FastAPI
@@ -7,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .. import __version__, bridge_connect, connection, runs
-from ..agents import ProposalStore
+from ..agents import REGISTRY, ProposalStore
 from ..paths import OutputRoots, repo_root
 from ..preload import preload
 from ..security import redact
@@ -31,12 +32,19 @@ def trusted_hosts(host=None) -> list[str]:
     return list(dict.fromkeys(f'[{name}]' if ':' in name else name for name in names))
 
 
+@asynccontextmanager
+async def lifespan(app):
+    yield
+    REGISTRY.stop_all()                   # the agent CLIs this backend started stop with it
+
+
 def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=True, monitor=None,
                auto_check_on_start=True, connection_stale_seconds=120.0, connector=None, host=None) -> FastAPI:
     # Endpoints run in a thread pool and import the optimizer lazily: two first imports at once corrupt
     # torch_geometric for the life of the process. Import it here, before any thread or request exists.
     preload()
-    app = FastAPI(title='GATOR workbench', version=__version__, docs_url='/api/docs', openapi_url='/api/openapi.json')
+    app = FastAPI(title='GATOR workbench', version=__version__, docs_url='/api/docs', openapi_url='/api/openapi.json',
+                  lifespan=lifespan)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts(host))
     roots = OutputRoots(extra_output_roots)
     input_roots = [repo_root().resolve()] + [Path(p).expanduser().resolve() for p in extra_input_roots]

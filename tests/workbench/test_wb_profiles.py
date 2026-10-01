@@ -240,7 +240,7 @@ def test_the_no_simulation_check_is_gated_and_reports_the_step_that_failed(tmp_p
         outcome = profile_preflight.run('ring_osc_3stage', 'lab', tmp_path / 'work')
     finally:
         patch.undo()
-    assert (tmp_path / 'artifacts/local/bridge-state').is_dir()
+    assert (tmp_path / 'artifacts/local/bridge-state').is_dir(), outcome     # failed once under load, cause not found: say why
     assert outcome['ok'] is False and outcome['simulated'] is False and outcome['steps'][0] == dict(step='profile', ok=True, detail=profile_preflight.MEANING['profile'])
     assert outcome['steps'][1]['step'] == 'connect' and outcome['steps'][1]['ok'] is False
     client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False,

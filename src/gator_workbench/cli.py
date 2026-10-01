@@ -13,6 +13,10 @@ import json
 from pathlib import Path
 import sys
 
+# Stopping the backend (Ctrl+C, or `kill`) waits this long for open requests, then cancels them. A live agent answer keeps
+# its request open until the agent is done, so a stop used to wait for that - forever for an agent that hangs.
+SHUTDOWN_GRACE_SECONDS = 5
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='gator-workbench', description=__doc__,
@@ -54,7 +58,12 @@ def main(argv=None):
                          connection_stale_seconds=args.connection_stale_seconds,
                          auto_check_on_start=args.connection_check_on_start, host=args.host)
         print(f'GATOR workbench: http://{args.host}:{args.port}   (API docs: /api/docs)', flush=True)
-        uvicorn.run(app, host=args.host, port=args.port, log_level='info')
+        try:
+            uvicorn.run(app, host=args.host, port=args.port, log_level='info',
+                        timeout_graceful_shutdown=SHUTDOWN_GRACE_SECONDS)
+        finally:                          # a second Ctrl+C skips the app's own shutdown
+            from .agents import REGISTRY
+            REGISTRY.stop_all()
         return 0
 
     from .schema import WorkbenchConfig

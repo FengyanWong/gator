@@ -90,7 +90,7 @@ await runChecks(browser, async () => {
   const column = name => evaluate(`(() => { const head = [...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.textContent.replace(' *', '').trim()), at = head.indexOf(${JSON.stringify(name)});
     return [...${EDITORS}.querySelectorAll('table.editor tbody tr')].map(r => { const c = r.children[at]?.querySelector('input, select'); return c ? c.value : null; }); })()`);
   const note = () => evaluate(`${PANEL}.querySelector('.task-rows')?.textContent ?? ''`);
-  const config = () => evaluate(`new Promise(r => setTimeout(() => r(JSON.parse(localStorage.getItem('gator-workbench-config-v1'))), 1000))`);   // the page saves 0.8 s after a change
+  const config = async () => { await page.saved(); return page.stored(); };       // after the page's 800 ms save, however late
   const shot = name => page.shot(path.join(out, name));
 
   await page.intercept(['*/api/*'], answer);
@@ -98,6 +98,7 @@ await runChecks(browser, async () => {
   const mock = LIVE ? await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json() : MOCK;
   const SEED = { schema_version: 'gator-workbench-config-v1', ...mock, run: { mode: 'scratch', concurrency: 1, threads_per_job: 1, ...mock.run }, output: { experiment_name: 'fixture' }, research: {} };
   await page.seed({ config: SEED, when: 'missing' });
+  await page.trackSaves();                                  // the page saves 800 ms after the last change: read it with saved()
   await send('Page.navigate', { url: APP });
   check('the page opens', await until(`!!(${PANEL}) && ${FIELD('Task')}.options.length > 1`));
   await openTab('Specs');

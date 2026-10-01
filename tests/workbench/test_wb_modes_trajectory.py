@@ -2,6 +2,7 @@
 across different topologies and action dimensions, and reloading of configuration + trajectories.
 The complete experience archive is tested against the finite replay snapshot."""
 import json
+import pickle
 import shutil
 
 import pytest
@@ -66,7 +67,7 @@ def test_weights_file_is_tensor_only_and_loads_without_unpickling_objects(source
     directory, _ = latest(source_run[1])
     payload = torch.load(directory / 'model_weights.pt', map_location='cpu', weights_only=True)   # safe loader
     assert payload['format'] == 'gator-workbench-weights-v1' and set(payload) >= {'actor', 'critics', 'targets', 'log_alpha'}
-    with pytest.raises(Exception):
+    with pytest.raises(pickle.UnpicklingError, match='Weights only load failed'):
         torch.load(directory / 'training_state.pt', map_location='cpu', weights_only=True)  # holds dataclasses: trusted-only
 
 

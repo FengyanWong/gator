@@ -290,7 +290,8 @@ def test_serve_hands_its_host_to_the_app(monkeypatch):
     monkeypatch.setattr(api, 'create_app', lambda **options: made.update(options) or 'app')
     monkeypatch.setattr(uvicorn, 'run', lambda app, **options: served.update(app=app, **options))
     assert cli_module.main(['serve', '--host', '192.168.1.50', '--port', '8799']) == 0
-    assert made['host'] == '192.168.1.50' and served == dict(app='app', host='192.168.1.50', port=8799, log_level='info')
+    assert made['host'] == '192.168.1.50' and served == dict(app='app', host='192.168.1.50', port=8799, log_level='info',
+                                                             timeout_graceful_shutdown=cli_module.SHUTDOWN_GRACE_SECONDS)
 
 
 # ------------------------------------------------------------------------------- A16: malformed bodies and NUL bytes

@@ -24,7 +24,7 @@ import shutil
 
 from .ngspice_netlist import NetlistError, Parsed, parse_text
 from .paths import local_settings_dir
-from .storage.atomic import write_json
+from .storage.atomic import publish, temporary_path, write_json
 from .storage.dataset import utcnow
 
 PREFIX = 'ngspice'
@@ -168,7 +168,10 @@ def save(name, text, *, device_kinds=None, source_path=None, circuit_class='unsp
         previous = directory / FILES['netlist']
         if previous.is_file():
             shutil.copy2(previous, history / f'r{existing.get("revision", 0)}.cir')
-    (directory / FILES['netlist']).write_text(text, encoding='utf8')
+    netlist = directory / FILES['netlist']
+    temporary = temporary_path(netlist)            # a crash mid-write leaves the deck before, never half of the new one
+    temporary.write_text(text, encoding='utf8')
+    publish(temporary, netlist)
     write_json(directory / FILES['entry'], entry)
     return dict(entry, directory=str(directory), created=existing is None)
 

@@ -89,8 +89,8 @@ def test_owned_worker_deadline_and_exit_do_not_block_shutdown(operation):
 def test_hung_lane_keeps_peer_transition_and_reports_unknown_job(opamp, tmp_path, monkeypatch):
     original = OwnedWorker.submit
     def submit(self, function, *args, **kwargs):
-        if function.__name__ == '_step':
-            kwargs['timeout'] = .6
+        if function.__name__ == '_step' and self.lane == 0:     # only the hung lane: its peer's step had the same 0.6 s and
+            kwargs['timeout'] = .6                              # missed it under a loaded suite (review of 2026-10-01)
         return original(self, function, *args, **kwargs)
     monkeypatch.setattr(OwnedWorker, 'submit', submit)
     learner, replay, report = toy_learner(), ReplayBuffer(origin='synthetic'), {}

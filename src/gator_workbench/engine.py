@@ -43,6 +43,9 @@ from .trajectory import StateEncoder, TrajectoryLoader
 
 INFRASTRUCTURE_FAILURES = ('timeout', 'transport_error', 'license_error', 'backend_error')
 TERMINAL_STATES = ('completed', 'paused', 'stopped', 'cancelled', 'failed')
+# What the environment raises when the run's stop file reached a candidate before its first launch (analog_optimizer.envs.
+# sizing): nothing was simulated, the run itself stopped it.
+STOPPED_BEFORE_LAUNCH = 'Candidate stopped before nominal evaluation'
 # `aggregation` of a probe's aggregate metrics row: what the Probes' aggregation column (retired 2026-09-29, record
 # 7.105) held in every run - a run refused any other value - so results tables read as before.
 PROBE_AGGREGATION = 'nominal_only'
@@ -429,6 +432,10 @@ class RunEngine:
                                   're-admitted to replay; the learner updates made after it are not recoverable.')
         if self.encoder is not None:
             self.encoder.written = {r['state_id'] for r in DatasetReader(self.layout.data).rows('states', ['state_id'])}
+        # A pause for infrastructure failures asks for the connection gate to pass again, and a resume passes it: the count
+        # starts over. Restored as saved it was still at the limit, so every Resume paused again at once, nothing evaluated
+        # (review of 2026-10-01).
+        self.counters['consecutive_infrastructure_failures'] = 0
         self._pending_events = [('resumed', report)]
 
     def _record_interrupted(self):
@@ -742,6 +749,11 @@ class RunEngine:
                           started_at=iso(busy['attempt_dispatched_at']), ended_at=iso(),
                           exception=dict(type=type(exc).__name__, message=str(exc)[:4000]), lane_failure=True,
                           episode=None, episode_step=None)
+        if (self.stop_reason is not None and not result['ok'] and not result.get('launches')
+                and (result.get('exception') or {}).get('message') == STOPPED_BEFORE_LAUNCH):
+            # Dispatched just before the run stopped, stopped by it before any launch: recorded as cancelled, like a forced
+            # cancel, not as an infrastructure failure - one more "failure" of the link that never happened.
+            result['cancelled'] = True
         if result.get('lane_failure') and not self.task.mock:
             result['launches'] = busy['launch_allowance']         # conservative: the physical launch state is unknown
             result['launch_unknown'] = True

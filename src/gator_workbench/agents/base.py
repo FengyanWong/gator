@@ -219,6 +219,12 @@ class ProcessRegistry:
             self._processes.pop(request_id, None)
             self._cancelled.pop(request_id, None)
 
+    def stop_all(self):
+        """The backend is stopping: every agent CLI it started is cancelled. A CLI runs in a session of its own, so it
+        outlived the backend before - a request answered in one piece survived even Ctrl+C (review of 2026-09-29)."""
+        for request_id in self.active():
+            self.cancel(request_id)
+
     def cancel(self, request_id) -> bool:
         """True when a running CLI of the request was stopped. False when there is none (yet): the cancel still counts."""
         with self._lock:
@@ -340,6 +346,9 @@ def _read_live(process, stdin_text, timeout, on_line, max_output):
             timer.cancel()
         for helper in helpers:
             helper.join(timeout=5)
+        process.stdout.close()                    # communicate() closes its pipes; this reader closes its own
+        if not helpers[1].is_alive():             # only once its reader is done: closing it mid-read would block
+            process.stderr.close()
     if expired.is_set():
         raise AgentError('timeout', f'No result within {timeout:g} s; the request subprocess was stopped')
     return ''.join(lines), ''.join(errors)

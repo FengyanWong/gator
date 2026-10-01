@@ -29,7 +29,7 @@ HTMLAnchorElement.prototype.click = function () { downloads.push(this.download);
 
 function Poll({ run, interval, timeout, controls }: { run: string; interval: number; timeout: number; controls: boolean }) {
   const result = useRequest(signal => api.status(run, signal), [run], { pollEvery: interval, timeoutMs: timeout });
-  return <><button id="refresh" onClick={result.refresh}>Refresh</button><pre id="result">{JSON.stringify(result)}</pre>{controls && <StatusTab status={result.value} onContinue={() => {}} />}</>;
+  return <><button id="refresh" onClick={result.refresh}>Refresh</button><pre id="result">{JSON.stringify(result)}</pre>{controls && <StatusTab status={result.value} runDir={null} error={null} onContinue={() => {}} continueBlocked={null} />}</>;
 }
 
 function Fixture() {
@@ -39,7 +39,7 @@ function Fixture() {
     <select id="tab" value={tab} onChange={e => setTab(e.target.value)}>{['poll', 'data', 'files', 'status', 'logs'].map(t => <option key={t}>{t}</option>)}</select>
     <input id="interval" type="number" value={interval} onChange={e => setInterval(Number(e.target.value))} />
     <input id="timeout" type="number" value={timeout} onChange={e => setTimeoutMs(Number(e.target.value))} />
-    <div id="panel">{tab === 'data' ? <DataTab runDir={run} /> : tab === 'files' ? <FilesTab runDir={run} /> : tab === 'logs' ? <LogsTab runDir={run} alive={false} />
+    <div id="panel">{tab === 'data' ? <DataTab runDir={run} status={null} /> : tab === 'files' ? <FilesTab runDir={run} /> : tab === 'logs' ? <LogsTab runDir={run} alive={false} />
       : <Poll run={run} interval={interval} timeout={timeout} controls={tab === 'status'} />}</div></>;
 }
 createRoot(document.getElementById('root')!).render(<StrictMode><Fixture /></StrictMode>);

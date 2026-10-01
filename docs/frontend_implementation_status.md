@@ -175,3 +175,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.132 | Five limits from the MScR build fixed: noise statement, analogLib and PDK resistors, iprobe, PWL in the package parser, Save task refuses equations naming no Probe; MScR noise specs and optimized resistors; optimizer digest 0d045b8e → 46327861 |
 | 7.133 | Follow-ups: the other five MScR tasks run cleanly with the fixed form writer; the ngspice refusal test back; the warm-start note counts only paid resets |
 | 7.134 | The header's flip-back after Abort: the run lock's liveness test took the lock exclusively and was seen as a worker by a test at the same moment; tests now share the lock, acquire waits 0.2 s |
+| 7.135 | Round 5 open items: agent CLIs stop with the backend, infrastructure pauses resumable, Apply once; random test failures explained |

@@ -227,9 +227,12 @@ class ProposalStore:
 
     def get(self, proposal_id) -> dict:
         with self._lock:
-            if proposal_id not in self._items:
-                raise KeyError(proposal_id)
-            return self._items[proposal_id]
+            return self._get(proposal_id)
+
+    def _get(self, proposal_id) -> dict:
+        if proposal_id not in self._items:
+            raise KeyError(proposal_id)
+        return self._items[proposal_id]
 
     def _still_current(self, proposal, config, circuit_hash):
         reasons = []
@@ -239,8 +242,13 @@ class ProposalStore:
             reasons.append('the circuit changed after the proposal was generated')
         return reasons
 
+    # approve, apply and reject check a proposal's state and change it in one step under the store's lock: two presses
+    # (a double click, a second tab) used to both pass the check, so a proposal could be applied - and written - twice.
     def approve(self, proposal_id, *, proposal_hash, config, circuit_hash) -> dict:
-        proposal = self.get(proposal_id)
+        with self._lock:
+            return self._approve(self._get(proposal_id), proposal_hash, config, circuit_hash)
+
+    def _approve(self, proposal, proposal_hash, config, circuit_hash) -> dict:
         if proposal['status'] not in ('proposed', 'approved'):
             raise ProposalRejected(f"Proposal is {proposal['status']}")
         if proposal_hash != proposal['proposal_hash']:
@@ -256,7 +264,10 @@ class ProposalStore:
 
     def apply(self, proposal_id, *, config, circuit_hash) -> dict:
         """Returns the new configuration. An old approval does not survive a changed config/circuit."""
-        proposal = self.get(proposal_id)
+        with self._lock:
+            return self._apply(self._get(proposal_id), config, circuit_hash)
+
+    def _apply(self, proposal, config, circuit_hash) -> dict:
         if proposal['status'] != 'approved' or not proposal['approval']:
             raise ProposalRejected('The proposal has not been approved')
         reasons = self._still_current(proposal, config, circuit_hash)
@@ -269,6 +280,7 @@ class ProposalStore:
         return updated
 
     def reject(self, proposal_id):
-        proposal = self.get(proposal_id)
-        proposal.update(status='rejected')
-        return proposal
+        with self._lock:
+            proposal = self._get(proposal_id)
+            proposal.update(status='rejected')
+            return proposal

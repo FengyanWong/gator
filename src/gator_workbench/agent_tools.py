@@ -29,8 +29,11 @@ def ask(method, payload):
     url = os.environ.get('GATOR_TOOLS_URL', '').rstrip('/') + '/api/agent/tools'
     body = json.dumps(dict(payload, token=os.environ.get('GATOR_TOOLS_TOKEN', ''), method=method)).encode()
     request = urllib.request.Request(url, data=body, method='POST', headers={'Content-Type': 'application/json'})
+    # Straight to the backend on this machine: urlopen would honour http_proxy, and a proxy would then see the one-time
+    # tool token and every call (review of 2026-09-29).
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as answer:
+        with opener.open(request, timeout=TIMEOUT) as answer:
             return json.loads(answer.read().decode('utf8', 'replace') or '{}')
     except urllib.error.HTTPError as exc:                       # the backend refused: its words go to the agent
         try:

@@ -2,12 +2,11 @@
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
-- **Optimizer source digest:** `f42a309884ec5b499f8c38e18a811fd330a0ffa4740363616aeb56104f59146e`, set by `898b134`
-  (record 7.126: corner jobs two at a time, every 5th reset simulated, Maestro results not parsed, 2026-09-30). Before
-  it: `100945fb780852ea3776a2395f83474bd208ed2f1ee5a27aff7cdf28b0d2651b`, set by `4634200` (LLM sizing: the search
-  package with the audit's duplicate-check fix, records 7.116 and 7.120); `3f00832c...` before that, set by `8cf53ae`
+- **Optimizer source digest:** `0d045b8e3406d93120a81273dc20427b6d04f62901615d2efe4237273a9648c5`, set by `5362ebb`
+  (record 7.129: the optimizer fixes held back from review round 5, 2026-10-01). Before it: `f42a3098...`, set by
+  `898b134` (record 7.126: corner jobs two at a time, every 5th reset simulated, Maestro results not parsed);
+  `100945fb...`, set by `4634200` (LLM sizing, records 7.116 and 7.120); `3f00832c...` before that, set by `8cf53ae`
   (reward v2.1).
-  On top of it `0d045b8e…` since record 7.129 (uncommitted): the optimizer fixes held back from review round 5.
 - **Encoders:** `graph_transformer` (default), `rgcn`, `gatv2`. `port_gnn` was removed on 2026-09-24; `mlp` and `gcn`
   on 2026-09-26, when `gatv2` replaced `gat` (GATv1).
 - **Reward:** v2.1 ([reward-v2.md](reward-v2.md)). Schema defaults keep the old arithmetic: capped violations,
@@ -16,7 +15,7 @@ A summary for new sessions; everything below is the chronological record, oldest
   (`always`, `after_nominal`) was offered for `real:gpdk045_ota7` only; no task has it since 2026-09-30 (7.128).
 - **Older checkpoints** resume exactly only under their own source: digest `02127bc3...` (M6 pilot, six encoders) from
   `bbdfe36`; `aa987cf0...` (five encoders incl. MLP, GCN, GATv1) from `9bc488f`; `f087a4ce...` (reward v2) from
-  `1135b8b` up to the commit before `8cf53ae`; `3f00832c...` (reward v2.1) from `8cf53ae` up to the commit before `4634200`; `100945fb...` (LLM sizing) from `4634200` up to the commit before `898b134`. Digests never committed (`75c7cfac...`, `5e8a1bc1...`, `11e62657...`, `3473ed9c...`, and
+  `1135b8b` up to the commit before `8cf53ae`; `3f00832c...` (reward v2.1) from `8cf53ae` up to the commit before `4634200`; `100945fb...` (LLM sizing) from `4634200` up to the commit before `898b134`; `f42a3098...` (record 7.126) from `898b134` up to the commit before `5362ebb`. Digests never committed (`75c7cfac...`, `5e8a1bc1...`, `11e62657...`, `3473ed9c...`, and
   `27a36b2b...`, the LLM sizing build before the duplicate-check fix, which Astra's acceptance evidence names) are in
   the entries below.
 - **Tasks:** since 2026-09-30 (record 7.128) the workbench offers only the user's saved tasks (the MScR library) and
@@ -660,5 +659,5 @@ Seeded synthetic training is identical before and after (weights, optimizer stat
 `0d045b8e3406d93120a81273dc20427b6d04f62901615d2efe4237273a9648c5`: checkpoints saved under an earlier digest no longer
 `resume` (`fine_tune` and `frozen` still load). Not taken: the "worst value" tie-break of passing range specs (it changes
 network inputs), the homogeneous graph view (`demo.py --homogeneous` uses it) and the GPDK045 profile copy-paste.
-Landed with no job running in the tree and a guarded script that refused any other starting digest. No commit. Record
-7.129.
+Landed with no job running in the tree and a guarded script that refused any other starting digest. Committed as
+`5362ebb`. Record 7.129.

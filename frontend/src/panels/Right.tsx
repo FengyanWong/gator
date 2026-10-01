@@ -136,10 +136,11 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
 
   // Only a Mode that loads the model asks about it: a model_source left over from fine_tune is ignored in scratch, and
   // was compiled and checked after every edit there all the same (audit 2026-09-30).
+  const modelChecked = run.mode !== 'scratch' && !!source.run_dir && !llmOnly;
   const { value: fresh, error, loading: modelLoading } = useRequest<Json>(() => api.model(source.run_dir, source.checkpoint_id ?? 'latest', config),
     [JSON.stringify([config.circuit, config.parameters, config.targets, config.measurements, run.mode, source,
       run.connection_profile_id, run.seed, run.network, run.advanced, run.reward, run.conditions, config.research?.split])],
-    { enabled: run.mode !== 'scratch' && !!source.run_dir && !llmOnly, delay: 250 });
+    { enabled: modelChecked, delay: 250 });
   // While the SAME saved model is checked again after an edit (0.25 s and a compile), what is known about it - its facts,
   // network, component list, structure and graph view - stays; only the compatibility verdict waits for the new answer
   // (an old "compatible" is never shown while checking, record 7.96). The whole block used to vanish and come back after
@@ -288,7 +289,8 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       <label title="scratch: random init, new run. resume: same task, same run, full state. fine_tune: compatible weights, new task, new run with a parent. frozen: no updates at all.">Mode
         <select value={run.mode} onChange={e => set({ mode: e.target.value })}>
           {(llmOnly ? ['scratch', 'resume'] : run.search?.method && run.search.method !== 'sac' ? ['scratch', 'resume', 'fine_tune'] : ['scratch', 'resume', 'fine_tune', 'frozen']).map(m => <option key={m} value={m}>{m}</option>)}</select></label>
-      {model?.suggestion && model.suggestion.mode !== run.mode && <p className="warn">Suggested: <button className="text-link mode-suggestion"
+      {/* Only while the model is checked: in scratch the last check's suggestion stayed, never asked again (review of 2026-10-01) */}
+      {modelChecked && model?.suggestion && model.suggestion.mode !== run.mode && <p className="warn">Suggested: <button className="text-link mode-suggestion"
         title={`Set Mode to ${model.suggestion.mode}`} onClick={() => set({ mode: model.suggestion.mode })}>{model.suggestion.mode}</button> - {model.suggestion.reason}
         {model.suggestion.requires_confirmation ? ' (needs your confirmation)' : ''}</p>}
       <Num label="Concurrent Spectre jobs" disabled={llmOnly} value={run.concurrency} onChange={v => set({ concurrency: v })} title="Independent simulation jobs at once. NOT the thread count of one simulation." />

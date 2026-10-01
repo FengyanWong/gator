@@ -38,8 +38,11 @@ const MORE_KEY = 'gator-workbench-editor-more-columns';
 const LIMIT_CHOICES: [string, string][] = [['>=', 'none'], ['>=', 'maximize'], ['<=', 'none'], ['<=', 'minimize'],
   ['interval', 'none'], ['interval', 'minimize'], ['interval', 'maximize'], ['target', 'none']];
 const LIMIT_TEXT: Record<string, string> = { '>=': '≥ lower', '<=': '≤ upper', interval: 'interval', target: 'target ± tolerance' };
-const limitLabel = (constraint: string, objective: string) => (LIMIT_TEXT[constraint] ?? String(constraint))
-  + (objective === 'minimize' ? ', then lower is better' : objective === 'maximize' ? ', then higher is better' : '');
+// A row without a constraint read "undefined", and an objective this list does not know read like a plain limit (review of
+// 2026-10-01): both are shown as they are.
+const limitLabel = (constraint: string, objective: string) => (constraint ? LIMIT_TEXT[constraint] ?? String(constraint) : '(not set)')
+  + (objective === 'minimize' ? ', then lower is better' : objective === 'maximize' ? ', then higher is better'
+    : objective && objective !== 'none' ? `, then ${objective}` : '');
 
 function LimitSelect({ row, title, onChange }: { row: Json; title: string; onChange: (fields: Json) => void }) {
   const objective = row.direction_after_feasible ?? 'none', current = `${row.constraint}|${objective}`;

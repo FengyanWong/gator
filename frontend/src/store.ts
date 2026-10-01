@@ -93,14 +93,18 @@ function migrateParameter(row: Json): Json {
   return out;
 }
 
-/** The text field being typed in, or null (a select, a tick box, a button, another window). Changes typed into ONE field
- *  less than MERGE_MS apart are one Undo step (user choice 2026-09-30: typing 1.5e-6 used to take six Undo presses, and
- *  the 100 kept steps ran out while typing). */
+/** The text field this change was typed into, or null (a select, a tick box, a button, an answer that arrived meanwhile).
+ *  Changes typed into ONE field less than MERGE_MS apart are one Undo step (user choice 2026-09-30: typing 1.5e-6 used to
+ *  take six Undo presses, and the 100 kept steps ran out while typing). The field is the one whose input event is being
+ *  handled, not the focused one: an agent proposal applied, rows read from Virtuoso or a change in a pop-up window while a
+ *  cell had focus joined its typing step, and Undo took them away with the typed text (review of 2026-10-01). Tag names,
+ *  not instanceof: a pop-up window's fields belong to that window. */
 const MERGE_MS = 1500;
 function typingField(): Element | null {
-  const e = document.activeElement;
-  if (e instanceof HTMLTextAreaElement) return e;
-  return e instanceof HTMLInputElement && !['checkbox', 'radio', 'file', 'button', 'submit'].includes(e.type) ? e : null;
+  const event = window.event;
+  const e = event && ['input', 'change', 'compositionend'].includes(event.type) ? event.target as HTMLInputElement | null : null;
+  if (e?.tagName === 'TEXTAREA') return e;
+  return e?.tagName === 'INPUT' && !['checkbox', 'radio', 'file', 'button', 'submit'].includes(e.type) ? e : null;
 }
 
 /** Configuration state with undo/redo and local persistence (kept in the browser by itself, 0.8 s after each change - the

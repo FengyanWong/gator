@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import functools
 import os
 from pathlib import Path
 import shutil
@@ -34,8 +35,10 @@ def refuse_nul(path) -> None:
         raise PathNotAllowed('A path cannot contain a NUL character')
 
 
+@functools.lru_cache(maxsize=1)
 def repo_root() -> Path:
-    """Repository that contains this package (src/gator_workbench/..)."""
+    """Repository that contains this package (src/gator_workbench/..). Resolved once: on the 9p-mounted D: drive a
+    resolve looks up every part of the path, and reading the task list called it 38 times (review of 2026-10-01)."""
     return Path(__file__).resolve().parents[2]
 
 

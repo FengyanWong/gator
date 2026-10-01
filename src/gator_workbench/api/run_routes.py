@@ -100,7 +100,7 @@ def register(app: FastAPI, context: ApiContext):
                         mode = config.run.mode if config.run.mode != 'scratch' else 'fine_tune'
                         result['compatibility'] = ckpt.check_compatibility(meta_, mode=mode, task_definition_hash=task_hash,
                                                                            contract=contract)
-                result['suggestion'] = runs.suggest_mode(config, run_dir)
+                result['suggestion'] = runs.suggest_mode(config, run_dir, task=runtime)   # the task loaded above, not a second load
         return result
 
     @app.get('/api/runs/default-model')

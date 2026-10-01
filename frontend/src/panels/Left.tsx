@@ -100,6 +100,9 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     if (!offered) { request.current++; setError(null); setCircuit(null); return; }
     // Another task - or the first look - loads at once. A change within the same one waits 0.4 s to settle: arrowing
     // through the Cell list of the Virtuoso window chose every cell on the way, and a cell's load may ask the bridge.
+    // The previous cell's load still on its way is no longer this reference's: its answer was shown under the new cell
+    // during those 0.4 s (review of 2026-10-01).
+    request.current++;
     const task = `${ref.source}|${ref.task_id}`, settle = loadedAs.current === task ? 400 : 0;
     const timer = setTimeout(() => { loadedAs.current = task; load(ref, follow && virtuosoOn ? follow : null); }, settle);
     return () => clearTimeout(timer);
@@ -206,9 +209,12 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     try {
       const answer = await api.nativeImport(profileId!, ref.library, ref.cell, ref.testbench_cell ?? null, declare);
       if (answer?.pdk?.state === 'read') pdksChanged();  // the Components list in the RL network block shows it at once
-      // The selects are locked while a cell is read; should the page follow another cell anyway, its own load shows it.
+      // The selects are locked while a cell is read; should the page follow another cell anyway, its own load shows it. A
+      // registered task chosen meanwhile keeps the last cell's fields: the draft's load outbid the task's, and could
+      // exchange its Probes (review of 2026-10-01).
       const now = latest.current.circuit;
-      if (now.library !== ref.library || now.cell !== ref.cell || (now.testbench_cell ?? null) !== (ref.testbench_cell ?? null)) return;
+      if (now.source !== ref.source || (now.task_id ?? null) !== (ref.task_id ?? null) || now.library !== ref.library
+        || now.cell !== ref.cell || (now.testbench_cell ?? null) !== (ref.testbench_cell ?? null)) return;
       setPdkStep(answer?.pdk ?? null);                    // the cell's PDK, read in the same press (2026-09-27); an older server sends none
       await load(ref, 'press');
     }

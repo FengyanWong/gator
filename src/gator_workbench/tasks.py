@@ -22,7 +22,8 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from copy import deepcopy
+from dataclasses import dataclass, field, replace
 import importlib.util
 import json
 import os
@@ -423,6 +424,63 @@ def load_task(circuit, *, allow_real=False, profile_id=None) -> TaskRuntime:
                               + ', '.join(f'real:{n}' for n in offered_real_profiles()), contract=REAL_INTERFACE_CONTRACT)
         return _native_draft_runtime(imported, circuit)
     raise TaskBlocked(f'Unsupported circuit source {circuit.source!r}')
+
+
+# ---- a saved task as the page loads it: kept while its files are unchanged ----------------------------------------------
+# Loading a GENERATED task (real:<name>, saved from a cell) opens ~43 files - every saved task's entry three times, its own
+# folder, the connection file - and rebuilds its form writer: 0.3-1 s on the 9p-mounted D: drive, at EVERY edit of the
+# page (validation, task load, Matched devices, the saved-model check; review of 2026-10-01). The page's loads keep the
+# runtime while none of the files it is built from changed; the link and the model file are checked at every call, as
+# before. A run never takes this path: it loads with the authorization (load_task(allow_real=True)).
+_VIEW_LIMIT = 16
+_view_cache: dict = {}
+
+
+def _view_stamp(name):
+    """(name, size, mtime) of what a generated task is built from - its folder and every file in it, the folder of saved
+    tasks, the connection file, the conditions file - or None when one of them cannot be read (then nothing is kept)."""
+    from . import profiles
+    from .paths import local_settings_dir
+    try:
+        store = profiles.store_root()
+        folder = store / name
+        parts = [(str(store), 0, store.stat().st_mtime_ns), (str(folder), 0, folder.stat().st_mtime_ns)]
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                if entry.is_file():
+                    stat = entry.stat()
+                    parts.append((entry.name, stat.st_size, stat.st_mtime_ns))
+        for path in (local_settings_dir() / 'bridge_connection.json', repo_root() / 'configs' / 'gpdk045_conditions.json'):
+            stat = path.stat()
+            parts.append((str(path), stat.st_size, stat.st_mtime_ns))
+        return tuple(sorted(parts))
+    except OSError:
+        return None
+
+
+def load_task_view(circuit, *, profile_id=None) -> TaskRuntime:
+    """load_task(circuit) - without the authorization - for the page; a generated task is kept while its files are
+    unchanged. What a caller may change (the circuit facts, the notes) is its own copy; the graph is shared and read
+    only (compile_task deep-copies it before it sets variables)."""
+    key = (circuit.task_id or '') if circuit.source == 'registered_task' else ''
+    kind, _, name = key.partition(':')
+    if kind != 'real' or not name or name in REAL_PROFILES or key in REMOVED_REAL_TASKS:
+        return load_task(circuit, profile_id=profile_id)
+    stamp, memo = _view_stamp(name), (key, profile_id)
+    kept = _view_cache.get(memo)
+    if stamp is not None and kept is not None and kept[0] == stamp:
+        blocker = generated_backend_blocker(profile_id)
+        if blocker:
+            raise TaskBlocked(blocker, contract=REAL_INTERFACE_CONTRACT)
+        runtime = kept[1]
+    else:
+        runtime = load_task(circuit, profile_id=profile_id)
+        _view_cache.pop(memo, None)
+        if stamp is not None and runtime.circuit.get('generated_profile'):
+            _view_cache[memo] = (stamp, runtime)
+            while len(_view_cache) > _VIEW_LIMIT:
+                _view_cache.pop(next(iter(_view_cache)))
+    return replace(runtime, circuit=deepcopy(runtime.circuit), notes=list(runtime.notes))
 
 
 NETLIST_SOURCE_REMOVED = ('The workbench no longer imports Spectre netlist files. Choose a registered task or a Virtuoso '

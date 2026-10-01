@@ -145,13 +145,14 @@ def with_circuit_content(config: WorkbenchConfig, task) -> WorkbenchConfig:
     return config
 
 
-def suggest_mode(config: WorkbenchConfig, source_run_dir=None) -> dict:
+def suggest_mode(config: WorkbenchConfig, source_run_dir=None, task=None) -> dict:
     """resume when full state exists for the SAME task; fine_tune (needs confirmation) for an old model on
-    a new task; scratch when nothing is loaded."""
+    a new task; scratch when nothing is loaded. `task`: the runtime the caller has already loaded (the saved-model
+    check loaded it twice per edit)."""
     if not source_run_dir:
         return dict(mode='scratch', reason='No previous weights selected.', requires_confirmation=False)
     try:
-        config = with_circuit_content(config, load_task(config.circuit))
+        config = with_circuit_content(config, task or load_task(config.circuit))
     except TaskBlocked:
         pass
     try:

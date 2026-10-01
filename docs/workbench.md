@@ -1679,8 +1679,9 @@ The user chose all four groups of `artifacts/local/reviews/frontend-audit-2026-0
   took it for MOCK (a task chosen a moment before its circuit was read), the question is built from the backend's own
   report: "This runs REAL simulations of real:<task> ... Authorize a total budget of N candidate evaluation(s)?".
 * **Undo while typing:** keys typed into one field less than 1.5 s apart are one Undo step (user choice); leaving the
-  field ends it. An edit made less than 0.8 s before the page is closed or reloaded is saved - unless another tab stored
-  the configuration meanwhile.
+  field ends it, and a change that was not typed there - a button, an applied proposal, rows read from Virtuoso - is a
+  step of its own even while the field has focus (7.131). An edit made less than 0.8 s before the page is closed or
+  reloaded is saved - unless another tab stored the configuration meanwhile.
 * **The Agent tab keeps its message box** while an AI run's thread is shown (the thread scrolls in a row of its own).
 * **Import JSON:** only a file this workbench exported replaces the whole configuration; other files are rows for the
   open tab (every row with its ID) or are refused in words. The confirmation shows Apply / Cancel first and scrolls.
@@ -1701,12 +1702,22 @@ The user chose all four groups of `artifacts/local/reviews/frontend-audit-2026-0
 Browser checks added: run_control (the real-run question), llm_sizing (the message box keeps its room),
 spec_equations (one Undo per typed value, an edit before a reload, a long import, a foreign JSON file).
 
+**Review fixes (record 7.131).** A new AI run's sizing thread appears in the open Agent tab once its search starts, and
+a refused hint stays said until the next press. Continue waits while the header starts or resumes a run. In scratch no
+Mode suggestion is left over from an earlier model check. A Specs row without a constraint reads "(not set)". Choosing
+a registered task while a cell is read keeps the task, and a cell's previous load is not shown under the next one. An
+ended run's log is read once more after its worker ended. Overlapping tests of two connections each show "Testing...".
+
 ## Code organization
 
 `src/gator_workbench/api/app.py` initializes the app and registers four feature modules: settings and
 connections, circuits and tasks, runs and exports, and agents. `api/models.py` owns HTTP request schemas;
 `api/context.py` shares input/output authorization, configuration loading and the cached readiness
 checklist; `api/support.py` shares response and streaming helpers. The HTTP routes and schemas are unchanged.
+The page's task loads (`support.load_runtime`: validation, the task, Matched devices, the saved-model check, the agent)
+go through `tasks.load_task_view`, which keeps a saved task (`real:<name>`) while its folder, its files, the connection
+file and the conditions file are unchanged; the link is checked at every call. A run, the corner check and the command
+line load it from the files (7.131).
 The legacy copy route still refuses copying; Save-as remains a supported backend request.
 
 The frontend keeps the agent conversation in `panels/AgentTab.tsx` and the run tabs in `panels/RunTabs.tsx`.

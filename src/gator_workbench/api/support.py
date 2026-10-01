@@ -202,7 +202,11 @@ def _bridge_call(action, *refusals):
 
 def load_runtime(config, *, allow_real=False):
     try:
-        return tasks.load_task(config.circuit, allow_real=allow_real, profile_id=config.run.connection_profile_id), None
+        if allow_real:
+            return tasks.load_task(config.circuit, allow_real=True, profile_id=config.run.connection_profile_id), None
+        # The page's loads - validation, the task, Matched devices, the saved-model check, the agent: a saved task is kept
+        # while its files are unchanged (tasks.load_task_view, review of 2026-10-01).
+        return tasks.load_task_view(config.circuit, profile_id=config.run.connection_profile_id), None
     except tasks.TaskBlocked as exc:
         return None, dict(blocker=str(exc), interface_contract=exc.contract)
     except Exception as exc:

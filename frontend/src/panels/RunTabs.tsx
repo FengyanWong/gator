@@ -1,5 +1,5 @@
 import { searchPhase } from './SearchSettings';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, bytes, copy, download, downloadPackage, Json, num, saveJson } from '../api';
 import { usePolling, useRequest } from '../store';
@@ -128,7 +128,14 @@ export function LogsTab({ runDir, alive }: { runDir: string | null; alive: boole
   const [note, setNote] = useState<string | null>(null);
   // Read every 2 s while the worker lives; a run at rest is read once (when the tab opens, and once more when its worker
   // ends) - it used to be re-read every minute for as long as the tab stayed open.
-  const { value } = usePolling(() => api.logs(runDir!, kind), alive ? 2000 : 0, !!runDir, [runDir, kind]);
+  const { value, refresh } = usePolling(() => api.logs(runDir!, kind), alive ? 2000 : 0, !!runDir, [runDir, kind]);
+  // That last read starts after the worker ended: a read already on its way then was kept, and could miss the last lines
+  // (review of 2026-10-01).
+  const before = useRef({ runDir, alive });
+  useEffect(() => {
+    const was = before.current; before.current = { runDir, alive };
+    if (was.alive && !alive && was.runDir === runDir) refresh();
+  }, [runDir, alive]);
   useEffect(() => setNote(null), [runDir, kind]);
   if (!runDir) return <p className="hint">No run selected.</p>;
   // The list below is only the newest 200 entries; the file is the whole log, one JSON record per line. A healthy run has an

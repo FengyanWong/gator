@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { api, Json } from '../api';
 import { searchPhase } from './SearchSettings';
 
-const LIVE = ['created', 'running', 'pausing', 'stopping'];
+const LIVE = ['created', 'starting', 'running', 'pausing', 'stopping'];
+const STARTING = ['created', 'starting'];            // a run's status has no search yet: it comes once the engine runs
 
 /** The run's AI sizing thread in the Agent tab. `visible`: the tab is open, or the conversation is in its own window.
  *  `hint` lives in the Agent tab, so detaching the conversation (which draws this anew) keeps what is being typed. */
@@ -11,7 +12,9 @@ export function SizingThread({ runDir, active, visible, hint, setHint }: { runDi
   const [thread, setThread] = useState<Json>(null);
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
-  useEffect(() => { setThread(null); setError(''); }, [runDir]);
+  // A refused hint is said until the next press: on the line of the reads, the next good read took it away within a second.
+  const [hintError, setHintError] = useState('');
+  useEffect(() => { setThread(null); setError(''); setHintError(''); }, [runDir]);
   // Read while the thread can be seen, and again every second while the run is live AND has an AI search: a SAC run has
   // none, and was read every second all the same, with the Agent tab closed too (audit 2026-09-30). A failed read is
   // tried again more slowly instead of ending the updates for the rest of the run; a status read that fails for a moment
@@ -25,7 +28,9 @@ export function SizingThread({ runDir, active, visible, hint, setHint }: { runDi
         const data = await api.llmThread(runDir);
         if (gone) return;
         failures = 0; setThread(data); setError('');
-        if (active && data.search && LIVE.includes(data.state)) again = 1000;
+        // A run just started is read until its search appears (a SAC run's never does: its reads end once it runs). The
+        // thread of a new AI run never came while the tab was open (review of 2026-10-01).
+        if (active && LIVE.includes(data.state) && (data.search || STARTING.includes(data.state))) again = 1000;
       } catch (e: any) {
         if (gone) return;
         setError(e.message);
@@ -44,8 +49,8 @@ export function SizingThread({ runDir, active, visible, hint, setHint }: { runDi
   const send = async () => {
     if (sending) return;
     setSending(true);
-    try { await api.llmHint(runDir!, hint); setHint(''); setError(''); }
-    catch (e: any) { setError(e.message); } finally { setSending(false); }
+    try { await api.llmHint(runDir!, hint); setHint(''); setHintError(''); }
+    catch (e: any) { setHintError(e.message); } finally { setSending(false); }
   };
   return <section className="sizing-thread">
     <h3>Run’s AI sizing thread</h3>
@@ -79,6 +84,7 @@ export function SizingThread({ runDir, active, visible, hint, setHint }: { runDi
       onChange={e => setHint(e.target.value)} /></label>
     <button disabled={!search.hints_available || !active || !hint.trim() || sending} onClick={send}>{sending ? 'Adding...' : 'Add hint'}</button>
     <p className="hint">Hints guide a future eligible call. They cannot change bounds, specifications or budgets, or trigger a rescue.</p>
+    {hintError && <p className="error">{hintError}</p>}
     {error && <p className="error">{error}</p>}
   </section>;
 }

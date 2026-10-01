@@ -52,11 +52,17 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
 
   // ---- actions: every one of them is a button press, but for the one test when the page opens (below) ---------------
   const { busy, run } = useAsyncAction(e => setError(e.message), () => setError(null));
-  // Which connection the action in progress belongs to: a test of A (it can take a minute) no longer shows B "testing..."
-  // and locks B's buttons once B is chosen (audit 2026-09-30). Adding a connection belongs to none.
-  const [busyFor, setBusyFor] = useState<string | null>(null);
-  const runFor = (name: string, action: () => Promise<unknown>) => { setBusyFor(profileId); return run(name, action); };
-  const mine = busy && (busy === 'profile' || busyFor === profileId) ? busy : null;
+  // Which connection each action in progress belongs to: a test of A (it can take a minute) no longer shows B "testing..."
+  // and locks B's buttons once B is chosen (audit 2026-09-30), and a test of B pressed meanwhile no longer takes A's
+  // "Testing..." away and unlocks A's buttons while A's test goes on (review of 2026-10-01). Adding a connection belongs
+  // to none.
+  const [busyFor, setBusyFor] = useState<Record<string, string>>({});
+  const runFor = (name: string, action: () => Promise<unknown>) => {
+    const id = profileId!;
+    setBusyFor(b => ({ ...b, [id]: name }));
+    return run(name, action).finally(() => setBusyFor(b => { const rest = { ...b }; delete rest[id]; return rest; }));
+  };
+  const mine = busy === 'profile' ? busy : profileId ? busyFor[profileId] ?? null : null;
   // The connection list stays usable while a slow test runs: an answer - or a failure - for a connection that is no longer
   // the chosen one is dropped (null), so it never shows under another connection.
   const chosen = useRef(profileId);

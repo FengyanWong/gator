@@ -140,6 +140,23 @@ await runChecks(browser, async () => {
   await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Undo').click()`);
   await page.saved();
   check('one Undo takes the whole typed value back (not one character)', (await page.stored()).targets[1].lower === lowerBefore, `${(await page.stored()).targets[1].lower} (before: ${lowerBefore})`);
+  // Review of 2026-10-01: a change that was not typed - a button, an applied answer - is a step of its own, even while the
+  // cell still has focus (the focused field decided it, and Undo took the typed value away with the button's change).
+  await evaluate(`${CELL(1, 'lower')}.focus(); ${CELL(1, 'lower')}.select()`);
+  for (const ch of '0.5') { await send('Input.insertText', { text: ch }); await sleep(60); }
+  const rowsBefore = await evaluate(`${EDITORS}.querySelectorAll('tbody tr').length`);
+  await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Add').click()`);   // at once, focus stays
+  const focusStayed = await evaluate(`document.activeElement === ${CELL(1, 'lower')}`);
+  await page.saved();
+  const withRow = (await page.stored()).targets;
+  await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Undo').click()`);
+  await page.saved();
+  const undone = (await page.stored()).targets;
+  check('a button pressed while a typed cell has focus is its own Undo step: Undo takes the row, the typed 0.5 stays',
+    focusStayed && withRow.length === undone.length + 1 && undone[1].lower === 0.5
+    && await evaluate(`${EDITORS}.querySelectorAll('tbody tr').length`) === rowsBefore,
+    `focus stayed ${focusStayed}; rows ${withRow.length} -> ${undone.length}; lower ${undone[1].lower}`);
+  await evaluate(`${CELL(1, 'lower')}.blur()`);
   await evaluate(`${CELL(1, 'lower')}.focus(); ${CELL(1, 'lower')}.select()`);
   await send('Input.insertText', { text: '0.25' });
   await send('Page.reload');                                 // at once: less than 0.8 s after the change

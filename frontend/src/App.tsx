@@ -174,7 +174,10 @@ export function App() {
   // ...but not while the header is busy with ANOTHER run (the case above that does not hand the run to the header): the
   // continued run would have no Pause or Abort anywhere - the tab's run buttons went on 2026-09-29 - and two real runs
   // would drive the one Virtuoso session. A paused run there is no hindrance: the header takes the continued run instead.
+  // Nor while the header starts or resumes a run: Continue then asked the same run to go on twice, and its end cleared
+  // the header's "resuming" while the header's own Resume was still on its way (review of 2026-10-01).
   const continueBlocked: string | null = continuing ? 'The run is being continued; a moment.'
+    : control.phase === 'starting' || control.phase === 'resuming' ? 'The header is starting or resuming a run; a moment.'
     : control.dir === runDir || control.phase === 'idle' || control.phase === 'paused' ? null
     : control.phase === 'checking' ? 'The header is still looking up which run is live; a moment.'
     : 'Another run is live in the header: pause it or let it finish first (a second live run would have no Pause or Abort on this page).';

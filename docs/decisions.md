@@ -2,8 +2,10 @@
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
-- **Optimizer source digest:** `100945fb780852ea3776a2395f83474bd208ed2f1ee5a27aff7cdf28b0d2651b`, set by `4634200`
-  (LLM sizing: the search package with the audit's duplicate-check fix, records 7.116 and 7.120, 2026-09-30). Before it: `3f00832c89c1cf7af5cbc5ab6dac74c20250a76ea7bfa3a2df06717087fdd6f4`, set by `8cf53ae`
+- **Optimizer source digest:** `f42a309884ec5b499f8c38e18a811fd330a0ffa4740363616aeb56104f59146e`, set by `898b134`
+  (record 7.126: corner jobs two at a time, every 5th reset simulated, Maestro results not parsed, 2026-09-30). Before
+  it: `100945fb780852ea3776a2395f83474bd208ed2f1ee5a27aff7cdf28b0d2651b`, set by `4634200` (LLM sizing: the search
+  package with the audit's duplicate-check fix, records 7.116 and 7.120); `3f00832c...` before that, set by `8cf53ae`
   (reward v2.1).
 - **Encoders:** `graph_transformer` (default), `rgcn`, `gatv2`. `port_gnn` was removed on 2026-09-24; `mlp` and `gcn`
   on 2026-09-26, when `gatv2` replaced `gat` (GATv1).
@@ -13,7 +15,7 @@ A summary for new sessions; everything below is the chronological record, oldest
   (`always`, `after_nominal`) was offered for `real:gpdk045_ota7` only; no task has it since 2026-09-30 (7.128).
 - **Older checkpoints** resume exactly only under their own source: digest `02127bc3...` (M6 pilot, six encoders) from
   `bbdfe36`; `aa987cf0...` (five encoders incl. MLP, GCN, GATv1) from `9bc488f`; `f087a4ce...` (reward v2) from
-  `1135b8b` up to the commit before `8cf53ae`; `3f00832c...` (reward v2.1) from `8cf53ae` up to the commit before `4634200`. Digests never committed (`75c7cfac...`, `5e8a1bc1...`, `11e62657...`, `3473ed9c...`, and
+  `1135b8b` up to the commit before `8cf53ae`; `3f00832c...` (reward v2.1) from `8cf53ae` up to the commit before `4634200`; `100945fb...` (LLM sizing) from `4634200` up to the commit before `898b134`. Digests never committed (`75c7cfac...`, `5e8a1bc1...`, `11e62657...`, `3473ed9c...`, and
   `27a36b2b...`, the LLM sizing build before the duplicate-check fix, which Astra's acceptance evidence names) are in
   the entries below.
 - **Tasks:** since 2026-09-30 (record 7.128) the workbench offers only the user's saved tasks (the MScR library) and
@@ -618,8 +620,8 @@ Optimizer digest `100945fb…` → `f42a309884ec5b499f8c38e18a811fd330a0ffa47403
 Astra job running and a guarded script that refused any other starting digest. Full suite on a copy of the tree: 1,591
 passed without the change, 1,609 with it (18 new tests), none failed. Checked the same evening on MScR circuits (the
 user: "Run tests on MScR circuits"): on real:mscr_ota7t the same 10 evaluations bought 8 steps instead of 5 at the
-same pace; a real:mscr_ring3 run exposed stale well-proximity values in that cell, unrelated to this change. No
-commit. Record 7.126.
+same pace; a real:mscr_ring3 run exposed a fault of the form writer (record 7.127), unrelated to this change.
+Committed as `898b134` and `e2584fa`. Record 7.126.
 
 ## The MOCK task and the real OTA7 and LDO tasks deleted, with their example files (2026-09-30)
 
@@ -633,4 +635,4 @@ stay. Told that the M5/M6 audits and the frozen M6 plan re-hash those configurat
 anyway": those audits re-validate from a checkout before this change, and CLAUDE.md's evidence rule says so. With OTA7
 gone no task trains at corners and Corner check has no task. No package file changed, so the optimizer digest is
 untouched. Full suite of the tree with the change 1,532 passed, none failed; 33 of 34 browser checks pass (the 34th
-fails on an old ngspice model in outputs/ with the old code too). No commit. Record 7.128.
+fails on an old ngspice model in outputs/ with the old code too). Committed in `e2584fa`. Record 7.128.

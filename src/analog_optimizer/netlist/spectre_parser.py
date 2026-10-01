@@ -68,7 +68,7 @@ def statements(text: str, file: str) -> list[list[Token]]:
             if end >= len(text) or text[end] != char:
                 raise ParseError("Unterminated quoted value", source)
             word = text[i:end + 1]
-        elif char in "(){}=+-*/":
+        elif char in "(){}[]=+-*/":
             word = "**" if text.startswith("**", i) else char
         else:
             match = _ATOM.match(text, i)
@@ -96,10 +96,10 @@ def assignments(tokens: list[Token]) -> dict[str, tuple[str, SourceSpan]]:
             token = tokens[j]
             if not stack and j > i + 2 and j + 1 < len(tokens) and tokens[j + 1].text == "=":
                 break
-            if token.text in ("(", "{"):
+            if token.text in ("(", "{", "["):
                 stack.append(token.text)
-            elif token.text in (")", "}"):
-                if not stack or stack.pop() != {")": "(", "}": "{"}[token.text]:
+            elif token.text in (")", "}", "]"):
+                if not stack or stack.pop() != {")": "(", "}": "{", "]": "["}[token.text]:
                     raise ParseError("Unbalanced parameter expression", token.source)
             j += 1
         if stack or j == i + 2:

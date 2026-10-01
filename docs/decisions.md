@@ -7,6 +7,7 @@ A summary for new sessions; everything below is the chronological record, oldest
   `898b134` (record 7.126: corner jobs two at a time, every 5th reset simulated, Maestro results not parsed);
   `100945fb...`, set by `4634200` (LLM sizing, records 7.116 and 7.120); `3f00832c...` before that, set by `8cf53ae`
   (reward v2.1).
+  On top of that `46327861…` since record 7.132 (uncommitted): the Spectre parser reads PWL `[ ]` arrays.
 - **Encoders:** `graph_transformer` (default), `rgcn`, `gatv2`. `port_gnn` was removed on 2026-09-24; `mlp` and `gcn`
   on 2026-09-26, when `gatv2` replaced `gat` (GATv1).
 - **Reward:** v2.1 ([reward-v2.md](reward-v2.md)). Schema defaults keep the old arithmetic: capped violations,

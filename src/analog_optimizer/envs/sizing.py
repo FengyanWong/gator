@@ -141,9 +141,15 @@ class CircuitSizingEnv:
     def __init__(self, backend, graph, specs, work_root, *, max_steps=5,
                  timeout_seconds=120.0, stop_on_success=True, expected_origin='real',
                  condition: SimulationCondition | None = None, recorder=None, reward_settings=None,
-                 condition_policy='off', corners=()):
+                 condition_policy='off', corners=(), condition_jobs=1):
         if isinstance(max_steps, bool) or not isinstance(max_steps, int) or max_steps < 1:
             raise ValueError('max_steps must be a positive integer')
+        self._reset_cache = None                           # (observation, info) of the last valid reset, for reset_reused
+        if isinstance(condition_jobs, bool) or not isinstance(condition_jobs, int) or condition_jobs < 1:
+            raise ValueError('condition_jobs must be a positive integer')
+        # How many of a candidate's corner jobs may run at once after its nominal job; the backend may allow fewer
+        # (`concurrent_condition_jobs`). 1 keeps the plan strictly one job after another.
+        self.condition_jobs = condition_jobs
         if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise ValueError('timeout_seconds must be positive and finite')
         if expected_origin not in ('real', 'synthetic'):
@@ -241,11 +247,36 @@ class CircuitSizingEnv:
             raise RuntimeError('Environment supports only its owning worker thread')
 
     def reset(self):
+        """Start an episode at the starting design, simulated. A valid result is kept for `reset_reused`."""
         self._require_connection()
         self.steps = 0
         self.episode += 1
         self._done = True
         observation, _, _, _, info = self._evaluate(None, reset=True)
+        return observation, info
+
+    def reset_reused(self):
+        """Start an episode from the last valid reset's observation without simulating: it is the same starting design.
+        The caller keeps the drift check by calling reset() now and then (the workbench engine: every 5th reset, user
+        decision of 2026-09-30 - the same design used to be re-simulated at every reset). This launches nothing,
+        charges nothing and records no candidate; the info says `reset_reused` and names the candidate whose measurement
+        it reuses. After a failed reset there is nothing to reuse, and this refuses."""
+        self._require_connection()
+        if self._reset_cache is None:
+            raise RuntimeError('No valid reset to reuse: call reset() for a simulated one')
+        self.steps = 0
+        self.episode += 1
+        self._launch_allowance = None                      # consumed like a real reset's, although nothing launches
+        observation, info = deepcopy(self._reset_cache)
+        self._done = False
+        if self.recorder is not None:
+            self._recording_observation = deepcopy(observation)
+        reused = info.get('candidate_id')
+        info = {k: v for k, v in info.items() if k not in ('record', 'receipt', 'eval_id', 'record_path', 'candidate_id', 'job_id')}
+        info.update(reset_reused=True, reused_candidate_id=reused, replay_eligible=False, bootstrap=False,
+                    terminated=False, truncated=False, simulation_calls=self.simulation_calls,
+                    candidate_evaluations=self.candidate_evaluations, confirmed_calls=self.confirmed_calls,
+                    uncertain_calls=self.uncertain_calls)
         return observation, info
 
     def step(self, proposal):
@@ -359,11 +390,11 @@ class CircuitSizingEnv:
             simulation_started = perf_counter()
             if self.recorder is not None:
                 self.recorder.start(candidate_id, dict(applied), record)
-            for index, condition in enumerate(planned_now):
-                if self._stop_file is not None and self._stop_file.exists():
-                    stopped = True
-                    record['conditions_stop_reason'] = 'coordinator_stop'
-                    break
+
+            def launch(index, condition):
+                """One condition job's launch intent, written - and counted as dispatched - before its simulator may
+                start. Returns (intent, request, pending)."""
+                nonlocal allowance
                 if allowance < 1:
                     raise RuntimeError('Launch allowance exhausted before physical invocation')
                 current = artifact if index == 0 else self.backend.derive_condition_artifact(
@@ -389,9 +420,12 @@ class CircuitSizingEnv:
                     self.recorder.launch_intent(candidate_id, intent)
                 required = tuple(s.metric_id for s in self.evaluator.specs if s.active and s.required
                                  and (index == 0 or not s.nominal_only))
-                result = self.backend.run_simulation(SimulationRequest(
-                    current, output_root / 'simulations', required,
-                    self.timeout_seconds, dict(applied), condition=condition))
+                return intent, SimulationRequest(current, output_root / 'simulations', required,
+                                                 self.timeout_seconds, dict(applied), condition=condition), pending
+
+            def settle(index, condition, intent, pending, result, *, side_by_side=False):
+                """A finished job: its result checked against the launch, the call accounting, the completed intent and
+                the row it makes. Returns (row, invocations)."""
                 if result.origin != self.expected_origin or not same_parameters(result.applied_parameters, applied):
                     raise ValueError('Simulation result origin or parameters differ from the export')
                 if result.condition != condition or result.sample_index is not None:
@@ -432,7 +466,9 @@ class CircuitSizingEnv:
                 for name in local.errors:
                     metrics[name], validity[name] = None, False
                 operating_points = result.operating_points
-                if operating_points is None and result.status == SimulationStatus.OK:
+                # The backend's "latest operating points" belong to whichever job finished last: never read them for a
+                # job that ran side by side with another.
+                if operating_points is None and result.status == SimulationStatus.OK and not side_by_side:
                     try:
                         operating_points = self.backend.get_operating_points()
                     except UnsupportedCapability:
@@ -446,22 +482,103 @@ class CircuitSizingEnv:
                 if missing and self.evaluator.row_scorable(row, nominal=index == 0):
                     from dataclasses import replace
                     row = replace(row, reason_code='missing_counted_as_failure', missing_failure_metrics=list(missing))
+                return row, invocations
+
+            def keep(row, result):
                 rows.append(row)
                 results.append(result)
                 record['condition_results'] = [asdict(r) for r in rows]
                 if self.recorder is None:
                     write_record(path, record)
+
+            def halt(index, row, result, invocations):
+                """True when this kept row ends the plan (it still counts)."""
+                nonlocal stopped
                 attributed = result.candidate_evaluated and result.status in (SimulationStatus.INVALID_DESIGN, SimulationStatus.NONCONVERGED)
                 if invocations is None or not self.evaluator.row_scorable(row, nominal=index == 0):
                     stopped = True
                     record['conditions_stop_reason'] = 'unavailable_or_uncertain_condition'
-                    break
+                    return True
                 if index == 0 and not reset and self.condition_policy == 'after_nominal' and not self.evaluator.evaluate_conditions(rows).nominal_success:
                     record['conditions_stop_reason'] = 'nominal_gate_not_met'
-                    break
+                    return True
                 if index == 0 and attributed:
                     record['conditions_stop_reason'] = 'attributed_nominal_failure'
-                    break
+                    return True
+                return False
+
+            def coordinator_stop():
+                nonlocal stopped
+                if self._stop_file is not None and self._stop_file.exists():
+                    stopped = True
+                    record['conditions_stop_reason'] = 'coordinator_stop'
+                    return True
+                return False
+
+            def one_at_a_time(indices):
+                """Returns True when the plan ended early."""
+                for index in indices:
+                    if coordinator_stop():
+                        return True
+                    intent, request, pending = launch(index, planned_now[index])
+                    result = self.backend.run_simulation(request)
+                    row, invocations = settle(index, planned_now[index], intent, pending, result)
+                    keep(row, result)
+                    if halt(index, row, result, invocations):
+                        return True
+                return False
+
+            def side_by_side(indices, jobs):
+                """The corners after the nominal, at most `jobs` at once (2026-09-30): each intent is written before its
+                launch, results are taken in plan order. A kept row that ends the plan stops further launches, and a job
+                that had already started after it is accounted (its intent completed) but adds no row - the rows a
+                one-at-a-time plan would have kept. Jobs launched before a coordinator stop was seen keep their rows, as
+                there. On an error every job still running is waited for and accounted before the error is raised."""
+                from collections import deque
+                from concurrent.futures import ThreadPoolExecutor
+                waiting, running, failure = deque(indices), deque(), None
+                launching, counting = True, True
+                simulate = self.backend.delegated(self.backend.run_simulation)
+                with ThreadPoolExecutor(max_workers=jobs, thread_name_prefix='condition-job') as pool:
+                    while True:
+                        while launching and waiting and len(running) < jobs:
+                            if any(future.done() and future.exception() is not None for *_, future in running):
+                                launching = False            # a later job already failed: launch nothing more
+                                break
+                            if coordinator_stop():
+                                launching = False
+                                break
+                            index = waiting.popleft()
+                            try:
+                                intent, request, pending = launch(index, planned_now[index])
+                            except BaseException as exc:
+                                failure, launching, counting = exc, False, False
+                                break
+                            running.append((index, intent, pending, pool.submit(simulate, request)))
+                        if not running:
+                            break
+                        index, intent, pending, future = running.popleft()
+                        try:
+                            result = future.result()
+                            row, invocations = settle(index, planned_now[index], intent, pending, result, side_by_side=True)
+                        except BaseException as exc:
+                            if failure is None:
+                                failure = exc
+                            launching = counting = False
+                            continue
+                        if counting:
+                            keep(row, result)
+                            if halt(index, row, result, invocations):
+                                launching = counting = False
+                if failure is not None:
+                    raise failure
+
+            jobs = min(self.condition_jobs, getattr(self.backend, 'concurrent_condition_jobs', 1))
+            if not one_at_a_time([0]) and len(planned_now) > 1:
+                if jobs > 1 and len(planned_now) > 2 and callable(getattr(self.backend, 'delegated', None)):
+                    side_by_side(range(1, len(planned_now)), jobs)
+                else:
+                    one_at_a_time(range(1, len(planned_now)))
             record['timings']['simulation_and_measurement'] = perf_counter() - simulation_started
             if not rows:
                 raise RuntimeError('Candidate stopped before nominal evaluation')
@@ -524,9 +641,14 @@ class CircuitSizingEnv:
                 info['receipt'] = receipt
                 self._recording_observation = deepcopy(observation)
                 self.recorder.retain_and_clean(receipt, workspace, self.backend)
+            if reset:     # kept for reset_reused - also after a retried reset; a failed one leaves nothing to reuse
+                self._reset_cache = (deepcopy((observation, info))
+                                     if observation is not None and evaluated.valid and not self._done else None)
             return observation, reward, terminated, truncated, info
         except BaseException as exc:
             self._done = True
+            if reset:
+                self._reset_cache = None
             record.update(state='execution_error', exception_type=type(exc).__name__, error=str(exc),
                           replay_eligible=False, reward=None, simulation_calls=self.simulation_calls,
                           elapsed_seconds=perf_counter() - started)

@@ -140,9 +140,9 @@ class BridgeScratch:
             raise RuntimeError('Spectre scratch operation failed: ' + result.stderr[-2048:])
         return json.loads(result.stdout)
 
-    def simulator(self, work_dir, timeout):
+    def simulator(self, work_dir, timeout, *, output_format='psfascii'):
         from virtuoso_bridge.spectre.runner import SpectreSimulator
-        options = dict(work_dir=work_dir, timeout=timeout, output_format='psfascii', spectre_args=[],
+        options = dict(work_dir=work_dir, timeout=timeout, output_format=output_format, spectre_args=[],
                        keep_remote_files=True, profile=self.profile)
         if self.remote:
             options.update(remote=True, ssh_runner=self.runner, remote_work_dir=self.workspace['path'])

@@ -83,6 +83,7 @@ class NativeEnvironmentFactory:
     reward_settings: RewardSettings = field(default_factory=RewardSettings)
     condition_policy: str = 'off'
     corners: tuple = ()
+    condition_jobs: int = 2              # a candidate's corner jobs two at a time where the backend allows (2026-09-30)
 
     @contextmanager
     def preparation_context(self, limits, report):
@@ -100,7 +101,8 @@ class NativeEnvironmentFactory:
         env = CircuitSizingEnv(backend, self.profile.optimization_graph(), self.specs,
                                self.output / f'worker-{lane}', max_steps=self.max_steps,
                                timeout_seconds=self.timeout_seconds, stop_on_success=False, recorder=recorder,
-                               reward_settings=self.reward_settings, condition_policy=self.condition_policy, corners=self.corners)
+                               reward_settings=self.reward_settings, condition_policy=self.condition_policy, corners=self.corners,
+                               condition_jobs=self.condition_jobs)
         if self.reference_metrics is not None:
             original_reset = env.reset
             def checked_reset():

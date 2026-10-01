@@ -5,7 +5,7 @@ No SSH transport, daemon, Spectre runner or PSF reader is reimplemented here.
 """
 from __future__ import annotations
 
-from contextlib import redirect_stdout, redirect_stderr
+from contextlib import contextmanager, redirect_stdout, redirect_stderr
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 import fcntl
@@ -16,6 +16,7 @@ import math
 import os
 from pathlib import Path
 import re
+import sys
 import threading
 from time import perf_counter
 from uuid import uuid4
@@ -40,6 +41,51 @@ def write_json(path, value):
 
 def parameter_rows(parameters):
     return [{'device': d, 'parameter': p, 'value': value} for (d, p), value in sorted(parameters.items())]
+
+
+# A candidate's condition jobs may run side by side on helper threads of the backend's owning thread (2026-09-30). Such
+# a helper carries its owner's token here, and only run_simulation accepts it: every call that touches the Virtuoso
+# session still demands the owning thread itself.
+_delegation = threading.local()
+_capture = threading.local()
+_capture_install = threading.Lock()
+
+
+def delegated_owner():
+    """(thread id, pid) of the owner this helper thread runs a simulation for, else None."""
+    return getattr(_delegation, 'owner', None)
+
+
+class _ThreadRoutedStream:
+    """Stands in for sys.stdout / sys.stderr: a thread that captures writes to its own log, every other thread to the
+    stream this one replaced. contextlib.redirect_stdout swaps the process-wide stream, which two simulations running
+    side by side would mix into each other's logs."""
+    def __init__(self, original, name):
+        self._original, self._name = original, name
+
+    def write(self, text):
+        return (getattr(_capture, self._name, None) or self._original).write(text)
+
+    def flush(self):
+        (getattr(_capture, self._name, None) or self._original).flush()
+
+    def __getattr__(self, item):
+        return getattr(self._original, item)
+
+
+@contextmanager
+def _captured(log):
+    """This thread's stdout and stderr go to `log` while inside; other threads keep theirs."""
+    with _capture_install:
+        for name in ('stdout', 'stderr'):
+            if not isinstance(getattr(sys, name), _ThreadRoutedStream):
+                setattr(sys, name, _ThreadRoutedStream(getattr(sys, name), name))
+    before = getattr(_capture, 'stdout', None), getattr(_capture, 'stderr', None)
+    _capture.stdout = _capture.stderr = log
+    try:
+        yield
+    finally:
+        _capture.stdout, _capture.stderr = before
 
 
 def build_deck_header(structure, model_file, section='tt', *, temperature_c=27.0):
@@ -83,6 +129,9 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
     Cadence session, and do not manipulate it while this backend is connected.
     """
     _process_lock = threading.Lock()
+    # Condition jobs of one candidate at a time: this is the verified single-owner adapter. A lane backend
+    # (native_preparation.NativeCandidateBackend) may allow more; the environment then runs them through `delegated`.
+    concurrent_condition_jobs = 1
 
     def __init__(self, config: BridgeConfig, circuit: Gpdk045OtaProfile):
         self.config, self.circuit = config, circuit
@@ -91,6 +140,7 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         self._owns_process_lock = False
         self._dirty = False
         self._exports = {}
+        self._simulator_lock = threading.Lock()      # the per-evaluation recording workspaces run_simulation hands out
         self._op = None
         self.timings = {}
 
@@ -155,10 +205,26 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
     def _vb_env():
         return {k: v for k, v in os.environ.items() if k.startswith('VB_')}
 
-    def _require_connection(self):
+    def delegated(self, call):
+        """`call` wrapped to run on a helper thread of this backend's owner - a candidate's condition jobs side by side.
+        Inside it run_simulation accepts the helper as the owner; nothing else does."""
+        owner = (self._thread, os.getpid())
+
+        def run(*args, **kwargs):
+            _delegation.owner = owner
+            try:
+                return call(*args, **kwargs)
+            finally:
+                _delegation.owner = None
+        return run
+
+    def _delegated_here(self):
+        return delegated_owner() is not None and delegated_owner() == (getattr(self, '_thread', None), os.getpid())
+
+    def _require_connection(self, *, delegable=False):
         if self.client is None:
             raise BackendNotConnected('Call connect() before using the real backend')
-        if threading.get_ident() != self._thread:
+        if threading.get_ident() != self._thread and not (delegable and self._delegated_here()):
             raise RuntimeError('Use the backend only from its owning thread')
         if digest(self.config.env_file) != self._env_hash or self._vb_env() != self._bound_env:
             raise RuntimeError('Bridge configuration changed during an active session')
@@ -369,6 +435,12 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         graph.metadata['simulation_condition'] = asdict(artifact.condition)
         return graph
 
+    def _raw_format(self):
+        """The Spectre results format asked for. A circuit measured inside the Virtuoso session (OCEAN,
+        `measures_in_virtuoso`) never reads its results here, so it keeps Spectre's own binary format and the bridge skips
+        parsing the downloaded text (user decision of 2026-09-30: about 0.45 s of a Maestro-measured evaluation)."""
+        return None if getattr(self.circuit, 'measures_in_virtuoso', False) else 'psfascii'
+
     def _new_simulator(self, work_dir, timeout):
         if getattr(self, '_recording_scratch', None) is not None:
             if self._recording_scratch_used:
@@ -377,10 +449,10 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                 self._recording_scratch = BridgeScratch(recorder, eval_id, profile=self.config.profile)
                 self._recording_workspaces.append(self._recording_scratch)
             self._recording_scratch_used = True
-            return self._recording_scratch.simulator(work_dir, math.ceil(timeout))
+            return self._recording_scratch.simulator(work_dir, math.ceil(timeout), output_format=self._raw_format())
         from virtuoso_bridge.spectre.runner import SpectreSimulator
         return SpectreSimulator.from_env(work_dir=work_dir, timeout=math.ceil(timeout),
-                                        output_format='psfascii', spectre_args=[], keep_remote_files=True,
+                                        output_format=self._raw_format(), spectre_args=[], keep_remote_files=True,
                                         profile=self.config.profile)
 
     def prepare_recording(self, recorder, eval_id):
@@ -400,7 +472,10 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
     def run_simulation(self, request: SimulationRequest):
         condition = request.condition or request.netlist.condition
         self.validate_condition(condition)
-        self._require_connection()
+        # A helper thread of the owner may run this (condition jobs side by side, `delegated`): it touches no Virtuoso
+        # session, only this candidate's exports, a fresh job folder and a simulator of its own.
+        self._require_connection(delegable=True)
+        owner_thread = not self._delegated_here()
         if request.analysis:
             raise UnsupportedCapability('Only the analyses prepared by the circuit profile are supported')
         artifact, applied, metadata = self._exports.get(request.netlist.job_id, (None, None, None))
@@ -409,7 +484,8 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         if request.parameters and (request.parameters.keys() != applied.keys() or
                                    any(not equal(v, applied[k]) for k, v in request.parameters.items())):
             raise ValueError('Requested parameters differ from the values verified in this export')
-        self._op = None
+        if owner_thread:                               # side by side, each result carries its own operating points
+            self._op = None
         started = perf_counter()
         job_id = uuid4().hex
         job = Path(request.work_root).resolve() / job_id
@@ -427,8 +503,9 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         status, reason = SimulationStatus.BACKEND_ERROR, 'unclassified_bridge_failure'
         invocations, error_summary, operating_points = None, '', None
         try:
-            simulator = self._new_simulator(job / 'results', request.timeout_seconds)
-            with (job / 'bridge.log').open('w') as log, redirect_stdout(log), redirect_stderr(log):
+            with self._simulator_lock:
+                simulator = self._new_simulator(job / 'results', request.timeout_seconds)
+            with (job / 'bridge.log').open('w') as log, _captured(log):
                 raw = simulator.run_simulation(deck)  # Never pass sizing assignments as bridge params.
             # An intended command is not proof of execution: Bridge also returns
             # it when upload/transport fails before launching Spectre.
@@ -452,7 +529,8 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                     required = request.required_metrics or tuple(metrics)
                     if not required or not all(validity[k] for k in required):
                         raise ValueError('A required metric is missing or invalid')
-                    self._op = operating_points
+                    if owner_thread:
+                        self._op = operating_points
                     status, reason = SimulationStatus.OK, 'validated_spectre_completion'
                 except (ValueError, KeyError, FileNotFoundError) as exc:
                     status, reason = SimulationStatus.MEASUREMENT_ERROR, 'measurement_validation_failed'

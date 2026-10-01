@@ -22,7 +22,7 @@ from uuid import uuid4
 
 from .backend import BackendNotConnected, UnsupportedCapability
 from .provenance import content_hash, profile_contract
-from .virtuoso_bridge import VirtuosoBridgeBackend, digest, parameter_rows, write_json
+from .virtuoso_bridge import VirtuosoBridgeBackend, delegated_owner, digest, parameter_rows, write_json
 
 MAX_SPECTRE_WORKERS = 4
 
@@ -189,6 +189,13 @@ class NativeCandidateBackend(VirtuosoBridgeBackend):
         self._active = False
         self._parameters = circuit.validate_readback(circuit.reference)
 
+    @property
+    def concurrent_condition_jobs(self):
+        """A candidate's condition jobs may run two at a time (user decision of 2026-09-30: two Spectre runs at once
+        have run on this simulator host). A circuit whose measurement runs inside the Virtuoso session (OCEAN,
+        `measures_in_virtuoso`) keeps one at a time: that session takes one command at a time."""
+        return 1 if getattr(self.circuit, 'measures_in_virtuoso', False) else 2
+
     def connect(self):
         if self._active:
             self._require_connection()
@@ -218,10 +225,11 @@ class NativeCandidateBackend(VirtuosoBridgeBackend):
             raise
         self._env_after_attach = self._vb_env()
 
-    def _require_connection(self):
+    def _require_connection(self, *, delegable=False):
         if not self._active:
             raise BackendNotConnected('Native candidate backend is not connected')
-        if (threading.get_ident(), os.getpid()) != (self._thread, self._pid):
+        if (threading.get_ident(), os.getpid()) != (self._thread, self._pid) \
+                and not (delegable and delegated_owner() == (self._thread, self._pid)):
             raise RuntimeError('Native backend must stay in its owning worker process/thread')
         if digest(self.config.env_file) != self._env_hash or self._vb_env() != self._bound_env:
             raise RuntimeError('Bridge configuration changed during an active worker')

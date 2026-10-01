@@ -534,7 +534,7 @@ def _register_in_experiment(experiment_dir, manifest, compiled, task, created):
     import time
     for _ in range(200):
         try:
-            lock.acquire()
+            lock.acquire(patience=0)            # this loop is its own patience (10 s)
             break
         except RuntimeError:
             time.sleep(0.05)

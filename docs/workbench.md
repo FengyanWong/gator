@@ -121,6 +121,10 @@ The header has one main run button and **Abort** next to it. The main button cha
   last condition since 7.125 - a finished run in the tabs was read every 1.5 s while the header paused another run). A paused, stopped or
   interrupted run is read every 15 s (another browser may continue it), and an ended one once a minute. Until then a
   paused or stopped run was read every 1.5 s, and each read re-reads its tables.
+* Whether a run's worker is alive is read from its lock at every status read (`RunLock.held`). The test asks for a
+  shared lock, so reads at the same moment never take each other for a worker (record 7.134). An exclusive test did:
+  for an instant after an Abort the header went back from "Start" to "Aborting...", and a Start or Resume could be
+  refused as "already running". Starting or resuming waits up to 0.2 s for such a read to let go.
 
 Browser checks: `frontend/scripts/run_control_check.mjs` (fixtures only, safe next to a live run) and
 `frontend/scripts/run_control_live_check.mjs` (real MOCK worker; needs a scratch backend, refuses port 8765).

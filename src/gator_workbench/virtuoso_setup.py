@@ -310,7 +310,8 @@ def _plain(text) -> float:
 
 # ---------------------------------------------------------------------------------- Maestro's own deck (task flow part 5)
 DECK_FORMAT = 'gator-maestro-deck-1'
-ANALYSIS_STATEMENT = re.compile(r'^\s*[A-Za-z_]\w*\s+(tran|ac|dc|noise|xf|sp|stb|pss|pac|pnoise|pxf|hb|hbac|hbnoise)\b')
+ANALYSIS_STATEMENT = re.compile(r'^\s*[A-Za-z_]\w*\s+(?:\([^)]*\)\s*)?'     # terminals of e.g. `noise ( VOUT 0 ) noise`
+                                r'(tran|ac|dc|noise|xf|sp|stb|pss|pac|pnoise|pxf|hb|hbac|hbnoise)\b')
 
 
 def split_deck(deck, circuit) -> tuple[str, str]:

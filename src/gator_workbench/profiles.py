@@ -649,6 +649,13 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
                                'that it is a copy you made) and save a new task')
     elif name in REAL_PROFILES or f'real:{name}' in REMOVED_REAL_TASKS or directory.exists():   # a removed one's name stays reserved
         raise ProfileError(f'A task called real:{name} already exists: choose another name')
+    from .validation import Report, _check_equation              # a spec must judge Probes the task has (the editors' check)
+    probes, refused = {m.measurement_id: m for m in config.measurements}, []
+    for spec in config.targets:
+        _check_equation(spec, spec.metric_id, report := Report(), probes)
+        refused += [f'Spec {spec.metric_id}: {issue.message}' for issue in report.issues if issue.level == 'error']
+    if refused:
+        raise ProfileError(' '.join(refused))
     kind = measurement_kind(config)
     saved = task_file(task) if current else None
     claimed = None

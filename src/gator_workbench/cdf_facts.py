@@ -175,6 +175,11 @@ def _rule_state(facts, instance, cdf_name, which):
     return ((facts.get('rules') or {}).get(instance) or {}).get(cdf_name, {}).get(which)
 
 
+# analogLib's display rule asks whether the simulator the form is opened for lists the parameter. Read outside ADE it says
+# no, yet every parameter written here is one of Spectre's instance parameters (`sources`), so Spectre's form shows it.
+TOOL_DISPLAY = re.compile(r"\s*artParameterInToolDisplay\(\s*'?\w+\s*\)\s*")
+
+
 def editable(facts, instance, source) -> str | None:
     """None when the form lets a user type this value into `instance` now (or only the open form can tell), else why not."""
     if source['editable'] is None:
@@ -185,7 +190,7 @@ def editable(facts, instance, source) -> str | None:
         return 'the form never shows it'
     if _rule_state(facts, instance, source['cdf'], 'editable') == 'no':
         return f'the form greys it out in the setting {instance} has now (its rule: {source["editable"]})'
-    if _rule_state(facts, instance, source['cdf'], 'display') == 'no':
+    if _rule_state(facts, instance, source['cdf'], 'display') == 'no' and not TOOL_DISPLAY.fullmatch(str(source['display'])):
         return f'the form hides it in the setting {instance} has now (its rule: {source["display"]})'
     return None
 

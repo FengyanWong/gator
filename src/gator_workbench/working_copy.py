@@ -86,13 +86,20 @@ def own_libraries() -> dict:
 
 # ---------------------------------------------------------------------------------- checks of what came back
 COMMENT = re.compile(r'^\s*//')
+PCELL = re.compile(r'\b\w+_pcell_\d+\b')
 
 
 def structure(text) -> dict:
     """A netlist as {block: sorted statements}: comments and blank lines dropped, continuation lines joined, one block
     per `subckt ... ends` and one for the top level. The order of statements inside a block means nothing to Spectre -
     re-pointing an instance moves it in Virtuoso's database, so the netlister writes it elsewhere - which is why the
-    statements are compared as sets, not as sequences."""
+    statements are compared as sets, not as sequences. A PDK pcell's subckt number is counted by each netlister on its
+    own (Maestro wrote resnsppoly_pcell_0 where the schematic export wrote resnsppoly_pcell_01), so pcells are
+    renumbered in the order they are defined."""
+    order = {}
+    for name in re.findall(r'(?m)^\s*subckt\s+(\w+_pcell_\d+)\b', text):
+        order.setdefault(name, f'{name.rsplit("_", 1)[0]}#{len(order)}')
+    text = PCELL.sub(lambda m: order.get(m.group(0), m.group(0)), text)
     statements, pending = [], ''
     for line in text.splitlines():
         if not line.strip() or COMMENT.match(line):

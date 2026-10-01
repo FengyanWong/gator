@@ -1492,6 +1492,16 @@ fix}], simulated: false}`; 409 `not_a_saved_task` for anything else. Tests: `tes
 Browser checks: `frontend/scripts/consistency_check.mjs` (hermetic), `virtuoso_source_check.mjs`,
 `project_help_check.mjs`.
 
+**What a task may hold since record 7.132** (limits found while building the MScR library):
+- A noise analysis: Maestro writes it with its terminals, `noise ( VOUT 0 ) noise ...`, and the deck check reads that form.
+- An analogLib resistor's `r` as a row: its display rule `artParameterInToolDisplay('r)` asks whether the simulator lists the
+  field and reads "no" outside ADE; every field a run writes is one of Spectre's instance parameters, so it counts as shown.
+- A GPDK045 poly resistor: each netlister numbers pcell subckts on its own (Maestro `resnsppoly_pcell_0`, the export
+  `resnsppoly_pcell_01`), so the circuit comparison numbers pcells by the order they are defined.
+- analogLib `iprobe` (a verified 0 V source, pins PLUS and MINUS, in `configs/gpdk045_devices.json`) and PWL sources
+  (`wave=[...]`: the netlist parser in the optimizer package pairs brackets like parentheses).
+- Save task refuses a spec whose equation names no Probe, with the Probes the task has, before anything reaches Virtuoso.
+
 ### Running a task measured by Maestro (added 2026-09-22, user request)
 
 The fifth part of the flow. A task whose Probes are the Maestro outputs of its working copy runs like every other saved

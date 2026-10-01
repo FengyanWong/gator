@@ -2,12 +2,12 @@
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
-- **Optimizer source digest:** `0d045b8e3406d93120a81273dc20427b6d04f62901615d2efe4237273a9648c5`, set by `5362ebb`
-  (record 7.129: the optimizer fixes held back from review round 5, 2026-10-01). Before it: `f42a3098...`, set by
+- **Optimizer source digest:** `4632786135d13ed7775237f3139c37f4848e7b40e0efe7b0b0360bafb5df7270`, set by `8edbf6d`
+  (record 7.132: the Spectre parser reads PWL `[ ]` arrays, 2026-10-01). Before it: `0d045b8e...`, set by `5362ebb`
+  (record 7.129: the optimizer fixes held back from review round 5, 2026-10-01); `f42a3098...`, set by
   `898b134` (record 7.126: corner jobs two at a time, every 5th reset simulated, Maestro results not parsed);
   `100945fb...`, set by `4634200` (LLM sizing, records 7.116 and 7.120); `3f00832c...` before that, set by `8cf53ae`
   (reward v2.1).
-  On top of that `46327861…` since record 7.132 (uncommitted): the Spectre parser reads PWL `[ ]` arrays.
 - **Encoders:** `graph_transformer` (default), `rgcn`, `gatv2`. `port_gnn` was removed on 2026-09-24; `mlp` and `gcn`
   on 2026-09-26, when `gatv2` replaced `gat` (GATv1).
 - **Reward:** v2.1 ([reward-v2.md](reward-v2.md)). Schema defaults keep the old arithmetic: capped violations,

@@ -192,3 +192,6 @@ One row per commit, newest last.
 | `5362ebb` | 10-01 02:58 | 7.129 | the optimizer fixes held back from review round 5, digest `0d045b8e...`: the top grid point clamped, a corner summary without a flagged value, a late worker result, three copies and the MOCK journal fsync removed, 10 unused imports |
 | `5b3da95` | 10-01 02:59 | - | record only: names the commit of record 7.129, and the table rows for 5674ecb and 5362ebb |
 | `26793a4` | 10-01 03:14 | 7.133 | the follow-ups of 7.126-7.128: the warm-start budget note counts only the resets a run pays for (`runs.warm_start_resets`), the ngspice refusal test back on a saved task, the five other MScR tasks run on the simulator with the fixed form writer |
+| `5451d65` | 10-01 03:15 | - | record only: names the commit of record 7.133, and the table rows for 5b3da95 and 26793a4 |
+| `8edbf6d` | 10-01 03:21 | 7.132 | the optimizer part of record 7.132: the Spectre parser pairs `[ ]` like `( )`, so a PWL `wave=[...]` source parses (digest `46327861...`; only this record's hunks) |
+| `39401ba` | 10-01 03:21 | 7.132 | the workbench part: noise statements with terminals, analogLib `res` rows (`cdf_facts.TOOL_DISPLAY`), pcell subckts numbered by definition order, `iprobe` a verified device, Save task refuses equations naming no Probe; MScR noise specs and optimized resistors |

@@ -44,6 +44,7 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | Entry | Title |
 |---|---|
 | 7.1 | Resolved: Virtuoso bridge connection request |
+| 7.129 | Optimizer fixes held back from round 5: top grid point, corner summary, late worker result, copies, MOCK fsync |
 | 7.2 | Coordination with the parallel "Project directory setup" session |
 | 7.3 | Connect flow in the panel |
 | 7.4 | Per-circuit bindings in a connection profile |

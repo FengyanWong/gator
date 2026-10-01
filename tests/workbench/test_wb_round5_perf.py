@@ -3,6 +3,7 @@ MOCK run and in a generated profile - without touching src/analog_optimizer. B4,
 cleanup, each proved behaviour-identical before/after outside the suite; these tests pin what they save. MOCK only."""
 import importlib.util
 import json
+import math
 import random
 import sys
 import time
@@ -75,12 +76,13 @@ def test_grid_top_is_the_top_that_project_reaches_on_thousands_of_typed_ranges()
                               units.scale_to_canonical(step_um, 'um'))
         typed = ParameterGroup('g', 'w', 'm', lower, lower, upper, (ParameterBinding('M', 'w'),), step=step)
         top = comp.grid_top(lower, upper, step)
-        reached = typed.project(upper)
-        if reached <= upper:
+        grid = lower + math.floor((upper - lower) / step + 1e-12) * step       # the optimizer's own top grid point
+        if grid <= upper:
             assert top is upper                                  # untouched: the very float that was typed
             continue
         moved += 1
-        assert top == reached
+        assert top == grid
+        assert typed.project(upper) == upper                     # the package clamps since the round-5 optimizer step
         snapped = ParameterGroup('g', 'w', 'm', lower, lower, top, (ParameterBinding('M', 'w'),), step=step)
         assert snapped.project(top) == top and snapped.project(upper) == top
         for value in (lower, (lower + upper) / 2, upper - step):

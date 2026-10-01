@@ -23,7 +23,7 @@ from uuid import uuid4
 
 from .backend import (BackendNotConnected, NetlistArtifact, SimulationRequest,
                       SimulationResult, SimulationStatus, UnsupportedCapability, VirtuosoBackend)
-from .gpdk045 import Gpdk045OtaProfile, INPUT_KEYS, GEOMETRY, equal, number, set_gpdk_mos
+from .gpdk045 import Gpdk045OtaProfile, GEOMETRY, equal, number, set_gpdk_mos
 from .conditions import PVTCorner, SimulationCondition, finite_number
 from analog_optimizer.measurements.opamp import analyze
 

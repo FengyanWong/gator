@@ -145,7 +145,9 @@ def summarize_corners(design: NominalDesign, corners: tuple[PVTCorner, ...],
             for spec in evaluator.specs:
                 if not spec.active or evaluation.violations[spec.metric_id] is None:
                     continue
-                value = result.metrics[spec.metric_id]
+                value = result.metrics.get(spec.metric_id)
+                if value is None:       # "Missing value = failed": the corner fails, and there is no value to rank
+                    continue
                 # Unclipped distance chooses the true worst failing sample;
                 # min/max tie-breaking also selects the weakest passing margin.
                 if spec.comparator == 'min':

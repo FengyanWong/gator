@@ -60,7 +60,7 @@ class Transition:
             raise ValueError('Truncated/invalid bootstrap transition cannot enter nominal replay')
         if last.remaining_steps != first.remaining_steps - 1 or (last.remaining_steps == 0 and not self.terminated):
             raise ValueError('Finite-horizon budget must terminate without bootstrap')
-        action = ActionMapper(first.graph).legalize(self.proposal)
+        action = ActionMapper(first.graph, copy=False).legalize(self.proposal)
         actual = last.graph.assignments({g.id: g.value for g in last.graph.parameter_groups if g.mutable})
         if not same_parameters(actual, action.assignments) or not same_parameters(actual, self.applied_parameters):
             raise ValueError('Proposed, executed and next-state parameters differ')
@@ -156,9 +156,11 @@ class ReplayBuffer:
             raise ValueError('Insufficient replay for sampling without replacement')
         return deepcopy(self._rng.sample(self._items, batch_size))
 
-    def state_dict(self):
-        return deepcopy(dict(capacity=self.capacity, origin=self.origin, items=self._items,
-                             position=self._position, insertions=self.insertions, rng=self._rng.getstate()))
+    def state_dict(self, *, copy=True):
+        """copy=False for a checkpoint written at once: pickling makes its own copy (the same bytes)."""
+        state = dict(capacity=self.capacity, origin=self.origin, items=self._items,
+                     position=self._position, insertions=self.insertions, rng=self._rng.getstate())
+        return deepcopy(state) if copy else state
 
     def manifest(self):
         if self.store is None:

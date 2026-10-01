@@ -10,8 +10,6 @@ from copy import deepcopy
 from dataclasses import fields
 from functools import lru_cache
 import fcntl
-import hashlib
-import json
 import math
 from multiprocessing.managers import BaseManager
 from pathlib import Path
@@ -21,7 +19,7 @@ import threading
 import time
 from uuid import uuid4
 
-from .codec import VERSION, identity, pack, unpack, tree, untree, diff, patched, raw
+from .codec import VERSION, identity, pack, unpack, tree, untree, diff, patched
 from .space import (RecordingConfig, SpaceExhausted, filesystem, disk_bytes, require_space,
                     create_workspace, checked_workspace, remove_workspace, fsync_directory)
 

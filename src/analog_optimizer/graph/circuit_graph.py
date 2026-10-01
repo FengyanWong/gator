@@ -125,7 +125,9 @@ class ParameterGroup:
         if step:
             index = min(math.floor((self.upper - self.lower) / step + 1e-12),
                         max(0, math.floor((value - self.lower) / step + 0.5)))
-            value = self.lower + index * step
+            # lower + index*step can land one float step above `upper` for bounds typed in decimals (1.84 .. 42.38 um in
+            # 0.02 um steps: 4.2380000000000004e-05), and the group then refused its own top value. In range: unchanged.
+            value = min(self.upper, max(self.lower, self.lower + index * step))
         return value
 
 

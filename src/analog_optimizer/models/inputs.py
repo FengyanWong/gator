@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import math
 import pickle
@@ -281,8 +281,9 @@ def batch_observations(observations, feature_schema=None, spec_schema=None, *, c
     prepared = [prepare(o, feature_schema, spec_schema) for o in observations]
     contexts = torch.stack([p.context for p in prepared])
     graph = Batch.from_data_list([p.graph for p in prepared])
-    # Tensor collation allocates new storage; opaque metadata needs its own copy.
-    graph.graph_metadata = deepcopy(graph.graph_metadata)
+    # Tensor collation allocates new storage; opaque metadata needs its own copy - of the one part that can change (the
+    # source metadata dict). The other fields are tuples of frozen dataclasses: a deep copy of them cost ~7 % of an update.
+    graph.graph_metadata = [replace(m, source_metadata=deepcopy(m.source_metadata)) for m in graph.graph_metadata]
     group_ids = tuple(p.group_ids for p in prepared)
     node_batch = torch.cat((graph['device'].batch, graph['net'].batch))
     edge_index, roles, ordinals = port_edge_tensors(graph)

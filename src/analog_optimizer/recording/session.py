@@ -1,10 +1,8 @@
 """Opt-in recording hooks for existing environments, without changing rewards."""
-from copy import deepcopy
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from pathlib import Path
 
-from .codec import VERSION, identity
+from .codec import identity
 from analog_optimizer.measurements.specs import REWARD_VERSION, RewardSettings
 
 

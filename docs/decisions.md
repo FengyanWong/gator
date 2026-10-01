@@ -7,6 +7,7 @@ A summary for new sessions; everything below is the chronological record, oldest
   it: `100945fb780852ea3776a2395f83474bd208ed2f1ee5a27aff7cdf28b0d2651b`, set by `4634200` (LLM sizing: the search
   package with the audit's duplicate-check fix, records 7.116 and 7.120); `3f00832c...` before that, set by `8cf53ae`
   (reward v2.1).
+  On top of it `0d045b8e…` since record 7.129 (uncommitted): the optimizer fixes held back from review round 5.
 - **Encoders:** `graph_transformer` (default), `rgcn`, `gatv2`. `port_gnn` was removed on 2026-09-24; `mlp` and `gcn`
   on 2026-09-26, when `gatv2` replaced `gat` (GATv1).
 - **Reward:** v2.1 ([reward-v2.md](reward-v2.md)). Schema defaults keep the old arithmetic: capped violations,
@@ -636,3 +637,28 @@ anyway": those audits re-validate from a checkout before this change, and CLAUDE
 gone no task trains at corners and Corner check has no task. No package file changed, so the optimizer digest is
 untouched. Full suite of the tree with the change 1,532 passed, none failed; 33 of 34 browser checks pass (the 34th
 fails on an old ngspice model in outputs/ with the old code too). Committed in `e2584fa`. Record 7.128.
+
+## Optimizer fixes held back from review round 5 (2026-10-01)
+
+The round-5 review (record 7.117) left its optimizer findings for one digest step; the user chose "later, after Astra
+commits" and, on 2026-10-01, "go ahead with the optimizer fixes", then "land now". Built and tested in a scratch copy of
+the tree (7.126 included) and landed on top of 7.126:
+
+- the top grid point of a range typed in decimals no longer lands one float step above its upper bound
+  (`ParameterGroup.project` clamps after rounding; every in-range projection is bitwise unchanged; the workbench's
+  `compile.grid_top` guard of round 5 stays and agrees with it);
+- a corner summary whose OK corner lacks the value of a "Missing value = failed" spec fails that corner instead of
+  raising (TypeError for an empty value, KeyError for an absent one; the workbench guard caught only the first);
+- a worker result that arrives just after its deadline's wait gives up is returned, not reported as a timeout;
+- cost only, the same results: a checkpoint pickles the replay without deep-copying it first (the same bytes; 1,000
+  transitions 1.56 s -> 0.49 s), a replay check reads the graph instead of copying it, a batch copies only the mutable
+  part of its metadata, and a synthetic (MOCK) environment's journals skip the fsync (10.7 -> 5.9 ms per write on a 9p
+  mount); 10 unused imports, `PolicySample.mean_actions`, a per-metric computation and an implied condition removed.
+
+Seeded synthetic training is identical before and after (weights, optimizer states, replay transitions; batch 64 about
+24 % faster); G1 reward identity 2,811 / 2,811 on both digests. Optimizer digest `f42a3098…` ->
+`0d045b8e3406d93120a81273dc20427b6d04f62901615d2efe4237273a9648c5`: checkpoints saved under an earlier digest no longer
+`resume` (`fine_tune` and `frozen` still load). Not taken: the "worst value" tie-break of passing range specs (it changes
+network inputs), the homogeneous graph view (`demo.py --homogeneous` uses it) and the GPDK045 profile copy-paste.
+Landed with no job running in the tree and a guarded script that refused any other starting digest. No commit. Record
+7.129.

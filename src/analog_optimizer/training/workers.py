@@ -74,8 +74,8 @@ class DeadlineFuture:
             try:
                 return self.future.result(timeout=max(0., min(.1, remaining)))
             except TimeoutError as exc:
-                if self.future.done():
-                    raise
+                if self.future.done():  # finished right after the wait gave up: its own result, or its own exception
+                    return self.future.result()
                 if remaining <= 0:
                     raise WorkerTimeout(f'Worker deadline exceeded: {self.description}; last progress={self.future.progress}') from exc
 

@@ -17,7 +17,7 @@ from analog_optimizer.models.inputs import SpecSchema
 from analog_optimizer.training.replay import ReplayBuffer, Transition
 from analog_optimizer.training.sac import SACLearner, source_digest
 from analog_optimizer.training.runtime import write_report_preserving_error
-from .transfer import aggregate_runs, digest, freeze_protocol, validate_split
+from .transfer import aggregate_runs, freeze_protocol, validate_split
 
 
 ENCODER_LABELS = dict(graph_transformer='gt', rgcn='rgcn', gatv2='gatv2')

@@ -19,15 +19,17 @@ from analog_optimizer.measurements.specs import REWARD_VERSION, CLEARANCE_RULE, 
 from analog_optimizer.parameters.actions import ActionMapper
 
 
-def write_record(path, value):
-    """Atomic journal replacement; pending records survive failed operations."""
+def write_record(path, value, *, durable=True):
+    """Atomic journal replacement; pending records survive failed operations. durable=False skips the fsync: still
+    atomic against a crash of the process, not against a power cut (the environment's MOCK journals only)."""
     path = Path(path)
     temporary = path.with_suffix(path.suffix + '.tmp')
     with temporary.open('w') as stream:
         json.dump(value, stream, indent=2, allow_nan=False, default=str)
         stream.write('\n')
         stream.flush()
-        os.fsync(stream.fileno())
+        if durable:
+            os.fsync(stream.fileno())
     temporary.replace(path)
 
 
@@ -216,10 +218,18 @@ class CircuitSizingEnv:
                   'critic_action_semantics': 'normalized_proposal'}
         self.config_sha256 = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
         if recorder is None:
-            write_record(self.directory / 'config.json', {**config, 'sha256': self.config_sha256})
+            self._record(self.directory / 'config.json', {**config, 'sha256': self.config_sha256})
         else:
             recorder.bind(graph, self.evaluator.specs,
                           {k: v for k, v in config.items() if k not in ('initial_graph', 'specs')})
+
+    def _record(self, path, value):
+        """A journal write of this environment. A synthetic (MOCK) backend's records are not evidence: they skip the fsync,
+        which was about 80 % of a synthetic evaluation (still atomic against a crash of the process)."""
+        if self.expected_origin == 'synthetic':
+            write_record(path, value, durable=False)
+        else:
+            write_record(path, value)
 
     def __enter__(self):
         if self._closed or self._connected:
@@ -330,7 +340,7 @@ class CircuitSizingEnv:
                   'timings': {}}
         workspace, result, committed, finalizing = None, None, False, False
         if self.recorder is None:
-            write_record(path, record)  # Before restoration or the first candidate mutation.
+            self._record(path, record)  # Before restoration or the first candidate mutation.
             output_root = self.directory
         else:
             from analog_optimizer.recording.space import RecordingConfig, require_filesystem_space
@@ -413,9 +423,9 @@ class CircuitSizingEnv:
                 record.update(state='simulation_started', simulation_calls=self.simulation_calls,
                               simulation_dispatched=True)
                 # The per-job intent survives a process loss, including before a result exists.
-                write_record(output_root / f'launch-{candidate_id}-{index}.json', intent)
+                self._record(output_root / f'launch-{candidate_id}-{index}.json', intent)
                 if self.recorder is None:
-                    write_record(path, record)
+                    self._record(path, record)
                 elif hasattr(self.recorder, 'launch_intent'):
                     self.recorder.launch_intent(candidate_id, intent)
                 required = tuple(s.metric_id for s in self.evaluator.specs if s.active and s.required
@@ -448,16 +458,16 @@ class CircuitSizingEnv:
                               elapsed_seconds=result.elapsed_seconds, simulator_invocations=invocations,
                               confirmed_calls=invocations or 0, uncertain_calls=int(invocations is None),
                               candidate_evaluated=result.candidate_evaluated)
-                write_record(output_root / f'launch-{candidate_id}-{index}.json', intent)
+                self._record(output_root / f'launch-{candidate_id}-{index}.json', intent)
                 if self.recorder is not None and hasattr(self.recorder, 'launch_result'):
                     self.recorder.launch_result(candidate_id, intent)
                 names = set(result.metrics) | set(self.evaluator.required_metrics)
                 metrics, validity = {}, {}
+                accept_measurement_error = (result.status == SimulationStatus.MEASUREMENT_ERROR and any(
+                    s.active and s.required and s.missing_is_failure and (index == 0 or not s.nominal_only)
+                    for s in self.evaluator.specs))
                 for name in names:
                     value = result.metrics.get(name)
-                    accept_measurement_error = (result.status == SimulationStatus.MEASUREMENT_ERROR and any(
-                        s.active and s.required and s.missing_is_failure and (index == 0 or not s.nominal_only)
-                        for s in self.evaluator.specs))
                     valid = ((result.status == SimulationStatus.OK or accept_measurement_error) and result.candidate_evaluated
                              and result.metric_validity.get(name) is True
                              and isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value))
@@ -489,7 +499,7 @@ class CircuitSizingEnv:
                 results.append(result)
                 record['condition_results'] = [asdict(r) for r in rows]
                 if self.recorder is None:
-                    write_record(path, record)
+                    self._record(path, record)
 
             def halt(index, row, result, invocations):
                 """True when this kept row ends the plan (it still counts)."""
@@ -630,7 +640,7 @@ class CircuitSizingEnv:
                           elapsed_seconds=perf_counter() - started)
             if self.recorder is None:
                 record['observation'] = None if observation is None else asdict(observation)
-                write_record(path, record)
+                self._record(path, record)
             else:
                 finalizing = True
                 receipt = self.recorder.finish(record, result, observation, self._recording_observation,
@@ -653,7 +663,7 @@ class CircuitSizingEnv:
                           replay_eligible=False, reward=None, simulation_calls=self.simulation_calls,
                           elapsed_seconds=perf_counter() - started)
             if self.recorder is None:
-                write_record(path, record)
+                self._record(path, record)
             elif not committed and not finalizing:
                 self.recorder.finish(record, result, None, self._recording_observation, action)
                 # An unexpected exception does not prove the simulator stopped.
@@ -668,7 +678,7 @@ class CircuitSizingEnv:
         record = {'state': 'pending', 'simulation_calls': self.simulation_calls}
         primary = None
         try:
-            write_record(self.directory / 'restoration.json', record)
+            self._record(self.directory / 'restoration.json', record)
         except BaseException as exc:
             primary = exc
         try:
@@ -691,7 +701,7 @@ class CircuitSizingEnv:
                 record.update(state='recovery_required', close_error=str(exc))
             self._closed, self._connected, self._done = True, False, True
             try:
-                write_record(self.directory / 'restoration.json', record)
+                self._record(self.directory / 'restoration.json', record)
             except BaseException as exc:
                 primary = primary or exc
         if primary is not None:

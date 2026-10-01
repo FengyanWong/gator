@@ -146,8 +146,10 @@ def test_a_missing_flagged_value_at_a_corner_still_writes_the_summary(tmp_path, 
     assert cc.execute(directory) == 'completed'
     summary = read_json(directory / 'summary.json')
     entry = summary['designs'][0]
-    assert entry['disposition'] == 'inconclusive' and 'Missing value = failed' in entry['grading_error']
-    assert summary['verdicts'] == dict(accepted=0, rejected=0, inconclusive=1)
+    # Since the round-5 optimizer step the grading no longer raises: the corner without the flagged value fails, so the
+    # design is rejected. (Before it, the TypeError guard kept summary.json with the design inconclusive.)
+    assert entry['disposition'] == 'rejected' and 'grading_error' not in entry
+    assert summary['verdicts'] == dict(accepted=0, rejected=1, inconclusive=0)
     assert cc.check_status(layout.run_dir, directory.name)['status']['state'] == 'completed'
 
 

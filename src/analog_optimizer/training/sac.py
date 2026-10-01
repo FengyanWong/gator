@@ -185,7 +185,7 @@ class SACLearner:
                        targets=self.targets.state_dict(), log_alpha=self.log_alpha.detach(),
                        actor_optimizer=self.actor_optimizer.state_dict(),
                        critic_optimizer=self.critic_optimizer.state_dict(), alpha_optimizer=self.alpha_optimizer.state_dict(),
-                       replay=replay.state_dict() if replay.store is None else replay.manifest(),
+                       replay=replay.state_dict(copy=False) if replay.store is None else replay.manifest(),
                        replay_format='embedded-v1' if replay.store is None else 'replay-ids-v1',
                        updates=self.updates, run_state=deepcopy(run_state or {}),
                        torch_rng=torch.get_rng_state(), python_rng=random.getstate(), numpy_rng=np.random.get_state(),

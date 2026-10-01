@@ -244,10 +244,10 @@ def test_environment_report_failure_still_restores_and_closes(opamp, tmp_path, m
     from analog_optimizer.envs import sizing
     env = ToyFactory(opamp, tmp_path)(0)
     original = sizing.write_record
-    def write(path, data):
+    def write(path, data, **options):         # the toy (synthetic) environment's journals pass durable=False
         if Path(path).name == 'restoration.json':
             raise OSError('restoration report failure')
-        return original(path, data)
+        return original(path, data, **options)
     monkeypatch.setattr(sizing, 'write_record', write)
     with pytest.raises(ValueError if training_error else OSError):
         with env:

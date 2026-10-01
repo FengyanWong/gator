@@ -167,8 +167,7 @@ class SpecificationEvaluator:
         # the value is absent. Absence of both value and unit is still absence.
         return (spec.required and spec.missing_is_failure and row.candidate_evaluated
                 and row.status in ('ok', 'measurement_error')
-                and _measurement_error(spec, row) in ('missing_or_nonfinite', 'invalid_measurement')
-                and (spec.metric_id not in row.metric_units or row.metric_units[spec.metric_id] == spec.unit))
+                and _measurement_error(spec, row) in ('missing_or_nonfinite', 'invalid_measurement'))
 
     def missing_failures(self, row, *, nominal=True):
         return tuple(s.metric_id for s in self.specs if s.active and (nominal or not s.nominal_only)

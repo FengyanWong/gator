@@ -205,3 +205,5 @@ One row per commit, newest last.
 | `87f4dd8` | 10-01 14:11 | - | record only: names the commit of record 7.135, and the table rows for 4652209 and d71323f |
 | `d3f72e7` | 10-02 19:05 | 7.139 | `docs/functionality-reference.md` (every function with its code, route, entries, tests and checks) and the check of 2026-10-02; docs only, this entry's hunks only |
 | `cd8f68a` | 10-02 19:08 | 7.141 | a parameter bound to a Maestro variable gets its own value back: kept when the workbench binds it (`values_before_binding.json`), and a binding whose value is not known is refused instead of writing the variable's name back (only this record's hunks; the new line in HEAD's `Path(target['state_dir'])` form) |
+| `f5da116` | 10-02 19:09 | - | record only: names the commit of record 7.141, and the table row for cd8f68a |
+| `c700032` | 10-02 19:37 | 7.144 | the GPDK045 profiles' copied checks merged into one shared class (`Gpdk045MappedProfile`), every message kept; two dead cache branches and an in-loop import gone; behaviour identical, digest `4632786135d1...` -> `41983cc79771...` (only this record's hunks) |

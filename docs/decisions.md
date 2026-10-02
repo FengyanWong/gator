@@ -42,7 +42,7 @@ A summary for new sessions; everything below is the chronological record, oldest
   G6 partial was fixed in the package afterwards (record 7.120; 1,601 tests with its own); the gate evidence predates
   the fix. The tested frontend and backend were deployed on port 8765 at the user's request (record 7.123):
   1,615 tests passed with one expected failure, 123 scratch browser checks passed, and the live page rendered all
-  four methods. Core feature commits are `4634200` and `7c7a0ff`; the protocol revision remains uncommitted.
+  four methods. Core feature commits are `4634200` and `7c7a0ff`; the protocol revision is in `d8b8c4f`.
   Paid slices remain unapproved. G10 retains the historical server-rejected request.
 
 # M1 决策 — 2026-09-19

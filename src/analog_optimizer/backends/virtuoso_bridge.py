@@ -143,6 +143,7 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         self._simulator_lock = threading.Lock()      # the per-evaluation recording workspaces run_simulation hands out
         self._op = None
         self.timings = {}
+        self._netlist_ready = False                  # OCEAN set up for this testbench (`_export_netlist`)
 
     def _attach(self):
         from virtuoso_bridge import VirtuosoClient
@@ -248,6 +249,17 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         self._require_connection()
         return self.circuit.validate_readback(self._read_snapshot())
 
+    def written_parameters(self):
+        """The values the last `set_parameters` read back right after writing them, without reading the cell again: a
+        second whole-cell read straight after that one added nothing (record 7.137, user decision of 2026-10-01)."""
+        self._require_connection()
+        return self.circuit.validate_readback(self._current)
+
+    def written_snapshot(self):
+        """The whole readback of the last `set_parameters` (record 7.140: what a netlist is built from)."""
+        self._require_connection()
+        return deepcopy(self._current)
+
     def read_cdf_snapshot(self):
         """Return a verified full snapshot of the current native candidate."""
         self._require_connection()
@@ -334,7 +346,42 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
     def validate_condition(self, condition):
         self.circuit.validate_condition(condition or self.nominal_condition())
 
-    def generate_netlist(self, work_root, *, condition=None):
+    def _skill(self, text, timeout=120):
+        answer = self.client.execute_skill(text, timeout=timeout)
+        if not answer.ok:
+            raise RuntimeError('SKILL failed: ' + ('; '.join(str(e) for e in answer.errors or []) or str(answer.output)))
+        text = (answer.output or '').strip()
+        if len(text) >= 2 and text[0] == text[-1] == '"':
+            return bytes(text[1:-1], 'utf-8').decode('unicode_escape')
+        return text
+
+    def _export_netlist(self, output_dir):
+        """Virtuoso's own netlister, its package downloaded into `output_dir`. The bridge's export sets OCEAN up again on
+        every call (simulator, design, a library refresh): 0.27 s per export where `createNetlist` alone takes 0.18 s
+        (record 7.140). A client that can run SKILL and download files therefore sets OCEAN up once and then only
+        netlists (record 7.142, user decision of 2026-10-02); when the netlist it returns is not this testbench's -
+        something else set OCEAN to another design meanwhile - it sets up again. A task measured inside the Virtuoso
+        session shares OCEAN with that measurement and keeps the bridge's export, as does a client without those calls."""
+        library, testbench = self.config.library, self.circuit.design['testbench_cell']
+        if (getattr(self.circuit, 'measures_in_virtuoso', False) or not callable(getattr(self.client, 'execute_skill', None))
+                or not callable(getattr(self.client, 'download_file', None))):
+            return self.client.schematic.export_netlist(library, testbench, output_dir, timeout=120)
+        for _ in range(2):
+            if not self._netlist_ready:
+                self._skill(f"progn(simulator('spectre) design({json.dumps(library)} {json.dumps(testbench)} \"schematic\" \"r\") t)")
+                self._netlist_ready = True
+            source = self._skill('let((r) r = createNetlist(?recreateAll t ?display nil) when(r simplifyFilename(r)))')
+            if source.startswith('/') and f'/{testbench}/' in source:
+                break
+            self._netlist_ready = False
+        else:
+            raise RuntimeError(f'createNetlist did not netlist {library}/{testbench}: {source!r}')
+        result = self.client.download_file(source.rsplit('/', 1)[0], output_dir, timeout=120, recursive=True)
+        if not (output_dir / 'input.scs').is_file() or not (output_dir / 'netlist').is_file():
+            raise RuntimeError(f'The netlist package did not download: {result}')
+        return {'input_file': str(output_dir / 'input.scs')}
+
+    def generate_netlist(self, work_root, *, condition=None, just_written=False, built=None):
         # Preflight unsupported MC/voltage requests before any remote operation.
         if condition is None:
             corner = self.circuit.nominal_corner
@@ -345,20 +392,36 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                 condition = self.nominal_condition()
         self.validate_condition(condition)
         self._require_connection()
-        self._check_windows()
-        started = perf_counter()
-        snapshot = self._read_snapshot()
-        self._verify_restored(snapshot, self._current)
+        if just_written:
+            # Straight after `set_parameters`, which checked the windows and read the cell before and after its write in
+            # the same transaction: the cell is that readback. The export is still checked against it, and the read after
+            # the export still proves the cell holds it (record 7.137, user decision of 2026-10-01).
+            started = perf_counter()
+            snapshot = deepcopy(self._current)
+        else:
+            self._check_windows()
+            started = perf_counter()
+            snapshot = self._read_snapshot()
+            self._verify_restored(snapshot, self._current)
         job_id = uuid4().hex
         directory = Path(work_root).resolve() / job_id
         directory.mkdir(parents=True, exist_ok=False)
         write_json(directory / 'readback.json', snapshot)
-        with (directory / 'bridge.log').open('w') as log, redirect_stdout(log), redirect_stderr(log):
-            exported = self.client.schematic.export_netlist(
-                self.config.library, self.circuit.design['testbench_cell'], directory / 'package', timeout=120)
-        structure = Path(exported['input_file']).parent / 'netlist'
-        parameters = self.circuit.validate_export(structure, snapshot)
-        self._verify_restored(self._read_snapshot(), snapshot)
+        if built is not None:
+            # The netlist built from the write's readback (record 7.142): no export, and nothing done in Virtuoso since
+            # that readback, so nothing to read again. It is held to the cell exactly as an export is.
+            if not just_written:
+                raise ValueError('A built netlist follows the readback of its own write')
+            structure = directory / 'package' / 'netlist'
+            structure.parent.mkdir()
+            structure.write_text(built)
+            parameters = self.circuit.validate_export(structure, snapshot)
+        else:
+            with (directory / 'bridge.log').open('w') as log, redirect_stdout(log), redirect_stderr(log):
+                exported = self._export_netlist(directory / 'package')
+            structure = Path(exported['input_file']).parent / 'netlist'
+            parameters = self.circuit.validate_export(structure, snapshot)
+            self._verify_restored(self._read_snapshot(), snapshot)
         original_structure = structure
         prepared = self.circuit.structure_for_condition(structure.read_text(), condition)
         # Keep the raw export as evidence; the graph reflects the executed supply.
@@ -378,6 +441,7 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                     'condition_fingerprint': condition.fingerprint, 'model_file': self.config.model_file,
                     'original_structure_path': str(original_structure.resolve()),
                     'original_structure_sha256': digest(original_structure),
+                    'netlist_source': 'built from the readback' if built is not None else 'native export',
                     'source_sha256': digest(structure), 'executed_sha256': artifact.sha256,
                     'structure_path': str(structure.resolve()),
                     'applied_parameters': parameter_rows(parameters), 'timings': dict(self.timings),

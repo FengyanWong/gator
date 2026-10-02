@@ -1,8 +1,10 @@
 """One Virtuoso owner prepares actual candidates for isolated Spectre workers.
 
 The manager exposes local IPC only. Its queue runs the complete CDF/readback/
-native export transaction on one owning thread; simulator workers never attach
-to Virtuoso. There is no parameter enumeration or candidate cache.
+netlist transaction on one owning thread; simulator workers never attach
+to Virtuoso. There is no parameter enumeration or candidate cache. A netlist is
+Virtuoso's own export, or built from the write's readback with an export to
+compare every NATIVE_EVERY-th candidate (GATOR_NETLIST_BUILD, record 7.142).
 """
 from concurrent.futures import Future
 from contextlib import contextmanager
@@ -24,13 +26,46 @@ from .backend import BackendNotConnected, UnsupportedCapability
 from .provenance import content_hash, profile_contract
 from .virtuoso_bridge import VirtuosoBridgeBackend, delegated_owner, digest, parameter_rows, write_json
 
-MAX_SPECTRE_WORKERS = 4
+MAX_SPECTRE_WORKERS = 6       # 4 until record 7.143 (user decision of 2026-10-02): the simulator host has 8 cores
+# GATOR_NETLIST_BUILD (record 7.142, user decision of 2026-10-02): "skip" (default) builds a candidate's netlist from its
+# readback and exports natively - comparing the two - for the session's first candidate and every NATIVE_EVERY-th after;
+# "check" exports every candidate natively and compares each (7.140); "native" exports every candidate, building nothing.
+NETLIST_MODES = ('skip', 'check', 'native')
+NATIVE_EVERY = 5
 
 
 def validate_workers(value):
     if type(value) is not int or not 1 <= value <= MAX_SPECTRE_WORKERS:
-        raise ValueError('max_workers must be an integer between 1 and 4')
+        raise ValueError(f'max_workers must be an integer between 1 and {MAX_SPECTRE_WORKERS}')
     return value
+
+
+def netlist_statements(text):
+    """A netlist as its statements: continuation lines joined, white space collapsed, comments and empty lines left out
+    (a netlister's line breaks follow the length of the values, and its header carries a date)."""
+    statements, current = [], ''
+    for line in text.splitlines():
+        if line.lstrip().startswith('//'):
+            continue
+        if line.rstrip().endswith('\\'):
+            current += line.rstrip()[:-1] + ' '
+            continue
+        statement = ' '.join((current + line).split())
+        current = ''
+        if statement:
+            statements.append(statement)
+    return statements
+
+
+def first_difference(built, native):
+    """None when two netlists have the same statements, else where they first differ, in words."""
+    a, b = netlist_statements(built), netlist_statements(native)
+    if a == b:
+        return None
+    if len(a) != len(b):
+        return f'{len(a)} statements built, {len(b)} exported'
+    index = next(i for i, (x, y) in enumerate(zip(a, b)) if x != y)
+    return f'statement {index + 1}: built {a[index][:200]!r}, exported {b[index][:200]!r}'
 
 
 @dataclass(frozen=True)
@@ -56,7 +91,11 @@ class PreparationService:
     def _serve(self):
         backend = None
         prepared = 0
+        template = None
         try:
+            mode = os.environ.get('GATOR_NETLIST_BUILD', 'skip')
+            if mode not in NETLIST_MODES:
+                raise ValueError(f'GATOR_NETLIST_BUILD must be one of {", ".join(NETLIST_MODES)}, not {mode!r}')
             backend = self.factory()
             backend.connect()
             initial = backend.read_parameters()
@@ -84,20 +123,39 @@ class PreparationService:
                     backend.circuit.validate_assignment(parameters)
                     started = perf_counter()
                     backend.set_parameters(parameters)
-                    applied = backend.read_parameters()
+                    # The write's own readback: the cell is read before and after the write and after the export, not
+                    # twice more in between (record 7.137, user decision of 2026-10-01).
+                    applied = backend.written_parameters()
                     if applied.keys() != parameters.keys() or any(
                             not math.isclose(applied[k], v, rel_tol=1e-8, abs_tol=1e-24)
                             for k, v in parameters.items()):
                         raise ValueError('CDF readback differs from requested candidate')
-                    artifact = backend.generate_netlist(root, condition=condition)
+                    render = getattr(backend.circuit, 'render_export', None) if mode != 'native' else None
+                    build = callable(render) and mode == 'skip' and template is not None and bool(prepared % NATIVE_EVERY)
+                    if build:                       # built from the readback, no export (record 7.142)
+                        artifact = backend.generate_netlist(root, condition=condition, just_written=True,
+                                                            built=render(template, backend.written_snapshot()))
+                    else:
+                        artifact = backend.generate_netlist(root, condition=condition, just_written=True)
                     _, verified, metadata = backend._exports.pop(artifact.job_id)
                     if applied != verified:
                         raise ValueError('Native export differs from CDF readback')
+                    if callable(render) and not build:
+                        # A native export: the netlist built from the readback must have its statements (7.140); the
+                        # native export is the one simulated, and the session's first one is the template. A difference
+                        # stops the run.
+                        native = Path(metadata['original_structure_path']).read_text()
+                        template = native if template is None else template
+                        difference = first_difference(render(template, backend.written_snapshot()), native)
+                        if difference:
+                            raise ValueError(f'The netlist built from the readback differs from the native export: {difference}')
+                        metadata['built_export'] = 'matches the native export'
                     metadata.update(candidate_id=candidate_id, preparation_pid=os.getpid(),
                         queue_wait_seconds=started - submitted,
                         proposed_parameters=parameter_rows(parameters),
                         preparation_seconds=perf_counter() - started,
-                        preparation='actual-candidate-cdf-native-export', cache_hit=False)
+                        preparation='actual-candidate-cdf-built-netlist' if build else 'actual-candidate-cdf-native-export',
+                        cache_hit=False)
                     write_json(artifact.path.parent / 'manifest.json', metadata)
                     prepared += 1
                     future.set_result((artifact, applied, metadata))

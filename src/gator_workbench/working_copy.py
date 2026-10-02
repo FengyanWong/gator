@@ -511,10 +511,23 @@ def write_setup_on(monitor, profile_id, target, setup, *, command=None) -> dict:
     # did, to the user's ring task on 2026-09-22 23:08, and the next save then stored a task file without them.
     keep = [part for part in ('analyses', 'variables', 'bindings', 'initial_conditions') if setup.get(part) is None]
     wanted = {(b['cell'], b['instance'], b['parameter']) for b in setup.get('bindings') or []}
+    bound = {(b['cell'], b['instance'], b['parameter']): b['variable'] for b in last.get('bindings') or []}
     originals = _original_values_on(target)
-    restore = [] if 'bindings' in keep else [
-        [c, i, p, originals[(c, i, p)]] for c, i, p in {(b['cell'], b['instance'], b['parameter']) for b in last.get('bindings') or []} - wanted
-        if (c, i, p) in originals]
+    # A parameter's value from before the workbench bound it is kept from that moment on: read from the cell again while
+    # it is bound, its value IS the variable's name, and restoring that wrote the name back (review round 5).
+    before_file = Path(target['state_dir']) / 'values_before_binding.json'
+    before = {tuple(e['key']): e['value'] for e in _json_or_empty(before_file).get('values', [])}
+    before.update({key: originals[key] for key in wanted - set(bound) - set(before) if key in originals})
+    restore, unknown = [], []
+    for key in [] if 'bindings' in keep else sorted(set(bound) - wanted):
+        value = before.get(key, originals.get(key))
+        if value is not None:
+            (unknown if value == bound[key] else restore).append([*key, value])
+    if unknown:
+        raise virtuoso_setup.SetupError('The setup cannot be written: ' + '; '.join(
+            f'{c}/{i} parameter {p} would go back to the variable name {v!r} (the cell was read again while it was bound, '
+            'so its value before is not known): type its value in Virtuoso and read the cell again' for c, i, p, v in unknown))
+    still_bound = dict(values=[dict(key=list(k), value=v) for k, v in sorted(before.items()) if k in wanted])
     normalized = virtuoso_setup.normalize(setup)
     for part in keep:
         normalized[part] = None
@@ -526,6 +539,8 @@ def write_setup_on(monitor, profile_id, target, setup, *, command=None) -> dict:
     expected = dict(wanted, model_files=got['model_files'] if setup.get('keep_model_files') and got['model_files'] else wanted['model_files'],
                     **{part: got[part] for part in keep})
     write_json(last_file, expected)                                    # what the copy holds now
+    if 'bindings' not in keep:                                         # kept only while the parameter stays bound
+        write_json(before_file, still_bound)
     found = _described(answer)
     diffs = virtuoso_setup.differences(expected, answer)
     return dict(found, written=expected, differences=diffs, matches=not diffs)

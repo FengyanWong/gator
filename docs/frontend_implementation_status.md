@@ -178,3 +178,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.134 | The header's flip-back after Abort: the run lock's liveness test took the lock exclusively and was seen as a worker by a test at the same moment; tests now share the lock, acquire waits 0.2 s |
 | 7.135 | Round 5 open items: agent CLIs stop with the backend, infrastructure pauses resumable, Apply once; random test failures explained |
 | 7.139 | Check of the work so far, and `docs/functionality-reference.md`: every function with its code, route, entries, tests, checks |
+| 7.141 | A parameter bound to a Maestro variable gets its own value back, even after its cell was read again while bound |

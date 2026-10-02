@@ -1307,7 +1307,9 @@ that is not a voltage is refused before anyone can approve it. A circuit that se
 device derives other values from its parameters or clamps them: on the live GPDK045 a transistor width set to a variable
 left the 12 side values the PDK computes from it (as, ad, ps, pd, nrd, nrs, sa, sb, sd, sca, scb, scc) at their old
 numbers, which would simulate a different transistor. Transistor sizes therefore keep the verified path of writing the
-number through the PDK callbacks - into the copy.
+number through the PDK callbacks - into the copy. A value bound to a variable is remembered when the workbench binds it,
+and goes back when the binding is dropped (record 7.141; before, a cell read again while bound got the variable's
+name back). A binding from before then whose value is not known is refused in words, never written back as a name.
 
 **Expressions** run inside the user's Virtuoso session when they are measured, so an output must pass an allowed list:
 calls of listed calculator functions (`VT`, `VF`, `IT`, `frequency`, `bandwidth`, `phaseMargin`, `ymax` ...), strings,

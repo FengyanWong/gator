@@ -192,6 +192,40 @@ def test_writing_a_setup_goes_to_the_copy_only_and_is_compared_on_the_way_back(t
     assert not result['matches'] and result['differences'] == ["Spec on freq: the task says ('gt', '1000000000'), Virtuoso has ('gt', '2000000000')"]
 
 
+def bound_then_read_again(tmp_path):
+    """V0's vdc is 1.0, the workbench binds it to VSUP, then the cell is read again while it is bound: Virtuoso has the
+    variable's name as its value, and so has the new import's readback. Returns the setup calls' log."""
+    imported(tmp_path)
+    working_copy.make(probe(tmp_path), 'lab', LIB, CELL, command=fake_writer(tmp_path))
+    readback = working_copy.native_cells.cell_dir(LIB, CELL) / 'testbench_readback.json'
+
+    def read(vdc):
+        readback.write_text(json.dumps(dict(instances=[dict(name='V0', lib='analogLib', cell='vdc', params=dict(vdc=vdc, srcType='dc')),
+                                                       dict(name='XU1', lib=LIB, cell=CELL, params={})])))
+    read('1.0')
+    write(probe(tmp_path), SETUP, command=setup_writer(tmp_path, written_answer()))
+    read('VSUP')
+    return tmp_path / 'setup_calls.jsonl'
+
+
+def test_a_parameter_read_again_while_bound_still_gets_its_own_value_back(tmp_path):
+    calls = bound_then_read_again(tmp_path)
+    write(probe(tmp_path), dict(SETUP, variables={}, bindings=[]),
+          command=setup_writer(tmp_path, dict(written_answer(), variables={}, bindings=[])))
+    last = json.loads(calls.read_text().splitlines()[-1])
+    assert last['request']['restore'] == [[TB, 'V0', 'vdc', '1.0']]          # the variable's name went back before
+
+
+def test_a_parameter_whose_value_before_its_binding_is_unknown_is_refused_not_written_back(tmp_path):
+    calls = bound_then_read_again(tmp_path)
+    (Path(working_copy.draft_target(LIB, CELL)['state_dir']) / 'values_before_binding.json').unlink(missing_ok=True)   # bound before 7.141
+    sent = len(calls.read_text().splitlines())
+    with pytest.raises(vs.SetupError, match="parameter vdc would go back to the variable name 'VSUP'"):
+        write(probe(tmp_path), dict(SETUP, variables={}, bindings=[]),
+              command=setup_writer(tmp_path, dict(written_answer(), variables={}, bindings=[])))
+    assert len(calls.read_text().splitlines()) == sent                      # nothing was sent to Virtuoso
+
+
 def test_a_setup_that_fails_its_checks_writes_nothing(tmp_path):
     imported(tmp_path)
     working_copy.make(probe(tmp_path), 'lab', LIB, CELL, command=fake_writer(tmp_path))

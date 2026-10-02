@@ -1,15 +1,22 @@
 """Dedicated nominal LDO profile; independent permissions and measurement contract."""
-from copy import deepcopy
 import math
 
 from .backend import UnsupportedCapability
-from .gpdk045 import Gpdk045OtaProfile, GEOMETRY, equal, number
+from .gpdk045 import Gpdk045MappedProfile, equal, number
 
 
-class Gpdk045LdoProfile(Gpdk045OtaProfile):
+class Gpdk045LdoProfile(Gpdk045MappedProfile):
     writable_keys=tuple((f'XU1/{name}','w') for name in ('M1','M2','MP'))
     mos_names=('M1','M2','M3','M4','M5','MP')
     deck_name='ldo.scs'
+    passives={'RUP':'r','RDN':'r'}
+    reads_snapshot_first=False
+    messages=dict(instance_set='Unexpected LDO core instance set',master='LDO master/terminal mismatch: {name}',
+                  passive='Fixed feedback resistor changed',fixed='Fixed LDO parameter changed: {name}.{key}',
+                  stale_fw='Invalid LDO CDF geometry: {name}',geometry='Invalid LDO CDF geometry: {name}',
+                  readback='LDO CDF readback differs from requested widths',stale_geometry='Stale derived LDO geometry: {name}',
+                  topology='LDO exported topology differs from reference',parameter_set='Exported LDO parameter set changed',
+                  mismatch='Exported LDO parameter mismatch: {device}.{key}')
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -48,72 +55,6 @@ class Gpdk045LdoProfile(Gpdk045OtaProfile):
                 raise ValueError('LDO width outside bounds or CDF-compatible grid')
         if not equal(parameters['XU1/M1','w'],parameters['XU1/M2','w']):
             raise ValueError('LDO input pair must remain matched')
-
-    def optimization_graph(self, structure=None):
-        graph=self.parser.parse_file(structure) if structure is not None else deepcopy(self.graph)
-        graph.validate()
-        self.validate_assignment(graph.assignments({g.id:g.value for g in graph.parameter_groups if g.mutable}))
-        return graph
-
-    def validate_readback(self, snapshot):
-        actual,reference=self.instances(snapshot),self.instances(self.reference)
-        if set(actual)!=set(reference) or set(actual)!=set(self.mos_names)|{'RUP','RDN'}:
-            raise ValueError('Unexpected LDO core instance set')
-        writable={device.split('/')[1] for device,_ in self.writable_keys}
-        for name,inst in actual.items():
-            ref=reference[name]
-            if any(inst[k]!=ref[k] for k in ('lib','cell','view','terms')):
-                raise ValueError(f'LDO master/terminal mismatch: {name}')
-            if name in ('RUP','RDN'):
-                if not equal(number(inst['params']['r']),number(ref['params']['r'])):
-                    raise ValueError('Fixed feedback resistor changed')
-                continue
-            p=inst['params']
-            for key in ('l','m','fingers')+(() if name in writable else ('w','fw')+GEOMETRY):
-                if not equal(number(p[key]),number(ref['params'][key])):
-                    raise ValueError(f'Fixed LDO parameter changed: {name}.{key}')
-            if not equal(number(p['w']),number(p['fw'])) or any(number(p[k])<=0 for k in GEOMETRY):
-                raise ValueError(f'Invalid LDO CDF geometry: {name}')
-        result={(device,key):number(actual[device.split('/')[1]]['params'][key]) for device,key in self.writable_keys}
-        self.validate_assignment(result)
-        return result
-
-    def verify_transition(self, before, after, expected):
-        actual=self.validate_readback(after)
-        if any(not equal(actual[k],v) for k,v in expected.items()):
-            raise ValueError('LDO CDF readback differs from requested widths')
-        old,new=self.instances(before),self.instances(after)
-        for device,_ in self.writable_keys:
-            name=device.split('/')[1]
-            a,b=old[name]['params'],new[name]['params']
-            if not equal(number(a['w']),number(b['w'])) and any(
-                    equal(number(a[k]),number(b[k])) for k in ('ad','as','pd','ps','nrd','nrs')):
-                raise ValueError(f'Stale derived LDO geometry: {name}')
-
-    def validate_export(self, structure, snapshot):
-        graph=self.parser.parse_file(structure)
-        graph.validate()
-        def topology(g):
-            return (sorted((d.id,d.model_ref,d.terminals) for d in g.devices),
-                    sorted((c.device_id,c.terminal,c.net_id) for c in g.connections))
-        if topology(graph)!=topology(self.graph):
-            raise ValueError('LDO exported topology differs from reference')
-        actual=self.instances(snapshot)
-        writable={d for d,_ in self.writable_keys}
-        for device,params in graph.parameters.items():
-            ref=self.graph.parameters[device]
-            if params.keys()!=ref.keys():
-                raise ValueError('Exported LDO parameter set changed')
-            for key,param in params.items():
-                if device in writable and key in ('w',)+GEOMETRY:
-                    same=param.valid and equal(param.value,number(actual[device.split('/')[1]]['params'][key]))
-                elif param.valid and ref[key].valid:
-                    same=equal(param.value,ref[key].value)
-                else:
-                    same=param.raw==ref[key].raw
-                if not same:
-                    raise ValueError(f'Exported LDO parameter mismatch: {device}.{key}')
-        return self.validate_readback(snapshot)
 
     def build_deck(self, structure, model_file, section='tt', *, temperature_c=27.):
         from .virtuoso_bridge import build_deck_header

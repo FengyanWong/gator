@@ -265,10 +265,9 @@ class ObservationTensorCache:
             return self._items[key]
         self.misses += 1
         prepared = _prepare_observation(observation, feature_schema, spec_schema, self.topologies)
-        if self.capacity:
-            self._items[key] = prepared
-            if len(self._items) > self.capacity:
-                self._items.popitem(last=False)
+        self._items[key] = prepared
+        if len(self._items) > self.capacity:
+            self._items.popitem(last=False)
         return prepared
 
 

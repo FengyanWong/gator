@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -490,7 +490,6 @@ class CircuitSizingEnv:
                                           for key, values in (operating_points or {}).items() if isinstance(values, dict)})
                 missing = self.evaluator.missing_failures(row, nominal=index == 0)
                 if missing and self.evaluator.row_scorable(row, nominal=index == 0):
-                    from dataclasses import replace
                     row = replace(row, reason_code='missing_counted_as_failure', missing_failure_metrics=list(missing))
                 return row, invocations
 

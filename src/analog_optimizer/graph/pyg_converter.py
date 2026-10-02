@@ -104,12 +104,10 @@ class TopologyTensorCache:
             return self._items[key].clone()
         self.misses += 1
         data = _static_features(graph, schema)
-        if self.capacity:
-            self._items[key] = data
-            if len(self._items) > self.capacity:
-                self._items.popitem(last=False)
-            return data.clone()  # Public results never expose a cached tensor.
-        return data
+        self._items[key] = data
+        if len(self._items) > self.capacity:
+            self._items.popitem(last=False)
+        return data.clone()  # Public results never expose a cached tensor.
 
 
 def _static_features(graph, schema):

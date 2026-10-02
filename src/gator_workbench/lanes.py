@@ -15,7 +15,7 @@ additional job attempt. The environment itself still performs no automatic retri
 """
 from __future__ import annotations
 
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 import json
 import os
@@ -243,15 +243,25 @@ class ProcessLane:
 
 
 def open_lanes(factory, count, *, use_processes, limits=None):
-    lanes = []
+    """Open the run's lanes side by side. Each builds its own environment, a real lane in a process of its own (about 2 s),
+    so one after another a 4-lane run waited 8.7 s before its first evaluation (record 7.136). They come back in index
+    order; if one fails to open, every lane that did open is closed and the failure of the lowest index is raised."""
+    def open_one(index):
+        return ProcessLane(index, factory, limits) if use_processes else ThreadLane(index, factory)
+
+    futures = []
     try:
-        for index in range(count):
-            lanes.append(ProcessLane(index, factory, limits) if use_processes else ThreadLane(index, factory))
+        with ThreadPoolExecutor(max_workers=max(count, 1), thread_name_prefix='gator-lane-open') as pool:
+            futures = [pool.submit(open_one, index) for index in range(count)]
+        failure = next((future.exception() for future in futures if future.exception() is not None), None)
+        if failure is not None:
+            raise failure
     except BaseException:
-        for lane in lanes:
-            try:
-                lane.close()
-            except BaseException:
-                pass
+        for future in futures:
+            if future.done() and not future.cancelled() and future.exception() is None:
+                try:
+                    future.result().close()
+                except BaseException:
+                    pass
         raise
-    return lanes
+    return [future.result() for future in futures]

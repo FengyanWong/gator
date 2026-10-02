@@ -46,6 +46,9 @@ MOCK_TARGETS = {'w': 0.4, 'l': -0.2, 'm': 0.0, 'nf': 0.0, 'r': 0.3, 'c': -0.3, '
 ENV_SYNTHETIC_FIXTURES = 'GATOR_WORKBENCH_SYNTHETIC_FIXTURES'
 
 
+# Lanes a real task may run at once: the optimizer's MAX_SPECTRE_WORKERS (native_preparation.py), 4 until record 7.143.
+REAL_LANES = 6
+
 def _registered_fixtures() -> dict:
     path = os.environ.get(ENV_SYNTHETIC_FIXTURES)
     return json.loads(Path(path).read_text()) if path else {}
@@ -114,7 +117,7 @@ REAL_INTERFACE_CONTRACT = dict(
                   'an ALREADY RUNNING bridge tunnel (automatic startup is disabled by the adapter)',
                   'a dedicated Virtuoso session; no ADE/Maestro window open on the design',
                   'verified real baseline measurements for the selected profile'],
-    max_concurrency=4,
+    max_concurrency=REAL_LANES,
     note='Native CDF preparation is serialized by the existing preparation service; only Spectre runs in parallel.')
 
 
@@ -601,7 +604,7 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
                      'circuit, and OCEAN measures the outputs on that run\'s results.')
     provided = tuple(entry.get('provided_metrics') or ()) if entry.get('recipe') == profiles.MAESTRO else recipes.provided_metrics(entry['recipe'])
     return TaskRuntime(task_key, 'real', graph, provided, circuit, structure.read_text(),
-                       str(structure), str(mapping), builder, max_concurrency=4, authorized=bool(authorized), notes=notes,
+                       str(structure), str(mapping), builder, max_concurrency=REAL_LANES, authorized=bool(authorized), notes=notes,
                        reference_metrics=None if reference is None else {
                            key: dict(value=value, unit=None) for key, value in reference.items() if isinstance(value, (int, float))})
 
@@ -664,7 +667,7 @@ def _real_runtime(task_key, name, profile_id=None, *, authorized=False):
                    topology_id=f'profile:{name}', complete=True, evaluation_backend='virtuoso_bridge + Spectre (REAL)')
     metrics = tuple(reference['metrics'])
     return TaskRuntime(task_key, 'real', graph, metrics, circuit, (root / info['structure']).read_text(),
-                       str(root / info['structure']), str(root / info['mapping']), builder, max_concurrency=4,
+                       str(root / info['structure']), str(root / info['mapping']), builder, max_concurrency=REAL_LANES,
                        authorized=bool(authorized),
                        reference_metrics={name: dict(value=value, unit=(reference.get('metric_units') or {}).get(name))
                                           for name, value in reference['metrics'].items() if isinstance(value, (int, float))},

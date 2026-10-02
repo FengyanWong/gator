@@ -566,3 +566,70 @@ def test_a_saved_task_accepts_an_export_whose_values_changed(tmp_path):
     changed.write_text((directory / 'structure.scs').read_text().replace('w=(1u)', 'w=(1.2u)'))
     graph = profiles.load_profile('ring_cdf').optimization_graph(changed)
     assert {g.id: g.value for g in graph.parameter_groups if g.mutable} == dict(wn=pytest.approx(1.2e-6))
+
+
+def test_a_netlist_built_from_the_readback_has_the_statements_of_the_cells_own_export(tmp_path, monkeypatch):
+    """Record 7.140 (check-only mode): the form's values put into an earlier export's value slots give the statements of
+    the export the cell itself gives - after a write, and after writing the first values back."""
+    from analog_optimizer.backends.native_preparation import first_difference
+    made = make(tmp_path)
+    profile = profiles.load_profile('ring_cdf')
+    backend, client = backend_of(tmp_path, monkeypatch, profile, Path(made['directory']))
+    backend.connect()
+    exported = lambda artifact: Path(backend._exports[artifact.job_id][2]['original_structure_path']).read_text()
+    template = exported(backend.generate_netlist(tmp_path / 'first'))
+    initial = backend.read_parameters()
+    for step, values in enumerate((profile.assignments(dict(wn=1.2e-6, ln=6e-8, wc=3e-6, mc=3)), initial)):
+        backend.set_parameters(values)
+        native = exported(backend.generate_netlist(tmp_path / f'step{step}', just_written=True))
+        built = profile.render_export(template, backend.written_snapshot())
+        assert first_difference(built, native) is None, step
+        if step == 0:
+            assert built != template
+    backend.close()
+
+
+def test_the_built_netlist_keeps_the_netlisters_brackets_line_breaks_and_fixed_values(tmp_path):
+    """On the user's real ring export: a written value keeps its brackets, a derived one is the form's text, the line
+    breaks stay, and every statement of an instance the change does not touch is left as it was."""
+    from analog_optimizer.backends.native_preparation import netlist_statements
+    make(tmp_path)
+    profile = profiles.load_profile('ring_cdf')
+    template = (Path(__file__).parent / 'fixtures/ring_osc/netlist.scs').read_text()
+    snapshot = deepcopy(profile.reference)
+    params = next(i for i in snapshot['instances'] if i['name'] == 'MN1')['params']
+    params.update({'w': '1.2u', 'fw': '1.2u', 'l': '60n', 'as': '168f', 'ad': '168f'})
+    built = profile.render_export(template, snapshot)
+    old, new = netlist_statements(template), netlist_statements(built)
+    changed = [(a, b) for a, b in zip(old, new) if a != b]
+    assert len(old) == len(new) and [b.split()[0] for _, b in changed] == ['MN1']
+    assert all(token in changed[0][1].split() for token in ('w=(1.2u)', 'l=60n', 'as=168f', 'ad=168f'))
+    assert 'w=(1u)' in changed[0][0].split() and 'l=45n' in changed[0][0].split()
+    assert built.count('\n') == template.count('\n') and built.count('\\\n') == template.count('\\\n')
+
+
+def test_by_default_most_netlists_are_built_from_the_readback_and_each_is_the_cells_own_export(tmp_path, monkeypatch):
+    """Record 7.142 (the default since the user's decision of 2026-10-02): through the preparation service, the 1st and
+    6th candidate are exported and compared, the others built from the readback - and every one has the statements of the
+    export the cell itself gives."""
+    from analog_optimizer.backends.native_preparation import PreparationService, first_difference
+    monkeypatch.delenv('GATOR_NETLIST_BUILD', raising=False)
+    made = make(tmp_path)
+    profile = profiles.load_profile('ring_cdf')
+    backend, client = backend_of(tmp_path, monkeypatch, profile, Path(made['directory']))
+    service = PreparationService(lambda: backend, timeout_seconds=30)
+    service.baseline()
+    rows = [(1.2e-6, 6e-8, 3e-6, 3), (1e-6, 5e-8, 2.5e-6, 2), (1.4e-6, 8e-8, 4e-6, 4), (8e-7, 4.5e-8, 2e-6, 1),
+            (1.6e-6, 1e-7, 5.6e-6, 2), (1.1e-6, 7e-8, 3.5e-6, 3)]
+    try:
+        sources = []
+        for index, (wn, ln, wc, mc) in enumerate(rows):
+            _, _, metadata = service.prepare(profile.assignments(dict(wn=wn, ln=ln, wc=wc, mc=mc)), tmp_path / 'work',
+                                             backend.nominal_condition(), f'c{index}')
+            sources.append(metadata['netlist_source'])
+            client.export('lib', 'cell', tmp_path / f'own{index}', 0)                 # what the cell itself exports now
+            assert first_difference(Path(metadata['original_structure_path']).read_text(),
+                                    (tmp_path / f'own{index}' / 'netlist').read_text()) is None, index
+        assert sources == ['native export'] + ['built from the readback'] * 4 + ['native export']
+    finally:
+        service.close()

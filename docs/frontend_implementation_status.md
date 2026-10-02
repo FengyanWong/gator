@@ -177,6 +177,13 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.133 | Follow-ups: the other five MScR tasks run cleanly with the fixed form writer; the ngspice refusal test back; the warm-start note counts only paid resets |
 | 7.134 | The header's flip-back after Abort: the run lock's liveness test took the lock exclusively and was seen as a worker by a test at the same moment; tests now share the lock, acquire waits 0.2 s |
 | 7.135 | Round 5 open items: agent CLIs stop with the backend, infrastructure pauses resumable, Apply once; random test failures explained |
+| 7.136 | Several designs at once on Spectre (mscr_ota7t): 2 lanes 1.8× faster, 4 lanes 2.3×; the one Virtuoso preparation process (about 0.6 s per candidate) is the limit |
+| 7.137 | Lanes open side by side; the native preparation reads the cell 3 times per candidate, not 5 (digest 66ce02ab); working-copy folder read under the settings folder in use; checked on Spectre: 0.70 s per evaluation at 4 lanes |
+| 7.138 | Investigation: the netlist export is 0.25 s of SKILL per candidate (OCEAN set up, libraries refreshed, everything re-netlisted each time); decks differ only in values; options A-D with estimates |
 | 7.139 | Check of the work so far, and `docs/functionality-reference.md`: every function with its code, route, entries, tests, checks |
+| 7.140 | Export variants timed (OCEAN set up once saves 0.09 s); netlists built from the readback, checked against every native export (GATOR_NETLIST_BUILD=check): matched on 3 MScR tasks on Spectre; a value at its bound no longer stops a run (digest c3a340b9) |
 | 7.141 | A parameter bound to a Maestro variable gets its own value back, even after its cell was read again while bound |
+| 7.142 | Real runs build most netlists from the readback, with Virtuoso export + comparison every 5th candidate (default; GATOR_NETLIST_BUILD=check/native); OCEAN set up once (not for Maestro tasks); ota7t 0.70 -> 0.54 s/eval at 4 lanes (digest e3f8c5b8) |
+| 7.143 | Spectre job time measured (analyses ~5% of an ota7t job); up to 6 lanes for a real task (MAX_SPECTRE_WORKERS, tasks.REAL_LANES): ota7t 0.54 -> 0.41 s/eval, vco_lin 2.03 -> 1.40, no licence error (digest efa93649) |
 | 7.144 | GPDK045 profiles: copied checks merged into one shared class, every message kept; dead cache branches gone; optimizer digest moves |
+| 7.145 | Investigation: cell reads without positions save 7-10% (not done); the one Virtuoso session (preparation + OCEAN measurements) is the limit; staying-alive Spectre possible (+interactive) but little gain now |

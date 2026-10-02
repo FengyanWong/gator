@@ -959,6 +959,73 @@ Optimizer digest `100945fb…` → `f42a3098…`, one step for all three. Tests:
 simulator on 2026-09-30 (record 7.126): on `real:mscr_ota7t` the same 10 evaluations bought 8 steps instead of 5 at the
 same pace (2.0 s against 2.1 s per evaluation), and the designs both codes proposed measured the same to within 2 ulp.
 
+**Several designs at once** ("Concurrent Spectre jobs", `run.concurrency`). A real task allows at most 6 since record
+7.143 (4 before): the simulator host has 8 cores, and 6 jobs at once ran with no licence error, though jobs sometimes
+waited up to 0.8 s for a licence. With the netlist built from the readback (7.142), 6 lanes against 4 took
+`mscr_ota7t` from 0.54 to 0.41 s per evaluation (4.9× one lane) and `mscr_vco_lin` from 2.03 to 1.40 s. Each job ran
+10-15% slower on the shared CPUs, and the preparation process was busy 71-79% again. Measured on Spectre on
+2026-10-01 (record 7.136), before those changes, `real:mscr_ota7t`, 20 evaluations per run:
+
+| at once | per evaluation | faster | lanes starting (before the first evaluation) |
+|---|---|---|---|
+| 1 | 1.99 s | 1× | 2.1 s |
+| 2 | 1.10 s | 1.8× | 4.3 s |
+| 4 | 0.87 s | 2.3× | 8.7 s |
+
+Each lane runs its own Spectre jobs, but every candidate's sizes are written into the one Virtuoso cell and netlisted
+by one preparation process, one candidate at a time. On this cell that takes about 0.6 s per candidate:
+- five reads of the whole cell, 0.23 s;
+- the netlist export, 0.22 s;
+- two window checks, 0.06 s;
+- the write, 0.06 s.
+
+With 4 lanes that process is busy 90% of the time, so about 0.6 s per evaluation is the floor whatever the lane count.
+Since record 7.137 a candidate takes three of those reads and one window check: the two reads that repeated a check made
+a moment earlier are gone (user decision; optimizer digest step, `docs/decisions.md`).
+Checked on Spectre with both changes of 7.137 (one run, the same settings): 4 at once took 0.70 s per evaluation
+(2.8× one at a time), and the lanes started in 2.6 s.
+A cell with more instances reads more slowly: `mscr_vco_lin`, 34 instances, takes about 0.4 s per read. In these runs the
+lanes opened one after another, about 2 s each, which is why more lanes started later. Since record 7.137 they open side
+by side (`lanes.open_lanes`). Other findings:
+- One 4-lane run stalled for about 12 s once the policy took over (1.59 s per evaluation). A repeat with a stack
+  sampler did not stall, so the cause is unknown.
+- One CPU thread per process (`OMP_NUM_THREADS=1`) made a 4-lane run slower: 1.10 s per evaluation and a 21 s
+  longer start.
+- Results come back in a varying order, so two multi-lane runs with the same seed can differ.
+
+**Netlists built from the readback** (records 7.140 and 7.142). The decks of different candidates differ only in
+values: the written ones and those the PDK callbacks derive, which the readback after each write already holds (7.138).
+Since 7.142 (user decision of 2026-10-02) a real run works like this:
+- The session's first candidate and every 5th after get Virtuoso's native export, which is the one simulated.
+- Each of those is compared, statement by statement, with the netlist built from its readback; a difference stops the
+  run.
+- The candidates in between get the built netlist: the session's first native export with the readback's values filled
+  in (`CdfWritableProfile.render_export`), held to the cell by `validate_export` like an export. No export and no read
+  after the write.
+- Each candidate's manifest says which it got (`netlist_source`).
+
+The built netlist has the same statements as Virtuoso's export: same devices, connections and values, character for
+character. Only the line breaks and a date comment can differ, which Spectre ignores, so the simulation results are the
+same. The variable `GATOR_NETLIST_BUILD`, set in the environment the server or run starts from, chooses:
+- `skip`, the default;
+- `check`: every candidate native, each compared (7.140);
+- `native`: every candidate native, nothing built.
+
+On Spectre at 4 lanes (20 evaluations each), the default against the check-only runs:
+- `mscr_ota7t` went from 0.70 to 0.54 s per evaluation (3.7× one lane);
+- `mscr_ring3` from 0.71 to 0.64 s;
+- `mscr_vco_lin` stayed at 2.0 s, since its 5 s transient jobs set its pace.
+
+The preparation process is no longer the limit there: busy 62% instead of 92%, about 0.29 s per candidate. A value one
+float step past its bound counts as that bound, in the group check and in `ActionMapper.encode`. "180n" parses to
+1.8000000000000002e-07, and a policy design at the 180 nm top of a length range had stopped `mscr_ring3` and
+`mscr_vco_lin`.
+
+The native export itself sets OCEAN up once per session and then only netlists (`VirtuosoBridgeBackend._export_netlist`,
+7.142), about 0.09 s less per export. If the netlist returned is not this testbench's, it sets up again. A task
+measured inside Virtuoso (the Maestro recipe, which every MScR task uses) keeps the bridge's export, which sets up
+every time.
+
 ## The right column: settings, saved models and the graph view
 
 ### SAC and LLM search methods (2026-09-30, record 7.116)
@@ -1273,6 +1340,13 @@ originals read back unchanged; records under `configs/local/workbench/working_co
 window says "made by the workbench before 2026-09-23", and nothing migrates them. `working_copy.make` remains for Save as
 through the API and for the tests. Cell and instance names are the same in a copy as in the original, so every
 Parameters row and every probe names the same instance path either way.
+
+A saved task stores its copy's record folder (`copy_target.state_dir` in `profile.json`) as an absolute path into the
+settings folder that saved it. Since record 7.137 it is read as the same `<library>/<cell>` (or `_tasks/<task>`) under
+the `working_copies` folder of the settings folder in use (`working_copy.state_path`). This matters in two cases:
+- A run from a scratch settings folder holding copies of the task files used to write its setup-read logs into the live
+  folder.
+- After the repository moves, the stored path names the old place.
 
 **Read setup.** One Maestro test, `GATOR`, on the cell's testbench holds what the
 simulation needs and measures: the model file (the connection's, section `tt`), the analyses, the outputs (Cadence

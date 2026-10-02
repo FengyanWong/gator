@@ -176,3 +176,19 @@ def test_library_names_stay_plain_cadence_names():
         working_copy.copy_library_name('L' * 70)
     with pytest.raises(working_copy.CopyError):
         working_copy.record_dir('bad name', CELL)
+
+
+def test_a_task_saved_under_another_settings_folder_keeps_its_copy_records_in_this_one():
+    """A saved task stores its working-copy folder as an absolute path into the settings folder that saved it. Under a
+    scratch settings folder holding copies of the task files, or after the repository moved, the setup read wrote its logs
+    into the old folder until record 7.137 (a scratch run's five read logs in the live folder, 2026-10-01)."""
+    here = working_copy.store_root()
+    saved = dict(state_dir='/elsewhere/configs/local/workbench/working_copies/MScR/mscr_ota7t')
+    assert working_copy.state_path(saved) == here / 'MScR' / 'mscr_ota7t'
+    assert working_copy.state_path(dict(state_dir='/old/repo/working_copies/_tasks/t2')) == here / '_tasks' / 't2'   # Save as
+    assert working_copy.state_path(dict(state_dir=str(here / LIB / CELL))) == here / LIB / CELL                       # unchanged
+    assert working_copy.state_path(dict(state_dir='/tmp/state')) == Path('/tmp/state')     # not a working-copy folder: as stored
+    (here / 'MScR' / 'mscr_ota7t').mkdir(parents=True)
+    (here / 'MScR' / 'mscr_ota7t' / 'last_written_setup.json').write_text(json.dumps(dict(test='GATOR')))
+    assert working_copy.last_written(saved) == dict(test='GATOR')
+    assert working_copy._request_dir(saved).parent == here / 'MScR' / 'mscr_ota7t' / 'setup'

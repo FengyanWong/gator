@@ -2,7 +2,12 @@
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
-- **Optimizer source digest:** `41983cc7977168096a9517cdd08528e84a7ea2bd18ea76b0777e1ccbb0c8234e`, set by `c700032`
+- **Optimizer source digest:** in the working tree `34bc85f4472fddf90a0245515121c4ffc2dd4632ce30561c9026e46efb41e89b`
+  (records 7.137, 7.140, 7.142 and 7.143, not committed: the native preparation reads the cell three times per
+  candidate, not five; by default it builds most netlists from the readback, with a native export every 5th candidate; a
+  value one float step past its bound counts as the bound, in the group check and in `ActionMapper.encode`; up to 6
+  Spectre lanes instead of 4). Committed:
+  `41983cc7977168096a9517cdd08528e84a7ea2bd18ea76b0777e1ccbb0c8234e`, set by `c700032`
   (record 7.144: the GPDK045 profiles' copied checks merged, behaviour identical, 2026-10-02). Before it:
   `4632786135d13ed7775237f3139c37f4848e7b40e0efe7b0b0360bafb5df7270`, set by `8edbf6d`
   (record 7.132: the Spectre parser reads PWL `[ ]` arrays, 2026-10-01). Before it: `0d045b8e...`, set by `5362ebb`
@@ -664,3 +669,104 @@ Seeded synthetic training is identical before and after (weights, optimizer stat
 network inputs), the homogeneous graph view (`demo.py --homogeneous` uses it) and the GPDK045 profile copy-paste.
 Landed with no job running in the tree and a guarded script that refused any other starting digest. Committed as
 `5362ebb`. Record 7.129.
+
+## The native preparation reads the cell three times per candidate, not five (2026-10-01)
+
+Measured on Spectre (record 7.136): the one Virtuoso preparation process writes and netlists every candidate, and with
+4 lanes it was busy 90% of the time, mostly on five whole-cell reads (0.23 s per candidate on `mscr_ota7t`, about 0.4 s
+per read on `mscr_vco_lin`). Two of them repeated a check made a moment earlier, with nothing in between:
+- `read_parameters()`, straight after `set_parameters`' own readback;
+- the read at the start of `generate_netlist`, together with a second window check.
+
+Asked whether to remove them, the user chose "Yes, remove them". Now the service takes the write's readback
+(`VirtuosoBridgeBackend.written_parameters`) and exports with `generate_netlist(..., just_written=True)`, which uses
+that readback as its snapshot. The checks that stay:
+- the cell is still read before each write, after it and after the export;
+- the export is still compared with the readback;
+- a cell edited meanwhile is still refused.
+
+New tests in `tests/test_native_preparation.py`: three reads and one window check per candidate, and an edit during the
+export refused. Other callers of `generate_netlist` are unchanged. The saving is about 0.12 s per candidate on
+`mscr_ota7t` and about 0.85 s on `mscr_vco_lin`.
+
+Optimizer digest `46327861…` -> `66ce02ab91eda506b52a2a727746ff370b7517383eaf3680d507a647caf54797`: checkpoints saved
+under an earlier digest no longer `resume` (`fine_tune` and `frozen` still load). Not committed. Record 7.137.
+
+## Netlists built from the readback, checked against every native export; a value at its bound is accepted (2026-10-02)
+
+Record 7.138 found that the decks of different candidates differ only in values: the written ones and those the PDK
+callbacks derive, all of which the readback after each write already holds. Asked, the user chose to build each
+netlist from the readback in a check-only mode first ("Yes, check-only first"):
+- `CdfWritableProfile.render_export` (workbench) puts the readback's values into the value slots of the session's
+  first native export.
+- With `GATOR_NETLIST_BUILD=check`, the preparation service (`native_preparation.py`) compares that build with every
+  candidate's native export, statement by statement, and stops the run on a difference.
+- The native export is still the one simulated. Without the variable, nothing changes.
+
+The Spectre trial the user approved (60 simulations, then 40 more) found a separate bug:
+- **What happened:** `mscr_ring3` and `mscr_vco_lin` stopped on their first policy design with "l: invalid
+  bounds/current value".
+- **Cause:** the length was exactly its top value, 180 nm, and the netlist parser reads "180n" as
+  1.8000000000000002e-07, which `ParameterGroup.validate` refused against the upper bound 1.8e-07.
+- **Fix:** `ParameterGroup.validate` now allows a relative 1e-12 at either bound, the span the form writer's
+  `Write.legal` already allows. Only values that were refused before change outcome.
+- **Follow-up** (found by the "RL reward design" session): `ActionMapper.encode` allows the same span and maps such a
+  value to the end of the action range. Otherwise a starting design one float step past a bound passed the group check
+  but failed encoding, in `SeededProposer` and when an LLM reply repeated the start.
+
+Results:
+- After the fix all three tasks completed (20 evaluations each at 4 lanes), and every candidate's built netlist had its
+  native export's statements.
+- 28 exports of `tb_ota7t` timed on Virtuoso: setting OCEAN up once per session would save about 0.09 s per native
+  export (0.27 -> 0.18 s). The library refresh and incremental netlisting saved nothing measurable.
+
+Optimizer digest `66ce02ab…` -> `c3a340b9c426742923327c881dcf04d2eeab89efa7a4e1e192b348e89de4513b`. It is one
+uncommitted step with 7.137: checkpoints saved under an earlier digest no longer `resume`, while `fine_tune` and
+`frozen` still load. Skipping native exports, and the set-up-once export, are open for the user to decide. Not
+committed. Record 7.140.
+
+## Real runs build most netlists from the readback; OCEAN set up once per export session (2026-10-02)
+
+The check-only mode of 7.140 matched on every candidate. Told what changes and what does not (the netlist Spectre
+receives has the same statements, so the results are the same; the guarantee becomes "Virtuoso's export every 5th
+candidate, compared with the build" instead of "Virtuoso's export for every candidate"), the user chose:
+- "On by default" for building netlists from the readback;
+- "Yes" for setting OCEAN up once.
+
+Since then the preparation service (`native_preparation.py`) runs `GATOR_NETLIST_BUILD=skip` by default:
+- The first candidate and every `NATIVE_EVERY` = 5th get the native export, compared with the build. A difference stops
+  the run.
+- The others get the built netlist, without an export or a read after the write.
+- `check` keeps 7.140's mode, and `native` exports every candidate and builds nothing.
+- The manifest names the source of each netlist.
+
+`VirtuosoBridgeBackend._export_netlist` sets OCEAN up once and only netlists after that, about 0.09 s less per export.
+It sets up again when the netlist returned is not the testbench's. Tasks measured inside Virtuoso (the Maestro recipe)
+keep the bridge's export, as the user's answer said. Every MScR task is such a task, so there it changes nothing.
+
+On Spectre at 4 lanes (20 evaluations each, cells equal to their records afterwards), against the check-only runs:
+- `mscr_ota7t`: 0.70 -> 0.54 s per evaluation;
+- `mscr_ring3`: 0.71 -> 0.64 s;
+- `mscr_vco_lin`: 2.0 s, unchanged, because its transient jobs set the pace.
+
+Optimizer digest `c3a340b9…` -> `e3f8c5b84c4480f5dcc1feec9539e1635b18306f7ceea86e5e5b2d229ae51315`, the same
+uncommitted step as 7.137 and 7.140. Not committed. Record 7.142.
+
+## Up to 6 Spectre lanes for a real task (2026-10-02)
+
+With netlists built from the readback (7.142), Spectre set the pace. On `mscr_ota7t` a job took about 1.2 s, of which the
+circuit's analyses took about 0.05 s; the rest was start-up, a licence check, reading the PDK model files (0.4-0.8 s)
+and copying files. The simulator host has 8 cores and the package allowed 4 lanes. The user chose "Raise to 6":
+- `MAX_SPECTRE_WORKERS` (`native_preparation.py`) is 6.
+- The workbench's task limit follows it (`tasks.REAL_LANES`).
+
+On Spectre (20 evaluations each, cells equal to their records afterwards), 6 lanes against 4:
+- `mscr_ota7t`: 0.54 -> 0.41 s per evaluation;
+- `mscr_vco_lin`: 2.03 -> 1.40 s.
+
+Six jobs at once ran with no licence error. Jobs sometimes waited up to 0.8 s for a licence, and each job ran 10-15%
+slower on the shared CPUs. The preparation process was busy 71-79% again, so more lanes would gain little without a
+cheaper preparation or a Spectre that stays running between jobs.
+
+Optimizer digest `e3f8c5b8…` -> `efa93649d1e792602174994abf4a019e23e9dcf2ccef9ef0e1dd25a1beaab7ca`, the same
+uncommitted step as 7.137, 7.140 and 7.142. Not committed. Record 7.143.

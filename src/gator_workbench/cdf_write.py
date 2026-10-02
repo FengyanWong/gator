@@ -478,6 +478,39 @@ class CdfWritableProfile(GenericMosWidthProfile):
                     raise ValueError(f'Exported parameter mismatch: {device}.{key}')
         return read
 
+    def render_export(self, template, snapshot):
+        """The export `snapshot` would give, built without Virtuoso from `template`, an export of this cell (record 7.140).
+        The values a run changes - the written parameters and those the PDK callbacks derive - are the form's own text in
+        `snapshot`, bracketed as in the template; every other value stays as the template has it, which `validate_export`
+        holds to the record. A written parameter takes the form field of its own name when the instance has one (the
+        netlister writes the total width `w`, not the finger width it may be typed as), else the field it is typed in.
+        The statements of a candidate's native export differ from each other only in these values (7.138)."""
+        actual = self.instances(snapshot)
+        slots = {(w.field.instance, w.parameter): w.parameter if w.parameter in actual[w.field.instance]['params'] else w.field.cdf
+                 for w in self.writes}
+        slots.update({(instance, key): cdf for (_, key), (instance, cdf) in self.derived.items()})
+        core, inside, continued, name, out = self.design['core_cell'], False, False, None, []
+        for line in template.splitlines(keepends=True):
+            words = line.split()
+            if not continued:                              # a new statement: its first word names it
+                if words[:2] == ['subckt', core]:
+                    inside = True
+                elif words[:1] == ['ends']:
+                    inside = False
+                name = words[0] if inside and words else None
+            if name in actual:
+                def put(match, name=name):
+                    key, value = match.group(1), match.group(2)
+                    cdf = slots.get((name, key))
+                    text = actual[name]['params'].get(cdf) if cdf else None
+                    if text is None:
+                        return match.group(0)
+                    return f'{key}=({text})' if value.startswith('(') else f'{key}={text}'
+                line = re.sub(r'\b(\w+)=(\([^)]*\)|[^\s\\()]+)', put, line)
+            continued = line.rstrip().endswith('\\')
+            out.append(line)
+        return ''.join(out)
+
 
 class CdfRingOscillatorProfile(GenericRingOscillatorProfile, CdfWritableProfile):
     """The ring-oscillator deck and measurement, with rules of format 2."""

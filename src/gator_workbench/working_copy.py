@@ -57,6 +57,19 @@ def record_dir(library, cell) -> Path:
     return store_root() / _checked(library) / _checked(cell)
 
 
+def state_path(target) -> Path:
+    """Where a working copy's records are (`target['state_dir']`), in THIS settings folder. A saved task stores the folder
+    as an absolute path into the settings folder that saved it: `<settings>/working_copies/<library>/<cell>`, or
+    `.../_tasks/<task>` for a "Save as" copy. Read under another settings folder (a scratch one holding copies of the task
+    files, or the repository after a move) that path still named the old place, so a scratch run's setup read wrote its
+    logs into the live folder (record 7.137). The same two last parts under this folder's `working_copies` are meant; any
+    other path is used as stored."""
+    path = Path(target['state_dir'])
+    if path.is_absolute() and len(path.parts) >= 3 and path.parts[-3] == store_root().name:
+        return store_root() / path.parts[-2] / path.parts[-1]
+    return path
+
+
 def _checked(name) -> str:
     if not isinstance(name, str) or not native_cells.NAME.match(name):
         raise CopyError('Library and cell names must be plain Cadence names')
@@ -448,7 +461,7 @@ def make_task_copy(monitor, profile_id, source, task, *, source_netlist, command
 
 
 def _request_dir(target) -> Path:
-    directory = Path(target['state_dir']) / 'setup' / utcnow().strftime('%Y%m%dT%H%M%S%f')
+    directory = state_path(target) / 'setup' / utcnow().strftime('%Y%m%dT%H%M%S%f')
     directory.mkdir(parents=True)
     return directory
 
@@ -504,7 +517,7 @@ def write_setup_on(monitor, profile_id, target, setup, *, command=None) -> dict:
     if problems:
         raise virtuoso_setup.SetupError('The setup cannot be written: ' + '; '.join(problems))
     require_gate(monitor, 'write_cellview', profile_id, 'writing the Maestro setup')
-    last_file = Path(target['state_dir']) / 'last_written_setup.json'
+    last_file = state_path(target) / 'last_written_setup.json'
     last = _json_or_empty(last_file)
     # None = leave as the copy has it. `initial_conditions` belongs here too: without it a setup that simply does not
     # mention them (every plain "Save task" of an open task) would be read as "this test has none" and DELETE them - it
@@ -515,7 +528,7 @@ def write_setup_on(monitor, profile_id, target, setup, *, command=None) -> dict:
     originals = _original_values_on(target)
     # A parameter's value from before the workbench bound it is kept from that moment on: read from the cell again while
     # it is bound, its value IS the variable's name, and restoring that wrote the name back (review round 5).
-    before_file = Path(target['state_dir']) / 'values_before_binding.json'
+    before_file = state_path(target) / 'values_before_binding.json'
     before = {tuple(e['key']): e['value'] for e in _json_or_empty(before_file).get('values', [])}
     before.update({key: originals[key] for key in wanted - set(bound) - set(before) if key in originals})
     restore, unknown = [], []
@@ -549,7 +562,7 @@ def write_setup_on(monitor, profile_id, target, setup, *, command=None) -> dict:
 def last_written(target) -> dict:
     """The setup last written into this copy (what its Maestro test holds, as far as the workbench wrote it), or {}."""
     try:
-        return json.loads((Path(target['state_dir']) / 'last_written_setup.json').read_text())
+        return json.loads((state_path(target) / 'last_written_setup.json').read_text())
     except (OSError, ValueError, KeyError, TypeError):
         return {}
 

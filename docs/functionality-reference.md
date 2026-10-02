@@ -1,0 +1,322 @@
+# GATOR functionality reference
+
+Every function this repository offers, and where to find it: the place on the page, the code, the HTTP route, the
+description, the development-record entries, and the tests and browser checks that cover it. Functions that were
+removed are listed at the end, with what replaced them.
+
+**State.** 2026-10-02: branch `workbench` as committed with record 7.139, plus work that was still uncommitted then
+(records 7.122, 7.123 and 7.136-7.142, marked *uncommitted* below). The optimizer source digest was `e3f8c5b8…` in
+the working tree and `46327861…` in the last commit (the top of `docs/decisions.md` has the current one). The last
+full check is record 7.139.
+
+**This file is kept up to date in place**, like `docs/workbench.md`. When a function is added, changed or removed,
+change its row here as well. What a function does in detail is in `docs/workbench.md`. How it got there is in the
+record (`docs/frontend_implementation_status.md` is the index).
+
+**How to read a row.**
+- Code paths are short:
+  - `wb/` = `src/gator_workbench/`
+  - `opt/` = `src/analog_optimizer/`
+  - `fe/` = `frontend/src/panels/` (`App.tsx`, `store.ts` and `api.ts` are in `frontend/src/`)
+  - `t/` = `tests/`, `tw/` = `tests/workbench/`
+  - `fs/` = `frontend/scripts/`
+- **§ Title** is the section of `docs/workbench.md` with that heading: `grep -n '^##' docs/workbench.md` lists them.
+- **7.N** is a record entry. Find it with `grep -n '^### 7.N ' docs/workbench-log/*.md`. The commit that carries it is in
+  the commit table of `docs/workbench-log/record-history.md`.
+- A browser check runs on its own (`"/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w fs/<name>)"`), or with all
+  the others through `bash frontend/scripts/run_checks.sh`.
+
+**Contents.**
+[1 Starting the workbench](#1-starting-the-workbench) ·
+[2 The page](#2-the-page-area-by-area) ·
+[3 Runs: engine, data, real simulation](#3-runs-what-happens-behind-the-buttons) ·
+[4 LLM sizing and the SKY130 benchmark](#4-llm-sizing-and-the-sky130-benchmark) ·
+[5 The optimizer package](#5-the-optimizer-package-srcanalog_optimizer) ·
+[6 Scripts](#6-scripts-examples) ·
+[7 Tests and checks](#7-tests-and-checks) ·
+[8 Removed or replaced](#8-removed-or-replaced-functions) ·
+[9 Plans, not built](#9-plans-and-parked-work-not-built) ·
+[10 Where things are recorded](#10-where-things-are-recorded)
+
+## 1. Starting the workbench
+
+| Function | What it does | Code | Route | Docs and record | Tests and checks |
+|---|---|---|---|---|---|
+| Project environment | Python environment at `~/analog-optimizer-venv`, installed with the exact pins a saved model needs | `constraints.txt`, `pyproject.toml` (extras `graph`, `test`, `export`, `web`, `webtest`, `benchmark`) | - | § Start; CLAUDE.md; 7.81 | - |
+| `gator-workbench serve` | Serves the backend and the built page on 127.0.0.1:8765. Options: `--allow-root`, `--allow-input-root`, `--host`, `--connection-check-on-start` | `wb/cli.py`, `wb/api/app.py`, `wb/preload.py` (torch imported once, before serving) | `GET /api/meta`, `GET /api/schema` | § Start; first build, 7.9, 7.11 | `tw/test_wb_api.py`, `test_wb_preload.py`, `test_wb_round5_followup.py` |
+| Build the page | `npm run build` (type-check + Vite build into `frontend/dist`); `npm run dev` is the development server | `frontend/` | - | § Start; 7.93 | `npx tsc --noEmit` |
+| Command line without the page | `validate`, `run` (foreground run), `aggregates`, `check` (zero-cost connection check) | `wb/cli.py` → `wb/validation.py`, `wb/runs.py`, `wb/aggregates.py`, `wb/connection.py` | - | § Start | No test calls these four subcommands; the functions behind them: `tw/test_wb_schema_validation.py`, `test_wb_aggregates.py`, `test_wb_connection.py` |
+| Detached run worker | One process per run: `python -m gator_workbench.worker --run-dir <dir>` | `wb/worker.py` | - | § Start, Pause, Resume, Abort | `tw/test_wb_api.py`, `tw/test_wb_real_bindings.py`, `tw/test_wb_round5_safety.py` |
+| Settings folder | Saved tasks, connections, presets, PDKs, working-copy records under `configs/local/workbench/`. `GATOR_WORKBENCH_SETTINGS_DIR` moves it (tests, scratch scripts) | `wb/runs.py` (`load_settings`), `wb/paths.py` | - | CLAUDE.md | `tw/test_wb_isolation.py` |
+
+## 2. The page, area by area
+
+### 2.1 Header
+
+| Function | What it does | Code | Route | Docs and record | Tests and checks |
+|---|---|---|---|---|---|
+| **Start → Pause → Resume** (one button) and **Abort** / **Force abort** | Starts a run. Pause saves everything and stops after the simulation in flight. Resume continues the same run. Abort ends the run gently. Force abort is for a stuck run | `fe/RunControl.tsx`, `App.tsx`; `wb/runs.py`, `wb/worker.py`, `wb/engine.py` (`RunEngine`, `RunLock`) | `POST /api/runs/start`, `/api/runs/continue`, `/api/runs/command`; `GET /api/runs/status` | § Start, Pause, Resume, Abort; 7.18, 7.33, 7.82, 7.109, 7.115, 7.125, 7.134, 7.135 | `tw/test_wb_api.py`, `test_wb_engine.py`, `test_wb_run_lock.py`, `test_wb_round5_followup.py`; `fs/run_control_check.mjs`, `run_control_live_check.mjs` |
+| **Save now** | Saves the running run's model without pausing (run command `checkpoint`) | `fe/RunControl.tsx`; `wb/engine.py`, `wb/checkpoints.py` | `POST /api/runs/command` | § Save now; 7.23 | `tw/test_wb_save_now.py`; `fs/save_now_check.mjs` |
+| **Single baseline simulation** | One real evaluation of the task. When it finishes, its result becomes the task's reference by itself | `App.tsx`; `wb/runs.py`, `wb/worker.py`, `wb/profiles.py` | `POST /api/runs/start`; `POST /api/virtuoso/profile/reference` (scripts only) | § Browsing a Virtuoso library; 7.21, 7.22, 7.24, 7.78 | `tw/test_wb_profiles.py`, `test_wb_engine.py` |
+| The real-run question | Before a real run, asks for the budget in the backend's own words. Nothing is created when the answer is no | `fe/RunControl.tsx`; `wb/runs.py` (`prepare_run`: `real_authorization_required`) | `POST /api/runs/start` | § What is real and what is mock; 7.5, 7.125 | `tw/test_wb_real_bindings.py`, `test_wb_ngspice.py`; `fs/run_control_check.mjs` |
+| **N blocking issue(s)** button | Lists every issue that stops a start: level, field, row, plain words, technical details folded | `fe/Issues.tsx`; `wb/validation.py`, `wb/schema.py` (`describe_errors`) | `POST /api/config/validate` | § Tests (last part); 7.12, 7.56 | `tw/test_wb_schema_errors.py`, `test_wb_schema_validation.py`; `fs/blocking_issues_check.mjs` |
+| Autosave warning: **Retry save** / **Export JSON** | Shown when the browser cannot store the configuration | `App.tsx`, `store.ts` (`useConfig`) | - | § Saving a task; 7.125, 7.130 | `fs/reliability_check.mjs` |
+
+### 2.2 Project column (left)
+
+| Function | What it does | Code | Route | Docs and record | Tests and checks |
+|---|---|---|---|---|---|
+| Project fields and labels | Project name; circuit class, PDK id and DUT hierarchy, which are labels only, folded into one line | `fe/Left.tsx` | - | § Browsing a Virtuoso library; 7.30, 7.35 | `fs/project_help_check.mjs` |
+| **Registered task → Task** | Chooses a saved task (`real:<name>`) or an ngspice task (`ngspice:<name>`). The task brings its own Parameters, Probes and Specs rows; rows you edited stay | `fe/Left.tsx`; `wb/tasks.py` (`starter_config`, `load_task_view` keeps a loaded task while its files are unchanged) | `GET /api/tasks`, `GET /api/tasks/starter`, `POST /api/circuit/load` | § Choosing a registered task; 7.44, 7.47, 7.59, 7.128, 7.131 | `tw/test_wb_real_starter.py`, `test_wb_task_view_cache.py`; `fs/task_rows_check.mjs` |
+| **Load task** / **Delete task** (icons, in the task row) | Load task puts the saved rows back. Delete task takes the task out of the list; its folder is kept aside under `.deleted/` | `fe/Left.tsx`, `fe/Icons.tsx`; `wb/profiles.py`, `wb/ngspice_tasks.py` | `POST /api/virtuoso/profile/delete`, `POST /api/ngspice/task/delete` | § Browsing a Virtuoso library; 7.47, 7.78, 7.82 | `tw/test_wb_profiles.py`, `test_wb_ngspice.py`; `fs/task_rows_check.mjs` |
+| Window launchers | **Virtuoso cell...** and **ngspice netlist...** buttons. Which ones show follows the connection in use | `fe/Left.tsx`, `fe/Ngspice.tsx`, `fe/popupWindow.ts` | - | § An ngspice netlist as a task; 7.72, 7.75, 7.76, 7.77 | `fs/virtuoso_source_check.mjs`, `ngspice_window_check.mjs` |
+| **Hierarchy** block | Instance tree, **Instances and parameters**, **Native schematic**, each folded into one line | `fe/CircuitBrowser.tsx` (`CircuitDetails`, `NativeSchematic`), `fe/Left.tsx` | `POST /api/circuit/load` | § Browsing a Virtuoso library; 7.30, 7.35 | `fs/project_help_check.mjs` |
+| **Check now** (in the task's block) | See 2.6, "The check before every run" | | | | |
+
+### 2.3 Connection window (the **Connection** button)
+
+| Function | What it does | Code | Route | Docs and record | Tests and checks |
+|---|---|---|---|---|---|
+| One button, a window, four kinds | The button names the connection in use and its last test. The window holds the rest. Kinds: `virtuoso_ssh`, `virtuoso_local`, `ngspice_local`, `ngspice_ssh` | `fe/Connection.tsx`, `fe/popupWindow.ts`; `wb/connection.py` | `GET /api/connection/profiles`, `GET /api/connection/status` | § "Connection": one button...; 7.32, 7.79 | `tw/test_wb_connection_kinds.py`; `fs/connection_panel_check.mjs` |
+| **Add a connection** | Writes a new connection from names only. Existing connections are never changed; the previous file is kept beside it | `wb/bridge_connect.py` | `GET /api/connection/setup`, `POST /api/connection/profile` | § Connecting from the panel; 7.3, 7.32 | `tw/test_wb_bridge_connect.py`, `test_wb_connection_kinds.py` |
+| **Connect SSH** / **Set up local bridge** | Starts the bridge's SSH tunnel (or the local bridge) on an explicit press only | `wb/bridge_connect.py` | `POST /api/connection/connect` | § Connecting from the panel; 7.3 | `tw/test_wb_bridge_connect.py` |
+| CIW line with **Copy** | Shows the `load("...virtuoso_setup.il")` line to paste into the CIW. The workbench never sends it | `fe/Connection.tsx`; `wb/bridge_connect.py` | `GET /api/connection/setup` | § Connecting from the panel | `fs/connection_panel_check.mjs` |
+| **Test connection** (+ **Spectre / license**) | Read-only, zero-cost check, layer by layer, in one plain sentence. Runs once when the page opens, otherwise only on a press | `wb/connection.py` (monitor and gate), `wb/ngspice_link.py` (ngspice layers) | `POST /api/connection/check` | § Connection profiles, § Connecting from the panel; 7.1, 7.9, 7.80, 7.115 | `tw/test_wb_connection.py`, `test_wb_connection_kinds.py`; `fs/connection_panel_check.mjs` |
+| Connection gate | Tests the link again before every real action (cell read or write, real simulation). A passing check of the last 30 s is reused for reads and writes, never for a simulation | `wb/connection.py` (`require_gate`) | - | § Connection profiles; 7.115 | `tw/test_wb_connection.py` |
+| Per-circuit bindings | A connection's `library`, `model_file` and `circuits` entries (creation receipt, reference measurements) | `wb/tasks.py` | - | § Connection profiles; 7.4 | `tw/test_wb_real_bindings.py` |
+
+### 2.4 Virtuoso window (**Virtuoso cell...**)
+
+| Function | What it does | Code | Route | Docs and record | Tests and checks |
+|---|---|---|---|---|---|
+| Library → cell → schematic | Opening the window lists the libraries; choosing one lists its cells; choosing a cell reads its schematic. Read-only and gated. **Refresh** repeats the chain | `fe/CircuitBrowser.tsx` (`useVirtuosoBrowser`), `fe/Left.tsx`; `wb/bridge_read.py` | `POST /api/virtuoso/libraries`, `/api/virtuoso/cells`, `/api/virtuoso/read` | § Browsing a Virtuoso library; 7.15 | `tw/test_wb_api.py`; `fs/virtuoso_source_check.mjs` |
+| **Testbench cell** | Finds `tb_<cell>` by its name; can be chosen by hand | `fe/CircuitBrowser.tsx` (`namedTestbench`) | - | § Browsing a Virtuoso library; 7.49 | `tw/test_wb_testbench_probes.py`; `fs/testbench_probes_check.mjs` |
+| Probes follow the testbench | After a read, the Probes tab gets the results of the circuit type the testbench fits | `wb/profiles.py` (`testbench_probes`) | `POST /api/virtuoso/import` | § Browsing a Virtuoso library; 7.49 | `tw/test_wb_testbench_probes.py`; `fs/testbench_probes_check.mjs` |
+| **Read this cell into the workbench** (and **Read the cell again**) | Exports the testbench netlist and reads the sizes. It first asks whether the cell is a copy you made; OK declares it the working copy | `wb/bridge_read.py` (`import_cell`), `wb/native_cells.py`, `wb/working_copy.py` (`declare`) | `POST /api/virtuoso/import` (`work_here`) | § Browsing a Virtuoso library, § The cell the task flow works in; 7.17, 7.72 | `tw/test_wb_native_cells.py`, `test_wb_own_copy.py`; `fs/virtuoso_source_check.mjs` |
+| The cell's PDK is read with the cell | The same press reads the PDK of the cell's technology library | `wb/bridge_read.py` (`pdk_with_import`), `wb/pdk.py` | `POST /api/virtuoso/import` | § The components the network knows; 7.100 | `tw/test_wb_native_cells.py` |
+| **PDK window...** | Reads one PDK by name and shows what was read: components, pins, roles, parameters | `fe/Pdk.tsx` (`PdkWindowButton`); `wb/pdk.py` | `POST /api/pdks/load`, `GET /api/pdks`, `GET /api/pdks/{pdk_id}` | § The components the network knows; 7.54, 7.100 | `tw/test_wb_pdk.py`; `fs/pdk_check.mjs` |
+| Working-copy block and **Read setup** | Shows the cell the task flow works in. **Read setup** takes the Maestro test's outputs and specs into Probes and Specs | `fe/WorkingCopy.tsx`; `wb/working_copy.py`, `wb/virtuoso_setup.py`, `wb/bridge_setup.py` | `POST /api/virtuoso/setup/read` | § The cell the task flow works in; 7.55, 7.65, 7.72 | `tw/test_wb_working_copy.py`, `test_wb_virtuoso_setup.py`; `fs/working_copy_check.mjs` |
+| Initial conditions | A start voltage per net, for a circuit that does not start by itself. Written into a small `ic` file on the simulator host that the Maestro test includes | `wb/bridge_setup.py`, `wb/virtuoso_setup.py`, `wb/working_copy.py` (`write_setup_on`) | `POST /api/virtuoso/task/save` | § The cell the task flow works in; 7.67, 7.71 | `tw/test_wb_virtuoso_setup.py`, `test_wb_task_save.py` |
+| Maestro variables and bindings | A value may be bound to a Maestro design variable (analogLib R, C, L and sources only). Dropping a binding puts back the value it had before (7.141, *uncommitted*) | `wb/working_copy.py` (`write_setup_on`), `wb/bridge_setup.py` (`write_bindings`), `wb/virtuoso_setup.py` | `POST /api/virtuoso/task/save` | § The cell the task flow works in ("What may be a Maestro variable"); 7.55, 7.141 | `tw/test_wb_virtuoso_setup.py` |
+| Working-copy folder under the settings folder in use (*uncommitted*) | A saved task's absolute `state_dir` is read under the settings folder in use | `wb/working_copy.py` (`state_path`) | - | § The cell the task flow works in; 7.137 | `tw/test_wb_working_copy.py` |
+| **Ask the agent to set up** | Opens the Agent tab with a `virtuoso_setup` request; see 2.10 | `fe/Left.tsx`, `fe/AgentTab.tsx` | `POST /api/agent/propose` | § The agent sets the task up; 7.60 | `tw/test_wb_agent_setup.py`; `fs/agent_setup_check.mjs` |
+
+### 2.5 ngspice window (**ngspice netlist...**)
+
+| Function | What it does | Code | Route | Docs and record | Tests and checks |
+|---|---|---|---|---|---|
+| Deck in, task out | Paste a SPICE deck or load it from a file (**Example**: `examples/circuits/ngspice_ota5_level1.cir`). **Check** says what the deck holds. Saving makes `ngspice:<name>`, and saving again makes its next revision | `fe/Ngspice.tsx`; `wb/ngspice_netlist.py` (reader and writer), `wb/ngspice_tasks.py` (store, starter rows) | `POST /api/ngspice/read`, `/api/ngspice/check`, `/api/ngspice/task/save`; `GET /api/ngspice/task`; `POST /api/ngspice/task/delete` | § An ngspice netlist as a task; 7.74, 7.77, 7.78 | `tw/test_wb_ngspice.py`; `fs/ngspice_window_check.mjs` |
+| Real runs on ngspice | One `ngspice -b` per evaluation, on this machine or over SSH. Counted, authorized and recorded like every real run | `wb/ngspice_backend.py`, `wb/ngspice_analysis.py` (counts control commands), `wb/ngspice_operating_points.py` (MOS readout for the network's **Nominal device operating points**) | `POST /api/runs/start` | § An ngspice netlist as a task; 7.74, 7.79, 7.116 | `tw/test_wb_ngspice.py`, `test_llm_operating_points.py` |
+
+### 2.6 Editors (centre): Parameters | Probes | Specs
+
+| Function | What it does | Code | Route | Docs and record | Tests and checks |
+|---|---|---|---|---|---|
+| The three tabs | **Parameters** = what may vary, **Probes** = what is measured, **Specs** = equations over Probes with their limits | `fe/Editors.tsx`; `wb/schema.py` (`OptimizationParameter`, `MeasurementDefinition`, `PerformanceTarget`) | - | § Choosing a registered task; 7.34, 7.51 | `tw/test_wb_schema_validation.py` |
+| Toolbar: **Add**, **Delete selected**, **Undo**, **Redo** (icons) | Row edits. One Undo step per typed value or per button | `fe/Editors.tsx`, `fe/Icons.tsx`, `store.ts` (`useConfig`) | - | § What the frontend audit changed; 7.82, 7.125, 7.131 | `fs/spec_equations_check.mjs`, `typing_check.mjs` |
+| **Import JSON** / **Export JSON** | Only a file this workbench exported replaces the whole configuration; other files are rows for the open tab | `fe/Editors.tsx`, `api.ts` (`saveJson`) | - | § What the frontend audit changed; 7.125 | `fs/spec_equations_check.mjs`, `reliability_check.mjs` |
+| Typing boxes | Number and text cells that keep partial input between keys | `fe/Typed.tsx` | - | 7.64 | `fs/typing_check.mjs` |
+| Autosave and migration | The page keeps the configuration 0.8 s after every change and when the page closes. Old rows are migrated when they load | `store.ts` (`useConfig`, `migrateConfig`) | - | § Fewer columns..., § Saving a task; 7.92, 7.125, 7.130 | `fs/reliability_check.mjs` |
+| Specs are equations over Probes | Each spec judges one value, written with Probe IDs, numbers and `+ - * / **` | `wb/spec_equations.py` (also `EquationNativeFactory` for real runs) | `POST /api/config/validate` | § Specs are equations over Probes; 7.52, 7.112, 7.113 | `tw/test_wb_spec_equations.py`; `fs/spec_equations_check.mjs` |
+| Specs columns | Compact tick-box column, objective inside **Constraint**, **Judged at** (only with training corners), **Missing value = failed**, **Margin sides**, scale suggestion | `fe/Editors.tsx`; `wb/schema.py`, `wb/validation.py` | - | § Reward v2.1 controls and checks; 7.106, 7.112, 7.114, 7.124 | `tw/test_wb_reward_v21.py`; `fs/spec_equations_check.mjs` |
+| **More columns** | Shows `soft_weight`, `active` and `basis` of Specs; the choice is kept in the browser | `fe/Editors.tsx` | - | § Fewer columns in Parameters, Probes and Specs; 7.92 | `tw/test_wb_retired_columns.py`; `fs/typing_check.mjs` |
+| **Matched devices...** (Parameters) | Finds differential pairs, mirrors, tails and cascodes in the circuit and suggests tying their rows; **Review...** then **Apply** | `fe/MatchedDevices.tsx`; `wb/structures.py` (`recognize`, `plan_ties`, `apply_ties`) | `POST /api/parameters/matched` | § Matched devices; 7.103 | `tw/test_wb_matched_devices.py`; `fs/matched_devices_check.mjs` |
+| **Modify selected with agent...** | Sends the selected rows to the Agent tab (request kind `modify_fields`) | `fe/Editors.tsx`, `fe/AgentTab.tsx` | `POST /api/agent/propose` | 7.29 | `tw/test_wb_agents.py`; `fs/agent_tab_check.mjs` |
+| **Save task** | Stores the editors' rows as the task `real:<name>`, or its next revision. Writes the working copy's Maestro test and reads the copy again. A person's press only | `fe/TaskSave.tsx`; `wb/profiles.py` (`save_task`), `wb/task_files.py`, `wb/generic_profile.py`, `wb/recipes.py` | `POST /api/virtuoso/task/save` | § Saving a task; 7.57, 7.65, 7.71, 7.125, 7.132 | `tw/test_wb_task_save.py`, `test_wb_profiles.py`; `fs/task_save_check.mjs` |
+| **Task file** (window) and **Apply to editors** | Shows the task file of the current editors, explained. Apply checks an edited file and fills the editors | `fe/TaskFile.tsx`; `wb/task_files.py` | `POST /api/virtuoso/task/file`, `/api/virtuoso/task/file/check` | § Saving a task; 7.57 | `tw/test_wb_task_save.py`; `fs/task_save_check.mjs` |
+| **Check now** - the check before every run | Compares the editors with the saved task, the task with its working copy (export, compare, deck) and, for a Maestro task, its Maestro test. Start, Single baseline and Resume run it by themselves | `fe/Consistency.tsx`; `wb/consistency.py` | `POST /api/virtuoso/task/check` | § The check before every run; 7.61, 7.132 | `tw/test_wb_consistency.py`; `fs/consistency_check.mjs` |
+| Validation and diff | Static validation while you edit; a structured diff for proposals | `wb/validation.py`, `wb/schema.py`, `wb/units.py` | `POST /api/config/validate`, `POST /api/config/diff` | first build; 7.11, 7.56 | `tw/test_wb_schema_validation.py`, `test_wb_api.py` |
+
+### 2.7 Right column: **Run configuration**
+
+| Function | What it does | Code | Route | Docs and record | Tests and checks |
+|---|---|---|---|---|---|
+| **Mode**: scratch, resume, fine_tune, frozen | What is loaded and what is reset. A suggested mode is the clickable word itself | `fe/Right.tsx` (`RunPanel`); `wb/modes.py` | - | § Choosing which saved model to load; 7.90 | `tw/test_wb_modes_trajectory.py`; `fs/mode_suggestion_check.mjs` |
+| Budget and limits | Evaluation budget, max Spectre launches, wall-time limit, retries per evaluation, stop after N consecutive failed evaluations, pause after N infrastructure failures, seed, stop at the first feasible design | `fe/Right.tsx`; `wb/schema.py` (`RunSettings`), `wb/budget.py` | - | § Reward v2.1 controls and checks ("Failure limits"); first build, 7.135 | `tw/test_wb_engine.py`, `test_wb_storage_budget_paths.py`, `test_wb_round5_followup.py` |
+| **Concurrent Spectre jobs** (`run.concurrency`) | Several designs at once, at most 4 on a real task. Lanes open side by side (*uncommitted*, 7.137) | `fe/Right.tsx`; `wb/lanes.py` (`open_lanes`), `wb/engine.py` | - | § How a real run spends its simulations ("Several designs at once"); 7.136, 7.137 | `tw/test_wb_lanes_open.py`, `test_wb_engine.py` |
+| **Search method**: SAC, LLM warm start → SAC, LLM only, SAC with LLM rescue | Who proposes designs. AI methods have their own provider, model, effort and call and cost ceilings | `fe/SearchSettings.tsx`; `wb/search.py`, `wb/agents/sizing.py`, `opt/search/` | - | § SAC and LLM search methods; `docs/llm-sizing.md`; 7.116, 7.118, 7.120, 7.123 | `tw/test_llm_search.py`, `test_llm_audit_fixes.py`, `test_llm_providers_api.py`; `t/test_search.py`; `fs/llm_sizing_check.mjs` |
+| **RL network**: encoder and sizes | Graph Transformer (default), RGCN or GATv2, with layers, hidden and heads. Settings are kept per encoder, seeded from publications; a button sets the GATOR baseline. **Nominal device operating points** adds measured device values to the network input (7.116). Shown in Mode scratch only (otherwise the network comes with the model) | `fe/Right.tsx`; `wb/network_presets.py` | `GET /api/network-settings`, `PUT /api/network-settings/{encoder}`, `POST /api/network-settings/{encoder}/reset` | § Choosing which saved model to load; `docs/network-presets.md`; 7.7, 7.43, 7.83, 7.86, 7.87 | `tw/test_wb_network_presets.py`; `fs/network_panel_check.mjs` |
+| **Components** (standard / a loaded PDK) | The component list the network knows (`run.network.vocabulary`) | `fe/Pdk.tsx` (`ComponentList`); `wb/pdk.py` (`learner_class`) | `GET /api/pdks` | § The components the network knows; 7.54, 7.100 | `tw/test_wb_pdk.py`; `fs/pdk_check.mjs` |
+| **Reward and conditions** | Reward v2.1 settings: violation shape, worst-spec share, objective and tightest-margin bonus weights, nominal gate band. **Training conditions**: Nominal only, Corners after nominal passes, Every planned corner | `fe/Right.tsx`; `wb/schema.py` (`RewardConfig`, `ConditionsConfig`), `wb/compile.py`; `opt/envs/sizing.py` | - | § Reward and training conditions; `docs/reward-v2.md`; 7.94-7.98, 7.106, 7.111, 7.112 | `tw/test_wb_reward_v21.py`, `test_wb_reward_v2_mock.py`, `test_wb_round5_reward.py`; `fs/reward_v21_check.mjs` |
+| Steering warning and corner warning | The reward spread of the last 50 designs against the exploration bonus. A warning when no recorded design meets every hard spec at all planned conditions | `wb/reward_diagnostics.py` (`steering`), `wb/reachability.py` (`check`, `assess`) | `GET /api/runs/status` | § Reward v2.1 controls and checks; 7.106 | `tw/test_wb_reward_v21.py`, `test_wb_round5_reward.py` |
+| **Advanced** | Learning rates (including the alpha learning rate), batch size, replay capacity, episode length, warm-up, fine_tune switches (freeze encoder, encoder-only transfer, reset critic), simulation timeout | `fe/Right.tsx`; `wb/schema.py` (`AdvancedRL`) | `GET /api/schema` | § Reward v2.1 controls and checks; 7.106 | `tw/test_wb_schema_validation.py`, `test_wb_modes_trajectory.py` |
+| **RL model to load** (and **Look at a saved model** in scratch) | Lists every run with a saved model and each of its save points. Facts and a compatibility check against the current configuration | `fe/ModelChooser.tsx`; `wb/checkpoints.py` | `GET /api/runs/models`, `POST /api/runs/model`, `GET /api/runs/default-model` | § Choosing which saved model to load; 7.20, 7.43, 7.130 | `tw/test_wb_model_chooser.py`; `fs/model_chooser_check.mjs` |
+| **Network structure** | Every layer of the saved model with type, shape and parameter count, as tables. Weights that are never used are marked | `fe/ModelStructure.tsx`; `wb/model_structure.py` | `POST /api/runs/model/structure` | § Network structure of a saved model; 7.26 | `tw/test_wb_model_structure.py`; `fs/model_structure_check.mjs` |
+| **Circuit graph view** | The graph the network sees, drawn with cytoscape. Line width = attention; proposed sizes; nothing is simulated | `fe/CircuitGraphView.tsx`, `fe/circuitLayout.ts`; `wb/graph_view.py` | `POST /api/runs/model/graph-view` | § Circuit graph view; 7.33 | `tw/test_wb_graph_view.py`; `fs/graph_view_check.mjs` |
+| Folding the module | **Run configuration** folds into one line that keeps its main values and an "error inside" or "warning inside" mark | `fe/Right.tsx` (`Module`) | - | § Folding the right column's modules; 7.45 | `fs/module_fold_check.mjs` |
+
+### 2.8 Right column: **Output settings** and **Research experiments**
+
+| Function | What it does | Code | Route | Docs and record | Tests and checks |
+|---|---|---|---|---|---|
+| Output root and **Copy path** | Chosen among the allowed roots; writability tested; a Windows path shown once verified | `fe/Right.tsx` (`OutputPanel`); `wb/paths.py` | `GET /api/output/browse`, `POST /api/output/check` | § Output layout; 7.41 | `tw/test_wb_storage_budget_paths.py`, `test_wb_api.py`; `fs/output_panel_check.mjs` |
+| What is saved | Learner-update log, checkpoints, replay snapshots, transition archive, summary CSVs, waveforms with a storage limit typed with a unit | `fe/Right.tsx`; `wb/schema.py` (`OutputSettings`) | - | § Output layout; 7.41, 7.58 | `fs/output_panel_check.mjs` |
+| **Checkpoint every** | One interval, in evaluations or in seconds; `keep_last_checkpoints` prunes older periodic save points | `fe/Right.tsx`; `wb/checkpoints.py` | - | § Choosing which saved model to load; 7.58 | `tw/test_wb_engine.py`, `test_wb_model_chooser.py`; `fs/output_panel_check.mjs` |
+| Folding the module | **Output settings** folds like Run configuration | `fe/Right.tsx` (`Module`) | - | 7.45 | `fs/module_fold_check.mjs` |
+| **Research experiments** | Labels that group runs for the research tables: experiment group, split, generalization level, sources, test tasks, comparison pair, task order K, pretrain seed, budget checkpoints | `fe/Right.tsx` (`ResearchPanel`); `wb/schema.py` (`ResearchLabels`), `wb/aggregates.py` | - | first build (specification section 11) | `tw/test_wb_aggregates.py` |
+
+### 2.9 Bottom tabs and the run window
+
+| Function | What it does | Code | Route | Docs and record | Tests and checks |
+|---|---|---|---|---|---|
+| **Runs...** (run window) | Every run, newest first: started, finished, working time, state, evaluations, first feasible, MOCK or real. A double click shows a run in the tabs; **Details** opens its record | `fe/RunList.tsx` | `GET /api/runs` | § The run window; 7.38 | `tw/test_wb_run_list.py`; `fs/run_list_check.mjs` |
+| **Run status** | State, budget, best design, connection, reward diagnostics. **Continue** (a paused, stopped or interrupted run, with a new total budget). **Export status (JSON)** | `fe/RunTabs.tsx` (`StatusTab`) | `GET /api/runs/status`, `POST /api/runs/continue` | § Start, Pause, Resume, Abort, § Getting a run's data out; 7.31, 7.84, 7.109 | `tw/test_wb_api.py`; `fs/export_check.mjs` |
+| **Logs** | Newest 200 entries; **Download full log** | `fe/RunTabs.tsx` (`LogsTab`) | `GET /api/runs/logs`, `GET /api/runs/download` | § Getting a run's data out; 7.31 | `tw/test_wb_read_efficiency.py`; `fs/export_check.mjs` |
+| **Data tables** | The run's raw tables. **Export detailed CSV**; **Export research CSVs** (zip of the experiment's aggregate tables) | `fe/RunTabs.tsx` (`DataTab`); `wb/aggregates.py` | `GET /api/runs/table`, `POST /api/runs/export-csv`, `POST /api/aggregates/export`, `GET /api/aggregates/download` | § Getting a run's data out; 7.31 | `tw/test_wb_aggregates.py`, `test_wb_api.py`; `fs/export_check.mjs` |
+| **Output files** | Every file of the run with a download icon; **Download data-only package (.zip)** | `fe/RunTabs.tsx` (`FilesTab`) | `GET /api/runs/files`, `GET /api/runs/download`, `POST /api/runs/export-package` | § Getting a run's data out; 7.31, 7.91 | `tw/test_wb_api.py`, `test_wb_read_efficiency.py`; `fs/files_tab_check.mjs`, `export_check.mjs` |
+| **Corner check** | Simulates a run's best designs again at five corners (`configs/gpdk045_conditions.json`) and gives a verdict per design. It has no task at the moment: saved tasks are qualified at nominal only | `fe/CornerCheck.tsx`; `wb/corner_check.py`; `opt/evaluation/corners.py` | `GET /api/runs/corner-check/plan`, `POST .../start`, `GET .../status`, `POST .../stop` | § Corner check; 7.62 | `tw/test_wb_corner_check.py`; `fs/corner_check_check.mjs` |
+| Live reading of the shown run | Every 1.5 s while the run can change by itself; 15 s for paused or stopped; once a minute when ended | `store.ts` (`usePolling`, `useRequest`), `App.tsx` | `GET /api/runs/status` | § Start, Pause, Resume, Abort; 7.99, 7.115, 7.125, 7.130 | `fs/request_lifecycle_check.mjs` |
+
+### 2.10 Agent tab
+
+| Function | What it does | Code | Route | Docs and record | Tests and checks |
+|---|---|---|---|---|---|
+| Providers, model and effort | Claude Code (`claude`), Codex (`codex exec`), or none. The model and effort lists are a table kept by hand from the vendors' documentation; any other model name is accepted ("Custom...") | `fe/AgentTab.tsx`; `wb/agents/claude_code.py`, `codex.py`, `disabled.py`, `catalog.py`, `base.py` | `GET /api/agent/settings`, `PUT /api/agent/settings`, `GET /api/agent/diagnostics` | § Agent providers; 7.6, 7.10, 7.14 | `tw/test_wb_agents.py`, `test_wb_agent_catalog.py`, `test_codex_strict_schemas.py`; `fs/agent_tab_check.mjs` |
+| The conversation in its own window | A pop-out control on the tab moves the chat into a browser window and back | `fe/AgentTab.tsx`, `fe/popupWindow.ts` | - | § The conversation in a window of its own; 7.14, 7.27 | `fs/agent_tab_check.mjs` |
+| Watching the answer being written | Thinking summary, steps and the reply stream in. No time limit; **Cancel request** keeps what arrived | `wb/agents/live.py` | `POST /api/agent/propose` (Server-Sent Events), `POST /api/agent/cancel` | § Watching the answer being written; 7.48, 7.50 | `tw/test_wb_agent_live.py`; `fs/agent_live_check.mjs` |
+| Proposals: diff, approve, apply, reject | Rows proposed by the agent change nothing until approved. Approval is bound to the proposal, configuration and circuit hashes. Apply works once | `wb/agents/proposals.py`, `wb/agents/prompts.py` | `POST /api/agent/approve`, `/api/agent/apply`, `/api/agent/reject` | § Agent providers; first build, 7.8, 7.135 | `tw/test_wb_api.py`, `test_wb_agent_setup.py`, `test_wb_round5_followup.py` |
+| Request kinds | `draft_config`, `parameters`, `targets`, `measurements`, `modify_fields`, `readiness`, `minimal_start`, `settings_review`, `run_review`, `virtuoso_setup`, `virtuoso_work` | `wb/agents/base.py` (`REQUEST_KINDS`), `wb/agents/prompts.py` | `POST /api/agent/propose` | § Agent providers | `tw/test_wb_agents.py` |
+| **What's missing?** and **Make it startable with the fewest changes** | A free checklist computed by the backend. Then one agent request (`readiness` or `minimal_start`) for what the agent can fix | `wb/agents/readiness.py`, `wb/agents/run_readiness.md` (the agent's editable brief) | `POST /api/agent/readiness` | § What is missing before the run can start; 7.16, 7.25, 7.46 | `tw/test_wb_agent_readiness.py` |
+| **Review settings** (optionally reading publications online) | Suggestions for the run settings, network, training and output, each tried on a copy; you apply them one by one | `wb/agents/settings_review.py` | `POST /api/agent/propose` | § Reviewing the settings; 7.36 | `tw/test_wb_agent_settings_review.py` |
+| **Review results** | The agent is given a digest of the run shown, never its files | `wb/agents/run_digest.py` | `POST /api/agent/propose` | § Letting the agent read a run's results; 7.39 | `tw/test_wb_agent_run_review.py` |
+| `virtuoso_setup` (**Ask the agent to set up**) | One proposal: rows plus the Maestro setup, written into the working copy on approval | `wb/agents/prompts.py`, `wb/working_copy.py` | `POST /api/agent/propose`, `/api/agent/apply` | § The agent sets the task up; 7.60 | `tw/test_wb_agent_setup.py`; `fs/agent_setup_check.mjs` |
+| `virtuoso_work` (the agent's own tools) | The agent reads Virtuoso and writes the working copy's Maestro setup itself, through the workbench's tools only (twelve writes at most) | `wb/agent_tools.py` (tool server), `wb/agents/tools.py` | `POST /api/agent/tools` | § The agent works in Virtuoso itself; 7.68 | `tw/test_wb_agent_tools.py` |
+| Without an agent | Export the task description, import a structured result | `wb/agents/disabled.py` | `POST /api/agent/export-task`, `/api/agent/import-result` | § Agent providers | `tw/test_wb_agents.py`, `test_wb_api.py` |
+| Sizing thread and hints (AI runs) | The thread of an AI sizing run, above the conversation; a hint applies to a future call and marks the run steered | `fe/SizingThread.tsx`; `wb/search.py` | `GET /api/runs/llm-thread`, `POST /api/runs/llm-hint` | `docs/llm-sizing.md` ("AI thread and evidence"); 7.116, 7.125, 7.131 | `tw/test_llm_providers_api.py`; `fs/llm_sizing_check.mjs` |
+| Agent processes stop with the backend | A backend shutdown cancels running agent CLIs | `wb/api/app.py` (lifespan), `wb/agents/base.py` | - | 7.135 | `tw/test_wb_round5_followup.py` |
+
+## 3. Runs: what happens behind the buttons
+
+| Function | What it does | Code | Docs and record | Tests |
+|---|---|---|---|---|
+| Run preparation and its gates | Builds the run folder only after validation, real authorization, the connection gate and the check before every run have passed | `wb/runs.py` (`prepare_run`), `wb/consistency.py`, `wb/connection.py` | § The check before every run; 7.5, 7.61 | `tw/test_wb_api.py`, `test_wb_real_bindings.py`, `test_wb_consistency.py` |
+| Run engine | A shared-budget scheduler around the optimizer's environment, learner and replay: dispatch, pause, resume, cancel, crash recovery | `wb/engine.py` (`RunEngine`), `wb/budget.py` | first build; § Start, Pause, Resume, Abort | `tw/test_wb_engine.py`, `test_wb_storage_budget_paths.py` |
+| Run lock | One worker per run. Its liveness test takes a shared lock, so two readers never mistake each other for a worker | `wb/engine.py` (`RunLock`) | 7.134 | `tw/test_wb_run_lock.py` |
+| Lanes | Each lane owns one environment, in a thread (MOCK) or a spawned process (real). Lanes open side by side (*uncommitted*) | `wb/lanes.py` (`ThreadLane`, `ProcessLane`, `open_lanes`); `opt/training/workers.py` | 7.136, 7.137 | `tw/test_wb_lanes_open.py`, `test_wb_engine_preparation.py` |
+| Every 5th reset simulated | Other resets start from the lane's last simulated reset, at no cost | `wb/engine.py` (`RESET_RECHECK_EVERY`), `wb/lanes.py` (`reset_reused`); `opt/envs/sizing.py` | § How a real run spends its simulations; 7.126, 7.133 | `tw/test_wb_reset_reuse.py`; `t/test_reset_recheck.py` |
+| Corner jobs two at a time | A candidate's corner simulations run two at once (tasks measured from Spectre's own results) | `opt/envs/sizing.py` (`condition_jobs`), `opt/training/parallel.py`, `opt/backends/virtuoso_bridge.py` | § How a real run spends its simulations; 7.126 | `t/test_parallel_corners.py` |
+| Failure limits | N consecutive failed evaluations end the run; N consecutive infrastructure failures pause it (resumable) | `wb/engine.py` | § Reward v2.1 controls and checks; 7.106, 7.135 | `tw/test_wb_engine.py`, `test_wb_round5_followup.py` |
+| Run modes | scratch, resume, fine_tune, frozen, each with a record of what was loaded and reset | `wb/modes.py`, `wb/checkpoints.py` | § Choosing which saved model to load | `tw/test_wb_modes_trajectory.py` |
+| Checkpoints | `latest`, `best_policy` and `best_design` kept strictly apart; a manual save point is never pruned | `wb/checkpoints.py`, `wb/best_design.py` | § Output layout | `tw/test_wb_modes_trajectory.py`, `test_wb_save_now.py` |
+| Output layout and raw data | Run folder, manifest, effective configuration, Parquet tables behind a write-ahead journal, data dictionary | `wb/layout.py`, `wb/storage/atomic.py`, `wb/storage/dataset.py`, `wb/storage/tables.py` | § Output layout | `tw/test_wb_storage_budget_paths.py`, `test_wb_read_efficiency.py` |
+| Run summary and research tables | `run_summary.json`, and six aggregate CSVs per experiment | `wb/summary.py`, `wb/aggregates.py` | § Output layout | `tw/test_wb_aggregates.py` |
+| Reload saved data | `DatasetReader` (tables), `TrajectoryLoader` (transitions as the optimizer's own objects) | `wb/storage/dataset.py`, `wb/trajectory.py` | § Reload saved data | `tw/test_wb_modes_trajectory.py` |
+| Task providers | Which circuit a task is and which backend evaluates it: saved Virtuoso tasks, ngspice tasks, and the tests' MOCK stand-in | `wb/tasks.py`, `wb/compile.py` | § What is real and what is mock; 7.59, 7.128 | `tw/test_wb_real_starter.py`, `test_wb_mock_task.py` |
+| Saved-task profiles | One file-driven profile per saved task, with its measurement recipe | `wb/generic_profile.py`, `wb/profiles.py`, `wb/recipes.py`, `wb/profile_preflight.py` | § Saving a task; 7.19, 7.21 | `tw/test_wb_generic_profile.py`, `test_wb_profiles.py` |
+| The form writer | A real run types any value the PDK's property form allows, length before width, then checks the readback | `wb/cdf_facts.py`, `wb/cdf_rules.py`, `wb/cdf_write.py`, `wb/cdf_factory.py` | § What a real run writes; 7.66, 7.127, 7.133 | `tw/test_wb_cdf_write.py` |
+| One Virtuoso preparation process | Writes every candidate into the cell and gives it a netlist, one at a time, for up to 4 Spectre lanes. The cell is read before and after each write, and after a native export (*uncommitted*) | `opt/backends/native_preparation.py`, `opt/backends/virtuoso_bridge.py` (`written_parameters`, `generate_netlist(just_written=True)`) | § How a real run spends its simulations; 7.136-7.138; `docs/decisions.md` | `t/test_native_preparation.py`, `t/test_bridge_adapter.py` |
+| Netlists built from the readback (*uncommitted*) | A real run's first candidate and every 5th get Virtuoso's export, compared statement by statement with the netlist built from the readback; a difference stops the run. The others get the built netlist (the same statements). `GATOR_NETLIST_BUILD` chooses: `skip` (the default), `check` (every candidate native and compared), `native` (nothing built); any other value is refused. Each manifest's `netlist_source` says which. The native export sets OCEAN up once per session, except for Maestro-recipe tasks | `opt/backends/native_preparation.py` (`NATIVE_EVERY`), `opt/backends/virtuoso_bridge.py` (`written_snapshot`, `generate_netlist(built=...)`, `_export_netlist`), `wb/cdf_write.py` (`CdfWritableProfile.render_export`) | § How a real run spends its simulations ("Netlists built from the readback"); 7.140, 7.142 | `t/test_native_preparation.py`, `tw/test_wb_cdf_write.py` |
+| Tasks measured by Maestro | Maestro's deck netlisted once at Save task; each evaluation measured with OCEAN on its own results | `wb/ocean.py`, `wb/virtuoso_setup.py` | § Running a task measured by Maestro; 7.63, 7.126 | `tw/test_wb_maestro_run.py`; `t/test_raw_format.py` |
+| Redaction | Credentials, tokens and licence output never leave the backend | `wb/security.py` | CLAUDE.md | `tw/test_wb_round5_safety.py` |
+| Units | Declared conversions only, never guessed from a name | `wb/units.py` | § Specs are equations over Probes | `tw/test_wb_schema_validation.py` |
+
+## 4. LLM sizing and the SKY130 benchmark
+
+The four search methods are in 2.7. This part is the benchmark around them. **The SKY130 benchmark is parked by the
+user's decision of 2026-09-30:** the calibration found zero passing designs in 4,800, mostly because of the settling
+target, made worse by fixed low bias currents. Two decisions are open: let SAC vary the bias current and calibrate
+again, or compare the methods on the MScR circuits on Spectre instead.
+
+| Function | What it does | Code | Docs and record | Tests |
+|---|---|---|---|---|
+| Sizing proposals and schedules | Bounded prompts, strict physical proposals, a duplicate check to a tolerance, warm-start and rescue schedules | `opt/search/llm.py`, `opt/search/proposers.py`, `opt/search/schedule.py`; `wb/search.py`, `wb/agents/sizing.py` | `docs/llm-sizing.md`; 7.116, 7.120 | `t/test_search.py`; `tw/test_llm_search.py`, `test_llm_audit_fixes.py` |
+| AnalogGym-Opt adapter | Pinned local adapter of the MIT benchmark; nothing of it is copied into the repository | `wb/analoggym.py`; `examples/import_analoggym.py`, `examples/check_analoggym.py` | `docs/brief-llm-sizing-for-astra.md`; 7.116 | `tw/test_analoggym_calibration.py` |
+| Calibration | Free calibration that re-simulates every passing design with the original evaluator | `examples/calibrate_analoggym.py` | `docs/llm-sizing.md` ("Benchmark and limits"); 7.119, 7.121 | `tw/test_analoggym_calibration.py` |
+| Comparison driver | Runs the arms (SAC, matched random, matched seeded, warm start, LLM only, rescue) through the workbench's own scheduler | `examples/benchmark_llm_sizing.py` | `docs/llm-sizing.md`; 7.116, 7.122 | `tw/test_llm_search.py` |
+| Comparison protocol v2 (*uncommitted*) | Equal 2,000-candidate budgets, constraint progress, every pass verified independently, a stop marker on disagreement | `examples/llm_sizing_evidence.py`; `wb/engine.py` (`evaluation_observer`) | 7.122, 7.123 | `tw/test_llm_benchmark_protocol.py` |
+
+## 5. The optimizer package (`src/analog_optimizer/`)
+
+Protected by the source digest (`opt/training/sac.py::source_digest()`): any edit changes it, and checkpoints then
+resume only under the matching source. The rule is in CLAUDE.md; the digest history is at the top of `docs/decisions.md`.
+
+| Part | What it does | Code | Docs | Tests |
+|---|---|---|---|---|
+| Netlist reader | A bounded Spectre dialect: tokens with source locations, whitelisted arithmetic (never `eval`), PWL arrays | `opt/netlist/spectre_parser.py`, `expressions.py`, `config.py` | `docs/verification.md`, `docs/m1-neural-inputs.md` | `t/test_parser.py` |
+| Circuit graph | Devices, nets and groups independent of Cadence and torch; tensor views; PyG `HeteroData`. A value within a relative 1e-12 of a bound counts as that bound (7.140, *uncommitted*) | `opt/graph/circuit_graph.py`, `neural.py`, `pyg_converter.py` | `docs/m1-neural-inputs.md` | `t/test_neural_graph.py`, `t/test_pyg.py`, `t/test_groups.py`, `t/test_bound_slack.py` |
+| Actions | Group actions mapped to physical sizes; `encode` allows the same 1e-12 bound slack as the circuit graph (7.140, *uncommitted*) | `opt/parameters/actions.py` | `docs/m4-graph-sac.md` | `t/test_actions.py`, `t/test_bound_slack.py` |
+| Encoders and inputs | Graph Transformer, RGCN and GATv2 behind one contract; packed inputs with bounded caches; the component list (`FeatureSchema`) | `opt/models/encoders.py`, `graph_transformer.py`, `inputs.py` | `docs/encoder-ablation.md`, `docs/input-tensor-cache.md`, `docs/network-presets.md` | `t/test_graph_sac.py`, `t/test_input_cache.py` |
+| SAC and training | CPU SAC with packed action dimensions; replay admission; single-worker and parallel collection; spawned workers; recovery | `opt/training/sac.py`, `replay.py`, `runner.py`, `parallel.py`, `workers.py`, `recovery.py`, `runtime.py` | `docs/m4-graph-sac.md`, `docs/parallel-spectre-sac.md`, `docs/runtime-reliability.md` | `t/test_graph_sac.py`, `t/test_parallel_training.py`, `t/test_runtime_recovery.py` |
+| Sizing environment and reward | `CircuitSizingEnv`: reward v2/v2.1, test conditions, corner jobs, reused resets | `opt/envs/sizing.py` | `docs/reward-v2.md`, `docs/opamp-environment.md` | `t/test_sizing_env.py`, `t/test_reward_v2*.py`, `t/test_reward_v21_*.py`, `t/test_parallel_corners.py`, `t/test_reset_recheck.py`, `t/test_optimizer_round5.py` |
+| Backends | The backend contract; MOCK and synthetic fixtures; the Virtuoso bridge adapter; the one preparation process; conditions | `opt/backends/backend.py`, `mock.py`, `synthetic_sizing.py`, `synthetic_category.py`, `virtuoso_bridge.py`, `native_preparation.py`, `conditions.py`, `provenance.py`, `spectre_validation.py` | `docs/opamp-backend.md`, `docs/native-cdf-real-verification.md`, `docs/pvt-mc-interfaces.md` | `t/test_backend.py`, `t/test_bridge_adapter.py`, `t/test_native_preparation.py`, `t/test_conditions.py`, `t/test_real_export.py`, `t/test_raw_format.py`, `t/test_spectre_validation.py` |
+| Research circuit profiles | Verified GPDK045 OTA, two-stage OTA, LDO and VCO (used by the M5/M6 research scripts; their workbench tasks are gone) | `opt/backends/gpdk045.py`, `gpdk045_two_stage.py`, `gpdk045_ldo.py`, `gpdk045_vco.py` | `docs/opamp-baseline.md`, `docs/m5-real-topology.md`, `docs/m6-ldo-baseline.md`, `docs/m6-vco-baseline.md` | `t/test_vco.py`, `t/test_ldo.py`, `t/test_vco_requalification.py` |
+| Measurements | AC gain, OTA, LDO and VCO measurements; unit-aware spec evaluation | `opt/measurements/ac.py`, `opamp.py`, `ldo.py`, `vco.py`, `specs.py` | `docs/m6-vco-runtime.md` | `t/test_ac_measurements.py`, `t/test_specs.py`, `t/test_vco.py`, `t/test_ldo.py` |
+| Evaluation and benchmarks | Corner grading (`summarize_corners`), M5 transfer, M6 cross-category (synthetic and the frozen real pilot), parallel seeds | `opt/evaluation/corners.py`, `transfer.py`, `cross_category.py`, `real_category.py`, `benchmark.py`, `parallel.py`, `runtime.py`, `streaming.py` | `docs/m5-transfer.md`, `docs/m6-cross-category.md`, `docs/m6-real-protocol.md`, `docs/m6-real-results.md` | `t/test_transfer.py`, `t/test_cross_category.py`, `t/test_benchmark_runtime.py`, `t/test_corner_summary.py` |
+| Experiment recording | SQLite store, recording hooks, checkpoints, codec, reader and export, remote scratch; `python -m analog_optimizer.recording <root> runs\|show\|summary\|pending\|usage\|export` | `opt/recording/` | `docs/experiment-recording.md`, `docs/recording-*.md` | `t/test_recording.py`, `t/test_recording_overhead.py` |
+| Demo | `analog-graph-demo` (`demo.py --homogeneous`): read a netlist and print the tensors | `opt/demo.py` | `docs/verification.md` | - |
+
+## 6. Scripts (`examples/`)
+
+Several of these are pinned by hash as M5/M6 evidence: never edit, reformat or move them (CLAUDE.md).
+
+| Group | Scripts | What they are for |
+|---|---|---|
+| Real circuit builds and qualification | `build_opamp_baseline.py`, `build_two_stage_ota.py`, `build_ldo_baseline.py`, `build_vco_baseline.py`; `verify_opamp_backend.py`, `verify_opamp_environment.py`, `verify_two_stage_ota.py`, `verify_ldo_baseline.py`, `verify_ldo_environment.py`, `verify_vco_baseline.py`, `verify_vco_environment.py`; `simulate_opamp_baseline.py`, `analyze_opamp_baseline.py`, `compare_opamp_baseline.py`, `opamp_connection.py` | Build each research circuit in Virtuoso, then qualify the backend and the environment on it |
+| Training | `train_synthetic_sac.py`, `train_opamp_sac_smoke.py`, `train_opamp_sac_parallel.py` | M4 acceptance runs (synthetic and real) and parallel Spectre training |
+| M5 and M6 benchmarks and audits | `benchmark_transfer.py`, `benchmark_real_topology.py`, `audit_real_topology.py`, `benchmark_cross_category.py`, `audit_cross_category.py`, `benchmark_real_cross_category.py`, `audit_real_cross_category.py`, `audit_ldo_baseline.py`, `audit_vco_baseline.py` | The frozen M5/M6 experiments and their independent audits. Since record 7.128 they re-validate from a checkout before that commit |
+| VCO precision and runtime | `compare_vco_precision.py`, `compare_vco_runtime.py`, `requalify_vco_designs.py`, `vco_requalification.py` | M6 VCO fast policy and its strict requalification |
+| Recording | `benchmark_recording.py`, `benchmark_recording_overhead.py`, `save_recording_summary.py`, `benchmark_input_cache.py` | Recording and input-cache timings, offline |
+| Reward v2 | `freeze_reward_v2_baseline.py`, `qualify_reward_v2_real.py`, `qualify_reward_v2_learning.py`, `report_reward_v2_acceptance.py`, `report_reward_v2_real_acceptance.py`, `check_reward_identity.py` | Reward v2 qualification and reports (`docs/reward-v2.md`) |
+| LLM sizing and AnalogGym | `import_analoggym.py`, `check_analoggym.py`, `calibrate_analoggym.py`, `benchmark_llm_sizing.py`, `llm_sizing_evidence.py` (*uncommitted*) | Section 4 |
+| Netlist demo | `netlist_demo.py` | The demo entry point |
+| Example circuits | `examples/circuits/gpdk045_ota5.scs` (+ `.cdf.json`), `gpdk045_vco.scs` (+ `.cdf.json`), `ngspice_ota5_level1.cir` | The OTA5 netlist is the tests' MOCK stand-in; the VCO netlist is read by `t/test_vco.py`; the ngspice OTA is the ngspice window's **Example** |
+
+## 7. Tests and checks
+
+| Function | What it does | Where | Docs and record |
+|---|---|---|---|
+| Full regression | `OMP_NUM_THREADS=1 ~/analog-optimizer-venv/bin/python -m pytest -q -n 12 --dist loadgroup`, about 1-3 min | `tests/`, `tests/conftest.py`, `pyproject.toml` (`xdist_group`) | CLAUDE.md; 7.117 |
+| Isolation | Tests never touch the live settings folder; the MOCK stand-in is registered through `GATOR_WORKBENCH_SYNTHETIC_FIXTURES` | `tests/conftest.py`, `tw/helpers.py`, `tw/fixtures/synthetic_fixtures.json` | § What is real and what is mock; 7.128 |
+| Fakes | Fake agent CLI, fake bridge clients and probe processes, recorded real streams and form rules | `tw/fixtures/` (`fake_cli.py`, `claude_live_recorded.ndjson`, `ring_osc/`, `pdk_demo/`) | § Tests |
+| Browser checks | 38 headless-Edge check scripts against scratch backends, 4 lanes, `--only`, `--skip`, `--retry-failed` | `fs/run_checks.sh`, `fs/run_checks.mjs`, `fs/lib/harness.mjs`, `fs/fixtures/` | § Tests; 7.64, 7.115 |
+| Request lifecycle and reliability | Late replies, cancellation, deadlines, storage failures, narrow layouts | `fs/request_lifecycle_check.mjs` (Vite source preview), `fs/reliability_check.mjs` | § Code organization; 7.130 |
+
+## 8. Removed or replaced functions
+
+Old configurations that name a removed function still load with their hashes unchanged, unless the row says otherwise.
+
+| Removed | When, record | What instead |
+|---|---|---|
+| Circuit source "Import Spectre netlist" | 2026-09-21, 7.53 | Saved Virtuoso tasks and ngspice tasks; the schema keeps the field for old hashes |
+| Four toy MOCK tasks | 2026-09-22, 7.59 | One MOCK task, then none (next row) |
+| MOCK task `synthetic:gpdk045_ota5` | 2026-09-30, 7.128 | Only the tests register it, as a stand-in |
+| `real:gpdk045_ota5`, `real:gpdk045_vco` | 2026-09-23, 7.73 | Tasks saved from your own cells (the MScR library) |
+| `real:gpdk045_ota7`, `real:gpdk045_ldo` with their example netlists and configurations | 2026-09-30, 7.128 | The same; the M5/M6 audits re-validate from an older checkout |
+| **Create profile** form | 2026-09-22, 7.57 | **Save task** and the task file |
+| **Make a working copy** (`<library>_GATOR`) and **Save as** in the page | 2026-09-23, 7.72 | You copy the cell in Virtuoso and declare it on the read. `POST /api/virtuoso/copy` refuses; Save as remains for the API |
+| **Write to Virtuoso**, **Use in editors**, the editors' own **Save** | 2026-09-22, 7.65 | **Save task** writes the copy; **Read setup** reads and takes over; autosave |
+| **Check against Virtuoso** | 2026-09-22, 7.61 | **Check now** |
+| **Ask the agent for suggestions** | 2026-09-22, 7.60 | **Ask the agent to set up** |
+| Run status tab's run commands, **Bring it back here**, **Record the baseline run as reference**, the header's **Static validation**, the Virtuoso window's **Open**, `run.threads_per_job` | 2026-09-29, 7.109 | The header's run buttons; the pop-out control; the baseline records itself (7.78) |
+| Encoders `port_gnn`; `mlp` and `gcn`; GATv1 `gat` | 2026-09-24, 7.83; 2026-09-26, 7.86, 7.87 | Graph Transformer, RGCN, GATv2. Old configurations naming them are refused |
+| Fourteen Parameters and Probes columns; Probes' `conditions` and `aggregation` | 2026-09-26, 7.92; 2026-09-29, 7.105 | Retired with a load-time migration (`schema.RETIRED_*`) |
+| The connection panel's 15 s status poll and its check on page load | 2026-09-20, 7.9 | A check on a press only; since 2026-09-24 (7.80) also one test when the page opens |
+| **Load PDK** in the RL network block | 2026-09-27, 7.100 | The PDK is read with the cell; **PDK window...** in the Virtuoso window |
+| The run drop-down of the bottom tabs | 2026-09-21, 7.38 | **Runs...** |
+| The agent's 300 s time limit; the send button | 2026-09-21, 7.48; 7.29 | **Cancel request**; Enter sends |
+| Shortcut buttons to the built-in tasks; the View box | 2026-09-21, 7.40; 7.15 | The Task list; the reader always opens `schematic` |
+
+## 9. Plans and parked work (not built)
+
+| What | Where | State |
+|---|---|---|
+| Finalist Monte Carlo check | `docs/plan-finalist-monte-carlo.md`; 7.103, 7.104 | Plan only, decisions open. It names OTA7 and LDO, which are gone since 7.128 |
+| OTA7 with a current-reference bias | `docs/plan-ota7-current-reference-variant.md`; 7.110 | Plan only |
+| Robust reward and wider network input | `docs/plan-robust-reward-and-network.md`, `docs/plan-reward-v2-real-flow.md` | Reward v2/v2.1 and corner training built from it; the Monte Carlo part not built |
+| Faster netlist export (options A-D) | 7.138, 7.140, 7.142 | A and B built (rows in section 3): A is on by default, B is not used by Maestro-recipe tasks. C (one SKILL call per candidate) and D (a second Virtuoso session) are not built |
+| SKY130 benchmark | Section 4 | Parked by the user (2026-09-30) |
+
+## 10. Where things are recorded
+
+| Record | Holds |
+|---|---|
+| `docs/decisions.md` | The current state (optimizer digest, encoders, reward, tasks) at its top, then the chronological decisions since M1 |
+| `docs/workbench.md` | What every workbench function does now (maintained in place) |
+| `docs/functionality-reference.md` | This file: every function and where it is (maintained in place) |
+| `docs/frontend_implementation_status.md` | The index of the development record: one row per entry |
+| `docs/workbench-log/` | The entries themselves (open file: `7.119-and-later.md`), and `record-history.md` (the record's history and the commit table) |
+| `gator_claude_code_fable51_frontend_data_outputs_en.md` | The workbench specification (untracked on purpose) |
+| `CLAUDE.md` | Rules for sessions: digest, evidence pinning, real-simulation authorization, data-only outputs |
+| `.agents/skills/analog-optimizer/` | The research-side rules for M1-M6 (a Codex-style skill; read it as documentation) |
+| `docs/m*-*.md`, `docs/reward-v2.md`, `docs/llm-sizing.md`, `docs/network-presets.md` | Milestone and feature reports |
+| `artifacts/local/` (git-ignored) | Evidence: run outputs, audits, reviews, acceptance summaries |

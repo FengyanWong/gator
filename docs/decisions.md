@@ -16,7 +16,7 @@ A summary for new sessions; everything below is the chronological record, oldest
   (`always`, `after_nominal`) was offered for `real:gpdk045_ota7` only; no task has it since 2026-09-30 (7.128).
 - **Older checkpoints** resume exactly only under their own source: digest `02127bc3...` (M6 pilot, six encoders) from
   `bbdfe36`; `aa987cf0...` (five encoders incl. MLP, GCN, GATv1) from `9bc488f`; `f087a4ce...` (reward v2) from
-  `1135b8b` up to the commit before `8cf53ae`; `3f00832c...` (reward v2.1) from `8cf53ae` up to the commit before `4634200`; `100945fb...` (LLM sizing) from `4634200` up to the commit before `898b134`; `f42a3098...` (record 7.126) from `898b134` up to the commit before `5362ebb`. Digests never committed (`75c7cfac...`, `5e8a1bc1...`, `11e62657...`, `3473ed9c...`, and
+  `1135b8b` up to the commit before `8cf53ae`; `3f00832c...` (reward v2.1) from `8cf53ae` up to the commit before `4634200`; `100945fb...` (LLM sizing) from `4634200` up to the commit before `898b134`; `f42a3098...` (record 7.126) from `898b134` up to the commit before `5362ebb`; `0d045b8e...` (record 7.129) from `5362ebb` up to the commit before `8edbf6d`. Digests never committed (`75c7cfac...`, `5e8a1bc1...`, `11e62657...`, `3473ed9c...`, and
   `27a36b2b...`, the LLM sizing build before the duplicate-check fix, which Astra's acceptance evidence names) are in
   the entries below.
 - **Tasks:** since 2026-09-30 (record 7.128) the workbench offers only the user's saved tasks (the MScR library) and

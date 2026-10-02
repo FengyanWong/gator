@@ -26,6 +26,9 @@ lists every section with its line number; a section says what its feature does N
 [Code organization](#code-organization) ·
 [Tests](#tests)
 
+Where each function lives - its button, code, route, record entries, tests and browser checks - is listed in
+[functionality-reference.md](functionality-reference.md) (2026-10-02, record 7.139).
+
 Workbench code lives in `src/gator_workbench/` and `frontend/`. Optimizer edits require explicit
 permission because `training/sac.py::source_digest()` gates checkpoint loading and the M5/M6 audits.
 The user granted it for reward v2 (2026-09-26, [plan](plan-reward-v2-real-flow.md)) and reward v2.1

@@ -137,6 +137,7 @@ One row per commit, newest last.
 | `00fc084` | 09-22 19:56 | 7.68 | |
 | `0fea6b1` | 09-23 02:07 | 7.53 | the departed session's netlist removal, committed on the user's decision |
 | `bfcfb2d` | 09-23 03:10 | 7.69 | review round 2; also the rollover rule and the lists in this file |
+| `715aaa2` | 09-23 03:11 | - | record only: names the commit that carries review round 2 (7.69); its row was added on 2026-10-02 (7.139) |
 | `e4ef6b4` | 09-23 03:54 | 7.70 | review round 3: identical code merged only; nothing under `src/analog_optimizer` |
 | `8bb464e` | 09-23 03:55 | - | record only: names the commit of 7.70 |
 | `043386a` | 09-23 16:25 | 7.72 | Virtuoso cellview import in a window; the user's copy declared on the read |

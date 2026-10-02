@@ -8,9 +8,10 @@ map (`grep -n '^##' docs/workbench.md`) and read only the section of the feature
 feature got there: entries 7.1 onwards, newest last, append-only; a later entry supersedes an earlier one without editing
 it. Read only the entries of your area: find them in the table below, or search the log, for example
 `grep -n 'Matched devices' docs/workbench-log/*.md` (`grep -n '^### 7\.' docs/workbench-log/*.md` lists every entry).
-Do not redo completed modules from conversational memory. The record's history (what the first build got wrong, entries
-a later one reversed, the modules each entry added, known slips) and the commit table are in
-[`record-history.md`](workbench-log/record-history.md).
+Where each function lives (its button, code, route, entries, tests and browser checks) is listed in
+[`functionality-reference.md`](functionality-reference.md), kept current in place. Do not redo completed modules from
+conversational memory. The record's history (what the first build got wrong, entries a later one reversed, the modules
+each entry added, known slips) and the commit table are in [`record-history.md`](workbench-log/record-history.md).
 
 | File | Holds |
 |---|---|
@@ -176,3 +177,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.133 | Follow-ups: the other five MScR tasks run cleanly with the fixed form writer; the ngspice refusal test back; the warm-start note counts only paid resets |
 | 7.134 | The header's flip-back after Abort: the run lock's liveness test took the lock exclusively and was seen as a worker by a test at the same moment; tests now share the lock, acquire waits 0.2 s |
 | 7.135 | Round 5 open items: agent CLIs stop with the backend, infrastructure pauses resumable, Apply once; random test failures explained |
+| 7.139 | Check of the work so far, and `docs/functionality-reference.md`: every function with its code, route, entries, tests, checks |

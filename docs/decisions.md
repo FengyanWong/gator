@@ -2,11 +2,11 @@
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
-- **Optimizer source digest:** in the working tree `34bc85f4472fddf90a0245515121c4ffc2dd4632ce30561c9026e46efb41e89b`
-  (records 7.137, 7.140, 7.142 and 7.143, not committed: the native preparation reads the cell three times per
+- **Optimizer source digest:** `34bc85f4472fddf90a0245515121c4ffc2dd4632ce30561c9026e46efb41e89b`, set by `1c308a5`
+  (records 7.137, 7.140, 7.142 and 7.143, 2026-10-02: the native preparation reads the cell three times per
   candidate, not five; by default it builds most netlists from the readback, with a native export every 5th candidate; a
   value one float step past its bound counts as the bound, in the group check and in `ActionMapper.encode`; up to 6
-  Spectre lanes instead of 4). Committed:
+  Spectre lanes instead of 4). Before it:
   `41983cc7977168096a9517cdd08528e84a7ea2bd18ea76b0777e1ccbb0c8234e`, set by `c700032`
   (record 7.144: the GPDK045 profiles' copied checks merged, behaviour identical, 2026-10-02). Before it:
   `4632786135d13ed7775237f3139c37f4848e7b40e0efe7b0b0360bafb5df7270`, set by `8edbf6d`
@@ -23,7 +23,7 @@ A summary for new sessions; everything below is the chronological record, oldest
   (`always`, `after_nominal`) was offered for `real:gpdk045_ota7` only; no task has it since 2026-09-30 (7.128).
 - **Older checkpoints** resume exactly only under their own source: digest `02127bc3...` (M6 pilot, six encoders) from
   `bbdfe36`; `aa987cf0...` (five encoders incl. MLP, GCN, GATv1) from `9bc488f`; `f087a4ce...` (reward v2) from
-  `1135b8b` up to the commit before `8cf53ae`; `3f00832c...` (reward v2.1) from `8cf53ae` up to the commit before `4634200`; `100945fb...` (LLM sizing) from `4634200` up to the commit before `898b134`; `f42a3098...` (record 7.126) from `898b134` up to the commit before `5362ebb`; `0d045b8e...` (record 7.129) from `5362ebb` up to the commit before `8edbf6d`; `46327861...` (record 7.132) from `8edbf6d` up to the commit before `c700032`. Digests never committed (`75c7cfac...`, `5e8a1bc1...`, `11e62657...`, `3473ed9c...`, and
+  `1135b8b` up to the commit before `8cf53ae`; `3f00832c...` (reward v2.1) from `8cf53ae` up to the commit before `4634200`; `100945fb...` (LLM sizing) from `4634200` up to the commit before `898b134`; `f42a3098...` (record 7.126) from `898b134` up to the commit before `5362ebb`; `0d045b8e...` (record 7.129) from `5362ebb` up to the commit before `8edbf6d`; `46327861...` (record 7.132) from `8edbf6d` up to the commit before `c700032`; `41983cc7...` (record 7.144) from `c700032` up to the commit before `1c308a5`. Digests never committed (`66ce02ab...`, `046e35c6...`, `78e8ca37...`, `c3a340b9...`, `e3f8c5b8...` and `efa93649...`, the working trees of records 7.137-7.143, used by scratch trial runs only; `75c7cfac...`, `5e8a1bc1...`, `11e62657...`, `3473ed9c...`, and
   `27a36b2b...`, the LLM sizing build before the duplicate-check fix, which Astra's acceptance evidence names) are in
   the entries below.
 - **Tasks:** since 2026-09-30 (record 7.128) the workbench offers only the user's saved tasks (the MScR library) and
@@ -690,7 +690,8 @@ export refused. Other callers of `generate_netlist` are unchanged. The saving is
 `mscr_ota7t` and about 0.85 s on `mscr_vco_lin`.
 
 Optimizer digest `46327861…` -> `66ce02ab91eda506b52a2a727746ff370b7517383eaf3680d507a647caf54797`: checkpoints saved
-under an earlier digest no longer `resume` (`fine_tune` and `frozen` still load). Not committed. Record 7.137.
+under an earlier digest no longer `resume` (`fine_tune` and `frozen` still load). Committed as `1c308a5` (optimizer)
+and `8043c07`. Record 7.137.
 
 ## Netlists built from the readback, checked against every native export; a value at its bound is accepted (2026-10-02)
 
@@ -722,8 +723,8 @@ Results:
 
 Optimizer digest `66ce02ab…` -> `c3a340b9c426742923327c881dcf04d2eeab89efa7a4e1e192b348e89de4513b`. It is one
 uncommitted step with 7.137: checkpoints saved under an earlier digest no longer `resume`, while `fine_tune` and
-`frozen` still load. Skipping native exports, and the set-up-once export, are open for the user to decide. Not
-committed. Record 7.140.
+`frozen` still load. Skipping native exports, and the set-up-once export, are open for the user to decide. Committed as
+`1c308a5` (optimizer) and `8043c07`. Record 7.140.
 
 ## Real runs build most netlists from the readback; OCEAN set up once per export session (2026-10-02)
 
@@ -750,7 +751,7 @@ On Spectre at 4 lanes (20 evaluations each, cells equal to their records afterwa
 - `mscr_vco_lin`: 2.0 s, unchanged, because its transient jobs set the pace.
 
 Optimizer digest `c3a340b9…` -> `e3f8c5b84c4480f5dcc1feec9539e1635b18306f7ceea86e5e5b2d229ae51315`, the same
-uncommitted step as 7.137 and 7.140. Not committed. Record 7.142.
+uncommitted step as 7.137 and 7.140. Committed as `1c308a5` (optimizer) and `8043c07`. Record 7.142.
 
 ## Up to 6 Spectre lanes for a real task (2026-10-02)
 
@@ -769,4 +770,4 @@ slower on the shared CPUs. The preparation process was busy 71-79% again, so mor
 cheaper preparation or a Spectre that stays running between jobs.
 
 Optimizer digest `e3f8c5b8…` -> `efa93649d1e792602174994abf4a019e23e9dcf2ccef9ef0e1dd25a1beaab7ca`, the same
-uncommitted step as 7.137, 7.140 and 7.142. Not committed. Record 7.143.
+uncommitted step as 7.137, 7.140 and 7.142. Committed as `1c308a5` (optimizer) and `8043c07`. Record 7.143.

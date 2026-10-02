@@ -180,7 +180,8 @@ await runChecks(browser, async () => {
   const numeric = name => `[...${RIGHT}.querySelectorAll('label')].find(l => l.firstChild?.textContent?.trim() === ${JSON.stringify(name)})?.querySelector('input')`;
   const beforeUnrelated = asked.length;
   await page.setValue(numeric('Evaluation budget (max_evaluations)'), '123');
-  await page.setValue(`[...document.querySelectorAll('.left label')].find(l => l.firstChild?.textContent?.trim() === 'Name')?.querySelector('input')`, 'fixture-renamed');
+  const renamed = await page.setValue(`[...document.querySelectorAll('.left label')].find(l => l.firstChild?.textContent?.trim() === 'Project name')?.querySelector('input')`, 'fixture-renamed');
+  check('the project name box is found and renamed ("Name" until record 7.146)', renamed === 'fixture-renamed', String(renamed));
   await sleep(800);
   check('budget and project label edits do not re-inspect the checkpoint', asked.length === beforeUnrelated, `${beforeUnrelated} -> ${asked.length}`);
   await page.setValue(numeric('Random seed (target task)'), '19');

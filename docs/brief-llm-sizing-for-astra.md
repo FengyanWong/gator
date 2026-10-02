@@ -1,6 +1,6 @@
 # Brief for Astra: SAC and LLM sizing modes, with a free SKY130 benchmark
 
-> **Status (2026-09-30): IMPLEMENTED; free calibration complete, comparison qualification unresolved; paid slices unapproved.**
+> **Status (2026-09-30): IMPLEMENTED; free baseline calibration complete; comparison protocol revised; paid slices unapproved.**
 > Its precondition, reward v2.1 finished and committed, was met on 2026-09-29
 > (`8cf53ae`, `8db46b8`, audit fixes `7d365c3`). For this work it overrides the no-LLM rule ("no LLM search / no LLM inner
 > loop") of the Codex skill `.agents/skills/analog-optimizer`.
@@ -24,12 +24,22 @@ FOML, FOMS, Power, GBW and all other outputs are descriptive on the best feasibl
 tied at zero, the existing workbench selects the earliest passing design. Bias currents are fixed at upstream
 starting values for **every** arm, including every LLM arm; record this benchmark deviation in `plan-benchmark.json`.
 Do not extend the optimizer package for current units. Separately assess a workbench-created current FeatureSchema
-read-only. Before/during calibration independently re-simulate **every** GATOR-passing design in the original
+read-only. During calibration **and every comparison arm**, independently re-simulate **every** GATOR-passing design in the original
 upstream evaluator: all values must agree at 1e-9 relative tolerance and verdicts must match. Any disagreement stops
-calibration; report the positive-design checks under G9 (the original 205 comparisons contained zero passes).
+comparison or calibration; report the positive-design checks under G9 (the original 205 comparisons contained zero passes).
+Verification launches and elapsed time are separate overhead, never extra search candidates or learning data.
+Zero observed passes means positive parity is unqualified; it does not disqualify a circuit from further search.
 Before any commit, run the complete suite on the final tree. Audit all sizing and Agent-tab Codex schemas for
 strict object rules; sizing must pass, while Agent-tab changes are only to be listed, not implemented. G10's earlier
 unauthorized, server-rejected request remains a failed gate; an offline schema audit does not erase it.
+
+**User's benchmark revision, 2026-09-30:** the completed 60-evaluation random/pattern runs are short baseline
+evidence, not a reachability test or a circuit selection requirement. Eligible imports must still pass B3. Compare
+all four methods with the same longer per-run budget and report uncapped constraint-violation progress alongside
+success. The planning default is **2,000 candidate evaluations per circuit/method/seed**, including resets and
+failures, with no success-based early stop; this is an engineering starting budget, not a guarantee of feasibility
+or approval to spend on LLM calls. The user's optional budget choice remains open until execution is frozen.
+Keep the completed calibration evidence unchanged and record this prospective protocol separately in the plan.
 
 It comes AFTER [brief-reward-v2.1-for-astra.md](brief-reward-v2.1-for-astra.md). Both change `src/analog_optimizer/`,
 and both touch `ngspice_backend.py`, `frontend/src/panels/Right.tsx` and `agents/run_digest.py`. Start this brief only
@@ -505,7 +515,8 @@ Carlo plan also edit it.
 **B2 Importer**, a NEW file `examples/import_analoggym.py`. It turns a circuit's YAML and testbenches into an
 `ngspice:<name>` task:
 - The deck.
-- Parameter rows: W and L on their grid; multipliers as `integer` rows; bias currents on a `log` scale.
+- Parameter rows: W and L on their grid; multipliers as `integer` rows. Bias currents stay fixed at the upstream
+  starting values and are absent from the mutable domain in every arm (the user-authorized deviation).
 - Probe rows: every value the benchmark measures.
 - Spec rows: the benchmark's own pass rule, read from its evaluator code (`AmpEnv.py`, `LdoEnv.py`), not guessed from
   the YAML. Under the 2026-09-30 decision, all after-feasible directions are `none`; former objective metrics
@@ -519,16 +530,21 @@ extend the ngspice backend to run several decks per candidate (a W item, covered
   run locally, to 1e-9 relative. The benchmark's pass/fail verdict must match too.
 - A circuit that fails is left out and reported. Never loosen the comparison to make it pass.
 
-**B4 Calibration** (free), with fixed seeds, per circuit that passed B3:
-- random search, 5 runs × 60 simulations;
-- pattern search, 3 runs × 60 simulations.
+**B4 Baseline evidence and circuit selection.** The completed free calibration used five random runs and
+three deterministic pattern runs of 60 evaluations per B3-eligible circuit. Preserve its 80 runs / 4,800 candidates
+and zero passes as historical evidence. The three pattern seed labels produced the same trajectory; they are not
+three independent repeats. Do not repeat those short runs to qualify a circuit.
 
-Choose 3 amplifiers where random search succeeds in at most 1 of 5 runs, and pattern search, or AnalogGym-Opt's own RL
-(optional; CPU only), shows the specs are reachable. Add `ldo_basic` if it passed B3.
+Eligibility is based on B3 import/domain correctness and evaluator agreement. Neither a pattern-search pass within
+60 evaluations nor a random-success threshold is a selection requirement. Failure to find a feasible design in
+those short runs is not proof of unreachability. Keep real parity failures and invalid starting domains excluded.
+Use the first three B3-eligible amplifiers alphabetically as the planned cohort, independently of search outcomes;
+the first is the single-circuit pilot. The remaining B3-eligible circuits stay eligible, not failed. Include LDO
+only after its B3 problems are resolved. The planned cohort is `amp_acbc`, `amp_affc`, `amp_az`; pilot `amp_acbc`.
 
-Write `artifacts/local/llm-sizing/calibration/summary.json` and a plan file
-`artifacts/local/llm-sizing/plan-benchmark.json`: benchmark commit, licence, circuits, seeds, budgets, the chosen
-circuits and why.
+Write the current protocol to `artifacts/local/llm-sizing/plan-benchmark.json`: benchmark commit, licence, eligible
+pool, deterministic selection rule, seeds, common budget, fixed domain/scoring, verification policy and model-call
+ceilings. Preserve the original `calibration/summary.json` and plan snapshot; their old selection result is historical.
 
 **B5 Where the data goes.** Imported tasks stay in `configs/local` and are not committed; committing them is decision L3.
 Do not clone, copy or run anything from AMS-SizingBench (`yuxi120407/AutoSizer`). It has no licence file.
@@ -555,13 +571,36 @@ Use the same circuit, starting design, parameter domain, targets, reward, episod
 initialization seed, batch size, W, U, online update schedule, concurrency and stopping rules across matched arms.
 Keep plain SAC's existing schedule intact and disclose that difference. Report initial and online updates separately.
 Pin W/U on development runs before held-out comparisons; do not tune them on the reported evaluation runs. Calibration
-chooses difficult reachable tasks and must be disclosed; it is not evidence of general superiority.
+is descriptive baseline evidence and must be disclosed; it neither proves reachability nor establishes superiority.
 
-Count all candidate evaluations, including resets, initial data and failures. A retry retains its evaluation ID;
-count every actual simulator launch/analysis and retry separately. Report feasibility, simulations and time to first feasible,
-best violation/quality at the budget, LLM calls/tokens/cost, LLM waiting time, initial training time and total runtime.
-Unknown token/cost values remain null. An unfinished or unsuccessful run stays in the report. Keep steered and
-degraded starts separate and visible. Also retain standalone random and pattern-search benchmark references.
+Use a common planning budget of **2,000 candidate evaluations per run** for SAC, every LLM mode and numeric
+controls/references, with seeds 17, 29 and 43, concurrency 1 and no first-feasible early stop. Freeze the chosen
+budget before starting a comparison; never extend only a failing method or tune the budget from reported outcomes.
+The driver requires the saved comparison plan and rejects a different candidate budget or a competing wall/launch
+limit. Runs execute serially under one shared output root. The larger budget gives a longer search opportunity;
+it does not establish that these targets are reachable with the fixed bias domain.
+
+Count every candidate evaluation, including resets, initial data, repeated designs and failures. A retry retains its
+evaluation ID; count every simulator launch/analysis and retry separately. Independently re-simulate **every**
+GATOR-passing evaluation (including a passing reset or repeat) in both original upstream testbenches. Compare all
+metrics at 1e-9 relative tolerance, no absolute floor, and require identical verdicts. Record false-negative verdict
+disagreements too. A disagreement or unresolved verification stops the comparison and blocks subsequent arms.
+Verification has separate launch/time accounting and never enters replay, reward, normalization or proposal feedback.
+Report total wall time including verification and search/learning time excluding it. No passing design means zero
+verification launches and unqualified positive parity, not a failed circuit eligibility gate.
+
+Report success rates **and constraint-violation progress**. At each evaluation retain the current valid design's
+uncapped normalized violations for every hard spec and its largest violation. Track the lowest such largest
+violation achieved by a single complete valid design, its evaluation ID and its per-spec values. Invalid designs
+still consume budget but cannot improve that incumbent. Report baseline-to-best improvement and checkpoints at
+60, 100, 250, 500, 1,000 and 2,000 evaluations when reached; an unreached checkpoint is null, not a carried-forward
+full-budget result. Keep all runs, including no-feasible and early-ending runs, in the success-rate denominator,
+and report budget completion separately. Never combine individually best specs from different designs into a pass.
+
+Also report evaluations/time to first feasible, all Probes for the best feasible design (or null), calls/tokens/cost,
+LLM waiting time, initial training time, failures and retries. Unknown token/cost values remain null. Keep circuits,
+providers/models, seeds, budgets, steered runs and degraded starts explicit; do not pool unlike groups or claim a
+ranking from three seeds. Standalone random and pattern search remain optional reference methods, not selection gates.
 
 Build and verify this harness with FakeClient/ReplayClient and free non-LLM simulations before requesting paid calls.
 
@@ -580,7 +619,7 @@ replayed responses; paid runs remain behind section 7's explicit authorization.
 user-authorized shared baseline is `5a39f89`. The full suite passed 1,417 tests and TypeScript passed. The frozen
 baseline and seeded SAC output are under `artifacts/local/llm-sizing/baseline/` and `g1-before/`; the historical
 `acceptance-summary.json` records pre-implementation checks, not acceptance of this revised feature. Its old
-scheduling question is resolved by S6/W1 here. No LLM-sizing implementation or paid call has been made. Recheck
+scheduling question is resolved by S6/W1 here. That historical preflight predates implementation and the G10 rejected-call incident. Recheck
 status and relevant source hashes before reusing this evidence; if they match, continue from step 2 without
 repeating completed preflight work. Preserve the historical record and update the acceptance summary when resuming.
 
@@ -589,9 +628,9 @@ repeating completed preflight work. Preserve the historical record and update th
    - Run `git status`. Stop on another session's uncommitted edits in files you need.
    - Record `source_digest()`, and snapshot `src/analog_optimizer/` and the tree for G1.
    - Run the full suite once, and write down any failures that already exist.
-2. **Package (future commit A).** S1-S12 for the four methods, with gates G2 and G5, G1's package half and
+2. **Package (implemented in `4634200`).** S1-S12 for the four methods, with gates G2 and G5, G1's package half and
    G11/G13/G14 schedule tests. Initial training uses existing SAC operations; do not edit SAC or replay algorithms.
-3. **Workbench (future commit B).** W1-W12, including warm-start learning, LLM-only state and asynchronous rescue,
+3. **Workbench (implemented in `7c7a0ff`).** W1-W12, including warm-start learning, LLM-only state and asynchronous rescue,
    with gates G1, G3, G4, G6, G7, G11, G13 and G14.
 4. **Benchmark.** B1-B7, with gates G9 and G12. Prepare the controls and all four modes before any paid experiment.
 5. **Checks and docs.**
@@ -602,19 +641,23 @@ repeating completed preflight work. Preserve the historical record and update th
 7. **Only with a ceiling the user approved in words** (section 8):
    - (a) **Measured calls.** At most 2 calls with Fable 5.1 through Claude Code, and at most 2 with `gpt-6-astra`
      through Codex, from the fixed working directory. The second call of each shows whether the prompt was cached.
-     Record latency, tokens and notional cost. The first Codex call is also the provider's first real request.
+     Record latency, tokens and notional cost. A successful response would be the first validated live sizing
+     response; G10 retains its earlier rejected request.
    - (b) **Warm-start pilot.** One chosen circuit, seeds 17, 29, 43; `llm_warmstart` with each of the two providers
-     is six runs. Proposed settings: W = 8, U = 8, batch size 8, k = 4, concurrency 1, 60 candidate evaluations per
-     run (including resets), and no early stop, so handover and subsequent SAC behavior can be observed. The planned
+     is six runs. Proposed settings: W = 8, U = 8, batch size 8, k = 4, concurrency 1, the B6 common
+     budget (planning default 2,000 candidates per run, including resets), and no early stop, so handover and
+     subsequent SAC behavior can be observed. The planned
      successful path needs two LLM calls per run; propose a hard ceiling of four per run, including repairs and
      replacements: **24 calls total**, separate from 7a's four. These are proposed limits, not authorization. If
      data are insufficient inside the ceiling, apply and disclose S6 fallback; do not expand the limit.
    - Run B6's plain SAC and both matched non-LLM controls on the same circuit and seeds. Include standalone random
      and pattern search with the same candidate-evaluation budget. Report their reset/update differences.
    - (c) **LLM-only and rescue pilot, separately approved.** Use the same circuit, seeds, providers, k = 4,
-     concurrency 1 and 60-evaluation budget, with no early stop. Each added method has six runs. Propose at most
-     16 calls per LLM-only run (96 total, including repairs), and S = 8, R = 2 with four calls per rescue run
-     (24 total, including repairs). That is at most **120 additional calls**, not included in 7a/7b. Stop or
+     concurrency 1 and the same B6 budget, with no early stop. Each added method has six runs. At 2,000 evaluations
+     and k = 4, LLM only needs at least 500 full-batch calls per run after its baseline. Propose **550 calls per
+     LLM-only run** (3,300 total, including repairs/replacements), and S = 8, R = 2 with four calls per rescue run
+     (24 total). This is **3,324 proposed additional calls**, not included in 7a/7b and not authorized. A smaller
+     call ceiling can end LLM only early and must be labelled budget-incomplete, not a completed 2,000-evaluation run. Stop or
      continue SAC at exhausted ceilings as S6 specifies. User approval can authorize a smaller slice; this plan
      does not authorize any calls. Report the actual evaluated candidates if a call ceiling ends LLM-only early.
    - Report per run, with no pooling and no ranking claim at n = 3. Then stop.
@@ -630,7 +673,7 @@ Not in this brief:
 ## 8. Decisions for the user (ask before the step that needs them)
 
 - **L1**, before each paid slice: explicit call and notional-cost ceilings. Proposed call caps are 4 for 7a,
-  24 for 7b, and 120 for 7c (96 LLM-only plus 24 rescue). These are separate ceilings; approving one does not
+  24 for 7b, and 3,324 for 7c (3,300 LLM-only plus 24 rescue at the provisional 2,000-evaluation budget). These are separate ceilings; approving one does not
   approve the others. A notional-cost cap must be agreed where cost is known. No paid calls are yet approved.
 - **L2**, with L1: confirm the measured model IDs and effort after checking CLI support; proposed effort is `high`
   for both requested models. Free implementation and fake/replay checks do not need a development-model decision
@@ -639,7 +682,7 @@ Not in this brief:
   that choice; do not block free import or calibration on it.
 
 Defaults already chosen; do not ask:
-- Specs are calibrated harder (B4).
+- Keep upstream pass targets unchanged; B4 short-run outcomes do not gate eligibility.
 - Operating points go to the LLM; no PDK-derived tables.
 - Resets are kept for SAC methods.
 - Hints are allowed and mark the run steered.
@@ -667,7 +710,10 @@ Defaults already chosen; do not ask:
 - **G8: Suites.** The full suite and `tests/workbench` pass, `tsc --noEmit` is clean, and the browser checks for W8-W10
   pass on scratch ports. The method selector has exactly four choices; phase progress, rescue status, hint rules
   and LLM-only tabs without policy checkpoints are verified. S6 compatibility rules hold in both schema and UI.
-- **G9: Benchmark.** B3 parity and B4 calibration are recorded, including failed/excluded circuits and the selection rule.
+- **G9: Benchmark.** B3 parity and historical B4 baselines are recorded, including real import/parity exclusions.
+  No 60-evaluation reachability selection rule remains. All comparison passes require independent two-deck
+  verification with strict values/verdicts and stop-on-disagreement; positive parity stays unqualified until observed.
+  G12 also checks the common per-run budget and progress reporting for no-feasible and incomplete runs.
 - **G10: Nothing paid.** Before step 7, no real `claude` or `codex` model request ran, `agent_audit.jsonl` is unchanged,
   and no bridge or Spectre call was made. W7's local `--help` inspection is allowed; it must not invoke a model.
 - **G11: Learning before handover.** A real SACLearner on synthetic MOCK results receives W eligible initial
@@ -697,7 +743,7 @@ Defaults already chosen; do not ask:
   - A new page `docs/llm-sizing.md`: the four methods, warm-start learning/handover, LLM-only stopping/resume,
     asynchronous rescue, how to run each, recorded data, literature limits and the benchmark controls.
   - A `docs/decisions.md` entry: the user decisions of 2026-09-29/30 and both digests.
-  - The next free entry in `docs/workbench-log/7.101-and-later.md`, plus its row in the index.
+  - The next free entry in `docs/workbench-log/7.119-and-later.md`, plus its row in the index.
   - `artifacts/local/llm-sizing/acceptance-summary.json`: the gates, the digest, the counts, the benchmark commit, and
     the parity and calibration results.
 - **To the user.**

@@ -165,6 +165,8 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.119 | Fixed-bias feasibility calibration: 80 runs, zero passes; full suite passes; current/schema findings recorded |
 | 7.120 | Audit finding F1 fixed: the LLM duplicate check compares sizes to a tolerance; optimizer digest 27a36b2b → 100945fb |
 | 7.121 | Audit of the fixed-bias calibration: the zero passes come from the settling-time target, made worse by fixed low bias currents; tree green |
+| 7.122 | Comparison protocol: equal 2,000-candidate planning budget, violation progress, every-pass verification |
+| 7.123 | Committed duplicate fix verified; sizing UI deployed on 8765; live model and comparison still unapproved |
 | 7.124 | Specs: compact tick-box column, the objective inside the Constraint list, Judged at only with training corners |
 | 7.125 | Frontend audit and its fixes: honest real-run question, Agent message box, Import JSON, Save task without the Virtuoso window, stale answers, fewer requests; Undo per typed value |
 | 7.126 | Optimization review's package changes landed: corners two at a time, every 5th reset simulated, Maestro results not parsed; optimizer digest 100945fb → f42a3098 |
@@ -187,3 +189,6 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.143 | Spectre job time measured (analyses ~5% of an ota7t job); up to 6 lanes for a real task (MAX_SPECTRE_WORKERS, tasks.REAL_LANES): ota7t 0.54 -> 0.41 s/eval, vco_lin 2.03 -> 1.40, no licence error (digest efa93649) |
 | 7.144 | GPDK045 profiles: copied checks merged into one shared class, every message kept; dead cache branches gone; optimizer digest moves |
 | 7.145 | Investigation: cell reads without positions save 7-10% (not done); the one Virtuoso session (preparation + OCEAN measurements) is the limit; staying-alive Spectre possible (+interactive) but little gain now |
+| 7.146 | Project name stays; task label derives from selection; rows switch atomically, edits protected; Load becomes Reload saved values |
+| 7.147 | Matched devices is the single open/refresh control; Find again removed; Close becomes an accessible × icon |
+| 7.148 | Per-lane OCEAN on the simulator host for Maestro outputs: built, values identical on Spectre (43 comparisons), no speed gain (the preparation limits, not the measurement; 7.145 corrected), removed (user); before-write read kept (user) |

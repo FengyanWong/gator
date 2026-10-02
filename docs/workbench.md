@@ -170,16 +170,18 @@ record 7.128):
 |---|---|---|---|
 | a profile created from your own cell | the rows the profile fixes | one per result its circuit type produces, ready to carry a target | **none**: requirements are never inferred from a circuit. State yours, or press "Draft with agent..." |
 
-* The **Circuit class / PDK id** labels follow the task at once, and so does a project name that a starter had given
-  (`mock-gpdk045-ota5` -> `mscr-ota5t`), so a real run is not filed under `runs/mock_gpdk045_ota5/`. A name you typed
-  stays. Choosing a task after a removed MOCK task brings the new task's rows and name at once: no task can run the old
-  rows any more (one Undo brings them back).
-* Rows are exchanged only while they are nobody's work: empty, or still exactly what the task before had brought.
-  **Rows you edited stay**; the panel says so, and **Load task** (there for every task; was "Load starter
-  configuration" until 2026-09-24, status record 7.78) exchanges
-  them when you want it. One **Undo** takes back a task choice together with everything it brought.
-* Run settings are never touched by a task choice, and a real budget is never suggested. Load task keeps them too
-  since 2026-09-29 (7.109); before, it reset the MOCK task's budget to 60 and its seed to 17 without saying so.
+* **Project name** stays unchanged across tasks. The separate editable **Task name** field is removed: the run-folder
+  and export label (`project.task_name`) comes from the selected task, independently of the project name.
+* Selecting a task automatically reads its saved rows. The selected task, **Circuit class / PDK id**, run label and all
+  three tables change together after that read succeeds. While loading, the previous task remains selected with its
+  own rows; a loading message names the requested task. A failed or superseded read cannot replace the current task.
+* Edited rows prompt **before** switching: OK discards those edits and loads the chosen task; Cancel keeps both the
+  current task and its edits, so they can be saved first. Edits made during the read are protected too. One **Undo**
+  takes back the whole task choice, including its rows and run label.
+* **Reload saved values** replaces the old **Load task** control. It is optional, for resetting the current task to its
+  saved rows, with the same edit-discard confirmation. Normal task switching needs no extra button press.
+* Project name, run, output and research settings stay unchanged during switching and reloading. No real budget is
+  suggested and no simulation, task save or Virtuoso write is triggered by selecting a task (record 7.146).
 * A profile created from a cell brings its own result registry (the built-in LDO and VCO tasks brought the registry of
   record of the real cross-category experiment until they were removed). A registry stated in the configuration
   (`run.advanced.spec_registry`) still wins. Units `V/V` and `V/A` (line / load regulation) are accepted.
@@ -292,8 +294,10 @@ the circuit's values are equal. A device of a pair that has no row gets a follow
 that already follows the same leader is shown as kept, and one tied elsewhere by you is left alone. The box lists the
 structures in plain sentences and one line per row it would change. **Review...** shows the diff, the count of
 independent action variables before and after, and any validation error; only **Apply** changes the rows, and **Undo** in
-the toolbar takes it back. The box asks once per press: an answer about rows that changed since says so and offers **Find
-again**. Nothing is simulated or stored.
+the toolbar takes it back. **Matched devices...** stays enabled while the box is open; each press reads the current
+rows again and replaces the previous results and unapplied review. The separate **Find / Find again** button is
+removed. An answer about rows that changed since directs you to the toolbar button. The **Close** control is an ×
+icon with a tooltip and an accessible label; it dismisses the box without changing rows. Nothing is simulated or stored.
 
 Where it applies: a cell read from Virtuoso (the ties go into the task at **Save task**), a task you saved (save it again
 afterwards: a task runs with the rows it was saved with), an ngspice task (its rows start one per size, so the pair and the
@@ -304,7 +308,7 @@ The agent sees the same sentences: `circuit_summary` carries them as `structures
 Backend `structures.py` (`recognize`, `plan_ties`, `apply_ties`), route `POST /api/parameters/matched` (`{config, apply}`;
 local files only). Tests: `tests/workbench/test_wb_matched_devices.py` (the circuits of record, hand-made netlists with
 non-M names and unlabelled rails, a folded cascode, a 2:1 bias mirror, kept and foreign ties, the route). Browser check:
-`frontend/scripts/matched_devices_check.mjs` (25 checks, hermetic, answered with `frontend/scripts/fixtures/matched_devices.json`
+`frontend/scripts/matched_devices_check.mjs` (hermetic, answered with `frontend/scripts/fixtures/matched_devices.json`
 = the real route's answers for its seed).
 
 ### Spectre netlist import: removed
@@ -339,7 +343,7 @@ their own copy of the deck in `input_snapshot/netlist.cir`, and a changed deck i
 the deck on the backend without keeping it and says what it found: elements by kind, the values a run can vary,
 the results it measures (with a unit guessed from the result's name or its expression: `gain_db`, `ugf_hz`,
 `v(out)` -> V, `i(vdd)` -> A - edit the Probes row when the guess is wrong), the analyses, includes, diagnostics
-and, in plain words, what would stop a run. **Delete task** (in the column's task row, at the right of Load task,
+and, in plain words, what would stop a run. **Delete task** (in the column's task row, at the right of Reload saved values,
 for the task the page follows) takes
 it out of the list; its folder is kept aside on the backend machine. Nothing in the window runs a simulation.
 
@@ -499,7 +503,7 @@ to say.
   **Task** in the Project column (its **Open** button went on 2026-09-29, 7.109); change it there
   (Save task); another task needs another copy of the cell, made in Virtuoso and read in
   the window. A built-in circuit gets no second task.
-  **Delete task** (in the column's task row, at the right end next to Load task since 2026-09-24 - before
+  **Delete task** (in the column's task row, at the right end next to Reload saved values (formerly Load task) since 2026-09-24 - before
   that the last line of the task's block; asks once more; was: Delete profile):
   the task leaves the list, its name is free again and the cell is free for the next Save task.
   Nothing is erased: the folder moves to `configs/local/workbench/profiles/.deleted/<name>.<time>/`,
@@ -1026,6 +1030,11 @@ The native export itself sets OCEAN up once per session and then only netlists (
 measured inside Virtuoso (the Maestro recipe, which every MScR task uses) keeps the bridge's export, which sets up
 every time.
 
+Tried and removed (record 7.148): each lane measuring its Maestro outputs with an OCEAN of its own on the simulator
+host, so that the Virtuoso session only prepares. On Spectre at 6 lanes the values were identical, but runs were no
+faster (0.39 vs 0.41 s per evaluation on `mscr_ota7t` once every lane's OCEAN was up), and starting six OCEANs slowed
+the first 10-20 s. The preparation, not the measurement, is what limits a run (`docs/plan-measurement-off-virtuoso.md`).
+
 ## The right column: settings, saved models and the graph view
 
 ### SAC and LLM search methods (2026-09-30, record 7.116)
@@ -1042,10 +1051,15 @@ run is live - a SAC run has none (record 7.125); it has a scrolling row of its o
 to a future eligible call and mark the run steered. Phase, call and rescue counts are saved and shown
 consistently. See [LLM sizing](llm-sizing.md) for settings, failure behavior, recovery and the benchmark limits.
 
-The source implementation and scratch browser checks are complete; this work did not rebuild the live page or restart
-8765. The free SKY130 benchmark uses the user's feasibility-only decision: upstream pass targets, all metrics as
-descriptive Probes, and bias currents fixed at upstream starting values in every arm. Calibration independently
-rechecks every passing design against the original evaluator at 1e-9 relative tolerance, stopping on disagreement.
+The four sizing methods are deployed on the local frontend and backend at port 8765 (2026-09-30, record 7.123).
+The production build, 123 scratch browser checks and a read-only live browser check passed; the full regression
+rerun passed 1,615 tests with one documented expected Agent-tab schema failure. Live model validation and the
+performance comparison remain unapproved and unrun. The free SKY130 benchmark uses the user's feasibility-only decision: upstream pass targets, all metrics as
+descriptive Probes, and bias currents fixed at upstream starting values in every arm. Calibration and comparison independently
+recheck every passing design against the original evaluator at 1e-9 relative tolerance, stopping on disagreement.
+The revised comparison plan removes the 60-evaluation pattern-success gate, uses a common provisional 2,000-candidate
+budget, and reports uncapped constraint progress and incomplete runs alongside success. Verification is separate
+from learning and search budgets. The completed short-run calibration stays as historical evidence.
 SAC's general current-group limitation remains; a read-only FeatureSchema experiment confirmed that a static current
 column works, while a tunable current group still fails unit validation. No optimizer current-unit implementation was added.
 The development record also documents one accidentally launched, server-rejected Codex request; the no-calls gate failed.
@@ -1412,7 +1426,7 @@ folded). For a cell read from Virtuoso: a New task name (the cell's name when le
 file**. On an open task (Registered task): "Task real:<name>, revision N", **Save task** and **Task file**. Their
 messages and questions (the saved revision, a refusal, the ring oscillator's rough frequency) appear under the editors'
 toolbar. "Delete task" (was: Delete profile) stayed at the end of the task's block in the Project column until
-2026-09-24; it is in the column's task row now, at the right of Load task (7.78). The editors'
+2026-09-24; it is in the column's task row now, at the right of Reload saved values (formerly Load task, 7.78). The editors'
 own **Save** button went at the same
 time: it kept the configuration in the browser, which the page already does by itself 0.8 s after every change (and,
 since 7.125, when the page is closed or reloaded sooner), and a second "Save" beside "Save task" only confused.
@@ -1555,7 +1569,7 @@ three things must say the same thing:
    validation says it while you edit - a blocking issue `task_not_saved` per editor that differs, naming the rows and
    fields ("Specs differ from the saved task real:ring_osc (revision 1): osc_frequency_hz: lower 1.3e+09 here, 1.1e+09
    saved") - so Start is not offered until **Save task** stores them (it keeps the recorded baseline when
-   only specs or notes changed) or **Load task** takes the saved rows back. A resume runs the run's own
+   only specs or notes changed) or **Reload saved values** takes the saved rows back. A resume runs the run's own
    saved rows and is not compared.
 2. **The saved task and its working copy in Virtuoso.** The run adapter does everything a real evaluation does before
    Spectre starts, and nothing after: it connects (the creation record matches, no ADE/Maestro window is open on the copy,

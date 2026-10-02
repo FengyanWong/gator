@@ -451,6 +451,7 @@ def test_rescue_resume_retains_round_queue_and_call_budget(tmp_path):
 def test_benchmark_controls_share_handover_without_provider(tmp_path, monkeypatch, arm):
     import importlib.util
     from pathlib import Path
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[2] / 'examples'))
     spec = importlib.util.spec_from_file_location('benchmark_llm_sizing', Path(__file__).parents[2] / 'examples/benchmark_llm_sizing.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

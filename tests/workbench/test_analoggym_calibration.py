@@ -73,7 +73,7 @@ def test_comparison_accepts_imported_starter_without_run_settings(tmp_path,monke
     config=make_config(tmp_path)
     data=config.model_dump(mode='json')
     starter={k:data[k] for k in ('project','circuit','parameters','measurements','targets')}
-    bundle=dict(native_initial={},fixed_native_values={},metric_units={'score':'fixture'},scoring='feasibility_only')
+    bundle=dict(name='fixture',native_initial={},fixed_native_values={},metric_units={'score':'fixture'},scoring='feasibility_only')
     monkeypatch.setattr(driver.tasks,'load_task',lambda *args,**kwargs:SimpleNamespace(
         mock=False,connection_family='ngspice',circuit={'analoggym_task':True}))
     monkeypatch.setattr(ngspice_tasks,'load',lambda *args:(dict(starter=starter,analoggym=bundle),''))
@@ -81,7 +81,9 @@ def test_comparison_accepts_imported_starter_without_run_settings(tmp_path,monke
         raise StopIteration('Preparation reached; no simulation')
     monkeypatch.setattr(driver.runs,'prepare_run',intercepted)
     with pytest.raises(StopIteration,match='Preparation reached'):
-        driver.run_arm(config,'sac',tmp_path/'comparison',authorize_ngspice=True)
+        driver.run_arm(config,'sac',tmp_path/'comparison',authorize_ngspice=True,
+            plan={'comparison':dict(protocol='llm-sizing-comparison-v2', circuits=['fixture'],
+                                    evaluations_per_run=config.run.max_evaluations,seeds=[config.run.seed])})
 
 
 @pytest.mark.parametrize('parameter',['mf','mult'])

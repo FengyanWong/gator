@@ -212,7 +212,7 @@ await runChecks(browser, async () => {
   await send('DOM.setFileInputFiles', { nodeId, files: [rowsFile] });
   const APPLY = `[...document.querySelectorAll('.editors .confirm button')].find(b => b.textContent.trim() === 'Apply')`;
   check('(set-up) rows for the Parameters tab wait in the confirmation box', await until(`!!(${APPLY})`, 60));
-  await page.setValue(LABELLED('.left', 'Name'), 'fixture-edited-meanwhile', { event: 'input' });
+  await page.setValue(LABELLED('.left', 'Project name'), 'fixture-edited-meanwhile', { event: 'input' });
   await sleep(300);
   await evaluate(`${APPLY}.click()`);
   config = await saved();
@@ -235,9 +235,9 @@ await runChecks(browser, async () => {
   // Two configurations in flight: a late success must not clear the newer configuration's blocker.
   await sleep(700);
   holdValidation = true;
-  await page.setValue(LABELLED('.left', 'Name'), 'fixture-old', { event: 'input' });
+  await page.setValue(LABELLED('.left', 'Project name'), 'fixture-old', { event: 'input' });
   const oldValidation = await page.nextPaused('/api/config/validate');
-  await page.setValue(LABELLED('.left', 'Name'), 'fixture-new', { event: 'input' });
+  await page.setValue(LABELLED('.left', 'Project name'), 'fixture-new', { event: 'input' });
   const newValidation = await page.nextPaused('/api/config/validate');
   check('validation requests describe two different edits',
     JSON.parse(oldValidation.postData).config.project.name === 'fixture-old' && JSON.parse(newValidation.postData).config.project.name === 'fixture-new');

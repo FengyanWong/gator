@@ -30,7 +30,7 @@ def preflight_process(tmp_path, steps, tag='check'):
 
 
 def task_config(tmp_path, name='ring_osc', **run):
-    """The configuration the page holds for a saved task: exactly its saved rows (what "Load task" brings)."""
+    """The configuration the page holds for a saved task: exactly its saved rows (what "Reload saved values" brings)."""
     raw = tasks.starter_config(f'real:{name}')
     raw['run'] = dict(dict(max_evaluations=3, connection_profile_id='lab'), **run)
     raw['output'] = dict(output_root=str(tmp_path / 'out'), experiment_name='t')
@@ -46,13 +46,13 @@ def saved_ring(tmp_path):
 def test_static_validation_says_when_the_editors_differ_from_the_saved_task(tmp_path):
     cfg = saved_ring(tmp_path)
     issues = lambda c: [i for i in validate(c).as_dict()['issues'] if i['code'] == 'task_not_saved']
-    assert issues(cfg) == []                                                   # the saved rows, as "Load task" brings them
+    assert issues(cfg) == []                                                   # the saved rows, as "Reload saved values" brings them
     tighter = cfg.model_copy(deep=True)
     tighter.targets[0].lower = 1.3e9
     [issue] = issues(tighter)
     assert issue['path'] == 'targets' and issue['level'] == 'error'
     assert 'Specs differ from the saved task real:ring_osc (revision 1): osc_frequency_hz: lower 1.3e+09 here, 1.1e+09 saved' in issue['message']
-    assert 'Press Save task' in issue['message'] and 'Load task' in issue['message']
+    assert 'Press Save task' in issue['message'] and 'Reload saved values' in issue['message']
     wider = cfg.model_copy(deep=True)
     wider.parameters[0].upper = wider.parameters[0].upper + 0.2
     wider.measurements = wider.measurements[:0]

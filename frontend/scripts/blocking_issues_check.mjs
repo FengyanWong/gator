@@ -68,7 +68,7 @@ await runChecks(browser, async () => {
   const headerButton = label => `[...document.querySelectorAll('header button')].find(b => b.textContent === ${JSON.stringify(label)})`;
   // The page validates by itself half a second after any change ("Static validation", the button that asked at once, went
   // on 2026-09-29): a change of the project name makes it ask again, alternating between two names.
-  const NAME_BOX = `[...document.querySelectorAll('.left label')].find(l => l.firstChild?.textContent.trim() === 'Name')?.querySelector('input')`;
+  const NAME_BOX = `[...document.querySelectorAll('.left label')].find(l => l.firstChild?.textContent.trim() === 'Project name')?.querySelector('input')`;   // 'Name' until 7.146
   let flip = false;
   const revalidate = async fixture => {
     answerWith = fixture; const before = validations; flip = !flip;

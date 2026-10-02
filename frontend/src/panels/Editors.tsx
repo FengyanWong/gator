@@ -113,7 +113,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const showMore = (now: boolean) => { setMore(now); try { localStorage.setItem(MORE_KEY, now ? 'shown' : 'hidden'); } catch { /* no storage: the choice lasts for this page */ } };
   // `rows`: an import of one table's rows - Apply writes that table alone; null = a whole configuration, which replaces all.
   const [pending, setPending] = useState<{ next: Json; diff: Json[]; others: string[]; rows: { section: Section; value: Json[] } | null } | null>(null);
-  const [matched, setMatched] = useState(false);            // the Matched devices box of the Parameters tab (record 7.103)
+  const [matched, setMatched] = useState(0);               // each toolbar press opens a fresh read; zero closes the box
   const [error, setError] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
   const columns: Json[] = schema.editors[tab].map((c: Json) => tab !== 'targets' ? c : c.name === 'nominal_only'
@@ -217,7 +217,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     <section className="panel editors">
       {/* Another tab closes the Matched devices box: kept "open", coming back to Parameters mounted it again, and mounting
           is its press - it asked the backend with nobody pressing anything, and a reviewed diff was gone. */}
-      <div className="tabs">{(Object.keys(TITLES) as Section[]).map(s => <button key={s} className={s === tab ? 'active' : ''} onClick={() => { if (s !== tab) setMatched(false); setTab(s); setSelected({}); }}>{TITLES[s]} ({(config[s] ?? []).length})</button>)}
+      <div className="tabs">{(Object.keys(TITLES) as Section[]).map(s => <button key={s} className={s === tab ? 'active' : ''} onClick={() => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); }}>{TITLES[s]} ({(config[s] ?? []).length})</button>)}
         <span className="tab-actions" ref={taskSlot} /></div>
       <div className="toolbar">
         <button onClick={add} title="Add: A new row at the end, with a free ID."><Icon name="add" label="Add" /></button>
@@ -229,12 +229,12 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         <input ref={file} type="file" accept="application/json" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) importJson(f); }} />
         <span className="spacer" />
         {hidden.length > 0 && <button className="text" onClick={() => showMore(!more)} title={(more ? 'Fewer columns: hide ' : 'More columns: also show ') + hidden.map(c => c.name).join(', ') + '. They keep their values either way.'}>{more ? 'Fewer columns' : `More columns (${hidden.length})`}</button>}
-        {tab === 'parameters' && <button className="text" disabled={matched} onClick={() => setMatched(true)} title="Matched devices...: Reads the circuit for differential pairs, current-mirror loads, matched loads and cascodes and suggests tying their sizes. You review a diff; nothing is applied automatically.">Matched devices...</button>}
+        {tab === 'parameters' && <button className="text" onClick={() => setMatched(n => n + 1)} title="Matched devices...: Reads the circuit for differential pairs, current-mirror loads, matched loads and cascodes and suggests tying their sizes. Press again to refresh the results. You review a diff; nothing is applied automatically.">Matched devices...</button>}
         <button onClick={() => onAgent(tab, [])} title="Draft with agent...: Opens the Agent tab set to draft this tab's rows. Nothing is sent until you write what you need there and press Enter; its proposal is a diff you approve."><Icon name="agent-draft" label="Draft with agent..." /></button>
         <button disabled={!selection.length} onClick={() => onAgent('modify_fields', selection)} title="Modify selected with agent...: Ask the agent for a change to the ticked rows. You review a diff; nothing is applied automatically."><Icon name="agent-modify" label="Modify selected with agent..." /></button>
       </div>
       <div className="task-notes" ref={taskNotes} />
-      {tab === 'parameters' && matched && <MatchedDevices config={config} setConfig={setConfig} onClose={() => setMatched(false)} />}
+      {tab === 'parameters' && matched > 0 && <MatchedDevices key={matched} config={config} setConfig={setConfig} onClose={() => setMatched(0)} />}
       {tab === 'parameters' && <p className="fact">Independent action variables: <b>{validation?.facts?.independent_action_variables ?? '?'}</b> of {rows.length} rows.
         The initial value is the one read from the circuit. Equal initial values do not imply a binding. The policy's proposed action and the executed (projected/quantized) value are both recorded.</p>}
       {tab === 'targets' && <p className="fact spec-probes">Each spec judges its <b>equation</b>, written with Probe IDs, numbers, + - * / ** and brackets

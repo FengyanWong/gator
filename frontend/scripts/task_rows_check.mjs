@@ -7,8 +7,8 @@
 // local files, no bridge, no simulation); that backend must be a restarted or scratch one, and the numbers OF RECORD are checked.
 // The browser profile is new and temporary: the user's saved configuration is not touched.
 // What it pins (user report 2026-09-21: after choosing real:gpdk045_ota5 the Specs tab still showed the MOCK "score"):
-// the rows of the three editors, the PDK / class labels and a starter-made project name follow the chosen task; one Undo
-// takes all of it back; rows the user edited are kept and the button offers the exchange; a typed project name stays; an
+// the rows, task label and PDK / class change atomically; one Undo takes all of it back; edited rows require a decision
+// BEFORE switching, project names stay, failed/late loads cannot replace the current task; an
 // older backend is named as such; a circuit without targets of record says so and gets no invented target. Since status
 // record 7.59: a configuration saved with one of the four removed MOCK tasks says so plainly, and choosing the one MOCK
 // task left (synthetic:gpdk045_ota5) brings its rows and name at once.
@@ -16,7 +16,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_rows_check.mjs)" [--live] [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { validConfiguration, check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { answerDialogs, validConfiguration, check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const LIVE = process.argv.includes('--live');                 // reads go to the backend; writing requests are refused either way
 const APP = await workbenchUrl();
@@ -66,13 +66,21 @@ await runChecks(browser, async () => {
   const page = await browser.open();
   const { send, evaluate, fulfil, consoleErrors } = page;
   const refused = []; const starters = []; const loads = [];
+  const answers = [], dialogs = [], held = [];
+  let delayTask = null;
+  answerDialogs(page, answers, dialogs);
   const answer = params => {
     const { requestId, request } = params, url = new URL(request.url), name = url.pathname, pass = () => page.pass(requestId);
     if (name === '/api/tasks/starter') starters.push(url.searchParams.get('task_key'));
     if (name === '/api/circuit/load') loads.push(JSON.parse(request.postData ?? '{}').circuit ?? {});
     if (LIVE) return name === '/api/circuit/load' || name === '/api/config/validate' ? pass() : page.readOrRefuse(params, refused);
     if (name === '/api/tasks') return fulfil(requestId, 200, { tasks: TASKS, real_interface_contract: {} });
-    if (name === '/api/tasks/starter') { const s = STARTERS[url.searchParams.get('task_key')]; return s ? fulfil(requestId, 200, s) : fulfil(requestId, 404, { detail: 'No starter configuration for this task' }); }
+    if (name === '/api/tasks/starter') {
+      const id = url.searchParams.get('task_key'), s = STARTERS[id];
+      const reply = () => s ? fulfil(requestId, 200, s) : fulfil(requestId, 404, { detail: 'No starter configuration for this task' });
+      if (id === delayTask) { held.push(reply); return; }
+      return reply();
+    }
     if (name === '/api/circuit/load') return fulfil(requestId, 200, loaded(loads[loads.length - 1].task_id ?? ''));
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
     return page.readOrRefuse(params, refused);
@@ -107,8 +115,8 @@ await runChecks(browser, async () => {
 
   // ---- the reported case: choose the real OTA ------------------------------------------------------------------------
   await choose('Task', 'real:gpdk045_ota5');
-  check('the labels follow the task at once', (await value('PDK id')) === 'gpdk045' && (await value('Circuit class')) === 'opamp', `${await value('PDK id')} / ${await value('Circuit class')}`);
   check('the rows arrive and the panel says so', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`), await note());
+  check('the labels arrive with the task rows', (await value('PDK id')) === 'gpdk045' && (await value('Circuit class')) === 'opamp', `${await value('PDK id')} / ${await value('Circuit class')}`);
   const metrics = await column('metric_id');
   check('Specs shows the circuit\'s own targets, not the score', !metrics.includes('score') && metrics.includes('gain_db_at_start') && metrics.includes('unity_gain_hz') && metrics.includes('supply_power_w'), JSON.stringify(metrics));
   // each spec is an equation over the probes; a starter's is the one probe of its own result (2026-09-21, status record 7.52)
@@ -129,7 +137,9 @@ await runChecks(browser, async () => {
   const basis = await column('basis');
   await evaluate(`${moreColumns}.click()`);
   check('every target states where it comes from', basis.every(b => /of record/.test(b)), JSON.stringify(basis.slice(0, 1)));
-  check('a starter-made project name follows, so a real run is not filed under mock_*', (await value('Name')) === 'gpdk045-ota5' && (await value('Task name')) === 'gpdk045_ota5', `${await value('Name')} / ${await value('Task name')}`);
+  check('project name stays and the run label follows the chosen task', (await value('Project name')) === 'mock-gpdk045-ota5'
+    && (await config()).project.task_name === 'gpdk045_ota5');
+  check('there is no duplicate Task name input', !(await evaluate(`[...${PANEL}.querySelectorAll('label')].some(l => l.firstChild?.textContent.trim() === 'Task name')`)));
   await openTab('Probes');
   check('Probes read the circuit\'s results', !(await column('source_name')).includes('score') && (await column('source_name')).includes('gain_db_at_start'), JSON.stringify(await column('source_name')));
   const saved = await config();
@@ -140,33 +150,41 @@ await runChecks(browser, async () => {
   // ---- one Undo takes the choice and everything it brought back; Redo returns it ---------------------------------------
   await evaluate(`${BUTTON(EDITORS, 'Undo')}.click()`);
   check('ONE Undo: the MOCK task, its score, its labels and its name are back', await until(`${FIELD('Task')}.value === 'synthetic:gpdk045_ota5'`) && JSON.stringify(await column('metric_id')) === '["score"]'
-    && (await value('PDK id')) === 'gpdk045' && (await value('Name')) === 'mock-gpdk045-ota5', `${await value('Task')} ${JSON.stringify(await column('metric_id'))} ${await value('PDK id')} ${await value('Name')}`);
+    && (await value('PDK id')) === 'gpdk045' && (await value('Project name')) === 'mock-gpdk045-ota5', `${await value('Task')} ${JSON.stringify(await column('metric_id'))}`);
   check('the note about another task is gone', (await note()) === '', await note());
   await evaluate(`${BUTTON(EDITORS, 'Redo')}.click()`);
-  check('Redo: the real task with its rows again', await until(`${FIELD('Task')}.value === 'real:gpdk045_ota5'`) && (await column('metric_id')).includes('gain_db_at_start') && (await value('Name')) === 'gpdk045-ota5', JSON.stringify(await column('metric_id')));
+  check('Redo: the real task with its rows again', await until(`${FIELD('Task')}.value === 'real:gpdk045_ota5'`) && (await column('metric_id')).includes('gain_db_at_start'), JSON.stringify(await column('metric_id')));
 
-  // ---- rows the user edited are kept; the button offers the exchange ----------------------------------------------------
+  // ---- resolve edits before changing the task -------------------------------------------------------------------------
   await setInput(`${EDITORS}.querySelector('table.editor tbody tr input.numeric')`, '26');
   check('an edit hides the "now show this task\'s rows" note', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '') === ''`), await note());
+  answers.push(false);
   await choose('Task', 'synthetic:gpdk045_ota5');
-  check('edited rows stay, and the panel says whose they are', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('still hold the rows you edited')`) && (await note()).includes('real:gpdk045_ota5'), await note());
-  check('the edited Specs are still there', (await column('metric_id')).includes('gain_db_at_start') && (await column('lower')).includes('26'), JSON.stringify(await column('lower')));
-  check('labels and the starter-made name follow all the same', (await value('PDK id')) === 'gpdk045' && (await value('Name')) === 'mock-gpdk045-ota5', `${await value('PDK id')} / ${await value('Name')}`);
-  await shot('task-rows-2-edited-rows-kept.png');
-  await evaluate(`${BUTTON(PANEL, 'Load task')}.click()`);
-  check('"Load task" exchanges them', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`) && JSON.stringify(await column('metric_id')) === '["score"]', JSON.stringify(await column('metric_id')));
+  await until(`!${PANEL}.querySelector('[role="status"]')`);
+  check('Cancel keeps the old task selected and its edited rows', (await value('Task')) === 'real:gpdk045_ota5'
+    && (await column('lower')).includes('26') && dialogs.at(-1)?.message.includes('unsaved'));
+  answers.push(true);
+  await choose('Task', 'synthetic:gpdk045_ota5');
+  check('Discard switches task and all rows without a Load press', await until(`${FIELD('Task')}.value === 'synthetic:gpdk045_ota5'`)
+    && JSON.stringify(await column('metric_id')) === '["score"]', await note());
 
   // ---- a name the user typed stays ---------------------------------------------------------------------------------------
-  await setInput(FIELD('Name'), 'my-amplifier');
+  await setInput(FIELD('Project name'), 'my-amplifier');
   await choose('Task', 'real:gpdk045_ota7');
   check('untouched MOCK rows are exchanged for the OTA7\'s', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`) && (await column('metric_id')).includes('gain_db_at_start'), await note());
   check(LIVE ? 'LIVE: the OTA7 has its own numbers (53.3 dB)' : 'the OTA7 has its own numbers', (await column('lower')).includes('53.3'), JSON.stringify(await column('lower')));
-  check('a typed project name stays', (await value('Name')) === 'my-amplifier', await value('Name'));
-  check('the button is there for a real task too', await evaluate(`!!${BUTTON(PANEL, 'Load task')}`));
+  check('a typed project name stays while the task label follows independently', (await value('Project name')) === 'my-amplifier'
+    && (await config()).project.task_name === 'gpdk045_ota7');
+  check('Reload saved values is available for resetting the current task', await evaluate(`!!${BUTTON(PANEL, 'Reload saved values')}`));
   await setInput(`${EDITORS}.querySelector('table.editor tbody tr input.numeric')`, '54');
-  await evaluate(`${BUTTON(PANEL, 'Load task')}.click()`);
+  answers.push(false);
+  await evaluate(`${BUTTON(PANEL, 'Reload saved values')}.click()`);
+  await until(`!${PANEL}.querySelector('[role="status"]')`);
+  check('Cancel reload preserves edits', (await column('lower')).includes('54'));
+  answers.push(true);
+  await evaluate(`${BUTTON(PANEL, 'Reload saved values')}.click()`);
   check('the button puts the task\'s own numbers back and keeps the typed name as well', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`)
-    && (await column('lower')).includes('53.3') && !(await column('lower')).includes('54') && (await value('Name')) === 'my-amplifier', `${JSON.stringify(await column('lower'))} ${await value('Name')}`);
+    && (await column('lower')).includes('53.3') && !(await column('lower')).includes('54') && (await value('Project name')) === 'my-amplifier', JSON.stringify(await column('lower')));
 
   if (!LIVE) {
     // ---- a circuit without targets of record: nothing is invented -----------------------------------------------------
@@ -176,8 +194,35 @@ await runChecks(browser, async () => {
     // ---- a backend that was not restarted ----------------------------------------------------------------------------------
     await choose('Task', 'real:gpdk045_vco');
     check('an older backend is named as such, in the panel', await until(`(${PANEL}.querySelector('.task-rows.error')?.textContent ?? '').includes('older than the page')`), await note());
-    check('its rows are left as they were, the class label still follows', (await strip()) === 'Parameters (1) | Probes (2) | Specs (0)' && (await value('Circuit class')) === 'vco', await strip());
+    check('failed load leaves the task, labels and rows unchanged', (await value('Task')) === 'real:ring_demo'
+      && (await strip()) === 'Parameters (1) | Probes (2) | Specs (0)' && (await value('Circuit class')) === 'vco', await strip());
     await shot('task-rows-3-older-backend.png');
+
+    delayTask = 'real:gpdk045_ota5';
+    await choose('Task', delayTask);
+    for (let i = 0; i < 100 && !held.length; i++) await sleep(50);
+    check('while loading the previous task and its rows stay together', held.length === 1 && (await value('Task')) === 'real:ring_demo'
+      && (await strip()) === 'Parameters (1) | Probes (2) | Specs (0)');
+    await openTab('Parameters');
+    await setInput(`${EDITORS}.querySelector('table.editor tbody tr input.numeric')`, '0.000002');
+    answers.push(false);
+    delayTask = null; await held.shift()();
+    await until(`!${PANEL}.querySelector('[role="status"]')`);
+    check('edits made while loading also require a decision', (await value('Task')) === 'real:ring_demo'
+      && (await column('lower')).includes('0.000002'));
+    answers.push(true);
+    await choose('Task', 'real:gpdk045_ota5');
+    await until(`${FIELD('Task')}.value === 'real:gpdk045_ota5'`);
+
+    delayTask = 'real:ring_demo';
+    await choose('Task', delayTask);
+    for (let i = 0; i < 100 && !held.length; i++) await sleep(50);
+    await choose('Task', 'real:gpdk045_ota7');
+    await until(`${FIELD('Task')}.value === 'real:gpdk045_ota7'`);
+    delayTask = null; await held.shift()(); await sleep(300);
+    await openTab('Specs');
+    check('a delayed earlier selection cannot replace the latest task', (await value('Task')) === 'real:gpdk045_ota7'
+      && (await column('lower')).includes('53.3'));
   }
 
   // ---- a configuration saved with a removed MOCK task (status record 7.59: four MOCK tasks became one) ---------------------
@@ -198,16 +243,19 @@ await runChecks(browser, async () => {
     await evaluate(`[...${PANEL}.querySelectorAll('.note')].map(n => n.textContent).join(' | ')`));
   for (let i = 0; i < 50 && !loads.slice(mark).some(l => l.task_id === 'synthetic:vco'); i++) await sleep(100);
   await sleep(400);                                                              // the load's answer is drawn
-  check('no red "Blocked" box, and no "Load task" for a task that has none', !(await evaluate(`!!${PANEL}.querySelector('.blocker')`)) && !(await evaluate(`!!${BUTTON(PANEL, 'Load task')}`)));
+  check('no red "Blocked" box, and no reload for a task that has none', !(await evaluate(`!!${PANEL}.querySelector('.blocker')`)) && !(await evaluate(`!!${BUTTON(PANEL, 'Reload saved values')}`)));
   await shot('task-rows-4-removed-task.png');
+  answers.push(true);
   await choose('Task', 'synthetic:gpdk045_ota5');
-  check('choosing the MOCK task brings its rows at once: a removed task\'s rows are nobody\'s work', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`)
+  check('choosing a replacement for a removed task brings its rows after confirmation', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`)
     && (await strip()) === `Parameters (${mock.parameters.length}) | Probes (1) | Specs (1)`, `${await note()} ${await strip()}`);
-  check('the old starter-made project name follows too', (await value('Name')) === 'mock-gpdk045-ota5' && (await value('Task name')) === 'mock_gpdk045_ota5', `${await value('Name')} / ${await value('Task name')}`);
+  check('legacy project name stays and the run label follows the new task', (await value('Project name')) === 'mock-vco'
+    && (await config()).project.task_name === 'mock_gpdk045_ota5');
   check('the removed entry and the note are gone', !(await evaluate(`[...${FIELD('Task')}.options].some(o => o.value === 'synthetic:vco')`))
     && !(await evaluate(`[...${PANEL}.querySelectorAll('.note')].some(n => n.textContent.includes('no longer exists'))`)));
   await evaluate(`${BUTTON(EDITORS, 'Undo')}.click()`);
-  check('one Undo brings the saved state back', await until(`${FIELD('Task')}.value === 'synthetic:vco'`) && (await value('Name')) === 'mock-vco' && (await strip()).startsWith('Parameters (2)'), `${await value('Task')} ${await strip()}`);
+  check('one Undo brings the saved state back', await until(`${FIELD('Task')}.value === 'synthetic:vco'`) && (await value('Project name')) === 'mock-vco' && (await strip()).startsWith('Parameters (2)'), `${await value('Task')} ${await strip()}`);
+  check('every edit-discard prompt was expected', dialogs.every(d => d.planned) && answers.length === 0, JSON.stringify(dialogs));
   reportRefused(refused, NEVER_ASKED);
   check('no console errors', consoleErrors.filter(e => !/404|418/.test(e)).length === 0, consoleErrors.join(' | ').slice(0, 300));
 });

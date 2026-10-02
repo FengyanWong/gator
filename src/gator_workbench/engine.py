@@ -157,9 +157,11 @@ class RunLock:
 
 
 class RunEngine:
-    def __init__(self, run_dir, *, task, use_processes=None, lane_factory=None, clock=time.monotonic, lock=None, llm_client=None, seed_proposer=None):
+    def __init__(self, run_dir, *, task, use_processes=None, lane_factory=None, clock=time.monotonic, lock=None, llm_client=None, seed_proposer=None, evaluation_observer=None):
         self.layout = RunLayout(Path(run_dir))
         self.manifest = read_json(self.layout.manifest)
+        if self.manifest.get('benchmark_verification_required') and evaluation_observer is None:
+            raise ValueError('This benchmark run requires its independent evaluation verifier; use the comparison driver')
         self.config = WorkbenchConfig.model_validate(read_json(self.layout.effective_config))
         self.task = task
         self.run_id, self.task_id = self.manifest['run_id'], self.manifest['task_id']
@@ -172,6 +174,7 @@ class RunEngine:
         self.search = None
         self.llm_only = self.config.run.search.method == 'llm'
         self._llm_client, self._seed_proposer = llm_client, seed_proposer
+        self._evaluation_observer = evaluation_observer
         self.frozen = self.mode == 'frozen'
         self.provenance = 'mock' if task.mock else 'real'
         self.use_processes = (not task.mock) if use_processes is None else use_processes
@@ -1010,6 +1013,10 @@ class RunEngine:
                 evaluation_id=evaluation_id, commit_seq=commit_seq, collector=codec.tree(collector),
                 counters={k: self.counters[k] for k in ('global_env_step', 'episodes', 'baseline_done')}))
         self.dataset.commit(bundle)                              # <- durable acknowledgement
+        # Benchmark validation sees the actual committed verdict before raw-output retention.
+        # Its return value never enters learning; an exception stops dispatch and preserves evidence.
+        if self._evaluation_observer is not None:
+            self._evaluation_observer(dict(evaluation), record)
         if role is not None:
             write_json(self.layout.best_design / 'tracker_state.json',
                        dict(last_commit_seq=commit_seq, **self.tracker.state_dict()))

@@ -115,12 +115,12 @@ try {
   await page.seed({ config: MOCK_PAGE_CONFIG, when: 'once' });           // on the MOCK stand-in (record 7.128)
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
-  for (let i = 0; i < 100 && !(await evaluate(`!!(${COLUMN_BUTTON('Load task')})`)); i++) await sleep(100);
+  for (let i = 0; i < 100 && !(await evaluate(`!!(${COLUMN_BUTTON('Reload saved values')})`)); i++) await sleep(100);
   for (let i = 0; i < 60 && !(await evaluate(`/\\S/.test(document.querySelector('.left button.connection-button .connection-button-what')?.textContent.replace(/none (selected|set up yet)/, '') ?? '')`)); i++) await sleep(100);
   await sleep(800);
 
   // ---- a registered task's rows first: the MOCK starter (its Probe m_score, its target score) -------------------------
-  await press('Load task', COLUMN_BUTTON); await sleep(800);
+  await press('Reload saved values', COLUMN_BUTTON); await sleep(800);
   check('the MOCK starter is in the editors', (await counts()).Specs === 1 && (await counts()).Probes === 1, JSON.stringify(await counts()));
 
   // ---- tb_<cell> is found by its name (in the window) ---------------------------------------------------------------------

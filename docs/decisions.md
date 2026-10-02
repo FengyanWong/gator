@@ -33,10 +33,17 @@ A summary for new sessions; everything below is the chronological record, oldest
 - **LLM sizing:** four modes implemented; free calibration complete (80 runs / 4,800 candidates / zero passes)
   ([brief](brief-llm-sizing-for-astra.md), [implementation](llm-sizing.md)). The user authorized feasibility-only
   calibration with fixed starting bias currents for every arm and independent upstream rechecks of every pass.
-  No circuit qualified for the comparison, and positive-design parity remains unqualified (G9). The final full suite
+  The old short-run selection rule qualified no circuit. The user has now removed it: B3-eligible circuits remain
+  eligible; the comparison plans equal 2,000-candidate runs (provisional), uncapped constraint progress and independent
+  re-simulation of every pass, including comparison arms. Historical results are preserved; no new runs are started.
+  Positive-design parity remains unqualified (G9). Protocol revision record 7.122: final full suite 1615 passed,
+  one expected Agent-schema failure, zero skips; current evidence includes the F1 fix. The prior full suite
   passed 1,581 tests with one expected Agent-schema failure. The duplicate-check issue on continuous rows that kept
   G6 partial was fixed in the package afterwards (record 7.120; 1,601 tests with its own); the gate evidence predates
-  the fix. Paid slices remain unapproved. G10 retains the historical server-rejected request.
+  the fix. The tested frontend and backend were deployed on port 8765 at the user's request (record 7.123):
+  1,615 tests passed with one expected failure, 123 scratch browser checks passed, and the live page rendered all
+  four methods. Core feature commits are `4634200` and `7c7a0ff`; the protocol revision remains uncommitted.
+  Paid slices remain unapproved. G10 retains the historical server-rejected request.
 
 # M1 决策 — 2026-09-19
 

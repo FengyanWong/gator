@@ -72,7 +72,10 @@ await runChecks(browser, async () => {
     JSON.stringify(asked.map(a => a.apply)));
   const listed = await evaluate(`[...${BOX}.querySelectorAll('li')].map(li => li.textContent.trim())`);
   check('the structures are listed in plain sentences', JSON.stringify(listed) === JSON.stringify(FIXTURE.found.structures.map(s => s.text)), JSON.stringify(listed));
-  check('the pressed button waits while the box is open', await evaluate(`${BUTTON(TOOLBAR, 'Matched devices...')}.disabled`));
+  check('Matched devices stays available while the box is open', !(await evaluate(`${BUTTON(TOOLBAR, 'Matched devices...')}.disabled`)));
+  check('the box has no duplicate Find button', !(await evaluate(`!!${BUTTON(BOX, 'Find')} || !!${BUTTON(BOX, 'Find again')}`)));
+  check('Close is an icon with a hidden accessible label and a tooltip', await evaluate(`(() => {
+    const b = ${BUTTON(BOX, 'Close')}; return !!b.querySelector('svg.icon') && b.querySelector('.sr-only')?.textContent === 'Close' && b.title.startsWith('Close:'); })()`));
   check('both matched ties are offered, ticked', JSON.stringify(await ticks()) === JSON.stringify([{ checked: true, disabled: false }, { checked: true, disabled: false }]), JSON.stringify(await ticks()));
   check('what each tie changes is said per row', /w_in_b follows w_in_a \(ratio 1\)/.test(await boxText()) && /w_load_b follows w_load_a \(ratio 1\)/.test(await boxText()), await boxText());
   check('the independent variables are counted', /Independent action variables now: 5\./.test(await boxText()));
@@ -98,14 +101,15 @@ await runChecks(browser, async () => {
   check('...and the page counts 3 independent variables', await until(`/Independent action variables: 3 of 5/.test(${EDITORS}.querySelector('.fact')?.textContent ?? '')`),
     await evaluate(`${EDITORS}.querySelector('.fact')?.textContent`));
   // What was found is about the rows before Apply: it goes, and "the rows changed" no longer stands next to "Applied" (7.125).
-  check('the answer about the rows before goes: no stale warning next to "Applied", no review, and the box offers Find', await until(`!!${BUTTON(BOX, 'Find')}`)
+  check('the answer about the rows before goes: no stale warning next to "Applied" and no review', await until(`!${BUTTON(BOX, 'Review...')}`)
     && await evaluate(`!/changed after this was found/.test(${BOX}.textContent) && !${BUTTON(BOX, 'Review...')}`) && /Applied: 2 rows changed/.test(await boxText()), await boxText());
 
   await press(TOOLBAR, 'Undo');
   check('Undo takes the ties back', await until(`${CELL(1, 'binding_group')}.value === '' && ${CELL(3, 'binding_group')}.value === ''`));
   check('...and no request was made by that', asked.length === 2, String(asked.length));
-  await press(BOX, 'Find');
-  check('Find asks again', await until(`${BOX}.querySelectorAll('li').length === 3`) && asked.length === 3 && asked[2].apply === null);
+  await press(TOOLBAR, 'Matched devices...');
+  check('the toolbar button refreshes the open box with one new read', await until(`${BOX}.querySelectorAll('li').length === 3`)
+    && asked.length === 3 && asked[2].apply === null && !(await boxText()).includes('Applied:'));
 
   await press(BOX, 'Close');
   check('Close takes the box away and gives the button back', await until(`!${BOX} && !${BUTTON(TOOLBAR, 'Matched devices...')}.disabled`));

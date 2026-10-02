@@ -129,10 +129,21 @@ its destructive environment constructor is never called. Its pass rule comes fro
 Native failure penalties remain identified as benchmark outputs. They are not evidence of successful measurements.
 
 `examples/check_analoggym.py` compares independently run original testbenches with the imported backend at a strict
-1e-9 relative tolerance. A failing circuit stops at its first mismatch and remains excluded. Calibration must then
-use five random and three pattern-search runs of 60 evaluations for each eligible circuit. Selection requires three
-amplifiers with at most one random success and demonstrated reachability. The LDO is included only after parity.
-Starting values outside the published bounds or grid are reported rather than silently changed.
+1e-9 relative tolerance. A failing circuit stops at its first mismatch and remains excluded. The completed five
+random and three pattern runs of 60 evaluations are historical baselines. Their success counts no longer gate
+selection. B3-eligible circuits remain eligible even with zero short-run passes; choose the first three amplifiers
+alphabetically for the planned cohort (ACBC, AFFC, AZ), with ACBC as pilot. Starting values outside the published
+bounds or grid remain excluded rather than silently changed.
+
+The revised comparison plan defaults to 2,000 candidate evaluations per method/circuit/seed, including resets and
+failed candidates, with seeds 17/29/43 and no success-based early stopping. This is a provisional engineering budget,
+not paid-call authorization or a feasibility guarantee. `benchmark_llm_sizing.py --plan <plan-benchmark.json>`
+requires that common budget for AnalogGym runs and rejects competing wall/launch limits. All arms of one comparison
+share one output root and run serially. Each run writes `constraint-progress.json`: uncapped per-spec violations,
+best worst-spec violation from a single valid design, baseline improvement and fixed evaluation checkpoints.
+Invalid designs count toward budget but cannot improve the incumbent. Unreached checkpoints are null.
+`benchmark-result.json` and `comparison-summary.json` keep no-feasible and early-ending runs alongside success
+rates, budget completion, separate verification costs and original per-run Probes; unlike groups are not pooled.
 
 The user's 2026-09-30 decision sets calibration and comparison to feasibility-only, retaining the upstream pass
 rule and unchanged reward. Every benchmark output remains a Probe, including inactive objective metrics.
@@ -146,11 +157,14 @@ only the count columns declared by an ngspice configuration, each with reference
 for validation, learner construction and archived state metadata. Explicit count bindings may tie these names to
 `m`; unrelated parameter kinds remain incompatible. Default schemas and the optimizer package stay unchanged.
 
-`examples/calibrate_analoggym.py` runs the free calibration and independently re-simulates **every** GATOR-passing
-candidate in the two original upstream testbenches. Every reported metric must agree to 1e-9 relative tolerance
-(no absolute tolerance floor), and verdicts must agree. Any disagreement stops all calibration workers after their
-in-flight candidate checks. Verification launches are counted separately from the 60 search candidates; they never
-enter the search. The earlier 205 parity designs contained no successes, so those checks alone do not validate passes.
+Calibration and every AnalogGym comparison arm independently re-simulate **every** GATOR-passing evaluation
+(including passing resets and repeated designs) in the original AC/DC and transient testbenches. Each metric must
+agree at 1e-9 relative tolerance with no absolute floor, and verdicts must match. The comparison verifier runs after
+the original result is durably recorded and before the next dispatch or raw-output retention. Its measurements do
+not enter learning or AI feedback. A failed or unresolved check leaves a durable `comparison-STOP.json` marker and
+blocks subsequent arms sharing that output root. Verification launches and time are reported separately from
+search candidates; total wall time includes both. The original 205 parity designs and 4,800 calibration designs
+contained no successes, so positive parity is still unqualified; this is not a circuit eligibility requirement.
 
 A read-only in-memory check confirms a workbench-built `FeatureSchema` can append `current` with reference `1e-6 A`,
 and PyG preserves its column and `dc` writeback name. SAC accepts it as a static device feature when the action groups
@@ -168,8 +182,8 @@ bounds. The imported best-design export writes both the main and transient decks
 by re-parsing. A representative ACBC candidate passed strict metric/verdict parity for both the instrumented backend
 and exported decks; its single ngspice process performed five analyses, not five candidate evaluations.
 The final scalar-output test also verifies that OP readout leaves the deck's original numeric precision unchanged.
-Calibration completed 80 runs / 4,800 candidates: zero passes, so no circuit qualified for comparison and no positive-design
-recheck was triggered. G9 remains unqualified for passing designs. Every best-feasible report is null; all Probes
+Calibration completed 80 runs / 4,800 candidates with zero passes. Under its historical selection rule no circuit
+qualified; the revised rule removes that success requirement. No positive-design recheck was triggered. G9 remains unqualified for passing designs. Every best-feasible report is null; all Probes
 remain available in the candidate data. Calibration, interrupted costs and exclusions are recorded in the acceptance report.
 
 The offline Codex-schema tests intercept the actual files passed by both provider paths before any CLI launch.
@@ -198,6 +212,18 @@ the sizing client, and offline tests now block real Claude/Codex model executabl
 [incident record](../artifacts/local/llm-sizing/provider-launch-incident.json) is retained. No paid experiment has
 been authorized; this incident must not be represented as a passing no-calls gate.
 
-The live frontend bundle and port 8765 were not changed by this work. Feature code and imported tasks remain
-uncommitted. Measured provider checks and each benchmark pilot still need the separate call and notional-cost
-ceilings specified in section 8 of the brief, together with confirmation of model IDs and effort.
+The core optimizer and workbench feature are committed as `4634200` and `7c7a0ff`. On 2026-09-30, the user
+requested deployment: the current tested frontend was built and served on port 8765, and the backend was gracefully
+restarted with its previous settings and launch environment. A read-only live browser check displayed all four
+search methods with no JavaScript errors. The prior frontend bundle is retained for recovery.
+The comparison-protocol revision, imported tasks and other sessions' pending changes remain uncommitted.
+
+Deployment validation: 1,615 tests passed, one expected Agent-tab schema failure, no skips; 123 scratch browser
+checks passed, and the production build type-checked. The first full suite had one worker-timeout failure under
+concurrent browser/build load; its entire 13-test module and the full rerun passed unchanged. Logs and the exact
+source hashes are in [deployment evidence](../artifacts/local/llm-sizing/deployment-20260930/deployment.json).
+No optimizer code changed during deployment. No real model, bridge or Spectre request was made.
+Measured provider checks and each benchmark pilot still need the separate call and notional-cost ceilings in
+section 8 of the brief, together with confirmation of model IDs and effort. The
+[four-call validation proposal](../artifacts/local/llm-sizing/deployment-20260930/live-validation-proposal.json)
+is not authorization and does not authorize the performance comparison.

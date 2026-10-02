@@ -88,14 +88,15 @@ await runChecks(browser, async () => {
   let mark = loads.length;
   await choose('Task', 'synthetic:gpdk045_ota5'); await settle(mark);
   check('choosing a task sends exactly one load: that task, without the two file paths', loads.length === mark + 1 && loads[mark].source === 'registered_task'
-    && loads[mark].task_id === 'synthetic:gpdk045_ota5' && loads[mark].netlist_path === null && loads[mark].parser_config_path === null, JSON.stringify(loads.slice(mark)));
+    && loads[mark].task_id === 'synthetic:gpdk045_ota5' && loads[mark].netlist_path == null && loads[mark].parser_config_path == null, JSON.stringify(loads.slice(mark)));
+  // `== null`: since record 7.146 a task choice leaves both paths out instead of writing them as null; the backend reads both as null
   check('the task is read: MOCK backend, its hierarchy', (await text()).includes('MOCK evaluation backend') && (await text()).includes('Hierarchy ('));
   const after = await options();
   check('the removed entry and the note are gone', !after.some(o => o.value === '' ) && (await evaluate(`${SOURCE}.value`)) === 'synthetic:gpdk045_ota5'
     && !(await text()).includes('This configuration was saved with a Spectre netlist file'), after.map(o => o.value).join(' | '));
   await sleep(1200);                                                                // the page keeps its copy 0.8 s after a change
   const kept = await saved();
-  check('the browser\'s saved copy no longer names the files', kept?.source === 'registered_task' && kept.netlist_path === null && kept.parser_config_path === null, JSON.stringify(kept));
+  check('the browser\'s saved copy no longer names the files', kept?.source === 'registered_task' && kept.netlist_path == null && kept.parser_config_path == null, JSON.stringify(kept));
   await shot('source-2-registered-task.png');
 
   // ---- Undo brings the old configuration back, still without a request ---------------------------------------------------------

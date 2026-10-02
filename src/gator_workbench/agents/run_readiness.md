@@ -42,15 +42,16 @@ A start is refused at the first of these that fails, and nothing is created or c
     Virtuoso cell its finished result becomes the task's reference by itself (the column then no
     longer says "no real baseline yet"). Then "Start".
 
-## The task's own rows: "Load task"
+## The task's own rows: "Reload saved values"
 
-For a registered task the Project panel (left) has **Load task**. It replaces the rows of
+Choosing a registered task loads its rows automatically; edited rows require a discard decision before switching.
+The Project panel (left) also has **Reload saved values**, which asks before discarding edits. It replaces the rows of
 the three tables with the task's own, free and exact: for a verified real circuit the parameters its
 profile fixes (the same rows as `required_parameter_rows`) and its targets of record, each with the
 source it comes from; for a profile made from a cell the parameters and measurements, no target; for a
 MOCK task the fixture's rows. When the tables are empty, or hold rows of ANOTHER task (a MOCK `score`
 target on a real circuit, variables that differ from `required_parameter_rows`), advise that button
-first - it costs no request and cannot be wrong. Draft rows only for what it cannot give: a cell without
+first when the user wants to restore the saved rows - it makes no paid agent or simulation request. Draft rows only for what it cannot give: a cell without
 a profile, a requirement of the user's own. Targets of record are not provisional values: they state
 their source; do not relabel or replace them unless the user asks.
 

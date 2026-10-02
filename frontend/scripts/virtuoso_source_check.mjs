@@ -78,7 +78,9 @@ try {
     if (pathname === '/api/tasks/starter') {                                         // a task saved in this check brings the rows it registered
       const task = new URL(request.url).searchParams.get('task_key');
       return [...created].some(key => task === `real:${key.split('/')[1]}`)
-        ? fulfil(requestId, 200, { project: { name: 'fixture-profile', task_name: task.replace('real:', '') }, parameters: ROWS, targets: [], measurements: [], run: {} })
+        ? fulfil(requestId, 200, { project: { name: 'fixture-profile', task_name: task.replace('real:', '') },
+            circuit: { source: 'registered_task', task_id: task, circuit_class: 'vco', pdk_id: 'gpdk045' },
+            parameters: ROWS, targets: [], measurements: [], run: {} })
         : send('Fetch.continueRequest', { requestId });
     }
     if (pathname === '/api/circuit/load') {                                          // an imported cell loads from the backend's export
@@ -348,11 +350,11 @@ try {
   await choose('Task', 'real:ota5_v1'); await quiet();
   check('the saved task is opened in the Task list', (await value('Task')) === 'real:ota5_v1', await value('Task'));
   // Since 2026-09-24 (status record 7.78) Delete task stands in the task row at the top of the column, at the right end,
-  // next to "Load task" (was: Load starter configuration); what it does is its tooltip.
-  const taskRow = await evaluate(`(() => { const d = ${BUTTON('Delete task')}, l = ${BUTTON('Load task')}; if (!d || !l) return 'missing';
+  // next to "Reload saved values" (was: Load starter configuration); what it does is its tooltip.
+  const taskRow = await evaluate(`(() => { const d = ${BUTTON('Delete task')}, l = ${BUTTON('Reload saved values')}; if (!d || !l) return 'missing';
     return d.closest('.row.task-buttons') === l.closest('.row.task-buttons') && d.getBoundingClientRect().left > l.getBoundingClientRect().right
       && Math.abs(d.getBoundingClientRect().top - l.getBoundingClientRect().top) < 4 ? 'ok' : 'elsewhere'; })()`);
-  check('"Delete task" stands at the right of "Load task", in the task row', taskRow === 'ok', taskRow);
+  check('"Delete task" stands at the right of "Reload saved values", in the task row', taskRow === 'ok', taskRow);
   check('the task row is the only place: the block does not say "To start over from the cell" any more', !(await text()).includes('To start over from the cell'));
   mark = calls.length; answers.push(false);
   await evaluate(`${BUTTON('Delete task')}.click()`); await quiet(800);
@@ -424,6 +426,7 @@ try {
   await windowTarget(false); await sleep(500);
   check('closing the window keeps the page on the cell; the column names it and offers the window again', (await stored()).circuit.source === 'virtuoso'
     && (await evaluate(`${LAUNCH}.closest('.row').querySelector('.hint').textContent`)) === 'Read from Virtuoso: FIXTURE_OTHER/inv' && !!(await evaluate(`!!(${LAUNCH})`)));
+  answers.push(true);                       // leave the cell draft and replace its rows with the selected task's
   await choose('Task', 'synthetic:gpdk045_ota5'); await sleep(1200);
   check('choosing a task in the column makes the page follow it again', (await stored()).circuit.source === 'registered_task' && (await value('Task')) === 'synthetic:gpdk045_ota5');
 

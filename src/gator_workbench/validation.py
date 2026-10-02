@@ -675,7 +675,7 @@ def validate(config: WorkbenchConfig, *, graph=None, provided_metrics=None,
 
 def _check_saved_task(config, report):
     """A saved task runs exactly as it was saved (task flow part 4, consistency.py): Parameters, Probes or Specs rows that
-    differ from its task file block a start until "Save task" stores them, or "Load task" takes the saved
+    differ from its task file block a start until "Save task" stores them, or "Reload saved values" takes the saved
     rows back. A resume runs the run's own saved rows, so it is not compared."""
     if config.run.mode == 'resume':
         return

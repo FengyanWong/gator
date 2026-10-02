@@ -122,7 +122,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     setDeleted(null); setSaved(made.created ? made : null);
     refreshTasks();
     if (made.task_key === ref.task_id) { setConfig(c => ({ ...c, parameters: made.parameters })); load(ref); return; }
-    setConfig(c => ({ ...c, parameters: made.parameters, circuit: { ...c.circuit, source: 'registered_task', task_id: made.task_key, circuit_class: made.circuit_class, pdk_id: made.pdk_id } }));
+    setConfig(c => ({ ...c, parameters: made.parameters, project: { ...c.project, task_name: made.task_key.replace(/^[^:]+:/, '') },
+      circuit: { ...c.circuit, source: 'registered_task', task_id: made.task_key, circuit_class: made.circuit_class, pdk_id: made.pdk_id } }));
   };
   // A saved task: "Check now" runs the check Start runs by itself before every run (backend consistency.py - the editors,
   // the task file and the cell in Virtuoso must agree; the run adapter connects and exports without simulating). A
@@ -262,57 +263,53 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   const namedHere = namedTestbench(cells, chosen.cell);
   const cellInfo = new Map<string, Json>((cells?.cells ?? []).map((c: Json) => [c.name, c]));   // one look-up per option, not a search
 
-  // Choosing a task brings THAT task's rows (user report 2026-09-21: real:gpdk045_ota5 still showed the MOCK fixture's
-  // "score" as its only spec, and "synthetic-fixture" as its PDK). The labels follow at once. The rows of the three editors
-  // are exchanged only while they are nobody's work - empty, or still exactly what the task before had brought; rows that
-  // were edited stay, and the button offers the exchange. A project name nobody typed - the untouched default, or what some
-  // task's starter gives (mock-gpdk045-ota5 ...) - follows too, so a real run is not filed under mock_*; a typed name stays,
-  // on the button as well. The exchange is not a history step of its own: one Undo takes back the task choice and
-  // everything it brought. The rows of a MOCK task that no longer exists (four were removed, status record 7.59) are
-  // nobody's work either: no task can run them. Choosing a task always makes the page follow it (source registered_task),
-  // also while it followed a Virtuoso cell or the removed netlist source (whose two file paths then go: nothing reads them).
-  const [taskRows, setTaskRows] = useState<Json>(null);      // what the last task choice did to the editors: { task, state, ... }
-  const following = useRef(0);                               // only the newest choice may answer
-  const starterNamed = (p: Json) => (p.name === 'gator-project' && p.task_name === 'task')
-    || tasks.some(t => t.starter_project?.name === p.name && t.starter_project?.task_name === p.task_name);
+  // Keep the current task and its rows together until the next task is ready. A switch is one Undo step, after any
+  // edited rows have been explicitly discarded. Project identity stays; the run label follows the selected task.
+  const [taskRows, setTaskRows] = useState<Json>(null);
+  const [taskLoading, setTaskLoading] = useState<string | null>(null);
+  const [taskLoadError, setTaskLoadError] = useState<string | null>(null);
+  const following = useRef(0);
+  useEffect(() => () => { following.current++; }, []);
   const starterProblem = (e: any, taskId: string) => (e.status === 404 && taskId.startsWith('real:')
     ? 'This backend is older than the page and has no starting rows for a real task yet: restart it (gator_workbench.cli serve).' : e.message);
   const goneMock = (taskId?: string | null) => !!taskId && taskId.startsWith('synthetic:') && tasks.length > 0 && !tasks.some(t => t.task_key === taskId);
   const removedMock = ref.source === 'registered_task' && goneMock(ref.task_id);
-  // What a removed MOCK task's starter named the project (mock-vco / mock_vco): nobody typed it either.
-  const goneStarterNamed = (p: Json, taskId: string) => { const n = taskId.slice('synthetic:'.length); return p.name === `mock-${n}` && p.task_name === `mock_${n}`; };
   // `labels`: the class and PDK id of a task just saved (the ngspice window) - not in the task list read before the save.
-  const chooseTask = async (taskId: string, labels?: { circuit_class?: string | null; pdk_id?: string | null }) => {
-    const before = config, mine = ++following.current, gone = goneMock(before.circuit.task_id);
-    const listed = labels ?? tasks.find(t => t.task_key === taskId);
-    // The rows the task before brought when it was chosen: a task deleted since has no rows to read any more, and one
-    // saved again (a new revision) reads as its new rows - either made untouched rows look edited.
-    const brought = taskRows?.task === before.circuit.task_id ? taskRows?.starter ?? null : null;
-    patch({ source: 'registered_task', task_id: taskId, ...(offered ? {} : { netlist_path: null, parser_config_path: null }),
-      ...(listed?.circuit_class ? { circuit_class: listed.circuit_class } : {}), ...(listed?.pdk_id ? { pdk_id: listed.pdk_id } : {}) });
-    setTaskRows({ task: taskId, state: 'reading' });
-    const [previous, starter] = await Promise.all([
-      before.circuit.task_id ? api.starter(before.circuit.task_id).catch(() => null) : null,
-      api.starter(taskId).catch((e: any) => ({ problem: starterProblem(e, taskId) }))]);
-    if (mine !== following.current) return;
-    if (starter.problem) { setTaskRows({ task: taskId, state: 'unavailable', text: starter.problem }); return; }
-    const untouched = noRows(before) || gone || (!!previous && sameRows(before, previous)) || (!!brought && sameRows(before, brought));
-    setConfig(c => (c.circuit.task_id !== taskId ? c : {
-      ...c, project: starterNamed(c.project) || (gone && goneStarterNamed(c.project, before.circuit.task_id)) ? { ...c.project, ...starter.project } : c.project,
-      ...(untouched ? { parameters: starter.parameters, targets: starter.targets, measurements: starter.measurements } : {}) }), false);
-    setTaskRows({ task: taskId, state: untouched ? 'brought' : 'kept', starter, from: before.circuit.task_id });
-  };
-  const useStarter = async () => {
-    const taskId = ref.task_id, mine = ++following.current;
+  const chooseTask = async (taskId: string, labels?: { circuit_class?: string | null; pdk_id?: string | null }, reload = false) => {
+    const before = latest.current, mine = ++following.current;
+    const currentTask = before.circuit.source === 'registered_task' ? before.circuit.task_id : null;
+    const stillHere = () => mine === following.current && latest.current.circuit === before.circuit;
+    const brought = taskRows?.task === currentTask ? taskRows.starter : null;
+    setTaskLoadError(null);
+    setTaskLoading(taskId);
     try {
-      const starter = await api.starter(taskId);
-      if (mine !== following.current) return;           // another task was chosen meanwhile: its rows, not these
-      // The task's rows and its circuit reference; the run, output and research settings stay the user's - the MOCK
-      // task's starter used to reset the budget to 60 and the seed to 17 here, which the tooltip never said (2026-09-29).
-      setConfig(c => ({ ...c, ...starter, project: starterNamed(c.project) ? { ...c.project, ...starter.project } : c.project,
-        run: c.run, output: c.output, research: c.research }));
+      const [previous, starter] = await Promise.all([
+        currentTask && currentTask !== taskId ? api.starter(currentTask).catch(() => null) : null,
+        api.starter(taskId)]);
+      if (!stillHere()) return;
+      // Check the rows NOW: the user can edit while the read is in flight. A saved-again task may differ from the
+      // rows it originally brought; either known baseline counts as untouched when switching to another task.
+      const now = latest.current, baseline = currentTask === taskId ? starter : previous;
+      const untouched = noRows(now) || sameRows(now, starter) || (!!baseline && sameRows(now, baseline))
+        || (!reload && !!brought && sameRows(now, brought));
+      if (!untouched && !window.confirm(`${reload ? 'Reload saved values' : `Switch to ${taskId}`}?\n\n`
+        + 'This replaces your unsaved Parameters, Probes and Specs edits.\n'
+        + 'OK = discard those edits and load the saved rows.\nCancel = keep the current task and edits. You can save them with Save task first.')) return;
+      const nextCircuit = { ...starter.circuit, ...labels, source: 'registered_task', task_id: taskId };
+      setConfig(c => c.circuit !== before.circuit ? c : ({ ...c,
+        circuit: nextCircuit,
+        project: { ...c.project, task_name: starter.project.task_name },
+        parameters: starter.parameters, targets: starter.targets, measurements: starter.measurements }));
+      request.current++;                         // any pending circuit view still belongs to the previous task
+      followCount.current++;                     // a pending Virtuoso probe read cannot replace the new task's rows
+      setCircuit(null);
+      if (currentTask === taskId) load(nextCircuit);
       setTaskRows({ task: taskId, state: 'brought', starter });
-    } catch (e: any) { setError(starterProblem(e, taskId ?? '')); }
+    } catch (e: any) {
+      if (stillHere()) setTaskLoadError(`Could not load ${taskId}. The current task and rows are unchanged. ${starterProblem(e, taskId)}`);
+    } finally {
+      if (mine === following.current) setTaskLoading(null);
+    }
   };
   // A cell that already has a registered task - the task saved from it, or one of the verified built-in circuits - gets
   // no second task: the note names the task. One short button, because it is about THIS cell (not a list of tasks); it
@@ -342,8 +339,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   const column = (
     <section className="panel">
       <h3>Project</h3>
-      <label>Name<input value={config.project.name} onChange={e => setConfig(c => ({ ...c, project: { ...c.project, name: e.target.value } }))} /></label>
-      <label>Task name<input value={config.project.task_name} onChange={e => setConfig(c => ({ ...c, project: { ...c.project, task_name: e.target.value } }))} /></label>
+      <label>Project name<input value={config.project.name} onChange={e => setConfig(c => ({ ...c, project: { ...c.project, name: e.target.value } }))} /></label>
       <h3>Registered task</h3>
       {!offered && <div className="note"><p>This configuration was saved with a Spectre netlist file{ref.netlist_path ? <> (<code>{ref.netlist_path}</code>)</> : null}.
         The workbench no longer imports netlists: choose a task below, or a Virtuoso cell in its window.</p></div>}
@@ -362,11 +358,9 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
             on 2026-09-30, record 7.128): a plain note, not a red "Blocked". */}
         {removedMock && <div className="note"><p><code>{ref.task_id}</code> no longer exists: the workbench has no MOCK task since
           2026-09-30. Choose one of your saved tasks under Task; it brings its own rows.</p></div>}
-        {/* The task's two buttons in one row (user request 2026-09-24): "Load task" (was: Load starter configuration) brings
-            its rows; "Delete task" at the right end, for a task that can leave the list - one saved from a cell, or an ngspice
-            netlist; a built-in circuit cannot. What Delete does is in its tooltip; it asks once more. */}
+        {/* Choosing a task loads its rows. Reload is only for resetting the current task to its saved values. */}
         {ref.task_id && !removedMock && <div className="row task-buttons">
-          <button onClick={useStarter} title="Load task: Replaces the rows of Parameters, Probes and Specs with this task's own. The MOCK task: the width groups of its circuit and the toy score. A real circuit: the parameters its profile fixes and its targets of record. Your run and output settings stay. Everything stays editable, and Undo takes it back."><Icon name="load" label="Load task" /></button>
+          <button disabled={!!taskLoading} onClick={() => chooseTask(ref.task_id, undefined, true)} title="Reload saved values: Reset Parameters, Probes and Specs to the saved task. Asks before discarding edits. Project, run and output settings stay. Undo takes it back."><Icon name="load" label="Reload saved values" /></button>
           <span className="spacer" />
           {(deletableName || ngspiceTask) && <button disabled={!!profileBusy} onClick={ngspiceTask ? deleteNgspice : deleteProfile}
             title={ngspiceTask ? 'Delete task: Asks once more. The task leaves the Registered task list; its deck and task file are kept aside on the backend machine, and runs already made keep their data.'
@@ -374,14 +368,11 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
             <Icon name="delete-task" label={profileBusy === 'delete' ? 'Deleting...' : 'Delete task'} /></button>}
         </div>}
         {profileMessage?.what === 'delete' && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
-        {taskRows?.task === ref.task_id && (
-          taskRows.state === 'reading' ? <p className="hint task-rows">Reading this task's rows...</p>
-          : taskRows.state === 'unavailable' ? <p className="error task-rows">{taskRows.text}</p>
-          : taskRows.state === 'kept' ? <p className="warn task-rows">Parameters, Probes and Specs still hold the rows you edited{taskRows.from ? <> for <code>{taskRows.from}</code></> : null}.
-              <b> Load task</b> replaces them with this task's.</p>
-          : sameRows(config, taskRows.starter) && <p className="hint task-rows">Parameters, Probes and Specs now show this task's rows
-              {taskRows.starter.targets.length ? '' : ' - it has no targets of record, so Specs is yours to fill (its results are ready in Probes)'}. Undo brings the previous ones back.</p>)}
+        {!taskLoading && taskRows?.task === ref.task_id && sameRows(config, taskRows.starter) && <p className="hint task-rows">Parameters, Probes and Specs now show this task's rows
+              {taskRows.starter.targets.length ? '' : ' - it has no targets of record, so Specs is yours to fill (its results are ready in Probes)'}. Undo brings the previous ones back.</p>}
       </>)}
+      {taskLoading && <p className="hint task-rows" role="status">Loading <code>{taskLoading}</code>...</p>}
+      {taskLoadError && <p className="error task-rows" role="alert">{taskLoadError}</p>}
       {/* The two other ways to a task, each ONE button that opens its window (user request 2026-09-23): the Virtuoso cellview
           import and an ngspice netlist. One small grid, so the two buttons stand under each other in one column and the text
           beside each says what the page follows (user: "arrange this part to make it more readable", 2026-09-23). */}

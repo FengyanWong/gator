@@ -152,9 +152,12 @@ def run_calibration(directory, output, scratch, method, seed, count, stop=None, 
                 report['simulator_processes'] += result.simulator_invocations or 0
                 native = read_json(result.artifact_directory / 'benchmark.json')
                 evaluated = evaluator.evaluate_conditions((result,))
-                verdict = result.status.value in ('ok', 'measurement_error') and hard_constraints(
-                    compiled.targets, result.metrics, result.metric_validity)[1]
-                item.update(status=result.status.value, reward=evaluated.reward if evaluated.valid else None,
+                valid, feasible, violations, violation = hard_constraints(
+                    compiled.targets, result.metrics, result.metric_validity)
+                verdict = result.status.value in ('ok', 'measurement_error') and feasible
+                item.update(valid=valid and result.status.value in ('ok', 'measurement_error'),
+                            normalized_constraint_violation=violation, spec_violations=violations,
+                            status=result.status.value, reward=evaluated.reward if evaluated.valid else None,
                             gator_passed=verdict, metrics=result.metrics, metric_units=result.metric_units,
                             native_metrics=native['native_metrics'], upstream_on_imported_outputs=native['upstream_passed'],
                             clearance_margin=evaluated.clearance_margin,
@@ -220,12 +223,14 @@ def summarize(reports, expected, stop):
         np = sum(r['success'] for r in pattern_runs)
         complete = len(random_runs)==5 and len(pattern_runs)==3 and all(r['completed'] for r in rows)
         circuits.append(dict(circuit=name, completed=complete, random_successes=nr, random_runs=len(random_runs),
-            pattern_successes=np, pattern_runs=len(pattern_runs), eligible=complete and nr<=1 and np>0))
+            pattern_successes=np, pattern_runs=len(pattern_runs),
+            eligible=not any(r.get('error') or any(d.get('error') and 'disagree' in d['error']
+                             for d in r['designs']) for r in rows)))
     selected = [r['circuit'] for r in circuits if r['eligible']][:3]
     return dict(status='stopped' if stop.is_set() else 'complete' if len(reports)==expected else 'running',
         expected_runs=expected, completed_runs=sum(r['completed'] for r in reports), circuits=circuits,
         selected_circuits=selected, selection_satisfied=len(selected)==3,
-        selection_rule='At most 1/5 random successes, at least one pattern success; alphabetical tie-break; LDO excluded by B3.',
+        selection_rule='B3 import/domain/parity eligibility only; no short-run success requirement; first three alphabetically. LDO excluded by B3.',
         candidate_evaluations=sum(len(r['designs']) for r in reports),
         simulator_processes=sum(r['simulator_processes'] for r in reports),
         upstream_verification_processes=sum(r['verification_processes'] for r in reports),

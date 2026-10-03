@@ -35,6 +35,47 @@ def _mtime(path):
         return 0
 
 
+SCRATCH_FOLDERS = ('exports', 'simulations')     # an environment's export packages and per-job simulation folders
+
+
+def link_scratch(directory, root):
+    """Make an environment's scratch folders links into `root` (record 7.149). The environment creates them only when
+    it first uses them, so a fresh one has neither; a folder that cannot be linked stays where it is."""
+    directory = Path(directory)
+    for name in SCRATCH_FOLDERS:
+        link = directory / name
+        if link.exists() or link.is_symlink():
+            continue
+        target = Path(root) / directory.name / name
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+            link.symlink_to(target, target_is_directory=True)
+        except OSError:
+            pass
+
+
+def unlink_scratch(directory):
+    """Remove the links `link_scratch` made (not what they point to: the run removes its scratch as a whole)."""
+    for name in SCRATCH_FOLDERS:
+        link = Path(directory) / name
+        if link.is_symlink():
+            link.unlink()
+
+
+class ScratchLinked:
+    """An environment factory whose environments keep their simulator scratch on the local disk, under `root`
+    (`layout.local_scratch`). Each environment's own folder - launch journals, candidate records, restoration record -
+    stays where the factory puts it. Picklable whenever `factory` is: a process lane builds its environment itself."""
+
+    def __init__(self, factory, root):
+        self.factory, self.root = factory, str(root)
+
+    def __call__(self, lane_id):
+        env = self.factory(lane_id)
+        link_scratch(env.directory, self.root)
+        return env
+
+
 class _EnvDriver:
     """Runs inside the lane (thread or worker process) and owns the environment."""
     def __init__(self, factory, lane_id):

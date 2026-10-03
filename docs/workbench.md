@@ -1035,6 +1035,35 @@ host, so that the Virtuoso session only prepares. On Spectre at 6 lanes the valu
 faster (0.39 vs 0.41 s per evaluation on `mscr_ota7t` once every lane's OCEAN was up), and starting six OCEANs slowed
 the first 10-20 s. The preparation, not the measurement, is what limits a run (`docs/plan-measurement-off-virtuoso.md`).
 
+**Where a candidate's time goes now** (record 7.149, 7.143's 6-lane `mscr_ota7t` run). A lane's cycle is about 2.2 s:
+- 0.62 s before Spectre starts: the preparation, about 0.3 s, and its queue;
+- 1.47 s of Spectre job: Spectre about 1.0 s (reading the PDK models 0.43 s, the analyses 0.02 s), transfers about
+  0.25 s, the measurement about 0.1 s;
+- under 0.1 s after it: lanes wait 0.03-0.07 s for their next candidate.
+
+**Job folders on the WSL disk** (record 7.149). A run whose folder is on a slow mount - D: seen from WSL is 9p, about
+100 times slower per file operation - keeps its lanes' export packages and per-job folders in
+`/tmp/gator-work/<experiment>/<run>`, on the WSL disk (`layout.local_scratch`; WSL empties `/tmp` at every boot):
+- Each lane's `exports` and `simulations` folders are links there (`lanes.ScratchLinked`). The lane's own folder stays in
+  the run folder, with its launch journals, candidate records and restoration record, and so does the preparation's
+  journal (`artifacts/local/bridge-state`).
+- Retention moves each kept job folder into the run folder when its result is durable, as before; the rest are deleted
+  in the scratch.
+- When the run ends, the links and the scratch are removed (`RunEngine._clear_scratch`). The event `simulator_scratch`
+  names the folder.
+- `GATOR_LOCAL_SCRATCH=off`, set like `GATOR_NETLIST_BUILD`, turns it off.
+
+Runs from the page write to the output root of the settings (`/mnt/d/gator/outputs` here); the Spectre trials above
+wrote to the WSL disk. On Spectre with the run folder on D: (`mscr_ota7t`, 6 lanes, 40 evaluations each), the run
+took 0.84 s per evaluation with its job folders on D: and 0.50 s with the scratch. On D: the one-at-a-time preparation
+queued every lane: a built candidate took 0.46 s there instead of 0.23 s. The rest of the gap to the all-local trials
+(0.41 s) is the run's own records on D: (tables, launch journals, candidate records), which stay there. An output root
+on the WSL disk removes that part too.
+
+The windows are checked before each native export only (record 7.149): an open ADE/Maestro window conflicts with
+OCEAN's export, not with a write, and a netlist built from the readback runs no OCEAN. That is one Virtuoso call less
+for 4 of every 5 candidates, about 0.03 s of the one-at-a-time preparation.
+
 **A trimmed model library** (record 7.154). A fresh Spectre spends about 0.25 s of each job reading the model file
 (7.153), and GPDK045's corner section loads 23 parts - every transistor family, diodes, bipolars, capacitors, resistors,
 an inductor - where a circuit uses two or three. At the start of a real run of a task with a recorded baseline,
@@ -1079,6 +1108,10 @@ runs had recorded. Kept job folders no longer carry the parameter tables ADE's r
 
 With both, a one-lane `mscr_ota7t` run took 1.30 s per evaluation (20 evaluations, record 7.157), against 1.99 s in record
 7.136: preparation 0.22 s, upload 0.02 s, the remote shell and Spectre 0.58 s, download 0.05 s, OCEAN 0.10 s.
+
+Tried and removed (records 7.149 and 7.152): a Spectre that stays running in each lane, sent only each candidate's changed
+values. Its reruns took 0.05 s, but a running Spectre does not follow changes of `l` or `m` (DC up to 98% off a fresh
+Spectre on the same values), so it could not give correct values; `docs/plan-persistent-spectre.md`.
 
 ## The right column: settings, saved models and the graph view
 

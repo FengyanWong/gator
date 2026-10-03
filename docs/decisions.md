@@ -779,6 +779,47 @@ cheaper preparation or a Spectre that stays running between jobs.
 Optimizer digest `e3f8c5b8…` -> `efa93649d1e792602174994abf4a019e23e9dcf2ccef9ef0e1dd25a1beaab7ca`, the same
 uncommitted step as 7.137, 7.140 and 7.142. Committed as `1c308a5` (optimizer) and `8043c07`. Record 7.143.
 
+## Simulator scratch on the local disk; the window check before exports only (2026-10-02)
+
+Where a candidate's time went at 6 lanes on `mscr_ota7t` (7.143's run, from its tables, Spectre's log and the stack
+samples; nothing re-run): 0.62 s before Spectre starts (the preparation, about 0.3 s, and its queue); 1.47 s of Spectre
+job (Spectre about 1.0 s, of which reading the PDK models 0.43 s; transfers about 0.25 s; the measurement about 0.1 s);
+under 0.1 s after. The user chose all four next steps offered:
+- **Concurrency 6** for runs from the page: the saved setting was 1. A setting, no code.
+- **Job folders on the WSL disk** (workbench code). A run whose folder is on a slow mount (D: from WSL is 9p) keeps its
+  lanes' export packages and per-job folders in `/tmp/gator-work/<experiment>/<run>` (`layout.local_scratch`,
+  `lanes.ScratchLinked`). The lanes' own folders stay in the run folder: launch journals, candidate records,
+  restoration records. Retention moves each kept job folder there as before. `GATOR_LOCAL_SCRATCH=off` turns it off.
+  Replayed offline, a job folder took 153.5 ms on D: and 1.7 ms on the WSL disk.
+- **One call less per candidate** (optimizer). The window check guards OCEAN's export against an open ADE/Maestro window.
+  It now runs before each native export (`generate_netlist`), not before every write (`set_parameters`). A netlist built
+  from the readback (4 of every 5 candidates since 7.142) runs no OCEAN, so it checks none. The check took about 0.03 s
+  of the one-at-a-time preparation. An open window now stops the run at the next export rather than at the next write;
+  the cell is restored either way.
+- **A Spectre that stays running:** the user lifted the adapter's rule "No ... Spectre runner ... is reimplemented
+  here" for it. Plan: `docs/plan-persistent-spectre.md`; nothing built.
+
+On Spectre with the run folder on D: (`mscr_ota7t`, 6 lanes, 40 evaluations each): 0.84 s per evaluation with the
+job folders on D:, 0.50 s with the scratch; cells equal to their records afterwards.
+
+Optimizer digest `34bc85f4…` -> `f83342bcc50a7b385cadad1770d8ae06962d48fa4cdbcb76ceceef08bcb7cc77`. Not committed.
+Record 7.149.
+
+## A Spectre that stays running in each lane: built, tried, removed (2026-10-02/03)
+
+The user chose to build it knowing that a rerun's values depend, in about the sixth digit, on the candidates before it
+(7.149's G0): "I'd rather have the ~25% speed-up with those tiny order-dependent differences, build it". The adapter's
+rule against a Spectre runner of our own was lifted for it, and the session was built off by default, with a fresh check
+every 5th run and a fallback to fresh runs.
+
+On the real Spectre the protocol worked, but trial 1 showed far larger differences (gain 263 against 342). The cause: a
+running Spectre follows changes of `w` and `sca`/`scb`/`scc` but not of `l` or `m`, whether through `sclSetAttribute` or
+alter analyses. Sizing changes `l` and `m`, so the session could not give correct values. The checks caught it at the
+first comparison in every lane, so no wrong value entered the run.
+
+Removed at the user's decision ("Remove it"): the hook, the session code and its tests. The adapter's rule stands as
+before, and the digest is back to 7.149's. Record 7.152.
+
 ## A trimmed model library, for any circuit (2026-10-03)
 
 User: "build the trimmed library for any circuit", after record 7.153 had measured about 0.25 s of model reading saved

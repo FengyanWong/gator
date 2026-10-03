@@ -33,8 +33,8 @@ from uuid import uuid4
 from . import best_design, checkpoints as ckpt, modes
 from .budget import BudgetLedger
 from .compile import compile_task, hard_constraints
-from .lanes import open_lanes
-from .layout import RunLayout, build_artifact_manifest, run_bytes
+from .lanes import ScratchLinked, open_lanes, unlink_scratch
+from .layout import RunLayout, build_artifact_manifest, local_scratch, run_bytes
 from .schema import WorkbenchConfig, task_definition_hash
 from .security import redact
 from .storage.atomic import JsonlAppender, PersistenceError, read_json, read_jsonl, write_json
@@ -188,6 +188,7 @@ class RunEngine:
         # has no writer but this engine (_apply_retention) while it holds the run lock. A MOCK evaluation re-resolved the
         # folder three times and re-read the index every time.
         self._work_resolved = self._waveform_index = None
+        self._scratch = None              # the run's simulator scratch on the local disk, when it has one (_prepare)
 
     # ================================================================== lifecycle
     def run(self):
@@ -324,6 +325,11 @@ class RunEngine:
             factory = self._preparation.enter_context(prepare_context(WorkerLimits(), self.preparation_report))
             self._event('preparation_service_started', session=(self.preparation_report.get('preparation') or {}).get('session_dir'))
         limits = WorkerLimits(operation_seconds=max(300., (1 + len(run.conditions.corners)) * adv.simulation_timeout_seconds + 180.))
+        self._scratch = local_scratch(self.layout)
+        if self._scratch is not None:                    # wrapped last: it keeps the preparation service's factory as is
+            factory = ScratchLinked(factory, self._scratch)
+            self._event('simulator_scratch', path=str(self._scratch),
+                        note='export packages and per-job folders on the local disk; kept job folders move to the run folder')
         self.lanes = open_lanes(factory, count, use_processes=self.use_processes, limits=limits)
         self.lane_state = {lane.lane_id: dict(observation=None, needs_reset=True, busy=None, finished=False,
                                               episode_id=None, reset_cache_valid=False, resets_since_check=0)
@@ -1318,9 +1324,9 @@ class RunEngine:
     def _inside_work(self, path):
         try:
             resolved = Path(path).resolve()
-            if self._work_resolved is None:
-                self._work_resolved = self.layout.work.resolve()
-            return self._work_resolved in resolved.parents and not Path(path).is_symlink()
+            if self._work_resolved is None:              # work/, and the run's local scratch when it has one
+                self._work_resolved = [self.layout.work.resolve()] + ([self._scratch.resolve()] if self._scratch else [])
+            return any(root in resolved.parents for root in self._work_resolved) and not Path(path).is_symlink()
         except OSError:
             return False
 
@@ -1451,6 +1457,25 @@ class RunEngine:
         return metadata
 
     # ------------------------------------------------------------------ finalize
+    def _clear_scratch(self):
+        """Once the lanes and the preparation service are closed: the links in the lanes' folders, then the run's local
+        scratch itself (`layout.local_scratch`). Each kept job folder moved to the run folder when its result was
+        durable; the rest are temporaries, as in work/."""
+        if self._scratch is None:
+            return
+        for lane in self.lanes:
+            directory = (getattr(lane, 'info', None) or {}).get('directory')
+            if directory:
+                try:
+                    unlink_scratch(directory)
+                except OSError:
+                    pass
+        shutil.rmtree(self._scratch, ignore_errors=True)
+        try:
+            self._scratch.parent.rmdir()              # the experiment's folder, once none of its runs has scratch left
+        except OSError:
+            pass
+
     def _finalize(self, final_state):
         problems = []
         if self.search:
@@ -1472,6 +1497,7 @@ class RunEngine:
             except BaseException as exc:
                 problems.append(f'preparation service: {type(exc).__name__}: {exc}')
             self._preparation = None
+        self._clear_scratch()
         checkpoint = None
         persistence_ok = self.dataset is not None and self.dataset.failed is None
         if persistence_ok and hasattr(self, 'ledger'):

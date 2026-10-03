@@ -283,9 +283,10 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                     raise RuntimeError(f'Restoration mismatch: {name}.{key}')
 
     def set_parameters(self, parameters):
+        # No window check here: an open ADE/Maestro window conflicts with OCEAN's export, not with a write, so it is
+        # checked before each export (`generate_netlist`). A netlist built from the readback needs none (record 7.149).
         self._require_connection()
         self.circuit.validate_assignment(parameters)
-        self._check_windows()
         before = self._read_snapshot()
         previous = self.circuit.validate_readback(before)
         self._verify_restored(before, self._current)
@@ -393,9 +394,12 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         self.validate_condition(condition)
         self._require_connection()
         if just_written:
-            # Straight after `set_parameters`, which checked the windows and read the cell before and after its write in
-            # the same transaction: the cell is that readback. The export is still checked against it, and the read after
-            # the export still proves the cell holds it (record 7.137, user decision of 2026-10-01).
+            # Straight after `set_parameters`, which read the cell before and after its write in the same transaction:
+            # the cell is that readback. The export is still checked against it, and the read after the export still
+            # proves the cell holds it (record 7.137, user decision of 2026-10-01). The windows are checked only when an
+            # export follows: a netlist built from the readback runs no OCEAN (record 7.149).
+            if built is None:
+                self._check_windows()
             started = perf_counter()
             snapshot = deepcopy(self._current)
         else:

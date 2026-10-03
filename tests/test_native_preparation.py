@@ -389,6 +389,30 @@ def test_by_default_a_netlist_is_built_from_the_readback_with_a_native_export_ev
         service.close()
 
 
+def test_the_windows_are_checked_before_each_export_and_not_for_a_built_netlist(adapter, monkeypatch, tmp_path):
+    """Record 7.149: an open ADE/Maestro window conflicts with OCEAN's export, not with a write. A candidate whose netlist
+    is built from its readback runs no OCEAN and checks no window; the next export still refuses such a window."""
+    service, _ = started(adapter, monkeypatch, None)
+    checks, windows = [], []
+
+    def listed():
+        checks.append(1)
+        return list(windows)
+    adapter.test_client.list_windows = listed
+    try:
+        made = []
+        for index, width in enumerate([4.1e-6, 3.6e-6, 4.4e-6, 4.105e-6, 4.1e-6]):
+            before = len(checks)
+            _, _, metadata = service.prepare(adapter.circuit.assignments(width), tmp_path, adapter.nominal_condition(), f'c{index}')
+            made.append((metadata['netlist_source'], len(checks) - before))
+        assert made == [('native export', 1)] + [('built from the readback', 0)] * 4
+        windows.append({'name': 'ADE Assembler'})                                  # opened while the run goes on
+        with pytest.raises(RuntimeError, match='conflicts with OCEAN export'):     # the 6th candidate is exported
+            service.prepare(adapter.circuit.assignments(3.6e-6), tmp_path, adapter.nominal_condition(), 'c5')
+    finally:
+        service.close()
+
+
 def test_an_unknown_netlist_mode_is_refused_before_anything_is_prepared(adapter, monkeypatch):
     monkeypatch.setenv('GATOR_NETLIST_BUILD', 'sometimes')
     service = PreparationService(lambda: adapter, timeout_seconds=10)

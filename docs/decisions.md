@@ -2,7 +2,9 @@
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
-- **Optimizer source digest:** `34bc85f4472fddf90a0245515121c4ffc2dd4632ce30561c9026e46efb41e89b`, set by `1c308a5`
+- **Optimizer source digest:** `f83342bcc50a7b385cadad1770d8ae06962d48fa4cdbcb76ceceef08bcb7cc77`, set by `ab34f03`
+  (record 7.149, 2026-10-02: the windows are checked before each native export only, not before every write). Before it:
+  `34bc85f4472fddf90a0245515121c4ffc2dd4632ce30561c9026e46efb41e89b`, set by `1c308a5`
   (records 7.137, 7.140, 7.142 and 7.143, 2026-10-02: the native preparation reads the cell three times per
   candidate, not five; by default it builds most netlists from the readback, with a native export every 5th candidate; a
   value one float step past its bound counts as the bound, in the group check and in `ActionMapper.encode`; up to 6
@@ -802,7 +804,7 @@ under 0.1 s after. The user chose all four next steps offered:
 On Spectre with the run folder on D: (`mscr_ota7t`, 6 lanes, 40 evaluations each): 0.84 s per evaluation with the
 job folders on D:, 0.50 s with the scratch; cells equal to their records afterwards.
 
-Optimizer digest `34bc85f4…` -> `f83342bcc50a7b385cadad1770d8ae06962d48fa4cdbcb76ceceef08bcb7cc77`. Not committed.
+Optimizer digest `34bc85f4…` -> `f83342bcc50a7b385cadad1770d8ae06962d48fa4cdbcb76ceceef08bcb7cc77`, committed as `ab34f03` (optimizer) and `a16bdd1` (workbench).
 Record 7.149.
 
 ## A Spectre that stays running in each lane: built, tried, removed (2026-10-02/03)

@@ -412,8 +412,6 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
         {circuit.interface_contract && <details><summary>Interface contract</summary><pre>{JSON.stringify(circuit.interface_contract, null, 1)}</pre></details>}</div>}
       {ref.source === 'registered_task' && circuit?.loaded && (<>
         {circuit.mock && <p className="mock">MOCK evaluation backend: {circuit.evaluation_backend}</p>}
-        {circuit.mock === false && !circuit.native_draft && circuit.simulator !== 'ngspice' && <p className="real">REAL evaluation backend: {circuit.evaluation_backend ?? 'Virtuoso + Spectre'}. Every
-          evaluation is a costed simulation; Start asks you to authorize the budget first.</p>}
         {circuit.simulator === 'ngspice' && (<>
           <p className="real">ngspice evaluation backend: every evaluation is one real circuit simulation by ngspice (no license). Start asks you to
             confirm the number of simulations first.</p>

@@ -104,11 +104,13 @@ def register(app: FastAPI, context: ApiContext):
         return result
 
     @app.get('/api/runs/default-model')
-    def default_model(project: str):
-        """Default = last compatible model used by this project, and that run's `latest`, not `best`."""
-        last = (runs.load_settings().get('last_run') or {}).get(project)
+    def default_model(label: str | None = None, project: str | None = None):
+        """Default = the newest model saved under this RL model label (record 7.159), and that run's `latest`, not
+        `best`. `project`: the project name runs were remembered under before the label, asked when the label has none."""
+        remembered = runs.load_settings().get('last_run') or {}
+        last = (remembered.get(label.strip()) if label and label.strip() else None) or (remembered.get(project) if project else None)
         if not last or not context.roots.is_allowed(last) or not (Path(last) / 'checkpoints' / 'latest.json').is_file():
-            return dict(run_dir=None, checkpoint_id='latest', reason='No previous model for this project.')
+            return dict(run_dir=None, checkpoint_id='latest', reason='No saved model under this label yet.')
         return dict(run_dir=last, checkpoint_id='latest', description=ckpt.describe(last, 'latest'))
 
     @app.get('/api/runs/models')

@@ -390,6 +390,9 @@ class RunSettings(_Model):
         return _without_retired(data, RETIRED_RUN_FIELDS)
 
     mode: Literal['scratch', 'resume', 'fine_tune', 'frozen'] = 'scratch'
+    model_label: Optional[str] = Field(None, max_length=80,
+        description='The name the RL model of this run is filed under (record 7.159, independent of any project name). '
+                    'resume, fine_tune and frozen start from the newest model saved under it. Empty: the task\'s run label.')
     concurrency: int = Field(1, ge=1, le=64,
         description='Number of independent simulation jobs running at once. Not the thread count of one job.')
     max_evaluations: int = Field(ge=1,
@@ -487,14 +490,25 @@ class OutputSettings(_Model):
 
 
 # --------------------------------------------------------------------------- research
+# Research labels retired on 2026-10-03 (record 7.163; user, on "which should be kept": "Remove both"), each with the
+# default it had. Nothing read `experiment_group` (Output settings' experiment name groups a run's folder) or
+# `test_tasks`. A configuration written with them still loads (the before-validator drops them), and the configuration
+# hash still sees them at these defaults (`_hashed`), so every approval and run made before keeps its identity; the task
+# hash never saw research labels.
+RETIRED_RESEARCH_FIELDS = {'experiment_group': UNSPECIFIED, 'test_tasks': []}
+
+
 class ResearchLabels(_Model):
-    experiment_group: str = UNSPECIFIED
+    @model_validator(mode='before')
+    @classmethod
+    def _retired_fields(cls, data):
+        return _without_retired(data, RETIRED_RESEARCH_FIELDS)
+
     split: Literal['train', 'validation', 'test', 'unspecified'] = 'unspecified'
     generalization_level: Literal['same_task', 'unseen_spec', 'unseen_topology', 'unseen_circuit_class',
                                   'unspecified'] = 'unspecified'
     training_sources: list[str] = Field(default_factory=list,
         description='Task IDs/classes the source model was trained on.')
-    test_tasks: list[str] = Field(default_factory=list)
     comparison_pair_id: str = UNSPECIFIED
     task_order: Optional[int] = Field(None, ge=0, description='Position K in a fixed task order.')
     pretrain_seed: Optional[int] = Field(None, ge=0, description='Seed of the SOURCE pretraining run.')
@@ -557,11 +571,18 @@ def _hashed(data):
     Parameters and Probes fields retired on 2026-09-26 (record 7.92) and 2026-09-29 (record 7.105, the Probes' conditions
     and aggregation) are hashed as present at their old defaults, for the
     same reason again; a row that stated another value for one of them (it never ran, or the run refused it) hashes
-    differently since. So is the retired `run.threads_per_job` (2026-09-29, RETIRED_RUN_FIELDS)."""
+    differently since. So is the retired `run.threads_per_job` (2026-09-29, RETIRED_RUN_FIELDS). The RL model's label
+    (`run.model_label`, record 7.159) is hashed as absent while it is not set. The research labels retired on 2026-10-03
+    (record 7.163, RETIRED_RESEARCH_FIELDS) are hashed as present at their old defaults."""
     data = dict(data)
+    research = data.get('research') if isinstance(data, dict) else None
+    if isinstance(research, dict):
+        data['research'] = dict(research, **{key: research.get(key, default) for key, default in RETIRED_RESEARCH_FIELDS.items()})
     run = data.get('run') if isinstance(data, dict) else None
     if isinstance(run, dict):
         run = dict(run, **{key: run.get(key, default) for key, default in RETIRED_RUN_FIELDS.items()})
+        if run.get('model_label') is None:
+            run.pop('model_label', None)
         reward = run.get('reward')
         if run.get('search') == SearchSettings().model_dump(mode='json'):
             run.pop('search')

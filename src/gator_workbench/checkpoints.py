@@ -475,7 +475,7 @@ def saved_models(run_entries) -> list[dict]:
             manifest = read_json(Path(entry['run_dir']) / 'run_manifest.json', default=None) or {}
         circuit = manifest.get('circuit') or {}
         models.append(dict(
-            entry, task_name=manifest.get('task_name'), circuit_task=circuit.get('task_key'),
+            entry, task_name=manifest.get('task_name'), model_label=manifest.get('model_label'), circuit_task=circuit.get('task_key'),
             circuit_class=circuit.get('circuit_class'), latest=listing['latest'], best_policy=listing['best_policy'],
             checkpoints=listing['checkpoints'], network=newest['network'], saved_utc=newest['created_utc'],
             trained_evaluations=newest['evaluations'], learner_updates=newest['learner_updates'],

@@ -139,7 +139,8 @@ await runChecks(browser, async () => {
   await evaluate(`[...${OUTPUT}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Test writability').click()`);
   check('an error that appears while the module is folded is marked at once: "error inside", in red', await until(`${fold(OUTPUT)}.querySelector('.module-attention')?.textContent === 'error inside'`, 40) && probes === before + 1, JSON.stringify(await state(OUTPUT)));
   const red = await evaluate(`getComputedStyle(${fold(OUTPUT)}.querySelector('.module-attention')).backgroundColor`);
-  check('the two marks differ in colour (warning amber, error red)', amber !== red && red === 'rgb(179, 38, 30)', JSON.stringify([amber, red]));
+  const badFill = await evaluate(`(name => { const s = document.createElement('span'); s.style.color = 'var(' + name + ')'; document.body.appendChild(s); const c = getComputedStyle(s).color; s.remove(); return c; })('--bad-fill')`);   // the look's red (record 7.158)
+  check('the two marks differ in colour (warning amber, error red)', amber !== red && red === badFill, JSON.stringify([amber, red, badFill]));
   await shot('fold-3-both-folded.png');
   await clickHeading(OUTPUT);
   check('unfolded, the error itself is in view', (await state(OUTPUT)).open && await evaluate(`[...${OUTPUT}.querySelectorAll('td.error')].some(td => /FIXTURE: outside the allowed roots/.test(td.textContent) && td.checkVisibility())`));

@@ -40,7 +40,7 @@ export function SearchSettings({ run, schema, set }: { run: Json; schema: Json; 
     placeholder={nullable ? 'Automatic' : fields[key]?.default != null ? String(fields[key].default) : 'Required'}
     onChange={e => edit({ [key]: e.target.value === '' ? (nullable ? null : undefined) : Number(e.target.value) })} /></label>;
   return <section className="search-settings">
-    <h3>Search method</h3>
+    {/* One "Search method", the field's own label (user, 2026-10-03: "The search method subtitle is repeated"), as Mode has. */}
     <label>Search method<select aria-label="Search method" value={method} onChange={e => {
       const next = e.target.value;
       set({ search: { ...search, method: next }, ...(next === 'llm' ? { concurrency: 1, mode: 'scratch', model_source: {} }

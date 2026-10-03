@@ -1,5 +1,6 @@
 import { Icon } from './Icons';
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
+import { pointAt } from './CircuitPicture';
 import { api, Json, saveJson } from '../api';
 import { migrateConfig } from '../store';
 import { Typed } from './Typed';
@@ -9,7 +10,7 @@ export type Section = 'parameters' | 'targets' | 'measurements';
 const TITLES: Record<Section, string> = { parameters: 'Parameters', measurements: 'Probes', targets: 'Specs' };   // key order = tab order
 const ROW_TABS = Object.keys(TITLES);
 /** The sections a whole-configuration import replaces beside the three tables, as the confirmation names them. */
-const IMPORTED_SECTIONS: Record<string, string> = { project: 'project name', circuit: 'circuit source', run: 'run settings',
+const IMPORTED_SECTIONS: Record<string, string> = { project: 'project labels', circuit: 'circuit source', run: 'run settings',
   output: 'output settings', research: 'research labels' };
 
 /** The scale offered while nobody has typed one, or null when the row gives nothing to size it by yet: then the scale stays
@@ -212,12 +213,22 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     setPending(null);
   };
   const selection = rows.filter(r => selected[r[keyField]]).map(r => ({ section: tab, key: r[keyField], fields: [] as string[] }));
+  // A Parameters row under the pointer (or the keyboard) lights the devices it sizes in the circuit picture of the Project
+  // column: its own and those of the rows tied to it (binding_group), so w_pair lights M1 and its follower's M2 (record 7.158).
+  const devicesOf = (row: Json): string[] => {
+    const leader = row.binding_group || row.variable_id;
+    const tied = rows.filter(r => r.variable_id === leader || (r.binding_group && r.binding_group === leader));
+    return [...new Set([row, ...tied].map(r => r.instance_path).filter(Boolean))] as string[];
+  };
+  useEffect(() => () => pointAt([]), [tab]);
+  const probeIds: string[] = (config.measurements ?? []).map((m: Json) => m.measurement_id).filter(Boolean);
 
   return (
-    <section className="panel editors">
+    <section className="panel editors" data-editor={tab}>
       {/* Another tab closes the Matched devices box: kept "open", coming back to Parameters mounted it again, and mounting
-          is its press - it asked the backend with nobody pressing anything, and a reviewed diff was gone. */}
-      <div className="tabs">{(Object.keys(TITLES) as Section[]).map(s => <button key={s} className={s === tab ? 'active' : ''} onClick={() => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); }}>{TITLES[s]} ({(config[s] ?? []).length})</button>)}
+          is its press - it asked the backend with nobody pressing anything, and a reviewed diff was gone.
+          Each editor has a colour of its own (record 7.158): its tab, its table's header row, and its ids where another editor shows them. */}
+      <div className="tabs">{(Object.keys(TITLES) as Section[]).map(s => <button key={s} data-editor={s} className={s === tab ? 'active' : ''} onClick={() => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); }}>{TITLES[s]} ({(config[s] ?? []).length})</button>)}
         <span className="tab-actions" ref={taskSlot} /></div>
       <div className="toolbar">
         <button onClick={add} title="Add: A new row at the end, with a free ID."><Icon name="add" label="Add" /></button>
@@ -238,7 +249,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       {tab === 'parameters' && <p className="fact">Independent action variables: <b>{validation?.facts?.independent_action_variables ?? '?'}</b> of {rows.length} rows.
         The initial value is the one read from the circuit. Equal initial values do not imply a binding. The policy's proposed action and the executed (projected/quantized) value are both recorded.</p>}
       {tab === 'targets' && <p className="fact spec-probes">Each spec judges its <b>equation</b>, written with Probe IDs, numbers, + - * / ** and brackets
-        (e.g. m_supply_power_w / m_osc_frequency_hz). Probes: {(config.measurements ?? []).map((m: Json) => m.measurement_id).filter(Boolean).join(', ') || 'none yet - fill in the Probes tab first'}.
+        (e.g. m_supply_power_w / m_osc_frequency_hz). Probes: {probeIds.length ? probeIds.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<code className="probe-id">{id}</code></Fragment>)
+          : 'none yet - fill in the Probes tab first'}.
         An empty normalization_scale divides the violation by the size of the threshold.</p>}
       {tab === 'targets' && rows.some(r => r.constraint === 'interval' && r.lower === 0) && <p className="hint zero-floor-hint">The margin also measures the distance to 0. If 0 is only a physical floor, choose Margin sides: upper.</p>}
       {error && <p className="error">{error}</p>}
@@ -251,7 +263,9 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
           <thead><tr><th className="sel"></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
           <tbody>{rows.map((row, index) => {
             const found = rowIssues(index);
-            return <tr key={index} className={found.some((i: Json) => i.level === 'error' || i.level === 'blocker') ? 'has-error' : ''}>
+            const point = tab === 'parameters' ? { onMouseEnter: () => pointAt(devicesOf(row)), onMouseLeave: () => pointAt([]),
+              onFocus: () => pointAt(devicesOf(row)), onBlur: () => pointAt([]) } : {};
+            return <tr key={index} className={found.some((i: Json) => i.level === 'error' || i.level === 'blocker') ? 'has-error' : ''} {...point}>
               <td className="sel"><input type="checkbox" checked={!!selected[row[keyField]]} onChange={e => setSelected(s => ({ ...s, [row[keyField]]: e.target.checked }))} /></td>
               {/* A field the row does not STATE is shown with the value the backend uses for it (hard = on, tolerance = 0 ...): a
                   starter row's absent `hard` used to look unchecked although the target is hard. A box the user cleared is null,

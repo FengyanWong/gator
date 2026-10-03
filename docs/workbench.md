@@ -6,14 +6,16 @@ saves the raw data and model state needed for research analysis.
 
 It produces **data, configurations, models, netlists and logs only**: no plots, images, PDFs,
 spreadsheets or analysis reports are ever written, and the backend installs and imports no plotting library.
-One exception ON SCREEN, by user decision of 2026-09-21: the **circuit graph view** (see "Circuit graph view"
-below), drawn in the browser with cytoscape (MIT, frontend only, loaded when the view is opened). It is a
-diagnostic picture; nothing drawn is written into a run folder or an export, so the outputs stay data-only.
+Two exceptions ON SCREEN, by user decision: the **circuit graph view** (2026-09-21, see "Circuit graph view"
+below), drawn in the browser with cytoscape (MIT, frontend only, loaded when the view is opened), and the **circuit
+picture** in the Project column (2026-10-03, see "The page's looks and layout"), drawn as plain SVG. Both are diagnostic
+pictures; nothing drawn is written into a run folder or an export, so the outputs stay data-only.
 
 **Where things are described** (this file is long: read only the section you need - `grep -n '^##' docs/workbench.md`
 lists every section with its line number; a section says what its feature does NOW):
 [Start](#start) ·
 [Start, Pause, Resume, Abort](#start-pause-resume-abort-added-2026-09-21-user-request) ·
+[The page's looks and layout](#the-pages-looks-and-layout-2026-10-03-record-7158) ·
 [What is real and what is mock](#what-is-real-and-what-is-mock) ·
 [Connection profiles](#connection-profiles-section-21) ·
 [Output layout](#output-layout) ·
@@ -150,6 +152,83 @@ already saved everything), it is already pausing / stopping (that saves by itsel
 is never replaced), or it was started with "Model checkpoints" switched off. Browser check:
 `frontend/scripts/save_now_check.mjs` (fixtures only, safe next to a live run).
 
+## The page's looks and layout (2026-10-03, record 7.158)
+
+The user chose two looks for the page and five layout changes from a set of pictured ideas (answers "1 A+B, 2 yes, 3 yes,
+4 yes, 5 yes, 6 Windows"). Only colour, type, rules and borders differ between the looks: every panel, button and field
+stands where it stands in both, and the browser checks find the same page.
+
+**Two looks, one switch.** *Whiteprint*, the default, is ink on drawing paper: a faint grid, a sheet frame with zone
+letters A-H across and 1-4 down (a place on the page has a name: "the box at C2"), ruled table heads, and the three
+editors as numbered sheets 1, 2, 3. *Silicon Night* is dark like Virtuoso's canvas: the schematic's dot grid, a seal
+ring around the header, alignment marks in the corners, a hatched layer swatch on each editor tab (Parameters metal 1
+blue, Probes metal 2 magenta, Specs metal 3 teal), and Start glows while it can be pressed. The moon / sun icon at the
+left of the header switches them; nothing changes by itself. The choice is kept in this browser
+(`gator-workbench-look-v1`) and set before the page draws (`index.html`), so a dark choice never flashes light. Every
+pop-up window (Connection, Virtuoso, ngspice, PDK, Runs, RL networks, Task file, the Agent conversation) takes the look
+when it opens and follows the switch while open (`theme.ts` `followLook`, called by `popupWindow.ts`). The circuit graph
+view takes its canvas, line and label colours from the look and changes them on a switch; its node fills stay the
+picture's own key.
+
+**Research experiments** (record 7.163; user: "Check the research experiments module and see which should be kept",
+then "Remove both" and "Fold them"). Since record 7.166 its heading looks like the other modules' headings, and its note
+("Optional for a single run; missing labels stay unspecified") is the tooltip of its name. The module shows the three labels every research table uses - **Method label**,
+**Comparison pair ID**, **Budget checkpoints** - and folds the six that only a transfer study uses (Split, Generalization
+level, Training sources, Task order K, Pretrain seed, Ablation labels) into a closed "Transfer study" line. Experiment
+group and Test tasks were removed: nothing read them (Output settings' experiment name groups a run's folder). A
+configuration saved with them still loads without them, and keeps its configuration hash (`RETIRED_RESEARCH_FIELDS`).
+Run configuration says "Search method" once, as the field's own label.
+
+**One tab style** (record 7.164, user: "day and night tab style different, change the day style to night one"): both
+looks draw every tab strip alike, the chosen tab raised with an underline, an editor tab in its editor's colour, and
+mark each editor tab with its hatched layer swatch. Whiteprint lost its numbered sheet tabs; only the colours differ.
+
+**The same page in both looks** (record 7.162, user: "the day and night mode banner size is a bit different fix it"):
+every size is shared - the page's margin, the header's border and padding, the tab borders, each editor tab's mark - and
+the looks set only colours and drawings (Silicon Night's seal ring is drawn inside the header's edge, as Whiteprint's
+double rule). Switching the look moves no box; `looks_check.mjs` measures fourteen of them in both looks.
+
+**Colours by name.** Every colour of the page is a named value: Whiteprint's in `styles.css` (`:root`), Silicon Night's
+in `themes.css`, which also holds what each look adds. Before the looks came, the 86 colour values written into 69 rules
+were replaced by names carrying exactly the old values; screenshots of six views of the live page were identical before
+and after, pixel for pixel (the seventh, the Runs window, differs only in its "read at" time, as two shots of one build
+do). The fonts are Windows' own, so nothing is downloaded: Bahnschrift for headings, tabs and table heads, Segoe UI for
+text, Consolas for numbers and ids. Another system shows its own fallbacks.
+
+**The title block.** The header names what the page works on: Task, Rev (the saved task's revision), Class · PDK and
+the RL model's label (record 7.159; its first cell was the project name until the user removed that box). They are
+read-only; the fields stay in their panels, and the circuit panel puts them in the header. The version and environment
+line moved into the tooltip of the name GATOR.
+
+**The splitter above the bottom panel.** Drag the top edge of the bottom panel to give it more or less room;
+double-click it to fold the panel down to its tab line, and again to open it. From the keyboard: Tab to it, then the
+arrow keys (24 px a press) or Enter. A press on one of its tabs, on the header's run line or an agent request opens it
+again; Start and Resume do not. The height and the fold are kept in this browser (`gator-workbench-bottom-v1`), and the
+editors always keep the window height less 280 px. Windows narrower than 1100 px keep their own stacked layout and have
+no splitter.
+
+**One line per row in Data tables.** An id (a column ending in `_id`) is written in Consolas and ends in "..." when it
+is long; hovering shows the whole value and a click copies it. A time keeps its full width, no word is cut in two, and
+a JSON value has a column of bounded width of its own.
+
+**Each editor's colour.** Parameters, Probes and Specs each have a colour, used on their tab and on their table's header
+row. The Specs line lists the Probe ids as Probe-coloured chips; its words are the same as before.
+
+**The circuit picture.** A second on-screen picture by user decision, on the graph view's terms (drawn in the browser,
+nothing written). Under the loaded task in the Project column, the circuit appears as a small node-link drawing in the
+graph view's manner: devices as boxes (nmos blue, pmos rose, passives green), nets as dots, supply on top and ground at
+the bottom. It is placed by the graph view's own hard-coded hints (`circuitLayout.ts`) and drawn from the circuit summary
+the task's load already returns, so nothing more is asked of the backend. It shows:
+- the DUT's devices when the circuit names its DUT, else every device but the testbench's sources;
+- as the supply, if the circuit marks none, the net a voltage source holds against ground and devices conduct from;
+- names without their hierarchy where that stays unambiguous (DUT/M1 reads M1).
+
+Pointing at a Parameters row, or tabbing into it, lights the devices that row sizes: its own and those of the rows tied
+to it by `binding_group` (`w_pair` lights M1 and M2). The block folds into its heading line, and the fold is kept in
+this browser (`gator-workbench-circuit-picture-v1`).
+
+Browser check: `frontend/scripts/looks_check.mjs` (47 checks, hermetic).
+
 ## What is real and what is mock
 
 | Path | Status |
@@ -170,8 +249,10 @@ record 7.128):
 |---|---|---|---|
 | a profile created from your own cell | the rows the profile fixes | one per result its circuit type produces, ready to carry a target | **none**: requirements are never inferred from a circuit. State yours, or press "Draft with agent..." |
 
-* **Project name** stays unchanged across tasks. The separate editable **Task name** field is removed: the run-folder
-  and export label (`project.task_name`) comes from the selected task, independently of the project name.
+* There is no **Project name** box any more (record 7.159, user: "remove the project name box in the Project module"): it
+  only filed a run's model for the next resume / fine_tune / frozen, which the RL model's own label does now (see "The RL
+  model's label"). The separate editable **Task name** field went earlier (record 7.146): the run-folder and export label
+  (`project.task_name`) comes from the selected task. A configuration keeps its old `project.name`, unshown.
 * Selecting a task automatically reads its saved rows. The selected task, **Circuit class / PDK id**, run label and all
   three tables change together after that read succeeds. While loading, the previous task remains selected with its
   own rows; a loading message names the requested task. A failed or superseded read cannot replace the current task.
@@ -180,7 +261,7 @@ record 7.128):
   takes back the whole task choice, including its rows and run label.
 * **Reload saved values** replaces the old **Load task** control. It is optional, for resetting the current task to its
   saved rows, with the same edit-discard confirmation. Normal task switching needs no extra button press.
-* Project name, run, output and research settings stay unchanged during switching and reloading. No real budget is
+* Run settings (the RL model's label included), output and research settings stay unchanged during switching and reloading. No real budget is
   suggested and no simulation, task save or Virtuoso write is triggered by selecting a task (record 7.146).
 * A profile created from a cell brings its own result registry (the built-in LDO and VCO tasks brought the registry of
   record of the real cross-category experiment until they were removed). A registry stated in the configuration
@@ -1144,14 +1225,19 @@ The development record also documents one accidentally launched, server-rejected
 
 ### Run configuration and the RL networks window (2026-10-02, record 7.150)
 
-**Mode** is the first setting in Run configuration, with **RL networks...** directly underneath it.
+**Mode** is the first setting in Run configuration, with **RL networks...** directly underneath it. Left of the button
+stands the network in use, in short (record 7.160, user: "show the current network selection next to the RL network
+button in short"): the encoder and hidden / heads / layers, `GT 48/4/4` (GT = graph_transformer; `–` where an encoder
+has no heads), then "op. points" and the component list when they are on, and "saved model" in a Mode that loads one,
+whose network the run takes. A loading Mode without a chosen model reads "no saved model chosen", LLM only "not used
+(LLM only)". The tooltip says all of it in full.
 **Search method** is the second setting. The button opens a separate window containing the encoder and sizes,
 operating-point input switch, Components list, presets, saved-model chooser, model facts, compatibility details,
 network structure, circuit graph view, and Advanced RL settings. Changing Mode in the main page updates this window.
 Budgets, concurrency, seed, failure limits, reward and training conditions stay in Run configuration.
 
-Pressing the button again focuses the existing window. The close icon and the browser's close button keep all
-configuration edits; pending preset saves and model compatibility checks continue in the main page. Undo/Redo also
+Pressing the button again focuses the existing window. It has no close button of its own (record 7.163, user: "delete
+the cross button in RL network window"): the browser's close keeps all configuration edits; pending preset saves and model compatibility checks continue in the main page. Undo/Redo also
 work for typing in the window. A blocked popup is explained beside the launcher. With LLM only selected, the launcher
 is disabled and an already open window explains that this method has no RL network. Switching back restores the
 controls. Reloading or leaving the workbench closes its window.
@@ -1159,6 +1245,25 @@ controls. Reloading or leaving the workbench closes its window.
 Network settings that need attention leave a notice in Run configuration, including its folded warning/error mark.
 Browser checks: `frontend/scripts/network_panel_check.mjs`, `model_chooser_check.mjs`, `model_structure_check.mjs`,
 `graph_view_check.mjs`, `pdk_check.mjs`, `module_fold_check.mjs`, `typing_check.mjs` and `reliability_check.mjs`.
+
+### The RL model's label (2026-10-03, record 7.159)
+
+User: "remove the project name box in the Project module. Give the RL model its own label, independent of the project
+name." The project name did one thing: the backend remembered each project's newest run, and a Mode that loads a model
+(resume, fine_tune, frozen) started from that run's `latest` save by itself. That job is now the **RL model label**'s, a
+box in Run configuration under **RL networks...**:
+- empty, the label is the task's run label (`project.task_name`, shown as the box's grey placeholder);
+- a run that saves an RL model is remembered under its label (`settings.json` `last_run`); a Single baseline simulation
+  and an LLM-only run save none and leave the label alone (before, a baseline under the same project name pushed its
+  project's model out);
+- the default model is the newest one saved under the label (`GET /api/runs/default-model?label=`); runs remembered under
+  a project name before still answer through the configuration's unshown old `project.name`;
+- the label is written into the run's manifest (`model_label`), names the model's card in the saved-model list (before:
+  the task name) and can be typed into its filter; the header's title block shows it; a folded Run configuration shows a
+  typed one.
+
+`run.model_label` is part of the configuration; it is hashed as absent while it is empty, so configurations and runs
+from before keep their hashes, and it changes no task hash. Tests: `tests/workbench/test_wb_model_label.py`.
 
 ### Folding the right column's modules (added 2026-09-21, user request)
 

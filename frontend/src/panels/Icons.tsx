@@ -9,7 +9,7 @@
  *  icon-only button's title starts with its label. */
 
 export type IconName = 'save' | 'play' | 'pause' | 'wait' | 'stop' | 'force-stop' | 'task' | 'add' | 'delete' | 'undo' | 'redo' | 'load' | 'delete-task' | 'export' | 'import' | 'agent-draft' | 'agent-modify' | 'task-file'
-  | 'refresh' | 'download' | 'csv' | 'zip' | 'copy' | 'check' | 'close';
+  | 'refresh' | 'download' | 'csv' | 'zip' | 'copy' | 'check' | 'close' | 'moon' | 'sun';
 
 const DRAWINGS: Record<IconName, JSX.Element> = {
   // A floppy disk: the model is written to disk while the run goes on.
@@ -24,6 +24,9 @@ const DRAWINGS: Record<IconName, JSX.Element> = {
   stop: <rect x="3" y="3" width="10" height="10" rx="1" fill="currentColor" />,
   // Force abort: the stop square struck through, it does not wait.
   'force-stop': <><rect x="3" y="3" width="10" height="10" rx="1" /><path d="M5.5 5.5l5 5M10.5 5.5l-5 5" /></>,
+  // Switch look (record 7.158): a moon while the page is light (press for Silicon Night), a sun while it is dark.
+  moon: <path d="M13 10.3A5.6 5.6 0 0 1 5.7 3a5.6 5.6 0 1 0 7.3 7.3z" />,
+  sun: <><circle cx="8" cy="8" r="2.8" /><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" /></>,
   // Save task: a document with a check mark, the rows become the task's next revision.
   task: <><path d="M4 1.5h5.5L13 5v9.5H4z" /><path d="M9.5 1.5V5H13" /><path d="M6 10l2 2 3.5-3.5" /></>,
   // Add: a plus, one new row.

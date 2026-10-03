@@ -9,7 +9,6 @@ import { ComponentList } from './Pdk';
 import { SearchSettings } from './SearchSettings';
 import { Typed } from './Typed';
 import { BLOCKED, usePopupWindow } from './popupWindow';
-import { Icon } from './Icons';
 
 function Num({ label, value, onChange, title, nullable, disabled, note, after, placeholder, bounded }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; nullable?: boolean; disabled?: boolean; note?: string; after?: ReactNode; placeholder?: string; bounded?: boolean }) {
   // `Typed` keeps what is being typed while the box has focus ("0." and "3e-" are steps towards 0.005 and 3e-4, not
@@ -127,6 +126,9 @@ const NETWORK_SETTING_LABELS: Record<string, string> = {
   hidden_dim: 'Hidden width', heads: 'Heads', layers: 'Layers',
   ...Object.fromEntries(ADVANCED_ROWS.flat().map(([name, label]) => [name, label])),
 };
+
+/** The encoders in short, for the line beside RL networks... (the window names them in full). */
+const SHORT_ENCODER: Record<string, string> = { graph_transformer: 'GT', rgcn: 'RGCN', gatv2: 'GATv2' };
 
 export function RunPanel({ config, setConfig, runs, circuit, schema }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json; schema: Json }) {
   const run = config.run;
@@ -281,6 +283,9 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   // is shown in scratch only, and otherwise the configuration takes the network of the chosen model - the act is the
   // choice of that model. Only the network follows; the training numbers under Advanced stay the user's.
   const loads = run.mode !== 'scratch';
+  // The RL model's own label (record 7.159, user: "Give the RL model its own label, independent of the project name"):
+  // typed here, else the task's run label. A run that saves a model files it under this name.
+  const label: string = (run.model_label ?? '').trim() || config.project.task_name;
   const savedModel: Json = loads ? model?.description?.contract?.model_config : null;
   const savedNet: Json = savedModel?.encoder_type ? { encoder_type: savedModel.encoder_type, ...pick(savedModel, netFields),
     operating_points: !!model?.description?.contract?.feature_schema?.op_columns?.length } : null;
@@ -301,7 +306,8 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const savedList: string | undefined = loads ? model?.vocabulary?.name : undefined;
   useEffect(() => { if (savedList && savedList !== (net.vocabulary ?? 'standard')) chooseList(savedList, false); }, [savedList, net.vocabulary]);
 
-  // Default the RL model to the last model used by this project, and its `latest` checkpoint (not `best`) - in a Mode that
+  // Default the RL model to the newest model saved under the RL model label (record 7.159; before it, under the project
+  // name, still asked for the runs remembered that way), and its `latest` checkpoint (not `best`) - in a Mode that
   // loads a model. In scratch it used to be written into the configuration on page load: a validation warning
   // (source_ignored_in_scratch), an undo step nobody made and a model compile on every edit. Filled by itself, it is no
   // Undo step either: one Undo takes back the Mode choice and the model it brought.
@@ -310,13 +316,23 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   useEffect(() => {
     if (source.run_dir || !loads) return;
     let live = true;
-    api.defaultModel(config.project.name).then(d => live && d.run_dir && setConfig(c => c.run.mode === 'scratch' || c.run.model_source?.run_dir ? c
+    api.defaultModel(label, config.project.name).then(d => live && d.run_dir && setConfig(c => c.run.mode === 'scratch' || c.run.model_source?.run_dir ? c
       : { ...c, run: { ...c.run, model_source: { ...(c.run.model_source ?? {}), run_dir: d.run_dir, checkpoint_id: 'latest' } } }, false)).catch(() => undefined);
     return () => { live = false; };
-  }, [config.project.name, loads]);
+  }, [label, loads]);
 
 
-  const folded = [run.mode, typeof budget === 'number' ? `${budget} evaluations` : null,
+  // The network in use, in short, beside the RL networks button (user, 2026-10-03: "show the current network selection next to
+  // the RL network button in short"). In a Mode that loads a model the configuration's network is that model's (above).
+  const hidden = net.hidden_dim ?? entry?.network?.hidden_dim ?? 32, heads = net.heads ?? entry?.network?.heads ?? 4, layers = net.layers ?? entry?.network?.layers ?? 2;
+  const components = net.vocabulary && net.vocabulary !== 'standard' ? net.vocabulary.replace(/^pdk:/, '') : null;
+  const netShort = llmOnly ? 'not used (LLM only)' : loads && !source.run_dir ? 'no saved model chosen'
+    : [`${SHORT_ENCODER[encoder] ?? encoder} ${hidden}/${usesHeads ? heads : '–'}/${layers}`, net.operating_points ? 'op. points' : null,
+      components ? `${components} parts` : null, loads ? 'saved model' : null].filter(Boolean).join(' · ');
+  const netTitle = llmOnly ? 'LLM only does not use an RL network.' : loads && !source.run_dir ? `Mode ${run.mode} loads a saved model: choose one in RL networks; the run then uses its network.`
+    : `The network in use: ${encoder}, hidden ${hidden}, ${usesHeads ? `heads ${heads}` : 'no attention heads'}, layers ${layers}; nominal operating points ${net.operating_points ? 'on' : 'off'}; `
+      + `components ${components ?? 'standard'}${loads ? `. It is the network of the saved model this run loads (${source.run_dir}).` : '.'} RL networks... changes it.`;
+  const folded = [run.mode, run.model_label?.trim() ? `model ${run.model_label.trim()}` : null, typeof budget === 'number' ? `${budget} evaluations` : null,
     `${encoder} ${net.hidden_dim ?? '?'}/${net.heads ?? '?'}/${net.layers ?? '?'}`,
     net.vocabulary && net.vocabulary !== 'standard' ? `knows ${net.vocabulary.slice(4)}` : null].filter(Boolean).join(' - ');
   const networkError = error || netMessage?.level === 'error' || !offeredEncoders.includes(encoder)
@@ -329,9 +345,10 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       <label title="scratch: random init, new run. resume: same task, same run, full state. fine_tune: compatible weights, new task, new run with a parent. frozen: no updates at all.">Mode
         <select value={run.mode} onChange={e => set({ mode: e.target.value })}>
           {(llmOnly ? ['scratch', 'resume'] : run.search?.method && run.search.method !== 'sac' ? ['scratch', 'resume', 'fine_tune'] : ['scratch', 'resume', 'fine_tune', 'frozen']).map(m => <option key={m} value={m}>{m}</option>)}</select></label>
-      <button className="rl-networks-open" disabled={llmOnly}
-        title={llmOnly ? 'LLM only does not use an RL network.' : 'Open RL network settings, saved models, and model views.'}
-        onClick={() => networkWindow.open()}>RL networks...</button>
+      <div className="rl-networks-row"><span className={`hint net-short${llmOnly || (loads && !source.run_dir) ? '' : ' net-code'}`} title={netTitle}>{netShort}</span>
+        <button className="rl-networks-open" disabled={llmOnly}
+          title={llmOnly ? 'LLM only does not use an RL network.' : 'Open RL network settings, saved models, and model views.'}
+          onClick={() => networkWindow.open()}>RL networks...</button></div>
       {networkWindow.blocked && <p className="error" role="alert">{BLOCKED}</p>}
       {!llmOnly && (networkError || networkWarning) && <p className={networkError ? 'error' : 'warn'}>Review the settings in RL networks.</p>}
       {/* Only while the model is checked: in scratch the last check's suggestion stayed, never asked again (review of 2026-10-01) */}
@@ -339,6 +356,10 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         title={`Set Mode to ${model.suggestion.mode}`} onClick={() => set({ mode: model.suggestion.mode })}>{model.suggestion.mode}</button> - {model.suggestion.reason}
         {model.suggestion.requires_confirmation ? ' (needs your confirmation)' : ''}</p>}
       <SearchSettings run={run} schema={schema} set={set} />
+      {/* Below Search method: Mode first, Search method second (record 7.150). */}
+      <label title={`RL model label: the name this run's RL model is saved under. Mode resume, fine_tune and frozen start from the newest model saved under it. Empty: the task's run label (${config.project.task_name}).`}>RL model label
+        <input className="model-label" value={run.model_label ?? ''} placeholder={config.project.task_name} disabled={llmOnly} maxLength={80}
+          onChange={e => set({ model_label: e.target.value.trim() ? e.target.value : null })} /></label>
       <Num label="Concurrent Spectre jobs" disabled={llmOnly} value={run.concurrency} onChange={v => set({ concurrency: v })} title="Independent simulation jobs at once. NOT the thread count of one simulation." />
       {circuit?.max_concurrency && run.concurrency > circuit.max_concurrency && <p className="error">This task supports at most {circuit.max_concurrency} jobs.</p>}
       <Num label="Evaluation budget (max_evaluations)" value={run.max_evaluations} onChange={v => set({ max_evaluations: v })}
@@ -393,8 +414,9 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
           <option key={r.run_dir} value={r.run_dir}>{r.task_name ?? r.run_dir}</option>)}</select></label>}
     </Module>
     {networkWindow.popup && networkWindow.root && createPortal(<section className="panel rl-networks-panel" aria-labelledby="rl-networks-title">
-      <div className="rl-networks-heading"><h2 id="rl-networks-title">RL networks</h2>
-        <button className="icon-button" title="Close: Your settings are kept." onClick={networkWindow.close}><Icon name="close" label="Close" /></button></div>
+      {/* No close button of its own (user, 2026-10-03: "delete the cross button in RL network window"): the window's own close
+          does it, and the settings are kept either way. */}
+      <div className="rl-networks-heading"><h2 id="rl-networks-title">RL networks</h2></div>
       <p className="hint">Mode: <b>{run.mode}</b>. Changes apply to the current run configuration.</p>
       {llmOnly ? <p className="hint">LLM only does not use an RL network. Choose an SAC search method in Run configuration to edit these settings.</p> : <>
       {!loads && <>
@@ -594,18 +616,24 @@ export function ResearchPanel({ config, setConfig }: { config: Json; setConfig: 
   const listBox = (field: string, numbers = false) => <Typed value={r[field] ?? []} format={v => (v ?? []).join(', ')}
     parse={t => ({ value: numbers ? list(t).map(Number).filter(Number.isFinite) : list(t) })} onChange={v => set({ [field]: v })} />;
   return (
-    <details className="panel"><summary><b>Research experiments</b> (optional for a single run; missing labels stay "unspecified")</summary>
-      <label>Experiment group<input value={r.experiment_group ?? 'unspecified'} onChange={e => set({ experiment_group: e.target.value })} /></label>
-      <label>Split<select value={r.split ?? 'unspecified'} onChange={e => set({ split: e.target.value })}>{['unspecified', 'train', 'validation', 'test'].map(s => <option key={s}>{s}</option>)}</select></label>
-      <label>Generalization level<select value={r.generalization_level ?? 'unspecified'} onChange={e => set({ generalization_level: e.target.value })}>
-        {['unspecified', 'same_task', 'unseen_spec', 'unseen_topology', 'unseen_circuit_class'].map(s => <option key={s}>{s}</option>)}</select></label>
-      <label>Training sources{listBox('training_sources')}</label>
-      <label>Test tasks{listBox('test_tasks')}</label>
+    // The heading in the modules' heading style, its note on hover (record 7.166, user: "Modify the font difference and make the
+    // comment appear when mouse is over the module name"). It stays a closed fold of its own, not a Module.
+    <details className="panel research-module"><summary><h3 title={'Optional for a single run; missing labels stay "unspecified".'}>Research experiments</h3></summary>
+      {/* Record 7.163 (user, 2026-10-03, on "which should be kept"): Experiment group and Test tasks went - nothing read them;
+          the labels only a transfer study uses are folded below; what every comparison table uses stays in view. */}
+      <label title="Names the method in every research table (Data tables > Export research CSVs): run summary, success per budget, paired runs, transfer summary, cumulative cost.">Method label
+        <input value={r.method_label ?? 'unspecified'} onChange={e => set({ method_label: e.target.value })} placeholder="Scratch | Pretrained-Frozen | Pretrained-Fine-tuned | encoder-only transfer" /></label>
       <label title="Associates runs with the same target, initial dimensions, budget, test setup and target seed.">Comparison pair ID<input value={r.comparison_pair_id ?? 'unspecified'} onChange={e => set({ comparison_pair_id: e.target.value })} /></label>
-      <div className="row"><Num label="Task order K" nullable value={r.task_order} onChange={v => set({ task_order: v })} /><Num label="Pretrain seed (source)" nullable value={r.pretrain_seed} onChange={v => set({ pretrain_seed: v })} /></div>
-      <label>Budget checkpoints{listBox('budget_checkpoints', true)}</label>
-      <label>Method label<input value={r.method_label ?? 'unspecified'} onChange={e => set({ method_label: e.target.value })} placeholder="Scratch | Pretrained-Frozen | Pretrained-Fine-tuned | encoder-only transfer" /></label>
-      <label>Ablation labels{listBox('ablation_labels')}</label>
+      <label title="Evaluation budgets at which success is counted (success per budget). Empty: the run's own budget.">Budget checkpoints{listBox('budget_checkpoints', true)}</label>
+      <details className="more transfer-study"><summary>Transfer study</summary>
+        <p className="hint">Labels for a study that trains on some circuits and tests on others; a single run needs none of them.</p>
+        <label>Split<select value={r.split ?? 'unspecified'} onChange={e => set({ split: e.target.value })}>{['unspecified', 'train', 'validation', 'test'].map(s => <option key={s}>{s}</option>)}</select></label>
+        <label>Generalization level<select value={r.generalization_level ?? 'unspecified'} onChange={e => set({ generalization_level: e.target.value })}>
+          {['unspecified', 'same_task', 'unseen_spec', 'unseen_topology', 'unseen_circuit_class'].map(s => <option key={s}>{s}</option>)}</select></label>
+        <label>Training sources{listBox('training_sources')}</label>
+        <div className="row"><Num label="Task order K" nullable value={r.task_order} onChange={v => set({ task_order: v })} /><Num label="Pretrain seed (source)" nullable value={r.pretrain_seed} onChange={v => set({ pretrain_seed: v })} /></div>
+        <label>Ablation labels{listBox('ablation_labels')}</label>
+      </details>
     </details>
   );
 }

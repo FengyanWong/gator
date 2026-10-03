@@ -1,44 +1,75 @@
-:root { --bg: #f5f6f8; --panel: #fff; --line: #d4d8de; --text: #1c2430; --muted: #66707e; --accent: #1f5fbf; --bad: #b3261e; --warn: #8a5a00; --ok: #1d6b35; }
+:root {
+  /* The page's colours by name (record 7.158): every rule below uses these, so a look is one list of values. These are
+     Whiteprint's, the default look - ink on drawing paper; themes.css has Silicon Night's and what each look adds. */
+  --bg: #e9eef1; --panel: #fbfcfc; --line: #c3cfda; --text: #13304f; --muted: #566c82; --accent: #1d4f91; --bad: #b3321f; --warn: #8a5a00; --ok: #22704a;
+  --on-accent: #fff; --on-warn: #fff; --accent-fill: #13304f; --bad-fill: #b3321f; --warn-fill: #8a5a00;
+  --field: #fff; --field-disabled: #e9eef2; --button: #f4f7f9; --card: #fff; --canvas: #fff; --sunk: #f1f5f8; --surface-2: #f7f9fb;
+  --head: #e5ecf2; --code-bg: #e9eff4; --selected: #dfe9f5; --selected-hover: #d3e1f1; --selected-soft: #e9f0f8; --hover: #eef3f8;
+  --info-bg: #edf2f7; --info-line: #c3d3e4; --real-bg: #e7eef5;
+  --bad-bg: #fbeeeb; --bad-line: #e2aba1; --bad-row: #fcf2f0; --bad-strong: #8c2414; --close-hover: #e81123;
+  --warn-bg: #fbf3df; --warn-line: #dcc183; --mock-line: #c99a2e; --busy-bg: #fbf0d8;
+  --ok-bg: #e4f2ea; --ok-line: #a3cdb3; --added-bg: #e9f5ee;
+  --neutral-bg: #e9eef2; --neutral-text: #4c5f73; --na-bg: #f1f4f6; --unresolved: #6a3fa0;
+  --user-bg: #e3ebf5; --user-line: #bccbe0; --thinking-bg: #f1f5f8; --thinking-line: #c3d0db;
+  --checklist-bg: #fcf8ee; --checklist-line: #c9b26a; --detach-hover: #d3dde6; --log-line: #e3e9ee; --backdrop: rgba(19, 48, 79, .32);
+  /* the stronger rule of headers and table heads, alternate rows, the paper's grid */
+  --rule: #9db1c4; --zebra: #f5f8fa; --grid-line: #dde5ea;
+  /* each editor's own colour (its tab, its table's header row, its ids elsewhere) */
+  --param: #1d4f91; --probe: #95357f; --spec: #0b6f7c; --param-head: #e2eaf4; --probe-head: #f1e5ee; --spec-head: #ddedef;
+  --probe-chip: #f6eaf3; --probe-chip-line: #e2c6db;
+  /* the circuit picture (CircuitPicture.tsx) and the graph view's lines */
+  --cp-link: #a9b9c8; --cp-nmos: #dce7f4; --cp-pmos: #f3e0e8; --cp-passive: #e1efe6; --cp-source: #ebe4f4; --cp-net: #fff; --cp-net-line: #8ea3b7;
+  --cp-supply: #f6d9cf; --cp-ground: #d8e0e8; --graph-edge: #c9ced6;
+  /* Windows' own fonts (the user's choice: nothing is downloaded): labels, text, numbers */
+  --f-label: Bahnschrift, 'DIN Alternate', 'Arial Narrow', 'Segoe UI', sans-serif;
+  --f-body: 'Segoe UI', system-ui, sans-serif;
+  --f-mono: Consolas, 'Cascadia Mono', ui-monospace, monospace;
+  accent-color: var(--accent);
+}
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
-body { font: 12.5px/1.4 system-ui, 'Segoe UI', sans-serif; color: var(--text); background: var(--bg); }
-.layout { display: grid; height: 100%; grid-template: 'head head head' auto 'msg msg msg' auto 'left main right' minmax(0, 1fr) 'foot foot foot' 34vh / 300px minmax(0, 1fr) 340px; gap: 6px; padding: 6px; }
+body { font: 12.5px/1.4 var(--f-body); color: var(--text); background: var(--bg); }
+.layout { display: grid; height: 100%; grid-template: 'head head head' auto 'msg msg msg' auto 'left main right' minmax(0, 1fr) 'foot foot foot' min(var(--foot, 34vh), calc(100vh - 280px)) / 300px minmax(0, 1fr) 340px; gap: 6px; padding: 6px; }
 header { grid-area: head; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--panel); border: 1px solid var(--line); padding: 6px 10px; }
 /* The list of blocking issues is a second, full-width line of the header: it pushes the page down instead of covering the editors it is used with. */
-button.issues-button { color: var(--bad); border-color: var(--bad); font-weight: 600; } button.issues-button.active { background: #fdecea; border-color: var(--bad); }
+button.issues-button { color: var(--bad); border-color: var(--bad); font-weight: 600; } button.issues-button.active { background: var(--bad-bg); border-color: var(--bad); }
 .issue-list { order: 1; flex: 0 0 100%; min-width: 0; border-top: 1px solid var(--line); padding-top: 6px; } .issue-list-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
 .issue-list-body { max-height: 30vh; overflow: auto; } .issue-list code { font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
 /* settings.json unreadable (backend runs.load_settings): a full-width line of the header too, in the notice colours below. */
 .settings-problem { order: 1; flex: 0 0 100%; margin: 0; }
-.banner { grid-area: msg; padding: 6px 10px; border: 1px solid var(--line); background: #eef3fb; cursor: pointer; }
-.banner.error { background: #fdecea; border-color: var(--bad); } .banner.mock, .mock, .settings-problem { background: #fff6dc; border: 1px solid #d9a400; padding: 4px 8px; font-weight: 600; }
+.banner { grid-area: msg; padding: 6px 10px; border: 1px solid var(--line); background: var(--info-bg); cursor: pointer; }
+.banner.error { background: var(--bad-bg); border-color: var(--bad); } .banner.mock, .mock, .settings-problem { background: var(--warn-bg); border: 1px solid var(--mock-line); padding: 4px 8px; font-weight: 600; }
 .left { grid-area: left; overflow: auto; } main { grid-area: main; min-width: 0; overflow: hidden; display: flex; } .right { grid-area: right; overflow: auto; }
 footer { grid-area: foot; background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
 .bottom-body { flex: 1; overflow: auto; padding: 8px; min-height: 0; }
 .panel { background: var(--panel); border: 1px solid var(--line); padding: 8px 10px; margin-bottom: 6px; }
 .rl-networks-open { margin: 2px 0 6px; }
+/* The network in use, in short, then the button (user, 2026-10-03): the words on the left, the short button at the right end. */
+.rl-networks-row { display: flex; align-items: center; gap: 8px; margin: 2px 0 6px; } .rl-networks-row .rl-networks-open { margin: 0; flex: none; }
+.rl-networks-row .net-short { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; } .rl-networks-row .net-code { font-family: var(--f-mono); }
 .rl-networks-window { max-width: 1060px; margin: 0 auto; padding: 14px 18px 24px; }
 .rl-networks-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .rl-networks-heading h2 { margin: 0; font-size: 17px; }
 .rl-networks-panel { min-width: 0; }
 .panel.editors { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; margin: 0; }
-h3 { margin: 10px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); } h3:first-child { margin-top: 0; } h4 { margin: 8px 0 4px; }
+h3 { margin: 10px 0 4px; font: 600 11.5px/1.3 var(--f-label); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); } h3:first-child { margin-top: 0; } h4 { margin: 8px 0 4px; }
 label { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; color: var(--muted); font-size: 11.5px; flex: 1; min-width: 0; }
 label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); }
 input, select, textarea, button { font: inherit; color: var(--text); }
 table { font: inherit; }  /* a pop-up window starts as about:blank = quirks mode, where a table does not inherit the font and falls back to 16px */
-input, select, textarea { border: 1px solid var(--line); padding: 3px 5px; background: #fff; min-width: 0; width: 100%; }
+input, select, textarea { border: 1px solid var(--line); padding: 3px 5px; background: var(--field); min-width: 0; width: 100%; }
 label.check input, td input[type=checkbox] { width: auto; }
-input.numeric { text-align: right; font-variant-numeric: tabular-nums; }
-button { border: 1px solid var(--line); background: #fafbfc; padding: 3px 9px; cursor: pointer; white-space: nowrap; }
+input.numeric { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--f-mono); }
+button { border: 1px solid var(--line); background: var(--button); padding: 3px 9px; cursor: pointer; white-space: nowrap; }
 button:hover:not(:disabled) { border-color: var(--accent); } button:disabled { opacity: .45; cursor: not-allowed; }
-button.primary { background: var(--accent); color: #fff; border-color: var(--accent); } button.active { background: #e6eefb; border-color: var(--accent); }
+button.primary { background: var(--accent-fill); color: var(--on-accent); border-color: var(--accent-fill); } button.active { background: var(--selected); border-color: var(--accent); }
 .row { display: flex; gap: 6px; align-items: flex-end; flex-wrap: wrap; margin: 4px 0; } .spacer { flex: 1; }
 .tabs { display: flex; gap: 2px; align-items: center; border-bottom: 1px solid var(--line); padding: 4px 6px 0; } .tabs button { border-bottom: none; }
+.tabs > button, .tabs .tab-group > button { font-family: var(--f-label); letter-spacing: .02em; }
 .toolbar { display: flex; gap: 4px; align-items: center; padding: 6px 0; flex-wrap: wrap; }
 .scroll { overflow: auto; flex: 1; min-height: 0; max-width: 100%; }
 table.grid { border-collapse: collapse; width: 100%; } table.grid th, table.grid td { border: 1px solid var(--line); padding: 2px 5px; text-align: left; vertical-align: top; white-space: nowrap; }
-table.grid th { background: #eef0f3; position: sticky; top: 0; cursor: help; font-weight: 600; } table.grid.small td { white-space: normal; word-break: break-word; }
+table.grid th { background: var(--head); position: sticky; top: 0; cursor: help; font-weight: 400; font-family: var(--f-label); letter-spacing: .02em; } table.grid.small td { white-space: normal; word-break: break-word; }
 table.editor td { padding: 0; } table.editor td input, table.editor td select { border: none; min-width: 84px; background: transparent; }
 table.editor td input.readonly { color: var(--muted); }
 table.editor select[aria-label="Judged at"] { min-width: 180px; }
@@ -48,70 +79,70 @@ table.editor th.sel, table.editor td.sel { width: 1%; padding: 0 3px; text-align
 table.editor td.sel input { min-width: 0; margin: 0; }
 .right input[aria-invalid="true"] { border-color: var(--bad); }
 .toolbar button.text { font-size: 11.5px; }
-tr.has-error td { background: #fdf1f0; }
+tr.has-error td { background: var(--bad-row); }
 .hint { color: var(--muted); font-size: 11.5px; } .fact { margin: 2px 0 6px; } .error { color: var(--bad); } .warn { color: var(--warn); } .ok { color: var(--ok); }
-.guidance { background: #eef3fb; border: 1px solid #c4d5ee; padding: 5px 8px; margin: 6px 0 0; cursor: pointer; }
-.issue { font-size: 11px; } .issue.error, .issue.blocker { color: var(--bad); } .issue.warning { color: var(--warn); } .issue.unresolved { color: #6a3fa0; } .issue.info { color: var(--muted); }
+.guidance { background: var(--info-bg); border: 1px solid var(--info-line); padding: 5px 8px; margin: 6px 0 0; cursor: pointer; }
+.issue { font-size: 11px; } .issue.error, .issue.blocker { color: var(--bad); } .issue.warning { color: var(--warn); } .issue.unresolved { color: var(--unresolved); } .issue.info { color: var(--muted); }
 td.issues { min-width: 170px; white-space: normal !important; }
-.blocker { border: 1px solid var(--bad); background: #fdecea; padding: 6px; margin: 6px 0; } .issue.blocker { border: 0; background: none; padding: 0; margin: 0; }
+.blocker { border: 1px solid var(--bad); background: var(--bad-bg); padding: 6px; margin: 6px 0; } .issue.blocker { border: 0; background: none; padding: 0; margin: 0; }
 /* A limit explained, not a fault: neutral, unlike .blocker. */
-.note { border: 1px solid var(--line); border-left: 3px solid var(--accent); background: #eef3fb; padding: 6px 8px; margin: 6px 0; } .note p { margin: 4px 0; } .note ul { margin: 2px 0 4px; padding-left: 18px; } .note code { overflow-wrap: anywhere; }
+.note { border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--info-bg); padding: 6px 8px; margin: 6px 0; } .note p { margin: 4px 0; } .note ul { margin: 2px 0 4px; padding-left: 18px; } .note code { overflow-wrap: anywhere; }
 /* The task row of the Project column: "Load task" at the left, "Delete task" at the right end (user request 2026-09-24). */
 .row.task-buttons { align-items: center; margin: 6px 0 4px; } .row.task-buttons button { flex: none; }
 pre { white-space: pre-wrap; word-break: break-word; margin: 4px 0; font-size: 11px; } pre.small { max-height: 180px; overflow: auto; }
-.badge { display: inline-block; padding: 1px 7px; border: 1px solid var(--line); font-size: 11px; font-weight: 600; }
-.state-ok { background: #e2f4e7; color: var(--ok); border-color: #9fd0ad; } .state-failed { background: #fdecea; color: var(--bad); border-color: #e2a19c; }
-.state-not_ready, .state-busy { background: #fff1d6; color: var(--warn); border-color: #e0bd6e; } .state-unknown, .state-not_checked { background: #ececf0; color: #505868; } .state-not_applicable { background: #f4f4f6; color: var(--muted); }
+.badge { display: inline-block; padding: 1px 7px; border: 1px solid var(--line); font: 600 10.5px/1.5 var(--f-label); letter-spacing: .08em; }
+.state-ok { background: var(--ok-bg); color: var(--ok); border-color: var(--ok-line); } .state-failed { background: var(--bad-bg); color: var(--bad); border-color: var(--bad-line); }
+.state-not_ready, .state-busy { background: var(--busy-bg); color: var(--warn); border-color: var(--warn-line); } .state-unknown, .state-not_checked { background: var(--neutral-bg); color: var(--neutral-text); } .state-not_applicable { background: var(--na-bg); color: var(--muted); }
 ul.tree { list-style: none; margin: 2px 0; padding-left: 12px; border-left: 1px dotted var(--line); } ul.tree li span { cursor: default; }
-.path { font-family: ui-monospace, Consolas, monospace; font-size: 11px; word-break: break-all; white-space: normal !important; cursor: copy; }
-.confirm { border: 1px solid var(--accent); background: #f3f7fe; padding: 8px; margin: 6px 0; } .diff-added td { background: #eaf7ee; } .diff-removed td { background: #fdecea; }
+.path { font-family: var(--f-mono); font-size: 11px; word-break: break-all; white-space: normal !important; cursor: copy; }
+.confirm { border: 1px solid var(--accent); background: var(--hover); padding: 8px; margin: 6px 0; } .diff-added td { background: var(--added-bg); } .diff-removed td { background: var(--bad-bg); }
 .agent { display: grid; grid-template-columns: 260px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 10px; height: 100%; } .agent-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: 'using using' 'chat compose'; gap: 4px 8px; min-height: 0; }
 /* The bottom panel is wide and short: conversation, message box and notes stand side by side, each at the full height, so a proposal never squeezes the conversation. */
 .agent-using { grid-area: using; color: var(--muted); font-size: 11.5px; display: flex; gap: 10px; align-items: center; justify-content: space-between; } .agent-using b { color: var(--text); font-weight: 600; }
 /* The start checklist: the workbench's own (free) one and the one in an agent's reply look the same. */
-.msg.checklist { align-self: stretch; max-width: none; border-color: #c9b26a; background: #fffaf0; } ul.checklist { list-style: none; margin: 4px 0 2px; padding: 0; }
+.msg.checklist { align-self: stretch; max-width: none; border-color: var(--checklist-line); background: var(--checklist-bg); } ul.checklist { list-style: none; margin: 4px 0 2px; padding: 0; }
 ul.checklist li { margin: 3px 0; padding-left: 22px; position: relative; } .check-mark { position: absolute; left: 2px; width: 16px; text-align: center; font-weight: 700; }
-.check-who { margin-left: 6px; padding: 0 5px; border: 1px solid var(--line); border-radius: 8px; font-size: 10.5px; color: var(--muted); background: #fff; }
+.check-who { margin-left: 6px; padding: 0 5px; border: 1px solid var(--line); border-radius: 8px; font-size: 10.5px; color: var(--muted); background: var(--field); }
 .check-detail { color: var(--muted); } .check-missing .check-detail { color: var(--text); } .check-action { color: var(--accent); }
 .check-done b, .check-not_applicable b { font-weight: 400; }
 /* A settings review: one row per suggested setting, applied by the user one by one. */
 .agent-actions { display: inline-flex; gap: 8px; align-items: center; flex: none; } .agent-actions label.check { flex: none; margin: 0; font-size: 11.5px; color: var(--muted); }
-.msg:has(.suggestions) { max-width: none; align-self: stretch; } .suggestions { margin-top: 5px; } .suggestions td { vertical-align: top; } .suggestions td:first-child b, .suggestions td:nth-child(2), .suggestions td:nth-child(3) { white-space: nowrap; word-break: normal; } .suggestions tr.applied td { background: #eaf7ee; }
+.msg:has(.suggestions) { max-width: none; align-self: stretch; } .suggestions { margin-top: 5px; } .suggestions td { vertical-align: top; } .suggestions td:first-child b, .suggestions td:nth-child(2), .suggestions td:nth-child(3) { white-space: nowrap; word-break: normal; } .suggestions tr.applied td { background: var(--added-bg); }
 .suggestions .quote { font-style: italic; color: var(--muted); margin-top: 2px; } .suggestions a, .ideas a { color: var(--accent); }
-.ideas { margin-top: 8px; padding: 5px 8px; border: 1px solid var(--line); background: #fcfcfd; } .ideas ul { margin: 3px 0; padding-left: 18px; } .ideas li { margin: 3px 0; }
-.selection-info { margin: 2px 0 6px; max-height: 140px; overflow: auto; border: 1px solid var(--line); background: #fcfcfd; padding: 3px 8px; } .selection-info ul { margin: 0; padding-left: 16px; } .selection-info li { margin: 2px 0; word-break: break-word; }
+.ideas { margin-top: 8px; padding: 5px 8px; border: 1px solid var(--line); background: var(--surface-2); } .ideas ul { margin: 3px 0; padding-left: 18px; } .ideas li { margin: 3px 0; }
+.selection-info { margin: 2px 0 6px; max-height: 140px; overflow: auto; border: 1px solid var(--line); background: var(--surface-2); padding: 3px 8px; } .selection-info ul { margin: 0; padding-left: 16px; } .selection-info li { margin: 2px 0; word-break: break-word; }
 /* Next to a proposal's diff: the workbench's own verdict on the result, and every value that is only a placeholder. */
 .verdict { margin: 6px 0 4px; font-weight: 600; } .verdict .hint { font-weight: 400; }
-.provisional { margin: 6px 0; padding: 5px 8px; border: 1px solid #e0bd6e; background: #fff6dc; } .provisional ul { margin: 3px 0 0; padding-left: 18px; } .provisional code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
+.provisional { margin: 6px 0; padding: 5px 8px; border: 1px solid var(--warn-line); background: var(--warn-bg); } .provisional ul { margin: 3px 0 0; padding-left: 18px; } .provisional code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
 .agent-side { overflow: auto; min-height: 0; padding-right: 4px; }  /* scrolls by itself: its length must not push the message box out of the panel */
 /* The conversation: one bubble per message. Yours on the right, the agent's on the left, workbench remarks small and centred. */
-.chat { grid-area: chat; overflow: auto; border: 1px solid var(--line); padding: 8px 10px; min-height: 60px; background: #f7f8fa; display: flex; flex-direction: column; gap: 7px; }
+.chat { grid-area: chat; overflow: auto; border: 1px solid var(--line); padding: 8px 10px; min-height: 60px; background: var(--sunk); display: flex; flex-direction: column; gap: 7px; }
 .chat-empty { margin: auto; max-width: 60ch; text-align: center; }
-.msg { flex: none; align-self: flex-start; max-width: min(92%, 90ch); padding: 5px 10px 6px; border: 1px solid var(--line); border-radius: 8px; background: #fff; line-height: 1.5; }
+.msg { flex: none; align-self: flex-start; max-width: min(92%, 90ch); padding: 5px 10px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); line-height: 1.5; }
 .msg .who { color: var(--muted); font-size: 11px; font-weight: 600; } .msg .when { font-weight: 400; margin-left: 4px; }
 .msg .text { word-break: break-word; } .msg.user .text { white-space: pre-wrap; } .msg .text p { margin: 0 0 5px; } .msg .text p:last-child, .msg .text ul:last-child, .msg .text ol:last-child { margin-bottom: 0; }
 .msg .text ul, .msg .text ol { margin: 2px 0 5px; padding-left: 20px; } .msg .text li { margin: 1px 0; }
-.msg code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; background: #eef0f3; border-radius: 3px; padding: 0 3px; }
-.msg.user { align-self: flex-end; background: #e3edfc; border-color: #bcd0ef; } .msg.reply { border-left: 3px solid var(--accent); }
-.msg.error { background: #fdecea; border-color: #e2a19c; color: var(--bad); } .msg.error .who { color: var(--bad); }
+.msg code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; background: var(--head); border-radius: 3px; padding: 0 3px; }
+.msg.user { align-self: flex-end; background: var(--user-bg); border-color: var(--user-line); } .msg.reply { border-left: 3px solid var(--accent); }
+.msg.error { background: var(--bad-bg); border-color: var(--bad-line); color: var(--bad); } .msg.error .who { color: var(--bad); }
 .msg.system { align-self: center; max-width: 80ch; border: none; background: none; padding: 0 8px; color: var(--muted); font-size: 11.5px; text-align: center; } .msg.system .who { display: inline; font-weight: 400; margin-right: 6px; } .msg.system .text { display: inline; } .msg.system .text p { display: inline; }
-.msg.pending { border-color: var(--accent); border-left: 3px solid var(--accent); color: var(--accent); } .msg.focused { box-shadow: 0 0 0 2px #bcd0ef; }
+.msg.pending { border-color: var(--accent); border-left: 3px solid var(--accent); color: var(--accent); } .msg.focused { box-shadow: 0 0 0 2px var(--user-line); }
 /* A live answer (status record 7.48): the thinking summary scrolls in a small box of its own and the reply grows under it.
    Afterwards the thinking stays with the reply, folded into one line. */
 .msg.pending .live-reply { color: var(--text); margin-top: 3px; } .msg.pending .live-status { margin-top: 2px; }
-.thinking-live, .thought-text { overflow: auto; margin: 3px 0; padding: 2px 8px; border-left: 2px solid #c8d3e6; background: #f5f7fb; color: var(--muted); font-size: .92em; line-height: 1.45; }
+.thinking-live, .thought-text { overflow: auto; margin: 3px 0; padding: 2px 8px; border-left: 2px solid var(--thinking-line); background: var(--thinking-bg); color: var(--muted); font-size: .92em; line-height: 1.45; }
 .thinking-live { max-height: 9.5em; } .thought-text { max-height: 16em; text-align: left; }
-.thinking-live .thinking-head { position: sticky; top: -2px; background: #f5f7fb; font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.thinking-live .thinking-head { position: sticky; top: -2px; background: var(--thinking-bg); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .thinking-live p, .thought-text p { margin: 0 0 4px; } .thinking-live p:last-child, .thought-text p:last-child { margin-bottom: 0; }
 .live-steps { margin: 2px 0; padding-left: 16px; color: var(--muted); font-size: .92em; } .live-steps li { margin: 1px 0; word-break: break-word; }
 details.thought { margin: 1px 0 2px; color: var(--muted); } details.thought summary { cursor: pointer; font-size: 11px; }
 button.detach { width: 100%; margin-bottom: 4px; }
 /* The agent tab is one tab shape holding two buttons: its label and, where a browser tab has its close button, the pop-out control. */
-.tabs .tab-group { display: inline-flex; align-items: center; border: 1px solid var(--line); border-bottom: none; background: #fafbfc; } .tabs .tab-group:hover { border-color: var(--accent); }
-.tabs .tab-group.active { background: #e6eefb; border-color: var(--accent); } .tabs .tab-group > button { border: none; background: none; padding-right: 5px; }
+.tabs .tab-group { display: inline-flex; align-items: center; border: 1px solid var(--line); border-bottom: none; background: var(--button); } .tabs .tab-group:hover { border-color: var(--accent); }
+.tabs .tab-group.active { background: var(--selected); border-color: var(--accent); } .tabs .tab-group > button { border: none; background: none; padding-right: 5px; }
 .tabs .tab-group.detached > button { font-style: italic; color: var(--muted); } .tab-slot { display: inline-flex; }
 .tabs .tab-group button.tab-detach { display: inline-flex; padding: 2px; margin-right: 4px; border-radius: 3px; color: var(--muted); line-height: 0; }
-.tabs .tab-group button.tab-detach:hover { background: #cfd8e6; color: var(--text); } .agent-away { padding: 14px; color: var(--muted); }
+.tabs .tab-group button.tab-detach:hover { background: var(--detach-hover); color: var(--text); } .agent-away { padding: 14px; color: var(--muted); }
 /* Detached into a window of its own: larger type, and the notes become a full-height column beside the chat
    (`display: contents` lifts the message box and the notes out of their shared row into the window's grid). */
 #agent-root { height: 100vh; padding: 10px; background: var(--panel); }
@@ -120,18 +151,18 @@ button.detach { width: 100%; margin-bottom: 4px; }
 .agent.detached .compose { display: contents; } .agent.detached .compose-main { grid-area: compose; max-height: 55vh; } .agent.detached .notes { grid-area: notes; } .agent.detached .agent-using { font-size: 13px; }
 .agent.detached textarea { font-size: 14px; min-height: 84px; } .agent.detached .notes li, .agent.detached .notes-title { font-size: 13px; } .agent.detached .notes-head, .agent.detached .msg .who { font-size: 12px; } .agent.detached .hint { font-size: 12.5px; }
 .compose { grid-area: compose; display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 40%); grid-template-rows: minmax(0, 1fr); gap: 8px; min-height: 0; } .compose-main { min-width: 0; min-height: 0; overflow: auto; } .compose-main .confirm { overflow-x: auto; margin-top: 0; } .compose-main textarea { display: block; } .compose-main .row select { width: auto; }
-.notes { position: relative; border: 1px solid var(--line); background: #fcfcfd; min-height: 110px; } .notes-scroll { position: absolute; inset: 0; overflow: auto; padding: 0 7px 5px; }
-.notes-head { position: sticky; top: 0; background: #fcfcfd; color: var(--muted); font-size: 11px; padding: 4px 0 2px; } .notes-title { font-weight: 600; font-size: 11.5px; margin-top: 3px; }
+.notes { position: relative; border: 1px solid var(--line); background: var(--surface-2); min-height: 110px; } .notes-scroll { position: absolute; inset: 0; overflow: auto; padding: 0 7px 5px; }
+.notes-head { position: sticky; top: 0; background: var(--surface-2); color: var(--muted); font-size: 11px; padding: 4px 0 2px; } .notes-title { font-weight: 600; font-size: 11.5px; margin-top: 3px; }
 .notes ul { margin: 1px 0 4px; padding-left: 16px; } .notes li { font-size: 11.5px; margin: 2px 0; word-break: break-word; }
 button.notes-link { border: none; background: none; padding: 0 3px; color: var(--accent); text-decoration: underline; font-size: 11px; white-space: normal; }
-.log div { font-family: ui-monospace, Consolas, monospace; font-size: 11px; border-bottom: 1px solid #eee; padding: 1px 0; word-break: break-all; }
+.log div { font-family: ui-monospace, Consolas, monospace; font-size: 11px; border-bottom: 1px solid var(--log-line); padding: 1px 0; word-break: break-all; }
 .step { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 5px; } .step-head { font-weight: 600; font-size: 12px; }
-.step-no { display: inline-block; width: 16px; height: 16px; line-height: 16px; text-align: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: 10.5px; margin-right: 3px; }
-.command { display: flex; gap: 6px; align-items: flex-start; margin: 3px 0; } .command code { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-all; background: #f0f2f5; border: 1px solid var(--line); padding: 4px 6px; font-size: 11.5px; user-select: all; }
+.step-no { display: inline-block; width: 16px; height: 16px; line-height: 16px; text-align: center; border-radius: 50%; background: var(--accent-fill); color: var(--on-accent); font-size: 10.5px; margin-right: 3px; }
+.command { display: flex; gap: 6px; align-items: flex-start; margin: 3px 0; } .command code { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-all; background: var(--code-bg); border: 1px solid var(--line); padding: 4px 6px; font-size: 11.5px; user-select: all; }
 .steps-list { margin: 3px 0; padding-left: 16px; font-size: 11.5px; }
 .status-line { margin: 4px 0; padding: 5px 7px; border: 1px solid var(--line); border-left-width: 4px; font-size: 12px; }
-.status-line.level-ok { border-color: #9fd0ad; background: #e2f4e7; color: var(--ok); } .status-line.level-error { border-color: #e2a19c; background: #fdecea; color: var(--bad); }
-.status-line.level-warn, .status-line.level-partial { border-color: #e0bd6e; background: #fff1d6; color: var(--warn); } .status-line.level-unknown { background: #ececf0; color: #505868; }
+.status-line.level-ok { border-color: var(--ok-line); background: var(--ok-bg); color: var(--ok); } .status-line.level-error { border-color: var(--bad-line); background: var(--bad-bg); color: var(--bad); }
+.status-line.level-warn, .status-line.level-partial { border-color: var(--warn-line); background: var(--busy-bg); color: var(--warn); } .status-line.level-unknown { background: var(--neutral-bg); color: var(--neutral-text); }
 /* The connection block of the left column is ONE button; pressing it opens the connection window (drawn through a portal). */
 .connection-launcher { padding: 6px; } button.connection-button { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 1px 7px; padding: 5px 9px; text-align: left; }
 /* Two lines: the name and the state of the last test, and under them which connection is in use and what kind it is. */
@@ -146,7 +177,7 @@ button.notes-link { border: none; background: none; padding: 0 3px; color: var(-
 .connection-window .hint, .connection-window label, .connection-window .steps-list, .virtuoso-window .hint, .virtuoso-window label, .virtuoso-window .steps-list, .pdk-window .hint, .pdk-window label { font-size: 12.5px; }
 .connection-window .step { margin-top: 10px; padding-top: 8px; } .connection-window .step-head { font-size: 13.5px; }
 .connection-window .step-no { width: 18px; height: 18px; line-height: 18px; font-size: 11.5px; } .connection-window .command code { font-size: 12.5px; } .connection-window .status-line { font-size: 13px; }
-.connection-window .row > label { flex: 1; } .connection-window .row > button, .virtuoso-window .row > button { flex: none; } .connection-window .connection-add { background: #f7f8fa; padding: 8px 10px; border: 1px solid var(--line); }
+.connection-window .row > label { flex: 1; } .connection-window .row > button, .virtuoso-window .row > button { flex: none; } .connection-window .connection-add { background: var(--sunk); padding: 8px 10px; border: 1px solid var(--line); }
 /* The two window launchers of the Project column: one grid, text left, the two buttons under each other in one right-hand
    column of equal width, each pair on one line (the text wraps inside its cell; the button stays beside it). */
 .launchers { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; row-gap: 6px; align-items: center; margin: 8px 0; }
@@ -156,14 +187,14 @@ details.labels > summary { color: var(--muted); } details.labels > summary b { f
 /* The Virtuoso cellview import of the left column is ONE button (user request 2026-09-23); pressing it opens the Virtuoso window,
    a pop-up like the connection window (about:blank = quirks mode, so its tables are told to inherit the font). */
 .virtuoso-window details > summary { cursor: pointer; }
-.virtuoso-window .copy-warning { border: 1px solid var(--warn); background: #fff6dc; padding: 5px 8px; }
+.virtuoso-window .copy-warning { border: 1px solid var(--warn); background: var(--warn-bg); padding: 5px 8px; }
 /* The ngspice window: the deck itself is the main thing, in a monospace box that fills the width. */
 .ngspice-window .ngspice-text { width: 100%; box-sizing: border-box; font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.35; white-space: pre; overflow: auto; }
 .ngspice-window .row.ngspice-file { align-items: flex-end; } .ngspice-window .row.ngspice-file > button { flex: none; }
 .ngspice-window .ngspice-check table td { vertical-align: top; } .ngspice-window .ngspice-check li.warn { color: var(--warn); }
-.real { background: #e8f0fd; border: 1px solid var(--accent); padding: 4px 8px; font-weight: 600; }
-label.disabled { opacity: .6; } input:disabled { background: #eceef1; color: var(--muted); cursor: not-allowed; }
-td.numeric { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap !important; } details a { color: var(--accent); }
+.real { background: var(--real-bg); border: 1px solid var(--accent); padding: 4px 8px; font-weight: 600; }
+label.disabled { opacity: .6; } input:disabled { background: var(--field-disabled); color: var(--muted); cursor: not-allowed; }
+td.numeric { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap !important; font-family: var(--f-mono); } details a { color: var(--accent); }
 .row.pair > button { flex: 1 1 0; min-width: 0; } p.in-use { margin: 6px 0 0; }
 /* A field whose caption line carries an action at its right end, shown as text (Output root ... Copy path); a number box with a unit list. */
 .field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 4px 0 2px; } .field-head label { flex: none; margin: 0; }
@@ -175,15 +206,15 @@ button.text-link.mode-suggestion { font-size: inherit; font-weight: 600; }
 .model-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; margin: 4px 0; }
 button.model-card { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left; white-space: normal; padding: 5px 8px; font-size: 11.5px; overflow-wrap: anywhere; }
 button.model-card.active { border-left: 3px solid var(--accent); } .model-title { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 12.5px; }
-.model-tag { font-size: 10px; font-weight: 600; padding: 0 5px; color: var(--muted); } .model-tag.mock-tag { background: #fff6dc; border-color: #d9a400; color: var(--text); }
+.model-tag { font-size: 10px; font-weight: 600; padding: 0 5px; color: var(--muted); } .model-tag.mock-tag { background: var(--warn-bg); border-color: var(--mock-line); color: var(--text); }
 input.model-filter { width: 100%; margin: 2px 0; } select.model-point { max-width: 100%; }
 table.grid.small.model-facts td:first-child, table.grid.small.run-facts td:first-child { white-space: nowrap; word-break: normal; width: 1%; color: var(--muted); }
 /* Network structure of the chosen saved model: a short summary in the narrow run panel, the full layer table in a wide dialog. Tables only. */
 details.structure { margin: 6px 0; } details.structure > summary { cursor: pointer; } .structure-part { margin: 6px 0; } table.structure-sections th { position: static; cursor: default; }
 dialog.structure-dialog, dialog.graph-dialog { padding: 12px 14px; border: 1px solid var(--line); color: var(--text); font: inherit; } dialog.structure-dialog { width: min(1180px, 94vw); max-height: 88vh; }
-dialog.structure-dialog::backdrop, dialog.graph-dialog::backdrop { background: rgba(20, 28, 40, .35); } dialog.structure-dialog h3, dialog.graph-dialog h3 { margin: 0; } .structure-scroll { overflow: auto; max-height: 74vh; }
+dialog.structure-dialog::backdrop, dialog.graph-dialog::backdrop { background: var(--backdrop); } dialog.structure-dialog h3, dialog.graph-dialog h3 { margin: 0; } .structure-scroll { overflow: auto; max-height: 74vh; }
 table.structure-layers td { white-space: normal; word-break: normal; } table.structure-layers td.path, table.structure-layers td.numeric, table.structure-layers td.keep { white-space: nowrap !important; cursor: default; }
-table.structure-layers tr.unused td { background: #fff6dc; } table.structure-layers tr.total td { font-weight: 600; background: #eef0f3; } table.structure-layers th { cursor: default; }
+table.structure-layers tr.unused td { background: var(--warn-bg); } table.structure-layers tr.total td { font-weight: 600; background: var(--head); } table.structure-layers th { cursor: default; }
 /* Circuit graph view (user decision 2026-09-21: one on-screen diagnostic picture): a large dialog, the drawing left, tables right. */
 dialog.graph-dialog { width: 96vw; height: 92vh; max-width: none; max-height: none; } .graph-tools .graph-step input { width: 74px; }
 /* One line: a labelled box carries a 4 px margin that a bare button does not, which left Show, the arrows and the layout buttons 4 px low. Here every control is 26 px high and stands on the same bottom edge. */
@@ -191,8 +222,8 @@ dialog.graph-dialog { width: 96vw; height: 92vh; max-width: none; max-height: no
 .graph-tools label.check { min-height: 26px; } .graph-tools label.check input { height: auto; }
 /* The close cross of a dialog, as a browser window has it: top right, no frame, red when pointed at. */
 button.dialog-close { border: none; background: none; width: 36px; height: 26px; padding: 0; font-size: 20px; line-height: 1; color: var(--muted); border-radius: 3px; }
-button.dialog-close:hover:not(:disabled) { background: #e81123; color: #fff; border: none; }
-.graph-body { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 10px; height: calc(92vh - 118px); } .graph-canvas { border: 1px solid var(--line); background: #fff; min-height: 0; }
+button.dialog-close:hover:not(:disabled) { background: var(--close-hover); color: var(--on-accent); border: none; }
+.graph-body { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 10px; height: calc(92vh - 118px); } .graph-canvas { border: 1px solid var(--line); background: var(--canvas); min-height: 0; }
 .graph-side { overflow: auto; min-height: 0; } .graph-side h4 { margin: 10px 0 4px; } .graph-side table.grid th { position: static; cursor: default; } .graph-side td.numeric { white-space: nowrap !important; }
 /* Header run buttons: one main button (Start -> Pause -> Resume) and Abort. Icon-only, so the header does not shift when the label changes. */
 button.run-main { font-weight: 600; }
@@ -203,22 +234,22 @@ button:has(> svg.icon) { display: inline-flex; align-items: center; justify-cont
 table.grid td > button:has(> svg.icon) { padding: 1px 6px; vertical-align: middle; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 /* Abort is RED (user request 2026-09-21): solid, like the main button is solid blue; faded while there is nothing to abort. */
-button.run-abort { background: var(--bad); color: #fff; border-color: var(--bad); font-weight: 600; } button.run-abort:hover:not(:disabled) { background: #8f1d17; border-color: #8f1d17; }
-button.run-chip { border: none; background: none; padding: 0 2px; color: var(--muted); font-variant-numeric: tabular-nums; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+button.run-abort { background: var(--bad-fill); color: var(--on-accent); border-color: var(--bad-fill); font-weight: 600; } button.run-abort:hover:not(:disabled) { background: var(--bad-strong); border-color: var(--bad-strong); }
+button.run-chip { border: none; background: none; padding: 0 2px; color: var(--muted); font-variant-numeric: tabular-nums; font-family: var(--f-mono); max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
 button.run-chip.running, button.run-chip.starting, button.run-chip.resuming { color: var(--ok); } button.run-chip.pausing, button.run-chip.paused, button.run-chip.aborting { color: var(--warn); }
 /* Which run the bottom tabs show: ONE button at the right end of the tab strip (a full button, not a tab). It only reads "Runs..." and opens the run window;
    the run that is shown is named as plain text to its LEFT (user request 2026-09-21), cut with "..." when the strip is too narrow for all of it. */
-.tabs button.run-list-button { flex: none; font-weight: 600; margin-bottom: 3px; border-bottom: 1px solid var(--line); } .tabs button.run-list-button:hover { border-color: var(--accent); } .tabs button.run-list-button.open { background: #e6eefb; border-color: var(--accent); }  /* `open`, not `active`: that class marks the chosen TAB of this strip */
+.tabs button.run-list-button { flex: none; font-weight: 600; margin-bottom: 3px; border-bottom: 1px solid var(--line); } .tabs button.run-list-button:hover { border-color: var(--accent); } .tabs button.run-list-button.open { background: var(--selected); border-color: var(--accent); }  /* `open`, not `active`: that class marks the chosen TAB of this strip */
 .tabs .run-list-current { min-width: 0; max-width: 62%; margin: 0 8px 3px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; } .run-list-blocked { margin-right: 8px; }
 /* The run window (drawn through a portal): every run as one table row. The table scrolls under its sticky titles; a run's details open as a row of their own. */
 #runs-root { height: 100vh; background: var(--panel); } .run-window { height: 100%; display: flex; flex-direction: column; padding: 12px 16px 10px; font-size: 13px; }
 .run-window h2 { margin: 0 0 4px; font-size: 17px; } .run-window p { margin: 4px 0; } .run-window .hint { font-size: 12.5px; } .run-window details > summary { cursor: pointer; }
 .run-window .row { align-items: center; } input.run-filter { width: 330px; } .run-count { flex: 1; }
 table.run-table td { vertical-align: middle; font-variant-numeric: tabular-nums; } table.run-table th.sortable { cursor: pointer; user-select: none; } table.run-table th.plain { cursor: default; } .sort-mark { color: var(--accent); }
-table.run-table tr.current > td { background: #e6eefb; } table.run-table tbody tr:not(.run-details-row):hover > td { background: #f3f7fe; } table.run-table tr.current:hover > td { background: #dbe7fa; }
+table.run-table tr.current > td { background: var(--selected); } table.run-table tbody tr:not(.run-details-row):hover > td { background: var(--hover); } table.run-table tr.current:hover > td { background: var(--selected-hover); }
 /* A double click on a row shows that run (there is no "Show" column): the row of the run that is shown carries a bar at its left edge besides its colour. */
 table.run-table tbody tr:not(.run-details-row) { cursor: default; } table.run-table tr.current > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
-table.run-table td .hint { font-size: 11px; } tr.run-details-row > td { background: #fafbfc; padding: 6px 10px 10px 34px; white-space: normal; }
+table.run-table td .hint { font-size: 11px; } tr.run-details-row > td { background: var(--button); padding: 6px 10px 10px 34px; white-space: normal; }
 .run-details { max-width: 1100px; } .run-details h4 { margin: 10px 0 3px; } .run-details table.grid th { position: static; cursor: default; } table.run-segments { width: auto; }
 /* Project panel: explanations are closed until asked for (details.more), so the narrow column shows the fields and buttons first. */
 .left details > summary { cursor: pointer; } details.more { margin: 4px 0; } details.more > :not(summary) { margin: 3px 0 3px 13px; }
@@ -227,8 +258,10 @@ details.section { margin-top: 10px; } details.section > summary > h3 { display: 
 /* A whole module of the right column (Run configuration, Output settings) folds the same way. Folded, its line carries the
    main values on a second row, and a mark when an error or a warning waits inside. */
 details.section.module { margin-top: 0; } details.module > summary { cursor: pointer; } details.module[open] > summary { margin-bottom: 4px; }
+/* Research experiments' heading: the modules' heading (record 7.166), its note in the name's tooltip */
+.research-module > summary { cursor: pointer; } .research-module[open] > summary { margin-bottom: 4px; } .research-module > summary > h3 { display: inline; margin: 0; cursor: help; }
 .module-summary { display: block; margin: 2px 0 0 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.module-attention { margin-left: 8px; padding: 0 5px; border-radius: 3px; font-size: 10.5px; font-weight: 600; color: #fff; background: var(--warn); } .module-attention.error { background: var(--bad); }
+.module-attention { margin-left: 8px; padding: 0 5px; border-radius: 3px; font-size: 10.5px; font-weight: 600; color: var(--on-warn); background: var(--warn-fill); } .module-attention.error { color: var(--on-accent); background: var(--bad-fill); }
 /* Load PDK (Pdk.tsx): the "Components" line of the RL network block, and the PDK window (a pop-up like the connection
    window; about:blank = quirks mode, so its tables are told to inherit the font). */
 /* a labelled list beside a bare button: bottom-aligned, one height for both (a centred row would put the button between the
@@ -237,7 +270,7 @@ details.section.module { margin-top: 0; } details.module > summary { cursor: poi
 .component-row > button { flex: none; height: 26px; } .component-list .component-what { margin: 2px 0 4px; }
 .pdk-window h3 { margin: 14px 0 6px; font-size: 14.5px; }
 .pdk-window .pdk-form { align-items: flex-end; } .pdk-window .pdk-form > label { flex: 1 1 240px; }
-.pdk-window .pdk-form > button { flex: none; } .pdk-list tr { cursor: default; } .pdk-list tr.active td { background: #eef4ff; }
+.pdk-window .pdk-form > button { flex: none; } .pdk-list tr { cursor: default; } .pdk-list tr.active td { background: var(--selected-soft); }
 .pdk-devices td { vertical-align: top; } .pdk-devices td:first-child, .pdk-devices td:nth-child(2) { white-space: nowrap; } .pdk-window .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 /* Corner check tab (CornerCheck.tsx): the plan line, the designs, then one row per design and one column per corner with a
    verdict at the end; pass / FAIL / unknown in the result colours. */
@@ -247,7 +280,7 @@ details.section.module { margin-top: 0; } details.module > summary { cursor: poi
 table.corner-grid td.corner-pass { color: var(--ok); } table.corner-grid td.corner-fail { color: var(--bad); font-weight: 600; }
 table.corner-grid td.corner-fail span { font-weight: normal; } table.corner-grid td.corner-unknown { color: var(--warn); }
 table.corner-grid td.corner-pending { color: var(--muted); font-style: italic; }
-table.corner-checks tr { cursor: default; } table.corner-checks tr.current > td { background: #e6eefb; }
+table.corner-checks tr { cursor: default; } table.corner-checks tr.current > td { background: var(--selected); }
 /* Save task at the right end of the editors' tab line, its messages and questions under their toolbar (TaskSave.tsx portals,
    user request 2026-09-22). Buttons inside `.tabs` are tab-shaped (no bottom border); these are plain buttons again. */
 .editors > .tabs { flex-wrap: wrap; } .tabs .tab-actions { margin-left: auto; display: inline-flex; } .tabs .tab-actions:empty { display: none; }
@@ -270,6 +303,78 @@ table.corner-checks tr { cursor: default; } table.corner-checks tr.current > td 
 .sizing-thread h3 { margin-top: 2px; }
 .persistence-problem { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .persistence-problem > span { flex: 1 1 300px; }
+/* ---- record 7.158: the header's title block, the look switch, the splitter, each editor's colour, one-line ids, the circuit
+   picture. Both looks use these; themes.css adds what makes each look itself. ---------------------------------------------- */
+header .title-block { display: flex; align-items: stretch; min-width: 0; flex: 0 1 auto; align-self: stretch; }
+.tb-brand { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding-right: 10px; cursor: default; }
+.tb-brand b { font: 700 17px/1 var(--f-label); letter-spacing: .14em; }
+.tb-brand .tb-sub { font: 600 8.5px/1 var(--f-label); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+button.look-switch { align-self: center; margin-right: 6px; }
+.tb-facts { display: flex; align-items: stretch; min-width: 0; }
+.tb-cell { display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 0 12px; border-left: 1px solid var(--rule); min-width: 0; }
+.tb-k { font: 600 8.5px/1 var(--f-label); letter-spacing: .17em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.tb-v { font: 12.5px/1.15 var(--f-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 28ch; }
+.tb-rev .tb-v { font: 700 16px/1 var(--f-label); }
+/* The splitter: the top edge of the bottom panel. Drag it, double-click it (fold to the tab line), or use the arrow keys. */
+footer { position: relative; }
+.splitter { position: absolute; left: 0; right: 0; top: -7px; height: 9px; cursor: row-resize; z-index: 2; touch-action: none; }
+.splitter::after { content: ''; position: absolute; left: 50%; top: 2px; width: 46px; height: 5px; margin-left: -23px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); opacity: 0; }
+.splitter:hover::after, .splitter:focus-visible::after, .layout.bottom-folded .splitter::after { opacity: 1; }
+.splitter:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+/* Each editor's colour: its tab and its table's header row; the Probe ids the Specs line offers are Probe-coloured chips. */
+.editors[data-editor="parameters"], .editors > .tabs > button[data-editor="parameters"] { --editor: var(--param); --editor-head: var(--param-head); }
+.editors[data-editor="measurements"], .editors > .tabs > button[data-editor="measurements"] { --editor: var(--probe); --editor-head: var(--probe-head); }
+.editors[data-editor="targets"], .editors > .tabs > button[data-editor="targets"] { --editor: var(--spec); --editor-head: var(--spec-head); }
+.editors > .tabs > button[data-editor].active { color: var(--editor); box-shadow: inset 0 -2px 0 var(--editor); }
+.editors[data-editor] table.editor th { background: var(--editor-head); box-shadow: inset 0 -2px 0 var(--editor); }
+.fact.spec-probes { line-height: 1.75; }
+.spec-probes code.probe-id { font: 11px/1.4 var(--f-mono); color: var(--probe); background: var(--probe-chip); border: 1px solid var(--probe-chip-line); padding: 0 4px; white-space: nowrap; }
+/* Alternate rows of the tables that list many rows; any row colour of meaning (an error, the current run) wins over it. */
+:where(table.grid.small, table.editor) :where(tbody tr:nth-child(even)) > td { background: var(--zebra); }
+/* Data tables: one line per row - an id ends in "...", the whole value on hover and copied by a click; a time keeps its width. */
+table.grid.small.data-table td { word-break: normal; }
+table.grid.small td.id-cell { white-space: nowrap; word-break: normal; max-width: 15ch; overflow: hidden; text-overflow: ellipsis; font: 11.5px/1.4 var(--f-mono); cursor: copy; }
+table.grid.small td.time-cell { white-space: nowrap; word-break: normal; font: 11.5px/1.4 var(--f-mono); }
+table.grid.small.data-table td.json-cell { word-break: break-all; min-width: 24ch; max-width: 48ch; font: 11px/1.4 var(--f-mono); }
+/* The circuit picture (CircuitPicture.tsx): the graph view's manner, small. */
+.circuit-picture svg { display: block; width: 100%; height: auto; margin: 6px 0 2px; }
+.circuit-picture > summary .hint { font-weight: 400; }
+.circuit-picture .picture-hint { margin: 2px 0 0; }
+.cp-link { stroke: var(--cp-link); stroke-width: 1.1; }
+.cp-link.gate { stroke-dasharray: 3 2.5; }
+.cp-link.on { stroke: var(--accent); stroke-width: 2; }
+.cp-gate-dot { fill: var(--cp-link); } .cp-gate-dot.on { fill: var(--accent); }
+.cp-net circle { fill: var(--cp-net); stroke: var(--cp-net-line); stroke-width: 1; }
+.cp-net.supply circle { fill: var(--cp-supply); } .cp-net.ground circle { fill: var(--cp-ground); }
+.cp-net text { fill: var(--muted); font: 8.5px var(--f-mono); dominant-baseline: central; }
+.cp-dev .body { fill: var(--cp-nmos); stroke: var(--cp-net-line); stroke-width: 1; }
+.cp-dev.pmos .body { fill: var(--cp-pmos); } .cp-dev.passive .body { fill: var(--cp-passive); } .cp-dev.source .body { fill: var(--cp-source); } .cp-dev.other .body { fill: var(--head); }
+.cp-dev text { fill: var(--text); font: 600 8.5px var(--f-body); text-anchor: middle; dominant-baseline: central; }
+.cp-dev .halo { fill: var(--accent); opacity: .18; }
+.cp-dev.on .body { fill: var(--accent-fill); stroke: var(--accent); stroke-width: 1.6; }
+.cp-dev.on text { fill: var(--on-accent); }
+/* Both looks share every size (record 7.162, user: "the day and night mode banner size is a bit different fix it"): the
+   page's margin, the header's border and padding, the tab borders and each editor tab's mark. themes.css sets colours and
+   drawings only, so switching the look never moves anything; looks_check.mjs measures it. */
+header { border-width: 1.5px; padding: 7px 12px; }
+.tabs { border-bottom-width: 1.5px; }
+.tabs > button:not(.run-list-button), .tabs .tab-group { border-width: 1.5px; }
+.tabs > button.active:not(.run-list-button), .tabs .tab-group.active { margin-bottom: -1.5px; border-bottom: 1.5px solid transparent; }
+.editors > .tabs > button[data-editor]::before { content: ''; display: inline-block; box-sizing: border-box; width: 15px; height: 15px;
+  margin-right: 6px; vertical-align: middle; border: 1px solid var(--editor); background: repeating-linear-gradient(45deg, var(--editor) 0 1.4px, transparent 1.4px 3.6px); }
+/* One tab style in both looks (record 7.164, user: "day and night tab style different, change the day style to night one"):
+   the editors' layer swatches above, and every tab strip drawn alike - the chosen tab raised with an underline (the
+   editor's colour on an editor tab), the others plain. :root[data-theme] keeps these at the weight the look rules had: over
+   a plain button, under an editor's colour and an error row. */
+:root[data-theme] :where(.tabs > button:not(.run-list-button), .tabs .tab-group) { background: transparent; border-color: transparent; color: var(--muted); border-radius: 3px 3px 0 0; }
+:root[data-theme] :where(.tabs > button.active:not(.run-list-button), .tabs .tab-group.active) { background: var(--button); color: var(--text); border-color: var(--line); box-shadow: inset 0 -2px 0 var(--accent); }
+@media (min-width: 1101px) { .layout { padding: 19px; } }
+/* Folded to its tab line: the rows above take the room (the narrow layouts below keep their own heights). */
+@media (min-width: 1101px) {
+  .layout.bottom-folded { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+  .layout.bottom-folded .bottom-body { display: none; }
+}
+@media (max-width: 1100px) { .splitter { display: none; } header .title-block { flex-wrap: wrap; } }
 /* Keep the editors usable when the two fixed side columns would consume the viewport. */
 @media (max-width: 1100px) {
   .layout { height: auto; min-height: 100%; grid-template: 'head head' auto 'msg msg' auto 'left right' minmax(240px, 45vh) 'main main' minmax(360px, 60vh) 'foot foot' minmax(420px, 65vh) / minmax(0, 1fr) minmax(0, 1fr); }

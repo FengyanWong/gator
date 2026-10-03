@@ -32,6 +32,9 @@ export function migrateConfig(config: Json): Json {
   if (Array.isArray(config.measurements)) out = { ...out, measurements: config.measurements.map((row: Json) => without(row, RETIRED_MEASUREMENT_KEYS)) };
   // "Threads per job" retired on 2026-09-29: no simulator ever used it. The backend drops it too and hashes it at 1.
   if (config.run && typeof config.run === 'object' && 'threads_per_job' in config.run) out = { ...out, run: without(config.run, ['threads_per_job']) };
+  // "Experiment group" and "Test tasks" retired on 2026-10-03 (record 7.163): nothing read them. The backend drops them too.
+  if (config.research && typeof config.research === 'object' && ('experiment_group' in config.research || 'test_tasks' in config.research))
+    out = { ...out, research: without(config.research, ['experiment_group', 'test_tasks']) };
   return out;
 }
 

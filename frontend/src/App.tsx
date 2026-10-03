@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { api, ApiError, Json, NO_ANSWER, plainError, saveJson } from './api';
+import { Look, LOOK_NAMES, setLook, useLook } from './theme';
+import { Icon } from './panels/Icons';
 import { useConfig, usePolling, useRequest } from './store';
 import { CircuitPanel } from './panels/Left';
 import { ConnectionButton } from './panels/Connection';
@@ -29,9 +32,28 @@ function rejected(e: any): Json {
 }
 const NO_RUNS: Json[] = [];                          // one empty list: a failed read does not make the model list read again
 
+/** The header's look switch (record 7.158): Whiteprint by day, Silicon Night by night. An icon, like the run buttons. */
+function LookSwitch() {
+  const look = useLook();
+  const other: Look = look === 'silicon' ? 'whiteprint' : 'silicon';
+  return <button className="look-switch" aria-pressed={look === 'silicon'} onClick={() => setLook(other)}
+    title={`Switch look: now ${LOOK_NAMES[look]}; press for ${LOOK_NAMES[other]}. Kept in this browser; the pop-up windows follow.`}>
+    <Icon name={look === 'silicon' ? 'sun' : 'moon'} label="Switch look" /></button>;
+}
+
+/** The bottom panel's height (record 7.158): dragged at its top edge, folded to its tab line with a double click there.
+ *  Kept in this browser, like the folded modules; null = the default third of the window. */
+type Bottom = { height: number | null; folded: boolean };
+const BOTTOM_KEY = 'gator-workbench-bottom-v1';
+const storedBottom = (): Bottom => {
+  try { const b = JSON.parse(localStorage.getItem(BOTTOM_KEY) ?? 'null'); return { height: typeof b?.height === 'number' && b.height > 0 ? b.height : null, folded: b?.folded === true }; }
+  catch { return { height: null, folded: false }; }
+};
+
 /** Layout (specification section 2): left = project, connection, circuit; center = three editors;
  *  right = run configuration + output settings (always visible); bottom = agent, logs, status, data, files.
- *  Tables, numbers, status and file lists only - nothing is plotted. */
+ *  Tables, numbers, status and file lists - nothing is plotted. On screen only, by user decision, two pictures of the
+ *  circuit: the graph view (2026-09-21) and the circuit picture in the left column (2026-10-03); nothing drawn is written. */
 export function App() {
   const store = useConfig();
   const { config, setConfig } = store;
@@ -43,8 +65,17 @@ export function App() {
   const [continuing, setContinuing] = useState(false);
   const [runDir, setRunDir] = useState<string | null>(() => { try { return localStorage.getItem('gator-workbench-current-run-v1') || null; } catch { return null; } });
   const [tab, setTab] = useState<BottomTab>('status');
+  const [bottom, setBottom] = useState<Bottom>(storedBottom);
+  const changeBottom = useCallback((change: (b: Bottom) => Bottom) => setBottom(b => {
+    const next = change(b);
+    if (next !== b) try { localStorage.setItem(BOTTOM_KEY, JSON.stringify(next)); } catch { /* a private window: not remembered */ }
+    return next;
+  }), []);
+  // A press that asks to see something in the bottom panel (one of its tabs, an agent request, the header's run) opens it.
+  const unfold = useCallback(() => changeBottom(b => (b.folded ? { ...b, folded: false } : b)), [changeBottom]);
   const [agentRequest, setAgentRequest] = useState<{ kind: string; selection: Json[]; prompt?: string } | null>(null);
-  const requestAgent = useCallback((kind: string, selection: Json[], prompt?: string) => { setAgentRequest({ kind, selection, prompt }); setTab('agent'); }, []);
+  const requestAgent = useCallback((kind: string, selection: Json[], prompt?: string) => { setAgentRequest({ kind, selection, prompt }); setTab('agent'); unfold(); }, [unfold]);
+  const [titleSlot, setTitleSlot] = useState<HTMLElement | null>(null);            // the header's title block: the circuit panel puts the task's facts there
   const [agentTabSlot, setAgentTabSlot] = useState<HTMLElement | null>(null);      // on the tab itself: where AgentTab puts its pop-out control
   const [taskSlot, setTaskSlot] = useState<HTMLElement | null>(null);              // editors' tab line: where the circuit panel puts "Save task"
   const [taskNotes, setTaskNotes] = useState<HTMLElement | null>(null);            // under the editors' toolbar: its messages and questions
@@ -186,12 +217,49 @@ export function App() {
     : control.phase === 'checking' ? 'The header is still looking up which run is live; a moment.'
     : 'Another run is live in the header: pause it or let it finish first (a second live run would have no Pause or Abort on this page).';
 
+  // ---- the splitter above the bottom panel (record 7.158): nothing moves unless it is dragged, double-clicked or keyed --------
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const fitBottom = (px: number) => {
+    const tabs = layoutRef.current?.querySelector<HTMLElement>('footer > .tabs')?.offsetHeight ?? 34;
+    return Math.round(Math.max(tabs + 60, Math.min(px, window.innerHeight - 280)));   // the editors keep room
+  };
+  const dragBottom = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const layout = layoutRef.current, foot = e.currentTarget.parentElement;
+    if (e.button !== 0 || !layout || !foot) return;
+    e.preventDefault();
+    const handle = e.currentTarget, edge = foot.getBoundingClientRect().bottom;
+    handle.setPointerCapture(e.pointerId);
+    let height: number | null = null;          // drawn while dragged, remembered once let go
+    const move = (m: PointerEvent) => { height = fitBottom(edge - m.clientY); layout.style.setProperty('--foot', `${height}px`); layout.classList.remove('bottom-folded'); };
+    const end = () => {
+      handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end);
+      const dragged = height;
+      if (dragged !== null) changeBottom(() => ({ height: dragged, folded: false }));
+    };
+    handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
+  };
+  const keyBottom = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); changeBottom(b => ({ ...b, folded: !b.folded })); return; }
+    const step = e.key === 'ArrowUp' ? 24 : e.key === 'ArrowDown' ? -24 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const now = e.currentTarget.parentElement?.getBoundingClientRect().height ?? 0;
+    changeBottom(() => ({ height: fitBottom(now + step), folded: false }));
+  };
+
   if (fatal) return <p className="error">Backend not reachable: {fatal}</p>;
   if (!schema) return <p>Loading schema...</p>;
   return (
-    <div className="layout">
+    <div className={`layout${bottom.folded ? ' bottom-folded' : ''}`} ref={layoutRef} style={bottom.height ? { '--foot': `${bottom.height}px` } as CSSProperties : undefined}>
       <header>
-        <b>GATOR workbench</b><span className="hint"> {meta?.version} | {meta?.environment?.environment} | data-only outputs (no plots)</span>
+        {/* The title block (record 7.158): the page names what it works on - the task's facts come from the circuit panel. The
+            version and the environment are one hover away, on the name. */}
+        <div className="title-block">
+          <span className="tb-brand" title={`GATOR workbench ${meta?.version ?? ''} | ${meta?.environment?.environment ?? ''} | data-only outputs (no plots)`}>
+            <b>GATOR</b><span className="tb-sub">workbench</span></span>
+          <LookSwitch />
+          <span className="tb-facts" ref={setTitleSlot} />
+        </div>
         {/* The hand-edited settings.json is not valid JSON: the backend works on defaults and leaves the file alone. Said on a
             line of its own under the header, as /api/meta said it when the page opened - never hidden, not dismissable. */}
         {meta?.settings_problem && <p className="settings-problem warn">{meta.settings_problem}</p>}
@@ -204,7 +272,7 @@ export function App() {
         <button disabled={!!validation?.blocks_run || control.phase !== 'idle'} onClick={() => start(true)}
           title={control.phase === 'idle' ? 'ONE costed evaluation of the initial design. It is a preflight record, not free.' : 'Not while the header holds a run that is active or paused. Abort lets go of a paused run.'}>Single baseline simulation</button>
         <RunButtons control={control} blocked={!!validation?.blocks_run} onStart={() => start(false)} onResumed={started => showRun(started, 'resume')}
-          onMessage={setMessage} onShow={dir => { setRunDir(dir); setTab('status'); }} />
+          onMessage={setMessage} onShow={dir => { setRunDir(dir); setTab('status'); unfold(); }} />
       </header>
       {message && <div className={`banner ${message.level}`} onClick={() => setMessage(null)}>
         {/* A start refused by the check before every run: its steps say it all (what differs, what to do). */}
@@ -214,7 +282,7 @@ export function App() {
       <aside className="left">
         <ConnectionButton profileId={profileId} setProfileId={(id, record) => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }), record)} />
         <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId}
-          onAgent={requestAgent} taskSlot={taskSlot} taskNotes={taskNotes}
+          onAgent={requestAgent} taskSlot={taskSlot} taskNotes={taskNotes} titleSlot={titleSlot}
           taskEpoch={taskEpoch} />
       </aside>
       <main>
@@ -227,12 +295,16 @@ export function App() {
         <ResearchPanel config={config} setConfig={setConfig} />
       </aside>
       <footer>
+        <div className="splitter" role="separator" aria-orientation="horizontal" tabIndex={0} aria-label="Height of the bottom panel"
+          aria-valuemin={0} aria-valuemax={100} aria-valuenow={bottom.folded ? 0 : bottom.height ? Math.min(100, Math.round(bottom.height / window.innerHeight * 100)) : 34}
+          title="Drag to give the bottom panel more or less room. Double-click: fold it down to its tab line, or open it again. Kept in this browser."
+          onPointerDown={dragBottom} onDoubleClick={() => changeBottom(b => ({ ...b, folded: !b.folded }))} onKeyDown={keyBottom} />
         <div className="tabs">
           {/* The agent tab carries a small control at its right end, where a browser tab has its close button: it moves the
               conversation into a window of its own. Two sibling buttons in one tab shape - a button inside a button is not valid. */}
           <span className={`tab-group${tab === 'agent' ? ' active' : ''}${agentDetached ? ' detached' : ''}`}>
-            <button onClick={() => setTab('agent')}>Agent</button><span className="tab-slot" ref={setAgentTabSlot} /></span>
-          {(['status', 'logs', 'data', 'files', 'corners'] as Exclude<BottomTab, 'agent'>[]).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => setTab(t)}>
+            <button onClick={() => { setTab('agent'); unfold(); }}>Agent</button><span className="tab-slot" ref={setAgentTabSlot} /></span>
+          {(['status', 'logs', 'data', 'files', 'corners'] as Exclude<BottomTab, 'agent'>[]).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); unfold(); }}>
             {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', corners: 'Corner check' }[t]}</button>)}
           <span className="spacer" />
           <RunListButton runs={runs} runsError={runsError} runDir={runDir} status={status} onChoose={setRunDir} onRefresh={refreshRuns} />

@@ -44,7 +44,8 @@ await runChecks(browser, async () => {
     const body = document.querySelector('.right .module-body');
     const labels = [...body.querySelectorAll('label')].slice(0, 2).map(l => l.firstChild.textContent.trim());
     const button = body.querySelector('.rl-networks-open');
-    return { labels, underMode: button.previousElementSibling === body.querySelector('label'),
+    // the button stands in one row with the network in short (user, 2026-10-03): that row is directly below Mode
+    return { labels, underMode: button.closest('.rl-networks-row')?.previousElementSibling === body.querySelector('label'),
       inlineNetwork: !!body.querySelector('.component-list, .look-open, .model-card'),
       windows: !!window.__checkRLWindow, stopRules: body.textContent.includes('Stop after N consecutive failed evaluations') };
   })()`);
@@ -55,7 +56,7 @@ await runChecks(browser, async () => {
     try { document.querySelector('.rl-networks-open').click(); } finally { window.open = open; } })()`, true);
   check('a blocked popup explains how to reopen it', await page.until(`document.querySelector('.right .error')?.textContent.includes('blocked the new window')`));
   let networkPage = await openNetworks(page, browser);
-  check('the window has an accessible icon close control', await networkPage.evaluate(`!!document.querySelector('.rl-networks-heading button svg') && document.querySelector('.rl-networks-heading button').textContent === 'Close'`));
+  check('the window has no close button of its own (user, 2026-10-03): the browser closes it', await networkPage.evaluate(`!document.querySelector('.rl-networks-heading button')`));
   check('opening succeeds after a blocked attempt and clears the message', !await evaluate(`document.querySelector('.right').textContent.includes('blocked the new window')`));
   const originalWindow = networkPage.target.id;
   await evaluate(`document.querySelector('.rl-networks-open').click()`, true);
@@ -68,6 +69,9 @@ await runChecks(browser, async () => {
   // ---- a fresh configuration takes the backend's values for the default encoder ------------------------------
   const gt = settings.settings.graph_transformer.network;
   check('fresh page shows the backend values of the default encoder', JSON.stringify(await numbers()) === JSON.stringify([gt.hidden_dim, gt.heads, gt.layers].map(String)), JSON.stringify(await numbers()));
+  const short = await evaluate(`(() => { const e = document.querySelector('.rl-networks-row .net-short'); return e && { text: e.textContent, title: e.title, left: e.getBoundingClientRect().right <= document.querySelector('.rl-networks-open').getBoundingClientRect().left }; })()`);
+  check('beside the button, the network in short: GT hidden/heads/layers, the words left of the button, the whole of it in the tooltip',
+    short?.text.startsWith(`GT ${gt.hidden_dim}/${gt.heads}/${gt.layers}`) && short.left && short.title.startsWith('The network in use: graph_transformer'), JSON.stringify(short));
   const options = await evaluate(`[...[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel label')].find(l => l.firstChild?.textContent === 'Encoder').querySelectorAll('option')].map(o => o.value)`);
   check('the encoder list offers only Graph Transformer, RGCN and GATv2', JSON.stringify(options) === JSON.stringify(['graph_transformer', 'rgcn', 'gatv2']), JSON.stringify(options));
   check('heads is editable for graph_transformer', !(await evaluate(`${box('heads')}.querySelector('input').disabled`)));
@@ -96,7 +100,7 @@ await runChecks(browser, async () => {
   await evaluate(`(() => { const i = ${box('hidden')}.querySelector('input'); i.focus(); i.select(); })()`);
   await networkPage.send('Input.insertText', { text: '64' });
   // Close before the debounced write returns: closing the view must not abandon a valid edit or its preference save.
-  await networkPage.evaluate(`document.querySelector('.rl-networks-heading button').click()`);
+  await networkPage.evaluate('window.close()');                                  // the window's own close (it has no button of its own)
   await browser.window('GATOR - RL networks', { present: false });
   const write = await nextWrite();
   check('an edit is sent to the backend for the chosen encoder', !!write && write.method === 'PUT' && write.url.endsWith('/api/network-settings/rgcn'), write ? `${write.method} ${write.url}` : 'no request');
@@ -140,6 +144,7 @@ await runChecks(browser, async () => {
   const method = `document.querySelector('select[aria-label="Search method"]')`;
   await page.setValue(method, 'llm');
   check('LLM only disables the launcher and explains the unused network in an open window', await page.until(`document.querySelector('.rl-networks-open').disabled && ${NETWORK_PANEL}.textContent.includes('LLM only does not use an RL network') && !${NETWORK_PANEL}.querySelector('.component-list')`));
+  check('...and the line beside it says the network is not used', await page.until(`document.querySelector('.rl-networks-row .net-short').textContent === 'not used (LLM only)'`), await evaluate(`document.querySelector('.rl-networks-row .net-short').textContent`));
   await page.setValue(method, 'sac');
   check('returning to SAC restores the network controls and their values', await page.until(`!document.querySelector('.rl-networks-open').disabled && !!${NETWORK_PANEL}.querySelector('.component-list')`) && (await numbers())[0] === String(b.hidden_dim));
   await networkPage.evaluate('window.close()');

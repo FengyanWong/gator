@@ -605,7 +605,7 @@ def _check_run(config, report, record):
 def _check_research(config, report, *, for_generalization=False):
     r = config.research
     level = 'error' if for_generalization else 'info'
-    missing = [name for name in ('experiment_group', 'comparison_pair_id', 'method_label')
+    missing = [name for name in ('comparison_pair_id', 'method_label')
                if getattr(r, name) == 'unspecified']
     missing += [name for name in ('split', 'generalization_level') if getattr(r, name) == 'unspecified']
     if missing:

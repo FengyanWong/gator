@@ -27,7 +27,7 @@ def meta(experiment_dir, name):
 @pytest.fixture(scope='module')
 def workflow(tmp_path_factory):
     root = tmp_path_factory.mktemp('workflow')
-    labels = lambda **k: dict(dict(experiment_group='g1', budget_checkpoints=[5, 14, 50]), **k)
+    labels = lambda **k: dict(dict(budget_checkpoints=[5, 14, 50]), **k)
     source, _ = execute(make_config(root, 'synthetic:gpdk045_ota5', run=dict(max_evaluations=20, seed=100),
                                     project=dict(task_name='source_opamp'),
                                     research=labels(split='train', method_label='Pretraining')), root)

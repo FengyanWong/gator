@@ -182,10 +182,10 @@ await runChecks(browser, async () => {
   const numeric = name => `[...document.querySelectorAll('.right label')].find(l => l.firstChild?.textContent?.trim() === ${JSON.stringify(name)})?.querySelector('input')`;
   const beforeUnrelated = asked.length;
   await page.setValue(numeric('Evaluation budget (max_evaluations)'), '123');
-  const renamed = await page.setValue(`[...document.querySelectorAll('.left label')].find(l => l.firstChild?.textContent?.trim() === 'Project name')?.querySelector('input')`, 'fixture-renamed');
-  check('the project name box is found and renamed ("Name" until record 7.146)', renamed === 'fixture-renamed', String(renamed));
+  const renamed = await page.setValue(`document.querySelector('.right input.model-label')`, 'fixture-renamed', { event: 'input' });
+  check('the RL model label box is found and renamed (the project name box until record 7.159)', renamed === 'fixture-renamed', String(renamed));
   await sleep(800);
-  check('budget and project label edits do not re-inspect the checkpoint', asked.length === beforeUnrelated, `${beforeUnrelated} -> ${asked.length}`);
+  check('budget and model label edits do not re-inspect the checkpoint', asked.length === beforeUnrelated, `${beforeUnrelated} -> ${asked.length}`);
   await page.setValue(numeric('Random seed (target task)'), '19');
   check('a contract-affecting seed edit still refreshes compatibility', await (async () => {
     for (let i = 0; i < 30 && asked.length === beforeUnrelated; i++) await sleep(100);

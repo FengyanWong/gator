@@ -103,8 +103,9 @@ await runChecks(browser, async () => {
   if (!(await until(`!!(${OPEN})`, 60))) throw new Error('this page has no "Circuit graph view" button: the served frontend is older than it (npm run build, then reload)');
 
   // ---- the Abort button is red -------------------------------------------------------------------------------------------------
-  const abort = await evaluate(`(() => { const b = document.querySelector('header button.run-abort'), s = getComputedStyle(b); return { background: s.backgroundColor, colour: s.color, border: s.borderTopColor, disabled: b.disabled }; })()`);
-  check('the Abort button is solid red with white text (also while there is nothing to abort)', abort.background === 'rgb(179, 38, 30)' && abort.colour === 'rgb(255, 255, 255)' && abort.border === 'rgb(179, 38, 30)', JSON.stringify(abort));
+  const abort = await evaluate(`(() => { const b = document.querySelector('header button.run-abort'), s = getComputedStyle(b); return { background: s.backgroundColor, colour: s.color, border: s.borderTopColor, disabled: b.disabled,
+    red: (name => { const s = document.createElement('span'); s.style.color = 'var(' + name + ')'; document.body.appendChild(s); const c = getComputedStyle(s).color; s.remove(); return c; })('--bad-fill'), white: (name => { const s = document.createElement('span'); s.style.color = 'var(' + name + ')'; document.body.appendChild(s); const c = getComputedStyle(s).color; s.remove(); return c; })('--on-accent') }; })()`);   // the look's own red and white (record 7.158)
+  check('the Abort button is solid red with white text (also while there is nothing to abort)', abort.background === abort.red && abort.colour === abort.white && abort.border === abort.red && abort.white === 'rgb(255, 255, 255)', JSON.stringify(abort));
 
   // ---- nothing before it is opened: no request, and the drawing library is not loaded with the page ----------------------------------
   await until(`!${OPEN}.disabled`, 60); await sleep(500);

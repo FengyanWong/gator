@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, Json, short, si } from '../api';
 import { hintedLayout } from './circuitLayout';
+import { useLook } from '../theme';
 
 // The circuit graph view (user decision 2026-09-21: ONE on-screen diagnostic picture; nothing drawn is ever written to
 // a run's outputs). The chosen save point is replayed by the backend on a state its own run ARCHIVED
@@ -22,6 +23,32 @@ const look = (d: Json): string => d.family ?? d.kind;
 const shortKind = (kind: string) => kind.includes(':') ? kind.split(':').slice(1).join(':') : kind;
 const ROLE_COLOUR: Record<string, string> = { supply: '#fecaca', ground: '#d5d9e0', input: '#bbf7d0', output: '#fde68a', bias: '#e9d5ff', clock: '#e9d5ff', normal: '#ffffff' };
 const netRole = (net: Json) => (net.roles as string[]).find(r => r !== 'normal') ?? 'normal';
+
+/** The drawing's style. The node fills above are the picture's own key (one colour per kind, in both looks); the canvas, the
+ *  lines and their labels take the page's look (record 7.158), read from the canvas, which may stand in a pop-up window. */
+function graphStyle(canvas: HTMLElement): Json {
+  const style = getComputedStyle(canvas), v = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
+  const muted = v('--muted', '#66707e'), accent = v('--accent', '#1f5fbf'), edge = v('--graph-edge', '#c9ced6');
+  return [
+    { selector: 'node', style: { label: 'data(label)', 'font-size': 10, 'text-wrap': 'wrap', 'text-valign': 'center', 'text-halign': 'center', color: '#1c2430',
+      'background-color': 'data(colour)', 'border-width': 1, 'border-color': '#66707e' } },
+    // hints from the circuit: a device's shape says its family (transistor / passive / source), its colour its kind; supply and ground stand out
+    { selector: 'node[type = "device"]', style: { shape: 'round-rectangle', width: 'label', height: 'label', padding: '7px' } },
+    { selector: 'node[family = "passive"]', style: { shape: 'barrel' } },
+    { selector: 'node[family = "source"]', style: { shape: 'cut-rectangle' } },
+    { selector: 'node[sized = 1]', style: { 'border-width': 3, 'border-color': accent } },
+    { selector: 'node[type = "net"]', style: { shape: 'ellipse', width: 'label', height: 22, padding: '5px', 'font-size': 9 } },
+    { selector: 'node[role = "supply"], node[role = "ground"]', style: { 'font-size': 11, 'font-weight': 'bold', 'border-width': 2, 'border-color': '#1c2430', height: 26, padding: '9px' } },
+    { selector: 'edge', style: { 'curve-style': 'bezier', label: 'data(label)', 'font-size': 8, color: muted, 'text-background-color': v('--canvas', '#fff'), 'text-background-opacity': 0.85, 'text-background-padding': '1px',
+      width: 'mapData(attention, 0, 1, 1, 10)', 'line-color': `mapData(attention, 0, 1, ${edge}, ${accent})` } },
+    // a link that enters a device at its gate ends in a dot there, one that enters at the bulk in a bar
+    { selector: 'edge[role = "gate"], edge[role = "base"]', style: { 'source-arrow-shape': 'circle', 'source-arrow-color': muted, 'arrow-scale': 0.8 } },
+    { selector: 'edge[role = "bulk"]', style: { 'source-arrow-shape': 'tee', 'source-arrow-color': muted, 'arrow-scale': 0.8 } },
+    { selector: 'edge[trivial = 1]', style: { width: 1, 'line-style': 'dashed', 'line-color': edge } },
+    { selector: 'edge.hidden', style: { display: 'none' } },
+    { selector: ':selected', style: { 'border-color': v('--bad', '#b3261e'), 'border-width': 3, 'line-color': v('--bad', '#b3261e') } },
+  ];
+}
 
 /** The attention of one connection for the chosen layer / head / direction; `trivial` = its receiver has no other connection. */
 const attentionOf = (connection: Json, layer: number, head: string, direction: string) => {
@@ -95,25 +122,7 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
         ...view.connections.map((c: Json) => ({ data: { id: `c:${c.id}`, source: `d:${c.device}`, target: `n:${c.net}`, label: c.terminal, role: c.role, attention: 0, trivial: 0,
           bulk: c.role === 'bulk' ? 1 : 0 } })),
       ];
-      const cy = cytoscape({ container: canvas.current, elements, minZoom: 0.2, maxZoom: 3, wheelSensitivity: 0.3, style: [
-        { selector: 'node', style: { label: 'data(label)', 'font-size': 10, 'text-wrap': 'wrap', 'text-valign': 'center', 'text-halign': 'center', color: '#1c2430',
-          'background-color': 'data(colour)', 'border-width': 1, 'border-color': '#66707e' } },
-        // hints from the circuit: a device's shape says its family (transistor / passive / source), its colour its kind; supply and ground stand out
-        { selector: 'node[type = "device"]', style: { shape: 'round-rectangle', width: 'label', height: 'label', padding: '7px' } },
-        { selector: 'node[family = "passive"]', style: { shape: 'barrel' } },
-        { selector: 'node[family = "source"]', style: { shape: 'cut-rectangle' } },
-        { selector: 'node[sized = 1]', style: { 'border-width': 3, 'border-color': '#1f5fbf' } },
-        { selector: 'node[type = "net"]', style: { shape: 'ellipse', width: 'label', height: 22, padding: '5px', 'font-size': 9 } },
-        { selector: 'node[role = "supply"], node[role = "ground"]', style: { 'font-size': 11, 'font-weight': 'bold', 'border-width': 2, 'border-color': '#1c2430', height: 26, padding: '9px' } },
-        { selector: 'edge', style: { 'curve-style': 'bezier', label: 'data(label)', 'font-size': 8, color: '#66707e', 'text-background-color': '#fff', 'text-background-opacity': 0.85, 'text-background-padding': '1px',
-          width: 'mapData(attention, 0, 1, 1, 10)', 'line-color': 'mapData(attention, 0, 1, #c9ced6, #1f5fbf)' } },
-        // a link that enters a device at its gate ends in a dot there, one that enters at the bulk in a bar
-        { selector: 'edge[role = "gate"], edge[role = "base"]', style: { 'source-arrow-shape': 'circle', 'source-arrow-color': '#66707e', 'arrow-scale': 0.8 } },
-        { selector: 'edge[role = "bulk"]', style: { 'source-arrow-shape': 'tee', 'source-arrow-color': '#66707e', 'arrow-scale': 0.8 } },
-        { selector: 'edge[trivial = 1]', style: { width: 1, 'line-style': 'dashed', 'line-color': '#c9ced6' } },
-        { selector: 'edge.hidden', style: { display: 'none' } },
-        { selector: ':selected', style: { 'border-color': '#b3261e', 'border-width': 3, 'line-color': '#b3261e' } },
-      ] as Json });
+      const cy = cytoscape({ container: canvas.current, elements, minZoom: 0.2, maxZoom: 3, wheelSensitivity: 0.3, style: graphStyle(canvas.current) });
       cy.on('tap', 'node, edge', (event: Json) => { const id: string = event.target.id(); setPicked({ type: id[0] === 'd' ? 'device' : id[0] === 'n' ? 'net' : 'connection', id: id.slice(2) }); });
       cy.on('tap', (event: Json) => { if (event.target === cy) setPicked(null); });
       graph.current = cy;
@@ -126,6 +135,9 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
     });
     return () => { cancelled = true; };
   }, [view]);
+  // Another look (the header's switch): the canvas, lines and labels take its colours; nothing moves (record 7.158).
+  const pageLook = useLook();
+  useEffect(() => { if (graph.current && canvas.current && view) { graph.current.style(graphStyle(canvas.current)); paint(graph.current, view, layer, head, direction); } }, [pageLook]);
   // Another layer, head or direction: only the lines change, the picture stays where the user put it.
   useEffect(() => { if (graph.current && view) paint(graph.current, view, layer, head, direction); }, [layer, head, direction]);
   useEffect(() => { graph.current?.edges('[bulk = 1]').toggleClass('hidden', !bulk); }, [bulk, view]);

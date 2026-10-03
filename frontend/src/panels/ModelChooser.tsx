@@ -32,7 +32,7 @@ export function ModelChooser({ mode, source, onChoose, runs, outputRoot, lookOnl
 
   const current: Json = models?.find(m => m.run_dir === source.run_dir) ?? null;
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
-  const text = (m: Json) => [m.task_name, m.task_id, m.circuit_task, m.circuit_class, netLabel(m.network), m.mode, m.state, m.mock ? 'mock' : 'real', `seed${m.seed}`].join(' ').toLowerCase();
+  const text = (m: Json) => [m.model_label, m.task_name, m.task_id, m.circuit_task, m.circuit_class, netLabel(m.network), m.mode, m.state, m.mock ? 'mock' : 'real', `seed${m.seed}`].join(' ').toLowerCase();
   const shown = (models ?? []).filter(m => m.run_dir === source.run_dir || words.every(w => text(m).includes(w)));
   const chosen: string = source.checkpoint_id ?? 'latest';
   const newest: Json = current?.checkpoints.find((p: Json) => p.is_latest) ?? current?.checkpoints[current.checkpoints.length - 1];
@@ -52,14 +52,14 @@ export function ModelChooser({ mode, source, onChoose, runs, outputRoot, lookOnl
       and every N evaluations while it runs ("Model checkpoints" in the output settings must be on).</p>}
     {/* Shown while a filter is typed too: when the list shrank to 5 or fewer the box used to vanish and leave its filter
         hiding cards with nothing to clear it (review of 2026-09-29). */}
-    {models && (models.length > 5 || !!filter) && <input className="model-filter" placeholder="Filter: task, circuit, network, mock / real ..." value={filter} onChange={e => setFilter(e.target.value)} />}
+    {models && (models.length > 5 || !!filter) && <input className="model-filter" placeholder="Filter: label, task, circuit, network, mock / real ..." value={filter} onChange={e => setFilter(e.target.value)} />}
     {source.run_dir && models && !current && !loading && <p className="warn model-missing">The selected model is not in this list: its run folder is outside the current output folder, or it no longer holds a complete save point.
       <span className="path" onClick={() => copy(source.run_dir)}> {source.run_dir}</span> <button onClick={() => onChoose(null, 'latest')}>Clear the selection</button></p>}
     {!!shown.length && <div className="model-list" role="radiogroup" aria-label="Saved models">
       {shown.map(m => { const active = m.run_dir === source.run_dir; return (
         <button key={m.run_dir} role="radio" aria-checked={active} className={`model-card${active ? ' active' : ''}`} title={m.run_dir}
           onClick={() => { if (!active) onChoose(m.run_dir, 'latest'); }}>
-          <span className="model-title"><b>{m.task_name ?? m.task_id}</b>{m.mock && <span className="badge model-tag mock-tag">MOCK</span>}
+          <span className="model-title"><b>{m.model_label ?? m.task_name ?? m.task_id}</b>{m.mock && <span className="badge model-tag mock-tag">MOCK</span>}
             {m.restoration_capability !== 'full_state' && <span className="badge model-tag" title="Saved without the replay snapshot: usable for fine_tune and frozen, but its run cannot be resumed.">weights only</span>}</span>
           <span>{m.circuit_task ?? m.circuit_class ?? 'unknown circuit'} - <b className="model-net">{netLabel(m.network)}</b></span>
           <span>{m.trained_evaluations ?? '?'} evaluations of training - {plural(m.checkpoints.length, 'save point')}</span>

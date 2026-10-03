@@ -212,13 +212,13 @@ await runChecks(browser, async () => {
   await send('DOM.setFileInputFiles', { nodeId, files: [rowsFile] });
   const APPLY = `[...document.querySelectorAll('.editors .confirm button')].find(b => b.textContent.trim() === 'Apply')`;
   check('(set-up) rows for the Parameters tab wait in the confirmation box', await until(`!!(${APPLY})`, 60));
-  await page.setValue(LABELLED('.left', 'Project name'), 'fixture-edited-meanwhile', { event: 'input' });
+  await page.setValue(LABELLED('.right', 'RL model label'), 'fixture-edited-meanwhile', { event: 'input' });   // the project name box until record 7.159
   await sleep(300);
   await evaluate(`${APPLY}.click()`);
   config = await saved();
-  check('Apply writes the imported Parameters rows and keeps an edit made while the box was open', config.project.name === 'fixture-edited-meanwhile'
+  check('Apply writes the imported Parameters rows and keeps an edit made while the box was open', config.run.model_label === 'fixture-edited-meanwhile'
     && config.parameters.length === importedRows.length && config.parameters.every(r => r.notes === 'FIXTURE imported'),
-    JSON.stringify({ name: config.project.name, notes: config.parameters.map(r => r.notes) }));
+    JSON.stringify({ label: config.run.model_label, notes: config.parameters.map(r => r.notes) }));
 
   // ---- (f) the stop rule's own field (decision of 2026-09-29): it had none, so its limit of 5 could not be seen or changed ------------
   const STOP_AFTER = LABELLED('.right', 'Stop after N consecutive failed evaluations');
@@ -235,14 +235,14 @@ await runChecks(browser, async () => {
   // Two configurations in flight: a late success must not clear the newer configuration's blocker.
   await sleep(700);
   holdValidation = true;
-  await page.setValue(LABELLED('.left', 'Project name'), 'fixture-old', { event: 'input' });
+  await page.setValue(LABELLED('.right', 'RL model label'), 'fixture-old', { event: 'input' });
   const oldValidation = await page.nextPaused('/api/config/validate');
-  await page.setValue(LABELLED('.left', 'Project name'), 'fixture-new', { event: 'input' });
+  await page.setValue(LABELLED('.right', 'RL model label'), 'fixture-new', { event: 'input' });
   const newValidation = await page.nextPaused('/api/config/validate');
   check('validation requests describe two different edits',
-    JSON.parse(oldValidation.postData).config.project.name === 'fixture-old' && JSON.parse(newValidation.postData).config.project.name === 'fixture-new');
+    JSON.parse(oldValidation.postData).config.run.model_label === 'fixture-old' && JSON.parse(newValidation.postData).config.run.model_label === 'fixture-new');
   await page.fulfil(newValidation.requestId, 200, validConfiguration({ blocks_run: true, counts: { error: 1 },
-    issues: [{ level: 'error', path: 'project.name', code: 'fixture', message: 'FIXTURE: newest configuration is blocked' }] }));
+    issues: [{ level: 'error', path: 'run.model_label', code: 'fixture', message: 'FIXTURE: newest configuration is blocked' }] }));
   const blockedButton = `document.querySelector('header button[title^="ONE costed"]')?.disabled`;
   check('the newer validation blocks starting a run', await until(blockedButton));
   check('the superseded validation fetch is cancelled', cancelled.has(oldValidation.networkId));

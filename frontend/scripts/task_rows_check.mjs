@@ -91,6 +91,10 @@ await runChecks(browser, async () => {
   const BUTTON = (scope, text) => `[...${scope}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const EDITORS = `document.querySelector('.editors')`;
   const value = label => evaluate(`${FIELD(label)}.value`);
+  // The RL model's own label in Run configuration took the Project name box's place (record 7.159).
+  const MODEL_LABEL = `document.querySelector('.right input.model-label')`;
+  const labelValue = () => evaluate(`${MODEL_LABEL}.value`);
+  const nameBox = () => evaluate(`[...document.querySelectorAll('.left label')].some(l => l.firstChild?.textContent.trim() === 'Project name')`);
   const choose = (label, v) => page.setValue(`${FIELD(label)}`, v);
   const setInput = (element, v) => page.setValue(`${element}`, v, { event: 'input' });
   const strip = () => evaluate(`[...${EDITORS}.querySelectorAll('.tabs button')].map(b => b.textContent.trim()).join(' | ')`);
@@ -137,8 +141,8 @@ await runChecks(browser, async () => {
   const basis = await column('basis');
   await evaluate(`${moreColumns}.click()`);
   check('every target states where it comes from', basis.every(b => /of record/.test(b)), JSON.stringify(basis.slice(0, 1)));
-  check('project name stays and the run label follows the chosen task', (await value('Project name')) === 'mock-gpdk045-ota5'
-    && (await config()).project.task_name === 'gpdk045_ota5');
+  check('the run label follows the chosen task; no Project name box, the RL model label untouched', !(await nameBox()) && (await labelValue()) === ''
+    && (await config()).project.task_name === 'gpdk045_ota5' && (await config()).project.name === 'mock-gpdk045-ota5');
   check('there is no duplicate Task name input', !(await evaluate(`[...${PANEL}.querySelectorAll('label')].some(l => l.firstChild?.textContent.trim() === 'Task name')`)));
   await openTab('Probes');
   check('Probes read the circuit\'s results', !(await column('source_name')).includes('score') && (await column('source_name')).includes('gain_db_at_start'), JSON.stringify(await column('source_name')));
@@ -150,7 +154,7 @@ await runChecks(browser, async () => {
   // ---- one Undo takes the choice and everything it brought back; Redo returns it ---------------------------------------
   await evaluate(`${BUTTON(EDITORS, 'Undo')}.click()`);
   check('ONE Undo: the MOCK task, its score, its labels and its name are back', await until(`${FIELD('Task')}.value === 'synthetic:gpdk045_ota5'`) && JSON.stringify(await column('metric_id')) === '["score"]'
-    && (await value('PDK id')) === 'gpdk045' && (await value('Project name')) === 'mock-gpdk045-ota5', `${await value('Task')} ${JSON.stringify(await column('metric_id'))}`);
+    && (await value('PDK id')) === 'gpdk045' && (await config()).project.name === 'mock-gpdk045-ota5', `${await value('Task')} ${JSON.stringify(await column('metric_id'))}`);
   check('the note about another task is gone', (await note()) === '', await note());
   await evaluate(`${BUTTON(EDITORS, 'Redo')}.click()`);
   check('Redo: the real task with its rows again', await until(`${FIELD('Task')}.value === 'real:gpdk045_ota5'`) && (await column('metric_id')).includes('gain_db_at_start'), JSON.stringify(await column('metric_id')));
@@ -168,13 +172,13 @@ await runChecks(browser, async () => {
   check('Discard switches task and all rows without a Load press', await until(`${FIELD('Task')}.value === 'synthetic:gpdk045_ota5'`)
     && JSON.stringify(await column('metric_id')) === '["score"]', await note());
 
-  // ---- a name the user typed stays ---------------------------------------------------------------------------------------
-  await setInput(FIELD('Project name'), 'my-amplifier');
+  // ---- a model label the user typed stays (it was the project name until record 7.159) -----------------------------------
+  await setInput(MODEL_LABEL, 'my-amplifier');
   await choose('Task', 'real:gpdk045_ota7');
   check('untouched MOCK rows are exchanged for the OTA7\'s', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`) && (await column('metric_id')).includes('gain_db_at_start'), await note());
   check(LIVE ? 'LIVE: the OTA7 has its own numbers (53.3 dB)' : 'the OTA7 has its own numbers', (await column('lower')).includes('53.3'), JSON.stringify(await column('lower')));
-  check('a typed project name stays while the task label follows independently', (await value('Project name')) === 'my-amplifier'
-    && (await config()).project.task_name === 'gpdk045_ota7');
+  check('a typed RL model label stays while the task label follows independently', (await labelValue()) === 'my-amplifier'
+    && (await config()).run.model_label === 'my-amplifier' && (await config()).project.task_name === 'gpdk045_ota7');
   check('Reload saved values is available for resetting the current task', await evaluate(`!!${BUTTON(PANEL, 'Reload saved values')}`));
   await setInput(`${EDITORS}.querySelector('table.editor tbody tr input.numeric')`, '54');
   answers.push(false);
@@ -184,7 +188,7 @@ await runChecks(browser, async () => {
   answers.push(true);
   await evaluate(`${BUTTON(PANEL, 'Reload saved values')}.click()`);
   check('the button puts the task\'s own numbers back and keeps the typed name as well', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`)
-    && (await column('lower')).includes('53.3') && !(await column('lower')).includes('54') && (await value('Project name')) === 'my-amplifier', JSON.stringify(await column('lower')));
+    && (await column('lower')).includes('53.3') && !(await column('lower')).includes('54') && (await labelValue()) === 'my-amplifier', JSON.stringify(await column('lower')));
 
   if (!LIVE) {
     // ---- a circuit without targets of record: nothing is invented -----------------------------------------------------
@@ -249,12 +253,12 @@ await runChecks(browser, async () => {
   await choose('Task', 'synthetic:gpdk045_ota5');
   check('choosing a replacement for a removed task brings its rows after confirmation', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`)
     && (await strip()) === `Parameters (${mock.parameters.length}) | Probes (1) | Specs (1)`, `${await note()} ${await strip()}`);
-  check('legacy project name stays and the run label follows the new task', (await value('Project name')) === 'mock-vco'
+  check('the old project name stays in the saved configuration (no box shows it now) and the run label follows the new task', (await config()).project.name === 'mock-vco'
     && (await config()).project.task_name === 'mock_gpdk045_ota5');
   check('the removed entry and the note are gone', !(await evaluate(`[...${FIELD('Task')}.options].some(o => o.value === 'synthetic:vco')`))
     && !(await evaluate(`[...${PANEL}.querySelectorAll('.note')].some(n => n.textContent.includes('no longer exists'))`)));
   await evaluate(`${BUTTON(EDITORS, 'Undo')}.click()`);
-  check('one Undo brings the saved state back', await until(`${FIELD('Task')}.value === 'synthetic:vco'`) && (await value('Project name')) === 'mock-vco' && (await strip()).startsWith('Parameters (2)'), `${await value('Task')} ${await strip()}`);
+  check('one Undo brings the saved state back', await until(`${FIELD('Task')}.value === 'synthetic:vco'`) && (await config()).project.name === 'mock-vco' && (await strip()).startsWith('Parameters (2)'), `${await value('Task')} ${await strip()}`);
   check('every edit-discard prompt was expected', dialogs.every(d => d.planned) && answers.length === 0, JSON.stringify(dialogs));
   reportRefused(refused, NEVER_ASKED);
   check('no console errors', consoleErrors.filter(e => !/404|418/.test(e)).length === 0, consoleErrors.join(' | ').slice(0, 300));

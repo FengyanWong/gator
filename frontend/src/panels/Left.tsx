@@ -11,6 +11,7 @@ import { NgspiceButton } from './Ngspice';
 import { TaskSave } from './TaskSave';
 import { CheckSteps } from './Consistency';
 import { Typed } from './Typed';
+import { CircuitPicture } from './CircuitPicture';
 
 /** The connection block lives in Connection.tsx: one button in this column that opens the connection window. */
 
@@ -50,9 +51,22 @@ const copyQuestion = (r: Json) => `Work in ${r.library}/${r.cell} directly?\n\n`
   + 'So only read a COPY you made in Virtuoso (Library Manager: copy the cell and its testbench into a library of yours).\n\n'
   + `OK = ${r.library}/${r.cell} is such a copy: read it and work in it.\nCancel = read nothing.`;
 
-export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, onAgent, taskSlot, taskNotes, taskEpoch = 0 }:
+/** The header's title block (record 7.158): what the page works on, as a drawing names its subject - the task and its
+ *  saved revision, the circuit's class and PDK labels, and the label the RL model is saved under (record 7.159: it took the
+ *  project name's place). Read-only; the fields themselves stay in their panels. */
+function TitleFacts({ config, revision }: { config: Json; revision: number | string | null }) {
+  const ref = config.circuit;
+  const task = ref.source === 'registered_task' ? ref.task_id : ref.source === 'virtuoso' && ref.cell ? `${ref.library}/${ref.cell}` : null;
+  const model = config.run.search?.method === 'llm' ? 'none (LLM only)' : (config.run.model_label ?? '').trim() || config.project.task_name;
+  const fact = (key: string, value: string, extra = '') => <span className={`tb-cell${extra}`}><span className="tb-k">{key}</span><span className="tb-v" title={value}>{value}</span></span>;
+  return <>{fact('Task', task || 'none chosen', ' tb-task')}{fact('Rev', revision == null ? '-' : String(revision), ' tb-rev')}
+    {fact('Class · PDK', `${ref.circuit_class ?? 'unspecified'} · ${ref.pdk_id ?? 'unspecified'}`)}{fact('RL model', model, ' tb-model')}</>;
+}
+
+export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, onAgent, taskSlot, taskNotes, titleSlot = null, taskEpoch = 0 }:
   { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null;
-    onAgent: (kind: string, selection: Json[], prompt?: string) => void; taskSlot: HTMLElement | null; taskNotes: HTMLElement | null; taskEpoch?: number }) {
+    onAgent: (kind: string, selection: Json[], prompt?: string) => void; taskSlot: HTMLElement | null; taskNotes: HTMLElement | null;
+    titleSlot?: HTMLElement | null; taskEpoch?: number }) {
   const [tasks, setTasks] = useState<Json[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [nativeOpen, setNativeOpen] = useState(false);                    // closed until asked for; the choice then lasts across cells and Refresh
@@ -338,8 +352,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // ---- the left column: the project and the registered task --------------------------------------------------------------
   const column = (
     <section className="panel">
-      <h3>Project</h3>
-      <label>Project name<input value={config.project.name} onChange={e => setConfig(c => ({ ...c, project: { ...c.project, name: e.target.value } }))} /></label>
+      {/* No Project name box (record 7.159, user: "remove the project name box in the Project module"): the name only filed
+          the last run, which the RL model's own label in Run configuration does now. */}
       <h3>Registered task</h3>
       {!offered && <div className="note"><p>This configuration was saved with a Spectre netlist file{ref.netlist_path ? <> (<code>{ref.netlist_path}</code>)</> : null}.
         The workbench no longer imports netlists: choose a task below, or a Virtuoso cell in its window.</p></div>}
@@ -437,6 +451,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
               your budget) before an optimization run. When it finishes, its result becomes the task's reference by itself.</p>)}
         {saved && saved.task_key === ref.task_id && <p className="ok">Saved the new task <code>{saved.task_key}</code>. It runs in
           <code> {saved.copy?.library}/{saved.copy?.testbench}</code>{saved.copy?.library === saved.original?.library ? ' - the cell you declared as your copy' : ' - its working copy'}; nothing has been simulated yet.</p>}
+        {/* The circuit picture (record 7.158) above the long note, so it is in view while Parameters rows are pointed at. */}
+        <CircuitPicture circuit={circuit} />
         {generatedName && (
           <div className="note">
             <TaskSave profileId={profileId} library={null} cell={null} task={generatedName}
@@ -600,5 +616,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   const firstSave = virtuosoOn && circuit?.loaded && circuit.native_draft && !taskNote && (
     <TaskSave profileId={profileId} library={ref.library} cell={ref.cell} task={null} hasCopy={!!circuit.working_copy?.verified}
       config={config} setConfig={setConfig} onSaved={taskSaved} bar={taskSlot} notes={taskNotes} />);
-  return <>{column}{firstSave}{popup && root && createPortal(view, root)}</>;
+  const titleFacts = titleSlot && createPortal(<TitleFacts config={config}
+    revision={ref.source === 'registered_task' ? tasks.find(t => t.task_key === ref.task_id)?.revision ?? null : null} />, titleSlot);
+  return <>{column}{firstSave}{titleFacts}{popup && root && createPortal(view, root)}</>;
 }

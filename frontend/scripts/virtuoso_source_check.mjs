@@ -201,8 +201,9 @@ try {
   check('nothing is read from Virtuoso when the page opens', calls.length === 0, ops().join(' | '));
 
   // ---- the column holds the registered task only --------------------------------------------------------------------------
-  const headings = await evaluate(`[...document.querySelectorAll('.left h3')].map(h => h.textContent.trim()).filter(h => !h.startsWith('Hierarchy ('))`);   // the Hierarchy fold's line is an h3 too
-  check('the column\'s headings are Project and Registered task - no "Circuit source"', JSON.stringify(headings) === JSON.stringify(['Project', 'Registered task']), headings.join(' | '));
+  const headings = await evaluate(`[...document.querySelectorAll('.left h3')].map(h => h.textContent.trim()).filter(h => !h.startsWith('Hierarchy (') && h !== 'Circuit picture')`);   // the Hierarchy and circuit picture folds' lines are h3s too
+  // (the Project heading went with the project name box, record 7.159)
+  check('the column\'s heading is Registered task - no "Circuit source", no Project name box', JSON.stringify(headings) === JSON.stringify(['Registered task']), headings.join(' | '));
   check('no Source list, no Library / Cell / Testbench boxes in the column', !(await evaluate(`!!(${LABEL('Source')}) || !!(${LABEL('Library')}) || !!(${LABEL('Cell')}) || !!(${LABEL('Testbench cell')})`)));
   check('the Task list is there, on the MOCK task', (await value('Task')) === 'synthetic:gpdk045_ota5', await value('Task'));
   const launcher = await evaluate(`(() => { const b = ${LAUNCH}; const row = b?.closest('.row'); return b ? { caption: b.textContent.trim(), beside: row.querySelector('.hint')?.textContent.trim() } : null; })()`);

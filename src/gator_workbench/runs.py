@@ -268,6 +268,18 @@ def manifest_conditions(conditions) -> dict:
                      'resets are simulated at nominal only')
 
 
+def model_label(config: WorkbenchConfig) -> str:
+    """The name a run's RL model is filed under (record 7.159, the user's request of 2026-10-03: "Give the RL model its own
+    label, independent of the project name"): the label typed in Run configuration, else the task's run label."""
+    return (config.run.model_label or '').strip() or config.project.task_name
+
+
+def saves_rl_model(config: WorkbenchConfig) -> bool:
+    """Whether a run writes an RL model to disk: one with save points on, other than LLM only (no policy weights). A
+    Single baseline simulation saves none."""
+    return bool(config.output.save_checkpoints) and config.run.search.method != 'llm'
+
+
 def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False, confirm_transfer=False,
                 monitor=None, acknowledge_unknown=False, benchmark_control=None):
     """Returns (RunLayout, manifest). Raises RunRejected with the validation/compatibility report."""
@@ -378,6 +390,7 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
         layout_version=OUTPUT_LAYOUT_VERSION, config_schema_version=CONFIG_SCHEMA_VERSION,
         experiment_id=experiment_id, experiment_name=config.output.experiment_name, run_id=run_id,
         task_id=f'{config.project.task_name}:{task_hash[:16]}', task_name=config.project.task_name,
+        model_label=model_label(config) if saves_rl_model(config) else None,
         task_definition_hash=task_hash, config_sha256=config_hash(config),
         comparison_pair_id=research['comparison_pair_id'], task_order=research['task_order'],
         run_kind='optimization', mode=config.run.mode, provenance='mock' if task.mock else 'real', mock=task.mock,
@@ -434,9 +447,13 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
     write_json(layout.status, dict(state='created', run_id=run_id, mode=config.run.mode, mock=task.mock,
                                    paths=layout.subpaths(), heartbeat_utc=now))
     _register_in_experiment(experiment_dir, manifest, compiled, task, created)
+    # The newest run that saves an RL model is remembered under the model's label (record 7.159): Resume, fine_tune and
+    # frozen start from it. A run that saves no model (a Single baseline simulation, LLM only) leaves the label alone.
     with _SETTINGS_LOCK:             # the last_run merge reads and writes under the lock every other save takes
-        save_settings(output_root=config.output.output_root, concurrency=config.run.concurrency,
-                      last_run={**load_settings().get('last_run', {}), config.project.name: str(layout.run_dir)})
+        remembered = load_settings().get('last_run', {})
+        if saves_rl_model(config):
+            remembered = {**remembered, model_label(config): str(layout.run_dir)}
+        save_settings(output_root=config.output.output_root, concurrency=config.run.concurrency, last_run=remembered)
     return layout, manifest
 
 

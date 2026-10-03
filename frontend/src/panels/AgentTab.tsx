@@ -18,6 +18,10 @@ const ROW_KEY: Record<string, string> = { parameters: 'variable_id', targets: 'm
 const ROW_FACTS: Record<string, string[]> = { parameters: ['instance_path', 'parameter_name', 'lower', 'upper', 'unit', 'initial_value', 'binding_group'],
   targets: ['equation', 'constraint', 'lower', 'upper', 'target', 'unit', 'hard', 'active'], measurements: ['analysis', 'result_source', 'source_name', 'unit'] };
 const CUSTOM = '__custom__';          // value of the "Custom..." entry of the agent-model list; never sent to the backend
+// Where the model list came from: the Codex app's own file (the account's models), or the table kept by hand.
+const listSource = (catalog: Json) => catalog.origin === 'codex_app'
+  ? `List from the Codex app (your account's models, fetched ${catalog.fetched_at ? new Date(catalog.fetched_at).toLocaleString([], { hour12: false }) : 'at an unknown time'}).`
+  : `List checked by hand on ${catalog.verified}${catalog.cache_note ? `; ${catalog.cache_note}` : ''}.`;
 const noteGroups = (m: Json) => NOTE_GROUPS.map(g => ({ ...g, items: (Array.isArray(m?.extra?.[g.key]) ? m.extra[g.key] : []) as Json[] })).filter(g => g.items.length > 0);
 const WHO: Record<string, string> = { user: 'You', system: 'Workbench', checklist: 'Workbench - run readiness', error: 'Error', manual_import: 'Imported result' };
 const MARK: Record<string, [string, string]> = { done: ['\u2714', 'ok'], missing: ['\u2718', 'error'], warning: ['!', 'warn'], unknown: ['?', 'hint'],
@@ -307,7 +311,10 @@ export function AgentTab({ config, setConfig, request, clearRequest, hidden, tab
               <option value="">{effortIgnored ? 'ignored by this model' : `CLI default${defaultEffort ? ` (${defaultEffort})` : ''}`}</option>
               {efforts.map(level => <option key={level}>{level}</option>)}</select></label>}
           <p className="hint">{catalog
-            ? <>{listed?.note ?? (isCustom ? 'A name outside the list is passed to the CLI as typed.' : catalog.default_note)} {catalog.caveat} List checked {catalog.verified}; showing it calls no model.</>
+            ? <>{listed?.note ?? (isCustom ? 'A name outside the list is passed to the CLI as typed.' : catalog.default_note)} {catalog.caveat} {listSource(catalog)} Showing it calls no model.
+              {/* The Codex app refreshes its file by itself; this reads it again without reloading the page. */}
+              {settings.provider === 'codex' && <> <button className="text-link" title="Read the Codex app's model list again (a local file; no model is called)"
+                onClick={() => api.agentSettings().then(s => { setSettings(s); agentSettingsSaved(s); }).catch(fail)}>Re-read list</button></>}</>
             : 'Restart the workbench server to get the model and effort lists.'}</p></>}
         <button onClick={() => api.agentDiagnostics().then(setDiagnostics).catch(fail)}>Diagnostics</button>
         {diagnostics && <details open><summary>Backend environment</summary><pre className="small">{JSON.stringify({ providers: diagnostics.providers, skills: diagnostics.skills.summary, nested: diagnostics.environment.nested_session_note, cwd: diagnostics.environment.cwd }, null, 1)}</pre></details>}

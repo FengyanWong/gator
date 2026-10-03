@@ -192,4 +192,5 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.146 | Project name stays; task label derives from selection; rows switch atomically, edits protected; Load becomes Reload saved values |
 | 7.147 | Matched devices is the single open/refresh control; Find again removed; Close becomes an accessible × icon |
 | 7.148 | Per-lane OCEAN on the simulator host for Maestro outputs: built, values identical on Spectre (43 comparisons), no speed gain (the preparation limits, not the measurement; 7.145 corrected), removed (user); before-write read kept (user) |
+| 7.155 | Agent tab model lists: Codex's read from the Codex app's own `models_cache.json` (account's models, "Re-read list"), hand table as fallback; Claude Code table re-checked (older pinned IDs) |
 | 7.156 | The "REAL evaluation backend ... authorize the budget first" banner under a loaded real task removed (it repeated what Start asks); budget question on Start unchanged |

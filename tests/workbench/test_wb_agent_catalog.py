@@ -1,6 +1,7 @@
 """The model / effort lists the Agent tab offers, and what each provider does with a choice.
 Fake CLI fixtures only: no real Claude/Codex session is started and no model is called."""
 import json
+import os
 
 from fastapi.testclient import TestClient
 import pytest
@@ -34,6 +35,9 @@ def test_effort_levels_differ_per_provider():
     AgentSettings(provider='disabled', effort='max').validate()          # a kept level never blocks switching it off
     assert catalog.supports_effort('claude_code', 'sonnet') and not catalog.supports_effort('claude_code', 'haiku')
     assert catalog.supports_effort('claude_code', None) and catalog.supports_effort('claude_code', 'some-future-model')
+    claude = {m['id']: m['efforts'] for m in catalog.CATALOG['claude_code']['models']}       # the documented levels per model
+    assert claude['claude-opus-4-6'] == claude['claude-sonnet-4-6'] == ['low', 'medium', 'high', 'max']
+    assert claude['claude-sonnet-4-5'] == [] and claude['claude-opus-4-8'] == list(catalog.CLAUDE_EFFORTS)
 
 
 def test_claude_gets_no_effort_flag_for_a_model_that_takes_none(tmp_path, cli):
@@ -110,3 +114,86 @@ def test_settings_endpoint_serves_the_lists_and_survives_a_level_from_the_other_
     runs.save_settings(agent=dict(provider='codex', model=None, effort='minimal'))
     kept = client.get('/api/agent/settings')
     assert kept.status_code == 200 and kept.json()['effort'] is None and kept.json()['provider'] == 'codex'
+
+
+def _codex_file(path, models):
+    """A stand-in for the file the Codex app keeps (models_cache.json), with an account part that must never be served."""
+    path.write_text(json.dumps(dict(fetched_at='2026-10-03T15:50:41Z', etag='W/"x"', client_version='0.160.0',
+                                    identity=dict(email='someone@example.com'), models=models)), encoding='utf8')
+    return path
+
+
+def _model(slug, priority, efforts, visibility='list', **extra):
+    return dict(slug=slug, display_name=slug.upper(), description=f'{slug} described.', visibility=visibility,
+                priority=priority, default_reasoning_level=efforts[0] if efforts else None,
+                supported_reasoning_levels=[dict(effort=e, description='...') for e in efforts], **extra)
+
+
+def test_codex_list_comes_from_the_codex_app_file(tmp_path, monkeypatch):
+    cache = _codex_file(tmp_path / 'models_cache.json', [
+        _model('gpt-old', 13, ['low', 'medium', 'high', 'xhigh'], upgrade=dict(
+            model='gpt-new', retirement_at='2026-10-14T19:00:00Z', migration_markdown='GPT-old retires on October 14, 2026.')),
+        _model('gpt-new', 1, ['low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'turbo']),
+        _model('gpt-hidden', 2, ['low'], visibility='hide'),
+        _model('-rf', 3, ['low']), _model('two\nlines', 4, ['low']), _model('gpt-new', 5, ['low']), 'not a model'])
+    monkeypatch.setenv(catalog.CODEX_CACHE_ENV, str(cache))
+    entry = catalog.codex_entry(search=True)
+    assert (entry['origin'], entry['cache_file'], entry['verified']) == ('codex_app', str(cache), '2026-10-03')
+    assert [m['id'] for m in entry['models']] == ['gpt-new', 'gpt-old']    # the app's order; hidden, unsafe, repeated left out
+    old = entry['models'][1]
+    assert old['label'] == 'gpt-old (retires 2026-10-14)' and 'retires on October 14' in old['note']
+    assert 'default effort: low' in old['note'] and old['efforts'] == ['low', 'medium', 'high', 'xhigh']
+    assert 'someone@example.com' not in json.dumps(entry)
+    # A level only the app lists becomes valid for Codex, and each model keeps its own levels (sizing drops the rest).
+    assert 'turbo' in catalog.efforts_for('codex') and 'turbo' not in catalog.efforts_for('claude_code')
+    AgentSettings(provider='codex', model='gpt-new', effort='turbo').validate()
+    assert catalog.model_entry('codex', 'gpt-6-astra') is None           # the hand table is not mixed in
+    _codex_file(cache, [_model('gpt-newer', 1, ['low'])])                # the app refreshed its file: read again
+    assert [m['id'] for m in catalog.codex_entry()['models']] == ['gpt-newer']
+
+
+def test_codex_list_falls_back_to_the_hand_table_and_says_why(tmp_path, monkeypatch):
+    entry = catalog.codex_entry(search=True)
+    assert entry['origin'] == 'hand_table' and 'switched off' in entry['cache_note']      # the suite never reads the user's
+    monkeypatch.setenv(catalog.CODEX_CACHE_ENV, str(tmp_path / 'missing.json'))
+    entry = catalog.codex_entry(search=True)
+    assert entry['models'] == catalog.CATALOG['codex']['models'] and 'not found' in entry['cache_note']
+    broken = tmp_path / 'broken.json'
+    monkeypatch.setenv(catalog.CODEX_CACHE_ENV, str(broken))
+    for text in ('{ not json', json.dumps(dict(models='none')), json.dumps(dict(models=[_model('gpt-x', 1, ['low'], 'hide')]))):
+        broken.write_text(text)
+        entry = catalog.codex_entry(search=True)
+        assert entry['origin'] == 'hand_table' and str(broken) in entry['cache_note'], text
+    assert catalog.efforts_for('codex') == catalog.CODEX_EFFORTS
+
+
+def test_codex_file_is_looked_for_in_the_codex_homes_and_the_newest_wins(tmp_path, monkeypatch):
+    home, windows = tmp_path / 'home', tmp_path / 'Users'
+    monkeypatch.delenv(catalog.CODEX_CACHE_ENV)
+    monkeypatch.delenv('CODEX_HOME', raising=False)
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.setattr(catalog, '_WINDOWS_USERS', windows)              # from WSL: C:\Users\<name>\.codex of the desktop app
+    assert 'not found' in catalog.codex_entry(search=True)['cache_note']
+    (home / '.codex').mkdir(parents=True)
+    (windows / 'someone' / '.codex').mkdir(parents=True)
+    linux = _codex_file(home / '.codex' / 'models_cache.json', [_model('gpt-linux', 1, ['low'])])
+    app = _codex_file(windows / 'someone' / '.codex' / 'models_cache.json', [_model('gpt-app', 1, ['low'])])
+    os.utime(linux, (1_000_000_000, 1_000_000_000))
+    assert [m['id'] for m in catalog.codex_entry(search=True)['models']] == ['gpt-app']
+    os.utime(app, (900_000_000, 900_000_000))
+    assert [m['id'] for m in catalog.codex_entry(search=True)['models']] == ['gpt-linux']
+    monkeypatch.setenv('CODEX_HOME', str(tmp_path / 'elsewhere'))
+    (tmp_path / 'elsewhere').mkdir()
+    _codex_file(tmp_path / 'elsewhere' / 'models_cache.json', [_model('gpt-codex-home', 1, ['low'])])
+    assert [m['id'] for m in catalog.codex_entry()['models']] == ['gpt-codex-home']      # a changed place is searched again
+
+
+def test_settings_endpoint_serves_the_codex_app_list(client, tmp_path, monkeypatch):
+    cache = _codex_file(tmp_path / 'models_cache.json', [_model('gpt-new', 1, ['low', 'turbo']), _model('gpt-luna', 2, ['low'])])
+    monkeypatch.setenv(catalog.CODEX_CACHE_ENV, str(cache))
+    codex = client.get('/api/agent/settings').json()['catalog']['codex']
+    assert codex['origin'] == 'codex_app' and [m['id'] for m in codex['models']] == ['gpt-new', 'gpt-luna']
+    assert codex['fetched_at'] == '2026-10-03T15:50:41Z' and 'identity' not in json.dumps(codex)
+    assert client.put('/api/agent/settings', json=dict(provider='codex', model='gpt-new', effort='turbo')).status_code == 200
+    _codex_file(cache, [_model('gpt-newer', 1, ['low'])])                # "Re-read list" is the same GET
+    assert [m['id'] for m in client.get('/api/agent/settings').json()['catalog']['codex']['models']] == ['gpt-newer']

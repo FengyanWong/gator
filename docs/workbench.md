@@ -1673,6 +1673,18 @@ only in one direction: `virtuoso_work` (2026-09-22) is granted the workbench's o
 reads, and the Maestro setup of the task's working copy - for as long as it runs; see "The agent works
 in Virtuoso itself". The tables it proposes still need the user's approval.
 
+**Model and effort lists** (`agents/catalog.py`, served with `GET /api/agent/settings`; showing them calls no model;
+since 2026-10-03). Codex: the Codex app's own list of the models the signed-in account may use, read (never written)
+from its `models_cache.json` - in `$CODEX_HOME`, `~/.codex`, and from WSL in `C:\Users\<name>\.codex` of the desktop
+app; the most recently written file wins, and `GATOR_CODEX_MODELS_CACHE` names one file or `off` (the test suite sets
+`off`). The app refreshes that file by itself; the tab reads it on every settings read, and "Re-read list" (Codex only)
+reads it again without reloading the page. Models the app hides are left out, each model keeps its own effort levels
+(sizing drops a level the chosen model lacks), a retiring one is marked, and only names, descriptions, levels and
+retirement dates are taken - never the account part of the file. Without the file the hand table is shown, with the
+reason. Claude Code cannot list its models, so its list is a table kept by hand from
+code.claude.com/docs/en/model-config and the API price list (checked 2026-10-03); `default`, `opusplan` and the `[1m]`
+spellings are left out on purpose (the module says why). Any other name is accepted under "Custom...".
+
 Bridge skills exist in `~/virtuoso-bridge-lite/skills/` and the project's Codex-style
 `.agents/skills/`, but **not** in a Claude Code discovery location. `GET /api/agent/diagnostics`
 reports this and proposes (never executes) symlinks into `.claude/skills/`.

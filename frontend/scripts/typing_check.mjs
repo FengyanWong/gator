@@ -11,7 +11,7 @@
 //   - Circuit class / PDK id: emptied, then typed, they take the new text (the old box put "unspecified" back at once);
 //   - in Mode scratch the page no longer writes the project's default model into run.model_source on page load; it does
 //     once Mode is switched to one that loads a model (fine_tune), and one Undo takes both back;
-//   - "Stop after N consecutive failed evaluations" (Advanced) shows the engine's limit of 5 and takes a typed one;
+//   - "Stop after N consecutive failed evaluations" (Failure limits) shows the engine's limit of 5 and takes a typed one;
 //   - "Import JSON..." of one table's rows writes that table alone: an edit made while its box was open stays.
 // A throwaway headless Edge over the DevTools protocol (lib/harness.mjs). HERMETIC: validation, the default model and the
 // model list are answered here with canned data labelled FIXTURE; other reads pass; every other writing request is
@@ -223,7 +223,7 @@ await runChecks(browser, async () => {
   // ---- (f) the stop rule's own field (decision of 2026-09-29): it had none, so its limit of 5 could not be seen or changed ------------
   const STOP_AFTER = LABELLED('.right', 'Stop after N consecutive failed evaluations');
   await focusAll(STOP_AFTER);
-  check('Run configuration > Advanced has "Stop after N consecutive failed evaluations", showing the default 5', (await valueOf(STOP_AFTER)) === '5', String(await valueOf(STOP_AFTER)));
+  check('Run configuration > Failure limits has "Stop after N consecutive failed evaluations", showing the default 5', (await valueOf(STOP_AFTER)) === '5', String(await valueOf(STOP_AFTER)));
   const stopTitle = await evaluate(`${STOP_AFTER}.closest('label').title`);
   check('its tooltip says the run stops safely and ends as failed (Continue cannot pick it up), and why reward v2.1 may need more (1-1000)',
     /stops safely/.test(stopTitle) && /"failed"/.test(stopTitle) && /Continue cannot/.test(stopTitle) && /v2\.1/.test(stopTitle) && /1-1000/.test(stopTitle), stopTitle);

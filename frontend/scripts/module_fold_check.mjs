@@ -120,7 +120,7 @@ await runChecks(browser, async () => {
   await clickHeading(RUN);
   check('a second click unfolds it, and that is remembered too', (await state(RUN)).open && (await evaluate(`${MODE}.checkVisibility()`)) && (await remembered('run')) === 'open');
   await type(BUDGET_BOX, '1');
-  check('(set-up) a budget of 1 raises the "never learns" warning inside the module', await until(`[...${RUN}.querySelectorAll('.module-body p.warn')].some(p => /^Budget 1 with warm-up/.test(p.textContent))`, 30));
+  check('(set-up) a budget of 1 marks the RL networks settings for review', await until(`[...${RUN}.querySelectorAll('.module-body p.warn')].some(p => /Review the settings in RL networks/.test(p.textContent))`, 30));
   check('open, the warning is in view itself: no mark on the heading', (await state(RUN)).attention === null);
   await clickHeading(RUN);
   run = await state(RUN);

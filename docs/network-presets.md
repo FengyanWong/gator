@@ -22,6 +22,12 @@ Now the backend keeps **one setting per network type**:
 * The **heads** box is greyed out with "ignored by this encoder" unless the network is
   `graph_transformer` or `gatv2`. Only those two have attention heads.
 
+An existing configuration retains its explicit values on reload, even if the saved defaults differ. In the
+**RL networks...** window, **In use: current run settings** and the **This run / Saved default** table identify that
+case, including differences under Advanced. A new run uses the current values. **Use saved defaults** replaces the
+configuration's network and Advanced values without writing preferences; **Save as defaults** keeps the current
+values and remembers them for this encoder. A preset's name is shown as in use only when its saved values match.
+
 **The one thing to keep in mind:** the papers ran thousands of simulations per run; GATOR's real runs
 used tens. A published batch size of 128 with 1,000 warm-up steps means that in a 60-evaluation run the
 network never learns and every action is random. The panel and the static validation warn when that

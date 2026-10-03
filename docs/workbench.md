@@ -896,7 +896,7 @@ edits until you type a scale of your own; a row with nothing to size it by yet (
 keeps an empty scale, which the backend sizes from the threshold. Saved empty scales are not filled on load. (Record
 7.112 fixed a suggestion that froze at 1 - e.g. 1 W - when a row was added before its limits were typed.)
 
-Reward and conditions exposes the nominal gate band and objective shape. Advanced exposes **Alpha learning rate**,
+Reward and conditions exposes the nominal gate band and objective shape. **RL networks... → Advanced** exposes **Alpha learning rate**,
 stored per configuration; empty inherits the actor learning rate. No separate starting rate passed the extended
 1,000-update unit check, so new configurations leave it empty. Attributed failures continue the episode, while its normal
 horizon and configured success ending still apply.
@@ -917,13 +917,13 @@ designs against the current hard specs: those of earlier runs of the same task w
 root (the configured one, else the remembered one), their Corner check results, and for `real:gpdk045_ota7` the
 reference and designs of reward v2's qualification (folders named in the code, never a scan of `artifacts/`).
 
-**Failure limits.** Run configuration has a field **Stop after N consecutive failed evaluations**
+**Failure limits.** Run configuration's **Failure limits** fold-out has a field **Stop after N consecutive failed evaluations**
 (`run.max_consecutive_failures`, default 5). A design the simulator reports as invalid or not converging is still
 scored (reward -1) and kept in replay, and since reward v2.1 the episode goes on, so the network learns where the
 circuit breaks. The stop rule counts it as a failed evaluation all the same: 5 in a row end the run as `failed`
 (stop reason `consecutive_failures`), so a run that explores a region where many designs break may need a higher
-limit. A dead backend has its own limit, **Pause after N consecutive infrastructure failures** (default 3, under
-Advanced): it pauses the run, resumable once the connection gate passes again, instead of failing it. A resume starts
+limit. A dead backend has its own limit, **Pause after N consecutive infrastructure failures** (default 3, in the same
+fold-out): it pauses the run, resumable once the connection gate passes again, instead of failing it. A resume starts
 that count over (before record 7.135 it was restored at the limit, and every Resume paused again at once).
 
 [Reward contract and validation](reward-v2.md#reward-v21-2026-09-29). These controls were checked on source previews
@@ -1142,6 +1142,24 @@ SAC's general current-group limitation remains; a read-only FeatureSchema experi
 column works, while a tunable current group still fails unit validation. No optimizer current-unit implementation was added.
 The development record also documents one accidentally launched, server-rejected Codex request; the no-calls gate failed.
 
+### Run configuration and the RL networks window (2026-10-02, record 7.150)
+
+**Mode** is the first setting in Run configuration, with **RL networks...** directly underneath it.
+**Search method** is the second setting. The button opens a separate window containing the encoder and sizes,
+operating-point input switch, Components list, presets, saved-model chooser, model facts, compatibility details,
+network structure, circuit graph view, and Advanced RL settings. Changing Mode in the main page updates this window.
+Budgets, concurrency, seed, failure limits, reward and training conditions stay in Run configuration.
+
+Pressing the button again focuses the existing window. The close icon and the browser's close button keep all
+configuration edits; pending preset saves and model compatibility checks continue in the main page. Undo/Redo also
+work for typing in the window. A blocked popup is explained beside the launcher. With LLM only selected, the launcher
+is disabled and an already open window explains that this method has no RL network. Switching back restores the
+controls. Reloading or leaving the workbench closes its window.
+
+Network settings that need attention leave a notice in Run configuration, including its folded warning/error mark.
+Browser checks: `frontend/scripts/network_panel_check.mjs`, `model_chooser_check.mjs`, `model_structure_check.mjs`,
+`graph_view_check.mjs`, `pdk_check.mjs`, `module_fold_check.mjs`, `typing_check.mjs` and `reliability_check.mjs`.
+
 ### Folding the right column's modules (added 2026-09-21, user request)
 
 "Run configuration" and "Output settings" fold into one line with a click on their heading (the "Research
@@ -1154,7 +1172,7 @@ Browser check: `frontend/scripts/module_fold_check.mjs` (fixtures only; safe aga
 ### Choosing which saved model to load (added 2026-09-21, user request)
 
 A **run** is one training session (one press of Start) with its own folder; the models it saved are its
-**save points** (`checkpoints/<id>/`). With Mode `resume`, `fine_tune` or `frozen`, the run panel's "RL model to
+**save points** (`checkpoints/<id>/`). With Mode `resume`, `fine_tune` or `frozen`, the RL networks window's "RL model to
 load" block lists every run that holds a model as a card (task, circuit, **network**, evaluations of training, last
 save; tags `MOCK`, `weights only`) and then offers every save point of the chosen run: "Latest
 save" (follows the run) or a dated one (always the same model). Runs without a save point are not listed. The list
@@ -1171,7 +1189,7 @@ timestamps match; `latest` is resolved on each description. Actual model loading
 
 **Available encoders (2026-09-26):** Graph Transformer, RGCN and GATv2 (`gatv2`). GATv1 (`gat`) was replaced on this date; old configurations are rejected explicitly and old GAT weights cannot load into GATv2. MLP and GCN were deleted from the optimizer and workbench by user request; port-GNN was removed earlier. An old configuration naming a removed encoder is rejected explicitly. Exact resume of checkpoints saved before this package change needs matching historical optimizer source and dependencies (`9bc488f` for the preceding five-encoder version, `bbdfe36` for the recorded six-encoder physical M6 pilot). Workbench `fine_tune` and `frozen` retain their existing compatibility checks: a source-digest difference is a provenance warning if the retained architecture and all other required contracts match; this does not make deleted encoders loadable. The package changed again since (reward v2 in `1135b8b`, reward v2.1 in `8cf53ae`): the current digest, and which commit loads which older checkpoint, are at the top of `docs/decisions.md`.
 
-**The network comes with the model (2026-09-21, user request).** The "RL network" block - encoder list, sizes,
+**The network comes with the model (2026-09-21, user request).** The "RL network" block in that window - encoder list, sizes,
 presets - sets up a NEW network and is shown in Mode `scratch` only. In `resume`, `fine_tune` and `frozen` it is not
 shown: a saved model only loads into the network it was trained with (the backend refuses any other one in all three
 Modes), so the configuration takes the network of the chosen model by itself and the model's facts start with a
@@ -1182,6 +1200,12 @@ and the panel says so. Back in `scratch` the block returns and shows the network
 Choosing an encoder loads its remembered settings. A delayed reply or preset reset only changes the configuration
 while that choice and its network values are still current; later choices, edits, Undo and imports take precedence.
 Preference writes and resets are ordered so an older save cannot overwrite a newer reset (record 7.130).
+
+An existing configuration keeps its explicit network and Advanced values when the page reloads. If they differ from
+the encoder's saved defaults, **In use** says **current run settings**, and a comparison table lists each differing
+setting with **This run** and **Saved default** values. The run uses the current values. **Use saved defaults** replaces
+this run's settings (one Undo step) without writing preferences; **Save as defaults** keeps this run's settings and
+remembers them for that encoder. The publication/baseline label is shown as in use only while the values match.
 
 ### Network structure of a saved model (added 2026-09-21, user request)
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { registerInputWindow } from '../store';
 
 /** What a panel says when the browser refused to open its window. */
 export const BLOCKED = 'The browser blocked the new window. Allow pop-ups for this page, then press the button again.';
@@ -48,11 +49,13 @@ export function usePopupWindow(name: string, options: {
 
   useEffect(() => {
     if (!popup) return;
+    const stopTrackingInput = registerInputWindow(popup);
     const closed = () => { setPopup(null); setRoot(null); latest.current.onClose?.(); };   // closed with its own close button
     const leave = () => popup.close();                     // the workbench page is leaving: do not leave a dead window behind
     popup.addEventListener('pagehide', closed);
     window.addEventListener('pagehide', leave);
     return () => {
+      stopTrackingInput();
       popup.removeEventListener('pagehide', closed);
       window.removeEventListener('pagehide', leave);
       if (latest.current.closeOnUnmount) popup.close();

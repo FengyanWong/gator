@@ -1,5 +1,6 @@
 import { useRequest } from '../store';
 import { Fragment, ReactNode, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api, bytes, copy, Json, num } from '../api';
 import { ModelChooser } from './ModelChooser';
 import { CircuitGraphView } from './CircuitGraphView';
@@ -7,6 +8,8 @@ import { ModelStructure } from './ModelStructure';
 import { ComponentList } from './Pdk';
 import { SearchSettings } from './SearchSettings';
 import { Typed } from './Typed';
+import { BLOCKED, usePopupWindow } from './popupWindow';
+import { Icon } from './Icons';
 
 function Num({ label, value, onChange, title, nullable, disabled, note, after, placeholder, bounded }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; nullable?: boolean; disabled?: boolean; note?: string; after?: ReactNode; placeholder?: string; bounded?: boolean }) {
   // `Typed` keeps what is being typed while the box has focus ("0." and "3e-" are steps towards 0.005 and 3e-4, not
@@ -120,6 +123,11 @@ const ADVANCED_ROWS: NumberField[][] = [
   ],
 ];
 
+const NETWORK_SETTING_LABELS: Record<string, string> = {
+  hidden_dim: 'Hidden width', heads: 'Heads', layers: 'Layers',
+  ...Object.fromEntries(ADVANCED_ROWS.flat().map(([name, label]) => [name, label])),
+};
+
 export function RunPanel({ config, setConfig, runs, circuit, schema }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json; schema: Json }) {
   const run = config.run;
   const llmOnly = run.search?.method === 'llm';
@@ -133,6 +141,11 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const [look, setLook] = useState<{ run_dir: string | null; checkpoint_id: string }>({ run_dir: null, checkpoint_id: 'latest' });
   const adv = run.advanced ?? {};
   const net = run.network ?? {};
+  // Keep the configuration, preset writes and compatibility checks here even when the window is closed.
+  const networkWindow = usePopupWindow('gator-rl-networks', {
+    title: 'GATOR - RL networks', features: 'popup,width=1100,height=900',
+    rootId: 'rl-networks-root', rootClass: 'rl-networks-window', closeOnUnmount: true,
+  });
 
   // Only a Mode that loads the model asks about it: a model_source left over from fine_tune is ignored in scratch, and
   // was compiled and checked after every edit there all the same (audit 2026-09-30).
@@ -255,8 +268,11 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       network: { ...(c.run.network ?? {}), ...pick(entry.network, missingNet), encoder_type: encoder },
       advanced: { ...(c.run.advanced ?? {}), ...pick(entry.advanced, missingAdv) } } }), false);
   }, [entry, JSON.stringify(net), JSON.stringify(adv)]);
-  const differs = !!entry && !pending.current && (netFields.some(f => net[f] !== undefined && net[f] !== entry.network[f])
-    || advFields.some(f => adv[f] !== undefined && adv[f] !== entry.advanced[f]));
+  const settingDifferences = entry ? [
+    ...netFields.map(field => ({ field, current: net[field], saved: entry.network[field] })),
+    ...advFields.map(field => ({ field, current: adv[field], saved: entry.advanced[field] })),
+  ].filter(row => row.current != null && row.current !== row.saved) : [];
+  const differs = settingDifferences.length > 0 && !pending.current;
   const originLabel = entry && ({ publication: 'publication preset', gator_baseline: 'GATOR baseline', custom: 'edited, saved in the backend' } as Json)[entry.origin];
   const budget: number = run.max_evaluations;
   const starved = run.mode !== 'frozen' && typeof budget === 'number' && (budget <= (adv.warmup_transitions ?? 0) || budget < (adv.batch_size ?? 0) + 1);
@@ -303,16 +319,26 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const folded = [run.mode, typeof budget === 'number' ? `${budget} evaluations` : null,
     `${encoder} ${net.hidden_dim ?? '?'}/${net.heads ?? '?'}/${net.layers ?? '?'}`,
     net.vocabulary && net.vocabulary !== 'standard' ? `knows ${net.vocabulary.slice(4)}` : null].filter(Boolean).join(' - ');
+  const networkError = error || netMessage?.level === 'error' || !offeredEncoders.includes(encoder)
+    || (modelChecked && model?.compatibility?.compatible === false);
+  const networkWarning = netMessage?.level === 'warn' || (!loads && (differs || entry?.problem))
+    || (starved && run.search?.method !== 'llm_warmstart') || archDiffers;
   return (
+    <>
     <Module id="run" title="Run configuration" summary={folded}>
-      <SearchSettings run={run} schema={schema} set={set} />
       <label title="scratch: random init, new run. resume: same task, same run, full state. fine_tune: compatible weights, new task, new run with a parent. frozen: no updates at all.">Mode
         <select value={run.mode} onChange={e => set({ mode: e.target.value })}>
           {(llmOnly ? ['scratch', 'resume'] : run.search?.method && run.search.method !== 'sac' ? ['scratch', 'resume', 'fine_tune'] : ['scratch', 'resume', 'fine_tune', 'frozen']).map(m => <option key={m} value={m}>{m}</option>)}</select></label>
+      <button className="rl-networks-open" disabled={llmOnly}
+        title={llmOnly ? 'LLM only does not use an RL network.' : 'Open RL network settings, saved models, and model views.'}
+        onClick={() => networkWindow.open()}>RL networks...</button>
+      {networkWindow.blocked && <p className="error" role="alert">{BLOCKED}</p>}
+      {!llmOnly && (networkError || networkWarning) && <p className={networkError ? 'error' : 'warn'}>Review the settings in RL networks.</p>}
       {/* Only while the model is checked: in scratch the last check's suggestion stayed, never asked again (review of 2026-10-01) */}
       {modelChecked && model?.suggestion && model.suggestion.mode !== run.mode && <p className="warn">Suggested: <button className="text-link mode-suggestion"
         title={`Set Mode to ${model.suggestion.mode}`} onClick={() => set({ mode: model.suggestion.mode })}>{model.suggestion.mode}</button> - {model.suggestion.reason}
         {model.suggestion.requires_confirmation ? ' (needs your confirmation)' : ''}</p>}
+      <SearchSettings run={run} schema={schema} set={set} />
       <Num label="Concurrent Spectre jobs" disabled={llmOnly} value={run.concurrency} onChange={v => set({ concurrency: v })} title="Independent simulation jobs at once. NOT the thread count of one simulation." />
       {circuit?.max_concurrency && run.concurrency > circuit.max_concurrency && <p className="error">This task supports at most {circuit.max_concurrency} jobs.</p>}
       <Num label="Evaluation budget (max_evaluations)" value={run.max_evaluations} onChange={v => set({ max_evaluations: v })}
@@ -322,6 +348,13 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       <Num label="Wall-time limit (s)" nullable value={run.max_wall_seconds} onChange={v => set({ max_wall_seconds: v })} />
       <Num label="Random seed (target task)" value={run.seed} onChange={v => set({ seed: v })} title="Seed of THIS run. The source model's pretraining seed is recorded separately." />
       <Check label="Stop at the first feasible design" value={run.stop_at_first_feasible} onChange={v => set({ stop_at_first_feasible: v })} />
+      <details><summary>Failure limits</summary>
+        <Num label="Pause after N consecutive infrastructure failures" value={run.max_consecutive_infrastructure_failures ?? 3} onChange={v => set({ max_consecutive_infrastructure_failures: v })} />
+        <Num label="Stop after N consecutive failed evaluations" value={run.max_consecutive_failures ?? 5} onChange={v => set({ max_consecutive_failures: v })}
+          title={'When this many evaluations in a row fail (no valid result), the run stops safely: everything is saved and it ends as "failed", '
+            + 'which Continue cannot pick up again. Reward v2.1 scores broken designs and learns from them, so a run exploring a region where many '
+            + 'designs break may need a higher limit (1-1000).'} />
+      </details>
       <h3>Reward and conditions</h3>
       {/* From Nominal only, every corner is planned; between the two corner policies the corners chosen stay chosen. */}
       <label>Training conditions<select value={run.conditions?.policy ?? 'off'} onChange={e => set({ conditions: {
@@ -358,7 +391,12 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         onChange={e => set({ model_source: { run_dir: e.target.value, checkpoint_id: 'latest' } })}>
         <option value="">Choose an AI-only run</option>{runs.filter((r: Json) => r.search?.method === 'llm').map((r: Json) =>
           <option key={r.run_dir} value={r.run_dir}>{r.task_name ?? r.run_dir}</option>)}</select></label>}
-      {!llmOnly && <>
+    </Module>
+    {networkWindow.popup && networkWindow.root && createPortal(<section className="panel rl-networks-panel" aria-labelledby="rl-networks-title">
+      <div className="rl-networks-heading"><h2 id="rl-networks-title">RL networks</h2>
+        <button className="icon-button" title="Close: Your settings are kept." onClick={networkWindow.close}><Icon name="close" label="Close" /></button></div>
+      <p className="hint">Mode: <b>{run.mode}</b>. Changes apply to the current run configuration.</p>
+      {llmOnly ? <p className="hint">LLM only does not use an RL network. Choose an SAC search method in Run configuration to edit these settings.</p> : <>
       {!loads && <>
       <h3>RL network</h3>
       <p className="hint">Independent of the agent language model. "No weights" means scratch, but an architecture is still required.
@@ -374,12 +412,20 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       <Check label="Nominal device operating points" value={net.operating_points ?? false} onChange={v => setNet({ operating_points: v })}
         title="Measured nominal device values and validity masks. Corner operating points are recorded but never replace the nominal network input. Changing this changes the model input schema." />
       <ComponentList value={net.vocabulary ?? 'standard'} onChoose={v => chooseList(v)} />
-      {entry && <><p className="hint in-use">In use: <b>{originLabel}</b></p>
+      {entry && <><p className="hint in-use">In use: <b>{settingDifferences.length ? 'current run settings' : originLabel}</b></p>
         <div className="row pair">
           <button disabled={entry.origin === 'publication' && !differs} onClick={() => reset('publication')} title="Forget the saved values of this encoder and return to the values taken from publications.">Publication preset</button>
           <button disabled={entry.origin === 'gator_baseline' && !differs} onClick={() => reset('gator_baseline')} title="The equal-size setting of all existing GATOR evidence and checkpoints. Suited to short runs.">GATOR baseline</button></div></>}
-      {differs && <p className="warn">These values differ from the backend's saved {encoder} setting.
-        <button onClick={() => applyEntry(entry)}>Load backend values</button> <button onClick={() => { queueSave(net, adv); flush(); }}>Save these to the backend</button></p>}
+      {differs && <div className="note network-differences">
+        <p className="warn">Current run values differ from the saved {encoder} defaults ({originLabel}).</p>
+        <p className="hint">This run uses the values shown in the controls. Saved defaults are loaded when you choose an encoder; they do not replace an existing configuration on page reload.</p>
+        <table className="grid small" aria-label="Network settings differences"><thead><tr><th>Setting</th><th>This run</th><th>Saved default</th></tr></thead><tbody>
+          {settingDifferences.map(row => <tr key={row.field}><td title={row.field}>{NETWORK_SETTING_LABELS[row.field] ?? row.field}</td>
+            <td className="numeric">{String(row.current)}</td><td className="numeric">{row.saved == null ? 'Not set' : String(row.saved)}</td></tr>)}
+        </tbody></table>
+        <div className="row pair"><button onClick={() => applyEntry(entry)} title="Replace this run's network and Advanced values with the saved defaults for this encoder.">Use saved defaults</button>
+          <button onClick={() => { queueSave(net, adv); flush(); }} title="Keep this run's values and remember them as the defaults for this encoder.">Save as defaults</button></div>
+      </div>}
       {entry?.problem && <p className="warn">{entry.problem}</p>}</>}
       {netMessage && <p className={`net-message ${netMessage.level === 'error' ? 'error' : netMessage.level === 'warn' ? 'warn' : 'hint'}`}>{netMessage.text}</p>}
       {starved && run.search?.method !== 'llm_warmstart' && <p className="warn">Budget {budget} with warm-up {adv.warmup_transitions} and batch size {adv.batch_size}: {budget <= (adv.warmup_transitions ?? 0) ? 'every evaluation is a random warm-up action, so the policy never acts' : 'one batch is never filled, so the network never learns'}.
@@ -447,16 +493,10 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         <Check label="Freeze encoder (fine_tune)" value={adv.freeze_encoder} onChange={v => setAdv({ freeze_encoder: v })} />
         <Check label="Encoder-only transfer (fine_tune)" value={adv.encoder_only_transfer} onChange={v => setAdv({ encoder_only_transfer: v })} />
         <Check label="Reset critic (fine_tune)" value={adv.reset_critic} onChange={v => setAdv({ reset_critic: v })} />
-        <Num label="Pause after N consecutive infrastructure failures" value={run.max_consecutive_infrastructure_failures ?? 3} onChange={v => set({ max_consecutive_infrastructure_failures: v })} />
-        {/* The engine's other stop rule (schema max_consecutive_failures, engine._check_limits), which had no field here
-            (decision of 2026-09-29: keep the rule and say what it means for reward v2.1). */}
-        <Num label="Stop after N consecutive failed evaluations" value={run.max_consecutive_failures ?? 5} onChange={v => set({ max_consecutive_failures: v })}
-          title={'When this many evaluations in a row fail (no valid result), the run stops safely: everything is saved and it ends as "failed", '
-            + 'which Continue cannot pick up again. Reward v2.1 scores broken designs and learns from them, so a run exploring a region where many '
-            + 'designs break may need a higher limit (1-1000).'} />
       </details>
       </>}
-    </Module>
+    </section>, networkWindow.root)}
+    </>
   );
 }
 

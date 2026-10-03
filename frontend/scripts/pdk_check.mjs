@@ -21,6 +21,7 @@
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/pdk_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
+import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 import path from 'node:path';
 import { validConfiguration, check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
@@ -85,7 +86,7 @@ await runChecks(browser, async () => {
   // through elements that do not exist yet.
   const until = (expression, tries = 60) => page.until(`(() => { try { return !!(${expression}); } catch { return false; } })()`, tries);
 
-  const RUN = `[...document.querySelectorAll('.right .panel')].find(p => p.querySelector('h3')?.textContent.trim() === 'Run configuration')`;
+  const RUN = NETWORK_PANEL;
   const LIST = `${RUN}.querySelector('.component-list')`;
   const SELECT = `${LIST}.querySelector('select')`;
   const ENCODER = `[...${RUN}.querySelectorAll('label')].find(l => l.firstChild?.textContent?.trim() === 'Encoder')?.querySelector('select')`;
@@ -97,6 +98,7 @@ await runChecks(browser, async () => {
   await page.intercept(['*/api/*'], answer);
   await page.seed({ config: CONFIG, when: 'missing' });
   await send('Page.navigate', { url: APP });
+  let networkPage = await openNetworks(page, browser);
   if (!(await until(`!!(${RUN})`, 150))) throw new Error('the Run configuration never appeared: ' + JSON.stringify(await evaluate(`document.body.innerText.slice(0, 300)`)));
   if (!(await until(`!!(${LIST})`, 50))) throw new Error('no component list: the served frontend is older than this change (build it, then reload)');
   await until(`${SELECT}.options.length > 1`, 50);
@@ -114,7 +116,7 @@ await runChecks(browser, async () => {
     && /reading a cell in the Virtuoso window reads its PDK too/.test(line.what), line.what);
   check('the longer explanation is folded (closed <details>)', line.helpFolded);
   check('page load read the list of loaded PDKs (local files) and started no load', listReads >= 1 && loadBodies.length === 0);
-  const fits = await evaluate(`(() => { const right = document.querySelector('.right'), panel = ${RUN}.getBoundingClientRect(),
+  const fits = await evaluate(`(() => { const right = ${NETWORK_DOCUMENT}.documentElement, panel = ${RUN}.getBoundingClientRect(),
     select = ${LIST}.querySelector('.component-row select').getBoundingClientRect();
     return { noSideScroll: right.scrollWidth <= right.clientWidth + 1, inside: select.left >= panel.left - 1 && select.right <= panel.right + 1, wide: select.width > panel.width * 0.8 }; })()`);
   check('the list spans the narrow column, with no sideways scrolling', fits.noSideScroll && fits.inside && fits.wide, JSON.stringify(fits));
@@ -193,11 +195,11 @@ await runChecks(browser, async () => {
   check('the newly loaded PDK can be chosen in the RL network block at once', await evaluate(`[...${SELECT}.options].some(o => o.value === 'pdk:fixload')`));
   await sleep(300);
   {                                              // the encoder row down to the component list, in a tall viewport
-    await page.viewport(browser.width, 2600); await sleep(300);
+    await networkPage.viewport(1100, 2600); await sleep(300);
     const clip = await evaluate(`(() => { ${ENCODER}.scrollIntoView({ block: 'start' }); const a = ${ENCODER}.closest('label').getBoundingClientRect(), b = ${LIST}.getBoundingClientRect();
       return { x: Math.min(a.x, b.x) - 4, y: a.y - 4, width: Math.max(a.right, b.right) - Math.min(a.x, b.x) + 8, height: b.bottom - a.y + 8, scale: 1.5 }; })()`);
-    await page.shot(path.join(out, 'pdk-2-list.png'), clip);
-    await page.viewport(browser.width, browser.height);
+    await networkPage.shot(path.join(out, 'pdk-2-list.png'), clip);
+    await networkPage.viewport(1100, 900);
   }
 
   // ---- no connection; a list that is not loaded --------------------------------------------------------------------------------
@@ -205,7 +207,7 @@ await runChecks(browser, async () => {
     run: { ...JSON.parse(localStorage.getItem('gator-workbench-config-v1')).run, connection_profile_id: null, network: { ...JSON.parse(localStorage.getItem('gator-workbench-config-v1')).run.network, vocabulary: 'pdk:gone' } } }))`);
   loaded = false;
   const firstWindow = target?.id;
-  await send('Page.reload'); await until(`!!(${LIST}) && ${SELECT}.options.length > 1`, 150); await sleep(500);
+  await send('Page.reload'); networkPage = await openNetworks(page, browser); await until(`!!(${LIST}) && ${SELECT}.options.length > 1`, 150); await sleep(500);
   const gone = await evaluate(`(() => { const l = ${LIST}; return { value: l.querySelector('select').value, option: [...l.querySelectorAll('option')].map(o => o.textContent).pop(), warn: l.querySelector('.warn')?.textContent ?? '' }; })()`);
   check('a configuration naming a PDK that is not loaded says so', gone.value === 'pdk:gone' && gone.option === 'PDK gone (not loaded)' && /not loaded here/.test(gone.warn), JSON.stringify(gone));
   // The reload took both windows with it (the page closes what it opened), so the buttons open them again.

@@ -1,6 +1,7 @@
 // Real saved qualification data and the real API. No route interception or simulation dispatch.
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
+import { openNetworks } from './lib/rl_networks.mjs';
 import { createHash } from 'node:crypto';
 import { launchEdge, workbenchUrl, sleep } from './lib/harness.mjs';
 
@@ -23,7 +24,7 @@ const check = (name, passed, evidence) => {
 };
 const label = name => `Array.from(document.querySelectorAll('aside.right label')).find(e => e.textContent.startsWith(${JSON.stringify(name)}))`;
 const control = (name, type = 'select') => `(${label(name)})?.querySelector(${JSON.stringify(type)})`;
-const row = (selector, name) => `Array.from(document.querySelectorAll(${JSON.stringify(selector + ' tr')})).find(e => e.cells[0]?.textContent === ${JSON.stringify(name)})?.cells[1]?.textContent`;
+const row = (selector, name) => `Array.from(${selector === '.model-facts' ? 'window.__checkRLWindow.document' : 'document'}.querySelectorAll(${JSON.stringify(selector + ' tr')})).find(e => e.cells[0]?.textContent === ${JSON.stringify(name)})?.cells[1]?.textContent`;
 try {
   const status = await (await fetch(new URL('/api/runs/status?run_dir=' + encodeURIComponent(stage.run_directory), url))).json();
   check('actual B data has 42 confirmed calls and nominal-only feasibility', status.budget.confirmed_launches === 42 && !status.manifest.mock
@@ -34,6 +35,7 @@ try {
   page.on('Network.requestWillBeSent', p => requests.push({ url: p.request.url, method: p.request.method }));
   await page.seed({ config, run: stage.run_directory, when: 'once' });
   await page.send('Page.navigate', { url });
+  const networkPage = await openNetworks(page, browser);
   check('current source loaded', await page.until("!!document.querySelector('.reward-costs')", 200));
   check('physical plan cost', await page.evaluate(`${row('.reward-costs', 'Launches / step')} === '5' && ${row('.reward-costs', 'Launches / reset')} === '1' && ${row('.reward-costs', 'Launch cap')} === '42'`));
   check('nominal OP enabled', await page.evaluate(`(${control('Nominal device operating points', 'input')})?.checked === true`));
@@ -87,23 +89,23 @@ try {
   await page.setValue(control('Training conditions'), 'always');
 
   await page.setValue(control('Mode'), 'resume');
-  const compatible = "Array.from(document.querySelectorAll('aside.right summary')).some(e => e.textContent === 'Compatibility for resume: compatible')";
+  const compatible = "Array.from(window.__checkRLWindow.document.querySelectorAll('.rl-networks-panel summary')).some(e => e.textContent === 'Compatibility for resume: compatible')";
   check('actual checkpoint initially resume compatible', await page.until(compatible, 300));
   check('saved reward coefficients shown', await page.evaluate(`Number(${row('.model-facts', 'Worst hard-spec share')}) === 0.5 && Number(${row('.model-facts', 'Objective bonus weight')}) === 0 && Number(${row('.model-facts', 'Margin bonus weight')}) === 0`));
   check('saved full condition identities shown', await page.evaluate(`${row('.model-facts', 'Saved condition plan')} === ${JSON.stringify(['nominal', ...corners].join(', '))}`));
   await page.setValue(control('Worst hard-spec share', 'input'), '0.7');
-  check('reward edit refreshes exact-resume compatibility', await page.until("Array.from(document.querySelectorAll('aside.right li.issue.error')).some(e => e.textContent.startsWith('reward_settings: incompatible'))", 300));
+  check('reward edit refreshes exact-resume compatibility', await page.until("Array.from(window.__checkRLWindow.document.querySelectorAll('.rl-networks-panel li.issue.error')).some(e => e.textContent.startsWith('reward_settings: incompatible'))", 300));
   check('old compatible verdict is no longer shown', !await page.evaluate(compatible));
   check('draft edit does not rewrite executed reward', await page.evaluate(`${row('.status-grid', 'Executed reward')}?.includes('worst hard-spec share 0.5')`));
-  await page.evaluate("Array.from(document.querySelectorAll('aside.right li.issue.error')).find(e => e.textContent.startsWith('reward_settings: incompatible')).scrollIntoView({block:'center'})", true);
+  await page.evaluate("Array.from(window.__checkRLWindow.document.querySelectorAll('.rl-networks-panel li.issue.error')).find(e => e.textContent.startsWith('reward_settings: incompatible')).scrollIntoView({block:'center'})", true);
   await page.shot(path.join(output, 'resume-reward-mismatch.png'));
   await page.setValue(control('Mode'), 'fine_tune');
-  check('fine-tune describes critic and replay reset', await page.until("Array.from(document.querySelectorAll('aside.right li.issue.warning')).some(e => e.textContent.startsWith('reward_settings: warning') && e.textContent.includes('resets critics, targets and replay'))", 300));
+  check('fine-tune describes critic and replay reset', await page.until("Array.from(window.__checkRLWindow.document.querySelectorAll('.rl-networks-panel li.issue.warning')).some(e => e.textContent.startsWith('reward_settings: warning') && e.textContent.includes('resets critics, targets and replay'))", 300));
   await page.setValue(control('Worst hard-spec share', 'input'), '0.5');
   await page.setValue(control('Mode'), 'resume');
   check('restored reward becomes compatible', await page.until(compatible, 300));
   await page.evaluate(`(${cornerCheck(corners[0])}).click()`, true);
-  check('corner edit refreshes exact-resume compatibility', await page.until("Array.from(document.querySelectorAll('aside.right li.issue.error')).some(e => e.textContent.startsWith('planned_conditions: incompatible'))", 300));
+  check('corner edit refreshes exact-resume compatibility', await page.until("Array.from(window.__checkRLWindow.document.querySelectorAll('.rl-networks-panel li.issue.error')).some(e => e.textContent.startsWith('planned_conditions: incompatible'))", 300));
   await page.evaluate(`(${cornerCheck(corners[0])}).click()`, true);
   check('re-adding corner restores canonical compatible plan', await page.until(compatible, 300));
   await sleep(1100);

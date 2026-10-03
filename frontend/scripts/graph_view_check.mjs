@@ -16,6 +16,7 @@
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 30 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/graph_view_check.mjs)" [screenshot-dir]
 // Optional: GATOR_WORKBENCH_OUTPUT_ROOT (from WSL: WSLENV=GATOR_WORKBENCH_URL:GATOR_WORKBENCH_OUTPUT_ROOT). Exit code 1 on failure.
+import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 import path from 'node:path';
 import { validConfiguration, check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
@@ -80,7 +81,7 @@ await runChecks(browser, async () => {
     return page.readOrRefuse({ requestId, request }, refused);
   };
   const until = (expression, tries = 60) => page.until(expression, tries);
-  const RIGHT = `document.querySelector('.right')`, OPEN = `document.querySelector('.right button.graph-open')`, DIALOG = `document.querySelector('dialog.graph-dialog')`, CY = `document.querySelector('.graph-canvas')?.__cy`;
+  const RIGHT = NETWORK_PANEL, OPEN = `${NETWORK_DOCUMENT}.querySelector('button.graph-open')`, DIALOG = `${NETWORK_DOCUMENT}.querySelector('dialog.graph-dialog')`, CY = `${NETWORK_DOCUMENT}.querySelector('.graph-canvas')?.__cy`;
   const setSelect = (expression, value) => page.setValue(`${expression}`, value);
   const drawn = () => evaluate(`(() => { const cy = ${CY}; if (!cy) return null; const box = cy.container().getBoundingClientRect();
     return { nodes: cy.nodes().map(n => ({ id: n.id(), label: n.data('label'), sized: n.data('sized'), kind: n.data('kind'), shape: n.style('shape'), fill: n.style('background-color'),
@@ -89,13 +90,15 @@ await runChecks(browser, async () => {
       width: box.width, height: box.height }; })()`);
   const waitAsked = async count => { for (let i = 0; i < 60 && asked.length < count; i++) await sleep(100); return asked.length; };
   const scripts = () => evaluate(`performance.getEntriesByType('resource').filter(r => r.name.endsWith('.js')).map(r => r.name.split('/').pop())`);
-  const shot = async (name, expression) => page.shot(path.join(out, name),
+  const shot = async (name, expression) => networkPage.shot(path.join(out, name),
     await evaluate(`(() => { const r = ${expression}.getBoundingClientRect(); return { x: Math.max(0, r.x), y: Math.max(0, r.y), width: Math.min(1680, r.width), height: Math.min(1050, r.height), scale: 1 }; })()`));
   const edgeOf = (graph, device, terminal) => graph.edges.find(e => e.id.startsWith(`c:${device}.${terminal}#`));
 
   await page.intercept(['*/api/*'], answer);
   await page.seed({ config: CONFIG, when: 'once' });
   await send('Page.navigate', { url: APP });
+  const networkPage = await openNetworks(page, browser);
+  await networkPage.viewport(1680, 1050);
   if (!(await until(`!!${RIGHT}?.querySelector('select.model-point')`, 150))) throw new Error('the model chooser never showed the seeded model; the page reads: ' + JSON.stringify(await evaluate(`document.body.innerText.slice(0, 300)`)));
   if (!(await until(`!!(${OPEN})`, 60))) throw new Error('this page has no "Circuit graph view" button: the served frontend is older than it (npm run build, then reload)');
 
@@ -153,7 +156,7 @@ await runChecks(browser, async () => {
   const overlap = (a, b) => a.box.x1 < b.box.x2 && b.box.x1 < a.box.x2 && a.box.y1 < b.box.y2 && b.box.y1 < a.box.y2;
   check('no two nodes overlap', !graph.nodes.some((a, i) => graph.nodes.slice(i + 1).some(b => overlap(a, b))));
   check('everything lies inside the canvas', graph.nodes.every(n => n.box.x1 >= 0 && n.box.y1 >= 0 && n.box.x2 <= graph.width && n.box.y2 <= graph.height), `${graph.width} x ${graph.height}`);
-  const box = await evaluate(`(() => { const r = ${DIALOG}.getBoundingClientRect(), c = document.querySelector('.graph-canvas').getBoundingClientRect(); return { width: r.width, height: r.height, canvas: c.width, canvasHeight: c.height }; })()`);
+  const box = await evaluate(`(() => { const r = ${DIALOG}.getBoundingClientRect(), c = ${NETWORK_DOCUMENT}.querySelector('.graph-canvas').getBoundingClientRect(); return { width: r.width, height: r.height, canvas: c.width, canvasHeight: c.height }; })()`);
   check('the dialog is large and the drawing has room', box.width > 1500 && box.canvas > 1000 && box.canvasHeight > 600, JSON.stringify(box));
   const line = await evaluate(`[...${DIALOG}.querySelectorAll('.graph-tools input:not([type=checkbox]), .graph-tools select, .graph-tools button')].map(e => { const r = e.getBoundingClientRect(); return { what: e.textContent.trim().slice(0, 14) || e.className || e.tagName, top: Math.round(r.top * 10) / 10, bottom: Math.round(r.bottom * 10) / 10 }; })`);
   check('the toolbar stands on ONE line: the evaluation box, Show, the arrows, the three lists and the layout buttons share their top and bottom edges',
@@ -203,7 +206,7 @@ await runChecks(browser, async () => {
   check('"<" asks once for the evaluation before', (await waitAsked(2)) === 2 && asked[1].evaluation === 19 && await until(`/Evaluation 19 of this run/.test(${DIALOG}.innerText)`, 50), JSON.stringify(asked[1]));
   graph = await drawn();
   check('... and the picture follows (other sizes on the device)', graph.nodes.find(n => n.id === 'd:M1').label === 'M1\nnmos\nw 1.9 \u00b5m -> 5.2 \u00b5m', graph.nodes.find(n => n.id === 'd:M1').label);
-  await evaluate(`(() => { const i = ${DIALOG}.querySelector('.graph-step input'); i.focus(); i.select(); })()`); await send('Input.insertText', { text: '2' });
+  await evaluate(`(() => { const i = ${DIALOG}.querySelector('.graph-step input'); i.focus(); i.select(); })()`); await networkPage.send('Input.insertText', { text: '2' });
   await evaluate(`[...${DIALOG}.querySelectorAll('button')].find(b => b.textContent === 'Show').click()`);
   check('a typed evaluation + Show asks once for it; at the first one "<" is off', (await waitAsked(3)) === 3 && asked[2].evaluation === 2
     && await until(`/Evaluation 2 of this run/.test(${DIALOG}.innerText) && [...${DIALOG}.querySelectorAll('button')].find(b => b.textContent === '<').disabled`, 50), JSON.stringify(asked[2]));
@@ -215,7 +218,7 @@ await runChecks(browser, async () => {
   await evaluate(`${DIALOG}.querySelector('button.dialog-close').click()`);
   check('the close control is a cross at the top right corner, as a browser window has it', await evaluate(`(() => { const b = ${DIALOG}.querySelector('button.dialog-close'), d = ${DIALOG}.getBoundingClientRect(), r = b.getBoundingClientRect(), s = getComputedStyle(b);
     return b.textContent === '\u00d7' && b.getAttribute('aria-label') === 'Close' && s.borderTopStyle === 'none' && d.right - r.right < 24 && r.top - d.top < 24 && ![...${DIALOG}.querySelectorAll('button')].some(x => x.textContent === 'Close'); })()`));
-  check('the cross closes the dialog and lets go of the drawing', (await until(`!${DIALOG}.open`, 30)) && !(await evaluate(`!!document.querySelector('.graph-canvas')`)));
+  check('the cross closes the dialog and lets go of the drawing', (await until(`!${DIALOG}.open`, 30)) && !(await evaluate(`!!${NETWORK_DOCUMENT}.querySelector('.graph-canvas')`)));
   mode = { attention: false };
   await evaluate(`${OPEN}.click()`); await waitAsked(5); await until(`!!(${CY}) && ${CY}.nodes().length > 0`, 80);
   check('an encoder without attention: said in plain words, no block / head boxes', await until(`/FIXTURE: The rgcn encoder has no attention/.test(${DIALOG}.innerText)`, 40) && !(await evaluate(`!!${DIALOG}.querySelector('select.graph-layer')`)));
@@ -228,7 +231,7 @@ await runChecks(browser, async () => {
 
   // ---- reachable WITHOUT a Mode that loads a model: scratch -> "Look at a saved model" -> the same view ------------------------------------------
   mode = {};
-  await setSelect(`[...(${RIGHT}?.querySelectorAll('label') ?? [])].find(l => l.firstChild?.textContent?.trim() === 'Mode')?.querySelector('select')`, 'scratch');
+  await setSelect(`[...document.querySelectorAll('.right label')].find(l => l.firstChild?.textContent?.trim() === 'Mode')?.querySelector('select')`, 'scratch');
   check('in scratch mode the view is reached through "Look at a saved model"', await until(`!!${RIGHT}.querySelector('button.look-open')`, 40) && !(await evaluate(`!!(${OPEN})`)));
   await evaluate(`${RIGHT}.querySelector('button.look-open').click()`);
   await until(`${RIGHT}.querySelectorAll('button.model-card').length === 1`, 50);
@@ -239,7 +242,7 @@ await runChecks(browser, async () => {
   check('... it asks once for that model\'s latest save and draws it', (await waitAsked(looked + 1)) === looked + 1 && asked[looked].run_dir === RUN && asked[looked].checkpoint_id === 'latest'
     && await until(`!!(${CY}) && ${CY}.nodes().length === 9`, 80), JSON.stringify(asked[looked]));
   await evaluate(`${DIALOG}.querySelector('button.dialog-close').click()`); await until(`!${DIALOG}.open`, 30);
-  await setSelect(`[...(${RIGHT}?.querySelectorAll('label') ?? [])].find(l => l.firstChild?.textContent?.trim() === 'Mode')?.querySelector('select')`, 'fine_tune');
+  await setSelect(`[...document.querySelectorAll('.right label')].find(l => l.firstChild?.textContent?.trim() === 'Mode')?.querySelector('select')`, 'fine_tune');
   await until(`!!(${OPEN})`, 40);
 
   // ---- the REAL route of this backend -----------------------------------------------------------------------------------------------------------------

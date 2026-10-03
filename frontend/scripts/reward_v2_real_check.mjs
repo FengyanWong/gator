@@ -1,6 +1,7 @@
 // Current-source UI and REAL saved runs. No Fetch interception and no simulator-start action.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { openNetworks } from './lib/rl_networks.mjs';
 import { launchEdge, workbenchUrl, sleep } from './lib/harness.mjs';
 
 const [qualification] = process.argv.slice(2);
@@ -33,12 +34,13 @@ try {
   page.on('Network.requestWillBeSent', p => requests.push({ url: p.request.url, method: p.request.method }));
   await page.seed({ config, run: stage.run_directory, when: 'once' });
   await page.send('Page.navigate', { url });
+  const networkPage = await openNetworks(page, browser);
   check('source page loaded', await page.until("document.querySelector('aside.right')?.textContent.includes('Reward and conditions')", 200));
   const selectFor = label => `Array.from(document.querySelectorAll('aside.right label')).find(e => e.textContent.startsWith(${JSON.stringify(label)}))?.querySelector('select')`;
   check('compressed reward selected', await page.evaluate(`(${selectFor('Violation shape')})?.value === 'compressed'`));
   check('all corners selected', await page.evaluate(`(${selectFor('Training conditions')})?.value === 'always'`));
   check('actual reset and step cost shown', await page.evaluate("document.querySelector('aside.right').innerText.includes('5 launches per candidate; 1 per reset. Launch cap: 42.')"));
-  check('nominal OP selected', await page.evaluate("Array.from(document.querySelectorAll('aside.right label')).find(e => e.textContent.includes('Nominal device operating points'))?.querySelector('input')?.checked === true"));
+  check('nominal OP selected', await page.evaluate("Array.from(window.__checkRLWindow.document.querySelectorAll('.rl-networks-panel label')).find(e => e.textContent.includes('Nominal device operating points'))?.querySelector('input')?.checked === true"));
   await page.evaluate("Array.from(document.querySelectorAll('footer .tabs button')).find(e => e.textContent === 'Run status').click()", true);
   const coverage = status.best_design.conditions_complete == null ? 'unknown' : status.best_design.conditions_complete ? 'complete' : 'partial';
   check('actual real coverage visible', await page.until(`document.querySelector('.status-grid')?.innerText.includes('coverage: ${coverage}')`, 150));
@@ -54,10 +56,10 @@ try {
   await sleep(1200);
   await page.setValue(selectFor('Mode'), 'resume');
   // The backend remembers B as the project's last real model; no start/continue command is clicked.
-  check('real model reward facts', await page.until("document.querySelector('aside.right').innerText.includes('constraint_violation_v2')", 250));
-  check('real model OP facts', await page.evaluate("Array.from(document.querySelectorAll('aside.right tr')).some(r => r.innerText.includes('Operating points') && r.innerText.includes('enabled'))"));
-  await page.evaluate("Array.from(document.querySelectorAll('aside.right tr')).find(r => r.innerText.includes('constraint_violation_v2')).scrollIntoView()", true);
-  await page.shot(path.join(dir, 'model-facts.png'));
+  check('real model reward facts', await page.until("window.__checkRLWindow.document.querySelector('.rl-networks-panel').innerText.includes('constraint_violation_v2')", 250));
+  check('real model OP facts', await page.evaluate("Array.from(window.__checkRLWindow.document.querySelectorAll('.rl-networks-panel tr')).some(r => r.innerText.includes('Operating points') && r.innerText.includes('enabled'))"));
+  await page.evaluate("Array.from(window.__checkRLWindow.document.querySelectorAll('.rl-networks-panel tr')).find(r => r.innerText.includes('constraint_violation_v2')).scrollIntoView()", true);
+  await networkPage.shot(path.join(dir, 'model-facts.png'));
   await page.viewport(1100, 800);
   await page.shot(path.join(dir, 'compact-desktop.png'));
   const overflow = await page.evaluate("Array.from(document.querySelectorAll('aside.right label, aside.right h3, .status-grid td')).filter(e => e.getBoundingClientRect().width > 0 && e.scrollWidth > e.clientWidth + 2).map(e => e.textContent.slice(0,100))");

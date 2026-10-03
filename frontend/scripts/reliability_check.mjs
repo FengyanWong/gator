@@ -1,4 +1,5 @@
 // Hermetic regression: no simulations, agent calls or backend settings writes. Only temporary browser storage changes.
+import { NETWORK_DOCUMENT, openNetworks } from './lib/rl_networks.mjs';
 import path from 'node:path';
 import { check, launchEdge, outDir, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
@@ -28,7 +29,8 @@ await runChecks(browser, async () => {
   await page.trackSaves();
   await page.seed({ config, run: null, when: 'once' });
   await page.send('Page.navigate', { url: APP });
-  const field = label => `[...document.querySelectorAll('.right label')].find(l => l.firstChild?.textContent === ${JSON.stringify(label)})`;
+  await openNetworks(page, browser);
+  const field = label => `[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel label')].find(l => l.firstChild?.textContent === ${JSON.stringify(label)})`;
   const encoder = `${field('Encoder')}?.querySelector('select')`, hidden = `${field('hidden')}?.querySelector('input')`;
   if (!await page.until(`!!(${encoder}) && !!document.querySelector('table.editor tbody tr')`)) throw new Error('Workbench did not load');
   await page.saved(); await sleep(300);
@@ -49,7 +51,7 @@ await runChecks(browser, async () => {
   check('manual network edit survives an outstanding settings read', await page.evaluate(`${encoder}.value === 'rgcn' && ${hidden}.value === '112'`));
   await page.evaluate(`${hidden}.blur()`);
   await sleep(800); // flush the intercepted preference write before reset
-  await page.evaluate(`[...document.querySelectorAll('.right button')].find(b => b.textContent === 'Publication preset').click()`);
+  await page.evaluate(`[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel button')].find(b => b.textContent === 'Publication preset').click()`);
   await waitCount(resets, 1);
   await page.setValue(encoder, 'gatv2');
   check('switching encoders does not wait for an earlier reset', await page.until(`${encoder}.value === 'gatv2'`));
@@ -59,7 +61,7 @@ await runChecks(browser, async () => {
   hold = false; await page.saved();
   await page.setValue(hidden, '112', { event: 'input', focus: true });
   await page.evaluate(`${hidden}.blur()`); await sleep(800);
-  await page.evaluate(`[...document.querySelectorAll('.right button')].find(b => b.textContent === 'Publication preset').click()`);
+  await page.evaluate(`[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel button')].find(b => b.textContent === 'Publication preset').click()`);
   await waitCount(resets, 2);
   await page.evaluate(`document.querySelector('section.editors button[title^="Undo:"]').click()`);
   check('Undo restores a network edit while reset is pending', await page.until(`${encoder}.value === 'gatv2' && ${hidden}.value === '96'`));

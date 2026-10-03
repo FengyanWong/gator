@@ -100,8 +100,14 @@ function migrateParameter(row: Json): Json {
  *  cell had focus joined its typing step, and Undo took them away with the typed text (review of 2026-10-01). Tag names,
  *  not instanceof: a pop-up window's fields belong to that window. */
 const MERGE_MS = 1500;
+const inputWindows = new Set<Window>();
+/** A portal's native input event belongs to its own window, even though React updates the workbench's store. */
+export function registerInputWindow(view: Window) {
+  inputWindows.add(view);
+  return () => { inputWindows.delete(view); };
+}
 function typingField(): Element | null {
-  const event = window.event;
+  const event = window.event ?? [...inputWindows].map(view => view.event).find(Boolean);
   const e = event && ['input', 'change', 'compositionend'].includes(event.type) ? event.target as HTMLInputElement | null : null;
   if (e?.tagName === 'TEXTAREA') return e;
   return e?.tagName === 'INPUT' && !['checkbox', 'radio', 'file', 'button', 'submit'].includes(e.type) ? e : null;
@@ -152,10 +158,13 @@ export function useConfig() {
   const redo = useCallback(() => move(future, past), []);
   // Leaving the field ends its typing: typing there again - even at once - is an Undo step of its own.
   useEffect(() => {
-    const left = (e: FocusEvent) => { if (e.target === typed.current.field) typed.current = { field: null, at: 0 }; };
-    document.addEventListener('focusout', left, true);
-    return () => document.removeEventListener('focusout', left, true);
-  }, []);
+    const field = typed.current.field;
+    if (!field) return;
+    const left = () => { if (field === typed.current.field) typed.current = { field: null, at: 0 }; };
+    // Listen on the field itself so leaving an input in a separate window also ends the Undo step.
+    field.addEventListener('blur', left);
+    return () => field.removeEventListener('blur', left);
+  });
 
   const latest = useRef(config), unsaved = useRef(false);
   latest.current = config;

@@ -15,6 +15,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/model_structure_check.mjs)" [screenshot-dir]
 // Optional: GATOR_WORKBENCH_OUTPUT_ROOT = the output folder whose real models the last section uses
 // (from WSL: WSLENV=GATOR_WORKBENCH_URL:GATOR_WORKBENCH_OUTPUT_ROOT). Exit code 1 if any check fails.
+import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 import path from 'node:path';
 import { validConfiguration, check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
@@ -80,7 +81,7 @@ await runChecks(browser, async () => {
     return page.readOrRefuse({ requestId, request }, refused);
   };
   const until = (expression, tries = 60) => page.until(expression, tries);
-  const RIGHT = `document.querySelector('.right')`, FOLD = `document.querySelector('.right details.structure')`, DIALOG = `document.querySelector('dialog.structure-dialog')`;
+  const RIGHT = NETWORK_PANEL, FOLD = `${NETWORK_DOCUMENT}.querySelector('details.structure')`, DIALOG = `${NETWORK_DOCUMENT}.querySelector('dialog.structure-dialog')`;
   const setSelect = (expression, value) => page.setValue(`${expression}`, value);
   const toggle = () => evaluate(`${FOLD}.querySelector('summary').click()`);
   const foldText = () => evaluate(`${FOLD}?.innerText ?? ''`);
@@ -88,12 +89,13 @@ await runChecks(browser, async () => {
   const layers = () => evaluate(`[...${DIALOG}.querySelectorAll('table.structure-layers')].map(t => [...t.tBodies[0].rows].map(r => ({ cells: [...r.cells].map(c => c.textContent.trim()), css: r.className })))`);
   const lastAsked = () => asked[asked.length - 1] ?? {};
   const waitAsked = async (count) => { for (let i = 0; i < 50 && asked.length < count; i++) await sleep(100); return asked.length; };
-  const shot = async (name, expression) => page.shot(path.join(out, name),
+  const shot = async (name, expression) => networkPage.shot(path.join(out, name),
     await evaluate(`(() => { const r = ${expression}.getBoundingClientRect(); return { x: Math.max(0, r.x), y: Math.max(0, r.y), width: Math.min(1680, r.width), height: Math.min(1050, r.height), scale: 1 }; })()`));
 
   await page.intercept(['*/api/*'], answer);
   await page.seed({ config: CONFIG, when: 'once' });
   await send('Page.navigate', { url: APP });
+  const networkPage = await openNetworks(page, browser);
   if (!(await until(`!!${RIGHT}?.querySelector('select.model-point')`, 150))) throw new Error('the model chooser never showed the seeded model; the page reads: ' + JSON.stringify(await evaluate(`document.body.innerText.slice(0, 300)`)));
   if (!(await until(`!!(${FOLD})`, 60))) throw new Error('this page has no "Network structure" fold-out: the served frontend is older than it (npm run build, then reload)');
 
@@ -172,11 +174,14 @@ await runChecks(browser, async () => {
     await until(`!!(${FOLD}) && !${FOLD}.open`, 50); await toggle();
     const words = `${expected.totals.trained.toLocaleString('en-US')} trained parameters = actor ${expected.totals.actor.toLocaleString('en-US')} + 2 critics x ${expected.totals.critic_each.toLocaleString('en-US')}`;
     check(`... its summary equals the real route (${words})`, await until(`${FOLD}.innerText.includes(${JSON.stringify(words)})`, 80), (await foldText()).slice(0, 140));
-    check('... the real model\'s types were verified by the backend', expected.types_verified === true && !/Layer types are not shown/.test(await foldText()));
+    check('... the displayed type verification matches the backend', expected.types_verified
+      ? !/Layer types are not shown/.test(await foldText())
+      : (await foldText()).includes(`Layer types are not shown: ${expected.types_problem}`), expected.types_problem);
     await evaluate(`[...${FOLD}.querySelectorAll('button')].find(b => b.textContent === 'Full layer table').click()`); await until(`${DIALOG}.open`, 30);
     rows = await layers();
     check(`... every real layer is listed (${expected.parts.map(p => p.layers.length).join(' + ')})`, rows.length === 2 && rows.every((r, i) => r.length === expected.parts[i].layers.length + 1), JSON.stringify(rows.map(r => r.length)));
-    check('... and every real layer has a type and a plain line', rows.flat().filter(r => r.css !== 'total').every(r => r.cells[3] !== '-' && r.cells[7].length > 10));
+    check('... every real layer matches the reported type and has a plain line', rows.every((part, i) => part.filter(r => r.css !== 'total')
+      .every((r, j) => r.cells[3] === (expected.parts[i].layers[j].type ?? '-') && r.cells[7].length > 10)));
     await shot('structure-3-real-dialog.png', DIALOG);
     await evaluate(`${DIALOG}.close()`);
   }

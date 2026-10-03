@@ -17,6 +17,7 @@
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 20 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/model_chooser_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
+import { NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { validConfiguration, check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
@@ -82,8 +83,8 @@ await runChecks(browser, async () => {
     return page.readOrRefuse({ requestId, request }, refused);
   };
   const until = (expression, tries = 60) => page.until(expression, tries);
-  const RIGHT = `document.querySelector('.right')`;
-  const labelled = text => `[...(${RIGHT}?.querySelectorAll('label') ?? [])].find(l => l.firstChild?.textContent?.trim() === ${JSON.stringify(text)})?.querySelector('select')`;
+  const RIGHT = NETWORK_PANEL;
+  const labelled = text => `[...(${text === 'Mode' ? "document.querySelector('.right')" : RIGHT}?.querySelectorAll('label') ?? [])].find(l => l.firstChild?.textContent?.trim() === ${JSON.stringify(text)})?.querySelector('select')`;
   const setSelect = (expression, value) => page.setValue(`${expression}`, value);
   const cards = () => evaluate(`[...${RIGHT}.querySelectorAll('button.model-card')].map(b => ({ title: b.querySelector('.model-title b')?.textContent, tags: [...b.querySelectorAll('.model-tag')].map(t => t.textContent),
     lines: [...b.children].slice(1).map(s => s.textContent), active: b.getAttribute('aria-checked') === 'true', fits: b.scrollWidth <= b.clientWidth + 1 }))`);
@@ -103,12 +104,13 @@ await runChecks(browser, async () => {
     advanced: [...${RIGHT}.querySelectorAll('summary')].some(x => /^Advanced/.test(x.textContent.trim())) })`);
   const storedNetwork = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')?.run?.network ?? null`);
   const sameNet = (a, b) => !!a && ['encoder_type', 'hidden_dim', 'heads', 'layers'].every(f => a[f] === b[f]);
-  const shot = name => page.shot(path.join(out, name), RIGHT, { scale: 1.5, maxHeight: 1050 });
+  const shot = name => networkPage.shot(path.join(out, name), RIGHT, { scale: 1.5, maxHeight: 1050 });
   const reveal = expression => evaluate(`${expression}?.scrollIntoView({ block: 'center' })`);
 
   await page.intercept(['*/api/*'], answer);
   await page.seed({ config: CONFIG, when: 'once' });
   await send('Page.navigate', { url: APP });
+  const networkPage = await openNetworks(page, browser);
   if (!(await until(`!!(${labelled('Mode')})`, 150))) throw new Error('the run panel never appeared; the page reads: '
     + JSON.stringify(await evaluate(`document.body.innerText.slice(0, 300)`)) + ' | console: ' + consoleErrors.join(' | ').slice(0, 300));
   if (!(await until(`[...${RIGHT}.querySelectorAll('h3')].some(h => h.textContent === 'RL model to load')`, 50)))
@@ -177,7 +179,7 @@ await runChecks(browser, async () => {
   check('the chosen model is described below (its evaluations)', await until(`/20 evaluations, 16 updates/.test(${RIGHT}.innerText) && /Trained on/.test(${RIGHT}.innerText)`, 40));
   // Editing labels/budgets does not alter the saved model's contract. A seed edit does.
   await sleep(600);
-  const numeric = name => `[...${RIGHT}.querySelectorAll('label')].find(l => l.firstChild?.textContent?.trim() === ${JSON.stringify(name)})?.querySelector('input')`;
+  const numeric = name => `[...document.querySelectorAll('.right label')].find(l => l.firstChild?.textContent?.trim() === ${JSON.stringify(name)})?.querySelector('input')`;
   const beforeUnrelated = asked.length;
   await page.setValue(numeric('Evaluation budget (max_evaluations)'), '123');
   const renamed = await page.setValue(`[...document.querySelectorAll('.left label')].find(l => l.firstChild?.textContent?.trim() === 'Project name')?.querySelector('input')`, 'fixture-renamed');
@@ -247,13 +249,13 @@ await runChecks(browser, async () => {
 
   // ---- filter, refresh, no timer ---------------------------------------------------------------------------------------------------
   check('with more than 5 models a filter box is shown', await evaluate(`!!${RIGHT}.querySelector('input.model-filter')`));
-  await evaluate(`${RIGHT}.querySelector('input.model-filter').focus()`); await send('Input.insertText', { text: 'ldo gatv2' }); await sleep(300);
+  await evaluate(`${RIGHT}.querySelector('input.model-filter').focus()`); await networkPage.send('Input.insertText', { text: 'ldo gatv2' }); await sleep(300);
   shown = await cards();
   check('the filter keeps the matching model and the selected one', shown.map(c => c.title).sort().join() === [B.task_name, D.task_name].sort().join(), shown.map(c => c.title).join());
-  await evaluate(`(() => { const i = ${RIGHT}.querySelector('input.model-filter'); i.focus(); i.select(); })()`); await send('Input.insertText', { text: 'nothing-like-this' }); await sleep(300);
+  await evaluate(`(() => { const i = ${RIGHT}.querySelector('input.model-filter'); i.focus(); i.select(); })()`); await networkPage.send('Input.insertText', { text: 'nothing-like-this' }); await sleep(300);
   check('a filter without a match still shows the selected model', (await cards()).map(c => c.title).join() === D.task_name);
-  await evaluate(`(() => { const i = ${RIGHT}.querySelector('input.model-filter'); i.focus(); i.select(); })()`); await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
-  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 }); await sleep(300);
+  await evaluate(`(() => { const i = ${RIGHT}.querySelector('input.model-filter'); i.focus(); i.select(); })()`); await networkPage.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
+  await networkPage.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 }); await sleep(300);
   check('clearing the filter shows all models again', (await cards()).length === MODELS.length);
   const before = lists; await sleep(2500);
   check('the list is not re-read on a timer', lists === before, `${lists - before} request(s) in 2.5 s`);

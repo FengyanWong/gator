@@ -1,6 +1,7 @@
 // Hermetic source-preview acceptance for reward v2.1. Explicit scratch URL required; no physical calls.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { openNetworks } from './lib/rl_networks.mjs';
 import { launchEdge, workbenchUrl, PAGE_OPEN_TEST, validConfiguration, sleep } from './lib/harness.mjs';
 const url = await workbenchUrl({ writes: true });
 if (new URL(url).port !== '5191') throw new Error('Reward v2.1 check requires scratch port 5191');
@@ -10,7 +11,7 @@ if (!output) throw new Error('An explicit evidence directory is required');
 mkdirSync(output,{recursive:true});
 const checks=[], requests=[], errors=[], refused=[];
 const check = (name, pass, detail) => { checks.push({name,passed:!!pass,detail}); if(!pass) throw new Error(name); };
-const label = name => `Array.from(document.querySelectorAll('aside.right label')).find(e=>e.textContent.startsWith(${JSON.stringify(name)}))`;
+const label = name => `Array.from(${name === 'Alpha learning rate' ? "window.__checkRLWindow.document" : 'document'}.querySelectorAll('${name === 'Alpha learning rate' ? '.rl-networks-panel' : 'aside.right'} label')).find(e=>e.textContent.startsWith(${JSON.stringify(name)}))`;
 const control = (name,type='select') => `(${label(name)})?.querySelector('${type}')`;
 const cell = (index,field) => `(() => {const table=document.querySelector('table.editor');const i=Array.from(table.tHead.rows[0].cells).findIndex(c=>c.dataset.field===${JSON.stringify(field)});return table.tBodies[0].rows[${index}].cells[i]?.querySelector('input,select')})()`;
 let browser,page,canCorners=true;
@@ -71,7 +72,8 @@ try {
  check('untouched suggestion follows the next limit edit',(await scaleOf())===5e-6);
  await page.setValue(cell(last,'normalization_scale'),'1e-6');await page.setValue(cell(last,'upper'),'4e-6');await sleep(850);
  check('scale typed by the user stays after a limit edit',(await scaleOf())===1e-6);
- await page.evaluate("Array.from(document.querySelectorAll('aside.right details')).find(d=>d.querySelector('summary')?.textContent.startsWith('Advanced')).open=true",true);
+ await openNetworks(page, browser);
+ await page.evaluate("Array.from(window.__checkRLWindow.document.querySelectorAll('.rl-networks-panel details')).find(d=>d.querySelector('summary')?.textContent.startsWith('Advanced')).open=true",true);
  check('alpha rate starts empty',await page.evaluate(`${control('Alpha learning rate','input')}.value===''`));
  await page.setValue(control('Alpha learning rate','input'),'0.003');await sleep(850);check('alpha field accepts independent rate',(await page.stored()).run.advanced.alpha_learning_rate===.003);
  await page.setValue(control('Alpha learning rate','input'),'');await sleep(850);check('alpha field returns to inherited rate',(await page.stored()).run.advanced.alpha_learning_rate===null);

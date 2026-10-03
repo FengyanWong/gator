@@ -27,7 +27,7 @@ export function ModelChooser({ mode, source, onChoose, runs, outputRoot, lookOnl
   if (!wanted) return (<>
     <h3>RL model to load</h3>
     <p className="hint model-none">None. Mode is <b>scratch</b>, so training starts from random weights and no saved model is loaded.
-      To reuse a saved model, change Mode at the top of this panel: <b>fine_tune</b> keeps training it in a new run,
+      To reuse a saved model, change Mode in Run configuration: <b>fine_tune</b> keeps training it in a new run,
       <b> frozen</b> uses it as it is without any learning, <b>resume</b> continues the run that saved it.</p></>);
 
   const current: Json = models?.find(m => m.run_dir === source.run_dir) ?? null;

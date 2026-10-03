@@ -1251,7 +1251,7 @@ Browser checks: `frontend/scripts/network_panel_check.mjs`, `model_chooser_check
 User: "remove the project name box in the Project module. Give the RL model its own label, independent of the project
 name." The project name did one thing: the backend remembered each project's newest run, and a Mode that loads a model
 (resume, fine_tune, frozen) started from that run's `latest` save by itself. That job is now the **RL model label**'s, a
-box in Run configuration under **RL networks...**:
+box in Run configuration, directly below **Search method**:
 - empty, the label is the task's run label (`project.task_name`, shown as the box's grey placeholder);
 - a run that saves an RL model is remembered under its label (`settings.json` `last_run`); a Single baseline simulation
   and an LLM-only run save none and leave the label alone (before, a baseline under the same project name pushed its

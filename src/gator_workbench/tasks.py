@@ -582,6 +582,8 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
                               'editor differ from what was saved; press "Save task" to save the new rows first.')
         adv = run_settings.advanced
         from analog_optimizer.measurements.specs import RewardSettings
+        from . import model_library                       # its decks load only the parts of the model file it uses (7.154)
+        model_library.attach(profile, config, reference=reference, structure=structure.read_text())
         return _with_computed_specs(factory_class(profile)(config, profile, compiled.specs, Path(work_root), adv.episode_length,
                                                            adv.simulation_timeout_seconds, reference,
                                                            reward_settings=RewardSettings(**run_settings.reward.model_dump())), compiled)

@@ -778,3 +778,35 @@ cheaper preparation or a Spectre that stays running between jobs.
 
 Optimizer digest `e3f8c5b8…` -> `efa93649d1e792602174994abf4a019e23e9dcf2ccef9ef0e1dd25a1beaab7ca`, the same
 uncommitted step as 7.137, 7.140 and 7.142. Committed as `1c308a5` (optimizer) and `8043c07`. Record 7.143.
+
+## A trimmed model library, for any circuit (2026-10-03)
+
+User: "build the trimmed library for any circuit", after record 7.153 had measured about 0.25 s of model reading saved
+per Spectre job on `mscr_ota7t`, with identical values. Decided:
+- The parts come from the library's own layout and the circuit's own devices, at the start of each run - never from a
+  list per PDK or per task. The layout is read on the simulator host by names only, so no model text leaves the host or
+  enters the repository.
+- Only for a task with a recorded baseline. That baseline was simulated with the whole model file, and every simulated
+  reset of the start design is compared with it at 1e-6: the guard is the existing one, at no extra simulation. A Single
+  baseline simulation (no baseline yet) and the corner check (no baseline at the corners) include the whole file. A
+  first-run comparison of the whole and the trimmed file (two more Spectre runs) was not built: those runs would sit
+  outside the simulations a run is authorized for.
+- Workbench code only (`gator_workbench/model_library.py`, the recipes' decks, the run's builder): no optimizer digest
+  step. `GATOR_MODEL_LIBRARY=full` turns it off.
+
+Record 7.154.
+
+## Maestro's unread info outputs left out of a run's deck (2026-10-03)
+
+User: "yes, build it", after asking "you sure dropping the six info outputs will not break any other type of
+evaluations?" and two checks on Spectre. A Maestro deck's six info outputs (`modelParameter`, `element`,
+`outputParameter`, `designParamVals`, `primitives`, `subckts`) are left out of every run deck of a Maestro task, with a
+comment line where they were:
+- nothing in GATOR reads them, and the decks GATOR builds itself never had them (their one info output is `dcOpInfo`);
+- an output could read them only through `VAR` or `getData(... ?result "<one of them>")`; a task whose outputs do keeps
+  all six;
+- on Spectre the analysis results were byte-identical without them and the OCEAN measurement the same for all 10
+  outputs tried, while each job took about 0.36 s less;
+- the operating points (`dcOpInfo`, `finalTimeOP`) stay; `GATOR_INFO_OUTPUTS=keep` keeps the six. Workbench code only.
+
+Record 7.157.

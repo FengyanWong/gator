@@ -1035,6 +1035,51 @@ host, so that the Virtuoso session only prepares. On Spectre at 6 lanes the valu
 faster (0.39 vs 0.41 s per evaluation on `mscr_ota7t` once every lane's OCEAN was up), and starting six OCEANs slowed
 the first 10-20 s. The preparation, not the measurement, is what limits a run (`docs/plan-measurement-off-virtuoso.md`).
 
+**A trimmed model library** (record 7.154). A fresh Spectre spends about 0.25 s of each job reading the model file
+(7.153), and GPDK045's corner section loads 23 parts - every transistor family, diodes, bipolars, capacitors, resistors,
+an inductor - where a circuit uses two or three. At the start of a real run of a task with a recorded baseline,
+`model_library.attach`:
+- reads the library's layout on the simulator host by names only: its sections, the includes in each, the subcircuits
+  and models each part defines and what their subcircuits use (an awk script through the bridge's own SSH runner; two
+  calls, 0.7 s for GPDK045). No model text leaves the host;
+- lists the circuit's devices and keeps, for every section, the parts that define them, the parts those parts'
+  subcircuits use, and every part that defines no device (GPDK045's SOA switch), in the library's order. A section with
+  statements of its own besides its includes is left whole.
+
+The decks then include those parts of the PDK's own files in place of the one model include, after a comment line that
+says so; a corner deck gets its corner's parts. The MScR tasks keep 2 or 3 of the 23:
+- `mscr_ota7t`, `mscr_ring3`: the 1.0 V transistors, the MIM capacitor and the SOA switch;
+- `mscr_vco_lin`: the 1.0 V transistors and the SOA switch;
+- `mscr_ota5t`, `mscr_ldo_basic`: the 1.8 V transistors and the SOA switch; `mscr_ldo1_rgcn`, `mscr_ldo2_rgcn`: also
+  the MIM capacitor.
+
+What guards it: such a run compares every simulated reset of the start design with the task's recorded baseline, which
+was simulated with the whole file, at 1e-6, and stops on a difference (`NativeEnvironmentFactory`). A part left out that
+a device needs makes Spectre stop with an undefined-subcircuit error. So a task without a baseline yet (its Single
+baseline simulation) and the corner check include the whole file. Anything that fails while reading or planning leaves
+the whole file in place and says why; the run event `model_library` names the parts kept. `GATOR_MODEL_LIBRARY=full`,
+set like `GATOR_NETLIST_BUILD`, turns it off.
+
+On Spectre (record 7.154) every result value of all seven MScR tasks was identical with the trimmed library, and a job's
+model reading was about 0.25 s shorter (Spectre's total in a 6-lane `mscr_ota7t` run: 0.72-0.79 s instead of 0.99-1.10
+s). That run was no faster (0.43 s per evaluation against 0.41), because the one Virtuoso session, which prepares every
+candidate and measures every Maestro result, is the limit at 6 lanes. On 2026-10-03 none of the MScR tasks had a recorded
+baseline, so their runs still include the whole file until a Single baseline simulation of each records one.
+
+**Maestro's unread info outputs left out** (record 7.157). A Maestro test's netlist asks Spectre for six info outputs
+after the analyses - `modelParameter`, `element`, `outputParameter`, `designParamVals`, `primitives`, `subckts` - which
+no output and no part of GATOR reads. They cost about 0.36 s of every Spectre job (1.13 s against 0.76 s on
+`mscr_ota7t`) and were 232 of the 268 kB a job downloaded. The Maestro recipe's deck leaves them out
+(`recipes.without_unread_info`) and puts a comment line where they were; the operating points (`dcOpInfo`,
+`finalTimeOP`, which OP and OPT read) stay. A task whose output expressions use `VAR` or name one of the six keeps all of
+them. With and without them, Spectre's analysis results were byte-identical apart from their headers, and GATOR's own
+OCEAN measurement gave the same value for all 10 outputs of `mscr_ota7t` and `mscr_vco_lin`, equal to the values their
+runs had recorded. Kept job folders no longer carry the parameter tables ADE's results browser shows.
+`GATOR_INFO_OUTPUTS=keep` keeps them.
+
+With both, a one-lane `mscr_ota7t` run took 1.30 s per evaluation (20 evaluations, record 7.157), against 1.99 s in record
+7.136: preparation 0.22 s, upload 0.02 s, the remote shell and Spectre 0.58 s, download 0.05 s, OCEAN 0.10 s.
+
 ## The right column: settings, saved models and the graph view
 
 ### SAC and LLM search methods (2026-09-30, record 7.116)

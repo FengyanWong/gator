@@ -309,6 +309,9 @@ class RunEngine:
         if self.llm_only:
             env_run.advanced.episode_length = run.max_evaluations + 1
         factory = self._lane_factory or self.task.env_factory_builder(self.compiled, self.layout.work, env_run)
+        circuit = getattr(factory, 'profile', None) or getattr(getattr(factory, 'inner', None), 'profile', None)
+        if getattr(circuit, 'model_library_event', None) is not None:    # which parts of the model file the decks load
+            self._event('model_library', **circuit.model_library_event)
         from analog_optimizer.training.workers import WorkerLimits
         # A real (native) factory needs ONE owner of the Virtuoso session, alive from before the first lane opens until
         # after the last one closed: the optimizer's preparation service. Entered here exactly as its own training loop

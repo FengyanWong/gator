@@ -156,6 +156,14 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
         if not condition.nominal_only or condition.corner != self.nominal_corner:
             raise UnsupportedCapability('A generated profile supports its nominal condition only')
 
+    def build_deck(self, structure, model_file, section='tt', *, temperature_c=27.):
+        """The adapter's own deck (`virtuoso_bridge.build_deck`, which the adapter used before this method existed), with
+        a run's trimmed model library in place of its model include (record 7.154)."""
+        from analog_optimizer.backends.virtuoso_bridge import build_deck
+        from . import model_library
+        return model_library.apply(build_deck(structure, model_file, section, temperature_c=temperature_c),
+                                   model_file, section, getattr(self, 'model_library', None))
+
     def assignments(self, values=None):
         """{group id: value} -> {(device, 'w'): width}; the recorded sizes when nothing is given."""
         graph = deepcopy(self.graph)

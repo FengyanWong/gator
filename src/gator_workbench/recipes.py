@@ -14,12 +14,14 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 import re
 from statistics import mean
 
 from analog_optimizer.backends.gpdk045 import number
 
+from . import model_library
 from .generic_profile import GenericMosWidthProfile, RulesError
 
 RING = 'ring_oscillator'
@@ -117,7 +119,8 @@ class GenericRingOscillatorProfile(GenericMosWidthProfile):
     def build_deck(self, structure, model_file, section='tt', *, temperature_c=27.):
         from analog_optimizer.backends.virtuoso_bridge import build_deck_header
         design, settings = self.design, self.analysis_settings
-        deck = build_deck_header(structure, model_file, section, temperature_c=temperature_c)
+        deck = model_library.apply(build_deck_header(structure, model_file, section, temperature_c=temperature_c),
+                                   model_file, section, getattr(self, 'model_library', None))
         conditions = ' '.join(f'{net}={number(design["initial_conditions"][net]):.12g}' for net in design['stage_nets'])
         return deck + ('dcOp dc\ndcOpInfo info what=oppoint where=rawfile\n'
                        f'ic {conditions}\n'
@@ -168,6 +171,41 @@ class GenericRingOscillatorProfile(GenericMosWidthProfile):
         return summary
 
 
+# Maestro's info outputs that no measurement reads (record 7.157): Spectre spent about 0.36 s of every job on them, and
+# they were 232 of the 268 kB a job downloaded. The operating points (`dcOpInfo`, `finalTimeOP`, read by OP and OPT) stay.
+UNREAD_INFO = ('modelParameter', 'element', 'outputParameter', 'designParamVals', 'primitives', 'subckts')
+INFO_ENV, INFO_MODES = 'GATOR_INFO_OUTPUTS', ('drop', 'keep')
+_UNREAD_INFO = re.compile(r'^\s*(' + '|'.join(UNREAD_INFO) + r')\s+info\b')
+
+
+def without_unread_info(tail, outputs):
+    """A Maestro deck's tail without the info outputs no output reads, a comment line where they were (record 7.157).
+    The tail stays as it is with GATOR_INFO_OUTPUTS=keep, when it has none of them, or when an output expression uses
+    VAR (a design variable) or names one of them (`getData(... ?result "element")`)."""
+    mode = os.environ.get(INFO_ENV, 'drop')
+    if mode not in INFO_MODES:
+        raise ValueError(f'{INFO_ENV} must be one of {", ".join(INFO_MODES)}, not {mode!r}')
+    expressions = ' '.join(str(o.get('spectre_expression') or o.get('expression') or '') for o in outputs or ())
+    if mode == 'keep' or re.search(r'\bVAR\s*\(', expressions) or any(name in expressions for name in UNREAD_INFO):
+        return tail
+    kept, removed, at, continued = [], [], None, False
+    for line in tail.split('\n'):
+        if continued:                                  # a continuation line of a statement left out
+            continued = line.rstrip().endswith('\\')
+            continue
+        match = _UNREAD_INFO.match(line)
+        if match:
+            removed.append(match.group(1))
+            at = len(kept) if at is None else at
+            continued = line.rstrip().endswith('\\')
+            continue
+        kept.append(line)
+    if not removed:
+        return tail
+    kept.insert(at, f"// GATOR: Maestro's info outputs {' '.join(removed)} left out - no output reads them (record 7.157)")
+    return '\n'.join(kept)
+
+
 class GenericMaestroProfile(GenericMosWidthProfile):
     """A task whose probes are the Maestro outputs of its working copy (task flow part 5). The same verified width
     writing and checks as every generated profile; the deck is Maestro's own deck of the copy's test - netlisted once,
@@ -211,12 +249,15 @@ class GenericMaestroProfile(GenericMosWidthProfile):
 
     def build_deck(self, structure, model_file, section='tt', *, temperature_c=27.):
         """Maestro's head (header, design variables, its model include) + the exported circuit + Maestro's tail (options,
-        analyses, info, saves). The model include must be the connection's file and section: one deck, one model."""
+        analyses, info, saves). The model include must be the connection's file and section: one deck, one model. A run's
+        trimmed model library (record 7.154) then takes the place of that include, and the info outputs no output reads
+        are left out of the tail (`without_unread_info`, record 7.157)."""
         deck = self.maestro
         if (deck['model_file'], deck['section']) != (str(model_file), section):
             raise RulesError(f'The Maestro test includes {deck["model_file"]} (section {deck["section"]}); the connection names '
                              f'{model_file} (section {section}): make them the same, then save the task again')
-        return deck['head'] + str(structure).strip('\n') + '\n' + deck['tail']
+        head = model_library.apply(deck['head'], str(model_file), section, getattr(self, 'model_library', None))
+        return head + str(structure).strip('\n') + '\n' + without_unread_info(deck['tail'], deck['outputs'])
 
     def analyze(self, job, *, result_name='bridge_result.json', mos_names=()):
         """The outputs of one finished run, measured with OCEAN on the run's own results on the simulator host (the

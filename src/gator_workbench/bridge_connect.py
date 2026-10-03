@@ -41,7 +41,7 @@ import tempfile
 import threading
 import time
 
-from . import connection, ngspice_link
+from . import connection, directories, ngspice_link
 from .paths import append_local_log, repo_root
 from .security import redact, skill_string
 from .storage.atomic import read_json, write_json
@@ -206,8 +206,9 @@ def detect_setup(home=None) -> dict:
     env_file = home / '.virtuoso-bridge' / '.env'                     # where `virtuoso-bridge init` writes it
     importable = _bridge_importable()
     site_packages = None
+    checkout = directories.local_path('bridge_checkout', home)       # the connection module's folder (record 7.168)
     if not importable:                                                # the bridge lives in another virtualenv
-        for candidate in sorted((home / 'virtuoso-bridge-lite' / '.venv' / 'lib').glob('python*/site-packages')):
+        for candidate in sorted((checkout / '.venv' / 'lib').glob('python*/site-packages')):
             if any(candidate.glob('virtuoso_bridge-*.dist-info')):
                 site_packages = candidate
     problems = []
@@ -216,7 +217,8 @@ def detect_setup(home=None) -> dict:
                              'terminal with:  virtuoso-bridge init <user>@<host>'))
     if not importable and site_packages is None:
         problems.append(dict(reason_code='bridge_not_found', message='virtuoso-bridge is neither importable by the backend '
-                             f'interpreter ({sys.executable}) nor installed under {home}/virtuoso-bridge-lite/.venv.'))
+                             f'interpreter ({sys.executable}) nor installed under {checkout}/.venv. A checkout elsewhere: '
+                             'set "virtuoso-bridge checkout" under Folders in this window.'))
     found = dict(env_file=str(env_file), env_file_exists=env_file.is_file(), bridge_importable=importable,
                  bridge_site_packages=None if site_packages is None else str(site_packages),
                  connection_file=str(connection.connection_file()), connection_file_exists=connection.connection_file().is_file(),
@@ -332,6 +334,73 @@ def create_profile(profile_id=DEFAULT_PROFILE_ID, *, kind=connection.DEFAULT_KIN
             'cells still need a Virtuoso connection.')
     return dict(created=True, profile_id=profile_id, kind=kind, connection_file=str(target), settings_present=sorted(profile),
                 backup=None if backup is None else str(backup), note=note)
+
+
+class FolderBusy(RuntimeError):
+    pass
+
+
+def save_directories(values) -> dict:
+    """Explicit click on "Save folders" in the Connection window (record 7.168): `values` = {folder: path, or None for
+    the default}. Each changed value is checked before anything is written - a local folder GATOR writes into is made
+    and written once - and nothing is stored unless all pass. Stored in the connection file's "directories" block, only
+    the values that differ from the defaults; the connections are left as they are, the previous file is kept as a
+    copy, a file that is not a readable connection file is never replaced, a missing one is made with no connection.
+    The adapter state folder does not change while its session lock is held (a run, a corner check or Save task), nor
+    while GATOR_BRIDGE_STATE_DIR decides it. A value of the file that fails its check is dropped when the block is
+    written again; names this backend does not know are kept."""
+    from .engine import RunLock
+    if not isinstance(values, dict):
+        raise ValueError('values must map each folder to a path, or to null for its default')
+    with _CREATE_LOCK:
+        target = connection.connection_file()
+        existing = None
+        if target.exists():
+            try:
+                existing = read_json(target, default=None)
+            except (OSError, ValueError):                # not JSON at all
+                existing = None
+            if not isinstance(existing, dict) or not isinstance(existing.get('profiles'), dict):
+                raise FileExistsError(f'{target} exists but is not a readable connection file. It is never replaced: '
+                                      'repair or move it by hand.')
+        current = directories.saved()[0]
+        wanted = dict(current)
+        for key, raw in values.items():
+            text = directories.normalized(key, raw)
+            if text is None:
+                wanted.pop(key, None)
+            else:
+                wanted[key] = text
+        changed = [key for key in directories.FIELDS if wanted.get(key) != current.get(key)]
+        for key in changed:
+            field = directories.FIELDS[key]
+            if field.env and os.environ.get(field.env):
+                raise FolderBusy(f'{field.label}: {field.env} in the backend\'s environment decides this folder; the '
+                                 'connection file\'s value would not be used. Unset it and restart the backend first.')
+            if key in wanted and field.side == directories.LOCAL:
+                directories.check_local(key, wanted[key])
+        if 'adapter_state' in changed:
+            default = directories.FIELDS['adapter_state'].default
+            for folder in {current.get('adapter_state') or default, wanted.get('adapter_state') or default}:
+                if RunLock.held(Path(folder).expanduser() / 'session.lock'):
+                    raise FolderBusy(f'A run, a corner check or Save task holds the adapter\'s session lock in {folder}. '
+                                     'Change the folder once it has finished.')
+        backup = None
+        if changed:
+            document = dict(existing) if existing else dict(active=None, profiles={})
+            block = existing.get(directories.BLOCK) if existing else None
+            block = {k: v for k, v in block.items() if k not in directories.FIELDS} if isinstance(block, dict) else {}
+            block.update((key, wanted[key]) for key in directories.FIELDS if key in wanted)
+            if block:
+                document[directories.BLOCK] = block
+            else:
+                document.pop(directories.BLOCK, None)
+            if existing is not None:
+                backup = target.with_name(f"{target.name}.before-{utcnow().strftime('%Y%m%dT%H%M%SZ')}-folders")
+                shutil.copy2(target, backup)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            write_json(target, document)
+    return dict(directories.describe(), saved=bool(changed), changed=changed, backup=None if backup is None else str(backup))
 
 
 # ---------------------------------------------------------------------------- the connect process

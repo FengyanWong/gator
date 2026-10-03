@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { api, connectionProfilesChanged, connectionProfilesShared, Json } from '../api';
+import { ConnectionFolders } from './ConnectionFolders';
 
 const STATE_LABEL: Record<string, string> = {
   ok: 'OK', failed: 'FAILED', not_ready: 'NOT READY', not_applicable: 'n/a', not_checked: 'not checked', busy: 'BUSY', unknown: 'UNKNOWN',
@@ -41,6 +42,7 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<Json>({ kind: 'virtuoso_ssh', name: '', ssh_host: '', bridge_profile: '' });
   const [created, setCreated] = useState<Json>(null);
+  const [folders, setFolders] = useState(false);                // the Folders section (record 7.168)
 
   const loadSetup = () => api.connectionSetup().then(setSetup).catch(e => setError(e.message));          // locates and names; contacts nothing
   // The connection file's active profile fills an empty choice by itself: not an Undo step (nobody chose it).
@@ -297,6 +299,12 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
       </>}
       {error && <p className="error">{error}</p>}
       {details}
+      <div className="row">
+        <button onClick={() => setFolders(f => !f)}
+          title="The folders GATOR uses outside the repository: the adapter's lock and crash journals, the simulator scratch, the bridge checkout, and two folders on the simulator host. Opening it changes nothing.">
+          {folders ? 'Close "Folders"' : 'Folders...'}</button>
+      </div>
+      {folders && <ConnectionFolders />}
     </div>
   );
   return <>{launcher}{popup && root && createPortal(view, root)}</>;

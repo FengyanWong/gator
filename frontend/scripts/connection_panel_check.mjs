@@ -13,7 +13,10 @@
 //     the same as a press - and (user request 2026-09-20) nothing else on its own: NO check when the window opens or a
 //     connection is chosen, NO timer (the old panel polled every 15 s, so each quiet period here lasts 17 s), one check
 //     per button press, a result that stays until the next;
-//   * (2026-09-29) a test answer that arrives after another connection was chosen is dropped, not shown under it.
+//   * (2026-09-29) a test answer that arrives after another connection was chosen is dropped, not shown under it;
+//   * (record 7.168) "Folders...": the folders of the connection module, read once when opened, each one at its value in use
+//     (a folder an environment variable decides cannot be typed into), saved only by "Save folders" with the changed folders
+//     alone; a refused folder is named and marked; "Use defaults" and "Undo changes" send nothing.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/connection_panel_check.mjs)" [screenshot-dir]
 // With GATOR_CONNECTION_LIVE=1 a last section lets the requests THROUGH to the backend: only ever against a scratch
@@ -47,6 +50,18 @@ const utc = ms => new Date(ms).toISOString().replace('Z', '+00:00');            
 const described = id => ({ kind: kindOf(id).kind, family: kindOf(id).family, transport: kindOf(id).transport, kind_label: kindOf(id).label });
 const publicProfile = (id, declared = true) => ({ profile_id: id, bridge_profile: null, kind: kindOf(id).kind, kind_declared: declared, family: kindOf(id).family,
   transport: kindOf(id).transport, kind_label: kindOf(id).label, settings_present: ['kind'] });
+const FOLDERS = [
+  ['adapter_state', 'local', 'Adapter state', '~/.local/state/gator/bridge-state', 'GATOR_BRIDGE_STATE_DIR'],
+  ['local_scratch', 'local', 'Simulator scratch', '/tmp/gator-work', null],
+  ['bridge_checkout', 'local', 'virtuoso-bridge checkout', '~/virtuoso-bridge-lite', null],
+  ['simulator_ic', 'simulator', 'Initial-condition files', '~/.gator/ic', null],
+  ['maestro_netlist', 'simulator', 'Maestro netlists', '/tmp/gator_maestro_netlist', null]];
+const folderAnswer = (saved = {}, extra = {}) => ({ connection_file: '/fixture/bridge_connection.json', note: 'FIXTURE note about VB_REMOTE_SCRATCH_ROOT.', ...extra,
+  fields: FOLDERS.map(([key, side, label, def, env]) => {
+    const byEnv = key === 'adapter_state';                                       // the backend was started with GATOR_BRIDGE_STATE_DIR set
+    return { key, side, label, default: def, saved: saved[key] ?? null, value: byEnv ? '/fixture/state-from-env' : saved[key] ?? def,
+      source: byEnv ? 'environment' : key in saved ? 'file' : 'default', environment_variable: env, set_by_environment: byEnv ? env : null, problem: null,
+      used_for: `FIXTURE: what ${label} holds.`, takes_effect: 'FIXTURE: the next use' }; }) });
 const fixtures = {
   profiles: () => ({ active: 'lab', connection_file: '/fixture/bridge_connection.json', connection_file_exists: true, kinds: KINDS,
     profiles: Object.keys(PROFILES).map(id => publicProfile(id, id !== 'lab')) }),                  // `lab` was written before kinds existed
@@ -67,7 +82,7 @@ const fixtures = {
 await runChecks(browser, async () => {
   const page = await browser.open();
   const { send, evaluate, fulfil, consoleErrors } = page;
-  const seen = []; let statusAnswer = fixtures.never; let live = false;
+  const seen = []; let statusAnswer = fixtures.never; let live = false; const savedFolders = {};
   let holdNextCheck = false, heldCheck = null;                                    // one test answer kept back, to arrive late
   const answer = ({ requestId, request }) => {                                    // every connection request: log it, answer it here
     const url = new URL(request.url), name = url.pathname.replace('/api/connection/', '');
@@ -83,6 +98,13 @@ await runChecks(browser, async () => {
     if (request.method === 'POST' && name === 'check') return fulfil(requestId, 200, fixtures.tested(body.profile_id, body.scope));
     if (request.method === 'POST' && name === 'connect') return fulfil(requestId, 200, { connect: { ok: true, action: 'started', reason_code: null, diagnostic: null,
       duration_seconds: 1.2, details: { mode: kindOf(body.profile_id).transport === 'local' ? 'local' : 'remote', ciw } }, status: fixtures.tested(body.profile_id, 'cheap') });
+    if (request.method === 'GET' && name === 'directories') return fulfil(requestId, 200, folderAnswer(savedFolders));
+    if (request.method === 'PUT' && name === 'directories') {
+      if (body.values.simulator_ic === 'bad value') return fulfil(requestId, 422, { detail: { message: 'Initial-condition files: FIXTURE refused - not a folder on the simulator host.', code: 'invalid_folder', folder: 'simulator_ic' } });
+      const changed = Object.keys(body.values);
+      for (const key of changed) { const def = FOLDERS.find(f => f[0] === key)[3]; if (!body.values[key] || body.values[key] === def) delete savedFolders[key]; else savedFolders[key] = body.values[key]; }
+      return fulfil(requestId, 200, folderAnswer(savedFolders, { saved: true, changed, backup: '/fixture/bridge_connection.json.before-FIXTURE-folders' }));
+    }
     if (request.method === 'POST' && name === 'profile') { PROFILES[body.profile_id] = body.kind;
       return fulfil(requestId, 200, { created: true, profile_id: body.profile_id, kind: body.kind, backup: '/fixture/bridge_connection.json.before-FIXTURE', note: 'FIXTURE note.', profiles: fixtures.profiles() }); }
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${request.method} ${name} is not expected in this check` } });
@@ -203,7 +225,7 @@ await runChecks(browser, async () => {
   await select('sim');
   shown = await text();
   check('ngspice on this machine: ONE step - test; no connect step, no CIW step, no Spectre button', shown.includes('Test ngspice on this machine') && !shown.includes('Virtuoso CIW')
-    && JSON.stringify((await buttons()).filter(b => !/Add a connection/.test(b))) === JSON.stringify(['Test connection', 'Details']), (await buttons()).join(' | '));
+    && JSON.stringify((await buttons()).filter(b => !/Add a connection|^Folders/.test(b))) === JSON.stringify(['Test connection', 'Details']), (await buttons()).join(' | '));
   check('what an ngspice connection runs is said plainly, as a neutral note (not as an error)', shown.includes('What an ngspice connection runs: the ngspice netlist tasks')
     && (await far.evaluate(`!!${WINDOW}.querySelector('.note') && !${WINDOW}.querySelector('.note.error, .note .error, .blocker')`)));
   check('the note says that the ngspice agent aid is under construction (user request 2026-09-24)', shown.includes('The ngspice agent aid is under construction')
@@ -258,6 +280,64 @@ await runChecks(browser, async () => {
   shown = await text();
   check('the new connection is selected, the kept copy of the file is named, and nothing was tested by itself', shown.includes('Connection "ngspice-ssh" was added') && shown.includes('.before-FIXTURE')
     && (await far.evaluate(`${WINDOW}.querySelector('select').value`)) === 'ngspice-ssh' && !seen.slice(mark).some(s => s.name === 'check' || s.name === 'connect'), names(mark).join(', '));
+
+  // ---- Folders (record 7.168): read once when opened, saved only by its button, the changed folders alone ----------------
+  const FOLDER = key => `${WINDOW}.querySelector('.connection-folders [data-folder=${key}] input')`;
+  const folderValues = () => far.evaluate(`Object.fromEntries([...${WINDOW}.querySelectorAll('.connection-folders [data-folder]')].map(d => [d.dataset.folder, d.querySelector('input').value]))`);
+  const folderText = () => far.evaluate(`${WINDOW}.querySelector('.connection-folders')?.innerText ?? ''`);
+  const disabledButton = label => far.evaluate(`[...${WINDOW}.querySelectorAll('.connection-folders button')].find(b => b.textContent.trim() === ${JSON.stringify(label)})?.disabled`);
+  check('the window has a "Folders..." button', (await buttons()).includes('Folders...'), (await buttons()).join(' | '));
+  mark = seen.length;
+  await press('Folders...');
+  await settle(mark);
+  check('"Folders..." reads the folders once (one GET directories) and sends nothing else', JSON.stringify(names(mark)) === JSON.stringify(['GET directories']), names(mark).join(', '));
+  let folders = await folderValues();
+  check('five folders, each at its value in use: the defaults, and the folder the environment decides', JSON.stringify(folders) === JSON.stringify({ adapter_state: '/fixture/state-from-env',
+    local_scratch: '/tmp/gator-work', bridge_checkout: '~/virtuoso-bridge-lite', simulator_ic: '~/.gator/ic', maestro_netlist: '/tmp/gator_maestro_netlist' }), JSON.stringify(folders));
+  let folderShown = await folderText();
+  check('grouped by machine: this machine, then the simulator host with what "~" means there', folderShown.indexOf('On this machine') < folderShown.indexOf('Simulator scratch')
+    && folderShown.indexOf('On the simulator host') < folderShown.indexOf('Initial-condition files') && folderShown.includes('the home of the user Virtuoso runs as'), folderShown.slice(0, 300));
+  check('a folder an environment variable decides cannot be typed into, and says why', (await far.evaluate(`${FOLDER('adapter_state')}.disabled`)) && folderShown.includes('Set by GATOR_BRIDGE_STATE_DIR'));
+  check('"Save folders" waits for a change', (await disabledButton('Save folders')) === true && (await disabledButton('Undo changes')) === true);
+  await far.setValue(FOLDER('local_scratch'), '/scratch/gator', { event: 'input' });
+  await sleep(200);
+  check('typing a folder sends nothing and shows its default beside it', seen.length === mark + 1 && (await folderText()).includes('Default: /tmp/gator-work'), names(mark).join(', '));
+  mark = seen.length;
+  await press('Save folders');
+  await settle(mark);
+  pressed = seen.slice(mark);
+  check('"Save folders" sends ONE request with the changed folder alone', pressed.length === 1 && pressed[0].method === 'PUT' && pressed[0].name === 'directories'
+    && JSON.stringify(pressed[0].body) === JSON.stringify({ values: { local_scratch: '/scratch/gator' } }), JSON.stringify(pressed.map(p => [p.method, p.name, p.body])));
+  folderShown = await folderText();
+  check('the answer names the saved folder and the kept copy of the file', folderShown.includes('Saved: Simulator scratch.') && folderShown.includes('.before-FIXTURE-folders')
+    && (await folderValues()).local_scratch === '/scratch/gator' && (await disabledButton('Save folders')) === true, folderShown.slice(-400));
+  await far.setValue(FOLDER('simulator_ic'), 'bad value', { event: 'input' });
+  mark = seen.length;
+  await press('Save folders');
+  await settle(mark);
+  pressed = seen.slice(mark);
+  folderShown = await folderText();
+  check('a refused folder: one request, the backend\'s words shown, the field marked', pressed.length === 1 && JSON.stringify(pressed[0].body) === JSON.stringify({ values: { simulator_ic: 'bad value' } })
+    && folderShown.includes('FIXTURE refused') && (await far.evaluate(`${FOLDER('simulator_ic')}.getAttribute('aria-invalid')`)) === 'true', folderShown.slice(-300));
+  mark = seen.length;
+  await press('Undo changes');
+  await sleep(300);
+  check('"Undo changes" puts the fields back to the values in use and sends nothing', seen.length === mark && (await folderValues()).simulator_ic === '~/.gator/ic'
+    && !(await folderText()).includes('FIXTURE refused'), JSON.stringify(await folderValues()));
+  await press('Use defaults');
+  await sleep(300);
+  folders = await folderValues();
+  check('"Use defaults" fills in the defaults - not the folder the environment decides - and sends nothing', seen.length === mark && folders.local_scratch === '/tmp/gator-work'
+    && folders.adapter_state === '/fixture/state-from-env', JSON.stringify(folders));
+  await press('Save folders');
+  await settle(mark);
+  pressed = seen.slice(mark);
+  check('saving the defaults sends the folder that changed back, alone', pressed.length === 1 && JSON.stringify(pressed[0].body) === JSON.stringify({ values: { local_scratch: '/tmp/gator-work' } }),
+    JSON.stringify(pressed.map(p => p.body)));
+  await shot('window', '.connection-window', 'connection-6b-window-folders.png');
+  await press('Close "Folders"');
+  await sleep(200);
+  check('"Close "Folders"" folds the section away', !(await far.evaluate(`!!${WINDOW}.querySelector('.connection-folders')`)));
 
   // ---- closing the window; the button opens it again; a reload closes it ------------------------------------------------
   await send('Target.closeTarget', { targetId: farPage.id });              // the user closes the window with its own X

@@ -31,7 +31,7 @@ from pathlib import Path
 import re
 import sys
 
-from .paths import repo_root
+from .paths import bridge_state_dir, repo_root
 from .storage.atomic import sha256_file as _sha256
 
 # Normalized toy optimum per parameter kind for the analytic mock objective. Arbitrary by
@@ -553,7 +553,7 @@ def generated_bridge_config(name, profile_id=None):
     except Exception as exc:
         raise TaskBlocked(f'The generated profile real:{name} no longer passes its own checks: {exc}')
     config = BridgeConfig(Path(connection['env_file']).resolve(), entry['library'], (directory / profiles.FILES['receipt']).resolve(),
-                          (repo_root() / 'artifacts/local/bridge-state').resolve(), connection['model_file'],
+                          bridge_state_dir().resolve(), connection['model_file'],
                           profile=connection.get('profile'))
     if entry.get('recipe') == profiles.MAESTRO:                   # its OCEAN measurement reaches Virtuoso the way the run does
         profile.bridge = dict(env_file=str(config.env_file), profile=connection.get('profile'), site=connection.get('bridge_site_packages'))
@@ -639,7 +639,7 @@ def _real_runtime(task_key, name, profile_id=None, *, authorized=False):
     profile = _verified_profile(name)
     config = BridgeConfig(Path(connection['env_file']).resolve(), connection['library'],
                           Path(connection['creation_receipt']).resolve(),
-                          (root / 'artifacts/local/bridge-state').resolve(), connection['model_file'],
+                          bridge_state_dir().resolve(), connection['model_file'],
                           profile=connection.get('profile'))
     reference = json.loads(Path(connection['reference_measurements']).read_text())
     if reference.get('origin') != 'real':

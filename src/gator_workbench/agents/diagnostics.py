@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 
+from .. import directories
 from ..paths import repo_root
 from ..security import redact
 
@@ -48,7 +49,7 @@ def skill_visibility(home=None, project=None) -> dict:
     other = []
     for label, directory in (('project .agents/skills (Codex/agents convention)', project / '.agents' / 'skills'),
                              ('~/.codex/skills', home / '.codex' / 'skills'),
-                             ('bridge checkout skills/', home / 'virtuoso-bridge-lite' / 'skills')):
+                             ('bridge checkout skills/', directories.local_path('bridge_checkout', home) / 'skills')):
         if directory.is_dir():
             names = sorted(c.name for c in directory.iterdir() if (c / 'SKILL.md').is_file())
             if names:

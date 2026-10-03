@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from gator_workbench import bridge_read, native_cells, profiles, recipes, schema, tasks
 from gator_workbench.api import create_app
-from gator_workbench.paths import local_settings_dir
+from gator_workbench.paths import bridge_state_dir, local_settings_dir
 from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
 from test_wb_api import probe
 
@@ -232,15 +232,9 @@ def test_the_no_simulation_check_is_gated_and_reports_the_step_that_failed(tmp_p
     with pytest.raises(PermissionError):
         profile_preflight.preflight(probe(tmp_path, session_readiness='not_ready'), 'ring_osc_3stage', 'lab', command=[sys.executable, str(fake)])
     # in-process, offline: without a tunnel the adapter refuses at "connect" and the check reports it instead of raising.
-    # The adapter's session lock lives under <repo>/artifacts/local/bridge-state: keep this test out of the real one.
-    import pytest as _pytest
-    patch = _pytest.MonkeyPatch()
-    patch.setattr(tasks, 'repo_root', lambda: tmp_path)
-    try:
-        outcome = profile_preflight.run('ring_osc_3stage', 'lab', tmp_path / 'work')
-    finally:
-        patch.undo()
-    assert (tmp_path / 'artifacts/local/bridge-state').is_dir(), outcome     # failed once under load, cause not found: say why
+    # The adapter's session lock lives in paths.bridge_state_dir(), which the test setup points into this test's folder.
+    outcome = profile_preflight.run('ring_osc_3stage', 'lab', tmp_path / 'work')
+    assert bridge_state_dir().is_dir() and bridge_state_dir().is_relative_to(tmp_path), outcome   # failed once under load: say why
     assert outcome['ok'] is False and outcome['simulated'] is False and outcome['steps'][0] == dict(step='profile', ok=True, detail=profile_preflight.MEANING['profile'])
     assert outcome['steps'][1]['step'] == 'connect' and outcome['steps'][1]['ok'] is False
     client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False,

@@ -156,9 +156,14 @@ await runChecks(browser, async () => {
   const heading = await evaluate(`(() => { const font = h => { const c = getComputedStyle(h); return [c.fontFamily, c.fontSize, c.fontWeight, c.textTransform, c.letterSpacing].join('|'); };
     const r = [...document.querySelectorAll('.right details.panel > summary h3')].find(h => h.textContent === 'Research experiments');
     const m = [...document.querySelectorAll('.right details.module > summary h3')].find(h => h.textContent === 'Run configuration');
-    return r && m && { same: font(r) === font(m), title: r.title, summary: r.closest('summary').textContent }; })()`);
+    return r && m && { same: font(r) === font(m), title: r.title, summary: r.closest('summary').textContent,
+      cursor: getComputedStyle(r).cursor, moduleCursor: getComputedStyle(m).cursor }; })()`);
   check('Research experiments is headed like the other modules, its note only in the tooltip of its name',
     !!heading && heading.same && heading.title.startsWith('Optional for a single run') && heading.summary === 'Research experiments', JSON.stringify(heading));
+  // the hand over its name, as over the other modules' names: a press opens or closes it (record 7.169, user: "make the mouse
+  // icon as click not with the questionmar[k]")
+  check('...and the pointer over its name is the hand, not the help question mark, as over Run configuration\'s name',
+    heading?.cursor === 'pointer' && heading.moduleCursor === 'pointer', JSON.stringify(heading && [heading.cursor, heading.moduleCursor]));
   const searchWords = await evaluate(`[...document.querySelectorAll('.right .module-body h3, .right .module-body label')].filter(e => (e.firstChild?.textContent ?? '').trim().toLowerCase() === 'search method').length`);
   check('"Search method" is said once in Run configuration (no heading over its own label)', searchWords === 1, String(searchWords));
 

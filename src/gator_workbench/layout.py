@@ -82,7 +82,6 @@ class RunLayout:
 # file operation: replayed offline, a lane's job folder (the 19 files of an mscr_ota7t job) took 0.15 s there and
 # 0.002 s on the WSL disk, the preparation's export files 0.03 s and 0.0015 s.
 SLOW_FILESYSTEMS = frozenset({'9p', 'drvfs', 'cifs', 'smb3', 'nfs', 'nfs4', 'fuse.sshfs'})
-LOCAL_SCRATCH = Path('/tmp/gator-work')          # on the WSL disk; WSL empties /tmp at every boot
 
 
 def filesystem_type(path, mounts=None) -> str | None:
@@ -106,14 +105,18 @@ def filesystem_type(path, mounts=None) -> str | None:
 
 def local_scratch(layout: RunLayout) -> Path | None:
     """Where a run keeps its simulator scratch - the export packages and the per-job simulation folders of its lanes -
-    when its folder is on a slow mount: a folder of its own under LOCAL_SCRATCH. The lanes' own folders, with their
-    launch journals, candidate records and restoration records, stay in the run folder; retention moves each kept job
-    folder there as before. None when the run folder is on a local disk, or with GATOR_LOCAL_SCRATCH=off."""
+    when its folder is on a slow mount: a folder of its own under the connection module's "Simulator scratch"
+    (`/tmp/gator-work` by default, on the WSL disk, which WSL empties at every boot; record 7.168). The lanes' own
+    folders, with their launch journals, candidate records and restoration records, stay in the run folder; retention
+    moves each kept job folder there as before. None when the run folder is on a local disk, when the scratch is on a
+    slow mount too, or with GATOR_LOCAL_SCRATCH=off."""
     if os.environ.get('GATOR_LOCAL_SCRATCH', '').strip().lower() in ('off', '0', 'no', 'false'):
         return None
-    if filesystem_type(layout.run_dir) not in SLOW_FILESYSTEMS or filesystem_type(LOCAL_SCRATCH.parent) in SLOW_FILESYSTEMS:
+    from .directories import local_path
+    root = local_path('local_scratch')
+    if filesystem_type(layout.run_dir) not in SLOW_FILESYSTEMS or filesystem_type(root.parent) in SLOW_FILESYSTEMS:
         return None
-    return LOCAL_SCRATCH / layout.experiment_dir.name / layout.run_dir.name
+    return root / layout.experiment_dir.name / layout.run_dir.name
 
 
 def new_experiment_dir(data_root: Path, experiment_name: str, experiment_id: str | None):

@@ -26,15 +26,14 @@ import re
 import sys
 from pathlib import Path
 
-from . import virtuoso_setup
+from . import directories, virtuoso_setup
 from .connection import RealBridge, child_error, resolve_profile_id, run_child
-from .paths import repo_root
+from .paths import bridge_state_dir
 from .security import skill_string as _q
 
 NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
 COPIED_VIEWS = ('schematic', 'symbol')
 SUFFIX = '_GATOR'
-LOCK = Path('artifacts/local/bridge-state/session.lock')
 
 # The cells of `library` under the testbench, and each one's views: `cell|views=a b|cdf=t` lines. Read-only - cellviews
 # opened "r" and closed again; a cellview the user has open in a window stays open (dbClose drops only this reference).
@@ -247,10 +246,10 @@ def read_maestro(client, library, testbench, *, test):
         answer['test'] = test
         answer['simulator_mode'] = _skill(client, f"let((th) th = maeGetTestSession({_q(test)}{s}) if(th asiGetHighPerformanceOptionVal(th 'uniMode) \"\"))",
                                           'reading the simulator mode').strip().strip('"') or None
-        listed_files = _read_model_files(client, test, s)
-        answer['model_files'] = [m for m in listed_files if _IC_MARK not in m[0]]
+        listed_files, ic_folders = _read_model_files(client, test, s), _ic_folders()
+        answer['model_files'] = [m for m in listed_files if not _is_ic_file(m[0], ic_folders)]
         for path, _section in listed_files:                       # the ic file, if the test carries one
-            if _IC_MARK in path:
+            if _is_ic_file(path, ic_folders):
                 answer['ic_file'] = path
                 answer['initial_conditions'] = virtuoso_setup.parse_ic_file(_ic_read(client, path))
         for name in _list(_skill(client, f'maeGetEnabledAnalysis({_q(test)}{s})', 'reading the analyses')):
@@ -291,25 +290,48 @@ def parse_spec(raw):
     return dict(op='unsupported', value=' '.join(items)[:200])
 
 
-IC_DIR = '.gator/ic'                      # under the simulator user's home: the ic files of the tasks
-_IC_MARK = f'/{IC_DIR}/'
+def _remote_path(client, folder, name=None):
+    """A folder of the simulator host from the connection module (record 7.168), with `name` below it, as an absolute
+    path: `~` is the home of the user Virtuoso runs as, read from Virtuoso."""
+    tail = folder[1:] if folder.startswith('~/') else folder
+    if name:
+        tail = f'{tail}/{name}'
+    if not folder.startswith('~/'):
+        return tail
+    raw = _skill(client, f'strcat(getShellEnvVar("HOME") {_q(tail)})', 'finding the home directory')
+    path = (raw or '').strip().strip('"')
+    if not path.startswith('/') or not path.endswith(tail) or len(path) == len(tail):
+        raise RuntimeError(f'could not build the path {folder}/{name or ""} on the host (got {path!r})')
+    return path
+
+
+def _ic_folders():
+    """The folders an initial-condition file of a test can be in: the connection module's "Initial-condition files" and
+    its default, where the tests saved before it was changed keep theirs."""
+    return {directories.value('simulator_ic'), directories.FIELDS['simulator_ic'].default}
+
+
+def _is_ic_file(path, folders):
+    """A file directly in one of `folders` (a folder under `~` matched by its part below the home)."""
+    parent = path.rsplit('/', 1)[0]
+    return any(parent == f or f.startswith('~/') and parent.endswith(f[1:]) for f in folders)
 
 
 def _ic_path(client, library, testbench, test):
-    """Where this test's initial-condition file lives on the simulator host (its home directory decides)."""
-    name = f'{library}__{testbench}__{test}.scs'
-    raw = _skill(client, f'strcat(getShellEnvVar("HOME") "/{IC_DIR}/" {_q(name)})', 'finding the home directory')
-    path = (raw or '').strip().strip('"')
-    if not path.startswith('/') or _IC_MARK not in path:
+    """Where this test's initial-condition file lives on the simulator host: in the "Initial-condition files" folder,
+    `~/.gator/ic` by default (the simulator user's home decides)."""
+    path = _remote_path(client, directories.value('simulator_ic'), f'{library}__{testbench}__{test}.scs')
+    if not path.startswith('/') or not _is_ic_file(path, _ic_folders()):
         raise RuntimeError(f'could not build the initial-conditions path on the host (got {path!r})')
     return path
 
 
 def _ic_write(client, path, text):
-    """Write the ic file (the folders are made first); SKILL writes it, so no file is uploaded."""
+    """Write the ic file (each level of its folder is made first); SKILL writes it, so no file is uploaded."""
     escaped = text.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
-    folder = path.rsplit('/', 1)[0]
-    written = _skill(client, f'let((p) createDir({_q(folder.rsplit("/", 1)[0])}) createDir({_q(folder)}) '
+    parts = path.split('/')[1:-1]
+    levels = ' '.join(f'createDir({_q("/" + "/".join(parts[:k]))})' for k in range(1, len(parts) + 1))
+    written = _skill(client, f'let((p) {levels} '
                              f'p = outfile({_q(path)} "w") unless(p error("cannot write %s" {_q(path)})) '
                              f'fprintf(p "%s" "{escaped}") close(p) isFile({_q(path)}))', 'writing the initial conditions')
     if (written or '').strip() not in ('t', '"t"'):
@@ -336,10 +358,10 @@ def write_maestro(client, library, testbench, setup):
                    'creating the test')
         # Initial conditions travel as a model file without a section: Maestro's netlist then `include`s the ic file,
         # so its own runs and every run deck built from its netlist start the circuit the same way. None = keep.
-        conditions, ic_path, listed = setup.get('initial_conditions'), None, None
+        conditions, ic_path, listed, ic_folders = setup.get('initial_conditions'), None, None, _ic_folders()
         if conditions is not None:                            # None = keep them as they are; {} = the test should have none
             listed = _read_model_files(client, test, s)
-            if conditions or any(_IC_MARK in file for file, _section in listed):
+            if conditions or any(_is_ic_file(file, ic_folders) for file, _section in listed):
                 ic_path = _ic_path(client, library, testbench, test)
                 if conditions:
                     _ic_write(client, ic_path, virtuoso_setup.ic_file_text(conditions))
@@ -351,8 +373,8 @@ def write_maestro(client, library, testbench, setup):
             if listed is None:                                # conditions kept: the ic file the test has stays registered
                 listed = _read_model_files(client, test, s)
             base = wanted if stating else listed
-            keep_ic = [m for m in listed if _IC_MARK in m[0]] if conditions is None else []
-            entries = [m for m in base if _IC_MARK not in m[0]] + keep_ic + ([[ic_path, '']] if conditions else [])
+            keep_ic = [m for m in listed if _is_ic_file(m[0], ic_folders)] if conditions is None else []
+            entries = [m for m in base if not _is_ic_file(m[0], ic_folders)] + keep_ic + ([[ic_path, '']] if conditions else [])
             files = ' '.join(f'({_q(f)} {_q(section)})' for f, section in entries)
             _skill(client, f'maeSetEnvOption({_q(test)} ?options `(("modelFiles" ({files}))){s})', 'setting the model files')
         for name in _list(_skill(client, f'maeGetEnabledAnalysis({_q(test)}{s})', 'reading the analyses')) if setup['analyses'] is not None else ():
@@ -419,16 +441,14 @@ def read_bindings(client, library, cells, variables):
     return found
 
 
-MAESTRO_NETLIST_ROOT = '/tmp/gator_maestro_netlist'          # on the simulator host: one folder per copy's testbench
-
-
 def maestro_netlist(client, library, testbench, *, test, out):
     """Maestro's own netlist of one test at the nominal corner (``maeCreateNetlistForCorner``), downloaded into
     `out/maestro_netlist`: the deck every evaluation of a Maestro-measured task runs around the circuit it exports, and
     the name maps (``amap/``) its output expressions are translated with. Maestro writes the netlist files into a
-    folder of its own on the simulator host; nothing in the design is written. A read-only session first; an editable
+    folder of its own on the simulator host - one per copy's testbench under the connection module's "Maestro netlists",
+    `/tmp/gator_maestro_netlist` by default; nothing in the design is written. A read-only session first; an editable
     one only when Maestro refuses to netlist from it."""
-    remote = f'{MAESTRO_NETLIST_ROOT}/{library}/{testbench}'
+    remote = _remote_path(client, directories.value('maestro_netlist'), f'{library}/{testbench}')
     for mode in ('r', 'a'):
         session = _session_open(client, library, testbench, mode=mode)
         try:
@@ -475,7 +495,7 @@ def _main(argv=None):
         if not NAME.match(value):
             raise SystemExit('library and cell names must be plain Cadence names')
     out = Path(args.output)
-    lock_path = repo_root() / LOCK
+    lock_path = bridge_state_dir() / 'session.lock'            # the run adapter's lock (record 7.167)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open('a+') as lock:
         try:

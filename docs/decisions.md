@@ -853,3 +853,45 @@ comment line where they were:
 - the operating points (`dcOpInfo`, `finalTimeOP`) stay; `GATOR_INFO_OUTPUTS=keep` keeps the six. Workbench code only.
 
 Record 7.157.
+
+## The run adapter's lock and crash journals on the WSL disk (2026-10-03)
+
+User: "move the crash journal off D:", after record 7.165 found the crash journal of each candidate's write costing
+16.2 ms on D: (9p) against 1.3 ms on the WSL disk. The adapter's whole state root moved - the session lock with the
+journals, since they share a folder - to `~/.local/state/gator/bridge-state` (`paths.bridge_state_dir()`,
+`GATOR_BRIDGE_STATE_DIR`). Decided with it:
+- one folder for every GATOR process, not one per settings folder: runs from scratch settings and from the page share
+  one Virtuoso session and must keep excluding each other;
+- a persistent folder (not `/tmp`): the journals are what tells, after a crash, what was written;
+- the tests get a folder of their own (an autouse fixture), so no test can take the real lock;
+- sessions before the move stay in `artifacts/local/bridge-state`. Workbench code only.
+
+Record 7.167.
+
+## Folder settings of the connection module (2026-10-03)
+
+User: "I realized the project might be used by others. Add directory settings for necessary files in the connection
+module with current setting as default". Decided:
+- The folders the workbench fixed outside the repository and the output folder become settings: three on the backend
+  machine (adapter state, simulator scratch, bridge checkout) and two on the simulator host (initial-condition files,
+  Maestro netlists). Each default is the value used before, so nothing changes until a folder is saved.
+- They live in the connection file, as one block for the whole file rather than one per connection. The local folders
+  belong to the machine; the simulator-side ones would differ only between two hosts laid out differently, which would
+  then be a hand edit.
+- Only values that differ from the defaults are written. Connections are still never changed from the browser.
+- This is the one connection route that takes paths, and each path is checked:
+  - a full path with no `..`;
+  - a safe set of characters for the simulator host;
+  - a write test for the folders GATOR writes into;
+  - not on a slow mount for the scratch;
+  - the bridge checkout must exist.
+- An environment variable keeps precedence (`GATOR_BRIDGE_STATE_DIR`, used by the tests); a folder it decides cannot be
+  edited. The adapter state folder does not change while its lock is held.
+- Initial-condition files in the default folder stay recognized after a change.
+- Left out:
+  - Spectre's job folders on the simulator host: the bridge env file's `VB_REMOTE_SCRATCH_ROOT`;
+  - the agents' scratch: the system's temporary folder;
+  - the settings folder, which holds the connection file;
+  - the output folder, which is already a setting.
+
+Record 7.168.

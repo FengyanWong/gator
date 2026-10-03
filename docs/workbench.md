@@ -172,7 +172,8 @@ picture's own key.
 
 **Research experiments** (record 7.163; user: "Check the research experiments module and see which should be kept",
 then "Remove both" and "Fold them"). Since record 7.166 its heading looks like the other modules' headings, and its note
-("Optional for a single run; missing labels stay unspecified") is the tooltip of its name. The module shows the three labels every research table uses - **Method label**,
+("Optional for a single run; missing labels stay unspecified") is the tooltip of its name; over the name the pointer is
+the hand, as over the rest of the line, since a press opens or closes the module (record 7.169). The module shows the three labels every research table uses - **Method label**,
 **Comparison pair ID**, **Budget checkpoints** - and folds the six that only a transfer study uses (Split, Generalization
 level, Training sources, Task order K, Pretrain seed, Ablation labels) into a closed "Transfer study" line. Experiment
 group and Test tasks were removed: nothing read them (Output settings' experiment name groups a run's folder). A
@@ -792,6 +793,74 @@ creation and the sentences in `bridge_connect.py`; the button and the window in
 check `frontend/scripts/connection_panel_check.mjs` (fixtures; `GATOR_CONNECTION_LIVE=1` adds a live
 section for a scratch backend only).
 
+### Folders: where the connection keeps its files (2026-10-03, record 7.168)
+
+User: "I realized the project might be used by others. Add directory settings for necessary files in the connection
+module with current setting as default". **Folders...** sits at the foot of the connection window; it is there even
+when no connection is set up. It lists five folders, each filled in with the value in use. Nothing is kept until
+**Save folders** is pressed. **Use defaults** fills the defaults in and **Undo changes** puts back the values in use;
+neither sends anything.
+
+| Folder | Default (the value before 7.168) | Where | What GATOR keeps there | A change takes effect at |
+|---|---|---|---|---|
+| Adapter state | `~/.local/state/gator/bridge-state` | this machine | the session lock that runs, corner checks and Save task take, and the crash journal of every write to a cell (7.167) | the next run, corner check or Save task |
+| Simulator scratch | `/tmp/gator-work` | this machine | export packages and Spectre job folders of a run whose output folder is on a slow mount (7.149) | the next run |
+| virtuoso-bridge checkout | `~/virtuoso-bridge-lite` | this machine | where "Add a connection" looks for the bridge's `.venv` when the backend cannot import the bridge; the agent diagnostics look for the bridge's skills there | the next "Add a connection" |
+| Initial-condition files | `~/.gator/ic` | simulator host | the file of a Maestro test's initial conditions that Save task writes | the next Save task |
+| Maestro netlists | `/tmp/gator_maestro_netlist` | simulator host | the netlist Maestro writes for a saved task, which GATOR then downloads | the next Save task |
+
+The values are stored as a `"directories"` block of `bridge_connection.json`, only those that differ from the defaults:
+
+```json
+{"active": "lab", "profiles": {"lab": {"kind": "virtuoso_ssh", "...": "..."}},
+ "directories": {"maestro_netlist": "~/gator/netlists", "local_scratch": "/scratch/gator-work"}}
+```
+
+* `~` on this machine is the backend user's home. On the simulator host it is the home of the user Virtuoso runs as,
+  read from Virtuoso when the folder is used.
+* Precedence: an environment variable, then the file, then the default. Only Adapter state has a variable,
+  `GATOR_BRIDGE_STATE_DIR`, which the tests use. A folder the variable decides is greyed out, shows the variable's
+  name, and cannot be saved (409 `folder_busy`).
+* Every changed folder is checked before anything is written. Nothing is stored unless all pass; a refusal (422
+  `invalid_folder`) names the folder. The checks:
+  - a full path (`/` or `~/`) on one line, with no `..`, and neither `/` nor the home folder itself;
+  - on the simulator host, only letters, digits and `_ . + -`, because the value goes into SKILL and shell commands;
+  - Adapter state and Simulator scratch are made when missing and written once;
+  - the scratch must not be on a slow mount (9p, drvfs, ...);
+  - the bridge checkout must exist.
+* Adapter state does not move while its session lock is held, in the old or the new folder (409 `folder_busy`). Every
+  GATOR process must use the same folder. A process started with other settings (`GATOR_WORKBENCH_SETTINGS_DIR`) reads
+  its own connection file, so give it the same block or set the variable.
+* How the file is written:
+  - the previous file is kept as `bridge_connection.json.before-<UTC>-folders`;
+  - a file that cannot be read is never replaced, and a missing one is made with no connection in it;
+  - connections are never changed here;
+  - names this backend does not know are kept;
+  - a value that fails its check is not used: the default applies, the window says why, and the next save drops it.
+* Initial-condition files already registered in a Maestro test are recognized in the configured folder and in the
+  default one, so tests saved before a change still work. The next Save task with conditions writes the file into the
+  new folder; old files stay on the host.
+* Not set here:
+  - Spectre's job folders on the simulator host: the bridge's own `VB_REMOTE_SCRATCH_ROOT` in the bridge env file,
+    `/tmp` when unset;
+  - the settings folder, which holds the connection file: `GATOR_WORKBENCH_SETTINGS_DIR`;
+  - the output folder: the output panel.
+* This is the one connection route that takes paths. They are checked as above, and a host or a command cannot be
+  given here.
+
+Routes:
+- `GET /api/connection/directories`: each folder's default, the value in use, where it comes from, and why a saved
+  value is not used;
+- `PUT /api/connection/directories` with `{"values": {folder: path or null}}` (null = the default).
+
+A server started before 7.168 answers 404; the window then asks for a restart.
+
+Code: `directories.py` (the folders, reading, checks), `bridge_connect.save_directories`, and where the folders are used:
+`paths.bridge_state_dir`, `layout.local_scratch`, `bridge_connect.detect_setup`, `agents/diagnostics.skill_visibility`,
+and `bridge_setup` (`_remote_path`, `_ic_folders`, `maestro_netlist`). The window is
+`frontend/src/panels/ConnectionFolders.tsx`. Tests: `tests/workbench/test_wb_directories.py`; browser check
+`connection_panel_check.mjs` ("Folders").
+
 ## Output layout
 
 Default root `<repo>/outputs` (remembered; selectable among allowed roots; writability is tested;
@@ -1127,7 +1196,7 @@ the first 10-20 s. The preparation, not the measurement, is what limits a run (`
 `/tmp/gator-work/<experiment>/<run>`, on the WSL disk (`layout.local_scratch`; WSL empties `/tmp` at every boot):
 - Each lane's `exports` and `simulations` folders are links there (`lanes.ScratchLinked`). The lane's own folder stays in
   the run folder, with its launch journals, candidate records and restoration record, and so does the preparation's
-  journal (`artifacts/local/bridge-state`).
+  journal (`~/.local/state/gator/bridge-state` since record 7.167, `paths.bridge_state_dir()`).
 - Retention moves each kept job folder into the run folder when its result is durable, as before; the rest are deleted
   in the scratch.
 - When the run ends, the links and the scratch are removed (`RunEngine._clear_scratch`). The event `simulator_scratch`
@@ -1189,6 +1258,19 @@ runs had recorded. Kept job folders no longer carry the parameter tables ADE's r
 
 With both, a one-lane `mscr_ota7t` run took 1.30 s per evaluation (20 evaluations, record 7.157), against 1.99 s in record
 7.136: preparation 0.22 s, upload 0.02 s, the remote shell and Spectre 0.58 s, download 0.05 s, OCEAN 0.10 s.
+
+**The bridge's SSH tunnel** (record 7.161). Every Virtuoso call goes through the bridge's tunnel to its service on the
+simulator host. Started with `-N` (no terminal), OpenSSH left Nagle's algorithm on, and every call with a short answer
+waited about 40 ms for a delayed acknowledgement: 44 ms for `1+1`, against 2-3 ms without SSH or through a tunnel with
+a terminal. The bridge checkout `~/virtuoso-bridge-lite` (outside this repository, uncommitted there) now starts the
+tunnel with `-tt` and a remote `sleep`: a short call takes 2.5 ms and the run adapter's window check 4 ms instead of
+about 30 ms. A bridge update has to keep that change.
+
+**The adapter's lock and crash journals on the WSL disk** (record 7.167). The preparation writes a crash journal before
+and after each write to the cell. Under `artifacts/local/bridge-state` on D: the two writes took 16.2 ms per candidate;
+in `~/.local/state/gator/bridge-state` (`paths.bridge_state_dir()`, `GATOR_BRIDGE_STATE_DIR`) they take about 1 ms. The
+same folder holds the session lock that runs, checks and Save task take, so every GATOR process names it the same way,
+whatever its settings folder.
 
 Tried and removed (records 7.149 and 7.152): a Spectre that stays running in each lane, sent only each candidate's changed
 values. Its reruns took 0.05 s, but a running Spectre does not follow changes of `l` or `m` (DC up to 98% off a fresh

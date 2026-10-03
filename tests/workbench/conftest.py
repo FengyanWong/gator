@@ -60,6 +60,13 @@ def _isolated_settings(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolated_bridge_state(tmp_path, monkeypatch):
+    """Tests never take the real run adapter's session lock or write into its journals (paths.bridge_state_dir)."""
+    monkeypatch.setenv('GATOR_BRIDGE_STATE_DIR', str(tmp_path / '_bridge_state'))
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _no_real_model_requests(tmp_path, monkeypatch):
     """CLI discovery must never turn an offline test into a real account request."""
     import subprocess

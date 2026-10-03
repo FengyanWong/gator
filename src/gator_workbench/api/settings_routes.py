@@ -2,12 +2,13 @@
 from __future__ import annotations
 from pathlib import Path
 from fastapi import FastAPI, Query
-from .. import __version__, agents, bridge_connect, bridge_read, connection, runs, schema, units
+from .. import __version__, agents, bridge_connect, bridge_read, connection, directories, runs, schema, units
 from .. import network_presets
 from ..layout import environment_versions
 from ..paths import PathNotAllowed, default_output_root, directory_bytes, repo_root
 from ..storage.tables import TABLES, data_dictionary
-from .models import ConnectBody, ConnectionBody, CreateConnectionBody, NetworkResetBody, NetworkSettingsBody, PROFILE_ID, PathBody, PdkLoadBody
+from .models import (ConnectBody, ConnectionBody, CreateConnectionBody, DirectoriesBody, NetworkResetBody, NetworkSettingsBody,
+                     PROFILE_ID, PathBody, PdkLoadBody)
 from .support import _bridge_call, fail
 from .context import ApiContext
 
@@ -133,6 +134,26 @@ def register(app: FastAPI, context: ApiContext):
         except ValueError as exc:
             fail(422, exc)
         return dict(created, profiles=connection.public_profiles())
+
+    @app.get('/api/connection/directories')
+    def connection_directories():
+        """The folders outside the repository that the simulator connection uses (record 7.168): each one's default,
+        the value in use and where it comes from (the environment, the connection file or the default)."""
+        return directories.describe()
+
+    @app.put('/api/connection/directories')
+    def save_connection_directories(body: DirectoriesBody):
+        """Explicit click on "Save folders": every changed folder is checked (one on this machine that GATOR writes into
+        is made and written once), then the connection file's "directories" block is written with the previous file
+        kept as a copy. The connections themselves are never changed here."""
+        try:
+            return bridge_connect.save_directories(body.values)
+        except FileExistsError as exc:
+            fail(409, exc, code='connection_file_unreadable')
+        except bridge_connect.FolderBusy as exc:
+            fail(409, exc, code='folder_busy')
+        except directories.InvalidDirectory as exc:
+            fail(422, exc, code='invalid_folder', folder=exc.key)
 
     @app.post('/api/connection/connect')
     def connection_connect(body: ConnectBody):

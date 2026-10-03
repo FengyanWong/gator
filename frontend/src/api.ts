@@ -123,6 +123,10 @@ export const api = {
   // { profile_id, kind, ssh_host?, bridge_profile? } - names only: never an address, a path or a command
   connectionCreateProfile: (body: Json) => call('POST', '/api/connection/profile', body),
   connectionConnect: (profile_id: string) => call('POST', '/api/connection/connect', { profile_id }),
+  // The connection module's folders (record 7.168): each one's default, the value in use and where it comes from. A save sends
+  // { folder: path, or null for its default }; the backend checks every value before it writes anything.
+  connectionDirectories: () => call('GET', '/api/connection/directories'),
+  saveConnectionDirectories: (values: Record<string, string | null>) => call('PUT', '/api/connection/directories', { values }),
   runs: (output_root?: string) => call('GET', '/api/runs' + q({ output_root })),
   model: (run_dir: string, checkpoint_id: string, config?: Json, signal?: AbortSignal) => call('POST', '/api/runs/model', { run_dir, checkpoint_id, config }, signal),
   defaultModel: (label: string, project?: string) => call('GET', '/api/runs/default-model' + q({ label, project })),

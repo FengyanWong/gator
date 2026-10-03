@@ -59,6 +59,18 @@ def local_settings_dir() -> Path:
     return repo_root() / 'configs' / 'local' / 'workbench'
 
 
+def bridge_state_dir() -> Path:
+    """The run adapter's state root: its session lock (`session.lock`, taken by every process that works on the Virtuoso
+    cell, so that two never do at once) and a folder per session with the crash journal of each write (record 7.167).
+    On the WSL disk by default, kept across restarts (`/tmp` is not): under artifacts/ on D:, a 9p mount, a candidate's
+    two journal writes took 16 ms, there 1.3 ms. The folder "Adapter state" of the connection module since record 7.168
+    (`directories`); GATOR_BRIDGE_STATE_DIR overrides it (the tests). Every GATOR process must name the same folder: one
+    started with other settings (GATOR_WORKBENCH_SETTINGS_DIR) reads its own connection file, so it needs the same value
+    there or the variable. Sessions before record 7.167 stay in artifacts/local/bridge-state."""
+    from .directories import local_path                   # imported here: directories -> connection -> this module
+    return local_path('adapter_state')
+
+
 def append_local_log(name, record) -> None:
     """One line of an application log in the settings folder: `record()`, built once the file is open. A log that
     cannot be written is skipped - it never fails what it records."""

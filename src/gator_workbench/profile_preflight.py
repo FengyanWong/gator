@@ -9,7 +9,7 @@ has never met the real cell through the run path: a mismatch should show up here
 
 Explicit click only. It runs in a short-lived process like every other bridge access, because the
 adapter binds the bridge environment and takes the project's session lock
-(``artifacts/local/bridge-state/session.lock`` - the same lock a real run takes, so the two exclude
+(``session.lock`` in ``paths.bridge_state_dir()`` - the same lock a real run takes, so the two exclude
 each other). The gate asks for the layers of ``write_cellview`` (1-5: package, profile, tunnel, daemon,
 session readiness); nothing is written - those are simply the layers a netlist export needs.
 

@@ -50,7 +50,7 @@ from . import tasks
 from .compile import CompileError, compile_task
 from .engine import INFRASTRUCTURE_FAILURES as INFRASTRUCTURE, RunLock
 from .layout import RunLayout
-from .paths import repo_root
+from .paths import bridge_state_dir, repo_root
 from .reward_diagnostics import kept, tables_version
 from .schema import WorkbenchConfig, task_definition_hash
 from .security import redact
@@ -63,7 +63,6 @@ LIVE = ('starting', 'running', 'stopping')
 MAX_INFRASTRUCTURE_FAILURES = 2          # in a row: the link is broken, not the design
 CHECK_ID = re.compile(r'^\d{8}T\d{6}Z-[0-9a-f]{8}$')
 CONDITIONS_FILE = 'configs/gpdk045_conditions.json'
-BRIDGE_STATE = 'artifacts/local/bridge-state'       # tasks.py: every real task's adapter state root and session lock
 # MOCK only: the toy optimum of every parameter kind moves by this much (normalized units) at each corner, so that a
 # design near the edge of its nominal acceptance can fail one. Plumbing for the free task, not a model of a process.
 MOCK_CORNER_SHIFT = {'nominal': 0.0, 'ss_hot_low': 0.35, 'ff_cold_high': -0.35, 'fs_nominal': 0.15, 'sf_nominal': -0.15}
@@ -310,7 +309,7 @@ def plan(run_dir, *, designs=MAX_DESIGNS) -> dict:
 # ================================================================================ starting one
 def bridge_busy() -> bool:
     """A real run or real check holds the adapter's session lock (the same file every real task uses)."""
-    return RunLock.held(repo_root() / BRIDGE_STATE / 'session.lock')
+    return RunLock.held(bridge_state_dir() / 'session.lock')
 
 
 def live_checks(run_dir) -> list:
@@ -444,7 +443,7 @@ def _state(directory, status):
         status = dict(status, state='interrupted',
                       note='The check process ended without finishing. Simulations it recorded are kept. For a real '
                            'circuit, look at the cell: the last design\'s widths may still be in it (the adapter\'s '
-                           'journal in artifacts/local/bridge-state says what was written).')
+                           'journal in the adapter\'s state folder (paths.bridge_state_dir) says what was written).')
     return alive, status
 
 
@@ -642,7 +641,7 @@ class Worker:
         if name in tasks.REAL_PROFILES:
             connection = tasks.real_bindings(tasks._profile_settings(self.context.config.run.connection_profile_id)[1], name)
             config = BridgeConfig(Path(connection['env_file']).resolve(), connection['library'],
-                                  Path(connection['creation_receipt']).resolve(), (repo_root() / BRIDGE_STATE).resolve(),
+                                  Path(connection['creation_receipt']).resolve(), bridge_state_dir().resolve(),
                                   connection['model_file'], profile=connection.get('profile'))
             return config, self.context.profile
         config, profile, _ = tasks.generated_bridge_config(name, self.context.config.run.connection_profile_id)

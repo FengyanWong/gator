@@ -84,6 +84,12 @@ class CreateConnectionBody(ConnectBody):
     bridge_profile: str | None = Field(None, pattern=r'^[A-Za-z0-9_]{1,32}$')
 
 
+class DirectoriesBody(Body):
+    """The folders of the connection module (record 7.168): {folder name: path, or null for its default}. Checked one by
+    one by `directories.normalized` and, for a folder on this machine, by writing into it."""
+    values: dict[str, str | None]
+
+
 class NetworkSettingsBody(Body):
     network: dict | None = None         # hidden_dim / heads / layers
     advanced: dict | None = None        # the SAC numbers stored per encoder; any other key is rejected

@@ -27,7 +27,7 @@ def test_only_a_run_folder_on_a_slow_mount_gets_a_local_scratch(tmp_path, monkey
     run = RunLayout(tmp_path / 'exp__abc' / 'runs' / 'task' / 'scratch__seed1__0123456789ab')
     monkeypatch.delenv('GATOR_LOCAL_SCRATCH', raising=False)
     monkeypatch.setattr(layout, 'filesystem_type', lambda path, mounts=None: '9p' if str(path).startswith(str(tmp_path)) else 'ext4')
-    assert layout.local_scratch(run) == layout.LOCAL_SCRATCH / 'exp__abc' / 'scratch__seed1__0123456789ab'
+    assert layout.local_scratch(run) == Path('/tmp/gator-work') / 'exp__abc' / 'scratch__seed1__0123456789ab'   # the default (7.168)
     monkeypatch.setenv('GATOR_LOCAL_SCRATCH', 'off')
     assert layout.local_scratch(run) is None
     monkeypatch.delenv('GATOR_LOCAL_SCRATCH')

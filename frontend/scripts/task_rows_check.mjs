@@ -133,7 +133,9 @@ await runChecks(browser, async () => {
   } else check('the three tabs hold this task\'s rows', (await strip()) === 'Parameters (2) | Probes (3) | Specs (3)', await strip());
   const hard = await evaluate(`(() => { const at = [...${EDITORS}.querySelectorAll('table.editor thead th')].findIndex(h => h.textContent.trim() === 'hard');
     return [...${EDITORS}.querySelectorAll('table.editor tbody tr')].map(r => r.children[at].querySelector('input').checked); })()`);
-  check('what a row does not state is shown as the backend will take it: hard = on, tolerance = 0', hard.length > 0 && hard.every(Boolean) && (await column('tolerance')).every(t => t === '0'), `${JSON.stringify(hard)} ${JSON.stringify(await column('tolerance'))}`);
+  const specHeads = await evaluate(`[...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.dataset.field).filter(Boolean)`);
+  check('what a row does not state is shown as the backend will take it: hard = on; no target or tolerance column (retired 2026-10-03)',
+    hard.length > 0 && hard.every(Boolean) && !specHeads.includes('tolerance') && !specHeads.includes('target'), `${JSON.stringify(hard)} ${JSON.stringify(specHeads)}`);
   // basis is one of the columns "More columns" shows (record 7.92): shown for this read, then hidden again
   const moreColumns = `[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => /^(More|Fewer) columns/.test(b.textContent.trim()))`;
   await evaluate(`${moreColumns}.click()`);

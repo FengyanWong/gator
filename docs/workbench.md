@@ -268,7 +268,7 @@ record 7.128):
   record of the real cross-category experiment until they were removed). A registry stated in the configuration
   (`run.advanced.spec_registry`) still wins. Units `V/V` and `V/A` (line / load regulation) are accepted.
 * In the three editors a field a row does not state is shown with the value the backend uses for it (`hard` on,
-  `tolerance` 0, ...), not as an empty or unchecked box.
+  `active` on, ...), not as an empty or unchecked box.
 
 Browser check: `frontend/scripts/task_rows_check.mjs` (fixtures, safe on the live backend; `--live` reads the real
 starters from a restarted or scratch backend). Tests: `tests/workbench/test_wb_real_starter.py`.
@@ -324,11 +324,11 @@ Probes lost `function`, `window`, `at_frequency_hz`, `integration_band_hz`, `bra
 `crossover` (no backend extracts anything from them; a filled `function` blocked the run), `on_failure` (one allowed value)
 and `validity` (checked for form only; run-time validity comes from the simulator's own flags). Specs kept every column.
 
-What stays but steps back: `soft_weight`, `active` and `basis` of Specs are
-shown after **More columns** at the right of the toolbar (the choice is kept in the browser). They keep their values either
-way: Add fills them, the agent may set them, a task file stores them. `initial_value` is shown and not typed: the circuit
-read fills it, and a typed value could only differ from the circuit. `normalization_scale` may be left empty: the violation
-is then divided by the size of the threshold (the largest of |lower|, |upper| and |target|, or 1).
+What stays but steps back: `soft_weight`, `active`, `basis`, **Missing value = failed** and **Margin sides** of Specs, and
+(since record 7.172) `value_type`, `step`, `scale` and `ratio` of Parameters are shown after **More columns** at the right
+of the toolbar (the choice is kept in the browser). They keep their values either way: Add fills them, the agent may set
+them, a task file stores them. `normalization_scale` may be left empty: the violation is then divided by the size of the
+threshold (the larger of |lower| and |upper|, or 1).
 
 Old rows still load. A task file, a run's `effective_config.json` or an imported JSON written with the retired columns is
 read as before: the schema drops them when it reads a row (`schema.RETIRED_PARAMETER_FIELDS`,
@@ -350,6 +350,23 @@ columns** any more; a probe's aggregate row in the results tables still reads `a
 (`engine.PROBE_AGGREGATION`). The task and configuration hashes of all 14 workbench runs on this machine (5 in
 `outputs/`, 9 kept as evidence in `artifacts/local`), of the 4 saved task files, of the old-format fixture and of the
 registered tasks' starters are the same before and after.
+
+**Fewer columns again (2026-10-03, user: "check the current tabs are there any columns redundant?", record 7.172).** The
+seven saved MScR tasks showed which columns repeat what another already says:
+- Retired, like the columns above: Specs' `target` and `tolerance` with the "target ± tolerance" choice (it was exactly the
+  interval [target - tolerance, target + tolerance], and a tolerance on any other spec only loosened its limit), and the
+  Probes' `expression` with its `result_source` "expression" (a probe computed from other probes: that is a spec equation's
+  job since record 7.52). An older row loads with what they meant - the limits they made, the arithmetic written in
+  parentheses into the equations of the specs that used the probe - and both hashes see them at their defaults, so the
+  seven tasks and every run on this machine keep their identities (checked).
+- Not shown, kept in the rows (the parked AnalogGym import and the task files still write them): Parameters'
+  `initial_value` (Save task empties it, so it showed nothing) and Probes' `result_source` (a task measures one way: a new
+  probe takes the way of the rows there, where it used to get "backend_profile" in a Maestro task too).
+- Filled for you: a Maestro output's Probe ID is `m_` + its output name, shown and not typed; it follows a renamed output,
+  and so do the spec equations that use it, in one Undo step. A spec whose equation becomes one probe takes that probe's
+  unit while it has no limits yet. The Probes column that holds a Maestro output's expression reads **Expression**.
+- On a follower row (one with `binding_group`) the fields its leader decides - `optimized`, `value_type`, the bounds,
+  `step`, `scale` - are greyed, with why in their tooltip: the written value is the leader's times the ratio.
 
 ### Matched devices: ties suggested from the circuit (added 2026-09-29, user request)
 
@@ -1050,9 +1067,9 @@ Under Specs → More columns, **Missing value = failed** opts a required spec in
 simulation as failure; wrong units and infrastructure faults stay errors. A spec computed by an equation is missing only
 when a probe it reads is missing; the other equation specs keep their values (record 7.112). **Margin sides** selects
 the limits counted by clearance and Corner check ranking; feasibility still checks all limits. The zero-floor hint
-explains the upper-only choice. A new row, and an edit of its unit, limits, constraint or tolerance, suggests a scale:
-3 dB, 10 degrees, a target's tolerance, half an interval, else the size of the threshold. The suggestion follows later
-edits until you type a scale of your own; a row with nothing to size it by yet (no dB/deg unit, tolerance or limit)
+explains the upper-only choice. A new row, and an edit of its unit, limits or constraint, suggests a scale:
+3 dB, 10 degrees, half an interval, else the size of the threshold. The suggestion follows later
+edits until you type a scale of your own; a row with nothing to size it by yet (no dB/deg unit or limit)
 keeps an empty scale, which the backend sizes from the threshold. Saved empty scales are not filled on load. (Record
 7.112 fixed a suggestion that froze at 1 - e.g. 1 W - when a row was added before its limits were typed.)
 

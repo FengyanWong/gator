@@ -12,7 +12,7 @@ import sys
 import time
 
 ROW = dict(metric_id='score', equation='m_score', unit='fixture', constraint='>=', lower=0.97, upper=None,
-           target=None, tolerance=0.0, hard=True, direction_after_feasible='none', soft_weight=1.0,
+           hard=True, direction_after_feasible='none', soft_weight=1.0,
            normalization_scale=1.0, active=True, basis='User asked for 0.97 in the prompt.')
 GOOD = dict(kind='targets', patch=[dict(op='replace', section='targets', key='score', value=ROW,
                                         basis='User prompt')],

@@ -160,6 +160,20 @@ def test_the_first_save_takes_the_cell_s_copy_and_registers_a_task_that_runs_on_
         save(tmp_path, name='other', extras=dict(expected_frequency_hz=1.2e9))
 
 
+def test_a_note_alone_keeps_the_recorded_baseline(tmp_path):
+    """Review of 2026-10-03: editing only a row's note dropped the recorded baseline - a real simulation to record again."""
+    ready(tmp_path)
+    save(tmp_path, extras=dict(expected_frequency_hz=1.2e9))
+    folder = profiles.profile_dir('ring_osc')
+    (folder / 'reference_measurements.json').write_text(json.dumps(dict(origin='real', metrics=dict(osc_frequency_hz=1.209e9))))
+    noted = [dict(r, notes='sized for 1.2 GHz') if r['variable_id'] == 'wn' else r for r in ROWS]
+    again = save(tmp_path, cfg=config(rows=noted), task='ring_osc')
+    assert again['changed'] == ['notes'] and again['baseline_kept']
+    assert profiles.reference_metrics('ring_osc') == dict(osc_frequency_hz=1.209e9)
+    assert task_files.what_changed(dict(probes=[dict(measurement_id='m', unit='Hz', notes='a')]),
+                                   dict(probes=[dict(measurement_id='m', unit='kHz', notes='a')])) == {'probes'}
+
+
 def test_save_task_updates_the_open_task_and_keeps_the_baseline_only_while_the_measurement_stands(tmp_path):
     ready(tmp_path)
     save(tmp_path, extras=dict(expected_frequency_hz=1.2e9))
@@ -353,8 +367,7 @@ def test_what_a_task_measures_is_read_from_its_probes(tmp_path):
     ade = vs.to_rows(SETUP)['measurements'][0]
     gain = dict(measurement_id='m_gain', analysis='ac', result_source='backend_profile', source_name='gain_db_at_start', unit='dB')
     power = dict(measurement_id='m_power', analysis='tran', result_source='backend_profile', source_name='supply_power_w', unit='W')
-    derived = dict(measurement_id='m_twice', analysis='tran', result_source='expression', expression='m_osc_frequency_hz * 2', unit='Hz')
-    assert profiles.measurement_kind(config(probes=[FREQUENCY_PROBE, derived], specs=[])) == 'ring_oscillator'
+    assert profiles.measurement_kind(config(probes=[FREQUENCY_PROBE], specs=[])) == 'ring_oscillator'
     assert profiles.measurement_kind(config(probes=[gain], specs=[])) == 'opamp_ac'
     assert profiles.measurement_kind(config(probes=[ade], specs=[])) == 'maestro'
     for probes, message in (([], 'Probes is empty'), ([ade, FREQUENCY_PROBE], 'mix Maestro outputs'), ([power], 'fit both circuit types'),

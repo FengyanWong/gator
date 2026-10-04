@@ -19,11 +19,10 @@ const IMPORTED_SECTIONS: Record<string, string> = { project: 'project labels', c
 function suggestedScale(row: Json): number | null {
   if (row.unit === 'dB') return 3;
   if (row.unit === 'deg') return 10;
-  if (row.constraint === 'target' && row.tolerance > 0) return row.tolerance;
   if (row.constraint === 'interval' && row.lower != null && row.upper != null && row.upper > row.lower) return (row.upper - row.lower) / 2;
-  return Math.max(...[row.lower, row.upper, row.target].filter(v => typeof v === 'number').map(Math.abs), 0) || null;
+  return Math.max(...[row.lower, row.upper].filter(v => typeof v === 'number').map(Math.abs), 0) || null;
 }
-const SCALE_FIELDS = ['unit', 'lower', 'upper', 'target', 'tolerance', 'constraint'];
+const SCALE_FIELDS = ['unit', 'lower', 'upper', 'constraint'];
 /** The scale after an edit of a field it depends on: an empty scale, or one still equal to the row's suggestion before the
  * edit, follows the edit; a scale the user typed stays. */
 function followScale(before: Json, after: Json): number | null {
@@ -37,8 +36,10 @@ const MORE_KEY = 'gator-workbench-editor-more-columns';
  *  better" and works on the limit on its side (minimize an upper limit, maximize a lower one), so a pair that could never
  *  work (>= then lower is better) is not offered. Saved as before: `constraint` + `direction_after_feasible`. */
 const LIMIT_CHOICES: [string, string][] = [['>=', 'none'], ['>=', 'maximize'], ['<=', 'none'], ['<=', 'minimize'],
-  ['interval', 'none'], ['interval', 'minimize'], ['interval', 'maximize'], ['target', 'none']];
-const LIMIT_TEXT: Record<string, string> = { '>=': '≥ lower', '<=': '≤ upper', interval: 'interval', target: 'target ± tolerance' };
+  ['interval', 'none'], ['interval', 'minimize'], ['interval', 'maximize']];
+// "target ± tolerance" went with its two columns (review of 2026-10-03): it was exactly an interval [target - tolerance,
+// target + tolerance], and a tolerance on any other row only loosened its limit. Older rows are rewritten so when they load.
+const LIMIT_TEXT: Record<string, string> = { '>=': '≥ lower', '<=': '≤ upper', interval: 'interval' };
 // A row without a constraint read "undefined", and an objective this list does not know read like a plain limit (review of
 // 2026-10-01): both are shown as they are.
 const limitLabel = (constraint: string, objective: string) => (constraint ? LIMIT_TEXT[constraint] ?? String(constraint) : '(not set)')
@@ -57,33 +58,45 @@ function LimitSelect({ row, title, onChange }: { row: Json; title: string; onCha
     {LIMIT_CHOICES.map(([c, o]) => <option key={`${c}|${o}`} value={`${c}|${o}`}>{limitLabel(c, o)}</option>)}</select>;
 }
 
-function Cell({ column, value, onChange }: { column: Json; value: Json; onChange: (v: Json) => void }) {
-  const title = column.guidance;
-  if (column.name === 'nominal_only') return <select aria-label="Judged at" title={title}
+/** One cell. `fixed`: why the value is shown and not typed - it follows another field (a Maestro output's Probe ID follows
+ *  its output name). `off`: why the field does nothing on this row (a follower's bounds, step, scale, type and "optimized":
+ *  its leader decides them) - shown greyed, with that reason as its tooltip (review of 2026-10-03). */
+function Cell({ column, value, onChange, fixed = null, off = null }: { column: Json; value: Json; onChange: (v: Json) => void;
+  fixed?: string | null; off?: string | null }) {
+  const title = off ?? fixed ?? column.guidance, disabled = off !== null;
+  if (column.name === 'nominal_only') return <select aria-label="Judged at" title={title} disabled={disabled}
     value={value ? 'nominal' : 'all'} onChange={e => onChange(e.target.value === 'nominal')}>
     <option value="all">All planned conditions</option><option value="nominal">Nominal only</option></select>;
-  // A column the circuit read fills (initial_value): shown, never typed - a typed value could only differ from the circuit.
-  if (column.readonly) return <input title={title} className="readonly" readOnly value={value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value)} />;
+  if (fixed !== null) return <input title={title} className="readonly" readOnly value={value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value)} />;
   if (column.options) {
     // A value the list does not hold - or none where one is required (a row from the agent or an import) - is shown as it
     // is: the browser showed the first option as if it were chosen, and choosing that one then changed nothing.
     const missing = value != null ? !column.options.includes(value) : !column.nullable;
-    return <select title={title} value={value ?? ''} onChange={e => onChange(e.target.value === '' && column.nullable ? null : e.target.value)}>
+    return <select title={title} disabled={disabled} value={value ?? ''} onChange={e => onChange(e.target.value === '' && column.nullable ? null : e.target.value)}>
       {column.nullable && <option value="">(none)</option>}{missing && <option value={value ?? ''} disabled={value == null}>{value ?? '(not set)'}</option>}
       {column.options.map((o: string) => <option key={o} value={o}>{o}</option>)}</select>;
   }
-  if (column.type === 'boolean') return <input type="checkbox" title={title} checked={!!value} onChange={e => onChange(e.target.checked)} />;
+  if (column.type === 'boolean') return <input type="checkbox" title={title} disabled={disabled} checked={!!value} onChange={e => onChange(e.target.checked)} />;
   if (column.type === 'number' || column.type === 'integer') {
-    return <Typed title={title} className="numeric" placeholder={column.nullable ? '-' : ''} value={value} onChange={onChange}
+    return <Typed title={title} disabled={disabled} className="numeric" placeholder={column.nullable ? '-' : ''} value={value} onChange={onChange}
       format={v => v == null ? '' : String(v)}
       parse={t => { const s = t.trim(), n = Number(s); return s === '' ? { value: column.nullable ? null : 0 } : Number.isFinite(n) ? { value: n } : undefined; }} />;
   }
   if (column.type === 'array' || column.type === 'object') {
-    return <Typed title={title + ' (JSON)'} value={value} onChange={onChange} format={v => v == null ? '' : JSON.stringify(v)}
+    return <Typed title={title + ' (JSON)'} disabled={disabled} value={value} onChange={onChange} format={v => v == null ? '' : JSON.stringify(v)}
       parse={t => { if (t.trim() === '') return { value: null }; try { return { value: JSON.parse(t) }; } catch { return undefined; } }} />;
   }
-  return <input title={title} value={value ?? ''} onChange={e => onChange(e.target.value === '' && column.nullable ? null : e.target.value)} />;
+  return <input title={title} disabled={disabled} value={value ?? ''} onChange={e => onChange(e.target.value === '' && column.nullable ? null : e.target.value)} />;
 }
+
+// What a follower row (binding_group set) leaves to its leader: the written value is the leader's times the ratio, so its own
+// bounds, step, scale, type and "optimized" do nothing (Save task even clears its bounds).
+const FOLLOWER_IGNORES = ['optimized', 'value_type', 'lower', 'upper', 'step', 'scale'];
+// A Maestro output's Probe ID is m_ + its name, as Save task names it (virtuoso_setup.probe_id); spec equations are rewritten
+// when it follows a renamed output. Equation names are plain identifiers (spec_equations.parse reads them with Python's ast).
+const probeIdOf = (outputName: string) => `m_${outputName}`;
+const renameInEquation = (equation: string, from: string, to: string) =>
+  equation.replace(new RegExp(`(?<![A-Za-z0-9_.])${from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`, 'g'), to);
 
 const exact = (v: Json) => (v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v));
 export function DiffView({ diff }: { diff: Json[] }) {
@@ -117,7 +130,10 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const [matched, setMatched] = useState(0);               // each toolbar press opens a fresh read; zero closes the box
   const [error, setError] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
-  const columns: Json[] = schema.editors[tab].map((c: Json) => tab !== 'targets' ? c : c.name === 'nominal_only'
+  // `signal` holds a Maestro output's expression (ymax(VT("/OUT")), getData(... ?result "stb")): "signal" read like a
+  // net name (review of 2026-10-03). For a profile metric it is a label of what is measured.
+  const columns: Json[] = schema.editors[tab].map((c: Json) => tab === 'measurements' && c.name === 'signal' ? { ...c, label: 'Expression' }
+    : tab !== 'targets' ? c : c.name === 'nominal_only'
     ? { ...c, label: 'Judged at' } : c.name === 'missing_is_failure' ? { ...c, label: 'Missing value = failed' } : c.name === 'margin_sides' ? { ...c, label: 'Margin sides' }
     : c.name === 'constraint' ? { ...c, guidance: c.guidance + ' "then lower / higher is better" is the objective: among the designs that pass '
       + 'every hard spec, the best one is the lowest / highest here (one spec at most); with an Objective bonus weight above 0 (Reward and '
@@ -126,7 +142,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // Specs shows the objective inside the constraint list (LimitSelect), and "Judged at" only while the run plans training
   // corners: without corners every spec is judged at nominal, so the choice would do nothing. Both keep their values.
   const corners = (config.run?.conditions?.policy ?? 'off') !== 'off';
-  const shown = columns.filter(c => tab !== 'targets' || (c.name !== 'direction_after_feasible' && (c.name !== 'nominal_only' || corners)));
+  // A hidden column (schema.HIDDEN_COLUMNS: initial_value, result_source) is kept in the rows and never shown.
+  const shown = columns.filter(c => !c.hidden && (tab !== 'targets' || (c.name !== 'direction_after_feasible' && (c.name !== 'nominal_only' || corners))));
   const hidden = shown.filter(c => c.advanced);
   const visible = shown.filter(c => more || !c.advanced);
   const keyField: string = schema.section_keys[tab];
@@ -161,13 +178,37 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       if (tab === 'targets' && Object.keys(fields).some(name => SCALE_FIELDS.includes(name) && fields[name] !== r[name])) row.normalization_scale = followScale(r, row);
       return row;
     })() : r) }));
-  const update = (index: number, name: string, value: Json) => patch(index, { [name]: value });
+  // Fields that follow another change with it, in the same Undo step (review of 2026-10-03): a Maestro output's Probe ID
+  // follows its output name, and the spec equations that use the ID follow it; a spec whose equation becomes one Probe takes
+  // that Probe's unit while it has no limits yet (its unit must match the Probe's anyway; a prefix can be typed after).
+  const update = (index: number, name: string, value: Json) => {
+    const row = rows[index] ?? {};
+    if (tab === 'measurements' && name === 'source_name' && row.result_source === 'ade_output' && typeof value === 'string'
+        && /^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+      const from = String(row.measurement_id ?? ''), to = probeIdOf(value);
+      setConfig((c: Json) => ({ ...c,
+        measurements: c.measurements.map((r: Json, i: number) => i === index ? { ...r, source_name: value, measurement_id: to } : r),
+        targets: from === to || !from ? c.targets : (c.targets ?? []).map((t: Json) => typeof t.equation === 'string'
+          ? { ...t, equation: renameInEquation(t.equation, from, to) } : t) }));
+      return;
+    }
+    if (tab === 'targets' && name === 'equation' && typeof value === 'string') {
+      const probe = (config.measurements ?? []).find((m: Json) => m.measurement_id === value.trim());
+      if (probe?.unit && (!row.unit || (row.lower == null && row.upper == null))) return patch(index, { equation: value, unit: probe.unit });
+    }
+    patch(index, { [name]: value });
+  };
   const add = () => {
     const row: Json = {};
     // A required field without a default comes as `default: null` from the schema: that means "none", not null - a new
     // Specs row used to get constraint = null and normalization_scale = null, and the whole configuration failed validation.
     for (const c of columns) row[c.name] = c.default !== undefined && (c.default !== null || c.nullable) ? c.default
       : c.nullable ? null : c.options ? c.options[0] : c.type === 'number' ? 1 : c.type === 'boolean' ? false : '';
+    // A new probe measures the way the task's other probes do - a task measures one way, Save task refuses a mix - where it
+    // used to take result_source's default, backend_profile, in a Maestro task too (review of 2026-10-03). The first probe of a
+    // task: ngspice and MOCK tasks read their backend's metrics, every other task reads Maestro outputs.
+    if (tab === 'measurements') row.result_source = config.measurements?.[0]?.result_source
+      ?? (/^(ngspice|synthetic):/.test(String(config.circuit?.task_id ?? '')) ? 'backend_profile' : 'ade_output');
     // A free ID: `rows.length + 1` repeated an existing one after a deletion, and "Delete selected" then removed both rows.
     const used = new Set(rows.map(r => r[keyField]));
     let n = rows.length + 1;
@@ -267,12 +308,16 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
               onFocus: () => pointAt(devicesOf(row)), onBlur: () => pointAt([]) } : {};
             return <tr key={index} className={found.some((i: Json) => i.level === 'error' || i.level === 'blocker') ? 'has-error' : ''} {...point}>
               <td className="sel"><input type="checkbox" checked={!!selected[row[keyField]]} onChange={e => setSelected(s => ({ ...s, [row[keyField]]: e.target.checked }))} /></td>
-              {/* A field the row does not STATE is shown with the value the backend uses for it (hard = on, tolerance = 0 ...): a
+              {/* A field the row does not STATE is shown with the value the backend uses for it (hard = on, active = on ...): a
                   starter row's absent `hard` used to look unchecked although the target is hard. A box the user cleared is null,
                   not absent, and stays empty. */}
               {visible.map(c => <td key={c.name}>{tab === 'targets' && c.name === 'constraint'
                 ? <LimitSelect row={row} title={c.guidance} onChange={fields => patch(index, fields)} />
-                : <Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)} />}</td>)}
+                : <Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)}
+                    fixed={tab === 'measurements' && c.name === 'measurement_id' && row.result_source === 'ade_output'
+                      ? `A Maestro output's Probe ID is m_ + its output name (Save task names it so): it follows the name, and so do the spec equations that use it.` : null}
+                    off={tab === 'parameters' && row.binding_group && FOLLOWER_IGNORES.includes(c.name)
+                      ? `Follows ${row.binding_group}: its leader's value times the ratio is written, so this field does nothing on this row.` : null} />}</td>)}
               <td className="issues">{found.map((i: Json, n: number) => <div key={n} className={`issue ${i.level}`} title={i.message}>{i.level}: {i.code}</div>)}</td>
             </tr>; })}</tbody>
         </table>

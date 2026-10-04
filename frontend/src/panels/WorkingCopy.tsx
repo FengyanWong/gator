@@ -22,7 +22,10 @@ function prefixFactor(unit: string, base: string): number | null {
 
 /** Probes and Specs with the cell's Maestro outputs and specs in place of the ones they stand for. A unit or an
  *  optimizer-only field someone chose on a row of the same name is kept - and a limit from the cell (Maestro keeps plain
- *  numbers in base units: Hz, V, s) is converted into that unit; when it cannot be, the spec keeps the base unit. Rows of
+ *  numbers in base units: Hz, V, s) is converted into that unit; when it cannot be, the spec keeps the base unit. What the
+ *  cell does not hold stays too: a probe's notes and - while its expression is the cell's - its analysis, a spec's
+ *  citation (basis) and its More-columns settings (review of 2026-10-03: the analysis came back as a guess that read
+ *  getData outputs as "other", so Save task refused the rows, and the citations became "Maestro spec on ..."). Rows of
  *  other kinds are left alone. */
 function withSetupRows(config: Json, rows: Json): Json {
   const probes: Json[] = config.measurements ?? [], specs: Json[] = config.targets ?? [];
@@ -30,21 +33,24 @@ function withSetupRows(config: Json, rows: Json): Json {
   const measurements = [...probes.filter(p => p.result_source !== 'ade_output'),
     ...rows.measurements.map((row: Json) => {
       const old = before.get(row.measurement_id);
-      return old?.result_source === 'ade_output' && old.unit ? { ...row, unit: old.unit, notes: old.notes || row.notes } : row;
+      return old?.result_source === 'ade_output' && old.unit ? { ...row, unit: old.unit, notes: old.notes || row.notes,
+        ...(old.analysis && old.signal === row.signal ? { analysis: old.analysis } : {}) } : row;
     })];
   const adeIds = new Set([...probes.filter(p => p.result_source === 'ade_output').map(p => p.measurement_id),
     ...rows.measurements.map((r: Json) => r.measurement_id)]);
   const units = new Map(measurements.map((p: Json) => [p.measurement_id, p.unit]));
   const oldSpecs = new Map(specs.map(t => [t.metric_id, t]));
   const kept = specs.filter(t => !adeIds.has(String(t.equation ?? '').trim()));
-  const OPTIMIZER_ONLY = ['hard', 'soft_weight', 'direction_after_feasible', 'normalization_scale', 'active', 'tolerance'];
+  const OPTIMIZER_ONLY = ['hard', 'soft_weight', 'direction_after_feasible', 'normalization_scale', 'active'];
+  const NOT_IN_THE_CELL = ['basis', 'missing_is_failure', 'margin_sides', 'nominal_only'];   // kept whatever the unit
   const fromCopy = rows.targets.map((row: Json) => {
     const wanted = units.get(row.equation) ?? row.unit, factor = prefixFactor(wanted, row.unit);
-    const limits = factor === null ? {} : Object.fromEntries(['lower', 'upper', 'target'].filter(k => typeof row[k] === 'number').map(k => [k, row[k] / factor]));
+    const limits = factor === null ? {} : Object.fromEntries(['lower', 'upper'].filter(k => typeof row[k] === 'number').map(k => [k, row[k] / factor]));
     const old = oldSpecs.get(row.metric_id);
     const mine = old && factor !== null ? Object.fromEntries(OPTIMIZER_ONLY.filter(k => old[k] !== undefined && (k !== 'normalization_scale' || old.unit === wanted)).map(k => [k, old[k]])) : {};
+    const theirs = old ? Object.fromEntries(NOT_IN_THE_CELL.filter(k => old[k] !== undefined && old[k] !== '').map(k => [k, old[k]])) : {};
     const scale = factor === null ? {} : { normalization_scale: row.normalization_scale / factor };
-    return { ...row, ...(factor === null ? {} : { unit: wanted }), ...limits, ...scale, ...mine };
+    return { ...row, ...(factor === null ? {} : { unit: wanted }), ...limits, ...scale, ...mine, ...theirs };
   });
   return { ...config, measurements, targets: [...kept, ...fromCopy] };
 }
@@ -118,7 +124,7 @@ export function WorkingCopy({ profileId, library, cell, record, config, setConfi
       {summary && <p className="hint">Test <code>GATOR</code>: {summary}.</p>}
       {setup?.test && !Object.keys(setup.analyses ?? {}).length && <p className="warn">The test has no analysis yet: its outputs measure nothing until one is set.</p>}
       {setup?.test && !setup.rows?.measurements?.length && <p className="hint">It has no outputs, so nothing was taken into the editors.</p>}
-      {fresh && setup.changed && <p className="ok">Probes and Specs now show the cell's outputs and specs; your units and optimizer settings stayed. Undo
+      {fresh && setup.changed && <p className="ok">Probes and Specs now show the cell's outputs and specs; your units, notes, analyses, citations and optimizer settings stayed. Undo
         brings the previous rows back.</p>}
       {fresh && setup.test && setup.rows?.measurements?.length > 0 && !setup.changed && diffs && (diffs.length === 0 ? <p className="ok">The editors already say what the cell says.</p>
         : <p className="warn">It differs from the editors in {diffs.length} place{diffs.length === 1 ? '' : 's'} that Probes and Specs do not hold: <b>Save task</b> makes

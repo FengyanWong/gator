@@ -45,6 +45,17 @@ def test_units_and_analyses_are_suggested_from_the_expression():
     assert vs.analysis_of('VT("/A") - VF("/B")') == 'other'
 
 
+def test_the_analysis_named_by_a_result_and_a_dc_sweep_are_read():
+    """Review of 2026-10-03: outputs read through getData (a loop gain, a phase margin, a noise) and a DC sweep came back
+    'other', and Save task refused the rows "Read setup" brought."""
+    assert vs.analysis_of('cross(dB20(getData("loopGain" ?result "stb")) 0 1 "falling")') == 'stb'
+    assert vs.analysis_of('phaseMargin((- getData("loopGain" ?result "stb")))') == 'stb'
+    assert vs.analysis_of("getData(\"out\" ?result 'noise)") == 'noise'
+    assert vs.analysis_of('value(VS("/VREG") 1.8)') == 'dc' and vs.analysis_of('IS("/V0/PLUS")') == 'dc'
+    assert vs.analysis_of('getData("M1:gm" ?result "dcOpInfo")') == 'other'            # an info result names no analysis
+    assert vs.analysis_of('getData("loopGain" ?result "stb") - VT("/OUT")') == 'other' # mixed
+
+
 def test_a_setup_is_checked_before_anything_is_written():
     bindable = {(TB, 'V0'): {'vdc', 'srcType'}}
     assert vs.validate(SETUP, bindable=bindable) == []
@@ -87,8 +98,7 @@ def test_rows_and_setup_map_onto_each_other():
     assert (spec_vmax['constraint'], spec_vmax['lower'], spec_vmax['upper'], spec_vmax['unit']) == ('interval', 0.9, 1.1, 'V')
 
     def rows_into(raw):
-        raw['measurements'] = rows['measurements'] + [dict(measurement_id='m_extra', analysis='tran', result_source='expression',
-                                                           expression='m_freq * 2', unit='Hz')]
+        raw['measurements'] = rows['measurements']
         raw['targets'] = rows['targets'] + [dict(metric_id='energy', equation='m_vmax / m_freq', unit='1', constraint='<=', upper=1,
                                                  normalization_scale=1.0)]
     config = make_config(Path('.'), mutate=rows_into)

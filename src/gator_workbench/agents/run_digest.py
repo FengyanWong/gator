@@ -40,6 +40,15 @@ def _num(value, digits=6):
     return value
 
 
+def _unit_size(unit):
+    """How many canonical units one `unit` is (um -> 1e-6); 1 for a unit the workbench does not know or none."""
+    from .. import units
+    try:
+        return units.scale_to_canonical(1.0, unit) if unit else 1.0
+    except units.UnitError:
+        return 1.0
+
+
 def _stats(values):
     clean = [v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)]
     if not clean:
@@ -61,9 +70,14 @@ def build(*, status: dict, config: dict, evaluations: list, parameters: list, me
     from ..reward_diagnostics import steering
     order = sorted(evaluations, key=lambda row: (row.get('completion_index') or 0, row.get('dispatch_index') or 0))
     by_eval_parameters, by_eval_metrics = {}, {}
+    # The parameters table records executed values in canonical units (m), the rows state bounds in their own (um): read
+    # every value in its row's unit, or each um variable looked pinned at its lower bound (review of 2026-10-03).
+    per_unit = {row.get('variable_id'): _unit_size(row.get('unit')) for row in config.get('parameters') or []}
     for row in parameters:
         if row.get('role') == 'independent':
-            by_eval_parameters.setdefault(row.get('evaluation_id'), {})[row.get('variable_id')] = row.get('executed_value')
+            value, size = row.get('executed_value'), per_unit.get(row.get('variable_id'), 1.0)
+            by_eval_parameters.setdefault(row.get('evaluation_id'), {})[row.get('variable_id')] = (
+                value / size if isinstance(value, (int, float)) and not isinstance(value, bool) else value)
     for row in metrics:
         if row.get('aggregation_level') in (None, 'aggregate'):
             by_eval_metrics.setdefault(row.get('evaluation_id'), {})[row.get('metric_name')] = row.get('raw_value')
@@ -103,7 +117,7 @@ def build(*, status: dict, config: dict, evaluations: list, parameters: list, me
         judged = [row for row in rows if row.get('satisfied') is not None]
         targets.append(dict(metric_id=name, equation=target.get('equation') or target.get('measurement_id'),      # an older run named one probe
                             constraint=target.get('constraint'), lower=_num(target.get('lower')), upper=_num(target.get('upper')),
-                            target=_num(target.get('target')), unit=target.get('unit'), hard=target.get('hard', True), active=target.get('active', True),
+                            unit=target.get('unit'), hard=target.get('hard', True), active=target.get('active', True),
                             reached=_stats([row.get('raw_value') for row in rows if row.get('valid')]),
                             at_best=_num((by_eval_metrics.get(best.get('evaluation_id')) or {}).get(name)) if best else None,
                             share_satisfied=_num(sum(1 for row in judged if row.get('satisfied')) / len(judged), 3) if judged else None,

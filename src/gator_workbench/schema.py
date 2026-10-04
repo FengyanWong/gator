@@ -43,7 +43,10 @@ RETIRED_PARAMETER_FIELDS = {'name': '', 'target_kind': 'instance_parameter', 'ca
 RETIRED_MEASUREMENT_FIELDS = {'function': None, 'window': None, 'at_frequency_hz': None, 'integration_band_hz': None,
                               'branch_direction': None, 'loop_definition': None, 'crossover': None,
                               'on_failure': 'invalid', 'validity': [{'kind': 'finite', 'value': None, 'note': ''}],
-                              'conditions': ['nominal'], 'aggregation': 'nominal_only'}
+                              'conditions': ['nominal'], 'aggregation': 'nominal_only', 'expression': None}
+# The Specs' target and tolerance, retired on 2026-10-03 (review of the editor columns): "target +/- tolerance" was an
+# interval, and a tolerance only loosened a limit. Hashed at these defaults like the fields above.
+RETIRED_TARGET_FIELDS = {'target': None, 'tolerance': 0.0}
 
 
 def _without_retired(data, retired):
@@ -165,15 +168,11 @@ class PerformanceTarget(_Model):
                     'simplest equation is one Probe ID. Probe values are in canonical units (W, Hz, V...), so W / Hz gives '
                     'J. A missing or invalid probe, or a failed operation such as a division by zero, makes the spec '
                     'invalid - never a number. Evaluated by a whitelist, never eval().')
-    unit: str = Field(max_length=32, description='Unit of the thresholds, tolerance and normalization scale.')
-    constraint: Literal['>=', '<=', 'interval', 'target'] = Field(
-        description='>= lower; <= upper; interval [lower, upper]; target +/- tolerance.')
+    unit: str = Field(max_length=32, description='Unit of the thresholds and the normalization scale.')
+    constraint: Literal['>=', '<=', 'interval'] = Field(
+        description='>= lower; <= upper; interval [lower, upper].')
     lower: Optional[float] = Field(None, description='Lower threshold (>=, interval).')
     upper: Optional[float] = Field(None, description='Upper threshold (<=, interval).')
-    target: Optional[float] = Field(None, description='Target value (constraint=target).')
-    tolerance: float = Field(0.0, ge=0,
-        description='Acceptance tolerance in `unit`. For constraint=target it is the half-width and must be > 0. '
-                    'For other constraints it relaxes each threshold by this amount.')
     hard: bool = Field(True,
         description='Hard constraint: must be satisfied for feasibility. Feasibility is decided from raw metric '
                     'values and thresholds, independently of the reward.')
@@ -185,13 +184,44 @@ class PerformanceTarget(_Model):
     margin_sides: Literal['both', 'lower', 'upper'] = Field('both', description='Margin sides: which limits contribute to the clearance bonus and Corner check ranking. Feasibility still checks every limit.')
     soft_weight: float = Field(1.0, gt=0, description='Relative weight of this target in the reward.')
     normalization_scale: Optional[float] = Field(None, gt=0,
-        description='Violation is (threshold distance)/scale, capped at 1. Empty = the size of the threshold: the largest '
-                    'of |lower|, |upper| and |target|, or 1 when they are all zero. Give a physically meaningful scale to '
-                    'use another.')
+        description='Violation is (threshold distance)/scale, capped at 1. Empty = the size of the threshold: the larger '
+                    'of |lower| and |upper|, or 1 when both are zero. Give a physically meaningful scale to use another.')
     active: bool = Field(True, description='Inactive targets affect neither reward nor feasibility.')
     basis: str = Field('', max_length=1000,
         description='Where this requirement comes from (datasheet, user statement...). Agent suggestions must '
                     'state their basis; requirements are never inferred from the circuit alone.')
+
+    @model_validator(mode='before')
+    @classmethod
+    def _retired_fields(cls, data):
+        """A spec written before 2026-10-03 may carry `target` and `tolerance` (RETIRED_TARGET_FIELDS). What they meant is
+        kept in the limits, as the compiler applied them: "target +/- tolerance" was the interval [target - tolerance,
+        target + tolerance], and a tolerance on any other spec loosened each limit by that much. An empty scale gets the
+        size it had, taken from the limits as typed (and |target|). A target without a positive tolerance, or one with
+        limits as well, never ran (both were errors) and is refused in plain words."""
+        if not isinstance(data, dict) or not (RETIRED_TARGET_FIELDS.keys() & data.keys() or data.get('constraint') == 'target'):
+            return data
+        row, who = dict(data), data.get('metric_id') or 'this spec'
+        number = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
+        target, tolerance = row.pop('target', None), row.pop('tolerance', None)
+        tolerance = 0.0 if tolerance is None else tolerance
+        if not number(tolerance) or tolerance < 0:
+            raise ValueError(f'{who}: tolerance {tolerance!r} is not a number of at least 0. The tolerance column was '
+                             'retired; give the limits it was meant to loosen instead.')
+        lower, upper = row.get('lower'), row.get('upper')
+        size = max([abs(v) for v in (lower, upper, target) if number(v)] or [0.0]) or 1.0
+        if row.get('constraint') == 'target':
+            if not number(target) or tolerance <= 0 or lower is not None or upper is not None:
+                raise ValueError(f'{who}: "target +/- tolerance" is no longer offered, and this spec is not a target with a '
+                                 'positive tolerance and no limits (the run refused it). Give an interval instead.')
+            row.update(constraint='interval', lower=target - tolerance, upper=target + tolerance)
+        elif tolerance:
+            row.update({k: v + d for k, v, d in (('lower', lower, -tolerance), ('upper', upper, tolerance)) if number(v)})
+        else:
+            return row
+        if row.get('normalization_scale') is None:
+            row['normalization_scale'] = size
+        return row
 
     @model_validator(mode='before')
     @classmethod
@@ -207,19 +237,17 @@ class PerformanceTarget(_Model):
 # --------------------------------------------------------------------------- measurements
 class MeasurementDefinition(_Model):
     measurement_id: str = Field(min_length=1, max_length=120, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
-        description='Stable ID. Targets refer to it, and expression measurements may use it as a symbol.')
+        description='Stable ID. Spec equations refer to it. A Maestro output\'s ID is m_ + its output name.')
     analysis: Literal['dc', 'ac', 'tran', 'noise', 'stb', 'pss', 'pnoise', 'other'] = Field(
         description='Analysis that produces the raw data.')
-    result_source: Literal['backend_profile', 'ade_output', 'expression'] = Field('backend_profile',
-        description='backend_profile: a metric computed by the verified circuit-profile analyzer. ade_output: an '
-                    'existing ADE/Maestro output (preferred for native designs; needs the bridge). expression: '
-                    'restricted arithmetic over other measurement IDs.')
+    result_source: Literal['backend_profile', 'ade_output'] = Field('backend_profile',
+        description='backend_profile: a metric computed by the circuit-profile analyzer. ade_output: a Maestro output '
+                    '(needs the bridge). A task measures one way; a new row takes the way of the rows there.')
     source_name: Optional[str] = Field(None, max_length=200,
         description='Metric name in the backend profile, or the ADE output name.')
-    signal: Optional[str] = Field(None, max_length=300, description='Node, branch or signal, e.g. VOUT or VDD:p.')
-    expression: Optional[str] = Field(None, max_length=512,
-        description='Restricted arithmetic (+ - * / ** and parentheses) over other measurement IDs. No function '
-                    'calls, no attribute access, never eval().')
+    signal: Optional[str] = Field(None, max_length=300,
+        description='For a Maestro output: its expression, e.g. ymax(VT("/OUT")) or getData("loopGain" ?result "stb"). '
+                    'For a profile metric: a label of what is measured, e.g. VOUT.')
     unit: str = Field(max_length=32,
         description='Unit of the measured value. A target using this measurement must have a compatible unit.')
     notes: str = Field('', max_length=1000, description='Free text; not used by the optimizer.')
@@ -232,7 +260,14 @@ class MeasurementDefinition(_Model):
         conditions and aggregation (RETIRED_MEASUREMENT_FIELDS). No backend ever read them - a set `function`, like
         conditions other than [nominal] or an aggregation other than nominal_only, even blocked the run - so they are
         dropped, whatever they say. The test conditions are the run's (`run.conditions`) and each spec's
-        (`PerformanceTarget.nominal_only`), since reward v2."""
+        (`PerformanceTarget.nominal_only`), since reward v2. A probe computed from other probes (`result_source`
+        expression, retired on 2026-10-03) is a spec equation's job since record 7.52: in a whole configuration its
+        arithmetic is written into the equations of the specs that use it (`WorkbenchConfig._expression_probes`); a row
+        on its own is refused in plain words."""
+        if isinstance(data, dict) and data.get('result_source') == 'expression':
+            raise ValueError(f'{data.get("measurement_id") or "this probe"}: a probe computed from other probes (result '
+                             'source "expression") is no longer offered. Write its arithmetic in the equation of the spec '
+                             'that uses it.')
         return _without_retired(data, RETIRED_MEASUREMENT_FIELDS)
 
 
@@ -536,6 +571,30 @@ class WorkbenchConfig(_Model):
     output: OutputSettings = Field(default_factory=OutputSettings)
     research: ResearchLabels = Field(default_factory=ResearchLabels)
 
+    @model_validator(mode='before')
+    @classmethod
+    def _expression_probes(cls, data):
+        """A configuration written before 2026-10-03 may hold Probes computed from other probes (`result_source`
+        expression, with `expression`, RETIRED_MEASUREMENT_FIELDS). Their arithmetic goes, in parentheses, into the
+        equations of the specs that use them (and of such probes first), and the probes go: the specs compute the same
+        numbers with the same evaluator, which the probes used too. A cycle of such probes never ran and is refused."""
+        rows = data.get('measurements') if isinstance(data, dict) else None
+        computed = {m.get('measurement_id'): m.get('expression') or '' for m in rows or []
+                    if isinstance(m, dict) and m.get('result_source') == 'expression'} if isinstance(rows, list) else {}
+        if not computed:
+            return data
+
+        def written(text, seen=()):
+            for name in [n for n in computed if isinstance(n, str) and _equation_uses(text, n)]:
+                if name in seen:
+                    raise ValueError(f'Probe {name} is computed from itself; a cycle of expression probes never ran.')
+                text = _replace_name(text, name, f'({written(computed[name], seen + (name,))})')
+            return text
+        targets = [dict(t, equation=written(t['equation'])) if isinstance(t, dict) and isinstance(t.get('equation'), str)
+                   else t for t in data.get('targets') or []]
+        return dict(data, targets=targets, measurements=[m for m in rows if not (isinstance(m, dict)
+                                                                                     and m.get('result_source') == 'expression')])
+
     @model_validator(mode='after')
     def _reward_contract(self):
         # The objective rows (one at most, with the limit its direction needs) are checked by validation.py as
@@ -563,6 +622,20 @@ def canonical_json(value) -> str:
 _ONE_PROBE = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]*$')
 
 
+def _name_pattern(name):
+    """A Probe ID as a whole name in a spec equation: its names are plain identifiers (spec_equations.parse reads them
+    with Python's ast), so neither a longer name nor a number's SI suffix (2m) holds it."""
+    return re.compile(rf'(?<![A-Za-z0-9_.]){re.escape(name)}(?![A-Za-z0-9_])')
+
+
+def _equation_uses(text, name):
+    return isinstance(text, str) and bool(_name_pattern(name).search(text))
+
+
+def _replace_name(text, name, replacement):
+    return _name_pattern(name).sub(lambda _: replacement, text)
+
+
 def _hashed(data):
     """What both hashes see. A spec whose equation is one Probe ID is hashed in the form every configuration had before
     specs were equations (`measurement_id`), so a configuration written earlier keeps its hashes: its runs still
@@ -573,7 +646,9 @@ def _hashed(data):
     same reason again; a row that stated another value for one of them (it never ran, or the run refused it) hashes
     differently since. So is the retired `run.threads_per_job` (2026-09-29, RETIRED_RUN_FIELDS). The RL model's label
     (`run.model_label`, record 7.159) is hashed as absent while it is not set. The research labels retired on 2026-10-03
-    (record 7.163, RETIRED_RESEARCH_FIELDS) are hashed as present at their old defaults."""
+    (record 7.163, RETIRED_RESEARCH_FIELDS) are hashed as present at their old defaults, and so are the Specs' target and
+    tolerance and the Probes' expression retired the same day (RETIRED_TARGET_FIELDS, RETIRED_MEASUREMENT_FIELDS): a spec
+    that used them, or a probe computed from others, was rewritten when it loaded and hashes differently since."""
     data = dict(data)
     research = data.get('research') if isinstance(data, dict) else None
     if isinstance(research, dict):
@@ -616,7 +691,8 @@ def _hashed(data):
     targets = data.get('targets') if isinstance(data, dict) else None
     if not isinstance(targets, list):
         return data
-    targets = [{k: v for k, v in row.items() if not (k in ('nominal_only', 'missing_is_failure') and v is False or k == 'margin_sides' and v == 'both')}
+    targets = [{k: v for k, v in dict(RETIRED_TARGET_FIELDS, **row).items()
+                if not (k in ('nominal_only', 'missing_is_failure') and v is False or k == 'margin_sides' and v == 'both')}
                if isinstance(row, dict) else row for row in targets]
     return dict(data, targets=[
         {('measurement_id' if key == 'equation' else key): value for key, value in row.items()}
@@ -647,10 +723,15 @@ def json_schema(section: str | None = None) -> dict:
     return SECTIONS[section].model_json_schema()
 
 
-# Columns the editors show only after "More columns": they exist, an agent may set them, a task file keeps them.
-ADVANCED_COLUMNS = {'targets': ('soft_weight', 'active', 'basis', 'missing_is_failure', 'margin_sides')}
-# Columns the editors show but take no typing in: the circuit read fills them, and a typed value could only differ.
-READ_ONLY_COLUMNS = {'parameters': ('initial_value',)}
+# Columns the editors show only after "More columns": they exist, an agent may set them, a task file keeps them. The
+# Parameters' four were always the same in the saved tasks (review of 2026-10-03): Save task takes value_type and the step
+# from the PDK, ratio must equal what the circuit shows, and nobody chose a log scale.
+ADVANCED_COLUMNS = {'targets': ('soft_weight', 'active', 'basis', 'missing_is_failure', 'margin_sides'),
+                    'parameters': ('value_type', 'step', 'scale', 'ratio')}
+# Columns the editors do not show at all: the value follows from elsewhere, and the rows keep it (task files, both hashes,
+# the agent, the parked AnalogGym import). initial_value was never filled in a saved task - Save task empties it - and
+# result_source is the task's one way of measuring: a new Probes row takes it from the rows there (review of 2026-10-03).
+HIDDEN_COLUMNS = {'parameters': ('initial_value',), 'measurements': ('result_source',)}
 
 
 def editor_columns(section: str) -> list[dict]:
@@ -675,7 +756,7 @@ def editor_columns(section: str) -> list[dict]:
                             nullable=any(b.get('type') == 'null' for b in prop.get('anyOf', [])),
                             guidance=info.description or '', default=prop.get('default'),
                             advanced=name in ADVANCED_COLUMNS.get(section, ()),
-                            readonly=name in READ_ONLY_COLUMNS.get(section, ())))
+                            hidden=name in HIDDEN_COLUMNS.get(section, ())))
     return columns
 
 

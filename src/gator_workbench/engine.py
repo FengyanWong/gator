@@ -1106,11 +1106,17 @@ class RunEngine:
     # ------------------------------------------------------------------ row builders
     def _candidate(self, busy, record, metrics, units_map, constraints, valid, feasible, violation, reward, seq):
         applied = {(r['device'], r['parameter']): r['value'] for r in (record.get('applied_parameters') or [])}
+        # A fixed group (optimized = false) is never sent to the simulator, so no candidate reports it: its members keep the
+        # circuit's values. Read as missing, every candidate of a task with one fixed row was "incomplete" - never valid,
+        # never feasible, no best design (review of 2026-10-03).
+        fixed = {group.id: group.value for group in self.compiled.graph.parameter_groups if not group.mutable}
         variables, members = [], []
         for variable in self.compiled.variables:
             group_value = None
             for member in variable['members']:
                 value = applied.get((member['instance_path'], self._source_name(member)))
+                if value is None and variable['variable_id'] in fixed:
+                    value = fixed[variable['variable_id']] * member['ratio']
                 if value is not None and group_value is None:
                     group_value = value / member['ratio']
                 members.append(dict(variable_id=variable['variable_id'], member_variable_id=member['variable_id'],

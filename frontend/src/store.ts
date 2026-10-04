@@ -29,7 +29,9 @@ export function migrateConfig(config: Json): Json {
     out = { ...out, targets };
   }
   if (Array.isArray(config.parameters)) out = { ...out, parameters: config.parameters.map(migrateParameter) };
-  if (Array.isArray(config.measurements)) out = { ...out, measurements: config.measurements.map((row: Json) => without(row, RETIRED_MEASUREMENT_KEYS)) };
+  out = withoutExpressionProbes(out);
+  if (Array.isArray(out.targets)) out = { ...out, targets: out.targets.map(migrateTarget) };
+  if (Array.isArray(out.measurements)) out = { ...out, measurements: out.measurements.map((row: Json) => without(row, RETIRED_MEASUREMENT_KEYS)) };
   // "Threads per job" retired on 2026-09-29: no simulator ever used it. The backend drops it too and hashes it at 1.
   if (config.run && typeof config.run === 'object' && 'threads_per_job' in config.run) out = { ...out, run: without(config.run, ['threads_per_job']) };
   // "Experiment group" and "Test tasks" retired on 2026-10-03 (record 7.163): nothing read them. The backend drops them too.
@@ -44,7 +46,47 @@ export function migrateConfig(config: Json): Json {
  *  ratio, a discrete candidate grid as lower/upper/step), and a value that cannot be kept goes into the notes. */
 const RETIRED_PARAMETER_KEYS = ['name', 'target_kind', 'candidates', 'relation', 'expression'];
 const RETIRED_MEASUREMENT_KEYS = ['function', 'window', 'at_frequency_hz', 'integration_band_hz', 'branch_direction', 'loop_definition', 'crossover', 'on_failure', 'validity',
-  'conditions', 'aggregation'];
+  'conditions', 'aggregation', 'expression'];
+
+/** Retired on 2026-10-03, as the backend does (schema.WorkbenchConfig._expression_probes, PerformanceTarget._retired_fields):
+ *  a probe computed from other probes goes into the equations of the specs that use it, in parentheses; a spec's
+ *  "target ± tolerance" becomes the interval it was, and a tolerance on another spec the limits it loosened (an empty scale
+ *  gets the size it had). What never ran (a cycle of probes, a target without a positive tolerance) stays as it is, for
+ *  the backend to refuse in plain words. */
+const namePattern = (name: string) => new RegExp(`(?<![A-Za-z0-9_.])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`, 'g');
+function withoutExpressionProbes(config: Json): Json {
+  const probes: Json[] = Array.isArray(config.measurements) ? config.measurements : [];
+  const computed = new Map<string, string>(probes.filter(m => m?.result_source === 'expression').map(m => [String(m.measurement_id), String(m.expression ?? '')]));
+  if (!computed.size) return config;
+  const written = (text: string, seen: string[] = []): string | null => {
+    let out: string | null = text;
+    for (const [name, expression] of computed) {
+      if (out === null || !namePattern(name).test(out)) continue;
+      if (seen.includes(name)) return null;
+      const inner = written(expression, [...seen, name]);
+      out = inner === null ? null : out.replace(namePattern(name), `(${inner})`);
+    }
+    return out;
+  };
+  const targets = (config.targets ?? []).map((t: Json) => typeof t?.equation === 'string' ? { t, equation: written(t.equation) } : { t, equation: t?.equation });
+  if (targets.some((x: Json) => x.equation === null)) return config;                 // a cycle: the backend says so
+  return { ...config, targets: targets.map((x: Json) => typeof x.t?.equation === 'string' ? { ...x.t, equation: x.equation } : x.t),
+    measurements: probes.filter(m => m?.result_source !== 'expression') };
+}
+function migrateTarget(row: Json): Json {
+  if (!row || typeof row !== 'object' || !('target' in row || 'tolerance' in row || row.constraint === 'target')) return row;
+  const number = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+  const tolerance = row.tolerance ?? 0, size = Math.max(...[row.lower, row.upper, row.target].filter(number).map(Math.abs), 0) || 1;
+  if (!number(tolerance) || tolerance < 0) return row;
+  let out = without(row, ['target', 'tolerance']);
+  if (row.constraint === 'target') {
+    if (!number(row.target) || tolerance <= 0 || row.lower != null || row.upper != null) return row;
+    out = { ...out, constraint: 'interval', lower: row.target - tolerance, upper: row.target + tolerance };
+  } else if (tolerance) {
+    out = { ...out, ...(number(row.lower) ? { lower: row.lower - tolerance } : {}), ...(number(row.upper) ? { upper: row.upper + tolerance } : {}) };
+  } else return out;
+  return out.normalization_scale == null ? { ...out, normalization_scale: size } : out;
+}
 
 function without(row: Json, keys: string[]): Json {
   if (!row || typeof row !== 'object' || !keys.some(key => key in row)) return row;

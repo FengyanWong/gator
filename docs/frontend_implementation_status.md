@@ -215,3 +215,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.169 | Research experiments' name shows the hand pointer (it opens and closes the fold), not the help question mark; its note stays the name's tooltip |
 | 7.170 | Connection window: Folders is a section of its own, headed like steps 1-3 (a folder sign where they have a number); each folder's comment is its name's tooltip, no text under it |
 | 7.171 | The three 0-to-1 reward boxes (Worst hard-spec share, Objective bonus weight, Tightest-margin bonus weight) without the browser's up/down arrows; still number boxes with the 0..1 range |
+| 7.172 | Editor columns: Specs target/tolerance and Probes expression retired (identities kept); initial_value and result_source hidden; value_type/step/scale/ratio behind More columns; probe ID and spec unit follow; six faults fixed (Read setup analysis and citations, Add probe source, digest units, fixed rows, a note dropping the baseline) |

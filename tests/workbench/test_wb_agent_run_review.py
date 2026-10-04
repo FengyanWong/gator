@@ -52,6 +52,18 @@ def test_the_digest_says_what_happened_where_the_search_went_and_what_failed():
     assert len(json.dumps(digest)) < 12000 and 'NaN' not in json.dumps(digest)                          # bounded, and plain JSON
 
 
+def test_values_are_read_in_the_rows_unit():
+    """Review of 2026-10-03: rows state bounds in their unit (um), the table records executed values in metres - compared
+    as they came, every um variable looked pinned at its lower bound."""
+    evaluations, parameters, metrics = rows(12)
+    config = dict(CONFIG, parameters=[dict(variable_id='width', lower=1.0, upper=8.0, unit='um'), dict(variable_id='width__m2', binding_group='width')])
+    digest = run_digest.build(status=dict(best_design=dict(evaluation_id='e11')), config=config, evaluations=evaluations, parameters=parameters,
+                              metrics=metrics, updates=[], errors=[])
+    width = digest['variables'][0]
+    assert width['share_at_upper_bound'] == pytest.approx(8 / 12, abs=1e-3) and width['share_at_lower_bound'] == 0.0
+    assert width['at_best'] == 8.0 and digest['best']['parameters'] == dict(width=8.0) and width['tried']['min'] == 2.0
+
+
 def test_too_little_data_is_said_as_null_and_an_empty_run_is_not_an_error():
     empty = run_digest.build(status=dict(state='starting', worker_alive=True), config=CONFIG, evaluations=[], parameters=[], metrics=[], updates=[], errors=[])
     assert empty['best'] is None and empty['progress'] == [] and empty['training']['policy_reward_trend'] is None

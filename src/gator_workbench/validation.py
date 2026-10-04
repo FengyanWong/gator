@@ -373,10 +373,6 @@ def _check_measurements(config, report, *, provided_metrics):
                 report.add('blocker', 'ade_outputs_not_wired', path + '.result_source',
                            f'The Maestro output {m.source_name!r} is measured only by a task saved with it (Save task): this '
                            'circuit does not measure it.')
-        elif m.result_source == 'expression':
-            if not m.expression:
-                report.add('error', 'missing_expression', path + '.expression', 'expression source needs one')
-    _check_expression_measurements(config, report, ids)
     return ids
 
 
@@ -385,37 +381,6 @@ def _expression_symbols(expression):
     # zero and was rejected as unsupported.
     from .spec_equations import parse
     return parse(expression)
-
-
-def _check_expression_measurements(config, report, ids):
-    graph = {}
-    for i, m in enumerate(config.measurements):
-        if m.result_source != 'expression' or not m.expression:
-            continue
-        names, error = _expression_symbols(m.expression)
-        path = f'measurements[{i}].expression'
-        if names is None:
-            report.add('error', 'expression_rejected', path,
-                       f'Unsupported expression ({error}). Allowed: numbers, measurement IDs, + - * / ** ( )')
-            continue
-        unknown = [n for n in names if n not in ids]
-        if unknown:
-            report.add('error', 'expression_unknown_symbol', path, f'Unknown measurement IDs: {unknown}')
-        graph[m.measurement_id] = [n for n in names if n in ids]
-    state = {}
-
-    def visit(node, trail):
-        if state.get(node) == 'done':
-            return
-        if state.get(node) == 'open':
-            report.add('error', 'expression_cycle', 'measurements', 'cycle: ' + ' -> '.join(trail + [node]))
-            return
-        state[node] = 'open'
-        for child in graph.get(node, []):
-            visit(child, trail + [node])
-        state[node] = 'done'
-    for node in graph:
-        visit(node, [])
 
 
 def _check_equation(t, path, report, measurement_ids):
@@ -470,8 +435,8 @@ def _check_targets(config, report, measurement_ids, *, registry, extensible=True
             report.add('error', 'spec_name_is_a_result', path + '.metric_id',
                        f'{t.metric_id!r} is the name of a result the simulation returns, but this spec computes {equation!r}. '
                        f'Give the spec its own name, or make its equation the Probe that reads {t.metric_id}.')
-        given = dict(lower=t.lower is not None, upper=t.upper is not None, target=t.target is not None)
-        need = {'>=': ('lower',), '<=': ('upper',), 'interval': ('lower', 'upper'), 'target': ('target',)}[t.constraint]
+        given = dict(lower=t.lower is not None, upper=t.upper is not None)
+        need = {'>=': ('lower',), '<=': ('upper',), 'interval': ('lower', 'upper')}[t.constraint]
         for name in need:
             if not given[name]:
                 report.add('error', 'missing_threshold', f'{path}.{name}', f'constraint {t.constraint} needs {name}')
@@ -481,13 +446,10 @@ def _check_targets(config, report, measurement_ids, *, registry, extensible=True
                            f'{name} is not used by constraint {t.constraint}; remove it to avoid ambiguity')
         if t.constraint == 'interval' and given['lower'] and given['upper'] and t.lower > t.upper:
             report.add('error', 'invalid_interval', path, 'lower must not exceed upper')
-        if t.constraint == 'target' and t.tolerance <= 0:
-            report.add('error', 'target_needs_tolerance', path + '.tolerance',
-                       'target-with-tolerance needs a positive tolerance')
         if t.direction_after_feasible != 'none' and t.active:
             preference.append(t.metric_id)
             needed = 'upper' if t.direction_after_feasible == 'minimize' else 'lower'
-            if t.constraint != 'target' and getattr(t, needed) is None:
+            if getattr(t, needed) is None:
                 report.add('error', 'objective_without_limit', path + f'.{needed}',
                            f'{t.metric_id}: a {t.direction_after_feasible} objective needs its {needed} limit - the objective '
                            'bonus measures how far inside that limit the design is')
@@ -526,9 +488,7 @@ def _check_targets(config, report, measurement_ids, *, registry, extensible=True
         equation = t.equation.strip()
         used |= {equation} if equation in measurement_ids else set(_expression_symbols(equation)[0] or ())
     for i, m in enumerate(config.measurements):
-        referenced = any(m.measurement_id in (_expression_symbols(o.expression)[0] or [])
-                         for o in config.measurements if o.result_source == 'expression' and o.expression)
-        if m.measurement_id not in used and not referenced:
+        if m.measurement_id not in used:
             report.add('warning', 'unused_measurement', f'measurements[{i}]', 'No spec equation uses this probe')
 
 

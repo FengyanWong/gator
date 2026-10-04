@@ -121,9 +121,10 @@ await runChecks(browser, async () => {
   for (let i = 0; i < 50 && !(await stored()); i++) await sleep(100);
   const starter = await stored();                                   // the page's own configuration: every field the page needs
   const seeded = { ...starter, circuit: { ...starter.circuit, source: 'virtuoso', task_id: null, library: LIB, cell: CELL, view: 'schematic', testbench_cell: TB, pdk_id: 'gpdk045' },
-    measurements: [...starter.measurements, { measurement_id: 'm_freq', analysis: 'tran', result_source: 'ade_output', source_name: 'freq',
+    measurements: [...starter.measurements, { measurement_id: 'm_freq', analysis: 'ac', result_source: 'ade_output', source_name: 'freq',
       signal: 'frequency(VT("/OUT"))', unit: 'GHz', notes: 'mine' }],
-    targets: [...starter.targets, { metric_id: 'freq', equation: 'm_freq', unit: 'GHz', constraint: '>=', lower: 0.5, normalization_scale: 0.5, hard: false, soft_weight: 3 }] };
+    targets: [...starter.targets, { metric_id: 'freq', equation: 'm_freq', unit: 'GHz', constraint: '>=', lower: 0.5, normalization_scale: 0.5, hard: false, soft_weight: 3,
+      basis: 'mine: datasheet', margin_sides: 'lower' }] };
   await evaluate(`localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(seeded))})`);
   await send('Page.reload');
   for (let i = 0; i < 100 && !(await evaluate(`!!(${LAUNCH})`)); i++) await sleep(100);
@@ -165,6 +166,11 @@ await runChecks(browser, async () => {
   check('your unit on a probe of the same name stays', probe?.unit === 'GHz' && probe?.notes === 'mine', JSON.stringify(probe));
   check('your optimizer settings on the spec stay; the cell\'s limit (1e9 Hz) arrives in your unit (1 GHz)', spec?.hard === false && spec?.soft_weight === 3
     && spec?.unit === 'GHz' && Math.abs(spec?.lower - 1) < 1e-12 && spec?.normalization_scale === 0.5, JSON.stringify(spec));
+  // Review of 2026-10-03: the analysis came back as a guess from the expression ("other" for getData outputs, so Save task
+  // refused the rows), and a spec's citation became "Maestro spec on ..." - what the cell does not hold now stays.
+  check('your analysis stays while the expression is the cell\'s, and so do the spec\'s citation and its margin sides',
+    probe?.analysis === 'ac' && spec?.basis === 'mine: datasheet' && spec?.margin_sides === 'lower',
+    JSON.stringify({ analysis: probe?.analysis, basis: spec?.basis, margin_sides: spec?.margin_sides }));
   const vmaxSpec = config.targets.find(t => t.metric_id === 'vmax');
   check('a spec on a probe in the base unit keeps the cell\'s numbers', vmaxSpec?.unit === 'V' && vmaxSpec?.lower === 0.9 && vmaxSpec?.upper === 1.1, JSON.stringify(vmaxSpec));
   check('the other rows are left alone', config.measurements.length === starter.measurements.length + 2

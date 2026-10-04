@@ -83,7 +83,7 @@ def test_other_rejections_read_plainly_too():
     assert 'it contains a space, "<", ">" and it starts with "1"' in said['parameters[2].variable_id'][1]
     assert 'for example _1st_M_0_' in said['parameters[2].variable_id'][1]
     assert said['targets[0].unit'] == ('schema', 'unit is missing: this field needs a value.')
-    assert said['targets[0].constraint'][1] == "constraint must be one of '>=', '<=', 'interval' or 'target' (it is \"between\")."
+    assert said['targets[0].constraint'][1] == "constraint must be one of '>=', '<=' or 'interval' (it is \"between\")."
     assert said['targets[0].normalization_scale'][1] == 'normalization_scale must be greater than 0 (it is 0).'
     assert 'Specs equations that use it need the new ID too' in said['measurements[1].measurement_id'][1]
     assert said['run.max_evaluations'][1] == 'max_evaluations needs a whole number (it is 1.5).'

@@ -51,7 +51,11 @@ IC_NET = re.compile(r'^[A-Za-z_0-9][A-Za-z0-9_.]{0,127}$')
 IC_HEADER = '// GATOR initial conditions - written with the task, do not edit\n'
 TOKEN = re.compile(r'''\s*(?:(?P<string>"(?:[^"\\]|\\.)*")|(?P<number>(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?[a-zA-Z]?)
                        |(?P<key>\?[A-Za-z_]\w*)|(?P<name>[A-Za-z_]\w*)|(?P<op>[-+*/(),])|(?P<bad>\S))''', re.X)
-ANALYSIS_OF = {'VT': 'tran', 'IT': 'tran', 'VF': 'ac', 'IF': 'ac', 'VDC': 'dc', 'IDC': 'dc', 'OP': 'dc', 'VN': 'noise', 'VN2': 'noise'}
+ANALYSIS_OF = {'VT': 'tran', 'IT': 'tran', 'VF': 'ac', 'IF': 'ac', 'VDC': 'dc', 'IDC': 'dc', 'OP': 'dc', 'VN': 'noise', 'VN2': 'noise',
+               'VS': 'dc', 'IS': 'dc'}
+# The analyses a `?result "..."` names (getData, value, ...): an info result such as dcOpInfo or element names none.
+RESULT_ANALYSIS = {'dc': 'dc', 'dcOp': 'dc', 'ac': 'ac', 'tran': 'tran', 'noise': 'noise', 'stb': 'stb', 'pss': 'pss', 'pnoise': 'pnoise'}
+RESULT_NAME = re.compile(r'''\?result\s+(?:"([^"]*)"|'([A-Za-z_]\w*))''')
 # A unit SUGGESTED from the outermost function of an expression; a Probes row always says it is a suggestion.
 UNIT_OF = {'frequency': 'Hz', 'bandwidth': 'Hz', 'unityGainFreq': 'Hz', 'gainBwProd': 'Hz', 'harmonicFreq': 'Hz',
            'riseTime': 's', 'fallTime': 's', 'delay': 's', 'settlingTime': 's', 'slewRate': 'V/s', 'phaseMargin': 'deg',
@@ -101,8 +105,13 @@ def outermost_function(expression):
 
 
 def analysis_of(expression):
-    """The analysis an expression reads, from the signal accessors it calls; 'other' when mixed or unknown."""
-    found = {ANALYSIS_OF[name] for name in re.findall(r'([A-Za-z_]\w*)\s*\(', expression or '') if name in ANALYSIS_OF}
+    """The analysis an expression reads, from the signal accessors it calls and the results it names (`?result "stb"`);
+    'other' when mixed or unknown. The results were not read until 2026-10-03: a loop gain, a phase margin or a noise
+    output read through getData came back 'other', so did a DC sweep (VS, IS), and Save task refused the next save
+    after "Read setup" ("reads the other analysis, which the Maestro test does not run")."""
+    text = expression or ''
+    found = {ANALYSIS_OF[name] for name in re.findall(r'([A-Za-z_]\w*)\s*\(', text) if name in ANALYSIS_OF}
+    found |= {RESULT_ANALYSIS[name] for pair in RESULT_NAME.findall(text) for name in pair if name in RESULT_ANALYSIS}
     return found.pop() if len(found) == 1 else 'other'
 
 

@@ -588,13 +588,11 @@ HISTORY = 'history'
 
 def measurement_kind(config) -> str:
     """How a task measures, read from its Probes: all Maestro outputs -> 'maestro'; all results of one circuit type ->
-    that type. Expression probes follow the probes they are made of."""
-    measured = [m for m in config.measurements if m.result_source != 'expression']
-    if not config.measurements:
+    that type."""
+    measured = list(config.measurements)
+    if not measured:
         raise ProfileError('Probes is empty: say what the simulation measures (Probes tab) before saving the task')
     sources = {m.result_source for m in measured}
-    if not sources:
-        raise ProfileError('Every probe is an expression over other probes: at least one must be measured')
     if sources == {'ade_output'}:
         return MAESTRO
     if sources == {'backend_profile'}:

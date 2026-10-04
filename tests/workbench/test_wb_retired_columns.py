@@ -95,15 +95,19 @@ def test_probe_conditions_and_aggregation_are_dropped_whatever_they_say(tmp_path
     assert schema.task_definition_hash(same) == G7_TASK_HASH                  # stated at their defaults: the same task
 
 
-def test_editor_columns_say_what_is_shown_on_request_and_what_is_read_only():
+def test_editor_columns_say_what_is_shown_on_request_and_what_is_hidden():
+    """Review of 2026-10-03: the Parameters' value_type, step, scale and ratio step back behind "More columns"; initial_value
+    (never filled in a saved task) and result_source (the task's one way of measuring) are not shown - the rows keep them.
+    The Specs' target and tolerance and the Probes' expression were retired."""
     by = {section: {c['name']: c for c in schema.editor_columns(section)} for section in schema.SECTIONS}
     assert [n for n, c in by['targets'].items() if c['advanced']] == ['missing_is_failure', 'margin_sides', 'soft_weight', 'active', 'basis']
-    assert [n for n, c in by['parameters'].items() if c['readonly']] == ['initial_value']
-    assert not any(c['advanced'] for c in [*by['parameters'].values(), *by['measurements'].values()])
+    assert [n for n, c in by['parameters'].items() if c['advanced']] == ['value_type', 'step', 'scale', 'ratio']
+    assert [n for s in by for n, c in by[s].items() if c['hidden']] == ['initial_value', 'result_source']
+    assert not any(c['advanced'] for c in by['measurements'].values())
     assert list(by['parameters']) == ['variable_id', 'instance_path', 'parameter_name', 'initial_value', 'unit', 'optimized',
                                       'value_type', 'lower', 'upper', 'step', 'scale', 'binding_group', 'ratio', 'notes']
-    assert list(by['measurements']) == ['measurement_id', 'analysis', 'result_source', 'source_name', 'signal', 'expression',
-                                        'unit', 'notes']
+    assert list(by['measurements']) == ['measurement_id', 'analysis', 'result_source', 'source_name', 'signal', 'unit', 'notes']
+    assert 'target' not in by['targets'] and 'tolerance' not in by['targets']
 
 
 def test_normalization_scale_defaults_to_the_size_of_the_threshold(tmp_path):

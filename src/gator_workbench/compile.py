@@ -54,11 +54,11 @@ def grid_top(lower, upper, step, integer=False):
 
 
 def normalization_scale(target) -> float:
-    """The scale a spec's violation is divided by: the one stated, else the size of its threshold (the largest of |lower|,
-    |upper| and |target|), else 1 - the same rule the Specs column states."""
+    """The scale a spec's violation is divided by: the one stated, else the size of its threshold (the larger of |lower|
+    and |upper|), else 1 - the same rule the Specs column states."""
     if target.normalization_scale:
         return float(target.normalization_scale)
-    return max([abs(v) for v in (target.lower, target.upper, target.target) if v is not None] or [0.0]) or 1.0
+    return max([abs(v) for v in (target.lower, target.upper) if v is not None] or [0.0]) or 1.0
 
 
 # The optimizer's eight parameter kinds and the one unit each is varied in (analog_optimizer.models.inputs: counts are
@@ -152,17 +152,10 @@ def build_specs(config: WorkbenchConfig):
     from analog_optimizer.measurements.specs import MetricSpec
     specs, targets, preference = [], [], None
     for t in config.targets:
+        # The limits as stated: "target +/- tolerance" and a tolerance that loosened a limit were retired on 2026-10-03,
+        # and a spec written with them states the limits they meant since it loaded (schema.PerformanceTarget).
         convert = lambda v: None if v is None else units.to_canonical(v, t.unit)
-        tolerance = units.scale_to_canonical(t.tolerance, t.unit)
         lower, upper = convert(t.lower), convert(t.upper)
-        if t.constraint == 'target':
-            center = convert(t.target)
-            lower, upper = center - tolerance, center + tolerance
-        else:
-            # The optimizer has no tolerance field: relax the thresholds so reward, success
-            # and the independent feasibility check all use the same acceptance region.
-            lower = None if lower is None else lower - tolerance
-            upper = None if upper is None else upper + tolerance
         comparator = 'range' if (lower is not None and upper is not None) else 'min' if lower is not None else 'max'
         unit = units.canonical_unit(t.unit)
         specs.append(MetricSpec(metric_id=t.metric_id, unit=unit, comparator=comparator,
@@ -174,7 +167,7 @@ def build_specs(config: WorkbenchConfig):
         targets.append(dict(metric_id=t.metric_id, equation=equation,
                             probe=equation if equation in {m.measurement_id for m in config.measurements} else None,
                             unit=unit, lower=lower, upper=upper, hard=t.hard, active=t.active, constraint=t.constraint,
-                            tolerance_applied=tolerance, scale=specs[-1].scale, nominal_only=t.nominal_only,
+                            scale=specs[-1].scale, nominal_only=t.nominal_only,
                             objective=specs[-1].objective, margin_sides=t.margin_sides))
         if t.active and t.direction_after_feasible != 'none':
             preference = dict(metric=t.metric_id,

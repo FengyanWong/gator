@@ -1,7 +1,7 @@
 """Specs are equations over Probes.
 
-A Probes row names one measured quantity: a result the circuit profile computes from the simulation
-(``source_name``), or arithmetic over other probes. A Specs row judges ONE value, its ``equation``, written
+A Probes row names one measured quantity: a result the simulation returns (``source_name``: a Maestro output or a
+profile metric). A Specs row judges ONE value, its ``equation``, written
 over Probe IDs: ``m_supply_power_w / m_osc_frequency_hz``, or simply ``m_osc_frequency_hz``. That value -
 and nothing else - is what the reward, the network's goal input, the independent pass/fail check and the
 tables see under the spec's name (``metric_id``).
@@ -15,7 +15,8 @@ and before the environment reads it. So the reward, the observation, the recorde
 workbench's own feasibility check (``engine``) all see the same number, made by the same code. For the same
 reason a spec may not borrow the name of a simulator result unless it IS that result (``validation``).
 
-The arithmetic is the whitelist evaluator the Probes' expressions use: numbers (SI suffixes such as ``2u``),
+The arithmetic is a whitelist evaluator (the Probes' own expressions used it until 2026-10-03, when a probe computed from
+other probes was retired: that is a spec equation's job): numbers (SI suffixes such as ``2u``),
 Probe IDs, ``+ - * / **`` and parentheses; no function calls, never ``eval()``. A missing or invalid input,
 or arithmetic that fails (a division by zero), makes the value invalid - never a number.
 """
@@ -109,14 +110,13 @@ class SpecEntry:
 @dataclass(frozen=True)
 class SpecPlan:
     """Picklable: goes to every lane with the environment factory."""
-    probes: tuple             # (probe_id, source_name | None, expression | None), in table order
+    probes: tuple             # (probe_id, source_name | None), in table order
     specs: tuple              # SpecEntry, in table order
 
     @classmethod
     def from_config(cls, config) -> 'SpecPlan':
         from . import units
-        probes = tuple((m.measurement_id, m.source_name if m.result_source in ('backend_profile', 'ade_output') else None,
-                        m.expression if m.result_source == 'expression' else None) for m in config.measurements)
+        probes = tuple((m.measurement_id, m.source_name) for m in config.measurements)
         table = {p[0]: p for p in probes}
         specs = []
         for t in config.targets:
@@ -134,24 +134,10 @@ class SpecPlan:
     # ------------------------------------------------------------------ values
     def probe_values(self, raw) -> dict:
         """{probe ID: value | None} from `raw` = the VALID simulator results (name -> number)."""
-        table, values = {p[0]: p for p in self.probes}, {}
-
-        def resolve(probe_id, trail=()):
-            if probe_id in values:
-                return values[probe_id]
-            if probe_id in trail:
-                raise ValueError('expression cycle among the probes: ' + ' -> '.join(trail + (probe_id,)))
-            _, source, expression = table[probe_id]
-            if source is not None:
-                value = raw.get(source)
-            elif expression is not None:
-                value = evaluate(expression, lambda name: resolve(name, trail + (probe_id,)) if name in table else None)
-            else:
-                value = None                                      # neither a result nor an expression: never a number
+        values = {}
+        for probe_id, source in self.probes:
+            value = raw.get(source) if source is not None else None   # no result named: never a number
             values[probe_id] = value if _finite(value) else None
-            return values[probe_id]
-        for probe_id in table:
-            resolve(probe_id)
         return values
 
     def spec_values(self, raw=None, *, probes=None) -> dict:
@@ -165,22 +151,10 @@ class SpecPlan:
 
     # ------------------------------------------------------------------ what a spec reads
     def raw_inputs(self, spec) -> tuple:
-        """The simulator results a spec's value is made of (through expression probes as well)."""
-        table, found, seen = {p[0]: p for p in self.probes}, [], set()
-
-        def visit(probe_id):
-            if probe_id in seen or probe_id not in table:
-                return
-            seen.add(probe_id)
-            _, source, expression = table[probe_id]
-            if source is not None:
-                found.append(source)
-            elif expression is not None:
-                for name in parse(expression)[0] or ():
-                    visit(name)
-        for name in [spec.probe] if spec.probe is not None else parse(spec.equation)[0] or ():
-            visit(name)
-        return tuple(dict.fromkeys(found))
+        """The simulator results a spec's value is made of."""
+        table = dict(self.probes)
+        names = [spec.probe] if spec.probe is not None else parse(spec.equation)[0] or ()
+        return tuple(dict.fromkeys(table[name] for name in names if table.get(name) is not None))
 
     def request_names(self, required) -> tuple:
         """The results a simulation request insists on: a computed spec stands for the results its equation reads."""
@@ -288,16 +262,12 @@ def registry_entries(config, base) -> tuple:
     table = {p[0]: p for p in plan.probes}
     probe_units = {m.measurement_id: m.unit for m in config.measurements}
 
-    def size(probe_id, trail=()):
-        if probe_id not in table or probe_id in trail:
+    def size(probe_id):
+        if probe_id not in table:
             return None
-        _, source, expression = table[probe_id]
+        _, source = table[probe_id]
         if source is not None and source in known:
             return known[source]
-        if expression is not None:
-            value = evaluate(expression, lambda name: size(name, trail + (probe_id,)))
-            if value:
-                return abs(value)
         return magnitude(probe_units.get(probe_id))
     added = []
     for spec in plan.specs:

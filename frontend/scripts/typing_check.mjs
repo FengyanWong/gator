@@ -126,6 +126,19 @@ await runChecks(browser, async () => {
   check('"Fewer columns" hides soft_weight again and the value stays (2.5)',
     (await evaluate(`${CELL(0, 'soft_weight')} ?? null`)) === null && config.targets[0].soft_weight === 2.5, `${config.targets[0].soft_weight}`);
   await openTab('Parameters');
+  // ratio is one of the four Parameters columns "More columns" shows since the review of 2026-10-03 (value_type, step, scale,
+  // ratio: Save task takes them from the PDK and the circuit); initial_value and result_source are not shown at all.
+  const moreHere = `[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => /^(More|Fewer) columns/.test(b.textContent.trim()))`;
+  const headers = () => evaluate(`[...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.dataset.field).filter(Boolean)`);
+  const shownBefore = await headers();
+  check('Parameters shows no ratio, step, scale, value_type or initial_value until "More columns", which offers four',
+    !['ratio', 'step', 'scale', 'value_type', 'initial_value'].some(c => shownBefore.includes(c)) && /More columns \(4\)/.test(await evaluate(`${moreHere}?.textContent ?? ''`)),
+    JSON.stringify(shownBefore));
+  await evaluate(`${moreHere}.click()`);
+  await until(`!!${CELL(0, 'ratio')}`);
+  const shownNow = await headers();
+  check('after "More columns" the four are there, initial_value still not',
+    ['ratio', 'step', 'scale', 'value_type'].every(c => shownNow.includes(c)) && !shownNow.includes('initial_value'), JSON.stringify(shownNow));
 
   // ---- (a) an emptied cell, and Undo while a cell has focus --------------------------------------------------------------------
   await focusAll(CELL(0, 'ratio')); await deleteKey();

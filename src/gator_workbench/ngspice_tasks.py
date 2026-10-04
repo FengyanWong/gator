@@ -299,7 +299,7 @@ def runtime(task_key, name, profile_id=None, *, authorized=False):
         for spec in compiled.specs:                    # a result-backed spec: the result carries the spec's own unit
             if spec.metric_id in parsed.result_names:
                 units[spec.metric_id] = spec.unit
-        for probe_id, source, _ in compiled.plan.probes if compiled.plan is not None else ():
+        for probe_id, source in compiled.plan.probes if compiled.plan is not None else ():
             if source in parsed.result_names and source not in units:
                 units[source] = parsed.units.get(source) or '1'
         from analog_optimizer.measurements.specs import RewardSettings

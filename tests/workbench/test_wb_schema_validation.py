@@ -61,7 +61,7 @@ def test_editor_columns_come_from_the_schema():
         assert [c['name'] for c in columns] == list(model.model_fields)
         assert all(c['guidance'] for c in columns), [c['name'] for c in columns if not c['guidance']]
     constraint = next(c for c in schema.editor_columns('targets') if c['name'] == 'constraint')
-    assert constraint['options'] == ['>=', '<=', 'interval', 'target']
+    assert constraint['options'] == ['>=', '<=', 'interval']                 # target +/- tolerance retired on 2026-10-03
 
 
 # ------------------------------------------------------------------------------- parameters
@@ -122,7 +122,6 @@ def test_integer_constraints(tmp_path):
     (dict(constraint='>=', lower=None), 'missing_threshold'),
     (dict(constraint='>=', lower=0.9, upper=1.0), 'unexpected_threshold'),
     (dict(constraint='interval', lower=1.0, upper=0.5), 'invalid_interval'),
-    (dict(constraint='target', lower=None, target=0.9, tolerance=0.0), 'target_needs_tolerance'),
     (dict(equation='nope'), 'equation_unknown_probe'),
     (dict(unit='dB'), 'target_unit_mismatch'),
     (dict(hard=False), 'no_hard_constraint'),
@@ -147,9 +146,7 @@ def test_unregistered_metric_is_added_to_the_registry_or_blocked_by_a_configured
 def test_only_one_post_feasibility_preference(tmp_path):
     def two(raw):
         raw['targets'][0]['direction_after_feasible'] = 'maximize'
-        raw['measurements'].append(dict(measurement_id='m2', analysis='other', result_source='expression',
-                                        expression='m_score*2', unit='fixture'))
-        raw['targets'].append(dict(metric_id='score2', equation='m2', unit='fixture', constraint='>=', lower=0,
+        raw['targets'].append(dict(metric_id='score2', equation='m_score*2', unit='fixture', constraint='>=', lower=0,
                                    normalization_scale=1, direction_after_feasible='minimize'))
     report, _ = check(make_config(tmp_path, mutate=two))
     assert 'multiple_preferences' in issues(report, 'error')
@@ -188,17 +185,61 @@ def test_unsupported_measurement_sources_are_rejected_not_faked(tmp_path):
     assert 'metric_not_provided' in issues(report, 'error')
 
 
-def test_restricted_expressions_never_execute_code(tmp_path):
-    bad = lambda text: make_config(tmp_path, mutate=lambda raw: raw['measurements'].append(dict(
-        measurement_id='m_bad', analysis='other', result_source='expression', expression=text, unit='fixture')))
+def test_restricted_equations_never_execute_code(tmp_path):
+    """Formulas live in the Specs' equations since probes computed from other probes were retired (2026-10-03): the same
+    whitelist reads them, and nothing is ever executed."""
+    bad = lambda text: make_config(tmp_path, mutate=lambda raw: raw['targets'].append(dict(
+        raw['targets'][0], metric_id='bad', equation=text, hard=False, direction_after_feasible='none')))
     for text in ('__import__("os").system("true")', 'm_score.real', 'abs(m_score)', 'm_score if 1 else 2'):
         report, _ = check(bad(text))
-        assert 'expression_rejected' in issues(report, 'error'), text
+        assert 'equation_rejected' in issues(report, 'error'), text
     report, _ = check(bad('undefined_measurement * 2'))
-    assert 'expression_unknown_symbol' in issues(report, 'error')
+    assert 'equation_unknown_probe' in issues(report, 'error')
     plan = spec_equations.SpecPlan.from_config(bad('(m_score * 2) - 1'))
-    assert plan.probe_values({'score': 0.75}) == {'m_score': 0.75, 'm_bad': 0.5}
-    assert plan.probe_values({})['m_bad'] is None           # a missing (invalid) input stays invalid, never a number
+    assert plan.spec_values({'score': 0.75})['bad'] == 0.5
+    assert plan.spec_values({})['bad'] is None              # a missing (invalid) input stays invalid, never a number
+
+
+def test_a_probe_computed_from_others_becomes_the_equation_of_its_specs(tmp_path):
+    """Review of 2026-10-03: a probe computed from other probes (result_source expression) was the Specs equation's job
+    since record 7.52. An older configuration loads with its arithmetic written into the specs that use it - the same
+    numbers - and without the probe; a cycle never ran and is refused; a row on its own is refused in plain words."""
+    def computed(raw):
+        raw['measurements'] += [dict(measurement_id='m_half', analysis='other', result_source='expression', expression='m_twice / 4', unit='fixture'),
+                                dict(measurement_id='m_twice', analysis='other', result_source='expression', expression='m_score * 2', unit='fixture')]
+        raw['targets'].append(dict(raw['targets'][0], metric_id='half', equation='m_half - 0.1', hard=False, direction_after_feasible='none'))
+    config = make_config(tmp_path, mutate=computed)
+    assert [m.measurement_id for m in config.measurements] == ['m_score']
+    assert config.targets[-1].equation == '((m_score * 2) / 4) - 0.1'
+    assert spec_equations.SpecPlan.from_config(config).spec_values({'score': 0.8})['half'] == pytest.approx(0.3)
+    def cycle(raw):
+        raw['measurements'] += [dict(measurement_id='m_a', analysis='other', result_source='expression', expression='m_b', unit='fixture'),
+                                dict(measurement_id='m_b', analysis='other', result_source='expression', expression='m_a', unit='fixture')]
+        raw['targets'].append(dict(raw['targets'][0], metric_id='loop', equation='m_a', hard=False, direction_after_feasible='none'))
+    with pytest.raises(ValidationError, match='computed from itself'):
+        make_config(tmp_path, mutate=cycle)
+    with pytest.raises(ValidationError, match='no longer offered'):
+        schema.MeasurementDefinition.model_validate(dict(measurement_id='m_x', analysis='other', result_source='expression',
+                                                         expression='1', unit='1'))
+
+
+def test_target_and_tolerance_become_the_limits_they_meant(tmp_path):
+    """Review of 2026-10-03: "target +/- tolerance" was an interval and a tolerance loosened a limit. An older spec loads
+    with those limits (and the size its empty scale had); one at the defaults keeps its hashes; one that never ran is
+    refused in plain words."""
+    plain = make_config(tmp_path)
+    stated = make_config(tmp_path, mutate=lambda raw: raw['targets'][0].update(target=None, tolerance=0.0))
+    assert schema.task_definition_hash(stated) == schema.task_definition_hash(plain)
+    assert schema.config_hash(stated) == schema.config_hash(plain)
+    target = make_config(tmp_path, mutate=lambda raw: raw['targets'][0].update(constraint='target', lower=None, target=0.9,
+                                                                              tolerance=0.05, normalization_scale=None))
+    row = target.targets[0]
+    assert (row.constraint, row.lower, row.upper, row.normalization_scale) == ('interval', pytest.approx(0.85), pytest.approx(0.95), 0.9)
+    loose = make_config(tmp_path, mutate=lambda raw: raw['targets'][0].update(tolerance=0.01, normalization_scale=None))
+    assert loose.targets[0].lower == pytest.approx(plain.targets[0].lower - 0.01)
+    assert loose.targets[0].normalization_scale == pytest.approx(abs(plain.targets[0].lower))
+    with pytest.raises(ValidationError, match='no longer offered'):
+        make_config(tmp_path, mutate=lambda raw: raw['targets'][0].update(constraint='target', lower=None, target=0.9, tolerance=0.0))
 
 
 # ------------------------------------------------------------------------------- compile / feasibility

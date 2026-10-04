@@ -9,7 +9,7 @@
  *  icon-only button's title starts with its label. */
 
 export type IconName = 'save' | 'play' | 'pause' | 'wait' | 'stop' | 'force-stop' | 'task' | 'add' | 'delete' | 'undo' | 'redo' | 'load' | 'delete-task' | 'export' | 'import' | 'agent-draft' | 'agent-modify' | 'task-file'
-  | 'refresh' | 'download' | 'csv' | 'zip' | 'copy' | 'check' | 'close' | 'moon' | 'sun';
+  | 'refresh' | 'download' | 'csv' | 'zip' | 'copy' | 'check' | 'close' | 'moon' | 'sun' | 'folder';
 
 const DRAWINGS: Record<IconName, JSX.Element> = {
   // A floppy disk: the model is written to disk while the run goes on.
@@ -64,6 +64,8 @@ const DRAWINGS: Record<IconName, JSX.Element> = {
   check: <path d="M3 8.5l3.2 3.2L13 4.5" strokeWidth="1.8" />,
   // Close: dismiss a panel without changing its rows.
   close: <path d="M4 4l8 8M12 4l-8 8" strokeWidth="1.8" />,
+  // Folders (record 7.170): a folder, in the circle where the connection window's steps have their number.
+  folder: <path d="M1.5 3.5h4.5l1.5 2h7v8h-13z" />,
 };
 
 /** `label`: the button's words, kept for screen readers and for the page checks but not drawn (`.sr-only`). */

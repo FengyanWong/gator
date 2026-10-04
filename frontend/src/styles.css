@@ -177,6 +177,14 @@ button.notes-link { border: none; background: none; padding: 0 3px; color: var(-
 .connection-window .hint, .connection-window label, .connection-window .steps-list, .virtuoso-window .hint, .virtuoso-window label, .virtuoso-window .steps-list, .pdk-window .hint, .pdk-window label { font-size: 12.5px; }
 .connection-window .step { margin-top: 10px; padding-top: 8px; } .connection-window .step-head { font-size: 13.5px; }
 .connection-window .step-no { width: 18px; height: 18px; line-height: 18px; font-size: 11.5px; } .connection-window .command code { font-size: 12.5px; } .connection-window .status-line { font-size: 13px; }
+/* record 7.171: the 0-to-1 reward boxes (Num bounded) keep type=number and its 0..1 range, without the up/down arrows */
+input.bounded { appearance: textfield; -moz-appearance: textfield; }
+input.bounded::-webkit-inner-spin-button, input.bounded::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+/* record 7.170: the Folders section's sign in the steps' number circle. The pop-up windows are about:blank documents, in quirks
+   mode, where a line holding only a picture ignores the line height: an invisible zero-width character keeps the circle where
+   the numbered ones sit. */
+.connection-window .step-no.step-sign::before { content: '\200b'; }
+.connection-window .step-no.step-sign svg.icon { width: 11px; height: 11px; vertical-align: -1px; }
 .connection-window .row > label { flex: 1; } .connection-window .row > button, .virtuoso-window .row > button { flex: none; } .connection-window .connection-add { background: var(--sunk); padding: 8px 10px; border: 1px solid var(--line); }
 /* The two window launchers of the Project column: one grid, text left, the two buttons under each other in one right-hand
    column of equal width, each pair on one line (the text wraps inside its cell; the button stays beside it). */

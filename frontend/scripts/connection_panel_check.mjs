@@ -287,6 +287,21 @@ await runChecks(browser, async () => {
   const folderText = () => far.evaluate(`${WINDOW}.querySelector('.connection-folders')?.innerText ?? ''`);
   const disabledButton = label => far.evaluate(`[...${WINDOW}.querySelectorAll('.connection-folders button')].find(b => b.textContent.trim() === ${JSON.stringify(label)})?.disabled`);
   check('the window has a "Folders..." button', (await buttons()).includes('Folders...'), (await buttons()).join(' | '));
+  // (record 7.170, user: "separate the folders section with other section with similar style") a section of its own, headed
+  // like the steps: the same rule above it, the same heading, a folder sign in the steps' circle
+  const section = await far.evaluate(`(() => { const b = [...${WINDOW}.querySelectorAll('button')].find(x => x.textContent.trim() === 'Folders...');
+    const own = b?.closest('.step'), step = [...${WINDOW}.querySelectorAll('.step')].find(s => /^\\d+$/.test(s.querySelector('.step-no')?.textContent ?? ''));
+    const rule = e => { const c = getComputedStyle(e); return [c.borderTopStyle, c.borderTopWidth, c.borderTopColor, c.paddingTop, c.marginTop].join('|'); };
+    const font = e => { const c = getComputedStyle(e); return [c.fontFamily, c.fontSize, c.fontWeight].join('|'); };
+    return own && step && { head: own.querySelector('.step-head')?.textContent.trim(), sign: !!own.querySelector('.step-no svg'),
+      sameRule: rule(own) === rule(step), sameHead: font(own.querySelector('.step-head')) === font(step.querySelector('.step-head')),
+      sameCircle: own.querySelector('.step-no').getBoundingClientRect().width === step.querySelector('.step-no').getBoundingClientRect().width,
+      // the circle sits where the numbered ones sit beside their heading's words (a picture alone in a line moves it in quirks mode)
+      sameSpot: (e => e.querySelector('.step-no').getBoundingClientRect().top - e.querySelector('.step-head').getBoundingClientRect().top)(own)
+        - (e => e.querySelector('.step-no').getBoundingClientRect().top - e.querySelector('.step-head').getBoundingClientRect().top)(step),
+      quirks: document.compatMode }; })()`);
+  check('Folders is a section of its own, headed like the steps: the same rule above it, the same heading, a folder sign in the circle',
+    !!section && section.head === 'Folders' && section.sign && section.sameRule && section.sameHead && section.sameCircle && Math.abs(section.sameSpot) < 0.5, JSON.stringify(section));
   mark = seen.length;
   await press('Folders...');
   await settle(mark);
@@ -297,6 +312,12 @@ await runChecks(browser, async () => {
   let folderShown = await folderText();
   check('grouped by machine: this machine, then the simulator host with what "~" means there', folderShown.indexOf('On this machine') < folderShown.indexOf('Simulator scratch')
     && folderShown.indexOf('On the simulator host') < folderShown.indexOf('Initial-condition files') && folderShown.includes('the home of the user Virtuoso runs as'), folderShown.slice(0, 300));
+  // (record 7.170, user: "if comments can be seen floating over name then delete the comment text underneath it")
+  const comments = await far.evaluate(`[...${WINDOW}.querySelectorAll('.connection-folders [data-folder]')].map(d => ({ key: d.dataset.folder,
+    tip: d.querySelector('label').title, under: [...d.querySelectorAll('.hint')].map(h => h.textContent) }))`);
+  check('each folder comment is the tooltip of its name, with no comment text under it; under it only what is the case (the environment decides it)',
+    comments.length === 5 && comments.every(c => c.tip.startsWith('FIXTURE: what') && c.tip.includes('Takes effect: FIXTURE: the next use.') && !c.under.some(t => t.includes('FIXTURE')))
+    && JSON.stringify(comments.filter(c => c.under.length).map(c => c.key)) === JSON.stringify(['adapter_state']), JSON.stringify(comments));
   check('a folder an environment variable decides cannot be typed into, and says why', (await far.evaluate(`${FOLDER('adapter_state')}.disabled`)) && folderShown.includes('Set by GATOR_BRIDGE_STATE_DIR'));
   check('"Save folders" waits for a change', (await disabledButton('Save folders')) === true && (await disabledButton('Undo changes')) === true);
   await far.setValue(FOLDER('local_scratch'), '/scratch/gator', { event: 'input' });

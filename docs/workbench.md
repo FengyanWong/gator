@@ -801,6 +801,15 @@ when no connection is set up. It lists five folders, each filled in with the val
 **Save folders** is pressed. **Use defaults** fills the defaults in and **Undo changes** puts back the values in use;
 neither sends anything.
 
+Since record 7.170 (user: "separate the folders section with other section with similar style", and "if comments can be
+seen floating over name then delete the comment text underneath it") Folders is a section of its own under the steps,
+headed like them: the same rule above it and a folder sign where a step has its number, since setting the folders is no
+step of connecting. Each folder's comment - what it holds and when a change takes effect - is the tooltip of its name,
+with no text under it; under a folder only what is the case now shows: that an environment variable of the backend
+decides it, or its default while the typed value differs. The pop-up windows are `about:blank` documents in quirks mode,
+where a line holding only a picture ignores the line height: a zero-width character before the sign keeps its circle
+where the numbered ones sit.
+
 | Folder | Default (the value before 7.168) | Where | What GATOR keeps there | A change takes effect at |
 |---|---|---|---|---|
 | Adapter state | `~/.local/state/gator/bridge-state` | this machine | the session lock that runs, corner checks and Save task take, and the crash journal of every write to a cell (7.167) | the next run, corner check or Save task |
@@ -1020,7 +1029,8 @@ are unchanged. No task trains at corners since 2026-09-30: the only one, `real:g
 
 ### Reward, conditions and the saved model on the page (record 7.96)
 
-Reward coefficients have the backend's 0..1 bounds; training conditions include a fixed nominal entry, at least one
+Reward coefficients have the backend's 0..1 bounds (number boxes, drawn without the browser's up/down arrows since
+record 7.171); training conditions include a fixed nominal entry, at least one
 selected corner in `always`, and separate step/reset launch costs with one shared cap. Missing caps and nonzero robust
 retries are explicit errors. Specs keeps the objective inside the **Constraint** list ("≤ upper, then lower is better";
 only pairs that can work are offered) and shows **Judged at** only while training corners are planned (record 7.124);

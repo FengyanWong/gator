@@ -166,6 +166,22 @@ await runChecks(browser, async () => {
     heading?.cursor === 'pointer' && heading.moduleCursor === 'pointer', JSON.stringify(heading && [heading.cursor, heading.moduleCursor]));
   const searchWords = await evaluate(`[...document.querySelectorAll('.right .module-body h3, .right .module-body label')].filter(e => (e.firstChild?.textContent ?? '').trim().toLowerCase() === 'search method').length`);
   check('"Search method" is said once in Run configuration (no heading over its own label)', searchWords === 1, String(searchWords));
+  // the 0-to-1 reward boxes: number boxes with the backend's range, drawn without the browser's up/down arrows (record 7.171,
+  // user: "remove the toggle for these 0 to 1 value boxes"); the pointer rests on the first one, its box focused, as when typing
+  const BOUNDED = ['Worst hard-spec share', 'Objective bonus weight', 'Tightest-margin bonus weight'];
+  const boxOf = name => `[...document.querySelectorAll('.right .module-body label')].find(l => l.firstChild?.textContent?.trim() === ${JSON.stringify(name)})?.querySelector('input')`;
+  const spot = await evaluate(`(() => { const e = ${boxOf(BOUNDED[0])}; e.scrollIntoView({ block: 'center' }); e.focus(); const r = e.getBoundingClientRect();
+    return { x: r.right - 12, y: r.top + r.height / 2 }; })()`);
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: spot.x, y: spot.y });
+  await sleep(200);
+  // (the arrows are a pseudo-element getComputedStyle cannot read: the box's appearance is checked, the picture shows the rest)
+  const bounded = await evaluate(`${JSON.stringify(BOUNDED)}.map(name => { const e = ${boxOf('NAME')}; return e && { name, type: e.type, min: e.min, max: e.max,
+    appearance: getComputedStyle(e).appearance }; })`.replace('"NAME"', 'name'));
+  check('the three 0-to-1 reward boxes keep the number range 0..1 and are drawn as plain text boxes (no up/down arrows)',
+    bounded.every(b => b && b.type === 'number' && b.min === '0' && b.max === '1' && b.appearance === 'textfield'), JSON.stringify(bounded));
+  await page.shot(path.join(out, 'looks-bounded-boxes.png'), `${boxOf(BOUNDED[0])}.closest('label')`, { scale: 2, pad: 4 });
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
+  await evaluate(`document.activeElement?.blur()`);
 
   // ---- the same page in both looks (record 7.162, user: "the day and night mode banner size is a bit different"): every box -----
   const BOXES = ['header', 'header .title-block', 'header .tb-cell', 'aside.left', 'main', 'aside.right', 'footer', 'footer > .tabs', '.editors > .tabs',

@@ -29,7 +29,7 @@ export function ConnectionFolders() {
       : e.message }));
   }, []);
   if (!shown) return (
-    <div className="step connection-add connection-folders"><div className="step-head">Folders</div>
+    <div className="connection-add connection-folders">
       {error ? <p className="error">{error.message}</p> : <p className="hint">Reading the folders...</p>}</div>);
 
   const editable = (f: Json) => !f.set_by_environment;
@@ -48,21 +48,23 @@ export function ConnectionFolders() {
   };
   const atDefaults = shown.fields.every((f: Json) => !editable(f) || values[f.key] === f.default);
   return (
-    <div className="step connection-add connection-folders">
-      <div className="step-head">Folders</div>
+    <div className="connection-add connection-folders">
       <p className="hint">Where GATOR keeps the files of the simulator connection outside the repository. Each folder starts at the value GATOR
         has always used; a changed one is kept in the connection file ({shown.connection_file}) and takes effect when the folder is next used.</p>
       {SIDES.map(([side, title]) => <div key={side}>
         <p><b>{title}</b></p>
         {shown.fields.filter((f: Json) => f.side === side).map((f: Json) => (
           <div key={f.key} className="folder-field" data-folder={f.key}>
-            <label title={f.used_for}>{f.label}
+            {/* The folder's comment - what it holds, when a change takes effect - is its name's tooltip, with no text under
+                it (record 7.170, user: "if comments can be seen floating over name then delete the comment text underneath
+                it"). Under it stays only what is the case now: the environment decides it, or the typed value is not the
+                default. */}
+            <label title={`${f.used_for} Takes effect: ${f.takes_effect}.`}>{f.label}
               <input value={values[f.key] ?? ''} placeholder={f.default} disabled={!editable(f) || busy} spellCheck={false}
                 aria-invalid={error?.folder === f.key || undefined}
                 onChange={e => { const typed = e.target.value; setSaved(null); setValues(v => ({ ...v, [f.key]: typed })); }} /></label>
-            <p className="hint">{f.used_for} Takes effect: {f.takes_effect}.
-              {f.set_by_environment ? ` Set by ${f.set_by_environment} in the backend's environment${f.saved ? ` (the connection file says ${f.saved})` : ''}.`
-                : (values[f.key] ?? '').trim() !== f.default ? ` Default: ${f.default}.` : ''}</p>
+            {f.set_by_environment ? <p className="hint">Set by {f.set_by_environment} in the backend's environment{f.saved ? ` (the connection file says ${f.saved})` : ''}.</p>
+              : (values[f.key] ?? '').trim() !== f.default && <p className="hint">Default: {f.default}.</p>}
             {f.problem && <p className="warn">{f.problem}</p>}
           </div>))}
       </div>)}

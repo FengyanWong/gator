@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { api, connectionProfilesChanged, connectionProfilesShared, Json } from '../api';
 import { ConnectionFolders } from './ConnectionFolders';
+import { Icon } from './Icons';
 
 const STATE_LABEL: Record<string, string> = {
   ok: 'OK', failed: 'FAILED', not_ready: 'NOT READY', not_applicable: 'n/a', not_checked: 'not checked', busy: 'BUSY', unknown: 'UNKNOWN',
@@ -299,12 +300,18 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
       </>}
       {error && <p className="error">{error}</p>}
       {details}
-      <div className="row">
-        <button onClick={() => setFolders(f => !f)}
-          title="The folders GATOR uses outside the repository: the adapter's lock and crash journals, the simulator scratch, the bridge checkout, and two folders on the simulator host. Opening it changes nothing.">
-          {folders ? 'Close "Folders"' : 'Folders...'}</button>
+      {/* A section of its own, headed like the steps above (record 7.170, user: "separate the folders section with other section
+          with similar style"): a folder sign where a step has its number - setting the folders is no step of connecting. It
+          stays outside the chosen-connection part: "Add a connection" uses the bridge checkout folder. */}
+      <div className="step folders-step">
+        <div className="step-head"><span className="step-no step-sign"><Icon name="folder" /></span> Folders</div>
+        <div className="row">
+          <button onClick={() => setFolders(f => !f)}
+            title="The folders GATOR uses outside the repository: the adapter's lock and crash journals, the simulator scratch, the bridge checkout, and two folders on the simulator host. Opening it changes nothing.">
+            {folders ? 'Close "Folders"' : 'Folders...'}</button>
+        </div>
+        {folders && <ConnectionFolders />}
       </div>
-      {folders && <ConnectionFolders />}
     </div>
   );
   return <>{launcher}{popup && root && createPortal(view, root)}</>;

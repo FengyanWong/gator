@@ -13,7 +13,9 @@ import { BLOCKED, usePopupWindow } from './popupWindow';
 function Num({ label, value, onChange, title, nullable, disabled, note, after, placeholder, bounded }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; nullable?: boolean; disabled?: boolean; note?: string; after?: ReactNode; placeholder?: string; bounded?: boolean }) {
   // `Typed` keeps what is being typed while the box has focus ("0." and "3e-" are steps towards 0.005 and 3e-4, not
   // values) and drops it as soon as the value changes from outside (reset button, undo, another encoder), focus or not.
-  const box = <Typed className="numeric" value={value} disabled={disabled} placeholder={placeholder ?? (nullable ? 'none' : '')}
+  // `bounded`: a 0-to-1 reward coefficient - a number box that declares the backend's range, drawn without the browser's
+  // up/down arrows (record 7.171, user: "remove the toggle for these 0 to 1 value boxes"; styles.css `input.bounded`).
+  const box = <Typed className={bounded ? 'numeric bounded' : 'numeric'} value={value} disabled={disabled} placeholder={placeholder ?? (nullable ? 'none' : '')}
     {...(bounded ? { type: 'number', min: 0, max: 1, step: 'any', inputMode: 'decimal' as const,
       'aria-invalid': typeof value !== 'number' || value < 0 || value > 1 } : {})}
     format={v => v === null || v === undefined ? '' : String(v)}

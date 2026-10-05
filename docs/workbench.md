@@ -1255,7 +1255,12 @@ study: the learning run's pass share rises from about evaluation 600 while the t
 Record 7.213 put viewing copies of the day's eight recorded `real:mscr_ota7t` Spectre runs (the three starting presets
 of records 7.199 and 7.209 and the defaults study's five) into the page's output folder, so that Runs... and Compare...
 list them: the folders `outputs/<experiment>__<id>/` with a `COPY-README.txt`; the originals stay in
-`artifacts/local/reviews/`. The copies hold no save points, so they cannot be continued and are not offered as models.
+`artifacts/local/reviews/`. The copies were made without their save points; on 2026-10-05 (23:17-23:22) each got its
+last save point back (session "Previous run model encoder saving", on the user's request "make it able to read todays
+real spectre training run models"): the three presets and the defaults study's learning run from the study archives, the
+other four defaults-study runs from the study session's temporary run folders, which no archive holds (the seed-1 run's
+is the safety save at its design 226). So the model chooser offers them, and Continue would simulate into the copy. Each
+copy's `COPY-README.txt` names its exact source.
 
 **When it reads, when it draws.** Nothing while another tab is shown or the browser tab is in the background. Opened, it
 asks for what is new since its last answer (a cursor of flush records; history pages target 30,000 rows, keeping each

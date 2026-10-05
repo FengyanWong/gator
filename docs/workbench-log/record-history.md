@@ -305,3 +305,5 @@ One row per commit, newest last.
 | `372c8da` | 10-05 23:00 | 7.218 | fewer boxes inside boxes: a callout inside a panel, the header or a window drawn by a rule at its left without a frame, only a status keeping its faint fill, no rule for a callout inside a callout; 3 nested boxes on the page -> 1 (a field) |
 | `7bafccd` | 10-05 23:01 | - | record only: names the commit of record 7.218, and the table rows for 223cca9 and 372c8da |
 | `4258714` | 10-05 23:21 | 7.211 | calibration on Spectre did not help on mscr_ota7t (Graph Transformer starting preset, two seeds per arm); a Baseline simulation on the six other MScR tasks; docs only (session "Single baseline simulation merge", committed by "Virtuoso read whole flow") |
+| `c170802` | 10-05 23:21 | - | record only: names the commit of record 7.211, and the table rows for 7bafccd and 4258714 |
+| `962731e` | 10-05 23:50 | 7.217 | calibration: "Apply and save" for a task saved from a cell, Scales written as quantities, a narrower window rule, no Initial alpha near the one in use (session "RL reward design", committed by "Virtuoso read whole flow") |

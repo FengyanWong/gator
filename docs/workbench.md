@@ -2346,6 +2346,15 @@ close). A passed check is kept in the run's manifest (`consistency_check`, for a
 part 2 alone) runs all three parts on its own: free, read-only, no simulation. Its result goes as soon as a row changes.
 Without a connection it compares the rows and says the rest needs one.
 
+**When another real run holds Virtuoso** (record 7.207). Only one process works on Virtuoso at a time: every real run,
+Corner check and check takes the run adapter's session lock (`session.lock` in the folder "Adapter state"). When it is
+taken, the check reads nothing from Virtuoso and says so in one step, "Another real run is using Virtuoso": who holds
+the lock (a run started from a workbench page, from a command line, a Corner check, or another check; its process
+number, start time and command line, read from `/proc/locks` without taking the lock) and that nothing in the task needs
+changing - check again when that run has ended. A Start, Baseline simulation or Resume is refused with the same words.
+Before 7.207 this read "The run adapter could not use the working copy ... BlockingIOError" with the advice for a changed
+copy (press Save task), which was wrong: a run started from a command line or another session is not shown on the page.
+
 Not compared: an original cell against a copy the workbench made of it before 2026-09-23. Such a copy was made once,
 and a later change of the original is not taken over. Since then the working copy is the cell you declared, so there
 is nothing else to compare.

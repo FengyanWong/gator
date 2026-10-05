@@ -169,6 +169,43 @@ def test_a_start_is_refused_on_a_difference_and_the_check_is_recorded_when_it_pa
     assert refused.value.code == 'validation' and len(seen) == 2
 
 
+def test_a_busy_virtuoso_is_named_and_the_task_is_not_blamed(tmp_path, monkeypatch):
+    """Record 7.207: while a command-line run held the adapter's session lock, Check now said "BlockingIOError" with the
+    advice for a changed working copy (press Save task). Now it says who holds Virtuoso, and does not even read it."""
+    import subprocess
+    from gator_workbench.paths import bridge_state_dir
+    cfg = saved_ring(tmp_path)
+    # the lock was taken between the look for a holder and the adapter's connect: the adapter's refusal says the same
+    taken = OK_STEPS[:1] + [dict(step='connect', ok=False, detail='BlockingIOError: [Errno 11] Resource temporarily unavailable')]
+    result = consistency.check(probe(tmp_path), 'lab', cfg, commands=dict(preflight=preflight_process(tmp_path, taken)))
+    busy = result['steps'][-1]
+    assert busy['step'] == 'busy' and busy['fix'] == consistency.FIX_BUSY and 'Save task' not in busy['fix']
+    assert 'held by another process (BlockingIOError: [Errno 11]' in busy['detail']
+    lock = bridge_state_dir() / 'session.lock'
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.touch()
+    assert consistency.lock_holder(lock) is None and consistency.lock_holder(tmp_path / 'missing') is None
+    holder = subprocess.Popen([sys.executable, '-c', 'import fcntl, sys, time\nf = open(sys.argv[1], "a+")\n'
+                               'fcntl.flock(f, fcntl.LOCK_EX)\nprint("held", flush=True)\ntime.sleep(60)', str(lock)],
+                              stdout=subprocess.PIPE, text=True)
+    try:
+        assert holder.stdout.readline() == 'held\n'
+        assert consistency.lock_holder(lock).startswith(f'a process (process {holder.pid}, started ')
+        monkeypatch.setattr(profile_preflight, 'preflight', lambda *a, **kw: pytest.fail('Virtuoso was read while it is busy'))
+        result = consistency.check(probe(tmp_path), 'lab', cfg)
+        assert not result['ok'] and [s['step'] for s in result['steps']] == ['editors', 'busy']
+        busy = result['steps'][-1]
+        assert busy['title'] == 'Another real run is using Virtuoso, so the working copy could not be checked'
+        assert busy['fix'] == consistency.FIX_BUSY and f'process {holder.pid}' in busy['detail']
+        with pytest.raises(runs.RunRejected) as refused:
+            runs.prepare_run(cfg, roots_for(tmp_path), allow_real=True, monitor=probe(tmp_path))
+        assert str(refused.value).startswith('Not started: another real run is using Virtuoso')
+    finally:
+        holder.kill()
+        holder.wait()
+    assert consistency.lock_holder(lock) is None
+
+
 def test_the_check_route_replaces_check_against_virtuoso(tmp_path, monkeypatch):
     cfg = saved_ring(tmp_path)
     monkeypatch.setattr(profile_preflight, 'preflight', lambda monitor, name, profile_id, **kw: dict(profile_preflight=True, ok=True, steps=OK_STEPS))

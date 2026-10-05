@@ -36,6 +36,9 @@ FIX_NEWER = ('These rows are older than the saved task: it was saved again (revi
              'first.')
 FIX_COPY = ('The working copy was changed in Virtuoso after the task was saved: press Save task to take the copy as it is '
             'now, or undo the change in Virtuoso.')
+# Another real run or check holds the run adapter's session lock (record 7.207): nothing is wrong with the task.
+FIX_BUSY = ('Nothing in the task or its working copy needs changing: check again when that run has ended. A run started '
+            'from this page stops with Abort; one started from a command line stops there.')
 TITLES = dict(
     editors='The editors hold the rows of the saved task',
     profile='The task\'s files pass the checks of the real backend',
@@ -46,7 +49,8 @@ TITLES = dict(
     close='The run adapter let go of the working copy',
     maestro='The working copy\'s Maestro test says what the task says: outputs, specs, analyses, variables, bindings',
     gate='The connection allows the check',
-    connection='A connection is chosen')
+    connection='A connection is chosen',
+    busy='No other real run is using Virtuoso')
 FAILED = dict(
     editors='The editors differ from the saved task',
     profile='The task\'s files do not pass the checks of the real backend',
@@ -56,7 +60,12 @@ FAILED = dict(
     close='The run adapter did not let go of the working copy cleanly',
     maestro='The working copy\'s Maestro test differs from the task',
     gate='The connection gate blocked the check',
-    connection='No connection is chosen')
+    connection='No connection is chosen',
+    busy='Another real run is using Virtuoso, so the working copy could not be checked')
+# What a holder of the session lock is, by its command line: the page's run worker, a command-line run, a Corner check,
+# another check (profile_preflight). `lock_holder` names the process that started a multiprocessing lane.
+_HOLDERS = (('gator_workbench.worker', 'a run started from a workbench page'), ('gator_workbench.cli run', 'a run started from a command line'),
+            ('gator_workbench.corner_check', 'a Corner check'), ('gator_workbench.profile_preflight', 'another check or a run\'s start check'))
 
 
 def saved_task(config, *, with_entry=True):
@@ -264,6 +273,46 @@ def _gate_step(exc) -> dict:
     return _step('gate', False, detail=f'{exc} ({layers}).', fix='Bring the link up in the Connection window, then check again.')
 
 
+def lock_holder(path) -> str | None:
+    """Who holds the flock on `path` (the run adapter's session lock), read from /proc/locks WITHOUT taking the lock: a
+    probe that took it, even shared, would make a real run that connects at that moment fail. "a run started from a
+    command line (process 123, started 18:49: python -m gator_workbench.cli run ...)", or None: nobody, or not Linux."""
+    import os
+    from datetime import datetime
+    from pathlib import Path
+    proc = lambda pid, part: Path(f'/proc/{pid}/{part}')
+    try:
+        stat = Path(path).stat()
+        key = f'{os.major(stat.st_dev):02x}:{os.minor(stat.st_dev):02x}:{stat.st_ino}'
+        # "19: FLOCK  ADVISORY  WRITE 3034112 08:30:143825 0 EOF"; a process waiting for the lock has "->" before its type
+        pids = [int(f[f.index(key) - 1]) for f in map(str.split, Path('/proc/locks').read_text().splitlines()) if key in f and '->' not in f]
+        if not pids:
+            return None
+        pid = pids[0]
+        for _ in range(3):                                         # a lane of a run: name the process that started it
+            argv = [a for a in proc(pid, 'cmdline').read_bytes().decode(errors='replace').split('\0') if a]
+            if not any('multiprocessing' in a for a in argv):
+                break
+            pid = int(proc(pid, 'stat').read_text().rsplit(')', 1)[1].split()[1])
+        fields = proc(pid, 'stat').read_text().rsplit(')', 1)[1].split()     # fields[0] is field 3 of proc(5): state
+        boot = next(int(line.split()[1]) for line in Path('/proc/stat').read_text().splitlines() if line.startswith('btime '))
+        started = datetime.fromtimestamp(boot + int(fields[19]) / os.sysconf('SC_CLK_TCK')).strftime('%H:%M')
+    except (OSError, ValueError, IndexError, StopIteration):
+        return None
+    command = ' '.join([Path(argv[0]).name, *argv[1:]]) if argv else '?'
+    kind = next((label for marker, label in _HOLDERS if marker in command), 'a process')
+    return redact(f'{kind} (process {pid}, started {started}: {command}', 300) + ')'
+
+
+def _busy_step(reason=None) -> dict:
+    """Another real run or check holds the adapter's session lock: only one process drives the Virtuoso cell at a time."""
+    from .paths import bridge_state_dir
+    lock = bridge_state_dir() / 'session.lock'
+    holder = lock_holder(lock) or f'another process ({reason or "it did not say which"})'
+    return _step('busy', False, fix=FIX_BUSY, detail=f'The run adapter\'s session lock ({lock}) is held by {holder}. Only one real '
+                 'run or check works on Virtuoso at a time; nothing was read from it.')
+
+
 def _connect_fix(detail) -> str:
     text = (detail or '').lower()
     if 'ade/maestro window' in text:
@@ -279,7 +328,10 @@ def copy_steps(monitor, profile_id, name, entry, saved, *, acknowledge_unknown=F
     """Parts 2 and 3: the saved task against its working copy in Virtuoso. Read-only; each step says what it found."""
     from . import profile_preflight, profiles, working_copy
     from .virtuoso_setup import differences
+    from .paths import bridge_state_dir
     commands = commands or {}
+    if lock_holder(bridge_state_dir() / 'session.lock'):           # record 7.207: the adapter could not take the lock
+        return [_busy_step()]
     try:
         result = profile_preflight.preflight(monitor, name, profile_id, acknowledge_unknown=acknowledge_unknown,
                                              command=commands.get('preflight'))
@@ -291,7 +343,9 @@ def copy_steps(monitor, profile_id, name, entry, saved, *, acknowledge_unknown=F
     steps = []
     for item in result['steps']:
         step = item['step'] if item['step'] in TITLES else 'connect'
-        if item['ok']:
+        if step == 'connect' and not item['ok'] and (item.get('detail') or '').startswith('BlockingIOError'):
+            steps.append(_busy_step(item.get('detail')))           # taken between the look above and the connect
+        elif item['ok']:
             steps.append(_step(step, True, detail=item.get('detail'), **({'skipped': True} if item.get('skipped') else {})))
         else:
             fix = (_connect_fix(item.get('detail')) if step == 'connect' else FIX_COPY if step == 'export'

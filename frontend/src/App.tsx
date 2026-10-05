@@ -66,13 +66,18 @@ export function App() {
   const [runDir, setRunDir] = useState<string | null>(() => { try { return localStorage.getItem('gator-workbench-current-run-v1') || null; } catch { return null; } });
   const [tab, setTab] = useState<BottomTab>('status');
   const [bottom, setBottom] = useState<Bottom>(storedBottom);
+  // Folded while no run is shown (record 7.179, design advice 1): its tabs show a run, and with none it was a third of the page
+  // saying "No run selected". A tab, the Agent, the splitter, a started or a chosen run opens it; the kept height and fold stay.
+  const [opened, setOpened] = useState(false);
+  const folded = bottom.folded || (!runDir && !opened);
   const changeBottom = useCallback((change: (b: Bottom) => Bottom) => setBottom(b => {
     const next = change(b);
     if (next !== b) try { localStorage.setItem(BOTTOM_KEY, JSON.stringify(next)); } catch { /* a private window: not remembered */ }
     return next;
   }), []);
   // A press that asks to see something in the bottom panel (one of its tabs, an agent request, the header's run) opens it.
-  const unfold = useCallback(() => changeBottom(b => (b.folded ? { ...b, folded: false } : b)), [changeBottom]);
+  const unfold = useCallback(() => { setOpened(true); changeBottom(b => (b.folded ? { ...b, folded: false } : b)); }, [changeBottom]);
+  const toggleBottom = () => (folded ? unfold() : changeBottom(b => ({ ...b, folded: true })));
   const [agentRequest, setAgentRequest] = useState<{ kind: string; selection: Json[]; prompt?: string } | null>(null);
   const requestAgent = useCallback((kind: string, selection: Json[], prompt?: string) => { setAgentRequest({ kind, selection, prompt }); setTab('agent'); unfold(); }, [unfold]);
   const [titleSlot, setTitleSlot] = useState<HTMLElement | null>(null);            // the header's title block: the circuit panel puts the task's facts there
@@ -166,7 +171,7 @@ export function App() {
   }, [config.output.output_root]);
 
   const showRun = (started: Json, as: 'start' | 'resume') => {
-    setRunDir(started.run_dir); setTab('status'); refreshRuns();
+    setRunDir(started.run_dir); setTab('status'); unfold(); refreshRuns();
     setMessage(as === 'resume' ? { level: 'info', text: `Continuing in the original run directory: ${started.run_dir}` }
       : { level: started.mock ? 'mock' : 'info', text: `${started.mock ? started.mock_notice + ' ' : ''}Run directory: ${started.run_dir}` });
   };
@@ -234,23 +239,23 @@ export function App() {
     const end = () => {
       handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end);
       const dragged = height;
-      if (dragged !== null) changeBottom(() => ({ height: dragged, folded: false }));
+      if (dragged !== null) { setOpened(true); changeBottom(() => ({ height: dragged, folded: false })); }
     };
     handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
   };
   const keyBottom = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); changeBottom(b => ({ ...b, folded: !b.folded })); return; }
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleBottom(); return; }
     const step = e.key === 'ArrowUp' ? 24 : e.key === 'ArrowDown' ? -24 : 0;
     if (!step) return;
     e.preventDefault();
     const now = e.currentTarget.parentElement?.getBoundingClientRect().height ?? 0;
-    changeBottom(() => ({ height: fitBottom(now + step), folded: false }));
+    setOpened(true); changeBottom(() => ({ height: fitBottom(now + step), folded: false }));
   };
 
   if (fatal) return <p className="error">Backend not reachable: {fatal}</p>;
   if (!schema) return <p>Loading schema...</p>;
   return (
-    <div className={`layout${bottom.folded ? ' bottom-folded' : ''}`} ref={layoutRef} style={bottom.height ? { '--foot': `${bottom.height}px` } as CSSProperties : undefined}>
+    <div className={`layout${folded ? ' bottom-folded' : ''}`} ref={layoutRef} style={bottom.height ? { '--foot': `${bottom.height}px` } as CSSProperties : undefined}>
       <header>
         {/* The title block (record 7.158): the page names what it works on - the task's facts come from the circuit panel. The
             version and the environment are one hover away, on the name. */}
@@ -296,9 +301,9 @@ export function App() {
       </aside>
       <footer>
         <div className="splitter" role="separator" aria-orientation="horizontal" tabIndex={0} aria-label="Height of the bottom panel"
-          aria-valuemin={0} aria-valuemax={100} aria-valuenow={bottom.folded ? 0 : bottom.height ? Math.min(100, Math.round(bottom.height / window.innerHeight * 100)) : 34}
+          aria-valuemin={0} aria-valuemax={100} aria-valuenow={folded ? 0 : bottom.height ? Math.min(100, Math.round(bottom.height / window.innerHeight * 100)) : 34}
           title="Drag to give the bottom panel more or less room. Double-click: fold it down to its tab line, or open it again. Kept in this browser."
-          onPointerDown={dragBottom} onDoubleClick={() => changeBottom(b => ({ ...b, folded: !b.folded }))} onKeyDown={keyBottom} />
+          onPointerDown={dragBottom} onDoubleClick={toggleBottom} onKeyDown={keyBottom} />
         <div className="tabs">
           {/* The agent tab carries a small control at its right end, where a browser tab has its close button: it moves the
               conversation into a window of its own. Two sibling buttons in one tab shape - a button inside a button is not valid. */}
@@ -307,7 +312,7 @@ export function App() {
           {(['status', 'logs', 'data', 'files', 'corners'] as Exclude<BottomTab, 'agent'>[]).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); unfold(); }}>
             {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', corners: 'Corner check' }[t]}</button>)}
           <span className="spacer" />
-          <RunListButton runs={runs} runsError={runsError} runDir={runDir} status={status} onChoose={setRunDir} onRefresh={refreshRuns} />
+          <RunListButton runs={runs} runsError={runsError} runDir={runDir} status={status} onChoose={dir => { setRunDir(dir); if (dir) unfold(); }} onRefresh={refreshRuns} />
         </div>
         <div className="bottom-body">
           <AgentTab hidden={tab !== 'agent'} config={config} setConfig={setConfig} request={agentRequest} clearRequest={() => setAgentRequest(null)}

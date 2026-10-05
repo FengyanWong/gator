@@ -75,6 +75,28 @@ button.primary { background: var(--accent-fill); color: var(--on-accent); border
 table.grid { border-collapse: collapse; width: 100%; } table.grid th, table.grid td { border: 1px solid var(--line); padding: 2px 5px; text-align: left; vertical-align: top; white-space: nowrap; }
 table.grid th { background: var(--head); position: sticky; top: 0; cursor: help; font-weight: 400; font-family: var(--f-label); letter-spacing: .02em; } table.grid.small td { white-space: normal; word-break: break-word; }
 table.editor td { padding: 0; } table.editor td input, table.editor td select { border: none; min-width: 84px; background: transparent; }
+/* record 7.180 (design advice: content-sized columns): an ID wide enough to read, a leader's name too, a unit narrow; the other
+   columns keep the 84 px every editor box has. */
+table.editor td[data-field="variable_id"] input, table.editor td[data-field="measurement_id"] input, table.editor td[data-field="metric_id"] input { min-width: 140px; }
+table.editor td[data-field="binding_group"] input { min-width: 120px; }
+table.editor td[data-field="unit"] input { min-width: 52px; }
+table.editor td input[type="checkbox"] { min-width: 0; }
+/* the Issues column as wide as its reports need: narrow while no row has one */
+table.editor:not(:has(td.issues > .issue)) td.issues { min-width: 0; }
+/* record 7.180 (design advice 4): a tied row folds under its leader - the leader's first cell counts them and opens them; an
+   open tied row is marked and its ID indented. The note of the last block paste under the formula bar. */
+table.editor td.sel { white-space: nowrap; }
+table.editor .tie-toggle { border: none; background: none; padding: 0 2px; margin-left: 2px; font: 11px/1 var(--f-mono); color: var(--param); cursor: pointer; }
+table.editor .tie-mark { margin-left: 5px; color: var(--muted); cursor: default; }
+table.editor tr.tied > td[data-field="variable_id"] input { padding-left: 16px; }
+.paste-note { margin: 0 0 4px; }
+/* record 7.179 (design advice 2): Run configuration and Output settings as a property sheet - a number's label and its box on
+   one line, the box at the right - and the run limits in one fold whose line names the limits that are set. */
+.right .module-body > label.num, .right .module-body > details > label.num { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; }
+.right .module-body > label.num > input, .right .module-body > details > label.num > input { width: 92px; }
+.right .module-body > label.num > .with-unit, .right .module-body > details > label.num > .with-unit { width: 176px; }
+.right details.limits { margin: 4px 0; } .right details.limits > summary { cursor: pointer; } .right details.limits > :not(summary) { margin-left: 13px; }
+.output-facts > summary { font-size: 11.5px; color: var(--muted); }
 /* record 7.175: the editors' formula bar - the chosen cell's whole value in a box as wide as the table; the chosen cell is marked */
 .formula { margin: 4px 0; } .formula-bar { display: flex; align-items: flex-start; gap: 6px; }
 .formula-bar .formula-where { flex: none; width: 210px; padding: 4px 8px; border: 1px solid var(--line); background: var(--head); font-size: 11.5px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }

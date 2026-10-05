@@ -22,7 +22,7 @@ function Num({ label, value, onChange, title, nullable, disabled, note, after, p
     parse={t => t.trim() === '' ? { value: nullable ? null : 0 } : Number.isFinite(Number(t)) ? { value: Number(t) } : undefined}
     onChange={onChange} />;
   return (
-    <label title={title} className={disabled ? 'disabled' : undefined}><span>{label}{note && <span className="hint"> - {note}</span>}</span>
+    <label title={title} className={disabled ? 'num disabled' : 'num'}><span>{label}{note && <span className="hint"> - {note}</span>}</span>
       {after ? <span className="with-unit">{box}{after}</span> : box}</label>);
 }
 
@@ -334,6 +334,8 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const netTitle = llmOnly ? 'LLM only does not use an RL network.' : loads && !source.run_dir ? `Mode ${run.mode} loads a saved model: choose one in RL networks; the run then uses its network.`
     : `The network in use: ${encoder}, hidden ${hidden}, ${usesHeads ? `heads ${heads}` : 'no attention heads'}, layers ${layers}; nominal operating points ${net.operating_points ? 'on' : 'off'}; `
       + `components ${components ?? 'standard'}${loads ? `. It is the network of the saved model this run loads (${source.run_dir}).` : '.'} RL networks... changes it.`;
+  const limitsSet = [run.max_spectre_launches != null ? `${run.max_spectre_launches} launches` : null, (run.max_retries ?? 0) > 0 ? `${run.max_retries} retries` : null,
+    run.max_wall_seconds != null ? `${run.max_wall_seconds} s` : null].filter(Boolean) as string[];
   const folded = [run.mode, run.model_label?.trim() ? `model ${run.model_label.trim()}` : null, typeof budget === 'number' ? `${budget} evaluations` : null,
     `${encoder} ${net.hidden_dim ?? '?'}/${net.heads ?? '?'}/${net.layers ?? '?'}`,
     net.vocabulary && net.vocabulary !== 'standard' ? `knows ${net.vocabulary.slice(4)}` : null].filter(Boolean).join(' - ');
@@ -366,12 +368,14 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       {circuit?.max_concurrency && run.concurrency > circuit.max_concurrency && <p className="error">This task supports at most {circuit.max_concurrency} jobs.</p>}
       <Num label="Evaluation budget (max_evaluations)" value={run.max_evaluations} onChange={v => set({ max_evaluations: v })}
         title="NEW candidate evaluations that may START in the whole run, shared by all workers. Baselines, warm-up and failures count. Episode resets do not reset it." />
-      <Num label="Max Spectre launches" nullable value={run.max_spectre_launches} onChange={v => set({ max_spectre_launches: v })} title="Optional hard cap incl. retries and failures." />
-      <Num label="Max retries per evaluation" value={run.max_retries ?? 0} onChange={v => set({ max_retries: v })} title="A retry keeps the evaluation_id and costs a launch, not an evaluation." />
-      <Num label="Wall-time limit (s)" nullable value={run.max_wall_seconds} onChange={v => set({ max_wall_seconds: v })} />
       <Num label="Random seed (target task)" value={run.seed} onChange={v => set({ seed: v })} title="Seed of THIS run. The source model's pretraining seed is recorded separately." />
       <Check label="Stop at the first feasible design" value={run.stop_at_first_feasible} onChange={v => set({ stop_at_first_feasible: v })} />
-      <details><summary>Failure limits</summary>
+      {/* The limits a run seldom changes, in one fold (record 7.179, design advice 2): the caps on launches, retries and wall
+          time with the two consecutive-failure rules (7.150's "Failure limits"). Its line names the ones that are set. */}
+      <details className="limits"><summary>Limits{limitsSet.length > 0 && <span className="hint"> - {limitsSet.join(', ')}</span>}</summary>
+        <Num label="Max Spectre launches" nullable value={run.max_spectre_launches} onChange={v => set({ max_spectre_launches: v })} title="Optional hard cap incl. retries and failures." />
+        <Num label="Max retries per evaluation" value={run.max_retries ?? 0} onChange={v => set({ max_retries: v })} title="A retry keeps the evaluation_id and costs a launch, not an evaluation." />
+        <Num label="Wall-time limit (s)" nullable value={run.max_wall_seconds} onChange={v => set({ max_wall_seconds: v })} />
         <Num label="Pause after N consecutive infrastructure failures" value={run.max_consecutive_infrastructure_failures ?? 3} onChange={v => set({ max_consecutive_infrastructure_failures: v })} />
         <Num label="Stop after N consecutive failed evaluations" value={run.max_consecutive_failures ?? 5} onChange={v => set({ max_consecutive_failures: v })}
           title={'When this many evaluations in a row fail (no valid result), the run stops safely: everything is saved and it ends as "failed", '
@@ -571,14 +575,17 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
       {locked && <p className="hint">The run directory is locked while a run is active. A resumed run writes back to its original directory.</p>}
       {browse && <ul className="tree">{browse.parent && <li onClick={() => ask(() => api.browse(browse.parent), setBrowse)}>..</li>}
         {browse.entries.map((e: Json) => <li key={e.path}><span onClick={() => ask(() => api.browse(e.path), setBrowse)}>{e.name}</span> <button onClick={() => { set({ output_root: e.path }); setBrowse(null); }}>select</button></li>)}</ul>}
-      {check && <table className="grid small"><tbody>
+      {/* What the backend found for the root, as one line; the table behind it (record 7.179, design advice 3). Open at once when
+          the root cannot be written. */}
+      {check && <details className="more output-facts" open={!(check.allowed && check.writable)}><summary>{check.allowed && check.writable ? 'writable' : 'NOT writable'} · {bytes(check.free_bytes)} free{check.windows_path ? ` · ${check.windows_path}` : ''}</summary>
+      <table className="grid small"><tbody>
         <tr><td>Resolved</td><td className="path">{check.resolved ?? '-'}</td></tr>
         <tr><td>Allowed / writable</td><td className={check.allowed && check.writable ? '' : 'error'}>{String(check.allowed)} / {String(check.writable)} {check.error ?? ''}</td></tr>
         <tr><td>Backend host</td><td>{check.host} ({check.environment}, {check.filesystem})</td></tr>
         <tr><td>Free space</td><td>{bytes(check.free_bytes)}; used here {bytes(check.bytes_used)}</td></tr>
         <tr><td>Windows path</td><td>{check.windows_path ?? <span className="hint">not shown: {check.windows_mapping}</span>}{check.windows_path && <span className="hint"> (verified by read-back)</span>}</td></tr>
         <tr><td>Mock data root</td><td className="path">{check.mock_data_root}</td></tr>
-      </tbody></table>}
+      </tbody></table></details>}
       <div className="row"><label>Experiment name<input value={out.experiment_name ?? ''} onChange={e => set({ experiment_name: e.target.value })} /></label>
         <label title="Set to append runs to an existing experiment; empty creates a new unique ID.">Experiment ID<input value={out.experiment_id ?? ''} placeholder="new" onChange={e => set({ experiment_id: e.target.value || null })} /></label></div>
       {paths && <details open><summary>Current run paths</summary><table className="grid small"><tbody>
@@ -587,7 +594,7 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
         <tr><td>last successful save</td><td>{activeRun?.persistence?.last_successful_save ?? '-'}</td></tr>
         <tr><td>remote Spectre work dir</td><td className="hint">local work/ for this task; final files are written directly here (sync: local)</td></tr>
       </tbody></table></details>}
-      <h4>Always saved</h4><p className="hint">Configuration/provenance snapshots, per-evaluation records, actual parameters, metrics, simulator-job accounting, run summary, event/error logs (Parquet + JSON).</p>
+      <p className="hint always-saved" title="Always saved: configuration/provenance snapshots, per-evaluation records, actual parameters, metrics, simulator-job accounting, run summary, event/error logs (Parquet + JSON).">Always saved: configuration, evaluations, logs.</p>
       {!llmOnly && <Check label="Learner-update log" value={out.save_learner_updates ?? true} onChange={v => set({ save_learner_updates: v })} />}
       <Check label={llmOnly ? 'Search progress (needed to resume)' : 'Model checkpoints'} value={out.save_checkpoints ?? true} onChange={v => set({ save_checkpoints: v })} />
       {!llmOnly && <Check label="Replay snapshots (needed for a FULL resume)" value={out.save_replay_snapshots ?? true} onChange={v => set({ save_replay_snapshots: v })} />}

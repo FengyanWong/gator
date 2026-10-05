@@ -189,6 +189,14 @@ every size is shared - the page's margin, the header's border and padding, the t
 the looks set only colours and drawings (Silicon Night's seal ring is drawn inside the header's edge, as Whiteprint's
 double rule). Switching the look moves no box; `looks_check.mjs` measures fourteen of them in both looks.
 
+**Room for the tables** (record 7.179, the user's "go on" after design advice 1-3). The bottom panel starts folded while no
+run is shown (see the splitter above). Run configuration reads as a property sheet: a number's label and its box share one
+line, the box at the right; the caps on launches, retries and wall time and the two consecutive-failure rules sit in one
+closed **Limits** fold whose line names the limits that are set ("Limits - 42 launches"). In Output settings the list of
+what is always saved is one line with the whole list in its tooltip, and what the backend found for the output root is one
+line ("writable · 270 GiB free · D:\gator\outputs") with its table folded behind it, open at once when the root cannot be
+written. Browser check: `frontend/scripts/room_check.mjs`.
+
 **Drop-down lists in the look's colours** (record 7.173, user: "fix the color issue of the drag down menu in night mode, it
 is hard to read"): the browser draws a select's open list from its options, and a select in an editor cell (Probes'
 analysis, for one) has no background of its own. Its list came out light under Silicon Night's light text. Every option
@@ -210,7 +218,9 @@ line moved into the tooltip of the name GATOR.
 **The splitter above the bottom panel.** Drag the top edge of the bottom panel to give it more or less room;
 double-click it to fold the panel down to its tab line, and again to open it. From the keyboard: Tab to it, then the
 arrow keys (24 px a press) or Enter. A press on one of its tabs, on the header's run line or an agent request opens it
-again; Start and Resume do not. The height and the fold are kept in this browser (`gator-workbench-bottom-v1`), and the
+again, and since record 7.179 so do Start, Resume and a run chosen in Runs.... While no run is shown (a fresh page, a run
+that is gone) it starts folded to its tab line: its tabs show a run, and with none it took a third of the page saying "No
+run selected"; opened by hand it stays open for that page. The height and the fold are kept in this browser (`gator-workbench-bottom-v1`), and the
 editors always keep the window height less 280 px. Windows narrower than 1100 px keep their own stacked layout and have
 no splitter.
 
@@ -389,6 +399,26 @@ that follows another field (a Maestro output's Probe ID, a follower's bounds) ar
 tooltip says why, and for a list names its choices. Typing in the cell shows at once in the bar. The bar writes through the
 same path as the cell, so what follows a cell follows a typed bar too (a renamed output's Probe ID and the equations using
 it; a spec's unit from its one Probe). Browser check: `frontend/scripts/formula_bar_check.mjs`.
+
+### Tied rows, spreadsheet keys and a pasted block (2026-10-05, record 7.180)
+
+The editor tables behave more like a spreadsheet (design advice 4 and 6, the user's "go on").
+- **Tied rows.** A Parameters row whose `binding_group` names a row of the table follows that leader - the leader decides
+  its size - and is folded under it; the rows keep their order. The leader's first cell, next to its tick box, counts its
+  tied rows (`▸2`) and opens and folds them; an open tied row is marked `↳` and its ID indented. A tied row with an error
+  report, or with the chosen cell, is never folded away. The LDO task shows 16 of its 24 rows.
+- **Keys.** Up and Down go to the same column of the row above or below, passing folded rows; Enter goes down and
+  Shift+Enter up, as in Excel. A list keeps its own keys.
+- **Pasting a block.** Tab-separated lines (what Excel copies) pasted into a cell fill the rows in view from that cell down
+  and the columns in view from it right, as one Undo step. Each text is read as its column takes it (numbers plain or with
+  an exponent, a list's choices, true/false or x for a tick box, `>=`/`<=`/`interval` for a limit); a text that cannot be
+  read is named and its cell left as it was; lines below the last row are named, not added; cells a leader decides, or
+  that follow another field, are kept. A line under the formula bar says what happened. One value pastes as before.
+- **Column widths.** An ID column is wide enough to read (140 px), a leader's name 120 px, a unit 52 px; a tick box no longer
+  takes the 84 px of a text box; the Issues column is narrow while no row has an issue. At 1680 x 1050 the LDO task's
+  Parameters table fits without scrolling sideways.
+
+Browser check: `frontend/scripts/sheet_check.mjs`.
 
 ### Matched devices: ties suggested from the circuit (added 2026-09-29, user request)
 
@@ -1116,7 +1146,7 @@ designs against the current hard specs: those of earlier runs of the same task w
 root (the configured one, else the remembered one), their Corner check results, and for `real:gpdk045_ota7` the
 reference and designs of reward v2's qualification (folders named in the code, never a scan of `artifacts/`).
 
-**Failure limits.** Run configuration's **Failure limits** fold-out has a field **Stop after N consecutive failed evaluations**
+**Failure limits.** Run configuration's **Limits** fold (record 7.179; until then "Failure limits", which held only these two rules) has a field **Stop after N consecutive failed evaluations**
 (`run.max_consecutive_failures`, default 5). A design the simulator reports as invalid or not converging is still
 scored (reward -1) and kept in replay, and since reward v2.1 the episode goes on, so the network learns where the
 circuit breaks. The stop rule counts it as a failed evaluation all the same: 5 in a row end the run as `failed`
@@ -1365,7 +1395,7 @@ whose network the run takes. A loading Mode without a chosen model reads "no sav
 **Search method** is the second setting. The button opens a separate window containing the encoder and sizes,
 operating-point input switch, Components list, presets, saved-model chooser, model facts, compatibility details,
 network structure, circuit graph view, and Advanced RL settings. Changing Mode in the main page updates this window.
-Budgets, concurrency, seed, failure limits, reward and training conditions stay in Run configuration.
+Budgets, concurrency, seed, the run limits (one Limits fold since record 7.179), reward and training conditions stay in Run configuration.
 
 Pressing the button again focuses the existing window. It has no close button of its own (record 7.163, user: "delete
 the cross button in RL network window"): the browser's close keeps all configuration edits; pending preset saves and model compatibility checks continue in the main page. Undo/Redo also

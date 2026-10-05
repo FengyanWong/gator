@@ -174,6 +174,9 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // The chosen cell of the formula bar (record 7.175): its row by position, checked by the row's ID (a Delete or an Undo moves
   // rows; while the ID itself is being typed, the position holds).
   const [active, setActive] = useState<{ index: number; name: string; key: string } | null>(null);
+  // Tied rows opened under their leader, by the leader's ID (record 7.180), and what the last block paste did.
+  const [openTies, setOpenTies] = useState<Record<string, boolean>>({});
+  const [pasted, setPasted] = useState<{ text: string; warn: boolean } | null>(null);
   const table = useRef<HTMLTableElement>(null);
   // `signal` holds a Maestro output's expression (ymax(VT("/OUT")), getData(... ?result "stb")): "signal" read like a
   // net name (review of 2026-10-03). For a profile metric it is a label of what is measured.
@@ -307,7 +310,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     return [...new Set([row, ...tied].map(r => r.instance_path).filter(Boolean))] as string[];
   };
   useEffect(() => () => pointAt([]), [tab]);
-  useEffect(() => setActive(null), [tab]);
+  useEffect(() => { setActive(null); setOpenTies({}); setPasted(null); }, [tab]);
 
   // Why a cell is shown and not typed: it follows another field, or its row's leader decides it (record 7.158 review).
   const fixedOf = (row: Json, c: Json): string | null => tab === 'measurements' && c.name === 'measurement_id' && row.result_source === 'ade_output'
@@ -347,6 +350,98 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     if (JSON.stringify(value) !== JSON.stringify(before)) update(at, c.name, value);
     return null;
   };
+  // Tied rows (record 7.180, design advice 4): a Parameters row whose binding_group names a row of the table follows that leader -
+  // the leader decides its size - and is folded under it; the leader's first cell counts them and opens them. A tied row with an
+  // issue, or with the chosen cell, is never folded away. The rows keep their order.
+  const ids = new Set(rows.map(r => r[keyField]));
+  const leaderOf = (row: Json): string | null => tab === 'parameters' && row.binding_group && ids.has(row.binding_group) ? row.binding_group : null;
+  const tiedCount = new Map<string, number>();
+  for (const r of rows) { const l = leaderOf(r); if (l) tiedCount.set(l, (tiedCount.get(l) ?? 0) + 1); }
+  const foldedAway = (row: Json, index: number) => { const l = leaderOf(row); return !!l && !openTies[l] && at !== index
+    && !rowIssues(index).some((i: Json) => i.level === 'error' || i.level === 'blocker'); };
+
+  // Keys as in a spreadsheet (record 7.180, design advice 6): Up and Down go to the same column of the row above or below (folded
+  // rows are passed over), Enter to the row below and Shift+Enter above. A list keeps its own keys; the tick box column is left be.
+  const moveFrom = (box: HTMLElement, step: 1 | -1) => {
+    const field = box.closest<HTMLElement>('td[data-field]')?.dataset.field;
+    let tr = box.closest('tr') as HTMLTableRowElement | null;
+    if (!field || !tr) return false;
+    do { tr = (step > 0 ? tr.nextElementSibling : tr.previousElementSibling) as HTMLTableRowElement | null; } while (tr && tr.hidden);
+    const next = tr?.querySelector(`td[data-field="${CSS.escape(field)}"]`)?.querySelector('input, select') as HTMLElement | null;
+    if (!next) return false;
+    next.focus();
+    if (next instanceof HTMLInputElement && next.type !== 'checkbox') next.select();
+    return true;
+  };
+  const onTableKey = (e: React.KeyboardEvent) => {
+    const box = e.target as HTMLElement;
+    if (!(box instanceof HTMLInputElement) || box.closest('td.sel') || e.altKey || e.ctrlKey || e.metaKey) return;
+    const step = e.key === 'ArrowDown' || (e.key === 'Enter' && !e.shiftKey) ? 1 : e.key === 'ArrowUp' || (e.key === 'Enter' && e.shiftKey) ? -1 : 0;
+    if (step && moveFrom(box, step)) e.preventDefault();
+  };
+  // A block copied from Excel (tab-separated lines) pasted into a cell fills the rows in view from that one down and the columns
+  // in view from that one right, as one Undo step (record 7.180). Each text is read as its column takes it; a cell that follows
+  // another field, or that its leader decides, is left as it is; what cannot be read is named and left as it was. One value
+  // pastes into the box as before.
+  const readAs = (c: Json, raw: string): { value?: Json; problem?: string } => {
+    const s = raw.trim();
+    if (c.name === 'nominal_only') return /^nominal/i.test(s) ? { value: true } : /^all/i.test(s) ? { value: false } : { problem: `"${s}" in ${c.name}` };
+    if (c.type === 'boolean') return /^(true|yes|on|1|x|✓)$/i.test(s) ? { value: true } : /^(false|no|off|0|)$/i.test(s) ? { value: false } : { problem: `"${s}" in ${c.name}` };
+    if (c.name === 'constraint' && tab === 'targets') {
+      const limit = ({ '>=': '>=', '≥': '>=', '<=': '<=', '≤': '<=', interval: 'interval' } as Record<string, string>)[s.toLowerCase()];
+      return limit ? { value: limit } : { problem: `"${s}" in ${c.name}` };
+    }
+    if (c.options) {
+      const option = c.options.find((o: string) => o.toLowerCase() === s.toLowerCase());
+      return option !== undefined ? { value: option } : s === '' && c.nullable ? { value: null } : { problem: `"${s}" in ${c.name}` };
+    }
+    if (c.type === 'number' || c.type === 'integer') {
+      if (s === '') return c.nullable ? { value: null } : {};
+      const n = Number(s);
+      return Number.isFinite(n) ? { value: n } : { problem: `"${s}" in ${c.name}` };
+    }
+    if (c.type === 'array' || c.type === 'object') {
+      if (s === '') return { value: null };
+      try { return { value: JSON.parse(s) }; } catch { return { problem: `"${s}" in ${c.name}` }; }
+    }
+    return { value: raw === '' && c.nullable ? null : raw };
+  };
+  const onTablePaste = (e: React.ClipboardEvent) => {
+    const cell = (e.target as HTMLElement).closest<HTMLElement>('td[data-field]');
+    const text = e.clipboardData.getData('text/plain').replace(/\r?\n$/, '');
+    if (!cell || !/[\t\n]/.test(text)) return;
+    e.preventDefault();
+    const shown = [...(table.current?.querySelectorAll<HTMLTableRowElement>('tbody > tr') ?? [])].filter(tr => !tr.hidden);
+    const first = shown.indexOf(cell.closest('tr') as HTMLTableRowElement), column = visible.findIndex(c => c.name === cell.dataset.field);
+    const changes = new Map<number, Json>(), problems: string[] = [];
+    let cells = 0, kept = 0, beyond = 0;
+    text.split(/\r?\n/).map(line => line.split('\t')).forEach((values, i) => {
+      const tr = shown[first + i];
+      if (!tr) { beyond += 1; return; }
+      const index = Number(tr.dataset.index), row = rows[index];
+      values.forEach((raw, j) => {
+        const c = visible[column + j];
+        if (!c) return;
+        if (fixedOf(row, c) || offOf(row, c)) { kept += 1; return; }
+        const read = readAs(c, raw);
+        if (read.problem) problems.push(read.problem);
+        else if ('value' in read) { changes.set(index, { ...(changes.get(index) ?? {}), [c.name]: read.value }); cells += 1; }
+      });
+    });
+    if (changes.size) setConfig((cfg: Json) => ({ ...cfg, [tab]: cfg[tab].map((r: Json, i: number) => {
+      const fields = changes.get(i);
+      if (!fields) return r;
+      const row = { ...r, ...fields };
+      if (tab === 'targets' && !('normalization_scale' in fields) && Object.keys(fields).some(n => SCALE_FIELDS.includes(n) && fields[n] !== r[n])) row.normalization_scale = followScale(r, row);
+      return row;
+    }) }));
+    const said = [cells ? `Pasted ${cells} cell${cells === 1 ? '' : 's'} into ${changes.size} row${changes.size === 1 ? '' : 's'} (one Undo step).` : 'Nothing pasted.',
+      problems.length ? `Not read, left as they were: ${problems.slice(0, 4).join(', ')}${problems.length > 4 ? ` and ${problems.length - 4} more` : ''}.` : '',
+      kept ? `${kept} cell${kept === 1 ? '' : 's'} that follow another field kept.` : '',
+      beyond ? `${beyond} line${beyond === 1 ? '' : 's'} below the last row left out: Add rows first.` : ''].filter(Boolean).join(' ');
+    setPasted({ text: said, warn: problems.length + beyond > 0 });
+  };
+
   // Back to the cell after Enter or Esc, as a spreadsheet does.
   const backToCell = () => {
     if (!active || at < 0) return;
@@ -392,15 +487,21 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         <div className="row"><button onClick={() => applyImport(pending)}>Apply</button><button onClick={() => setPending(null)}>Cancel</button></div>
         {(pending.diff.length > 0 || !pending.others.length) && <DiffView diff={pending.diff} />}</div>}
       <FormulaBar cell={barCell} commit={commitBar} back={backToCell} />
+      {pasted && <p className={`${pasted.warn ? 'warn' : 'hint'} paste-note`}>{pasted.text}</p>}
       <div className="scroll">
         <table className="grid editor" ref={table}>
           <thead><tr><th className="sel"></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
-          <tbody>{rows.map((row, index) => {
+          <tbody onKeyDown={onTableKey} onPaste={onTablePaste}>{rows.map((row, index) => {
             const found = rowIssues(index);
             const point = tab === 'parameters' ? { onMouseEnter: () => pointAt(devicesOf(row)), onMouseLeave: () => pointAt([]),
               onFocus: () => pointAt(devicesOf(row)), onBlur: () => pointAt([]) } : {};
-            return <tr key={index} className={found.some((i: Json) => i.level === 'error' || i.level === 'blocker') ? 'has-error' : ''} {...point}>
-              <td className="sel"><input type="checkbox" checked={!!selected[row[keyField]]} onChange={e => setSelected(s => ({ ...s, [row[keyField]]: e.target.checked }))} /></td>
+            const tied = tiedCount.get(row[keyField]) ?? 0, leader = leaderOf(row), open = !!openTies[row[keyField]];
+            return <tr key={index} data-index={index} hidden={foldedAway(row, index)} {...point}
+              className={[found.some((i: Json) => i.level === 'error' || i.level === 'blocker') ? 'has-error' : '', leader ? 'tied' : ''].filter(Boolean).join(' ') || undefined}>
+              <td className="sel"><input type="checkbox" checked={!!selected[row[keyField]]} onChange={e => setSelected(s => ({ ...s, [row[keyField]]: e.target.checked }))} />
+                {tied > 0 ? <button className="tie-toggle" aria-expanded={open} onClick={() => setOpenTies(o => ({ ...o, [row[keyField]]: !open }))}
+                  title={`${tied} tied row${tied === 1 ? '' : 's'} follow${tied === 1 ? 's' : ''} this one: ${open ? 'fold' : 'show'} ${tied === 1 ? 'it' : 'them'}.`}>{open ? '▾' : '▸'}{tied}</button>
+                  : leader ? <span className="tie-mark" title={`Follows ${leader}: its leader's value times the ratio is written.`}>↳</span> : null}</td>
               {/* A field the row does not STATE is shown with the value the backend uses for it (hard = on, active = on ...): a
                   starter row's absent `hard` used to look unchecked although the target is hard. A box the user cleared is null,
                   not absent, and stays empty. */}

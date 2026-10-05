@@ -221,3 +221,5 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.176 | The lines above Parameters and Specs cut to their fact - "Independent action variables: 16 of 24 rows.", "Probes: <chips>" - their explanations in the line's tooltip |
 | 7.177 | The saved task's run-check note cut to one line ("Before every run: the editors, the task and its cell must agree."), the explanation in its tooltip |
 | 7.178 | Browser checks: a pop-up is handed over once its copied stylesheets are in (harness `attach`), and pdk_check reads the PDK window's list once it has arrived - the two timing failures of pdk_check |
+| 7.179 | Room for the tables (design advice 1-3): the bottom panel folded while no run is shown; Run configuration a property sheet (a number's label and box on one line, the run limits in one "Limits" fold); Output settings' long lines folded into one-line summaries |
+| 7.180 | The editor tables as a spreadsheet (design advice 4 and 6): tied Parameters rows folded under their leader; Up / Down / Enter move between rows; a block pasted from Excel fills the cells as one Undo step |

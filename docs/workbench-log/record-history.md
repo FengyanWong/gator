@@ -286,3 +286,5 @@ One row per commit, newest last.
 | `d711528` | 10-05 19:21 | 7.199 | learning rate 1e-3 in the starting presets, the presets measured as a whole with one Spectre run (session "Gator baseline deletion in RL networks") |
 | `47f43cf` | 10-05 19:21 | 7.205 | up to eight Training charts at once (session "Training tab with live graphs") |
 | `e5cbcb9` | 10-05 19:21 | 7.204 | "Calibration ready": a line under the header when a Baseline simulation has ended, with Apply calibration and Not now (session "RL reward design") |
+| `dba040c` | 10-05 19:22 | - | record only: names the commits of records 7.199-7.201 and 7.203-7.205, and the table rows for dfef323, f97bc6e, aa5e3f9, d711528, 47f43cf and e5cbcb9 |
+| `d817f9a` | 10-05 21:02 | 7.209 | the RGCN and GATv2 starting presets on Spectre: first passing design 218 / 289 (Graph Transformer preset 202), last third 88 / 93 % passing; docs only (session "Reward module scoring design") |

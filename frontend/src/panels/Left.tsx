@@ -1,4 +1,4 @@
-import { useAsyncAction, useRequest } from '../store';
+import { noteRowsFrom, useAsyncAction, useRequest } from '../store';
 import { CircuitDetails, gateText, namedTestbench, NativeSchematic, useVirtuosoBrowser } from './CircuitBrowser';
 import { Icon } from './Icons';
 import { useEffect, useRef, useState } from 'react';
@@ -327,6 +327,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
         circuit: nextCircuit,
         project: { ...c.project, task_name: starter.project.task_name },
         parameters: starter.parameters, targets: starter.targets, measurements: starter.measurements }));
+      noteRowsFrom(taskId, starter.revision);    // which saved revision these rows are (record 7.203)
       request.current++;                         // any pending circuit view still belongs to the previous task
       followCount.current++;                     // a pending Virtuoso probe read cannot replace the new task's rows
       setCircuit(null);
@@ -472,7 +473,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           <div className="note">
             <TaskSave profileId={profileId} library={null} cell={null} task={generatedName}
               revision={tasks.find(t => t.task_key === ref.task_id)?.revision ?? null} hasCopy
-              config={config} setConfig={setConfig} onSaved={taskSaved} onSavedElsewhere={savedElsewhere} bar={taskSlot} notes={taskNotes} />
+              config={config} setConfig={setConfig} onSaved={taskSaved} onSavedElsewhere={savedElsewhere}
+              onReload={() => chooseTask(ref.task_id, undefined, true)} bar={taskSlot} notes={taskNotes} />
             {/* One line; the explanation is its tooltip (record 7.177, user: "reduce the texts this part"). */}
             <p title={'Start, Baseline simulation and Resume first check that the editors, this saved task and its cell in Virtuoso agree. '
               + 'The check simulates nothing; a difference starts nothing and says what to do.'}><b>Before every run:</b> the editors, the task and its cell must agree.</p>

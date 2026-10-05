@@ -19,6 +19,11 @@
 //     the save ended and reads the task list again;
 //   - a save refused because another one runs says so, and the page follows that one to its end;
 //   - reads that fail do not end the following; a save the backend no longer knows (started again) ends with a warning.
+// Record 7.203 (user: "yes build it", for rows older than the saved task):
+//   - Save task sends which saved revision the rows came from: none before the page knows, then the revision of the
+//     last save or of the rows Reload saved values brought; the check while editing gets it too;
+//   - refused because the rows are older than the saved task, the page asks under the toolbar: "Save anyway" sends the
+//     save again with replace_newer, "Reload saved values" brings the saved rows (and their revision).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; WSLENV carries the URL into it):
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_save_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -50,8 +55,13 @@ await runChecks(browser, async () => {
   // The backend's save state (record 7.198) as GET /api/tasks/saving answers it, and the save's own answer: `hold` keeps
   // it back until `release()`; `conflict` refuses it because another save runs.
   let saving = { running: null, last: null }, hold = false, conflict = null, release = null, statusReads = 0, taskListReads = 0, failing = false;
-  const answer = async ({ requestId, request }) => {
+  // Record 7.203: `older` refuses a save that does not say "Save anyway"; the starter tells its rows' revision.
+  let older = false, starterReads = 0;
+  const validations = [];
+  const answer = async params => {
+    const { requestId, request } = params;
     const url = new URL(request.url), pathname = url.pathname, body = JSON.parse(request.postData ?? '{}');
+    if (pathname === '/api/config/validate') { validations.push(body); return page.readOrRefuse(params, page.refused, { reads: true }); }
     if (pathname === '/api/tasks/saving') {
       statusReads++;
       return failing ? fulfil(requestId, 503, { detail: { message: 'FIXTURE: the backend is starting again' } }) : fulfil(requestId, 200, saving);
@@ -63,8 +73,9 @@ await runChecks(browser, async () => {
         revision: key === 'real:ring_osc' ? revision : 1, circuit_class: 'vco', pdk_id: 'gpdk045' }))] });
     }
     if (pathname === '/api/tasks/starter' && tasksKnown.has(url.searchParams.get('task_key'))) {
+      starterReads++;
       return fulfil(requestId, 200, { project: { name: 'fixture', task_name: 'ring' }, circuit: { source: 'registered_task', task_id: url.searchParams.get('task_key') },
-        parameters: ROWS, measurements: PROBES, targets: SPECS });
+        parameters: ROWS, measurements: PROBES, targets: SPECS, revision: 9 });
     }
     if (pathname === '/api/circuit/load') {
       const circuit = body.circuit ?? {};
@@ -80,6 +91,12 @@ await runChecks(browser, async () => {
       const bad = (data.probes ?? []).some(p => p.analysis === 'sometimes');
       return fulfil(requestId, 200, bad ? { ok: false, problems: ['probes[0] analysis: Input should be \'dc\', \'ac\', \'tran\' ... (FIXTURE)'], rows: {}, extras: {} }
         : { ok: true, problems: [], rows: { parameters: data.parameters, measurements: data.probes, targets: data.specs }, extras: { analyses: data.maestro?.analyses ?? {}, notes: data.notes } });
+    }
+    if (op === 'task/save' && older && !body.replace_newer) {
+      return fulfil(requestId, 409, { detail: { code: 'saved_task_newer', undone: { base: 3, current: 4, items: [] },
+        message: "FIXTURE: real:ring_osc was saved again after these rows were loaded: it is revision 4 now, the rows here are revision 3's. "
+          + 'Saving them would undo what was saved since: Specs osc_frequency_hz: normalization_scale 2e+08 saved, 1e+09 here. '
+          + 'Press Reload saved values to take the saved rows, or save anyway.' } });
     }
     if (op === 'task/save' && conflict) {
       saving = { running: conflict, last: saving.last };
@@ -125,7 +142,8 @@ await runChecks(browser, async () => {
     for (let seen = mark; calls.length !== mark && seen !== calls.length;) { seen = calls.length; await sleep(500); }
   };
 
-  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/tasks', '*/api/tasks/starter*', '*/api/tasks/saving'], answer, { others: 'read', connection: 'lab' });
+  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/tasks', '*/api/tasks/starter*', '*/api/tasks/saving', '*/api/config/validate'], answer,
+    { others: 'read', connection: 'lab' });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   for (let i = 0; i < 50 && !(await stored()); i++) await sleep(100);
@@ -175,6 +193,8 @@ await runChecks(browser, async () => {
   let mark = calls.length;
   await press('Save task'); await settle(1500);
   const saveCall = calls.slice(mark).find(c => c.op === 'task/save');
+  check('before the page knows where its rows came from, Save task says none (7.203)', saveCall?.base_revision === null && saveCall?.replace_newer === false,
+    JSON.stringify({ base: saveCall?.base_revision, replace: saveCall?.replace_newer }));
   check('Save task sends the rows, the open task and what the file added', !!saveCall && saveCall.task === 'ring_osc' && saveCall.name === 'ring_osc' && !saveCall.as_new
     && saveCall.extras?.analyses?.tran?.stop === '40n' && saveCall.config?.targets?.[0]?.lower === 1.25e9, JSON.stringify(saveCall ?? calls.slice(mark)));
   check('it reports the revision and that the baseline no longer holds, under the toolbar', (await notesText()).includes('Saved real:ring_osc, revision 2.') && (await notesText()).includes('no longer holds'), await notesText());
@@ -200,6 +220,8 @@ await runChecks(browser, async () => {
   check('it follows the steps the backend counts', (await lineText()) === 'Saving real:ring_osc - step 2 of 4: Virtuoso netlists the Maestro test (12 s; its last save took 34 s)',
     await lineText());
   check('Save task is closed while it runs', (await closed()) === true);
+  check('it sends the revision its last save made: the rows came from there (7.203)', calls.filter(c => c.op === 'task/save').at(-1)?.base_revision === 2,
+    JSON.stringify(calls.filter(c => c.op === 'task/save').map(c => c.base_revision)));
   check('the page asked again while the save ran', statusReads > reads + 1, `${statusReads - reads} reads`);
   await page.shot(path.join(out, 'task-save-progress.png'), `document.querySelector('.editors')`, { maxHeight: 220 });
   release(); hold = false;
@@ -214,6 +236,9 @@ await runChecks(browser, async () => {
   await send('Page.reload');
   for (let i = 0; i < 100 && !(await evaluate(`!!(${SAVE})`)); i++) await sleep(100);
   check('a page loaded during a save shows it', await page.until(`(${LINE}?.textContent ?? '').includes('step 1 of 4')`, 50), await lineText());
+  for (let i = 0; i < 50 && !validations.some(v => v.rows_from === 3); i++) await sleep(100);     // the page checks 0.5 s after a change
+  check('the reloaded page still knows where its rows came from: the check gets it (7.203)', validations.some(v => v.rows_from === 3),
+    JSON.stringify(validations.map(v => v.rows_from ?? null)));
   check('and keeps Save task closed', (await closed()) === true);
   check('its tooltip says what it waits for', (await evaluate(`${SAVE}.title`)).startsWith('Save task: Waits for the save of real:ring_osc that is running.'),
     await evaluate(`${SAVE}.title`));
@@ -261,6 +286,41 @@ await runChecks(browser, async () => {
   check('Save task opens again after it', (await closed()) === false);
   reads = statusReads; await sleep(2500);
   check('and the page stops asking', statusReads <= reads + 1, `${statusReads - reads} more reads`);
+
+  // ---- record 7.203: rows older than the saved task - the page asks before they replace it ------------------------------------
+  const QUESTION = `document.querySelector('.editors .task-notes .task-save-newer')`;
+  const ASK = text => `[...(${QUESTION}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
+  older = true;
+  let sent = calls.filter(c => c.op === 'task/save').length;
+  await evaluate(`${SAVE}.click()`);
+  check('refused as older than the saved task, the page asks under the toolbar', await page.until(`!!(${QUESTION})`, 40)
+    && (await evaluate(`${QUESTION}.textContent`)).includes('it is revision 4 now, the rows here are revision 3') , await notesText());
+  check('the question offers Reload saved values and Save anyway', await evaluate(`!!(${ASK('Reload saved values')}) && !!(${ASK('Save anyway')})`));
+  await page.shot(path.join(out, 'task-save-older.png'), `document.querySelector('.editors')`, { maxHeight: 240 });
+  check('and says nothing was saved: no "Saved" line', !(await notesText()).includes('Saved real:'), await notesText());
+  check('the refused save said which revision the rows came from', calls.filter(c => c.op === 'task/save').at(-1)?.base_revision === 3);
+  await evaluate(`${ASK('Save anyway')}.click()`); await settle(1500);
+  const anyway = calls.filter(c => c.op === 'task/save').slice(sent);
+  check('"Save anyway" sends the save again, saying so', anyway.length === 2 && anyway[1].replace_newer === true && anyway[0].replace_newer === false,
+    JSON.stringify(anyway.map(c => c.replace_newer)));
+  check('and the save says what it did, the question gone', (await notesText()).includes(`Saved real:ring_osc, revision ${revision}.`) && !(await evaluate(`!!(${QUESTION})`)),
+    await notesText());
+  const savedAs = revision;
+  sent = calls.filter(c => c.op === 'task/save').length;
+  await evaluate(`${SAVE}.click()`);
+  await page.until(`!!(${QUESTION})`, 40);
+  check('the next save starts from the revision "Save anyway" made', calls.filter(c => c.op === 'task/save').at(-1)?.base_revision === savedAs);
+  const read = starterReads;
+  answers.push(true);                                      // the rows here differ from the saved ones: OK, discard them
+  await evaluate(`${ASK('Reload saved values')}.click()`);
+  for (let i = 0; i < 40 && starterReads === read; i++) await sleep(100);
+  check('"Reload saved values" reads the saved rows, after its own question', starterReads > read && !(await evaluate(`!!(${QUESTION})`))
+    && dialogs.at(-1)?.message.startsWith('Reload saved values?') && dialogs.at(-1)?.planned, `${starterReads - read} reads`);
+  older = false; await sleep(400);
+  sent = calls.filter(c => c.op === 'task/save').length;
+  await evaluate(`${SAVE}.click()`); await settle(1500);
+  check('then Save task starts from the revision those rows are', calls.filter(c => c.op === 'task/save').slice(sent)[0]?.base_revision === 9,
+    JSON.stringify(calls.filter(c => c.op === 'task/save').slice(sent).map(c => c.base_revision)));
 
   check('no unplanned dialog', dialogs.every(d => d.planned), JSON.stringify(dialogs));
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));

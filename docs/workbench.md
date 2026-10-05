@@ -2155,6 +2155,23 @@ The backend keeps the save that is running (GET `/api/tasks/saving`, memory only
 Before, the only sign was a greyed icon (its "Saving..." is screen-reader text since the icon buttons of 7.82), and on
 2026-10-05 the user loaded the page again during two saves (record 7.194).
 
+**Rows older than the saved task** (record 7.203, user: "yes build it"). The page notes which saved revision its rows
+came from: when a task's rows are loaded (choosing the task, Reload saved values) and after each Save task. The note is
+kept in the browser, so it outlasts a reload of the page. When the task was saved again after that - from another tab,
+by another session, or while the page still held older rows - saving the rows here would undo what was saved since:
+- Save task asks first, under the toolbar, naming what would be undone ("real:mscr_ldo2_rgcn was saved again after these
+  rows were loaded: it is revision 6 now, the rows here are revision 5's. Saving them would undo what was saved since:
+  Specs psrr_10k_db: normalization_scale 6 saved, (none) here; ..."), with **Reload saved values** and **Save anyway**.
+  The backend refuses such a save before anything is written or read in Virtuoso (409 `saved_task_newer`), so no other
+  tab saves over it unasked either; Save anyway sends it again (`replace_newer`).
+- While editing, the blocking issue ("Specs differ from the saved task ...") then ends with "These rows are older than
+  the saved task ... Press Reload saved values to take the saved rows; Save task would undo that change, and asks
+  first." instead of offering Save task first.
+- Only what was saved since counts, not the user's own edits. Rows exactly like an earlier revision are recognized
+  without the page's note too (a page from before this change, rows brought back by Undo); edits on top of an earlier
+  revision need the note. The saved revisions are the task's `history/r<N>/task.json`.
+This is what happened on 2026-10-05 (record 7.194): the page held the rows of revision 2, the saved task was revision 3.
+
 **What Save task does.** It reads from the Probes how the task measures: all Maestro outputs (`ade_output`) = measured
 by Maestro; all results of one circuit type (`backend_profile`, e.g. what the testbench brought) = that type - the
 ring oscillator or the op-amp, measured by the workbench as before. Mixed probes, or probes that fit both types, are

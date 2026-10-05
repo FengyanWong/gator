@@ -9,7 +9,7 @@ from ..agents.prompts import circuit_summary
 from ..native_cells import load_import as load_cell_import
 from ..paths import PathNotAllowed, refuse_nul
 from ..security import redact
-from .models import CircuitBody, ConfigBody, CopyBody, DiffBody, MatchedBody, NativeReadBody, NgspiceCheckBody, NgspiceNameBody, NgspiceReadBody, NgspiceSaveBody, ProfileActionBody, SetupBody, TaskCheckBody, TaskFileBody, TaskFileTextBody, TaskSaveBody
+from .models import CircuitBody, ConfigBody, CopyBody, DiffBody, MatchedBody, NativeReadBody, NgspiceCheckBody, NgspiceNameBody, NgspiceReadBody, NgspiceSaveBody, ProfileActionBody, SetupBody, TaskCheckBody, TaskFileBody, TaskFileTextBody, TaskSaveBody, ValidateBody
 from .support import _bridge_call, fail, load_runtime, validate_loaded
 from .context import ApiContext
 
@@ -24,9 +24,13 @@ def register(app: FastAPI, context: ApiContext):
     @app.get('/api/tasks/starter')
     def starter(task_key: str):
         """The rows the three editors start from for a registered task. A real task: its profile's parameters and, for a
-        verified circuit, its targets of record - read from local files, no connection and no simulation."""
+        verified circuit, its targets of record - read from local files, no connection and no simulation. A saved task's
+        answer also says which saved revision these rows are (`revision`, beside the configuration's parts): the page
+        notes it, so Save task can tell rows older than the saved task (record 7.203)."""
         try:
-            return tasks.starter_config(task_key)
+            answer = tasks.starter_config(task_key)
+            saved = profiles.task_file(task_key[len('real:'):]) if task_key.startswith('real:') else None
+            return dict(answer, revision=saved['revision']) if saved and isinstance(saved.get('revision'), int) else answer
         except KeyError:
             fail(404, 'No starter configuration for this task')
         except Exception as exc:                           # a generated profile whose files no longer pass their own checks
@@ -254,8 +258,10 @@ def register(app: FastAPI, context: ApiContext):
                 save.answer = _bridge_call(
                     lambda: profiles.save_task(context.monitor, body.profile_id, body.name, config, library=body.library, cell=body.cell,
                                                task=body.task, as_new=body.as_new, extras=body.extras,
-                                               run_rows=runs.list_runs(context.roots, include_mock=False), progress=save.mark),
-                    (profiles.NeedsFrequency, 'needs_expected_frequency'), ((profiles.ProfileError,), 'refused'), COPY_REFUSED)
+                                               run_rows=runs.list_runs(context.roots, include_mock=False), progress=save.mark,
+                                               base_revision=body.base_revision, replace_newer=body.replace_newer),
+                    (profiles.NeedsFrequency, 'needs_expected_frequency'), (profiles.NewerSaved, 'saved_task_newer'),
+                    ((profiles.ProfileError,), 'refused'), COPY_REFUSED)
         except task_saving.Busy as exc:
             fail(409, exc, code='save_running', running=task_saving.status()['running'])
         return save.answer
@@ -307,9 +313,9 @@ def register(app: FastAPI, context: ApiContext):
                                                      testbench=body.testbench if op == 'import_cell' else None))
 
     @app.post('/api/config/validate')
-    def config_validate(body: ConfigBody):
+    def config_validate(body: ValidateBody):
         config, runtime, blocked = context.load_config(body.config)
-        report = validate_loaded(config, runtime, roots=context.roots)
+        report = validate_loaded(config, runtime, roots=context.roots, rows_from=body.rows_from)
         if runtime is not None and runtime.circuit.get('native_draft'):          # it must never look startable
             report.add('blocker', 'circuit_profile_missing', 'circuit', tasks.NATIVE_DRAFT_NOT_EXECUTABLE)
         return dict(report.as_dict(), config_hash=schema.config_hash(config),

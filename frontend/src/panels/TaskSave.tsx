@@ -1,4 +1,4 @@
-import { useAsyncAction, useRequest } from '../store';
+import { noteRowsFrom, rowsFrom, useAsyncAction, useRequest } from '../store';
 import { Icon } from './Icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -18,7 +18,9 @@ import { usePopupWindow } from './popupWindow';
  *  A save takes about half a minute on a Maestro task. Record 7.198 (user: "show saving ... dont allow another save task
  *  press even after refreshing page"): the backend keeps the save that is running, step by step (task_saving.py); this
  *  component reads it when it appears, follows a running save every second until it ends - its own, one sent before the
- *  page was loaded again, or one from another tab - shows the steps under the toolbar and keeps Save task closed. */
+ *  page was loaded again, or one from another tab - shows the steps under the toolbar and keeps Save task closed.
+ *  Record 7.203: rows older than the saved task - it was saved again after they were loaded - would undo what was saved
+ *  since; the backend refuses them with what they would undo, and the page asks: Reload saved values, or Save anyway. */
 
 const NAME = /^[a-z][a-z0-9_]{1,39}$/;
 const SUFFIX: Record<string, number> = { T: 1e12, G: 1e9, M: 1e6, k: 1e3, K: 1e3 };
@@ -52,14 +54,15 @@ const progressOf = (running: Json) => {
     text: `Saving ${running.task_key} - ${where} (${Math.round(running.seconds ?? 0)} s${usual})` };
 };
 
-export function TaskSave({ profileId, library, cell, task, revision, hasCopy, config, setConfig, onSaved, onSavedElsewhere, bar, notes }: {
+export function TaskSave({ profileId, library, cell, task, revision, hasCopy, config, setConfig, onSaved, onSavedElsewhere, onReload, bar, notes }: {
   profileId: string | null; library: string | null; cell: string | null; task: string | null; revision?: number | null;
   hasCopy: boolean; config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; onSaved: (made: Json, sentConfig: Json) => void;
-  onSavedElsewhere: (last: Json) => void; bar: HTMLElement | null; notes: HTMLElement | null }) {
+  onSavedElsewhere: (last: Json) => void; onReload?: () => void; bar: HTMLElement | null; notes: HTMLElement | null }) {
   const [name, setName] = useState('');
   const [message, setMessage] = useState<Json>(null);
   const [extras, setExtras] = useState<Json>({});
   const [askFrequency, setAskFrequency] = useState(false);                    // the save asked for the ring oscillator's rough frequency
+  const [newer, setNewer] = useState<Json>(null);                             // the save was refused: the rows are older than the task
   const [frequency, setFrequency] = useState('');
   const [file, setFile] = useState<Json>(null);                               // { text, title } while the window is open (text null: reading)
   const latest = useRef({ config, profileId, library, cell, task });
@@ -71,7 +74,7 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   const fileWindow = usePopupWindow('gator-task-file', { title: 'GATOR - Task file', features: 'popup,width=760,height=900',
     rootId: 'task-file-root', rootClass: 'task-file-window', onClose: () => setFile(null), closeOnUnmount: true });
   // Another task or cell: its extras, its messages, a typed name or frequency and an open task file (the old task's) go.
-  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); setName(''); setFrequency(''); setFile(null); fileWindow.popup?.close(); }, [task, library, cell]);
+  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); setNewer(null); setName(''); setFrequency(''); setFile(null); fileWindow.popup?.close(); }, [task, library, cell]);
   useEffect(() => {
     const written = (e: Event) => setExtras((x: Json) => {
       const next = { ...x };
@@ -118,18 +121,22 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   };
   const { busy, run } = useAsyncAction(e => {
     if (e.detail?.code === 'needs_expected_frequency') { setAskFrequency(true); setMessage({ level: 'warn', text: e.detail.message }); }
+    else if (e.detail?.code === 'saved_task_newer') setNewer(e.detail);
     else report(e);
-  }, () => setMessage(null));
-  const save = (more: Json = {}) => run('save', async () => {
+  }, () => { setMessage(null); setNewer(null); });
+  const save = (more: Json = {}, replaceNewer = false) => run('save', async () => {
     const sent = { ...extras, ...more };
     const stillHere = () => mounted.current && latest.current.config.circuit === config.circuit
       && latest.current.profileId === profileId && latest.current.library === library && latest.current.cell === cell && latest.current.task === task;
     let made: Json;
     own.current = true; backend.refresh();
-    try { made = await api.taskSave({ profile_id: profileId, name: taskName, config, library, cell, task, as_new: false, extras: sent }); }
+    const base = task ? rowsFrom(`real:${task}`) : null;            // which saved revision the rows came from (record 7.203)
+    try { made = await api.taskSave({ profile_id: profileId, name: taskName, config, library, cell, task, as_new: false, extras: sent,
+      base_revision: base, replace_newer: replaceNewer }); }
     catch (e) { if (stillHere()) throw e; return; }
     finally { own.current = false; backend.refresh(); }
     if (!stillHere()) return;
+    noteRowsFrom(made.task_key, made.revision);
     setExtras((current: Json) => current === extras ? sent : current); setAskFrequency(false);
     const edited = ['parameters', 'measurements', 'targets'].some(key => latest.current.config[key] !== config[key]);
     setMessage({ level: 'ok', text: `${savedText(made)}${edited ? ' Newer editor changes are kept and are not included in this save.' : ''}` });
@@ -157,7 +164,7 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   const canSave = !!profileId && (task ? true : hasCopy) && NAME.test(taskName) && !busy && !running;
   const progress = running ? progressOf(running) : busy === 'save' ? { value: 0, max: 1, text: `Saving real:${taskName} - starting` } : null;
   const waits = running && busy !== 'save' ? `Waits for the save of ${running.task_key} that is running. ` : '';
-  const said = askFrequency || message || progress;
+  const said = askFrequency || message || progress || newer;
   return (<>
     {bar && createPortal(
       <div className="task-save">
@@ -179,6 +186,14 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
           <label title="Rough is enough: it only sizes the transient (60 periods, measured after 20).">Rough oscillation frequency
             <input value={frequency} placeholder="e.g. 1.2G" onChange={e => setFrequency(e.target.value)} /></label>
           <button className="primary" disabled={!(frequencyValue > 0) || !canSave} onClick={() => save({ expected_frequency_hz: frequencyValue })} title="Save task: With this frequency."><Icon name="task" label="Save task" /></button></div>}
+        {newer && <div className="task-save-newer">
+          <p className="warn">{newer.message}</p>
+          <div className="row">
+            {onReload && <button onClick={() => { setNewer(null); onReload(); }}
+              title="Reload saved values: Puts the saved rows of the task into the editors. Asks before discarding edits; Undo takes it back.">Reload saved values</button>}
+            <button disabled={!canSave} onClick={() => save({}, true)}
+              title="Save anyway: Stores the rows here as the next revision, replacing what was saved since.">Save anyway</button>
+          </div></div>}
         {message && <p className={message.level === 'ok' ? 'ok' : message.level === 'warn' ? 'warn' : 'error'}>{message.text}</p>}
       </div>, notes)}
     {file && <TaskFileWindow root={fileWindow.root} text={file.text} title={file.title} onApply={applyFile}

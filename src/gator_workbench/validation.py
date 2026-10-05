@@ -637,7 +637,7 @@ def registry_for(config):
 
 
 def validate(config: WorkbenchConfig, *, graph=None, provided_metrics=None,
-             for_generalization=False) -> Report:
+             for_generalization=False, rows_from=None) -> Report:
     """Full semantic validation. `graph` enables circuit-aware checks; without one they are
     reported as not performed rather than assumed to pass."""
     report = Report()
@@ -663,14 +663,16 @@ def validate(config: WorkbenchConfig, *, graph=None, provided_metrics=None,
             report.add('error', 'task_removed', 'circuit.task_id', MOCK_TASK_REMOVED.format(task=config.circuit.task_id))
         if config.circuit.task_id in REMOVED_REAL_TASKS:        # records 7.73 and 7.128: the built-in verified tasks
             report.add('error', 'task_removed', 'circuit.task_id', real_task_removed(config.circuit.task_id))
-    _check_saved_task(config, report)
+    _check_saved_task(config, report, rows_from)
     return report
 
 
-def _check_saved_task(config, report):
+def _check_saved_task(config, report, rows_from=None):
     """A saved task runs exactly as it was saved (task flow part 4, consistency.py): Parameters, Probes or Specs rows that
     differ from its task file block a start until "Save task" stores them, or "Reload saved values" takes the saved
-    rows back. A resume runs the run's own saved rows, so it is not compared."""
+    rows back. A resume runs the run's own saved rows, so it is not compared. Rows older than the saved task - saving
+    them would undo what was saved since - point to Reload saved values (record 7.203; `rows_from`: the revision the
+    page's rows came from, when it knows)."""
     if config.run.mode == 'resume':
         return
     from . import consistency
@@ -678,6 +680,10 @@ def _check_saved_task(config, report):
     if found is None:
         return
     name, _, saved = found
-    for section, lines in consistency.row_differences(config, saved).items():
+    differences = consistency.row_differences(config, saved)
+    undone = consistency.undone_by_saving(config, name, saved, base=rows_from) if differences else None
+    older = {item['section'] for item in undone['items']} if undone else set()
+    for section, lines in differences.items():
+        fix = consistency.FIX_NEWER.format(**undone) if section in older else consistency.FIX_ROWS
         report.add('error', 'task_not_saved', section,
-                   consistency.describe_rows(section, lines, name=name, revision=saved.get('revision')) + ' ' + consistency.FIX_ROWS)
+                   consistency.describe_rows(section, lines, name=name, revision=saved.get('revision')) + ' ' + fix)

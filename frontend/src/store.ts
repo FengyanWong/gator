@@ -2,6 +2,18 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { readWithDeadline, type Json } from './api';
 
 export const STORAGE_KEY = 'gator-workbench-config-v1';
+/** Which saved revision of which task the editors' rows came from (record 7.203): noted when a task's rows are loaded
+ *  (choosing it, Reload saved values) and after each Save task - for this tab, and for the next load of the page. Save
+ *  task and the check send it, so rows older than the saved task are not saved over it unasked. */
+const ROWS_FROM_KEY = 'gator-workbench-rows-from-v1';
+let rowsFromHere: Json = (() => { try { return JSON.parse(localStorage.getItem(ROWS_FROM_KEY) ?? 'null'); } catch { return null; } })();
+export const rowsFrom = (task: string | null | undefined): number | null =>
+  !!task && rowsFromHere?.task === task && Number.isInteger(rowsFromHere?.revision) ? rowsFromHere.revision : null;
+export const noteRowsFrom = (task: string, revision: unknown) => {
+  if (!Number.isInteger(revision)) return;
+  rowsFromHere = { task, revision };
+  try { localStorage.setItem(ROWS_FROM_KEY, JSON.stringify(rowsFromHere)); } catch { /* no storage: this tab still knows */ }
+};
 const HISTORY_LIMIT = 100;
 
 /** The reward a new configuration starts with, and the one the run panel describes in a sentence (record 7.183, compared

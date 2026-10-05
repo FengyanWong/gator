@@ -19,6 +19,10 @@ class ConfigBody(Body):
     config: dict
 
 
+class ValidateBody(ConfigBody):
+    rows_from: int | None = Field(None, ge=1)     # the saved revision the page's rows came from, when it knows (record 7.203)
+
+
 class CircuitBody(Body):
     circuit: dict
 
@@ -134,6 +138,8 @@ class TaskSaveBody(Body):
     task: str | None = Field(None, pattern=TASK_NAME)     # the open task: updated, or the source of Save as
     as_new: bool = False
     extras: dict | None = None          # what the task file holds beside the rows: analyses, variables, bindings, frequency, notes
+    base_revision: int | None = Field(None, ge=1)   # the saved revision the rows came from, when the page knows (record 7.203)
+    replace_newer: bool = False         # the user answered "Save anyway": rows older than the saved task may replace it
 
 
 class TaskFileBody(Body):

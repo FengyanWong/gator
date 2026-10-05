@@ -404,6 +404,15 @@ class NeedsFrequency(ProfileError):
     """Save task needs the expected frequency of the ring-oscillator measurement (the page asks for it once)."""
 
 
+class NewerSaved(ProfileError):
+    """The rows are older than the saved task: saving them would undo what was saved since (record 7.203). `undone`
+    goes to the page with the refusal, which asks: Reload saved values, or save anyway."""
+
+    def __init__(self, message, undone):
+        super().__init__(message)
+        self.detail_extra = dict(undone=undone)
+
+
 def _checked_import(imported, name):
     """(netlist text, device mapping, core CDF readback) of an import a profile can be made from, or a plain refusal."""
     text = Path(imported['netlist_path']).read_text()
@@ -617,7 +626,7 @@ def task_file(name) -> dict | None:
 
 
 def save_task(monitor, profile_id, name, config, *, library=None, cell=None, task=None, as_new=False, extras=None,
-              run_rows=(), commands=None, progress=None) -> dict:
+              run_rows=(), commands=None, progress=None, base_revision=None, replace_newer=False) -> dict:
     """Explicit press - only a person can do it: store the editors' rows as the task real:<name>.
 
     * First save from a cell: the task takes the cell's working copy. "Save task" on an open task updates THAT task (a
@@ -631,7 +640,10 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
     * Then the profile files are generated from that copy and the task file is written. A new revision keeps the
       recorded baseline only when parameters, probes, measurement, analyses, variables and bindings are unchanged.
     * `progress(step, steps)` hears each step as it starts, with every step this save takes (`task_saving.TITLES`): the
-      page shows them while the save runs (record 7.198)."""
+      page shows them while the save runs (record 7.198).
+    * Rows older than the saved task - saving them would undo what was saved since (`consistency.undone_by_saving`;
+      `base_revision`: the revision the page's rows came from) - are refused with what they would undo (`NewerSaved`),
+      before anything is written, until the user answers "Save anyway" (`replace_newer`; record 7.203)."""
     from . import bridge_read, task_files, virtuoso_setup, working_copy
     from .tasks import REAL_PROFILES, REMOVED_REAL_TASKS
     commands, extras = commands or {}, dict(extras or {})
@@ -658,6 +670,12 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
         refused += [f'Spec {spec.metric_id}: {issue.message}' for issue in report.issues if issue.level == 'error']
     if refused:
         raise ProfileError(' '.join(refused))
+    if updating and not replace_newer:
+        from .consistency import describe_undone, undone_by_saving
+        undone = undone_by_saving(config, name, task_file(name), base=base_revision)
+        if undone:
+            raise NewerSaved(describe_undone(name, undone) + ' Press Reload saved values to take the saved rows, or save anyway.',
+                             undone)
     kind = measurement_kind(config)
     steps = (['copy'] if current and not updating else []) + (['setup', 'deck'] if kind == MAESTRO else []) + ['read', 'files']
     mark = (lambda step: progress(step, steps)) if progress else (lambda step: None)

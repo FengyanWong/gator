@@ -110,7 +110,8 @@ export const api = {
   taskFile: (body: Json) => call('POST', '/api/virtuoso/task/file', body),
   taskFileCheck: (text: string) => call('POST', '/api/virtuoso/task/file/check', { text }),
   taskCheck: (profile_id: string | null, config: Json) => call('POST', '/api/virtuoso/task/check', { profile_id, config }),
-  validate: (config: Json, signal?: AbortSignal) => call('POST', '/api/config/validate', { config }, signal),
+  validate: (config: Json, signal?: AbortSignal, rowsFrom?: number | null) =>
+    call('POST', '/api/config/validate', rowsFrom ? { config, rows_from: rowsFrom } : { config }, signal),
   diff: (before: Json, after: Json) => call('POST', '/api/config/diff', { before, after }),
   // Matched devices... (Parameters tab, record 7.103): the circuit's structures and the ties they suggest; with `apply`, the rows with those made.
   matchedDevices: (config: Json, apply: string[] | null = null) => call('POST', '/api/parameters/matched', { config, apply }),

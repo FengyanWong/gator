@@ -30,6 +30,10 @@ from .storage.dataset import utcnow
 SECTIONS = (('parameters', 'Parameters', 'variable_id', 'parameters'), ('measurements', 'Probes', 'measurement_id', 'probes'),
             ('targets', 'Specs', 'metric_id', 'specs'))
 FIX_ROWS = 'Press Save task to save the rows as they are now, or Reload saved values to take the saved rows back.'
+# The rows are older than the saved task (record 7.203): saving them would undo what was saved since.
+FIX_NEWER = ('These rows are older than the saved task: it was saved again (revision {current}) after they were loaded '
+             '(revision {base}). Press Reload saved values to take the saved rows; Save task would undo that change, and asks '
+             'first.')
 FIX_COPY = ('The working copy was changed in Virtuoso after the task was saved: press Save task to take the copy as it is '
             'now, or undo the change in Virtuoso.')
 TITLES = dict(
@@ -115,6 +119,131 @@ def describe_rows(section, lines, *, name, revision) -> str:
     label = next(label for key, label, _i, _p in SECTIONS if key == section)
     shown = '; '.join(lines[:4]) + (f'; and {len(lines) - 4} more' if len(lines) > 4 else '')
     return f'{label} differ from the saved task real:{name} (revision {revision}): {shown}.'
+
+
+# ---------------------------------------------------------------------- rows older than the saved task (record 7.203)
+# On 2026-10-05 a page that still held the rows of revision 2 of mscr_ldo2_rgcn pressed Save task twice: it stored those
+# rows over revision 3 and took out the Scale 6 that revision had added (record 7.194). Save task now asks first.
+_FILES: dict = {}                                    # (path, mtime, size) -> the parsed task file: the history never changes
+
+
+def _read_json(path):
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    key = (str(path), stat.st_mtime_ns, stat.st_size)
+    if key not in _FILES:
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return None
+        if len(_FILES) > 256:
+            _FILES.clear()
+        _FILES[key] = data
+    return _FILES[key]
+
+
+def revision_file(name, revision) -> dict | None:
+    """The task file of revision `revision` of real:<name>: the current one, or the copy kept in history/r<N>/."""
+    from .profiles import HISTORY, TASK_FILE, ProfileError, profile_dir
+    try:
+        folder = profile_dir(name)
+    except ProfileError:
+        return None
+    for path in (folder / TASK_FILE, folder / HISTORY / f'r{revision}' / TASK_FILE):
+        data = _read_json(path)
+        if isinstance(data, dict) and data.get('revision') == revision:
+            return data
+    return None
+
+
+def _models():
+    from .schema import MeasurementDefinition, OptimizationParameter, PerformanceTarget
+    return dict(parameters=OptimizationParameter, measurements=MeasurementDefinition, targets=PerformanceTarget)
+
+
+def _rows(rows_of_section) -> dict | None:
+    """{section: {row ID: the row as the schema reads it}} - as `row_differences` compares rows. None: rows this
+    workbench no longer reads."""
+    models, out = _models(), {}
+    try:
+        for section, _label, key, _part in SECTIONS:
+            out[section] = {}
+            for row in rows_of_section(section) or []:
+                normal = models[section].model_validate(row if isinstance(row, dict) else row.model_dump())
+                out[section][getattr(normal, key)] = normal.model_dump(mode='json', exclude_none=True)
+    except ValidationError:
+        return None
+    return out
+
+
+def _file_rows(data):
+    parts = {section: part for section, _label, _key, part in SECTIONS}
+    return None if not isinstance(data, dict) else _rows(lambda section: data.get(parts[section]))
+
+
+def undone_by_saving(config, name, saved, base=None) -> dict | None:
+    """What "Save task" with the editors' rows would UNDO of the saved task real:<name>: what was saved after the
+    revision the rows came from. That revision is the newest earlier one whose rows are exactly the editors' (the rows of
+    a page that missed a later save, or brought back by Undo), else `base` - the revision the page noted when it loaded
+    the task's rows or saved them. None when nothing would be undone: the rows came from the saved revision, already
+    hold what was saved since, or their origin cannot be told (no `base`, and edits on top of an earlier revision).
+    Per row ID, against that revision: a field changed since that the rows here still have as before; a row added or
+    changed since that the rows here lack; a row removed since that the rows here still have."""
+    current = (saved or {}).get('revision')
+    if not isinstance(current, int) or current < 2:
+        return None
+    here, now = _rows(lambda section: getattr(config, section)), _file_rows(saved)
+    if here is None or now is None or here == now:
+        return None
+    origin = next((revision for revision in range(current - 1, 0, -1) if _file_rows(revision_file(name, revision)) == here), None)
+    then = here
+    if origin is None:
+        if not isinstance(base, int) or not 1 <= base < current:
+            return None
+        origin, then = base, _file_rows(revision_file(name, base))
+        if then is None:
+            return None
+    items = []
+    for section, _label, _key, _part in SECTIONS:
+        before_rows, saved_rows, rows = then[section], now[section], here[section]
+        for row_id in dict.fromkeys([*before_rows, *saved_rows]):
+            before, after, row = before_rows.get(row_id), saved_rows.get(row_id), rows.get(row_id)
+            if before == after or row == after:
+                continue                                         # not changed since, or the rows here hold it already
+            if after is None:
+                if row is not None:
+                    items.append(dict(section=section, row=row_id, change='back'))
+            elif row is None:
+                items.append(dict(section=section, row=row_id, change='removed'))
+            else:
+                for field in sorted(set(before or {}) | set(after)):
+                    if (before or {}).get(field) != after.get(field) and row.get(field) != after.get(field):
+                        items.append(dict(section=section, row=row_id, change='field', field=field, saved=after.get(field),
+                                          here=row.get(field)))
+    return dict(base=origin, current=current, items=items) if items else None
+
+
+def undone_lines(undone) -> list[str]:
+    labels = {section: label for section, label, _key, _part in SECTIONS}
+    out = []
+    for item in undone['items']:
+        where = f'{labels[item["section"]]} {item["row"]}'
+        if item['change'] == 'field':
+            out.append(f'{where}: {item["field"]} {_brief(item["saved"])} saved, {_brief(item["here"])} here')
+        elif item['change'] == 'removed':
+            out.append(f'{where} is saved but not here')
+        else:
+            out.append(f'{where} was taken out of the saved task but is still here')
+    return out
+
+
+def describe_undone(name, undone) -> str:
+    lines = undone_lines(undone)
+    shown = '; '.join(lines[:4]) + (f'; and {len(lines) - 4} more' if len(lines) > 4 else '')
+    return (f'real:{name} was saved again after these rows were loaded: it is revision {undone["current"]} now, the rows here '
+            f'are revision {undone["base"]}\'s. Saving them would undo what was saved since: {shown}.')
 
 
 def _step(step, ok, *, detail=None, fix=None, **more) -> dict:

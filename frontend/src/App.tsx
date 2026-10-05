@@ -3,7 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerE
 import { api, ApiError, Json, NO_ANSWER, plainError, saveJson } from './api';
 import { Look, LOOK_NAMES, setLook, useLook } from './theme';
 import { Icon } from './panels/Icons';
-import { useConfig, usePolling, useRequest } from './store';
+import { rowsFrom, useConfig, usePolling, useRequest } from './store';
 import { CircuitPanel } from './panels/Left';
 import { ConnectionButton } from './panels/Connection';
 import { CheckSteps } from './panels/Consistency';
@@ -129,7 +129,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   // report is about - its row paths (targets[3]) name rows of THAT configuration, which Delete, Undo or Import may have
   // moved by the time it is drawn (the editors check the row before they mark it).
   const configKey = useMemo(() => JSON.stringify(config), [config]);
-  const validationRead = useRequest<Json>(signal => api.validate(config, signal).catch(rejected).then(v => ({ ...v, sent: config })), [configKey],
+  const validationRead = useRequest<Json>(signal => api.validate(config, signal, rowsFrom(config.circuit?.task_id)).catch(rejected).then(v => ({ ...v, sent: config })), [configKey],
     { delay: 500, keepPrevious: true });
   const validation = useMemo(() => validationRead.error ? { blocks_run: true, issues: [{ level: 'error', code: 'no_answer', path: '', message: validationRead.error }], facts: {} }
     : validationRead.value, [validationRead.value, validationRead.error]);

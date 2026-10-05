@@ -196,7 +196,7 @@ def _bridge_call(action, *refusals):
     except Exception as exc:
         for kinds, code in refusals:
             if isinstance(exc, kinds):
-                fail(409, exc, code=code)
+                fail(409, exc, code=code, **getattr(exc, 'detail_extra', {}))      # what the page needs to ask (record 7.203)
         fail(422 if isinstance(exc, (KeyError, ValueError)) else 502, exc)
 
 
@@ -213,7 +213,7 @@ def load_runtime(config, *, allow_real=False):
         return None, dict(blocker=redact(f'{type(exc).__name__}: {exc}', 1000), interface_contract=None)
 
 
-def validate_loaded(config, runtime, *, roots=None, reachability=True):
+def validate_loaded(config, runtime, *, roots=None, reachability=True, rows_from=None):
     """Static validation against the loaded circuit, the SAME way for the page, the start checklist, the settings
     review and an applied proposal. A cell read from Virtuoso that has no task yet (a native draft) provides metrics
     nobody knows: they are not checked - an empty list reported every probe as `metric_not_provided` in the agent's
@@ -221,7 +221,7 @@ def validate_loaded(config, runtime, *, roots=None, reachability=True):
     that reads recorded runs: for a caller that keeps only the errors and blockers."""
     draft = runtime is not None and bool(runtime.circuit.get('native_draft'))
     report = validate(config, graph=None if runtime is None else runtime.base_graph,
-                      provided_metrics=None if runtime is None or draft else set(runtime.provided_metrics))
+                      provided_metrics=None if runtime is None or draft else set(runtime.provided_metrics), rows_from=rows_from)
     if reachability and config.run.conditions.policy != 'off' and not report.blocks_run:
         from ..reachability import check
         try:

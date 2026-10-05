@@ -433,8 +433,29 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   tick-box column, whose width the page measures, also when a narrower window changes it: a tie toggle widens it on
   Parameters, and on Probes and Specs it stays as narrow as the box. The editor tables draw their lines cell by cell
   (each cell its right and bottom line), so the tick box and the ID carry theirs along and cover what passes under them.
+- **Find rows** (record 7.184, design advice 4). The box in the toolbar keeps in view only the rows whose text cells in view
+  hold every word typed, not case-sensitive, folded or not: the ID, instance path, parameter, unit, leader and notes; a
+  Probe's output name and expression; a spec's equation. Beside it, how many of the table's rows that is. Enter goes to the
+  first of them, Esc clears the box, and each table keeps its own text. The keys, a pasted block, Ctrl+D, Ctrl+C, Copy and
+  Delete selected work on the rows in view: a ticked row out of view stays ticked and is not deleted, and a chosen cell whose
+  row went out of view is let go.
+- **Fill down** (Ctrl+D, record 7.184). In a ticked row, with more rows ticked, the column takes the value of the topmost
+  ticked row in view in every ticked row in view; in any other row the cell takes the value of the row above in view. One
+  Undo step. A cell that follows another field, or that its leader decides, is kept; an ID is not filled, since each row
+  needs its own. The line under the formula bar says what was filled.
+- **Copy out** (Ctrl+C and the Copy button, record 7.184). In a ticked row, Ctrl+C copies the ticked rows in view - every
+  column in view, a header line first - as tab-separated lines that Excel takes; in any other row, the cell alone. With
+  text chosen inside the cell the browser copies that text, as ever. The Copy button takes the ticked rows in view, or
+  every row in view. Numbers are copied as stored (4.5e-7, which Excel reads), a limit as its sign (`>=`, `<=`,
+  `interval`). Pasted back, a first line that names the columns it lands on is skipped, so a block can go to Excel and
+  come back.
+- **One write path** (record 7.184). A typed cell, a pasted block and a fill follow the same rules: a Maestro output's
+  Probe ID follows its output name, and the spec equations follow the ID (a pasted name used to leave the ID behind); a
+  spec whose equation becomes one Probe takes its unit while it has no limits; an untouched scale follows its limits; a
+  limit written without its objective keeps the objective only where the two still pair (≥ with "higher is better", ≤
+  with "lower is better", an interval with either), and otherwise has none.
 
-Browser check: `frontend/scripts/sheet_check.mjs`.
+Browser checks: `frontend/scripts/sheet_check.mjs`, `frontend/scripts/find_fill_copy_check.mjs`.
 
 ### Matched devices: ties suggested from the circuit (added 2026-09-29, user request)
 

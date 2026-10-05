@@ -210,9 +210,11 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // The chosen cell of the formula bar (record 7.175): its row by position, checked by the row's ID (a Delete or an Undo moves
   // rows; while the ID itself is being typed, the position holds).
   const [active, setActive] = useState<{ index: number; name: string; key: string } | null>(null);
-  // Tied rows opened under their leader, by the leader's ID (record 7.180), and what the last block paste did.
+  // Tied rows opened under their leader, by the leader's ID (record 7.180), and what the last block paste, fill or copy did.
   const [openTies, setOpenTies] = useState<Record<string, boolean>>({});
-  const [pasted, setPasted] = useState<{ text: string; warn: boolean } | null>(null);
+  const [note, setNote] = useState<{ text: string; warn: boolean } | null>(null);
+  // The find box's text, kept per table (record 7.184).
+  const [find, setFind] = useState<Record<string, string>>({});
   const table = useRef<HTMLTableElement>(null);
   // The row's ID stays in view beside the tick box while the table scrolls sideways (record 7.182): it sticks at the tick-box
   // column's own width - which a tie toggle widens on Parameters, and a narrower window can change without a new render - and a
@@ -267,35 +269,40 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     return Object.keys(kept).length === Object.keys(s).length ? s : kept;
   }), [rows, keyField]);
 
-  // One change of one row, several fields at once (the constraint list sets the limit and the objective): one Undo step.
-  // The scale follows only a field that really changes: picking an objective re-sends the unchanged limit, and an empty
-  // (backend-sized) scale must not be frozen into the row by that.
-  const patch = (index: number, fields: Json) =>
-    setConfig((c: Json) => ({ ...c, [tab]: c[tab].map((r: Json, i: number) => i === index ? (() => {
+  // Fields that follow a change with it, in the same Undo step (review of 2026-10-03): a Maestro output's Probe ID follows its
+  // output name, and the spec equations that use the ID follow it; a spec whose equation becomes one Probe takes that Probe's
+  // unit while it has no limits yet (its unit must match the Probe's anyway; a prefix can be typed after); the scale follows
+  // only a field that really changes - picking an objective re-sends the unchanged limit, and an empty (backend-sized) scale
+  // must not be frozen into the row by that. One path for a typed cell, a pasted block and a fill since record 7.184 (a pasted
+  // output name had left its Probe ID behind); a limit written without its objective keeps the objective where they still pair.
+  const withFollowers = (c: Json, changes: Map<number, Json>): Json => {
+    const renames: [string, string][] = [];
+    const next = { ...c, [tab]: c[tab].map((r: Json, i: number) => {
+      const fields = changes.get(i);
+      if (!fields) return r;
       const row = { ...r, ...fields };
-      if (tab === 'targets' && Object.keys(fields).some(name => SCALE_FIELDS.includes(name) && fields[name] !== r[name])) row.normalization_scale = followScale(r, row);
+      if (tab === 'measurements' && typeof fields.source_name === 'string' && r.result_source === 'ade_output'
+          && /^[A-Za-z_][A-Za-z0-9_]*$/.test(fields.source_name)) {
+        row.measurement_id = probeIdOf(fields.source_name);
+        if (r.measurement_id && r.measurement_id !== row.measurement_id) renames.push([String(r.measurement_id), row.measurement_id]);
+      }
+      if (tab === 'targets') {
+        const probe = typeof fields.equation === 'string' && !('unit' in fields)
+          ? (c.measurements ?? []).find((m: Json) => m.measurement_id === fields.equation.trim()) : null;
+        if (probe?.unit && (!r.unit || (r.lower == null && r.upper == null))) row.unit = probe.unit;
+        if ('constraint' in fields && !('direction_after_feasible' in fields)
+            && !LIMIT_CHOICES.some(([limit, objective]) => limit === row.constraint && objective === (row.direction_after_feasible ?? 'none'))) row.direction_after_feasible = 'none';
+        if (!('normalization_scale' in fields) && SCALE_FIELDS.some(name => row[name] !== r[name])) row.normalization_scale = followScale(r, row);
+      }
       return row;
-    })() : r) }));
-  // Fields that follow another change with it, in the same Undo step (review of 2026-10-03): a Maestro output's Probe ID
-  // follows its output name, and the spec equations that use the ID follow it; a spec whose equation becomes one Probe takes
-  // that Probe's unit while it has no limits yet (its unit must match the Probe's anyway; a prefix can be typed after).
-  const update = (index: number, name: string, value: Json) => {
-    const row = rows[index] ?? {};
-    if (tab === 'measurements' && name === 'source_name' && row.result_source === 'ade_output' && typeof value === 'string'
-        && /^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
-      const from = String(row.measurement_id ?? ''), to = probeIdOf(value);
-      setConfig((c: Json) => ({ ...c,
-        measurements: c.measurements.map((r: Json, i: number) => i === index ? { ...r, source_name: value, measurement_id: to } : r),
-        targets: from === to || !from ? c.targets : (c.targets ?? []).map((t: Json) => typeof t.equation === 'string'
-          ? { ...t, equation: renameInEquation(t.equation, from, to) } : t) }));
-      return;
-    }
-    if (tab === 'targets' && name === 'equation' && typeof value === 'string') {
-      const probe = (config.measurements ?? []).find((m: Json) => m.measurement_id === value.trim());
-      if (probe?.unit && (!row.unit || (row.lower == null && row.upper == null))) return patch(index, { equation: value, unit: probe.unit });
-    }
-    patch(index, { [name]: value });
+    }) };
+    if (renames.length) next.targets = (c.targets ?? []).map((t: Json) => typeof t.equation === 'string'
+      ? { ...t, equation: renames.reduce((e, [from, to]) => renameInEquation(e, from, to), t.equation) } : t);
+    return next;
   };
+  // One change of one row, several fields at once (the constraint list sets the limit and the objective): one Undo step.
+  const patch = (index: number, fields: Json) => setConfig((c: Json) => withFollowers(c, new Map([[index, fields]])));
+  const update = (index: number, name: string, value: Json) => patch(index, { [name]: value });
   const add = () => {
     const row: Json = {};
     // A required field without a default comes as `default: null` from the schema: that means "none", not null - a new
@@ -318,7 +325,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     if (tab === 'targets' && row.normalization_scale == null) row.normalization_scale = suggestedScale(row);
     setConfig((c: Json) => ({ ...c, [tab]: [...(c[tab] ?? []), row] }));
   };
-  const remove = () => setConfig((c: Json) => ({ ...c, [tab]: c[tab].filter((r: Json) => !selected[r[keyField]]) }));
+  const remove = () => { const gone = new Set(selection.map(s => s.key)); setConfig((c: Json) => ({ ...c, [tab]: c[tab].filter((r: Json) => !gone.has(r[keyField])) })); };
 
   // JSON import goes through a DIFF CONFIRMATION before it replaces anything. The backend's diff covers the three tables;
   // a whole configuration also replaces the other sections, and the confirmation names each one that changes (it used to
@@ -351,7 +358,6 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     setConfig(rows ? (c: Json) => ({ ...c, [rows.section]: rows.value }) : p.next);
     setPending(null);
   };
-  const selection = rows.filter(r => selected[r[keyField]]).map(r => ({ section: tab, key: r[keyField], fields: [] as string[] }));
   // A Parameters row under the pointer (or the keyboard) lights the devices it sizes in the circuit picture of the Project
   // column: its own and those of the rows tied to it (binding_group), so w_pair lights M1 and its follower's M2 (record 7.158).
   const devicesOf = (row: Json): string[] => {
@@ -360,7 +366,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     return [...new Set([row, ...tied].map(r => r.instance_path).filter(Boolean))] as string[];
   };
   useEffect(() => () => pointAt([]), [tab]);
-  useEffect(() => { setActive(null); setOpenTies({}); setPasted(null); }, [tab]);
+  useEffect(() => { setActive(null); setOpenTies({}); setNote(null); }, [tab]);
 
   // Why a cell is shown and not typed: it follows another field, or its row's leader decides it (record 7.158 review).
   const fixedOf = (row: Json, c: Json): string | null => tab === 'measurements' && c.name === 'measurement_id' && row.result_source === 'ade_output'
@@ -409,6 +415,16 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   for (const r of rows) { const l = leaderOf(r); if (l) tiedCount.set(l, (tiedCount.get(l) ?? 0) + 1); }
   const foldedAway = (row: Json, index: number) => { const l = leaderOf(row); return !!l && !openTies[l] && at !== index
     && !rowIssues(index).some((i: Json) => i.level === 'error' || i.level === 'blocker'); };
+  // The find box (record 7.184, design advice 4): while it holds text, the rows in view are those whose text cells in view hold
+  // every word of it (not case-sensitive), folded or not; the keys, a pasted block, Ctrl+D, Ctrl+C, Copy and Delete selected
+  // then work on the rows in view, and a chosen cell whose row went out of view is let go.
+  const findWords = (find[tab] ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+  const textColumns = visible.filter(c => c.type === 'string' && !c.options);
+  const matchesFind = (row: Json) => { const text = textColumns.map(c => String(row[c.name] ?? '')).join('\n').toLowerCase(); return findWords.every(w => text.includes(w)); };
+  const inView = (row: Json, index: number) => findWords.length ? matchesFind(row) : !foldedAway(row, index);
+  const rowsInView = rows.map((_, i) => i).filter(i => inView(rows[i], i));
+  const selection = rows.filter(r => selected[r[keyField]] && (!findWords.length || matchesFind(r))).map(r => ({ section: tab, key: r[keyField], fields: [] as string[] }));
+  const firstInView = () => (table.current?.querySelector('tbody > tr:not([hidden]) > td[data-field] :is(input, select)') as HTMLElement | null)?.focus();
 
   // Keys as in a spreadsheet (record 7.180, design advice 6): Up and Down go to the same column of the row above or below (folded
   // rows are passed over), Enter to the row below and Shift+Enter above. A list keeps its own keys; the tick box column is left be.
@@ -424,10 +440,63 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     return true;
   };
   const onTableKey = (e: React.KeyboardEvent) => {
-    const box = e.target as HTMLElement;
+    const box = e.target as HTMLElement, cell = box.closest<HTMLElement>('td[data-field]');
+    // Ctrl+D fills down and Ctrl+C copies out (record 7.184); with text chosen inside the box Ctrl+C copies that text, as ever.
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && cell && /^[dc]$/i.test(e.key)) {
+      const chosenText = box instanceof HTMLInputElement && box.type !== 'checkbox' && box.selectionStart !== box.selectionEnd;
+      if (e.key.toLowerCase() === 'd') { e.preventDefault(); fillDown(cell); }
+      else if (!chosenText) { e.preventDefault(); copyOut(cell); }
+      return;
+    }
     if (!(box instanceof HTMLInputElement) || box.closest('td.sel') || e.altKey || e.ctrlKey || e.metaKey) return;
     const step = e.key === 'ArrowDown' || (e.key === 'Enter' && !e.shiftKey) ? 1 : e.key === 'ArrowUp' || (e.key === 'Enter' && e.shiftKey) ? -1 : 0;
     if (step && moveFrom(box, step)) e.preventDefault();
+  };
+  // Ctrl+D fills down, as in a spreadsheet (record 7.184): in a ticked row, with more rows ticked, the column takes the value of
+  // the topmost ticked row in view in every ticked row in view; otherwise the cell takes the value of the row above in view. One
+  // Undo step. A cell that follows another field, or that its leader decides, is kept; an ID is not filled (each row needs its own).
+  const shortText = (v: Json) => { const t = exact(v); return !t ? '(empty)' : t.length > 40 ? `${t.slice(0, 40)}...` : t; };
+  const fillDown = (cell: HTMLElement) => {
+    const c = visible.find(v => v.name === cell.dataset.field), index = Number(cell.closest('tr')?.dataset.index);
+    if (!c || !rows[index]) return;
+    if (c.name === keyField) return setNote({ text: `An ID is not filled down: each row needs its own ${c.label ?? c.name}.`, warn: true });
+    const ticked = rowsInView.filter(i => selected[rows[i][keyField]]);
+    const [from, targets] = ticked.length > 1 && ticked.includes(index) ? [ticked[0], ticked.slice(1)] : [rowsInView[rowsInView.indexOf(index) - 1], [index]];
+    if (from === undefined) return setNote({ text: 'No row above in view to fill from.', warn: true });
+    const value = rows[from][c.name] === undefined ? c.default : rows[from][c.name];
+    const changes = new Map<number, Json>();
+    let kept = 0;
+    for (const i of targets) {
+      if (fixedOf(rows[i], c) || offOf(rows[i], c)) { kept += 1; continue; }
+      if (exact(rows[i][c.name] === undefined ? c.default : rows[i][c.name]) !== exact(value))
+        changes.set(i, { [c.name]: value != null && typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : value });
+    }
+    if (changes.size) setConfig((cfg: Json) => withFollowers(cfg, changes));
+    const what = `${c.label ?? c.name} = ${shortText(value)} of ${rows[from][keyField]}`;
+    setNote({ text: [changes.size ? `Filled ${changes.size} cell${changes.size === 1 ? '' : 's'} with ${what} (one Undo step).`
+      : targets.length > kept ? `Nothing to fill: the cell${targets.length - kept === 1 ? ' holds' : 's hold'} ${what} already.` : 'Nothing filled.',
+      kept ? `${kept} cell${kept === 1 ? ' that follows' : 's that follow'} another field kept.` : ''].filter(Boolean).join(' '), warn: false });
+  };
+  // Ctrl+C copies out, as in a spreadsheet (record 7.184): in a ticked row, the ticked rows in view - every column in view, a
+  // header line first - as tab-separated lines for Excel; otherwise the cell alone. Numbers as stored (4.5e-7, which Excel
+  // reads), a limit as its sign. The Copy button takes the ticked rows in view, or every row in view.
+  const cellText = (row: Json, c: Json) => (c.name === 'nominal_only' ? ((row[c.name] ?? c.default) ? 'Nominal only' : 'All planned conditions')
+    : exact(row[c.name] === undefined ? c.default : row[c.name])).replace(/[\t\r\n]+/g, ' ');
+  const toClipboard = (text: string) => {
+    const put = (e: ClipboardEvent) => { e.clipboardData?.setData('text/plain', text); e.preventDefault(); };
+    document.addEventListener('copy', put, true);
+    try { return document.execCommand('copy'); } finally { document.removeEventListener('copy', put, true); }
+  };
+  const copyOut = (cell: HTMLElement | null) => {
+    const index = cell ? Number(cell.closest('tr')?.dataset.index) : -1, ticked = rowsInView.filter(i => selected[rows[i][keyField]]);
+    const block = cell ? (ticked.includes(index) ? ticked : null) : ticked.length ? ticked : rowsInView;
+    const c = cell ? visible.find(v => v.name === cell.dataset.field) : null;
+    if (!block && (!c || !rows[index])) return;
+    const text = block ? [visible.map(v => v.label ?? v.name), ...block.map(i => visible.map(v => cellText(rows[i], v)))].map(line => line.join('\t')).join('\r\n')
+      : cellText(rows[index], c);
+    if (!toClipboard(text)) return setNote({ text: 'The browser did not let the page copy: choose the text and copy it, or try the Copy button.', warn: true });
+    setNote({ text: block ? `Copied ${block.length} row${block.length === 1 ? '' : 's'} x ${visible.length} columns with a header line, for Excel; a paste back here skips that line.`
+      : `Copied ${c.label ?? c.name} of ${rows[index][keyField]}: ${shortText(text)}.`, warn: false });
   };
   // A block copied from Excel (tab-separated lines) pasted into a cell fills the rows in view from that one down and the columns
   // in view from that one right, as one Undo step (record 7.180). Each text is read as its column takes it; a cell that follows
@@ -464,8 +533,12 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     const shown = [...(table.current?.querySelectorAll<HTMLTableRowElement>('tbody > tr') ?? [])].filter(tr => !tr.hidden);
     const first = shown.indexOf(cell.closest('tr') as HTMLTableRowElement), column = visible.findIndex(c => c.name === cell.dataset.field);
     const changes = new Map<number, Json>(), problems: string[] = [];
-    let cells = 0, kept = 0, beyond = 0;
-    text.split(/\r?\n/).map(line => line.split('\t')).forEach((values, i) => {
+    let cells = 0, kept = 0, beyond = 0, lines = text.split(/\r?\n/).map(line => line.split('\t'));
+    // A first line that names the columns it lands on - the header of a copied block (record 7.184) - is skipped.
+    const names = (c: Json | undefined, v: string) => !!c && [c.name, c.label].some(n => n && n.toLowerCase() === v.trim().replace(/\s*\*$/, '').toLowerCase());
+    const header = lines.length > 1 && lines[0].every((v, j) => names(visible[column + j], v));
+    if (header) lines = lines.slice(1);
+    lines.forEach((values, i) => {
       const tr = shown[first + i];
       if (!tr) { beyond += 1; return; }
       const index = Number(tr.dataset.index), row = rows[index];
@@ -478,18 +551,13 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         else if ('value' in read) { changes.set(index, { ...(changes.get(index) ?? {}), [c.name]: read.value }); cells += 1; }
       });
     });
-    if (changes.size) setConfig((cfg: Json) => ({ ...cfg, [tab]: cfg[tab].map((r: Json, i: number) => {
-      const fields = changes.get(i);
-      if (!fields) return r;
-      const row = { ...r, ...fields };
-      if (tab === 'targets' && !('normalization_scale' in fields) && Object.keys(fields).some(n => SCALE_FIELDS.includes(n) && fields[n] !== r[n])) row.normalization_scale = followScale(r, row);
-      return row;
-    }) }));
+    if (changes.size) setConfig((cfg: Json) => withFollowers(cfg, changes));
     const said = [cells ? `Pasted ${cells} cell${cells === 1 ? '' : 's'} into ${changes.size} row${changes.size === 1 ? '' : 's'} (one Undo step).` : 'Nothing pasted.',
+      header ? 'The header line was skipped.' : '',
       problems.length ? `Not read, left as they were: ${problems.slice(0, 4).join(', ')}${problems.length > 4 ? ` and ${problems.length - 4} more` : ''}.` : '',
       kept ? `${kept} cell${kept === 1 ? '' : 's'} that follow another field kept.` : '',
       beyond ? `${beyond} line${beyond === 1 ? '' : 's'} below the last row left out: Add rows first.` : ''].filter(Boolean).join(' ');
-    setPasted({ text: said, warn: problems.length + beyond > 0 });
+    setNote({ text: said, warn: problems.length + beyond > 0 });
   };
 
   // Back to the cell after Enter or Esc, as a spreadsheet does.
@@ -515,6 +583,14 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         <button onClick={() => saveJson(`${config.project.task_name}.config.json`, config)} title="Export JSON: The whole configuration - the three tables, the circuit, run and output settings, research labels - as one JSON file, downloaded."><Icon name="export" label="Export JSON" /></button>
         <button onClick={() => file.current?.click()} title="Import JSON...: Read a JSON file - a whole configuration, or rows for this tab. You see everything it changes before anything is replaced."><Icon name="import" label="Import JSON..." /></button>
         <input ref={file} type="file" accept="application/json" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) importJson(f); }} />
+        <button onClick={() => copyOut(null)} title={'Copy for Excel: the ticked rows in view - or every row in view when none is ticked - every column in view, '
+          + 'a header line first, as tab-separated lines. In a cell, Ctrl+C copies the ticked rows the same way, or the cell alone; Ctrl+D fills down.'}><Icon name="copy" label="Copy for Excel" /></button>
+        <input type="search" className="find-rows" placeholder="Find rows" aria-label="Find rows" value={find[tab] ?? ''}
+          title={'Find rows: only the rows whose text cells in view (ID, instance path, expression, equation, notes ...) hold every word typed stay in view, '
+            + 'folded or not; not case-sensitive. Enter goes to the first of them, Esc clears the box.'}
+          onChange={e => setFind(f => ({ ...f, [tab]: e.target.value }))}
+          onKeyDown={e => { if (e.key === 'Escape') setFind(f => ({ ...f, [tab]: '' })); else if (e.key === 'Enter') { e.preventDefault(); firstInView(); } }} />
+        {findWords.length > 0 && <span className="find-count" title="Rows in view of this table's rows.">{rowsInView.length} of {rows.length}</span>}
         <span className="spacer" />
         {hidden.length > 0 && <button className="text" onClick={() => showMore(!more)} title={(more ? 'Fewer columns: hide ' : 'More columns: also show ') + hidden.map(c => c.name).join(', ') + '. They keep their values either way.'}>{more ? 'Fewer columns' : `More columns (${hidden.length})`}</button>}
         {tab === 'parameters' && <button className="text" onClick={() => setMatched(n => n + 1)} title="Matched devices...: Reads the circuit for differential pairs, current-mirror loads, matched loads and cascodes and suggests tying their sizes. Press again to refresh the results. You review a diff; nothing is applied automatically.">Matched devices...</button>}
@@ -536,8 +612,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         ? `, and it replaces the ${pending.others.map(k => IMPORTED_SECTIONS[k]).join(', ')}` : ''}</h4>
         <div className="row"><button onClick={() => applyImport(pending)}>Apply</button><button onClick={() => setPending(null)}>Cancel</button></div>
         {(pending.diff.length > 0 || !pending.others.length) && <DiffView diff={pending.diff} />}</div>}
-      <FormulaBar cell={barCell} commit={commitBar} back={backToCell} />
-      {pasted && <p className={`${pasted.warn ? 'warn' : 'hint'} paste-note`}>{pasted.text}</p>}
+      <FormulaBar cell={activeRow && !inView(activeRow, at) ? null : barCell} commit={commitBar} back={backToCell} />
+      {note && <p className={`${note.warn ? 'warn' : 'hint'} paste-note`}>{note.text}</p>}
       <div className="scroll" onScroll={e => markScrolled(e.currentTarget)}>
         <table className="grid editor" ref={table}>
           <thead><tr><th className="sel"></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
@@ -546,7 +622,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
             const point = tab === 'parameters' ? { onMouseEnter: () => pointAt(devicesOf(row)), onMouseLeave: () => pointAt([]),
               onFocus: () => pointAt(devicesOf(row)), onBlur: () => pointAt([]) } : {};
             const tied = tiedCount.get(row[keyField]) ?? 0, leader = leaderOf(row), open = !!openTies[row[keyField]];
-            return <tr key={index} data-index={index} hidden={foldedAway(row, index)} {...point}
+            return <tr key={index} data-index={index} hidden={!inView(row, index)} {...point}
               className={[found.some((i: Json) => i.level === 'error' || i.level === 'blocker') ? 'has-error' : '', leader ? 'tied' : ''].filter(Boolean).join(' ') || undefined}>
               <td className="sel"><input type="checkbox" checked={!!selected[row[keyField]]} onChange={e => setSelected(s => ({ ...s, [row[keyField]]: e.target.checked }))} />
                 {tied > 0 ? <button className="tie-toggle" aria-expanded={open} onClick={() => setOpenTies(o => ({ ...o, [row[keyField]]: !open }))}

@@ -90,7 +90,7 @@ def register(app: FastAPI, context: ApiContext):
         result = context.roots.check(body.path, create=body.create)
         if result['allowed'] and result['resolved']:
             result['mock_data_root'] = str(Path(result['resolved']) / 'mock')
-            result['bytes_used'] = directory_bytes(result['resolved']) if Path(result['resolved']).is_dir() else 0
+            result['bytes_used'] = (directory_bytes(result['resolved']) if Path(result['resolved']).is_dir() else 0) if body.usage else None
         return result
 
     @app.get('/api/connection/profiles')

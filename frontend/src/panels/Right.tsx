@@ -1,7 +1,7 @@
 import { SIMPLE_REWARD, useRequest } from '../store';
 import { Fragment, ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, bytes, copy, Json, num } from '../api';
+import { api, ApiError, bytes, copy, Json, num } from '../api';
 import { ModelChooser } from './ModelChooser';
 import { CircuitGraphView } from './CircuitGraphView';
 import { ModelStructure } from './ModelStructure';
@@ -572,11 +572,13 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
   const root = out.output_root ?? meta?.output_root ?? '';
   const [browse, setBrowse] = useState<Json>(null);
   const locked = !!activeRun?.worker_alive;
-  // The root is looked at 0.5 s after the last keystroke, and an answer for text typed before is dropped (useRequest): each
-  // look walks the folder for its size, and whichever answer came last used to win, a half-typed path's too.
+  // The root is looked at 0.5 s after the last keystroke, and an answer for text typed before is dropped (useRequest):
+  // whichever answer came last used to win, a half-typed path's too. A look no longer walks the folder for its size (record
+  // 7.189: 0.7 to 2 s of disk work on D: at every page open, for one number in a closed fold): "Measure" asks for it.
   const { value: looked, error: lookError, refresh: retryLook } = useRequest<Json>(signal => api.checkOutput(root, false, signal), [root], { enabled: !!root, delay: 500 });
   const [tested, setTested] = useState<{ root: string; value: Json } | null>(null);     // "Test writability", for the root it was pressed for
   useEffect(() => setTested(null), [root]);                                             // another root: its own look replaces it, as before
+  const [sized, setSized] = useState<{ root: string; bytes: number | null } | null>(null);   // "Measure", for the root it was pressed for
   const check: Json = tested && tested.root === root ? tested.value : looked;
   // Browse, a folder of its list and Test writability say what went wrong, as the other panels do (they used to say nothing).
   const [problem, setProblem] = useState<string | null>(null);
@@ -619,7 +621,12 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
         <tr><td>Resolved</td><td className="path">{check.resolved ?? '-'}</td></tr>
         <tr><td>Allowed / writable</td><td className={check.allowed && check.writable ? '' : 'error'}>{String(check.allowed)} / {String(check.writable)} {check.error ?? ''}</td></tr>
         <tr><td>Backend host</td><td>{check.host} ({check.environment}, {check.filesystem})</td></tr>
-        <tr><td>Free space</td><td>{bytes(check.free_bytes)}; used here {bytes(check.bytes_used)}</td></tr>
+        <tr><td>Free space</td><td>{bytes(check.free_bytes)}; used here {sized && sized.root === root ? bytes(sized.bytes)
+          : <button className="text-link" title="Adds up the files under the output root (on D: this takes a while for many runs)."
+              onClick={() => { const at = root; ask(() => api.checkOutput(at, false, undefined, true)
+                // a backend from before record 7.189 refuses `usage` (422), and its plain look still carries the size
+                .catch(e => e instanceof ApiError && e.status === 422 ? api.checkOutput(at, false) : Promise.reject(e)),
+              v => setSized({ root: at, bytes: v.bytes_used ?? null })); }}>Measure</button>}</td></tr>
         <tr><td>Windows path</td><td>{check.windows_path ?? <span className="hint">not shown: {check.windows_mapping}</span>}{check.windows_path && <span className="hint"> (verified by read-back)</span>}</td></tr>
         <tr><td>Mock data root</td><td className="path">{check.mock_data_root}</td></tr>
       </tbody></table></details>}

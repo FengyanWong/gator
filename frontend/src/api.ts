@@ -115,7 +115,8 @@ export const api = {
   // Matched devices... (Parameters tab, record 7.103): the circuit's structures and the ties they suggest; with `apply`, the rows with those made.
   matchedDevices: (config: Json, apply: string[] | null = null) => call('POST', '/api/parameters/matched', { config, apply }),
   browse: (path?: string) => call('GET', '/api/output/browse' + q({ path })),
-  checkOutput: (path: string, create = false, signal?: AbortSignal) => call('POST', '/api/output/check', { path, create }, signal),
+  // `usage`: the folder's size, walked only when asked (record 7.189) - and sent only then, so an older backend takes the look.
+  checkOutput: (path: string, create = false, signal?: AbortSignal, usage = false) => call('POST', '/api/output/check', usage ? { path, create, usage } : { path, create }, signal),
   connectionProfiles: () => call('GET', '/api/connection/profiles'),
   connectionStatus: (profile_id: string) => call('GET', '/api/connection/status' + q({ profile_id })),
   connectionCheck: (profile_id: string, scope: string, trigger = 'user') => call('POST', '/api/connection/check', { profile_id, scope, trigger }),

@@ -64,6 +64,9 @@ class CornerStopBody(Body):
 class PathBody(Body):
     path: str
     create: bool = False
+    # The folder's size is walked only when asked (record 7.189): on D: the walk took 0.7 to 2 s, on every page open, for
+    # one number inside a closed fold; the page asks for it with its "Measure" button.
+    usage: bool = False
 
 
 class ConnectionBody(Body):

@@ -195,7 +195,9 @@ line, the box at the right; the caps on launches, retries and wall time and the 
 closed **Limits** fold whose line names the limits that are set ("Limits - 42 launches"). In Output settings the list of
 what is always saved is one line with the whole list in its tooltip, and what the backend found for the output root is one
 line ("writable · 270 GiB free · D:\gator\outputs") with its table folded behind it, open at once when the root cannot be
-written. Browser check: `frontend/scripts/room_check.mjs`.
+written. The folder's own size ("used here") is measured on its **Measure** button only (record 7.189): adding up the
+files under the root took 0.7 to 2 s of disk work on D: at every page open, for this one number. Browser checks:
+`frontend/scripts/room_check.mjs`, `frontend/scripts/output_panel_check.mjs`.
 
 **Drop-down lists in the look's colours** (record 7.173, user: "fix the color issue of the drag down menu in night mode, it
 is hard to read"): the browser draws a select's open list from its options, and a select in an editor cell (Probes'

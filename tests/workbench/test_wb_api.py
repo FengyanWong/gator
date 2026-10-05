@@ -131,6 +131,10 @@ def test_output_root_is_visible_checked_and_restricted(client, tmp_path):
     assert check['allowed'] and check['writable'] and check['free_bytes'] > 0 and check['host']
     assert check['mock_data_root'].endswith('/out/mock') and check['windows_mapping'] != 'not_checked'
     assert check['windows_path'] is None or check['windows_mapping'] == 'verified_by_readback'
+    # the folder's size only when asked (record 7.189): a look walks nothing
+    assert check['bytes_used'] is None
+    (tmp_path / 'out' / 'f.bin').write_bytes(b'0123456789')
+    assert client.post('/api/output/check', json=dict(path=str(tmp_path / 'out'), usage=True)).json()['bytes_used'] == 10
     denied = client.post('/api/output/check', json=dict(path='/etc')).json()
     assert denied['allowed'] is False and 'backend operator' in denied['error']
     assert client.get('/api/output/browse', params=dict(path='/etc')).status_code == 403

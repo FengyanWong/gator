@@ -36,10 +36,11 @@ await runChecks(browser, async () => {
   const CONFIG = { ...starter, output: { experiment_name: 'fixture', output_root: ROOT, waveform_storage_limit_bytes: 2 * GIB }, research: {} };
   const page = await browser.open({ height: 2200 });
   const { send, fulfil, consoleErrors } = page;
-  const refused = []; const probes = [];
+  const refused = []; const probes = []; let oldBackend = false;   // oldBackend: answer `usage` as a backend from before record 7.189 does
   const answer = params => {
     const { requestId, request } = params, name = new URL(request.url).pathname;
-    if (name === '/api/output/check') { probes.push(JSON.parse(request.postData ?? '{}')); return fulfil(requestId, 200, OUTPUT_CHECK); }
+    if (name === '/api/output/check') { const body = JSON.parse(request.postData ?? '{}'); probes.push(body);
+      return oldBackend && body.usage ? fulfil(requestId, 422, { detail: [{ type: 'extra_forbidden', loc: ['body', 'usage'], msg: 'Extra inputs are not permitted' }] }) : fulfil(requestId, 200, OUTPUT_CHECK); }
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
     return page.readOrRefuse(params, refused);
   };
@@ -113,13 +114,32 @@ await runChecks(browser, async () => {
   check('the path box is still editable and full width', await evaluate(`(() => { const b = ${ROOT_INPUT}.getBoundingClientRect(), p = ${PANEL}.getBoundingClientRect(); return !${ROOT_INPUT}.disabled && b.width > p.width - 40; })()`));
   for (let i = 0; i < 30 && !probes.length; i++) await sleep(100);             // the root is looked at 0.5 s after it is shown (2026-09-29)
   check('opening the page only LOOKED at the output root (create: false), it probed nothing', probes.length >= 1 && probes.every(p => p.create === false), JSON.stringify(probes));
-  // Review of 2026-09-29: each look walks the folder for its size, and each keystroke used to send one (the last answer won).
+  check('...and did not ask for the folder\'s size (record 7.189: on D: that walk took 0.7 to 2 s at every page open)', probes.every(p => !p.usage), JSON.stringify(probes));
+  // Review of 2026-09-29: each keystroke used to send a look (the last answer won).
   const looks = probes.length;
   await evaluate(`(() => { const i = ${ROOT_INPUT}; i.focus(); i.setSelectionRange(i.value.length, i.value.length); })()`);
   for (const ch of '/sub') await send('Input.insertText', { text: ch });
   await sleep(1500);
   check('typing four characters into the output root looks at it ONCE, 0.5 s after the last one, for the whole text', probes.length - looks === 1
     && probes.at(-1)?.path === `${ROOT}/sub` && probes.at(-1)?.create === false, JSON.stringify(probes.slice(looks)));
+
+  // ---- the folder's size, on "Measure" only (record 7.189) ------------------------------------------------------------------
+  await evaluate(`(() => { const d = ${PANEL}.querySelector('details.output-facts'); d.open = true; })()`); await sleep(200);
+  const MEASURE = `[...${PANEL}.querySelectorAll('details.output-facts button')].find(b => b.textContent === 'Measure')`;
+  check('the facts table offers "Measure" where the folder\'s size was', await evaluate(`!!${MEASURE}`));
+  const asked = probes.length;
+  await evaluate(`${MEASURE}.click()`);
+  check('"Measure" asks for the size once, and shows it', await until(`[...${PANEL}.querySelectorAll('details.output-facts td')].some(td => td.textContent.includes('used here 3.00 GiB'))`, 30)
+    && probes.length - asked === 1 && probes.at(-1)?.usage === true && probes.at(-1)?.create === false, JSON.stringify(probes.slice(asked)));
+  // a backend from before record 7.189 refuses `usage` (its request body forbids unknown fields): the plain look's size is shown
+  oldBackend = true;
+  await page.setValue(`${PANEL}.querySelector('#output-root')`, `${ROOT}/older`, { event: 'input' }); await sleep(1200);
+  await evaluate(`(() => { const d = ${PANEL}.querySelector('details.output-facts'); d.open = true; })()`); await sleep(200);
+  const before7189 = probes.length;
+  await evaluate(`${MEASURE}.click()`);
+  check('...and against a backend from before it (which refuses usage) Measure shows the size of its plain look', await until(`[...${PANEL}.querySelectorAll('details.output-facts td')].some(td => td.textContent.includes('used here 3.00 GiB'))`, 30)
+    && probes.slice(before7189).map(p => !!p.usage).join(',') === 'true,false', JSON.stringify(probes.slice(before7189)));
+  oldBackend = false;
 
   // ---- "Waveform storage limit": a number and a unit -----------------------------------------------------------------
   check('the caption no longer says "(bytes)"', !(await evaluate(`${PANEL}.textContent.includes('(bytes)')`)));

@@ -162,7 +162,7 @@ record (`docs/frontend_implementation_status.md` is the index).
 
 | Function | What it does | Code | Route | Docs and record | Tests and checks |
 |---|---|---|---|---|---|
-| Output root and **Copy path** | Chosen among the allowed roots; writability tested; a Windows path shown once verified | `fe/Right.tsx` (`OutputPanel`); `wb/paths.py` | `GET /api/output/browse`, `POST /api/output/check` | § Output layout; 7.41 | `tw/test_wb_storage_budget_paths.py`, `test_wb_api.py`; `fs/output_panel_check.mjs` |
+| Output root and **Copy path** *uncommitted* | Chosen among the allowed roots; writability tested; a Windows path shown once verified; the folder's size on **Measure** only (`usage: true`; a look walks nothing, 7.189) | `fe/Right.tsx` (`OutputPanel`); `wb/paths.py`, `wb/api/settings_routes.py` (`output_check`), `wb/api/models.py` (`PathBody.usage`) | `GET /api/output/browse`, `POST /api/output/check` | § Output layout; 7.41, 7.189 | `tw/test_wb_storage_budget_paths.py`, `test_wb_api.py`; `fs/output_panel_check.mjs` |
 | What is saved | Learner-update log, checkpoints, replay snapshots, transition archive, summary CSVs, waveforms with a storage limit typed with a unit | `fe/Right.tsx`; `wb/schema.py` (`OutputSettings`) | - | § Output layout; 7.41, 7.58 | `fs/output_panel_check.mjs` |
 | **Checkpoint every** | One interval, in evaluations or in seconds; `keep_last_checkpoints` prunes older periodic save points | `fe/Right.tsx`; `wb/checkpoints.py` | - | § Choosing which saved model to load; 7.58 | `tw/test_wb_engine.py`, `test_wb_model_chooser.py`; `fs/output_panel_check.mjs` |
 | Folding the module | **Output settings** folds like Run configuration | `fe/Right.tsx` (`Module`) | - | 7.45 | `fs/module_fold_check.mjs` |

@@ -2,7 +2,7 @@
 
 **Built on 2026-10-05 as record 7.183** (user: "update the reward plan according to finding and build it"): steps S0 to
 S4 and S6, with the recommended choice of decisions 1 to 4, 6 and 7. Not done: S5 (decision 5, the 13 dB rows of four
-saved tasks) and S7 (commit, frontend rebuild and restart of 8765, on the user's word). What the build did differently
+saved tasks). S7 followed the same day on the user's word: commit `4a106f5`, live since 06:44. What the build did differently
 from this text is under "State" in section 5. Session "RL reward design". Revision 1 (2026-10-03) hid a few controls and left two run settings
 on the page; the user still found the reward too complicated. Revision 2 took every reward setting off the front of the
 page and gave the reward one sentence. Revision 3 withdrew revision 2's scale rule. **Revision 4 follows the tests of
@@ -173,7 +173,8 @@ re-recorded baseline).
 - **S2, built**, with one difference: a new row's scale is written as the size of its limit (the number an empty box
   stands for) rather than left empty, as before; only the 10 degrees and the half interval are gone, and a dB row gets 6.
 - **S3, S4, S6 built.** The reward page (artifact) was not republished.
-- **S5 not done** (decision 5 is open). **S7 not done.**
+- **S5 not done** (decision 5 is open). **S7 done** on 2026-10-05, on the user's word: commit `4a106f5`; the page rebuilt
+  from it at 06:44; the backend had been restarted at 06:31 by the session of record 7.174 and was not restarted again.
 
 ## 6. What was tested, and what was not
 

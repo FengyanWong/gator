@@ -9,8 +9,8 @@ await runChecks(browser, async () => {
   const config = await starterConfig(APP);
   config.run = { ...config.run, mode: 'scratch' }; delete config.run.search; delete config.run.model_source;
   const settings = await (await fetch(new URL('api/network-settings', APP))).json();
-  const page = await browser.open(), pending = [], resets = [];
-  let hold = false;
+  const page = await browser.open(), pending = [], writes = [];
+  let hold = false, holdWrites = false;
   await page.intercept(['*/api/*'], p => {
     const name = new URL(p.request.url).pathname;
     if (name === '/api/network-settings') {
@@ -18,7 +18,7 @@ await runChecks(browser, async () => {
       return page.fulfil(p.requestId, 200, settings);
     }
     if (name.startsWith('/api/network-settings/')) {
-      if (name.endsWith('/reset')) { resets.push(p); return; }
+      if (holdWrites) { writes.push(p); return; }
       const encoder = name.split('/').at(-1), body = JSON.parse(p.request.postData);
       return page.fulfil(p.requestId, 200, { ...settings.settings[encoder], ...body, origin: 'custom' });
     }
@@ -46,28 +46,29 @@ await runChecks(browser, async () => {
   check('late encoder response cannot switch back', await page.evaluate(`${encoder}.value === 'gatv2' && ${hidden}.value === '96'`));
 
   await page.setValue(encoder, 'rgcn'); await waitCount(pending, 3);
+  // The edit's settings write is held from here on. These races used to be checked with the "Publication preset"
+  // reset, which went with both preset buttons (record 7.191); an edit's own write meets the same ones.
+  holdWrites = true;
   await page.setValue(hidden, '112', { event: 'input', focus: true });
   await page.fulfil(pending[2].requestId, 200, older); await sleep(100);
   check('manual network edit survives an outstanding settings read', await page.evaluate(`${encoder}.value === 'rgcn' && ${hidden}.value === '112'`));
   await page.evaluate(`${hidden}.blur()`);
-  await sleep(800); // flush the intercepted preference write before reset
-  await page.evaluate(`[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel button')].find(b => b.textContent === 'Publication preset').click()`);
-  await waitCount(resets, 1);
+  await waitCount(writes, 1);
   await page.setValue(encoder, 'gatv2');
-  check('switching encoders does not wait for an earlier reset', await page.until(`${encoder}.value === 'gatv2'`));
-  await page.fulfil(resets[0].requestId, 200, { ...settings.settings.rgcn, origin: 'publication' });
+  check('switching encoders does not wait for an earlier settings write', await page.until(`${encoder}.value === 'gatv2'`));
+  await page.fulfil(writes[0].requestId, 200, { ...settings.settings.rgcn, network: { ...settings.settings.rgcn.network, hidden_dim: 112 }, origin: 'custom' });
   await waitCount(pending, 4); await page.fulfil(pending[3].requestId, 200, newer); await sleep(100);
-  check('late reset cannot replace the selected encoder', await page.evaluate(`${encoder}.value === 'gatv2' && ${hidden}.value === '96'`));
+  check('a late write reply cannot replace the selected encoder', await page.evaluate(`${encoder}.value === 'gatv2' && ${hidden}.value === '96'`));
   hold = false; await page.saved();
   await page.setValue(hidden, '112', { event: 'input', focus: true });
-  await page.evaluate(`${hidden}.blur()`); await sleep(800);
-  await page.evaluate(`[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel button')].find(b => b.textContent === 'Publication preset').click()`);
-  await waitCount(resets, 2);
+  await page.evaluate(`${hidden}.blur()`);
+  await waitCount(writes, 2);
   await page.evaluate(`document.querySelector('section.editors button[title^="Undo:"]').click()`);
-  check('Undo restores a network edit while reset is pending', await page.until(`${encoder}.value === 'gatv2' && ${hidden}.value === '96'`));
-  await page.fulfil(resets[1].requestId, 200, { ...settings.settings.gatv2, network: { ...settings.settings.gatv2.network, hidden_dim: 80 } });
+  check('Undo restores a network edit while its settings write is pending', await page.until(`${encoder}.value === 'gatv2' && ${hidden}.value === '96'`));
+  await page.fulfil(writes[1].requestId, 200, { ...settings.settings.gatv2, network: { ...settings.settings.gatv2.network, hidden_dim: 80 }, origin: 'custom' });
   await sleep(100);
-  check('late reset cannot overwrite Undo within the same encoder', await page.evaluate(`${hidden}.value === '96'`));
+  check('a late write reply cannot overwrite Undo within the same encoder', await page.evaluate(`${hidden}.value === '96'`));
+  holdWrites = false;
   await page.saved();
 
   const key = 'gator-workbench-config-v1';

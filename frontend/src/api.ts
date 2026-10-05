@@ -86,7 +86,6 @@ export const api = {
   schema: () => call('GET', '/api/schema'),
   networkSettings: () => call('GET', '/api/network-settings'),
   saveNetworkSettings: (encoder: string, body: Json) => call('PUT', '/api/network-settings/' + encodeURIComponent(encoder), body),
-  resetNetworkSettings: (encoder: string, to: string) => call('POST', '/api/network-settings/' + encodeURIComponent(encoder) + '/reset', { to }),
   tasks: () => call('GET', '/api/tasks'),
   starter: (taskKey: string) => call('GET', '/api/tasks/starter' + q({ task_key: taskKey })),
   loadCircuit: (circuit: Json) => call('POST', '/api/circuit/load', { circuit }),

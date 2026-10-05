@@ -34,8 +34,7 @@ await runChecks(browser, async () => {
   const select = name => page.setValue(`[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel label')].find(l => l.firstChild?.textContent === 'Encoder').querySelector('select')`, name);
   const box = label => `[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel .row label')].find(l => l.querySelector('span')?.firstChild?.textContent === ${JSON.stringify(label)})`;
   const numbers = () => evaluate(`['hidden', 'heads', 'layers'].map(n => [...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel .row label')].find(l => l.querySelector('span')?.firstChild?.textContent === n).querySelector('input').value)`);
-  const buttons = () => evaluate(`['Publication preset', 'GATOR baseline'].map(t => { const b = [...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel button')].find(x => x.textContent === t);
-    const r = b.getBoundingClientRect(); return { text: t, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), disabled: b.disabled }; })`);
+  const IN_USE = `${NETWORK_PANEL}.querySelector('.in-use')?.textContent`;
 
   await page.hold(['*/api/network-settings/*'], null, { others: 'read' });     // the writes wait here; the page's other requests: reads pass
   await send('Page.navigate', { url: APP });
@@ -62,7 +61,7 @@ await runChecks(browser, async () => {
   await evaluate(`document.querySelector('.rl-networks-open').click()`, true);
   check('pressing the launcher again reuses the same window', (await browser.pages()).filter(p => p.title === 'GATOR - RL networks').length === 1 && (await browser.window('GATOR - RL networks')).id === originalWindow);
   for (let i = 0; i < 100 && !(await evaluate(`!!(${H3})`)); i++) await sleep(100);
-  for (let i = 0; i < 50 && !(await evaluate(`[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel button')].some(b => b.textContent === 'GATOR baseline')`)); i++) await sleep(100);
+  for (let i = 0; i < 50 && !(await evaluate(`!!${NETWORK_PANEL}.querySelector('.in-use')`)); i++) await sleep(100);
   await sleep(600);
   const settings = await (await fetch(new URL('api/network-settings', APP))).json();
 
@@ -76,13 +75,13 @@ await runChecks(browser, async () => {
   check('the encoder list offers only Graph Transformer, RGCN and GATv2', JSON.stringify(options) === JSON.stringify(['graph_transformer', 'rgcn', 'gatv2']), JSON.stringify(options));
   check('heads is editable for graph_transformer', !(await evaluate(`${box('heads')}.querySelector('input').disabled`)));
 
-  // ---- the two reset buttons form one aligned pair ------------------------------------------------------------
-  let [pub, base] = await buttons();
-  check('reset buttons share one line', pub.y === base.y, JSON.stringify([pub, base]));
-  check('reset buttons have the same size', pub.w === base.w && pub.h === base.h, `${pub.w}x${pub.h} vs ${base.w}x${base.h}`);
-  const panel = await evaluate(`(() => { const s = getComputedStyle(${NETWORK_PANEL}); const r = ${NETWORK_PANEL}.getBoundingClientRect();
-    return { left: Math.round(r.x + parseFloat(s.paddingLeft)), right: Math.round(r.right - parseFloat(s.paddingRight)) }; })()`);
-  check('reset buttons span the panel like the number boxes above them', Math.abs(pub.x - panel.left) <= 1 && Math.abs(base.x + base.w - panel.right) <= 1, JSON.stringify({ pub, base, panel }));
+  // ---- one setting: the starting preset (record 7.192); no preset buttons (record 7.191) -----------------------
+  check('neither "Publication preset" nor "GATOR baseline" is a button any more', !(await evaluate(`[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel button')]
+    .some(b => ['Publication preset', 'GATOR baseline'].includes(b.textContent.trim()))`)));
+  check('the window never names the GATOR baseline', !(await evaluate(`${NETWORK_PANEL}.textContent.includes('GATOR baseline')`)));
+  const gtOrigin = settings.settings.graph_transformer.origin;
+  check('"In use" names what the backend holds for the default encoder', await evaluate(IN_USE) === `In use: ${gtOrigin === 'publication' ? 'starting preset' : 'edited, saved in the backend'}`
+    && ['publication', 'custom'].includes(gtOrigin), `${await evaluate(IN_USE)} (backend: ${gtOrigin})`);
   await shot('network-1-graph-transformer.png');
 
   // ---- choosing an encoder reads that encoder's backend values; heads greys out -------------------------------
@@ -91,8 +90,6 @@ await runChecks(browser, async () => {
   check('choosing rgcn loads the rgcn values', JSON.stringify(await numbers()) === JSON.stringify([rgcn.hidden_dim, rgcn.heads, rgcn.layers].map(String)), JSON.stringify(await numbers()));
   check('heads is greyed out for rgcn', await evaluate(`${box('heads')}.querySelector('input').disabled && ${box('heads')}.classList.contains('disabled')`));
   check('heads carries the "ignored by this encoder" hint', await evaluate(`${box('heads')}.textContent.includes('ignored by this encoder')`));
-  [pub, base] = await buttons();
-  check('reset buttons stay aligned when the heads hint is shown', pub.y === base.y && pub.w === base.w, JSON.stringify([pub, base]));
   check('no write happened by only choosing an encoder', paused.length === 0, JSON.stringify(paused.map(p => p.method + ' ' + p.url)));
   await shot('network-2-rgcn.png');
 
@@ -113,15 +110,16 @@ await runChecks(browser, async () => {
   check('the panel reports the edited state', await evaluate(`${NETWORK_PANEL}.textContent.includes('edited, saved in the backend')`));
   await shot('network-3-rgcn-edited.png');
 
-  // ---- GATOR baseline asks the backend (intercepted) and applies what it answers ------------------------------
-  await evaluate(`[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel button')].find(b => b.textContent === 'GATOR baseline').click()`);
-  const reset = await nextWrite();
-  check('GATOR baseline posts a reset for the chosen encoder', !!reset && reset.method === 'POST' && reset.url.endsWith('/api/network-settings/rgcn/reset') && JSON.parse(reset.postData).to === 'gator_baseline', reset ? `${reset.method} ${reset.url} ${reset.postData}` : 'no request');
-  if (reset) await fulfil(reset.requestId, 200, { ...settings.settings.rgcn, origin: 'gator_baseline', network: settings.gator_baseline.network, advanced: settings.gator_baseline.advanced });
-  await sleep(400);
-  const b = settings.gator_baseline.network;
-  check('the baseline values are shown', JSON.stringify(await numbers()) === JSON.stringify([b.hidden_dim, b.heads, b.layers].map(String)), JSON.stringify(await numbers()));
-  await shot('network-4-rgcn-baseline.png');
+  // ---- the way back without a button: typing the preset value again (the backend then forgets its copy) ---------
+  await evaluate(`(() => { const i = ${box('hidden')}.querySelector('input'); i.focus(); i.select(); })()`);
+  await networkPage.send('Input.insertText', { text: String(rgcn.hidden_dim) });
+  const back = await nextWrite();
+  check('typing the preset value back sends it for the chosen encoder', !!back && back.method === 'PUT' && back.url.endsWith('/api/network-settings/rgcn')
+    && JSON.parse(back.postData).network?.hidden_dim === rgcn.hidden_dim, back ? `${back.method} ${back.url} ${back.postData}` : 'no request');
+  if (back) await fulfil(back.requestId, 200, { ...settings.settings.rgcn, origin: 'publication' });
+  check('...and the window says the starting preset is in use again', await page.until(`${IN_USE} === 'In use: starting preset'`)
+    && (await numbers())[0] === String(rgcn.hidden_dim), `${await evaluate(IN_USE)} ${JSON.stringify(await numbers())}`);
+  await shot('network-4-rgcn-preset-again.png');
 
   const alpha = `[...${NETWORK_PANEL}.querySelectorAll('label')].find(l => l.firstChild.textContent === 'Alpha learning rate').querySelector('input')`;
   await evaluate(`${alpha}.closest('details').open = true`);
@@ -146,7 +144,7 @@ await runChecks(browser, async () => {
   check('LLM only disables the launcher and explains the unused network in an open window', await page.until(`document.querySelector('.rl-networks-open').disabled && ${NETWORK_PANEL}.textContent.includes('LLM only does not use an RL network') && !${NETWORK_PANEL}.querySelector('.component-list')`));
   check('...and the line beside it says the network is not used', await page.until(`document.querySelector('.rl-networks-row .net-short').textContent === 'not used (LLM only)'`), await evaluate(`document.querySelector('.rl-networks-row .net-short').textContent`));
   await page.setValue(method, 'sac');
-  check('returning to SAC restores the network controls and their values', await page.until(`!document.querySelector('.rl-networks-open').disabled && !!${NETWORK_PANEL}.querySelector('.component-list')`) && (await numbers())[0] === String(b.hidden_dim));
+  check('returning to SAC restores the network controls and their values', await page.until(`!document.querySelector('.rl-networks-open').disabled && !!${NETWORK_PANEL}.querySelector('.component-list')`) && (await numbers())[0] === String(rgcn.hidden_dim));
   await networkPage.evaluate('window.close()');
   await browser.window('GATOR - RL networks', { present: false });
   networkPage = await openNetworks(page, browser);
@@ -159,8 +157,8 @@ await runChecks(browser, async () => {
   await page.until(`!!document.querySelector('.rl-networks-open')`, 150);
   const restored = await page.stored();
   restored.run = { ...restored.run, mode: 'scratch',
-    network: { encoder_type: 'graph_transformer', ...gt, hidden_dim: settings.gator_baseline.network.hidden_dim },
-    advanced: { ...settings.settings.graph_transformer.advanced, batch_size: settings.gator_baseline.advanced.batch_size } };
+    network: { encoder_type: 'graph_transformer', ...gt, hidden_dim: settings.legacy_baseline.network.hidden_dim },
+    advanced: { ...settings.settings.graph_transformer.advanced, initial_alpha: settings.legacy_baseline.advanced.initial_alpha } };
   await page.seed({ config: restored });
   await send('Page.reload');
   networkPage = await openNetworks(page, browser);
@@ -170,15 +168,15 @@ await runChecks(browser, async () => {
   const compared = await evaluate(`[...${differences}.querySelectorAll('tbody tr')].map(r => [...r.cells].map(c => c.textContent))`);
   check('the comparison names the differing network and Advanced values exactly', JSON.stringify(compared) === JSON.stringify([
     ['Hidden width', String(restored.run.network.hidden_dim), String(gt.hidden_dim)],
-    ['Batch size', String(restored.run.advanced.batch_size), String(settings.settings.graph_transformer.advanced.batch_size)],
+    ['Initial alpha', String(restored.run.advanced.initial_alpha), String(settings.settings.graph_transformer.advanced.initial_alpha)],
   ]), JSON.stringify(compared));
   check('In use identifies current run settings instead of falsely claiming the preset', await evaluate(`${NETWORK_PANEL}.querySelector('.in-use').textContent === 'In use: current run settings'`));
-  check('the comparison explains which values run and where saved defaults apply', await evaluate(`${differences}.textContent.includes('This run uses the values shown in the controls') && ${differences}.textContent.includes('publication preset')`));
+  check('the comparison explains which values run and where saved defaults apply', await evaluate(`${differences}.textContent.includes('This run uses the values shown in the controls') && ${differences}.textContent.includes('starting preset')`));
   await networkPage.shot(path.join(out, 'network-5-restored-differences.png'), NETWORK_PANEL, { maxHeight: 1100, beyond: true });
   await evaluate(`[...${differences}.querySelectorAll('button')].find(b => b.textContent === 'Use saved defaults').click()`);
   check('Use saved defaults updates this run, clears the comparison and does not write preferences', await page.until(`!${differences}`)
     && (await numbers())[0] === String(gt.hidden_dim) && paused.length === 0);
-  check('a matching configuration can accurately name the publication preset', await evaluate(`${NETWORK_PANEL}.querySelector('.in-use').textContent === 'In use: publication preset'`));
+  check('a matching configuration can accurately name the starting preset', await evaluate(`${NETWORK_PANEL}.querySelector('.in-use').textContent === 'In use: starting preset'`));
   await evaluate(`document.querySelector('section.editors button[title^="Undo:"]').click()`);
   check('Undo restores the differing values and their comparison', await page.until(`!!${differences}`) && (await numbers())[0] === String(restored.run.network.hidden_dim));
   await evaluate(`[...${differences}.querySelectorAll('button')].find(b => b.textContent === 'Save as defaults').click()`);
@@ -186,7 +184,7 @@ await runChecks(browser, async () => {
   const defaultsBody = saveDefaults ? JSON.parse(saveDefaults.postData) : {};
   check('Save as defaults stores both network and Advanced values for this encoder', saveDefaults?.method === 'PUT'
     && saveDefaults.url.endsWith('/api/network-settings/graph_transformer')
-    && defaultsBody.network.hidden_dim === restored.run.network.hidden_dim && defaultsBody.advanced.batch_size === restored.run.advanced.batch_size);
+    && defaultsBody.network.hidden_dim === restored.run.network.hidden_dim && defaultsBody.advanced.initial_alpha === restored.run.advanced.initial_alpha);
   if (saveDefaults) await fulfil(saveDefaults.requestId, 200, { ...settings.settings.graph_transformer, ...defaultsBody, origin: 'custom' });
   check('after saving, the comparison clears and the current run values stay', await page.until(`!${differences}`)
     && (await numbers())[0] === String(restored.run.network.hidden_dim)

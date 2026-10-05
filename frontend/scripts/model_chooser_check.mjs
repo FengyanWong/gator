@@ -96,10 +96,9 @@ await runChecks(browser, async () => {
     while (n && n.tagName !== 'H3' && n.tagName !== 'DETAILS') { t += ' ' + n.innerText; n = n.nextElementSibling; } return t; })()`);
   const lastAsked = () => asked[asked.length - 1] ?? {};
   const lastConfigNet = () => lastAsked().network ?? null;
-  // The block for a NEW network: its heading, the Encoder list, the size boxes and the preset buttons.
+  // The block for a NEW network: its heading, the Encoder list and the size boxes (no preset buttons since record 7.191).
   const newNetwork = () => evaluate(`({ heading: [...${RIGHT}.querySelectorAll('h3')].some(h => h.textContent.trim() === 'RL network'), encoder: !!(${labelled('Encoder')}),
     sizes: ['hidden', 'heads', 'layers'].filter(t => [...${RIGHT}.querySelectorAll('label')].some(l => l.firstChild?.textContent?.trim().split(' - ')[0] === t && l.checkVisibility())).length,
-    presets: ['Publication preset', 'GATOR baseline'].filter(t => [...${RIGHT}.querySelectorAll('button')].some(b => b.textContent.trim() === t)).length,
     origin: [...${RIGHT}.querySelectorAll('summary')].some(x => /^Where the .+ values come from$/.test(x.textContent.trim())),
     advanced: [...${RIGHT}.querySelectorAll('summary')].some(x => /^Advanced/.test(x.textContent.trim())) })`);
   const storedNetwork = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')?.run?.network ?? null`);
@@ -122,7 +121,7 @@ await runChecks(browser, async () => {
   check('in scratch mode the block says that no model is loaded, and how to load one', /None\. Mode is scratch/.test(none) && /fine_tune/.test(none) && /frozen/.test(none) && /resume/.test(none), none.slice(0, 120));
   check('in scratch mode the list of saved models is not read', lists === 0, `${lists} request(s)`);
   const inScratch = await newNetwork();
-  check('in scratch mode the block for a NEW network is there: heading, Encoder list, sizes, preset buttons', inScratch.heading && inScratch.encoder && inScratch.sizes === 3 && inScratch.advanced, JSON.stringify(inScratch));
+  check('in scratch mode the block for a NEW network is there: heading, Encoder list, sizes', inScratch.heading && inScratch.encoder && inScratch.sizes === 3 && inScratch.advanced, JSON.stringify(inScratch));
   check('the old "Source run" / "Checkpoint" pickers are gone', !(await evaluate(`!!(${labelled('Source run')}) || !!(${labelled('Checkpoint')})`)));
 
   // ---- LOOKING at a saved model needs no Mode that loads it, and changes nothing about the run ----------------------------
@@ -144,8 +143,8 @@ await runChecks(browser, async () => {
   await setSelect(labelled('Mode'), 'fine_tune');
   check('choosing fine_tune reads the list once', (await until(`${RIGHT}.querySelectorAll('button.model-card').length > 0`, 50)) && lists === listsBefore + 1, `${lists - listsBefore} request(s)`);
   const inFineTune = await newNetwork();
-  check('in fine_tune the block for a NEW network is NOT shown: no heading, no Encoder list, no sizes, no preset buttons, no "where the values come from"',
-    !inFineTune.heading && !inFineTune.encoder && inFineTune.sizes === 0 && inFineTune.presets === 0 && !inFineTune.origin, JSON.stringify(inFineTune));
+  check('in fine_tune the block for a NEW network is NOT shown: no heading, no Encoder list, no sizes, no "where the values come from"',
+    !inFineTune.heading && !inFineTune.encoder && inFineTune.sizes === 0 && !inFineTune.origin, JSON.stringify(inFineTune));
   check('... the Advanced numbers stay (they belong to the run, and hold the fine_tune switches)', inFineTune.advanced);
   check('... and the chooser says that the run uses the chosen model\'s network', /The run uses that model's network, shown on its card/.test(await blockText()));
   let shown = await cards();

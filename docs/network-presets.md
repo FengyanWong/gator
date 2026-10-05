@@ -2,7 +2,7 @@
 
 Added 2026-09-20. Code: `src/gator_workbench/network_presets.py`, panel `frontend/src/panels/Right.tsx`,
 tests `tests/workbench/test_wb_network_presets.py`, browser check `frontend/scripts/network_panel_check.mjs`
-(headless Edge, 16 checks; writes are intercepted, so it never changes your saved settings).
+(headless Edge, 41 checks; writes are intercepted, so it never changes your saved settings).
 The initial preset implementation did not change `src/analog_optimizer/`. Since 2026-09-26, the optimizer and this panel offer only `graph_transformer`, `rgcn` and `gatv2`. GATv1 was replaced by GATv2 on that date; its historical preset settings are borrowed as starting values, not a published GATv2 sizing recipe. MLP/GCN were deleted on that date, and port-GNN on 2026-09-24. Their entries below retain historical preset provenance; they are no longer selectable or editable. Old configurations are rejected explicitly, and existing checkpoints require their matching historical source and dependencies.
 
 ## In plain words
@@ -15,11 +15,17 @@ Now the backend keeps **one setting per network type**:
 * Picking a network in the drop-down **loads** that network's numbers from the backend.
 * Changing a number (network sizes or anything under Advanced) **saves** it in the backend for that
   network only. It is still there after a restart.
-* Each network starts from numbers that **published analog-circuit papers actually used**. The panel
-  shows where every number comes from ("Where the ... values come from").
-* Two buttons bring you back: **Publication preset** (forget my edits) and **GATOR baseline** (32 / 4 / 2 for
-  every network, with the three training values measured on GATOR circuits on 2026-10-05: see "The three
-  tested values" below. Until then it was the schema's defaults, the setting behind every earlier result).
+* Each network starts from its **starting preset**: the network size (hidden / heads / layers) that
+  **published analog-circuit papers actually used**, and **every training number of the runs that learned on
+  GATOR circuits** on 2026-10-05 (record 7.192; the user: "merge the publication preset and overwrite those
+  settings with the previous learned settings, keep this as the starting preset with no multiple choices", then
+  "All training numbers"). The panel shows where every number comes from ("Where the ... values come from"); a
+  replaced published number is named there.
+* There is no choice between presets: the **GATOR baseline** (32 / 4 / 2 for every network) and the two buttons
+  that chose between it and the publication preset were deleted on 2026-10-05 (record 7.191). To go back to a
+  preset number, type it again: when all of a network's numbers equal its preset, the saved copy is forgotten and
+  the window says **In use: starting preset**. A network that was on the GATOR baseline reads as its starting
+  preset; the settings file is not rewritten.
 * The **heads** box is greyed out with "ignored by this encoder" unless the network is
   `graph_transformer` or `gatv2`. Only those two have attention heads.
 
@@ -30,18 +36,33 @@ configuration's network and Advanced values without writing preferences; **Save 
 values and remembers them for this encoder. A preset's name is shown as in use only when its saved values match.
 
 **The one thing to keep in mind:** the papers ran thousands of simulations per run; GATOR's real runs
-used tens. A published batch size of 128 with 1,000 warm-up steps means that in a 60-evaluation run the
-network never learns and every action is random. The panel and the static validation warn when that
-happens. For short runs, for comparing encoders at equal size, and for loading an existing checkpoint,
-click **GATOR baseline**.
+used tens to hundreds. A published batch size of 128 with 1,000 warm-up steps means that in a 60-evaluation run
+the network never learns and every action is random - which is why the presets no longer take the papers'
+training numbers. The network sizes are still the papers': the runs that learned used 32 / 4 / 2, so a
+published size has not been tried on GATOR circuits. With the starting values learning began after 250 to 600
+evaluations. For comparing encoders at equal size, give every encoder the same sizes; an existing checkpoint
+always loads with its own network.
 
 ## The presets
 
-`hidden / heads / layers`, then the training numbers. Anything not listed is the GATOR default
-(`update_every` 1, `target_entropy_per_action` 1, `max_grad_norm` 10; for `gatv2` and `graph_transformer` also
-`tau` 0.005 and `warmup_transitions` 8) or, since 2026-10-05, a value measured on GATOR circuits
-(`initial_alpha` 0.01 everywhere; `updates_per_transition` 8 for `graph_transformer` and `gatv2`, while `rgcn`
-keeps the 1 of its authors' code).
+Since record 7.192 (2026-10-05) every starting preset has the published network size and the training numbers
+of the runs that learned on GATOR circuits, the same for all three networks:
+
+| Encoder | hidden | heads | layers | lr | gamma | tau | batch | warm-up | replay | episode |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `graph_transformer` | 48 | 4 | 4 | 3e-4 | 0 | 0.005 | 8 | 8 | 10000 | 4 |
+| `rgcn` | 32 | (4) | 4 | 3e-4 | 0 | 0.005 | 8 | 8 | 10000 | 4 |
+| `gatv2` | 192 | 3 | 4 | 3e-4 | 0 | 0.005 | 8 | 8 | 10000 | 4 |
+
+All three also start with `initial_alpha` 0.01, `updates_per_transition` 8, `update_every` 1,
+`target_entropy_per_action` 1 and `max_grad_norm` 10. Of the training numbers, only `initial_alpha`,
+`updates_per_transition` and `gamma` were compared and chosen (basis `gator_tested`); batch, learning rate,
+warm-up, replay and episode length are the values those measurements were made with (basis
+`gator_measured_with`): learning rate 1e-3 did better in both runs that tried it but was never run with 8 updates,
+batch 32 learned a little earlier with 4 updates at four times the cost per update, warm-up 64 brought no gain,
+replay and episode length were not varied. `tau` was not varied either; every preset already had 0.005.
+
+The numbers the papers give, kept in each field's note (under `published` in the API when replaced):
 
 | Encoder | hidden | heads | layers | lr | gamma | tau | batch | warm-up | replay | episode |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -51,12 +72,16 @@ keeps the 1 of its authors' code).
 | `rgcn` | 32 | (4) | 4 | 3e-4 | 0.99 | 0.005 | 128 | 1000 | 100000 | 50 |
 | `port_gnn` (removed 2026-09-24) | 32 | (4) | 5 | 3e-4 | 0.99 | 0.005 | 128 | 1000 | 100000 | 50 |
 | `mlp` (removed 2026-09-26) | 256 | (4) | 4 | 3e-3 | 0.8 | 0.005 | 256 | 120 | 1000000 | 30 |
-| GATOR baseline (all) | 32 | 4 | 2 | 3e-4 | 0 | 0.005 | 8 | 8 | 10000 | 4 |
+| GATOR baseline (all; deleted 2026-10-05, record 7.191) | 32 | 4 | 2 | 3e-4 | 0 | 0.005 | 8 | 8 | 10000 | 4 |
 | schema defaults (the baseline until 2026-10-05) | 32 | 4 | 2 | 3e-4 | 0.99 | 0.005 | 8 | 8 | 10000 | 4 |
 
 ## The three tested values (2026-10-05, record 7.183)
 
-The GATOR baseline also sets `initial_alpha` 0.01, `updates_per_transition` 8 and `gamma` 0. The schema defaults -
+Every starting preset uses `initial_alpha` 0.01, `updates_per_transition` 8 and `gamma` 0 (record 7.192), with the
+other training numbers those measurements were made with (batch 8, learning rate 3e-4, warm-up 8, replay 10,000,
+episode length 4). The measurements used a 32 / 4 / 2 Graph Transformer; the presets keep the published network
+sizes, which were not measured on GATOR circuits. The GATOR baseline held exactly the measured setting until it was
+deleted (record 7.191). The schema defaults -
 0.2, 1 and 0.99 - are what every GATOR run used before, and with them soft actor-critic is a uniform random search:
 on Spectre (`real:mscr_ota7t`) two very different reward settings gave the same design in 147 of 150 positions, and
 none of 922 designs passed. Measured with 175 runs on two ngspice circuits and five Spectre runs
@@ -76,13 +101,13 @@ Learning starts after 250 to 600 evaluations, so a shorter from-scratch run is a
   their meaning. Static validation warns (`sac_values_random_search`) when a run that trains has fewer than 4 updates
   per evaluation or a starting temperature above 0.05, and (`budget_below_sac_learning`) when a from-scratch SAC run
   has fewer than 300 evaluations; the RL networks window says the first where the values are set.
-* In a publication preset, a field no publication reports now holds the tested value (basis `gator_tested`); a
-  published value stays (`rgcn`: one update per step, from the authors' code; the attention presets' `gamma` 0.9).
-  A published preset as a whole is still unmeasured here.
-* An encoder whose saved values equal the old baseline and were saved before the change is read as "on the GATOR
-  baseline" and follows it; `network_settings.json` is not rewritten. A configuration already open keeps its own
-  numbers: the window's **This run / Saved default** table shows the three, and **Use saved defaults** or **GATOR
-  baseline** applies them.
+* Every starting preset holds these three and the other training numbers of the runs that learned (record 7.192);
+  until then a published value stayed (`rgcn`: one update per step from the authors' code, the attention presets'
+  `gamma` 0.9). The published network sizes are still unmeasured here.
+* An encoder whose saved values were the GATOR baseline (the old baseline saved before the change, or the baseline
+  with the three values saved on 2026-10-05) is read as its starting preset since record 7.191;
+  `network_settings.json` is not rewritten. A configuration already open keeps its own numbers: the window's
+  **This run / Saved default** table shows the differences, and **Use saved defaults** applies the preset.
 
 `(4)` = ignored by that network; kept at 4 because the number is written into every checkpoint.
 
@@ -191,10 +216,11 @@ feature, mean-aggregated, no attention). Everything here is marked "closest netw
   Layer counts and widths transfer; exact parameter counts do not.
 * **Presets break the equal-size encoder comparison.** The encoder ablations give every encoder the same
   width and depth (32 / 4 / 2) by default. With presets the networks differ 32-fold in size, so a
-  difference in results is no longer a statement about the encoder type. Use the GATOR baseline for such
-  comparisons. Measured trainable parameters, actor + two critics (2026-09-20, PyG 2.8.0.post1):
+  difference in results is no longer a statement about the encoder type. For such comparisons give every
+  encoder the same sizes (the GATOR baseline that set 32 / 4 / 2 for all was deleted on 2026-10-05). Measured
+  trainable parameters, actor + two critics (2026-09-20, PyG 2.8.0.post1):
 
-  | Encoder | preset | GATOR baseline |
+  | Encoder | preset | 32 / 4 / 2 |
   |---|---|---|
   | `graph_transformer` | 349,540 | 105,476 |
   | `gat` (historical GATv1) | 3,858,820 | 87,044 |
@@ -205,7 +231,7 @@ feature, mean-aggregated, no attention). Everything here is marked "closest netw
 
   The `graph_transformer` figures include weights that are never used: PyG's `TransformerConv` always
   allocates `lin_skip`, which the block (`root_weight=False`) never calls. That is 28,224 of the preset's
-  349,540 and 6,336 of the baseline's 105,476.
+  349,540 and 6,336 of the 32 / 4 / 2 network's 105,476.
 * **Checkpoints.** A checkpoint only loads into the network it was trained with, and the whole
   `model_config` (including the ignored `heads`) is compared. All existing checkpoints are 32 / 4 / 2.
   Since 2026-09-21 the panel shows the network block in Mode `scratch` only: in `resume`, `fine_tune` and
@@ -220,12 +246,12 @@ feature, mean-aggregated, no attention). Everything here is marked "closest netw
   Editing back to the preset values removes the stored copy. A damaged file is reported in the panel and
   never overwritten.
 * API: `GET /api/network-settings`; `PUT /api/network-settings/{encoder}` with
-  `{"network": {...}, "advanced": {...}}`; `POST /api/network-settings/{encoder}/reset` with
-  `{"to": "publication" | "gator_baseline"}`. The complete value set is validated with the same schema
+  `{"network": {...}, "advanced": {...}}`. `POST /api/network-settings/{encoder}/reset` went with the two
+  buttons that called it (record 7.191). The complete value set is validated with the same schema
   as a run configuration, including "hidden divisible by heads" for the two attention encoders, so
   hidden and heads can be changed together.
-* A configuration submitted **without** a network block still gets the schema defaults (the GATOR
-  baseline until 2026-10-05), so existing configuration files, the CLI and the tests keep their meaning;
+* A configuration submitted **without** a network block still gets the schema defaults (the setting
+  behind every result before 2026-10-05), so existing configuration files, the CLI and the tests keep their meaning;
   validation says that those values do not learn. The panel always
   writes explicit values into the configuration, so what is shown is what runs.
 * If the configuration's numbers differ from the backend's (an imported file, an undo, "Use the

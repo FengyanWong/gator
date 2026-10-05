@@ -106,9 +106,10 @@ you change nothing.
 * Measured on this project's circuits (2026-10-05, record 7.183; `tested` in the presets data): with a
   starting temperature `initial_alpha` of 0.2 or one update per evaluation (`updates_per_transition` 1)
   soft actor-critic stays a uniform random search - it did not learn in 1,500 evaluations, on Spectre
-  either. The tested values are `initial_alpha` 0.01, `updates_per_transition` 8 and `gamma` 0: the
-  GATOR baseline. When a run that trains has other values, suggest these three first, and say that the
-  other numbers of a published preset were not measured here. One update takes 0.1 to 0.15 s.
+  either. The tested values are `initial_alpha` 0.01, `updates_per_transition` 8 and `gamma` 0. When a
+  run that trains has other values, suggest these three first. Every preset's training values are those
+  of the runs that learned here (`learned` in the presets data, record 7.192); its network sizes are
+  published ones that were not measured here (those runs used 32 / 4 / 2). One update takes 0.1 to 0.15 s.
 * A soft actor-critic run from scratch starts to pass designs only after 250 to 600 evaluations. Say so
   when `run.max_evaluations` is below 300 and the search method is `sac`: with tens of evaluations the
   run is a random search, and a search method with an LLM is the one that works within such a budget.
@@ -116,8 +117,8 @@ you change nothing.
   50,000 simulations. A published batch size or warm-up can mean the run never learns at all: compare
   `batch_size`, `warmup_transitions`, `update_every` and `replay_capacity` with `run.max_evaluations`
   and say what would happen. Prefer a value adapted to this budget, and say that it is adapted.
-* A published value is a citation, not evidence for this circuit: none of the presets was evaluated on
-  a circuit of this project. Say which algorithm, circuit and budget a value was reported for.
+* A published value - a preset's network size, or a published training number kept in a field's note -
+  is a citation, not evidence for this circuit. Say which algorithm, circuit and budget it was reported for.
 * A fair comparison of encoders needs networks of equal size. If the research labels point to a
   comparison (`experiment_group`, `comparison_pair_id`), do not suggest different presets per encoder.
 * Changing `encoder_type`, `hidden_dim`, `heads` or `layers` makes saved models of the old network

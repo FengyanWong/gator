@@ -1002,3 +1002,52 @@ The user: "build it, read analogLib with the PDK". Decided while building:
   more than 64 pins on one line. Each is named where it is met.
 
 Record 7.190.
+
+## The GATOR baseline deleted; the publication preset is the one setting per encoder (2026-10-05)
+
+The user: "Delete the gator baseline in RL networks and keep the publication preset, delete two buttons".
+
+- **Deleted:** the GATOR baseline (32 / 4 / 2 for every encoder with the three tested values), its button, and the
+  "Publication preset" button beside it; with them the reset route `POST /api/network-settings/{encoder}/reset`,
+  which nothing else called.
+- **Kept:** the publication preset of each encoder, which already takes the tested values where no publication gives
+  one (`network_presets.TESTED`); the schema defaults, so a configuration without a network block means what it meant;
+  editing per encoder, and Use saved defaults / Save as defaults when a configuration differs.
+- **The way back to a published number is typing it.** When all of an encoder's numbers equal its preset, the saved
+  copy is forgotten and "In use: publication preset" returns; every number is listed under "Where the ... values come
+  from". No new button: the user asked for fewer.
+- **An encoder put on the baseline reads as its publication preset** (the file is not rewritten): the schema defaults
+  saved before the tested values existed (05:00 UTC), as the user's Graph Transformer was, or the baseline saved on
+  2026-10-05 with them. The same numbers saved after that day were typed by the operator and stay theirs.
+- **What this means for Graph Transformer:** the two values that decide whether soft actor-critic learns stay (starting
+  temperature 0.01, 8 updates per evaluation). Discount 0.9 instead of 0, 48 / 4 / 4, batch 32, replay 50 and episode
+  30 were not measured on GATOR circuits; in the study batch 32 cost four times as much per update as 8, for the same
+  result.
+
+Record 7.191.
+
+## The starting preset: published network size, every training number of the runs that learned (2026-10-05)
+
+The user, the same afternoon: "can you transfer all the learned settings to the current preset", then "What I meant is
+merge the publication preset and overwrite those settings with the previous learned settings, keep this as the
+starting preset with no multiple choices between gator baseline and publication preset". Asked which numbers count as
+learned, they chose "All training numbers": network shape from the papers, every training number from the runs that
+learned (and, asked the same in another session, "take 10000 and 4 as well").
+
+- **Taken from the runs that learned, for every encoder:** starting temperature 0.01, 8 updates per evaluation and
+  discount 0 - compared and chosen in record 7.183 - and batch 8, learning rate 3e-4, warm-up 8, replay 10,000 and
+  episode length 4, the values those runs were made with (`network_presets.LEARNED`).
+- **Said as what it is.** Only the first three were compared and chosen. Learning rate 1e-3 did better in both runs
+  that tried it, but never with 8 updates; batch 32 learned a little earlier with 4 updates at four times the cost per
+  update; warm-up 64 brought no gain; replay and episode length were not varied. Each field's note says which.
+- **Kept from the papers:** the network sizes as hidden / heads / layers (Graph Transformer 48 / 4 / 4, RGCN
+  32 / 4 / 4, GATv2 192 / 3 / 4). The runs that learned used 32 / 4 / 2, so these sizes are untested here. Target smoothing (0.005) and
+  the other four numbers were already the runs' values everywhere.
+- **The published numbers stay visible:** a replaced field names its published value in its note and keeps it under
+  `published`; the pinned test still checks them against the sources.
+- **One name for it.** The page says "starting preset" (the user's word) where it said "publication preset"; the API's
+  origin is still `publication`, so nothing that reads it changes.
+- **Not measured as a whole.** The three encoders now differ from the measured setting only in network size; nobody
+  has run a published size with these training numbers on a GATOR circuit.
+
+Record 7.192.

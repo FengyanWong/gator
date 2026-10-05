@@ -1,14 +1,15 @@
 // Browser check of the reward as the page states it since record 7.183 (2026-10-05): one sentence for the set of values a
 // new configuration starts with, the controls in a closed "Advanced" fold, a configuration with other values told which and
 // offered the tested set on a button; the soft actor-critic values with which the search stays random named in the RL
-// networks window; the Specs scale headed "Scale" behind "More columns" and suggested as the size of the limit (6 dB for dB).
-// Hermetic: reads go to the scratch backend, every writing request but validation is refused, and the one press of
-// "GATOR baseline" is answered here with the backend's own baseline values.
+// networks window, and "Use saved defaults" (the starting preset) taking them away; the Specs scale headed "Scale"
+// behind "More columns" and suggested as the size of the limit (6 dB for dB).
+// Hermetic: reads go to the scratch backend, every writing request but validation is refused, and a network-settings
+// write is held here (none is expected: there is no GATOR baseline to press since record 7.191).
 // Run (Windows node through WSL interop):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/reward_block_check.mjs)" [screenshot-dir]
 import path from 'node:path';
 import { NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
-import { check, launchEdge, outDir, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, starterConfig, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -28,10 +29,9 @@ await runChecks(browser, async () => {
   const values = () => evaluate(`[${control('Violation shape', 'select')}?.value, ${control('Worst hard-spec share')}?.value, ${control('Objective bonus weight')}?.value,
     ${control('Objective shape', 'select')}?.value, ${control('Tightest-margin bonus weight')}?.value]`);
   const SIMPLE = ['compressed', '0.5', '1', 'compressed', '1'];
-  const nextWrite = async (ms = 4000) => { for (let waited = 0; waited < ms; waited += 50) { if (paused.length) return paused.shift(); await sleep(50); } return null; };
 
   await page.trackSaves();
-  await page.hold(['*/api/network-settings/*'], null, { others: 'read' });       // the baseline press waits here; other writes are refused
+  await page.hold(['*/api/network-settings/*'], null, { others: 'read' });       // a network-settings write waits here; other writes are refused
   await send('Page.navigate', { url: APP });
 
   // ---- a new configuration: the tested set, in one sentence ----------------------------------------------------------------
@@ -80,28 +80,26 @@ await runChecks(browser, async () => {
     await evaluate(`${SENTENCE}?.textContent`));
   check('the fold keeps the objective line', await evaluate(`${FOLD}.querySelector('.reward-objective').textContent === ${JSON.stringify('Objective: ' + objective)}`));
 
-  // ---- the soft actor-critic values of before: named where they are set, gone with the GATOR baseline -----------------------
+  // ---- the soft actor-critic values of before: named where they are set, gone with the encoder's saved defaults -------------
   check('Run configuration points at RL networks', await page.until(`[...${RIGHT}.querySelectorAll('.warn')].some(e => e.textContent === 'Review the settings in RL networks.')`));
   const networkPage = await openNetworks(page, browser);
   const SLOW = `${NETWORK_PANEL}.querySelector('.sac-values')`;
   check('the window names 1 update per evaluation and the starting temperature 0.2, and the tested values',
     await page.until(`${SLOW}?.textContent.startsWith('With 1 update per evaluation and a starting temperature of 0.2, soft actor-critic learned late or not at all')
-      && ${SLOW}.textContent.includes('8 updates per evaluation, starting temperature 0.01 and discount 0: the GATOR baseline')`), await evaluate(`${SLOW}?.textContent`));
-  const baselineButton = `[...${NETWORK_PANEL}.querySelectorAll('button')].find(b => b.textContent === 'GATOR baseline')`;
-  check('the GATOR baseline button says what it holds', await evaluate(`${baselineButton}.title.includes('starting temperature 0.01, 8 updates per evaluation, discount 0')`));
+      && ${SLOW}.textContent.includes('8 updates per evaluation, starting temperature 0.01 and discount 0 (under Advanced).')`), await evaluate(`${SLOW}?.textContent`));
+  check('no GATOR baseline button and no word of it (record 7.191)', !(await evaluate(`${NETWORK_PANEL}.textContent.includes('GATOR baseline')
+    || [...${NETWORK_PANEL}.querySelectorAll('button')].some(b => ['GATOR baseline', 'Publication preset'].includes(b.textContent.trim()))`)));
   await networkPage.shot(path.join(out, 'reward-3-sac-values.png'), NETWORK_PANEL, { maxHeight: 1100, beyond: true });
-  await evaluate(`${baselineButton}.click()`);
-  const reset = await nextWrite();
-  check('GATOR baseline asks the backend for the baseline of this encoder', !!reset && reset.method === 'POST' && reset.url.endsWith('/api/network-settings/graph_transformer/reset')
-    && JSON.parse(reset.postData).to === 'gator_baseline', reset ? `${reset.method} ${reset.url}` : 'no request');
-  check('the backend\'s baseline holds the three tested values', settings.gator_baseline.advanced.initial_alpha === 0.01 && settings.gator_baseline.advanced.updates_per_transition === 8
-    && settings.gator_baseline.advanced.gamma === 0 && settings.legacy_baseline.advanced.updates_per_transition === 1, JSON.stringify(settings.gator_baseline.advanced));
-  if (reset) await page.fulfil(reset.requestId, 200, { ...settings.settings.graph_transformer, origin: 'gator_baseline', network: settings.gator_baseline.network, advanced: settings.gator_baseline.advanced });
-  check('with the baseline applied the warning is gone, here and in Run configuration', await page.until(`!${SLOW} && ![...${RIGHT}.querySelectorAll('.warn')].some(e => e.textContent === 'Review the settings in RL networks.')`),
+  const held = settings.settings.graph_transformer.advanced;                  // the starting preset on a scratch backend
+  check('the default encoder\'s saved setting learns: 8 updates per evaluation, temperature 0.01 (the old schema values 1 and 0.2)',
+    held.updates_per_transition === 8 && held.initial_alpha === 0.01 && settings.legacy_baseline.advanced.updates_per_transition === 1, JSON.stringify(held));
+  await evaluate(`[...${NETWORK_PANEL}.querySelectorAll('.network-differences button')].find(b => b.textContent === 'Use saved defaults').click()`);
+  check('with "Use saved defaults" the warning is gone, here and in Run configuration', await page.until(`!${SLOW} && ![...${RIGHT}.querySelectorAll('.warn')].some(e => e.textContent === 'Review the settings in RL networks.')`),
     await evaluate(`${SLOW}?.textContent ?? ''`));
   await page.saved();
   const advanced = (await page.stored())?.run?.advanced ?? {};
-  check('the configuration now runs 8 updates per evaluation, temperature 0.01 and discount 0', advanced.updates_per_transition === 8 && advanced.initial_alpha === 0.01 && advanced.gamma === 0, JSON.stringify(advanced));
+  check('the configuration now runs the saved setting\'s 8 updates per evaluation and temperature 0.01, and nothing was written', advanced.updates_per_transition === 8
+    && advanced.initial_alpha === 0.01 && advanced.gamma === held.gamma && paused.length === 0, JSON.stringify(advanced));
   await networkPage.evaluate('window.close()');
   await browser.window('GATOR - RL networks', { present: false });
 

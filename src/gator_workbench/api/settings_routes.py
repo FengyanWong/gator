@@ -7,7 +7,7 @@ from .. import network_presets
 from ..layout import environment_versions
 from ..paths import PathNotAllowed, default_output_root, directory_bytes, repo_root
 from ..storage.tables import TABLES, data_dictionary
-from .models import (ConnectBody, ConnectionBody, CreateConnectionBody, DirectoriesBody, NetworkResetBody, NetworkSettingsBody,
+from .models import (ConnectBody, ConnectionBody, CreateConnectionBody, DirectoriesBody, NetworkSettingsBody,
                      PROFILE_ID, PathBody, PdkLoadBody)
 from .support import _bridge_call, fail
 from .context import ApiContext
@@ -46,13 +46,6 @@ def register(app: FastAPI, context: ApiContext):
             fail(404, f'Unknown encoder: {encoder}')
         except network_presets.InvalidNetworkSettings as exc:
             fail(422, exc)
-
-    @app.post('/api/network-settings/{encoder}/reset')
-    def reset_network_settings(encoder: str, body: NetworkResetBody):
-        try:
-            return network_presets.reset(encoder, body.to)
-        except KeyError:
-            fail(404, f'Unknown encoder: {encoder}')
 
     @app.get('/api/pdks')
     def loaded_pdks():

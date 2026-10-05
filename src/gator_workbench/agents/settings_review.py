@@ -111,11 +111,12 @@ def publication_presets() -> dict:
         encoders[encoder] = dict(summary=entry.get('summary'), network=published.get('network'), advanced=published.get('advanced'), where=where)
     references = {key: {k: ref.get(k) for k in ('short', 'title', 'venue', 'year', 'url', 'algorithm', 'budget')}
                   for key, ref in (described.get('references') or {}).items()}
-    return dict(encoders=encoders, references=references, gator_baseline=described.get('gator_baseline'), scale_note=described.get('scale_note'),
-                tested=described.get('tested'),
-                note='Collected by hand from the cited publications (docs/network-presets.md). None was evaluated on a circuit of this '
-                     'project, and they differ widely in size, so they must not be used for an equal-size comparison of encoders. '
-                     'The three values under `tested` were measured on this project (record 7.183) and are part of the GATOR baseline.')
+    return dict(encoders=encoders, references=references, scale_note=described.get('scale_note'),
+                tested=described.get('tested'), learned=described.get('learned'),
+                note='The network sizes were collected by hand from the cited publications (docs/network-presets.md). None was evaluated on '
+                     'a circuit of this project, and they differ widely, so they must not be used for an equal-size comparison of encoders. '
+                     'The three values under `tested` were compared on this project and chosen (record 7.183); `learned` are all the training values of '
+                     'the runs that learned there, which every preset now uses (record 7.192). The network sizes are still the published ones.')
 
 
 def task_digest(config: dict, circuit_summary: dict | None) -> dict:

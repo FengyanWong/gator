@@ -21,8 +21,9 @@ def test_values_with_which_the_search_stays_random_are_named(tmp_path):
     report, found = issues(make_config(tmp_path))                       # the schema defaults: temperature 0.2, one update
     slow = found['sac_values_random_search']
     assert slow.level == 'warning' and slow.path == 'run.advanced' and not report.blocks_run
-    assert '1 update per evaluation and a starting temperature of 0.2' in slow.message and 'GATOR baseline' in slow.message
-    tested = presets.gator_baseline()['advanced']
+    assert '1 update per evaluation and a starting temperature of 0.2' in slow.message and 'under Advanced in RL networks' in slow.message
+    assert 'GATOR baseline' not in slow.message                         # deleted, record 7.191
+    tested = {**presets.legacy_baseline()['advanced'], **presets.TESTED}
     assert 'sac_values_random_search' not in issues(make_config(tmp_path, advanced=tested))[1]
     # each of the two alone is still said, in its own words; the measured boundaries are 4 updates and 0.05
     assert issues(make_config(tmp_path, advanced=dict(tested, updates_per_transition=2)))[1][

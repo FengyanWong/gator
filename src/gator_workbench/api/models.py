@@ -98,10 +98,6 @@ class NetworkSettingsBody(Body):
     advanced: dict | None = None        # the SAC numbers stored per encoder; any other key is rejected
 
 
-class NetworkResetBody(Body):
-    to: str = Field('publication', pattern='^(publication|gator_baseline)$')
-
-
 class PdkLoadBody(Body):
     profile_id: str = Field(pattern=PROFILE_ID)
     technology_library: str | None = Field(None, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$')   # empty = the connection's design library's

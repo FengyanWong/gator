@@ -548,7 +548,7 @@ def _check_run(config, report, record):
                    f'With {" and ".join(slow)}, soft actor-critic learned late or not at all in GATOR\'s tests of 2026-10-05: '
                    'with 1 update per evaluation the designs stayed a uniform random search for 1,500 evaluations, and a '
                    'starting temperature of 0.2 delayed learning to about evaluation 1,000. The tested values are 8 updates '
-                   'per evaluation, starting temperature 0.01 and discount 0: "GATOR baseline" in RL networks.')
+                   'per evaluation, starting temperature 0.01 and discount 0, under Advanced in RL networks.')
     if run.mode == 'scratch' and run.search.method == 'sac' and run.max_evaluations < SAC_LEARNS_AFTER:
         report.add('warning', 'budget_below_sac_learning', 'run.max_evaluations',
                    f'Soft actor-critic from scratch started to pass designs after 250 to 600 evaluations in GATOR\'s tests of '

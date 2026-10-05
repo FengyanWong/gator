@@ -254,16 +254,6 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       if (fresh && JSON.stringify([fresh.network, fresh.advanced]) !== JSON.stringify([cached?.network, cached?.advanced])) applyEntry(fresh, false);
     }).catch(() => undefined);
   };
-  const reset = (to: string) => {
-    const revision = ++netRevision.current;
-    const expected = networkKey(run.mode, net, adv);
-    pending.current = null; window.clearTimeout(timer.current);
-    writing.current = writing.current.then(() => api.resetNetworkSettings(encoder, to)).then(e => {
-      if (!currentReply(revision, encoder, expected)) return;
-      remember(e); applyEntry(e);
-      setNetMessage({ level: 'ok', text: to === 'publication' ? `${encoder}: publication preset restored in the backend.` : `${encoder}: GATOR baseline stored in the backend.` });
-    }).catch(e => { if (currentReply(revision, encoder)) setNetMessage({ level: 'error', text: e.message }); });
-  };
   useEffect(() => {
     const revision = ++netRevision.current;
     api.networkSettings().then(s => { if (netRevision.current === revision) setNetSettings(s); })
@@ -285,7 +275,9 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
     ...advFields.map(field => ({ field, current: adv[field], saved: entry.advanced[field] })),
   ].filter(row => row.current != null && row.current !== row.saved) : [];
   const differs = settingDifferences.length > 0 && !pending.current;
-  const originLabel = entry && ({ publication: 'publication preset', gator_baseline: 'GATOR baseline', custom: 'edited, saved in the backend' } as Json)[entry.origin];
+  // The backend still calls it `publication`; since record 7.192 it is the network size from publications with every training
+  // value of the runs that learned on GATOR circuits (user: "keep this as the starting preset").
+  const originLabel = entry && ({ publication: 'starting preset', custom: 'edited, saved in the backend' } as Json)[entry.origin];
   const budget: number = run.max_evaluations;
   // The soft actor-critic values measured on 2026-10-05 (record 7.183; validation.py says the same as a warning): with one
   // update per evaluation the designs stayed a uniform random search for 1,500 evaluations, and a starting temperature of
@@ -474,10 +466,10 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       <Check label="Nominal device operating points" value={net.operating_points ?? false} onChange={v => setNet({ operating_points: v })}
         title="Measured nominal device values and validity masks. Corner operating points are recorded but never replace the nominal network input. Changing this changes the model input schema." />
       <ComponentList value={net.vocabulary ?? 'standard'} onChoose={v => chooseList(v)} />
-      {entry && <><p className="hint in-use">In use: <b>{settingDifferences.length ? 'current run settings' : originLabel}</b></p>
-        <div className="row pair">
-          <button disabled={entry.origin === 'publication' && !differs} onClick={() => reset('publication')} title="Forget the saved values of this encoder and return to the values taken from publications.">Publication preset</button>
-          <button disabled={entry.origin === 'gator_baseline' && !differs} onClick={() => reset('gator_baseline')} title="One setting for every encoder: network 32/4/2, batch 8, warm-up 8, and the three training values measured on GATOR circuits on 2026-10-05 - starting temperature 0.01, 8 updates per evaluation, discount 0. Runs made before that date used 0.2, 1 and 0.99, with which the search stayed random.">GATOR baseline</button></div></>}
+      {/* The GATOR baseline and both preset buttons were deleted (record 7.191, user: "Delete the gator baseline in RL networks
+          and keep the publication preset, delete two buttons"); the one preset left became the starting preset (7.192). Typing a
+          value back to its preset forgets the saved copy. */}
+      {entry && <p className="hint in-use">In use: <b>{settingDifferences.length ? 'current run settings' : originLabel}</b></p>}
       {differs && <div className="note network-differences">
         <p className="warn">Current run values differ from the saved {encoder} defaults ({originLabel}).</p>
         <p className="hint">This run uses the values shown in the controls. Saved defaults are loaded when you choose an encoder; they do not replace an existing configuration on page reload.</p>
@@ -491,7 +483,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       {entry?.problem && <p className="warn">{entry.problem}</p>}</>}
       {netMessage && <p className={`net-message ${netMessage.level === 'error' ? 'error' : netMessage.level === 'warn' ? 'warn' : 'hint'}`}>{netMessage.text}</p>}
       {starved && run.search?.method !== 'llm_warmstart' && <p className="warn">Budget {budget} with warm-up {adv.warmup_transitions} and batch size {adv.batch_size}: {budget <= (adv.warmup_transitions ?? 0) ? 'every evaluation is a random warm-up action, so the policy never acts' : 'one batch is never filled, so the network never learns'}.
-        Published settings assume thousands of simulations. Lower them under Advanced{loads ? ' or raise the budget' : ', raise the budget, or use the GATOR baseline'}.</p>}
+        Published settings assume thousands of simulations. Lower them under Advanced or raise the budget.</p>}
       {!loads && entry && <details><summary>Where the {encoder} values come from</summary>
         <p className="hint">{entry.summary}</p>
         <table className="grid small"><thead><tr><th>Setting</th><th>Preset</th><th>Basis</th><th>Source and note</th></tr></thead><tbody>
@@ -545,7 +537,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       </>)}
       {sacSlow.length > 0 && <p className="warn sac-values">With {sacSlow.join(' and ')}, soft actor-critic learned late or not at all in the tests of 2026-10-05:
         with 1 update per evaluation the designs stayed a uniform random search for 1,500 evaluations, and a starting temperature of 0.2 delayed
-        learning to about evaluation 1,000. The tested values are 8 updates per evaluation, starting temperature 0.01 and discount 0{loads ? ' (under Advanced)' : ': the GATOR baseline'}.</p>}
+        learning to about evaluation 1,000. The tested values are 8 updates per evaluation, starting temperature 0.01 and discount 0 (under Advanced).</p>}
       <details><summary>Advanced (stored per encoder, like the network sizes)</summary>
         <p className="hint">Alpha learning rate belongs to this configuration; the other settings belong to the selected encoder. The algorithm stays soft actor-critic; only its numbers change.</p>
         <Num label="Alpha learning rate" nullable value={adv.alpha_learning_rate} onChange={v => setAdv({ alpha_learning_rate: v })} title="Empty uses the actor learning rate. A separate rate is stored in this configuration." />

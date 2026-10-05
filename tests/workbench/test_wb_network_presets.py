@@ -1,5 +1,6 @@
-"""Per-encoder network settings: publication presets with provenance, the GATOR baseline, and the
-operator's saved values behind the panel's encoder drop-down. No simulator, no network access."""
+"""Per-encoder network settings: the starting preset of each encoder (network sizes from publications, every training
+value of the runs that learned on GATOR circuits, record 7.192) with provenance, and the operator's saved values behind
+the panel's encoder drop-down; the GATOR baseline is deleted (record 7.191). No simulator, no network access."""
 import json
 
 import pytest
@@ -44,31 +45,68 @@ def test_every_encoder_has_a_complete_valid_preset_with_provenance():
 
 
 def test_the_preset_numbers_are_the_ones_verified_in_the_primary_sources():
-    """Pinned on purpose: a changed number must come with a changed citation (docs/network-presets.md)."""
+    """Pinned on purpose: a changed number must come with a changed citation (docs/network-presets.md). A published
+    training number replaced by the one of the runs that learned (record 7.192) is still pinned, under `published`."""
     sizes = {name: tuple(presets.publication(name)['network'].values()) for name in schema.ENCODER_TYPES}
     assert sizes == dict(graph_transformer=(48, 4, 4), rgcn=(32, 4, 4), gatv2=(192, 3, 4))
     keys = ('learning_rate', 'gamma', 'tau', 'batch_size', 'warmup_transitions', 'replay_capacity', 'episode_length')
-    training = {name: tuple(presets.publication(name)['advanced'][k] for k in keys) for name in schema.ENCODER_TYPES}
+
+    def cited(name, key):
+        field = presets.PRESETS[name]['fields'][key]
+        return field.get('published', field)['value']
+    training = {name: tuple(cited(name, k) for k in keys) for name in schema.ENCODER_TYPES}
     li2023, attention = (3e-4, 0.99, 0.005, 128, 1000, 100000, 50), (1e-3, 0.9, 0.005, 32, 8, 50, 30)
     assert training == dict(graph_transformer=attention, gatv2=attention, rgcn=li2023)
-    borrowed = {name for name, preset in presets.PRESETS.items()
-                if any(field['match'] == 'closest' for field in preset['fields'].values())}
+    cited_fields = {name: [field.get('published', field) for field in preset['fields'].values()]
+                    for name, preset in presets.PRESETS.items()}
+    borrowed = {name for name, fields in cited_fields.items() if any(field['match'] == 'closest' for field in fields)}
     assert borrowed == {'graph_transformer', 'gatv2'}  # settings borrowed from other architectures
-    assert all(field['match'] == 'closest' for field in presets.PRESETS['gatv2']['fields'].values()
+    assert all(field['match'] == 'closest' for field in cited_fields['gatv2']
                if field['source'])                  # GAT papers must not become GATv2 sizing evidence
 
 
 def test_a_value_without_a_publication_is_the_gator_default_and_says_so():
-    baseline = presets.gator_baseline()
-    flat = {**baseline['network'], **baseline['advanced']}
+    legacy = presets.legacy_baseline()
+    flat = {**legacy['network'], **legacy['advanced'], **presets.LEARNED}
     for encoder, preset in presets.PRESETS.items():
         for name, field in preset['fields'].items():
-            if field['basis'] in ('gator_default', 'gator_tested', 'not_used'):
+            if field['basis'] in ('gator_default', 'gator_tested', 'gator_measured_with', 'not_used'):
                 assert field['value'] == flat[name], f'{encoder}.{name} claims the GATOR default but differs from it'
-            # a value measured on GATOR circuits (record 7.183) is one of the three, and says what was measured
+            # compared and chosen on GATOR circuits (record 7.183): one of the three, saying what was measured; the other
+            # training values of those runs say that they are what the measurements were made with, not a compared optimum
             assert (field['basis'] == 'gator_tested') == (name in presets.TESTED and field['source'] is None), (encoder, name)
-            if field['basis'] == 'gator_tested':
+            measured_with = name in presets.LEARNED and name not in presets.TESTED and field['source'] is None
+            assert (field['basis'] == 'gator_measured_with') == measured_with, (encoder, name)
+            if field['basis'] in ('gator_tested', 'gator_measured_with'):
                 assert 'record 7.183' in field['note'], (encoder, name)
+            if field['basis'] == 'gator_measured_with':
+                assert 'The value the measurements of 2026-10-05 were made with' in field['note'], (encoder, name)
+
+
+def test_every_preset_trains_with_the_values_of_the_runs_that_learned():
+    """Record 7.192 (user: "merge the publication preset and overwrite those settings with the previous learned settings",
+    then "All training numbers"): the network sizes stay published, every training value is the one of the runs that
+    learned on GATOR circuits. A replaced published value is kept under `published` and named in the note."""
+    legacy = presets.legacy_baseline()
+    assert presets.LEARNED == dict(presets.TESTED, batch_size=8, learning_rate=3e-4, warmup_transitions=8,
+                                   replay_capacity=10000, episode_length=4)
+    # besides the three compared values, those runs had the schema defaults - and a 32 / 4 / 2 network
+    assert {k: legacy['advanced'][k] for k in presets.LEARNED if k not in presets.TESTED} == {
+        k: v for k, v in presets.LEARNED.items() if k not in presets.TESTED}
+    runs = {**legacy['advanced'], **presets.TESTED}                    # every training number of the runs that learned
+    for encoder, preset in presets.PRESETS.items():
+        assert presets.publication(encoder)['advanced'] == runs, encoder
+        for name, field in preset['fields'].items():
+            if 'published' in field:
+                assert name in presets.LEARNED and field['published']['value'] != field['value'], (encoder, name)
+                assert field['published']['source'] in presets.REFERENCES and field['published']['basis'] in presets.BASES
+                assert field['note'].startswith(f"Published: {field['published']['value']:g} ("), (encoder, name)
+        assert 'record 7.192' in preset['summary'] and '32 / 4 / 2' in preset['summary']
+    replaced = {(e, n) for e, p in presets.PRESETS.items() for n, f in p['fields'].items() if 'published' in f}
+    assert replaced == {(e, n) for e in ('graph_transformer', 'gatv2')
+                        for n in ('learning_rate', 'gamma', 'batch_size', 'replay_capacity', 'episode_length')} | {
+        ('rgcn', n) for n in ('gamma', 'batch_size', 'warmup_transitions', 'updates_per_transition', 'replay_capacity',
+                              'episode_length')}
 
 
 def test_references_are_citable():
@@ -79,14 +117,13 @@ def test_references_are_citable():
         assert reference['url'].startswith('https://') and 1990 < reference['year'] < 2100
 
 
-def test_the_gator_baseline_holds_the_tested_values_and_a_bare_configuration_keeps_the_schema_defaults(tmp_path):
-    """Record 7.183: the baseline is the schema's sizes with the three training values measured on 2026-10-05. The schema
-    defaults themselves - the legacy baseline - stay, so a configuration without a network block means what it meant."""
-    baseline, legacy = presets.gator_baseline(), presets.legacy_baseline()
-    assert baseline['network'] == legacy['network'] == dict(hidden_dim=32, heads=4, layers=2)
-    assert baseline['advanced']['batch_size'] == 8 and baseline['advanced']['warmup_transitions'] == 8
+def test_the_tested_values_build_a_learner_and_a_bare_configuration_keeps_the_schema_defaults(tmp_path):
+    """Record 7.183: the three training values measured on 2026-10-05. The schema defaults themselves - the legacy
+    baseline - stay, so a configuration without a network block means what it meant."""
+    legacy = presets.legacy_baseline()
+    assert legacy['network'] == dict(hidden_dim=32, heads=4, layers=2)
+    assert legacy['advanced']['batch_size'] == 8 and legacy['advanced']['warmup_transitions'] == 8
     assert presets.TESTED == dict(initial_alpha=0.01, updates_per_transition=8, gamma=0.0)
-    assert {k: v for k, v in baseline['advanced'].items() if legacy['advanced'][k] != v} == presets.TESTED
     assert {k: legacy['advanced'][k] for k in presets.TESTED} == dict(initial_alpha=0.2, updates_per_transition=1, gamma=0.99)
     raw = make_config(tmp_path).model_dump(mode='json')
     del raw['run']['network'], raw['run']['advanced']
@@ -95,32 +132,45 @@ def test_the_gator_baseline_holds_the_tested_values_and_a_bare_configuration_kee
     assert bare.run.network.model_dump() == dict(encoder_type='graph_transformer', **legacy['network'], vocabulary='standard',
                                                  operating_points=False)          # added 2026-09-26 (reward v2), off = as before
     assert {k: v for k, v in bare.run.advanced.model_dump().items() if k in legacy['advanced']} == legacy['advanced']
-    modes.sac_config_from(schema.AdvancedRL(**baseline['advanced']))                # the tested values build a learner
+    modes.sac_config_from(schema.AdvancedRL(**{**legacy['advanced'], **presets.TESTED}))   # the tested values build a learner
 
 
-def test_values_saved_as_the_old_baseline_follow_it_to_the_tested_values():
-    """The operator who pressed "GATOR baseline" before 2026-10-05 has the schema defaults in the file. That choice is read
-    as "the baseline" and follows it; the file is not rewritten. The same numbers saved afterwards are the operator's own."""
+def test_an_encoder_put_on_the_deleted_gator_baseline_reads_as_the_publication_preset():
+    """Record 7.191 (user: "Delete the gator baseline in RL networks and keep the publication preset"). Pressed before
+    2026-10-05 the button stored the schema defaults (the user's own graph_transformer entry), pressed later that day the
+    schema's sizes with the tested values; both now read as the publication preset, and the file is not rewritten. The
+    same numbers saved at other times were typed by the operator and stay theirs."""
     legacy = presets.legacy_baseline()
+    tested = dict(network=legacy['network'], advanced={**legacy['advanced'], **presets.TESTED})
     saved_file().parent.mkdir(parents=True, exist_ok=True)
-    stored = dict(schema=presets.SETTINGS_SCHEMA, encoders=dict(graph_transformer=dict(legacy, saved_utc='2026-10-03T17:50:40+00:00')))
-    saved_file().write_text(json.dumps(stored))
-    before = saved_file().read_bytes()
-    entry = presets.entry('graph_transformer')
-    assert entry['origin'] == 'gator_baseline' and entry['followed_baseline'] and entry['problem'] is None
-    assert (entry['network'], entry['advanced']) == (presets.gator_baseline()['network'], presets.gator_baseline()['advanced'])
-    assert saved_file().read_bytes() == before and presets.entry('rgcn')['followed_baseline'] is False
-    stored['encoders']['graph_transformer']['saved_utc'] = '2026-10-06T08:00:00+00:00'
-    saved_file().write_text(json.dumps(stored))
-    own = presets.entry('graph_transformer')
-    assert own['origin'] == 'custom' and not own['followed_baseline'] and own['advanced'] == legacy['advanced']
-    edited = dict(legacy, advanced=dict(legacy['advanced'], batch_size=16), saved_utc='2026-10-03T17:50:40+00:00')
-    saved_file().write_text(json.dumps(dict(stored, encoders=dict(graph_transformer=edited))))
-    kept = presets.entry('graph_transformer')                                      # an edited old setting was never the baseline
-    assert kept['origin'] == 'custom' and kept['advanced']['initial_alpha'] == 0.2 and kept['advanced']['batch_size'] == 16
-    pressed = presets.reset('graph_transformer', 'gator_baseline')                 # the button stores the tested values
-    assert pressed['origin'] == 'gator_baseline' and not pressed['followed_baseline']
-    assert json.loads(saved_file().read_text())['encoders']['graph_transformer']['advanced']['updates_per_transition'] == 8
+
+    def read(values, saved_utc):
+        text = json.dumps(dict(schema=presets.SETTINGS_SCHEMA, encoders=dict(graph_transformer=dict(values, saved_utc=saved_utc))))
+        saved_file().write_text(text)
+        entry = presets.entry('graph_transformer')
+        assert saved_file().read_text() == text                                     # reading never rewrites the file
+        return entry
+
+    preset = presets.publication('graph_transformer')
+    for values, saved_utc in ((legacy, '2026-10-03T17:50:40+00:00'), (tested, '2026-10-05T10:00:00+00:00')):
+        entry = read(values, saved_utc)
+        assert entry['origin'] == 'publication' and entry['problem'] is None and entry['saved_utc'] is None, saved_utc
+        assert (entry['network'], entry['advanced']) == (preset['network'], preset['advanced'])
+        assert 'followed_baseline' not in entry
+    # the preset this lands on still learns: the two values that decide it are the tested ones (no random search again)
+    assert {k: preset['advanced'][k] for k in ('initial_alpha', 'updates_per_transition')} == dict(initial_alpha=0.01,
+                                                                                                    updates_per_transition=8)
+    assert json.loads(saved_file().read_text())['encoders']['graph_transformer']['saved_utc'] == '2026-10-05T10:00:00+00:00'
+    own = read(legacy, '2026-10-05T06:00:00+00:00')                                # the schema defaults typed after 7.183
+    assert own['origin'] == 'custom' and own['advanced'] == legacy['advanced']
+    typed = read(tested, '2026-10-06T08:00:00+00:00')                              # the old baseline typed after the deletion
+    assert typed['origin'] == 'custom' and (typed['network'], typed['advanced']) == (tested['network'], tested['advanced'])
+    edited = read(dict(legacy, advanced=dict(legacy['advanced'], batch_size=16)), '2026-10-03T17:50:40+00:00')
+    assert edited['origin'] == 'custom' and edited['advanced']['initial_alpha'] == 0.2 and edited['advanced']['batch_size'] == 16
+    read(legacy, '2026-10-03T17:50:40+00:00')
+    changed = presets.save('graph_transformer', dict(layers=3))                    # an edit starts from the preset, not the old values
+    assert changed['origin'] == 'custom' and changed['network'] == dict(preset['network'], layers=3)
+    assert changed['advanced'] == preset['advanced']
 
 
 def test_every_preset_builds_the_real_network_and_sac_configuration():
@@ -147,20 +197,6 @@ def test_editing_is_stored_per_encoder_and_choosing_reads_it_back():
     assert presets.entry('gatv2')['origin'] == 'publication'                       # other encoders are untouched
     stored = json.loads(saved_file().read_text())
     assert stored['schema'] == presets.SETTINGS_SCHEMA and set(stored['encoders']) == {'rgcn'}
-
-
-def test_reset_returns_to_the_publication_preset_or_stores_the_gator_baseline():
-    presets.save('rgcn', dict(layers=5))
-    back = presets.reset('rgcn', 'publication')
-    assert back['origin'] == 'publication' and 'rgcn' not in json.loads(saved_file().read_text())['encoders']
-    baseline = presets.reset('rgcn', 'gator_baseline')
-    assert (baseline['network'], baseline['advanced']) == (presets.gator_baseline()['network'],
-                                                           presets.gator_baseline()['advanced'])
-    assert baseline['origin'] in ('gator_baseline', 'publication')              # equal only if the preset IS the baseline
-    with pytest.raises(presets.InvalidNetworkSettings):
-        presets.reset('rgcn', 'factory')
-    with pytest.raises(KeyError):
-        presets.reset('lstm', 'publication')
 
 
 def test_editing_back_to_the_preset_values_forgets_the_saved_copy():
@@ -207,14 +243,15 @@ def test_api_serves_the_settings_the_panel_needs(client):
     assert data['attention_encoders'] == ['graph_transformer', 'gatv2'] and data['scale_note']
     assert data['network_fields'] == list(presets.NETWORK_FIELDS) and data['advanced_fields'] == list(presets.ADVANCED_FIELDS)
     assert data['tested']['values'] == presets.TESTED and 'record 7.183' in data['tested']['note']
-    assert data['gator_baseline']['advanced']['updates_per_transition'] == 8 and data['legacy_baseline']['advanced']['updates_per_transition'] == 1
+    assert 'gator_baseline' not in data and data['legacy_baseline']['advanced']['updates_per_transition'] == 1   # record 7.191
+    assert data['learned'] == presets.LEARNED                                                                     # record 7.192
     for encoder, entry in data['settings'].items():
         assert entry['uses_heads'] == (encoder in ('graph_transformer', 'gatv2'))
         assert set(entry['network']) == set(presets.NETWORK_FIELDS) and set(entry['advanced']) == set(presets.ADVANCED_FIELDS)
         assert set(entry['provenance']) == set(ALL_FIELDS) and entry['origin'] == 'publication'
 
 
-def test_api_edit_reset_and_rejections(client):
+def test_api_edit_and_rejections(client):
     put = client.put('/api/network-settings/gatv2', json=dict(network=dict(hidden_dim=48, heads=6), advanced=dict(learning_rate=1e-3)))
     assert put.status_code == 200 and put.json()['origin'] == 'custom' and put.json()['advanced']['learning_rate'] == 1e-3
     assert client.get('/api/network-settings').json()['settings']['gatv2']['network']['heads'] == 6
@@ -222,10 +259,11 @@ def test_api_edit_reset_and_rejections(client):
     assert bad.status_code == 422 and 'divisible' in bad.json()['detail']['message']
     assert client.put('/api/network-settings/gatv2', json=dict(network=dict(hidden_dim=48), host='x')).status_code == 422
     assert client.put('/api/network-settings/lstm', json=dict(network=dict(hidden_dim=48))).status_code == 404
-    assert client.post('/api/network-settings/gatv2/reset', json=dict(to='factory')).status_code == 422
-    assert client.post('/api/network-settings/lstm/reset', json=dict(to='publication')).status_code == 404
-    reset = client.post('/api/network-settings/gatv2/reset', json=dict(to='publication'))
-    assert reset.status_code == 200 and reset.json()['origin'] == 'publication'
+    preset = presets.publication('gatv2')                     # typed back to the preset: the saved copy is forgotten
+    back = client.put('/api/network-settings/gatv2', json=preset)
+    assert back.status_code == 200 and back.json()['origin'] == 'publication'
+    # the two preset buttons and the reset route behind them are gone (record 7.191)
+    assert client.post('/api/network-settings/gatv2/reset', json=dict(to='publication')).status_code == 404
 
 
 def test_a_configuration_built_from_any_preset_passes_the_run_schema(tmp_path):
@@ -239,15 +277,16 @@ def test_a_configuration_built_from_any_preset_passes_the_run_schema(tmp_path):
 
 
 def test_the_default_encoder_preset_trains_end_to_end_on_the_mock_backend(tmp_path):
-    """Not only valid numbers: the engine runs with them (48-wide 4-layer graph transformer, batch 32, replay 50)."""
+    """Not only valid numbers: the engine runs with them (48-wide 4-layer graph transformer, batch 8, 8 updates per
+    evaluation, discount 0)."""
     from helpers import execute, rows
     values = presets.publication('graph_transformer')
-    config = make_config(tmp_path, run=dict(max_evaluations=45, network=dict(encoder_type='graph_transformer', **values['network'])),
+    config = make_config(tmp_path, run=dict(max_evaluations=16, network=dict(encoder_type='graph_transformer', **values['network'])),
                          advanced=values['advanced'])
     layout, state = execute(config, tmp_path)
     assert state == 'completed'
     updates = rows(layout, 'learner_updates')
-    assert updates and all(update['batch_size'] == 32 for update in updates)     # one batch was filled and used
+    assert updates and all(update['batch_size'] == 8 for update in updates)      # one batch was filled and used
     sources = {row['action_source'] for row in rows(layout, 'evaluations')}
     assert {'random_warmup', 'sac_policy'} <= sources                           # warm-up ended, the policy acted
 
@@ -275,7 +314,6 @@ def test_gat_v1_is_rejected_without_migrating_saved_settings(client):
     assert current['settings']['gatv2']['network'] == presets.publication('gatv2')['network']
     assert saved_file().read_bytes() == before
     assert client.put('/api/network-settings/gat', json=dict(network=dict(hidden_dim=32))).status_code == 404
-    assert client.post('/api/network-settings/gat/reset', json=dict(to='publication')).status_code == 404
     with pytest.raises(ValidationError, match=r'gat \(GATv1\) was replaced by gatv2'):
         schema.NetworkConfig(encoder_type='gat')
 
@@ -288,7 +326,6 @@ def test_removed_encoders_are_gone_from_the_list_and_refused_in_words(client,enc
     assert data['encoders'] == list(schema.ENCODER_TYPES) == ['graph_transformer','rgcn','gatv2']
     assert encoder not in data['settings'] and encoder not in presets.PRESETS
     assert client.put(f'/api/network-settings/{encoder}', json=dict(network=dict(hidden_dim=32))).status_code == 404
-    assert client.post(f'/api/network-settings/{encoder}/reset', json=dict(to='publication')).status_code == 404
     with pytest.raises(KeyError):
         presets.entry(encoder)
     with pytest.raises(ValidationError) as caught:

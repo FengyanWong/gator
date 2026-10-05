@@ -72,7 +72,7 @@ await runChecks(browser, async () => {
   const one = await evaluate(SHOWN);
   const texts = p => ['variable_id', 'instance_path', 'parameter_name', 'unit', 'binding_group', 'notes'].map(f => p[f] ?? '').join('\n').toLowerCase();
   check('a find shows only the rows that hold the text - a folded tied row too - and counts them', JSON.stringify(one) === JSON.stringify(P.filter(p => texts(p).includes(followerRow.instance_path.toLowerCase())).map(p => p.variable_id))
-    && one.includes(follower) && (await evaluate(`document.querySelector('.toolbar .find-count')?.textContent`)) === `${one.length} of ${ids.length}`,
+    && one.includes(follower) && (await evaluate(`document.querySelector('.toolbar .find-count')?.textContent`)) === `${one.length}/${ids.length}`,
     `${JSON.stringify(one)} ${await evaluate(`document.querySelector('.toolbar .find-count')?.textContent`)}`);
   check('...and a chosen cell whose row went out of view is let go', one.includes(lead) || (await evaluate(`document.querySelector('.formula-bar .formula-where').textContent`)) === 'No cell chosen',
     await evaluate(`document.querySelector('.formula-bar .formula-where').textContent`));
@@ -104,7 +104,7 @@ await runChecks(browser, async () => {
   await ctrl('d', 68);
   check('Ctrl+D: the cell takes the value of the row above in view', await storedUntil(`c.parameters.find(p => p.variable_id === ${JSON.stringify(last)})?.upper === ${JSON.stringify(aboveUpper)}`),
     `${await stored(`c.parameters.find(p => p.variable_id === ${JSON.stringify(last)})?.upper`)} / ${aboveUpper}`);
-  check('...said under the formula bar', (await evaluate(NOTE)).startsWith(`Filled 1 cell with upper = ${aboveUpper} of ${above}`), await evaluate(NOTE));
+  check('...said under the formula bar', (await evaluate(NOTE)).startsWith(`Filled 1 cell with Upper = ${aboveUpper} of ${above}`), await evaluate(NOTE));
   await evaluate(UNDO);
   check('...one Undo step takes it back', await storedUntil(`c.parameters.find(p => p.variable_id === ${JSON.stringify(last)})?.upper === ${JSON.stringify(P.find(p => p.variable_id === last).upper)}`));
   const top = inView[0], notesOf = Object.fromEntries(P.map(p => [p.variable_id, p.notes ?? '']));
@@ -115,7 +115,7 @@ await runChecks(browser, async () => {
   check('Ctrl+D in a ticked row: the topmost ticked row\'s value goes into every other ticked row in view, folded rows left out',
     await storedUntil(`${JSON.stringify(inView)}.every(id => c.parameters.find(p => p.variable_id === id)?.notes === 'FIXTURE fill') && c.parameters.find(p => p.variable_id === ${JSON.stringify(follower)})?.notes !== 'FIXTURE fill'`),
     JSON.stringify(await stored(`c.parameters.map(p => [p.variable_id, p.notes])`)));
-  check('...as one Undo step', (await evaluate(NOTE)).startsWith(`Filled ${inView.length - 1} cells with notes = FIXTURE fill of ${top} (one Undo step).`), await evaluate(NOTE));
+  check('...as one Undo step', (await evaluate(NOTE)).startsWith(`Filled ${inView.length - 1} cells with Notes = FIXTURE fill of ${top} (one Undo step).`), await evaluate(NOTE));
   await evaluate(UNDO);
   check('...which one Undo takes back', await storedUntil(`${JSON.stringify(inView.slice(1))}.every(id => (c.parameters.find(p => p.variable_id === id)?.notes ?? '') === ${JSON.stringify(notesOf)}[id])
     && c.parameters.find(p => p.variable_id === ${JSON.stringify(top)})?.notes === 'FIXTURE fill'`));
@@ -130,7 +130,7 @@ await runChecks(browser, async () => {
   await evaluate(`${ROW(lead)}.querySelector('.tie-toggle').click()`); await sleep(200);
   await choose(BOX(last, 'variable_id'));
   await ctrl('d', 68);
-  check('an ID is not filled down', (await evaluate(NOTE)) === 'An ID is not filled down: each row needs its own variable_id.' && (await stored(`c.parameters.some(p => p.variable_id === ${JSON.stringify(last)})`)), await evaluate(NOTE));
+  check('an ID is not filled down', (await evaluate(NOTE)) === 'An ID is not filled down: each row needs its own ID.' && (await stored(`c.parameters.some(p => p.variable_id === ${JSON.stringify(last)})`)), await evaluate(NOTE));
 
   // ---- Ctrl+C and Copy ---------------------------------------------------------------------------------------------------------------
   const heads = await evaluate(`[...document.querySelectorAll('table.editor thead th[data-field]')].map(h => h.textContent.replace(/ \\*$/, ''))`);
@@ -140,7 +140,7 @@ await runChecks(browser, async () => {
   await ctrl('c', 67);
   const aboveLower = String(await stored(`c.parameters.find(p => p.variable_id === ${JSON.stringify(above)}).lower`));
   check('Ctrl+C in a cell: the cell alone, the number as stored', (await evaluate('window.__copied')) === aboveLower
-    && (await evaluate(NOTE)) === `Copied lower of ${above}: ${aboveLower}.`, `${await evaluate('window.__copied')} | ${await evaluate(NOTE)}`);
+    && (await evaluate(NOTE)) === `Copied Lower of ${above}: ${aboveLower}.`, `${await evaluate('window.__copied')} | ${await evaluate(NOTE)}`);
   await tick(above); await tick(last);
   await choose(BOX(last, 'lower'));
   await ctrl('c', 67);
@@ -171,6 +171,19 @@ await runChecks(browser, async () => {
     && pairRows.every((id, i) => all[i + 1].startsWith(`${id}\t`)), JSON.stringify({ all, pairRows }));
   await page.shot(path.join(out, 'find-2-copied.png'), `document.querySelector('.editors')`, { maxHeight: 520 });
   await findText('');
+
+  // ---- the toolbar on one line at 1366 x 768 (record 7.185), a find too -----------------------------------------------------------------
+  const toolbarLines = () => evaluate(`new Set([...document.querySelector('section.editors .toolbar').children].filter(c => c.offsetParent && !c.classList.contains('spacer'))
+    .map(c => Math.round((c.getBoundingClientRect().top + c.getBoundingClientRect().bottom) / 2 / 20))).size`);
+  await send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false }); await sleep(500);
+  const idle = await toolbarLines();
+  await findText('pair');
+  const finding = await toolbarLines(), box = await evaluate(`Math.round(document.querySelector('.toolbar .find-box').getBoundingClientRect().width)`);
+  await page.shot(path.join(out, 'find-3-1366.png'), `document.querySelector('.editors')`, { maxHeight: 260 });
+  check('at 1366 x 768 the toolbar stays on one line, while finding too (the count sits inside the box)', idle === 1 && finding === 1 && box >= 80, JSON.stringify({ idle, finding, box }));
+  await findText('');
+  await send('Emulation.clearDeviceMetricsOverride'); await sleep(300);
+  check('...and on a wide window the box is 170 px', (await evaluate(`Math.round(document.querySelector('.toolbar .find-box').getBoundingClientRect().width)`)) === 170);
 
   // ---- one write path: a pasted output name, a pasted limit ----------------------------------------------------------------------
   await evaluate(`${TAB('measurements')}.click()`); await sleep(300);

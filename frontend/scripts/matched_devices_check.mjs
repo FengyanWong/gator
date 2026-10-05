@@ -48,7 +48,7 @@ await runChecks(browser, async () => {
   const BUTTON = (scope, text) => `[...${scope}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const TOOLBAR = `${EDITORS}.querySelector('.toolbar')`;
   const press = (scope, text) => evaluate(`${BUTTON(scope, text)}.click()`);
-  const CELL = (row, name) => `(() => { const at = [...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.textContent.replace(' *', '').trim()).indexOf(${JSON.stringify(name)});
+  const CELL = (row, name) => `(() => { const at = [...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.dataset.field ?? h.textContent.replace(' *', '').trim()).indexOf(${JSON.stringify(name)});
     return ${EDITORS}.querySelectorAll('table.editor tbody tr')[${row}].children[at].querySelector('input, select'); })()`;
   const cell = (row, name) => evaluate(`${CELL(row, name)}.value`);
   const boxText = () => evaluate(`${BOX}?.textContent ?? ''`);

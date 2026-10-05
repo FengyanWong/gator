@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { readWithDeadline, type Json } from './api';
 
-const STORAGE_KEY = 'gator-workbench-config-v1';
+export const STORAGE_KEY = 'gator-workbench-config-v1';
 const HISTORY_LIMIT = 100;
 
 /** The reward a new configuration starts with, and the one the run panel describes in a sentence (record 7.183, compared

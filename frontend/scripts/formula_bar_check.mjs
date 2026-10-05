@@ -48,7 +48,7 @@ await runChecks(browser, async () => {
   const first = await evaluate(`document.activeElement === ${CELL(0, 'notes')}.querySelector('input')`);
   const before = config.parameters[0];
   check('a chosen cell is marked, and the bar names it (column and row ID) with its whole value', first && await evaluate(`${CELL(0, 'notes')}.classList.contains('active-cell')`)
-    && await evaluate(`${WHERE}.textContent === ${JSON.stringify(`notes · ${before.variable_id}`)} && ${BAR}.value === ${JSON.stringify(before.notes ?? '')} && !${BAR}.readOnly`),
+    && await evaluate(`${WHERE}.textContent === ${JSON.stringify(`Notes · ${before.variable_id}`)} && ${BAR}.value === ${JSON.stringify(before.notes ?? '')} && !${BAR}.readOnly`),
     await evaluate(`${WHERE}.textContent + ' | ' + ${BAR}.value`));
   check('the name of the cell carries its column\'s format in its tooltip', await evaluate(`${WHERE}.title.startsWith('notes (string') && ${WHERE}.title.includes('Free text')`), await evaluate(`${WHERE}.title`));
   const widths = await evaluate(`({ bar: ${BAR}.getBoundingClientRect().width, cell: ${CELL(0, 'notes')}.getBoundingClientRect().width })`);
@@ -77,7 +77,7 @@ await runChecks(browser, async () => {
   check('another tab: no cell chosen', await evaluate(`${WHERE}.textContent === 'No cell chosen'`));
   const spec = config.targets[0];
   await click(`${CELL(0, 'lower')}.querySelector('input')`);
-  check('a number cell is named in the bar', await evaluate(`${WHERE}.textContent === ${JSON.stringify(`lower · ${spec.metric_id}`)}`), await evaluate(`${WHERE}.textContent`));
+  check('a number cell is named in the bar', await evaluate(`${WHERE}.textContent === ${JSON.stringify(`Lower · ${spec.metric_id}`)}`), await evaluate(`${WHERE}.textContent`));
   await typeInBar('abc');
   await press(...key('Enter', 'Enter', 13));
   check('"abc" is refused in words, the cell unchanged, the bar still in hand', await evaluate(`document.querySelector('.formula-problem')?.textContent.includes('is not a number')`)

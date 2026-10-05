@@ -11,7 +11,9 @@
 //     that a leader decides are kept;
 //   - (record 7.182) the tick box and the row's ID stay at the left while the table scrolls sideways, the ID right beside the
 //     tick box on Parameters (whose tick-box column a tie toggle widens) and on Specs (a narrow one), also when that column
-//     changes size with no new render; nothing covers them, and nothing passing under shows through them.
+//     changes size with no new render; nothing covers them, and nothing passing under shows through them;
+//   - (record 7.188) the headers in plain words, each field name in its header's tooltip and on the help line a press opens;
+//     Ctrl+Z and Ctrl+Y in a cell are the toolbar's Undo and Redo.
 // Run: bash frontend/scripts/run_checks.sh --only sheet_check. About 20 s.
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
@@ -20,6 +22,7 @@ const APP = await workbenchUrl();
 const out = outDir();
 const browser = await launchEdge('sheet');
 const ROW = n => `document.querySelector('table.editor tbody > tr:nth-child(${n + 1})')`;
+const TABS = key => `[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.dataset.editor === ${JSON.stringify(key)})`;
 const BOX = (n, field) => `${ROW(n)}.querySelector('td[data-field="${field}"]').querySelector('input, select')`;
 
 await runChecks(browser, async () => {
@@ -85,7 +88,7 @@ await runChecks(browser, async () => {
   check('one Undo takes the whole block back', await page.until(stored(`${JSON.stringify(block)}.every(n => c.parameters[n].lower === ${JSON.stringify(config.parameters.map(p => p.lower))}[n])`), 30));
   await paste(block[0], 'lower', 'abc\t4e-6');
   check('a text the column cannot read is named and left as it was; the rest is taken', await page.until(stored(`c.parameters[${block[0]}].upper === 4e-6`), 30)
-    && (await evaluate(`document.querySelector('.paste-note').textContent`)).includes('Not read, left as they were: "abc" in lower')
+    && (await evaluate(`document.querySelector('.paste-note').textContent`)).includes('Not read, left as they were: "abc" in Lower')
     && await evaluate(stored(`c.parameters[${block[0]}].lower === ${JSON.stringify(config.parameters[block[0]].lower)}`)), await evaluate(`document.querySelector('.paste-note')?.textContent`));
   const last = shownRows[shownRows.length - 1];
   await paste(last, 'notes', 'a\nb\nc');
@@ -159,6 +162,28 @@ await runChecks(browser, async () => {
     }
     await evaluate(`document.querySelector('section.editors .scroll').style.maxWidth = ''`);
   }
+
+  // ---- the headers in plain words, the field names in their tooltips (record 7.188) -----------------------------------------------------
+  await evaluate(`${TABS('parameters')}.click()`); await sleep(400);
+  const heads = await evaluate(`[...document.querySelectorAll('table.editor thead th[data-field]')].map(h => [h.dataset.field, h.textContent.replace(/ \\*$/, ''), h.title.split(':')[0]])`);
+  check('the headers read in plain words, each with its field name in its tooltip', JSON.stringify(heads.slice(0, 3).map(h => h[1])) === JSON.stringify(['ID', 'Instance', 'Parameter'])
+    && heads.some(([f, l]) => f === 'binding_group' && l === 'Tied to') && heads.every(([f, , t]) => t === f), JSON.stringify(heads));
+  await evaluate(`document.querySelector('table.editor thead th[data-field="binding_group"]').click()`); await sleep(200);
+  const help = await evaluate(`document.querySelector('.editors p.guidance')?.textContent ?? ''`);
+  check('...and a header press names both on the help line', help.startsWith('Tied to (binding_group, string'), help);
+  await evaluate(`document.querySelector('.editors p.guidance').click()`);
+
+  // ---- Ctrl+Z and Ctrl+Y in a cell (record 7.188) ------------------------------------------------------------------------------------
+  const ctrlKey = async (k, vk) => { for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: k, code: `Key${k.toUpperCase()}`, windowsVirtualKeyCode: vk, modifiers: 2 }); await sleep(250); };
+  const first = shownRows[0], noteBefore = await evaluate(stored(`c.parameters[${first}].notes ?? ''`));
+  await page.setValue(BOX(first, 'notes'), 'FIXTURE undo me', { event: 'input', focus: true });
+  await page.until(stored(`c.parameters[${first}].notes === 'FIXTURE undo me'`), 30);
+  await evaluate(`${BOX(first, 'notes')}.focus()`); await sleep(150);
+  await ctrlKey('z', 90);
+  check('Ctrl+Z in a cell is the toolbar\'s Undo: the whole entry goes back, in the cell too', await page.until(stored(`(c.parameters[${first}].notes ?? '') === ${JSON.stringify(noteBefore)}`), 30)
+    && (await evaluate(`${BOX(first, 'notes')}.value`)) === noteBefore, await evaluate(`${BOX(first, 'notes')}.value`));
+  await ctrlKey('y', 89);
+  check('...and Ctrl+Y redoes it', await page.until(stored(`c.parameters[${first}].notes === 'FIXTURE undo me'`), 30) && (await evaluate(`${BOX(first, 'notes')}.value`)) === 'FIXTURE undo me');
 
   reportRefused(page.refused, NEVER_ASKED_OR_SAVED);
   check('no console error', !consoleErrors.length, consoleErrors.slice(0, 3).join(' | '));

@@ -30,7 +30,7 @@ await runChecks(browser, async () => {
   const until = (expression, tries = 100) => page.until(expression, tries);
   const EDITORS = `document.querySelector('.editors')`;
   const openTab = name => evaluate(`[...${EDITORS}.querySelectorAll('.tabs button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(name)})).click()`);
-  const headers = () => evaluate(`[...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.textContent.replace(' *', '').trim())`);
+  const headers = () => evaluate(`[...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.dataset.field ?? h.textContent.replace(' *', '').trim())`);   // fields: the headers read in plain words (record 7.188)
   // A column by its field name (the header's data-field): a header may show a label instead ("Missing value = failed").
   const CELL = (row, name) => `(() => { const at = [...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.dataset.field).indexOf(${JSON.stringify(name)});
     return ${EDITORS}.querySelectorAll('table.editor tbody tr')[${row}].children[at].querySelector('input, select'); })()`;
@@ -191,7 +191,10 @@ await runChecks(browser, async () => {
     await until(`/neither a workbench configuration/.test(${EDITORS}.querySelector('.error')?.textContent ?? '') && !document.querySelector('.editors .confirm')`),
     await evaluate(`${EDITORS}.querySelector('.error')?.textContent ?? 'no message'`));
 
-  // With training corners planned, each spec's "Judged at" matters again, and the column is there.
+  // With training corners planned, each spec's "Judged at" matters again, and the column is there. The page's own save comes
+  // first: a save still due could land between the write below and the reload and put the configuration without corners back
+  // (seen once in a full run under load, record 7.188).
+  await page.saved();
   const withCorners = await page.stored();
   withCorners.run = { ...withCorners.run, conditions: { policy: 'always', corners: ['ss_hot_low'] } };
   await evaluate(`localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(withCorners))}); window.__beforeReload = true`);

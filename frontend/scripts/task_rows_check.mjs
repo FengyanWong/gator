@@ -99,7 +99,7 @@ await runChecks(browser, async () => {
   const setInput = (element, v) => page.setValue(`${element}`, v, { event: 'input' });
   const strip = () => evaluate(`[...${EDITORS}.querySelectorAll('.tabs button')].map(b => b.textContent.trim()).join(' | ')`);
   const openTab = name => evaluate(`[...${EDITORS}.querySelectorAll('.tabs button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(name)})).click()`);
-  const column = name => evaluate(`(() => { const head = [...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.textContent.replace(' *', '').trim()), at = head.indexOf(${JSON.stringify(name)});
+  const column = name => evaluate(`(() => { const head = [...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.dataset.field ?? h.textContent.replace(' *', '').trim()), at = head.indexOf(${JSON.stringify(name)});
     return [...${EDITORS}.querySelectorAll('table.editor tbody tr')].map(r => { const c = r.children[at]?.querySelector('input, select'); return c ? c.value : null; }); })()`);
   const note = () => evaluate(`${PANEL}.querySelector('.task-rows')?.textContent ?? ''`);
   const config = async () => { await page.saved(); return page.stored(); };       // after the page's 800 ms save, however late
@@ -145,7 +145,7 @@ await runChecks(browser, async () => {
     && !specHeadsBefore.includes('hard') && !specHeadsBefore.includes('normalization_scale')
     && (await evaluate(`${EDITORS}.querySelector('th[data-field="normalization_scale"]')?.textContent.trim()`)) === 'Scale',
     `${JSON.stringify(hard)} ${JSON.stringify(specHeadsBefore)} ${JSON.stringify(specHeads)}`);
-  await until(`[...${EDITORS}.querySelectorAll('table.editor thead th')].some(h => h.textContent.trim() === 'basis')`);
+  await until(`!!${EDITORS}.querySelector('table.editor thead th[data-field="basis"]')`);
   const basis = await column('basis');
   await evaluate(`${moreColumns}.click()`);
   check('every target states where it comes from', basis.every(b => /of record/.test(b)), JSON.stringify(basis.slice(0, 1)));

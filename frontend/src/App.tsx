@@ -15,6 +15,7 @@ import { OutputPanel, ResearchPanel, RunPanel } from './panels/Right';
 import { AgentTab } from './panels/AgentTab';
 import { DataTab, FilesTab, LogsTab, StatusTab } from './panels/RunTabs';
 import { CornerCheckTab } from './panels/CornerCheck';
+import { CrashPanel } from './panels/CrashPanel';
 
 type BottomTab = 'agent' | 'status' | 'logs' | 'data' | 'files' | 'corners';
 
@@ -54,8 +55,15 @@ const storedBottom = (): Bottom => {
  *  right = run configuration + output settings (always visible); bottom = agent, logs, status, data, files.
  *  Tables, numbers, status and file lists - nothing is plotted. On screen only, by user decision, two pictures of the
  *  circuit: the graph view (2026-09-21) and the circuit picture in the left column (2026-10-03); nothing drawn is written. */
+/** The page under its crash panel (record 7.188, design advice): the configuration and its Undo history live above the panel,
+ *  so a failure to draw any part of the page - this function's own work included - is shown with Undo, Export JSON and Reload
+ *  instead of a blank page, and Undo draws the page again from the configuration before the last change. */
 export function App() {
   const store = useConfig();
+  return <CrashPanel undo={store.undo} canUndo={store.canUndo} config={store.config}><Page store={store} /></CrashPanel>;
+}
+
+function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const { config, setConfig } = store;
   const [schema, setSchema] = useState<Json>(null);
   const [meta, setMeta] = useState<Json>(null);

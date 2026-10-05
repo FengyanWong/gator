@@ -115,7 +115,7 @@ The header has one main run button and **Abort** next to it. The main button cha
   While a run is active or paused in the header, "Single baseline simulation" is not available. A finished
   Single baseline simulation of a task saved from a cell records its result as the task's reference by itself
   (status record 7.78): once the run has come to rest the Project column reads the task again and no longer
-  says "no real baseline yet".
+  says "No real baseline yet" (one line since record 7.188, its explanation in the line's tooltip).
 * A real run asks for the budget again at Resume (what is left of it). A run that was started with checkpoints or
   replay snapshots switched off cannot come back from a pause; Pause says so before it pauses.
 * The run commands are in the header only (status record 7.109, 2026-09-29, user decision): the Run status tab's
@@ -216,6 +216,14 @@ the fields stay in their panels, and the circuit panel puts them in the header. 
 into the tooltip of the name GATOR. Since record 7.182 the **Connection** button is the block's last cell (user: "move the
 conection button to the header"), and the task name has left it (user: "remove the current task name on the header"):
 the Project column's Task list names the task.
+
+**When the page cannot be drawn** (record 7.188, design advice). A failure while drawing the page used to leave it blank.
+Now a panel names the error and offers the ways out. **Undo the last change** draws the page again from the configuration
+before the last change: the configuration and its Undo history sit above the panel, so they outlive the failure. **Export
+JSON** downloads the configuration as it is, and **Reload** opens the page again. When there is nothing to undo - the
+configuration saved in this browser already fails when the page opens - **Start from an empty configuration...** downloads
+the saved one first and opens the page empty. "Details for a bug report" holds the error's stack. A second panel around
+everything catches a failure above that one, without an Undo. Browser check: `frontend/scripts/crash_panel_check.mjs`.
 
 **The splitter above the bottom panel.** Drag the top edge of the bottom panel to give it more or less room;
 double-click it to fold the panel down to its tab line, and again to open it. From the keyboard: Tab to it, then the
@@ -435,8 +443,9 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   (each cell its right and bottom line), so the tick box and the ID carry theirs along and cover what passes under them.
 - **Find rows** (record 7.184, design advice 4). The box in the toolbar keeps in view only the rows whose text cells in view
   hold every word typed, not case-sensitive, folded or not: the ID, instance path, parameter, unit, leader and notes; a
-  Probe's output name and expression; a spec's equation. Beside it, how many of the table's rows that is. Enter goes to the
-  first of them, Esc clears the box, and each table keeps its own text. The keys, a pasted block, Ctrl+D, Ctrl+C, Copy and
+  Probe's output name and expression; a spec's equation. Inside its right end, how many of the table's rows that is (3/16).
+  The box shrinks with the window, from 170 px down to 80 px, so the toolbar stays on one line at 1366 px (record 7.185).
+  Enter goes to the first of them, Esc clears the box, and each table keeps its own text. The keys, a pasted block, Ctrl+D, Ctrl+C, Copy and
   Delete selected work on the rows in view: a ticked row out of view stays ticked and is not deleted, and a chosen cell whose
   row went out of view is let go.
 - **Fill down** (Ctrl+D, record 7.184). In a ticked row, with more rows ticked, the column takes the value of the topmost
@@ -454,6 +463,14 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   spec whose equation becomes one Probe takes its unit while it has no limits; an untouched scale follows its limits; a
   limit written without its objective keeps the objective only where the two still pair (≥ with "higher is better", ≤
   with "lower is better", an interval with either), and otherwise has none.
+- **Headers in plain words** (record 7.188). The editor tables' headers read ID, Instance, Parameter, Unit, Optimized, Lower,
+  Upper, Tied to and Notes; Probe ID, Analysis, Output name and Expression; Spec ID, Equation, Limit, Hard and the rest. The
+  field names - what the task files, Export JSON and the agent use - stay in each header's tooltip, in the formula bar's
+  format note and on the help line a header press opens. A copied block's header line reads as the headers do, and a paste
+  back skips a header line of either kind.
+- **Ctrl+Z and Ctrl+Y** (record 7.188). In a cell, Ctrl+Z and Ctrl+Y (or Ctrl+Shift+Z) are the toolbar's Undo and Redo, as
+  in a spreadsheet: a cell's typing is one Undo step, so the whole entry goes back at once. The formula bar keeps the
+  browser's own undo of its text.
 
 Browser checks: `frontend/scripts/sheet_check.mjs`, `frontend/scripts/find_fill_copy_check.mjs`.
 

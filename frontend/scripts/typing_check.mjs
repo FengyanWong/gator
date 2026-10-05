@@ -71,7 +71,7 @@ await runChecks(browser, async () => {
   const EDITORS = `document.querySelector('section.editors')`;
   const openTab = name => evaluate(`[...${EDITORS}.querySelectorAll('.tabs > button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(name)})).click()`);
   const TOOL = text => `[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
-  const CELL = (row, name) => `(() => { const at = [...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.textContent.replace(' *', '').trim()).indexOf(${JSON.stringify(name)});
+  const CELL = (row, name) => `(() => { const at = [...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.dataset.field ?? h.textContent.replace(' *', '').trim()).indexOf(${JSON.stringify(name)});
     return ${EDITORS}.querySelectorAll('table.editor tbody tr')[${row}]?.children[at]?.querySelector('input, select'); })()`;
   const LABELLED = (scope, label) => `[...document.querySelectorAll(${JSON.stringify(scope + ' label')})].find(l => l.firstChild?.textContent?.trim() === ${JSON.stringify(label)})?.querySelector('input, select')`;
   const shot = (name, what) => page.shot(path.join(out, name), what);

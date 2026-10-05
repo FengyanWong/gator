@@ -160,7 +160,7 @@ try {
 
   // ---- rows someone edited are never replaced by themselves ------------------------------------------------------------------------
   await evaluate(`[...document.querySelectorAll('section.editors .tabs button')].find(b => b.textContent.startsWith('Probes')).click()`); await sleep(300);
-  const notesColumn = await evaluate(`[...document.querySelectorAll('section.editors table.editor thead th')].findIndex(th => th.textContent.replace(' *', '') === 'notes')`);
+  const notesColumn = await evaluate(`[...document.querySelectorAll('section.editors table.editor thead th')].findIndex(th => th.dataset.field === 'notes')`);
   await evaluate(`(() => { const i = document.querySelector('section.editors table.editor tbody tr:first-child td:nth-child(${notesColumn + 1}) input'); i.focus(); i.select(); })()`);
   await send('Input.insertText', { text: 'my own note' }); await sleep(300);
   mark = calls.length;

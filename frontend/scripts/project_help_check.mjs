@@ -224,7 +224,8 @@ try {
 
   // ---- a saved task: in the column -----------------------------------------------------------------------------------------
   await evaluate(`${TASK_BUTTON('Save task')}.click()`, true); await quiet(); await until(`${PANEL}.textContent.includes('Before every run')`);
-  check('saved task: the missing-baseline warning stays in view, in the column; no REAL banner (removed, record 7.156)', !(await col.present('REAL evaluation backend')) && await col.shown('This task has no real baseline yet'));
+  check('saved task: the missing-baseline warning stays in view, in the column; no REAL banner (removed, record 7.156)', !(await col.present('REAL evaluation backend')) && await col.shown('No real baseline yet: run Single baseline simulation first.')
+    && (await evaluate(`[...document.querySelectorAll('.left p.warn')].find(p => p.textContent.startsWith('No real baseline yet'))?.title ?? ''`)).includes("becomes the task's reference by itself"));
   check('saved task: "Before every run" and "Check now" stay in view; no manual baseline button (a baseline records itself)', await col.shown('Before every run:')
     && await col.buttonShown('Check now') && !(await col.buttonShown('Record the baseline run as reference')));
   check('saved task: what the check compares is folded', await col.shown('What the check compares') && await col.folded('no ADE/Maestro window may be open on the copy'));

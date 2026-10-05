@@ -166,6 +166,17 @@ function FormulaBar({ cell, commit, back }: { cell: BarCell | null; commit: (tex
     </div>);
 }
 
+/** The editor tables' headers in plain words (record 7.188); the field names - what the task files, Export JSON and the agent
+ *  use - stay in each header's tooltip, in the formula bar's format note and on the help line a header press opens. The few
+ *  columns that had a word of their own keep it (Expression, Judged at, Missing value = failed, Margin sides, Scale). */
+const LABELS: Record<string, Record<string, string>> = {
+  parameters: { variable_id: 'ID', instance_path: 'Instance', parameter_name: 'Parameter', initial_value: 'Initial value', unit: 'Unit', optimized: 'Optimized',
+    value_type: 'Value type', lower: 'Lower', upper: 'Upper', step: 'Step', scale: 'Search scale', binding_group: 'Tied to', ratio: 'Ratio', notes: 'Notes' },
+  measurements: { measurement_id: 'Probe ID', analysis: 'Analysis', result_source: 'Result source', source_name: 'Output name', unit: 'Unit', notes: 'Notes' },
+  targets: { metric_id: 'Spec ID', equation: 'Equation', unit: 'Unit', constraint: 'Limit', lower: 'Lower', upper: 'Upper', hard: 'Hard',
+    direction_after_feasible: 'Objective', soft_weight: 'Soft weight', active: 'Active', basis: 'Basis' },
+};
+
 // What a follower row (binding_group set) leaves to its leader: the written value is the leader's times the ratio, so its own
 // bounds, step, scale, type and "optimized" do nothing (Save task even clears its bounds).
 const FOLLOWER_IGNORES = ['optimized', 'value_type', 'lower', 'upper', 'step', 'scale'];
@@ -232,7 +243,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   });
   // `signal` holds a Maestro output's expression (ymax(VT("/OUT")), getData(... ?result "stb")): "signal" read like a
   // net name (review of 2026-10-03). For a profile metric it is a label of what is measured.
-  const columns: Json[] = schema.editors[tab].map((c: Json) => tab === 'measurements' && c.name === 'signal' ? { ...c, label: 'Expression' }
+  const columns: Json[] = schema.editors[tab].map((c: Json) => ({ ...c, label: c.label ?? LABELS[tab]?.[c.name] })).map((c: Json) => tab === 'measurements' && c.name === 'signal' ? { ...c, label: 'Expression' }
     : tab !== 'targets' ? c : c.name === 'nominal_only'
     ? { ...c, label: 'Judged at' } : c.name === 'missing_is_failure' ? { ...c, label: 'Missing value = failed' } : c.name === 'margin_sides' ? { ...c, label: 'Margin sides' }
     : c.name === 'constraint' ? { ...c, guidance: c.guidance + ' "then lower / higher is better" is the objective: among the designs that pass '
@@ -441,6 +452,13 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   };
   const onTableKey = (e: React.KeyboardEvent) => {
     const box = e.target as HTMLElement, cell = box.closest<HTMLElement>('td[data-field]');
+    // Ctrl+Z and Ctrl+Y (or Ctrl+Shift+Z) are the toolbar's Undo and Redo here, as in a spreadsheet (record 7.188): a cell's typing
+    // is one Undo step, so the whole entry goes back at once; the formula bar keeps the browser's own undo of its text.
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[zy]$/i.test(e.key)) {
+      e.preventDefault();
+      (e.key.toLowerCase() === 'y' || e.shiftKey ? redo : undo)();
+      return;
+    }
     // Ctrl+D fills down and Ctrl+C copies out (record 7.184); with text chosen inside the box Ctrl+C copies that text, as ever.
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && cell && /^[dc]$/i.test(e.key)) {
       const chosenText = box instanceof HTMLInputElement && box.type !== 'checkbox' && box.selectionStart !== box.selectionEnd;
@@ -504,24 +522,24 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // pastes into the box as before.
   const readAs = (c: Json, raw: string): { value?: Json; problem?: string } => {
     const s = raw.trim();
-    if (c.name === 'nominal_only') return /^nominal/i.test(s) ? { value: true } : /^all/i.test(s) ? { value: false } : { problem: `"${s}" in ${c.name}` };
-    if (c.type === 'boolean') return /^(true|yes|on|1|x|✓)$/i.test(s) ? { value: true } : /^(false|no|off|0|)$/i.test(s) ? { value: false } : { problem: `"${s}" in ${c.name}` };
+    if (c.name === 'nominal_only') return /^nominal/i.test(s) ? { value: true } : /^all/i.test(s) ? { value: false } : { problem: `"${s}" in ${c.label ?? c.name}` };
+    if (c.type === 'boolean') return /^(true|yes|on|1|x|✓)$/i.test(s) ? { value: true } : /^(false|no|off|0|)$/i.test(s) ? { value: false } : { problem: `"${s}" in ${c.label ?? c.name}` };
     if (c.name === 'constraint' && tab === 'targets') {
       const limit = ({ '>=': '>=', '≥': '>=', '<=': '<=', '≤': '<=', interval: 'interval' } as Record<string, string>)[s.toLowerCase()];
-      return limit ? { value: limit } : { problem: `"${s}" in ${c.name}` };
+      return limit ? { value: limit } : { problem: `"${s}" in ${c.label ?? c.name}` };
     }
     if (c.options) {
       const option = c.options.find((o: string) => o.toLowerCase() === s.toLowerCase());
-      return option !== undefined ? { value: option } : s === '' && c.nullable ? { value: null } : { problem: `"${s}" in ${c.name}` };
+      return option !== undefined ? { value: option } : s === '' && c.nullable ? { value: null } : { problem: `"${s}" in ${c.label ?? c.name}` };
     }
     if (c.type === 'number' || c.type === 'integer') {
       if (s === '') return c.nullable ? { value: null } : {};
       const n = readNumber(s);
-      return n !== undefined ? { value: n } : { problem: `"${s}" in ${c.name}` };
+      return n !== undefined ? { value: n } : { problem: `"${s}" in ${c.label ?? c.name}` };
     }
     if (c.type === 'array' || c.type === 'object') {
       if (s === '') return { value: null };
-      try { return { value: JSON.parse(s) }; } catch { return { problem: `"${s}" in ${c.name}` }; }
+      try { return { value: JSON.parse(s) }; } catch { return { problem: `"${s}" in ${c.label ?? c.name}` }; }
     }
     return { value: raw === '' && c.nullable ? null : raw };
   };
@@ -585,14 +603,16 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         <input ref={file} type="file" accept="application/json" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) importJson(f); }} />
         <button onClick={() => copyOut(null)} title={'Copy for Excel: the ticked rows in view - or every row in view when none is ticked - every column in view, '
           + 'a header line first, as tab-separated lines. In a cell, Ctrl+C copies the ticked rows the same way, or the cell alone; Ctrl+D fills down.'}><Icon name="copy" label="Copy for Excel" /></button>
-        <input type="search" className="find-rows" placeholder="Find rows" aria-label="Find rows" value={find[tab] ?? ''}
-          title={'Find rows: only the rows whose text cells in view (ID, instance path, expression, equation, notes ...) hold every word typed stay in view, '
-            + 'folded or not; not case-sensitive. Enter goes to the first of them, Esc clears the box.'}
-          onChange={e => setFind(f => ({ ...f, [tab]: e.target.value }))}
-          onKeyDown={e => { if (e.key === 'Escape') setFind(f => ({ ...f, [tab]: '' })); else if (e.key === 'Enter') { e.preventDefault(); firstInView(); } }} />
-        {findWords.length > 0 && <span className="find-count" title="Rows in view of this table's rows.">{rowsInView.length} of {rows.length}</span>}
+        {/* The box shrinks with the window and its count sits inside it (record 7.185): the toolbar stays on one line at 1366 px. */}
+        <span className={`find-box${findWords.length ? ' finding' : ''}`}>
+          <input type="search" className="find-rows" placeholder="Find rows" aria-label="Find rows" value={find[tab] ?? ''}
+            title={'Find rows: only the rows whose text cells in view (ID, instance path, expression, equation, notes ...) hold every word typed stay in view, '
+              + 'folded or not; not case-sensitive. Enter goes to the first of them, Esc clears the box.'}
+            onChange={e => setFind(f => ({ ...f, [tab]: e.target.value }))}
+            onKeyDown={e => { if (e.key === 'Escape') setFind(f => ({ ...f, [tab]: '' })); else if (e.key === 'Enter') { e.preventDefault(); firstInView(); } }} />
+          {findWords.length > 0 && <span className="find-count" title={`${rowsInView.length} of ${rows.length} rows in view`}>{rowsInView.length}/{rows.length}</span>}</span>
         <span className="spacer" />
-        {hidden.length > 0 && <button className="text" onClick={() => showMore(!more)} title={(more ? 'Fewer columns: hide ' : 'More columns: also show ') + hidden.map(c => c.name).join(', ') + '. They keep their values either way.'}>{more ? 'Fewer columns' : `More columns (${hidden.length})`}</button>}
+        {hidden.length > 0 && <button className="text" onClick={() => showMore(!more)} title={(more ? 'Fewer columns: hide ' : 'More columns: also show ') + hidden.map(c => c.label ?? c.name).join(', ') + '. They keep their values either way.'}>{more ? 'Fewer columns' : `More columns (${hidden.length})`}</button>}
         {tab === 'parameters' && <button className="text" onClick={() => setMatched(n => n + 1)} title="Matched devices...: Reads the circuit for differential pairs, current-mirror loads, matched loads and cascodes and suggests tying their sizes. Press again to refresh the results. You review a diff; nothing is applied automatically.">Matched devices...</button>}
         <button onClick={() => onAgent(tab, [])} title="Draft with agent...: Opens the Agent tab set to draft this tab's rows. Nothing is sent until you write what you need there and press Enter; its proposal is a diff you approve."><Icon name="agent-draft" label="Draft with agent..." /></button>
         <button disabled={!selection.length} onClick={() => onAgent('modify_fields', selection)} title="Modify selected with agent...: Ask the agent for a change to the ticked rows. You review a diff; nothing is applied automatically."><Icon name="agent-modify" label="Modify selected with agent..." /></button>
@@ -616,7 +636,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       {note && <p className={`${note.warn ? 'warn' : 'hint'} paste-note`}>{note.text}</p>}
       <div className="scroll" onScroll={e => markScrolled(e.currentTarget)}>
         <table className="grid editor" ref={table}>
-          <thead><tr><th className="sel"></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
+          <thead><tr><th className="sel"></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance ? `${c.name}: ${c.guidance}` : c.name} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
           <tbody onKeyDown={onTableKey} onPaste={onTablePaste}>{rows.map((row, index) => {
             const found = rowIssues(index);
             const point = tab === 'parameters' ? { onMouseEnter: () => pointAt(devicesOf(row)), onMouseLeave: () => pointAt([]),
@@ -640,7 +660,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
             </tr>; })}</tbody>
         </table>
       </div>
-      {help && <p className="guidance" onClick={() => setHelp(null)}><b>{help.name}</b> ({help.type}{help.options ? ': ' + help.options.join(' | ') : ''}) - {help.guidance}</p>}
+      {help && <p className="guidance" onClick={() => setHelp(null)}><b>{help.label ?? help.name}</b> ({help.label ? `${help.name}, ` : ''}{help.type}{help.options ? ': ' + help.options.join(' | ') : ''}) - {help.guidance}</p>}
       {issues.filter((i: Json) => !/\[\d+\]/.test(i.path)).map((i: Json, n: number) => <p key={n} className={`issue ${i.level}`}>{i.level}: {i.message}</p>)}
     </section>
   );

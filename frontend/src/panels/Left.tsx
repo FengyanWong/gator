@@ -448,14 +448,16 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           </div>
         </>)}
         {/* Until the task has its reference. A finished Single baseline simulation records it by itself (status record 7.78);
-            one whose measurement was refused is named with the reason, instead of the same standing advice. */}
+            one whose measurement was refused is named with the reason, instead of the same standing advice. The standing advice is
+            one line since record 7.188 (design advice: shorter notes), its explanation in the tooltip. */}
         {circuit.generated_profile && !circuit.baseline_recorded && (circuit.baseline_attempt
           ? <p className="warn">The Single baseline simulation <code>{String(circuit.baseline_attempt.run_id ?? '').slice(0, 12)}</code>
               {circuit.baseline_attempt.ended_utc ? ` (${String(circuit.baseline_attempt.ended_utc).slice(0, 16).replace('T', ' ')} UTC)` : ''} gave no usable
               baseline: {circuit.baseline_attempt.reason} Run <b>Single baseline simulation</b> again once that is put right; a finished one becomes
               the task's reference by itself.</p>
-          : <p className="warn">This task has no real baseline yet: begin with <b>Single baseline simulation</b> (one real Spectre run, asks for
-              your budget) before an optimization run. When it finishes, its result becomes the task's reference by itself.</p>)}
+          : <p className="warn" title={'Single baseline simulation is one real Spectre run; it asks for your budget first. When it finishes, its result '
+              + "becomes the task's reference by itself, before any optimization run."}>No real baseline
+              yet: run <b>Single baseline simulation</b> first.</p>)}
         {saved && saved.task_key === ref.task_id && <p className="ok">Saved the new task <code>{saved.task_key}</code>. It runs in
           <code> {saved.copy?.library}/{saved.copy?.testbench}</code>{saved.copy?.library === saved.original?.library ? ' - the cell you declared as your copy' : ' - its working copy'}; nothing has been simulated yet.</p>}
         {/* The circuit picture (record 7.158) above the long note, so it is in view while Parameters rows are pointed at. */}

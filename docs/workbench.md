@@ -292,6 +292,8 @@ record 7.128):
   saved rows, with the same edit-discard confirmation. Normal task switching needs no extra button press.
 * Run settings (the RL model's label included), output and research settings stay unchanged during switching and reloading. No real budget is
   suggested and no simulation, task save or Virtuoso write is triggered by selecting a task (record 7.146).
+* The bottom tabs follow the choice (record 7.212): they show the chosen task's newest run, or no run when it has none
+  (see "The run window" below).
 * A profile created from a cell brings its own result registry (the built-in LDO and VCO tasks brought the registry of
   record of the real cross-category experiment until they were removed). A registry stated in the configuration
   (`run.advanced.spec_registry`) still wins. Units `V/V` and `V/A` (line / load regulation) are accepted.
@@ -1094,9 +1096,32 @@ it). The window lists every run under the output folder, newest first, one row p
 * The times come from the run's own files (`run_manifest.json` segments, `status.json`); `GET /api/runs` carries them
   as `started_utc`, `ended_utc`, `last_seen_utc`, `active_seconds`, `paused_seconds`, `segments`. A workbench server
   started before this was added lists runs without them: the window says so and asks for a restart of `serve`.
+* **Details** also names the run's **Registered task** (`real:<name>`, `ngspice:<name>`), and the filter box finds a
+  task's runs by that name. A Baseline simulation is one of its task's runs, although its folder reads `<name>.baseline`.
 
-Browser check: `frontend/scripts/run_list_check.mjs` (every run request answered by FIXTURE runs; safe against the
-live backend). Backend test: `tests/workbench/test_wb_run_list.py`.
+**The run that follows the task** (2026-10-05, record 7.212, user: "after selecting specific task, it automatically load
+the most recent corresponding run of the registered task. If there is no recent run, then leave run selection and run
+status default blank unless you choose other runs"):
+
+* When the page's registered task changes, the run list is read again and the bottom tabs show that task's **newest run**
+  (by its start), whatever state it is in; a task without a run shows **none** ("No run selected"). The task changes when
+  it is chosen under **Task**, when **Undo** or **Redo** takes that choice back or forward, and when a first **Save task**
+  makes the page follow the new task. Reload saved values keeps the task, so it keeps the run shown too.
+* Opening the page follows nothing: it shows the run it showed before. The page keeps the run shown in the browser
+  together with the header's run of that moment; when the header holds another run by the next opening (a run started in
+  another tab of the page), the page opens on the header's run, as it always did. A browser that never kept one opens on
+  the header's run.
+* A run chosen in the run window always counts: also when it is chosen while the list is still being read for a task,
+  and it stays until another task is chosen. A list that cannot be read, a server older than the page (its runs carry no
+  task; restart `serve`), and a page that leaves its tasks for a Virtuoso cell all leave the run shown as it is.
+* Only the bottom tabs follow. The header's Start / Pause / Abort keep acting on their own run: a live run of another task
+  keeps its Pause and Abort, and choosing its task shows it again.
+* `GET /api/runs` carries each run's task as `task_key`, read from `run_manifest.json` (`circuit.task_key`, written
+  there by every run since the first build).
+
+Browser checks: `frontend/scripts/run_list_check.mjs` (every run request answered by FIXTURE runs; safe against the
+live backend) and `frontend/scripts/task_run_check.mjs` (the run that follows the task; fixtures, safe against the live
+backend). Backend test: `tests/workbench/test_wb_run_list.py`.
 
 Changing the selected run immediately hides the previous run's status, table and file list. Replies arriving late
 cannot put them back, and status commands carry the identity of the run whose status was displayed. Polling waits

@@ -752,5 +752,8 @@ def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True):
                                 # The run window (frontend RunList.tsx): what a run was, how it ended and how long it took.
                                 task_name=manifest.get('task_name'), stop_reason=status.get('stop_reason'), error=status.get('error'),
                                 max_evaluations=(manifest.get('budgets') or {}).get('max_evaluations'),
+                                # The registered task it ran (real:<name>, ngspice:<name>, as the Task list names it): choosing
+                                # that task shows its newest run (App.tsx, record 7.212).
+                                task_key=(manifest.get('circuit') or {}).get('task_key'),
                                 **run_timing(manifest, status)))
     return sorted(runs, key=lambda r: r['created_utc'] or '', reverse=True)

@@ -65,6 +65,18 @@ const CALIBRATION_DESIGNS = 64;
  *  calibration and Not now - so the proposals cannot be missed in Run status. Still the user's press: nothing is applied by
  *  itself. The run whose line was answered is kept in this browser, so a reload does not ask again. */
 const CALIBRATION_ANSWERED_KEY = 'gator-workbench-calibration-answered-v1';
+/** The run the bottom tabs show, kept in this browser with the header's run of that moment (record 7.212): a page loaded
+ *  again shows the run it showed - or none, after a task without runs was chosen. Unless the header holds another run by
+ *  then (started in another tab of the page, say): the page opens on the header's run then, as it always did, and so does a
+ *  browser that never kept one. */
+const SHOWN_RUN_KEY = 'gator-workbench-shown-run-v1';
+const HEADER_RUN_KEY = 'gator-workbench-current-run-v1';      // RunControl.tsx: the run the header's buttons act on
+const shownRun = (): string | null => {
+  try {
+    const header = localStorage.getItem(HEADER_RUN_KEY) || null, kept = JSON.parse(localStorage.getItem(SHOWN_RUN_KEY) ?? 'null');
+    return kept && typeof kept === 'object' && (kept.header ?? null) === header ? kept.run ?? null : header;
+  } catch { return null; }
+};
 
 /** Layout (specification section 2): left = project, connection, circuit; center = three editors;
  *  right = run configuration + output settings (always visible); bottom = agent, logs, status, data, files, training.
@@ -87,7 +99,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const [runs, setRuns] = useState<Json[]>(NO_RUNS);
   const [runsError, setRunsError] = useState<string | null>(null);   // the run list could not be read: said, not shown as "no run yet"
   const [continuing, setContinuing] = useState(false);
-  const [runDir, setRunDir] = useState<string | null>(() => { try { return localStorage.getItem('gator-workbench-current-run-v1') || null; } catch { return null; } });
+  const [runDir, setRunDir] = useState<string | null>(shownRun);
   const [tab, setTab] = useState<BottomTab>('status');
   const [bottom, setBottom] = useState<Bottom>(storedBottom);
   // Folded while no run is shown (record 7.179, design advice 1): its tabs show a run, and with none it was a third of the page
@@ -127,11 +139,12 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   // Only the newest read of the run list may answer: while the output root is typed, a half-typed path outside the roots
   // (403) used to empty the list when its answer came last.
   const listing = useRef(0);
-  const refreshRuns = (): Promise<Json[]> => {
+  const readRuns = (): Promise<{ list: Json[]; error: string | null }> => {
     const mine = ++listing.current;
     return api.runs(config.output.output_root ?? undefined).then(r => ({ list: r.runs as Json[], error: null }), e => ({ list: NO_RUNS, error: plainError(e) }))
-      .then(({ list, error }) => { if (mine === listing.current) { setRuns(list); setRunsError(error); } return list; });
+      .then(read => { if (mine === listing.current) { setRuns(read.list); setRunsError(read.error); } return read; });
   };
+  const refreshRuns = (): Promise<Json[]> => readRuns().then(read => read.list);
 
   // Debounce validation and ignore replies for a configuration that has since changed. `sent`: the configuration the
   // report is about - its row paths (targets[3]) name rows of THAT configuration, which Delete, Undo or Import may have
@@ -165,6 +178,10 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   // The run the header buttons act on (Start -> Pause -> Resume, Abort). It is not the run the bottom tabs show.
   const [looked, setLooked] = useState(false);
   const control = useRunControl(status, looked);
+  // The run shown, kept with the header's run (shownRun above); again when the header takes or lets go of one.
+  useEffect(() => {
+    try { localStorage.setItem(SHOWN_RUN_KEY, JSON.stringify({ run: runDir, header: control.dir })); } catch { /* a private window: not kept */ }
+  }, [runDir, control.dir]);
   // The header's run at rest, its calibration result, and what Apply would do with the rows the page holds now.
   const [calibrationAnswered, setCalibrationAnswered] = useState<string | null>(() => { try { return localStorage.getItem(CALIBRATION_ANSWERED_KEY); } catch { return null; } });
   const calibrated: Json = control.phase === 'idle' && control.dir && control.dir !== calibrationAnswered ? control.status?.calibration?.result ?? null : null;
@@ -213,6 +230,29 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     }), adopted.current ? 500 : 0);
     return () => clearTimeout(timer);
   }, [config.output.output_root]);
+  // The bottom tabs follow the registered task (record 7.212, user: "after selecting specific task, it automatically load the
+  // most recent corresponding run of the registered task. If there is no recent run, then leave run selection and run status
+  // default blank unless you choose other runs"). When the page's task changes - chosen under Task, saved for the first time,
+  // a choice taken back with Undo - the run list is read again and the task's newest run is shown (a Baseline simulation is
+  // one of its runs), or no run. Not when the page opens: the run it showed is kept. A run chosen in the run window or
+  // started while the list is read stays, and so does the run shown when the read fails or the page leaves its tasks for a
+  // Virtuoso cell. The header's Start / Pause / Abort keep their own run. A server older than this page lists runs without
+  // their task: the run shown stays then, instead of every choice showing none.
+  const taskKey: string | null = config.circuit?.source === 'registered_task' ? config.circuit.task_id ?? null : null;
+  const followedTask = useRef(taskKey);
+  const shownNow = useRef(runDir);
+  shownNow.current = runDir;
+  useEffect(() => {
+    if (taskKey === followedTask.current) return;
+    followedTask.current = taskKey;
+    if (!taskKey) return;
+    const before = shownNow.current;
+    readRuns().then(({ list, error }) => {
+      if (error || followedTask.current !== taskKey || shownNow.current !== before) return;
+      if (list.length && !list.some(r => 'task_key' in r)) return;
+      setRunDir(list.find(r => r.task_key === taskKey)?.run_dir ?? null);
+    });
+  }, [taskKey]);
 
   const showRun = (started: Json, as: 'start' | 'resume') => {
     setRunDir(started.run_dir); setTab('status'); unfold(); refreshRuns();

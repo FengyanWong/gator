@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from gator_workbench import runs
 from gator_workbench.api import create_app
 from gator_workbench.storage import read_json
-from helpers import execute, make_config, roots_for
+from helpers import MOCK_TASK, execute, make_config, roots_for
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
 pytestmark = pytest.mark.xdist_group('test_wb_run_list')
@@ -74,6 +74,20 @@ def test_a_worker_that_died_is_listed_as_interrupted_with_the_time_it_was_last_s
     assert row['active_seconds'] == 237.0 and row['evaluations'] == 31 and row['max_evaluations'] == 60   # no summary was ever written
 
 
+def test_a_row_names_the_registered_task_its_run_ran(tmp_path):
+    """Choosing a task shows its newest run (record 7.212): the page matches a row's task_key with the task it chose. A
+    Baseline simulation is a run of its task as well, although its folder is named <name>.baseline."""
+    task = dict(task_key='real:mscr_ota7t', source='registered_task')
+    fabricate(tmp_path, 'scratch__seed0__aaaaaaaaaaaa', dict(run_id='aaaaaaaaaaaa', created_utc='2026-10-05T17:03:29+00:00',
+                                                             task_name='mscr_ota7t.baseline', circuit=task), dict(state='completed'))
+    fabricate(tmp_path, 'scratch__seed0__bbbbbbbbbbbb', dict(run_id='bbbbbbbbbbbb', created_utc='2026-10-05T18:33:42+00:00',
+                                                             task_name='mscr_ota7t', circuit=task), dict(state='completed'))
+    fabricate(tmp_path, 'scratch__seed0__cccccccccccc', dict(run_id='cccccccccccc', created_utc='2026-09-01T00:00:00+00:00'),
+              dict(state='completed'))                                    # a manifest that names no task: no task_key
+    assert [(row['run_id'], row['task_key']) for row in runs.list_runs(roots_for(tmp_path), tmp_path)] == [
+        ('bbbbbbbbbbbb', 'real:mscr_ota7t'), ('aaaaaaaaaaaa', 'real:mscr_ota7t'), ('cccccccccccc', None)]
+
+
 @pytest.fixture(scope='module')
 def finished(tmp_path_factory):
     root = tmp_path_factory.mktemp('run_list')
@@ -90,6 +104,7 @@ def test_a_real_mock_run_is_listed_with_the_times_its_manifest_holds(finished):
     assert row['started_utc'] == last['started_utc'] and row['ended_utc'] == last['ended_utc'] and row['ended_utc'] > row['started_utc']
     assert row['active_seconds'] == last['active_seconds'] > 0 and row['paused_seconds'] == 0.0
     assert row['task_name'] == 'listed_task' and row['evaluations'] == row['max_evaluations'] == 8 and row['error'] is None
+    assert row['task_key'] == MOCK_TASK                     # the registered task, whatever the run label says
     assert [s['end_state'] for s in row['segments']] == ['completed']
 
 
@@ -98,7 +113,7 @@ def test_the_api_serves_the_same_rows(finished):
     client = TestClient(create_app(extra_output_roots=[str(root)], serve_frontend=False, auto_check_on_start=False))
     row, = client.get('/api/runs', params=dict(output_root=str(root))).json()['runs']
     assert row == json.loads(json.dumps(runs.list_runs(roots_for(root), root)[0]))
-    assert {'started_utc', 'ended_utc', 'last_seen_utc', 'active_seconds', 'paused_seconds', 'segments'} <= set(row)
+    assert {'started_utc', 'ended_utc', 'last_seen_utc', 'active_seconds', 'paused_seconds', 'segments', 'task_key'} <= set(row)
 
 
 def wait_for(client, run_dir, timeout=180):

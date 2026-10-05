@@ -9,6 +9,7 @@ import { LIVE_STATES } from './RunControl';
  *  LEFT. Pressing it opens the run window - a browser window of its own, drawn through a portal like the connection
  *  window - with every run under the output folder as a table: when it started and finished, how long it worked, and
  *  what it was and came to. A double click on a row shows that run; "Details" adds the rest; "Clear" shows no run.
+ *  Choosing a task in the Project column shows that task's newest run, or none (App.tsx, record 7.212).
  *
  *  Nothing here updates on a timer: the list is read when the button is pressed and by "Refresh list", a run's details
  *  when they are opened. So a run that is working shows the state and duration AS OF the read time, which is printed. */
@@ -67,7 +68,7 @@ const COLUMNS: Column[] = [
 function RunDetails({ row, info, error, onCopy, copied }: { row: Json; info: Json; error?: string; onCopy: (text: string) => void; copied: boolean }) {
   const b = info?.budget, best = info?.best_design, first = info?.first_feasible, summary = info?.summary, source = info?.manifest?.source_model;
   const facts: [string, string | null | undefined][] = [
-    ['Run id', row.run_id], ['Task id', row.task_id], ['Experiment', row.experiment],
+    ['Run id', row.run_id], ['Registered task', row.task_key], ['Task id', row.task_id], ['Experiment', row.experiment],
     ['Created', stamp(row.created_utc)], ['Worker began', stamp(row.started_utc)], ['Came to rest', stamp(row.ended_utc)], ['Last sign of life', row.ended_utc ? null : stamp(row.last_seen_utc)],
     ['Worked for', span(row.active_seconds)], ['Paused between segments', row.paused_seconds ? span(row.paused_seconds) : null],
     ['Summed simulator job time', summary?.time?.sum_job_runtime_seconds != null ? `${span(summary.time.sum_job_runtime_seconds)} (parallel jobs added up: not elapsed time)` : null],
@@ -135,7 +136,7 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
 
   const current: Json = runs.find(r => r.run_dir === runDir) ?? null;
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
-  const text = (r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_id, r.mode, `seed${r.seed}`, r.state, r.stop_reason, r.experiment, r.mock ? 'mock' : 'real', folder(r.run_dir)].join(' ').toLowerCase();
+  const text = (r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_key, r.task_id, r.mode, `seed${r.seed}`, r.state, r.stop_reason, r.experiment, r.mock ? 'mock' : 'real', folder(r.run_dir)].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === sort.key) ?? COLUMNS[0];
   // Empty cells stay at the bottom whichever way the column is sorted. Only while the window is open: the page redraws
   // on every status poll, and a closed window needs no sorted list.
@@ -157,7 +158,7 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
           : `${runs.length} run${runs.length === 1 ? '' : 's'} under the output folder${readAt ? `, read at ${readAt}` : ''}. Nothing here updates by itself.`}</span>
       </div>
       {runsError && !loading && <p className="error run-list-error">The run list could not be read: {runsError}</p>}
-      <p className="hint"><b>Double click</b> a run to show it in the bottom tabs of the workbench (Run status, Logs, Data tables, Output files); the run that is shown is marked. <b>Clear</b> shows no run. This window stays open until you close it.</p>
+      <p className="hint"><b>Double click</b> a run to show it in the bottom tabs of the workbench (Run status, Logs, Data tables, Output files); the run that is shown is marked. <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none. This window stays open until you close it.</p>
       <details className="more"><summary>What the columns mean</summary>
         <ul className="steps-list">{COLUMNS.map(c => <li key={c.key}><b>{c.title}</b>: {c.help}</li>)}
           <li>All times are the local time of this computer. Press a column title to sort by it. "Details" shows everything else the run recorded.</li></ul></details>

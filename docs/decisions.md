@@ -1116,9 +1116,16 @@ calibration functionality to that".
   starting design that cannot be simulated would otherwise have used the whole budget on resets.
 - **The same designs as a warm-up.** The random designs are recorded as phase `warmup`, source `random_warmup`: no new
   phase name, the table schema is unchanged.
-- **Not measured:** a training run with the proposals on Spectre (the run itself was checked there once, on the user's
-  word: 65 simulations on `real:mscr_ota7t`, proposals for all four rows); what the proposals do on a circuit other
-  than `ota5`; the guard rails' numbers.
+- **Measured on Spectre afterwards, and it did not help there** (record 7.211, user: "Spectre test of calibration"):
+  `real:mscr_ota7t`, the Graph Transformer starting preset, one lane, 800 launches, the plain reward without bonuses,
+  two seeds per arm. With the four proposed scales and Initial alpha 0.011 the first passing design came at 455 and 177
+  against 202 and 146 with the empty boxes; the last third passed 93.5 % against 97.0 %; the passing designs' bias
+  current was 682 against 705 uA, inside the seeds' own spread (619 to 746). So the ngspice gain (93 to 98 %) did not
+  carry over to this task: the proposals stay proposals - shown, explained, applied only by a press - and nothing
+  applies them by default. The seed spread is large (one calibrated seed learned 250 designs late); two seeds on one
+  task is no proof that calibration hurts.
+- **Not measured:** what the proposals do on Spectre circuits other than `mscr_ota7t`; with the page's tested reward
+  (bonuses) on Spectre; the guard rails' numbers.
 
 Record 7.197. Evidence: `artifacts/local/reviews/calibration-study-2026-10-05/README.md`.
 

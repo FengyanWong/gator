@@ -1528,8 +1528,8 @@ proposes nothing says why on the same line. Nothing is applied by itself.
 - **From a script:** `POST /api/runs/start` takes `calibration_designs` (0 to 500) with `baseline_only`; the result is
   `calibration.json` in the run folder and `calibration` in the run's status.
 
-**What was measured** (free ngspice circuit `ota5`, 1,000 evaluations per run, 3 seeds per setting; on Spectre the run
-itself was checked once, no training run was made with its proposals).
+**What was measured** (free ngspice circuit `ota5`, 1,000 evaluations per run, 3 seeds per setting; on Spectre one task,
+`real:mscr_ota7t`, two seeds per arm - record 7.211, below).
 The scales of 64 random designs agreed with those of 4,153: gain 7.7 to 11 dB against 10, bandwidth 64 to 73 MHz against
 70, output voltage 0.026 to 0.043 V against 0.04 (six seeds). In training, calibrated scales did not make learning
 faster. They raised the share of passing designs in the last third of the run: 93 % to 98 % without bonuses (six seeds
@@ -1540,7 +1540,13 @@ more distance from the limits. The Initial alpha matters when the reward is flat
 difference against 0.01. Network size and encoder made no difference to the result, so nothing about them is
 calibrated. The one Spectre run (`real:mscr_ota7t`, 65 simulations in 114 s) proposed gain 260 V/V where an empty box
 means 400, bandwidth 11 MHz (25 MHz), phase margin 9.6 deg (60 deg), current 0.28 mA (1 mA) and Initial alpha 0.011.
-The numbers:
+**On Spectre the calibrated scales did not help** (record 7.211: `real:mscr_ota7t`, the Graph Transformer starting
+preset, one lane, 800 launches, the plain reward without bonuses; the empty boxes against those four proposals plus
+Initial alpha 0.011, seeds 0 and 1). First passing design 202 and 146 with the empty boxes, 455 and 177 calibrated;
+passing designs in the last third 97.0 % against 93.5 %; their median bias current 705 uA against 682 uA (the seeds alone
+spread from 619 to 746 uA); designs still failing after learning 5.1 % against 5.9 %. One task and two seeds: the
+calibration stays a proposal to look at, not a habit. The numbers:
+`artifacts/local/reviews/calibration-spectre-2026-10-05/README.md`. On ngspice:
 `artifacts/local/reviews/calibration-study-2026-10-05/README.md`; the reasons: [decisions.md](decisions.md),
 "Calibration with the baseline run".
 

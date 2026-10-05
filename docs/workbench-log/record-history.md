@@ -292,3 +292,5 @@ One row per commit, newest last.
 | `1dd5079` | 10-05 21:11 | 7.207 | Check now says when another real run holds Virtuoso (the holder named from /proc/locks, no lock taken) instead of advising Save task (session "Run adapter working copy sync issue", committed by "Virtuoso read whole flow") |
 | `349bae4` | 10-05 21:12 | - | record only: names the commit of record 7.207, and the table rows for 38defd1 and 1dd5079 |
 | `fd82665` | 10-05 21:15 | 7.210 | the short-budget warning gives the starting presets' learning point (about 150 to 300 evaluations) beside 250 to 600 for the values before them; the threshold stays 300 |
+| `61f1ea4` | 10-05 21:16 | - | record only: names the commit of record 7.210, and the table rows for 349bae4 and fd82665 |
+| `fb65f76` | 10-05 21:27 | 7.214 | the Calibration of a run of another task than the page holds shows that run's own Scales ("Scale in the run") and Initial alpha, never the page's Specs rows of the same ID (an LDO's pm_deg had stood as an OTA's "Scale now"); Apply says which task it waits for. Page only (session "OTA7 calibration panel spec misses") |

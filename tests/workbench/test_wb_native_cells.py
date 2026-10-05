@@ -50,6 +50,24 @@ def test_the_mapping_of_a_draft_holds_only_models_this_project_verified():
     assert unverified == ['pdk_mystery_dev'] and 'pdk_mystery_dev' not in mapping['models']
 
 
+def test_the_ideal_current_source_and_resistor_are_known_without_any_example_circuit(tmp_path, monkeypatch):
+    """Only the LDO example's mapping file named these two: deleting the example circuits (record 7.128) made "Save task"
+    refuse every cell that holds one - six of the seven MScR tasks. They are the workbench's own now (record 7.187),
+    as that file had them, also in a repository without a single mapping file."""
+    netlist = EXPORT.rstrip('\n') + '\nIREF (VDD VBIAS) isource dc=50u type=dc\nRFB (VOUT 0) resistor r=9.49K\n'   # as real exports write them
+    mapping, unverified = native_cells.build_mapping(netlist)
+    assert unverified == []
+    assert mapping['models']['isource'] == dict(kind='isource', terminals=['p', 'n'], roles=['positive', 'negative'], parameters={'dc': 'dc'})
+    assert mapping['models']['resistor'] == dict(kind='resistor', terminals=['p', 'n'], roles=['positive', 'negative'], parameters={'r': 'r'})
+    assert mapping['mapping_version'] == 'native-draft-1'                         # no PDK was needed for them
+    monkeypatch.setattr(native_cells, 'repo_root', lambda: tmp_path)
+    assert sorted(native_cells.verified_models()) == ['isource', 'resistor']
+    (tmp_path / 'configs').mkdir()
+    (tmp_path / 'configs' / 'gpdk045_other.json').write_text(json.dumps(dict(models=dict(
+        isource=dict(kind='isource', terminals=['n', 'p'], roles=['negative', 'positive'], parameters={'dc': 'dc'})))))
+    assert sorted(native_cells.verified_models()) == ['resistor']                 # defined differently in a file: left out, not chosen
+
+
 def test_an_imported_cell_loads_from_its_local_copy_and_can_never_execute(tmp_path):
     with pytest.raises(tasks.TaskBlocked, match='verified circuit profile'):        # before any import: browse only
         tasks.load_task(reference())

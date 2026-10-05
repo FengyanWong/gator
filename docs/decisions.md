@@ -965,3 +965,19 @@ tasks (filling them changes four task hashes). The larger daemon cache (`RB_NONC
 running Virtuoso the same day, on the user's word; it is not yet in Virtuoso's start-up (record 7.183).
 
 Record 7.183.
+
+## Ideal parts are the workbench's own knowledge, not an example file's (2026-10-05)
+
+- **What happened.** A device type is known from the loaded PDK (Load PDK reads the technology library's own
+  description) or from the "verified" list, collected from the example circuits' mapping files. analogLib's ideal
+  current source and resistor were in one of those files only. Deleting the examples (record 7.128) therefore made
+  "Save task" refuse six of the seven MScR tasks, unnoticed until the first save four days later.
+- **Decided now.** The two definitions live in `native_cells.ANALOGLIB_VERIFIED`: deleting an example can no longer
+  take a device type away.
+- **The user's rule, still open:** "it should be recognizing all the loaded components". Ideal parts remain a
+  hand-written list (voltage source, capacitor and current probe still sit in example files). The PDK reader's query
+  takes any library: reading analogLib's own pin order and Spectre names together with the PDK would replace the list.
+  Proposed to the user, not built. One limit would remain: the optimizer package knows a fixed set of ideal kinds, so
+  a part outside it (a controlled source, a switch) stays refused until the package learns it.
+
+Record 7.187.

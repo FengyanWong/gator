@@ -10,7 +10,8 @@ every attempt to run it is refused with that reason (``tasks.load_task``, ``runs
 static validation).
 
 Device mapping: pin order and parameter meaning are never guessed. The models a draft may use are
-the ones already verified in this repository's GPDK045 mappings (``configs/gpdk045_*.json``) and, once
+the ones already verified in this repository's GPDK045 mappings (``configs/gpdk045_*.json``), analogLib's
+ideal current source and resistor (``ANALOGLIB_VERIFIED``) and, once
 the cell's technology library was loaded with "Load PDK" (``pdk.py``), every component that PDK's own
 description names - pins and parameters as the PDK states them. Any other model stays ``unknown`` -
 shown, flagged, its pins unnamed. A profile for real runs takes the same models (``profiles._checked_import``).
@@ -48,10 +49,22 @@ def cell_dir(library, cell) -> Path:
     return store_root() / library / cell
 
 
+# analogLib's ideal current source and resistor, as Virtuoso's Spectre export writes them. Their pin order was verified
+# with the LDO example circuit, whose mapping (configs/gpdk045_ldo.json) was the only file that named them: when the
+# example circuits were deleted (record 7.128, 2026-10-01) the two definitions went with it, and from then on "Save
+# task" refused every cell that holds one - six of the seven MScR tasks, found on 2026-10-05 (record 7.187). They are
+# kept here, word for word as that file and every task saved before had them.
+ANALOGLIB_VERIFIED = {
+    'isource': dict(kind='isource', terminals=['p', 'n'], roles=['positive', 'negative'], parameters={'dc': 'dc'}),
+    'resistor': dict(kind='resistor', terminals=['p', 'n'], roles=['positive', 'negative'], parameters={'r': 'r'}),
+}
+
+
 def verified_models() -> dict:
-    """Device models whose pin order and parameters this project has verified, taken from its own
-    GPDK045 mappings. A model defined differently in two files is left out rather than chosen."""
-    models, conflicting = {}, set()
+    """Device models whose pin order and parameters this project has verified: its own GPDK045 mappings, and
+    analogLib's ideal current source and resistor (`ANALOGLIB_VERIFIED`). A model defined differently in two places
+    is left out rather than chosen."""
+    models, conflicting = {name: dict(entry) for name, entry in ANALOGLIB_VERIFIED.items()}, set()
     for path in sorted((repo_root() / 'configs').glob('gpdk045_*.json')):
         try:
             raw = json.loads(path.read_text())

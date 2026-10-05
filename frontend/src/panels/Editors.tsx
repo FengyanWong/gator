@@ -238,7 +238,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     : c.name === 'constraint' ? { ...c, guidance: c.guidance + ' "then lower / higher is better" is the objective: among the designs that pass '
       + 'every hard spec, the best one is the lowest / highest here (one spec at most); with an Objective bonus weight above 0 (Reward and '
       + 'conditions) the reward also pushes it past the limit.' }
-    : c.name === 'normalization_scale' ? { ...c, label: 'Scale', guidance: 'The distance outside the limit that costs half of this row\'s penalty. Empty: the size of the limit, so a value 50 % outside costs a third and 100 % outside a half - the rule every saved task uses. Type a number only for a limit of 0, or to make this row count more (smaller) or less (larger) than the others. Passing or failing is decided by the limits alone.' } : c);
+    : c.name === 'normalization_scale' ? { ...c, label: 'Scale', guidance: 'How far outside its limit a value counts as a miss of 1. Empty: as far as the limit itself. dB rows: 6 (a factor of 2), so with a limit of 30 dB, 24 dB is a miss of 1. Smaller = stricter. Pass or fail depends on the limits only.' } : c);
   // Specs shows the objective inside the constraint list (LimitSelect), and "Judged at" only while the run plans training
   // corners: without corners every spec is judged at nominal, so the choice would do nothing. Both keep their values.
   const corners = (config.run?.conditions?.policy ?? 'off') !== 'off';

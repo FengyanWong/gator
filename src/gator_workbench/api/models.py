@@ -3,6 +3,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 from .. import ngspice_tasks
 from .. import corner_check
+from ..calibration import MAX_DESIGNS
 
 
 PROFILE_ID = r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$'        # a connection profile: an identifier, never a host, port or command
@@ -28,6 +29,8 @@ class StartBody(Body):
     authorize_real_simulation: bool = False
     acknowledge_unknown_connection: bool = False
     baseline_only: bool = False
+    # With baseline_only: this many random designs after the baseline, for the calibration (calibration.py). 0 = none.
+    calibration_designs: int = Field(0, ge=0, le=MAX_DESIGNS)
 
 
 class CommandBody(Body):

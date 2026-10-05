@@ -52,6 +52,13 @@ const storedBottom = (): Bottom => {
   catch { return { height: null, folded: false }; }
 };
 
+/** The calibration that goes with the Single baseline simulation (record 7.197, user: "shouldnt each task run the baseline
+ *  run? can you add the calibration functionality to that"): after the baseline, this many random designs, from which the run
+ *  proposes a Scale per Specs row and the Initial alpha (Run status shows them with Apply). The tick beside the button is
+ *  kept in this browser; ticked unless it was unticked. */
+const CALIBRATION_DESIGNS = 64;
+const CALIBRATE_KEY = 'gator-workbench-baseline-calibration-v1';
+
 /** Layout (specification section 2): left = project, connection, circuit; center = three editors;
  *  right = run configuration + output settings (always visible); bottom = agent, logs, status, data, files, training.
  *  Tables, numbers, status and file lists. On screen only, by user decision: two pictures of the circuit - the graph view
@@ -73,6 +80,8 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const [runs, setRuns] = useState<Json[]>(NO_RUNS);
   const [runsError, setRunsError] = useState<string | null>(null);   // the run list could not be read: said, not shown as "no run yet"
   const [continuing, setContinuing] = useState(false);
+  const [calibrate, setCalibrate] = useState<boolean>(() => { try { return localStorage.getItem(CALIBRATE_KEY) !== 'off'; } catch { return true; } });
+  const chooseCalibrate = (now: boolean) => { setCalibrate(now); try { localStorage.setItem(CALIBRATE_KEY, now ? 'on' : 'off'); } catch { /* a private window: the choice lasts until the page is closed */ } };
   const [runDir, setRunDir] = useState<string | null>(() => { try { return localStorage.getItem('gator-workbench-current-run-v1') || null; } catch { return null; } });
   const [tab, setTab] = useState<BottomTab>('status');
   const [bottom, setBottom] = useState<Bottom>(storedBottom);
@@ -194,7 +203,11 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const failed = (e: any) => setMessage({ level: 'error', text: plainError(e), detail: e.detail });
   const start = async (baseline_only: boolean) => {
     setMessage(null);
-    const budget = baseline_only ? 1 : config.run.max_evaluations;
+    // With the calibration every lane simulates the starting design once (the first of them is the baseline), then the
+    // random designs follow: the budget the backend sets (calibration.py `prepare`), said here before anything starts.
+    const calibration_designs = baseline_only && calibrate ? CALIBRATION_DESIGNS : 0, lanes: number = config.run.concurrency ?? 1;
+    const budget = !baseline_only ? config.run.max_evaluations : calibration_designs ? lanes + calibration_designs : 1;
+    const calibrationText = calibration_designs ? `\n(${lanes === 1 ? 'The baseline' : `The starting design once on each of ${lanes} lanes`}, then ${calibration_designs} random designs for the calibration.)` : '';
     const search = config.run.search;
     const llm = !baseline_only && !!search && search.method !== 'sac';
     const llmText = llm ? `\nAI sizing: up to ${search.max_llm_calls ?? 'unset'} model calls${search.max_llm_notional_usd != null ? `, notional cost ceiling $${search.max_llm_notional_usd}` : ' (no reported dollar cost for Codex)'}.` : '';
@@ -203,9 +216,9 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
       // A refusal creates nothing; what the backend asks for (real budget, a model from another task, unknown
       // connection layers) is put to the user and the start is repeated with the answers.
       // An ngspice netlist task is real too (circuit simulations, counted and recorded as such), only without a license.
-      const started = await launchWithConsent(flags => api.start({ config, baseline_only, ...flags }), { real: !!isReal, transfer: true, llm,
+      const started = await launchWithConsent(flags => api.start({ config, baseline_only, ...(calibration_designs ? { calibration_designs } : {}), ...flags }), { real: !!isReal, transfer: true, llm,
         authorizeText: (!isReal ? `Start ${budget} synthetic MOCK evaluations?` : circuit?.simulator === 'ngspice' ? `This starts ngspice simulations of the task (no license; every one is counted as a real evaluation).\nRun a budget of ${budget} candidate evaluation(s)?`
-          : `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?`) + llmText });
+          : `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?`) + calibrationText + llmText });
       if (started) launchedRun(started, 'start'); else setMessage({ level: 'info', text: 'Not started: you answered no, so nothing was created.' });
     } catch (e: any) { failed(e); } finally { control.setPending(null); }
   };
@@ -293,7 +306,12 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
         <span className="spacer" />
         <ValidationStatus validation={validation} config={config} schema={schema} />
         <button disabled={!!validation?.blocks_run || control.phase !== 'idle'} onClick={() => start(true)}
-          title={control.phase === 'idle' ? 'ONE costed evaluation of the initial design. It is a preflight record, not free.' : 'Not while the header holds a run that is active or paused. Abort lets go of a paused run.'}>Single baseline simulation</button>
+          title={control.phase !== 'idle' ? 'Not while the header holds a run that is active or paused. Abort lets go of a paused run.'
+            : 'ONE costed evaluation of the initial design. It is a preflight record, not free.'
+              + (calibrate ? ` With the calibration ticked, ${CALIBRATION_DESIGNS} random designs follow it in the same run, each a costed evaluation.` : '')}>Single baseline simulation</button>
+        {/* The calibration goes with the baseline run (record 7.197). A tick, not a second button: it is the same run, longer. */}
+        <label className="check baseline-calibration" title={`After the baseline, ${CALIBRATION_DESIGNS} random designs over the Parameters ranges are simulated in the same run. From them the run proposes a Scale for each Specs row and the Initial alpha of RL networks; Run status shows the proposals with an Apply button, and nothing changes by itself. Unticked: the one baseline simulation only.`}>
+          <input type="checkbox" checked={calibrate} disabled={control.phase !== 'idle'} onChange={e => chooseCalibrate(e.target.checked)} />+ calibration</label>
         <RunButtons control={control} blocked={!!validation?.blocks_run} onStart={() => start(false)} onResumed={started => showRun(started, 'resume')}
           onMessage={setMessage} onShow={dir => { setRunDir(dir); setTab('status'); unfold(); }} />
       </header>
@@ -334,7 +352,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
         <div className="bottom-body">
           <AgentTab hidden={tab !== 'agent'} config={config} setConfig={setConfig} request={agentRequest} clearRequest={() => setAgentRequest(null)}
             tabSlot={agentTabSlot} onDetached={setAgentDetached} runDir={runDir} runActive={!!status?.worker_alive} />
-          {tab === 'status' && <StatusTab status={status} runDir={runDir} error={statusError} onContinue={continueRun} continueBlocked={continueBlocked} />}
+          {tab === 'status' && <StatusTab status={status} runDir={runDir} error={statusError} onContinue={continueRun} continueBlocked={continueBlocked} config={config} setConfig={setConfig} />}
           {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
           {tab === 'data' && <DataTab runDir={runDir} status={status} />}
           {tab === 'files' && <FilesTab runDir={runDir} />}

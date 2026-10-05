@@ -914,7 +914,9 @@ def adopt_baseline_run(run_dir, manifest=None) -> dict | None:
     entry = list_profiles().get(name)
     if entry is None:
         return None
-    if manifest.get('state') != 'completed':
+    # A run asked to calibrate (record 7.197) goes on after its baseline with random designs: stopped by the user among
+    # them, its baseline evaluation is as finished as that of a run of one evaluation (`record_reference` looks at it).
+    if manifest.get('state') != 'completed' and not (manifest.get('state') == 'stopped' and manifest.get('calibration')):
         return dict(recorded=False, name=name, note=f'Not recorded as the reference of {task_key}: the run ended as {manifest.get("state")}.')
     if reference_metrics(name) is not None:
         return dict(recorded=False, name=name, note=f'{task_key} already has a recorded baseline; it is never replaced.')

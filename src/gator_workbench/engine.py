@@ -290,6 +290,9 @@ class RunEngine:
                              failures=0, retries=0, last_checkpoint_commit=0, launches_unconfirmed_after_crash=0,
                              interrupted_evaluations=0, feasible_evaluations=0, valid_evaluations=0)
         self.previous_best_waveform = None
+        # A baseline run asked to calibrate (record 7.197): until its baseline evaluation is committed and valid, no other
+        # lane starts and no random design is drawn (`_dispatch`, `_commit`). Any other run never waits.
+        self._baseline_checked = not self.manifest.get('calibration') or self.entry == 'resume'
         self.encoder = None
         if self.archive:
             self.encoder = StateEncoder(self.layout.data / 'states' / 'static', task_id=self.task_id,
@@ -666,6 +669,8 @@ class RunEngine:
     def _dispatch(self, lane):
         if self.search and self.search.replay_barrier():
             return
+        if not self._baseline_checked and self.counters['baseline_done']:      # the baseline is in flight: see `_commit`
+            return
         state = self.lane_state[lane.lane_id]
         chosen = None
         if self.search:
@@ -872,6 +877,14 @@ class RunEngine:
             constraint_rows = list(by_metric.values())
         if op_is_step := busy['op'] != 'reset':
             self.counters['global_env_step'] += 1
+        if not self._baseline_checked and busy['phase'] == 'baseline':
+            # The calibration's random designs follow a valid baseline only: without one no lane can start an episode, and
+            # every further evaluation would be the same failing reset. The run ends here as a baseline run of one evaluation.
+            self._baseline_checked = True
+            if not valid and self.stop_reason is None:
+                self.stop_reason = 'baseline_invalid'
+                self._event('limit_reached', reason=self.stop_reason,
+                            note='the starting design gave no valid result: no calibration design is simulated')
         failed = not valid
         from .connection import classify_infrastructure_failure
         infrastructure = None if valid else classify_infrastructure_failure(
@@ -1538,6 +1551,7 @@ class RunEngine:
                        active_seconds=self._clock() - self._segment_started)
         self.manifest['state'] = final_state
         self._adopt_baseline()
+        self._calibrate()
         write_json(self.layout.manifest, self.manifest)
         self._event('segment_ended', state=final_state, stop_reason=self.stop_reason, error=self.error)
         self._write_status(final_state)
@@ -1568,6 +1582,24 @@ class RunEngine:
             self.manifest.setdefault('notes', []).append(outcome['note'])
             self.manifest_notes = [*getattr(self, 'manifest_notes', []), outcome['note']]
             self._event('baseline_reference', recorded=outcome['recorded'], task=f"real:{outcome['name']}", note=outcome['note'])
+
+    def _calibrate(self):
+        """A baseline run asked to calibrate (record 7.197) writes its proposals - a Scale per Specs row and the Initial
+        alpha, from its random designs - into calibration.json of the run folder, and says so in the manifest's notes.
+        Nothing is applied: the page offers them. As with the baseline's adoption, nothing here may fail the run."""
+        if not self.manifest.get('calibration') or self.dataset is None:
+            return
+        try:
+            from . import calibration
+            result = calibration.from_run(self.layout.run_dir, manifest=self.manifest)
+            write_json(self.layout.run_dir / calibration.FILE, result)
+        except BaseException as exc:
+            self._log_error('calibration_failed', exc)
+            return
+        note = calibration.sentence(result)
+        self.manifest.setdefault('notes', []).append(note)
+        self.manifest_notes = [*getattr(self, 'manifest_notes', []), note]
+        self._event('calibration', status=result['status'], designs=result['designs'], note=note)
 
     def _write_outputs(self, final_state, checkpoint, persistence_ok):
         from .summary import build_run_summary

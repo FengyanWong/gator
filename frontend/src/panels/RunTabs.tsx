@@ -1,7 +1,7 @@
 import { searchPhase } from './SearchSettings';
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
-import { api, bytes, copy, download, downloadPackage, Json, num, saveJson } from '../api';
+import { api, bytes, copy, download, downloadPackage, Json, num, saveJson, short, si } from '../api';
 import { usePolling, useRequest } from '../store';
 
 const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'llm_calls', 'transitions', 'states'];
@@ -18,12 +18,75 @@ function SteeringCheck({ value }: { value: Json }) {
     {value.verdict && <p className="warn">{value.verdict}</p>}</div>;
 }
 
+const sameNumber = (a: unknown, b: unknown) => (a ?? null) === (b ?? null);
+/** The Specs row of the page that IS the row a run calibrated: same ID, same limits, same unit. A row whose limits were
+ *  edited since is another question, and the run's answer is not written into it. */
+const sameSpecsRow = (target: Json, row: Json) => !!target && sameNumber(target.lower, row.lower) && sameNumber(target.upper, row.upper) && target.unit === row.unit;
+const limitText = (row: Json) => row.lower != null && row.upper != null ? `${si(row.lower, row.unit)} to ${si(row.upper, row.unit)}`
+  : row.lower != null ? `\u2265 ${si(row.lower, row.unit)}` : `\u2264 ${si(row.upper, row.unit)}`;
+
+/** The calibration of a Single baseline simulation that was asked for it (record 7.197; backend calibration.py): from the
+ *  run's random designs, a Scale per Specs row (the typical miss among the designs that miss the row) and the Initial alpha
+ *  (0.1 x the reward's spread among them). The run applies nothing. Apply writes the proposals into the configuration this
+ *  page holds - the Scale of the Specs rows that still are the rows the run simulated, and Initial alpha in RL networks - as
+ *  ONE Undo step; a task saved from a Virtuoso cell then needs Save task before it starts. */
+function Calibration({ value, live, config, setConfig }: { value: Json; live: boolean; config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void }) {
+  const result: Json = value.result, request: Json = value.request ?? {};
+  if (!result) return <div className="calibration"><h4>Calibration</h4><p className="hint">{live
+    ? `After the baseline, ${request.designs} random designs are simulated; the proposals appear here when the run has ended.`
+    : 'This run ended without a calibration result.'}</p></div>;
+  const targets: Json[] = config.targets ?? [], designs: Json = result.designs ?? {}, alpha: Json = result.initial_alpha ?? {};
+  const pageRow = (row: Json): Json | undefined => targets.find(t => t.metric_id === row.metric_id);
+  const rows: Json[] = (result.rows ?? []).map((row: Json) => { const target = pageRow(row); return { ...row, target, same: sameSpecsRow(target as Json, row) }; });
+  const otherTask = !!result.task_key && !!config.circuit?.task_id && result.task_key !== config.circuit.task_id;
+  const scales = rows.filter(r => r.proposed_scale != null && r.same);
+  const alphaNow: number | undefined = config.run?.advanced?.initial_alpha;
+  const pending = scales.filter(r => !sameNumber(r.target.normalization_scale, r.proposed_scale)).length + (alpha.proposed != null && alphaNow !== alpha.proposed ? 1 : 0);
+  const proposals = scales.length + (alpha.proposed != null ? 1 : 0);
+  // A task saved from a Virtuoso cell starts only with the rows it has saved (the check before every run), so applied
+  // scales need Save task; that save changes Specs only, and the recorded baseline stays.
+  const savedTask = String(config.circuit?.task_id ?? '').startsWith('real:');
+  const afterwards = savedTask && scales.length ? ' Then press Save task: this task starts only with the rows it has saved, and its recorded baseline is kept.' : '';
+  const apply = () => setConfig((c: Json) => ({ ...c,
+    targets: (c.targets ?? []).map((t: Json) => { const row = scales.find(r => r.metric_id === t.metric_id); return row && sameSpecsRow(t, row) ? { ...t, normalization_scale: row.proposed_scale } : t; }),
+    run: alpha.proposed == null ? c.run : { ...c.run, advanced: { ...(c.run.advanced ?? {}), initial_alpha: alpha.proposed } } }));
+  return <div className="calibration">
+    <h4>Calibration <span className="hint">from this run's random designs: {designs.scored} of {designs.simulated} gave a reward, {designs.passing} pass{designs.passing === 1 ? 'es' : ''} every hard spec</span></h4>
+    {result.status !== 'calibrated' && <p className="warn">Nothing is proposed. {result.reason}</p>}
+    {result.scale_note && <p className="hint">{result.scale_note}</p>}
+    {rows.length > 0 && <table className="grid small calibration-rows"><thead><tr>
+      <th title="The Specs row, by its ID.">Specs row</th><th title="The row's limit, as the run had it.">Limit</th>
+      <th title="How many of the random designs that measured this row are outside its limit.">Random designs that miss it</th>
+      <th title="The median distance outside the limit, among the designs that miss it, in the row's unit.">Typical miss</th>
+      <th title="What the Scale box of this row holds on the page now. Empty = the size of the limit.">Scale now</th>
+      <th title="The typical miss, rounded to two digits: with it a typical failing random design counts as a miss of 1 on this row. A smaller Scale makes a miss on the row cost more, so the search keeps more distance from that limit.">Proposed Scale</th></tr></thead>
+      <tbody>{rows.map(r => <tr key={r.metric_id}>
+        <td>{r.metric_id}</td><td>{limitText(r)}</td><td>{r.misses} of {r.measured}{r.measured < designs.simulated && <span className="hint"> ({designs.simulated - r.measured} gave no value)</span>}</td>
+        <td>{r.median_miss == null ? '-' : si(r.median_miss, r.unit)}</td>
+        <td>{!r.target ? <span className="hint">no such row on the page</span> : r.target.normalization_scale != null ? short(r.target.normalization_scale) : <span className="hint">empty</span>}</td>
+        <td>{r.proposed_scale != null && <b>{short(r.proposed_scale)}</b>}
+          {r.proposed_scale != null && !r.same && <span className="warn"> not applied: {r.target ? 'the limits of this row were changed after the run' : 'the page has no row with this ID'}</span>}
+          {r.note && <span className="hint">{r.proposed_scale != null ? ' ' : ''}{r.note}</span>}</td></tr>)}</tbody></table>}
+    <p className="calibration-alpha">Initial alpha (RL networks): now <b>{alphaNow ?? "the encoder's saved value"}</b>; proposed {alpha.proposed != null
+      ? <><b>{short(alpha.proposed)}</b> <span className="hint">= 0.1 x the reward's spread among the random designs ({short(Number(Number(alpha.reward_sd).toPrecision(3)))}{scales.length || rows.some(r => r.proposed_scale != null) ? ', with the proposed scales' : ''})</span></>
+      : <span className="hint">nothing. {alpha.note}</span>}{alpha.proposed != null && alpha.note && <span className="hint"> {alpha.note}</span>}</p>
+    <div className="row">
+      <button disabled={!pending || otherTask} onClick={apply}
+        title="Apply calibration: Writes the proposed Scale into those Specs rows and the proposed Initial alpha into RL networks, as one Undo step. Nothing is simulated and no task is saved.">Apply calibration</button>
+      <span className="hint">{otherTask ? `This run calibrated ${result.task_key}; the page holds ${config.circuit.task_id}.`
+        : !proposals ? 'There is nothing to apply.'
+        : !pending ? `The page holds these values.${afterwards}`
+        : `Sets ${scales.length ? `the Scale of ${scales.length} Specs row${scales.length === 1 ? '' : 's'}` : ''}${scales.length && alpha.proposed != null ? ' and ' : ''}${alpha.proposed != null ? 'Initial alpha' : ''}, as one Undo step.${afterwards}`}</span>
+    </div>
+  </div>;
+}
+
 /** The run the bottom tabs show. Its run commands live in the header only (Save now, Pause, Abort, Force abort): the
  *  four copies this tab had went on 2026-09-29 (user: fewer duplicate buttons). Continue stays - it sets a new budget and
  *  also continues a stopped run, which the header cannot. `continueBlocked`: why Continue waits (the header is busy with
  *  another run), or null. */
-export function StatusTab({ status, runDir, error, onContinue, continueBlocked }: { status: Json; runDir: string | null; error: string | null;
-  onContinue: () => void; continueBlocked: string | null }) {
+export function StatusTab({ status, runDir, error, onContinue, continueBlocked, config, setConfig }: { status: Json; runDir: string | null; error: string | null;
+  onContinue: () => void; continueBlocked: string | null; config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void }) {
   // A run chosen whose answer is still on its way, or whose status cannot be read now, is said as such: this line used
   // to read "No run selected." while the strip below named the run.
   if (!status) return <p className="hint">{!runDir ? 'No run selected.' : error ? `The status of this run could not be read: ${error}` : 'Reading the run...'}</p>;
@@ -38,6 +101,7 @@ export function StatusTab({ status, runDir, error, onContinue, continueBlocked }
   return (<div className="status-grid">
     <SteeringCheck value={status.steering} />
     {status.manifest?.mock && <p className="mock">{status.manifest.mock_notice}</p>}
+    {status.calibration && <Calibration value={status.calibration} live={!!status.worker_alive || !['completed', 'failed', 'stopped', 'cancelled'].includes(status.state)} config={config} setConfig={setConfig} />}
     <table className="grid small"><tbody>
       <tr><td>State</td><td><b>{status.state}</b>{status.stop_reason ? ` (${status.stop_reason})` : ''}{status.worker_alive ? ' - worker alive' : ''}</td></tr>
       {status.search && <tr><td>Search</td><td>{searchPhase(status.search)} · LLM {status.search.calls} / {status.search.max_calls}</td></tr>}

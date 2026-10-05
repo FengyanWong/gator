@@ -1051,3 +1051,58 @@ learned (and, asked the same in another session, "take 10000 and 4 as well").
   has run a published size with these training numbers on a GATOR circuit.
 
 Record 7.192.
+
+## Calibration with the baseline run: proposed from random designs, applied by a press (2026-10-05)
+
+The user asked whether the settings could be tuned in initial runs ("not on the fly during the run but have an
+calibration setting during initail runs"), then, of all the settings ("not only the alpha but all the settings in RL
+network and reward settings"), and settled where it belongs: "shouldnt each task run the baseline run? can you add the
+calibration functionality to that".
+
+- **Two settings are calibrated, because two depend on the task and can be read from random designs.** The Scale of a
+  Specs row (how far outside its limit counts as a miss of 1) and the Initial alpha (the starting temperature). A free
+  study on the ngspice circuit `ota5` (66 runs of 1,000 evaluations, 3 seeds per setting) looked at the others: network
+  size (16 / 2 / 1, 32 / 4 / 2, 48 / 4 / 4) and encoder (Graph Transformer, RGCN, GATv2) ended at the same share of
+  passing designs (93 to 95 %); episode length 4 and 8 the same, 1 worse; memory 50 with episode 30 worse. Those stay
+  preset values. Learning rate 1e-3 was better than the preset's 3e-4 in all three seeds (learned at design 139 to 179
+  against 251 to 294): one value for every task, so a preset and not a calibration - the user took it into the
+  starting presets the same day (record 7.199).
+- **The Scale is the median miss among the random designs that miss the row.** A typical failing design then scores
+  0.5 on every row under the compressed shape, whatever the row's unit or the size of its limit. Tested: same learning
+  speed, more passing designs in the last third of a run - 93 % to 98 % without bonuses (two rounds of three seeds),
+  97.0 % to 99.1 % with the page's tested reward.
+- **It has a price, and the user is told.** With the tested reward the passing designs drew about 7 % more power
+  (median 80 uW against 75 uW in the last third; the lowest 64 to 68 against 61 to 64): a miss costs more with the
+  smaller scales, so the search keeps more distance from the limits. More passing designs, a little less of the
+  objective.
+- **The Initial alpha is 0.1 x the standard deviation of the reward among the random designs,** with the proposed
+  scales. 0.1 is what the tested 0.01 was on the circuit it was tested on (reward spread 0.09). Tested where it should
+  matter: with scales ten times too large, 0.01 ended at 64 % passing and the calibrated 0.0025 at 91 %; a hundred
+  times too large, 1 % and 20 %. It repairs a flat reward only in part - the Scale is the first setting, the
+  temperature the second. With calibrated scales the spread is about the same on every task by construction, and the
+  proposal lands near 0.01: on `ota5` 0.014, which made no difference (98.6 % against 99.1 %).
+- **The objective row gets no proposal - a judgment.** Its Scale also measures the objective bonus, so a proposal from
+  the misses would change what the bonus means. Measured, it made no difference whether that row was calibrated too
+  (150 uW limit, Scale 80 uW): 99.3 % passing and 81 uW with it, 99.1 % and 80 uW without.
+- **Nothing for the capped shape.** The median puts a typical miss at 1, which is the cap: half of the failing designs
+  would count the same. The page's tested reward is compressed.
+- **Guard rails that are judgment, not measurement:** at least 8 designs (and one in eight) must miss a row; a Scale
+  stays within 0.01 to 10 times the size of the limit (tested proposals were 0.03 to 0.7 times); the Initial alpha
+  within 0.0001 to 0.05 (validation warns above 0.05); two digits. 64 designs because the proposals of 64 agreed with
+  those of 4,153 and those of 32 or 16 often had too few misses to propose at all.
+- **Proposed, never applied by the run.** The run writes `calibration.json`; the page applies on a press, as one Undo
+  step, and a saved task still needs Save task. A run that changed a task's Specs by itself would have changed what
+  every later run of that task means.
+- **A tick, not a second button, and not a renamed one.** It is the same run, longer; "Single baseline simulation"
+  still names what the baseline is, and the tick says what is added. On by default because the user wants every
+  task's baseline run to calibrate; the question before a real run names the number of simulations.
+- **The baseline comes first and alone.** No other lane starts before it is committed, and an invalid one ends the
+  run: with the calibration's higher failure limit (random designs may fail to be measured many times in a row) a
+  starting design that cannot be simulated would otherwise have used the whole budget on resets.
+- **The same designs as a warm-up.** The random designs are recorded as phase `warmup`, source `random_warmup`: no new
+  phase name, the table schema is unchanged.
+- **Not measured:** a training run with the proposals on Spectre (the run itself was checked there once, on the user's
+  word: 65 simulations on `real:mscr_ota7t`, proposals for all four rows); what the proposals do on a circuit other
+  than `ota5`; the guard rails' numbers.
+
+Record 7.197. Evidence: `artifacts/local/reviews/calibration-study-2026-10-05/README.md`.

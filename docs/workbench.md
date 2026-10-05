@@ -1360,6 +1360,68 @@ or half the width into an interval. A row whose limit is 0 needs a typed scale a
 `frontend/scripts/reward_block_check.mjs` (28: the sentence, the fold, the button, the RL networks warning and the GATOR
 baseline press, the Specs scale). The measurement: `artifacts/local/reviews/defaults-study-2026-10-05/README.md`.
 
+### Calibration with the baseline run: a Scale per Specs row and the Initial alpha (2026-10-05, record 7.197, user request)
+
+**In plain words.** Beside **Single baseline simulation** in the header there is a tick, **+ calibration**, on unless
+you take it off. With it the same run goes on after the baseline: it simulates 64 random designs - uniform draws over
+the Parameters ranges, the draws a run's warm-up makes - and works out two settings from what they measure.
+
+- **Scale, for each Specs row:** the typical miss - the median distance outside the limit among the random designs that
+  miss the row, in the row's own unit. One example, from the free ngspice test circuit: the output-voltage row allows
+  0.7 to 1.2 V, so an empty Scale box means 1.2 V; the random designs that miss the row miss it by 0.042 V. With Scale
+  0.042 such a miss counts as 1; with the empty box it counted as 0.035 and the reward hardly saw the row.
+- **Initial alpha** (the starting temperature in RL networks): 0.1 x the spread of the reward among the random designs,
+  worked out with the proposed scales.
+
+**The run changes nothing.** Run status of that run shows the proposals: one line per Specs row - its limit, how many
+random designs miss it, the typical miss, the Scale the page holds now, the proposed Scale - then the Initial alpha, and
+**Apply calibration**. One press writes the proposed scales into the Specs rows and the Initial alpha into RL networks,
+as one Undo step. A task saved from a Virtuoso cell then needs **Save task**: it starts only with the rows it has saved.
+That save changes Specs only, so the recorded baseline is kept.
+
+- **What it costs.** Each lane simulates the starting design once (the first is the baseline), then come the 64 random
+  designs: 64 + the number of lanes evaluations, every one a real simulation on a real task. The question before the
+  run names the number. Nothing is learned from them (no learner update), and a design that passes does not stop the run.
+- **No lane starts before the baseline is in.** A baseline that gives no valid result ends the run there, as a baseline
+  run of one evaluation: no random design is simulated on a task whose starting design cannot be measured.
+- **Stopped among the random designs** (Abort), the run still gives the task its reference - the baseline evaluation is
+  as finished as that of a run of one - and proposes from the designs it has, if at least 16 gave a reward.
+- **What is not proposed, and said in the table instead:**
+  - a row fewer than 8 random designs miss (or fewer than one in eight): too few to name a typical miss;
+  - the row that carries the objective: its Scale also measures the objective bonus, so it is left as it is (in the
+    test it made no measurable difference whether that row was calibrated too);
+  - any Scale while the reward uses the capped shape: a typical miss at 1 would sit on the cap. The calibration is
+    made for the compressed shape (**Use the tested reward**);
+  - the Initial alpha when the reward code cannot give the recorded rewards again from the recorded values, or when
+    every random design has the same reward.
+- **Limits of a proposal.** A Scale stays within 0.01 to 10 times the size of the limit, the Initial alpha within 0.0001
+  to 0.05, and both are rounded to two digits: they are estimates from a few dozen designs.
+- **Apply writes only what still fits.** A Specs row whose limits or unit were changed after the run is marked "not
+  applied", and a run of another task than the one on the page offers nothing.
+- **Without the tick** the button is what it was: one evaluation. The tick is kept in this browser.
+- **From a script:** `POST /api/runs/start` takes `calibration_designs` (0 to 500) with `baseline_only`; the result is
+  `calibration.json` in the run folder and `calibration` in the run's status.
+
+**What was measured** (free ngspice circuit `ota5`, 1,000 evaluations per run, 3 seeds per setting; on Spectre the run
+itself was checked once, no training run was made with its proposals).
+The scales of 64 random designs agreed with those of 4,153: gain 7.7 to 11 dB against 10, bandwidth 64 to 73 MHz against
+70, output voltage 0.026 to 0.043 V against 0.04 (six seeds). In training, calibrated scales did not make learning
+faster. They raised the share of passing designs in the last third of the run: 93 % to 98 % without bonuses (six seeds
+in two rounds), 97.0 % to 99.1 % with the page's tested reward. **They have a price:** with the tested reward the
+passing designs then drew about 7 % more power (median 80 uW against 75 uW) - a miss costs more, so the search keeps
+more distance from the limits. The Initial alpha matters when the reward is flat: with scales ten times too large,
+64 % passing with 0.01 and 91 % with the calibrated 0.0025; with calibrated scales its proposal (0.014) made no
+difference against 0.01. Network size and encoder made no difference to the result, so nothing about them is
+calibrated. The one Spectre run (`real:mscr_ota7t`, 65 simulations in 114 s) proposed gain 260 V/V where an empty box
+means 400, bandwidth 11 MHz (25 MHz), phase margin 9.6 deg (60 deg), current 0.28 mA (1 mA) and Initial alpha 0.011.
+The numbers:
+`artifacts/local/reviews/calibration-study-2026-10-05/README.md`; the reasons: [decisions.md](decisions.md),
+"Calibration with the baseline run".
+
+**Checks.** `tests/workbench/test_wb_calibration.py` (10: the arithmetic, the run with one and with three lanes, an
+invalid baseline, a stopped run's reference, the route); `frontend/scripts/calibration_check.mjs` (26: the tick, a real
+MOCK run of 65 evaluations, the proposals, Apply as one Undo step, an edited row left alone, the run without the tick).
+
 ### How a real run spends its simulations: corners two at a time, reused resets (2026-09-30, record 7.126)
 
 Three changes of the optimizer package (user decisions of 2026-09-30) stop a real run from spending time and budget on

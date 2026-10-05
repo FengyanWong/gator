@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
 from .. import aggregates, checkpoints as ckpt, runs, schema
-from .. import corner_check
+from .. import calibration, corner_check
 from ..layout import RunLayout
 from ..paths import PathNotAllowed, safe_child
 from ..storage.atomic import read_json, read_jsonl_tail, JsonlAppender
@@ -152,12 +152,17 @@ def register(app: FastAPI, context: ApiContext):
 
     def _start(config, body, *, baseline_only=False):
         allow_real = bool(body.authorize_real_simulation)
+        designs, calibrating = getattr(body, 'calibration_designs', 0), None
+        if designs and not baseline_only:
+            fail(400, 'Calibration designs belong to the Single baseline simulation (baseline_only), not to an optimization run.')
         if baseline_only:
             config = config.model_copy(deep=True)
             config.run.search = schema.SearchSettings()
             config.run.mode, config.run.max_evaluations = 'scratch', 1         # exactly ONE costed evaluation
             config.output.save_checkpoints = False
             config.project.task_name = f'{config.project.task_name}.baseline'
+            if designs:                                # ... and then the random designs of the calibration (record 7.197)
+                calibrating = calibration.prepare(config, designs)
         try:
             layout, manifest = runs.prepare_run(config, context.roots, allow_real=allow_real,
                                                 confirm_transfer=getattr(body, 'confirm_transfer', False), monitor=context.monitor,
@@ -169,6 +174,10 @@ def register(app: FastAPI, context: ApiContext):
         if baseline_only:
             manifest['run_kind'] = 'baseline_preflight'
             manifest['notes'].append('Single baseline simulation: a costed preflight evaluation, not a free check.')
+            if calibrating:
+                manifest['calibration'] = calibrating
+                manifest['notes'].append(f'With calibration: after the baseline, {calibrating["designs"]} random designs over the '
+                                         'Parameters ranges (each of them a costed evaluation; nothing is learned from them).')
             from ..storage.atomic import write_json
             write_json(layout.manifest, manifest)
         pid = runs.launch_worker(layout, allow_real=allow_real and not manifest['mock'])
@@ -214,6 +223,9 @@ def register(app: FastAPI, context: ApiContext):
                       summary=read_json(layout.summary, default=None))
         profile = (result.get('connection_profile_id') or None)
         result['connection'] = context.monitor.status(profile) if profile else dict(overall='not_applicable')
+        # A baseline run asked to calibrate (record 7.197): what it was asked, and its proposals once the run has written them.
+        result['calibration'] = None if not manifest.get('calibration') else dict(
+            request=manifest['calibration'], result=read_json(path / calibration.FILE, default=None))
         return result
 
     @app.get('/api/runs/corner-check/plan')

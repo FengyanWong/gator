@@ -162,7 +162,8 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
     ready = not missing and not validation.get('blocks_run')
     items.append(_item('start', 'Start', 'done' if ready else 'missing', 'you',
                        'Nothing blocks a start.' if ready else f"{len(missing)} item(s) above still block a start.",
-                       'Press "Single baseline simulation" (one costed evaluation) or "Start".' if ready else ''))
+                       'Press "Single baseline simulation" (one costed evaluation; with "+ calibration" ticked, 64 random '
+                       'designs follow it) or "Start".' if ready else ''))
     return dict(ready=ready, next=missing[0] if missing else items[-1], items=items, facts=validation.get('facts') or {},
                 # Metric names the simulation backend really returns for this circuit: a target on anything else is refused.
                 provided_metrics=sorted(str(m) for m in (getattr(task, 'provided_metrics', None) or ()))[:80],

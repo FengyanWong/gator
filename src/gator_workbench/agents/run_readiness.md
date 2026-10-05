@@ -40,7 +40,11 @@ A start is refused at the first of these that fails, and nothing is created or c
 10. **Start** - "Single baseline simulation" first is a good habit: ONE costed evaluation of the
     initial design that proves the whole chain before a budget is spent. For a task saved from a
     Virtuoso cell its finished result becomes the task's reference by itself (the column then no
-    longer says "no real baseline yet"). Then "Start".
+    longer says "no real baseline yet"). With "+ calibration" ticked beside the button (the default),
+    64 random designs follow the baseline in the same run, each a costed evaluation: from them the
+    run proposes a Scale for each Specs row and the Initial alpha, shown under Run status with
+    "Apply calibration". Nothing is applied by the run; after Apply a saved task needs "Save task".
+    Then "Start".
 
 ## The task's own rows: "Reload saved values"
 

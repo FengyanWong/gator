@@ -278,3 +278,5 @@ One row per commit, newest last.
 | `d83b308` | 10-05 18:27 | - | record only: names the commit of record 7.197, and the table rows for 5a7500d and 5f5fbd2 |
 | `a0bce06` | 10-05 18:46 | 7.202 | one "Baseline simulation" button: the "+ calibration" tick gone, every baseline run calibrates (the baseline alone = Abort once the random designs begin); "Single baseline simulation" renamed in every text; Check now stays the free check (the user's choice after advice) |
 | `d47f72c` | 10-05 18:48 | - | record only: names the commit of record 7.202, and the table rows for d83b308 and a0bce06 |
+| `74e015d` | 10-05 18:49 | 7.202 | follow-up: typing_check finds the Baseline simulation button by its name (it looked for the old tooltip "ONE costed"); the entry says so; the table row for d47f72c |
+| `55e47aa` | 10-05 19:00 | 7.206 | the Abort question of a Baseline simulation says the baseline is kept, a task saved from a cell without a reference still gets it, and the calibration proposes only from the random designs simulated so far (at least 16) |

@@ -38,7 +38,7 @@ button.issues-button { color: var(--bad); border-color: var(--bad); font-weight:
 /* settings.json unreadable (backend runs.load_settings): a full-width line of the header too, in the notice colours below. */
 .settings-problem { order: 1; flex: 0 0 100%; margin: 0; }
 .banner { grid-area: msg; padding: 6px 10px; border: 1px solid var(--line); background: var(--info-bg); cursor: pointer; }
-.banner.error { background: var(--bad-bg); border-color: var(--bad); } .banner.mock, .mock, .settings-problem { background: var(--warn-bg); border: 1px solid var(--mock-line); padding: 4px 8px; font-weight: 600; }
+.banner.error { background: var(--bad-bg); border-color: var(--bad); } .mock, .settings-problem { background: var(--warn-bg); border-left: 3px solid var(--mock-line); padding: 4px 10px; font-weight: 600; } .banner.mock { border: 1px solid var(--mock-line); padding: 4px 8px; }
 .left { grid-area: left; overflow: auto; } main { grid-area: main; min-width: 0; overflow: hidden; display: flex; } .right { grid-area: right; overflow: auto; }
 footer { grid-area: foot; background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
 .bottom-body { flex: 1; overflow: auto; padding: 8px; min-height: 0; }
@@ -153,12 +153,18 @@ table.editor td.sel input { min-width: 0; margin: 0; }
 .toolbar .find-count { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--muted); white-space: nowrap; pointer-events: none; }
 tr.has-error td { background: var(--bad-row); }
 .hint { color: var(--muted); font-size: 11.5px; } .fact { margin: 2px 0 6px; } .error { color: var(--bad); } .warn { color: var(--warn); } .ok { color: var(--ok); }
-.guidance { background: var(--info-bg); border: 1px solid var(--info-line); padding: 5px 8px; margin: 6px 0 0; cursor: pointer; }
+.guidance { border-left: 3px solid var(--info-line); padding: 3px 10px; margin: 6px 0 0; cursor: pointer; }   /* a callout: record 7.218 */
 .issue { font-size: 11px; } .issue.error, .issue.blocker { color: var(--bad); } .issue.warning { color: var(--warn); } .issue.unresolved { color: var(--unresolved); } .issue.info { color: var(--muted); }
 td.issues { min-width: 170px; white-space: normal !important; }
-.blocker { border: 1px solid var(--bad); background: var(--bad-bg); padding: 6px; margin: 6px 0; } .issue.blocker { border: 0; background: none; padding: 0; margin: 0; }
+.blocker { border-left: 3px solid var(--bad); background: var(--bad-bg); padding: 6px 10px; margin: 6px 0; }   /* a status callout: record 7.218 */ .issue.blocker { border: 0; background: none; padding: 0; margin: 0; }
 /* A limit explained, not a fault: neutral, unlike .blocker. */
-.note { border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--info-bg); padding: 6px 8px; margin: 6px 0; } .note p { margin: 4px 0; } .note ul { margin: 2px 0 4px; padding-left: 18px; } .note code { overflow-wrap: anywhere; }
+/* record 7.218 (user: "work on fewer boxes inside boxes"): inside a panel, the header or a window, a callout has no frame of
+   its own. A rule at its left sets it off - the accent for a note, a confirmation and a group, the status colour for a
+   status - and only a status that must not be missed keeps its faint fill (a blocker, a warning, MOCK / REAL, a test
+   result). Fields, buttons, tables, chat bubbles, charts and the panels themselves keep theirs. */
+.note { border-left: 3px solid var(--accent); padding: 2px 10px; margin: 8px 0; }
+/* ...and a callout inside another one has no rule of its own: its heading sets it off (two rules side by side read as a frame) */
+:is(.note, .confirm, .matched-devices, .connection-add) :is(.note, .confirm) { border-left: none; padding-left: 0; } .note p { margin: 4px 0; } .note ul { margin: 2px 0 4px; padding-left: 18px; } .note code { overflow-wrap: anywhere; }
 /* The task row of the Project column: "Load task" at the left, "Delete task" at the right end (user request 2026-09-24). */
 .row.task-buttons { align-items: center; margin: 6px 0 4px; } .row.task-buttons button { flex: none; }
 pre { white-space: pre-wrap; word-break: break-word; margin: 4px 0; font-size: 11px; } pre.small { max-height: 180px; overflow: auto; }
@@ -167,7 +173,7 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 4px 0; font-size: 1
 .state-not_ready, .state-busy { background: var(--busy-bg); color: var(--warn); border-color: var(--warn-line); } .state-unknown, .state-not_checked { background: var(--neutral-bg); color: var(--neutral-text); } .state-not_applicable { background: var(--na-bg); color: var(--muted); }
 ul.tree { list-style: none; margin: 2px 0; padding-left: 12px; border-left: 1px dotted var(--line); } ul.tree li span { cursor: default; }
 .path { font-family: var(--f-mono); font-size: 11px; word-break: break-all; white-space: normal !important; cursor: copy; }
-.confirm { border: 1px solid var(--accent); background: var(--hover); padding: 8px; margin: 6px 0; } .diff-added td { background: var(--added-bg); } .diff-removed td { background: var(--bad-bg); }
+.confirm { border-left: 3px solid var(--accent); padding: 4px 10px; margin: 8px 0; }   /* a callout: record 7.218 */ .diff-added td { background: var(--added-bg); } .diff-removed td { background: var(--bad-bg); }
 .agent { display: grid; grid-template-columns: 260px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 10px; height: 100%; } .agent-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: 'using using' 'chat compose'; gap: 4px 8px; min-height: 0; }
 /* The bottom panel is wide and short: conversation, message box and notes stand side by side, each at the full height, so a proposal never squeezes the conversation. */
 .agent-using { grid-area: using; color: var(--muted); font-size: 11.5px; display: flex; gap: 10px; align-items: center; justify-content: space-between; } .agent-using b { color: var(--text); font-weight: 600; }
@@ -181,11 +187,11 @@ ul.checklist li { margin: 3px 0; padding-left: 22px; position: relative; } .chec
 .agent-actions { display: inline-flex; gap: 8px; align-items: center; flex: none; } .agent-actions label.check { flex: none; margin: 0; font-size: 11.5px; color: var(--muted); }
 .msg:has(.suggestions) { max-width: none; align-self: stretch; } .suggestions { margin-top: 5px; } .suggestions td { vertical-align: top; } .suggestions td:first-child b, .suggestions td:nth-child(2), .suggestions td:nth-child(3) { white-space: nowrap; word-break: normal; } .suggestions tr.applied td { background: var(--added-bg); }
 .suggestions .quote { font-style: italic; color: var(--muted); margin-top: 2px; } .suggestions a, .ideas a { color: var(--accent); }
-.ideas { margin-top: 8px; padding: 5px 8px; border: 1px solid var(--line); background: var(--surface-2); } .ideas ul { margin: 3px 0; padding-left: 18px; } .ideas li { margin: 3px 0; }
-.selection-info { margin: 2px 0 6px; max-height: 140px; overflow: auto; border: 1px solid var(--line); background: var(--surface-2); padding: 3px 8px; } .selection-info ul { margin: 0; padding-left: 16px; } .selection-info li { margin: 2px 0; word-break: break-word; }
+.ideas { margin-top: 8px; padding: 2px 10px; border-left: 3px solid var(--line); } .ideas ul { margin: 3px 0; padding-left: 18px; } .ideas li { margin: 3px 0; }
+.selection-info { margin: 2px 0 6px; max-height: 140px; overflow: auto; border-left: 3px solid var(--line); padding: 2px 10px; } .selection-info ul { margin: 0; padding-left: 16px; } .selection-info li { margin: 2px 0; word-break: break-word; }
 /* Next to a proposal's diff: the workbench's own verdict on the result, and every value that is only a placeholder. */
 .verdict { margin: 6px 0 4px; font-weight: 600; } .verdict .hint { font-weight: 400; }
-.provisional { margin: 6px 0; padding: 5px 8px; border: 1px solid var(--warn-line); background: var(--warn-bg); } .provisional ul { margin: 3px 0 0; padding-left: 18px; } .provisional code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
+.provisional { margin: 6px 0; padding: 5px 10px; border-left: 3px solid var(--warn-line); background: var(--warn-bg); } .provisional ul { margin: 3px 0 0; padding-left: 18px; } .provisional code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
 .agent-side { overflow: auto; min-height: 0; padding-right: 4px; }  /* scrolls by itself: its length must not push the message box out of the panel */
 /* The conversation: one bubble per message. Yours on the right, the agent's on the left, workbench remarks small and centred. */
 .chat { grid-area: chat; overflow: auto; border: 1px solid var(--line); padding: 8px 10px; min-height: 60px; background: var(--sunk); display: flex; flex-direction: column; gap: 7px; }
@@ -232,7 +238,7 @@ button.notes-link { border: none; background: none; padding: 0 3px; color: var(-
 .step-no { display: inline-block; width: 16px; height: 16px; line-height: 16px; text-align: center; border-radius: 50%; background: var(--accent-fill); color: var(--on-accent); font-size: 10.5px; margin-right: 3px; }
 .command { display: flex; gap: 6px; align-items: flex-start; margin: 3px 0; } .command code { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-all; background: var(--code-bg); border: 1px solid var(--line); padding: 4px 6px; font-size: 11.5px; user-select: all; }
 .steps-list { margin: 3px 0; padding-left: 16px; font-size: 11.5px; }
-.status-line { margin: 4px 0; padding: 5px 7px; border: 1px solid var(--line); border-left-width: 4px; font-size: 12px; }
+.status-line { margin: 4px 0; padding: 5px 10px; border-left: 4px solid var(--line); font-size: 12px; }   /* a status callout: record 7.218 */
 .status-line.level-ok { border-color: var(--ok-line); background: var(--ok-bg); color: var(--ok); } .status-line.level-error { border-color: var(--bad-line); background: var(--bad-bg); color: var(--bad); }
 .status-line.level-warn, .status-line.level-partial { border-color: var(--warn-line); background: var(--busy-bg); color: var(--warn); } .status-line.level-unknown { background: var(--neutral-bg); color: var(--neutral-text); }
 /* The connection block of the left column is ONE button; pressing it opens the connection window (drawn through a portal). */
@@ -257,7 +263,7 @@ input.bounded::-webkit-inner-spin-button, input.bounded::-webkit-outer-spin-butt
    the numbered ones sit. */
 .connection-window .step-no.step-sign::before { content: '\200b'; }
 .connection-window .step-no.step-sign svg.icon { width: 11px; height: 11px; vertical-align: -1px; }
-.connection-window .row > label { flex: 1; } .connection-window .row > button, .virtuoso-window .row > button { flex: none; } .connection-window .connection-add { background: var(--sunk); padding: 8px 10px; border: 1px solid var(--line); }
+.connection-window .row > label { flex: 1; } .connection-window .row > button, .virtuoso-window .row > button { flex: none; } .connection-window .connection-add { padding: 2px 12px; border-left: 3px solid var(--accent); }
 /* The two window launchers of the Project column: one grid, text left, the two buttons under each other in one right-hand
    column of equal width, each pair on one line (the text wraps inside its cell; the button stays beside it). */
 .launchers { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; row-gap: 6px; align-items: center; margin: 8px 0; }
@@ -267,12 +273,12 @@ details.labels > summary { color: var(--muted); } details.labels > summary b { f
 /* The Virtuoso cellview import of the left column is ONE button (user request 2026-09-23); pressing it opens the Virtuoso window,
    a pop-up like the connection window (about:blank = quirks mode, so its tables are told to inherit the font). */
 .virtuoso-window details > summary { cursor: pointer; }
-.virtuoso-window .copy-warning { border: 1px solid var(--warn); background: var(--warn-bg); padding: 5px 8px; }
+.virtuoso-window .copy-warning { border-left: 3px solid var(--warn); background: var(--warn-bg); padding: 5px 10px; }
 /* The ngspice window: the deck itself is the main thing, in a monospace box that fills the width. */
 .ngspice-window .ngspice-text { width: 100%; box-sizing: border-box; font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.35; white-space: pre; overflow: auto; }
 .ngspice-window .row.ngspice-file { align-items: flex-end; } .ngspice-window .row.ngspice-file > button { flex: none; }
 .ngspice-window .ngspice-check table td { vertical-align: top; } .ngspice-window .ngspice-check li.warn { color: var(--warn); }
-.real { background: var(--real-bg); border: 1px solid var(--accent); padding: 4px 8px; font-weight: 600; }
+.real { background: var(--real-bg); border-left: 3px solid var(--accent); padding: 4px 10px; font-weight: 600; }
 label.disabled { opacity: .6; } input:disabled { background: var(--field-disabled); color: var(--muted); cursor: not-allowed; }
 td.numeric { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap !important; font-family: var(--f-mono); } details a { color: var(--accent); }
 .row.pair > button { flex: 1 1 0; min-width: 0; } p.in-use { margin: 6px 0 0; }
@@ -361,7 +367,7 @@ details.section.module { margin-top: 0; } details.module > summary { cursor: poi
 .calibration table.grid { width: auto; max-width: 100%; } .calibration table.grid th { position: static; cursor: help; }
 .calibration-alpha { margin: 5px 0; } .calibration .row { align-items: center; }
 /* "Calibration ready" (record 7.204): a line of its own under the header when a Baseline simulation has ended, with its two buttons. */
-.calibration-ready { order: 1; flex: 0 0 100%; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--info-bg); border: 1px solid var(--line); padding: 4px 8px; }
+.calibration-ready { order: 1; flex: 0 0 100%; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border-left: 3px solid var(--accent); padding: 2px 10px; }
 .calibration-ready > span { flex: 1 1 300px; } .calibration-ready .hint { font-weight: normal; }
 .corner-check h4 { margin: 10px 0 3px; } .corner-check h4 .hint { font-weight: normal; }
 .corner-check table.grid { width: auto; } .corner-check table.grid th { position: static; cursor: default; } table.corner-grid th .hint { display: block; font-weight: normal; }
@@ -380,7 +386,7 @@ table.corner-checks tr { cursor: default; } table.corner-checks tr.current > td 
 .task-save-progress { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
 .task-save-progress progress { flex: none; width: 7em; height: 6px; accent-color: var(--accent); }
 /* Matched devices... (Parameters tab, status record 7.103) */
-.matched-devices { border: 1px solid var(--line); background: var(--panel); padding: 4px 8px 6px; margin: 6px 0; }
+.matched-devices { border-left: 3px solid var(--accent); padding: 2px 10px 4px; margin: 8px 0; }
 .matched-devices .row { align-items: center; } .matched-devices h4 { margin: 2px 8px 2px 0; }
 .matched-devices .structures { margin: 4px 0 6px 18px; padding: 0; } .matched-devices tr.muted td { color: var(--muted); }
 /* An import confirmation or the Matched devices box scrolls by itself (its Apply / Cancel first): a long diff grew past the

@@ -228,6 +228,15 @@ configuration saved in this browser already fails when the page opens - **Start 
 the saved one first and opens the page empty. "Details for a bug report" holds the error's stack. A second panel around
 everything catches a failure above that one, without an Undo. Browser check: `frontend/scripts/crash_panel_check.mjs`.
 
+**Callouts without frames** (record 7.218, user: "work on fewer boxes inside boxes"). Inside a panel, the header or a
+window, a callout has no frame of its own. A rule at its left sets it off: the accent colour for a note, a confirmation
+and a group (Add a connection, Matched devices), the status colour for a status. Only a status that must not be missed
+keeps its faint fill: a blocking issue, a warning, MOCK / REAL, a connection test result, the settings problem. A callout
+inside another one, such as the review inside Matched devices, has no rule of its own; its heading sets it off. Fields,
+buttons, tables, chat areas, charts and the panels keep their frames, and the MOCK banner between the header and the
+columns keeps its frame too. The rules are shared by both looks (`styles.css`). Browser check:
+`frontend/scripts/callouts_check.mjs`.
+
 **The splitter above the bottom panel.** Drag the top edge of the bottom panel to give it more or less room;
 double-click it to fold the panel down to its tab line, and again to open it. From the keyboard: Tab to it, then the
 arrow keys (24 px a press) or Enter. A press on one of its tabs, on the header's run line or an agent request opens it

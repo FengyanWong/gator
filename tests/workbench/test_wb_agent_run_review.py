@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from gator_workbench.agents import AgentError, AgentRequest, prompts, run_digest
+from gator_workbench.agents.claude_code import CLAUDE_DOCS_READ
 from helpers import cli, execute, make_config, workbench_app
 
 
@@ -105,7 +106,8 @@ def test_a_real_mock_run_is_condensed_and_handed_to_the_agent_over_http(client, 
     assert reply.status_code == 200 and proposal['kind'] == 'run_review'
     assert [s['path'] for s in proposal['suggestions']] == ['run.advanced.batch_size', 'run.network.encoder_type'] and 'applicable' in proposal['suggestions'][0]
     sent = json.loads((tmp_path / 'record.json').read_text())
-    assert '<run_results_data>' in sent['stdin'] and '"charged": 12' in sent['stdin'] and '--allowedTools' not in sent['argv'] and sent['files_in_cwd'] == []
+    assert '<run_results_data>' in sent['stdin'] and '"charged": 12' in sent['stdin'] and sent['files_in_cwd'] == []
+    assert sent['argv'][sent['argv'].index('--allowedTools') + 1].split(',') == list(CLAUDE_DOCS_READ)   # documents only
     missing = client.post('/api/agent/propose', json=dict(kind='run_review', prompt='x', config=raw))
     assert missing.status_code == 409 and 'choose one' in missing.json()['detail']['detail']
     outside = client.post('/api/agent/propose', json=dict(kind='run_review', prompt='x', config=raw, run_dir='/etc'))

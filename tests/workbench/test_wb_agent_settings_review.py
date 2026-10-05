@@ -7,6 +7,7 @@ import pytest
 
 from gator_workbench.agents import AgentError, AgentRequest, AgentResult, AgentSettings, ClaudeCodeProvider, CodexProvider, ProposalStore
 from gator_workbench.agents import prompts, settings_review
+from gator_workbench.agents.claude_code import CLAUDE_DOCS_READ
 from helpers import cli, make_config, workbench_app
 
 
@@ -129,7 +130,8 @@ def test_web_tools_stay_denied_unless_this_request_asked_and_then_only_publicati
     provider.propose(review_request(tmp_path))
     argv = json.loads(record.read_text())['argv']
     denied = argv[argv.index('--disallowedTools') + 1].split(',')
-    assert 'WebFetch' in denied and 'WebSearch' in denied and '--allowedTools' not in argv and '--max-turns' not in argv
+    assert 'WebFetch' in denied and 'WebSearch' in denied and '--max-turns' not in argv
+    assert argv[argv.index('--allowedTools') + 1].split(',') == list(CLAUDE_DOCS_READ)    # offline: documents only, no web
     provider.propose(review_request(tmp_path, web=True, web_domains=settings_review.domains(['my.lab.example', 'not a host', '*.ok.org'])))
     seen = json.loads(record.read_text())
     argv = seen['argv']
@@ -182,5 +184,6 @@ def test_a_review_over_http_is_checked_by_the_backend_and_applies_nothing(client
     assert 'ONLINE RESEARCH IS ON' in sent['stdin'] and '--allowedTools' in sent['argv']
     assert all(str(row['instance_path']) not in sent['stdin'] for row in config['parameters'])       # nothing of the design went along
     offline = client.post('/api/agent/propose', json=dict(kind='settings_review', prompt='Review my settings.', config=config)).json()
-    assert offline['suggestions'] and '--allowedTools' not in json.loads((tmp_path / 'record.json').read_text())['argv']
+    offline_argv = json.loads((tmp_path / 'record.json').read_text())['argv']
+    assert offline['suggestions'] and offline_argv[offline_argv.index('--allowedTools') + 1].split(',') == list(CLAUDE_DOCS_READ)
     assert client.post('/api/agent/propose', json=dict(kind='targets', prompt='x', config=config, web=True)).status_code == 409

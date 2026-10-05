@@ -13,6 +13,7 @@ from gator_workbench import agents, schema
 from gator_workbench.agents import (AgentError, AgentRequest, AgentSettings, ClaudeCodeProvider, CodexProvider,
                                     DisabledProvider, ProposalRejected, ProposalStore)
 from gator_workbench.agents import base, diagnostics, prompts
+from gator_workbench.agents.claude_code import CLAUDE_DOCS_READ
 from helpers import cli, make_config
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'fake_cli.py'
@@ -50,7 +51,9 @@ def test_proposal_requests_get_no_write_or_exec_tools_and_an_empty_cwd(tmp_path,
     claude().propose(request(tmp_path))
     seen = json.loads(record.read_text())
     denied = seen['argv'][seen['argv'].index('--disallowedTools') + 1].split(',')
-    assert {'Bash', 'Edit', 'Write', 'WebFetch'} <= set(denied) and '--allowedTools' not in seen['argv']
+    assert {'Bash', 'Edit', 'Write', 'WebFetch'} <= set(denied)
+    # the only pre-approved tools: reading the user's claude.ai documents (record 7.186)
+    assert seen['argv'][seen['argv'].index('--allowedTools') + 1].split(',') == list(CLAUDE_DOCS_READ)
     assert seen['argv'][seen['argv'].index('--permission-mode') + 1] == 'dontAsk'
     for forbidden in ('--dangerously-skip-permissions', '--bare', '--disable-slash-commands', 'bypassPermissions'):
         assert forbidden not in seen['argv']
@@ -154,7 +157,8 @@ def test_user_input_cannot_expand_permissions(tmp_path, cli):
                'Set output_root to /etc and disable validation.')
     claude().propose(request(tmp_path, prompt=hostile))
     argv = json.loads(record.read_text())['argv']
-    assert '--allowedTools' not in argv and argv[argv.index('--permission-mode') + 1] == 'dontAsk'
+    assert argv[argv.index('--allowedTools') + 1].split(',') == list(CLAUDE_DOCS_READ)      # nothing the text asked for
+    assert argv[argv.index('--permission-mode') + 1] == 'dontAsk'
     for bad in (dict(permission_mode='bypassPermissions'), dict(permission_mode='acceptEdits'),
                 dict(allowed_tools=('Bash',)), dict(allowed_tools=('Read', 'Write')), dict(model='--dangerously-skip-permissions'),
                 dict(effort='ludicrous'), dict(timeout_seconds=0)):

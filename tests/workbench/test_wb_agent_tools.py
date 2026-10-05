@@ -16,6 +16,7 @@ from gator_workbench import agent_tools as tool_server
 from gator_workbench import bridge_read, working_copy
 from gator_workbench.agents import AgentError, AgentRequest, AgentSettings, ClaudeCodeProvider
 from gator_workbench.agents import base, tools as catalog
+from gator_workbench.agents.claude_code import CLAUDE_DOCS_READ
 from gator_workbench.api import create_app
 from helpers import cli, workbench_server, make_config
 
@@ -210,7 +211,7 @@ def test_the_cli_is_given_exactly_the_granted_tools_and_no_other_server(tmp_path
     directory, config = claude_config(provider, request)
     argv = provider.build_argv('claude', request, mcp_config=config)
     allowed = argv[argv.index('--allowedTools') + 1].split(',')
-    assert allowed == catalog.mcp_names(catalog.granted('virtuoso_work'))
+    assert allowed == list(CLAUDE_DOCS_READ) + catalog.mcp_names(catalog.granted('virtuoso_work'))
     assert '--strict-mcp-config' in argv and argv[argv.index('--mcp-config') + 1] == config
     server = json.loads(Path(config).read_text())['mcpServers']['gator']
     assert server['args'] == ['-m', 'gator_workbench.agent_tools']
@@ -231,7 +232,7 @@ def test_a_request_without_tools_gets_an_empty_server_set(tmp_path):
     provider = ClaudeCodeProvider(AgentSettings(provider='claude_code'))
     argv = provider.build_argv('claude', request_for(tmp_path, kind='virtuoso_setup'))
     assert argv[argv.index('--mcp-config') + 1] == '{"mcpServers":{}}' and '--strict-mcp-config' in argv
-    assert '--allowedTools' not in argv
+    assert argv[argv.index('--allowedTools') + 1].split(',') == list(CLAUDE_DOCS_READ)   # documents to read, no tool
     assert claude_config(provider, request_for(tmp_path, kind='virtuoso_setup')) == (None, None)
 
 

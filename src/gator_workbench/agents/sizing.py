@@ -97,8 +97,8 @@ class SizingCliClient:
         emit = on_event or (lambda event: None)
         if self.provider.name == 'claude_code':
             request = AgentRequest('parameters', prompt, {}, None, request_id=self.call_id)
-            argv = self.provider.build_argv(executable, request, live=True, schema=schema)
-            argv += ['--tools', '', '--max-budget-usd', str(self.remaining_cost)]
+            argv = self.provider.build_argv(executable, request, live=True, schema=schema, builtin_tools=(), claude_docs=False)
+            argv += ['--max-budget-usd', str(self.remaining_cost)]
             code, stdout, stderr = run_cli(argv, stdin_text=prompt, cwd=self.cwd, timeout=self.timeout,
                 request_id=self.call_id, registry=self.registry, env=dict(os.environ, **LIVE_ENV),
                 on_line=LiveTranslator(emit).feed)

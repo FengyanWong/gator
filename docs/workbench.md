@@ -2143,6 +2143,23 @@ only in one direction: `virtuoso_work` (2026-09-22) is granted the workbench's o
 reads, and the Maestro setup of the task's working copy - for as long as it runs; see "The agent works
 in Virtuoso itself". The tables it proposes still need the user's approval.
 
+**What the agent may use (since 2026-10-05, record 7.186).** Every Claude Code request starts with a NAMED list of
+built-in tools (`--tools`), no longer with "everything except a deny list".
+- The list is `ToolSearch` (it loads the tools below), `Read`, `Grep` and `Glob` (inside the empty scratch folder),
+  plus `WebSearch` and `WebFetch` for an online settings review.
+- A tool the CLI adds later is therefore not offered. That includes the ones that reach outside a request: messages
+  to your other Claude sessions, routines on claude.ai, phone notifications, artifacts, workflows and scheduled
+  prompts. Until then all 18 real requests had been offered them; none used one.
+- **Your claude.ai documents** (the Docs connector of your claude.ai account) may be read (`read`, `query`, `guide`)
+  and never changed: `create`, `update`, `delete`, `batch` and `export` are denied. That is your decision of
+  2026-10-05.
+- **"Work in Virtuoso" keeps all six Virtuoso tools,** so the agent can still reach Virtuoso and finds out when the
+  connection is down. The last connection test result stays in every request's checklist.
+- **Sizing calls of the run engine** start with no built-in tool at all and no documents.
+- **How it was checked:** on the real `claude` 2.1.278 at no cost. The CLI was started with an unknown model name, so
+  it listed each request's tools and the API then refused the model (0 USD).
+  `tests/workbench/test_wb_agent_boundary.py` pins the command line.
+
 **Model and effort lists** (`agents/catalog.py`, served with `GET /api/agent/settings`; showing them calls no model;
 since 2026-10-03). Codex: the Codex app's own list of the models the signed-in account may use, read (never written)
 from its `models_cache.json` - in `$CODEX_HOME`, `~/.codex`, and from WSL in `C:\Users\<name>\.codex` of the desktop

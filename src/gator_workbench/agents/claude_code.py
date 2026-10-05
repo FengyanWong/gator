@@ -47,6 +47,21 @@ from .prompts import build_prompt, proposal_schema_json
 from .tools import SERVER as TOOL_SERVER, mcp_names
 
 WEB_TOOLS = ('WebSearch', 'WebFetch')
+# The ONLY built-in tools a request starts with (`--tools`; record 7.186, 2026-10-05). The CLI adds tools with every release,
+# among them ones that reach outside the request: messages to the user's other Claude sessions (SendMessage, ListAgents),
+# routines on claude.ai (RemoteTrigger), phone notifications, artifacts, workflows, scheduled prompts. In `dontAsk` a tool
+# that needs no permission runs without asking, so the old deny list could not keep up: all 18 real requests until then were
+# offered those tools. The file tools stay confined to the empty scratch folder; ToolSearch loads the tools that arrive
+# deferred (the claude.ai Docs read tools below, the workbench's own Virtuoso tools of `virtuoso_work`, which are not built-in
+# tools and keep working). StructuredOutput, the answer itself, comes with --json-schema whatever --tools says. Checked on
+# claude 2.1.278 at no cost: started with an unknown model name, the CLI lists the session's tools and the API then refuses
+# the model (0 USD).
+BUILTIN_TOOLS = ('ToolSearch', 'Read', 'Grep', 'Glob')
+# The user's claude.ai Docs connector reaches every session from the claude.ai account (--strict-mcp-config does not keep it
+# out). The agent may READ documents and never change them (user decision of 2026-10-05).
+CLAUDE_DOCS = 'mcp__claude_ai_Claude_Docs__'
+CLAUDE_DOCS_READ = tuple(CLAUDE_DOCS + name for name in ('read', 'query', 'guide'))
+CLAUDE_DOCS_WRITE = tuple(CLAUDE_DOCS + name for name in ('create', 'update', 'delete', 'batch', 'export'))
 LIVE_OPTIONS = ('--include-partial-messages', '--thinking-display', 'summarized')
 LIVE_ENV = {'CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING': '1'}
 LIVE_OPTION_REFUSED = re.compile(r"(?i)unknown option[^\n]*--(thinking-display|include-partial-messages)"
@@ -91,7 +106,11 @@ class ClaudeCodeProvider(CliProvider):
         scratch = tempfile.mkdtemp(prefix='gator-agent-')
         return Path(scratch), scratch
 
-    def build_argv(self, executable, request: AgentRequest, live=False, mcp_config=None, schema=None):
+    def build_argv(self, executable, request: AgentRequest, live=False, mcp_config=None, schema=None, builtin_tools=None,
+                   claude_docs=True):
+        """`builtin_tools`: the built-in tools the session starts with; None = the Agent tab's set (BUILTIN_TOOLS, plus the
+        two web tools for an online settings review), () = none at all (the run engine's sizing calls). `claude_docs`: the
+        agent may read the user's claude.ai documents (never change them)."""
         s = self.settings
         events = live or s.stream                                  # a live request needs the event stream
         argv = [executable, '-p', '--output-format', 'stream-json' if events else 'json']
@@ -103,13 +122,16 @@ class ClaudeCodeProvider(CliProvider):
         # denied tool cannot be re-allowed - and WebFetch is allowed for the operator's publication hosts only. Everything that
         # writes or executes stays denied, and the working directory stays the empty scratch directory.
         web = bool(request.web and request.kind == 'settings_review' and request.web_domains)
-        denied = [tool for tool in WRITE_OR_EXEC_TOOLS if not (web and tool in WEB_TOOLS)]
+        if builtin_tools is None:
+            builtin_tools = BUILTIN_TOOLS + (WEB_TOOLS if web else ())
+        denied = [tool for tool in WRITE_OR_EXEC_TOOLS if not (web and tool in WEB_TOOLS)] + list(CLAUDE_DOCS_WRITE)
         allowed = list(s.allowed_tools) + (['WebSearch'] + [f'WebFetch(domain:{host})' for host in request.web_domains] if web else [])
+        allowed += list(CLAUDE_DOCS_READ) if claude_docs else []
         # The workbench's own tools (agents/tools.py), for a request kind that is granted some. The grant is spelled out
         # tool by tool - `--disallowedTools` says nothing about MCP tools, and a tool ADDED to the server later must not
         # become reachable for an older kind - and `--strict-mcp-config` keeps every other MCP server out, including the
-        # user's own. A request without a grant is given an EMPTY server set, so it has no tools at all either way.
-        argv += ['--mcp-config', mcp_config or '{"mcpServers":{}}', '--strict-mcp-config']
+        # user's own. A request without a grant is given an EMPTY server set, so it has no workbench tools either way.
+        argv += ['--mcp-config', mcp_config or '{"mcpServers":{}}', '--strict-mcp-config', '--tools', ','.join(builtin_tools)]
         allowed += mcp_names(request.tools) if request.tools else []
         argv += ['--json-schema', json.dumps(schema) if schema is not None else proposal_schema_json(),
                  '--permission-mode', s.permission_mode, '--disallowedTools', ','.join(denied)]

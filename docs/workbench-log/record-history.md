@@ -301,3 +301,5 @@ One row per commit, newest last.
 | `7df7728` | 10-05 21:59 | 7.212 | choosing a registered task shows its newest run in the bottom tabs, or none (session "Task-run linking in frontend") |
 | `c928f9d` | 10-05 21:59 | 7.213 | learner charts by evaluation, units in the chart titles, the day's Spectre runs in the Training tab (session "Training tab with live graphs") |
 | `d34573c` | 10-05 22:13 | 7.215 | key numbers per run in the Training tab; "Can continue" checks that a save point exists (session "Training tab with live graphs") |
+| `223cca9` | 10-05 22:14 | - | record only: names the commits of records 7.212, 7.213 and 7.215, the Live line of 7.212, and the table rows for 8d90167, 7df7728, c928f9d and d34573c |
+| `372c8da` | 10-05 23:00 | 7.218 | fewer boxes inside boxes: a callout inside a panel, the header or a window drawn by a rule at its left without a frame, only a status keeping its faint fill, no rule for a callout inside a callout; 3 nested boxes on the page -> 1 (a field) |

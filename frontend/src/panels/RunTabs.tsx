@@ -88,6 +88,7 @@ export function StatusTab({ status, runDir, error, onContinue, continueBlocked, 
   const executedReward = status.summary?.reward;
   const hasV2 = Object.prototype.hasOwnProperty.call(b ?? {}, 'first_nominal_feasible');
   const continuable = !status.worker_alive && ['paused', 'stopped', 'interrupted'].includes(status.state);
+  const noSavePoint = status.save_point === null;      // the folder holds no save point to go on from (record 7.215; older backends: undefined)
   return (<div className="status-grid">
     <SteeringCheck value={status.steering} />
     {status.manifest?.mock && <p className="mock">{status.manifest.mock_notice}</p>}
@@ -120,8 +121,9 @@ export function StatusTab({ status, runDir, error, onContinue, continueBlocked, 
       {status.error && <tr><td>Error</td><td className="error">{status.error}</td></tr>}
     </tbody></table>
     <div className="row">
-      <button disabled={!continuable || !!continueBlocked} onClick={onContinue}
-        title={continuable && continueBlocked ? `Continue: ${continueBlocked}`
+      <button disabled={!continuable || noSavePoint || !!continueBlocked} onClick={onContinue}
+        title={continuable && noSavePoint ? 'Continue: this run folder holds no save point - a copy made without them, or they were deleted - so there is nothing to go on from.'
+          : continuable && continueBlocked ? `Continue: ${continueBlocked}`
           : 'Continue: A paused, stopped or interrupted run goes on in the same run folder, from its saved state, with its own saved configuration.'}><Icon name="play" label="Continue" /></button>
       <button onClick={() => saveJson(`${runName(status.run_dir)}__status.json`, { exported_utc: new Date().toISOString(), ...status })}
         title="Export status (JSON): Everything this tab shows, as it is right now, in one JSON file: state, budget, best design, connection, the run's manifest and summary."><Icon name="export" label="Export status (JSON)" /></button>

@@ -121,7 +121,8 @@ The header has one main run button and **Abort** next to it. The main button cha
 * The run commands are in the header only (status record 7.109, 2026-09-29, user decision): the Run status tab's
   copies - Save now, Pause and save, Stop and save, Force cancel - went, as they did what Save now, Pause, Abort and
   Force abort do there. The tab keeps **Continue** (a paused, stopped or interrupted run, with a new total budget) and
-  **Export status**. A run that is live when the page opens - started from another browser or the CLI - is taken into
+  **Export status**. Continue waits, and says why, when the run folder holds no save point to go on from - a copy made
+  without its save points, or deleted ones (record 7.215: `GET /api/runs/status` names it as `save_point`). A run that is live when the page opens - started from another browser or the CLI - is taken into
   the header; a second run live at the same time as the header's own has no run buttons on this page.
 * The run shown is read every 1.5 s while it can change by itself: a worker is alive, its state is a live one, or the
   header is starting, resuming, pausing or ending a run and it is the run shown (status record 7.115, 2026-09-30; the
@@ -1078,7 +1079,7 @@ it). The window lists every run under the output folder, newest first, one row p
 | Evaluations | Candidate designs simulated, of the budget: `25 / 60`. |
 | First feasible | The number of evaluations spent when the first design met every target; "none" if no design has. |
 | Data | MOCK (synthetic backend, not a circuit result) or real. |
-| Can continue | yes (full saved state), model only (usable for fine_tune / frozen), no. |
+| Can continue | yes (full saved state), model only (usable for fine_tune / frozen), no. "no" also when the run folder no longer holds the save point its summary names - a copy made without its save points, deleted ones (record 7.215); Details says so under "Saved state". |
 
 * **A double click on a row** puts that run into the bottom tabs; the row is marked (blue, with a bar at its left
   edge) and the window stays open. **Clear** empties the tabs again. Neither stops, changes or deletes anything. The
@@ -1207,6 +1208,13 @@ they are empty.
   **Smoothing**: off, or the mean of the last 10 / 20 / 50 / 100 / 200 recorded values of each series (default 20); the
   recorded values stay as faint points under the line, and a gap stays a gap in both. A chart's unit is written in its
   title the way the rest of the page writes units (`units.ts`, record 7.208: English letters - "uA", "ohm", "deg").
+* **Key numbers** (record 7.215, the user's choice of "what next"): a table above the charts, one row per run on them
+  (each in its chart colour when runs are compared): evaluations recorded, the **first passing design** (its evaluation
+  number), the **passing share of the last 100 evaluations** (designs with a verdict: a timeout or a lost link is none),
+  the **best design's worst-spec miss** now (0 = it has a passing design), and how the **entropy estimate** and the
+  **temperature α** moved - the mean of the learner's updates of the first 50 evaluations it learned at, then of the last
+  50 ("6.15 → -8.71": the policy settled; level: it still explores). Episode starts are left out, as on the charts; all
+  of it is read from the recorded rows. It folds to its one line, and stays as left in this browser.
 * **Learner by** (record 7.213, the user's choice of "what next": "Learner charts by evaluations"): **update** (the
   default) draws the learner's charts along its update count; **evaluation** along the evaluations collected, so that runs
   learning 1 and 8 times per evaluation line up with each other and with the evaluation charts. By evaluation the

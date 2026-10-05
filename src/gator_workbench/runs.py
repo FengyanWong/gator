@@ -730,6 +730,23 @@ class _RunRow(dict):
         self.manifest = manifest
 
 
+def save_point(run_dir) -> str | None:
+    """The run's latest save point as its folder holds it now (``checkpoints/latest.json`` and the save point it names),
+    or None: none was written, or it is gone - a copy made without its save points (record 7.213's viewing copies of
+    recorded runs), or deleted. Continue needs it: a resume refuses "Nothing to resume" without it."""
+    try:
+        return ckpt.resolve_checkpoint(run_dir, 'latest').name
+    except (OSError, ValueError):
+        return None
+
+
+def _resumability(run_dir, summary):
+    """The run window's "Can continue" (record 7.215): what the summary says the latest save point allows, while that
+    save point is still in the run folder; 'none' once it is gone, whatever the summary wrote when the run came to rest."""
+    claimed = (summary.get('output') or {}).get('resumability')
+    return claimed if claimed in (None, 'none') or save_point(run_dir) else 'none'
+
+
 def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True):
     root = roots.resolve(output_root or remembered_output_root())
     runs = []
@@ -748,7 +765,7 @@ def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True):
                                 experiment=f"{manifest.get('experiment_name')}__{manifest.get('experiment_id')}",
                                 evaluations=budget.get('charged', (summary.get('totals') or {}).get('candidate_evaluations_charged')),
                                 first_feasible_eval_count=summary.get('first_feasible_eval_count'),
-                                resumability=(summary.get('output') or {}).get('resumability'),
+                                resumability=_resumability(run_dir, summary),
                                 # The run window (frontend RunList.tsx): what a run was, how it ended and how long it took.
                                 task_name=manifest.get('task_name'), stop_reason=status.get('stop_reason'), error=status.get('error'),
                                 max_evaluations=(manifest.get('budgets') or {}).get('max_evaluations'),

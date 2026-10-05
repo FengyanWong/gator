@@ -10,11 +10,13 @@
 //   - the memory bound thins the oldest half, keeps every spike, and keeps evaluation numbers and order intact
 //   - learner charts by evaluation (record 7.213): x = evaluations collected, the updates after one evaluation share its x,
 //     the mean is over the last N evaluations, compared runs learning 8 and 1 times per evaluation share the slots of an x
+//   - key numbers (record 7.215): first passing design, passing share of the last 100 evaluations, best design's miss,
+//     entropy and temperature at the start and the end - the recorded values, episode starts and no-verdict rows left out
 // Run: "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_data_check.mjs)"   (about 1 s)
 import { fileURLToPath } from 'node:url';
 
 const data = await import(new URL('../src/panels/trainingData.ts', import.meta.url).href);
-const { TrainingStore, build, buildCompare, catalog, decimate, smooth, smoothOver, updateBranches, viewRange, setCaps, passFlags } = data;
+const { TrainingStore, build, buildCompare, catalog, decimate, smooth, smoothOver, updateBranches, viewRange, setCaps, passFlags, keyNumbers, RECENT, ENDS } = data;
 if (fileURLToPath(import.meta.url) && !TrainingStore) throw new Error('trainingData.ts did not load');
 
 let passed = 0, failed = 0;
@@ -358,6 +360,39 @@ const valuesOf = (built, label) => built.series.find(s => s.label === label)?.va
     return c.missing.length === 1 && c.missing[0].label === 'B' && /no evaluation count/.test(c.missing[0].reason) && !c.series.some(x => x.label === 'B')
       && alone.x.length === 0 && /no evaluation count/.test(alone.missing?.[0]?.reason ?? '');
   })());
+}
+
+// ---- 9. key numbers (record 7.215) -------------------------------------------------------------------------------------------
+{
+  // 300 evaluations: every 5th an episode start (passing, to be left out), every 41st a timeout (no verdict); designs pass from 120 on
+  const rows = Array.from({ length: 300 }, (_, i) => {
+    const k = i + 1, start = (k - 1) % 5 === 0;
+    return evaluation(k, { phase: start ? (k === 1 ? 'baseline' : 'episode_reset') : 'search', status: k % 41 === 0 ? 'timeout' : 'ok',
+      all_hard_constraints_satisfied: start || (k >= 120 && k % 3 !== 0), best_so_far_violation: k >= 120 ? 0 : 0.5 - k / 1000 });
+  });
+  const updates = Array.from({ length: 290 * 2 }, (_, i) => update(i + 1, { evaluations_collected: 11 + Math.floor(i / 2), mean_log_prob: -5 + i / 50, alpha: 0.01 / (1 + i / 100) }));
+  const store = new TrainingStore('/fixture/keys');
+  store.apply(answer({ served: 1, total: 1, final: chunk({ evaluations: rows, updates }) }));
+  const k = keyNumbers(store);
+  const design = r => r.phase === 'search' && r.status === 'ok';
+  const firstPass = rows.find(r => design(r) && r.all_hard_constraints_satisfied).commit_seq;
+  const last = rows.filter(r => r.commit_seq > 300 - RECENT && design(r));
+  check('first passing design: the first design that met every hard spec, episode starts left out', k.firstPass === firstPass && firstPass === 122, String(k.firstPass));
+  check(`passing of the last ${RECENT} evaluations: designs with a verdict only (no episode start, no timeout)`,
+    same(k.recent, { passed: last.filter(r => r.all_hard_constraints_satisfied).length, judged: last.length, from: 201, to: 300 }), JSON.stringify(k.recent));
+  check('the best design\'s miss at the newest evaluation, and the recorded count', k.bestMiss === 0 && k.evaluations === 300);
+  const mean = (list, f) => list.reduce((a, u) => a + f(u), 0) / list.length;
+  const head = updates.filter(u => u.evaluations_collected <= 11 + ENDS - 1), tail = updates.filter(u => u.evaluations_collected >= 300 - ENDS + 1);
+  check(`entropy estimate and α: the means of the updates of the first and the last ${ENDS} evaluations it learned at`,
+    Math.abs(k.entropy[0] - mean(head, u => -u.mean_log_prob)) < 1e-9 && Math.abs(k.entropy[1] - mean(tail, u => -u.mean_log_prob)) < 1e-9
+    && Math.abs(k.alpha[0] - mean(head, u => u.alpha)) < 1e-12 && Math.abs(k.alpha[1] - mean(tail, u => u.alpha)) < 1e-12, JSON.stringify([k.entropy, k.alpha]));
+  check('a calibrating baseline learns nothing: no learner numbers', keyNumbers(store, { calibration: true }).entropy === null);
+  const none = new TrainingStore('/fixture/none');
+  none.apply(answer({ served: 1, total: 1, final: chunk({ evaluations: rows.slice(0, 50).map(r => ({ ...r, all_hard_constraints_satisfied: r.phase !== 'search' })) }) }));
+  const n = keyNumbers(none);
+  check('no passing design yet, no learner: said as none, not as 0', n.firstPass === null && n.entropy === null && n.alpha === null && n.recent.passed === 0 && n.recent.from === 1,
+    JSON.stringify(n));
+  check('an empty run: nothing but the count', same(keyNumbers(new TrainingStore('/fixture/empty')), { evaluations: 0, firstPass: null, recent: null, bestMiss: null, entropy: null, alpha: null }));
 }
 
 console.log(failed ? `${failed} of ${passed + failed} check(s) FAILED` : `all ${passed} checks passed`);

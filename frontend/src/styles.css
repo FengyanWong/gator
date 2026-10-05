@@ -499,6 +499,10 @@ button.training-key.off { opacity: .45; text-decoration: line-through; }
 button.training-chip-remove { border: none; background: none; padding: 0 1px; line-height: 1; color: var(--muted); } button.training-chip-remove svg.icon { width: 11px; height: 11px; }
 .training-head select.training-compare { max-width: 150px; } .training-missing { margin: 0; font-size: 11px; }
 .key-run0 .swatch { background: var(--accent); } .key-run1 .swatch { background: var(--probe); } .key-run2 .swatch { background: var(--spec); } .key-run3 .swatch { background: var(--unresolved); }
+/* the key numbers of the runs on the charts (record 7.215): a small table that folds to its one line */
+.training-keys { margin: 0 0 2px; font-size: 11.5px; } .training-keys summary { cursor: pointer; }
+.training-keys table.grid { width: auto; max-width: 100%; margin: 2px 0 0; } .training-keys table.grid th { position: static; }
+.training-keys table.grid td, .training-keys table.grid th { padding: 1px 6px; }
 .training-readout { flex: 1 1 280px; min-width: 0; text-align: right; color: var(--muted); font: 11px/1.4 var(--f-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .training-plot { flex: 1; min-height: 110px; position: relative; }
 .training-plot > .uplot { position: absolute; inset: 0; font-family: var(--f-label); }

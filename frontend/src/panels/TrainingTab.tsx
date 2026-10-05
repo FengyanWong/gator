@@ -5,7 +5,7 @@ import { unitLabel } from '../units';
 import { Icon } from './Icons';
 import { LIVE_STATES } from './RunControl';
 import { TrainingChart } from './TrainingChart';
-import { build, buildCompare, catalog, ChartSpec, COMPARE_MAX, Context, LearnerX, setCaps, TrainingStore, View } from './trainingData';
+import { build, buildCompare, catalog, ChartSpec, COMPARE_MAX, Context, ENDS, keyNumbers, LearnerX, RECENT, setCaps, TrainingStore, View } from './trainingData';
 import type { Built } from './trainingData';
 import type { Answer } from './trainingData';
 
@@ -29,20 +29,24 @@ import type { Answer } from './trainingData';
  *  collected instead of the update count, so runs that learn 1 and 8 times per evaluation line up; units in the chart
  *  titles are written as everywhere on the page (units.ts, record 7.208: English letters).
  *
- *  Kept in this browser: the charts chosen, the smoothing, the learner's x and the compared runs (like the folded modules);
- *  not the zoom. */
+ *  Key numbers (record 7.215, the user's choice of "what next"): a table of each run's first passing design, its passing
+ *  share of the last 100 evaluations, its best design's worst miss and how far its entropy estimate and temperature fell -
+ *  read from the recorded rows like the charts, so the runs on the charts can be compared at a glance.
+ *
+ *  Kept in this browser: the charts chosen, the smoothing, the learner's x, whether the key numbers are open and the
+ *  compared runs (like the folded modules); not the zoom. */
 const SETTINGS_KEY = 'gator-workbench-training-v1';
 const SMOOTHING = [0, 10, 20, 50, 100, 200];
 const MAX_CHARTS = 8;
-type Settings = { charts: string[]; smoothing: number; learnerX: LearnerX };
-const DEFAULTS: Settings = { charts: ['reward', 'pass'], smoothing: 20, learnerX: 'update' };
+type Settings = { charts: string[]; smoothing: number; learnerX: LearnerX; keys: boolean };
+const DEFAULTS: Settings = { charts: ['reward', 'pass'], smoothing: 20, learnerX: 'update', keys: true };
 function storedSettings(): Settings {
   try {
     const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? 'null');
     // any number of charts since 7.205; before it two, the second possibly null
     const charts = Array.isArray(s?.charts) ? s.charts.filter((c: unknown) => typeof c === 'string').slice(0, MAX_CHARTS) : [];
     return { charts: charts.length ? charts : DEFAULTS.charts, smoothing: SMOOTHING.includes(s?.smoothing) ? s.smoothing : DEFAULTS.smoothing,
-      learnerX: s?.learnerX === 'evaluation' ? 'evaluation' : DEFAULTS.learnerX };
+      learnerX: s?.learnerX === 'evaluation' ? 'evaluation' : DEFAULTS.learnerX, keys: s?.keys !== false };
   } catch { return DEFAULTS; }
 }
 /** How many charts stand side by side: up to three in a row, four as two by two, then rows of three or four. */
@@ -71,6 +75,7 @@ const clock = (seconds: number) => new Date(seconds * 1000).toLocaleTimeString([
 // a unit that is a quantity gets its SI prefix (si in api.ts); a count, a share or a normalized number is a plain number
 const PLAIN = new Set(['', 'share', 'normalized', 'nats']);
 const formatFor = (unit: string) => (v: number) => (PLAIN.has(unit) ? String(+v.toPrecision(4)) : si(v, unit));
+const plain = (v: number) => String(+v.toPrecision(3));
 const STATE_CLASS: Record<string, string> = { completed: 'state-ok', failed: 'state-failed', cancelled: 'state-failed', interrupted: 'state-failed',
   running: 'state-busy', starting: 'state-busy', pausing: 'state-busy', stopping: 'state-busy' };
 
@@ -95,9 +100,10 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   const [slots, setSlots] = useState<{ key: number; id: string }[]>(() => storedSettings().charts.map(id => ({ key: nextKey.current++, id })));
   const [smoothing, setSmoothing] = useState<number>(() => storedSettings().smoothing);
   const [learnerX, setLearnerX] = useState<LearnerX>(() => storedSettings().learnerX);
+  const [keysOpen, setKeysOpen] = useState<boolean>(() => storedSettings().keys);
   useEffect(() => {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ charts: slots.map(slot => slot.id), smoothing, learnerX })); } catch { /* a private window: not remembered */ }
-  }, [slots, smoothing, learnerX]);
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ charts: slots.map(slot => slot.id), smoothing, learnerX, keys: keysOpen })); } catch { /* a private window: not remembered */ }
+  }, [slots, smoothing, learnerX, keysOpen]);
   const store = useRef<TrainingStore | null>(null);
   const [frame, setFrame] = useState(0);                         // one more each time the charts take the store's rows
   const [reading, setReading] = useState<{ error: string | null; at: number | null; busy: boolean }>({ error: null, at: null, busy: false });
@@ -208,6 +214,9 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   const calibration = !!status?.calibration;
   const context: Context = useMemo(() => ({ calibration }), [calibration]);
   const charts = useMemo(() => (own ? catalog(own, context) : []), [own, frame, context]);
+  // the key numbers of every run on the charts, the shown one first (record 7.215); again with each frame
+  const keyRows = useMemo(() => (own && runDir ? [{ dir: runDir, store: own, context }, ...others.map(dir => ({ dir, store: compared.current.get(dir), context: {} }))]
+    .map(({ dir, store: run, context: known }) => ({ dir, numbers: run && run.answers > 0 ? keyNumbers(run, known) : null })) : []), [own, runDir, frame, othersKey, context]);
   const specOf = (id: string | null) => (id ? charts.find(c => c.id === id) ?? null : null);
   const viewOf = (key: number) => views[key] ?? NONE;
   // Each chart's data, rebuilt only when what it shows changed: new numbers (frame), its choice, its zoom or its width - so a
@@ -318,6 +327,25 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
         <button type="button" className="training-chip-remove" onClick={() => keepCompare(others.filter(d => d !== dir))}
           title={`Remove: take ${runLabel(dir)} off the charts`}><Icon name="close" label={`Remove ${runLabel(dir)}`} /></button></span>)}
     </div>}
+    {own.answers > 0 && !empty && <details className="training-keys" open={keysOpen} onToggle={e => setKeysOpen(e.currentTarget.open)}>
+      <summary title="Key numbers: what each run on the charts reached, read from its recorded rows (episode starts left out, as on the charts).">Key numbers</summary>
+      <table className="grid training-keys-table"><thead><tr><th>Run</th><th title="Evaluations recorded so far.">Evaluations</th>
+        <th title="The evaluation number of the first design that met every hard spec.">First passing design</th>
+        <th title={`Of the designs of the last ${RECENT} evaluations with a verdict (a timeout or a lost link is none), how many met every hard spec.`}>Passing, last {RECENT}</th>
+        <th title="The worst-spec miss of the design the run keeps as its best, at the newest evaluation: 0 = it has a design that meets every hard spec.">Best design's worst miss</th>
+        <th title={`The policy's entropy estimate (-mean_log_prob): the mean of the learner updates of the first ${ENDS} evaluations it learned at, then of the last ${ENDS}. Fallen far = the policy has settled; level = it still explores.`}>Entropy estimate</th>
+        <th title={`The temperature α the same way: the mean of the first ${ENDS} evaluations it learned at, then of the last ${ENDS}.`}>Temperature α</th></tr></thead>
+        <tbody>{keyRows.map(({ dir, numbers: k }, i) => <tr key={dir}>
+          <td title={dir}>{others.length ? <span className={`training-chip key-run${i}`}><span className="swatch" />{runLabel(dir)}</span> : runLabel(dir)}</td>
+          {!k ? <td colSpan={6} className="hint">Reading...</td> : <>
+            <td>{k.evaluations}</td>
+            <td>{k.firstPass != null ? `evaluation ${k.firstPass}` : 'none yet'}</td>
+            <td title={k.recent ? `evaluations ${k.recent.from} to ${k.recent.to}` : undefined}>{!k.recent ? '-' : k.recent.judged ? `${k.recent.passed} of ${k.recent.judged} (${Math.round((100 * k.recent.passed) / k.recent.judged)} %)` : 'no verdict'}</td>
+            <td>{k.bestMiss != null ? plain(k.bestMiss) : '-'}</td>
+            <td>{k.entropy ? `${plain(k.entropy[0])} \u2192 ${plain(k.entropy[1])}` : '-'}</td>
+            <td>{k.alpha ? `${plain(k.alpha[0])} \u2192 ${plain(k.alpha[1])}` : '-'}</td></>}
+        </tr>)}</tbody></table>
+    </details>}
     {state === 'failed' && status?.error && <p className="error training-note">The run failed: {status.error}</p>}
     {reading.error && <p className="error training-note">The training numbers could not be read: {reading.error} <button onClick={() => setRetry(n => n + 1)}>Retry read</button></p>}
     {!own.tailComplete && <p className="hint training-note">The run's journal was being rewritten at a save point; its newest results come with the next read.</p>}

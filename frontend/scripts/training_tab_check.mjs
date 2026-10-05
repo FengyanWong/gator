@@ -16,6 +16,7 @@
 //   - learner charts by evaluation (record 7.213): a run learning 8 times per evaluation and one learning once end at the
 //     same x; the choice is kept after a reload and lets go of the learner charts' zoom; units in the chart titles are
 //     written in English letters (units.ts)
+//   - key numbers (record 7.215): one row per run on the charts with the recorded values, folded and kept so after a reload
 // Run (Windows node through WSL interop, ~1 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -294,6 +295,24 @@ await runChecks(browser, async () => {
   await sleep(5000);
   check('a run at rest is not read again', reads.length === after, `${reads.length - after} reads`);
 
+  // ---- key numbers (record 7.215): the recorded values of the run, one row; folded and kept so --------------------------------------
+  const KEYS = `(${TRAINING}).querySelector('details.training-keys')`;
+  const keyCells = (row = 0) => evaluate(`[...(${KEYS}).querySelectorAll('tbody tr')][${row}] ? [...[...(${KEYS}).querySelectorAll('tbody tr')][${row}].cells].map(c => c.textContent) : null`);
+  const isStart = e => e.phase === 'baseline' || e.phase === 'episode_reset';
+  const judged288 = RUNS.live.data.evaluations.filter(e => !isStart(e) && e.status === 'ok');
+  const firstLive = judged288.find(e => e.all_hard_constraints_satisfied)?.commit_seq;
+  const last100 = judged288.filter(e => e.commit_seq > 188 && e.commit_seq <= 288), passed100 = last100.filter(e => e.all_hard_constraints_satisfied).length;
+  const wantKeys = ['288', `evaluation ${firstLive}`, `${passed100} of ${last100.length} (${Math.round(100 * passed100 / last100.length)} %)`, '0'];
+  check('key numbers: open, one row with the run\'s recorded first passing design, passing share of the last 100 and best design\'s miss',
+    await until(`(${KEYS})?.open && (${KEYS}).querySelectorAll('tbody tr').length === 1`, 40) && JSON.stringify((await keyCells()).slice(1, 5)) === JSON.stringify(wantKeys)
+    && / \u2192 /.test((await keyCells())[5]) && / \u2192 /.test((await keyCells())[6]), `${JSON.stringify(await keyCells())} | want ${JSON.stringify(wantKeys)}`);
+  await evaluate(`(${KEYS}).querySelector('summary').click()`);
+  const folded = await until(`!(${KEYS}).open`, 20);
+  await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150); await press('Training');
+  check('folded, the key numbers stay folded after a reload', folded && await until(`!!(${KEYS}) && !(${KEYS}).open`, 80));
+  await evaluate(`(${KEYS}).querySelector('summary').click()`);
+  check('...and open again with a click', await until(`(${KEYS}).open && (${KEYS}).querySelectorAll('tbody tr').length === 1`, 40));
+
   // ---- listeners and charts left behind ------------------------------------------------------------------------------------------
   const listeners = async () => { const { result } = await send('Runtime.evaluate', { expression: 'window' }); const { listeners } = await send('DOMDebugger.getEventListeners', { objectId: result.objectId }); return listeners.length; };
   const before = await listeners();
@@ -352,6 +371,10 @@ await runChecks(browser, async () => {
     && [...(${TRAINING}).querySelectorAll('.training-legend')].every(l => l.querySelector('.key-run0') && l.querySelector('.key-run1'))`, 60),
     await evaluate(`(${TRAINING}).querySelector('.training-compared')?.innerText`));
   check('the compared run is read in pages from its own cursor', reads.filter(r => r.run === 'twin')[0]?.flushes === 0);
+  check('key numbers: a row per run, each named and coloured as its chip', await until(`(${TRAINING}).querySelectorAll('details.training-keys tbody tr').length === 2`, 40)
+    && await evaluate(`[...(${TRAINING}).querySelectorAll('details.training-keys tbody tr')].map((r, i) => r.cells[0].querySelector('.key-run' + i)?.textContent).join('|')
+      === [...(${TRAINING}).querySelectorAll('.training-compared .training-chip')].map(c => c.childNodes[1].textContent).join('|')`),
+    await evaluate(`[...(${TRAINING}).querySelectorAll('details.training-keys tbody tr')].map(r => r.textContent).join(' || ')`));
   // the twin has 306 evaluations; its 306th is an episode start, which a comparison leaves out: its newest point is 305
   check('the newest point of the comparison is the longer run\'s', await until(`/Newest: Evaluation 305/.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`, 40),
     await readout(0));

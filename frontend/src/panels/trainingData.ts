@@ -786,3 +786,51 @@ function learnerPart(run: CompareRun, r: number, id: string, smoothing: number, 
   });
   return { x, series };
 }
+
+// ------------------------------------------------------------------------------------------------------ a run's key numbers
+/** The line of numbers the Training tab writes for each run on its charts (record 7.215, the user's choice "Key numbers in
+ *  the tab"), all read from the recorded rows - nothing estimated, and episode starts left out as on the charts. null: the
+ *  run has no such number (yet). With a thinned history (memory bound) the first passing design is the first one kept. */
+export interface KeyNumbers {
+  evaluations: number;                                       // recorded evaluations, as the head counts them
+  firstPass: number | null;                                  // the evaluation number of the first design meeting every hard spec
+  recent: { passed: number; judged: number; from: number; to: number } | null;   // designs of the last RECENT evaluations with a verdict
+  bestMiss: number | null;                                   // the best design so far: its worst-spec miss at the newest evaluation
+  entropy: [number, number] | null;                          // the entropy estimate: mean of the updates of the first and of the last ENDS evaluations
+  alpha: [number, number] | null;                            // the temperature α, the same way
+}
+export const RECENT = 100, ENDS = 50;
+
+export function keyNumbers(store: TrainingStore, context: Context = {}): KeyNumbers {
+  const t = store.evaluations, k = t.cols.k, n = t.n;
+  const categories = rowCategories(store), pass = passFlags(store);
+  let firstPass: number | null = null, recent: KeyNumbers['recent'] = null, bestMiss: number | null = null;
+  for (let i = 0; i < n && firstPass === null; i++) if (categories[i] !== 'start' && pass[i] === 1) firstPass = k[i];
+  if (n) {
+    const to = k[n - 1], from = Math.max(k[0], to - RECENT + 1);
+    let passed = 0, judged = 0;
+    for (let i = n - 1; i >= 0 && k[i] >= from; i--) if (categories[i] !== 'start' && !Number.isNaN(pass[i])) { judged += 1; passed += pass[i]; }
+    recent = { passed, judged, from, to };
+  }
+  for (let i = n - 1; i >= 0 && bestMiss === null; i--) if (!Number.isNaN(t.cols.bestViolation[i])) bestMiss = t.cols.bestViolation[i];
+  let entropy: [number, number] | null = null, alpha: [number, number] | null = null;
+  const u = store.updates;
+  if (!context.calibration && store.learner.recorded && u.n) {
+    const { superseded } = updateBranches(u);
+    const { rows, x } = learnerOrder(u, 'evaluation', i => !superseded[i]);
+    if (rows.length) {
+      const first = x[0], last = x[x.length - 1];
+      const mean = (column: string, sign: number, lo: number, hi: number) => {
+        let sum = 0, count = 0;
+        rows.forEach((row, j) => { const v = u.cols[column][row]; if (x[j] >= lo && x[j] <= hi && !Number.isNaN(v)) { sum += sign * v; count += 1; } });
+        return count ? sum / count : NaN;
+      };
+      const ends = (column: string, sign: number): [number, number] | null => {
+        const a = mean(column, sign, first, first + ENDS - 1), b = mean(column, sign, last - ENDS + 1, last);
+        return Number.isNaN(a) || Number.isNaN(b) ? null : [a, b];
+      };
+      entropy = ends('logp', -1); alpha = ends('alpha', 1);
+    }
+  }
+  return { evaluations: store.counts().evaluations, firstPass, recent, bestMiss, entropy, alpha };
+}

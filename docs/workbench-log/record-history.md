@@ -297,3 +297,7 @@ One row per commit, newest last.
 | `9e40a1b` | 10-05 21:28 | - | record only: names the commit of record 7.214, and the table rows for 61f1ea4 and fb65f76 |
 | `53ae0f9` | 10-05 21:37 | 7.208 | one way of writing a quantity: the number, an SI prefix and the unit in English letters (1.205 um, 400 uA, 9.535 kohm, 60 deg) in the editors, the read-only views and the backend's messages; any typed form read, another quantity refused in words; no Unit column in Parameters and Specs (a row's quantity from its parameter kind or its Probe), the Probes' Unit a list |
 | `7dfd997` | 10-05 21:44 | - | record only: names the commit of record 7.208, and the table rows for 9e40a1b and 53ae0f9 |
+| `8d90167` | 10-05 21:46 | - | record only: the Live line of record 7.214, and the table row for 7dfd997 |
+| `7df7728` | 10-05 21:59 | 7.212 | choosing a registered task shows its newest run in the bottom tabs, or none (session "Task-run linking in frontend") |
+| `c928f9d` | 10-05 21:59 | 7.213 | learner charts by evaluation, units in the chart titles, the day's Spectre runs in the Training tab (session "Training tab with live graphs") |
+| `d34573c` | 10-05 22:13 | 7.215 | key numbers per run in the Training tab; "Can continue" checks that a save point exists (session "Training tab with live graphs") |

@@ -729,8 +729,10 @@ def json_schema(section: str | None = None) -> dict:
 
 # Columns the editors show only after "More columns": they exist, an agent may set them, a task file keeps them. The
 # Parameters' four were always the same in the saved tasks (review of 2026-10-03): Save task takes value_type and the step
-# from the PDK, ratio must equal what the circuit shows, and nobody chose a log scale.
-ADVANCED_COLUMNS = {'targets': ('soft_weight', 'active', 'basis', 'missing_is_failure', 'margin_sides'),
+# from the PDK, ratio must equal what the circuit shows, and nobody chose a log scale. Specs' `hard` and
+# `normalization_scale` joined on 2026-10-05 (record 7.183): none of the 51 saved Specs rows has a soft row or a typed
+# scale, and an empty scale - the size of the limit - was the best single rule on the recorded designs.
+ADVANCED_COLUMNS = {'targets': ('soft_weight', 'active', 'basis', 'missing_is_failure', 'margin_sides', 'hard', 'normalization_scale'),
                     'parameters': ('value_type', 'step', 'scale', 'ratio')}
 # Columns the editors do not show at all: the value follows from elsewhere, and the rows keep it (task files, both hashes,
 # the agent, the parked AnalogGym import). initial_value was never filled in a saved task - Save task empties it - and

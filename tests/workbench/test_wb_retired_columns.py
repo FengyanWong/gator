@@ -100,7 +100,9 @@ def test_editor_columns_say_what_is_shown_on_request_and_what_is_hidden():
     (never filled in a saved task) and result_source (the task's one way of measuring) are not shown - the rows keep them.
     The Specs' target and tolerance and the Probes' expression were retired."""
     by = {section: {c['name']: c for c in schema.editor_columns(section)} for section in schema.SECTIONS}
-    assert [n for n, c in by['targets'].items() if c['advanced']] == ['missing_is_failure', 'margin_sides', 'soft_weight', 'active', 'basis']
+    # hard and normalization_scale joined on 2026-10-05 (record 7.183): no saved Specs row is soft or has a typed scale
+    assert [n for n, c in by['targets'].items() if c['advanced']] == ['hard', 'missing_is_failure', 'margin_sides', 'soft_weight',
+                                                                       'normalization_scale', 'active', 'basis']
     assert [n for n, c in by['parameters'].items() if c['advanced']] == ['value_type', 'step', 'scale', 'ratio']
     assert [n for s in by for n, c in by[s].items() if c['hidden']] == ['initial_value', 'result_source']
     assert not any(c['advanced'] for c in by['measurements'].values())

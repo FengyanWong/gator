@@ -3,14 +3,20 @@
 publication     values taken from analog-circuit design publications (REFERENCES / PRESETS below).
                 Read-only. Every field records where it comes from and says so plainly when no
                 publication reports a usable value.
-gator_baseline  the schema defaults (hidden 32, heads 4, layers 2, batch 8, warm-up 8 ...): ONE
-                setting for all encoders, the one behind every existing GATOR result and checkpoint.
+gator_baseline  ONE setting for all encoders: the schema's sizes (hidden 32, heads 4, layers 2, batch 8,
+                warm-up 8 ...) with the three training values measured on 2026-10-05 (TESTED: starting
+                temperature 0.01, 8 updates per evaluation, discount 0).
+legacy_baseline the schema defaults alone: the setting behind every GATOR result and checkpoint made
+                before 2026-10-05. With it soft actor-critic is a uniform random search (record 7.183).
 saved           what the operator last set for an encoder in the panel
-                (<settings dir>/network_settings.json). It wins over the publication preset.
+                (<settings dir>/network_settings.json). It wins over the publication preset. Values
+                saved before TESTED_SINCE that equal the legacy baseline are read as "the GATOR
+                baseline was chosen" and follow it to the tested values; the file is not rewritten.
 
 Choosing an encoder in the UI reads ``entry(encoder)`` (saved, else publication); editing a value
 writes ``saved`` for that encoder only. A configuration submitted WITHOUT a network block still gets
-the schema defaults, so existing configurations, tests and checkpoints keep their meaning.
+the schema defaults, so existing configurations, tests and checkpoints keep their meaning (static
+validation warns that those values do not learn).
 
 Presets are ordinary ``ModelConfig`` / ``SACConfig`` / collector values of the existing algorithm;
 nothing here touches ``src/analog_optimizer/``. A published value is a starting point with a
@@ -38,12 +44,35 @@ ADVANCED_FIELDS = ('learning_rate', 'gamma', 'tau', 'initial_alpha', 'target_ent
 # paper: stated in the publication. official_code: read from the authors' released code.
 # adapted: derived from a published value, changed to fit this architecture (the note says how).
 # gator_default: no publication reports a usable value; the GATOR default is kept.
+# gator_tested: no publication reports a usable value; the value measured on GATOR circuits is used (TESTED).
 # not_used: the encoder ignores the field; the value only keeps checkpoints comparable.
-BASES = ('paper', 'official_code', 'adapted', 'gator_default', 'not_used')
+BASES = ('paper', 'official_code', 'adapted', 'gator_default', 'gator_tested', 'not_used')
 # same: the cited work uses this kind of network. closest: no publication uses this network for the
 # purpose, so the closest published network is cited instead (the note says which and why).
 MATCHES = ('same', 'closest')
 _LOCK = threading.Lock()
+
+# The three soft actor-critic values measured on 2026-10-05 (record 7.183; numbers, scripts and run data in
+# artifacts/local/reviews/defaults-study-2026-10-05/README.md): 175 runs on two ngspice circuits and five Spectre runs on
+# real:mscr_ota7t. With the schema defaults (0.2, 1, 0.99) the designs are a uniform random search under every reward
+# setting; with these, the share of passing designs in the last third of 1,500 evaluations went from 1 % to 98 %.
+TESTED = dict(initial_alpha=0.01, updates_per_transition=8, gamma=0.0)
+TESTED_SINCE = '2026-10-05T05:00:00+00:00'
+TESTED_NOTES = dict(
+    initial_alpha='Measured on GATOR circuits (record 7.183): at 0.2 the exploration term is several times any reward '
+                  'difference and never comes down within a run. 0.05 learns as early but ends lower (88 % passing against '
+                  '97 %); 0.002 learns twice as late.',
+    updates_per_transition='Measured on GATOR circuits (record 7.183): with 1 nothing learns, whatever the temperature, batch '
+                           'or learning rate. 4 learns at about evaluation 1,000, 8 at about 470, 16 at about 330. One '
+                           'update takes 0.1 to 0.15 s.',
+    gamma='Measured on GATOR circuits (record 7.183): an action is a whole design and its reward is that design\'s own '
+          'measurement, so later steps add only noise. With 8 updates: learned at evaluation 269 instead of 466.')
+TESTED_NOTE = ('GATOR\'s own measurement (record 7.183, 2026-10-05): with a starting temperature of 0.2 and one update per '
+               'evaluation - the values behind every earlier GATOR run, and what a published one-update setting amounts to at '
+               'these budgets - soft actor-critic stayed a uniform random search for 1,500 evaluations on two ngspice '
+               'circuits and for 922 designs on Spectre (real:mscr_ota7t, none passing). With temperature 0.01 and 8 updates '
+               'per evaluation it learned after 250 to 600 evaluations (36 of 760 Spectre designs passing); discount 0 '
+               'halved that on ngspice. The GATOR baseline holds these three values.')
 
 SCALE_NOTE = ('Scale: the cited studies spent between 300 steps (CAN) and about 50,000 simulations per run, and the only '
               'published soft actor-critic settings (PPAAS) were used with 8,000 to 24,000 steps. GATOR real runs so '
@@ -58,9 +87,14 @@ def _field(value, basis, source=None, note='', match='same'):
     return dict(value=value, basis=basis, source=source, note=note, match=match)
 
 
+def _tested(name, why=''):
+    return _field(TESTED[name], 'gator_tested', note=(why + ' ' if why else '') + TESTED_NOTES[name])
+
+
 def _defaults(note='No publication for this encoder reports a usable value; GATOR default kept.'):
     network, advanced = NetworkConfig().model_dump(), AdvancedRL().model_dump()
-    return {name: _field({**network, **advanced}[name], 'gator_default', note=note)
+    return {name: _tested(name, 'No publication for this encoder reports a usable value.') if name in TESTED
+            else _field({**network, **advanced}[name], 'gator_default', note=note)
             for name in NETWORK_FIELDS + ADVANCED_FIELDS}
 
 
@@ -142,7 +176,7 @@ def _li2023_training(note='', match='same'):
         updates_per_transition=_field(1, 'official_code', key, 'One gradient step per update.' + note, match),
         replay_capacity=_field(100000, 'paper', key, '"the size of our memory buffer M is 100000".' + note, match),
         episode_length=_field(50, 'paper', key, '"The episode length w is 50".' + note, match),
-        initial_alpha=_field(AdvancedRL().initial_alpha, 'gator_default', note=_NO_ENTROPY.format(algorithm='DDPG')),
+        initial_alpha=_tested('initial_alpha', 'The cited study uses DDPG, which has no entropy temperature.'),
         target_entropy_per_action=_field(AdvancedRL().target_entropy_per_action, 'gator_default',
                                          note=_NO_ENTROPY.format(algorithm='DDPG')),
         max_grad_norm=_field(AdvancedRL().max_grad_norm, 'gator_default',
@@ -208,10 +242,17 @@ class InvalidNetworkSettings(ValueError):
     """A value set that the run schema (or the attention divisibility rule) would reject."""
 
 
-def gator_baseline() -> dict:
-    """The schema defaults: the one setting behind all existing GATOR evidence and checkpoints."""
+def legacy_baseline() -> dict:
+    """The schema defaults: the one setting behind all GATOR evidence and checkpoints made before 2026-10-05, and what a
+    configuration without a network block still gets."""
     network, advanced = NetworkConfig().model_dump(), AdvancedRL().model_dump()
     return dict(network={f: network[f] for f in NETWORK_FIELDS}, advanced={f: advanced[f] for f in ADVANCED_FIELDS})
+
+
+def gator_baseline() -> dict:
+    """The schema's sizes with the three training values measured on 2026-10-05 (TESTED)."""
+    legacy = legacy_baseline()
+    return dict(network=legacy['network'], advanced={**legacy['advanced'], **TESTED})
 
 
 def check(encoder, network, advanced) -> dict:
@@ -273,11 +314,16 @@ def entry(encoder) -> dict:
         raise KeyError(encoder)
     preset, baseline = publication(encoder), gator_baseline()
     encoders, problem = _saved()
-    saved, values = encoders.get(encoder), preset
+    saved, values, followed = encoders.get(encoder), preset, False
     if saved is not None:
         try:
             values = check(encoder, {**preset['network'], **saved['network']},
                            {**preset['advanced'], **saved['advanced']})
+            # Stored while the baseline still was the schema default: "the GATOR baseline was chosen", so the encoder
+            # follows the baseline to its tested values. The same numbers saved afterwards are the operator's own.
+            followed = values == legacy_baseline() and str(saved.get('saved_utc') or '') < TESTED_SINCE
+            if followed:
+                values = baseline
         except (InvalidNetworkSettings, KeyError, TypeError) as exc:       # hand-edited or outdated file
             problem = f'The saved {encoder} values were ignored: {exc}'
     origin = 'publication' if values == preset else 'gator_baseline' if values == baseline else 'custom'
@@ -285,7 +331,7 @@ def entry(encoder) -> dict:
                 network=values['network'], advanced=values['advanced'], publication=preset,
                 provenance=PRESETS[encoder]['fields'], summary=PRESETS[encoder]['summary'],
                 saved_utc=saved.get('saved_utc') if isinstance(saved, dict) and problem is None else None,
-                problem=problem)
+                followed_baseline=followed, problem=problem)
 
 
 def save(encoder, network=None, advanced=None) -> dict:
@@ -310,5 +356,6 @@ def reset(encoder, to='publication') -> dict:
 def describe() -> dict:
     return dict(encoders=list(ENCODER_TYPES), default_encoder=DEFAULT_ENCODER,
                 attention_encoders=list(ATTENTION_ENCODERS), network_fields=list(NETWORK_FIELDS),
-                advanced_fields=list(ADVANCED_FIELDS), gator_baseline=gator_baseline(), references=REFERENCES,
+                advanced_fields=list(ADVANCED_FIELDS), gator_baseline=gator_baseline(), legacy_baseline=legacy_baseline(),
+                tested=dict(values=dict(TESTED), since=TESTED_SINCE, note=TESTED_NOTE), references=REFERENCES,
                 scale_note=SCALE_NOTE, settings={name: entry(name) for name in ENCODER_TYPES})

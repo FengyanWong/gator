@@ -42,20 +42,22 @@ try {
  await page.setValue(control('Nominal gate band','input'),'0.4');await sleep(950);
  check('new reward controls persist', (await page.stored()).run.reward.objective_shape==='compressed' && (await page.stored()).run.reward.nominal_gate_band===.4);
  await page.evaluate("Array.from(document.querySelectorAll('.editors .tabs button')).find(b=>b.textContent.startsWith('Specs')).click()",true);
- check('new columns initially hidden',await page.evaluate("!document.querySelector('th[data-field=missing_is_failure]') && !document.querySelector('th[data-field=margin_sides]')"));
- check('saved empty scale remains empty on load',await page.evaluate(`${cell(0,'normalization_scale')}.value===''`));
+ check('new columns initially hidden, and since record 7.183 hard and the scale too',await page.evaluate("!document.querySelector('th[data-field=missing_is_failure]') && !document.querySelector('th[data-field=margin_sides]') && !document.querySelector('th[data-field=hard]') && !document.querySelector('th[data-field=normalization_scale]')"));
  check('zero-floor margin hint',await page.evaluate("document.querySelector('.zero-floor-hint').textContent==='The margin also measures the distance to 0. If 0 is only a physical floor, choose Margin sides: upper.'"));
  await page.evaluate("Array.from(document.querySelectorAll('.editors button')).find(b=>b.textContent.startsWith('More columns')).click()",true);
- check('new optional labels',await page.evaluate("document.querySelector('th[data-field=missing_is_failure]').textContent==='Missing value = failed' && document.querySelector('th[data-field=margin_sides]').textContent==='Margin sides'"));
+ check('new optional labels',await page.evaluate("document.querySelector('th[data-field=missing_is_failure]').textContent==='Missing value = failed' && document.querySelector('th[data-field=margin_sides]').textContent==='Margin sides' && document.querySelector('th[data-field=normalization_scale]').textContent==='Scale'"));
+ check('saved empty scale remains empty on load',await page.evaluate(`${cell(0,'normalization_scale')}.value===''`));
  await page.evaluate(`${cell(0,'missing_is_failure')}.click()`,true);await page.setValue(cell(0,'margin_sides'),'upper');
  await page.setValue(cell(0,'lower'),'54');await sleep(950);
- let saved=await page.stored();check('flags persist and editing dB limit proposes 3',saved.targets[0].missing_is_failure===true && saved.targets[0].margin_sides==='upper' && saved.targets[0].normalization_scale===3);
- // A suggestion runs only on an explicit edit, while the scale is empty or still the untouched suggestion.
- for (const [unit,constraint,lower,upper,tolerance,expected] of [
-  ['deg','>=',30,null,0,10],['V','target',null,null,.2,.2],['V','interval',2,6,0,2],['V','>=',8,null,0,8]]) {
+ let saved=await page.stored();check('flags persist and editing dB limit proposes 6 (3 until record 7.183)',saved.targets[0].missing_is_failure===true && saved.targets[0].margin_sides==='upper' && saved.targets[0].normalization_scale===6);
+ // A suggestion runs only on an explicit edit, while the scale is empty or still the untouched suggestion. Since record
+ // 7.183 it is the size of the limit for every unit but dB (10 degrees and half an interval acted as hidden weights); the
+ // "target" constraint and its tolerance column were retired in record 7.172.
+ for (const [unit,constraint,lower,upper,expected] of [
+  ['deg','>=',30,null,30],['V','interval',2,6,6],['V','>=',8,null,8]]) {
   await page.setValue(cell(0,'unit'),'');await page.setValue(cell(0,'constraint'),constraint);
   await page.setValue(cell(0,'lower'),lower==null?'':String(lower));await page.setValue(cell(0,'upper'),upper==null?'':String(upper));
-  await page.setValue(cell(0,'tolerance'),String(tolerance));await page.setValue(cell(0,'normalization_scale'),'');await page.setValue(cell(0,'unit'),unit);await sleep(850);
+  await page.setValue(cell(0,'normalization_scale'),'');await page.setValue(cell(0,'unit'),unit);await sleep(850);
   check(`scale suggestion ${unit}/${constraint}`, (await page.stored()).targets[0].normalization_scale===expected);
  }
  await page.setValue(cell(0,'normalization_scale'),'7');await page.setValue(cell(0,'lower'),'9');await sleep(850);
@@ -90,6 +92,13 @@ try {
  // A genuinely new browser configuration uses B7; loading the saved fixture above retained its explicit fields.
  await page.evaluate("localStorage.removeItem('gator-workbench-config-v1')",true);await page.send('Page.reload',{ignoreCache:true});
  check('new configuration starts compressed/share 0.5',await page.until(`${control('Violation shape')}?.value==='compressed' && ${control('Worst hard-spec share','input')}?.value==='0.5'`,150));
+ // Record 7.183: the tested set in full, said in one sentence, with the controls in a closed fold
+ check('new configuration starts with both bonuses at 1 and the compressed objective',await page.evaluate(`${control('Objective bonus weight','input')}?.value==='1' && ${control('Tightest-margin bonus weight','input')}?.value==='1' && ${control('Objective shape')}?.value==='compressed'`));
+ check('the reward is said in one sentence and its controls are folded',await page.evaluate("document.querySelector('aside.right .reward-sentence')?.textContent.startsWith('Reward: minus half the average miss, minus half the worst miss.') && document.querySelector('aside.right details.reward-advanced')?.open===false && !document.querySelector('aside.right .reward-other')"));
+ await page.setValue(control('Worst hard-spec share','input'),'0');
+ check('another value is named, with the button back to the tested reward',await page.until("document.querySelector('aside.right .reward-other')?.textContent.includes('worst hard-spec share 0 instead of 0.5') && !document.querySelector('aside.right .reward-sentence')",100));
+ await page.evaluate("document.querySelector('aside.right button.reward-simple').click()",true);
+ check('the button restores the tested reward',await page.until(`!!document.querySelector('aside.right .reward-sentence') && ${control('Worst hard-spec share','input')}?.value==='0.5'`,100));
  check('no 8765 request',requests.every(r=>new URL(r.url).port!=='8765'));
  check('no action route requested',requests.every(r=>! /\/api\/(runs\/(start|continue|command|corner-check\/start)|virtuoso\/|connection\/connect|agent\/chat)/.test(r.url)));
  check('no JS errors',errors.length===0,errors);

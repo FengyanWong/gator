@@ -112,8 +112,10 @@ def publication_presets() -> dict:
     references = {key: {k: ref.get(k) for k in ('short', 'title', 'venue', 'year', 'url', 'algorithm', 'budget')}
                   for key, ref in (described.get('references') or {}).items()}
     return dict(encoders=encoders, references=references, gator_baseline=described.get('gator_baseline'), scale_note=described.get('scale_note'),
+                tested=described.get('tested'),
                 note='Collected by hand from the cited publications (docs/network-presets.md). None was evaluated on a circuit of this '
-                     'project, and they differ widely in size, so they must not be used for an equal-size comparison of encoders.')
+                     'project, and they differ widely in size, so they must not be used for an equal-size comparison of encoders. '
+                     'The three values under `tested` were measured on this project (record 7.183) and are part of the GATOR baseline.')
 
 
 def task_digest(config: dict, circuit_summary: dict | None) -> dict:

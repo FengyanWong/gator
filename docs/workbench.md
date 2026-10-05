@@ -342,11 +342,12 @@ Probes lost `function`, `window`, `at_frequency_hz`, `integration_band_hz`, `bra
 `crossover` (no backend extracts anything from them; a filled `function` blocked the run), `on_failure` (one allowed value)
 and `validity` (checked for form only; run-time validity comes from the simulator's own flags). Specs kept every column.
 
-What stays but steps back: `soft_weight`, `active`, `basis`, **Missing value = failed** and **Margin sides** of Specs, and
-(since record 7.172) `value_type`, `step`, `scale` and `ratio` of Parameters are shown after **More columns** at the right
-of the toolbar (the choice is kept in the browser). They keep their values either way: Add fills them, the agent may set
-them, a task file stores them. `normalization_scale` may be left empty: the violation is then divided by the size of the
-threshold (the larger of |lower| and |upper|, or 1).
+What stays but steps back: `soft_weight`, `active`, `basis`, **Missing value = failed** and **Margin sides** of Specs,
+(since record 7.172) `value_type`, `step`, `scale` and `ratio` of Parameters, and (since record 7.183) `hard` and the
+scale of Specs, headed **Scale**, are shown after **More columns** at the right of the toolbar (the choice is kept in the
+browser). They keep their values either way: Add fills them, the agent may set them, a task file stores them. The scale
+(`normalization_scale`) may be left empty: a miss is then measured against the size of the limit (the larger of |lower|
+and |upper|). A limit of 0 has no size, so such a row needs a typed scale and blocks a run without one.
 
 Old rows still load. A task file, a run's `effective_config.json` or an imported JSON written with the retired columns is
 read as before: the schema drops them when it reads a row (`schema.RETIRED_PARAMETER_FIELDS`,
@@ -1136,7 +1137,8 @@ values, and draft settings from the executed reward in the saved summary. Histor
 
 ### Reward v2.1 controls and checks (2026-09-29, record 7.106)
 
-New configurations start with compressed violations and worst-spec share 0.5; saved ones retain their settings.
+New configurations start with compressed violations and worst-spec share 0.5 (since record 7.183 also with both bonus
+weights at 1 and the compressed objective: "The reward as one sentence" below); saved ones retain their settings.
 Training conditions offers Nominal only, Corners after nominal passes, and Every planned corner. The backend reports
 whether the task supports corners (none since 2026-09-30). For after_nominal, a nominal failure costs one launch, a
 pass costs 1 + K, and a reset costs one; the full step plan must fit the launch ceiling before preparation.
@@ -1146,12 +1148,13 @@ simulation as failure; wrong units and infrastructure faults stay errors. A spec
 when a probe it reads is missing; the other equation specs keep their values (record 7.112). **Margin sides** selects
 the limits counted by clearance and Corner check ranking; feasibility still checks all limits. The zero-floor hint
 explains the upper-only choice. A new row, and an edit of its unit, limits or constraint, suggests a scale:
-3 dB, 10 degrees, half an interval, else the size of the threshold. The suggestion follows later
+6 dB for a dB row, else the size of the limit - which is what an empty scale means too (until record 7.183: 3 dB,
+10 degrees, half an interval; a row still holding one of those follows its next edit). The suggestion follows later
 edits until you type a scale of your own; a row with nothing to size it by yet (no dB/deg unit or limit)
 keeps an empty scale, which the backend sizes from the threshold. Saved empty scales are not filled on load. (Record
 7.112 fixed a suggestion that froze at 1 - e.g. 1 W - when a row was added before its limits were typed.)
 
-Reward and conditions exposes the nominal gate band and objective shape. **RL networks... → Advanced** exposes **Alpha learning rate**,
+Reward and conditions holds the nominal gate band and objective shape in its Advanced fold (record 7.183, below). **RL networks... → Advanced** exposes **Alpha learning rate**,
 stored per configuration; empty inherits the actor learning rate. No separate starting rate passed the extended
 1,000-update unit check, so new configurations leave it empty. Attributed failures continue the episode, while its normal
 horizon and configured success ending still apply.
@@ -1184,6 +1187,53 @@ that count over (before record 7.135 it was restored at the limit, and every Res
 [Reward contract and validation](reward-v2.md#reward-v21-2026-09-29). These controls were checked on source previews
 only: the user's live frontend/backend were not rebuilt or restarted. The subsequent fixed-action physical check used
 10 of the approved 30 launches, exercised both gate paths and restored the starting design (record 7.108).
+
+### The reward as one sentence, and the tested defaults (2026-10-05, record 7.183)
+
+**In plain words.** A new configuration's reward is said in one sentence in Run configuration, under Reward and
+conditions: *minus half the average miss, minus half the worst miss; a design that meets every Specs row scores above 0 -
+up to +1 for the room it leaves on its tightest row, and up to +1 more for improving the row marked as the objective.*
+A miss is how far a value sits outside its limit, as a fraction of the limit, compressed to between 0 and 1 (10 %
+outside costs 0.09, 50 % costs 0.33, 100 % costs 0.5). You set the limits in Specs and, on one row at most, "then lower /
+higher is better". Nothing else needs setting.
+
+- **The five settings behind the sentence** sit in the **Advanced** fold below it: violation shape compressed, worst
+  hard-spec share 0.5, objective bonus weight 1 with the compressed shape, tightest-margin bonus weight 1 (the nominal gate
+  band joins them while corners are planned). They were compared in training on 2026-10-05; the reasons are in
+  [decisions.md](decisions.md), "The tested defaults".
+- **A configuration that holds other values** - every one saved before this record - is not changed. In place of the
+  sentence the block names each value that differs ("worst hard-spec share 0 instead of 0.5") and offers **Use the
+  tested reward**, which sets the five and nothing else. The fold's line counts them ("Advanced - 2 not as tested").
+- **No warning for a bonus without an objective row:** the weight is 1 in every new configuration, and without an
+  objective row the bonus is simply 0; the sentence says that no row is marked.
+- **The schema's own defaults are unchanged** (capped, share 0, no bonus): a configuration file without these fields means
+  what it meant.
+
+**The three training values that had to change first.** With the values every earlier run used - starting temperature
+0.2, one update per evaluation - soft actor-critic is a uniform random search, and no reward setting changes what it does
+(on Spectre, two very different reward settings gave the same design in 147 of 150 positions). The **GATOR baseline** in
+RL networks now holds starting temperature 0.01, 8 updates per evaluation and discount 0
+([network-presets.md](network-presets.md), "The three tested values"). Where it shows:
+
+- **RL networks...** names values with which the search stays random ("With 1 update per evaluation and a starting
+  temperature of 0.2, soft actor-critic learned late or not at all ..."), and Run configuration then says "Review the
+  settings in RL networks."
+- **Static validation** warns the same (`sac_values_random_search`) for any run that trains, also from the command
+  line, and warns a from-scratch SAC run below 300 evaluations (`budget_below_sac_learning`): learning started after 250
+  to 600 evaluations in the tests. The page's starting budget stays 60 - every evaluation of a real task is a simulation
+  you authorize - so a new SAC configuration carries that warning until the budget is raised or an LLM method is chosen.
+- **An encoder you had put on the GATOR baseline before** follows it to the new values by itself (the settings file is
+  not rewritten). A configuration already open keeps its own numbers; the window's This run / Saved default table shows
+  the three, and **Use saved defaults** or **GATOR baseline** applies them.
+
+**Specs.** `hard` and the scale (headed **Scale**) are behind **More columns**. A new row's scale is the size of its
+limit, which is what an empty scale means, and 6 dB for a dB row; the page no longer writes 10 degrees into a phase row
+or half the width into an interval. A row whose limit is 0 needs a typed scale and blocks a run without one
+(`scale_needed_for_zero_limit`): it was silently measured against 1 of its unit.
+
+**Checks.** `tests/workbench/test_wb_tested_defaults.py` (11) and `test_wb_network_presets.py`;
+`frontend/scripts/reward_block_check.mjs` (28: the sentence, the fold, the button, the RL networks warning and the GATOR
+baseline press, the Specs scale). The measurement: `artifacts/local/reviews/defaults-study-2026-10-05/README.md`.
 
 ### How a real run spends its simulations: corners two at a time, reused resets (2026-09-30, record 7.126)
 

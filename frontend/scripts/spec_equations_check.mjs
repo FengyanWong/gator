@@ -76,7 +76,13 @@ await runChecks(browser, async () => {
   check('the list pairs a lower limit with "higher is better" and an upper one with "lower is better", never the reverse',
     choices.includes('≥ lower, then higher is better') && choices.includes('≤ upper, then lower is better')
     && !choices.includes('≥ lower, then lower is better') && !choices.includes('≤ upper, then higher is better'), JSON.stringify(choices));
+  // the scale sits behind "More columns" since record 7.183: shown for this edit, then hidden again
+  const moreSpecColumns = `[...${EDITORS}.querySelectorAll('button')].find(b => /^(More|Fewer) columns/.test(b.textContent.trim()))`;
+  await evaluate(`${moreSpecColumns}.click()`);
+  await until(`!!${EDITORS}.querySelector('th[data-field="normalization_scale"]')`);
   await type(0, 'normalization_scale', '');                // an empty scale: the backend sizes it from the limit
+  await evaluate(`${moreSpecColumns}.click()`);
+  await until(`!${EDITORS}.querySelector('th[data-field="normalization_scale"]')`);
   await page.saved();
   await page.setValue(CELL(0, 'constraint'), '>=|maximize');
   await page.saved();

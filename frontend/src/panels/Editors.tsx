@@ -15,18 +15,29 @@ const IMPORTED_SECTIONS: Record<string, string> = { project: 'project labels', c
 
 /** The scale offered while nobody has typed one, or null when the row gives nothing to size it by yet: then the scale stays
  * empty and the backend sizes it from the limits (the size of the threshold, else 1), instead of freezing a bare 1 W or
- * 1 Hz into a row whose limits are typed afterwards (record 7.112). */
+ * 1 Hz into a row whose limits are typed afterwards (record 7.112).
+ * One rule since record 7.183: the size of the limit - which is what an empty scale means too - and 6 dB (a factor of two)
+ * for a dB row, where "a fraction of a 40 dB limit" makes each dB count for little. On the 227 recorded designs the tighter
+ * suggestions of before acted as hidden weights: 10 degrees on a phase row reordered the designs, and half the width of an
+ * interval put most of a ring oscillator's designs above a miss of 0.9. */
 function suggestedScale(row: Json): number | null {
+  if (row.unit === 'dB') return 6;
+  return Math.max(...[row.lower, row.upper].filter(v => typeof v === 'number').map(Math.abs), 0) || null;
+}
+/** What the page suggested until record 7.183 (3 dB, 10 degrees, half an interval): a row that still holds it was never typed
+ * into, so it follows the next edit to today's suggestion instead of keeping the old number for good. */
+function formerSuggestion(row: Json): number | null {
   if (row.unit === 'dB') return 3;
   if (row.unit === 'deg') return 10;
   if (row.constraint === 'interval' && row.lower != null && row.upper != null && row.upper > row.lower) return (row.upper - row.lower) / 2;
-  return Math.max(...[row.lower, row.upper].filter(v => typeof v === 'number').map(Math.abs), 0) || null;
+  return null;
 }
 const SCALE_FIELDS = ['unit', 'lower', 'upper', 'constraint'];
 /** The scale after an edit of a field it depends on: an empty scale, or one still equal to the row's suggestion before the
  * edit, follows the edit; a scale the user typed stays. */
 function followScale(before: Json, after: Json): number | null {
-  const untouched = before.normalization_scale == null || before.normalization_scale === suggestedScale(before);
+  const untouched = before.normalization_scale == null || before.normalization_scale === suggestedScale(before)
+    || before.normalization_scale === formerSuggestion(before);
   return untouched ? suggestedScale(after) : after.normalization_scale;
 }
 
@@ -225,7 +236,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     : c.name === 'constraint' ? { ...c, guidance: c.guidance + ' "then lower / higher is better" is the objective: among the designs that pass '
       + 'every hard spec, the best one is the lowest / highest here (one spec at most); with an Objective bonus weight above 0 (Reward and '
       + 'conditions) the reward also pushes it past the limit.' }
-    : c.name === 'normalization_scale' ? { ...c, guidance: 'Threshold distance divided by this positive scale, then shaped by the selected capped or compressed reward. Empty uses the threshold size. Feasibility uses the actual bounds, not the reward.' } : c);
+    : c.name === 'normalization_scale' ? { ...c, label: 'Scale', guidance: 'The distance outside the limit that costs half of this row\'s penalty. Empty: the size of the limit, so a value 50 % outside costs a third and 100 % outside a half - the rule every saved task uses. Type a number only for a limit of 0, or to make this row count more (smaller) or less (larger) than the others. Passing or failing is decided by the limits alone.' } : c);
   // Specs shows the objective inside the constraint list (LimitSelect), and "Judged at" only while the run plans training
   // corners: without corners every spec is judged at nominal, so the choice would do nothing. Both keep their values.
   const corners = (config.run?.conditions?.policy ?? 'off') !== 'off';
@@ -517,7 +528,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       {tab === 'parameters' && <p className="fact" title={'The initial value is the one read from the circuit. Equal initial values do not imply a binding. '
         + "The policy's proposed action and the executed (projected/quantized) value are both recorded."}>Independent action variables: <b>{validation?.facts?.independent_action_variables ?? '?'}</b> of {rows.length} rows.</p>}
       {tab === 'targets' && <p className="fact spec-probes" title={'Each spec judges its equation, written with Probe IDs, numbers, + - * / ** and brackets '
-        + '(e.g. m_supply_power_w / m_osc_frequency_hz). An empty normalization_scale divides the violation by the size of the threshold.'}>Probes: {probeIds.length
+        + '(e.g. m_supply_power_w / m_osc_frequency_hz). A miss is measured against the size of the limit, unless a Scale is typed (More columns).'}>Probes: {probeIds.length
           ? probeIds.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<code className="probe-id">{id}</code></Fragment>) : 'none yet - fill in the Probes tab first'}</p>}
       {tab === 'targets' && rows.some(r => r.constraint === 'interval' && r.lower === 0) && <p className="hint zero-floor-hint">The margin also measures the distance to 0. If 0 is only a physical floor, choose Margin sides: upper.</p>}
       {error && <p className="error">{error}</p>}

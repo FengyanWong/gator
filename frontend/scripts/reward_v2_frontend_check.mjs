@@ -68,7 +68,8 @@ try {
   check('selected objective reflected in reward controls', await page.until("document.querySelector('.reward-objective').textContent.includes('minimize supply_power_w')", 100));
   await page.setValue(powerLimit, 'interval|none');
   await page.setValue(control('Objective bonus weight', 'input'), '0.2');
-  check('inactive objective bonus is explicit', await page.until("Array.from(document.querySelectorAll('aside.right .warn')).some(e => e.textContent.includes('No active objective'))", 100));
+  // Since record 7.183 a bonus weight without an objective row is no warning (a new configuration always has weight 1): the line says none is chosen
+  check('no objective row is said plainly', await page.until("document.querySelector('.reward-objective').textContent === 'Objective: none'", 100));
   await page.setValue(control('Objective bonus weight', 'input'), '0');
 
   await page.setValue(control('Max retries per evaluation', 'input'), '1');

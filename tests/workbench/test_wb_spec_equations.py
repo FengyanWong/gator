@@ -93,9 +93,11 @@ def test_a_configuration_from_before_equations_loads_and_keeps_both_hashes():
 
 # ------------------------------------------------------------------------------- validation
 def test_every_starter_is_still_valid_and_its_specs_are_their_own_results(tmp_path):
+    # the helper's own run settings are the schema defaults with a budget of 20, which static validation names since
+    # record 7.183 (values and a budget with which soft actor-critic does not learn): they are no fault of the starter
     config = make_config(tmp_path)
     report = check(config)
-    assert not report.blocks_run and not codes(report, 'warning')
+    assert not report.blocks_run and set(codes(report, 'warning')) == {'sac_values_random_search', 'budget_below_sac_learning'}
     compiled = comp.compile_task(config, tasks.load_task(config.circuit).base_graph)
     assert compiled.plan.injected == () and compiled.spec_schema.version == 'spec-input-v1'      # nothing added: same network input
     assert compiled.targets[0]['equation'] == compiled.targets[0]['probe'] == 'm_score'

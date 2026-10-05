@@ -4,13 +4,19 @@ import { readWithDeadline, type Json } from './api';
 const STORAGE_KEY = 'gator-workbench-config-v1';
 const HISTORY_LIMIT = 100;
 
+/** The reward a new configuration starts with, and the one the run panel describes in a sentence (record 7.183, compared
+ *  in training on 2026-10-05): minus half the average miss and half the worst miss; a passing design earns up to +1 for the
+ *  room on its tightest row and up to +1 for the objective row. The schema's own defaults stay the old arithmetic (capped,
+ *  share 0, no bonus), which is what a configuration saved without these fields meant. */
+export const SIMPLE_REWARD: Json = { violation_shape: 'compressed', worst_spec_share: 0.5, objective_weight: 1, objective_shape: 'compressed', margin_weight: 1 };
+
 const emptyConfig = (): Json => ({
   schema_version: 'gator-workbench-config-v1',
   project: { name: 'gator-project', task_name: 'task', notes: '' },
   // No task until one is chosen: the MOCK task that used to open here was deleted on 2026-09-30 (record 7.128).
   circuit: { source: 'registered_task', task_id: null, circuit_class: 'unspecified', pdk_id: 'unspecified' },
   parameters: [], targets: [], measurements: [],
-  run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, seed: 0, reward: { violation_shape: 'compressed', worst_spec_share: 0.5 } },
+  run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, seed: 0, reward: { ...SIMPLE_REWARD } },
   output: { experiment_name: 'experiment' },
   research: {},
 });

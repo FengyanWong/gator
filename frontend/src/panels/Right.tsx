@@ -1,4 +1,4 @@
-import { useRequest } from '../store';
+import { SIMPLE_REWARD, useRequest } from '../store';
 import { Fragment, ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, bytes, copy, Json, num } from '../api';
@@ -129,6 +129,10 @@ const NETWORK_SETTING_LABELS: Record<string, string> = {
   ...Object.fromEntries(ADVANCED_ROWS.flat().map(([name, label]) => [name, label])),
 };
 
+/** The five reward settings a new configuration fixes (store.ts SIMPLE_REWARD), as the reward block names them. */
+const REWARD_NAMES: Record<string, string> = { violation_shape: 'violation shape', worst_spec_share: 'worst hard-spec share',
+  objective_weight: 'objective bonus weight', objective_shape: 'objective shape', margin_weight: 'tightest-margin bonus weight' };
+
 /** The encoders in short, for the line beside RL networks... (the window names them in full). */
 const SHORT_ENCODER: Record<string, string> = { graph_transformer: 'GT', rgcn: 'RGCN', gatv2: 'GATv2' };
 
@@ -174,6 +178,10 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const supportsCorners = circuit?.loaded && circuit?.task_key === config.circuit?.task_id && circuit?.training_capabilities?.corners === true;
   const launchesPerStep = robust ? 1 + corners.length : 1;
   const objective = (config.targets ?? []).filter((t: Json) => t.active !== false && t.direction_after_feasible && t.direction_after_feasible !== 'none');
+  // The reward this configuration runs - with what the schema fills in for a field it leaves out - and where it differs from
+  // the set a new configuration starts with, the one compared in training on 2026-10-05 (record 7.183).
+  const reward: Json = { violation_shape: 'capped', worst_spec_share: 0, objective_weight: 0, objective_shape: 'clipped', margin_weight: 0, ...(run.reward ?? {}) };
+  const rewardOther = Object.keys(SIMPLE_REWARD).filter(k => reward[k] !== SIMPLE_REWARD[k]);
   const toggleCorner = (id: string, checked: boolean) => set({ conditions: { ...run.conditions,
     // Re-adding a corner follows schema order, so toggling it back restores the original plan.
     corners: checked ? cornerIds.filter(c => c === id || corners.includes(c)) : corners.filter(c => c !== id) } });
@@ -279,6 +287,15 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const differs = settingDifferences.length > 0 && !pending.current;
   const originLabel = entry && ({ publication: 'publication preset', gator_baseline: 'GATOR baseline', custom: 'edited, saved in the backend' } as Json)[entry.origin];
   const budget: number = run.max_evaluations;
+  // The soft actor-critic values measured on 2026-10-05 (record 7.183; validation.py says the same as a warning): with one
+  // update per evaluation the designs stayed a uniform random search for 1,500 evaluations, and a starting temperature of
+  // 0.2 delayed learning to about evaluation 1,000. Said where the values are set, for a Mode that trains.
+  // Unknown until the encoder's settings have arrived (a new configuration holds no Advanced values of its own): no verdict then.
+  const updatesPer: number | undefined = adv.updates_per_transition ?? entry?.advanced?.updates_per_transition;
+  const startAlpha: number | undefined = adv.initial_alpha ?? entry?.advanced?.initial_alpha;
+  const sacSlow = llmOnly || run.mode === 'frozen' || run.mode === 'resume' ? [] : [
+    updatesPer !== undefined && updatesPer < 4 ? `${updatesPer} update${updatesPer === 1 ? '' : 's'} per evaluation` : null,
+    startAlpha !== undefined && startAlpha > 0.05 ? `a starting temperature of ${startAlpha}` : null].filter(Boolean) as string[];
   const starved = run.mode !== 'frozen' && typeof budget === 'number' && (budget <= (adv.warmup_transitions ?? 0) || budget < (adv.batch_size ?? 0) + 1);
   // resume / fine_tune / frozen LOAD a saved model, and its weights only fit the network they were trained with (the
   // backend refuses any other network in all three). So there is nothing to set up then: the block for a NEW network
@@ -342,7 +359,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const networkError = error || netMessage?.level === 'error' || !offeredEncoders.includes(encoder)
     || (modelChecked && model?.compatibility?.compatible === false);
   const networkWarning = netMessage?.level === 'warn' || (!loads && (differs || entry?.problem))
-    || (starved && run.search?.method !== 'llm_warmstart') || archDiffers;
+    || (starved && run.search?.method !== 'llm_warmstart') || archDiffers || sacSlow.length > 0;
   return (
     <>
     <Module id="run" title="Run configuration" summary={folded}>
@@ -404,6 +421,21 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       {robust && !supportsCorners && <p className="error">Training corners require the registered real OTA7 task.</p>}
       {robust && (run.max_spectre_launches == null || run.max_spectre_launches < 1) && <p className="error">A positive launch cap is required for training corners.</p>}
       {robust && (run.max_retries ?? 0) !== 0 && <p className="error">Training corners require zero automatic retries.</p>}
+      {/* The reward in one sentence (record 7.183, user: "it is too complicated... is there room for simplification?"). The five
+          settings compared in training on 2026-10-05 are fixed for a new configuration (store.ts SIMPLE_REWARD) and said here in
+          words; the controls sit in one fold, for reproducing an older run or for an experiment. A configuration that holds other
+          values is told which, and offered the tested set on a button - it is never changed by itself. */}
+      {rewardOther.length === 0
+        ? <p className="hint reward-sentence">Reward: minus half the average miss, minus half the worst miss. A design that meets every Specs row
+            scores above 0: up to +1 for the room it leaves on its tightest row, and up to +1 more for improving the objective
+            row{objective.length ? <> (<b>{objective.map((t: Json) => `${t.direction_after_feasible} ${t.metric_id}`).join('; ')}</b>).</> : ' (none is marked in Specs).'}</p>
+        : <div className="note reward-other">
+            <p className="hint">This configuration's reward is not the one a new configuration starts with (the set compared in training on 2026-10-05):
+              {' '}{rewardOther.map(k => `${REWARD_NAMES[k]} ${reward[k]} instead of ${SIMPLE_REWARD[k]}`).join('; ')}.</p>
+            <div className="row"><button className="reward-simple" onClick={() => set({ reward: { ...run.reward, ...SIMPLE_REWARD } })}
+              title="Compressed violations, worst hard-spec share 0.5, objective bonus weight 1 with the compressed shape, tightest-margin bonus weight 1. Nothing else changes.">Use the tested reward</button></div>
+          </div>}
+      <details className="limits reward-advanced"><summary>Advanced{rewardOther.length > 0 && <span className="hint"> - {rewardOther.length} not as tested</span>}</summary>
       <label title="Capped: min(1, distance/scale). Compressed: (distance/scale)/(1 + distance/scale). Neither determines feasibility by reward sign.">Violation shape<select value={run.reward?.violation_shape ?? 'capped'} onChange={e => set({ reward: { ...run.reward, violation_shape: e.target.value } })}>
         <option value="capped">Capped</option><option value="compressed">Compressed</option></select></label>
       {gated && <Num label="Nominal gate band" value={run.reward?.nominal_gate_band ?? 0.5} onChange={v => set({ reward: { ...run.reward, nominal_gate_band: v } })} title="Strictly between 0 and 1. Gate-passing designs always rank above gate-failing designs." />}
@@ -411,11 +443,11 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       <Num label="Worst hard-spec share" bounded value={run.reward?.worst_spec_share ?? 0} onChange={v => set({ reward: { ...run.reward, worst_spec_share: v } })}
         title="0 to 1. Mix the weighted mean violation with the worst hard-spec violation. At 1, soft violations do not contribute to the penalty." />
       <Num label="Objective bonus weight" bounded value={run.reward?.objective_weight ?? 0} onChange={v => set({ reward: { ...run.reward, objective_weight: v } })}
-        title="0 to 1. Applies only to a complete hard-feasible plan and the single objective selected in Specs." />
+        title="0 to 1. Applies only to a complete hard-feasible plan and the single objective selected in Specs. Without an objective row the bonus is 0." />
       <p className="hint reward-objective">Objective: {objective.length ? objective.map((t: Json) => `${t.direction_after_feasible} ${t.metric_id}`).join('; ') : 'none'}</p>
-      {(run.reward?.objective_weight ?? 0) > 0 && !objective.length && <p className="warn">No active objective; the objective bonus is zero.</p>}
       <Num label="Tightest-margin bonus weight" bounded value={run.reward?.margin_weight ?? 0} onChange={v => set({ reward: { ...run.reward, margin_weight: v } })}
         title="Complete hard-feasible plans only. Equality constraints remain mandatory but do not contribute clearance." />
+      </details>
       {llmOnly && run.mode === 'resume' && <label>AI run to resume<select value={source.run_dir ?? ''}
         onChange={e => set({ model_source: { run_dir: e.target.value, checkpoint_id: 'latest' } })}>
         <option value="">Choose an AI-only run</option>{runs.filter((r: Json) => r.search?.method === 'llm').map((r: Json) =>
@@ -445,7 +477,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       {entry && <><p className="hint in-use">In use: <b>{settingDifferences.length ? 'current run settings' : originLabel}</b></p>
         <div className="row pair">
           <button disabled={entry.origin === 'publication' && !differs} onClick={() => reset('publication')} title="Forget the saved values of this encoder and return to the values taken from publications.">Publication preset</button>
-          <button disabled={entry.origin === 'gator_baseline' && !differs} onClick={() => reset('gator_baseline')} title="The equal-size setting of all existing GATOR evidence and checkpoints. Suited to short runs.">GATOR baseline</button></div></>}
+          <button disabled={entry.origin === 'gator_baseline' && !differs} onClick={() => reset('gator_baseline')} title="One setting for every encoder: network 32/4/2, batch 8, warm-up 8, and the three training values measured on GATOR circuits on 2026-10-05 - starting temperature 0.01, 8 updates per evaluation, discount 0. Runs made before that date used 0.2, 1 and 0.99, with which the search stayed random.">GATOR baseline</button></div></>}
       {differs && <div className="note network-differences">
         <p className="warn">Current run values differ from the saved {encoder} defaults ({originLabel}).</p>
         <p className="hint">This run uses the values shown in the controls. Saved defaults are loaded when you choose an encoder; they do not replace an existing configuration on page reload.</p>
@@ -511,6 +543,9 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         {run.mode === 'frozen' && <label>Frozen actions<select value={run.frozen_action ?? 'deterministic'} onChange={e => set({ frozen_action: e.target.value })}><option>deterministic</option><option>sampled</option></select></label>}
         {run.mode === 'fine_tune' && <Check label="Continual learning (inherit weights fine-tuned on a previous test task)" value={run.continual_learning} onChange={v => set({ continual_learning: v })} />}
       </>)}
+      {sacSlow.length > 0 && <p className="warn sac-values">With {sacSlow.join(' and ')}, soft actor-critic learned late or not at all in the tests of 2026-10-05:
+        with 1 update per evaluation the designs stayed a uniform random search for 1,500 evaluations, and a starting temperature of 0.2 delayed
+        learning to about evaluation 1,000. The tested values are 8 updates per evaluation, starting temperature 0.01 and discount 0{loads ? ' (under Advanced)' : ': the GATOR baseline'}.</p>}
       <details><summary>Advanced (stored per encoder, like the network sizes)</summary>
         <p className="hint">Alpha learning rate belongs to this configuration; the other settings belong to the selected encoder. The algorithm stays soft actor-critic; only its numbers change.</p>
         <Num label="Alpha learning rate" nullable value={adv.alpha_learning_rate} onChange={v => setAdv({ alpha_learning_rate: v })} title="Empty uses the actor learning rate. A separate rate is stored in this configuration." />

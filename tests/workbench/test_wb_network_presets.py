@@ -63,8 +63,12 @@ def test_a_value_without_a_publication_is_the_gator_default_and_says_so():
     flat = {**baseline['network'], **baseline['advanced']}
     for encoder, preset in presets.PRESETS.items():
         for name, field in preset['fields'].items():
-            if field['basis'] in ('gator_default', 'not_used'):
+            if field['basis'] in ('gator_default', 'gator_tested', 'not_used'):
                 assert field['value'] == flat[name], f'{encoder}.{name} claims the GATOR default but differs from it'
+            # a value measured on GATOR circuits (record 7.183) is one of the three, and says what was measured
+            assert (field['basis'] == 'gator_tested') == (name in presets.TESTED and field['source'] is None), (encoder, name)
+            if field['basis'] == 'gator_tested':
+                assert 'record 7.183' in field['note'], (encoder, name)
 
 
 def test_references_are_citable():
@@ -75,17 +79,48 @@ def test_references_are_citable():
         assert reference['url'].startswith('https://') and 1990 < reference['year'] < 2100
 
 
-def test_the_gator_baseline_is_the_schema_default_and_stays_the_fallback_of_a_bare_configuration(tmp_path):
-    baseline = presets.gator_baseline()
-    assert baseline['network'] == dict(hidden_dim=32, heads=4, layers=2)
+def test_the_gator_baseline_holds_the_tested_values_and_a_bare_configuration_keeps_the_schema_defaults(tmp_path):
+    """Record 7.183: the baseline is the schema's sizes with the three training values measured on 2026-10-05. The schema
+    defaults themselves - the legacy baseline - stay, so a configuration without a network block means what it meant."""
+    baseline, legacy = presets.gator_baseline(), presets.legacy_baseline()
+    assert baseline['network'] == legacy['network'] == dict(hidden_dim=32, heads=4, layers=2)
     assert baseline['advanced']['batch_size'] == 8 and baseline['advanced']['warmup_transitions'] == 8
+    assert presets.TESTED == dict(initial_alpha=0.01, updates_per_transition=8, gamma=0.0)
+    assert {k: v for k, v in baseline['advanced'].items() if legacy['advanced'][k] != v} == presets.TESTED
+    assert {k: legacy['advanced'][k] for k in presets.TESTED} == dict(initial_alpha=0.2, updates_per_transition=1, gamma=0.99)
     raw = make_config(tmp_path).model_dump(mode='json')
     del raw['run']['network'], raw['run']['advanced']
     bare = schema.WorkbenchConfig.model_validate(raw)             # old configurations keep their meaning
     # (the component list, added later, defaults to the standard one every old configuration was built with)
-    assert bare.run.network.model_dump() == dict(encoder_type='graph_transformer', **baseline['network'], vocabulary='standard',
+    assert bare.run.network.model_dump() == dict(encoder_type='graph_transformer', **legacy['network'], vocabulary='standard',
                                                  operating_points=False)          # added 2026-09-26 (reward v2), off = as before
-    assert {k: v for k, v in bare.run.advanced.model_dump().items() if k in baseline['advanced']} == baseline['advanced']
+    assert {k: v for k, v in bare.run.advanced.model_dump().items() if k in legacy['advanced']} == legacy['advanced']
+    modes.sac_config_from(schema.AdvancedRL(**baseline['advanced']))                # the tested values build a learner
+
+
+def test_values_saved_as_the_old_baseline_follow_it_to_the_tested_values():
+    """The operator who pressed "GATOR baseline" before 2026-10-05 has the schema defaults in the file. That choice is read
+    as "the baseline" and follows it; the file is not rewritten. The same numbers saved afterwards are the operator's own."""
+    legacy = presets.legacy_baseline()
+    saved_file().parent.mkdir(parents=True, exist_ok=True)
+    stored = dict(schema=presets.SETTINGS_SCHEMA, encoders=dict(graph_transformer=dict(legacy, saved_utc='2026-10-03T17:50:40+00:00')))
+    saved_file().write_text(json.dumps(stored))
+    before = saved_file().read_bytes()
+    entry = presets.entry('graph_transformer')
+    assert entry['origin'] == 'gator_baseline' and entry['followed_baseline'] and entry['problem'] is None
+    assert (entry['network'], entry['advanced']) == (presets.gator_baseline()['network'], presets.gator_baseline()['advanced'])
+    assert saved_file().read_bytes() == before and presets.entry('rgcn')['followed_baseline'] is False
+    stored['encoders']['graph_transformer']['saved_utc'] = '2026-10-06T08:00:00+00:00'
+    saved_file().write_text(json.dumps(stored))
+    own = presets.entry('graph_transformer')
+    assert own['origin'] == 'custom' and not own['followed_baseline'] and own['advanced'] == legacy['advanced']
+    edited = dict(legacy, advanced=dict(legacy['advanced'], batch_size=16), saved_utc='2026-10-03T17:50:40+00:00')
+    saved_file().write_text(json.dumps(dict(stored, encoders=dict(graph_transformer=edited))))
+    kept = presets.entry('graph_transformer')                                      # an edited old setting was never the baseline
+    assert kept['origin'] == 'custom' and kept['advanced']['initial_alpha'] == 0.2 and kept['advanced']['batch_size'] == 16
+    pressed = presets.reset('graph_transformer', 'gator_baseline')                 # the button stores the tested values
+    assert pressed['origin'] == 'gator_baseline' and not pressed['followed_baseline']
+    assert json.loads(saved_file().read_text())['encoders']['graph_transformer']['advanced']['updates_per_transition'] == 8
 
 
 def test_every_preset_builds_the_real_network_and_sac_configuration():
@@ -171,6 +206,8 @@ def test_api_serves_the_settings_the_panel_needs(client):
     assert data['encoders'] == list(schema.ENCODER_TYPES) and data['default_encoder'] == 'graph_transformer'
     assert data['attention_encoders'] == ['graph_transformer', 'gatv2'] and data['scale_note']
     assert data['network_fields'] == list(presets.NETWORK_FIELDS) and data['advanced_fields'] == list(presets.ADVANCED_FIELDS)
+    assert data['tested']['values'] == presets.TESTED and 'record 7.183' in data['tested']['note']
+    assert data['gator_baseline']['advanced']['updates_per_transition'] == 8 and data['legacy_baseline']['advanced']['updates_per_transition'] == 1
     for encoder, entry in data['settings'].items():
         assert entry['uses_heads'] == (encoder in ('graph_transformer', 'gatv2'))
         assert set(entry['network']) == set(presets.NETWORK_FIELDS) and set(entry['advanced']) == set(presets.ADVANCED_FIELDS)

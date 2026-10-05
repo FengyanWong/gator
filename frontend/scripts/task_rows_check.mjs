@@ -132,14 +132,19 @@ await runChecks(browser, async () => {
     check('LIVE: the six targets of record, with their numbers', metrics.length === 6 && (await column('lower')).includes('25.01') && (await column('upper')).includes('0.0000021'), `${JSON.stringify(await column('lower'))} ${JSON.stringify(await column('upper'))}`);
     check('LIVE: five parameter rows and six probes', (await strip()) === 'Parameters (5) | Probes (6) | Specs (6)', await strip());
   } else check('the three tabs hold this task\'s rows', (await strip()) === 'Parameters (2) | Probes (3) | Specs (3)', await strip());
-  const hard = await evaluate(`(() => { const at = [...${EDITORS}.querySelectorAll('table.editor thead th')].findIndex(h => h.textContent.trim() === 'hard');
+  // hard and basis are columns "More columns" shows (hard since record 7.183, basis since 7.92): shown for these reads, then hidden again
+  const moreColumns = `[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => /^(More|Fewer) columns/.test(b.textContent.trim()))`;
+  const specHeadsBefore = await evaluate(`[...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.dataset.field).filter(Boolean)`);
+  await evaluate(`${moreColumns}.click()`);
+  await until(`!!${EDITORS}.querySelector('th[data-field="hard"]')`);
+  const hard = await evaluate(`(() => { const at = [...${EDITORS}.querySelectorAll('table.editor thead th')].findIndex(h => h.dataset.field === 'hard');
     return [...${EDITORS}.querySelectorAll('table.editor tbody tr')].map(r => r.children[at].querySelector('input').checked); })()`);
   const specHeads = await evaluate(`[...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.dataset.field).filter(Boolean)`);
-  check('what a row does not state is shown as the backend will take it: hard = on; no target or tolerance column (retired 2026-10-03)',
-    hard.length > 0 && hard.every(Boolean) && !specHeads.includes('tolerance') && !specHeads.includes('target'), `${JSON.stringify(hard)} ${JSON.stringify(specHeads)}`);
-  // basis is one of the columns "More columns" shows (record 7.92): shown for this read, then hidden again
-  const moreColumns = `[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => /^(More|Fewer) columns/.test(b.textContent.trim()))`;
-  await evaluate(`${moreColumns}.click()`);
+  check('what a row does not state is shown as the backend will take it: hard = on (behind "More columns", headed "Scale" for the scale); no target or tolerance column (retired 2026-10-03)',
+    hard.length > 0 && hard.every(Boolean) && !specHeads.includes('tolerance') && !specHeads.includes('target')
+    && !specHeadsBefore.includes('hard') && !specHeadsBefore.includes('normalization_scale')
+    && (await evaluate(`${EDITORS}.querySelector('th[data-field="normalization_scale"]')?.textContent.trim()`)) === 'Scale',
+    `${JSON.stringify(hard)} ${JSON.stringify(specHeadsBefore)} ${JSON.stringify(specHeads)}`);
   await until(`[...${EDITORS}.querySelectorAll('table.editor thead th')].some(h => h.textContent.trim() === 'basis')`);
   const basis = await column('basis');
   await evaluate(`${moreColumns}.click()`);

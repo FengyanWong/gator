@@ -17,8 +17,9 @@ Now the backend keeps **one setting per network type**:
   network only. It is still there after a restart.
 * Each network starts from numbers that **published analog-circuit papers actually used**. The panel
   shows where every number comes from ("Where the ... values come from").
-* Two buttons bring you back: **Publication preset** (forget my edits) and **GATOR baseline** (the old
-  32 / 4 / 2 setting that every existing GATOR result and checkpoint was made with).
+* Two buttons bring you back: **Publication preset** (forget my edits) and **GATOR baseline** (32 / 4 / 2 for
+  every network, with the three training values measured on GATOR circuits on 2026-10-05: see "The three
+  tested values" below. Until then it was the schema's defaults, the setting behind every earlier result).
 * The **heads** box is greyed out with "ignored by this encoder" unless the network is
   `graph_transformer` or `gatv2`. Only those two have attention heads.
 
@@ -37,8 +38,10 @@ click **GATOR baseline**.
 ## The presets
 
 `hidden / heads / layers`, then the training numbers. Anything not listed is the GATOR default
-(`update_every` 1, `updates_per_transition` 1, `initial_alpha` 0.2, `target_entropy_per_action` 1,
-`max_grad_norm` 10; for `gatv2` and `graph_transformer` also `tau` 0.005 and `warmup_transitions` 8).
+(`update_every` 1, `target_entropy_per_action` 1, `max_grad_norm` 10; for `gatv2` and `graph_transformer` also
+`tau` 0.005 and `warmup_transitions` 8) or, since 2026-10-05, a value measured on GATOR circuits
+(`initial_alpha` 0.01 everywhere; `updates_per_transition` 8 for `graph_transformer` and `gatv2`, while `rgcn`
+keeps the 1 of its authors' code).
 
 | Encoder | hidden | heads | layers | lr | gamma | tau | batch | warm-up | replay | episode |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -48,7 +51,38 @@ click **GATOR baseline**.
 | `rgcn` | 32 | (4) | 4 | 3e-4 | 0.99 | 0.005 | 128 | 1000 | 100000 | 50 |
 | `port_gnn` (removed 2026-09-24) | 32 | (4) | 5 | 3e-4 | 0.99 | 0.005 | 128 | 1000 | 100000 | 50 |
 | `mlp` (removed 2026-09-26) | 256 | (4) | 4 | 3e-3 | 0.8 | 0.005 | 256 | 120 | 1000000 | 30 |
-| GATOR baseline (all) | 32 | 4 | 2 | 3e-4 | 0.99 | 0.005 | 8 | 8 | 10000 | 4 |
+| GATOR baseline (all) | 32 | 4 | 2 | 3e-4 | 0 | 0.005 | 8 | 8 | 10000 | 4 |
+| schema defaults (the baseline until 2026-10-05) | 32 | 4 | 2 | 3e-4 | 0.99 | 0.005 | 8 | 8 | 10000 | 4 |
+
+## The three tested values (2026-10-05, record 7.183)
+
+The GATOR baseline also sets `initial_alpha` 0.01, `updates_per_transition` 8 and `gamma` 0. The schema defaults -
+0.2, 1 and 0.99 - are what every GATOR run used before, and with them soft actor-critic is a uniform random search:
+on Spectre (`real:mscr_ota7t`) two very different reward settings gave the same design in 147 of 150 positions, and
+none of 922 designs passed. Measured with 175 runs on two ngspice circuits and five Spectre runs
+(`artifacts/local/reviews/defaults-study-2026-10-05/README.md`; the reasons are in
+[decisions.md](decisions.md), "The tested defaults"):
+
+| Value | Before | Now | What was measured |
+|---|---|---|---|
+| `initial_alpha` | 0.2 | 0.01 | at 0.2 exploration swamps the reward and never comes down within a run; 0.05 ends lower, 0.002 learns twice as late |
+| `updates_per_transition` | 1 | 8 | with 1 nothing learns, whatever else is set; 4 learns at about evaluation 1,000, 8 at about 470, 16 at about 330; 0.1 to 0.15 s per update |
+| `gamma` | 0.99 | 0 | an action is a whole design scored on its own measurement; learned at 269 instead of 466 (ngspice only) |
+
+With temperature 0.01 and 8 updates the Spectre run found 36 passing designs in 760 (the first at design 591).
+Learning starts after 250 to 600 evaluations, so a shorter from-scratch run is a random search under any values.
+
+* The schema defaults stay as they were: a configuration without an Advanced block, a test and a saved model keep
+  their meaning. Static validation warns (`sac_values_random_search`) when a run that trains has fewer than 4 updates
+  per evaluation or a starting temperature above 0.05, and (`budget_below_sac_learning`) when a from-scratch SAC run
+  has fewer than 300 evaluations; the RL networks window says the first where the values are set.
+* In a publication preset, a field no publication reports now holds the tested value (basis `gator_tested`); a
+  published value stays (`rgcn`: one update per step, from the authors' code; the attention presets' `gamma` 0.9).
+  A published preset as a whole is still unmeasured here.
+* An encoder whose saved values equal the old baseline and were saved before the change is read as "on the GATOR
+  baseline" and follows it; `network_settings.json` is not rewritten. A configuration already open keeps its own
+  numbers: the window's **This run / Saved default** table shows the three, and **Use saved defaults** or **GATOR
+  baseline** applies them.
 
 `(4)` = ignored by that network; kept at 4 because the number is written into every checkpoint.
 
@@ -150,7 +184,8 @@ feature, mean-aggregated, no attention). Everything here is marked "closest netw
   per transition. In GATOR the random warm-up also applies to `fine_tune`, so a large warm-up stops a
   pretrained policy from acting at all in a short run.
 * **Soft actor-critic specifics.** No paper reports an entropy temperature, target entropy or gradient
-  clipping, so `initial_alpha`, `target_entropy_per_action` and `max_grad_norm` stay at GATOR defaults.
+  clipping, so `target_entropy_per_action` and `max_grad_norm` stay at GATOR defaults and `initial_alpha` is the
+  value measured here (0.01, record 7.183).
 * **Different architectures.** Every cited network differs from the GATOR block (pre-LayerNorm, residual,
   feed-forward of width 2h, separate encoders for the actor and both critics, one width throughout).
   Layer counts and widths transfer; exact parameter counts do not.
@@ -190,7 +225,8 @@ feature, mean-aggregated, no attention). Everything here is marked "closest netw
   as a run configuration, including "hidden divisible by heads" for the two attention encoders, so
   hidden and heads can be changed together.
 * A configuration submitted **without** a network block still gets the schema defaults (the GATOR
-  baseline), so existing configuration files, the CLI and the tests keep their meaning. The panel always
+  baseline until 2026-10-05), so existing configuration files, the CLI and the tests keep their meaning;
+  validation says that those values do not learn. The panel always
   writes explicit values into the configuration, so what is shown is what runs.
 * If the configuration's numbers differ from the backend's (an imported file, an undo, "Use the
   checkpoint's network"), the panel says so and offers "Load backend values" / "Save these to the

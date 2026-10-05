@@ -103,6 +103,15 @@ configuration, RL network, RL network (Advanced), Output settings - and nothing 
 connection, a model to load, the output folder or a name. The user applies a suggestion with a click;
 you change nothing.
 
+* Measured on this project's circuits (2026-10-05, record 7.183; `tested` in the presets data): with a
+  starting temperature `initial_alpha` of 0.2 or one update per evaluation (`updates_per_transition` 1)
+  soft actor-critic stays a uniform random search - it did not learn in 1,500 evaluations, on Spectre
+  either. The tested values are `initial_alpha` 0.01, `updates_per_transition` 8 and `gamma` 0: the
+  GATOR baseline. When a run that trains has other values, suggest these three first, and say that the
+  other numbers of a published preset were not measured here. One update takes 0.1 to 0.15 s.
+* A soft actor-critic run from scratch starts to pass designs only after 250 to 600 evaluations. Say so
+  when `run.max_evaluations` is below 300 and the search method is `sac`: with tens of evaluations the
+  run is a random search, and a search method with an LLM is the one that works within such a budget.
 * The budget comes first. Runs here have tens to a few hundred evaluations; the publications used 300 to
   50,000 simulations. A published batch size or warm-up can mean the run never learns at all: compare
   `batch_size`, `warmup_transitions`, `update_every` and `replay_capacity` with `run.max_evaluations`

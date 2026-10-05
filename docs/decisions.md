@@ -21,7 +21,8 @@ A summary for new sessions; everything below is the chronological record, oldest
   on 2026-09-26, when `gatv2` replaced `gat` (GATv1).
 - **Reward:** v2.1 ([reward-v2.md](reward-v2.md)). Schema defaults keep the old arithmetic: capped violations,
   worst-spec share 0, objective and margin weights 0, conditions `off` (nominal only), gate band 0.5, objective shape
-  `clipped`. New workbench configurations start with compressed violations and share 0.5. Corner training
+  `clipped`. New workbench configurations start with the set compared in training on 2026-10-05 (record 7.183):
+  compressed violations, share 0.5, objective and margin bonus weights 1, objective shape compressed. Corner training
   (`always`, `after_nominal`) was offered for `real:gpdk045_ota7` only; no task has it since 2026-09-30 (7.128).
 - **Older checkpoints** resume exactly only under their own source: digest `02127bc3...` (M6 pilot, six encoders) from
   `bbdfe36`; `aa987cf0...` (five encoders incl. MLP, GCN, GATv1) from `9bc488f`; `f087a4ce...` (reward v2) from
@@ -895,3 +896,72 @@ module with current setting as default". Decided:
   - the output folder, which is already a setting.
 
 Record 7.168.
+
+## The tested defaults: three soft actor-critic values, the reward of a new configuration, the Specs scale (2026-10-05)
+
+User: "check and test other default setting values, and give best default value", then "can you test with spectre
+simulations not ngspice?" (about 1 hour and at most 8,000 launches on `real:mscr_ota7t` approved; 1,925 used), then
+"record the reasons somewhere" and "update the reward plan according to finding and build it". Measured with 175 soft
+actor-critic runs on two ngspice circuits (195,961 simulations) and five Spectre runs; every number is in
+`artifacts/local/reviews/defaults-study-2026-10-05/README.md`. Each value below is followed by its reason.
+
+Soft actor-critic (the GATOR baseline of RL networks; the schema defaults are NOT changed):
+- **Starting temperature 0.01** (was 0.2). At 0.2 the exploration term (about 1.2) is several times any reward
+  difference (0.1 to 0.3), and the temperature's own learning rate cannot bring it down within a run (0.200 to 0.192 in
+  131 updates). 0.05 learns as early but ends lower (88 % passing against 97 %); 0.002 learns twice as late.
+- **8 updates per evaluation** (was 1). With 1 nothing learns, whatever the temperature, batch or learning rate (at most
+  15 % passing after 1,500 evaluations, against 1 % for a random search). 4 learns at about evaluation 1,000, 8 at
+  about 470, 16 at about 330. One update takes 0.1 to 0.15 s, so 8 cost about 0.9 s per design.
+- **Discount 0** (was 0.99). An action is a whole design and its reward is that design's own measurement, so the value
+  of later steps adds only noise: learned at evaluation 269 instead of 466 (and 367 instead of 686 on the second
+  circuit). Measured on ngspice only.
+- **Why it had to come first:** with the old values the search is uniform and no reward setting changes it. On Spectre,
+  "capped, share 0" and "compressed, share 0.5" gave the same design in 147 of 150 positions; 922 designs with the old
+  values, none passing; with temperature 0.01 and 8 updates, 36 of 760 passing (the first at design 591).
+- **Kept:** batch 8 (32 costs four times as much per update for the same result), learning rate 3e-4, warm-up 8,
+  episode length 4, and an empty temperature learning rate (3e-3 and 1e-2 gave nothing alone, were worse with more
+  updates, and two runs ended early with a collapsed policy).
+- **Budget:** learning starts after 250 to 600 evaluations, so a from-scratch SAC run below 300 is told that it is a
+  random search. The page's starting budget of 60 is kept: every evaluation is a real simulation the user authorizes.
+- **Where the values live:** the schema defaults (`AdvancedRL`) keep 0.2 / 1 / 0.99, so every saved configuration,
+  test and checkpoint means what it meant; the three values are `network_presets.TESTED`, part of `gator_baseline()`
+  and of every publication preset's fields that no publication reports. An encoder whose saved values equal the old
+  baseline and were saved before the change follows the baseline; the file is not rewritten. Static validation names
+  values that do not learn (`sac_values_random_search`), in the page as on the command line.
+
+The reward of a new configuration (frontend `SIMPLE_REWARD`; the schema defaults keep the old arithmetic):
+- **Worst hard-spec share 0.5.** With 0 a run ends with fewer passing designs (76 to 86 % of the last 200 against 88 to
+  94 %): one row just outside its limit costs only its share of the average. With 1 learning is slower and failed in 2
+  of 6 runs: a second failing row earns nothing.
+- **Compressed violations.** No difference from capped in training. Capped is flat once a row is a full scale away,
+  and 48 of the 227 designs recorded on Spectre have such a row.
+- **Objective bonus weight 1.** 27 to 30 % lower power among passing designs on 9 of 9 paired runs, no slower. 0.5 does
+  the same. Without an objective row the bonus is 0, so the weight needs no switch and no warning.
+- **Objective shape compressed.** No difference from clipped on a "minimise" row, which a clipped bonus never clips;
+  compressed also keeps paying on a "maximise" row beyond twice its limit.
+- **Tightest-margin bonus weight 1.** 99 % of the last designs pass against 88 to 94 %, no slower, also together with
+  the objective bonus. Without a bonus every passing design scores 0 and the policy settles on the edge of the limits.
+- **Missing value = failed stays off.** Switched on, it never learned faster and was slower on 7 of 9 paired runs. Off,
+  1 % of the designs are dropped and 1 of 89 learning runs stopped on five consecutive failures. It belongs on a row
+  whose missing value is the failure itself (an oscillator that does not start has no frequency).
+- **Not decided by a test:** the nominal gate band (0.5) and the corner policy; no task has corner decks.
+- **A configuration that holds other values is never changed by itself:** the run panel says which values differ and
+  offers the tested set on a button.
+
+The Specs scale:
+- **Empty, that is the size of the limit.** A scale of 10 % of the limit was better on three of the seven tasks'
+  recorded designs and worse on four (71 of 227 designs above a miss of 0.9, against 3). Half the limit is the best
+  single value, by a small margin (`artifacts/local/reviews/scale-study-2026-10-05/`).
+- **6 dB for a dB row** instead of 3: a fraction of a 30 or 40 dB limit makes each dB count three to five times less
+  than the same spec in V/V; 6 dB was better on three of the four tasks with dB rows and equal on the fourth.
+- **No more 10 degrees for a phase row or half the width of an interval:** they acted as hidden weights (10 degrees
+  reordered the recorded designs of `mscr_ota7t`; half an interval put 30 of 42 ring-oscillator designs above 0.9).
+- **Hard and the scale behind "More columns":** none of the 51 saved Specs rows is soft or has a typed scale.
+- **A limit of 0 with no scale blocks a run:** it was silently measured against 1 of the row's unit.
+
+Left open: discount 0 and the reward comparisons on Spectre (the approved hour went into the SAC values, because a
+six-lane run hit the bridge daemon's limit of 4,096 remembered requests per 15 minutes); the 13 dB rows of four saved
+tasks (filling them changes four task hashes). The larger daemon cache (`RB_NONCE_CACHE_MAX` 32768) was set in the
+running Virtuoso the same day, on the user's word; it is not yet in Virtuoso's start-up (record 7.183).
+
+Record 7.183.

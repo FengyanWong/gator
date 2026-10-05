@@ -225,8 +225,9 @@ def register(app: FastAPI, context: ApiContext):
         profile = (result.get('connection_profile_id') or None)
         result['connection'] = context.monitor.status(profile) if profile else dict(overall='not_applicable')
         # A baseline run asked to calibrate (record 7.197): what it was asked, and its proposals once the run has written them.
+        # A file written under an older rule is worked out again from the run's recorded designs (record 7.217).
         result['calibration'] = None if not manifest.get('calibration') else dict(
-            request=manifest['calibration'], result=read_json(path / calibration.FILE, default=None))
+            request=manifest['calibration'], result=calibration.current(path, manifest))
         return result
 
     @app.get('/api/runs/corner-check/plan')

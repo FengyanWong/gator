@@ -1,4 +1,5 @@
 import { Json, short } from '../api';
+import { quantity } from '../units';
 
 const sameNumber = (a: unknown, b: unknown) => (a ?? null) === (b ?? null);
 /** The Specs row of the page that IS the row a run calibrated: same ID, same limits, same unit. A row whose limits were
@@ -11,7 +12,10 @@ export const sameSpecsRow = (target: Json, row: Json) => !!target && sameNumber(
  *  rows: the result's rows with the page's row (`target`, none when the run calibrated another task) and whether it still
  *  is the row the run simulated (`same`); scales: the rows a Scale would be written into; pending: how many values Apply
  *  would change (0 = the page holds them, or the run calibrated another task);
- *  otherTask: the run calibrated another task than the page holds; what / afterwards: the words for both places. */
+ *  otherTask: the run calibrated another task than the page holds; what / afterwards: the words for both places;
+ *  saves: Apply would change a Specs row of a task saved from a Virtuoso cell, which then starts only after Save task -
+ *  where both places offer "Apply and save" (record 7.217). The values are written as every quantity of the page is
+ *  (record 7.208): 20 mV, 11 MHz, 9.6 deg. */
 export function calibrationPlan(result: Json, config: Json) {
   const targets: Json[] = config.targets ?? [], alpha: Json = result?.initial_alpha ?? {};
   const otherTask = !!result?.task_key && !!config.circuit?.task_id && result.task_key !== config.circuit.task_id;
@@ -24,15 +28,23 @@ export function calibrationPlan(result: Json, config: Json) {
   const proposals = scales.length + (alpha.proposed != null ? 1 : 0);
   const what = `${scales.length ? `the Scale of ${scales.length} Specs row${scales.length === 1 ? '' : 's'}` : ''}${scales.length && alpha.proposed != null ? ' and ' : ''}${alpha.proposed != null ? 'Initial alpha' : ''}`;
   // The values, for a line that has no table: at most six, then how many more there are.
-  const items = [...scales.map(r => `${r.metric_id} ${short(r.proposed_scale)}`), ...(alpha.proposed != null ? [`Initial alpha ${short(alpha.proposed)}`] : [])];
+  const items = [...scales.map(r => `${r.metric_id} ${quantity(r.proposed_scale, r.unit)}`), ...(alpha.proposed != null ? [`Initial alpha ${short(alpha.proposed)}`] : [])];
   const values = items.slice(0, 6).join(' · ') + (items.length > 6 ? ` · and ${items.length - 6} more` : '');
   // A task saved from a Virtuoso cell starts only with the rows it has saved (the check before every run), so applied
   // scales need Save task; that save changes Specs only, and the recorded baseline stays.
   const savedTask = String(config.circuit?.task_id ?? '').startsWith('real:');
   const afterwards = savedTask && scales.length ? ' Then press Save task: this task starts only with the rows it has saved, and its recorded baseline is kept.' : '';
+  const saves = !otherTask && savedTask && scales.some(r => !sameNumber(r.target.normalization_scale, r.proposed_scale));
   /** The configuration with the proposals written in: ONE change, so one Undo step; nothing for a run of another task. */
   const apply = (c: Json): Json => otherTask ? c : ({ ...c,
     targets: (c.targets ?? []).map((t: Json) => { const row = scales.find(r => r.metric_id === t.metric_id); return row && sameSpecsRow(t, row) ? { ...t, normalization_scale: row.proposed_scale } : t; }),
     run: alpha.proposed == null ? c.run : { ...c.run, advanced: { ...(c.run.advanced ?? {}), initial_alpha: alpha.proposed } } });
-  return { rows, scales, alpha, alphaNow, otherTask, pending, proposals, what, values, afterwards, apply };
+  return { rows, scales, alpha, alphaNow, otherTask, pending, proposals, what, values, afterwards, saves, apply };
 }
+
+/** "Apply and save" (record 7.217): what the page says once Save task (TaskSave.tsx `requestTaskSave`) has answered. */
+export const savingText = (asked: { taken: boolean; why: string }) => asked.taken
+  ? " Saving the task now: the progress is under the editors' tabs."
+  : ` Save task could not be started from here (${asked.why}): press Save task, above the editors.`;
+export const APPLY_AND_SAVE = 'then runs Save task: the rows become the task\'s next revision, the cell in Virtuoso is written to match and read back '
+  + '(about half a minute, no simulation). A change of Scale alone keeps the recorded baseline.';

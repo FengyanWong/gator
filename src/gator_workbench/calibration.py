@@ -8,8 +8,15 @@ configuration or a task, the page shows them with one Apply button.
 * Scale of a Specs row: the median miss, in the row's own unit, among the random designs that miss the row. With it a
   typical failing random design counts as a miss of 1 on every row (0.5 after the compressed shape), so no row leads
   the reward only because of its unit or the size of its limit.
+  A row with a lower AND an upper limit (a window) that most random designs are inside gets at most half its width
+  (record 7.217): a design inside the window has at most that much room, the margin bonus is paid on the row with the
+  least room measured in its Scale, and so a wider Scale on a window holds the margin bonus of the whole task small.
+  A window most random designs miss keeps the typical miss: it has to be found first, and half its width - a thirtieth
+  of the typical miss on the ring oscillator's frequency row - would make nearly every design count the same.
 * Initial alpha (the starting temperature of soft actor-critic): 0.1 x the standard deviation of the reward among the
-  random designs, the reward worked out again with the proposed scales by the reward code a run uses.
+  random designs, the reward worked out again with the proposed scales by the reward code a run uses. It is proposed
+  only when it differs from the value the run had by a factor of 2 or more (record 7.217): closer values made no
+  measurable difference in the tests, and a proposal only made the page differ from the saved default.
 
 What was measured, and what was not, is in docs/decisions.md ("Calibration with the baseline run").
 
@@ -33,7 +40,13 @@ MIN_MISS_SHARE = 0.125                     # ... and their share of the designs 
 SCALE_WITHIN = (0.01, 10.0)                # a proposed Scale stays within these multiples of what an empty box means
 ALPHA_PER_SD = 0.1
 ALPHA_WITHIN = (1e-4, 0.05)                # validation.py warns above 0.05 (the designs stay a random search)
+ALPHA_FACTOR = 2.0                         # proposed only when it differs from the value in use by this factor or more
 SAME_REWARD = 1e-9
+# The rule a result was worked out with. 1: record 7.197. 3 (record 7.217): a window most random designs are inside gets
+# at most half its width; Initial alpha only when it differs by ALPHA_FACTOR. (2 was an unreleased state of record
+# 7.217 - half its width for every window - under which six Baseline simulations of 2026-10-05 were recorded.) A run's
+# file written under another rule is worked out again from the run's recorded designs when it is read (`current`).
+RULE = 3
 
 
 def prepare(config, designs):
@@ -60,6 +73,12 @@ def _finite(value):
 def _round(value):
     """Two significant digits: a proposal is an estimate from a few dozen designs, not a measured constant."""
     return float(f'{value:.2g}')
+
+
+def _text(value, unit):
+    """A number of a note, three digits, written as every quantity is (record 7.208): 300 mV, 25 MHz, 9.6 deg."""
+    from . import units
+    return units.text(float(f'{value:.3g}'), unit)
 
 
 def _rewards(config, designs, values):
@@ -95,11 +114,13 @@ def calibrate(config, evaluations, metric_rows) -> dict:
             values.setdefault(row['evaluation_id'], {})[row['metric_name']] = row['raw_value']
     recorded = [e['reward'] if _finite(e.get('reward')) else None for e in designs]
     scored = sum(r is not None for r in recorded)
-    rule = dict(scale='the median miss among the random designs that miss the row', min_scored=MIN_SCORED, min_misses=MIN_MISSES,
-                min_miss_share=MIN_MISS_SHARE, scale_within=list(SCALE_WITHIN), alpha_per_sd=ALPHA_PER_SD, alpha_within=list(ALPHA_WITHIN))
+    rule = dict(version=RULE, scale='the median miss among the random designs that miss the row',
+                window='at most half the window when most random designs are inside it',
+                min_scored=MIN_SCORED, min_misses=MIN_MISSES, min_miss_share=MIN_MISS_SHARE, scale_within=list(SCALE_WITHIN),
+                alpha_per_sd=ALPHA_PER_SD, alpha_within=list(ALPHA_WITHIN), alpha_factor=ALPHA_FACTOR)
     result = dict(format=FORMAT, status='not_calibrated', reason=None, scale_note=None, rule=rule,
                   designs=dict(simulated=len(designs), scored=scored, passing=sum(bool(e.get('all_hard_constraints_satisfied')) for e in designs)),
-                  rows=[], initial_alpha=dict(used=config.run.advanced.initial_alpha, proposed=None, reward_sd=None, reward_sd_used=None, note=None))
+                  rows=[], initial_alpha=dict(used=config.run.advanced.initial_alpha, proposed=None, estimate=None, reward_sd=None, reward_sd_used=None, note=None))
     if scored < MIN_SCORED:
         result['reason'] = (f'{scored} of the {len(designs)} random designs gave a reward; at least {MIN_SCORED} are needed '
                             'before a typical miss or a reward spread can be named.')
@@ -124,20 +145,38 @@ def calibrate(config, evaluations, metric_rows) -> dict:
         stated = target.normalization_scale or None
         empty_box = compiler.normalization_scale(target.model_copy(update=dict(normalization_scale=None)))
         from_limit = any(v not in (None, 0) for v in (target.lower, target.upper))       # else the empty box means 1, a placeholder
+        # A window: a lower and an upper limit. Half its width, in the row's unit, is the most room a design can have in it.
+        window = _finite(target.lower) and _finite(target.upper) and target.upper > target.lower
+        half = float(f'{(target.upper - target.lower) / 2:.12g}') if window else None
         row = dict(metric_id=target.metric_id, unit=target.unit, lower=target.lower, upper=target.upper, scale_stated=stated,
                    scale_used=compiler.normalization_scale(target), measured=len(measured), misses=len(misses),
-                   median_miss=None, proposed_scale=None, limited=None, note=None)
+                   median_miss=None, proposed_scale=None, limited=None, note=None, half_window=half)
         if misses:
             row['median_miss'] = statistics.median(misses) / factor
-        if compressed and (len(misses) < MIN_MISSES or len(misses) < MIN_MISS_SHARE * len(measured)):
-            row['note'] = (f'{len(misses)} of {len(measured)} random designs miss this row: too few to name a typical miss. '
-                           'Its Scale stays as it is.')
-        elif compressed and target.direction_after_feasible != 'none':
+        few = len(misses) < MIN_MISSES or len(misses) < MIN_MISS_SHARE * len(measured)
+        inside = 2 * len(misses) <= len(measured)            # at least half of the random designs are within this row's limits
+        too_few = (f'{len(misses)} of {len(measured)} random designs miss this row: too few to name a typical miss.')
+        if not compressed:
+            pass
+        elif few and not window:
+            row['note'] = f'{too_few} Its Scale stays as it is.'
+        elif target.direction_after_feasible != 'none':
             # One number, two jobs: on this row the Scale also measures how far the objective is past its limit (the objective
             # bonus), so a proposal from the misses would change what the bonus means. A judgment: in the test it made no
             # measurable difference whether this row was calibrated too (docs/decisions.md).
             row['note'] = 'This row carries the objective: its Scale also measures the objective bonus, so it stays as it is.'
-        elif compressed:
+        elif few and (row['scale_used'] <= half or not inside):
+            row['note'] = f'{too_few} Its Scale stays as it is.'
+        elif few:
+            # A window few designs miss, with a Scale wider than half of it. The Scale then decides nothing about finding the
+            # window, but the room inside it counts as at most half / Scale - and the margin bonus follows the row with the
+            # least room, so it cannot pay for more than that on any row of the task.
+            row['proposed_scale'] = proposed[target.metric_id] = half
+            row['limited'] = 'window'
+            row['note'] = (f'{too_few} Half the window is proposed: with the Scale in use ({_text(row["scale_used"], target.unit)}) the middle of '
+                           f'the window counts as {half / row["scale_used"]:.2g} of a Scale away from its limits, and the margin bonus of the '
+                           'whole task cannot pay for more room than that.')
+        else:
             scale = row['median_miss']
             if from_limit:
                 low, high = (bound * empty_box for bound in SCALE_WITHIN)
@@ -146,9 +185,25 @@ def calibrate(config, evaluations, metric_rows) -> dict:
                 elif scale > high:
                     scale, row['limited'] = high, 'high'
                 if row['limited']:
-                    row['note'] = (f'The typical miss is {row["median_miss"]:.3g} {target.unit}; the proposal is kept within '
+                    row['note'] = (f'The typical miss is {_text(row["median_miss"], target.unit)}; the proposal is kept within '
                                    f'{SCALE_WITHIN[0]:g} to {SCALE_WITHIN[1]:g} times the size of the limit.')
-            row['proposed_scale'] = proposed[target.metric_id] = _round(scale)
+            scale = _round(scale)
+            if window and scale > half and inside:
+                # Most designs are inside the window already: what its Scale still decides is the margin bonus.
+                scale, row['limited'] = half, 'window'
+                row['note'] = (f'The typical miss is {_text(row["median_miss"], target.unit)}, more than half the window, and '
+                               f'{len(measured) - len(misses)} of {len(measured)} random designs are inside it. The proposal is half the '
+                               'window: a design inside it has at most that much room, and with a larger Scale the margin bonus of the '
+                               'whole task could not pay for more.')
+            elif window and scale > half:
+                # Most designs miss the window: it has to be found first, and the typical miss as its Scale is what tells a
+                # near design from a far one. Half the window - many times smaller - would make nearly all of them count the same.
+                wider = (f'{len(misses)} of {len(measured)} random designs miss this window, so its Scale is their typical miss: the '
+                         f'search has to find the window first. While that is wider than half the window ({_text(half, target.unit)}), a '
+                         f'design inside counts as at most {half / scale:.2g} of a Scale clear, and the margin bonus of the whole task stays '
+                         'that small.')
+                row['note'] = f'{row["note"]} {wider}' if row['note'] else wider
+            row['proposed_scale'] = proposed[target.metric_id] = scale
         result['rows'].append(row)
 
     # The starting temperature belongs to the reward the next run will have: the proposed scales, the same reward settings.
@@ -172,12 +227,24 @@ def calibrate(config, evaluations, metric_rows) -> dict:
             alpha['note'] = 'Not proposed: the reward does not differ among the random designs.'
         else:
             value = min(max(ALPHA_PER_SD * spread, ALPHA_WITHIN[0]), ALPHA_WITHIN[1])
-            alpha['proposed'] = _round(value)
-            if value != ALPHA_PER_SD * spread:
-                alpha['note'] = (f'{ALPHA_PER_SD:g} x the reward spread is {ALPHA_PER_SD * spread:.2g}; the proposal is kept within '
-                                 f'{ALPHA_WITHIN[0]:g} to {ALPHA_WITHIN[1]:g}.')
+            alpha['estimate'] = estimate = _round(value)
+            used = alpha['used']
+            # the numbers as the page shows them: 0.025 against 0.05 is a factor of 2, and is proposed
+            if _finite(used) and used > 0 and max(estimate / used, used / estimate) < ALPHA_FACTOR * (1 - 1e-9):
+                # Close to the value the run had: no proposal. 0.011 to 0.014 against 0.01 made no measurable difference in the
+                # tests; a factor of 4 did (docs/decisions.md).
+                alpha['note'] = (f'Not proposed: the estimate is {alpha["estimate"]:g} ({ALPHA_PER_SD:g} x the reward spread), within a '
+                                 f'factor of {ALPHA_FACTOR:g} of the {used:g} in use. The value in use stays.')
+            else:
+                alpha['proposed'] = alpha['estimate']
+                if value != ALPHA_PER_SD * spread:
+                    alpha['note'] = (f'{ALPHA_PER_SD:g} x the reward spread is {ALPHA_PER_SD * spread:.2g}; the proposal is kept within '
+                                     f'{ALPHA_WITHIN[0]:g} to {ALPHA_WITHIN[1]:g}.')
     if proposed or alpha['proposed'] is not None:
         result['status'] = 'calibrated'
+    elif alpha['estimate'] is not None:
+        result['reason'] = ('The random designs give nothing to change: no Scale is proposed for a Specs row, and the Initial alpha in use '
+                            f'({alpha["used"]:g}) is close to the estimate ({alpha["estimate"]:g}).')
     else:
         result['reason'] = 'The random designs give no proposal: no row is missed often enough, and the reward spread could not be named.'
     return result
@@ -219,3 +286,28 @@ def from_run(run_dir, manifest=None) -> dict:
     result.update(run_id=manifest.get('run_id'), task_key=(manifest.get('circuit') or {}).get('task_key'),
                   run_state=manifest.get('state'), created_utc=utcnow().isoformat())
     return result
+
+
+_AGAIN: dict = {}                          # run folder -> its result worked out again under today's rule (this process)
+
+
+def current(run_dir, manifest=None):
+    """A run's calibration as the page shows it: the run's own file - or, when that file was written under an older rule,
+    the proposals worked out again from the run's recorded designs (record 7.217: the designs are simulated and paid for;
+    only the arithmetic changed). Nothing is written: the run's file stays what the run said at its end, and the answer
+    names both rules (`recalculated`). None: the run has no calibration result (yet)."""
+    from pathlib import Path
+    from .storage import read_json
+    stored = read_json(Path(run_dir) / FILE, default=None)
+    if not isinstance(stored, dict) or (stored.get('rule') or {}).get('version') == RULE:
+        return stored
+    key = str(run_dir)
+    if key not in _AGAIN:
+        try:
+            again = from_run(run_dir, manifest)
+            again.update(created_utc=stored.get('created_utc'),
+                         recalculated=dict(from_rule=(stored.get('rule') or {}).get('version', 1), to_rule=RULE))
+        except Exception:                  # its tables are gone or cannot be read: what the run said stands
+            again = stored
+        _AGAIN[key] = again
+    return _AGAIN[key]

@@ -6,6 +6,9 @@
 // (record 7.204, "Calibration ready"): Not now changes nothing and is remembered, Apply calibration there does what the
 // block's button does, and the next run asks again. And a run of another task than the page holds (record 7.214, its status
 // changed by the check): the block shows the run's own Scales and Initial alpha, never the page's row of the same ID.
+// Record 7.217: an Initial alpha is proposed only when it differs from the one the run had by a factor of 2 or more - the
+// second run here starts from the first run's applied value, so whether it proposes one follows that rule ("Apply and
+// save", for a task saved from a Virtuoso cell, is in calibration_save_check.mjs).
 // It starts runs, so it REFUSES the default backend: give it a SCRATCH backend and a scratch output root (run_checks.sh does;
 // by hand as run_control_live_check.mjs says). Takes about a minute. Exit code 1 if any check fails.
 import path from 'node:path';
@@ -122,16 +125,23 @@ await runChecks(browser, async () => {
   const dir2 = await evaluate(`localStorage.getItem('gator-workbench-current-run-v1')`);
   let second = null;
   for (let i = 0; i < 300 && !second; i++) { const s = await get('runs/status', { run_dir: dir2 }); if (s.state === 'completed' && !s.worker_alive) second = s.calibration?.result; else await new Promise(r => setTimeout(r, 200)); }
-  const scale2 = second?.rows?.[0]?.proposed_scale, alpha2 = second?.initial_alpha?.proposed;
-  check('it ends with proposals of its own (the row now has the limit 0.9)', typeof scale2 === 'number' && typeof alpha2 === 'number' && second.rows[0].lower === 0.9, JSON.stringify(second).slice(0, 300));
+  const scale2 = second?.rows?.[0]?.proposed_scale, alpha2 = second?.initial_alpha?.proposed ?? null;
+  // This run had the Initial alpha the first run's Apply wrote: one is proposed only when the estimate is a factor of 2 away.
+  const estimate2 = second?.initial_alpha?.estimate, used2 = second?.initial_alpha?.used, close2 = Math.max(estimate2 / used2, used2 / estimate2) < 2;
+  check('it ends with a Scale of its own (the row now has the limit 0.9)', typeof scale2 === 'number' && second.rows[0].lower === 0.9, JSON.stringify(second).slice(0, 300));
+  check('an Initial alpha is proposed only when the estimate differs from the one the run had by a factor of 2 or more (7.217)', used2 === alpha && typeof estimate2 === 'number'
+    && (alpha2 === null) === close2 && (alpha2 === null ? /^Not proposed: the estimate is .* within a factor of 2 of the .* in use\. The value in use stays\.$/.test(second.initial_alpha.note) : alpha2 === estimate2),
+    JSON.stringify(second?.initial_alpha));
+  const values2 = `score ${scale2}${alpha2 === null ? '' : ` \u00b7 Initial alpha ${alpha2}`}`, what2 = `the Scale of 1 Specs row${alpha2 === null ? '' : ' and Initial alpha'}`;
   check('its line comes up, although the first run\'s was answered', await until(`!!(${readyButton('Apply calibration')})`, 150)
-    && (await evaluate(`${READY}.querySelector('span').textContent`)).startsWith(`Calibration ready for synthetic:gpdk045_ota5: score ${scale2} \u00b7 Initial alpha ${alpha2}.`), await evaluate(`${READY}?.textContent`));
+    && (await evaluate(`${READY}.querySelector('span').textContent`)).startsWith(`Calibration ready for synthetic:gpdk045_ota5: ${values2}. Proposed from 64 random designs`), await evaluate(`${READY}?.textContent`));
+  check('a task that is not saved from a Virtuoso cell keeps the one button: no Apply and save', await evaluate(`!(${readyButton('Apply and save')}) && !(${readyButton('Apply only')})`));
   await evaluate(`${readyButton('Apply calibration')}.click()`);
   config = await stored();
-  check('"Apply calibration" in the line writes the Scale and the Initial alpha', config.targets[0].normalization_scale === scale2 && config.run.advanced.initial_alpha === alpha2,
+  check('"Apply calibration" in the line writes what is proposed', config.targets[0].normalization_scale === scale2 && config.run.advanced.initial_alpha === (alpha2 ?? alpha),
     JSON.stringify({ scale: config.targets[0].normalization_scale, alpha: config.run.advanced.initial_alpha }));
   check('the line goes, and the page says what was applied', await until(`!(${READY})`, 30)
-    && (await evaluate(BANNER)) === 'Calibration applied: the Scale of 1 Specs row and Initial alpha, as one Undo step.', await evaluate(BANNER));
+    && (await evaluate(BANNER)) === `Calibration applied: ${what2}, as one Undo step.`, await evaluate(BANNER));
   await evaluate(`${TOOL('Undo')}.click()`);
   config = await stored();
   check('ONE Undo takes both back; the answered line stays away, the block in Run status still offers Apply', config.targets[0].normalization_scale === 1 && config.run.advanced.initial_alpha === alpha
@@ -149,7 +159,7 @@ await runChecks(browser, async () => {
     if (!foreign) return page.pass(params.requestId);
     const real = await (await fetch(params.request.url)).json();
     const fixture = real.calibration?.result;
-    if (fixture) { fixture.task_key = OTHER; fixture.rows[0].scale_stated = 2; fixture.initial_alpha.used = 0.02; }
+    if (fixture) { fixture.task_key = OTHER; fixture.rows[0].scale_stated = 2; Object.assign(fixture.initial_alpha, { used: 0.02, proposed: 0.045, note: null }); }
     return page.fulfil(params.requestId, 200, real);
   });
   await send('Page.reload');
@@ -160,7 +170,7 @@ await runChecks(browser, async () => {
   check('...the Scale column is the run\'s own ("Scale in the run" 2), not the page\'s row of the same ID (1), and no row is "not applied"',
     (await evaluate(`[...${BLOCK}.querySelectorAll('thead th')].map(th => th.textContent).join('|')`)).includes('|Scale in the run|')
     && foreignCells.length === 1 && foreignCells[0][4] === '2' && foreignCells[0][5] === String(scale2) && !/not applied|no such row/.test(await evaluate(`${BLOCK}.textContent`)), JSON.stringify(foreignCells));
-  check('...the Initial alpha is the run\'s', (await evaluate(`${BLOCK}.querySelector('.calibration-alpha').textContent`)).startsWith(`Initial alpha (RL networks): the run had 0.02; proposed ${alpha2}`),
+  check('...the Initial alpha is the run\'s', (await evaluate(`${BLOCK}.querySelector('.calibration-alpha').textContent`)).startsWith('Initial alpha (RL networks): the run had 0.02; proposed 0.045'),
     await evaluate(`${BLOCK}.querySelector('.calibration-alpha').textContent`));
   check('...and Apply rests, saying which task it waits for', await evaluate(`${APPLY}.disabled`) && (await evaluate(HINT)) === `Apply waits until the page holds ${OTHER}.`, await evaluate(HINT));
   await page.shot(path.join(out, 'calibration-3-other-task.png'), `document.querySelector('footer')`);

@@ -15,7 +15,8 @@ import { RunListButton } from './panels/RunList';
 import { OutputPanel, ResearchPanel, RunPanel } from './panels/Right';
 import { AgentTab } from './panels/AgentTab';
 import { DataTab, FilesTab, LogsTab, StatusTab } from './panels/RunTabs';
-import { calibrationPlan } from './panels/calibrationPlan';
+import { APPLY_AND_SAVE, calibrationPlan, savingText } from './panels/calibrationPlan';
+import { requestTaskSave } from './panels/TaskSave';
 import { CornerCheckTab } from './panels/CornerCheck';
 import { TrainingTab } from './panels/TrainingTab';
 import { CrashPanel } from './panels/CrashPanel';
@@ -187,13 +188,16 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const calibrated: Json = control.phase === 'idle' && control.dir && control.dir !== calibrationAnswered ? control.status?.calibration?.result ?? null : null;
   const calibrationOffer = calibrated ? calibrationPlan(calibrated, config) : null;
   const calibrationReady = !!calibrationOffer && !calibrationOffer.otherTask && (calibrated.status !== 'calibrated' || calibrationOffer.pending > 0);
-  const answerCalibration = (apply: boolean) => {
+  // 'save' (record 7.217, a task saved from a Virtuoso cell): Apply, then Save task as a press on it - asked in the same
+  // click, sent with the rows of the next render (TaskSave.tsx), so the page is not left differing from its saved task.
+  const answerCalibration = (how: 'save' | 'apply' | 'no') => {
     const dir = control.dir;
     if (!dir || !calibrationOffer) return;
-    if (apply) setConfig(calibrationOffer.apply);
+    if (how !== 'no') setConfig(calibrationOffer.apply);
+    const after = how === 'save' ? savingText(requestTaskSave(config.circuit.task_id)) : calibrationOffer.afterwards;
     setCalibrationAnswered(dir);
     try { localStorage.setItem(CALIBRATION_ANSWERED_KEY, dir); } catch { /* a private window: asked again after a reload */ }
-    if (calibrated.status === 'calibrated') setMessage({ level: 'info', text: apply ? `Calibration applied: ${calibrationOffer.what}, as one Undo step.${calibrationOffer.afterwards}`
+    if (calibrated.status === 'calibrated') setMessage({ level: 'info', text: how !== 'no' ? `Calibration applied: ${calibrationOffer.what}, as one Undo step.${after}`
       : 'Nothing was changed. The proposals stay under Run status of that run, with Apply calibration.' });
   };
   // The run shown is read every 1.5 s while it can change by itself: a worker is alive, its state is a live one, or the
@@ -369,10 +373,13 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
           {calibrated.status === 'calibrated'
             ? <><span><b>Calibration ready</b>{calibrated.task_key ? ` for ${calibrated.task_key}` : ''}: {calibrationOffer.values}. <span className="hint">Proposed
                 from {calibrated.designs?.scored} random designs; nothing has changed yet. The table is under Run status.</span></span>
-              <button onClick={() => answerCalibration(true)} title={`Apply calibration: Writes ${calibrationOffer.what} into the page, as one Undo step. Nothing is simulated and no task is saved.${calibrationOffer.afterwards}`}>Apply calibration</button>
-              <button onClick={() => answerCalibration(false)} title="Not now: Leaves everything as it is. The proposals stay under Run status of this run, with Apply calibration.">Not now</button></>
+              {calibrationOffer.saves
+                ? <><button className="primary" onClick={() => answerCalibration('save')} title={`Apply and save: Writes ${calibrationOffer.what} into the page, as one Undo step, ${APPLY_AND_SAVE}`}>Apply and save</button>
+                    <button onClick={() => answerCalibration('apply')} title={`Apply only: Writes ${calibrationOffer.what} into the page, as one Undo step. Nothing is simulated and no task is saved.${calibrationOffer.afterwards}`}>Apply only</button></>
+                : <button onClick={() => answerCalibration('apply')} title={`Apply calibration: Writes ${calibrationOffer.what} into the page, as one Undo step. Nothing is simulated and no task is saved.${calibrationOffer.afterwards}`}>Apply calibration</button>}
+              <button onClick={() => answerCalibration('no')} title="Not now: Leaves everything as it is. The proposals stay under Run status of this run, with Apply calibration.">Not now</button></>
             : <><span><b>Calibration finished:</b> nothing is proposed. {calibrated.reason}</span>
-              <button onClick={() => answerCalibration(false)} title="Closes this line. The run's numbers stay under Run status.">OK</button></>}
+              <button onClick={() => answerCalibration('no')} title="Closes this line. The run's numbers stay under Run status.">OK</button></>}
         </div>}
         <span className="spacer" />
         <ValidationStatus validation={validation} config={config} schema={schema} />

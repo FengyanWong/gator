@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, bytes, copy, download, downloadPackage, Json, num, saveJson, short, si } from '../api';
 import { usePolling, useRequest } from '../store';
-import { calibrationPlan } from './calibrationPlan';
+import { APPLY_AND_SAVE, calibrationPlan, savingText } from './calibrationPlan';
+import { requestTaskSave } from './TaskSave';
 
 const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'llm_calls', 'transitions', 'states'];
 
@@ -28,17 +29,25 @@ const limitText = (row: Json) => row.lower != null && row.upper != null ? `${si(
  *  page holds - the Scale of the Specs rows that still are the rows the run simulated, and Initial alpha in RL networks - as
  *  ONE Undo step; a task saved from a Virtuoso cell then needs Save task before it starts. What Apply does is worked out
  *  in calibrationPlan.ts, shared with the "Calibration ready" line under the header (record 7.204). A run of another task
- *  than the page holds shows its own Scales and Initial alpha, never the page's rows of the same ID (record 7.214). */
+ *  than the page holds shows its own Scales and Initial alpha, never the page's rows of the same ID (record 7.214).
+ *  Record 7.217: for a task saved from a Virtuoso cell the press is "Apply and save" - Apply, then Save task as a press
+ *  on it - with "Apply only" beside it; Scales are written as every quantity of the page is; and a result the backend
+ *  worked out again under today's rule says so. */
 function Calibration({ value, live, config, setConfig }: { value: Json; live: boolean; config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void }) {
   const result: Json = value.result, request: Json = value.request ?? {};
+  const [said, setSaid] = useState<string | null>(null);                      // what "Apply and save" answered, for this result
+  useEffect(() => setSaid(null), [result?.run_id]);
   if (!result) return <div className="calibration"><h4>Calibration</h4><p className="hint">{live
     ? `After the baseline, ${request.designs} random designs are simulated; the proposals appear here when the run has ended.`
     : 'This run ended without a calibration result.'}</p></div>;
   const designs: Json = result.designs ?? {};
-  const { rows, scales, alpha, alphaNow, otherTask, pending, proposals, what, afterwards, apply } = calibrationPlan(result, config);
+  const { rows, scales, alpha, alphaNow, otherTask, pending, proposals, what, afterwards, saves, apply } = calibrationPlan(result, config);
+  const applyAndSave = () => { setConfig(apply); setSaid(`Applied ${what}, as one Undo step.${savingText(requestTaskSave(config.circuit.task_id))}`); };
   return <div className="calibration">
     <h4>Calibration <span className="hint">from this run's random designs: {designs.scored} of {designs.simulated} gave a reward, {designs.passing} pass{designs.passing === 1 ? 'es' : ''} every hard spec</span></h4>
     {result.status !== 'calibrated' && <p className="warn">Nothing is proposed. {result.reason}</p>}
+    {result.recalculated && <p className="hint recalculated">Worked out again from this run's recorded designs with today's rule; the run's own file keeps what it
+      said at its end.</p>}
     {otherTask && <p className="hint other-task">This run calibrated <b>{result.task_key}</b>; the page holds {config.circuit.task_id}. The table shows the
       Scales the run had. To apply the proposals, choose {result.task_key} under Registered task.</p>}
     {result.scale_note && <p className="hint">{result.scale_note}</p>}
@@ -52,22 +61,29 @@ function Calibration({ value, live, config, setConfig }: { value: Json; live: bo
       <tbody>{rows.map(r => <tr key={r.metric_id}>
         <td>{r.metric_id}</td><td>{limitText(r)}</td><td>{r.misses} of {r.measured}{r.measured < designs.simulated && <span className="hint"> ({designs.simulated - r.measured} gave no value)</span>}</td>
         <td>{r.median_miss == null ? '-' : si(r.median_miss, r.unit)}</td>
-        <td>{otherTask ? (r.scale_stated != null ? short(r.scale_stated) : <span className="hint">empty</span>)
-          : !r.target ? <span className="hint">no such row on the page</span> : r.target.normalization_scale != null ? short(r.target.normalization_scale) : <span className="hint">empty</span>}</td>
-        <td>{r.proposed_scale != null && <b>{short(r.proposed_scale)}</b>}
+        <td>{otherTask ? (r.scale_stated != null ? si(r.scale_stated, r.unit) : <span className="hint">empty</span>)
+          : !r.target ? <span className="hint">no such row on the page</span> : r.target.normalization_scale != null ? si(r.target.normalization_scale, r.target.unit) : <span className="hint">empty</span>}</td>
+        <td>{r.proposed_scale != null && <b>{si(r.proposed_scale, r.unit)}</b>}
           {r.proposed_scale != null && !r.same && !otherTask && <span className="warn"> not applied: {r.target ? 'the limits of this row were changed after the run' : 'the page has no row with this ID'}</span>}
           {r.note && <span className="hint">{r.proposed_scale != null ? ' ' : ''}{r.note}</span>}</td></tr>)}</tbody></table>}
     <p className="calibration-alpha">Initial alpha (RL networks): {otherTask ? 'the run had' : 'now'} <b>{(otherTask ? alpha.used : alphaNow) ?? "the encoder's saved value"}</b>; proposed {alpha.proposed != null
       ? <><b>{short(alpha.proposed)}</b> <span className="hint">= 0.1 x the reward's spread among the random designs ({short(Number(Number(alpha.reward_sd).toPrecision(3)))}{scales.length || rows.some(r => r.proposed_scale != null) ? ', with the proposed scales' : ''})</span></>
-      : <span className="hint">nothing. {alpha.note}</span>}{alpha.proposed != null && alpha.note && <span className="hint"> {alpha.note}</span>}</p>
+      : <span className="hint">nothing{alpha.note ? `: ${String(alpha.note).replace(/^Not proposed: /, '')}` : '.'}</span>}{alpha.proposed != null && alpha.note && <span className="hint"> {alpha.note}</span>}</p>
     <div className="row">
-      <button disabled={!pending || otherTask} onClick={() => setConfig(apply)}
-        title="Apply calibration: Writes the proposed Scale into those Specs rows and the proposed Initial alpha into RL networks, as one Undo step. Nothing is simulated and no task is saved.">Apply calibration</button>
+      {saves ? <>
+          <button className="primary" onClick={applyAndSave}
+            title={`Apply and save: Writes ${what} into the page, as one Undo step, ${APPLY_AND_SAVE}`}>Apply and save</button>
+          <button onClick={() => { setSaid(null); setConfig(apply); }}
+            title="Apply only: Writes the proposed Scale into those Specs rows and the proposed Initial alpha into RL networks, as one Undo step. Nothing is simulated and no task is saved: the task starts again after Save task.">Apply only</button></>
+        : <button disabled={!pending || otherTask} onClick={() => setConfig(apply)}
+            title="Apply calibration: Writes the proposed Scale into those Specs rows and the proposed Initial alpha into RL networks, as one Undo step. Nothing is simulated and no task is saved.">Apply calibration</button>}
       <span className="hint">{otherTask ? `Apply waits until the page holds ${result.task_key}.`
         : !proposals ? 'There is nothing to apply.'
-        : !pending ? `The page holds these values.${afterwards}`
+        : !pending ? `The page holds these values.${said ? '' : afterwards}`
+        : saves ? `Sets ${what}, as one Undo step; Apply and save also saves the task, so it can start.`
         : `Sets ${what}, as one Undo step.${afterwards}`}</span>
     </div>
+    {said && <p className="hint calibration-said" role="status">{said}</p>}
   </div>;
 }
 

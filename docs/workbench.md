@@ -1461,7 +1461,10 @@ shows:
 
 **Specs.** `hard` and the scale (headed **Scale**) are behind **More columns**. A new row's scale is the size of its
 limit, which is what an empty scale means, and 6 dB for a dB row; the page no longer writes 10 degrees into a phase row
-or half the width into an interval. A row whose limit is 0 needs a typed scale and blocks a run without one
+or half the width into an interval. (Record 7.217 tested both again, in training runs, and left the page's
+suggestion as it is: 10 degrees changed nothing measurable, and half a window is right only for a window most designs
+already hit - which a Baseline simulation can tell and the page cannot. See "What a Scale does to the margin bonus"
+in [decisions.md](decisions.md).) A row whose limit is 0 needs a typed scale and blocks a run without one
 (`scale_needed_for_zero_limit`): it was silently measured against 1 of its unit.
 
 **Checks.** `tests/workbench/test_wb_tested_defaults.py` (11) and `test_wb_network_presets.py`;
@@ -1486,14 +1489,24 @@ baseline simulation"; the tick went, and **Check now** stays the free check, sim
 **The run changes nothing.** Run status of that run shows the proposals: one line per Specs row - its limit, how many
 random designs miss it, the typical miss, the Scale the page holds now, the proposed Scale - then the Initial alpha, and
 **Apply calibration**. One press writes the proposed scales into the Specs rows and the Initial alpha into RL networks,
-as one Undo step. A task saved from a Virtuoso cell then needs **Save task**: it starts only with the rows it has saved.
-That save changes Specs only, so the recorded baseline is kept.
+as one Undo step. Scales are written as every quantity of the page is (20 mV, 11 MHz, 9.6 deg; record 7.217).
+
+**A task saved from a Virtuoso cell: Apply and save** (record 7.217). Such a task starts only with the rows it has
+saved, so after Apply the page differed from its task and every start was blocked until Save task - two presses, and a
+page that looked broken in between (the user, on seeing "1 blocking issue(s)": "whats the problem here"). For such a
+task the button is now **Apply and save**: it applies, then runs Save task as a press on it would - the rows become the
+task's next revision, the cell in Virtuoso is written to match and read back (about half a minute, no simulation); its
+progress and its answer are where Save task's always are, under the editors' tabs. A change of Scale alone keeps the
+recorded baseline. **Apply only** beside it applies and leaves the save to you. When Save task cannot start - another
+save is running, no connection is chosen - Apply and save still applies and says why. A task that is not saved from a
+cell (an ngspice task) keeps the one button, Apply calibration.
 
 **When the run has ended, the header says so** (record 7.204, user: "build the prompt when the run finishes"). A line
-of its own under the header reads, for example, *Calibration ready for real:mscr_ota7t: gain_vv 260 · ugbw_hz 1.1e+7 ·
-pm_deg 9.6 · ibias_a 2.8e-4 · Initial alpha 0.011*, with **Apply calibration** and **Not now**. Apply there does what
-the button in Run status does - the same code, one Undo step - and the page then says what was applied and, for a
-saved task, to press Save task. Not now changes nothing; the proposals stay in Run status. The line belongs to the run
+of its own under the header reads, for example, *Calibration ready for real:mscr_ota7t: gain_vv 260 V/V · ugbw_hz
+11 MHz · pm_deg 9.6 deg · ibias_a 280 uA*, with **Apply and save**, **Apply only** and **Not now** (a task not saved
+from a cell: **Apply calibration** and **Not now**). The buttons there do what those in Run status do - the same code,
+one Undo step - and the page then says what was applied and that the save is running, or why it could not start.
+Not now changes nothing; the proposals stay in Run status. The line belongs to the run
 the header holds. It goes when it is answered (kept in this browser, so a reload does not ask again), when the page
 already holds the values, and when the next run starts; the next Baseline simulation asks again. A calibration that
 proposes nothing says why on the same line. Nothing is applied by itself.
@@ -1506,15 +1519,35 @@ proposes nothing says why on the same line. Nothing is applied by itself.
 - **Stopped among the random designs** (Abort), the run still gives the task its reference - the baseline evaluation is
   as finished as that of a run of one - and proposes from the designs it has, if at least 16 gave a reward.
 - **What is not proposed, and said in the table instead:**
-  - a row fewer than 8 random designs miss (or fewer than one in eight): too few to name a typical miss;
+  - a row fewer than 8 random designs miss (or fewer than one in eight): too few to name a typical miss (a window
+    whose Scale is wider than half of it is proposed half its width instead, below);
   - the row that carries the objective: its Scale also measures the objective bonus, so it is left as it is (in the
     test it made no measurable difference whether that row was calibrated too);
   - any Scale while the reward uses the capped shape: a typical miss at 1 would sit on the cap. The calibration is
     made for the compressed shape (**Use the tested reward**);
-  - the Initial alpha when the reward code cannot give the recorded rewards again from the recorded values, or when
-    every random design has the same reward.
+  - the Initial alpha when the reward code cannot give the recorded rewards again from the recorded values, when
+    every random design has the same reward, or (record 7.217) when the estimate is within a factor of 2 of the value
+    the run had. On `real:mscr_ota7t` the estimate was 0.011 against 0.01 in use; in the tests 0.011 to 0.014 against
+    0.01 made no measurable difference while a factor of 4 did, so such a proposal only made the page differ from the
+    saved default. The line names the estimate and says that the value in use stays.
+- **A window most random designs are inside gets at most half its width** (record 7.217). A row with a lower and an
+  upper limit: a design inside it has at most half its width of room. The margin bonus is paid on the row with the
+  least room measured in its Scale, so a window with a wide Scale always is that row, and the bonus pays for no other
+  row. The output row of the LDO task `mscr_ldo_basic` is 1.18 to 1.22 V, and 51 of 57 random designs are inside it:
+  with 1.22 V as its Scale (the empty box) the middle of the window is 0.016 of a Scale away from its limits, and the
+  margin bonus of the whole task cannot pay for more room than that. Its proposal is half the window, 20 mV. The same
+  holds when enough designs miss such a window to name a typical miss and that miss is wider than half of it.
+  **A window most random designs miss keeps the typical miss:** it has to be found first. The ring oscillator's
+  frequency row (0.95 to 1.05 GHz) is missed by 63 of 64 random designs, typically by 1.5 GHz; half its width, 50 MHz,
+  would make nearly all of them count the same. The table then says what that Scale costs: a design inside the window
+  counts as at most 0.033 of a Scale clear, and the margin bonus of that task stays that small.
 - **Limits of a proposal.** A Scale stays within 0.01 to 10 times the size of the limit, the Initial alpha within 0.0001
-  to 0.05, and both are rounded to two digits: they are estimates from a few dozen designs.
+  to 0.05, and both are rounded to two digits (half a window is exact): they are estimates from a few dozen designs.
+- **A run recorded under another rule is worked out again when it is read** (record 7.217). Its random designs are
+  simulated and paid for; only the arithmetic changed. The page then shows the proposals of today's rule with a line
+  saying so; the run's own `calibration.json` keeps what the run said at its end, and nothing is written into a run
+  folder. (The seven Baseline simulations of 2026-10-05 are such runs: one under record 7.197's rule, six under an
+  unreleased state of this record that cut every window to half its width.)
 - **Apply writes only what still fits.** A Specs row whose limits or unit were changed after the run is marked "not
   applied", and a run of another task than the one on the page offers nothing. Such a run is not compared with the
   page's rows at all (record 7.214: an LDO's `pm_deg` used to stand as the "Scale now" of an OTA's): a line names both
@@ -1550,11 +1583,22 @@ calibration stays a proposal to look at, not a habit. The numbers:
 `artifacts/local/reviews/calibration-study-2026-10-05/README.md`; the reasons: [decisions.md](decisions.md),
 "Calibration with the baseline run".
 
-**Checks.** `tests/workbench/test_wb_calibration.py` (10: the arithmetic, the run with one and with three lanes, an
-invalid baseline, a stopped run's reference, the route); `frontend/scripts/calibration_check.mjs` (36: one button and no
-tick, a real MOCK run of 65 evaluations in a browser that had unticked the old tick, the line under the header and Not
-now, the proposals, Apply as one Undo step, an edited row left alone, a second run whose line is answered with Apply
-calibration, one Undo, a reload, and a run of another task than the page holds, record 7.214).
+**What the window rule rests on** (record 7.217): free ngspice runs with the page's starting reward, in which the
+Scale of a window decided which row the margin bonus was paid on, and with it the share of passing designs (95.7 % to
+98.7 % on one circuit in every seed; 91.7 % to 96.0 % on a second, inside the spread between its seeds). Nothing of it
+was run on Spectre. The reasons: [decisions.md](decisions.md), "What a Scale does to the margin bonus"; the numbers:
+`artifacts/local/reviews/reward-review-2026-10-05/README.md`.
+
+**Checks.** `tests/workbench/test_wb_calibration.py` (13: the arithmetic, a window most designs are inside and one
+most designs miss, the Initial alpha only when it differs by a factor of 2, the run with one and with three lanes, a
+result of another rule worked out again when read, an invalid baseline, a stopped run's reference, the route);
+`frontend/scripts/calibration_check.mjs` (38: one button and no tick, a real MOCK run of 65 evaluations in a browser
+that had unticked the old tick, the line under the header and Not now, the proposals, Apply as one Undo step, an edited
+row left alone, a second run that proposes an Initial alpha only by the factor-of-2 rule and whose line is answered
+with Apply calibration, one Undo, a reload, and a run of another task than the page holds, record 7.214);
+`frontend/scripts/calibration_save_check.mjs` (22, hermetic, a task saved from a cell: Apply and save, Apply only and
+Not now with the Scales written as quantities, the save that holds the applied rows, one Undo, Apply only, and Apply
+and save while another save runs).
 
 ### How a real run spends its simulations: corners two at a time, reused resets (2026-09-30, record 7.126)
 

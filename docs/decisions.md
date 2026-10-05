@@ -1129,6 +1129,66 @@ calibration functionality to that".
 
 Record 7.197. Evidence: `artifacts/local/reviews/calibration-study-2026-10-05/README.md`.
 
+## What a Scale does to the margin bonus; the calibration's window rule; Apply and save (2026-10-05, record 7.217)
+
+The user asked "check the current reward design, is there anything to improve?", "together with the calibration
+flow", and to the six points that came of it: "build the items". Three are built as offered, one is built narrower,
+and two are not built; the free test runs that decided this are in
+`artifacts/local/reviews/reward-review-2026-10-05/README.md` (ngspice, the page's starting reward, today's presets).
+
+- **What the recorded runs showed.** After learning, a design that still fails misses one row by a hair: on Spectre
+  (`mscr_ota7t`, three encoders) 3.9 to 14.2 % of the late designs fail, by 1 to 7 % of a limit; on ngspice 7.3 %.
+- **The margin bonus is paid on the row with the least room measured in its Scale.** It is the margin weight times
+  the compressed smallest room / Scale over the hard rows. So a Scale decides, above all, WHICH row the bonus
+  protects. With every Scale the size of its limit that was the gain row for 61 % of the passing designs of the test
+  circuit (6 dB of room on a 52 dB limit reads as 12 %) and the frequency row - the one that fails - for 13 %
+  (23 MHz on 100 MHz reads as 23 %). Across nine settings the share of passing designs followed the share of them
+  whose bonus sat on the failing row: 94 to 96 % passing with that share at 0 to 23 %, 98.5 to 98.8 % with it at 39
+  to 87 %.
+- **Making the failing row's own Scale smaller did nothing.** The frequency row at 10 % of its limit, everything else
+  as it was: 94.3 % against 94.4 %. The miss cost ten times more, and the bonus left the row altogether.
+- **A window with a wide Scale takes the bonus from every other row.** A design inside a window has at most half its
+  width of room, so with the size of the limit as its Scale a window is nearly always the row with the least: 82 % of
+  the passing designs on the test circuit once its dB row held the page's 6, and 99 % on a two-stage OTA whose 40 mV
+  output window had the Scale 0.92 V. With half the window instead: 95.7 % to 98.7 % passing in the last third on the
+  first circuit (every seed above every seed without), 91.7 % to 96.0 % on the second (six seeds each; inside the
+  spread between its seeds, 83 to 98 %). The price is the one calibration has: the typical passing design drew about
+  8 % more power (84 against 78 uW), the best design of a run 62 against 60 uW.
+- **Hence the calibration's rule for a window, and only where the designs say it is safe.** A window that at least half
+  of the random designs are inside is proposed at most half its width: there the Scale decides nothing about finding
+  the window. A window most random designs miss keeps the typical miss, with the cost to the margin bonus said in the
+  table. On the ring oscillator's frequency row 63 of 64 random designs miss, typically by 30 half-widths: half the
+  window as its Scale would make nearly all of them count the same (0.94 to 0.98), which is what record 7.183 saw
+  when it re-scored recorded designs. A test in between - a frequency window that 97 % of random designs miss, by 6.6
+  half-widths at the median - found the window as fast with half its width (first passing design at 84 to 96 against
+  70 to 90) and ended the same (62 to 69 % in all four settings): no harm there, no gain either, so nothing argues for
+  cutting such a Scale.
+- **The page's suggestion for a new row stays as record 7.183 left it** - offered as points 1 and 2, not built.
+  *Half a window:* right for a window designs already hit, wrong in kind for one that must be found, and the page
+  cannot tell them apart when a row is typed; a Baseline simulation can, so the rule is there. *10 degrees on a phase
+  row:* no change where the phase margin is far from its limit (95.4 % against 95.7 %); where it binds, 94.8 % against
+  91.7 % alone and no change beside the window rule (95.7 % against 96.0 %) - there it moved the failures from the
+  frequency row to the phase row (33 and 65 against 68 and 25): the smaller Scale sent the bonus away from the phase
+  row. On Spectre the calibrated Scales, with 9.6 degrees on that row, did not help `mscr_ota7t` (record 7.211).
+- **A fixed bonus for passing was tested and is not built.** 96.3 % against 94.4 %, inside the spread between seeds,
+  with the same row failing; it would have needed a change of the optimizer package.
+- **The Initial alpha is proposed only when it differs from the value the run had by a factor of 2 or more.** 0.011
+  to 0.014 against 0.01 made no measurable difference; a factor of 4 did (the calibration entry above). A closer
+  proposal only made the page differ from the saved default. A judgment between those two measurements.
+- **A result of another rule is worked out again when it is read, and the run's file is not rewritten.** The designs
+  are simulated and paid for; a rule is arithmetic. The answer names both rules. Seven Baseline simulations of this
+  day are such runs.
+- **Apply and save, for a task saved from a cell.** Apply alone left the page differing from its task and every start
+  blocked until Save task - right by the rule that a task starts only with the rows it has saved, and read as a fault
+  (the user: "whats the problem here"). One press now does both, by asking Save task itself to run: one way of
+  saving, with its own progress, its questions and its refusals. Apply only stays, for looking before saving.
+- **Not measured, and said so:** nothing here ran on Spectre, and the one Spectre test of calibrated Scales did not
+  carry the ngspice gain over. The window rule changes what is proposed, never what is applied.
+- **Seen in the seven real calibrations and left as it is:** where random designs miss a row by far more than its
+  limit - a broken LDO's dropout, 9 V typical on a 0.22 V limit - the typical miss is LARGER than the Scale in use,
+  and the proposal loosens the row (2.2 V after the tenfold limit). Nothing measured says whether that helps; it is a
+  reason to read a proposal before applying it, and a candidate for the next change of the rule.
+
 ## Learning rate 1e-3 in the starting presets (2026-10-05)
 
 The user, told what the calibration study had measured: "use learning rate 1e-3 in the starting preset".

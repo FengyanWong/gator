@@ -38,6 +38,16 @@ export const COPY_SETUP_WRITTEN = 'gator-copy-setup-written';
  *  Save task sends, so the next save writes them into the copy (the job "Write to Virtuoso" had until 2026-09-22). */
 export const COPY_SETUP_PENDING = 'gator-copy-setup-pending';
 
+/** "Apply and save" (record 7.217): another part of the page asks the open task's Save task to run, as a press on it would.
+ *  The save is sent in the render after the request, so a change made in the same click is in it. The answer comes at
+ *  once: whether Save task took it, or why not (another task, no Save task on the page, a save already running). */
+export const SAVE_TASK_REQUEST = 'gator-save-task-request';
+export function requestTaskSave(taskKey: string): { task: string; taken: boolean; why: string } {
+  const detail = { task: taskKey, taken: false, why: 'Save task is not on the page for this task' };
+  window.dispatchEvent(new CustomEvent(SAVE_TASK_REQUEST, { detail }));
+  return detail;
+}
+
 /** What a save that ended says: this page's own, or one it followed. */
 const savedText = (made: Json) => {
   const kept = made.created ? '' : made.baseline_kept ? ' The recorded baseline still holds.'
@@ -69,6 +79,8 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   latest.current = { config, profileId, library, cell, task };
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const [asked, setAsked] = useState(0);                                      // saves asked for by "Apply and save" (record 7.217)
+  const able = useRef({ can: false, why: '' });
   // The task file's window. It is opened INSIDE the click on "Task file" - the browser's pop-up rule refuses a window
   // opened later, when the file has arrived - so a blocked window can be tried again with the next press.
   const fileWindow = usePopupWindow('gator-task-file', { title: 'GATOR - Task file', features: 'popup,width=760,height=900',
@@ -142,6 +154,18 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
     setMessage({ level: 'ok', text: `${savedText(made)}${edited ? ' Newer editor changes are kept and are not included in this save.' : ''}` });
     onSaved(made, config);
   });
+  // "Apply and save": the request names the task; this Save task answers at once, and saves with the rows of the next render.
+  useEffect(() => {
+    const request = (e: Event) => {
+      const detail = (e as CustomEvent<Json>).detail;
+      if (!detail || !latest.current.task || detail.task !== `real:${latest.current.task}`) return;
+      detail.taken = able.current.can; detail.why = able.current.why || 'Save task is not available';
+      if (able.current.can) setAsked(n => n + 1);
+    };
+    window.addEventListener(SAVE_TASK_REQUEST, request);
+    return () => window.removeEventListener(SAVE_TASK_REQUEST, request);
+  }, []);
+  useEffect(() => { if (asked) save(); }, [asked]);
   const openFile = async () => {
     setMessage(null);
     // Already open: bring it forward and keep what is typed in it (a second press used to replace the draft silently).
@@ -162,6 +186,8 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   };
   const frequencyValue = parseFrequency(frequency);
   const canSave = !!profileId && (task ? true : hasCopy) && NAME.test(taskName) && !busy && !running;
+  able.current = { can: canSave && !askFrequency && !!task, why: running ? `the save of ${running.task_key} is still running`
+    : busy ? 'Save task is busy' : !profileId ? 'no connection is chosen' : askFrequency ? 'Save task waits for the rough frequency' : '' };
   const progress = running ? progressOf(running) : busy === 'save' ? { value: 0, max: 1, text: `Saving real:${taskName} - starting` } : null;
   const waits = running && busy !== 'save' ? `Waits for the save of ${running.task_key} that is running. ` : '';
   const said = askFrequency || message || progress || newer;

@@ -475,10 +475,13 @@ header { border-width: 1.5px; padding: 7px 12px; }
 .training-counts { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .training-what .badge { flex: none; }
 .training-note { margin: 0 0 2px; } .training-note ul { margin: 2px 0 4px; padding-left: 18px; }
-.training-charts { flex: 1; min-height: 150px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
-.training-charts.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.training-charts { flex: 1; min-height: 150px; display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(170px, 1fr); gap: 8px; overflow-y: auto; }
 .training-chart { margin: 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--line); background: var(--canvas); padding: 3px 6px 2px; }
-.training-chart figcaption { font: 600 11.5px/1.4 var(--f-label); letter-spacing: .02em; cursor: help; }
+.training-chart figcaption { display: flex; align-items: center; gap: 4px; font: 600 11.5px/1.4 var(--f-label); letter-spacing: .02em; }
+/* a chart's title is its choice (record 7.205): a list that reads as a heading until it is pointed at */
+.training-chart select.training-chart-choice { width: auto; max-width: calc(100% - 24px); padding: 0 2px; border-color: transparent; background: transparent; font: inherit; letter-spacing: inherit; cursor: pointer; }
+.training-chart select.training-chart-choice:hover, .training-chart select.training-chart-choice:focus { border-color: var(--line); background: var(--field); }
+button.training-chart-remove { border: none; background: none; padding: 0 1px; line-height: 1; color: var(--muted); } button.training-chart-remove svg.icon { width: 11px; height: 11px; }
 .training-empty { margin: 10px 2px; }
 .training-plot-area { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .training-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; font-size: 11px; min-height: 18px; }

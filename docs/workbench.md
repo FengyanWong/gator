@@ -1107,7 +1107,7 @@ Browser check: `frontend/scripts/export_check.mjs` (real MOCK run; needs a scrat
 
 The user asked for "a Training tab beside Output in the workbench's existing bottom panel, using uPlot for live training
 graphs. Keep Output available for logs and errors." The **Training** tab sits right after **Output files**; Logs, Data
-tables and Output files are unchanged (the log and the errors stay in **Logs**). It draws one or two charts of the run
+tables and Output files are unchanged (the log and the errors stay in **Logs**). It draws charts of the run
 shown in the bottom tabs, live while the run works. The charts exist on screen only: nothing drawn is written anywhere,
 and the run's data stay the data-only files listed above (export them with Data tables). By user decision this is the
 second kind of on-screen picture after the circuit pictures (7.33, 7.158): see the hard rule in CLAUDE.md.
@@ -1148,7 +1148,14 @@ draws, but nothing learns from them: the tab calls them **Calibration (random de
 they are empty.
 
 **Using it.**
-* **Charts**: the first and the second chart (or "(one chart)"); metrics of different units never share a chart.
+* **Charts** (record 7.205, user: "add multiple charts same page support. more than the current 2"): up to eight on the
+  page. Each chart chooses what it shows in its own title (a list that reads as the heading); **Add chart** (+, among the
+  controls) adds the first chart the run can draw that is not on the page yet; × in a chart's title takes it off (one
+  always stays). One to three charts stand side by side, four as two by two, more in rows of three or four; when the
+  bottom panel is too short for them all it scrolls (the splitter gives it room). Metrics of different units never share
+  a chart. A chart chosen for another run that this one lacks (a spec of another task) says so in its place and keeps the
+  choice. Taking one chart off leaves the others' charts as they are, and a chart is only drawn again when its own data,
+  zoom or width changed.
   **Smoothing**: off, or the mean of the last 10 / 20 / 50 / 100 / 200 recorded values of each series (default 20); the
   recorded values stay as faint points under the line, and a gap stays a gap in both. Both choices are kept in this browser.
 * **Hover**: the line above a chart says the evaluation (or update) under the pointer, its phase, episode and status, and

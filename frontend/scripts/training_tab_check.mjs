@@ -173,7 +173,10 @@ await runChecks(browser, async () => {
   check('the head names the run, its state, the counts and the last metric', await until(`/scratch__seed1__live/.test((${TRAINING}).querySelector('.training-run').textContent)
     && /running/.test((${TRAINING}).querySelector('.badge').textContent) && /165 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)
     && /last metric \\d\\d:\\d\\d:\\d\\d/.test((${TRAINING}).querySelector('.training-counts').textContent) && /live/.test((${TRAINING}).querySelector('.training-counts').textContent)`), await head());
-  const captions = await evaluate(`[...(${TRAINING}).querySelectorAll('figcaption')].map(f => f.textContent)`);
+  // each chart's title is the list it chooses its content in (record 7.205): what it shows = the chosen option's words
+  const CHART = i => `[...(${TRAINING}).querySelectorAll('figure.training-chart select.training-chart-choice')][${i}]`;
+  const TITLES = `[...(${TRAINING}).querySelectorAll('figure.training-chart select.training-chart-choice')].map(s => s.selectedOptions[0]?.textContent ?? '')`;
+  const captions = await evaluate(TITLES);
   check('the first charts: step reward and the share meeting every hard spec', captions[0] === 'Step reward' && captions[1] === 'Meets every hard spec', captions.join(' | '));
   check('the training numbers were read from cursor 0 with no page twice', reads[0]?.flushes === 0 && new Set(reads.map(r => r.flushes)).size >= 1);
   check('live journal pages are fetched immediately using their separate cursor', reads.length >= 3 && !reads[0].tailCursor
@@ -262,9 +265,9 @@ await runChecks(browser, async () => {
   check('a legend key hides its series and says so', await until(`[...[...(${TRAINING}).querySelectorAll('.training-legend')][0].querySelectorAll('.training-key')].find(b => /Training/.test(b.textContent)).getAttribute('aria-pressed') === 'false'`), keys);
   await evaluate(`[...[...(${TRAINING}).querySelectorAll('.training-legend')][0].querySelectorAll('.training-key')].find(b => /Training/.test(b.textContent)).click()`);
   check('pressed again, the series is back', await until(`/Training \\(recorded\\)/.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`));
-  const SECOND = `(${TRAINING}).querySelector('select[aria-label="Second chart"]')`;
+  const SECOND = CHART(1);
   await page.setValue(SECOND, 'critic_loss');
-  check('a learner chart: critic loss over learner updates', await until(`[...(${TRAINING}).querySelectorAll('figcaption')][1]?.textContent === 'Critic loss' && document.querySelectorAll('.training .training-plot canvas').length === 2`));
+  check('a learner chart: critic loss over learner updates', await until(`(${TITLES})[1] === 'Critic loss' && document.querySelectorAll('.training .training-plot canvas').length === 2`));
   const SMOOTH = `[...(${TRAINING}).querySelectorAll('.training-head label.inline')].find(l => /Smoothing/.test(l.textContent)).querySelector('select')`;
   await page.setValue(SMOOTH, '50');
   check('smoothing: the recorded values stay under a mean of the last 50', await until(`/Training \\(recorded\\) -?[\\d.]+.*Training: mean of last 50 -?[\\d.]+/.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`),
@@ -297,7 +300,7 @@ await runChecks(browser, async () => {
   // ---- other runs: kept apart; failed, waiting, not recorded --------------------------------------------------------------------------
   const showRun = async run => { await evaluate(`localStorage.setItem('gator-workbench-current-run-v1', ${JSON.stringify(run.dir)})`); await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150); await press('Training'); };
   await showRun(RUNS.failed);
-  check('the chosen charts are kept after a reload', await until(`[...(${TRAINING}).querySelectorAll('figcaption')][1]?.textContent === 'Critic loss'`, 60));
+  check('the chosen charts are kept after a reload', await until(`(${TITLES})[1] === 'Critic loss'`, 60));
   check('a failed run says so, with its error, and shows its own rows only', await until(`/failed/.test((${TRAINING}).querySelector('.badge').textContent) && /The run failed: FIXTURE/.test((${TRAINING}).innerText) && /32 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 60), await head());
   await showRun(RUNS.older);
   check('a backend older than the page (no such route) is said as such', await until(`/older than the page/.test((${TRAINING}).innerText)`, 60), await evaluate(`(${TRAINING}).innerText.slice(0, 200)`));
@@ -306,8 +309,8 @@ await runChecks(browser, async () => {
   await showRun(RUNS.frozen);
   await until(`/48 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 60);
   check('a frozen run: the learner chart says why it is empty', await until(`/frozen run evaluates a saved policy/.test((${TRAINING}).innerText)`, 30));
-  await page.setValue(`(${TRAINING}).querySelector('.training-head label.inline select')`, 'eval_pass');
-  check('a frozen run has an evaluation success rate', await until(`[...(${TRAINING}).querySelectorAll('figcaption')][0]?.textContent === 'Evaluation success rate' && document.querySelectorAll('.training .training-plot canvas').length >= 1`, 30));
+  await page.setValue(CHART(0), 'eval_pass');
+  check('a frozen run has an evaluation success rate', await until(`(${TITLES})[0] === 'Evaluation success rate' && document.querySelectorAll('.training .training-plot canvas').length >= 1`, 30));
   check('what the run does not record is listed with the reason', /Episode return/.test(await evaluate(`(${TRAINING}).querySelector('details.training-note summary').textContent`)));
   await page.shot(path.join(out, 'training-frozen.png'), `(${TRAINING})`);
 
@@ -320,7 +323,7 @@ await runChecks(browser, async () => {
     const loaded = await until(`/20000 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 600, 100);
     return { loaded, seconds: (Date.now() - started) / 1000, pages: reads.length - first };
   };
-  await page.setValue(`(${TRAINING}).querySelector('.training-head label.inline select')`, 'reward');
+  await page.setValue(CHART(0), 'reward');
   await showRun(RUNS.calibration);
   check('a baseline run that calibrates: its random designs are not called Training', await until(`/Calibration \\(random designs\\)/.test([...(${TRAINING}).querySelectorAll('.training-legend')][0]?.textContent ?? '')`, 60)
     && !/^Training$/m.test([...(await evaluate(`[...[...(${TRAINING}).querySelectorAll('.training-legend')][0].querySelectorAll('.training-key')].map(b => b.textContent).join('\\n')`)).split('\n')].join('\n')));
@@ -378,6 +381,42 @@ await runChecks(browser, async () => {
   await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip-remove')][0].click()`);
   check('the last one taken off: one run again', await until(`!(${TRAINING}).querySelector('.training-compared') && !(${TRAINING}).querySelector('.key-run1')`, 30));
   listRuns = false;
+
+  // ---- more than two charts (record 7.205, user: "add multiple charts same page support. more than the current 2") ------------
+  const ADD = `[...(${TRAINING}).querySelectorAll('.training-head button')].find(b => b.textContent === 'Add chart')`;
+  const columns = () => evaluate(`getComputedStyle((${TRAINING}).querySelector('.training-charts')).gridTemplateColumns.split(' ').length`);
+  const figures = () => evaluate(`(${TRAINING}).querySelectorAll('figure.training-chart').length`);
+  await until(`(${TRAINING}).querySelectorAll('figure.training-chart canvas').length === 2`, 60);
+  const listenersBefore = await listeners();
+  await evaluate(`(${TRAINING}).querySelector('figure.training-chart canvas').dataset.mark = 'kept'`);    // the first chart's own canvas
+  await evaluate(`(${ADD}).click()`);
+  check('Add chart puts a third chart on the page, one the run can draw and not on the page yet', await until(`(${TRAINING}).querySelectorAll('figure.training-chart canvas').length === 3`, 40)
+    && new Set(await evaluate(TITLES)).size === 3, JSON.stringify(await evaluate(TITLES)));
+  check('three charts stand side by side', (await columns()) === 3, String(await columns()));
+  await evaluate(`(${ADD}).click()`);
+  check('four charts: two by two', await until(`(${TRAINING}).querySelectorAll('figure.training-chart').length === 4`, 40) && (await columns()) === 2);
+  for (let i = 0; i < 4; i++) await evaluate(`(${ADD}).click()`);
+  check('up to eight charts, in rows of four; Add chart then waits', await until(`(${TRAINING}).querySelectorAll('figure.training-chart canvas').length === 8`, 60)
+    && (await columns()) === 4 && await evaluate(`(${ADD}).disabled`), `${await figures()} charts`);
+  const eight = await evaluate(TITLES);
+  check('eight different charts', new Set(eight).size === 8, eight.join(' | '));
+  await page.setValue(CHART(5), 'spec:gain_vv');
+  check('a chart chooses what it shows in its own title', await until(`(${TITLES})[5] === 'gain_vv (V/V)'`, 40));
+  await page.shot(path.join(out, 'training-eight.png'), `(${TRAINING})`);
+  await evaluate(`[...(${TRAINING}).querySelectorAll('figure.training-chart .training-chart-remove')][1].click()`);
+  check('× takes one chart off; the others keep theirs (the first chart\'s canvas is the same one)', await until(`(${TRAINING}).querySelectorAll('figure.training-chart').length === 7`, 40)
+    && await evaluate(`(${TRAINING}).querySelector('figure.training-chart canvas')?.dataset.mark === 'kept'`)
+    && JSON.stringify(await evaluate(TITLES)) === JSON.stringify(eight.filter((_, i) => i !== 1).map((t, i) => (i === 4 ? 'gain_vv (V/V)' : t))));
+  const seven = await evaluate(TITLES);
+  await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150); await press('Training');
+  check('the charts on the page are kept after a reload', await until(`JSON.stringify(${TITLES}) === ${JSON.stringify(JSON.stringify(seven))}`, 80), JSON.stringify(await evaluate(TITLES)));
+  while ((await figures()) > 1) { await evaluate(`[...(${TRAINING}).querySelectorAll('figure.training-chart .training-chart-remove')].at(-1).click()`); await sleep(150); }
+  check('one chart always stays: its × waits', (await figures()) === 1 && await evaluate(`(${TRAINING}).querySelector('figure.training-chart .training-chart-remove').disabled`));
+  await evaluate(`(${ADD}).click()`);
+  await until(`(${TRAINING}).querySelectorAll('figure.training-chart').length === 2`, 40);
+  await page.setValue(CHART(0), 'reward'); await page.setValue(CHART(1), 'critic_loss');
+  await until(`(${TRAINING}).querySelectorAll('figure.training-chart canvas').length === 2`, 60); await sleep(500);
+  check('no window listener left behind after adding and taking off charts', (await listeners()) === listenersBefore, `${listenersBefore} -> ${await listeners()}`);
   const long = await loadLong(null);
   check(`20,000 evaluations and ${RUNS.long.data.updates.length.toLocaleString('en')} learner updates load in pages`, long.loaded && long.pages >= 6, `${long.seconds.toFixed(1)} s, ${long.pages} pages`);
   const t = Date.now(); await evaluate('1'); const ping = Date.now() - t;

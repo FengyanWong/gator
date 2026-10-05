@@ -4,7 +4,8 @@ import { useLook } from '../theme';
 import { Icon } from './Icons';
 import { LIVE_STATES } from './RunControl';
 import { TrainingChart } from './TrainingChart';
-import { build, buildCompare, catalog, ChartSpec, COMPARE_MAX, CompareRun, Context, setCaps, TrainingStore, View } from './trainingData';
+import { build, buildCompare, catalog, ChartSpec, COMPARE_MAX, Context, setCaps, TrainingStore, View } from './trainingData';
+import type { Built } from './trainingData';
 import type { Answer } from './trainingData';
 
 /** The Training tab (record 7.193, user request): live charts of the shown run's RECORDED training numbers - step reward,
@@ -20,18 +21,26 @@ import type { Answer } from './trainingData';
  *  Several runs on one chart (record 7.200, the user's choice of "what next"): up to three other runs beside the shown one,
  *  each its own colour, read the same way (history once, then every 2 s while its worker lives - the answer says so).
  *
- *  Kept in this browser: the two charts chosen, the smoothing and the compared runs (like the folded modules); not the zoom. */
+ *  More than two charts (record 7.205, user: "add multiple charts same page support. more than the current 2"): up to
+ *  eight, each choosing what it shows in its own title; + adds one, × takes one off.
+ *
+ *  Kept in this browser: the charts chosen, the smoothing and the compared runs (like the folded modules); not the zoom. */
 const SETTINGS_KEY = 'gator-workbench-training-v1';
 const SMOOTHING = [0, 10, 20, 50, 100, 200];
-type Settings = { charts: [string, string | null]; smoothing: number };
+const MAX_CHARTS = 8;
+type Settings = { charts: string[]; smoothing: number };
 const DEFAULTS: Settings = { charts: ['reward', 'pass'], smoothing: 20 };
 function storedSettings(): Settings {
   try {
     const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? 'null');
-    if (!s || typeof s.charts?.[0] !== 'string') return DEFAULTS;
-    return { charts: [s.charts[0], typeof s.charts[1] === 'string' ? s.charts[1] : null], smoothing: SMOOTHING.includes(s.smoothing) ? s.smoothing : DEFAULTS.smoothing };
+    // any number of charts since 7.205; before it two, the second possibly null
+    const charts = Array.isArray(s?.charts) ? s.charts.filter((c: unknown) => typeof c === 'string').slice(0, MAX_CHARTS) : [];
+    return { charts: charts.length ? charts : DEFAULTS.charts, smoothing: SMOOTHING.includes(s?.smoothing) ? s.smoothing : DEFAULTS.smoothing };
   } catch { return DEFAULTS; }
 }
+/** How many charts stand side by side: up to three in a row, four as two by two, then rows of three or four. */
+const columnsFor = (n: number) => (n <= 3 ? n : n === 4 ? 2 : n <= 6 ? 3 : 4);
+const chartName = (id: string) => (id.startsWith('spec:') ? id.slice(5) : id.replace(/_/g, ' '));
 try {      // a browser check of the memory bound sets lower caps for its own page (trainingData.ts setCaps)
   const caps = JSON.parse(localStorage.getItem('gator-workbench-training-caps-v1') ?? 'null');
   if (caps) setCaps(caps);
@@ -74,19 +83,24 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   const pageHidden = usePageHidden();
   const active = !hidden && !pageHidden && !!runDir;
   const live = !!status && status.run_dir === runDir && (!!status.worker_alive || LIVE_STATES.includes(status.state));
-  const [settings, setSettings] = useState<Settings>(storedSettings);
-  const keep = (next: Settings) => { setSettings(next); try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch { /* a private window: not remembered */ } };
+  // the charts on the page: a stable key each (so taking one off keeps the others' charts as they are) and what it shows
+  const nextKey = useRef(0);
+  const [slots, setSlots] = useState<{ key: number; id: string }[]>(() => storedSettings().charts.map(id => ({ key: nextKey.current++, id })));
+  const [smoothing, setSmoothing] = useState<number>(() => storedSettings().smoothing);
+  useEffect(() => {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ charts: slots.map(slot => slot.id), smoothing })); } catch { /* a private window: not remembered */ }
+  }, [slots, smoothing]);
   const store = useRef<TrainingStore | null>(null);
   const [frame, setFrame] = useState(0);                         // one more each time the charts take the store's rows
   const [reading, setReading] = useState<{ error: string | null; at: number | null; busy: boolean }>({ error: null, at: null, busy: false });
-  const [views, setViews] = useState<[View, View]>([NONE, NONE]);
-  const [widths, setWidths] = useState<[number, number]>([600, 600]);
+  const [views, setViews] = useState<Record<number, View>>({});           // by chart key; none = the whole run
+  const [widths, setWidths] = useState<Record<number, number>>({});
   const [retry, setRetry] = useState(0);
 
   // Another run: its own store, whole charts, the zoom let go. The previous run's rows are dropped with its store.
   if (runDir && store.current?.runDir !== runDir) store.current = new TrainingStore(runDir);
   if (!runDir && store.current) store.current = null;
-  useEffect(() => { setViews([NONE, NONE]); setReading({ error: null, at: null, busy: false }); }, [runDir]);
+  useEffect(() => { setViews({}); setReading({ error: null, at: null, busy: false }); }, [runDir]);
 
   // ---- drawing: at most once a second, only when something changed, never while hidden (then caught up when shown)
   const activeRef = useRef(active);
@@ -179,32 +193,45 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   const context: Context = useMemo(() => ({ calibration }), [calibration]);
   const charts = useMemo(() => (own ? catalog(own, context) : []), [own, frame, context]);
   const specOf = (id: string | null) => (id ? charts.find(c => c.id === id) ?? null : null);
-  // A chart chosen for another run that this one does not have (a spec of another circuit): the step reward, or no second
-  // chart, for this run - the choice itself is kept for the runs that have it.
-  const ids: [string, string | null] = own && own.answers > 0
-    ? [specOf(settings.charts[0]) ? settings.charts[0] : 'reward', specOf(settings.charts[1]) ? settings.charts[1] : null] : settings.charts;
-  const slots = ids.map(specOf) as [ChartSpec | null, ChartSpec | null];
-  const builtFor = (slot: 0 | 1) => {
-    const spec = slots[slot];
-    if (!own || !runDir || !spec?.available) return null;
-    if (!others.length) return build(own, spec.id, settings.smoothing, views[slot], widths[slot], context);
-    const runsOn: CompareRun[] = [{ store: own, label: runLabel(runDir), context },
-      ...others.map(dir => ({ store: compared.current.get(dir)!, label: runLabel(dir) }))];
-    return buildCompare(runsOn, spec.id, settings.smoothing, views[slot], widths[slot]);
-  };
-  const built0 = useMemo(() => builtFor(0), [own, frame, slots[0]?.id, slots[0]?.available, settings.smoothing, views[0], widths[0], context, othersKey, rowOf]);
-  const built1 = useMemo(() => builtFor(1), [own, frame, slots[1]?.id, slots[1]?.available, settings.smoothing, views[1], widths[1], context, othersKey, rowOf]);
-  const built = [built0, built1];
+  const viewOf = (key: number) => views[key] ?? NONE;
+  // Each chart's data, rebuilt only when what it shows changed: new numbers (frame), its choice, its zoom or its width - so a
+  // chart whose own things stayed put keeps its data object and is not drawn again. A chart chosen for another run that
+  // this one does not have (a spec of another circuit) says so in its place; the choice is kept for the runs that have it.
+  const builtCache = useRef(new Map<number, { sig: string; built: Built | null }>());
+  const runsSig = useMemo(() => runs.map(r => `${r.run_dir}|${r.task_name}|${r.seed}`).join('\n'), [runs]);
+  const built = slots.map(slot => {
+    const spec = specOf(slot.id), view = viewOf(slot.key), width = widths[slot.key] ?? 600;
+    const sig = [frame, runDir, slot.id, !!spec?.available, smoothing, JSON.stringify(view), width, calibration, othersKey, runsSig].join('\u0001');
+    const hit = builtCache.current.get(slot.key);
+    if (hit && hit.sig === sig) return hit.built;
+    let made: Built | null = null;
+    if (own && runDir && spec?.available) {
+      made = !others.length ? build(own, spec.id, smoothing, view, width, context)
+        : buildCompare([{ store: own, label: runLabel(runDir), context }, ...others.map(dir => ({ store: compared.current.get(dir)!, label: runLabel(dir) }))],
+          spec.id, smoothing, view, width);
+    }
+    builtCache.current.set(slot.key, { sig, built: made });
+    return made;
+  });
+  for (const key of [...builtCache.current.keys()]) if (!slots.some(slot => slot.key === key)) builtCache.current.delete(key);
 
-  const setView = (slot: 0 | 1, view: View) => setViews(v => (slot === 0 ? [view, v[1]] : [v[0], view]));
-  const choose = (slot: 0 | 1, id: string | null) => { keep({ ...settings, charts: slot === 0 ? [id ?? 'reward', ids[1]] : [ids[0], id] }); setView(slot, NONE); };
-  const shown = ([0, 1] as const).filter(slot => built[slot]);
-  const following = shown.every(slot => views[slot].mode !== 'fixed');
-  const follow = () => setViews(v => v.map((view, slot) => {
-    if (following) { const range = built[slot]?.range; return range ? { mode: 'fixed', min: range[0], max: range[1] } : view; }     // freeze where it is
-    return view.mode === 'fixed' ? { mode: 'follow', width: view.max - view.min } : view;                                            // slide to the newest, same width
-  }) as [View, View]);
-  const reset = () => setViews([NONE, NONE]);
+  const setView = (key: number, view: View) => setViews(v => ({ ...v, [key]: view }));
+  const choose = (key: number, id: string) => { setSlots(list => list.map(slot => (slot.key === key ? { ...slot, id } : slot))); setView(key, NONE); };
+  /** One more chart: the first chart of this run not on the page yet that it can draw. */
+  const addChart = () => setSlots(list => {
+    if (list.length >= MAX_CHARTS) return list;
+    const next = charts.find(c => c.available && !list.some(slot => slot.id === c.id))?.id ?? 'reward';
+    return [...list, { key: nextKey.current++, id: next }];
+  });
+  const removeChart = (key: number) => setSlots(list => (list.length <= 1 ? list : list.filter(slot => slot.key !== key)));
+  const shown = slots.filter((_, i) => built[i]);
+  const following = shown.every(slot => viewOf(slot.key).mode !== 'fixed');
+  const follow = () => setViews(v => Object.fromEntries(slots.map((slot, i) => {
+    const view = v[slot.key] ?? NONE;
+    if (following) { const range = built[i]?.range; return [slot.key, range ? { mode: 'fixed', min: range[0], max: range[1] } : view]; }   // freeze where it is
+    return [slot.key, view.mode === 'fixed' ? { mode: 'follow', width: view.max - view.min } : view];                                     // slide to the newest, same width
+  })));
+  const reset = () => setViews({});
 
   /** The facts of a recorded row, for the line above a chart. */
   const describe = (axis: 'evaluation' | 'update') => (row: number) => {
@@ -239,9 +266,10 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
         <span className="hint training-counts" title={counts}>{counts}</span>
       </span>
       <span className="training-controls">
-      <label className="inline">Charts <select value={ids[0]} onChange={e => choose(0, e.target.value)}>{options(charts)}</select></label>
-      <select aria-label="Second chart" value={ids[1] ?? ''} onChange={e => choose(1, e.target.value || null)}><option value="">(one chart)</option>{options(charts)}</select>
-      <label className="inline">Smoothing <select value={settings.smoothing} onChange={e => keep({ ...settings, smoothing: Number(e.target.value) })}>
+      <button disabled={slots.length >= MAX_CHARTS} onClick={addChart}
+        title={`Add chart: one more chart on the page (up to ${MAX_CHARTS}). Each chart chooses what it shows in its title; × there takes it off.`}>
+        <Icon name="add" label="Add chart" /></button>
+      <label className="inline">Smoothing <select value={smoothing} onChange={e => setSmoothing(Number(e.target.value))}>
         {SMOOTHING.map(n => <option key={n} value={n}>{n ? `mean of last ${n}` : 'off'}</option>)}</select></label>
       <select aria-label="Compare with another run" className="training-compare" value="" disabled={others.length >= COMPARE_MAX - 1 || !candidates.length}
         onChange={e => { if (e.target.value) keepCompare([...others, e.target.value]); }}
@@ -250,7 +278,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
       <button aria-pressed={following} disabled={!shown.length} onClick={follow}
         title={following ? 'Follow latest: on - the charts keep the newest results in view. Press to hold them where they are.' : 'Follow latest: off - you zoomed in, so new results do not move the charts. Press to slide back to the newest results, keeping the zoom width.'}>
         <Icon name="follow" label="Follow latest" /></button>
-      <button disabled={!shown.some(slot => views[slot].mode !== 'all')} onClick={reset} title="Reset zoom: show the whole run again (a double click on a chart does the same). Drag across a chart to zoom in.">
+      <button disabled={!shown.some(slot => viewOf(slot.key).mode !== 'all')} onClick={reset} title="Reset zoom: show the whole run again (a double click on a chart does the same). Drag across a chart to zoom in.">
         <Icon name="zoom-reset" label="Reset zoom" /></button>
       </span>
     </div>
@@ -270,19 +298,26 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
     {(own.thinnedEvaluations > 0 || own.thinnedUpdates > 0) && <p className="hint training-note">The oldest part of this long run is shown thinned to its extremes (shaded): every point drawn is a recorded one, some in between are left out on screen only. The run's tables keep every row.</p>}
     {empty ? <p className="hint">{live ? 'Waiting for metrics: the charts start with the run\'s first recorded result.' : 'This run recorded no evaluations and no learner updates.'}</p>
       : own.answers === 0 ? <p className="hint">{reading.error ? '' : 'Reading the run\'s recorded training numbers...'}</p>
-      : <div className={`training-charts${slots[1] ? ' two' : ''}`}>
-        {([0, 1] as const).filter(slot => slots[slot] || slot === 0).map(slot => {
-          const spec = slots[slot];
-          return <figure key={slot} className="training-chart">
-            <figcaption title={spec ? `${spec.about} Recorded as ${spec.source}.` : undefined}>
-              <b>{spec?.title ?? 'Chart'}</b>{spec?.unit && !['', 'share'].includes(spec.unit) ? <span className="hint"> ({spec.unit})</span> : null}</figcaption>
-            {!spec ? <p className="hint">This chart is not offered for this run.</p>
+      : <div className="training-charts" style={{ gridTemplateColumns: `repeat(${columnsFor(slots.length)}, minmax(0, 1fr))` }}>
+        {slots.map((slot, i) => {
+          const spec = specOf(slot.id), made = built[i];
+          return <figure key={slot.key} className="training-chart">
+            {/* what this chart shows is chosen in its title; × takes the chart off the page (one always stays) */}
+            <figcaption>
+              <select aria-label={`Chart ${i + 1}`} className="training-chart-choice" value={slot.id} onChange={e => choose(slot.key, e.target.value)}
+                title={spec ? `${spec.about} Recorded as ${spec.source}.` : 'This run has no such chart.'}>
+                {!spec && <option value={slot.id} disabled>{chartName(slot.id)} - not in this run</option>}{options(charts)}</select>
+              <span className="spacer" />
+              <button type="button" className="training-chart-remove" disabled={slots.length <= 1} onClick={() => removeChart(slot.key)}
+                title="Remove chart: take this chart off the page"><Icon name="close" label={`Remove chart ${i + 1}`} /></button>
+            </figcaption>
+            {!spec ? <p className="hint training-empty">{own.answers > 0 ? `This run has no ${chartName(slot.id)} chart (a spec of another task?). Choose another in the title.` : 'Reading...'}</p>
               : !spec.available ? <p className="hint training-empty">{spec.reason}</p>
-              : <>{built[slot]?.missing?.length ? <p className="hint training-missing">Not on this chart: {built[slot]!.missing!.map(m => `${m.label} (${m.reason})`).join('; ')}</p> : null}
-                <TrainingChart built={built[slot]} hidden={!active} look={look} xLabel={spec.axis === 'update' ? 'Learner update' : 'Evaluation'}
+              : <>{made?.missing?.length ? <p className="hint training-missing">Not on this chart: {made.missing.map(m => `${m.label} (${m.reason})`).join('; ')}</p> : null}
+                <TrainingChart built={made} hidden={!active} look={look} xLabel={spec.axis === 'update' ? 'Learner update' : 'Evaluation'}
                   format={formatFor(spec.unit)} describe={describe(spec.axis)}
-                  onWidth={width => setWidths(w => (Math.abs(w[slot] - width) < 8 ? w : (slot === 0 ? [width, w[1]] : [w[0], width])))}
-                  onZoom={(min, max) => setView(slot, { mode: 'fixed', min, max })} onReset={() => setView(slot, NONE)} /></>}
+                  onWidth={width => setWidths(w => (Math.abs((w[slot.key] ?? 600) - width) < 8 ? w : { ...w, [slot.key]: width }))}
+                  onZoom={(min, max) => setView(slot.key, { mode: 'fixed', min, max })} onReset={() => setView(slot.key, NONE)} /></>}
           </figure>;
         })}
       </div>}

@@ -1513,12 +1513,14 @@ has no heads), then "op. points" and the component list when they are on, and "s
 whose network the run takes. A loading Mode without a chosen model reads "no saved model chosen", LLM only "not used
 (LLM only)". The tooltip says all of it in full.
 **Search method** is the second setting. The button opens a separate window containing the encoder and sizes,
-operating-point input switch, Components list, presets, saved-model chooser, model facts, compatibility details,
-network structure, circuit graph view, and Advanced RL settings. Changing Mode in the main page updates this window.
+operating-point input switch, the Advanced RL settings directly below it (record 7.195, user: "move the advanced
+setting to beneath the nominal device op checkbox"; a Mode that loads a model has no network block, so there they close
+the window), Components list, the "In use" line of the starting preset, saved-model chooser, model facts, compatibility
+details, network structure and circuit graph view. Changing Mode in the main page updates this window.
 Budgets, concurrency, seed, the run limits (one Limits fold since record 7.179), reward and training conditions stay in Run configuration.
 
 Pressing the button again focuses the existing window. It has no close button of its own (record 7.163, user: "delete
-the cross button in RL network window"): the browser's close keeps all configuration edits; pending preset saves and model compatibility checks continue in the main page. Undo/Redo also
+the cross button in RL network window"): the browser's close keeps all configuration edits; pending settings saves and model compatibility checks continue in the main page. Undo/Redo also
 work for typing in the window. A blocked popup is explained beside the launcher. With LLM only selected, the launcher
 is disabled and an already open window explains that this method has no RL network. Switching back restores the
 controls. Reloading or leaving the workbench closes its window.

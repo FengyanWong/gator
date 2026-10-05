@@ -24,7 +24,8 @@ await runChecks(browser, async () => {
 
   // The controls live in the named window; their React requests still originate in the workbench page.
   const H3 = `[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel h3')].find(h => h.textContent.trim() === 'RL network')`;
-  const BLOCK = `(() => { const h = ${H3}; const items = []; for (let n = h; n && !(n !== h && n.tagName === 'H3') && n.tagName !== 'DETAILS'; n = n.nextElementSibling) items.push(n); return items; })()`;
+  // The block runs to the next heading or fold; the Advanced fold inside it (record 7.195) is part of it.
+  const BLOCK = `(() => { const h = ${H3}; const items = []; for (let n = h; n && !(n !== h && n.tagName === 'H3') && (n.tagName !== 'DETAILS' || n.classList.contains('rl-advanced')); n = n.nextElementSibling) items.push(n); return items; })()`;
   const shot = async name => {
     await evaluate(`${H3}.scrollIntoView({ block: 'start' })`);
     await sleep(150);
@@ -74,6 +75,13 @@ await runChecks(browser, async () => {
   const options = await evaluate(`[...[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel label')].find(l => l.firstChild?.textContent === 'Encoder').querySelectorAll('option')].map(o => o.value)`);
   check('the encoder list offers only Graph Transformer, RGCN and GATv2', JSON.stringify(options) === JSON.stringify(['graph_transformer', 'rgcn', 'gatv2']), JSON.stringify(options));
   check('heads is editable for graph_transformer', !(await evaluate(`${box('heads')}.querySelector('input').disabled`)));
+  // record 7.195 (user: "move the advanced setting to beneath the nominal device op checkbox")
+  const order = await evaluate(`(() => { const box = [...${NETWORK_PANEL}.querySelectorAll('label.check')].find(l => l.textContent === 'Nominal device operating points');
+    let n = box?.nextElementSibling; while (n?.matches('p.sac-values')) n = n.nextElementSibling;
+    const fold = ${NETWORK_PANEL}.querySelectorAll('details.rl-advanced');
+    return { below: !!n?.matches('details.rl-advanced'), one: fold.length === 1, closed: fold[0]?.open === false,
+      before: !!(fold[0] && ${NETWORK_PANEL}.querySelector('.component-list') && (fold[0].compareDocumentPosition(${NETWORK_PANEL}.querySelector('.component-list')) & Node.DOCUMENT_POSITION_FOLLOWING)) }; })()`);
+  check('the Advanced fold sits directly below "Nominal device operating points", closed, once, above the component list', order.below && order.one && order.closed && order.before, JSON.stringify(order));
 
   // ---- one setting: the starting preset (record 7.192); no preset buttons (record 7.191) -----------------------
   check('neither "Publication preset" nor "GATOR baseline" is a button any more', !(await evaluate(`[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel button')]

@@ -352,6 +352,28 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
     || (modelChecked && model?.compatibility?.compatible === false);
   const networkWarning = netMessage?.level === 'warn' || (!loads && (differs || entry?.problem))
     || (starved && run.search?.method !== 'llm_warmstart') || archDiffers || sacSlow.length > 0;
+  // The training numbers, with the warning about values that leave the search random right above them. In scratch they sit
+  // directly below "Nominal device operating points" (user, 2026-10-05: "move the advanced setting to beneath the nominal
+  // device op checkbox", record 7.195); a Mode that loads a model shows no network block, so there they close the window -
+  // they hold the fine_tune switches.
+  const advanced = <>
+    {sacSlow.length > 0 && <p className="warn sac-values">With {sacSlow.join(' and ')}, soft actor-critic learned late or not at all in the tests of 2026-10-05:
+      with 1 update per evaluation the designs stayed a uniform random search for 1,500 evaluations, and a starting temperature of 0.2 delayed
+      learning to about evaluation 1,000. The tested values are 8 updates per evaluation, starting temperature 0.01 and discount 0 (under Advanced).</p>}
+    <details className="rl-advanced"><summary>Advanced (stored per encoder, like the network sizes)</summary>
+      <p className="hint">Alpha learning rate belongs to this configuration; the other settings belong to the selected encoder. The algorithm stays soft actor-critic; only its numbers change.</p>
+      <Num label="Alpha learning rate" nullable value={adv.alpha_learning_rate} onChange={v => setAdv({ alpha_learning_rate: v })} title="Empty uses the actor learning rate. A separate rate is stored in this configuration." />
+      {ADVANCED_ROWS.map((fields, i) => {
+        const inputs = fields.map(([name, label, title]) => <Num key={name} label={label} title={title}
+          value={adv[name] ?? entry?.advanced?.[name] ?? schema.$defs.AdvancedRL.properties[name].default}
+          onChange={v => editAdv({ [name]: v })} />);
+        return i === 0 ? <Fragment key={i}>{inputs}</Fragment> : <div className="row" key={i}>{inputs}</div>;
+      })}
+      <Check label="Freeze encoder (fine_tune)" value={adv.freeze_encoder} onChange={v => setAdv({ freeze_encoder: v })} />
+      <Check label="Encoder-only transfer (fine_tune)" value={adv.encoder_only_transfer} onChange={v => setAdv({ encoder_only_transfer: v })} />
+      <Check label="Reset critic (fine_tune)" value={adv.reset_critic} onChange={v => setAdv({ reset_critic: v })} />
+    </details>
+  </>;
   return (
     <>
     <Module id="run" title="Run configuration" summary={folded}>
@@ -465,6 +487,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         <Num label="layers" value={net.layers ?? entry?.network?.layers ?? 2} onChange={v => editNet({ layers: v })} /></div>
       <Check label="Nominal device operating points" value={net.operating_points ?? false} onChange={v => setNet({ operating_points: v })}
         title="Measured nominal device values and validity masks. Corner operating points are recorded but never replace the nominal network input. Changing this changes the model input schema." />
+      {advanced}
       <ComponentList value={net.vocabulary ?? 'standard'} onChoose={v => chooseList(v)} />
       {/* The GATOR baseline and both preset buttons were deleted (record 7.191, user: "Delete the gator baseline in RL networks
           and keep the publication preset, delete two buttons"); the one preset left became the starting preset (7.192). Typing a
@@ -535,22 +558,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         {run.mode === 'frozen' && <label>Frozen actions<select value={run.frozen_action ?? 'deterministic'} onChange={e => set({ frozen_action: e.target.value })}><option>deterministic</option><option>sampled</option></select></label>}
         {run.mode === 'fine_tune' && <Check label="Continual learning (inherit weights fine-tuned on a previous test task)" value={run.continual_learning} onChange={v => set({ continual_learning: v })} />}
       </>)}
-      {sacSlow.length > 0 && <p className="warn sac-values">With {sacSlow.join(' and ')}, soft actor-critic learned late or not at all in the tests of 2026-10-05:
-        with 1 update per evaluation the designs stayed a uniform random search for 1,500 evaluations, and a starting temperature of 0.2 delayed
-        learning to about evaluation 1,000. The tested values are 8 updates per evaluation, starting temperature 0.01 and discount 0 (under Advanced).</p>}
-      <details><summary>Advanced (stored per encoder, like the network sizes)</summary>
-        <p className="hint">Alpha learning rate belongs to this configuration; the other settings belong to the selected encoder. The algorithm stays soft actor-critic; only its numbers change.</p>
-        <Num label="Alpha learning rate" nullable value={adv.alpha_learning_rate} onChange={v => setAdv({ alpha_learning_rate: v })} title="Empty uses the actor learning rate. A separate rate is stored in this configuration." />
-        {ADVANCED_ROWS.map((fields, i) => {
-          const inputs = fields.map(([name, label, title]) => <Num key={name} label={label} title={title}
-            value={adv[name] ?? entry?.advanced?.[name] ?? schema.$defs.AdvancedRL.properties[name].default}
-            onChange={v => editAdv({ [name]: v })} />);
-          return i === 0 ? <Fragment key={i}>{inputs}</Fragment> : <div className="row" key={i}>{inputs}</div>;
-        })}
-        <Check label="Freeze encoder (fine_tune)" value={adv.freeze_encoder} onChange={v => setAdv({ freeze_encoder: v })} />
-        <Check label="Encoder-only transfer (fine_tune)" value={adv.encoder_only_transfer} onChange={v => setAdv({ encoder_only_transfer: v })} />
-        <Check label="Reset critic (fine_tune)" value={adv.reset_critic} onChange={v => setAdv({ reset_critic: v })} />
-      </details>
+      {loads && advanced}
       </>}
     </section>, networkWindow.root)}
     </>

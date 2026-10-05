@@ -1371,7 +1371,8 @@ shows:
   settings in RL networks."
 - **Static validation** warns the same (`sac_values_random_search`) for any run that trains, also from the command
   line, and warns a from-scratch SAC run below 300 evaluations (`budget_below_sac_learning`): learning started after 250
-  to 600 evaluations in the tests. The page's starting budget stays 60 - every evaluation of a real task is a simulation
+  to 600 evaluations in the tests, and after about 150 to 300 with the starting presets (record 7.199; the warning says
+  so since record 7.210). The page's starting budget stays 60 - every evaluation of a real task is a simulation
   you authorize - so a new SAC configuration carries that warning until the budget is raised or an LLM method is chosen.
 - **An encoder you had put on the GATOR baseline** reads as its starting preset since record 7.191 (the settings file
   is not rewritten). A configuration already open keeps its own numbers; the window's This run / Saved default table

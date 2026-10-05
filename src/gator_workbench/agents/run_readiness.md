@@ -116,9 +116,10 @@ you change nothing.
   published ones, which learned as early as 32 / 4 / 2 with these values on ngspice; on Spectre
   (`real:mscr_ota7t`) the Graph Transformer preset passed 469 of 760 designs, the first at design 202,
   against 36 and 591 for the earlier setting (record 7.199). One update takes 0.1 to 0.15 s.
-* A soft actor-critic run from scratch starts to pass designs only after 250 to 600 evaluations. Say so
-  when `run.max_evaluations` is below 300 and the search method is `sac`: with tens of evaluations the
-  run is a random search, and a search method with an LLM is the one that works within such a budget.
+* A soft actor-critic run from scratch starts to pass designs only after about 150 to 300 evaluations
+  with the starting presets (record 7.199; 250 to 600 with record 7.183's values). Say so when
+  `run.max_evaluations` is below 300 and the search method is `sac`: with tens of evaluations the run is a
+  random search, and a search method with an LLM is the one that works within such a budget.
 * The budget comes first. Runs here have tens to a few hundred evaluations; the publications used 300 to
   50,000 simulations. A published batch size or warm-up can mean the run never learns at all: compare
   `batch_size`, `warmup_transitions`, `update_every` and `replay_capacity` with `run.max_evaluations`

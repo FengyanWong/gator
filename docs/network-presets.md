@@ -139,7 +139,8 @@ none of 922 designs passed. Measured with 175 runs on two ngspice circuits and f
 | `gamma` | 0.99 | 0 | an action is a whole design scored on its own measurement; learned at 269 instead of 466 (ngspice only) |
 
 With temperature 0.01 and 8 updates the Spectre run found 36 passing designs in 760 (the first at design 591).
-Learning starts after 250 to 600 evaluations, so a shorter from-scratch run is a random search under any values.
+Learning started after 250 to 600 evaluations with these values (after about 150 to 300 with the starting presets,
+record 7.199), so a shorter from-scratch run is close to a random search.
 
 * The schema defaults stay as they were: a configuration without an Advanced block, a test and a saved model keep
   their meaning. Static validation warns (`sac_values_random_search`) when a run that trains has fewer than 4 updates

@@ -500,8 +500,9 @@ def _check_targets(config, report, measurement_ids, *, registry, extensible=True
             report.add('warning', 'unused_measurement', f'measurements[{i}]', 'No spec equation uses this probe')
 
 
-# A from-scratch soft actor-critic run below this many evaluations is told that it cannot have learned (record 7.183:
-# learning started after 250 to 600 evaluations on three circuits).
+# A from-scratch soft actor-critic run below this many evaluations is told that it has hardly had time to learn. Record
+# 7.183's values started to learn after 250 to 600 evaluations on three circuits; the starting presets (record 7.199)
+# after about 150 to 300 on ngspice and Spectre (record 7.210). So 300 stays: about where the slowest of them had begun.
 SAC_LEARNS_AFTER = 300
 
 
@@ -551,8 +552,9 @@ def _check_run(config, report, record):
                    'per evaluation, starting temperature 0.01 and discount 0, under Advanced in RL networks.')
     if run.mode == 'scratch' and run.search.method == 'sac' and run.max_evaluations < SAC_LEARNS_AFTER:
         report.add('warning', 'budget_below_sac_learning', 'run.max_evaluations',
-                   f'Soft actor-critic from scratch started to pass designs after 250 to 600 evaluations in GATOR\'s tests of '
-                   f'2026-10-05. With {run.max_evaluations} evaluations this run is a random search: raise the budget to '
+                   f'Soft actor-critic from scratch started to pass designs after about 150 to 300 evaluations with the '
+                   f'starting presets in GATOR\'s tests of 2026-10-05 (after 250 to 600 with the values tested before them). '
+                   f'With {run.max_evaluations} evaluations this run has little or no time to learn: raise the budget to '
                    'several hundred, or choose a search method with an LLM.')
     vocabulary = getattr(run.network, 'vocabulary', 'standard') or 'standard'
     if vocabulary != 'standard':                  # the schema admits 'pdk:<name>' only: `record` is _pdk_record's load of <name>

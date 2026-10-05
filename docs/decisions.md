@@ -961,7 +961,7 @@ The Specs scale:
 
 Left open: discount 0 and the reward comparisons on Spectre (the approved hour went into the SAC values, because a
 six-lane run hit the bridge daemon's limit of 4,096 remembered requests per 15 minutes); the 13 dB rows of four saved
-tasks (filling them changes four task hashes). The larger daemon cache (`RB_NONCE_CACHE_MAX` 32768) was set in the
+tasks (filled the same day, on the user's "fill them with 6": record 7.187). The larger daemon cache (`RB_NONCE_CACHE_MAX` 32768) was set in the
 running Virtuoso the same day, on the user's word; it is not yet in Virtuoso's start-up (record 7.183).
 
 Record 7.183.

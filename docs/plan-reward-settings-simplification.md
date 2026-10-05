@@ -1,8 +1,8 @@
 # Plan: a simpler reward (revision 5, 2026-10-05: built)
 
 **Built on 2026-10-05 as record 7.183** (user: "update the reward plan according to finding and build it"): steps S0 to
-S4 and S6, with the recommended choice of decisions 1 to 4, 6 and 7. Not done: S5 (decision 5, the 13 dB rows of four
-saved tasks). S7 followed the same day on the user's word: commit `4a106f5`, live since 06:44. What the build did differently
+S4 and S6, with the recommended choice of decisions 1 to 4, 6 and 7. S5 (decision 5, the 13 dB rows of four
+saved tasks) followed the same day as record 7.187. S7 followed the same day on the user's word: commit `4a106f5`, live since 06:44. What the build did differently
 from this text is under "State" in section 5. Session "RL reward design". Revision 1 (2026-10-03) hid a few controls and left two run settings
 on the page; the user still found the reward too complicated. Revision 2 took every reward setting off the front of the
 page and gave the reward one sentence. Revision 3 withdrew revision 2's scale rule. **Revision 4 follows the tests of
@@ -154,7 +154,7 @@ corner-specific limits.
 | S2 | The Specs column headed `normalization_scale` gets the header "Scale" and joins "More columns" with the Hard tick. A new row starts with an empty scale, like the tasks' rows: the page stops writing 10° into phase rows and half the width into intervals. A new dB row gets 6 dB instead of 3 (decision 5). | `frontend/src/panels/Editors.tsx`, `schema.ADVANCED_COLUMNS` | the frozen old-configuration hash fixture is unchanged; a browser check adds one row of each kind |
 | S3 | Validation blocks a row whose limit is 0 with no scale (today it silently divides by 1), and names the Scale column | `src/gator_workbench/validation.py` | one validation test |
 | S4 | The agent's "Review settings" and readiness brief describe the reduced set and the SAC values | `src/gator_workbench/agents/` | settings-review test |
-| S5 | Only if decision 5 says so: 6 dB typed into the 13 dB rows of four tasks (`mscr_ota5t`, `mscr_ldo1_rgcn`, `mscr_ldo2_rgcn`, `mscr_ldo_basic`), saved as four new task revisions. The pilot task `mscr_ota7t` has no dB row and is not touched. | the page, on the user's word | each task's validation clean; the `ldo2_rgcn` baseline is recorded again (one Spectre launch) |
+| S5 | Only if decision 5 says so: 6 dB typed into the 13 dB rows of four tasks (`mscr_ota5t`, `mscr_ldo1_rgcn`, `mscr_ldo2_rgcn`, `mscr_ldo_basic`), saved as four new task revisions. The pilot task `mscr_ota7t` has no dB row and is not touched. | the page, on the user's word | each task's validation clean; the `ldo2_rgcn` baseline is recorded again (one Spectre launch) - not needed after all: a save that changes only Specs keeps a recorded baseline (record 7.187) |
 | S6 | Docs (`network-presets.md` too), record entry, index row; the reward page republished to the simple form | `docs/`, the artifact | — |
 | S7 | Land hunk-exact when no other session is committing; frontend rebuilt and 8765 restarted on the user's word | — | the live page shows the new block |
 
@@ -173,7 +173,9 @@ re-recorded baseline).
 - **S2, built**, with one difference: a new row's scale is written as the size of its limit (the number an empty box
   stands for) rather than left empty, as before; only the 10 degrees and the half interval are gone, and a dB row gets 6.
 - **S3, S4, S6 built.** The reward page (artifact) was not republished.
-- **S5 not done** (decision 5 is open). **S7 done** on 2026-10-05, on the user's word: commit `4a106f5`; the page rebuilt
+- **S5 done** on 2026-10-05 (record 7.187, user: "fill them with 6"): the 13 dB rows hold Scale 6, four tasks at revision 3,
+  no simulation. It first needed a fix: since record 7.128 Save task refused every cell with an ideal current source or resistor.
+  **S7 done** on 2026-10-05, on the user's word: commit `4a106f5`; the page rebuilt
   from it at 06:44; the backend had been restarted at 06:31 by the session of record 7.174 and was not restarted again.
 
 ## 6. What was tested, and what was not
@@ -219,4 +221,5 @@ re-recorded baseline).
 Decisions 1 to 4, 6 and 7 were taken as recommended with the build (record 7.183). Decision 8 was taken and applied
 on 2026-10-05, on the user's word: 32768 in the running Virtuoso, the daemon restarted, 4,500 requests in 19 s all
 answered. It is not yet in Virtuoso's start-up (the VM's `.cdsinit` belongs to root): a restarted Virtuoso needs the
-line typed before the bridge is loaded (record 7.183, "The bridge setting"). Open: 5.
+line typed before the bridge is loaded (record 7.183, "The bridge setting"). Decision 5 was taken the same day ("fill them
+with 6") and done as record 7.187. No decision is open.

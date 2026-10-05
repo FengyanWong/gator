@@ -257,3 +257,4 @@ One row per commit, newest last.
 | `0857ecf` | 10-05 14:34 | 7.186 | the Agent tab's agent starts with a named list of built-in tools (no messages to other sessions, claude.ai routines, notifications, artifacts or workflows); claude.ai documents read-only to it; Virtuoso tools kept |
 | `08b60ca` | 10-05 14:35 | - | record only: names the commit of record 7.186, and the table rows for 4f3f01d and 0857ecf |
 | `6f75c3d` | 10-05 14:57 | 7.185, 7.188 | the editors' toolbar on one line at 1366 px (the find box shrinks, its count inside it); a crash panel instead of a blank page (Undo the last change, Export JSON, Reload; an empty start without Undo); Ctrl+Z / Ctrl+Y in the tables; the editor tables' headers in plain words, the field names in their tooltips; the "no real baseline yet" note in one line |
+| `f388bd2` | 10-05 14:58 | - | record only: names the commit of records 7.185 and 7.188, and the table rows for 08b60ca and 6f75c3d |

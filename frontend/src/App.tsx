@@ -52,12 +52,12 @@ const storedBottom = (): Bottom => {
   catch { return { height: null, folded: false }; }
 };
 
-/** The calibration that goes with the Single baseline simulation (record 7.197, user: "shouldnt each task run the baseline
- *  run? can you add the calibration functionality to that"): after the baseline, this many random designs, from which the run
- *  proposes a Scale per Specs row and the Initial alpha (Run status shows them with Apply). The tick beside the button is
- *  kept in this browser; ticked unless it was unticked. */
+/** The calibration that goes with the Baseline simulation (record 7.197, user: "shouldnt each task run the baseline run? can
+ *  you add the calibration functionality to that"): after the baseline, this many random designs, from which the run proposes
+ *  a Scale per Specs row and the Initial alpha (Run status shows them with Apply). Always, since record 7.202 (user: "can we
+ *  merge single baseline simulation and calibration to baseline simulation"): the "+ calibration" tick went. The one
+ *  simulation alone is still there: Abort once the random designs begin, and the baseline counts as finished. */
 const CALIBRATION_DESIGNS = 64;
-const CALIBRATE_KEY = 'gator-workbench-baseline-calibration-v1';
 
 /** Layout (specification section 2): left = project, connection, circuit; center = three editors;
  *  right = run configuration + output settings (always visible); bottom = agent, logs, status, data, files, training.
@@ -80,8 +80,6 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const [runs, setRuns] = useState<Json[]>(NO_RUNS);
   const [runsError, setRunsError] = useState<string | null>(null);   // the run list could not be read: said, not shown as "no run yet"
   const [continuing, setContinuing] = useState(false);
-  const [calibrate, setCalibrate] = useState<boolean>(() => { try { return localStorage.getItem(CALIBRATE_KEY) !== 'off'; } catch { return true; } });
-  const chooseCalibrate = (now: boolean) => { setCalibrate(now); try { localStorage.setItem(CALIBRATE_KEY, now ? 'on' : 'off'); } catch { /* a private window: the choice lasts until the page is closed */ } };
   const [runDir, setRunDir] = useState<string | null>(() => { try { return localStorage.getItem('gator-workbench-current-run-v1') || null; } catch { return null; } });
   const [tab, setTab] = useState<BottomTab>('status');
   const [bottom, setBottom] = useState<Bottom>(storedBottom);
@@ -168,7 +166,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const transitional = control.dir === runDir && ['starting', 'resuming', 'pausing', 'aborting', 'finishing'].includes(control.phase);
   useEffect(() => setStatusEvery(!status || status.worker_alive || LIVE_STATES.includes(status.state) || transitional ? 1500
     : ['completed', 'failed', 'cancelled'].includes(status.state) ? 60000 : 15000), [status?.worker_alive, status?.state, transitional]);
-  // When the header's run comes to rest, the Project column reads its task again (a finished Single baseline simulation
+  // When the header's run comes to rest, the Project column reads its task again (a finished Baseline simulation
   // records the task's reference by itself, status record 7.78): a counter the column follows. Not on the page's first look,
   // and not after a start that never ran (refused or declined) or a paused run let go: nothing about the task changed.
   const [taskEpoch, setTaskEpoch] = useState(0);
@@ -205,8 +203,8 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     setMessage(null);
     // With the calibration every lane simulates the starting design once (the first of them is the baseline), then the
     // random designs follow: the budget the backend sets (calibration.py `prepare`), said here before anything starts.
-    const calibration_designs = baseline_only && calibrate ? CALIBRATION_DESIGNS : 0, lanes: number = config.run.concurrency ?? 1;
-    const budget = !baseline_only ? config.run.max_evaluations : calibration_designs ? lanes + calibration_designs : 1;
+    const calibration_designs = baseline_only ? CALIBRATION_DESIGNS : 0, lanes: number = config.run.concurrency ?? 1;
+    const budget = baseline_only ? lanes + calibration_designs : config.run.max_evaluations;
     const calibrationText = calibration_designs ? `\n(${lanes === 1 ? 'The baseline' : `The starting design once on each of ${lanes} lanes`}, then ${calibration_designs} random designs for the calibration.)` : '';
     const search = config.run.search;
     const llm = !baseline_only && !!search && search.method !== 'sac';
@@ -307,11 +305,9 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
         <ValidationStatus validation={validation} config={config} schema={schema} />
         <button disabled={!!validation?.blocks_run || control.phase !== 'idle'} onClick={() => start(true)}
           title={control.phase !== 'idle' ? 'Not while the header holds a run that is active or paused. Abort lets go of a paused run.'
-            : 'ONE costed evaluation of the initial design. It is a preflight record, not free.'
-              + (calibrate ? ` With the calibration ticked, ${CALIBRATION_DESIGNS} random designs follow it in the same run, each a costed evaluation.` : '')}>Single baseline simulation</button>
-        {/* The calibration goes with the baseline run (record 7.197). A tick, not a second button: it is the same run, longer. */}
-        <label className="check baseline-calibration" title={`After the baseline, ${CALIBRATION_DESIGNS} random designs over the Parameters ranges are simulated in the same run. From them the run proposes a Scale for each Specs row and the Initial alpha of RL networks; Run status shows the proposals with an Apply button, and nothing changes by itself. Unticked: the one baseline simulation only.`}>
-          <input type="checkbox" checked={calibrate} disabled={control.phase !== 'idle'} onChange={e => chooseCalibrate(e.target.checked)} />+ calibration</label>
+            : `One costed evaluation of the starting design (the baseline), then ${CALIBRATION_DESIGNS} random designs over the Parameters ranges in the same run, each costed. `
+              + 'From them the run proposes a Scale for each Specs row and the Initial alpha; Run status shows them with Apply, nothing changes by itself. '
+              + 'For the baseline alone, Abort once the random designs begin.'}>Baseline simulation</button>
         <RunButtons control={control} blocked={!!validation?.blocks_run} onStart={() => start(false)} onResumed={started => showRun(started, 'resume')}
           onMessage={setMessage} onShow={dir => { setRunDir(dir); setTab('status'); unfold(); }} />
       </header>

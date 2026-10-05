@@ -1,4 +1,4 @@
-"""Calibration with the baseline run (record 7.197): a "Single baseline simulation" asked for it goes on with random
+"""Calibration with the baseline run (record 7.197): a "Baseline simulation" asked for it goes on with random
 designs, and proposes a Scale per Specs row and the Initial alpha from them. MOCK backend only; nothing is applied by a run."""
 import json
 import statistics
@@ -211,5 +211,5 @@ def test_the_start_route_takes_the_calibration_with_the_baseline_only(client, tm
     assert not (Path(plain['run_dir']) / calibration.FILE).exists()
     # not with an optimization run, and not above the limit
     refused = client.post('/api/runs/start', json=dict(config=raw, calibration_designs=20))
-    assert refused.status_code == 400 and 'Single baseline simulation' in refused.json()['detail']['message']
+    assert refused.status_code == 400 and 'Baseline simulation' in refused.json()['detail']['message']
     assert client.post('/api/runs/start', json=dict(config=raw, baseline_only=True, calibration_designs=501)).status_code == 422

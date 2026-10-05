@@ -2,7 +2,7 @@ import { Json } from '../api';
 
 /** The result of the check before every run of a saved task (backend consistency.py): one line per step - what was
  *  compared and whether it agrees. A failed step says what to do right beside it; the long reason is one closed line.
- *  Shown by "Check now" in the task's block and by a Start / Single baseline simulation / Resume that was refused. */
+ *  Shown by "Check now" in the task's block and by a Start / Baseline simulation / Resume that was refused. */
 export function CheckSteps({ result, refused = false }: { result: Json; refused?: boolean }) {
   const failed = (result.steps ?? []).filter((s: Json) => !s.ok);
   return (

@@ -1566,7 +1566,7 @@ class RunEngine:
         return final_state
 
     def _adopt_baseline(self):
-        """A finished "Single baseline simulation" of a generated task becomes the task's reference by itself
+        """A finished "Baseline simulation" of a generated task becomes the task's reference by itself
         (profiles.adopt_baseline_run, record 7.78) - only that run kind, after the tables are closed and the manifest
         says how the run ended, before it is written. What it did or why not goes into the manifest's notes. Nothing
         here may fail the run: a problem is logged and the run ends as it would have."""

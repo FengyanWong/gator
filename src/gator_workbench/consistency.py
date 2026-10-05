@@ -10,7 +10,7 @@ on its working copy, so three sides must say the same thing before any costed si
    recorded topology and every parameter, and the deck is written without simulating (``profile_preflight``);
 3. a task measured by Maestro: the copy's Maestro test, read back, against the task file's ``maestro`` part.
 
-Start, "Single baseline simulation" and Resume run parts 2 and 3 right after the connection gate
+Start, "Baseline simulation" and Resume run parts 2 and 3 right after the connection gate
 (``runs.prepare_run``) and create nothing on a difference; "Check now" in the task's block runs all three on its own.
 Read-only, no simulation, no budget. It replaces "Check against Virtuoso", which was part 2 alone.
 

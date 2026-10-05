@@ -25,7 +25,7 @@ const sameSpecsRow = (target: Json, row: Json) => !!target && sameNumber(target.
 const limitText = (row: Json) => row.lower != null && row.upper != null ? `${si(row.lower, row.unit)} to ${si(row.upper, row.unit)}`
   : row.lower != null ? `\u2265 ${si(row.lower, row.unit)}` : `\u2264 ${si(row.upper, row.unit)}`;
 
-/** The calibration of a Single baseline simulation that was asked for it (record 7.197; backend calibration.py): from the
+/** The calibration of a Baseline simulation (record 7.197, every one since 7.202; backend calibration.py): from the
  *  run's random designs, a Scale per Specs row (the typical miss among the designs that miss the row) and the Initial alpha
  *  (0.1 x the reward's spread among them). The run applies nothing. Apply writes the proposals into the configuration this
  *  page holds - the Scale of the Specs rows that still are the rows the run simulated, and Initial alpha in RL networks - as

@@ -1093,9 +1093,18 @@ calibration functionality to that".
 - **Proposed, never applied by the run.** The run writes `calibration.json`; the page applies on a press, as one Undo
   step, and a saved task still needs Save task. A run that changed a task's Specs by itself would have changed what
   every later run of that task means.
-- **A tick, not a second button, and not a renamed one.** It is the same run, longer; "Single baseline simulation"
-  still names what the baseline is, and the tick says what is added. On by default because the user wants every
-  task's baseline run to calibrate; the question before a real run names the number of simulations.
+- **A tick, not a second button, and not a renamed one** (record 7.197; REPLACED by record 7.202). It is the same run,
+  longer; "Single baseline simulation" still named what the baseline is, and the tick said what is added. On by default
+  because the user wants every task's baseline run to calibrate; the question before a real run names the number of
+  simulations.
+- **One button, "Baseline simulation", always calibrating** (record 7.202, user: "can we merge single baseline simulation
+  and calibration to baseline simulation"). Nothing was lost with the tick: a starting design that cannot be measured
+  ends the run after one simulation, and the baseline alone is Abort once the random designs begin (a stopped run still
+  gives the task its reference). The user's second idea, that **Check now** also simulate the starting design once, was
+  advised against and not taken (their choice): Check now is the free check Start runs by itself, so every press would
+  have cost a simulation and a budget question; it is shown only for tasks saved from a Virtuoso cell, so ngspice and
+  MOCK tasks would have had no baseline; and a simulation is a run (folder, Pause/Abort, Run status), a check an answer
+  in place.
 - **The baseline comes first and alone.** No other lane starts before it is committed, and an invalid one ends the
   run: with the calibration's higher failure limit (random designs may fail to be measured many times in a row) a
   starting design that cannot be simulated would otherwise have used the whole budget on resets.

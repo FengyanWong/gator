@@ -1,9 +1,9 @@
 """Calibration from the random designs of a task's baseline run (record 7.197).
 
-A "Single baseline simulation" asked to calibrate goes on, after the one simulation of the starting design, with N
-random designs - uniform draws over the Parameters ranges, the very draws a run's warm-up makes - and this module reads
-what they measured. Two settings come out of it, both as PROPOSALS: nothing here changes a configuration or a task, the
-page shows them with one Apply button.
+A "Baseline simulation" asked to calibrate (the page asks every time, record 7.202) goes on, after the one simulation of
+the starting design, with N random designs - uniform draws over the Parameters ranges, the very draws a run's warm-up
+makes - and this module reads what they measured. Two settings come out of it, both as PROPOSALS: nothing here changes a
+configuration or a task, the page shows them with one Apply button.
 
 * Scale of a Specs row: the median miss, in the row's own unit, among the random designs that miss the row. With it a
   typical failing random design counts as a miss of 1 on every row (0.5 after the compressed shape), so no row leads

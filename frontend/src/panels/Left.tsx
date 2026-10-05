@@ -154,7 +154,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   };
   // A saved task: "Check now" runs the check Start runs by itself before every run (backend consistency.py - the editors,
   // the task file and the cell in Virtuoso must agree; the run adapter connects and exports without simulating). A
-  // finished Single baseline simulation records its result as the task's reference by itself (status record 7.78; the
+  // finished Baseline simulation records its result as the task's reference by itself (status record 7.78; the
   // manual "Record the baseline run as reference" went on 2026-09-29). Explicit presses, none starts a simulation.
   // A check result goes as soon as the rows change: it was about the rows before. A message says which press it answers
   // (`what`): the answer to Delete task stands by that button, in the task row at the top of the column.
@@ -453,17 +453,17 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
                 (runs made before keep their own copy).</p></details>
           </div>
         </>)}
-        {/* Until the task has its reference. A finished Single baseline simulation records it by itself (status record 7.78);
+        {/* Until the task has its reference. A finished Baseline simulation records it by itself (status record 7.78);
             one whose measurement was refused is named with the reason, instead of the same standing advice. The standing advice is
             one line since record 7.188 (design advice: shorter notes), its explanation in the tooltip. */}
         {circuit.generated_profile && !circuit.baseline_recorded && (circuit.baseline_attempt
-          ? <p className="warn">The Single baseline simulation <code>{String(circuit.baseline_attempt.run_id ?? '').slice(0, 12)}</code>
+          ? <p className="warn">The Baseline simulation <code>{String(circuit.baseline_attempt.run_id ?? '').slice(0, 12)}</code>
               {circuit.baseline_attempt.ended_utc ? ` (${String(circuit.baseline_attempt.ended_utc).slice(0, 16).replace('T', ' ')} UTC)` : ''} gave no usable
-              baseline: {circuit.baseline_attempt.reason} Run <b>Single baseline simulation</b> again once that is put right; a finished one becomes
+              baseline: {circuit.baseline_attempt.reason} Run <b>Baseline simulation</b> again once that is put right; a finished one becomes
               the task's reference by itself.</p>
-          : <p className="warn" title={'Single baseline simulation is one real Spectre run; it asks for your budget first. When it finishes, its result '
-              + "becomes the task's reference by itself, before any optimization run."}>No real baseline
-              yet: run <b>Single baseline simulation</b> first.</p>)}
+          : <p className="warn" title={'Baseline simulation is one real Spectre run: the starting design, then 64 random designs for the calibration; '
+              + "it asks for your budget first. Its first simulation becomes the task's reference by itself, before any optimization run."}>No real baseline
+              yet: run <b>Baseline simulation</b> first.</p>)}
         {saved && saved.task_key === ref.task_id && <p className="ok">Saved the new task <code>{saved.task_key}</code>. It runs in
           <code> {saved.copy?.library}/{saved.copy?.testbench}</code>{saved.copy?.library === saved.original?.library ? ' - the cell you declared as your copy' : ' - its working copy'}; nothing has been simulated yet.</p>}
         {/* The circuit picture (record 7.158) above the long note, so it is in view while Parameters rows are pointed at. */}
@@ -474,7 +474,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
               revision={tasks.find(t => t.task_key === ref.task_id)?.revision ?? null} hasCopy
               config={config} setConfig={setConfig} onSaved={taskSaved} onSavedElsewhere={savedElsewhere} bar={taskSlot} notes={taskNotes} />
             {/* One line; the explanation is its tooltip (record 7.177, user: "reduce the texts this part"). */}
-            <p title={'Start, Single baseline simulation and Resume first check that the editors, this saved task and its cell in Virtuoso agree. '
+            <p title={'Start, Baseline simulation and Resume first check that the editors, this saved task and its cell in Virtuoso agree. '
               + 'The check simulates nothing; a difference starts nothing and says what to do.'}><b>Before every run:</b> the editors, the task and its cell must agree.</p>
             <details className="more"><summary>What the check compares</summary>
               <ul className="steps-list">

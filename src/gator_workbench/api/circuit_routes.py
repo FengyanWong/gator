@@ -49,7 +49,7 @@ def register(app: FastAPI, context: ApiContext):
         shell = schema.WorkbenchConfig.model_validate(dict(circuit=circuit.model_dump(), run=dict(max_evaluations=1)))
         runtime, blocked = load_runtime(shell)
         if runtime is not None and runtime.circuit.get('generated_profile') and not runtime.circuit.get('baseline_recorded'):
-            # A Single baseline simulation records itself when it finishes (record 7.78); one made before that, or one
+            # A Baseline simulation records itself when it finishes (record 7.78); one made before that, or one
             # whose worker could not, becomes the reference now: the newest completed one of this task under the
             # remembered output root (the one every run is filed under; none remembered = no run was ever made here),
             # from its manifest and tables, nothing simulated. The task is then loaded again with its reference.
@@ -123,13 +123,13 @@ def register(app: FastAPI, context: ApiContext):
     def native_profile_reference(body: ProfileActionBody):
         """Explicit click: the real baseline of a finished run of this task becomes the profile's reference (read
         from the run's own tables; never replaced once recorded). Without `run_dir`: the newest run of the task. Since
-        record 7.78 a finished Single baseline simulation records itself; the press is for a run made another way
+        record 7.78 a finished Baseline simulation records itself; the press is for a run made another way
         (an optimization run's first evaluation, a run made before)."""
         try:
             run_dir = context.run_path(body.run_dir) if body.run_dir else profiles.latest_baseline_run(
                 body.name, [r['run_dir'] for r in runs.list_runs(context.roots, include_mock=False)])
             if run_dir is None:
-                fail(409, f'No run of real:{body.name} was found under the output root. Run "Single baseline simulation" first.',
+                fail(409, f'No run of real:{body.name} was found under the output root. Run "Baseline simulation" first.',
                      code='no_baseline_run')
             return profiles.record_reference(body.name, run_dir)
         except profiles.ProfileError as exc:

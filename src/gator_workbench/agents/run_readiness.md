@@ -37,14 +37,14 @@ A start is refused at the first of these that fails, and nothing is created or c
    circuits need no connection.
 9. **Real circuits only - budget authorization** - pressing Start asks the user to authorize the
    number of real simulations. Nobody else can give that authorization.
-10. **Start** - "Single baseline simulation" first is a good habit: ONE costed evaluation of the
+10. **Start** - "Baseline simulation" first is a good habit: ONE costed evaluation of the
     initial design that proves the whole chain before a budget is spent. For a task saved from a
-    Virtuoso cell its finished result becomes the task's reference by itself (the column then no
-    longer says "no real baseline yet"). With "+ calibration" ticked beside the button (the default),
-    64 random designs follow the baseline in the same run, each a costed evaluation: from them the
-    run proposes a Scale for each Specs row and the Initial alpha, shown under Run status with
-    "Apply calibration". Nothing is applied by the run; after Apply a saved task needs "Save task".
-    Then "Start".
+    Virtuoso cell its result becomes the task's reference by itself (the column then no longer
+    says "no real baseline yet"). 64 random designs follow the baseline in the same run, each a
+    costed evaluation: from them the run proposes a Scale for each Specs row and the Initial
+    alpha, shown under Run status with "Apply calibration". Nothing is applied by the run; after
+    Apply a saved task needs "Save task". For the baseline alone the user presses Abort once the
+    random designs begin. Then "Start".
 
 ## The task's own rows: "Reload saved values"
 

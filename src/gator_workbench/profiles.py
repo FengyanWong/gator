@@ -15,7 +15,7 @@ callback and choices) - and not otherwise; lengths stay on the 5 nm grid, counts
 types: the verified ones, and every component of a loaded PDK (pins as the PDK itself states them).
 Always refused: a supply other than the verified nominal one. What it cannot know is whether the circuit
 then simulates as hoped: a generated profile has NO real baseline until the user runs the
-budget-authorized "Single baseline simulation" of the new task - it is labelled unverified until then. A
+budget-authorized "Baseline simulation" of the new task - it is labelled unverified until then. A
 finished one records itself as the task's reference (`adopt_baseline_run`, record 7.78).
 
 The rows of the editors are returned ADJUSTED (bounds snapped onto the grid, the step filled in,
@@ -866,8 +866,8 @@ def latest_baseline_run(name, run_dirs):
     return None
 
 
-# ---------------------------------------------------------------------------------- a finished Single baseline simulation records itself
-BASELINE_KIND = 'baseline_preflight'                 # run_kind of the header's "Single baseline simulation" (api/app.py `_start`)
+# ---------------------------------------------------------------------------------- a finished Baseline simulation records itself
+BASELINE_KIND = 'baseline_preflight'                 # run_kind of the header's "Baseline simulation" (api/app.py `_start`)
 
 
 def _run_outlived_the_task(entry, manifest) -> str | None:
@@ -892,7 +892,7 @@ def _run_outlived_the_task(entry, manifest) -> str | None:
 
 
 def adopt_baseline_run(run_dir, manifest=None) -> dict | None:
-    """A finished "Single baseline simulation" of a generated task becomes the task's reference BY ITSELF - until record
+    """A finished "Baseline simulation" of a generated task becomes the task's reference BY ITSELF - until record
     7.78 (2026-09-24) "Record the baseline run as reference" was a press of its own, and after the user's first real
     baseline the Project column still said "no real baseline yet". The worker calls this at the end of such a run
     (engine.py `_adopt_baseline`); for a run made before that, `adopt_latest_baseline` does it when the task is loaded.
@@ -938,7 +938,7 @@ def adopt_baseline_run(run_dir, manifest=None) -> dict | None:
 
 
 def adopt_latest_baseline(name, data_root) -> dict | None:
-    """The newest completed Single baseline simulation of real:<name> under the output root becomes its reference - for
+    """The newest completed Baseline simulation of real:<name> under the output root becomes its reference - for
     a run made before such runs recorded themselves. Called when a generated task without a reference is loaded
     (api/app.py `circuit_load`); reads the run manifests only, one small file per run, and never once a reference
     exists. Only the newest completed one is tried: a refusal is remembered in the entry and said in the column."""

@@ -276,7 +276,7 @@ def model_label(config: WorkbenchConfig) -> str:
 
 def saves_rl_model(config: WorkbenchConfig) -> bool:
     """Whether a run writes an RL model to disk: one with save points on, other than LLM only (no policy weights). A
-    Single baseline simulation saves none."""
+    Baseline simulation saves none."""
     return bool(config.output.save_checkpoints) and config.run.search.method != 'llm'
 
 
@@ -448,7 +448,7 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
                                    paths=layout.subpaths(), heartbeat_utc=now))
     _register_in_experiment(experiment_dir, manifest, compiled, task, created)
     # The newest run that saves an RL model is remembered under the model's label (record 7.159): Resume, fine_tune and
-    # frozen start from it. A run that saves no model (a Single baseline simulation, LLM only) leaves the label alone.
+    # frozen start from it. A run that saves no model (a Baseline simulation, LLM only) leaves the label alone.
     with _SETTINGS_LOCK:             # the last_run merge reads and writes under the lock every other save takes
         remembered = load_settings().get('last_run', {})
         if saves_rl_model(config):

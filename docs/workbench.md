@@ -112,8 +112,8 @@ The header has one main run button and **Abort** next to it. The main button cha
 * The header controls ONE run - the one started or resumed from this page, remembered across a reload - and shows
   it as a small text button ("running 12 / 60"; press it to see the run under Run status). It is not the run chosen
   in the list of the bottom tabs: looking at an older run's data never takes Pause and Abort away from a live run.
-  While a run is active or paused in the header, "Single baseline simulation" is not available. A finished
-  Single baseline simulation of a task saved from a cell records its result as the task's reference by itself
+  While a run is active or paused in the header, "Baseline simulation" is not available. A finished
+  Baseline simulation of a task saved from a cell records its result as the task's reference by itself
   (status record 7.78): once the run has come to rest the Project column reads the task again and no longer
   says "No real baseline yet" (one line since record 7.188, its explanation in the line's tooltip).
 * A real run asks for the budget again at Resume (what is left of it). A run that was started with checkpoints or
@@ -736,8 +736,9 @@ to say.
      everything a real evaluation does before Spectre starts (connect through the run adapter, export,
      compare with the record, write the deck). Free, read-only; needs the link up and no ADE/Maestro
      window open on the design. Start runs it by itself as well.
-  2. **Single baseline simulation** in the header - one real Spectre run; asks for your budget. When it
-     finishes, its result is recorded as the task's reference BY ITSELF (status record 7.78, 2026-09-24):
+  2. **Baseline simulation** in the header - one real Spectre run (the starting design, then 64 random
+     designs for the calibration, below); asks for your budget. When it finishes, its baseline is
+     recorded as the task's reference BY ITSELF (status record 7.78, 2026-09-24):
      from then on every run compares its first evaluation with that result, as the verified profiles do.
      Recorded once, never replaced. A refused measurement (incomplete, invalid) is named in the column
      with its reason instead of the standing advice. A baseline made before 7.78 - or one whose worker
@@ -1362,9 +1363,11 @@ baseline press, the Specs scale). The measurement: `artifacts/local/reviews/defa
 
 ### Calibration with the baseline run: a Scale per Specs row and the Initial alpha (2026-10-05, record 7.197, user request)
 
-**In plain words.** Beside **Single baseline simulation** in the header there is a tick, **+ calibration**, on unless
-you take it off. With it the same run goes on after the baseline: it simulates 64 random designs - uniform draws over
-the Parameters ranges, the draws a run's warm-up makes - and works out two settings from what they measure.
+**In plain words.** **Baseline simulation** in the header simulates the starting design (the baseline), and the same
+run goes on: it simulates 64 random designs - uniform draws over the Parameters ranges, the draws a run's warm-up makes -
+and works out two settings from what they measure. (Until record 7.202 a tick, **+ calibration**, beside a button named
+Single baseline simulation chose the second part. The user: "can we merge single baseline simulation and calibration to
+baseline simulation"; the tick went, and **Check now** stays the free check, simulating nothing.)
 
 - **Scale, for each Specs row:** the typical miss - the median distance outside the limit among the random designs that
   miss the row, in the row's own unit. One example, from the free ngspice test circuit: the output-voltage row allows
@@ -1398,7 +1401,9 @@ That save changes Specs only, so the recorded baseline is kept.
   to 0.05, and both are rounded to two digits: they are estimates from a few dozen designs.
 - **Apply writes only what still fits.** A Specs row whose limits or unit were changed after the run is marked "not
   applied", and a run of another task than the one on the page offers nothing.
-- **Without the tick** the button is what it was: one evaluation. The tick is kept in this browser.
+- **The baseline alone:** press **Abort** once the random designs begin; the baseline counts as finished (the point
+  above). A starting design that cannot be measured costs one simulation anyway: the run ends after it. A browser that
+  had unticked the old tick calibrates too: that choice is no longer read.
 - **From a script:** `POST /api/runs/start` takes `calibration_designs` (0 to 500) with `baseline_only`; the result is
   `calibration.json` in the run folder and `calibration` in the run's status.
 
@@ -1419,8 +1424,9 @@ The numbers:
 "Calibration with the baseline run".
 
 **Checks.** `tests/workbench/test_wb_calibration.py` (10: the arithmetic, the run with one and with three lanes, an
-invalid baseline, a stopped run's reference, the route); `frontend/scripts/calibration_check.mjs` (26: the tick, a real
-MOCK run of 65 evaluations, the proposals, Apply as one Undo step, an edited row left alone, the run without the tick).
+invalid baseline, a stopped run's reference, the route); `frontend/scripts/calibration_check.mjs` (21: one button and no
+tick, a real MOCK run of 65 evaluations in a browser that had unticked the old tick, the proposals, Apply as one Undo
+step, an edited row left alone).
 
 ### How a real run spends its simulations: corners two at a time, reused resets (2026-09-30, record 7.126)
 
@@ -1585,7 +1591,7 @@ On Spectre (record 7.154) every result value of all seven MScR tasks was identic
 model reading was about 0.25 s shorter (Spectre's total in a 6-lane `mscr_ota7t` run: 0.72-0.79 s instead of 0.99-1.10
 s). That run was no faster (0.43 s per evaluation against 0.41), because the one Virtuoso session, which prepares every
 candidate and measures every Maestro result, is the limit at 6 lanes. On 2026-10-03 none of the MScR tasks had a recorded
-baseline, so their runs still include the whole file until a Single baseline simulation of each records one.
+baseline, so their runs still include the whole file until a Baseline simulation of each records one.
 
 **Maestro's unread info outputs left out** (record 7.157). A Maestro test's netlist asks Spectre for six info outputs
 after the analyses - `modelParameter`, `element`, `outputParameter`, `designParamVals`, `primitives`, `subckts` - which
@@ -1679,7 +1685,7 @@ name." The project name did one thing: the backend remembered each project's new
 (resume, fine_tune, frozen) started from that run's `latest` save by itself. That job is now the **RL model label**'s, a
 box in Run configuration, directly below **Search method**:
 - empty, the label is the task's run label (`project.task_name`, shown as the box's grey placeholder);
-- a run that saves an RL model is remembered under its label (`settings.json` `last_run`); a Single baseline simulation
+- a run that saves an RL model is remembered under its label (`settings.json` `last_run`); a Baseline simulation
   and an LLM-only run save none and leave the label alone (before, a baseline under the same project name pushed its
   project's model out);
 - the default model is the newest one saved under the label (`GET /api/runs/default-model?label=`); runs remembered under
@@ -2275,7 +2281,7 @@ three things must say the same thing:
    `maestro` part (outputs, specs, analyses, variables, bindings, simulator mode). Its deck is Maestro's own deck around
    the export (see "Running a task measured by Maestro"); the deck step writes it.
 
-**Start, Single baseline simulation and Resume** run parts 2 and 3 by themselves, right after the connection gate and
+**Start, Baseline simulation and Resume** run parts 2 and 3 by themselves, right after the connection gate and
 before anything is created (`runs.prepare_run`). A difference starts nothing: the banner under the header lists each step
 - passed / FAILED, what differs, and what to do (for example "The working copy was changed in Virtuoso after the task was
 saved: press Save task to take the copy as it is now, or undo the change in Virtuoso", or which ADE/Maestro windows to
@@ -2307,7 +2313,7 @@ Browser checks: `frontend/scripts/consistency_check.mjs` (hermetic), `virtuoso_s
 ### Running a task measured by Maestro (added 2026-09-22, user request)
 
 The fifth part of the flow. A task whose Probes are the Maestro outputs of its working copy runs like every other saved
-task - Start, Single baseline simulation, the optimizer writing transistor widths into the copy through the PDK
+task - Start, Baseline simulation, the optimizer writing transistor widths into the copy through the PDK
 callbacks - and differs only in the deck each evaluation simulates and in how its results are measured:
 
 * **The deck: Maestro's own, netlisted once.** Save task has Maestro netlist the copy's test at its nominal corner

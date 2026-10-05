@@ -95,7 +95,7 @@ await runChecks(browser, async () => {
   check('it counts the blocking issues only (3 of 6 reported)', (await evaluate(`${BUTTON}.textContent`)) === '3 blocking issue(s)', await evaluate(`${BUTTON}.textContent`));
   check('the old text notifier is gone', !(await evaluate(`[...document.querySelectorAll('header span')].some(s => /blocking issue/.test(s.textContent))`)));
   check('nothing is listed before a press', !(await evaluate(`!!(${LIST})`)) && (await evaluate(`${BUTTON}.getAttribute('aria-expanded')`)) === 'false');
-  check('Start and the baseline simulation are disabled', await evaluate(`${headerButton('Start')}.disabled && ${headerButton('Single baseline simulation')}.disabled`));
+  check('Start and the baseline simulation are disabled', await evaluate(`${headerButton('Start')}.disabled && ${headerButton('Baseline simulation')}.disabled`));
   const heightClosed = await evaluate(`document.querySelector('header').getBoundingClientRect().height`);
   await shot('issues-1-closed.png');
 
@@ -139,7 +139,7 @@ await runChecks(browser, async () => {
   await revalidate(fixtures.valid);
   check('with nothing blocking the header reads "configuration valid" and the button is gone', !(await evaluate(`!!(${BUTTON})`)) && await evaluate(`[...document.querySelectorAll('header span.ok')].some(s => s.textContent === 'configuration valid')`));
   check('the open list closed with it', !(await evaluate(`!!(${LIST})`)));
-  check('Start and the baseline simulation are enabled again', await evaluate(`!${headerButton('Start')}.disabled && !${headerButton('Single baseline simulation')}.disabled`));
+  check('Start and the baseline simulation are enabled again', await evaluate(`!${headerButton('Start')}.disabled && !${headerButton('Baseline simulation')}.disabled`));
   await shot('issues-4-valid.png');
   await revalidate(fixtures.three);
   check('a new problem brings the button back, closed', (await until(`!!(${BUTTON})`, 30)) && !(await evaluate(`!!(${LIST})`)) && (await evaluate(`${BUTTON}.textContent`)) === '3 blocking issue(s)');

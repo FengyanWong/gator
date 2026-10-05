@@ -90,7 +90,7 @@ await runChecks(browser, async () => {
     return send('Page.handleJavaScriptDialog', { accept: !!accept, promptText: '' });   // a prompt() answered with nothing typed
   });
   const MAIN = `document.querySelector('header button.run-main')`, ABORT = `document.querySelector('header button.run-abort')`, CHIP = `document.querySelector('header button.run-chip')`;
-  const BASELINE = `[...document.querySelectorAll('header button')].find(b => b.textContent === 'Single baseline simulation')`;
+  const BASELINE = `[...document.querySelectorAll('header button')].find(b => b.textContent === 'Baseline simulation')`;
   const look = () => evaluate(`({ main: ${MAIN}?.textContent, mainOff: ${MAIN}?.disabled, abort: ${ABORT}?.textContent, abortOff: ${ABORT}?.disabled, chip: ${CHIP}?.textContent ?? null,
     baselineOff: ${BASELINE}?.disabled, banner: document.querySelector('.banner')?.textContent ?? null, remembered: localStorage.getItem(${JSON.stringify(RUN_KEY)}) })`);
   const mainReads = (label, tries) => until(`${MAIN}?.textContent === ${JSON.stringify(label)}`, tries);

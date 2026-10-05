@@ -178,7 +178,7 @@ def test_a_created_profile_makes_the_cell_a_registered_task_over_the_api(tmp_pat
     registered = dict(source='registered_task', task_id='real:ring_osc_3stage')
     loaded = client.post('/api/circuit/load', json=dict(circuit=registered)).json()
     assert loaded['loaded'] and loaded['generated_profile'] and loaded['baseline_recorded'] is False and loaded['mock'] is False
-    assert any('Single baseline simulation' in note for note in loaded['notes'])
+    assert any('Baseline simulation' in note for note in loaded['notes'])
     full = config(rows=made['parameters']).model_dump(mode='json')
     full['circuit'] = registered
     report = client.post('/api/config/validate', json=dict(config=full)).json()
@@ -432,7 +432,7 @@ RING_VALUES = dict(zip(recipes.RING_METRICS, (1.2092e9, 1.96e-4, 1.96e-4, 0.999,
 
 def baseline_run(tmp_path, monkeypatch, run_dir, *, run_id='r1', run_kind='baseline_preflight', state='completed', mock=False,
                  task_key='real:ring_osc_3stage', created='2026-09-23T22:45:18+00:00', valid=True, circuit=None):
-    """A Single baseline simulation of the ring task as its run directory holds it: the manifest the worker writes
+    """A Baseline simulation of the ring task as its run directory holds it: the manifest the worker writes
     (run_kind, circuit.task_key, state) and the tables the reference is read from (a fake reader, counted)."""
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / 'effective_config.json').write_text(json.dumps(dict(circuit=dict(source='registered_task', task_id=task_key))))
@@ -517,7 +517,7 @@ def test_a_refused_baseline_is_remembered_and_said_until_a_good_one_comes(tmp_pa
 
 def test_a_baseline_made_before_is_adopted_when_the_task_is_loaded(tmp_path, monkeypatch):
     """The user's own case (2026-09-24): the baseline run was made before runs recorded themselves. Loading the task
-    finds the newest completed Single baseline simulation of the task under the remembered output root and records it;
+    finds the newest completed Baseline simulation of the task under the remembered output root and records it;
     no output root remembered (no run ever made here) - nothing is scanned."""
     from gator_workbench import runs
     read_cell(tmp_path)

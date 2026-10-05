@@ -18,7 +18,7 @@ capacitors, resistors, an inductor - while a circuit uses a few, and reading the
    model include, for the deck's own section: a corner deck gets that corner's parts.
 
 When (``attach``, called where a real run's environment is built): only for a task whose baseline was recorded, which
-was simulated with the full library (a task's Single baseline simulation has none yet, so it keeps the full library,
+was simulated with the full library (a task's Baseline simulation has none yet, so it keeps the full library,
 and a reference is never replaced). Every simulated reset of the start design is compared with that baseline at 1e-6
 (``NativeEnvironmentFactory``), so a part left out that mattered stops the run instead of passing unnoticed; a part
 missing for a device makes Spectre stop with an undefined-subcircuit error. The corner check keeps the full library:
@@ -351,7 +351,7 @@ def attach(profile, config, *, reference, structure, run=None):
     if mode == 'full':
         note = f'{ENV}=full: the decks include the whole model file'
     elif reference is None:
-        note = ('No recorded baseline yet: this run includes the whole model file (a Single baseline simulation records '
+        note = ('No recorded baseline yet: this run includes the whole model file (a Baseline simulation records '
                 'the baseline that later runs, with the trimmed library, compare with)')
     else:
         started = perf_counter()

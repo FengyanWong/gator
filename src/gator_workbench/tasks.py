@@ -594,7 +594,7 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
                    baseline_recorded=reference is not None, evaluation_backend='virtuoso_bridge + Spectre (REAL)',
                    baseline_attempt=None if reference is not None else entry.get('baseline_attempt'))
     notes = ['Generated profile: it passes every offline check of the verified profiles, but '
-             + ('its first real simulation has not been run yet - start with "Single baseline simulation"; when it finishes, '
+             + ('its first real simulation has not been run yet - start with "Baseline simulation"; when it finishes, '
                 'its result becomes the task\'s reference by itself.' if reference is None
                 else 'only its recorded baseline has been simulated for real.')]
     if not authorized:

@@ -154,7 +154,7 @@ def register(app: FastAPI, context: ApiContext):
         allow_real = bool(body.authorize_real_simulation)
         designs, calibrating = getattr(body, 'calibration_designs', 0), None
         if designs and not baseline_only:
-            fail(400, 'Calibration designs belong to the Single baseline simulation (baseline_only), not to an optimization run.')
+            fail(400, 'Calibration designs belong to the Baseline simulation (baseline_only), not to an optimization run.')
         if baseline_only:
             config = config.model_copy(deep=True)
             config.run.search = schema.SearchSettings()
@@ -173,7 +173,7 @@ def register(app: FastAPI, context: ApiContext):
             fail(403, exc)
         if baseline_only:
             manifest['run_kind'] = 'baseline_preflight'
-            manifest['notes'].append('Single baseline simulation: a costed preflight evaluation, not a free check.')
+            manifest['notes'].append('Baseline simulation: a costed preflight evaluation, not a free check.')
             if calibrating:
                 manifest['calibration'] = calibrating
                 manifest['notes'].append(f'With calibration: after the baseline, {calibrating["designs"]} random designs over the '

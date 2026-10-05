@@ -311,7 +311,7 @@ try {
     && Array.isArray(calls[mark].config?.parameters), JSON.stringify(calls.slice(mark)));
   check('the new task is opened in the column', (await stored()).circuit.source === 'registered_task' && (await value('Task')) === 'real:ota5_v1', await value('Task'));
   check('the column says what happened, in which cell, and what comes first', (await text()).includes('Saved the new task real:ota5_v1') && (await text()).includes('the cell you declared as your copy')
-    && (await text()).includes('Single baseline simulation'));
+    && (await text()).includes('Baseline simulation'));
   check('the parameter editor shows the rows as saved', await evaluate(`document.querySelector('main').innerHTML.includes('wn_fixture')`));
   check('the open task offers Save task and Task file - no Save as', await evaluate(`!!(${TASK_BUTTON('Save task')}) && !!(${TASK_BUTTON('Task file')}) && !(${TASK_BUTTON('Save as')})`));
   check('the window now says it follows the task and starts from a blank library', await wShown('.follows-task') && (await wText()).includes('follows the task real:ota5_v1') && (await wValue('Library')) === '');
@@ -327,7 +327,7 @@ try {
     'agree. Nothing was simulated.'].every(t => shownCheck.includes(t)), shownCheck.slice(shownCheck.indexOf('Check now'), shownCheck.indexOf('Check now') + 300));
   check('no manual "Record the baseline run as reference": a finished baseline records itself (2026-09-29)',
     !(await evaluate(`!!(${BUTTON('Record the baseline run as reference')})`)));
-  baselineRecorded = true;          // as a finished Single baseline simulation records itself (7.78): the task's next read says so
+  baselineRecorded = true;          // as a finished Baseline simulation records itself (7.78): the task's next read says so
   // ---- a cell that already has a registered task says so in the window: no second task; the Task list opens it ---------------
   mark = calls.length;
   await wChoose('Library', 'FIXTURE_DESIGNS'); await quiet();

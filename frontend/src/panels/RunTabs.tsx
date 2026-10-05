@@ -27,7 +27,8 @@ const limitText = (row: Json) => row.lower != null && row.upper != null ? `${si(
  *  (0.1 x the reward's spread among them). The run applies nothing. Apply writes the proposals into the configuration this
  *  page holds - the Scale of the Specs rows that still are the rows the run simulated, and Initial alpha in RL networks - as
  *  ONE Undo step; a task saved from a Virtuoso cell then needs Save task before it starts. What Apply does is worked out
- *  in calibrationPlan.ts, shared with the "Calibration ready" line under the header (record 7.204). */
+ *  in calibrationPlan.ts, shared with the "Calibration ready" line under the header (record 7.204). A run of another task
+ *  than the page holds shows its own Scales and Initial alpha, never the page's rows of the same ID (record 7.214). */
 function Calibration({ value, live, config, setConfig }: { value: Json; live: boolean; config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void }) {
   const result: Json = value.result, request: Json = value.request ?? {};
   if (!result) return <div className="calibration"><h4>Calibration</h4><p className="hint">{live
@@ -38,27 +39,31 @@ function Calibration({ value, live, config, setConfig }: { value: Json; live: bo
   return <div className="calibration">
     <h4>Calibration <span className="hint">from this run's random designs: {designs.scored} of {designs.simulated} gave a reward, {designs.passing} pass{designs.passing === 1 ? 'es' : ''} every hard spec</span></h4>
     {result.status !== 'calibrated' && <p className="warn">Nothing is proposed. {result.reason}</p>}
+    {otherTask && <p className="hint other-task">This run calibrated <b>{result.task_key}</b>; the page holds {config.circuit.task_id}. The table shows the
+      Scales the run had. To apply the proposals, choose {result.task_key} under Registered task.</p>}
     {result.scale_note && <p className="hint">{result.scale_note}</p>}
     {rows.length > 0 && <table className="grid small calibration-rows"><thead><tr>
       <th title="The Specs row, by its ID.">Specs row</th><th title="The row's limit, as the run had it.">Limit</th>
       <th title="How many of the random designs that measured this row are outside its limit.">Random designs that miss it</th>
       <th title="The median distance outside the limit, among the designs that miss it, in the row's unit.">Typical miss</th>
-      <th title="What the Scale box of this row holds on the page now. Empty = the size of the limit.">Scale now</th>
+      {otherTask ? <th title="What the Scale box of this row held in the run. Empty = the size of the limit.">Scale in the run</th>
+        : <th title="What the Scale box of this row holds on the page now. Empty = the size of the limit.">Scale now</th>}
       <th title="The typical miss, rounded to two digits: with it a typical failing random design counts as a miss of 1 on this row. A smaller Scale makes a miss on the row cost more, so the search keeps more distance from that limit.">Proposed Scale</th></tr></thead>
       <tbody>{rows.map(r => <tr key={r.metric_id}>
         <td>{r.metric_id}</td><td>{limitText(r)}</td><td>{r.misses} of {r.measured}{r.measured < designs.simulated && <span className="hint"> ({designs.simulated - r.measured} gave no value)</span>}</td>
         <td>{r.median_miss == null ? '-' : si(r.median_miss, r.unit)}</td>
-        <td>{!r.target ? <span className="hint">no such row on the page</span> : r.target.normalization_scale != null ? short(r.target.normalization_scale) : <span className="hint">empty</span>}</td>
+        <td>{otherTask ? (r.scale_stated != null ? short(r.scale_stated) : <span className="hint">empty</span>)
+          : !r.target ? <span className="hint">no such row on the page</span> : r.target.normalization_scale != null ? short(r.target.normalization_scale) : <span className="hint">empty</span>}</td>
         <td>{r.proposed_scale != null && <b>{short(r.proposed_scale)}</b>}
-          {r.proposed_scale != null && !r.same && <span className="warn"> not applied: {r.target ? 'the limits of this row were changed after the run' : 'the page has no row with this ID'}</span>}
+          {r.proposed_scale != null && !r.same && !otherTask && <span className="warn"> not applied: {r.target ? 'the limits of this row were changed after the run' : 'the page has no row with this ID'}</span>}
           {r.note && <span className="hint">{r.proposed_scale != null ? ' ' : ''}{r.note}</span>}</td></tr>)}</tbody></table>}
-    <p className="calibration-alpha">Initial alpha (RL networks): now <b>{alphaNow ?? "the encoder's saved value"}</b>; proposed {alpha.proposed != null
+    <p className="calibration-alpha">Initial alpha (RL networks): {otherTask ? 'the run had' : 'now'} <b>{(otherTask ? alpha.used : alphaNow) ?? "the encoder's saved value"}</b>; proposed {alpha.proposed != null
       ? <><b>{short(alpha.proposed)}</b> <span className="hint">= 0.1 x the reward's spread among the random designs ({short(Number(Number(alpha.reward_sd).toPrecision(3)))}{scales.length || rows.some(r => r.proposed_scale != null) ? ', with the proposed scales' : ''})</span></>
       : <span className="hint">nothing. {alpha.note}</span>}{alpha.proposed != null && alpha.note && <span className="hint"> {alpha.note}</span>}</p>
     <div className="row">
       <button disabled={!pending || otherTask} onClick={() => setConfig(apply)}
         title="Apply calibration: Writes the proposed Scale into those Specs rows and the proposed Initial alpha into RL networks, as one Undo step. Nothing is simulated and no task is saved.">Apply calibration</button>
-      <span className="hint">{otherTask ? `This run calibrated ${result.task_key}; the page holds ${config.circuit.task_id}.`
+      <span className="hint">{otherTask ? `Apply waits until the page holds ${result.task_key}.`
         : !proposals ? 'There is nothing to apply.'
         : !pending ? `The page holds these values.${afterwards}`
         : `Sets ${what}, as one Undo step.${afterwards}`}</span>

@@ -1436,7 +1436,10 @@ proposes nothing says why on the same line. Nothing is applied by itself.
 - **Limits of a proposal.** A Scale stays within 0.01 to 10 times the size of the limit, the Initial alpha within 0.0001
   to 0.05, and both are rounded to two digits: they are estimates from a few dozen designs.
 - **Apply writes only what still fits.** A Specs row whose limits or unit were changed after the run is marked "not
-  applied", and a run of another task than the one on the page offers nothing.
+  applied", and a run of another task than the one on the page offers nothing. Such a run is not compared with the
+  page's rows at all (record 7.214: an LDO's `pm_deg` used to stand as the "Scale now" of an OTA's): a line names both
+  tasks, the table shows **Scale in the run** and the Initial alpha the run had, and Apply waits until the page holds
+  the run's task (choose it under Registered task).
 - **The baseline alone:** press **Abort** once the random designs begin; the baseline counts as finished (the point
   above). The Abort question of a Baseline simulation says so: the baseline is kept, a task saved from a cell that has
   no reference yet still gets it, and the calibration proposes only from the random designs simulated so far (at least
@@ -1462,10 +1465,10 @@ The numbers:
 "Calibration with the baseline run".
 
 **Checks.** `tests/workbench/test_wb_calibration.py` (10: the arithmetic, the run with one and with three lanes, an
-invalid baseline, a stopped run's reference, the route); `frontend/scripts/calibration_check.mjs` (31: one button and no
+invalid baseline, a stopped run's reference, the route); `frontend/scripts/calibration_check.mjs` (36: one button and no
 tick, a real MOCK run of 65 evaluations in a browser that had unticked the old tick, the line under the header and Not
 now, the proposals, Apply as one Undo step, an edited row left alone, a second run whose line is answered with Apply
-calibration, one Undo, a reload).
+calibration, one Undo, a reload, and a run of another task than the page holds, record 7.214).
 
 ### How a real run spends its simulations: corners two at a time, reused resets (2026-09-30, record 7.126)
 

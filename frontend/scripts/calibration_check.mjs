@@ -4,7 +4,8 @@
 // Scale per Specs row and the Initial alpha - and Apply, which writes them into the page's configuration as ONE Undo step
 // and only into rows that still are the rows the run simulated. And the line under the header when the run has ended
 // (record 7.204, "Calibration ready"): Not now changes nothing and is remembered, Apply calibration there does what the
-// block's button does, and the next run asks again.
+// block's button does, and the next run asks again. And a run of another task than the page holds (record 7.214, its status
+// changed by the check): the block shows the run's own Scales and Initial alpha, never the page's row of the same ID.
 // It starts runs, so it REFUSES the default backend: give it a SCRATCH backend and a scratch output root (run_checks.sh does;
 // by hand as run_control_live_check.mjs says). Takes about a minute. Exit code 1 if any check fails.
 import path from 'node:path';
@@ -138,6 +139,35 @@ await runChecks(browser, async () => {
   await send('Page.reload');
   await until(`!!(${BASELINE}) && !!(${CHIP})`, 200);
   check('after a reload the answered line still stays away', !(await until(`!!(${READY})`, 30)) && (await evaluate(`localStorage.getItem('gator-workbench-calibration-answered-v1')`)) === dir2);
+
+  // ---- a run of another task than the page holds (record 7.214) -----------------------------------------------------------------
+  // The second run's status as it is, except FIXTURE values: it calibrated another task, whose row "score" has the same ID and
+  // limits as the page's row, and the run had Scale 2 and Initial alpha 0.02. Nothing of the page's rows may stand in its table.
+  const OTHER = 'synthetic:another_task';
+  let foreign = true;
+  await page.intercept(['*/api/runs/status*'], async params => {
+    if (!foreign) return page.pass(params.requestId);
+    const real = await (await fetch(params.request.url)).json();
+    const fixture = real.calibration?.result;
+    if (fixture) { fixture.task_key = OTHER; fixture.rows[0].scale_stated = 2; fixture.initial_alpha.used = 0.02; }
+    return page.fulfil(params.requestId, 200, real);
+  });
+  await send('Page.reload');
+  check('a run of another task: the block names both tasks and where to choose the run\'s task', await until(`!!${BLOCK}?.querySelector('.other-task')`, 200)
+    && (await evaluate(`${BLOCK}.querySelector('.other-task').textContent.replace(/\\s+/g, ' ')`)) === `This run calibrated ${OTHER}; the page holds synthetic:gpdk045_ota5. The table shows the Scales the run had. To apply the proposals, choose ${OTHER} under Registered task.`,
+    await evaluate(`${BLOCK}?.textContent.slice(0, 300)`));
+  const foreignCells = await cells();
+  check('...the Scale column is the run\'s own ("Scale in the run" 2), not the page\'s row of the same ID (1), and no row is "not applied"',
+    (await evaluate(`[...${BLOCK}.querySelectorAll('thead th')].map(th => th.textContent).join('|')`)).includes('|Scale in the run|')
+    && foreignCells.length === 1 && foreignCells[0][4] === '2' && foreignCells[0][5] === String(scale2) && !/not applied|no such row/.test(await evaluate(`${BLOCK}.textContent`)), JSON.stringify(foreignCells));
+  check('...the Initial alpha is the run\'s', (await evaluate(`${BLOCK}.querySelector('.calibration-alpha').textContent`)).startsWith(`Initial alpha (RL networks): the run had 0.02; proposed ${alpha2}`),
+    await evaluate(`${BLOCK}.querySelector('.calibration-alpha').textContent`));
+  check('...and Apply rests, saying which task it waits for', await evaluate(`${APPLY}.disabled`) && (await evaluate(HINT)) === `Apply waits until the page holds ${OTHER}.`, await evaluate(HINT));
+  await page.shot(path.join(out, 'calibration-3-other-task.png'), `document.querySelector('footer')`);
+  foreign = false;
+  await send('Page.reload');
+  check('the same run of the page\'s own task shows the page\'s Scale again', await until(`!!(${APPLY}) && !${BLOCK}.querySelector('.other-task')
+    && [...${BLOCK}.querySelectorAll('thead th')].some(th => th.textContent === 'Scale now')`, 200), await evaluate(`${BLOCK}?.textContent.slice(0, 300)`));
 
   check('no error in the page console', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
 });

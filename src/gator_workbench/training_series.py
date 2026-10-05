@@ -9,9 +9,9 @@ for the charts, and the page draws them in the browser only.
 
 Cursor: the number of flush records the page already holds. An answer carries the rows of the next flush records
 (``final``: they never change) and, once the page holds every flush, the journal's bundles after the newest one
-(``tail``: provisional - the page replaces its tail with every answer, so a bundle that a later flush publishes is never
-counted twice). A journal being rewritten while it is read (compaction at a save point) gives an empty tail for that one
-answer; the next one has the bundles in a part.
+(``tail``: provisional cursor pages, replaced when a later flush publishes those rows, so nothing is counted twice).
+A journal being rewritten while it is read (compaction at a save point) resets the tail; a missing bundle gives an
+empty tail for that answer and the next read finds the rows in a part.
 
 What is NOT here, because the run does not record it: an episode return (the reward is recorded per evaluation - the
 step reward), a separate evaluation of the policy during training (only a frozen run evaluates a policy), and an
@@ -46,7 +46,7 @@ SPEC_COLUMNS = ('evaluation_id', 'metric_name', 'raw_value', 'unit', 'threshold_
                 'satisfied', 'failure_reason', 'aggregation_level')
 STRING_COLUMNS = {'episode_id', 'phase', 'action_source', 'status', 'update_phase', 'metric_name', 'failure_reason'}
 TIME_COLUMNS = {'committed_at', 'updated_at'}
-MAX_ROWS = 30000                # rows of one answer (evaluations + updates + specs); a longer history comes in pages
+MAX_ROWS = 30000                # page target (evaluations + updates + specs); a published flush is indivisible
 _POOL = None
 _POOL_LOCK = threading.Lock()
 
@@ -109,7 +109,8 @@ def _table_columns(table, objective):
             micros = column.cast(pa.int64()).to_pylist()
             out[name] = [None if v is None else v / 1e6 for v in micros]
         elif name == 'best_so_far_metrics':
-            out['best_so_far_objective'] = _objective_values(column.to_pylist(), objective)
+            out['best_so_far_objective'] = _objective_values(
+                column.to_pylist(), objective, table['best_so_far_feasible'].to_pylist())
         else:
             out[name] = column.to_pylist()
     if 'aggregation_level' in out:              # spec rows only (see SPEC_COLUMNS)
@@ -119,7 +120,7 @@ def _table_columns(table, objective):
     return out
 
 
-def _objective_values(maps, objective):
+def _objective_values(maps, objective, feasible):
     """best_so_far_metrics holds the metrics of the design the run keeps as best (best_design.py: a feasible design
     always beats an infeasible one; among feasible ones the objective decides). The objective's value of it, only while
     that design is feasible: before the first feasible design there is no best feasible objective, and none is made up."""
@@ -127,9 +128,9 @@ def _objective_values(maps, objective):
         return [None] * len(maps)
     metric = objective['metric']
     values = []
-    for pairs in maps:
+    for pairs, is_feasible in zip(maps, feasible):
         value = None
-        for item in pairs or ():
+        for item in (pairs or ()) if is_feasible is True else ():
             if item['key'] == metric:
                 value = item['value']
                 break
@@ -148,7 +149,7 @@ def _rows_columns(rows, columns, objective):
             if name in TIME_COLUMNS:
                 out[name].append(_epoch(value))
             elif name == 'best_so_far_metrics':
-                out['best_so_far_objective'].extend(_objective_values([value], objective))
+                out['best_so_far_objective'].extend(_objective_values([value], objective, [row.get('best_so_far_feasible')]))
             else:
                 out[name].append(value)
     if 'aggregation_level' in out:
@@ -239,6 +240,28 @@ def _bundle_chunk(bundles, objective):
     return chunk
 
 
+def _journal_lines(stream, block_size=1 << 16):
+    """Acknowledged lines backwards, with the byte offset immediately after each; bounded by a block and one line."""
+    position = stream.seek(0, os.SEEK_END)
+    pending, at_end = b'', True
+    while position:
+        size = min(position, block_size)
+        position -= size
+        stream.seek(position)
+        block = stream.read(size) + pending
+        pieces = block.split(b'\n')
+        pending = pieces[0]
+        end = position + len(block) + 1
+        for line in reversed(pieces[1:]):
+            if at_end:
+                at_end = False                # bytes after the final newline are not acknowledged
+            elif line.strip():
+                yield line, end
+            end -= len(line) + 1
+    if not at_end and pending.strip():
+        yield pending, len(pending) + 1
+
+
 def journal_tail(path, after_seq, *, block_size=1 << 16):
     """The journal's acknowledged bundles with commit_seq > after_seq, oldest first, read from the end backwards and
     stopping at the first older bundle - the part a flush has not published yet, not the whole journal (it can hold a
@@ -252,41 +275,100 @@ def journal_tail(path, after_seq, *, block_size=1 << 16):
         stream = path.open('rb')
     except FileNotFoundError:
         return [], True
-    found, pending, at_end, older = [], b'', True, False
-
-    def take(line):
-        nonlocal older
-        if not line.strip():
-            return
-        bundle = json.loads(line)
-        if bundle['commit_seq'] <= after_seq:
-            older = True
-        else:
-            found.append(bundle)
+    found = []
     try:
         with stream:
-            position = stream.seek(0, os.SEEK_END)
-            while position and not older:
-                size = min(position, block_size)
-                position -= size
-                stream.seek(position)
-                pieces = (stream.read(size) + pending).split(b'\n')
-                pending = pieces.pop(0)
-                if at_end and pieces:
-                    pieces.pop()                         # bytes after the final newline are not a committed record
-                    at_end = False
-                for line in reversed(pieces):
-                    take(line)
-                    if older:
-                        break
-            if not position and not at_end and not older:
-                take(pending)
+            for line, _ in _journal_lines(stream, block_size):
+                bundle = json.loads(line)
+                if bundle['commit_seq'] <= after_seq:
+                    break
+                found.append(bundle)
     except (ValueError, KeyError, TypeError, UnicodeError):
         return [], False
     found.reverse()
     if [b['commit_seq'] for b in found] != list(range(after_seq + 1, after_seq + 1 + len(found))):
         return [], False
     return found, True
+
+
+def journal_page(path, after_seq, objective, cursor=None, *, max_rows=MAX_ROWS):
+    """A bounded page, seeking directly to the next unread journal row on later polls.
+
+    The cursor is tied to both the last flush and the open file's identity. A flush or atomic journal replacement
+    resets the provisional rows in the browser. A row offset also splits a single large bundle without separating
+    its spec values from their evaluation identities. Only newline-terminated (acknowledged) bundles are read.
+    """
+    chunk = _Chunk()
+    page = dict(start=cursor, cursor=None, reset=True, more=False)
+    try:
+        stream = Path(path).open('rb')
+    except FileNotFoundError:
+        return chunk, page, True, after_seq
+    with stream:
+        stat = os.fstat(stream.fileno())
+        identity = [stat.st_dev, stat.st_ino]
+        offset, row_offset, seq = 0, 0, after_seq
+        try:
+            saved = json.loads(cursor) if cursor else {}
+            if (saved.get('base') == after_seq and saved.get('file') == identity
+                    and all(type(saved.get(k)) is int and saved[k] >= 0 for k in ('offset', 'row', 'seq'))
+                    and saved['offset'] <= stat.st_size and saved['seq'] >= after_seq):
+                offset, row_offset, seq = saved['offset'], saved['row'], saved['seq']
+                page['reset'] = False
+        except (ValueError, TypeError, AttributeError):
+            pass
+        remaining = max_rows
+        try:
+            if page['reset'] and after_seq:
+                # New flush: locate its boundary from the end, without rescanning the already published history.
+                offset = next((end for line, end in _journal_lines(stream)
+                               if json.loads(line)['commit_seq'] <= after_seq), 0)
+            stream.seek(offset)
+            while remaining > 0:
+                offset = stream.tell()
+                line = stream.readline()
+                if not line.endswith(b'\n'):
+                    break                       # keep the offset: an unfinished bundle may be acknowledged next time
+                if not line.strip():
+                    continue
+                bundle = json.loads(line)
+                if bundle['commit_seq'] <= after_seq:
+                    row_offset = 0
+                    continue
+                if bundle['commit_seq'] != seq + 1:
+                    raise ValueError('Journal changed while reading its flush boundary')
+                source = _bundle_chunk([bundle], objective)
+                skip = row_offset
+                consumed, size = 0, 0
+                for name in ('evaluations', 'updates', 'specs'):
+                    columns = getattr(source, name)
+                    count = len(next(iter(columns.values()), []))
+                    size += count
+                    start = min(skip, count)
+                    skip -= start
+                    take = min(count - start, remaining)
+                    if take:
+                        _Chunk._extend(getattr(chunk, name), {k: v[start:start + take] for k, v in columns.items()})
+                        consumed += take
+                        remaining -= take
+                chunk.spec_defs.update(source.spec_defs)
+                if row_offset > size:
+                    raise ValueError('Journal cursor is outside its bundle')
+                row_offset += consumed
+                if row_offset < size:
+                    page['more'] = True
+                    break
+                seq = bundle['commit_seq']
+                offset, row_offset = stream.tell(), 0
+                if remaining == 0:
+                    # A torn last line is not another page. Leave it for the next ordinary poll.
+                    page['more'] = stream.readline().endswith(b'\n')
+                    break
+        except (ValueError, KeyError, TypeError, UnicodeError):
+            return _Chunk(), dict(start=cursor, cursor=None, reset=True, more=False), False, after_seq
+        page['cursor'] = json.dumps(dict(base=after_seq, file=identity, offset=offset, row=row_offset, seq=seq),
+                                    separators=(',', ':'))
+    return chunk, page, True, seq
 
 
 def run_objective(run_dir):
@@ -323,7 +405,7 @@ def learner_record(run_dir):
     return dict(recorded=True, every=every, reason=None)
 
 
-def read_training(run_dir, flushes=0, *, max_rows=MAX_ROWS):
+def read_training(run_dir, flushes=0, *, max_rows=MAX_ROWS, tail_cursor=None):
     """The Training tab's answer for one run: the rows of flush records [flushes, served) and, once served is the last
     one, the journal's tail. Raises FileNotFoundError when the folder holds no run data."""
     layout = RunLayout(Path(run_dir))
@@ -344,14 +426,21 @@ def read_training(run_dir, flushes=0, *, max_rows=MAX_ROWS):
     served = start + len(chosen)
     final = _flush_chunk(data, chosen, objective) if chosen else _Chunk()
     tail, tail_complete, latest = None, True, (records[-1]['last_seq'] if records else 0)
+    tail_page = dict(start=tail_cursor, cursor=None, reset=True, more=False)
     if served == total:
-        bundles, tail_complete = journal_tail(data / '_journal' / 'wal.jsonl', latest)
-        tail = _bundle_chunk(bundles, objective).as_json()
-        if bundles:
-            latest = bundles[-1]['commit_seq']
+        budget = max(0, max_rows - rows)
+        if budget:
+            pending, tail_page, tail_complete, latest = journal_page(
+                data / '_journal' / 'wal.jsonl', latest, objective, tail_cursor, max_rows=budget)
+            tail = pending.as_json()
+        else:
+            tail_page['more'] = True
+    from .runs import run_status
+    status = run_status(layout.run_dir)      # status.json + the run lock: whether a run compared beside the shown one still works
     return dict(run_dir=str(layout.run_dir), run_id=manifest.get('run_id'), mode=manifest.get('mode'),
-                mock=manifest.get('mock'), flushes=dict(served=served, total=total, start=start),
-                final=final.as_json(), tail=tail, tail_complete=tail_complete, latest_seq=latest,
+                mock=manifest.get('mock'), state=status.get('state'), worker_alive=bool(status.get('worker_alive')),
+                flushes=dict(served=served, total=total, start=start),
+                final=final.as_json(), tail=tail, tail_complete=tail_complete, latest_seq=latest, tail_page=tail_page,
                 objective=objective, learner=learner_record(layout.run_dir),
                 segments=[{k: s.get(k) for k in ('segment', 'entry', 'started_utc', 'ended_utc', 'end_state', 'stop_reason')}
                           for s in manifest.get('segments') or []])

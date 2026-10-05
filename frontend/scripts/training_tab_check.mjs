@@ -74,7 +74,7 @@ const chunk = (data, from, to) => ({ evaluations: columns(data.evaluations.slice
   updates: columns(data.updates.slice(data.prefix[Math.min(from, data.evaluations.length)], data.prefix[Math.min(to, data.evaluations.length)]), UPDATE),
   specs: columns(data.specs.slice(from, to), SPEC), spec_defs: DEFS });
 /** The canned backend of one run: `final` evaluations published in flushes of 16, `tail` more still in the journal. */
-function serve(run, cursor) {
+function serve(run, cursor, tailCursor) {
   const flushes = Math.ceil(run.final / 16), start = Math.min(cursor, flushes);
   let served = start, rows = 0;
   while (served < flushes) {
@@ -84,9 +84,18 @@ function serve(run, cursor) {
     rows += add; served += 1;
   }
   const from = start * 16, to = Math.min(run.final, served * 16);
+  const previous = tailCursor ? JSON.parse(tailCursor) : null;
+  const reset = previous?.base !== run.final;
+  const tailFrom = reset ? run.final : previous.offset;
+  // Deliberately tiny live pages exercise both cursor polling loops independently of the larger history pages.
+  const tailTo = Math.min(run.final + run.tail, tailFrom + 2);
+  const tailPage = served === flushes
+    ? { start: tailCursor, cursor: JSON.stringify({ base: run.final, offset: tailTo }), reset, more: tailTo < run.final + run.tail }
+    : { start: tailCursor, cursor: null, reset: true, more: false };
   return { run_dir: run.dir, run_id: run.id, mode: run.frozen ? 'frozen' : 'scratch', mock: true, flushes: { served, total: flushes, start },
-    final: chunk(run.data, from, to), tail: served === flushes ? chunk(run.data, run.final, run.final + run.tail) : null, tail_complete: true,
-    latest_seq: run.final + (served === flushes ? run.tail : 0), objective: null,
+    state: run.state, worker_alive: run.alive ?? run.state === 'running',
+    final: chunk(run.data, from, to), tail: served === flushes ? chunk(run.data, tailFrom, tailTo) : null, tail_complete: true, tail_page: tailPage,
+    latest_seq: served === flushes ? tailTo : run.final, objective: null,
     learner: run.frozen ? { recorded: false, every: 1, reason: 'A frozen run evaluates a saved policy without training it: there are no learner updates, so no losses, temperature or entropy.' } : { recorded: true, every: 1, reason: null },
     segments: [{ segment: 1, entry: 'start', started_utc: new Date(T0 * 1000).toISOString(), ended_utc: null, end_state: null, stop_reason: null }] };
 }
@@ -103,10 +112,16 @@ const RUNS = {
   empty: { dir: base + 'scratch__seed3__empty', id: 'empty', state: 'running', final: 0, tail: 0, data: makeRun(0) },
   older: { dir: base + 'scratch__seed6__older', id: 'older', state: 'completed', final: 16, tail: 0, data: makeRun(16), older: true },
   calibration: { dir: base + 'scratch__seed7__calibration', id: 'calibration', state: 'completed', final: 25, tail: 0, data: makeRun(25, { calibration: true }), calibration: true },
+  // compared beside the shown run (record 7.200): listed as completed (so the page does not take it over as the header's
+  // run), while its own answers say its worker lives until the check says otherwise
+  twin: { dir: base + 'scratch__seed8__twin', id: 'twin', state: 'completed', alive: true, final: 304, tail: 2, data: makeRun(400) },   // whole flushes of 16: a published flush never changes
   frozen: { dir: base + 'scratch__seed4__frozen', id: 'frozen', state: 'completed', final: 48, tail: 0, data: makeRun(48, { frozen: true }), frozen: true },
   long: { dir: base + 'scratch__seed5__long', id: 'long', state: 'completed', final: 20000, tail: 0, data: null },
 };
 const byDir = Object.fromEntries(Object.values(RUNS).map(r => [r.dir, r]));
+let listRuns = false;                                 // GET /api/runs lists the runs only for the comparison part
+const runRows = () => ['live', 'failed', 'frozen', 'twin'].map((id, i) => ({ run_dir: RUNS[id].dir, run_id: id, task_name: 'fixture_task', mode: RUNS[id].frozen ? 'frozen' : 'scratch',
+  seed: i + 1, state: RUNS[id].state === 'running' ? 'completed' : RUNS[id].state, created_utc: `2026-10-05T1${i}:00:00+00:00`, evaluations: RUNS[id].final + RUNS[id].tail, mock: true }));
 
 await runChecks(browser, async () => {
   const CONFIG = await starterConfig(APP);
@@ -116,15 +131,16 @@ await runChecks(browser, async () => {
   const answer = ({ requestId, request }) => {
     const url = new URL(request.url), name = url.pathname, run = byDir[url.searchParams.get('run_dir')];
     if (name === '/api/config/validate') return fulfil(requestId, 200, validConfiguration({ mock: true }));
-    if (name === '/api/runs') return fulfil(requestId, 200, { runs: [] });
+    if (name === '/api/runs') return fulfil(requestId, 200, { runs: listRuns ? runRows() : [] });
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
     if (name === '/api/runs/status') return run ? fulfil(requestId, 200, status(run)) : fulfil(requestId, 404, { detail: 'Not a run directory' });
     if (name === '/api/runs/training') {
       if (!run) return fulfil(requestId, 404, { detail: { message: 'Not a run directory' } });
       if (run.older) return fulfil(requestId, 404, { detail: 'Not Found' });                   // a backend without the route
       if (run.id === 'long' && !run.data) run.data = makeRun(20000);
-      reads.push({ run: run.id, flushes: Number(url.searchParams.get('flushes')), at: Date.now() });
-      return fulfil(requestId, 200, serve(run, Number(url.searchParams.get('flushes'))));
+      const tailCursor = url.searchParams.get('tail_cursor');
+      reads.push({ run: run.id, flushes: Number(url.searchParams.get('flushes')), tailCursor, at: Date.now() });
+      return fulfil(requestId, 200, serve(run, Number(url.searchParams.get('flushes')), tailCursor));
     }
     if (name === '/api/runs/logs') return fulfil(requestId, 200, { kind: url.searchParams.get('kind'), entries: [{ time_utc: '2026-10-05T12:00:01+00:00', event: 'FIXTURE_event', run_id: 'live', detail: 'logs still work' }] });
     if (name === '/api/runs/files') return fulfil(requestId, 200, { files: [{ path: 'FIXTURE/run_manifest.json', bytes: 1234, modified_utc: '2026-10-05T12:00:00+00:00' }], total_bytes: 1234, run_dir: run?.dir });
@@ -135,7 +151,7 @@ await runChecks(browser, async () => {
     CanvasRenderingContext2D.prototype.clearRect = function (...a) { const plot = this.canvas.closest && this.canvas.closest('.training-plot');
       if (plot) window.__draws.push({ at: performance.now(), plot: [...document.querySelectorAll('.training-plot')].indexOf(plot) }); return clear.apply(this, a); };
     window.__long = []; try { new PerformanceObserver(l => window.__long.push(...l.getEntries().map(e => e.duration))).observe({ type: 'longtask', buffered: true }); } catch {} })();` });
-  await page.intercept(['*/api/runs/*', '*/api/runs', '*/api/config/validate'], answer, { others: 'read' });
+  await page.intercept(['*/api/runs/*', '*/api/runs', '*/api/runs?*', '*/api/config/validate'], answer, { others: 'read' });
   await page.seed({ config: CONFIG, run: RUNS.live.dir, when: 'once' });
   await send('Page.navigate', { url: APP });
   const until = (expression, tries = 80) => page.until(expression, tries);
@@ -160,6 +176,8 @@ await runChecks(browser, async () => {
   const captions = await evaluate(`[...(${TRAINING}).querySelectorAll('figcaption')].map(f => f.textContent)`);
   check('the first charts: step reward and the share meeting every hard spec', captions[0] === 'Step reward' && captions[1] === 'Meets every hard spec', captions.join(' | '));
   check('the training numbers were read from cursor 0 with no page twice', reads[0]?.flushes === 0 && new Set(reads.map(r => r.flushes)).size >= 1);
+  check('live journal pages are fetched immediately using their separate cursor', reads.length >= 3 && !reads[0].tailCursor
+    && !!reads[1].tailCursor && !!reads[2].tailCursor && reads[2].at - reads[0].at < 2000);
   await page.shot(path.join(out, 'training-open.png'), `(${TRAINING})`);
 
   // ---- hover: the recorded values -----------------------------------------------------------------------------------------
@@ -307,6 +325,59 @@ await runChecks(browser, async () => {
   check('a baseline run that calibrates: its random designs are not called Training', await until(`/Calibration \\(random designs\\)/.test([...(${TRAINING}).querySelectorAll('.training-legend')][0]?.textContent ?? '')`, 60)
     && !/^Training$/m.test([...(await evaluate(`[...[...(${TRAINING}).querySelectorAll('.training-legend')][0].querySelectorAll('.training-key')].map(b => b.textContent).join('\\n')`)).split('\n')].join('\n')));
   check('...and its learner chart says it learns nothing', await until(`/learns nothing/.test((${TRAINING}).innerText)`, 30));
+
+  // ---- several runs on one chart (record 7.200) -----------------------------------------------------------------------------
+  listRuns = true;
+  await evaluate(`localStorage.removeItem('gator-workbench-training-compare-v1')`);
+  await showRun(RUNS.live);
+  await until(`/288 evaluations/.test((${TRAINING}).querySelector('.training-counts')?.textContent ?? '')`, 60);
+  await page.setValue(SECOND, 'critic_loss');
+  const COMPARE = `(${TRAINING}).querySelector('select[aria-label="Compare with another run"]')`;
+  const choices = await evaluate(`[...(${COMPARE}).options].map(o => o.value)`);
+  check('Compare lists the other runs, not the shown one', choices.includes(RUNS.twin.dir) && choices.includes(RUNS.failed.dir) && !choices.includes(RUNS.live.dir), choices.length + ' choices');
+  const twinReads = () => reads.filter(r => r.run === 'twin').length;
+  await page.setValue(COMPARE, RUNS.twin.dir);
+  check('a compared run gets its chip and its own colour on both charts, its whole name in the legend', await until(`(${TRAINING}).querySelectorAll('.training-compared .training-chip').length === 2
+    && /fixture_task · seed 4 · twin/.test([...(${TRAINING}).querySelectorAll('.training-legend')][0].textContent)
+    && [...(${TRAINING}).querySelectorAll('.training-legend')].every(l => l.querySelector('.key-run0') && l.querySelector('.key-run1'))`, 60),
+    await evaluate(`(${TRAINING}).querySelector('.training-compared')?.innerText`));
+  check('the compared run is read in pages from its own cursor', reads.filter(r => r.run === 'twin')[0]?.flushes === 0);
+  // the twin has 306 evaluations; its 306th is an episode start, which a comparison leaves out: its newest point is 305
+  check('the newest point of the comparison is the longer run\'s', await until(`/Newest: Evaluation 305/.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`, 40),
+    await readout(0));
+  const before3 = twinReads();
+  RUNS.twin.final = 320;
+  const grew = await until(`/Newest: Evaluation 322/.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`, 60);
+  check('a compared run whose worker lives is read again and drawn on', grew && twinReads() > before3, `${await readout(0)} | ${twinReads() - before3} reads`);
+  check('compared runs also send their journal cursor on subsequent reads', reads.filter(r => r.run === 'twin').some(r => !!r.tailCursor));
+  check('its chip says it is live', / \u00b7 live/.test(await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip')][1].textContent`)),
+    await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip')][1].textContent`));
+  box = await plotBox(0);
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w * 0.3, y: box.y + box.h / 2 });
+  await sleep(300);
+  const both = await readout(0), at = Number(/^Evaluation (\d+)/.exec(both)?.[1]), wantShown = RUNS.live.data.evaluations[at - 1]?.reward, wantTwin = RUNS.twin.data.evaluations[at - 1]?.reward;
+  const shownLabel = await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip')][0].textContent.replace(' (shown)', '')`);
+  const twinLabel = await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip')][1].childNodes[1].textContent`);
+  const comparedValue = new RegExp(`${shownLabel.replace(/[.*+?^$()|[\]\\]/g, '\\$&')} \\(recorded\\) (-?[\\d.e-]+)`).exec(both)?.[1];
+  check('hovering a comparison: each run\'s recorded value at that evaluation', wantShown == null || comparedValue === String(+wantShown.toPrecision(4)), `${both} | shown ${wantShown}, twin ${wantTwin} (${twinLabel})`);
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w + 40, y: box.y - 40 });
+  RUNS.twin.alive = false;
+  await sleep(2500);
+  const settled = twinReads();
+  await sleep(4500);
+  check('once its worker has ended, the compared run is not read again', twinReads() === settled, `${twinReads() - settled} reads`);
+  await page.setValue(COMPARE, RUNS.frozen.dir);
+  check('a run that cannot be drawn on a chart is named there, with the reason', await until(`/Not on this chart: .*frozen run evaluates a saved policy/.test([...(${TRAINING}).querySelectorAll('figure.training-chart')][1].textContent)`, 60),
+    await evaluate(`[...(${TRAINING}).querySelectorAll('figure.training-chart')][1].querySelector('.training-missing')?.textContent ?? ''`));
+  await page.shot(path.join(out, 'training-compare.png'), `(${TRAINING})`);
+  await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150); await press('Training');
+  check('the compared runs are kept after a reload', await until(`(${TRAINING}).querySelectorAll('.training-compared .training-chip').length === 3`, 60));
+  await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip-remove')][0].click()`);
+  check('× takes a run off the charts', await until(`(${TRAINING}).querySelectorAll('.training-compared .training-chip').length === 2
+    && !(${TRAINING}).querySelector('.training-compared').textContent.includes('twin')`, 30));
+  await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip-remove')][0].click()`);
+  check('the last one taken off: one run again', await until(`!(${TRAINING}).querySelector('.training-compared') && !(${TRAINING}).querySelector('.key-run1')`, 30));
+  listRuns = false;
   const long = await loadLong(null);
   check(`20,000 evaluations and ${RUNS.long.data.updates.length.toLocaleString('en')} learner updates load in pages`, long.loaded && long.pages >= 6, `${long.seconds.toFixed(1)} s, ${long.pages} pages`);
   const t = Date.now(); await evaluate('1'); const ping = Date.now() - t;

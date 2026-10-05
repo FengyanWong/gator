@@ -354,7 +354,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
           {tab === 'files' && <FilesTab runDir={runDir} />}
           {/* Stays mounted, like the Agent tab: its recorded numbers and chosen charts survive a look at another tab; hidden - another
               tab, or the panel folded to its tab line - it reads and draws nothing (record 7.193). */}
-          <TrainingTab hidden={tab !== 'training' || folded} runDir={runDir} status={status} />
+          <TrainingTab hidden={tab !== 'training' || folded} runDir={runDir} status={status} runs={runs} />
           {tab === 'corners' && cornersUsable && <CornerCheckTab runDir={runDir} />}
         </div>
       </footer>

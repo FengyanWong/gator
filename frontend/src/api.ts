@@ -142,7 +142,7 @@ export const api = {
   table: (run_dir: string, table: string, limit = 25, signal?: AbortSignal) => call('GET', '/api/runs/table' + q({ run_dir, table, limit }), undefined, signal),
   logs: (run_dir: string, kind: string, signal?: AbortSignal) => call('GET', '/api/runs/logs' + q({ run_dir, kind, limit: 200 }), undefined, signal),
   // The Training tab (record 7.193): the run's recorded training numbers from flush record `flushes` on, plus the unpublished tail.
-  training: (run_dir: string, flushes: number, signal?: AbortSignal) => call('GET', '/api/runs/training' + q({ run_dir, flushes }), undefined, signal),
+  training: (run_dir: string, flushes: number, signal?: AbortSignal, tail_cursor?: string | null) => call('GET', '/api/runs/training' + q({ run_dir, flushes, tail_cursor }), undefined, signal),
   exportCsv: (run_dir: string, table: string) => call('POST', '/api/runs/export-csv', { run_dir, table }),
   exportAggregates: (run_dir: string) => call('POST', '/api/aggregates/export', { run_dir }),
   downloadUrl: (run_dir: string, path: string) => '/api/runs/download' + q({ run_dir, path }),

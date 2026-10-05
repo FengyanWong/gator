@@ -1127,7 +1127,7 @@ recorded names (`evaluations.reward`, `learner_updates.actor_loss`, ...): a char
 | Worst spec miss | `normalized_constraint_violation` | evaluation | How far a design misses its worst hard spec, over the spec's scale; 0 = met. |
 | Tightest margin | `clearance_margin` | evaluation | Signed margin of the binding hard spec (older runs: not recorded). |
 | Best design so far: worst spec miss | `best_so_far_violation` | evaluation | The design the run keeps as best at each evaluation; 0 from the first design that meets every hard spec. |
-| Best feasible \<objective\> | `best_so_far_metrics` + `best_so_far_feasible` | evaluation | Only when a Specs row says "then lower/higher is better": that row's value of the best feasible design (best_design.py's rule). |
+| Best feasible \<objective\> | `best_so_far_metrics` + `best_so_far_feasible` | evaluation | Only when a Specs row says "then lower/higher is better": that row's value of the best feasible design (best_design.py's rule). An infeasible or unknown best design is a gap; until a feasible value exists the chart says why it is unavailable (7.201). |
 | \<each spec\> | the `metrics` table's aggregate row of the spec | evaluation | The spec's value per evaluation, with its lower and/or upper limit as dashed lines, in the spec's canonical unit. |
 | Simulation time per evaluation | `execution_seconds` | evaluation | Start to result, every attempt included. |
 | Actor loss, Critic loss, Temperature loss, Mean TD target, Gradient norms | `learner_updates.*` | learner update | The SAC learner's own diagnostics at each recorded update. |
@@ -1142,8 +1142,8 @@ has none either, AI sizing alone has no learner, no Specs row may be marked lowe
 
 **Training and evaluation apart.** Each evaluation's phase decides its series: **Training** (random warm-up, the SAC
 policy, AI proposals), **Evaluation** (a frozen policy: `frozen_eval`, `validation`) and **Episode start** (the reset
-design an episode begins from: no action, no reward). Each has its own colour and legend key. A Single baseline
-simulation that calibrates (record 7.197; the run's status carries `calibration`) records its random designs as warm-up
+design an episode begins from: no action, no reward). Each has its own colour and legend key. A Baseline simulation,
+which calibrates (records 7.197 and 7.202; the run's status carries `calibration`), records its random designs as warm-up
 draws, but nothing learns from them: the tab calls them **Calibration (random designs)**, and its learner charts say why
 they are empty.
 
@@ -1158,8 +1158,24 @@ they are empty.
   chart) shows the whole run.
 * The plots follow the bottom panel's height (the splitter) and the window's width.
 
+**Several runs on one chart** (record 7.200, the user's choice of "what next"). **Compare...** (in the controls) lists the
+runs of the run window; a chosen run is drawn on both charts beside the shown one, up to four runs, each in its own colour
+(the shown run in the accent colour), with a line of chips above the charts naming them - × takes one off. The runs share
+one x axis: the evaluation's number in each run's recorded order, or the learner's update count. A run's designs are one
+series (a training run's training designs, a frozen run's evaluated ones); episode starts are left out, so are a
+learner's updates abandoned at a restart. The hover line gives each run's recorded value at that evaluation. A run that
+cannot be drawn on a chart (it has no such spec, the spec's unit differs, it records no learner updates) is named on that
+chart with the reason; a spec's limits are the shown run's. Each compared run is read like the shown one - its history in
+pages, then every 2 s while its worker lives (the answer of `/api/runs/training` says so since 7.200: `state`,
+`worker_alive`) - and kept in this browser like the chart choices. Checked on three recorded Spectre runs of the defaults
+study: the learning run's pass share rises from about evaluation 600 while the two runs with the old defaults stay flat.
+
 **When it reads, when it draws.** Nothing while another tab is shown or the browser tab is in the background. Opened, it
-asks for what is new since its last answer (a cursor of flush records; a long history comes in pages of 30,000 rows),
+asks for what is new since its last answer (a cursor of flush records; history pages target 30,000 rows, keeping each
+published flush whole). Live journal rows share the remaining page budget and have a separate byte/row cursor, so
+later polls fetch only new rows (7.201). Even one large bundle can span pages; its spec values still join to their
+evaluation. A new flush or journal replacement resets the provisional rows before they are loaded again, without
+double-counting. More pages are fetched immediately,
 then every 2 s while the run's worker lives, once more when it ends, and never for a run at rest. A chart is redrawn at
 most once a second and only when something changed; the chart objects are reused. New numbers never change the chosen
 tab. Another run starts from nothing (runs are never mixed); a run continued after a pause or a crash gets a dashed
@@ -1172,9 +1188,11 @@ on.
 
 **Memory and long runs.** A chart gets a few points per pixel column of its width: in each, the first and the last row
 and every series' smallest and largest value and its first gap, so spikes and gaps stay visible; every point drawn is a
-recorded one. The page keeps at most 50,000 evaluations and 200,000 learner updates per run in memory; past that the
-oldest half is thinned the same way, the thinned stretch is shaded and said in a line, no mean is drawn over it, and the
-counts stay the recorded ones. The run's tables keep every row. (Measured with 20,000 evaluations and 128,000 updates:
+recorded one. The page retains at most 50,000 evaluations and 200,000 learner updates per run, counting both published
+and unflushed rows (7.201); past that the oldest half is thinned the same way, the thinned stretch is shaded and said
+in a line, no mean is drawn over it, and the counts and evaluation numbers stay the recorded ones. Oversized buffers
+and unused word entries are released after thinning. If independent extremes outnumber the available slots, the row
+bound takes precedence. The run's tables keep every row. (Measured with 20,000 evaluations and 128,000 updates:
 0.6 s to read, JS heap about 54 MB.)
 
 Limits: a backend started before this tab has no `/api/runs/training`: the tab then asks for a restart of `serve`. The

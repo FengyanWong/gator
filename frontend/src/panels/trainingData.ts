@@ -5,12 +5,12 @@
  *  What is kept: every recorded row, in commit order - evaluations (x = their number in recorded order, 1-based) and
  *  learner updates (x = the learner's cumulative update count). A missing or invalid value is NaN here and a gap (null)
  *  in a chart, never a zero. The journal's tail (bundles no flush has published yet) is the provisional end of the
- *  tables: every answer replaces it, so a bundle that is flushed later is never counted twice.
+ *  tables: cursor pages extend it; a new flush replaces it, so no bundle is counted twice.
  *
  *  Memory is bounded: past EVALUATION_CAP / UPDATE_CAP rows the oldest half of a table is thinned - in each bin of rows
  *  only the rows holding a column's smallest or largest value (and the bin's first and last row) stay, so every row kept
- *  is a recorded one and every spike stays visible. Thinning has not happened on any run so far (the longest recorded
- *  run has 800 evaluations and 5,904 updates); the page says when it does. The run's tables keep every row. */
+ *  is a recorded one. With more independent extremes than available row slots, the bound takes precedence. The page
+ *  says when it thins history; the run's tables keep every row. */
 
 export type Coded = { values: string[]; codes: number[] };
 export type Columns = { n: number; [name: string]: unknown };
@@ -19,8 +19,10 @@ export interface Chunk { evaluations: Columns; updates: Columns; specs: Columns;
 export interface Segment { segment: number; entry: string; started_utc: string | null; ended_utc: string | null; end_state: string | null; stop_reason: string | null }
 export interface Answer {
   run_dir: string; run_id: string | null; mode: string | null; mock: boolean | null;
+  state?: string | null; worker_alive?: boolean;      // since record 7.200: whether a compared run still works (older backends: absent)
   flushes: { served: number; total: number; start: number };
   final: Chunk; tail: Chunk | null; tail_complete: boolean; latest_seq: number;
+  tail_page?: { start: string | null; cursor: string | null; reset: boolean; more: boolean };
   objective: { metric: string; direction: 'min' | 'max' } | null;
   learner: { recorded: boolean; every: number; reason: string | null };
   segments: Segment[];
@@ -36,8 +38,8 @@ const CATEGORY_OF: Record<string, Category> = {
 };
 export const categoryOf = (phase: string | undefined): Category => CATEGORY_OF[phase ?? ''] ?? 'training';
 export const CATEGORY_LABEL: Record<Category, string> = { training: 'Training', evaluation: 'Evaluation', start: 'Episode start' };
-/** What the page knows of the run beyond its tables. `calibration`: a Single baseline simulation that also calibrates (record
- *  7.197, GET /api/runs/status `calibration`): its random designs are recorded as phase warmup, but nothing learns from them. */
+/** What the page knows of the run beyond its tables. `calibration`: a Baseline simulation, which also calibrates (records 7.197
+ *  and 7.202, GET /api/runs/status `calibration`): its random designs are recorded as phase warmup, but nothing learns from them. */
 export interface Context { calibration?: boolean }
 const CALIBRATION_LABEL = 'Calibration (random designs)';
 const labelOf = (category: Category, context: Context) => (context.calibration && category === 'training' ? CALIBRATION_LABEL : CATEGORY_LABEL[category]);
@@ -89,6 +91,11 @@ export class Table {
     }
     this.n = rows.length;
   }
+  shrink() {
+    if (this.cap <= Math.max(256, this.n * 2)) return;
+    this.cap = Math.max(256, 2 ** Math.ceil(Math.log2(Math.max(1, this.n))));
+    for (const name of Object.keys(this.cols)) this.cols[name] = this.cols[name].slice(0, this.cap);
+  }
 }
 
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : NaN);
@@ -104,6 +111,16 @@ class Words {
     if (!coded || !Array.isArray(coded.codes)) return new Array(n).fill(NaN);
     const own = coded.values.map(word => this.code(word));
     return coded.codes.map(c => (c < 0 ? NaN : own[c]));
+  }
+  compact(columns: { values: Float64Array; n: number }[]) {
+    const old = this.list, remap = new Map<number, number>();
+    this.list = []; this.index.clear();
+    for (const { values, n } of columns) for (let i = 0; i < n; i++) {
+      const code = values[i];
+      if (!Number.isFinite(code) || code < 0) continue;
+      if (!remap.has(code)) remap.set(code, this.code(old[code]));
+      values[i] = remap.get(code)!;
+    }
   }
 }
 
@@ -130,6 +147,10 @@ export class TrainingStore {
   thinnedEvaluations = 0;      // rows [0, this) of a table were thinned (memory bound)
   thinnedUpdates = 0;
   updatesReceived = 0;         // final learner-update rows received, thinned or not
+  evaluationsReceived = 0;
+  tailCursor: string | null = null;
+  private tailEvaluationsReceived = 0;
+  private tailUpdatesReceived = 0;
   evaluations: Table;
   updates: Table;
   words = { episode: new Words(), phase: new Words(), source: new Words(), status: new Words(), updatePhase: new Words(), reason: new Words() };
@@ -156,34 +177,56 @@ export class TrainingStore {
    *  the one held (a late reply) is ignored. */
   apply(answer: Answer): boolean {
     if (answer.flushes.start !== this.flushes) return false;
+    const page = answer.tail_page;
+    if (page && page.start !== this.tailCursor) return false;
     const before = this.version;
     this.answers += 1;
     this.mode = answer.mode; this.mock = answer.mock; this.objective = answer.objective; this.learner = answer.learner;
     this.segments = answer.segments ?? [];
-    this.evaluations.truncate(this.finalEvaluations);            // the old tail goes; the new one comes after the final rows
-    this.updates.truncate(this.finalUpdates);
-    const updatesBefore = this.updates.n;
-    const added = this.append(answer.final);
-    this.updatesReceived += this.updates.n - updatesBefore;
-    this.finalEvaluations = this.evaluations.n; this.finalUpdates = this.updates.n;
+    const reset = !page || page.reset || answer.flushes.served !== this.flushes;
+    if (reset) {
+      this.evaluations.truncate(this.finalEvaluations);
+      this.updates.truncate(this.finalUpdates);
+      this.thinnedEvaluations = Math.min(this.thinnedEvaluations, this.finalEvaluations);
+      this.thinnedUpdates = Math.min(this.thinnedUpdates, this.finalUpdates);
+      this.tailEvaluationsReceived = this.tailUpdatesReceived = 0;
+    }
+    const added = this.append(answer.final, this.evaluationsReceived);
+    this.evaluationsReceived += answer.final.evaluations.n;
+    this.updatesReceived += answer.final.updates.n;
+    if (reset) { this.finalEvaluations = this.evaluations.n; this.finalUpdates = this.updates.n; }
     this.flushes = answer.flushes.served; this.total = answer.flushes.total;
-    if (answer.tail) this.append(answer.tail);
+    let tailAdded = 0;
+    if (answer.tail) {
+      tailAdded = this.append(answer.tail, this.evaluationsReceived + this.tailEvaluationsReceived);
+      this.tailEvaluationsReceived += answer.tail.evaluations.n;
+      this.tailUpdatesReceived += answer.tail.updates.n;
+    }
+    this.tailCursor = page?.cursor ?? null;
     this.tailComplete = answer.tail_complete; this.latestSeq = answer.latest_seq;
-    const tailKey = `${this.evaluations.n - this.finalEvaluations}:${this.updates.n - this.finalUpdates}:${answer.latest_seq}`;
-    if (added || tailKey !== this.tailKey) this.version += 1;
+    const tailKey = `${this.tailEvaluationsReceived}:${this.tailUpdatesReceived}:${answer.latest_seq}:${this.tailCursor}`;
+    if (added || (page && tailAdded) || tailKey !== this.tailKey) this.version += 1;
     this.tailKey = tailKey;
-    if (this.finalEvaluations > EVALUATION_CAP) { this.thin('evaluations'); this.version += 1; }
-    if (this.finalUpdates > UPDATE_CAP) { this.thin('updates'); this.version += 1; }
+    let thinned = false;
+    while (this.evaluations.n > EVALUATION_CAP) { this.thin('evaluations'); thinned = true; }
+    while (this.updates.n > UPDATE_CAP) { this.thin('updates'); thinned = true; }
+    if (thinned) {
+      this.version += 1;
+      this.evaluations.shrink(); this.updates.shrink();
+      for (const [own] of EVALUATION_WORDS) this.words[own as keyof TrainingStore['words']].compact([
+        { values: this.evaluations.cols[own], n: this.evaluations.n }]);
+      this.words.updatePhase.compact([{ values: this.updates.cols.phase, n: this.updates.n }]);
+      this.words.reason.compact(this.specNames.map(name => ({ values: this.evaluations.cols[`specWhy:${name}`], n: this.evaluations.n })));
+    }
     return this.version !== before;
   }
 
-  private append(chunk: Chunk): number {
+  private append(chunk: Chunk, k0: number): number {
     const e = chunk.evaluations, u = chunk.updates, s = chunk.specs;
     let added = 0;
     if (e && e.n > 0) {
       const table = this.evaluations, start = table.n;
       table.reserve(e.n);
-      const k0 = start > 0 ? table.cols.k[start - 1] : 0;
       for (const [own, name] of EVALUATION_NUMBERS) { const values = (e[name] as unknown[]) ?? []; const column = table.cols[own]; for (let i = 0; i < e.n; i++) column[start + i] = num(values[i]); }
       for (const [own, name] of EVALUATION_FLAGS) { const values = (e[name] as unknown[]) ?? []; const column = table.cols[own]; for (let i = 0; i < e.n; i++) column[start + i] = flag(values[i]); }
       for (const [own, name] of EVALUATION_WORDS) { const codes = this.words[own as keyof TrainingStore['words']].decode(e[name], e.n); const column = table.cols[own]; for (let i = 0; i < e.n; i++) column[start + i] = codes[i]; }
@@ -191,24 +234,26 @@ export class TrainingStore {
       for (const name of this.specNames) table.cols[`specWhy:${name}`].fill(NO_SPEC_ROW, start, start + e.n);
       table.n = start + e.n;
       added += e.n;
-      if (s && s.n > 0) {
-        const rowOf = new Map<number, number>();
-        const seq = table.cols.seq;
-        for (let i = start; i < table.n; i++) rowOf.set(seq[i], i);
-        const names = this.words.reason;          // reasons share the store's word list
-        const metric = (s.metric_name as Coded), values = s.raw_value as unknown[], satisfied = s.satisfied as unknown[], seqs = s.commit_seq as unknown[];
-        const reasons = names.decode(s.failure_reason, s.n);
-        for (let i = 0; i < s.n; i++) {
-          const name = metric.values[metric.codes[i]];
-          if (name === undefined) continue;
-          const row = rowOf.get(seqs[i] as number);
-          if (row === undefined) continue;
-          if (!this.specNames.includes(name)) this.addSpec(name);
-          table.cols[`spec:${name}`][row] = num(values[i]);
-          table.cols[`specOk:${name}`][row] = flag(satisfied[i]);
-          table.cols[`specWhy:${name}`][row] = Number.isFinite(reasons[i]) ? reasons[i] : NaN;
-        }
+    }
+    if (s && s.n > 0) {
+      const table = this.evaluations;
+      const rowOf = new Map<number, number>();
+      const seq = table.cols.seq;
+      for (let i = 0; i < table.n; i++) rowOf.set(seq[i], i);
+      const names = this.words.reason;          // reasons share the store's word list
+      const metric = (s.metric_name as Coded), values = s.raw_value as unknown[], satisfied = s.satisfied as unknown[], seqs = s.commit_seq as unknown[];
+      const reasons = names.decode(s.failure_reason, s.n);
+      for (let i = 0; i < s.n; i++) {
+        const name = metric.values[metric.codes[i]];
+        if (name === undefined) continue;
+        const row = rowOf.get(seqs[i] as number);
+        if (row === undefined) continue;
+        if (!this.specNames.includes(name)) this.addSpec(name);
+        table.cols[`spec:${name}`][row] = num(values[i]);
+        table.cols[`specOk:${name}`][row] = flag(satisfied[i]);
+        table.cols[`specWhy:${name}`][row] = Number.isFinite(reasons[i]) ? reasons[i] : NaN;
       }
+      added += s.n;
     }
     for (const [name, def] of Object.entries(chunk.spec_defs ?? {})) this.specDefs[name] = def;
     if (u && u.n > 0) {
@@ -231,12 +276,12 @@ export class TrainingStore {
     t.add(`specWhy:${name}`).fill(NO_SPEC_ROW, 0, t.n);
   }
 
-  /** The memory bound (see the top of the file): the oldest half of the final rows, thinned to the rows that hold each
+  /** The memory bound (see the top of the file): the oldest half of all rows, including the live tail, thinned to each
    *  value column's extremes and first gap per bin (and each bin's first and last row). */
   private thin(which: 'evaluations' | 'updates') {
     const table = which === 'evaluations' ? this.evaluations : this.updates;
     const finalN = which === 'evaluations' ? this.finalEvaluations : this.finalUpdates;
-    const half = Math.floor(finalN / 2);
+    const half = Math.floor(table.n / 2);
     const value = Object.keys(table.cols).filter(c => !IDENTITY_COLUMNS.has(c) && !c.startsWith('specWhy:') && !c.startsWith('specOk:'));
     const width = Math.max(128, 16 * value.length);
     const kept: number[] = [];
@@ -256,19 +301,20 @@ export class TrainingStore {
       }
       kept.push(...[...rows].sort((a, c) => a - c));
     }
-    const thinned = kept.length;
+    // With more independent spec extremes than row slots, retaining all of them is impossible. Still make progress.
+    if (kept.length >= half) kept.splice(0, kept.length, ...kept.filter((_, i) => i % 2 === 0 || i === kept.length - 1));
     for (let i = half; i < table.n; i++) kept.push(i);
-    table.keep(kept);
     const previous = which === 'evaluations' ? this.thinnedEvaluations : this.thinnedUpdates;
-    const stretch = thinned + Math.max(0, previous - half);       // rows at the start of the table that stand for thinned history
-    if (which === 'evaluations') { this.finalEvaluations = finalN - (half - thinned); this.thinnedEvaluations = stretch; }
-    else { this.finalUpdates = finalN - (half - thinned); this.thinnedUpdates = stretch; }
+    const stretch = kept.filter(row => row < Math.max(half, previous)).length;
+    const finalKept = kept.filter(row => row < finalN).length;
+    table.keep(kept);
+    if (which === 'evaluations') { this.finalEvaluations = finalKept; this.thinnedEvaluations = stretch; }
+    else { this.finalUpdates = finalKept; this.thinnedUpdates = stretch; }
   }
 
   /** How many evaluations and learner updates the run has recorded so far (thinning for the memory bound keeps fewer rows). */
   counts() {
-    const t = this.evaluations;
-    return { evaluations: t.n ? t.cols.k[t.n - 1] : 0, updates: this.updatesReceived + this.updates.n - this.finalUpdates };
+    return { evaluations: this.evaluationsReceived + this.tailEvaluationsReceived, updates: this.updatesReceived + this.tailUpdatesReceived };
   }
 
   /** When the newest number was recorded (seconds since 1970), or null. */
@@ -372,10 +418,13 @@ export interface ChartSpec {
   source: string;                               // the recorded column(s), by the data dictionary's names
   about: string;                                // what it is, in one sentence
 }
-export interface Series { label: string; role: 'raw' | 'smooth' | 'line' | 'limit' | 'superseded'; category: Category | null; values: (number | null | undefined)[]; step?: boolean }
+export interface Series { label: string; role: 'raw' | 'smooth' | 'line' | 'limit' | 'superseded'; category: Category | null; values: (number | null | undefined)[]; step?: boolean;
+  run?: number;            // compared runs (record 7.200): the run's place in the comparison, which picks its colour
+  dash?: boolean }         // the second of two columns of one run (gradient norms: the policy's)
 export interface Marker { x: number; label: string; kind: 'resume' | 'restart' }
 export interface Built { axis: Axis; x: number[]; rows: number[]; series: Series[]; markers: Marker[]; thinnedTo: number | null; extent: [number, number] | null;
-  range: [number, number] | null; unit: string }
+  range: [number, number] | null; unit: string;
+  missing?: { label: string; reason: string }[] }     // compared runs that cannot be drawn on this chart, and why
 
 const EVALUATION_TEXT = 'No evaluation is recorded yet.';
 const anyValue = (table: Table, column: string, keep?: (row: number) => boolean) => {
@@ -450,7 +499,7 @@ export function catalog(store: TrainingStore, context: Context = {}): ChartSpec[
   charts.push({ id: 'objective', title: objective ? `Best feasible ${objective.metric} (${objective.direction === 'min' ? 'lower' : 'higher'} is better)` : 'Best feasible objective',
     unit: objectiveUnit, axis: 'evaluation', group: objective ? 'Results' : 'Not recorded', source: 'evaluations.best_so_far_metrics, best_so_far_feasible',
     about: 'The objective\'s value of the best design that meets every hard spec, as the run keeps it (feasible first, then the objective).',
-    available: !!objective && anyValue(e, 'bestObjective'),
+    available: !!objective && anyValue(e, 'bestObjective', row => e.cols.bestFeasible[row] === 1),
     reason: !objective ? 'No objective: no Specs row of this run says "then lower/higher is better".' : empty ?? 'No design has met every hard spec yet.' });
   for (const name of store.specNames) {
     const def = store.specDefs[name];
@@ -489,13 +538,10 @@ function resumeMarkers(store: TrainingStore, table: Table, xColumn: string): Mar
  *  results arrive ("Follow latest" after a zoom). fixed: what the user zoomed to; new results do not move it. */
 export type View = { mode: 'all' } | { mode: 'follow'; width: number } | { mode: 'fixed'; min: number; max: number };
 
-/** One chart's data: rows in view (plus one beyond each edge), thinned to `buckets` pixel columns by `decimate`. */
-export function build(store: TrainingStore, id: string, smoothing: number, view: View, buckets: number, context: Context = {}): Built {
-  const spec = catalog(store, context).find(c => c.id === id);
-  const unit = spec?.unit ?? '';
-  if (spec?.axis === 'update') return buildUpdates(store, id, smoothing, view, buckets, unit);
-  const t = store.evaluations, n = t.n, k = t.cols.k;
-  const categories = rowCategories(store);
+/** What an evaluation chart takes from one run: each row's value (NaN = a gap), the categories it draws, and how: `single` = one
+ *  stepped line over every row (the best design so far), `cumulative` = the share so far instead of a mean. */
+function evaluationValues(store: TrainingStore, id: string) {
+  const t = store.evaluations, n = t.n;
   const value = new Float64Array(n).fill(NaN);
   let allowed: Category[] = ['training', 'evaluation', 'start'], single: string | null = null, cumulative = false;
   const copy = (column: string, sign = 1) => { const c = t.cols[column]; if (c) for (let i = 0; i < n; i++) value[i] = sign * c[i]; };
@@ -506,8 +552,23 @@ export function build(store: TrainingStore, id: string, smoothing: number, view:
   else if (id === 'margin') copy('margin');
   else if (id === 'seconds') copy('seconds');
   else if (id === 'best') { copy('bestViolation'); single = 'Best design so far'; }
-  else if (id === 'objective') { copy('bestObjective'); single = 'Best feasible design so far'; }
+  else if (id === 'objective') {
+    copy('bestObjective');
+    for (let i = 0; i < n; i++) if (t.cols.bestFeasible[i] !== 1) value[i] = NaN;
+    single = 'Best feasible design so far';
+  }
   else if (id.startsWith('spec:')) copy(id);
+  return { value, allowed, single, cumulative };
+}
+
+/** One chart's data: rows in view (plus one beyond each edge), thinned to `buckets` pixel columns by `decimate`. */
+export function build(store: TrainingStore, id: string, smoothing: number, view: View, buckets: number, context: Context = {}): Built {
+  const spec = catalog(store, context).find(c => c.id === id);
+  const unit = spec?.unit ?? '';
+  if (spec?.axis === 'update') return buildUpdates(store, id, smoothing, view, buckets, unit);
+  const t = store.evaluations, n = t.n, k = t.cols.k;
+  const categories = rowCategories(store);
+  const { value, allowed, single, cumulative } = evaluationValues(store, id);
   const series: Series[] = [];
   // Over a thinned stretch (memory bound) only its extremes are left: no mean is drawn there, and the mean starts after it.
   const full = store.thinnedEvaluations;
@@ -583,4 +644,88 @@ function cut(x: number[], rows: number[], series: Series[], extent: [number, num
   const keep = decimate(x, series.map(s => s.values), from, to, min, max, Math.max(16, Math.floor(buckets)));
   return { axis, x: keep.map(i => x[i]), rows: keep.map(i => rows[i]), unit, markers, thinnedTo, extent, range: [min, max],
     series: series.map(s => ({ ...s, values: keep.map(i => s.values[i]) })) };
+}
+
+// ------------------------------------------------------------------------------------------------- several runs on one chart
+/** A run on a comparison chart (record 7.200): its store, the name the chart gives it, what the page knows of it. */
+export interface CompareRun { store: TrainingStore; label: string; context?: Context }
+export const COMPARE_MAX = 4;
+
+/** Up to four runs on one chart, each its own colour (Series.run), on one x axis: the evaluation's number in each run's
+ *  recorded order, or the learner's update count. A run's designs are one series - a training run's training designs, a
+ *  frozen run's evaluated ones; episode starts (one design re-simulated) are left out, so are a learner's abandoned
+ *  updates after a restart. A run that cannot be drawn on this chart (it has no such spec, the spec's unit differs, it
+ *  records no learner updates) is listed in `missing` with the reason. Limits are the first run's. */
+export function buildCompare(runs: CompareRun[], id: string, smoothing: number, view: View, buckets: number): Built {
+  const first = runs[0];
+  const spec = catalog(first.store, first.context ?? {}).find(c => c.id === id);
+  const unit = spec?.unit ?? '', axis: Axis = spec?.axis ?? 'evaluation';
+  const missing: { label: string; reason: string }[] = [];
+  const parts: { x: number[]; series: Series[] }[] = [];
+  runs.forEach((run, r) => {
+    const own = catalog(run.store, run.context ?? {}).find(c => c.id === id);
+    if (!own?.available) { missing.push({ label: run.label, reason: own?.reason ?? 'this run has no such chart' }); return; }
+    if (own.unit !== unit) { missing.push({ label: run.label, reason: `its ${own.title} is in ${own.unit || 'no unit'}, not in ${unit || 'no unit'}` }); return; }
+    parts.push(axis === 'update' ? learnerPart(run, r, id, smoothing) : evaluationPart(run, r, id, smoothing));
+  });
+  const x = [...new Set(parts.flatMap(p => p.x))].sort((a, b) => a - b);
+  const at = new Map(x.map((v, i) => [v, i]));
+  const series: Series[] = [];
+  for (const part of parts) {
+    for (const s of part.series) {
+      const values: (number | null | undefined)[] = new Array(x.length).fill(undefined);
+      part.x.forEach((v, i) => { values[at.get(v)!] = s.values[i]; });
+      series.push({ ...s, values });
+    }
+  }
+  if (id.startsWith('spec:')) {
+    const def = first.store.specDefs[id.slice(5)];
+    for (const [bound, label] of [[def?.threshold_lower, 'lower limit'], [def?.threshold_upper, 'upper limit']] as [number | null | undefined, string][]) {
+      if (bound != null && Number.isFinite(bound)) series.push({ label: `${label} (${first.label})`, role: 'limit', category: null, values: new Array(x.length).fill(bound) });
+    }
+  }
+  const extent: [number, number] | null = x.length ? [x[0], x[x.length - 1]] : null;
+  return { ...cut(x, x.map(() => -1), series, extent, view, buckets, [], null, axis, unit), missing };
+}
+
+/** One run's series of an evaluation chart in a comparison: its rows of the chart's categories but episode starts. */
+function evaluationPart(run: CompareRun, r: number, id: string, smoothing: number): { x: number[]; series: Series[] } {
+  const { store, label } = run, t = store.evaluations, k = t.cols.k;
+  const { value, allowed, single, cumulative } = evaluationValues(store, id);
+  const categories = rowCategories(store);
+  const x: number[] = [], raw: (number | null)[] = [];
+  let full = 0;                                      // rows of a thinned stretch among the kept ones: no mean over them
+  for (let i = 0; i < t.n; i++) {
+    if (!single && (categories[i] === 'start' || !allowed.includes(categories[i]))) continue;
+    x.push(k[i]); raw.push(Number.isNaN(value[i]) ? null : value[i]);
+    if (i < store.thinnedEvaluations) full += 1;
+  }
+  const after = (over: (v: (number | null | undefined)[]) => (number | null | undefined)[]) => (full ? [...new Array(full).fill(undefined), ...over(raw.slice(full))] : over(raw));
+  if (single) return { x, series: [{ label, role: 'line', category: null, run: r, step: true, values: raw }] };
+  if (cumulative) return { x, series: [{ label: `${label} (each design)`, role: 'raw', category: null, run: r, values: raw },
+    { label: `${label}: share so far`, role: 'smooth', category: null, run: r, values: after(part => { let passed = 0, judged = 0; return part.map(v => (v == null ? v : (judged += 1, passed += v, passed / judged))); }) }] };
+  if (smoothing > 0) return { x, series: [{ label: `${label} (recorded)`, role: 'raw', category: null, run: r, values: raw },
+    { label: `${label}: mean of last ${smoothing}`, role: 'smooth', category: null, run: r, values: after(part => smooth(part, smoothing)) }] };
+  return { x, series: [{ label, role: 'raw', category: null, run: r, values: raw }] };
+}
+
+/** One run's series of a learner chart in a comparison: its updates on the line it went on (abandoned ones left out). */
+function learnerPart(run: CompareRun, r: number, id: string, smoothing: number): { x: number[]; series: Series[] } {
+  const { store, label } = run, t = store.updates, cum = t.cols.cum;
+  const { superseded } = updateBranches(t);
+  const rows: number[] = [];
+  for (let i = 0; i < t.n; i++) if (!superseded[i]) rows.push(i);
+  const x = rows.map(i => cum[i]), from = store.thinnedUpdates ? Math.max(0, rows.findIndex(i => i >= store.thinnedUpdates)) : 0;
+  const columns = LEARNER_COLUMNS[id] ?? [];
+  const series: Series[] = [];
+  columns.forEach(([column, name], c) => {
+    const values = rows.map(i => (Number.isNaN(t.cols[column][i]) ? null : (id === 'entropy' ? -1 : 1) * t.cols[column][i]));
+    const named = columns.length > 1 ? `${label} / ${name}` : label;      // the run's name stays whole in its legend key
+    if (smoothing > 0) {
+      series.push({ label: `${named} (recorded)`, role: 'raw', category: null, run: r, dash: c > 0, values });
+      series.push({ label: `${named}: mean of last ${smoothing}`, role: 'smooth', category: null, run: r, dash: c > 0,
+        values: from > 0 ? [...new Array(from).fill(undefined), ...smooth(values.slice(from), smoothing)] : smooth(values, smoothing) });
+    } else series.push({ label: named, role: 'raw', category: null, run: r, dash: c > 0, values });
+  });
+  return { x, series };
 }

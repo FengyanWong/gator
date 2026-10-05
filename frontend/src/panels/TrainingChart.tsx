@@ -43,10 +43,12 @@ function alpha(color: string, a: number) {
   return rgb ? `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})` : color;
 }
 
-interface Palette { training: string; evaluation: string; start: string; other: string[]; limit: string; superseded: string; text: string; muted: string; grid: string; line: string; bad: string; label: string; mono: string }
+interface Palette { training: string; evaluation: string; start: string; other: string[]; runs: string[]; limit: string; superseded: string; text: string; muted: string; grid: string; line: string; bad: string; label: string; mono: string }
 function palette(element: HTMLElement): Palette {
   return { training: token(element, '--accent', '#1d4f91'), evaluation: token(element, '--spec', '#0b6f7c'), start: token(element, '--muted', '#566c82'),
     other: [token(element, '--accent', '#1d4f91'), token(element, '--probe', '#95357f')], limit: token(element, '--warn', '#8a5a00'),
+    // compared runs (record 7.200): the shown run in the accent, the others in the editors' colours and violet; amber stays the limits'
+    runs: [token(element, '--accent', '#1d4f91'), token(element, '--probe', '#95357f'), token(element, '--spec', '#0b6f7c'), token(element, '--unresolved', '#6a3fa0')],
     superseded: token(element, '--muted', '#566c82'), text: token(element, '--text', '#13304f'), muted: token(element, '--muted', '#566c82'),
     grid: token(element, '--grid-line', '#dde5ea'), line: token(element, '--line', '#c3cfda'), bad: token(element, '--bad', '#b3321f'),
     label: token(element, '--f-label', 'sans-serif'), mono: token(element, '--f-mono', 'monospace') };
@@ -56,12 +58,14 @@ function palette(element: HTMLElement): Palette {
 function colourOf(series: Series, index: number, colours: Palette) {
   if (series.role === 'limit') return colours.limit;
   if (series.role === 'superseded') return colours.superseded;
+  if (series.run != null) return colours.runs[series.run % colours.runs.length];
   if (series.category) return colours[series.category as Category];
   return colours.other[index % colours.other.length];
 }
 
 /** What a series group is called on its toggle: the category, or the learner series' own name. */
-export const groupOf = (series: Series) => (series.role === 'limit' ? 'limits' : series.role === 'superseded' ? 'abandoned' : series.category ?? series.label.replace(/ \(recorded\)$|: mean of last \d+$/, ''));
+export const groupOf = (series: Series) => (series.role === 'limit' ? 'limits' : series.role === 'superseded' ? 'abandoned' : series.run != null ? `run${series.run}`
+  : series.category ?? series.label.replace(/ \(recorded\)$|: mean of last \d+$/, ''));
 
 export function TrainingChart({ built, hidden, look, xLabel, format, describe, onZoom, onReset, onWidth }: ChartProps) {
   const box = useRef<HTMLDivElement>(null);
@@ -107,8 +111,8 @@ export function TrainingChart({ built, hidden, look, xLabel, format, describe, o
       if (value === undefined) return;
       parts.push(`${series.label} ${value === null ? 'no value' : latest.current.format(value)}`);
     });
-    const row = data.rows[index];
-    element.textContent = `${hovering ? '' : 'Newest: '}${xLabel} ${data.x[index]}${row != null ? ` · ${latest.current.describe(row)}` : ''}${parts.length ? ` · ${parts.join(' · ')}` : ''}`;
+    const row = data.rows[index];      // -1 on a comparison: several runs' rows share an x, none of them is named
+    element.textContent = `${hovering ? '' : 'Newest: '}${xLabel} ${data.x[index]}${row != null && row >= 0 ? ` · ${latest.current.describe(row)}` : ''}${parts.length ? ` · ${parts.join(' · ')}` : ''}`;
     element.title = element.textContent;
   };
 
@@ -151,14 +155,15 @@ export function TrainingChart({ built, hidden, look, xLabel, format, describe, o
       const dense = data.axis === 'update';
       if (s.role === 'limit') return { label: s.label, stroke: colour, width: 1.25, dash: [6, 4], points: { show: false } };
       if (s.role === 'superseded') return { label: s.label, stroke: alpha(colour, 0.8), width: 1, dash: [3, 3], points: { show: false } };
-      if (s.role === 'smooth') return { label: s.label, stroke: colour, width: 2, points: { show: false } };
+      const dash = s.dash ? { dash: [5, 3] } : {};
+      if (s.role === 'smooth') return { label: s.label, stroke: colour, width: 2, ...dash, points: { show: false } };
       if (s.role === 'line') return { label: s.label, stroke: colour, width: 2, paths: UPlotClass.paths.stepped!({ align: 1 }), points: { show: false } };
       // a recorded value: under a smoothed line faint points (thousands of learner updates: a faint thin line), alone a thin line
       // with its points; an episode start (one design re-simulated now and then) points only - a line through them would look
       // like a limit
       const smoothed = data.series.some(o => o.role === 'smooth' && o.category === s.category && groupOf(o) === groupOf(s));
       const pointsOnly = (smoothed && !dense) || s.category === 'start';
-      return { label: s.label, stroke: alpha(colour, smoothed ? 0.35 : 0.85), width: 1, ...(pointsOnly ? { paths: () => null } : {}),
+      return { label: s.label, stroke: alpha(colour, smoothed ? 0.35 : 0.85), width: 1, ...dash, ...(pointsOnly ? { paths: () => null } : {}),
         points: { show: dense ? undefined : true, size: s.category === 'start' ? 4 : 3, stroke: alpha(colour, smoothed ? 0.45 : 0.9), fill: alpha(colour, smoothed ? 0.3 : 0.6), width: 1 } };
     })];
     const share = data.unit === 'share';
@@ -209,9 +214,9 @@ export function TrainingChart({ built, hidden, look, xLabel, format, describe, o
     for (const s of built?.series ?? []) {
       const group = groupOf(s);
       if (seen.has(group)) continue;
-      const key = s.role === 'limit' ? 'limit' : s.role === 'superseded' ? 'superseded' : s.category ?? `other${seen.size % 2}`;   // its colour, as colourOf picks it
+      const key = s.role === 'limit' ? 'limit' : s.role === 'superseded' ? 'superseded' : s.run != null ? `run${s.run % 4}` : s.category ?? `other${seen.size % 2}`;   // its colour, as colourOf picks it
       seen.set(group, { key, label: s.role === 'limit' ? 'limit' : s.role === 'superseded' ? 'abandoned at a restart'
-        : s.label.replace(/ \(recorded\)$|: mean of last \d+$| \(each design\)$|: share so far$/, '') });
+        : s.label.replace(/ \(recorded\)$|: mean of last \d+$| \(each design\)$|: share so far$/, '').replace(s.run != null ? / \/ [^/]+$/ : /$^/, '') });
     }
     return [...seen.entries()];
   }, [built]);

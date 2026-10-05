@@ -488,6 +488,11 @@ button.training-key.off { opacity: .45; text-decoration: line-through; }
 .key-training .swatch, .key-other0 .swatch { background: var(--accent); } .key-evaluation .swatch { background: var(--spec); }
 .key-other1 .swatch { background: var(--probe); } .key-limit .swatch { background: var(--warn); }
 .key-superseded .swatch, .key-start .swatch { background: var(--muted); }
+.training-compared { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; font-size: 11.5px; margin: 0 0 2px; }
+.training-chip { display: inline-flex; align-items: center; gap: 4px; } .training-chip .swatch { width: 10px; height: 10px; border-radius: 2px; background: var(--muted); }
+button.training-chip-remove { border: none; background: none; padding: 0 1px; line-height: 1; color: var(--muted); } button.training-chip-remove svg.icon { width: 11px; height: 11px; }
+.training-head select.training-compare { max-width: 150px; } .training-missing { margin: 0; font-size: 11px; }
+.key-run0 .swatch { background: var(--accent); } .key-run1 .swatch { background: var(--probe); } .key-run2 .swatch { background: var(--spec); } .key-run3 .swatch { background: var(--unresolved); }
 .training-readout { flex: 1 1 280px; min-width: 0; text-align: right; color: var(--muted); font: 11px/1.4 var(--f-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .training-plot { flex: 1; min-height: 110px; position: relative; }
 .training-plot > .uplot { position: absolute; inset: 0; font-family: var(--f-label); }

@@ -4,7 +4,7 @@ import { useLook } from '../theme';
 import { Icon } from './Icons';
 import { LIVE_STATES } from './RunControl';
 import { TrainingChart } from './TrainingChart';
-import { build, catalog, ChartSpec, Context, setCaps, TrainingStore, View } from './trainingData';
+import { build, buildCompare, catalog, ChartSpec, COMPARE_MAX, CompareRun, Context, setCaps, TrainingStore, View } from './trainingData';
 import type { Answer } from './trainingData';
 
 /** The Training tab (record 7.193, user request): live charts of the shown run's RECORDED training numbers - step reward,
@@ -17,7 +17,10 @@ import type { Answer } from './trainingData';
  *  lives, once when it ends, and never while this tab is hidden: opened again, one answer brings it up to date. Charts
  *  are redrawn at most once a second, and only when something changed.
  *
- *  Kept in this browser: the two charts chosen and the smoothing (like the folded modules); not the zoom. */
+ *  Several runs on one chart (record 7.200, the user's choice of "what next"): up to three other runs beside the shown one,
+ *  each its own colour, read the same way (history once, then every 2 s while its worker lives - the answer says so).
+ *
+ *  Kept in this browser: the two charts chosen, the smoothing and the compared runs (like the folded modules); not the zoom. */
 const SETTINGS_KEY = 'gator-workbench-training-v1';
 const SMOOTHING = [0, 10, 20, 50, 100, 200];
 type Settings = { charts: [string, string | null]; smoothing: number };
@@ -33,6 +36,17 @@ try {      // a browser check of the memory bound sets lower caps for its own pa
   const caps = JSON.parse(localStorage.getItem('gator-workbench-training-caps-v1') ?? 'null');
   if (caps) setCaps(caps);
 } catch { /* blocked storage: the default caps */ }
+
+const COMPARE_KEY = 'gator-workbench-training-compare-v1';
+function storedCompare(): string[] {
+  try { const list = JSON.parse(localStorage.getItem(COMPARE_KEY) ?? '[]'); return Array.isArray(list) ? list.filter(d => typeof d === 'string').slice(0, COMPARE_MAX - 1) : []; }
+  catch { return []; }
+}
+const readError = (e: any) => (e instanceof ApiError && (e.status === 405 || (e.status === 404 && e.detail === 'Not Found')) ? OLDER_BACKEND : plainError(e));
+const taskOf = (r: Json) => r?.task_name ?? String(r?.task_id ?? '').split(':')[0];
+const created = (utc?: string | null) => (utc ? new Date(utc).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'unknown time');
+/** A run in the Compare list, as the run window names it: when, task, mode and seed, state, evaluations. */
+const runChoice = (r: Json) => `${created(r.created_utc)} | ${taskOf(r)} | ${r.mode} seed${r.seed} | ${r.state ?? 'not started'}${r.evaluations != null ? ` | ${r.evaluations} eval.` : ''}${r.mock ? ' [MOCK]' : ''}`;
 
 const POLL_MS = 2000, RETRY_MS = 5000, FRAME_MS = 1000;
 const NONE: View = { mode: 'all' };
@@ -55,7 +69,7 @@ function usePageHidden() {
   return hidden;
 }
 
-export function TrainingTab({ hidden, runDir, status }: { hidden: boolean; runDir: string | null; status: Json }) {
+export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean; runDir: string | null; status: Json; runs: Json[] }) {
   const look = useLook();
   const pageHidden = usePageHidden();
   const active = !hidden && !pageHidden && !!runDir;
@@ -101,23 +115,63 @@ export function TrainingTab({ hidden, runDir, status }: { hidden: boolean; runDi
     const read = async () => {
       setReading(r => (r.busy ? r : { ...r, busy: true }));
       try {
-        const answer: Answer = await readWithDeadline(signal => api.training(own.runDir, own.flushes, signal), controller.signal, 60000);
+        const answer: Answer = await readWithDeadline(signal => api.training(own.runDir, own.flushes, signal, own.tailCursor), controller.signal, 60000);
         if (!alive) return;
         if (own.apply(answer)) requestFrame();
         setReading({ error: null, at: Date.now(), busy: false });
-        if (answer.flushes.served < answer.flushes.total) { void read(); return; }     // the rest of a long history, at once
+        if (answer.flushes.served < answer.flushes.total || answer.tail_page?.more) { void read(); return; }
         if (liveRef.current) timer = window.setTimeout(read, POLL_MS);
       } catch (e: any) {
         if (!alive || controller.signal.aborted) return;
         // a backend started before this tab existed has no such route (FastAPI's own 404 "Not Found"): said as such
-        const older = e instanceof ApiError && (e.status === 405 || (e.status === 404 && e.detail === 'Not Found'));
-        setReading({ error: older ? OLDER_BACKEND : plainError(e), at: Date.now(), busy: false });
+        setReading({ error: readError(e), at: Date.now(), busy: false });
         if (liveRef.current) timer = window.setTimeout(read, RETRY_MS);
       }
     };
     void read();
     return () => { alive = false; controller.abort(); if (timer !== undefined) window.clearTimeout(timer); };
   }, [active, runDir, live, retry, requestFrame]);
+
+  // ---- other runs on the same charts (record 7.200): each its own store, read like the shown one, apart from it
+  const [compare, setCompare] = useState<string[]>(storedCompare);
+  const keepCompare = (next: string[]) => { setCompare(next); try { localStorage.setItem(COMPARE_KEY, JSON.stringify(next)); } catch { /* not remembered */ } };
+  const others = compare.filter(dir => dir !== runDir).slice(0, COMPARE_MAX - 1);
+  const othersKey = others.join('\n');
+  const compared = useRef(new Map<string, TrainingStore>());
+  for (const dir of others) if (!compared.current.has(dir)) compared.current.set(dir, new TrainingStore(dir));
+  for (const dir of [...compared.current.keys()]) if (!others.includes(dir)) compared.current.delete(dir);
+  const [comparedState, setComparedState] = useState<Record<string, { error: string | null; live: boolean }>>({});
+  useEffect(() => {
+    if (!active || !others.length) return;
+    let alive = true;
+    const timers: number[] = [], controller = new AbortController();
+    for (const dir of others) {
+      const run = compared.current.get(dir);
+      if (!run) continue;
+      const read = async () => {
+        try {
+          const answer: Answer = await readWithDeadline(signal => api.training(dir, run.flushes, signal, run.tailCursor), controller.signal, 60000);
+          if (!alive) return;
+          if (run.apply(answer)) requestFrame();
+          const working = !!answer.worker_alive;
+          setComparedState(state => ({ ...state, [dir]: { error: null, live: working } }));
+          if (answer.flushes.served < answer.flushes.total || answer.tail_page?.more) { void read(); return; }
+          if (working) timers.push(window.setTimeout(read, POLL_MS));
+        } catch (e: any) {
+          if (!alive || controller.signal.aborted) return;
+          setComparedState(state => ({ ...state, [dir]: { error: readError(e), live: false } }));
+        }
+      };
+      void read();
+    }
+    return () => { alive = false; controller.abort(); timers.forEach(t => window.clearTimeout(t)); };
+  }, [active, othersKey, retry, requestFrame]);
+  const rowOf = useMemo(() => new Map(runs.map(r => [r.run_dir, r] as [string, Json])), [runs]);
+  /** A run's name on a compared chart: task, seed and the start of its folder's id (two runs of one task and seed differ there). */
+  const runLabel = (dir: string) => {
+    const row = rowOf.get(dir), id = (runName(dir).split('__').pop() ?? '').slice(0, 6);
+    return row ? `${taskOf(row)} \u00b7 seed ${row.seed ?? '?'} \u00b7 ${id}` : runName(dir);
+  };
 
   const own = store.current;
   // a baseline run that calibrates (record 7.197): its random designs are not training, and nothing learns
@@ -132,10 +186,14 @@ export function TrainingTab({ hidden, runDir, status }: { hidden: boolean; runDi
   const slots = ids.map(specOf) as [ChartSpec | null, ChartSpec | null];
   const builtFor = (slot: 0 | 1) => {
     const spec = slots[slot];
-    return own && spec?.available ? build(own, spec.id, settings.smoothing, views[slot], widths[slot], context) : null;
+    if (!own || !runDir || !spec?.available) return null;
+    if (!others.length) return build(own, spec.id, settings.smoothing, views[slot], widths[slot], context);
+    const runsOn: CompareRun[] = [{ store: own, label: runLabel(runDir), context },
+      ...others.map(dir => ({ store: compared.current.get(dir)!, label: runLabel(dir) }))];
+    return buildCompare(runsOn, spec.id, settings.smoothing, views[slot], widths[slot]);
   };
-  const built0 = useMemo(() => builtFor(0), [own, frame, slots[0]?.id, slots[0]?.available, settings.smoothing, views[0], widths[0], context]);
-  const built1 = useMemo(() => builtFor(1), [own, frame, slots[1]?.id, slots[1]?.available, settings.smoothing, views[1], widths[1], context]);
+  const built0 = useMemo(() => builtFor(0), [own, frame, slots[0]?.id, slots[0]?.available, settings.smoothing, views[0], widths[0], context, othersKey, rowOf]);
+  const built1 = useMemo(() => builtFor(1), [own, frame, slots[1]?.id, slots[1]?.available, settings.smoothing, views[1], widths[1], context, othersKey, rowOf]);
   const built = [built0, built1];
 
   const setView = (slot: 0 | 1, view: View) => setViews(v => (slot === 0 ? [view, v[1]] : [v[0], view]));
@@ -166,7 +224,8 @@ export function TrainingTab({ hidden, runDir, status }: { hidden: boolean; runDi
   const { evaluations, updates } = own.counts();
   const last = own.lastTime();
   const state: string | undefined = status?.state;
-  const empty = own.answers > 0 && evaluations === 0 && updates === 0;
+  const empty = own.answers > 0 && evaluations === 0 && updates === 0 && !others.length;
+  const candidates = runs.filter(r => r.run_dir !== runDir && !others.includes(r.run_dir));
   const unavailable = charts.filter(c => !c.available);
   const counts = own.answers === 0 ? (reading.error ? '' : 'Reading the recorded numbers...')
     : `${evaluations} evaluation${evaluations === 1 ? '' : 's'} · ${updates} learner update${updates === 1 ? '' : 's'}${last ? ` · last metric ${clock(last)}` : ''}`
@@ -184,6 +243,10 @@ export function TrainingTab({ hidden, runDir, status }: { hidden: boolean; runDi
       <select aria-label="Second chart" value={ids[1] ?? ''} onChange={e => choose(1, e.target.value || null)}><option value="">(one chart)</option>{options(charts)}</select>
       <label className="inline">Smoothing <select value={settings.smoothing} onChange={e => keep({ ...settings, smoothing: Number(e.target.value) })}>
         {SMOOTHING.map(n => <option key={n} value={n}>{n ? `mean of last ${n}` : 'off'}</option>)}</select></label>
+      <select aria-label="Compare with another run" className="training-compare" value="" disabled={others.length >= COMPARE_MAX - 1 || !candidates.length}
+        onChange={e => { if (e.target.value) keepCompare([...others, e.target.value]); }}
+        title={`Compare: draw up to ${COMPARE_MAX - 1} other runs on the same charts, each in its own colour (the list of the run window, Runs...).`}>
+        <option value="">Compare...</option>{candidates.map(r => <option key={r.run_dir} value={r.run_dir}>{runChoice(r)}</option>)}</select>
       <button aria-pressed={following} disabled={!shown.length} onClick={follow}
         title={following ? 'Follow latest: on - the charts keep the newest results in view. Press to hold them where they are.' : 'Follow latest: off - you zoomed in, so new results do not move the charts. Press to slide back to the newest results, keeping the zoom width.'}>
         <Icon name="follow" label="Follow latest" /></button>
@@ -191,6 +254,14 @@ export function TrainingTab({ hidden, runDir, status }: { hidden: boolean; runDi
         <Icon name="zoom-reset" label="Reset zoom" /></button>
       </span>
     </div>
+    {others.length > 0 && <div className="training-compared">
+      {/* the runs on the charts, each in its colour; × takes one off (record 7.200) */}
+      <span className="training-chip key-run0" title={runDir}><span className="swatch" />{runLabel(runDir)} (shown)</span>
+      {others.map((dir, i) => <span key={dir} className={`training-chip key-run${i + 1}`} title={dir}><span className="swatch" />{runLabel(dir)}
+        {comparedState[dir]?.live ? ' \u00b7 live' : ''}{comparedState[dir]?.error ? <span className="error"> - {comparedState[dir].error}</span> : null}
+        <button type="button" className="training-chip-remove" onClick={() => keepCompare(others.filter(d => d !== dir))}
+          title={`Remove: take ${runLabel(dir)} off the charts`}><Icon name="close" label={`Remove ${runLabel(dir)}`} /></button></span>)}
+    </div>}
     {state === 'failed' && status?.error && <p className="error training-note">The run failed: {status.error}</p>}
     {reading.error && <p className="error training-note">The training numbers could not be read: {reading.error} <button onClick={() => setRetry(n => n + 1)}>Retry read</button></p>}
     {!own.tailComplete && <p className="hint training-note">The run's journal was being rewritten at a save point; its newest results come with the next read.</p>}
@@ -207,10 +278,11 @@ export function TrainingTab({ hidden, runDir, status }: { hidden: boolean; runDi
               <b>{spec?.title ?? 'Chart'}</b>{spec?.unit && !['', 'share'].includes(spec.unit) ? <span className="hint"> ({spec.unit})</span> : null}</figcaption>
             {!spec ? <p className="hint">This chart is not offered for this run.</p>
               : !spec.available ? <p className="hint training-empty">{spec.reason}</p>
-              : <TrainingChart built={built[slot]} hidden={!active} look={look} xLabel={spec.axis === 'update' ? 'Learner update' : 'Evaluation'}
+              : <>{built[slot]?.missing?.length ? <p className="hint training-missing">Not on this chart: {built[slot]!.missing!.map(m => `${m.label} (${m.reason})`).join('; ')}</p> : null}
+                <TrainingChart built={built[slot]} hidden={!active} look={look} xLabel={spec.axis === 'update' ? 'Learner update' : 'Evaluation'}
                   format={formatFor(spec.unit)} describe={describe(spec.axis)}
                   onWidth={width => setWidths(w => (Math.abs(w[slot] - width) < 8 ? w : (slot === 0 ? [width, w[1]] : [w[0], width])))}
-                  onZoom={(min, max) => setView(slot, { mode: 'fixed', min, max })} onReset={() => setView(slot, NONE)} />}
+                  onZoom={(min, max) => setView(slot, { mode: 'fixed', min, max })} onReset={() => setView(slot, NONE)} /></>}
           </figure>;
         })}
       </div>}

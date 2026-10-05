@@ -12,7 +12,7 @@
 import { fileURLToPath } from 'node:url';
 
 const data = await import(new URL('../src/panels/trainingData.ts', import.meta.url).href);
-const { TrainingStore, build, catalog, decimate, smooth, updateBranches, viewRange, setCaps, passFlags } = data;
+const { TrainingStore, build, buildCompare, catalog, decimate, smooth, updateBranches, viewRange, setCaps, passFlags } = data;
 if (fileURLToPath(import.meta.url) && !TrainingStore) throw new Error('trainingData.ts did not load');
 
 let passed = 0, failed = 0;
@@ -40,9 +40,9 @@ const UPDATE = ['cumulative_updates', 'evaluations_collected', 'update_phase', '
 const SPEC = ['commit_seq', 'metric_name', 'raw_value', 'satisfied', 'failure_reason'];
 const chunk = ({ evaluations = [], updates = [], specs = [], defs = {} } = {}) =>
   ({ evaluations: columns(evaluations, EVALUATION), updates: columns(updates, UPDATE), specs: columns(specs, SPEC), spec_defs: defs });
-const answer = ({ start = 0, served, total, final, tail = null, objective = null, learner = { recorded: true, every: 1, reason: null }, segments = [], complete = true, latest = 0 }) =>
+const answer = ({ start = 0, served, total, final, tail = null, tail_page, objective = null, learner = { recorded: true, every: 1, reason: null }, segments = [], complete = true, latest = 0 }) =>
   ({ run_dir: '/fixture/run', run_id: 'fixture', mode: 'scratch', mock: true, flushes: { served, total, start }, final, tail, tail_complete: complete,
-     latest_seq: latest, objective, learner, segments });
+     latest_seq: latest, objective, learner, segments, tail_page });
 const evaluation = (seq, over = {}) => ({ commit_seq: seq, completion_index: seq, global_env_step: seq, episode_id: `0-${String(Math.ceil(seq / 5)).padStart(6, '0')}`,
   episode_step: (seq - 1) % 5, phase: 'search', action_source: 'sac_policy', status: 'ok', reward: -1 / seq, valid: true,
   all_hard_constraints_satisfied: false, normalized_constraint_violation: 1 / seq, clearance_margin: -1 / seq, best_so_far_feasible: false,
@@ -197,6 +197,110 @@ const valuesOf = (built, label) => built.series.find(s => s.label === label)?.va
   store.apply(answer({ start: 2, served: 3, total: 3, final: chunk({ evaluations: [evaluation(3002), evaluation(3003)] }), tail: null }));
   const after = Array.from(t.cols.k.subarray(0, t.n)).slice(-4);
   check('rows after thinning are numbered on, the tail replaced as before', same(after, [3000, 3001, 3002, 3003]), JSON.stringify(after));
+  setCaps({ evaluations: 50000, updates: 200000 });
+}
+
+// ---- 7. several runs on one chart (record 7.200) ---------------------------------------------------------------------------
+{
+  const gainDefs = { gain_vv: { unit: 'V/V', threshold_lower: 400, threshold_upper: null, hard: true } };
+  const run = (name, n, gainOf, extra = {}) => {
+    const store = new TrainingStore(name);
+    const rows = Array.from({ length: n }, (_, i) => evaluation(i + 1, { phase: i % 5 === 0 ? (i ? 'episode_reset' : 'baseline') : 'search', reward: i % 5 === 0 ? null : gainOf(i + 1) / 1000 }));
+    const specs = rows.map(r => ({ commit_seq: r.commit_seq, metric_name: extra.spec ?? 'gain_vv', raw_value: gainOf(r.commit_seq), satisfied: null, failure_reason: null }));
+    const defs = extra.spec ? { [extra.spec]: { unit: extra.unit ?? 'V/V', threshold_lower: null, threshold_upper: null, hard: true } } : extra.unit ? { gain_vv: { ...gainDefs.gain_vv, unit: extra.unit } } : gainDefs;
+    store.apply(answer({ served: 1, total: 1, final: chunk({ evaluations: rows, specs, defs, updates: extra.updates ?? [] }) }));
+    return store;
+  };
+  const a = run('/a', 10, k => 300 + k), b = run('/b', 6, k => 100 + k), c = run('/c', 8, k => 50 + k, { spec: 'pm_deg', unit: 'deg' }), d = run('/d', 5, k => k, { unit: 'dB' });
+  const built = buildCompare([{ store: a, label: 'A' }, { store: b, label: 'B' }, { store: c, label: 'C' }, { store: d, label: 'D' }], 'spec:gain_vv', 0, { mode: 'all' }, 800);
+  const valuesOf2 = label => built.series.find(x => x.label === label)?.values;
+  check('compared runs share one x axis: their evaluation numbers', same(built.x, [2, 3, 4, 5, 7, 8, 9, 10]), JSON.stringify(built.x));
+  check('each run its own series, its recorded values at its own evaluations; episode starts left out',
+    same(valuesOf2('A'), [302, 303, 304, 305, 307, 308, 309, 310]) && same(valuesOf2('B'), [102, 103, 104, 105, undefined, undefined, undefined, undefined]), JSON.stringify(built.series.map(x => [x.label, x.values])));
+  check('each run its colour (run index); the first run\'s limits', built.series.find(x => x.label === 'A').run === 0 && built.series.find(x => x.label === 'B').run === 1
+    && same(valuesOf2('lower limit (A)'), new Array(8).fill(400)));
+  check('a run without the spec, and one whose spec has another unit, are named with the reason', built.missing.length === 2
+    && /C/.test(built.missing[0].label) && /D/.test(built.missing[1].label) && /dB/.test(built.missing[1].reason), JSON.stringify(built.missing));
+  check('no row of a comparison is named on hover (rows -1)', built.rows.every(r => r === -1));
+  const smoothed = buildCompare([{ store: a, label: 'A' }, { store: b, label: 'B' }], 'reward', 2, { mode: 'all' }, 800);
+  check('smoothing per run: its own recorded values under its own mean', same(smoothed.series.map(x => x.label), ['A (recorded)', 'A: mean of last 2', 'B (recorded)', 'B: mean of last 2'])
+    && [0.102, (0.102 + 0.103) / 2, (0.103 + 0.104) / 2, (0.104 + 0.105) / 2].every((want, i) => Math.abs(smoothed.series[3].values[i] - want) < 1e-12),   // a running mean: rounding at 1e-17
+    JSON.stringify(smoothed.series[3].values.slice(0, 4)));
+  // learner charts: abandoned updates after a restart left out; two columns of one run, the second dashed
+  const ups = [...Array.from({ length: 6 }, (_, i) => update(i + 1)), ...Array.from({ length: 4 }, (_, i) => update(i + 4, { critic_loss: 9 }))];
+  const e = run('/e', 3, k => k, { updates: ups }), f = run('/f', 3, k => k, { updates: [update(1), update(2)] });
+  const learner = buildCompare([{ store: e, label: 'E' }, { store: f, label: 'F' }], 'critic_loss', 0, { mode: 'all' }, 800);
+  check('learner comparison: the line each learner went on, abandoned updates left out', same(learner.x, [1, 2, 3, 4, 5, 6, 7])
+    && same(learner.series[0].values, [1, 1 / 2, 1 / 3, 9, 9, 9, 9]) && same(learner.series[1].values, [1, 1 / 2, undefined, undefined, undefined, undefined, undefined]), JSON.stringify(learner.series.map(x => x.values)));
+  const grads = buildCompare([{ store: e, label: 'E' }, { store: f, label: 'F' }], 'grad_norm', 0, { mode: 'all' }, 800);
+  check('two columns of one run: named, the second dashed', same(grads.series.map(x => [x.label, !!x.dash, x.run]), [['E / Critics', false, 0], ['E / Policy', true, 0], ['F / Critics', false, 1], ['F / Policy', true, 1]]));
+}
+
+// ---- audit regressions: feasible objective and bounded, incremental live rows -----------------------------------------
+{
+  const store = new TrainingStore('/fixture/objective'), objective = { metric: 'gain', direction: 'max' };
+  const rows = [evaluation(1, { best_so_far_objective: 100 }), evaluation(2, { best_so_far_objective: 120, best_so_far_feasible: null })];
+  store.apply(answer({ served: 1, total: 1, final: chunk({ evaluations: rows }), objective }));
+  check('an infeasible or unknown best design cannot enable the feasible-objective chart', !catalog(store).find(c => c.id === 'objective').available);
+  store.apply(answer({ start: 1, served: 2, total: 2, objective,
+    final: chunk({ evaluations: [evaluation(3, { best_so_far_objective: 80, best_so_far_feasible: true })] }) }));
+  check('objective plot masks infeasible values even from an older backend',
+    same(build(store, 'objective', 0, { mode: 'all' }, 800).series[0].values, [null, null, 80]));
+  check('objective comparison also masks infeasible values',
+    same(buildCompare([{ store, label: 'A' }], 'objective', 0, { mode: 'all' }, 800).series[0].values, [null, null, 80]));
+}
+{
+  const store = new TrainingStore('/fixture/paged');
+  const page = (start, cursor, reset = false, more = false) => ({ start, cursor, reset, more });
+  store.apply(answer({ served: 0, total: 0, final: chunk(), tail: chunk({ evaluations: [evaluation(1)], updates: [update(1)] }),
+    tail_page: page(null, 'a', true, true) }));
+  const second = answer({ served: 0, total: 0, final: chunk(), tail: chunk({ updates: [update(2)] }), tail_page: page('a', 'b', false, true) });
+  store.apply(second);
+  check('journal cursor pages append without replacing preceding pages', same(store.counts(), { evaluations: 1, updates: 2 })
+    && store.finalEvaluations === 0 && store.finalUpdates === 0 && store.tailCursor === 'b');
+  check('a repeated page at the same flush cursor is ignored', !store.apply(second) && store.counts().updates === 2);
+  const specs = [{ commit_seq: 1, metric_name: 'gain', raw_value: 99, satisfied: true, failure_reason: null }];
+  const changed = store.apply(answer({ served: 0, total: 0, final: chunk(), tail: chunk({ specs }), latest: 1, tail_page: page('b', 'c') }));
+  check('a specs-only page joins to an evaluation on an earlier page and requests redraw', changed && store.evaluations.cols['spec:gain'][0] === 99);
+  check('an unchanged incremental poll requests no redraw', !store.apply(answer({ served: 0, total: 0, final: chunk(), tail: chunk(), latest: 1, tail_page: page('c', 'c') })));
+  store.apply(answer({ served: 1, total: 1, final: chunk({ evaluations: [evaluation(1)], updates: [update(1), update(2)], specs }),
+    tail: chunk({ evaluations: [evaluation(2)] }), latest: 2, tail_page: page('c', 'd', true) }));
+  check('publishing a paged tail removes its provisional rows before appending final rows',
+    same(store.counts(), { evaluations: 2, updates: 2 }) && store.finalEvaluations === 1 && store.evaluations.n === 2);
+  store.apply(answer({ start: 1, served: 1, total: 1, final: chunk(), tail: chunk(), latest: 1, complete: false, tail_page: page('d', null, true) }));
+  check('a compaction race drops only the provisional data and clears the tail cursor',
+    same(store.counts(), { evaluations: 1, updates: 2 }) && store.evaluations.n === 1 && store.tailCursor === null);
+}
+{
+  const store = new TrainingStore('/fixture/large-live-tail');
+  const n = data.UPDATE_CAP + 1;
+  const updates = Array.from({ length: n }, (_, i) => update(i + 1));
+  store.apply(answer({ served: 0, total: 0, final: chunk(), tail: chunk({ updates }), latest: 1 }));
+  check('the actual 200,000-update cap also applies when nothing has flushed', store.updates.n <= data.UPDATE_CAP
+    && store.thinnedUpdates > 0 && store.finalUpdates === 0, `${store.updates.n} retained of ${n}`);
+  check('thinning a live tail keeps exact recorded counts and the newest update', store.counts().updates === n && store.updates.cols.cum[store.updates.n - 1] === n);
+}
+{
+  setCaps({ evaluations: 2000, updates: 2000 });
+  const store = new TrainingStore('/fixture/thinned-paged');
+  const rows = Array.from({ length: 3000 }, (_, i) => evaluation(i + 1, { episode_id: `episode-${i + 1}` }));
+  const updates = Array.from({ length: 3000 }, (_, i) => update(i + 1));
+  store.apply(answer({ served: 1, total: 1, final: chunk({ evaluations: rows.slice(0, 1000), updates: updates.slice(0, 1000) }),
+    tail: chunk({ evaluations: rows.slice(1000), updates: updates.slice(1000) }), latest: 3000,
+    tail_page: { start: null, cursor: 'first', reset: true, more: false } }));
+  check('both row limits cover final rows plus journal rows', store.evaluations.n <= 2000 && store.updates.n <= 2000
+    && same(store.counts(), { evaluations: 3000, updates: 3000 }));
+  check('thinning also releases unused word dictionary entries', store.words.episode.list.length === store.evaluations.n);
+  store.apply(answer({ start: 1, served: 1, total: 1, final: chunk(), tail: chunk({ evaluations: [evaluation(3001)], updates: [update(3001)] }), latest: 3001,
+    tail_page: { start: 'first', cursor: 'second', reset: false, more: false } }));
+  check('incremental appends after tail thinning keep original evaluation numbers', store.evaluations.cols.k[store.evaluations.n - 1] === 3001
+    && same(store.counts(), { evaluations: 3001, updates: 3001 }));
+  store.apply(answer({ start: 1, served: 2, total: 2, final: chunk({ evaluations: [...rows.slice(1000), evaluation(3001)], updates: [...updates.slice(1000), update(3001)] }),
+    tail: chunk({ evaluations: [evaluation(3002)] }), latest: 3002, tail_page: { start: 'second', cursor: 'third', reset: true, more: false } }));
+  const t = store.evaluations, seqs = Array.from(t.cols.seq.subarray(0, t.n));
+  check('a later flush replaces a thinned tail without duplicates or misnumbering', new Set(seqs).size === t.n
+    && seqs.every((seq, i) => seq === t.cols.k[i]) && same(store.counts(), { evaluations: 3002, updates: 3001 }));
+  check('the row limits still hold after flushing a thinned tail', t.n <= 2000 && store.updates.n <= 2000);
   setCaps({ evaluations: 50000, updates: 200000 });
 }
 

@@ -30,16 +30,19 @@ def decode(column):
 
 
 def whole(answers):
-    """What the page holds after these answers: every page's final rows, then the last answer's tail (the page replaces
-    its tail with every answer)."""
+    """Final rows plus tail pages since the latest cursor reset."""
     out = {'evaluations': {}, 'updates': {}, 'specs': {}}
+    pending = []
     for answer in answers:
         for table in out:
             for name, column in answer['final'][table].items():
                 if name != 'n':
                     out[table].setdefault(name, []).extend(decode(column))
-    tail = answers[-1]['tail']
-    if tail:
+        if answer.get('tail_page', {}).get('reset', True):
+            pending.clear()
+        if answer['tail']:
+            pending.append(answer['tail'])
+    for tail in pending:
         for table in out:
             for name, column in tail[table].items():
                 if name != 'n':
@@ -48,16 +51,18 @@ def whole(answers):
 
 
 def read_all(run_dir, max_rows=training_series.MAX_ROWS):
-    answers, cursor = [], 0
+    answers, cursor, tail_cursor = [], 0, None
     while True:
-        answer = training_series.read_training(run_dir, cursor, max_rows=max_rows)
+        answer = training_series.read_training(run_dir, cursor, max_rows=max_rows, tail_cursor=tail_cursor)
         json.dumps(answer, allow_nan=False)                     # what the route sends: never a NaN or an infinity
         answers.append(answer)
         assert answer['flushes']['start'] == cursor
         cursor = answer['flushes']['served']
-        if cursor == answer['flushes']['total']:
+        tail_cursor = answer['tail_page']['cursor']
+        if cursor == answer['flushes']['total'] and not answer['tail_page']['more']:
             return answers
-        assert answer['tail'] is None                           # a tail only once the page holds every flush
+        if cursor < answer['flushes']['total']:
+            assert answer['tail'] is None                       # a tail only once the page holds every flush
 
 
 def epoch(value):
@@ -100,6 +105,7 @@ def test_values_are_the_recorded_rows_exactly(scripted_run):
     assert gaps == {'missing_or_nonfinite', 'evaluation_status_timeout'}           # the NaN measurement and the timeout: gaps, with why
     assert answer['final']['spec_defs'] == {'score': dict(unit='fixture', threshold_lower=0.6, threshold_upper=None, hard=True)}
     assert answer['learner'] == dict(recorded=True, every=1, reason=None) and answer['objective'] is None
+    assert answer['state'] == 'completed' and answer['worker_alive'] is False      # a run compared beside the shown one (7.200)
     assert [s['entry'] for s in answer['segments']] == ['start'] and answer['tail'] == {'evaluations': {'n': 0}, 'updates': {'n': 0},
                                                                                          'specs': {'n': 0}, 'spec_defs': {}}
 
@@ -110,7 +116,7 @@ def test_pages_add_up_to_one_answer_and_never_repeat_a_row(scripted_run):
     paged = read_all(layout.run_dir, max_rows=12)
     assert len(one) == 1 and len(paged) > 3
     assert whole(paged) == whole(one)
-    assert [a['flushes']['served'] for a in paged] == sorted({a['flushes']['served'] for a in paged})
+    assert [a['flushes']['served'] for a in paged] == sorted(a['flushes']['served'] for a in paged)
 
 
 def test_journal_tail_reads_back_to_the_last_flush_only(tmp_path):
@@ -225,6 +231,95 @@ def test_best_feasible_objective_is_the_trackers_objective_value(tmp_path):
     assert got == want and any(v is not None for v in got)
     values = [v for v in got if v is not None]
     assert values == sorted(values)                                             # the best feasible score only improves
+
+
+def test_infeasible_or_unknown_best_design_has_no_feasible_objective():
+    import pyarrow as pa
+    objective = dict(metric='gain', direction='max')
+    recorded = [dict(best_so_far_metrics=[dict(key='gain', value=100. + i)], best_so_far_feasible=flag)
+                for i, flag in enumerate((False, None, True, False))]
+    columns = ('best_so_far_metrics', 'best_so_far_feasible')
+    parquet = training_series._table_columns(pa.Table.from_pylist(recorded), objective)
+    journal = training_series._rows_columns(recorded, columns, objective)
+    assert parquet['best_so_far_objective'] == journal['best_so_far_objective'] == [None, None, 102., None]
+
+
+def journal_bundle(seq, updates=7):
+    return dict(commit_seq=seq, evaluation_id=f'e{seq}', rows=dict(
+        evaluations=[dict(evaluation_id=f'e{seq}', commit_seq=seq)],
+        learner_updates=[dict(cumulative_updates=(seq - 1) * updates + i + 1) for i in range(updates)],
+        metrics=[dict(evaluation_id=f'e{seq}', metric_name='gain', raw_value=float(seq), hard=True,
+                      aggregation_level='aggregate', satisfied=True)]))
+
+
+def test_live_journal_is_bounded_incremental_and_splits_large_bundles(tmp_path):
+    data = tmp_path / 'data' / '_journal'
+    data.mkdir(parents=True)
+    wal = data / 'wal.jsonl'
+    wal.write_text(''.join(json.dumps(journal_bundle(seq)) + '\n' for seq in range(1, 4)))
+    answers = read_all(tmp_path, max_rows=4)
+    assert len(answers) == 7
+    assert all(sum(a['tail'][name]['n'] for name in ('evaluations', 'updates', 'specs')) <= 4 for a in answers)
+    assert [a['tail_page']['reset'] for a in answers] == [True] + [False] * 6
+    got = whole(answers)
+    assert got['evaluations']['commit_seq'] == [1, 2, 3]
+    assert got['updates']['cumulative_updates'] == list(range(1, 22))
+    assert got['specs']['commit_seq'] == [1, 2, 3]
+    assert got['specs']['raw_value'] == [1., 2., 3.]
+    cursor = answers[-1]['tail_page']['cursor']
+    quiet = training_series.read_training(tmp_path, tail_cursor=cursor, max_rows=4)
+    assert quiet['tail_page'] == dict(start=cursor, cursor=cursor, reset=False, more=False)
+    assert all(quiet['tail'][name]['n'] == 0 for name in ('evaluations', 'updates', 'specs'))
+    with wal.open('a') as stream:
+        stream.write(json.dumps(journal_bundle(4, updates=0)) + '\n')
+    added = training_series.read_training(tmp_path, tail_cursor=cursor, max_rows=4)
+    assert added['tail']['evaluations']['commit_seq'] == [4] and added['latest_seq'] == 4
+    assert not added['tail_page']['reset'] and not added['tail_page']['more']
+
+
+def test_live_cursor_handles_torn_lines_flushes_and_compaction(tmp_path):
+    wal = tmp_path / 'wal.jsonl'
+    line = lambda seq: json.dumps(journal_bundle(seq, updates=0)) + '\n'
+    wal.write_text(line(1) + line(2)[:-5])
+    chunk, page, complete, latest = training_series.journal_page(wal, 0, None)
+    assert complete and latest == 1 and chunk.evaluations['commit_seq'] == [1] and not page['more']
+    with wal.open('a') as stream:
+        stream.write(line(2)[-5:])
+    chunk, page, complete, latest = training_series.journal_page(wal, 0, None, page['cursor'])
+    assert complete and latest == 2 and chunk.evaluations['commit_seq'] == [2] and not page['reset']
+    cursor = page['cursor']
+    # Atomic WAL compaction changes the file identity, even if its size is unchanged.
+    replacement = tmp_path / 'replacement'
+    replacement.write_text(line(2) + line(3))
+    replacement.replace(wal)
+    chunk, page, complete, latest = training_series.journal_page(wal, 1, None, cursor)
+    assert complete and latest == 3 and page['reset'] and chunk.evaluations['commit_seq'] == [2, 3]
+    # A reader with a stale flush list waits for the next poll rather than inventing a missing bundle.
+    chunk, page, complete, latest = training_series.journal_page(wal, 0, None, cursor)
+    assert not complete and chunk.as_json()['evaluations']['n'] == 0 and page['reset']
+    chunk, page, complete, latest = training_series.journal_page(wal, 1, None, 'invalid cursor')
+    assert complete and page['reset'] and chunk.evaluations['commit_seq'] == [2, 3]
+
+
+def test_new_flush_cursor_seeks_past_the_published_history(tmp_path, monkeypatch):
+    wal = tmp_path / 'wal.jsonl'
+    wal.write_text(''.join(json.dumps(journal_bundle(seq, updates=0)) + '\n' for seq in range(1, 1003)))
+    visited = []
+    original = training_series._journal_lines
+
+    def track(stream):
+        for line, end in original(stream, block_size=128):
+            visited.append(json.loads(line)['commit_seq'])
+            yield line, end
+
+    monkeypatch.setattr(training_series, '_journal_lines', track)
+    chunk, page, complete, latest = training_series.journal_page(wal, 1000, None, max_rows=2)
+    assert complete and chunk.evaluations['commit_seq'] == [1001] and page['more']
+    assert visited == [1002, 1001, 1000]
+    visited.clear()
+    chunk, page, complete, latest = training_series.journal_page(wal, 1000, None, page['cursor'], max_rows=2)
+    assert complete and latest == 1002 and chunk.evaluations['commit_seq'] == [1002] and not page['more']
+    assert not visited                         # next page seeks straight to its saved byte offset
 
 
 def test_learner_record_says_why_nothing_was_recorded(tmp_path):

@@ -258,3 +258,5 @@ One row per commit, newest last.
 | `08b60ca` | 10-05 14:35 | - | record only: names the commit of record 7.186, and the table rows for 4f3f01d and 0857ecf |
 | `6f75c3d` | 10-05 14:57 | 7.185, 7.188 | the editors' toolbar on one line at 1366 px (the find box shrinks, its count inside it); a crash panel instead of a blank page (Undo the last change, Export JSON, Reload; an empty start without Undo); Ctrl+Z / Ctrl+Y in the tables; the editor tables' headers in plain words, the field names in their tooltips; the "no real baseline yet" note in one line |
 | `f388bd2` | 10-05 14:58 | - | record only: names the commit of records 7.185 and 7.188, and the table rows for 08b60ca and 6f75c3d |
+| `358cc85` | 10-05 15:02 | - | record only: the four saves of record 7.187 (13 dB rows hold Scale 6), and the table row for f388bd2 |
+| `f185152` | 10-05 15:26 | 7.189 | a lighter page opening: the output folder no longer walked for its size at every page open (0.7 to 2 s on D:), a Measure button asks for it; the page's weight measured (128 ms, 6 MB, a 504 KB script; the graph library already loaded on demand) |

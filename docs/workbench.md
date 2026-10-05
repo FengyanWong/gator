@@ -356,7 +356,8 @@ list, any other expression). Both hashes see the retired columns at their old de
 run resumes, its checkpoints load, its task keeps its `task_id` and approvals still bind - checked against the three runs on
 this machine and the MOCK starter's documented task hash (`5f181ef3...`). The browser's copy of the rows is migrated the
 same way when the page loads (`store.ts migrateConfig`), so the editors' rows equal the rows the backend serves; a value the
-browser cannot keep is written into the row's notes.
+browser cannot keep is written into the row's notes. Legacy spec `measurement_id` references are converted to
+equations before computed probes are inlined and removed; an explicit equation still wins (record 7.174).
 
 **The Probes' `conditions` and `aggregation` went too (2026-09-29, user request, record 7.105).** They were to name the
 test conditions a probe is measured under and how its values there combine (nominal only, worst case, mean, min, max).
@@ -985,6 +986,9 @@ Mapping to the recommended layout of the specification:
   different moments. `replay_buffer/manifest.json` lists its members so it can be checked against
   the complete `transitions` archive without unpickling.
 * A part file belongs to the dataset only if `data/_journal/flushes.jsonl` lists it.
+* When a writer reopens a journal after a crash, it truncates only the incomplete final line before appending.
+  Complete corrupt records stop recovery with a persistence error; they never silently hide later records.
+  A healthy journal needs only its final byte checked (record 7.174).
 
 Three things that are deliberately not the same:
 `latest` (most recently safely saved state) / `best_policy` (only by an explicit validation-set
@@ -1824,6 +1828,11 @@ If browser storage is full or blocked, a persistent header warning offers **Retr
 current in-memory configuration. Failed writes remain unsaved, including for the page-close retry. A successful write
 clears the warning; page-close saving still avoids replacing another tab's stored configuration (record 7.130).
 
+Editing stays available while Save task is in flight. The reply applies normalized parameters only when those rows
+have not changed since the press; newer edits stay in the editors and the message says they are not saved yet. A reply
+for a task, cell or connection that is no longer selected cannot change the current rows, circuit or save message
+(record 7.174).
+
 **What Save task does.** It reads from the Probes how the task measures: all Maestro outputs (`ade_output`) = measured
 by Maestro; all results of one circuit type (`backend_profile`, e.g. what the testbench brought) = that type - the
 ring oscillator or the op-amp, measured by the workbench as before. Mixed probes, or probes that fit both types, are
@@ -2075,6 +2084,11 @@ reason. Claude Code cannot list its models, so its list is a table kept by hand 
 code.claude.com/docs/en/model-config and the API price list (checked 2026-10-03); `default`, `opusplan` and the `[1m]`
 spellings are left out on purpose (the module says why). Any other name is accepted under "Custom...".
 
+Codex proposals use a strict output schema with closed objects and required nullable optional fields. The flexible
+row values and Maestro dictionaries travel as JSON text and are decoded before the shared backend validation;
+Claude Code and manual import keep their existing format. Malformed encoded objects are schema failures, and the
+normal scope and approval checks still apply (record 7.174; `agents/codex_schema.py`).
+
 Bridge skills exist in `~/virtuoso-bridge-lite/skills/` and the project's Codex-style
 `.agents/skills/`, but **not** in a Claude Code discovery location. `GET /api/agent/diagnostics`
 reports this and proposes (never executes) symlinks into `.claude/skills/`.
@@ -2201,7 +2215,8 @@ The user chose all four groups of `artifacts/local/reviews/frontend-audit-2026-0
 * **Undo while typing:** keys typed into one field less than 1.5 s apart are one Undo step (user choice); leaving the
   field ends it, and a change that was not typed there - a button, an applied proposal, rows read from Virtuoso - is a
   step of its own even while the field has focus (7.131). An edit made less than 0.8 s before the page is closed or
-  reloaded is saved - unless another tab stored the configuration meanwhile.
+  reloaded is saved - unless another tab stored the configuration meanwhile. Configuration and Undo/Redo history
+  now move together in a pure reducer, including under development StrictMode (7.174).
 * **The Agent tab keeps its message box** while an AI run's thread is shown (the thread scrolls in a row of its own).
 * **Import JSON:** only a file this workbench exported replaces the whole configuration; other files are rows for the
   open tab (every row with its ID) or are refused in words. The confirmation shows Apply / Cancel first and scrolls.

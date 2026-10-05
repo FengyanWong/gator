@@ -49,6 +49,54 @@ def test_jsonl_ignores_a_torn_tail(tmp_path):
     assert [r['n'] for r in atomic.read_jsonl(tmp_path / 'l.jsonl')] == [1, 2]
 
 
+@pytest.mark.parametrize('prefix', [b'', b'{"n":1}\n'])
+@pytest.mark.parametrize('tail', [b'{"unfinished"', b'\xe2\x82', b'x' * 140000, b'{"n":2}'])
+def test_jsonl_repairs_only_unacknowledged_tail_before_append(tmp_path, prefix, tail):
+    path = tmp_path / 'log.jsonl'
+    path.write_bytes(prefix + tail)
+    before = atomic.read_jsonl(path)
+    log = atomic.JsonlAppender(path)
+    try:
+        log.append(dict(n=3, text='μ電路'))
+    finally:
+        log.close()
+    assert path.read_bytes().startswith(prefix)
+    assert atomic.read_jsonl(path) == before + [dict(n=3, text='μ電路')]
+
+
+def test_complete_corrupt_journal_record_is_not_silently_skipped(tmp_path):
+    path = tmp_path / 'log.jsonl'
+    original = b'{"n":1}\ninvalid\n{"n":2}\n'
+    path.write_bytes(original)
+    with pytest.raises(atomic.PersistenceError, match='line 2'):
+        atomic.read_jsonl(path)
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize('journal', ['wal.jsonl', 'flushes.jsonl'])
+def test_commit_after_crash_survives_compaction_and_second_restart(tmp_path, journal):
+    root = tmp_path / 'data'
+    data = RawDataset(root, flush_every=1)
+    data.commit(metric_bundle(1)); data.close()
+    with (root / '_journal' / journal).open('ab') as stream:
+        stream.write(b'{"unfinished": "\xe2\x82')
+    recovered = RawDataset(root, flush_every=100)
+    assert recovered.commit(metric_bundle(2))
+    # Another crash before the new acknowledgement reaches Parquet must work too.
+    recovered._wal.close(); recovered._flush_log.close()
+    recovered = RawDataset(root, flush_every=100)
+    assert recovered.has('e002')
+    recovered.flush(); recovered.compact_journal(); recovered.close()
+    reopened = RawDataset(root, flush_every=1)
+    assert reopened.has('e002') and not reopened.recovery['quarantined_parts']
+    assert reopened.commit(metric_bundle(2)) is False
+    assert reopened.commit(metric_bundle(3))
+    reopened.close()
+    reader = DatasetReader(root)
+    assert [r['evaluation_id'] for r in reader.rows('metrics')] == ['e001', 'e002', 'e003']
+    assert reader.verify() == []
+
+
 def test_only_registered_temporaries_are_removed(tmp_path):
     keep = tmp_path / 'model.pt'; keep.write_text('model')
     temp = tmp_path / f'part.parquet{atomic.TEMP_MARKER}abc'; temp.write_text('x')

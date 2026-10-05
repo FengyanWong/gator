@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { readWithDeadline, type Json } from './api';
 
 const STORAGE_KEY = 'gator-workbench-config-v1';
@@ -158,58 +158,58 @@ function typingField(): Element | null {
   return e?.tagName === 'INPUT' && !['checkbox', 'radio', 'file', 'button', 'submit'].includes(e.type) ? e : null;
 }
 
+type History = { config: Json; past: Json[]; future: Json[]; field: Element | null; at: number };
+type HistoryAction = { type: 'set'; next: Json | ((c: Json) => Json); record: boolean; field: Element | null; at: number }
+  | { type: 'undo' | 'redo' } | { type: 'blur'; field: Element };
+
+// React may replay this reducer in StrictMode. Configuration and history move together,
+// without changing refs or the arrays of a previous state.
+function configHistory(state: History, action: HistoryAction): History {
+  if (action.type === 'blur') return state.field === action.field ? { ...state, field: null, at: 0 } : state;
+  if (action.type === 'set') {
+    const config = typeof action.next === 'function' ? action.next(state.config) : action.next;
+    if (!action.record) return config === state.config ? state : { ...state, config };
+    if (JSON.stringify(config) === JSON.stringify(state.config)) return state;
+    const merge = action.field !== null && action.field === state.field && action.at - state.at < MERGE_MS && state.past.length > 0;
+    return { config, past: merge ? state.past : [...state.past.slice(-(HISTORY_LIMIT - 1)), state.config],
+      future: [], field: action.field, at: action.at };
+  }
+  const from = action.type === 'undo' ? state.past : state.future;
+  if (!from.length) return { ...state, field: null, at: 0 };
+  return { config: from[from.length - 1], field: null, at: 0,
+    past: action.type === 'undo' ? state.past.slice(0, -1) : [...state.past, state.config],
+    future: action.type === 'redo' ? state.future.slice(0, -1) : [...state.future, state.config] };
+}
+
 /** Configuration state with undo/redo and local persistence (kept in the browser by itself, 0.8 s after each change - the
  *  editors' "Save" button that did the same at once went on 2026-09-22; "Export JSON" writes a file, and a started run
  *  stores its own effective_config.json). A change still waiting for those 0.8 s is written when the page goes away.
  *  `fresh`: this browser had no saved configuration when the page opened (blocked site storage counts as fresh). */
 export function useConfig() {
   const [fresh] = useState(() => { try { return localStorage.getItem(STORAGE_KEY) === null; } catch { return true; } });
-  const [config, setConfigState] = useState<Json>(() => {
-    try { return migrateConfig(JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')) ?? emptyConfig(); } catch { return emptyConfig(); }
+  const [history, dispatch] = useReducer(configHistory, undefined, (): History => {
+    let config: Json;
+    try { config = migrateConfig(JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')) ?? emptyConfig(); } catch { config = emptyConfig(); }
+    return { config, past: [], future: [], field: null, at: 0 };
   });
-  const past = useRef<Json[]>([]);
-  const future = useRef<Json[]>([]);
-  const typed = useRef<{ field: Element | null; at: number }>({ field: null, at: 0 });
-  const [, bump] = useState(0);
+  const { config } = history;
 
   const setConfig = useCallback((next: Json | ((c: Json) => Json), record = true) => {
-    const field = record ? typingField() : null, now = Date.now();
-    setConfigState((current: Json) => {
-      const value = typeof next === 'function' ? next(current) : next;
-      if (record && JSON.stringify(value) !== JSON.stringify(current)) {
-        // More typing in the same field: the step taken at its first key already brings back what was there before.
-        const merge = field !== null && field === typed.current.field && now - typed.current.at < MERGE_MS && past.current.length > 0;
-        if (!merge) past.current = [...past.current.slice(-HISTORY_LIMIT), current];
-        future.current = [];
-        typed.current = { field, at: now };
-      }
-      return value;
-    });
-    bump(n => n + 1);
+    dispatch({ type: 'set', next, record, field: record ? typingField() : null, at: Date.now() });
   }, []);
 
   // Undo and redo are one move between the two histories, in opposite directions.
-  const move = (from: { current: Json[] }, to: { current: Json[] }) => {
-    typed.current = { field: null, at: 0 };
-    setConfigState((current: Json) => {
-      const taken = from.current.pop();
-      if (taken === undefined) return current;
-      to.current.push(current);
-      return taken;
-    });
-    bump(n => n + 1);
-  };
-  const undo = useCallback(() => move(past, future), []);
-  const redo = useCallback(() => move(future, past), []);
+  const undo = useCallback(() => dispatch({ type: 'undo' }), []);
+  const redo = useCallback(() => dispatch({ type: 'redo' }), []);
   // Leaving the field ends its typing: typing there again - even at once - is an Undo step of its own.
   useEffect(() => {
-    const field = typed.current.field;
+    const field = history.field;
     if (!field) return;
-    const left = () => { if (field === typed.current.field) typed.current = { field: null, at: 0 }; };
+    const left = () => dispatch({ type: 'blur', field });
     // Listen on the field itself so leaving an input in a separate window also ends the Undo step.
     field.addEventListener('blur', left);
     return () => field.removeEventListener('blur', left);
-  });
+  }, [history.field]);
 
   const latest = useRef(config), unsaved = useRef(false);
   latest.current = config;
@@ -236,7 +236,7 @@ export function useConfig() {
     return () => window.removeEventListener('pagehide', flush);
   }, []);
 
-  return { config, setConfig, undo, redo, canUndo: past.current.length > 0, canRedo: future.current.length > 0, fresh, saveError, retrySave: save };
+  return { config, setConfig, undo, redo, canUndo: history.past.length > 0, canRedo: history.future.length > 0, fresh, saveError, retrySave: save };
 }
 
 export function usePolling<T>(fn: (signal: AbortSignal) => Promise<T>, ms: number, enabled: boolean, deps: unknown[]) {

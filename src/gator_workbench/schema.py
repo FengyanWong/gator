@@ -590,8 +590,12 @@ class WorkbenchConfig(_Model):
                     raise ValueError(f'Probe {name} is computed from itself; a cycle of expression probes never ran.')
                 text = _replace_name(text, name, f'({written(computed[name], seen + (name,))})')
             return text
+        # This parent validator runs before PerformanceTarget's legacy-ID migration.
+        # Convert those references first, otherwise their computed probe is deleted
+        # while the target still points to its old name. An explicit equation wins.
+        targets = [PerformanceTarget._one_probe_before_equations(t) for t in data.get('targets') or []]
         targets = [dict(t, equation=written(t['equation'])) if isinstance(t, dict) and isinstance(t.get('equation'), str)
-                   else t for t in data.get('targets') or []]
+                   else t for t in targets]
         return dict(data, targets=targets, measurements=[m for m in rows if not (isinstance(m, dict)
                                                                                      and m.get('result_source') == 'expression')])
 

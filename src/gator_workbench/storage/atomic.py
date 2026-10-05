@@ -174,24 +174,51 @@ def read_json(path, default=_MISSING):
 class JsonlAppender:
     """Append-only JSONL with one fsync per record (the durable acknowledgement boundary).
 
-    A torn final line from a crash is ignored by ``read_jsonl``; complete lines are never
-    rewritten, so recovery cannot lose or duplicate an acknowledged record.
+    The caller serializes writers (the run lock for datasets). A torn final line is
+    discarded before appending again; complete lines are never rewritten. Opening a
+    healthy log reads only its final byte, not the whole journal.
     """
     def __init__(self, path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._stream = self.path.open('a', encoding='utf8')
+        self._stream = self.path.open('a+b')
+        try:
+            end = self._stream.seek(0, os.SEEK_END)
+            boundary = end
+            while boundary:
+                start = max(0, boundary - 65536)
+                self._stream.seek(start)
+                # A healthy log needs one byte; scan blocks only after finding a torn tail.
+                if boundary == end:
+                    self._stream.seek(end - 1)
+                    if self._stream.read(1) == b'\n':
+                        break
+                    self._stream.seek(start)
+                block = self._stream.read(boundary - start)
+                newline = block.rfind(b'\n')
+                if newline >= 0:
+                    boundary = start + newline + 1
+                    break
+                boundary = start
+            if boundary != end:
+                self._stream.truncate(boundary)
+                self._stream.flush()
+                os.fsync(self._stream.fileno())
+            self._stream.seek(0, os.SEEK_END)
+        except OSError:
+            self._stream.close()
+            raise
         self.bytes_written = 0
 
     def append(self, record) -> None:
-        line = json.dumps(jsonable(record), allow_nan=False, ensure_ascii=False, separators=(',', ':')) + '\n'
+        line = (json.dumps(jsonable(record), allow_nan=False, ensure_ascii=False, separators=(',', ':')) + '\n').encode('utf8')
         try:
             self._stream.write(line)
             self._stream.flush()
             os.fsync(self._stream.fileno())
         except OSError as exc:
             raise PersistenceError(f'Cannot append to {self.path}: {exc}') from exc
-        self.bytes_written += len(line.encode('utf8'))
+        self.bytes_written += len(line)
 
     def close(self) -> None:
         if not self._stream.closed:
@@ -203,17 +230,17 @@ def read_jsonl(path):
     if not path.exists():
         return []
     records = []
-    with path.open('r', encoding='utf8') as stream:
-        for line in stream:
-            if not line.endswith('\n'):
+    with path.open('rb') as stream:
+        for number, line in enumerate(stream, 1):
+            if not line.endswith(b'\n'):
                 break            # torn tail from an interrupted append: not acknowledged
             line = line.strip()
             if not line:
                 continue
             try:
                 records.append(json.loads(line))
-            except json.JSONDecodeError:
-                break
+            except (ValueError, UnicodeError) as exc:
+                raise PersistenceError(f'Corrupt JSONL record in {path} at line {number}') from exc
     return records
 
 
@@ -221,7 +248,7 @@ def read_jsonl_tail(path, limit, *, block_size=65536):
     """Newest complete log records, without scanning the journal's entire history.
 
     Display only: skip malformed log lines and an unfinished final line. Recovery still
-    uses read_jsonl, which stops at the first malformed record in the journal.
+    uses read_jsonl, which refuses a malformed complete record in the journal.
     """
     if limit <= 0:
         return []

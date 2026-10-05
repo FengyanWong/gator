@@ -31,7 +31,8 @@ def test_log_tail_empty_missing_and_corrupt_lines_do_not_change_recovery(tmp_pat
         assert atomic.read_jsonl_tail(path, 10) == []
     path.write_bytes(b'{"i":1}\ninvalid\n{"i":2}\npartial')
     assert atomic.read_jsonl_tail(path, 10) == [{'i': 1}, {'i': 2}]
-    assert atomic.read_jsonl(path) == [{'i': 1}]       # journal recovery still stops at corruption
+    with pytest.raises(atomic.PersistenceError, match='line 2'):
+        atomic.read_jsonl(path)                     # recovery refuses to hide complete records after corruption
 
 
 def test_log_tail_io_is_bounded_by_the_requested_window(tmp_path, monkeypatch):
@@ -57,6 +58,34 @@ def test_log_tail_io_is_bounded_by_the_requested_window(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, 'open', open_file)
     assert [r['i'] for r in atomic.read_jsonl_tail(path, 200)] == list(range(9800, 10000))
     assert opened[0].bytes_read <= 65536 < path.stat().st_size
+    assert opened[0].closed
+
+
+def test_opening_a_healthy_append_log_does_not_scan_its_history(tmp_path, monkeypatch):
+    path = tmp_path / 'events.jsonl'
+    path.write_bytes(b'{"event":"complete"}\n' * 100000)
+    opened, real_open = [], Path.open
+
+    class Counted(io.BufferedRandom):
+        bytes_read = 0
+
+        def read(self, size=-1):
+            value = super().read(size)
+            self.bytes_read += len(value)
+            return value
+
+    def open_file(p, *args, **kwargs):
+        if p == path and args == ('a+b',):
+            stream = Counted(io.FileIO(p, 'a+'))
+            opened.append(stream)
+            return stream
+        return real_open(p, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'open', open_file)
+    log = atomic.JsonlAppender(path)
+    log.append(dict(event='new'))
+    log.close()
+    assert opened[0].bytes_read <= 64 < path.stat().st_size
     assert opened[0].closed
 
 

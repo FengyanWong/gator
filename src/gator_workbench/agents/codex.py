@@ -26,7 +26,8 @@ from ..security import redact
 from .base import AgentError, AgentRequest, AgentResult, CliProvider, run_cli
 from .claude_code import AUTH_PATTERNS, MODEL_PATTERNS
 from .live import CodexTranslator
-from .prompts import PROPOSAL_SCHEMA, build_prompt
+from .prompts import build_prompt
+from .codex_schema import CODEX_PROPOSAL_SCHEMA, OUTPUT_INSTRUCTIONS, decode_proposal
 
 WANTED_OPTIONS = ('--output-schema', '--output-last-message', '--sandbox')
 EVENT_OPTIONS = ('--json', '--experimental-json')      # events as JSON lines: the documented name first
@@ -87,9 +88,9 @@ class CodexProvider(CliProvider):
         scratch = Path(tempfile.mkdtemp(prefix='gator-agent-'))
         try:
             schema_file, answer_file = scratch / 'schema.json', scratch / 'answer.json'
-            schema_file.write_text(json.dumps(PROPOSAL_SCHEMA))
+            schema_file.write_text(json.dumps(CODEX_PROPOSAL_SCHEMA))
             argv = self.build_argv(executable, help_text, schema_file, answer_file, events)
-            code, stdout, stderr = run_cli(argv, stdin_text=build_prompt(request), cwd=scratch,
+            code, stdout, stderr = run_cli(argv, stdin_text=OUTPUT_INSTRUCTIONS + '\n' + build_prompt(request), cwd=scratch,
                                            timeout=self.settings.timeout_seconds, request_id=request.request_id,
                                            on_line=translator.feed if translator else None)
             logs = [dict(type='stdout', text=redact(line, 500)) for line in stdout.splitlines()[-200:]]
@@ -109,7 +110,7 @@ class CodexProvider(CliProvider):
                 raise AgentError('incomplete_output', 'The final message is not valid JSON')
             if not isinstance(structured, dict):
                 raise AgentError('no_structured_output', 'The final message is not a JSON object')
-            return AgentResult(request.request_id, self.name, 'codex', structured, logs,
+            return AgentResult(request.request_id, self.name, 'codex', decode_proposal(structured), logs,
                                dict(exit_code=code, note='Audit metadata only; never RL state.'))
         finally:
             shutil.rmtree(scratch, ignore_errors=True)

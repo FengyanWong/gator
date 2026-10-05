@@ -200,18 +200,22 @@ def test_restricted_equations_never_execute_code(tmp_path):
     assert plan.spec_values({})['bad'] is None              # a missing (invalid) input stays invalid, never a number
 
 
-def test_a_probe_computed_from_others_becomes_the_equation_of_its_specs(tmp_path):
+@pytest.mark.parametrize('reference', ['equation', 'measurement_id'])
+def test_a_probe_computed_from_others_becomes_the_equation_of_its_specs(tmp_path, reference):
     """Review of 2026-10-03: a probe computed from other probes (result_source expression) was the Specs equation's job
     since record 7.52. An older configuration loads with its arithmetic written into the specs that use it - the same
     numbers - and without the probe; a cycle never ran and is refused; a row on its own is refused in plain words."""
     def computed(raw):
         raw['measurements'] += [dict(measurement_id='m_half', analysis='other', result_source='expression', expression='m_twice / 4', unit='fixture'),
                                 dict(measurement_id='m_twice', analysis='other', result_source='expression', expression='m_score * 2', unit='fixture')]
-        raw['targets'].append(dict(raw['targets'][0], metric_id='half', equation='m_half - 0.1', hard=False, direction_after_feasible='none'))
+        target = dict(raw['targets'][0], metric_id='half', hard=False, direction_after_feasible='none')
+        target.pop('measurement_id', None); target.pop('equation', None)
+        target[reference] = 'm_half' if reference == 'measurement_id' else 'm_half - 0.1'
+        raw['targets'].append(target)
     config = make_config(tmp_path, mutate=computed)
     assert [m.measurement_id for m in config.measurements] == ['m_score']
-    assert config.targets[-1].equation == '((m_score * 2) / 4) - 0.1'
-    assert spec_equations.SpecPlan.from_config(config).spec_values({'score': 0.8})['half'] == pytest.approx(0.3)
+    assert config.targets[-1].equation == '((m_score * 2) / 4)' + (' - 0.1' if reference == 'equation' else '')
+    assert spec_equations.SpecPlan.from_config(config).spec_values({'score': 0.8})['half'] == pytest.approx(0.3 if reference == 'equation' else 0.4)
     def cycle(raw):
         raw['measurements'] += [dict(measurement_id='m_a', analysis='other', result_source='expression', expression='m_b', unit='fixture'),
                                 dict(measurement_id='m_b', analysis='other', result_source='expression', expression='m_a', unit='fixture')]

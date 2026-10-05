@@ -1,6 +1,6 @@
 import { useAsyncAction } from '../store';
 import { Icon } from './Icons';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, gateText, Json, problemText } from '../api';
 import { TaskFileWindow } from './TaskFile';
@@ -34,7 +34,7 @@ export const COPY_SETUP_PENDING = 'gator-copy-setup-pending';
 
 export function TaskSave({ profileId, library, cell, task, revision, hasCopy, config, setConfig, onSaved, bar, notes }: {
   profileId: string | null; library: string | null; cell: string | null; task: string | null; revision?: number | null;
-  hasCopy: boolean; config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; onSaved: (made: Json) => void;
+  hasCopy: boolean; config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; onSaved: (made: Json, sentConfig: Json) => void;
   bar: HTMLElement | null; notes: HTMLElement | null }) {
   const [name, setName] = useState('');
   const [message, setMessage] = useState<Json>(null);
@@ -42,6 +42,10 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   const [askFrequency, setAskFrequency] = useState(false);                    // the save asked for the ring oscillator's rough frequency
   const [frequency, setFrequency] = useState('');
   const [file, setFile] = useState<Json>(null);                               // { text, title } while the window is open (text null: reading)
+  const latest = useRef({ config, profileId, library, cell, task });
+  latest.current = { config, profileId, library, cell, task };
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   // The task file's window. It is opened INSIDE the click on "Task file" - the browser's pop-up rule refuses a window
   // opened later, when the file has arrived - so a blocked window can be tried again with the next press.
   const fileWindow = usePopupWindow('gator-task-file', { title: 'GATOR - Task file', features: 'popup,width=760,height=900',
@@ -71,11 +75,17 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   }, () => setMessage(null));
   const save = (more: Json = {}) => run('save', async () => {
     const sent = { ...extras, ...more };
-    const made = await api.taskSave({ profile_id: profileId, name: taskName, config, library, cell, task, as_new: false, extras: sent });
-    setExtras(sent); setAskFrequency(false);
+    const stillHere = () => mounted.current && latest.current.config.circuit === config.circuit
+      && latest.current.profileId === profileId && latest.current.library === library && latest.current.cell === cell && latest.current.task === task;
+    let made: Json;
+    try { made = await api.taskSave({ profile_id: profileId, name: taskName, config, library, cell, task, as_new: false, extras: sent }); }
+    catch (e) { if (stillHere()) throw e; return; }
+    if (!stillHere()) return;
+    setExtras((current: Json) => current === extras ? sent : current); setAskFrequency(false);
     const kept = made.created ? '' : made.baseline_kept ? ' The recorded baseline still holds.' : made.changed?.length ? ' The recorded baseline no longer holds (what is measured changed): run a new baseline.' : '';
-    setMessage({ level: 'ok', text: `${made.created ? `Saved the new task ${made.task_key}.` : `Saved ${made.task_key}, revision ${made.revision}.`}${kept}` });
-    onSaved(made);
+    const edited = ['parameters', 'measurements', 'targets'].some(key => latest.current.config[key] !== config[key]);
+    setMessage({ level: 'ok', text: `${made.created ? `Saved the new task ${made.task_key}.` : `Saved ${made.task_key}, revision ${made.revision}.`}${kept}${edited ? ' Newer editor changes are kept and are not included in this save.' : ''}` });
+    onSaved(made, config);
   });
   const openFile = async () => {
     setMessage(null);

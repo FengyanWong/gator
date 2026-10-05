@@ -133,11 +133,17 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // longer hold).
   const [saved, setSaved] = useState<Json>(null);          // the last first save: said again once the task is open
   const refreshTasks = () => api.tasks().then(t => setTasks(t.tasks)).catch(() => undefined);
-  const taskSaved = (made: Json) => {
+  const taskSaved = (made: Json, sentConfig: Json) => {
+    if (latest.current.circuit !== sentConfig.circuit) return;
     setDeleted(null); setSaved(made.created ? made : null);
     refreshTasks();
-    if (made.task_key === ref.task_id) { setConfig(c => ({ ...c, parameters: made.parameters })); load(ref); return; }
-    setConfig(c => ({ ...c, parameters: made.parameters, project: { ...c.project, task_name: made.task_key.replace(/^[^:]+:/, '') },
+    const parameters = (c: Json) => c.parameters === sentConfig.parameters ? made.parameters : c.parameters;
+    if (made.task_key === sentConfig.circuit.task_id) {
+      setConfig(c => c.circuit === sentConfig.circuit ? { ...c, parameters: parameters(c) } : c);
+      load(sentConfig.circuit); return;
+    }
+    setConfig(c => c.circuit !== sentConfig.circuit ? c : ({ ...c, parameters: parameters(c),
+      project: { ...c.project, task_name: made.task_key.replace(/^[^:]+:/, '') },
       circuit: { ...c.circuit, source: 'registered_task', task_id: made.task_key, circuit_class: made.circuit_class, pdk_id: made.pdk_id } }));
   };
   // A saved task: "Check now" runs the check Start runs by itself before every run (backend consistency.py - the editors,

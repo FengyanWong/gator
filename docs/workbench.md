@@ -2049,6 +2049,24 @@ have not changed since the press; newer edits stay in the editors and the messag
 for a task, cell or connection that is no longer selected cannot change the current rows, circuit or save message
 (record 7.174).
 
+**While a save runs** (record 7.198, user: "show saving (is it possible to show progress?) and if the backend is saving
+dont allow another save task press even after refreshing page"). A save of a Maestro task takes about half a minute,
+almost all of it in Virtuoso. A line under the editors' toolbar shows it: a short bar and "Saving real:<name> - step 2
+of 4: Virtuoso netlists the Maestro test (12 s; its last save took 34 s)". The steps are the ones the save takes
+(`task_saving.TITLES`): Virtuoso writes the Maestro test into the cell and reads it back, netlists it, reads the cell
+into the workbench, then the task files are written and checked; a task the workbench measures itself has the last two.
+The backend keeps the save that is running (GET `/api/tasks/saving`, memory only), so:
+- Save task is closed while any save runs, and its tooltip says which save it waits for. The page asks when Save task
+  appears - also after the page is loaded again - and then every second, only while a save runs.
+- A second save is refused by the backend while one runs (409 `save_running`), whichever page or tab sends it; the
+  page then follows the running one. Delete task is refused for the task being saved.
+- A save the page did not send (one sent before the page was loaded again, or from another tab) says how it ended -
+  "The save that was running has ended. Saved real:<name>, revision N." or why it failed - and the task list is read
+  again. The rows on the page stay as they are; the check says if they differ from the saved task.
+- A backend started again during a save forgets it; the page then says the save ended without an answer.
+Before, the only sign was a greyed icon (its "Saving..." is screen-reader text since the icon buttons of 7.82), and on
+2026-10-05 the user loaded the page again during two saves (record 7.194).
+
 **What Save task does.** It reads from the Probes how the task measures: all Maestro outputs (`ade_output`) = measured
 by Maestro; all results of one circuit type (`backend_profile`, e.g. what the testbench brought) = that type - the
 ring oscillator or the op-amp, measured by the workbench as before. Mixed probes, or probes that fit both types, are

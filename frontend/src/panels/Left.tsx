@@ -146,6 +146,12 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       project: { ...c.project, task_name: made.task_key.replace(/^[^:]+:/, '') },
       circuit: { ...c.circuit, source: 'registered_task', task_id: made.task_key, circuit_class: made.circuit_class, pdk_id: made.pdk_id } }));
   };
+  // A save the page followed but did not send (record 7.198: sent before the page was loaded again, or from another tab):
+  // the task list and the open task are read again; the rows stay as they are, and the check says if they differ.
+  const savedElsewhere = (last: Json) => {
+    refreshTasks();
+    if (last.ok && last.task_key === latest.current.circuit.task_id) load(latest.current.circuit);
+  };
   // A saved task: "Check now" runs the check Start runs by itself before every run (backend consistency.py - the editors,
   // the task file and the cell in Virtuoso must agree; the run adapter connects and exports without simulating). A
   // finished Single baseline simulation records its result as the task's reference by itself (status record 7.78; the
@@ -466,7 +472,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           <div className="note">
             <TaskSave profileId={profileId} library={null} cell={null} task={generatedName}
               revision={tasks.find(t => t.task_key === ref.task_id)?.revision ?? null} hasCopy
-              config={config} setConfig={setConfig} onSaved={taskSaved} bar={taskSlot} notes={taskNotes} />
+              config={config} setConfig={setConfig} onSaved={taskSaved} onSavedElsewhere={savedElsewhere} bar={taskSlot} notes={taskNotes} />
             {/* One line; the explanation is its tooltip (record 7.177, user: "reduce the texts this part"). */}
             <p title={'Start, Single baseline simulation and Resume first check that the editors, this saved task and its cell in Virtuoso agree. '
               + 'The check simulates nothing; a difference starts nothing and says what to do.'}><b>Before every run:</b> the editors, the task and its cell must agree.</p>
@@ -626,7 +632,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // Virtuoso was out of reach) - closing the window took all of that away (audit 2026-09-30).
   const firstSave = virtuosoOn && circuit?.loaded && circuit.native_draft && !taskNote && (
     <TaskSave profileId={profileId} library={ref.library} cell={ref.cell} task={null} hasCopy={!!circuit.working_copy?.verified}
-      config={config} setConfig={setConfig} onSaved={taskSaved} bar={taskSlot} notes={taskNotes} />);
+      config={config} setConfig={setConfig} onSaved={taskSaved} onSavedElsewhere={savedElsewhere} bar={taskSlot} notes={taskNotes} />);
   const titleFacts = titleSlot && createPortal(<TitleFacts config={config}
     revision={ref.source === 'registered_task' ? tasks.find(t => t.task_key === ref.task_id)?.revision ?? null : null} />, titleSlot);
   return <>{column}{firstSave}{titleFacts}{popup && root && createPortal(view, root)}</>;

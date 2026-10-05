@@ -1,6 +1,6 @@
-import { useAsyncAction } from '../store';
+import { useAsyncAction, useRequest } from '../store';
 import { Icon } from './Icons';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, gateText, Json, problemText } from '../api';
 import { TaskFileWindow } from './TaskFile';
@@ -14,7 +14,11 @@ import { usePopupWindow } from './popupWindow';
  *  still answers `as_new` for the API).
  *  Shown at the right end of the editors' tab line (`bar`), its messages and questions under their toolbar (`notes`) -
  *  user request 2026-09-22: the save sits with the rows it stores. The component stays in the circuit panel, which owns
- *  the cell and the task; two portals put it there. */
+ *  the cell and the task; two portals put it there.
+ *  A save takes about half a minute on a Maestro task. Record 7.198 (user: "show saving ... dont allow another save task
+ *  press even after refreshing page"): the backend keeps the save that is running, step by step (task_saving.py); this
+ *  component reads it when it appears, follows a running save every second until it ends - its own, one sent before the
+ *  page was loaded again, or one from another tab - shows the steps under the toolbar and keeps Save task closed. */
 
 const NAME = /^[a-z][a-z0-9_]{1,39}$/;
 const SUFFIX: Record<string, number> = { T: 1e12, G: 1e9, M: 1e6, k: 1e3, K: 1e3 };
@@ -32,10 +36,26 @@ export const COPY_SETUP_WRITTEN = 'gator-copy-setup-written';
  *  Save task sends, so the next save writes them into the copy (the job "Write to Virtuoso" had until 2026-09-22). */
 export const COPY_SETUP_PENDING = 'gator-copy-setup-pending';
 
-export function TaskSave({ profileId, library, cell, task, revision, hasCopy, config, setConfig, onSaved, bar, notes }: {
+/** What a save that ended says: this page's own, or one it followed. */
+const savedText = (made: Json) => {
+  const kept = made.created ? '' : made.baseline_kept ? ' The recorded baseline still holds.'
+    : made.changed?.length ? ' The recorded baseline no longer holds (what is measured changed): run a new baseline.' : '';
+  return `${made.created ? `Saved the new task ${made.task_key}.` : `Saved ${made.task_key}, revision ${made.revision}.`}${kept}`;
+};
+/** The line a running save shows, from the backend's count (its seconds too: the page keeps no clock). The bar stands
+ *  halfway through the step that is running. */
+const progressOf = (running: Json) => {
+  const steps: Json[] = running.steps ?? [], number: number = running.step_number ?? 0;
+  const where = number ? `step ${number} of ${steps.length}: ${steps[number - 1].title}` : 'starting';
+  const usual = running.usual_seconds ? `; its last save took ${Math.round(running.usual_seconds)} s` : '';
+  return { value: number ? number - 0.5 : 0, max: steps.length || 1,
+    text: `Saving ${running.task_key} - ${where} (${Math.round(running.seconds ?? 0)} s${usual})` };
+};
+
+export function TaskSave({ profileId, library, cell, task, revision, hasCopy, config, setConfig, onSaved, onSavedElsewhere, bar, notes }: {
   profileId: string | null; library: string | null; cell: string | null; task: string | null; revision?: number | null;
   hasCopy: boolean; config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; onSaved: (made: Json, sentConfig: Json) => void;
-  bar: HTMLElement | null; notes: HTMLElement | null }) {
+  onSavedElsewhere: (last: Json) => void; bar: HTMLElement | null; notes: HTMLElement | null }) {
   const [name, setName] = useState('');
   const [message, setMessage] = useState<Json>(null);
   const [extras, setExtras] = useState<Json>({});
@@ -64,6 +84,33 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
     return () => { window.removeEventListener(COPY_SETUP_WRITTEN, written); window.removeEventListener(COPY_SETUP_PENDING, pending); };
   }, []);
 
+  // The save running in the backend, read when Save task appears and then every second while one runs (`own`: this
+  // page's press is on its way; `followed`: a save the page did not send, asked about until an answer says it ended -
+  // a read that fails does not end it). That save says how it ended; the rows stay as they are.
+  const own = useRef(false);
+  const followed = useRef<string | null>(null);
+  const followEvery = useCallback((value: Json) => (value?.running || own.current || followed.current ? 1000 : 0), []);
+  const backend = useRequest(signal => api.taskSaving(signal), [], { pollEvery: followEvery, keepPrevious: true });
+  const running: Json = backend.value?.running ?? null;
+  useEffect(() => {
+    const value = backend.value;
+    if (!value) return;
+    if (value.running) { if (!own.current) followed.current = value.running.id; return; }
+    const id = followed.current;
+    followed.current = null;
+    if (!id) return;
+    if (value.last?.id !== id) {                                  // the backend no longer knows it: it was started again
+      setMessage({ level: 'warn', text: 'The save that was running ended without an answer (was the backend started again?). '
+        + "Look at the task's revision before saving again." });
+      onSavedElsewhere({ ok: false });
+      return;
+    }
+    const last = value.last;
+    setMessage(last.ok ? { level: 'ok', text: `The save that was running has ended. ${savedText(last.answer)}` }
+      : { level: last.problem?.code === 'needs_expected_frequency' ? 'warn' : 'error', text: `The save that was running ended without saving: ${last.problem?.message}` });
+    onSavedElsewhere(last);
+  }, [backend.value]);
+
   const suggested = suggestTaskName(cell);
   const taskName = task ?? (name || suggested);
   const report = (e: any) => {
@@ -78,13 +125,14 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
     const stillHere = () => mounted.current && latest.current.config.circuit === config.circuit
       && latest.current.profileId === profileId && latest.current.library === library && latest.current.cell === cell && latest.current.task === task;
     let made: Json;
+    own.current = true; backend.refresh();
     try { made = await api.taskSave({ profile_id: profileId, name: taskName, config, library, cell, task, as_new: false, extras: sent }); }
     catch (e) { if (stillHere()) throw e; return; }
+    finally { own.current = false; backend.refresh(); }
     if (!stillHere()) return;
     setExtras((current: Json) => current === extras ? sent : current); setAskFrequency(false);
-    const kept = made.created ? '' : made.baseline_kept ? ' The recorded baseline still holds.' : made.changed?.length ? ' The recorded baseline no longer holds (what is measured changed): run a new baseline.' : '';
     const edited = ['parameters', 'measurements', 'targets'].some(key => latest.current.config[key] !== config[key]);
-    setMessage({ level: 'ok', text: `${made.created ? `Saved the new task ${made.task_key}.` : `Saved ${made.task_key}, revision ${made.revision}.`}${kept}${edited ? ' Newer editor changes are kept and are not included in this save.' : ''}` });
+    setMessage({ level: 'ok', text: `${savedText(made)}${edited ? ' Newer editor changes are kept and are not included in this save.' : ''}` });
     onSaved(made, config);
   });
   const openFile = async () => {
@@ -106,8 +154,10 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
     setExtras((x: Json) => ({ ...x, ...more }));
   };
   const frequencyValue = parseFrequency(frequency);
-  const canSave = !!profileId && (task ? true : hasCopy) && NAME.test(taskName) && !busy;
-  const said = askFrequency || message;
+  const canSave = !!profileId && (task ? true : hasCopy) && NAME.test(taskName) && !busy && !running;
+  const progress = running ? progressOf(running) : busy === 'save' ? { value: 0, max: 1, text: `Saving real:${taskName} - starting` } : null;
+  const waits = running && busy !== 'save' ? `Waits for the save of ${running.task_key} that is running. ` : '';
+  const said = askFrequency || message || progress;
   return (<>
     {bar && createPortal(
       <div className="task-save">
@@ -115,15 +165,16 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
           <input value={name} placeholder={suggested} onChange={e => setName(e.target.value)} /></label>}
         {task && <span className="hint">Task <code>real:{task}</code>{revision ? `, revision ${revision}` : ''}</span>}
         <button className="primary" disabled={!canSave || askFrequency} onClick={() => save()}
-          title={'Save task: ' + (task ? 'Stores the rows of Parameters, Probes and Specs as this task (its next revision). ' : hasCopy
+          title={'Save task: ' + waits + (task ? 'Stores the rows of Parameters, Probes and Specs as this task (its next revision). ' : hasCopy
             ? 'Stores the rows of Parameters, Probes and Specs as a new task of this cell. '
             : 'Read the cell in the Virtuoso window first and confirm that it is a copy you made: the task is saved into that cell. ')
             + 'It writes the cell in Virtuoso to match and reads it back; no simulation. Only you can press it.'}>
-          <Icon name="task" label={busy === 'save' ? 'Saving...' : 'Save task'} /></button>
+          <Icon name="task" label={busy === 'save' || running ? 'Saving...' : 'Save task'} /></button>
         <button disabled={!!busy} onClick={openFile} title="Task file: The task as one readable file, in a window of its own: open it, change it, apply it to the editors."><Icon name="task-file" label="Task file" /></button>
       </div>, bar)}
     {notes && said && createPortal(
       <div className="task-save-notes">
+        {progress && <div className="task-save-progress" role="status"><progress value={progress.value} max={progress.max} /><span>{progress.text}</span></div>}
         {askFrequency && <div className="row">
           <label title="Rough is enough: it only sizes the transient (60 periods, measured after 20).">Rough oscillation frequency
             <input value={frequency} placeholder="e.g. 1.2G" onChange={e => setFrequency(e.target.value)} /></label>

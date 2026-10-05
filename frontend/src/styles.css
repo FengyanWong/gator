@@ -369,6 +369,9 @@ table.corner-checks tr { cursor: default; } table.corner-checks tr.current > td 
 .task-save > label { flex: none; flex-direction: row; align-items: center; gap: 4px; margin: 0; white-space: nowrap; } .task-save > label input { width: 11em; }
 .tabs .task-save button { border-bottom: 1px solid var(--line); } .tabs .task-save button.primary { border-color: var(--accent); }
 .task-notes:empty { display: none; } .task-save-notes { margin: 0 0 4px; } .task-save-notes p { margin: 2px 0; } .task-save-notes .row > label { flex: 0 1 16em; }
+/* A running save's steps (record 7.198): a short bar and one line under the toolbar. */
+.task-save-progress { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
+.task-save-progress progress { flex: none; width: 7em; height: 6px; accent-color: var(--accent); }
 /* Matched devices... (Parameters tab, status record 7.103) */
 .matched-devices { border: 1px solid var(--line); background: var(--panel); padding: 4px 8px 6px; margin: 6px 0; }
 .matched-devices .row { align-items: center; } .matched-devices h4 { margin: 2px 8px 2px 0; }

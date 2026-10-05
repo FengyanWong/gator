@@ -12,6 +12,13 @@
 //     fills the editors (one Undo step); a broken file is refused with its problems and changes nothing;
 //   - "Save task" sends the rows, the task and what the file added (analyses) and reports the revision and the baseline;
 //     nothing happens on load.
+// Record 7.198 (user: "show saving (is it possible to show progress?) and if the backend is saving dont allow another save
+// task press even after refreshing page"), with the backend's save state answered as a FIXTURE too:
+//   - while a save runs, its step shows under the toolbar and Save task is closed; nothing is asked once no save runs;
+//   - a page loaded during a save shows it, keeps Save task closed (a press sends nothing), follows the steps, says how
+//     the save ended and reads the task list again;
+//   - a save refused because another one runs says so, and the page follows that one to its end;
+//   - reads that fail do not end the following; a save the backend no longer knows (started again) ends with a warning.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; WSLENV carries the URL into it):
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_save_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -40,9 +47,17 @@ await runChecks(browser, async () => {
   const page = await browser.open({ errors: consoleErrors });
   const { send, evaluate, fulfil } = page;
   const calls = []; const dialogs = []; const answers = [];
+  // The backend's save state (record 7.198) as GET /api/tasks/saving answers it, and the save's own answer: `hold` keeps
+  // it back until `release()`; `conflict` refuses it because another save runs.
+  let saving = { running: null, last: null }, hold = false, conflict = null, release = null, statusReads = 0, taskListReads = 0, failing = false;
   const answer = async ({ requestId, request }) => {
     const url = new URL(request.url), pathname = url.pathname, body = JSON.parse(request.postData ?? '{}');
+    if (pathname === '/api/tasks/saving') {
+      statusReads++;
+      return failing ? fulfil(requestId, 503, { detail: { message: 'FIXTURE: the backend is starting again' } }) : fulfil(requestId, 200, saving);
+    }
     if (pathname === '/api/tasks') {
+      taskListReads++;
       const real = await (await fetch(new URL('api/tasks', APP))).json();
       return fulfil(requestId, 200, { ...real, tasks: [...real.tasks, ...[...tasksKnown].map(key => ({ task_key: key, kind: 'real', available: true, generated: true,
         revision: key === 'real:ring_osc' ? revision : 1, circuit_class: 'vco', pdk_id: 'gpdk045' }))] });
@@ -66,6 +81,16 @@ await runChecks(browser, async () => {
       return fulfil(requestId, 200, bad ? { ok: false, problems: ['probes[0] analysis: Input should be \'dc\', \'ac\', \'tran\' ... (FIXTURE)'], rows: {}, extras: {} }
         : { ok: true, problems: [], rows: { parameters: data.parameters, measurements: data.probes, targets: data.specs }, extras: { analyses: data.maestro?.analyses ?? {}, notes: data.notes } });
     }
+    if (op === 'task/save' && conflict) {
+      saving = { running: conflict, last: saving.last };
+      return fulfil(requestId, 409, { detail: { code: 'save_running', running: conflict,
+        message: 'Another save is running (real:ring_osc, 5 s so far). Save task can be pressed again when it has ended.' } });
+    }
+    if (op === 'task/save' && hold) {
+      saving = { running: runningAt('own', 2, 12), last: saving.last };
+      await new Promise(resolve => { release = resolve; });
+      saving = { running: null, last: { id: 'own', task_key: 'real:ring_osc', ok: true, seconds: 30, answer: { task_key: 'real:ring_osc', revision: revision + 1 } } };
+    }
     if (op === 'task/save') {
       if (body.as_new) { tasksKnown.add(`real:${body.name}`); return fulfil(requestId, 200, { task_key: `real:${body.name}`, name: body.name, revision: 1, created: true, runnable: true,
         circuit_class: 'vco', pdk_id: 'gpdk045', parameters: ROWS, baseline_kept: false, changed: [], copy: { library: 'GPDK045_RINGOSC_GATOR', cell: `ring_osc_3stage_${body.name}`, testbench: `tb_ring_osc_3stage_${body.name}` } }); }
@@ -76,6 +101,10 @@ await runChecks(browser, async () => {
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${op} is not expected` } });
   };
   let revision = 1;
+  const STEPS = [['setup', 'Virtuoso writes the Maestro test into the cell and reads it back'], ['deck', 'Virtuoso netlists the Maestro test'],
+    ['read', 'Virtuoso reads the cell into the workbench'], ['files', 'Writing the task files and checking them']].map(([id, title]) => ({ id, title }));
+  const runningAt = (id, number, seconds) => ({ id, task_key: 'real:ring_osc', started_utc: '2026-10-05T16:00:00+00:00', seconds, steps: STEPS,
+    step: STEPS[number - 1].id, step_number: number, step_seconds: 1, usual_seconds: 34 });
   answerDialogs(page, answers, dialogs);
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
   const BLOCK = `document.querySelector('.editors .tabs .task-save')`;          // the bar: right end of the editors' tab line
@@ -96,7 +125,7 @@ await runChecks(browser, async () => {
     for (let seen = mark; calls.length !== mark && seen !== calls.length;) { seen = calls.length; await sleep(500); }
   };
 
-  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/tasks', '*/api/tasks/starter*'], answer, { others: 'read', connection: 'lab' });
+  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/tasks', '*/api/tasks/starter*', '*/api/tasks/saving'], answer, { others: 'read', connection: 'lab' });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   for (let i = 0; i < 50 && !(await stored()); i++) await sleep(100);
@@ -157,6 +186,82 @@ await runChecks(browser, async () => {
   check('no save of this check was sent as_new', calls.filter(c => c.op === 'task/save').every(c => c.as_new === false), JSON.stringify(calls.filter(c => c.op === 'task/save').map(c => c.as_new)));
   check('the task\'s block in the column names it and offers Check now', (await evaluate(`${PANEL}.textContent`)).includes('Before every run:')
     && (await evaluate(`[...${PANEL}.querySelectorAll('button')].some(b => b.textContent.trim() === 'Check now')`)));
+
+  // ---- record 7.198: a running save shows its step and keeps Save task closed until it ends, also after a reload ----------
+  const SAVE = `${BLOCK}?.querySelector('button.primary')`;                    // its caption says "Saving..." while one runs
+  const LINE = `document.querySelector('.editors .task-notes .task-save-progress')`;
+  const lineText = () => evaluate(`${LINE}?.textContent ?? ''`);
+  const closed = () => evaluate(`${SAVE}?.disabled ?? null`);
+  check('the page asked the backend about a running save when Save task appeared', statusReads >= 1, `${statusReads} reads`);
+  hold = true; let reads = statusReads;
+  await evaluate(`${SAVE}.click()`);
+  check('its own save shows a line under the toolbar at once', await page.until(`!!(${LINE})`, 30), await notesText());
+  await page.until(`(${LINE}?.textContent ?? '').includes('step 2 of 4')`, 40);
+  check('it follows the steps the backend counts', (await lineText()) === 'Saving real:ring_osc - step 2 of 4: Virtuoso netlists the Maestro test (12 s; its last save took 34 s)',
+    await lineText());
+  check('Save task is closed while it runs', (await closed()) === true);
+  check('the page asked again while the save ran', statusReads > reads + 1, `${statusReads - reads} reads`);
+  await page.shot(path.join(out, 'task-save-progress.png'), `document.querySelector('.editors')`, { maxHeight: 220 });
+  release(); hold = false;
+  check('when the answer comes, the line goes', await page.until(`!(${LINE})`, 40), await lineText());
+  check('and the save says what it did', (await notesText()).includes('Saved real:ring_osc, revision 3.'), await notesText());
+  check('Save task opens again', (await closed()) === false);
+  reads = statusReads; await sleep(2500);
+  check('nothing is asked once no save runs', statusReads <= reads + 1, `${statusReads - reads} more reads`);
+
+  // A page loaded while a save runs (the user's reload of 2026-10-05): shown, Save task closed, followed to its end.
+  saving = { running: runningAt('earlier', 1, 3), last: null };
+  await send('Page.reload');
+  for (let i = 0; i < 100 && !(await evaluate(`!!(${SAVE})`)); i++) await sleep(100);
+  check('a page loaded during a save shows it', await page.until(`(${LINE}?.textContent ?? '').includes('step 1 of 4')`, 50), await lineText());
+  check('and keeps Save task closed', (await closed()) === true);
+  check('its tooltip says what it waits for', (await evaluate(`${SAVE}.title`)).startsWith('Save task: Waits for the save of real:ring_osc that is running.'),
+    await evaluate(`${SAVE}.title`));
+  let saves = calls.filter(c => c.op === 'task/save').length;
+  await evaluate(`${SAVE}.click()`); await sleep(400);
+  check('a press on the closed Save task sends nothing', calls.filter(c => c.op === 'task/save').length === saves);
+  saving = { running: runningAt('earlier', 3, 20), last: null };
+  check('it follows that save\'s steps', await page.until(`(${LINE}?.textContent ?? '').includes('step 3 of 4: Virtuoso reads the cell into the workbench (20 s')`, 40),
+    await lineText());
+  const listed = taskListReads;
+  revision = 4;
+  saving = { running: null, last: { id: 'earlier', task_key: 'real:ring_osc', ok: true, seconds: 33.8,
+    answer: { task_key: 'real:ring_osc', revision: 4, created: false, baseline_kept: true, changed: ['specs'] } } };
+  check('when it ends, the line goes', await page.until(`!(${LINE})`, 40), await lineText());
+  check('and the page says how it ended', (await notesText()).includes('The save that was running has ended. Saved real:ring_osc, revision 4. The recorded baseline still holds.'),
+    await notesText());
+  check('it reads the task list again, so the task shows its new revision', await page.until(`(${BLOCK}?.textContent ?? '').includes('revision 4')`, 40)
+    && taskListReads > listed, `${await blockText()} | ${taskListReads - listed} reads`);
+  check('Save task opens again after it', (await closed()) === false);
+
+  // A press that meets another save (a stale page or another tab): refused by the backend, said, and followed.
+  conflict = runningAt('tab', 2, 5);
+  saves = calls.filter(c => c.op === 'task/save').length;
+  await evaluate(`${SAVE}.click()`);
+  check('a save refused because another one runs says so', await page.until(`(${NOTES}?.textContent ?? '').includes('Another save is running')`, 40), await notesText());
+  check('and the page follows that save, Save task closed', await page.until(`(${LINE}?.textContent ?? '').includes('step 2 of 4')`, 40) && (await closed()) === true,
+    await lineText());
+  conflict = null;
+  saving = { running: null, last: { id: 'tab', task_key: 'real:ring_osc', ok: false, seconds: 9, problem: { code: 'refused', message: 'FIXTURE: the copy reads back differently' } } };
+  check('a followed save that failed says why', await page.until(`(${NOTES}?.textContent ?? '').includes('The save that was running ended without saving: FIXTURE: the copy reads back differently')`, 40),
+    await notesText());
+  check('one save was sent for that press, and none since', calls.filter(c => c.op === 'task/save').length === saves + 1);
+  check('Save task opens again after a failed one', (await closed()) === false);
+
+  // The backend starts again during a save: its reads fail for a while, then it knows no save at all.
+  saving = { running: runningAt('lost', 1, 2), last: null };
+  await send('Page.reload');
+  for (let i = 0; i < 100 && !(await evaluate(`!!(${SAVE})`)); i++) await sleep(100);
+  await page.until(`(${LINE}?.textContent ?? '').includes('step 1 of 4')`, 50);
+  failing = true; reads = statusReads; await sleep(2600);
+  check('reads that fail do not end the following: the page keeps asking', statusReads >= reads + 2, `${statusReads - reads} reads`);
+  failing = false; saving = { running: null, last: null };
+  check('a save the backend no longer knows ends with a warning', await page.until(`(${NOTES}?.textContent ?? '').includes('ended without an answer')`, 40),
+    await notesText());
+  check('Save task opens again after it', (await closed()) === false);
+  reads = statusReads; await sleep(2500);
+  check('and the page stops asking', statusReads <= reads + 1, `${statusReads - reads} more reads`);
+
   check('no unplanned dialog', dialogs.every(d => d.planned), JSON.stringify(dialogs));
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
   await page.shot(path.join(out, 'task-save-1.png'));

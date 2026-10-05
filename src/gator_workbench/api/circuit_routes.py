@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from pydantic import ValidationError
 from .. import bridge_read, runs, schema, tasks
-from .. import consistency, ngspice_tasks, profiles, structures, task_files, virtuoso_setup, working_copy
+from .. import consistency, ngspice_tasks, profiles, structures, task_files, task_saving, virtuoso_setup, working_copy
 from ..agents.prompts import circuit_summary
 from ..native_cells import load_import as load_cell_import
 from ..paths import PathNotAllowed, refuse_nul
@@ -31,6 +31,13 @@ def register(app: FastAPI, context: ApiContext):
             fail(404, 'No starter configuration for this task')
         except Exception as exc:                           # a generated profile whose files no longer pass their own checks
             fail(409, redact(f'The starting rows of {task_key} cannot be built: {type(exc).__name__}: {exc}', 600))
+
+    @app.get('/api/tasks/saving')
+    def tasks_saving():
+        """The Save task running in this backend, step by step, and the last one that ended (record 7.198): the page asks
+        when its Save task appears and follows a running save until it ends, also after it was loaded again. Memory
+        only - nothing is read or contacted."""
+        return task_saving.status()
 
     @app.post('/api/circuit/load')
     def circuit_load(body: CircuitBody):
@@ -132,7 +139,9 @@ def register(app: FastAPI, context: ApiContext):
     def native_profile_delete(body: ProfileActionBody):
         """Explicit click (the page asks once more): take a generated profile out of the registered tasks, so its cell
         can get a new one. Contacts nothing. The folder is kept aside, the runs that were made keep their data; refused
-        while a worker is on a run of the task, and for the verified built-in circuits."""
+        while a worker is on a run of the task, while the task is being saved, and for the verified built-in circuits."""
+        if task_saving.running_task() == f'real:{body.name}':
+            fail(409, f'real:{body.name} is being saved right now: delete it once the save has ended.', code='delete_refused')
         try:
             return profiles.delete_profile(body.name, run_rows=runs.list_runs(context.roots, include_mock=False))
         except profiles.ProfileError as exc:
@@ -234,14 +243,22 @@ def register(app: FastAPI, context: ApiContext):
         """Explicit click - a person's only: store the editors' rows as the task real:<name>. The first save of a cell takes
         its working copy; on an open task, Save task updates it (next revision) and Save as (`as_new`) makes another task
         with a copy of its own. A Maestro-measured task writes its setup into its copy and reads it back first; then the
-        copy is read into the workbench (read-only) and the task files are generated from it. Zero simulations."""
+        copy is read into the workbench (read-only) and the task files are generated from it. Zero simulations.
+        One save at a time (record 7.198): another one is refused while it runs, whichever page sends it, and
+        GET /api/tasks/saving says how far it is."""
         if not body.profile_id:
             fail(422, 'A connection profile is required')
         config = context.parse_config(body.config)
-        return _bridge_call(lambda: profiles.save_task(context.monitor, body.profile_id, body.name, config, library=body.library, cell=body.cell,
-                                                       task=body.task, as_new=body.as_new, extras=body.extras,
-                                                       run_rows=runs.list_runs(context.roots, include_mock=False)),
-                            (profiles.NeedsFrequency, 'needs_expected_frequency'), ((profiles.ProfileError,), 'refused'), COPY_REFUSED)
+        try:
+            with task_saving.running(f'real:{body.name}') as save:
+                save.answer = _bridge_call(
+                    lambda: profiles.save_task(context.monitor, body.profile_id, body.name, config, library=body.library, cell=body.cell,
+                                               task=body.task, as_new=body.as_new, extras=body.extras,
+                                               run_rows=runs.list_runs(context.roots, include_mock=False), progress=save.mark),
+                    (profiles.NeedsFrequency, 'needs_expected_frequency'), ((profiles.ProfileError,), 'refused'), COPY_REFUSED)
+        except task_saving.Busy as exc:
+            fail(409, exc, code='save_running', running=task_saving.status()['running'])
+        return save.answer
 
     @app.post('/api/virtuoso/task/file')
     def virtuoso_task_file(body: TaskFileBody):

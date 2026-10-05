@@ -106,6 +106,7 @@ export const api = {
   nativeRead: (profile_id: string, library: string, cell: string) => call('POST', '/api/virtuoso/read', { profile_id, library, cell }),
   setupRead: (profile_id: string, library: string, cell: string, config: Json | null) => call('POST', '/api/virtuoso/setup/read', { profile_id, library, cell, config }),
   taskSave: (body: Json) => call('POST', '/api/virtuoso/task/save', body),
+  taskSaving: (signal?: AbortSignal) => call('GET', '/api/tasks/saving', undefined, signal),
   taskFile: (body: Json) => call('POST', '/api/virtuoso/task/file', body),
   taskFileCheck: (text: string) => call('POST', '/api/virtuoso/task/file/check', { text }),
   taskCheck: (profile_id: string | null, config: Json) => call('POST', '/api/virtuoso/task/check', { profile_id, config }),

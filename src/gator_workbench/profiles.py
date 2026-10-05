@@ -617,7 +617,7 @@ def task_file(name) -> dict | None:
 
 
 def save_task(monitor, profile_id, name, config, *, library=None, cell=None, task=None, as_new=False, extras=None,
-              run_rows=(), commands=None) -> dict:
+              run_rows=(), commands=None, progress=None) -> dict:
     """Explicit press - only a person can do it: store the editors' rows as the task real:<name>.
 
     * First save from a cell: the task takes the cell's working copy. "Save task" on an open task updates THAT task (a
@@ -629,7 +629,9 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
       then the copy is read into the workbench again (netlist + CDF readback, read-only): the reference every run of
       the task is compared with.
     * Then the profile files are generated from that copy and the task file is written. A new revision keeps the
-      recorded baseline only when parameters, probes, measurement, analyses, variables and bindings are unchanged."""
+      recorded baseline only when parameters, probes, measurement, analyses, variables and bindings are unchanged.
+    * `progress(step, steps)` hears each step as it starts, with every step this save takes (`task_saving.TITLES`): the
+      page shows them while the save runs (record 7.198)."""
     from . import bridge_read, task_files, virtuoso_setup, working_copy
     from .tasks import REAL_PROFILES, REMOVED_REAL_TASKS
     commands, extras = commands or {}, dict(extras or {})
@@ -657,6 +659,8 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
     if refused:
         raise ProfileError(' '.join(refused))
     kind = measurement_kind(config)
+    steps = (['copy'] if current and not updating else []) + (['setup', 'deck'] if kind == MAESTRO else []) + ['read', 'files']
+    mark = (lambda step: progress(step, steps)) if progress else (lambda step: None)
     saved = task_file(task) if current else None
     claimed = None
     if updating:
@@ -665,6 +669,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
         if not current.get('copy_target'):
             raise ProfileError(f'real:{task} was made before tasks had working copies: read its cell in the Virtuoso window (confirming '
                                'that it is a copy you made) and save a new task')
+        mark('copy')
         target = working_copy.make_task_copy(monitor, profile_id, current['copy_target'], name,
                                              source_netlist=(Path(current['directory']) / FILES['structure']).read_text(),
                                              command=commands.get('copy'))
@@ -691,6 +696,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
                                              bindings=extras['bindings'] if 'bindings' in extras else base.get('bindings'),
                                              initial_conditions=(extras['initial_conditions'] if 'initial_conditions' in extras
                                                                  else base.get('initial_conditions')))
+            mark('setup')
             written = working_copy.write_setup_on(monitor, profile_id, target, setup, command=commands.get('setup'))
             if not written['matches']:
                 raise ProfileError('The copy\'s Maestro setup reads back differently from the rows: ' + '; '.join(written['differences']))
@@ -701,9 +707,12 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
             outputs = [dict(name=o['name'], expression=o['expression'], analysis=probes[o['name']].analysis if o['name'] in probes
                             else virtuoso_setup.analysis_of(o['expression']), unit=probes[o['name']].unit if o['name'] in probes else '1')
                        for o in maestro['outputs']]
+            mark('deck')
             deck = working_copy.maestro_deck_on(monitor, profile_id, target, outputs, command=commands.get('deck'))
+        mark('read')
         bridge_read.read(monitor, profile_id, 'import_cell', library=target['copy']['library'], cell=target['copy']['cell'],
                          testbench=target['copy']['testbench'], command=commands.get('read'))
+        mark('files')
         imported = native_cells.load_import(target['copy']['library'], target['copy']['cell'])
         if imported is None:
             raise ProfileError('The working copy could not be read back into the workbench')

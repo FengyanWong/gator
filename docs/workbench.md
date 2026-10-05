@@ -418,6 +418,13 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   takes the 84 px of a text box; the Issues column is narrow while no row has an issue. At 1680 x 1050 the LDO task's
   Parameters table fits without scrolling sideways.
 
+- **Readable numbers** (record 7.181). A bound, limit or scale of a row in an unprefixed base unit (m, F, ohm, H, V, A, W,
+  J, Hz, s) reads in engineering notation below 0.01 and from 10,000 up: the LDO's quiescent-current limit 0.0004 A reads
+  `400µ` A, a width 4.5e-7 m `450n` m, 1.5e6 Hz `1.5M`. A prefixed unit (um, pF, mV) and every other number read as stored.
+  A cell, the formula bar and a pasted block take a number plain, with an exponent (2.5e-6) or an SI letter (2.5u, 400µ,
+  10k, 1.5M); the formula bar shows the stored number. Exact both ways: the shortest digits of the number are moved, never
+  computed, and "450n" is read as 450e-9.
+
 Browser check: `frontend/scripts/sheet_check.mjs`.
 
 ### Matched devices: ties suggested from the circuit (added 2026-09-29, user request)

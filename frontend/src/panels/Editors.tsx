@@ -58,11 +58,36 @@ function LimitSelect({ row, title, onChange }: { row: Json; title: string; onCha
     {LIMIT_CHOICES.map(([c, o]) => <option key={`${c}|${o}`} value={`${c}|${o}`}>{limitLabel(c, o)}</option>)}</select>;
 }
 
+/** Readable small and large numbers (record 7.181, design advice): a bound, limit or scale of a row in an unprefixed base unit
+ *  reads in engineering notation - 0.0004 A as 400µ A, 4.5e-7 m as 450n m - below 0.01 and from 10,000 up; a prefixed unit
+ *  (um, pF, mV) and everything else read as stored. Exact: the digits of the shortest form are moved, never computed, and a
+ *  typed "450n" is read as the number 450e-9. The formula bar shows the stored number. */
+const PREFIX: Record<number, string> = { [-15]: 'f', [-12]: 'p', [-9]: 'n', [-6]: 'µ', [-3]: 'm', 3: 'k', 6: 'M', 9: 'G', 12: 'T' };
+const SUFFIX: Record<string, number> = { f: -15, p: -12, n: -9, u: -6, 'µ': -6, 'μ': -6, m: -3, k: 3, K: 3, M: 6, G: 9, T: 12 };
+const BASE_UNITS = new Set(['m', 'F', 'ohm', 'Ohm', 'Ω', 'H', 'V', 'A', 'W', 'J', 'Hz', 's']);
+const READABLE: Record<string, string[]> = { parameters: ['lower', 'upper', 'step', 'initial_value'], targets: ['lower', 'upper', 'normalization_scale'] };
+export function engineering(v: number): string {
+  const size = Math.abs(v);
+  if (!Number.isFinite(v) || v === 0 || (size >= 0.01 && size < 1e4)) return String(v);
+  const [mantissa, power] = v.toExponential().split('e');           // "-4.5", "-7": the shortest digits that read back exactly
+  const exponent = Number(power), three = Math.floor(exponent / 3) * 3, prefix = PREFIX[three];
+  if (prefix === undefined) return String(v);
+  const digits = mantissa.replace('-', '').replace('.', ''), point = 1 + exponent - three;   // the point moves 0, 1 or 2 places
+  const whole = digits.slice(0, point).padEnd(point, '0'), fraction = digits.slice(point);
+  return `${v < 0 ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}${prefix}`;
+}
+/** A typed number: plain, with an exponent (2.5e-6), or with an SI letter (2.5u, 400µ, 10k). */
+export function readNumber(text: string): number | undefined {
+  const s = text.trim(), letter = /^([-+]?(?:\d+\.?\d*|\.\d+))([fpnuµμmkKMGT])$/.exec(s);
+  const n = letter ? Number(`${letter[1]}e${SUFFIX[letter[2]]}`) : s === '' ? NaN : Number(s);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 /** One cell. `fixed`: why the value is shown and not typed - it follows another field (a Maestro output's Probe ID follows
  *  its output name). `off`: why the field does nothing on this row (a follower's bounds, step, scale, type and "optimized":
  *  its leader decides them) - shown greyed, with that reason as its tooltip (review of 2026-10-03). */
-function Cell({ column, value, onChange, fixed = null, off = null }: { column: Json; value: Json; onChange: (v: Json) => void;
-  fixed?: string | null; off?: string | null }) {
+function Cell({ column, value, onChange, fixed = null, off = null, readable = false }: { column: Json; value: Json; onChange: (v: Json) => void;
+  fixed?: string | null; off?: string | null; readable?: boolean }) {
   const title = off ?? fixed ?? column.guidance, disabled = off !== null;
   if (column.name === 'nominal_only') return <select aria-label="Judged at" title={title} disabled={disabled}
     value={value ? 'nominal' : 'all'} onChange={e => onChange(e.target.value === 'nominal')}>
@@ -79,8 +104,8 @@ function Cell({ column, value, onChange, fixed = null, off = null }: { column: J
   if (column.type === 'boolean') return <input type="checkbox" title={title} disabled={disabled} checked={!!value} onChange={e => onChange(e.target.checked)} />;
   if (column.type === 'number' || column.type === 'integer') {
     return <Typed title={title} disabled={disabled} className="numeric" placeholder={column.nullable ? '-' : ''} value={value} onChange={onChange}
-      format={v => v == null ? '' : String(v)}
-      parse={t => { const s = t.trim(), n = Number(s); return s === '' ? { value: column.nullable ? null : 0 } : Number.isFinite(n) ? { value: n } : undefined; }} />;
+      format={v => v == null ? '' : readable && typeof v === 'number' ? engineering(v) : String(v)}
+      parse={t => { const n = readNumber(t); return t.trim() === '' ? { value: column.nullable ? null : 0 } : n !== undefined ? { value: n } : undefined; }} />;
   }
   if (column.type === 'array' || column.type === 'object') {
     return <Typed title={title + ' (JSON)'} disabled={disabled} value={value} onChange={onChange} format={v => v == null ? '' : JSON.stringify(v)}
@@ -339,8 +364,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     const c = activeColumn;
     let value: Json;
     if (c.type === 'number' || c.type === 'integer') {
-      const s = text.trim(), n = Number(s);
-      if (s !== '' && !Number.isFinite(n)) return `"${s}" is not a number: type it plain or with an exponent (2.5e-6); the unit column says the unit.`;
+      const s = text.trim(), n = readNumber(s);
+      if (s !== '' && n === undefined) return `"${s}" is not a number: type it plain, with an exponent (2.5e-6) or an SI letter (2.5u); the unit column says the unit.`;
       value = s === '' ? (c.nullable ? null : 0) : n;
     } else if (c.type === 'array' || c.type === 'object') {
       if (text.trim() === '') value = null;
@@ -397,8 +422,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     }
     if (c.type === 'number' || c.type === 'integer') {
       if (s === '') return c.nullable ? { value: null } : {};
-      const n = Number(s);
-      return Number.isFinite(n) ? { value: n } : { problem: `"${s}" in ${c.name}` };
+      const n = readNumber(s);
+      return n !== undefined ? { value: n } : { problem: `"${s}" in ${c.name}` };
     }
     if (c.type === 'array' || c.type === 'object') {
       if (s === '') return { value: null };
@@ -509,7 +534,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
                 onFocus={() => setActive({ index, name: c.name, key: String(row[keyField] ?? '') })}>{tab === 'targets' && c.name === 'constraint'
                 ? <LimitSelect row={row} title={c.guidance} onChange={fields => patch(index, fields)} />
                 : <Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)}
-                    fixed={fixedOf(row, c)} off={offOf(row, c)} />}</td>)}
+                    fixed={fixedOf(row, c)} off={offOf(row, c)} readable={!!READABLE[tab]?.includes(c.name) && BASE_UNITS.has(row.unit)} />}</td>)}
               <td className="issues">{found.map((i: Json, n: number) => <div key={n} className={`issue ${i.level}`} title={i.message}>{i.level}: {i.code}</div>)}</td>
             </tr>; })}</tbody>
         </table>

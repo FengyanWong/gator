@@ -92,6 +92,23 @@ await runChecks(browser, async () => {
   check('cells a leader decides are kept: nothing pasted, said so', (await evaluate(`document.querySelector('.paste-note').textContent`)) === 'Nothing pasted. 2 cells that follow another field kept.'
     && await evaluate(stored(`(c.parameters[${follower}].lower ?? null) === ${JSON.stringify(config.parameters[follower].lower ?? null)}`)), await evaluate(`document.querySelector('.paste-note')?.textContent`));
 
+  // ---- readable numbers (record 7.181): a bound of a row in a base unit reads in engineering notation, typed either way ----------------
+  const metre = config.parameters.findIndex((p, i) => p.unit === 'm' && typeof p.lower === 'number' && p.lower > 0 && p.lower < 0.01 && !tied.includes(i));
+  if (metre >= 0) {
+    await evaluate(`document.querySelector('section.editors button[title^="Undo:"]').click()`); await sleep(300);   // the pastes above undone
+    const shownNumber = await evaluate(`${BOX(metre, 'lower')}.value`);
+    check(`a bound in metres reads in engineering notation (${config.parameters[metre].lower} m as ${shownNumber} m)`, /^[\d.]+[fpnµm]$/.test(shownNumber), shownNumber);
+    await evaluate(`${BOX(metre, 'lower')}.focus()`); await sleep(200);
+    check('...and the formula bar shows the stored number', (await evaluate(`document.querySelector('.formula-bar textarea').value`)) === String(await evaluate(stored(`c.parameters[${metre}].lower`))),
+      await evaluate(`document.querySelector('.formula-bar textarea').value`));
+    await page.setValue(BOX(metre, 'lower'), '450n', { event: 'input' });
+    check('"450n" typed is the number 4.5e-7', await page.until(stored(`c.parameters[${metre}].lower === 4.5e-7`), 30), String(await evaluate(stored(`c.parameters[${metre}].lower`))));
+    await evaluate(`${BOX(metre, 'lower')}.blur()`); await sleep(200);
+    check('...and reads 450n once the box is left', (await evaluate(`${BOX(metre, 'lower')}.value`)) === '450n', await evaluate(`${BOX(metre, 'lower')}.value`));
+    await page.setValue(BOX(metre, 'unit'), 'um', { event: 'input' }); await sleep(300);
+    check('a bound of a row in a prefixed unit (um) reads as stored', (await evaluate(`${BOX(metre, 'lower')}.value`)) === '4.5e-7', await evaluate(`${BOX(metre, 'lower')}.value`));
+  } else check('the task has a bound in metres to read', false, JSON.stringify(config.parameters.map(p => [p.unit, p.lower])));
+
   reportRefused(page.refused, NEVER_ASKED_OR_SAVED);
   check('no console error', !consoleErrors.length, consoleErrors.slice(0, 3).join(' | '));
 });

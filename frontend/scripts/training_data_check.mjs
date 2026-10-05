@@ -8,11 +8,13 @@
 //   - thinning for the screen (decimate) keeps every pixel column's first/last row and each series' extremes and first gap
 //   - learner counter resets (resume from an older save point): the abandoned updates are a series of their own
 //   - the memory bound thins the oldest half, keeps every spike, and keeps evaluation numbers and order intact
+//   - learner charts by evaluation (record 7.213): x = evaluations collected, the updates after one evaluation share its x,
+//     the mean is over the last N evaluations, compared runs learning 8 and 1 times per evaluation share the slots of an x
 // Run: "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_data_check.mjs)"   (about 1 s)
 import { fileURLToPath } from 'node:url';
 
 const data = await import(new URL('../src/panels/trainingData.ts', import.meta.url).href);
-const { TrainingStore, build, buildCompare, catalog, decimate, smooth, updateBranches, viewRange, setCaps, passFlags } = data;
+const { TrainingStore, build, buildCompare, catalog, decimate, smooth, smoothOver, updateBranches, viewRange, setCaps, passFlags } = data;
 if (fileURLToPath(import.meta.url) && !TrainingStore) throw new Error('trainingData.ts did not load');
 
 let passed = 0, failed = 0;
@@ -302,6 +304,60 @@ const valuesOf = (built, label) => built.series.find(s => s.label === label)?.va
     && seqs.every((seq, i) => seq === t.cols.k[i]) && same(store.counts(), { evaluations: 3002, updates: 3001 }));
   check('the row limits still hold after flushing a thinned tail', t.n <= 2000 && store.updates.n <= 2000);
   setCaps({ evaluations: 50000, updates: 200000 });
+}
+
+// ---- 8. learner charts by evaluation (record 7.213) -------------------------------------------------------------------------
+{
+  check('a mean over the last N x units: gaps kept, rows of other series skipped, rows at one x counted in order',
+    same(smoothOver([1, 1, 2, 3, 3], [1, null, 3, undefined, 5], 1), [1, null, 3, undefined, 5])
+    && same(smoothOver([1, 1, 2, 3, 3], [1, null, 3, undefined, 5], 2), [1, null, 2, undefined, 4])
+    && same(smoothOver([9, 9, 9, 10], [1, 2, 3, 4], 1), [1, 1.5, 2, 4]));
+  // 8 updates after each of the evaluations 9, 10 and 11 (as the starting presets learn), one learner line
+  const eight = Array.from({ length: 24 }, (_, i) => update(i + 1, { evaluations_collected: 9 + Math.floor(i / 8), actor_loss: (i + 1) * 10 }));
+  const store = new TrainingStore('/fixture/eight');
+  store.apply(answer({ served: 1, total: 1, final: chunk({ updates: eight }) }));
+  const byUpdate = build(store, 'actor_loss', 0, { mode: 'all' }, 800), byEvaluation = build(store, 'actor_loss', 0, { mode: 'all' }, 800, {}, 'evaluation');
+  check('by update (the default): x = the update count, as before', same(byUpdate.x, eight.map(u => u.cumulative_updates)));
+  check('by evaluation: x = the evaluations collected, 8 updates at each', same(byEvaluation.x, eight.map(u => u.evaluations_collected)) && same(byEvaluation.extent, [9, 11]),
+    JSON.stringify(byEvaluation.x));
+  check('by evaluation: every value is its recorded row\'s, in update order; the rows named', same(valuesOf(byEvaluation, 'Actor loss'), eight.map(u => u.actor_loss))
+    && same(byEvaluation.rows, eight.map((_, i) => i)));
+  const mean = build(store, 'actor_loss', 2, { mode: 'all' }, 800, {}, 'evaluation');
+  const smoothLine = mean.series.find(x => x.role === 'smooth');
+  const avg = list => list.reduce((a, b) => a + b, 0) / list.length;
+  check('by evaluation the mean is over the updates of the last N evaluations, and says so', smoothLine.label === 'Actor loss: mean of last 2 evaluations'
+    && smoothLine.values[16] === avg([...Array.from({ length: 8 }, (_, i) => (i + 9) * 10), 170]) && smoothLine.values[23] === avg(Array.from({ length: 16 }, (_, i) => (i + 9) * 10)),
+    JSON.stringify([smoothLine.label, smoothLine.values[16], smoothLine.values[23]]));
+  check('by update the mean stays over the last N updates', build(store, 'actor_loss', 2, { mode: 'all' }, 800).series.find(x => x.role === 'smooth').label === 'Actor loss: mean of last 2');
+  // a restart: the learner went back to its save point (update 5) while the evaluations went on (11 onwards)
+  const first = Array.from({ length: 10 }, (_, i) => update(i + 1, { evaluations_collected: i + 1 }));
+  const second = Array.from({ length: 7 }, (_, i) => update(i + 6, { evaluations_collected: 11 + i, actor_loss: 100 + i }));
+  const restarted = new TrainingStore('/fixture/restart');
+  restarted.apply(answer({ served: 1, total: 1, final: chunk({ updates: [...first, ...second] }) }));
+  const r = build(restarted, 'actor_loss', 0, { mode: 'all' }, 800, {}, 'evaluation');
+  check('by evaluation after a restart: the line goes on at the evaluations it learned after, the abandoned updates apart',
+    same(r.x, [...first.map(u => u.evaluations_collected), ...second.map(u => u.evaluations_collected)])
+    && same(valuesOf(r, 'Actor loss').filter(v => v !== undefined), [...first.slice(0, 5), ...second].map(u => u.actor_loss))
+    && same(valuesOf(r, 'Actor loss: abandoned at a restart').filter(v => v !== undefined), first.slice(5).map(u => u.actor_loss)), JSON.stringify(r.x));
+  check('by evaluation the restart is marked at the evaluation it went on from', r.markers.some(m => m.kind === 'restart' && m.x === 11) && !r.markers.some(m => m.kind === 'restart' && m.x === 6));
+  // two runs: 8 updates per evaluation and 1 (the old defaults) line up by evaluation
+  const one = new TrainingStore('/fixture/one');
+  one.apply(answer({ served: 1, total: 1, final: chunk({ updates: [9, 10, 11, 12].map((c, i) => update(i + 1, { evaluations_collected: c, actor_loss: -c })) }) }));
+  const both = buildCompare([{ store, label: 'P' }, { store: one, label: 'Q' }], 'actor_loss', 0, { mode: 'all' }, 800, 'evaluation');
+  const q = both.series.find(x => x.label === 'Q').values, pv = both.series.find(x => x.label === 'P').values;
+  check('compared by evaluation: each x as often as the run that has it most often; the runs share its slots',
+    same(both.x, [...new Array(8).fill(9), ...new Array(8).fill(10), ...new Array(8).fill(11), 12]) && same(pv.slice(0, 24), eight.map(u => u.actor_loss)) && pv[24] === undefined
+    && same(q.map((v, i) => [v, i]).filter(([v]) => v !== undefined), [[-9, 0], [-10, 8], [-11, 16], [-12, 24]]), JSON.stringify(both.x));
+  const byCount = buildCompare([{ store, label: 'P' }, { store: one, label: 'Q' }], 'actor_loss', 0, { mode: 'all' }, 800);
+  check('compared by update: as before, one slot per count', same(byCount.x, eight.map(u => u.cumulative_updates)) && same(byCount.series[1].values.slice(0, 5), [-9, -10, -11, -12, undefined]));
+  const blank = new TrainingStore('/fixture/no-count');
+  blank.apply(answer({ served: 1, total: 1, final: chunk({ updates: [update(1, { evaluations_collected: null }), update(2, { evaluations_collected: null })] }) }));
+  check('a run without the evaluation count is named, not drawn at 0', (() => {
+    const c = buildCompare([{ store, label: 'P' }, { store: blank, label: 'B' }], 'actor_loss', 0, { mode: 'all' }, 800, 'evaluation');
+    const alone = build(blank, 'actor_loss', 0, { mode: 'all' }, 800, {}, 'evaluation');
+    return c.missing.length === 1 && c.missing[0].label === 'B' && /no evaluation count/.test(c.missing[0].reason) && !c.series.some(x => x.label === 'B')
+      && alone.x.length === 0 && /no evaluation count/.test(alone.missing?.[0]?.reason ?? '');
+  })());
 }
 
 console.log(failed ? `${failed} of ${passed + failed} check(s) FAILED` : `all ${passed} checks passed`);

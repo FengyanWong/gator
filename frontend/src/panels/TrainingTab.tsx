@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, OLDER_BACKEND, plainError, readWithDeadline, si } from '../api';
 import { useLook } from '../theme';
+import { unitLabel } from '../units';
 import { Icon } from './Icons';
 import { LIVE_STATES } from './RunControl';
 import { TrainingChart } from './TrainingChart';
-import { build, buildCompare, catalog, ChartSpec, COMPARE_MAX, Context, setCaps, TrainingStore, View } from './trainingData';
+import { build, buildCompare, catalog, ChartSpec, COMPARE_MAX, Context, LearnerX, setCaps, TrainingStore, View } from './trainingData';
 import type { Built } from './trainingData';
 import type { Answer } from './trainingData';
 
@@ -24,18 +25,24 @@ import type { Answer } from './trainingData';
  *  More than two charts (record 7.205, user: "add multiple charts same page support. more than the current 2"): up to
  *  eight, each choosing what it shows in its own title; + adds one, × takes one off.
  *
- *  Kept in this browser: the charts chosen, the smoothing and the compared runs (like the folded modules); not the zoom. */
+ *  Learner by evaluation (record 7.213, the user's choice of "what next"): the learner's charts drawn over the evaluations
+ *  collected instead of the update count, so runs that learn 1 and 8 times per evaluation line up; units in the chart
+ *  titles are written as everywhere on the page (units.ts, record 7.208: English letters).
+ *
+ *  Kept in this browser: the charts chosen, the smoothing, the learner's x and the compared runs (like the folded modules);
+ *  not the zoom. */
 const SETTINGS_KEY = 'gator-workbench-training-v1';
 const SMOOTHING = [0, 10, 20, 50, 100, 200];
 const MAX_CHARTS = 8;
-type Settings = { charts: string[]; smoothing: number };
-const DEFAULTS: Settings = { charts: ['reward', 'pass'], smoothing: 20 };
+type Settings = { charts: string[]; smoothing: number; learnerX: LearnerX };
+const DEFAULTS: Settings = { charts: ['reward', 'pass'], smoothing: 20, learnerX: 'update' };
 function storedSettings(): Settings {
   try {
     const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? 'null');
     // any number of charts since 7.205; before it two, the second possibly null
     const charts = Array.isArray(s?.charts) ? s.charts.filter((c: unknown) => typeof c === 'string').slice(0, MAX_CHARTS) : [];
-    return { charts: charts.length ? charts : DEFAULTS.charts, smoothing: SMOOTHING.includes(s?.smoothing) ? s.smoothing : DEFAULTS.smoothing };
+    return { charts: charts.length ? charts : DEFAULTS.charts, smoothing: SMOOTHING.includes(s?.smoothing) ? s.smoothing : DEFAULTS.smoothing,
+      learnerX: s?.learnerX === 'evaluation' ? 'evaluation' : DEFAULTS.learnerX };
   } catch { return DEFAULTS; }
 }
 /** How many charts stand side by side: up to three in a row, four as two by two, then rows of three or four. */
@@ -87,9 +94,10 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   const nextKey = useRef(0);
   const [slots, setSlots] = useState<{ key: number; id: string }[]>(() => storedSettings().charts.map(id => ({ key: nextKey.current++, id })));
   const [smoothing, setSmoothing] = useState<number>(() => storedSettings().smoothing);
+  const [learnerX, setLearnerX] = useState<LearnerX>(() => storedSettings().learnerX);
   useEffect(() => {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ charts: slots.map(slot => slot.id), smoothing })); } catch { /* a private window: not remembered */ }
-  }, [slots, smoothing]);
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ charts: slots.map(slot => slot.id), smoothing, learnerX })); } catch { /* a private window: not remembered */ }
+  }, [slots, smoothing, learnerX]);
   const store = useRef<TrainingStore | null>(null);
   const [frame, setFrame] = useState(0);                         // one more each time the charts take the store's rows
   const [reading, setReading] = useState<{ error: string | null; at: number | null; busy: boolean }>({ error: null, at: null, busy: false });
@@ -181,11 +189,19 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
     return () => { alive = false; controller.abort(); timers.forEach(t => window.clearTimeout(t)); };
   }, [active, othersKey, retry, requestFrame]);
   const rowOf = useMemo(() => new Map(runs.map(r => [r.run_dir, r] as [string, Json])), [runs]);
-  /** A run's name on a compared chart: task, seed and the start of its folder's id (two runs of one task and seed differ there). */
-  const runLabel = (dir: string) => {
-    const row = rowOf.get(dir), id = (runName(dir).split('__').pop() ?? '').slice(0, 6);
-    return row ? `${taskOf(row)} \u00b7 seed ${row.seed ?? '?'} \u00b7 ${id}` : runName(dir);
-  };
+  /** A run's name on a compared chart, as the run window and the Compare list show it: its experiment (the task when the
+   *  experiment kept the default name), its seed and when it was made; the start of its folder's id only when two compared
+   *  runs would read the same. Record 7.213: four Spectre runs of one task and seed read alike by folder id alone. */
+  const labels = useMemo(() => {
+    const base = (dir: string) => {
+      const row = rowOf.get(dir), experiment = String(row?.experiment ?? '').split('__')[0];
+      return row ? `${experiment && !['experiment', 'None'].includes(experiment) ? experiment : taskOf(row)} \u00b7 seed ${row.seed ?? '?'} \u00b7 ${created(row.created_utc)}` : runName(dir);
+    };
+    const dirs = runDir ? [runDir, ...others] : others, named = dirs.map(base);
+    return new Map(dirs.map((dir, i) => [dir, named.indexOf(named[i]) === named.lastIndexOf(named[i]) ? named[i]
+      : `${named[i]} \u00b7 ${(runName(dir).split('__').pop() ?? '').slice(0, 6)}`]));
+  }, [rowOf, runDir, othersKey]);
+  const runLabel = (dir: string) => labels.get(dir) ?? runName(dir);
 
   const own = store.current;
   // a baseline run that calibrates (record 7.197): its random designs are not training, and nothing learns
@@ -198,17 +214,17 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   // chart whose own things stayed put keeps its data object and is not drawn again. A chart chosen for another run that
   // this one does not have (a spec of another circuit) says so in its place; the choice is kept for the runs that have it.
   const builtCache = useRef(new Map<number, { sig: string; built: Built | null }>());
-  const runsSig = useMemo(() => runs.map(r => `${r.run_dir}|${r.task_name}|${r.seed}`).join('\n'), [runs]);
+  const runsSig = useMemo(() => runs.map(r => `${r.run_dir}|${r.task_name}|${r.seed}|${r.experiment}|${r.created_utc}`).join('\n'), [runs]);   // what the labels are made of
   const built = slots.map(slot => {
     const spec = specOf(slot.id), view = viewOf(slot.key), width = widths[slot.key] ?? 600;
-    const sig = [frame, runDir, slot.id, !!spec?.available, smoothing, JSON.stringify(view), width, calibration, othersKey, runsSig].join('\u0001');
+    const sig = [frame, runDir, slot.id, !!spec?.available, smoothing, learnerX, JSON.stringify(view), width, calibration, othersKey, runsSig].join('\u0001');
     const hit = builtCache.current.get(slot.key);
     if (hit && hit.sig === sig) return hit.built;
     let made: Built | null = null;
     if (own && runDir && spec?.available) {
-      made = !others.length ? build(own, spec.id, smoothing, view, width, context)
+      made = !others.length ? build(own, spec.id, smoothing, view, width, context, learnerX)
         : buildCompare([{ store: own, label: runLabel(runDir), context }, ...others.map(dir => ({ store: compared.current.get(dir)!, label: runLabel(dir) }))],
-          spec.id, smoothing, view, width);
+          spec.id, smoothing, view, width, learnerX);
     }
     builtCache.current.set(slot.key, { sig, built: made });
     return made;
@@ -232,13 +248,19 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
     return [slot.key, view.mode === 'fixed' ? { mode: 'follow', width: view.max - view.min } : view];                                     // slide to the newest, same width
   })));
   const reset = () => setViews({});
+  /** The learner's x changed: its charts' zoom was in the other unit, so they show the whole run again. */
+  const chooseLearnerX = (next: LearnerX) => {
+    setLearnerX(next);
+    setViews(v => Object.fromEntries(Object.entries(v).filter(([key]) => specOf(slots.find(slot => slot.key === Number(key))?.id ?? null)?.axis !== 'update')));
+  };
+  const learnerShown = slots.some(slot => specOf(slot.id)?.axis === 'update');
 
   /** The facts of a recorded row, for the line above a chart. */
   const describe = (axis: 'evaluation' | 'update') => (row: number) => {
     if (!own) return '';
     if (axis === 'update') {
       const t = own.updates, phase = own.words.updatePhase.list[t.cols.phase[row]];
-      return `after ${t.cols.collected[row]} evaluations${phase ? ` · ${phase} learning` : ''}`;
+      return `${learnerX === 'evaluation' ? `update ${t.cols.cum[row]}` : `after ${t.cols.collected[row]} evaluations`}${phase ? ` · ${phase} learning` : ''}`;
     }
     const t = own.evaluations, w = own.words, c = t.cols;
     const status = w.status.list[c.status[row]];
@@ -271,6 +293,12 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
         <Icon name="add" label="Add chart" /></button>
       <label className="inline">Smoothing <select value={smoothing} onChange={e => setSmoothing(Number(e.target.value))}>
         {SMOOTHING.map(n => <option key={n} value={n}>{n ? `mean of last ${n}` : 'off'}</option>)}</select></label>
+      <label className="inline" title={'Learner by: the x axis of the learner\'s charts (losses, temperature, entropy). "update": the learner\'s update count. '
+        + '"evaluation": the number of evaluations collected when each update ran - the x of the other charts - so runs that learn 1 and 8 times per '
+        + 'evaluation line up; the updates after one evaluation share its x, and smoothing averages the updates of the last evaluations.'
+        + (learnerShown ? '' : ' No learner chart is on the page now.')}>Learner by <select aria-label="Learner charts by" value={learnerX}
+          onChange={e => chooseLearnerX(e.target.value === 'evaluation' ? 'evaluation' : 'update')}>
+          <option value="update">update</option><option value="evaluation">evaluation</option></select></label>
       <select aria-label="Compare with another run" className="training-compare" value="" disabled={others.length >= COMPARE_MAX - 1 || !candidates.length}
         onChange={e => { if (e.target.value) keepCompare([...others, e.target.value]); }}
         title={`Compare: draw up to ${COMPARE_MAX - 1} other runs on the same charts, each in its own colour (the list of the run window, Runs...).`}>
@@ -314,7 +342,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
             {!spec ? <p className="hint training-empty">{own.answers > 0 ? `This run has no ${chartName(slot.id)} chart (a spec of another task?). Choose another in the title.` : 'Reading...'}</p>
               : !spec.available ? <p className="hint training-empty">{spec.reason}</p>
               : <>{made?.missing?.length ? <p className="hint training-missing">Not on this chart: {made.missing.map(m => `${m.label} (${m.reason})`).join('; ')}</p> : null}
-                <TrainingChart built={made} hidden={!active} look={look} xLabel={spec.axis === 'update' ? 'Learner update' : 'Evaluation'}
+                <TrainingChart built={made} hidden={!active} look={look} xLabel={spec.axis === 'update' && learnerX === 'update' ? 'Learner update' : 'Evaluation'}
                   format={formatFor(spec.unit)} describe={describe(spec.axis)}
                   onWidth={width => setWidths(w => (Math.abs((w[slot.key] ?? 600) - width) < 8 ? w : { ...w, [slot.key]: width }))}
                   onZoom={(min, max) => setView(slot.key, { mode: 'fixed', min, max })} onReset={() => setView(slot.key, NONE)} /></>}
@@ -330,6 +358,6 @@ function options(charts: ChartSpec[]) {
   return groups.map(group => {
     const list = charts.filter(c => c.group === group);
     return list.length ? <optgroup key={group} label={group}>{list.map(c => <option key={c.id} value={c.id} title={c.available ? c.about : c.reason ?? ''}>
-      {c.title}{c.unit && !['', 'share'].includes(c.unit) ? ` (${c.unit})` : ''}{c.available ? '' : ' - not recorded'}</option>)}</optgroup> : null;
+      {c.title}{c.unit && !['', 'share'].includes(c.unit) ? ` (${unitLabel(c.unit)})` : ''}{c.available ? '' : ' - not recorded'}</option>)}</optgroup> : null;
   });
 }

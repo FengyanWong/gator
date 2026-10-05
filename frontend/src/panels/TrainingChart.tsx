@@ -65,7 +65,7 @@ function colourOf(series: Series, index: number, colours: Palette) {
 
 /** What a series group is called on its toggle: the category, or the learner series' own name. */
 export const groupOf = (series: Series) => (series.role === 'limit' ? 'limits' : series.role === 'superseded' ? 'abandoned' : series.run != null ? `run${series.run}`
-  : series.category ?? series.label.replace(/ \(recorded\)$|: mean of last \d+$/, ''));
+  : series.category ?? series.label.replace(/ \(recorded\)$|: mean of last \d+( evaluations)?$/, ''));
 
 export function TrainingChart({ built, hidden, look, xLabel, format, describe, onZoom, onReset, onWidth }: ChartProps) {
   const box = useRef<HTMLDivElement>(null);
@@ -102,12 +102,15 @@ export function TrainingChart({ built, hidden, look, xLabel, format, describe, o
     if (!element) return;
     if (!u || !data || !data.x.length) { element.textContent = ''; return; }
     const hovering = u.cursor.left != null && u.cursor.left >= 0;
-    // the row under the pointer, and only the values recorded AT it (a row has one category: the other series have none there)
+    // the row under the pointer, and only the values recorded AT it (a row has one category: the other series have none there).
+    // Rows that share its x count as it: compared runs learning 8 and 1 times per evaluation have 8 and 1 rows at one x (7.213).
     const index = hovering ? Math.min(data.x.length - 1, Math.max(0, u.posToIdx(u.cursor.left!))) : data.x.length - 1;
     const parts: string[] = [];
     data.series.forEach((series, i) => {
       if (series.role === 'limit' || !u.series[i + 1]?.show) return;
-      const value = series.values[index];
+      let value = series.values[index];
+      for (let j = index - 1; value === undefined && j >= 0 && data.x[j] === data.x[index]; j--) value = series.values[j];
+      for (let j = index + 1; value === undefined && j < data.x.length && data.x[j] === data.x[index]; j++) value = series.values[j];
       if (value === undefined) return;
       parts.push(`${series.label} ${value === null ? 'no value' : latest.current.format(value)}`);
     });

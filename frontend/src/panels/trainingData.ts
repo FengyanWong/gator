@@ -3,7 +3,8 @@
  *  file under Node as it is (Node strips the types) and check the arithmetic on fixtures.
  *
  *  What is kept: every recorded row, in commit order - evaluations (x = their number in recorded order, 1-based) and
- *  learner updates (x = the learner's cumulative update count). A missing or invalid value is NaN here and a gap (null)
+ *  learner updates (x = the learner's cumulative update count, or - "Learner by evaluation", record 7.213 - the number of
+ *  evaluations collected when the update ran, the evaluation charts' x). A missing or invalid value is NaN here and a gap (null)
  *  in a chart, never a zero. The journal's tail (bundles no flush has published yet) is the provisional end of the
  *  tables: cursor pages extend it; a new flush replaces it, so no bundle is counted twice.
  *
@@ -329,20 +330,20 @@ export class TrainingStore {
 /** Learner counter resets: after a resume from a save point older than the run's last updates (the worker died), the
  *  learner continues from the save point's count, so cumulative_updates repeats numbers it had already recorded. The
  *  updates recorded after that save point belong to a line the learner abandoned: `superseded` marks them, `restarts`
- *  lists where the learner went on (x = its first update after the restart). */
-export function updateBranches(table: Table): { superseded: Uint8Array; restarts: number[] } {
-  const cum = table.cols.cum, superseded = new Uint8Array(table.n), restarts: number[] = [];
+ *  lists where the learner went on (x = its first update after the restart; `restartRows`: that update's row). */
+export function updateBranches(table: Table): { superseded: Uint8Array; restarts: number[]; restartRows: number[] } {
+  const cum = table.cols.cum, superseded = new Uint8Array(table.n), restarts: number[] = [], restartRows: number[] = [];
   let top = -Infinity;
   for (let j = 0; j < table.n; j++) {
     const v = cum[j];
     if (Number.isNaN(v)) continue;
     if (v <= top) {
-      restarts.push(v);
+      restarts.push(v); restartRows.push(j);
       for (let i = 0; i < j; i++) if (cum[i] >= v) superseded[i] = 1;
       top = v;
     } else top = v;
   }
-  return { superseded, restarts };
+  return { superseded, restarts, restartRows };
 }
 
 /** A trailing mean over the last `window` recorded values of one series (its own positions only; a gap neither counts
@@ -358,6 +359,21 @@ export function smooth(values: (number | null | undefined)[], window: number): (
     ring.push(v); sum += v;
     if (ring.length > window) sum -= ring.shift()!;
     out[i] = sum / ring.length;
+  }
+  return out;
+}
+
+/** As `smooth`, but the window is the last `width` units of a sorted x instead of a number of values: learner updates by
+ *  evaluation are averaged over the updates of the last `width` evaluations, however many updates an evaluation had (record
+ *  7.213). A row is in the window of every later row up to `width` x units on, and of the rows at its own x after it. */
+export function smoothOver(x: ArrayLike<number>, values: (number | null | undefined)[], width: number): (number | null | undefined)[] {
+  const out: (number | null | undefined)[] = new Array(values.length);
+  let lo = 0, sum = 0, count = 0;
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (typeof v === 'number') { sum += v; count += 1; }
+    while (x[lo] <= x[i] - width) { const w = values[lo]; if (typeof w === 'number') { sum -= w; count -= 1; } lo++; }
+    out[i] = v === undefined ? undefined : v === null ? null : sum / count;
   }
   return out;
 }
@@ -561,11 +577,17 @@ function evaluationValues(store: TrainingStore, id: string) {
   return { value, allowed, single, cumulative };
 }
 
+/** What a learner chart's x is: the learner's update count, or the number of evaluations collected when the update ran
+ *  (learner_updates.evaluations_collected, record 7.213) - the evaluation charts' x, on which runs that learn 1 and 8
+ *  times per evaluation line up. Several updates after one evaluation share its x there. */
+export type LearnerX = 'update' | 'evaluation';
+const noCount = (learnerX: LearnerX) => (learnerX === 'evaluation' ? 'it records no evaluation count with its learner updates' : 'it records no update count');
+
 /** One chart's data: rows in view (plus one beyond each edge), thinned to `buckets` pixel columns by `decimate`. */
-export function build(store: TrainingStore, id: string, smoothing: number, view: View, buckets: number, context: Context = {}): Built {
+export function build(store: TrainingStore, id: string, smoothing: number, view: View, buckets: number, context: Context = {}, learnerX: LearnerX = 'update'): Built {
   const spec = catalog(store, context).find(c => c.id === id);
   const unit = spec?.unit ?? '';
-  if (spec?.axis === 'update') return buildUpdates(store, id, smoothing, view, buckets, unit);
+  if (spec?.axis === 'update') return buildUpdates(store, id, smoothing, view, buckets, unit, learnerX);
   const t = store.evaluations, n = t.n, k = t.cols.k;
   const categories = rowCategories(store);
   const { value, allowed, single, cumulative } = evaluationValues(store, id);
@@ -604,29 +626,52 @@ export function build(store: TrainingStore, id: string, smoothing: number, view:
   return cut(Array.from(k.subarray(0, n)), Array.from({ length: n }, (_, i) => i), series, extent, view, buckets, markers, thinnedTo, 'evaluation', unit);
 }
 
-function buildUpdates(store: TrainingStore, id: string, smoothing: number, view: View, buckets: number, unit: string): Built {
-  const t = store.updates, n = t.n, cum = t.cols.cum;
-  const { superseded, restarts } = updateBranches(t);
-  let order = Array.from({ length: n }, (_, i) => i);
-  if (restarts.length) order = order.sort((a, b) => cum[a] - cum[b] || a - b);      // stable: the abandoned row first at a repeated count
-  const x = order.map(i => cum[i]);
+/** The rows of the learner's table in the order of a learner chart's x: by update count or by evaluations collected (rows
+ *  without that count left out), stable - at a repeated x the earlier row first (an abandoned update before the update that
+ *  replaced it). */
+function learnerOrder(t: Table, learnerX: LearnerX, keep?: (row: number) => boolean): { rows: number[]; x: number[]; column: string } {
+  const column = learnerX === 'evaluation' ? 'collected' : 'cum', xs = t.cols[column];
+  const rows: number[] = [];
+  let sorted = true;
+  for (let i = 0; i < t.n; i++) {
+    if (Number.isNaN(xs[i]) || (keep && !keep(i))) continue;
+    if (rows.length && xs[i] < xs[rows[rows.length - 1]]) sorted = false;
+    rows.push(i);
+  }
+  if (!sorted) rows.sort((a, b) => xs[a] - xs[b] || a - b);
+  return { rows, x: rows.map(i => xs[i]), column };
+}
+
+/** The smoothed learner line: over the last `smoothing` updates, or by evaluation over the updates of the last `smoothing`
+ *  evaluations; from `from` on (the rows of a thinned stretch have no mean). */
+function learnerMean(x: number[], values: (number | null | undefined)[], smoothing: number, learnerX: LearnerX, from: number) {
+  const over = (part: (number | null | undefined)[]) => (learnerX === 'evaluation' ? smoothOver(x.slice(from), part, smoothing) : smooth(part, smoothing));
+  return from > 0 ? [...new Array(from).fill(undefined), ...over(values.slice(from))] : over(values);
+}
+const meanLabel = (smoothing: number, learnerX: LearnerX) => `mean of last ${smoothing}${learnerX === 'evaluation' ? ' evaluations' : ''}`;
+
+function buildUpdates(store: TrainingStore, id: string, smoothing: number, view: View, buckets: number, unit: string, learnerX: LearnerX): Built {
+  const t = store.updates;
+  const { superseded, restarts, restartRows } = updateBranches(t);
+  const { rows: order, x, column } = learnerOrder(t, learnerX);
   const series: Series[] = [];
-  for (const [column, label] of LEARNER_COLUMNS[id] ?? []) {
-    const c = t.cols[column], sign = id === 'entropy' ? -1 : 1;
+  for (const [col, label] of LEARNER_COLUMNS[id] ?? []) {
+    const c = t.cols[col], sign = id === 'entropy' ? -1 : 1;
     const at = (i: number) => (Number.isNaN(c[i]) ? null : sign * c[i]);
     const main = order.map(i => (superseded[i] ? undefined : at(i)));
     if (smoothing > 0) {
-      const thinned = store.thinnedUpdates, from = thinned ? order.findIndex(i => i >= thinned) : 0;     // the mean starts after a thinned stretch
-      const mean = from > 0 ? [...new Array(from).fill(undefined), ...smooth(main.slice(from), smoothing)] : smooth(main, smoothing);
+      const thinned = store.thinnedUpdates, from = thinned ? Math.max(0, order.findIndex(i => i >= thinned)) : 0;     // the mean starts after a thinned stretch
       series.push({ label: `${label} (recorded)`, role: 'raw', category: null, values: main });
-      series.push({ label: `${label}: mean of last ${smoothing}`, role: 'smooth', category: null, values: mean });
+      series.push({ label: `${label}: ${meanLabel(smoothing, learnerX)}`, role: 'smooth', category: null, values: learnerMean(x, main, smoothing, learnerX, from) });
     } else series.push({ label, role: 'raw', category: null, values: main });
     if (restarts.length) series.push({ label: `${label}: abandoned at a restart`, role: 'superseded', category: null, values: order.map(i => (superseded[i] ? at(i) : undefined)) });
   }
-  const markers = [...resumeMarkers(store, t, 'cum'), ...restarts.map(v => ({ x: v, label: 'learner restarted from its save point', kind: 'restart' as const }))];
-  const extent: [number, number] | null = n ? [x[0], x[n - 1]] : null;
-  const thinnedTo = store.thinnedUpdates > 0 ? cum[store.thinnedUpdates - 1] : null;
-  return cut(x, order, series, extent, view, buckets, markers, thinnedTo, 'update', unit);
+  const restartX = learnerX === 'evaluation' ? restartRows.map(j => t.cols.collected[j]).filter(v => !Number.isNaN(v)) : restarts;
+  const markers = [...resumeMarkers(store, t, column), ...restartX.map(v => ({ x: v, label: 'learner restarted from its save point', kind: 'restart' as const }))];
+  const extent: [number, number] | null = x.length ? [x[0], x[x.length - 1]] : null;
+  const thinnedTo = store.thinnedUpdates > 0 ? t.cols[column][store.thinnedUpdates - 1] : null;
+  const made = cut(x, order, series, extent, view, buckets, markers, Number.isNaN(thinnedTo) ? null : thinnedTo, 'update', unit);
+  return t.n && !x.length ? { ...made, missing: [{ label: 'this run', reason: noCount(learnerX) }] } : made;
 }
 
 /** The x range a view shows on this extent: a single point gets one unit on each side, so it is drawn. */
@@ -652,11 +697,12 @@ export interface CompareRun { store: TrainingStore; label: string; context?: Con
 export const COMPARE_MAX = 4;
 
 /** Up to four runs on one chart, each its own colour (Series.run), on one x axis: the evaluation's number in each run's
- *  recorded order, or the learner's update count. A run's designs are one series - a training run's training designs, a
- *  frozen run's evaluated ones; episode starts (one design re-simulated) are left out, so are a learner's abandoned
- *  updates after a restart. A run that cannot be drawn on this chart (it has no such spec, the spec's unit differs, it
- *  records no learner updates) is listed in `missing` with the reason. Limits are the first run's. */
-export function buildCompare(runs: CompareRun[], id: string, smoothing: number, view: View, buckets: number): Built {
+ *  recorded order, or for the learner's charts its update count or the evaluations collected (`learnerX`). A run's designs
+ *  are one series - a training run's training designs, a frozen run's evaluated ones; episode starts (one design
+ *  re-simulated) are left out, so are a learner's abandoned updates after a restart. A run that cannot be drawn on this
+ *  chart (it has no such spec, the spec's unit differs, it records no learner updates) is listed in `missing` with the
+ *  reason. Limits are the first run's. */
+export function buildCompare(runs: CompareRun[], id: string, smoothing: number, view: View, buckets: number, learnerX: LearnerX = 'update'): Built {
   const first = runs[0];
   const spec = catalog(first.store, first.context ?? {}).find(c => c.id === id);
   const unit = spec?.unit ?? '', axis: Axis = spec?.axis ?? 'evaluation';
@@ -666,15 +712,27 @@ export function buildCompare(runs: CompareRun[], id: string, smoothing: number, 
     const own = catalog(run.store, run.context ?? {}).find(c => c.id === id);
     if (!own?.available) { missing.push({ label: run.label, reason: own?.reason ?? 'this run has no such chart' }); return; }
     if (own.unit !== unit) { missing.push({ label: run.label, reason: `its ${own.title} is in ${own.unit || 'no unit'}, not in ${unit || 'no unit'}` }); return; }
-    parts.push(axis === 'update' ? learnerPart(run, r, id, smoothing) : evaluationPart(run, r, id, smoothing));
+    const part = axis === 'update' ? learnerPart(run, r, id, smoothing, learnerX) : evaluationPart(run, r, id, smoothing);
+    if (!part.x.length && axis === 'update') { missing.push({ label: run.label, reason: noCount(learnerX) }); return; }
+    parts.push(part);
   });
-  const x = [...new Set(parts.flatMap(p => p.x))].sort((a, b) => a - b);
-  const at = new Map(x.map((v, i) => [v, i]));
+  // One x column for all runs: each x value as many times as the run that has it most often (by evaluation, a run that learns
+  // 8 times per evaluation has 8 updates at one x), so the runs share the slots of an x and each keeps its own rows in order.
+  const need = new Map<number, number>();
+  for (const part of parts) {
+    const own = new Map<number, number>();
+    for (const v of part.x) own.set(v, (own.get(v) ?? 0) + 1);
+    for (const [v, count] of own) if (count > (need.get(v) ?? 0)) need.set(v, count);
+  }
+  const x: number[] = [], firstSlot = new Map<number, number>();
+  for (const v of [...need.keys()].sort((a, b) => a - b)) { firstSlot.set(v, x.length); for (let j = 0; j < need.get(v)!; j++) x.push(v); }
   const series: Series[] = [];
   for (const part of parts) {
+    const used = new Map<number, number>();
+    const slot = part.x.map(v => { const j = used.get(v) ?? 0; used.set(v, j + 1); return firstSlot.get(v)! + j; });
     for (const s of part.series) {
       const values: (number | null | undefined)[] = new Array(x.length).fill(undefined);
-      part.x.forEach((v, i) => { values[at.get(v)!] = s.values[i]; });
+      slot.forEach((to, i) => { values[to] = s.values[i]; });
       series.push({ ...s, values });
     }
   }
@@ -710,12 +768,11 @@ function evaluationPart(run: CompareRun, r: number, id: string, smoothing: numbe
 }
 
 /** One run's series of a learner chart in a comparison: its updates on the line it went on (abandoned ones left out). */
-function learnerPart(run: CompareRun, r: number, id: string, smoothing: number): { x: number[]; series: Series[] } {
-  const { store, label } = run, t = store.updates, cum = t.cols.cum;
+function learnerPart(run: CompareRun, r: number, id: string, smoothing: number, learnerX: LearnerX): { x: number[]; series: Series[] } {
+  const { store, label } = run, t = store.updates;
   const { superseded } = updateBranches(t);
-  const rows: number[] = [];
-  for (let i = 0; i < t.n; i++) if (!superseded[i]) rows.push(i);
-  const x = rows.map(i => cum[i]), from = store.thinnedUpdates ? Math.max(0, rows.findIndex(i => i >= store.thinnedUpdates)) : 0;
+  const { rows, x } = learnerOrder(t, learnerX, i => !superseded[i]);
+  const from = store.thinnedUpdates ? Math.max(0, rows.findIndex(i => i >= store.thinnedUpdates)) : 0;
   const columns = LEARNER_COLUMNS[id] ?? [];
   const series: Series[] = [];
   columns.forEach(([column, name], c) => {
@@ -723,8 +780,8 @@ function learnerPart(run: CompareRun, r: number, id: string, smoothing: number):
     const named = columns.length > 1 ? `${label} / ${name}` : label;      // the run's name stays whole in its legend key
     if (smoothing > 0) {
       series.push({ label: `${named} (recorded)`, role: 'raw', category: null, run: r, dash: c > 0, values });
-      series.push({ label: `${named}: mean of last ${smoothing}`, role: 'smooth', category: null, run: r, dash: c > 0,
-        values: from > 0 ? [...new Array(from).fill(undefined), ...smooth(values.slice(from), smoothing)] : smooth(values, smoothing) });
+      series.push({ label: `${named}: ${meanLabel(smoothing, learnerX)}`, role: 'smooth', category: null, run: r, dash: c > 0,
+        values: learnerMean(x, values, smoothing, learnerX, from) });
     } else series.push({ label: named, role: 'raw', category: null, run: r, dash: c > 0, values });
   });
   return { x, series };

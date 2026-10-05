@@ -13,6 +13,9 @@
 //   - switching runs keeps them apart; no listener or chart is left behind (window listener count, chart count)
 //   - a long history (20,000 evaluations, ~128,000 learner updates) loads in pages and stays responsive; with lower caps the
 //     memory bound thins the oldest part and says so
+//   - learner charts by evaluation (record 7.213): a run learning 8 times per evaluation and one learning once end at the
+//     same x; the choice is kept after a reload and lets go of the learner charts' zoom; units in the chart titles are
+//     written in English letters (units.ts)
 // Run (Windows node through WSL interop, ~1 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -42,8 +45,9 @@ function columns(rows, names) {
 const T0 = Date.parse('2026-10-05T12:00:00Z') / 1000;
 const reward = k => -0.3 * Math.exp(-k / 150) - 0.01 * (1 + Math.sin(k));              // a learning curve with noise
 const gain = k => (k % 37 === 0 ? null : 350 + 120 * (1 - Math.exp(-k / 120)) + 5 * Math.cos(k));
-/** A run of `n` evaluations (every 5th an episode start, every 41st a timeout) with 8 learner updates each after a warm-up. */
-function makeRun(n, { updatesPer = 8, frozen = false, calibration = false } = {}) {
+/** A run of `n` evaluations (every 5th an episode start, every 41st a timeout) with 8 learner updates each after a warm-up;
+ *  its one spec `gain_vv` in V/V unless `spec` and `unit` say otherwise. */
+function makeRun(n, { updatesPer = 8, frozen = false, calibration = false, spec = 'gain_vv', unit = 'V/V' } = {}) {
   const evaluations = [], updates = [], specs = [];
   let cum = 0;
   for (let k = 1; k <= n; k++) {
@@ -55,7 +59,7 @@ function makeRun(n, { updatesPer = 8, frozen = false, calibration = false } = {}
       policy_version: null, reward: start || timeout ? null : reward(k), valid: !timeout && value !== null, all_hard_constraints_satisfied: met,
       normalized_constraint_violation: timeout || value === null ? null : Math.max(0, (400 - value) / 400), clearance_margin: null, best_so_far_feasible: k > 200,
       best_so_far_violation: Math.max(0, 0.1 - k / 2000), execution_seconds: 1.2, committed_at: T0 + k, best_so_far_objective: null });
-    specs.push({ commit_seq: k, metric_name: 'gain_vv', raw_value: timeout ? null : value, satisfied: timeout || value === null ? null : met,
+    specs.push({ commit_seq: k, metric_name: spec, raw_value: timeout ? null : value, satisfied: timeout || value === null ? null : met,
       failure_reason: timeout ? 'evaluation_status_timeout' : value === null ? 'missing_or_nonfinite' : null });
     if (!frozen && !calibration && !start && k >= 9) for (let u = 0; u < updatesPer; u++) {
       cum += 1;
@@ -67,12 +71,11 @@ function makeRun(n, { updatesPer = 8, frozen = false, calibration = false } = {}
   const prefix = new Int32Array(n + 1);
   let u = 0;
   for (let k = 1; k <= n; k++) { while (u < updates.length && updates[u].evaluations_collected <= k) u++; prefix[k] = u; }
-  return { evaluations, updates, specs, prefix };
+  return { evaluations, updates, specs, prefix, defs: { [spec]: { unit, threshold_lower: 400, threshold_upper: null, hard: true } } };
 }
-const DEFS = { gain_vv: { unit: 'V/V', threshold_lower: 400, threshold_upper: null, hard: true } };
 const chunk = (data, from, to) => ({ evaluations: columns(data.evaluations.slice(from, to), EVALUATION),
   updates: columns(data.updates.slice(data.prefix[Math.min(from, data.evaluations.length)], data.prefix[Math.min(to, data.evaluations.length)]), UPDATE),
-  specs: columns(data.specs.slice(from, to), SPEC), spec_defs: DEFS });
+  specs: columns(data.specs.slice(from, to), SPEC), spec_defs: data.defs });
 /** The canned backend of one run: `final` evaluations published in flushes of 16, `tail` more still in the journal. */
 function serve(run, cursor, tailCursor) {
   const flushes = Math.ceil(run.final / 16), start = Math.min(cursor, flushes);
@@ -117,11 +120,14 @@ const RUNS = {
   twin: { dir: base + 'scratch__seed8__twin', id: 'twin', state: 'completed', alive: true, final: 304, tail: 2, data: makeRun(400) },   // whole flushes of 16: a published flush never changes
   frozen: { dir: base + 'scratch__seed4__frozen', id: 'frozen', state: 'completed', final: 48, tail: 0, data: makeRun(48, { frozen: true }), frozen: true },
   long: { dir: base + 'scratch__seed5__long', id: 'long', state: 'completed', final: 20000, tail: 0, data: null },
+  // learns once per evaluation (as the SAC defaults before record 7.183 did); its spec's unit written with a Greek letter
+  once: { dir: base + 'scratch__seed9__once', id: 'once', state: 'completed', final: 288, tail: 0, data: makeRun(288, { updatesPer: 1, spec: 'i_bias', unit: '\u00b5A' }) },
 };
 const byDir = Object.fromEntries(Object.values(RUNS).map(r => [r.dir, r]));
 let listRuns = false;                                 // GET /api/runs lists the runs only for the comparison part
-const runRows = () => ['live', 'failed', 'frozen', 'twin'].map((id, i) => ({ run_dir: RUNS[id].dir, run_id: id, task_name: 'fixture_task', mode: RUNS[id].frozen ? 'frozen' : 'scratch',
-  seed: i + 1, state: RUNS[id].state === 'running' ? 'completed' : RUNS[id].state, created_utc: `2026-10-05T1${i}:00:00+00:00`, evaluations: RUNS[id].final + RUNS[id].tail, mock: true }));
+const runRows = () => ['live', 'failed', 'frozen', 'twin', 'once'].map((id, i) => ({ run_dir: RUNS[id].dir, run_id: id, task_name: 'fixture_task', mode: RUNS[id].frozen ? 'frozen' : 'scratch',
+  seed: i + 1, state: RUNS[id].state === 'running' ? 'completed' : RUNS[id].state, created_utc: `2026-10-05T1${i}:00:00+00:00`, evaluations: RUNS[id].final + RUNS[id].tail, mock: true }))
+  .map(r => (r.run_id === 'once' ? { ...r, seed: 1, created_utc: '2026-10-05T10:00:00+00:00' } : r));      // reads as the live run but for its folder id
 
 await runChecks(browser, async () => {
   const CONFIG = await starterConfig(APP);
@@ -341,7 +347,8 @@ await runChecks(browser, async () => {
   const twinReads = () => reads.filter(r => r.run === 'twin').length;
   await page.setValue(COMPARE, RUNS.twin.dir);
   check('a compared run gets its chip and its own colour on both charts, its whole name in the legend', await until(`(${TRAINING}).querySelectorAll('.training-compared .training-chip').length === 2
-    && /fixture_task · seed 4 · twin/.test([...(${TRAINING}).querySelectorAll('.training-legend')][0].textContent)
+    && [...(${TRAINING}).querySelectorAll('.training-legend')][0].textContent.includes('fixture_task \u00b7 seed 4 \u00b7 '
+      + new Date('2026-10-05T13:00:00+00:00').toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }))
     && [...(${TRAINING}).querySelectorAll('.training-legend')].every(l => l.querySelector('.key-run0') && l.querySelector('.key-run1'))`, 60),
     await evaluate(`(${TRAINING}).querySelector('.training-compared')?.innerText`));
   check('the compared run is read in pages from its own cursor', reads.filter(r => r.run === 'twin')[0]?.flushes === 0);
@@ -380,6 +387,54 @@ await runChecks(browser, async () => {
     && !(${TRAINING}).querySelector('.training-compared').textContent.includes('twin')`, 30));
   await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip-remove')][0].click()`);
   check('the last one taken off: one run again', await until(`!(${TRAINING}).querySelector('.training-compared') && !(${TRAINING}).querySelector('.key-run1')`, 30));
+
+  // ---- learner charts by evaluation (record 7.213): 8 and 1 updates per evaluation line up ----------------------------------------
+  const LEARNER_X = `(${TRAINING}).querySelector('select[aria-label="Learner charts by"]')`;
+  const liveLast = RUNS.live.data.updates.filter(u => u.evaluations_collected <= 288).at(-1);
+  const onceAt288 = RUNS.once.data.updates.find(u => u.evaluations_collected === 288), onceLast = RUNS.once.data.updates.at(-1);
+  const p4 = v => String(+v.toPrecision(4));
+  check('learner charts are drawn by update unless chosen otherwise', (await evaluate(`(${LEARNER_X}).value`)) === 'update'
+    && await until(`/^Newest: Learner update ${liveLast.cumulative_updates} \u00b7 after 288 evaluations/.test([...(${TRAINING}).querySelectorAll('.training-readout')][1].textContent)`, 40), await readout(1));
+  box = await plotBox(1);
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x + box.w * 0.2, y: box.y + box.h / 2, button: 'left', clickCount: 1 });
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w * 0.4, y: box.y + box.h / 2, button: 'left', buttons: 1 });
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box.x + box.w * 0.4, y: box.y + box.h / 2, button: 'left', clickCount: 1 });
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w + 40, y: box.y - 40 });
+  const learnerZoomed = await until(`!(${RESET}).disabled`, 30);
+  await page.setValue(LEARNER_X, 'evaluation');
+  check('by evaluation: x = the evaluations collected, the newest row named by its update; the zoom of the learner chart let go',
+    learnerZoomed && await until(`/^Newest: Evaluation 288 \u00b7 update ${liveLast.cumulative_updates} \u00b7 Critic loss \\(recorded\\) ${p4(liveLast.critic_loss).replace('.', '\\.')} \u00b7 Critic loss: mean of last 50 evaluations /.test([...(${TRAINING}).querySelectorAll('.training-readout')][1].textContent)`, 40)
+    && await evaluate(`(${RESET}).disabled`), await readout(1));
+  await page.setValue(COMPARE, RUNS.once.dir);
+  await until(`(${TRAINING}).querySelectorAll('.training-compared .training-chip').length === 2`, 60);
+  const onceLabel = await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip')][1].childNodes[1].textContent`);
+  const liveChip = await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip')][0].textContent`);
+  check('two compared runs that would read alike (task, seed, time) are told apart by their folder ids', / \u00b7 once$/.test(onceLabel) && / \u00b7 live \(shown\)$/.test(liveChip)
+    && onceLabel.replace(/ \u00b7 once$/, '') === liveChip.replace(/ \u00b7 live \(shown\)$/, ''), `${liveChip} | ${onceLabel}`);
+  const at288 = new RegExp(`^Newest: Evaluation 288 .*${onceLabel.replace(/[.*+?^$()|[\]\\]/g, '\\$&')} \\(recorded\\) ${p4(onceAt288.critic_loss).replace('.', '\\.')}( |$)`);
+  check('compared by evaluation, a run learning once per evaluation ends at the same x, each run\'s recorded value there',
+    await until(`${at288}.test([...(${TRAINING}).querySelectorAll('.training-readout')][1].textContent) && /\\(recorded\\) ${p4(liveLast.critic_loss).replace('.', '\\.')} /.test([...(${TRAINING}).querySelectorAll('.training-readout')][1].textContent)`, 60),
+    await readout(1));
+  await page.setValue(LEARNER_X, 'update');
+  check('compared by update the same two runs end far apart (the newest x is the 8-per-evaluation run\'s count)',
+    await until(`/^Newest: Learner update ${liveLast.cumulative_updates} /.test([...(${TRAINING}).querySelectorAll('.training-readout')][1].textContent)
+      && ![...(${TRAINING}).querySelectorAll('.training-readout')][1].textContent.includes(${JSON.stringify(onceLabel + ' (recorded)')})`, 40)
+    && liveLast.cumulative_updates > 4 * onceLast.cumulative_updates, `${await readout(1)} | once ends at update ${onceLast.cumulative_updates}`);
+  await page.setValue(LEARNER_X, 'evaluation');
+  await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150); await press('Training');
+  check('the learner\'s x is kept after a reload', await until(`(${LEARNER_X})?.value === 'evaluation' && /^Newest: Evaluation 288 /.test([...(${TRAINING}).querySelectorAll('.training-readout')][1]?.textContent ?? '')`, 80),
+    await evaluate(`(${LEARNER_X})?.value`));
+  await page.shot(path.join(out, 'training-learner-by-evaluation.png'), `(${TRAINING})`);
+  await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip-remove')][0].click()`);
+  await until(`!(${TRAINING}).querySelector('.training-compared')`, 30);
+  await page.setValue(LEARNER_X, 'update');
+  // units in the chart titles (units.ts, record 7.208: English letters): the run's spec is stored in \u00b5A
+  await showRun(RUNS.once);
+  await until(`/288 evaluations/.test((${TRAINING}).querySelector('.training-counts')?.textContent ?? '')`, 60);
+  const unitTitle = await evaluate(`[...(${CHART(0)}).options].find(o => o.value === 'spec:i_bias')?.textContent ?? ''`);
+  check('a chart title writes its unit in English letters, as the rest of the page', unitTitle === 'i_bias (uA)', unitTitle);
+  await showRun(RUNS.live);
+  await until(`/288 evaluations/.test((${TRAINING}).querySelector('.training-counts')?.textContent ?? '')`, 60);
   listRuns = false;
 
   // ---- more than two charts (record 7.205, user: "add multiple charts same page support. more than the current 2") ------------

@@ -1175,12 +1175,15 @@ recorded names (`evaluations.reward`, `learner_updates.actor_loss`, ...): a char
 | Best feasible \<objective\> | `best_so_far_metrics` + `best_so_far_feasible` | evaluation | Only when a Specs row says "then lower/higher is better": that row's value of the best feasible design (best_design.py's rule). An infeasible or unknown best design is a gap; until a feasible value exists the chart says why it is unavailable (7.201). |
 | \<each spec\> | the `metrics` table's aggregate row of the spec | evaluation | The spec's value per evaluation, with its lower and/or upper limit as dashed lines, in the spec's canonical unit. |
 | Simulation time per evaluation | `execution_seconds` | evaluation | Start to result, every attempt included. |
-| Actor loss, Critic loss, Temperature loss, Mean TD target, Gradient norms | `learner_updates.*` | learner update | The SAC learner's own diagnostics at each recorded update. |
-| Temperature α | `learner_updates.alpha` | learner update | The entropy coefficient. |
-| Entropy estimate | `−learner_updates.mean_log_prob` | learner update | The data dictionary's definition of the entropy estimate. |
+| Actor loss, Critic loss, Temperature loss, Mean TD target, Gradient norms | `learner_updates.*` | learner update or evaluation | The SAC learner's own diagnostics at each recorded update. |
+| Temperature α | `learner_updates.alpha` | learner update or evaluation | The entropy coefficient. |
+| Entropy estimate | `−learner_updates.mean_log_prob` | learner update or evaluation | The data dictionary's definition of the entropy estimate. |
 
 "Along evaluation" = the evaluation's number in the order the run recorded it (1, 2, 3 ...; equal to `completion_index`
-except where a crash-resume re-used one, which the hover line names). "Along learner update" = `cumulative_updates`.
+except where a crash-resume re-used one, which the hover line names). "Along learner update" = `cumulative_updates`;
+with **Learner by: evaluation** (record 7.213) the learner's charts are drawn along `learner_updates.evaluations_collected`
+instead - the number of evaluations collected when the update ran, the evaluation charts' x - and the updates that ran
+after one evaluation (8 with the starting presets, 1 with the SAC defaults before record 7.183) share its x.
 What a run does not record is listed under the controls ("Not in this run: ...", a closed line), and a chosen chart the
 run cannot draw says why in its place: a frozen run has no learner updates, a run started with "save learner updates" off
 has none either, AI sizing alone has no learner, no Specs row may be marked lower/higher is better.
@@ -1202,7 +1205,14 @@ they are empty.
   choice. Taking one chart off leaves the others' charts as they are, and a chart is only drawn again when its own data,
   zoom or width changed.
   **Smoothing**: off, or the mean of the last 10 / 20 / 50 / 100 / 200 recorded values of each series (default 20); the
-  recorded values stay as faint points under the line, and a gap stays a gap in both. Both choices are kept in this browser.
+  recorded values stay as faint points under the line, and a gap stays a gap in both. A chart's unit is written in its
+  title the way the rest of the page writes units (`units.ts`, record 7.208: English letters - "uA", "ohm", "deg").
+* **Learner by** (record 7.213, the user's choice of "what next": "Learner charts by evaluations"): **update** (the
+  default) draws the learner's charts along its update count; **evaluation** along the evaluations collected, so that runs
+  learning 1 and 8 times per evaluation line up with each other and with the evaluation charts. By evaluation the
+  smoothing averages the updates of the last N evaluations ("mean of last 50 evaluations"), however many updates each
+  had, and the hover line names the update under the pointer. Changing it lets go of the learner charts' zoom (it was in
+  the other unit). Kept in this browser with the chart choices.
 * **Hover**: the line above a chart says the evaluation (or update) under the pointer, its phase, episode and status, and
   the recorded value - without a pointer, the newest one. **Legend keys** switch a series off and on.
 * **Zoom**: drag across a chart. A zoomed chart holds still while new results arrive (**Follow latest** goes off).
@@ -1212,8 +1222,12 @@ they are empty.
 
 **Several runs on one chart** (record 7.200, the user's choice of "what next"). **Compare...** (in the controls) lists the
 runs of the run window; a chosen run is drawn on both charts beside the shown one, up to four runs, each in its own colour
-(the shown run in the accent colour), with a line of chips above the charts naming them - × takes one off. The runs share
-one x axis: the evaluation's number in each run's recorded order, or the learner's update count. A run's designs are one
+(the shown run in the accent colour), with a line of chips above the charts naming them - × takes one off. A run is
+named as the run window shows it (record 7.213): its experiment (the task's name when the experiment kept the default name
+"experiment"), its seed and when it was made; the start of its folder's id is added only when two compared runs would
+read the same. The runs share one x axis: the evaluation's number in each run's recorded order, or for the learner's
+charts its update count or the evaluations collected (**Learner by**); at an evaluation where one run learned 8 times and
+another once, each keeps its own updates in order and the hover line gives both. A run's designs are one
 series (a training run's training designs, a frozen run's evaluated ones); episode starts are left out, so are a
 learner's updates abandoned at a restart. The hover line gives each run's recorded value at that evaluation. A run that
 cannot be drawn on a chart (it has no such spec, the spec's unit differs, it records no learner updates) is named on that
@@ -1221,6 +1235,10 @@ chart with the reason; a spec's limits are the shown run's. Each compared run is
 pages, then every 2 s while its worker lives (the answer of `/api/runs/training` says so since 7.200: `state`,
 `worker_alive`) - and kept in this browser like the chart choices. Checked on three recorded Spectre runs of the defaults
 study: the learning run's pass share rises from about evaluation 600 while the two runs with the old defaults stay flat.
+Record 7.213 put viewing copies of the day's eight recorded `real:mscr_ota7t` Spectre runs (the three starting presets
+of records 7.199 and 7.209 and the defaults study's five) into the page's output folder, so that Runs... and Compare...
+list them: the folders `outputs/<experiment>__<id>/` with a `COPY-README.txt`; the originals stay in
+`artifacts/local/reviews/`. The copies hold no save points, so they cannot be continued and are not offered as models.
 
 **When it reads, when it draws.** Nothing while another tab is shown or the browser tab is in the background. Opened, it
 asks for what is new since its last answer (a cursor of flush records; history pages target 30,000 rows, keeping each

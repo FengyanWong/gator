@@ -304,7 +304,7 @@ await runChecks(browser, async () => {
   const probes = config.measurements.map(m => m.measurement_id).filter(Boolean);
   const chips = await evaluate(`(() => { const p = document.querySelector('.fact.spec-probes'); return { ids: [...p.querySelectorAll('code.probe-id')].map(c => c.textContent), text: p.textContent }; })()`);
   check('the Specs line offers the Probe ids as Probe-coloured chips', JSON.stringify(chips.ids) === JSON.stringify(probes), JSON.stringify(chips.ids));
-  check('...with the same words as before (a comma between ids)', chips.text.includes(`Probes: ${probes.join(', ')}.`), chips.text.slice(0, 160));
+  check('...the line reads "Probes:" and the ids, a comma between them (its explanation in the tooltip, record 7.176)', chips.text === `Probes: ${probes.join(', ')}`, chips.text.slice(0, 160));
   check('the Specs table header row takes the Specs colour', await evaluate(`document.querySelector('.editors').dataset.editor === 'targets'`));
   await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.textContent.startsWith('Parameters')).click()`);
 

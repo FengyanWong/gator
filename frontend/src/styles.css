@@ -75,6 +75,13 @@ button.primary { background: var(--accent-fill); color: var(--on-accent); border
 table.grid { border-collapse: collapse; width: 100%; } table.grid th, table.grid td { border: 1px solid var(--line); padding: 2px 5px; text-align: left; vertical-align: top; white-space: nowrap; }
 table.grid th { background: var(--head); position: sticky; top: 0; cursor: help; font-weight: 400; font-family: var(--f-label); letter-spacing: .02em; } table.grid.small td { white-space: normal; word-break: break-word; }
 table.editor td { padding: 0; } table.editor td input, table.editor td select { border: none; min-width: 84px; background: transparent; }
+/* record 7.175: the editors' formula bar - the chosen cell's whole value in a box as wide as the table; the chosen cell is marked */
+.formula { margin: 4px 0; } .formula-bar { display: flex; align-items: flex-start; gap: 6px; }
+.formula-bar .formula-where { flex: none; width: 210px; padding: 4px 8px; border: 1px solid var(--line); background: var(--head); font-size: 11.5px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
+.formula-bar textarea { flex: 1; min-height: 26px; max-height: 7.5em; resize: none; field-sizing: content; font-family: var(--f-mono); font-size: 12px; line-height: 16px; overflow: auto; }
+.formula-bar textarea[readonly]:not(:disabled) { background: var(--field-disabled); color: var(--muted); }
+.formula-problem { margin: 3px 0 0 216px; }
+table.editor td.active-cell { box-shadow: inset 0 0 0 2px var(--accent); }
 table.editor td input.readonly { color: var(--muted); }
 table.editor select[aria-label="Judged at"] { min-width: 180px; }
 table.editor select[aria-label="Constraint"] { min-width: 200px; }

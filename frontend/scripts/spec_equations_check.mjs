@@ -66,7 +66,7 @@ await runChecks(browser, async () => {
   check('...and is saved back in the new form, in the same place', JSON.stringify(Object.keys(saved.targets[0]).slice(0, 2)) === '["metric_id","equation"]'
     && !('measurement_id' in saved.targets[0]), JSON.stringify(saved.targets[0]));
   check('the old row is valid as it is', (await issuesUntil(0, [], ['error', 'blocker']))[0], JSON.stringify(await issues(0)));
-  check('the tab names the probes an equation can use', /Probes: m_score\./.test(await evaluate(`${EDITORS}.querySelector('.spec-probes')?.textContent ?? ''`)));
+  check('the tab names the probes an equation can use', /^Probes: m_score$/.test(await evaluate(`${EDITORS}.querySelector('.spec-probes')?.textContent ?? ''`)));
   // The row-selection tick box is as narrow as the box (it inherited the 84 px minimum of the editor inputs).
   const tickWidth = await evaluate(`${EDITORS}.querySelector('table.editor thead th.sel')?.getBoundingClientRect().width ?? 0`);
   check('the tick-box column is narrow', tickWidth > 0 && tickWidth < 32, `${tickWidth} px`);

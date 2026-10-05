@@ -458,8 +458,9 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
             <TaskSave profileId={profileId} library={null} cell={null} task={generatedName}
               revision={tasks.find(t => t.task_key === ref.task_id)?.revision ?? null} hasCopy
               config={config} setConfig={setConfig} onSaved={taskSaved} bar={taskSlot} notes={taskNotes} />
-            <p><b>Before every run:</b> Start, Single baseline simulation and Resume first check that the editors, this saved task and its
-              cell in Virtuoso agree. The check simulates nothing; a difference starts nothing and says what to do.</p>
+            {/* One line; the explanation is its tooltip (record 7.177, user: "reduce the texts this part"). */}
+            <p title={'Start, Single baseline simulation and Resume first check that the editors, this saved task and its cell in Virtuoso agree. '
+              + 'The check simulates nothing; a difference starts nothing and says what to do.'}><b>Before every run:</b> the editors, the task and its cell must agree.</p>
             <details className="more"><summary>What the check compares</summary>
               <ul className="steps-list">
                 <li>The rows of Parameters, Probes and Specs against the saved task. While you edit, the header's blocking issues say it too.</li>

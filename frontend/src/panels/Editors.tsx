@@ -89,6 +89,47 @@ function Cell({ column, value, onChange, fixed = null, off = null }: { column: J
   return <input title={title} disabled={disabled} value={value ?? ''} onChange={e => onChange(e.target.value === '' && column.nullable ? null : e.target.value)} />;
 }
 
+/** What the formula bar shows of the chosen cell: where it is, its whole value as text, whether it is typed there, and why not. */
+type BarCell = { id: string; where: string; text: string; editable: boolean; why: string; format: string };
+
+/** The editors' formula bar (record 7.175, user: "add excel like single cell whole row text edit somewhere for long text editing
+ *  which cant show everything in the cell"): the chosen cell's whole value in a box as wide as the table, as in a spreadsheet.
+ *  What is typed there goes into the cell when Enter, Tab or leaving the box takes it - one Undo step - and Esc keeps the cell
+ *  as it was. A list, a tick box and a value that follows another field are shown here, not typed. */
+function FormulaBar({ cell, commit, back }: { cell: BarCell | null; commit: (text: string) => string | null; back: () => void }) {
+  const [draft, setDraft] = useState<string | null>(null);         // null: not typing here, the box shows the cell's value
+  const [problem, setProblem] = useState<string | null>(null);
+  // The text is read from a ref too: Enter and Esc go back to the cell, which blurs the box at once, and that blur must see the
+  // text already taken or dropped - read from the render it would write a text Esc had just dropped.
+  const typed = useRef<string | null>(null);
+  const keep = (text: string | null) => { typed.current = text; setDraft(text); };
+  useEffect(() => { keep(null); setProblem(null); }, [cell?.id]);  // another cell: its own value
+  const take = () => {
+    if (typed.current === null) return true;
+    const refused = commit(typed.current);
+    setProblem(refused);
+    if (!refused) keep(null);
+    return !refused;
+  };
+  return (
+    <div className="formula">
+      <div className="formula-bar">
+        <span className="formula-where" title={cell ? cell.format : 'Click a cell of the table to see its whole value here.'}>{cell ? cell.where : 'No cell chosen'}</span>
+        <textarea rows={1} spellCheck={false} aria-label="Whole value of the chosen cell" disabled={!cell} readOnly={!cell?.editable}
+          value={draft ?? cell?.text ?? ''} placeholder={cell ? '' : 'Click a cell to see and edit its whole value here'}
+          title={!cell ? undefined : cell.editable ? 'The whole value of the chosen cell. Enter (or Tab, or clicking elsewhere) writes it into the cell; Esc keeps the cell as it was.' : cell.why}
+          onChange={e => { keep(e.target.value.replace(/\r?\n/g, ' ')); setProblem(null); }}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); if (take()) back(); }
+            else if (e.key === 'Escape') { e.preventDefault(); keep(null); setProblem(null); back(); }
+            else if (e.key === 'Tab' && !take()) e.preventDefault();
+          }}
+          onBlur={take} />
+      </div>
+      {problem && <p className="error formula-problem">{problem}</p>}
+    </div>);
+}
+
 // What a follower row (binding_group set) leaves to its leader: the written value is the leader's times the ratio, so its own
 // bounds, step, scale, type and "optimized" do nothing (Save task even clears its bounds).
 const FOLLOWER_IGNORES = ['optimized', 'value_type', 'lower', 'upper', 'step', 'scale'];
@@ -130,6 +171,10 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const [matched, setMatched] = useState(0);               // each toolbar press opens a fresh read; zero closes the box
   const [error, setError] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
+  // The chosen cell of the formula bar (record 7.175): its row by position, checked by the row's ID (a Delete or an Undo moves
+  // rows; while the ID itself is being typed, the position holds).
+  const [active, setActive] = useState<{ index: number; name: string; key: string } | null>(null);
+  const table = useRef<HTMLTableElement>(null);
   // `signal` holds a Maestro output's expression (ymax(VT("/OUT")), getData(... ?result "stb")): "signal" read like a
   // net name (review of 2026-10-03). For a profile metric it is a label of what is measured.
   const columns: Json[] = schema.editors[tab].map((c: Json) => tab === 'measurements' && c.name === 'signal' ? { ...c, label: 'Expression' }
@@ -262,6 +307,52 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     return [...new Set([row, ...tied].map(r => r.instance_path).filter(Boolean))] as string[];
   };
   useEffect(() => () => pointAt([]), [tab]);
+  useEffect(() => setActive(null), [tab]);
+
+  // Why a cell is shown and not typed: it follows another field, or its row's leader decides it (record 7.158 review).
+  const fixedOf = (row: Json, c: Json): string | null => tab === 'measurements' && c.name === 'measurement_id' && row.result_source === 'ade_output'
+    ? `A Maestro output's Probe ID is m_ + its output name (Save task names it so): it follows the name, and so do the spec equations that use it.` : null;
+  const offOf = (row: Json, c: Json): string | null => tab === 'parameters' && row.binding_group && FOLLOWER_IGNORES.includes(c.name)
+    ? `Follows ${row.binding_group}: its leader's value times the ratio is written, so this field does nothing on this row.` : null;
+  const at = !active ? -1 : rows[active.index] && (active.name === keyField || String(rows[active.index][keyField] ?? '') === active.key)
+    ? active.index : rows.findIndex(r => String(r[keyField] ?? '') === active.key);
+  const activeRow = at >= 0 ? rows[at] : null;
+  const activeColumn: Json = activeRow ? columns.find(c => c.name === active!.name) ?? null : null;
+  const barCell: BarCell | null = activeRow && activeColumn ? (() => {
+    const c = activeColumn, value = activeRow[c.name] === undefined ? c.default : activeRow[c.name];
+    const choice = tab === 'targets' && c.name === 'constraint' ? 'A list: choose it in the cell.'
+      : c.name === 'nominal_only' || c.options ? `A list: choose it in the cell${c.options ? ` (${c.options.join(' | ')})` : ''}.`
+      : c.type === 'boolean' ? 'A tick box: tick it in the cell.' : null;
+    const why = fixedOf(activeRow, c) ?? offOf(activeRow, c) ?? choice;
+    const text = tab === 'targets' && c.name === 'constraint' ? limitLabel(activeRow.constraint, activeRow.direction_after_feasible ?? 'none')
+      : c.name === 'nominal_only' ? (value ? 'Nominal only' : 'All planned conditions') : c.type === 'boolean' ? (value ? 'on' : 'off')
+      : value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+    return { id: `${tab}|${at}|${c.name}`, where: `${c.label ?? c.name} · ${activeRow[keyField] ?? `row ${at + 1}`}`, text, editable: why === null,
+      why: why ?? '', format: `${c.name} (${c.type}${c.options ? ': ' + c.options.join(' | ') : ''}${c.required ? ', required' : ''}) - ${c.guidance ?? ''}` };
+  })() : null;
+  // The bar's text as the cell would take it: a number as the number cell reads it, a list as JSON; one change, one Undo step.
+  const commitBar = (text: string): string | null => {
+    if (!activeRow || !activeColumn) return null;
+    const c = activeColumn;
+    let value: Json;
+    if (c.type === 'number' || c.type === 'integer') {
+      const s = text.trim(), n = Number(s);
+      if (s !== '' && !Number.isFinite(n)) return `"${s}" is not a number: type it plain or with an exponent (2.5e-6); the unit column says the unit.`;
+      value = s === '' ? (c.nullable ? null : 0) : n;
+    } else if (c.type === 'array' || c.type === 'object') {
+      if (text.trim() === '') value = null;
+      else { try { value = JSON.parse(text); } catch { return 'Not JSON: a list is written as ["a", "b"].'; } }
+    } else value = text === '' && c.nullable ? null : text;
+    const before = activeRow[c.name] === undefined ? c.default : activeRow[c.name];
+    if (JSON.stringify(value) !== JSON.stringify(before)) update(at, c.name, value);
+    return null;
+  };
+  // Back to the cell after Enter or Esc, as a spreadsheet does.
+  const backToCell = () => {
+    if (!active || at < 0) return;
+    const cell = table.current?.querySelector(`tbody > tr:nth-child(${at + 1}) > td[data-field="${CSS.escape(active.name)}"]`);
+    (cell?.querySelector('input, select') as HTMLElement | null)?.focus();
+  };
   const probeIds: string[] = (config.measurements ?? []).map((m: Json) => m.measurement_id).filter(Boolean);
 
   return (
@@ -287,20 +378,22 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       </div>
       <div className="task-notes" ref={taskNotes} />
       {tab === 'parameters' && matched > 0 && <MatchedDevices key={matched} config={config} setConfig={setConfig} onClose={() => setMatched(0)} />}
-      {tab === 'parameters' && <p className="fact">Independent action variables: <b>{validation?.facts?.independent_action_variables ?? '?'}</b> of {rows.length} rows.
-        The initial value is the one read from the circuit. Equal initial values do not imply a binding. The policy's proposed action and the executed (projected/quantized) value are both recorded.</p>}
-      {tab === 'targets' && <p className="fact spec-probes">Each spec judges its <b>equation</b>, written with Probe IDs, numbers, + - * / ** and brackets
-        (e.g. m_supply_power_w / m_osc_frequency_hz). Probes: {probeIds.length ? probeIds.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<code className="probe-id">{id}</code></Fragment>)
-          : 'none yet - fill in the Probes tab first'}.
-        An empty normalization_scale divides the violation by the size of the threshold.</p>}
+      {/* The lines above the tables give their fact; what explains it is the line's tooltip (record 7.176, user: "reduce or
+          delete these texts"). */}
+      {tab === 'parameters' && <p className="fact" title={'The initial value is the one read from the circuit. Equal initial values do not imply a binding. '
+        + "The policy's proposed action and the executed (projected/quantized) value are both recorded."}>Independent action variables: <b>{validation?.facts?.independent_action_variables ?? '?'}</b> of {rows.length} rows.</p>}
+      {tab === 'targets' && <p className="fact spec-probes" title={'Each spec judges its equation, written with Probe IDs, numbers, + - * / ** and brackets '
+        + '(e.g. m_supply_power_w / m_osc_frequency_hz). An empty normalization_scale divides the violation by the size of the threshold.'}>Probes: {probeIds.length
+          ? probeIds.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<code className="probe-id">{id}</code></Fragment>) : 'none yet - fill in the Probes tab first'}</p>}
       {tab === 'targets' && rows.some(r => r.constraint === 'interval' && r.lower === 0) && <p className="hint zero-floor-hint">The margin also measures the distance to 0. If 0 is only a physical floor, choose Margin sides: upper.</p>}
       {error && <p className="error">{error}</p>}
       {pending && <div className="confirm"><h4>Confirm import: {pending.diff.length} changed row{pending.diff.length === 1 ? '' : 's'}{pending.others.length
         ? `, and it replaces the ${pending.others.map(k => IMPORTED_SECTIONS[k]).join(', ')}` : ''}</h4>
         <div className="row"><button onClick={() => applyImport(pending)}>Apply</button><button onClick={() => setPending(null)}>Cancel</button></div>
         {(pending.diff.length > 0 || !pending.others.length) && <DiffView diff={pending.diff} />}</div>}
+      <FormulaBar cell={barCell} commit={commitBar} back={backToCell} />
       <div className="scroll">
-        <table className="grid editor">
+        <table className="grid editor" ref={table}>
           <thead><tr><th className="sel"></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
           <tbody>{rows.map((row, index) => {
             const found = rowIssues(index);
@@ -311,13 +404,11 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
               {/* A field the row does not STATE is shown with the value the backend uses for it (hard = on, active = on ...): a
                   starter row's absent `hard` used to look unchecked although the target is hard. A box the user cleared is null,
                   not absent, and stays empty. */}
-              {visible.map(c => <td key={c.name}>{tab === 'targets' && c.name === 'constraint'
+              {visible.map(c => <td key={c.name} data-field={c.name} className={at === index && active?.name === c.name ? 'active-cell' : undefined}
+                onFocus={() => setActive({ index, name: c.name, key: String(row[keyField] ?? '') })}>{tab === 'targets' && c.name === 'constraint'
                 ? <LimitSelect row={row} title={c.guidance} onChange={fields => patch(index, fields)} />
                 : <Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)}
-                    fixed={tab === 'measurements' && c.name === 'measurement_id' && row.result_source === 'ade_output'
-                      ? `A Maestro output's Probe ID is m_ + its output name (Save task names it so): it follows the name, and so do the spec equations that use it.` : null}
-                    off={tab === 'parameters' && row.binding_group && FOLLOWER_IGNORES.includes(c.name)
-                      ? `Follows ${row.binding_group}: its leader's value times the ratio is written, so this field does nothing on this row.` : null} />}</td>)}
+                    fixed={fixedOf(row, c)} off={offOf(row, c)} />}</td>)}
               <td className="issues">{found.map((i: Json, n: number) => <div key={n} className={`issue ${i.level}`} title={i.message}>{i.level}: {i.code}</div>)}</td>
             </tr>; })}</tbody>
         </table>

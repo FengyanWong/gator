@@ -126,7 +126,8 @@ await runChecks(browser, async () => {
   // each spec is an equation over the probes; a starter's is the one probe of its own result (2026-09-21, status record 7.52)
   check('each spec\'s equation is the probe of its result', JSON.stringify(await column('equation')) === JSON.stringify(metrics.map(m => `m_${m}`)), JSON.stringify(await column('equation')));
   const probeLine = await evaluate(`${EDITORS}.querySelector('.spec-probes')?.textContent ?? ''`);
-  check('the Specs tab names the Probe IDs an equation can use', /equation/.test(probeLine) && metrics.every(m => probeLine.includes(`m_${m}`)), probeLine || '(no line)');
+  const probeTip = await evaluate(`${EDITORS}.querySelector('.spec-probes')?.title ?? ''`);       // its explanation, record 7.176
+  check('the Specs tab names the Probe IDs an equation can use', /equation/.test(probeTip) && metrics.every(m => probeLine.includes(`m_${m}`)), probeLine || '(no line)');
   if (LIVE) {
     check('LIVE: the six targets of record, with their numbers', metrics.length === 6 && (await column('lower')).includes('25.01') && (await column('upper')).includes('0.0000021'), `${JSON.stringify(await column('lower'))} ${JSON.stringify(await column('upper'))}`);
     check('LIVE: five parameter rows and six probes', (await strip()) === 'Parameters (5) | Probes (6) | Specs (6)', await strip());

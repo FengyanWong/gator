@@ -374,6 +374,22 @@ seven saved MScR tasks showed which columns repeat what another already says:
 - On a follower row (one with `binding_group`) the fields its leader decides - `optimized`, `value_type`, the bounds,
   `step`, `scale` - are greyed, with why in their tooltip: the written value is the leader's times the ratio.
 
+### The formula bar: a cell's whole value (2026-10-05, record 7.175)
+
+User: "add excel like single cell whole row text edit somewhere for long text editing which cant show everything in the
+cell". Above each table of Parameters, Probes and Specs stands a formula bar, as in a spreadsheet. A click on a cell (or
+reaching it with Tab) marks the cell and shows, in the bar, where it is - the column and the row's ID, e.g. `notes ·
+input_pair_width` - and its whole value, in a box as wide as the table that grows to a few lines for a long text. The
+column's format is the tooltip of that name.
+
+Typing in the bar changes nothing until **Enter** (or Tab, or a click elsewhere) writes the text into the cell, as one Undo
+step, and goes back to the cell; **Esc** keeps the cell as it was. A number is read as its cell reads it (plain or with an
+exponent, 2.5e-3; a word is refused in words and the cell stays). A list (analysis, constraint, ...), a tick box and a value
+that follows another field (a Maestro output's Probe ID, a follower's bounds) are shown in the bar and not typed there: its
+tooltip says why, and for a list names its choices. Typing in the cell shows at once in the bar. The bar writes through the
+same path as the cell, so what follows a cell follows a typed bar too (a renamed output's Probe ID and the equations using
+it; a spec's unit from its one Probe). Browser check: `frontend/scripts/formula_bar_check.mjs`.
+
 ### Matched devices: ties suggested from the circuit (added 2026-09-29, user request)
 
 **Matched devices...** in the Parameters toolbar reads the loaded circuit for the structures whose devices must be

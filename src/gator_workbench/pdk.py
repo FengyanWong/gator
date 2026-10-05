@@ -614,6 +614,15 @@ def classify_model(name, scan, *, cdf_units=(), depth=0):
     where = f'subcircuit {name} ({_where(subckt)})'
     if not paths:
         return dict(family='other', polarity=None, core=None, family_basis=f'{where}: its first two pins are not connected')
+    # A diode wrapped with its series resistance (`r1 (1 3) resistor` + `d1 (3 2) <diode model>`): every path between the
+    # first two pins crosses the one diode that can lie on such a path, and nothing but resistors besides it. A diode to
+    # a further pin (the body) never lies on one; a resistor beside a diode in parallel leaves a path without it.
+    series = [item for item in active if item[1] == 'diode' and len(item[0]['nodes']) == 2
+              and not set(item[0]['nodes']) & set(subckt['pins'][2:])]
+    if len(series) == 1 and all(path.count('diode') == 1 and set(path) <= {'diode', 'resistor'} for path in paths):
+        element, _, _, basis = series[0]
+        return dict(family='diode', polarity=None, core=element,
+                    family_basis=f"{where}: element {element['name']} uses {basis}, with only resistance in series between its first two pins")
     if on_path == {'resistor'}:
         return dict(family='resistor', polarity=None, core=None, family_basis=f'{where}: only resistive elements between its first two pins')
     if len(candidates) == 1 and on_path <= set(PASSIVE):

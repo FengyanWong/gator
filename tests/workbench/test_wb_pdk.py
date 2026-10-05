@@ -92,6 +92,30 @@ def test_every_component_is_classified_from_the_model_files_with_its_pins():
     assert standard['dm_npn'] == ('unknown', ['unknown'] * 4)                         # the standard list has no bipolar kind
 
 
+def test_a_diode_wrapped_with_its_series_resistance_is_a_diode():
+    """Some PDKs place a diode inside a subcircuit with its series resistance; the element is not named after the
+    subcircuit, so the inline rule does not see it. Invented definitions, shaped like such a wrapper."""
+    scan = pdk.scan_model_text('\n'.join([
+        'simulator lang=spectre',
+        'inline subckt dm_sdio (1 2)', 'parameters area=1e-10 rs=1e-6', '  r1 (1 3) resistor r=rs/area', '  diode (3 2) dm_dcore area=area', 'ends dm_sdio',
+        'subckt dm_rdio (k a)', '  r1 (k n1) resistor r=10', '  d1 (a n1) dm_dcore', 'ends dm_rdio',           # cathode pin first
+        'subckt dm_pdio (a c)', '  d1 (a c) dm_dcore', 'ends dm_pdio',                                           # no resistance at all
+        'subckt dm_bdio (a c body)', '  r1 (a n1) resistor r=10', '  d1 (n1 c) dm_dcore', '  d2 (body n1) dm_dcore', 'ends dm_bdio',
+        'subckt dm_rpar (n1 n2)', '  r1 (n1 n2) resistor r=1k', '  d1 (n1 n2) dm_dcore', 'ends dm_rpar',     # a path without the diode
+        'subckt dm_2dio (a c)', '  d1 (a n1) dm_dcore', '  d2 (n1 c) dm_dcore', 'ends dm_2dio',                # two diodes in series
+        'model dm_dcore diode is=1e-15']), '/pdk/demo/wrapped.scs')
+
+    def facts(name):
+        found = pdk.classify_model(name, scan)
+        return found['family'], [p['role'] for p in pdk.pin_roles(name, found, scan)]
+    assert facts('dm_sdio') == ('diode', ['anode', 'cathode'])          # the first pin reaches the anode through r1
+    assert facts('dm_rdio') == ('diode', ['cathode', 'anode'])
+    assert facts('dm_pdio') == ('diode', ['anode', 'cathode'])
+    assert facts('dm_bdio')[0] == 'diode'                                # a diode to the body is not on the path
+    assert 'with only resistance in series' in pdk.classify_model('dm_sdio', scan)['family_basis']
+    assert facts('dm_rpar')[0] == 'other' and facts('dm_2dio')[0] == 'other'
+
+
 def test_parameters_get_units_scales_and_columns_by_rule():
     record = load_demo()
 

@@ -1713,9 +1713,10 @@ started with (`network_vocabulary.json`), so loading the PDK again never changes
 **How each fact is decided - by rule, nothing guessed from a name.** A device's family comes from the Spectre
 primitive of its model (`bsim4` -> MOS with the card's `type=n|p`, `bjt` -> bipolar `npn|pnp`, `diode`, `resistor`,
 `capacitor`, `inductor`); for a wrapping subcircuit from its own element (an `inline subckt`), from the one MOS / bipolar
-element it holds, or from what lies between its first two pins (resistive only = resistor; an inductor there =
-inductor, its parallel capacitor and series resistor being parasitics; a declared resistance / capacitance unit of the
-cell decides between passive candidates). A pin's role is the primitive terminal it reaches, directly or through one
+element it holds, or from what lies between its first two pins (resistive only = resistor; one diode with nothing but
+resistance in series = diode, the way some foundry PDKs wrap theirs; an inductor there = inductor, its parallel capacitor and
+series resistor being parasitics; a declared resistance / capacitance unit of the cell decides between passive
+candidates). A pin's role is the primitive terminal it reaches, directly or through one
 series element (GPDK045's gate resistor); a passive's first two pins are its two ends, further pins its body. The CDF's
 pin mapping is cross-checked against the model file's pin order. A parameter's scale is the standard scale of its
 declared unit (length 1 um, capacitance 1 pF ...), else the power of ten of the PDK's own default value. One column per

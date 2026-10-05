@@ -212,6 +212,10 @@ def from_run(run_dir, manifest=None) -> dict:
     result = calibrate(config, evaluations, metric_rows)
     request = manifest.get('calibration') or {}
     result['designs']['requested'] = request.get('designs')
+    if not result['designs']['simulated']:                # said as what happened, not as "0 of the 0 random designs"
+        stopped = ((manifest.get('segments') or [{}])[-1]).get('stop_reason')
+        result['reason'] = ('The starting design gave no valid result, so no random design was simulated.' if stopped == 'baseline_invalid'
+                            else 'No random design was simulated: the run ended before the calibration began.')
     result.update(run_id=manifest.get('run_id'), task_key=(manifest.get('circuit') or {}).get('task_key'),
                   run_state=manifest.get('state'), created_utc=utcnow().isoformat())
     return result

@@ -2,9 +2,11 @@
 // "+ calibration" tick gone): the header button alone, a REAL run on the synthetic MOCK task (free, no bridge, no Virtuoso) of
 // the baseline plus 64 random designs - also in a browser that had unticked the old tick - the proposals in Run status - a
 // Scale per Specs row and the Initial alpha - and Apply, which writes them into the page's configuration as ONE Undo step
-// and only into rows that still are the rows the run simulated.
+// and only into rows that still are the rows the run simulated. And the line under the header when the run has ended
+// (record 7.204, "Calibration ready"): Not now changes nothing and is remembered, Apply calibration there does what the
+// block's button does, and the next run asks again.
 // It starts runs, so it REFUSES the default backend: give it a SCRATCH backend and a scratch output root (run_checks.sh does;
-// by hand as run_control_live_check.mjs says). Takes about 40 s. Exit code 1 if any check fails.
+// by hand as run_control_live_check.mjs says). Takes about a minute. Exit code 1 if any check fails.
 import path from 'node:path';
 import { check, launchEdge, outDir, runChecks, workbenchUrl } from './lib/harness.mjs';
 
@@ -30,6 +32,8 @@ await runChecks(browser, async () => {
   const CHIP = `document.querySelector('header button.run-chip')`;
   const BLOCK = `document.querySelector('footer .calibration')`, APPLY = `[...(${BLOCK}?.querySelectorAll('button') ?? [])].find(b => b.textContent === 'Apply calibration')`;
   const HINT = `${BLOCK}?.querySelector('.row .hint')?.textContent`;
+  const READY = `document.querySelector('header .calibration-ready')`, BANNER = `(document.querySelector('.banner')?.textContent ?? '')`;
+  const readyButton = text => `[...(${READY}?.querySelectorAll('button') ?? [])].find(b => b.textContent === ${JSON.stringify(text)})`;
   const EDITORS = `document.querySelector('.editors')`;
   const TOOL = text => `[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const CELL = (row, name) => `(() => { const at = [...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.dataset.field).indexOf(${JSON.stringify(name)});
@@ -66,6 +70,17 @@ await runChecks(browser, async () => {
     && typeof row?.proposed_scale === 'number' && typeof result?.initial_alpha?.proposed === 'number' && result.reward_check.reproduced === 64, JSON.stringify(result).slice(0, 400));
   const scale = row.proposed_scale, alpha = result.initial_alpha.proposed;
 
+  // ---- the line under the header: Calibration ready (record 7.204) ---------------------------------------------------------
+  check('when the run has ended, a line under the header says the calibration is ready, with the values and both buttons', await until(`!!(${READY})`, 100)
+    && (await evaluate(`${READY}.querySelector('span').textContent`)).startsWith(`Calibration ready for synthetic:gpdk045_ota5: score ${scale} \u00b7 Initial alpha ${alpha}. Proposed from 64 random designs; nothing has changed yet.`)
+    && await evaluate(`!!(${readyButton('Apply calibration')}) && !!(${readyButton('Not now')})`), await evaluate(`${READY}?.textContent`));
+  await page.shot(path.join(out, 'calibration-0b-ready-line.png'), `document.querySelector('header')`, { pad: 4 });
+  await evaluate(`${readyButton('Not now')}.click()`);
+  check('"Not now" closes the line, changes nothing and says where the proposals stay', await until(`!(${READY})`, 30)
+    && (await stored()).targets[0].normalization_scale === 1 && (await stored()).run.advanced.initial_alpha === 0.01
+    && /Nothing was changed\. The proposals stay under Run status of that run/.test(await evaluate(BANNER)), await evaluate(BANNER));
+  check('the answer is kept in this browser, for that run', (await evaluate(`localStorage.getItem('gator-workbench-calibration-answered-v1')`)) === dir);
+
   // ---- the block in Run status ----------------------------------------------------------------------------------------------
   check('Run status shows the calibration with its Apply button', await until(`!!(${APPLY}) && !${APPLY}.disabled`, 100), await evaluate(`${BLOCK}?.textContent.slice(0, 300)`));
   const shown = await cells();
@@ -99,6 +114,30 @@ await runChecks(browser, async () => {
   check('...and leaves the edited row alone', config.targets[0].normalization_scale === 1 && config.targets[0].lower === 0.9 && config.run.advanced.initial_alpha === alpha,
     JSON.stringify({ scale: config.targets[0].normalization_scale, lower: config.targets[0].lower, alpha: config.run.advanced.initial_alpha }));
   await page.shot(path.join(out, 'calibration-2-row-changed.png'), `document.querySelector('footer')`);
+
+  // ---- the next Baseline simulation asks again, and Apply calibration in the line does what the block's button does ---------
+  await evaluate(`${BASELINE}.click()`);
+  check('a second Baseline simulation starts', await until(`(localStorage.getItem('gator-workbench-current-run-v1') ?? ${JSON.stringify(dir)}) !== ${JSON.stringify(dir)}`, 900));
+  const dir2 = await evaluate(`localStorage.getItem('gator-workbench-current-run-v1')`);
+  let second = null;
+  for (let i = 0; i < 300 && !second; i++) { const s = await get('runs/status', { run_dir: dir2 }); if (s.state === 'completed' && !s.worker_alive) second = s.calibration?.result; else await new Promise(r => setTimeout(r, 200)); }
+  const scale2 = second?.rows?.[0]?.proposed_scale, alpha2 = second?.initial_alpha?.proposed;
+  check('it ends with proposals of its own (the row now has the limit 0.9)', typeof scale2 === 'number' && typeof alpha2 === 'number' && second.rows[0].lower === 0.9, JSON.stringify(second).slice(0, 300));
+  check('its line comes up, although the first run\'s was answered', await until(`!!(${readyButton('Apply calibration')})`, 150)
+    && (await evaluate(`${READY}.querySelector('span').textContent`)).startsWith(`Calibration ready for synthetic:gpdk045_ota5: score ${scale2} \u00b7 Initial alpha ${alpha2}.`), await evaluate(`${READY}?.textContent`));
+  await evaluate(`${readyButton('Apply calibration')}.click()`);
+  config = await stored();
+  check('"Apply calibration" in the line writes the Scale and the Initial alpha', config.targets[0].normalization_scale === scale2 && config.run.advanced.initial_alpha === alpha2,
+    JSON.stringify({ scale: config.targets[0].normalization_scale, alpha: config.run.advanced.initial_alpha }));
+  check('the line goes, and the page says what was applied', await until(`!(${READY})`, 30)
+    && (await evaluate(BANNER)) === 'Calibration applied: the Scale of 1 Specs row and Initial alpha, as one Undo step.', await evaluate(BANNER));
+  await evaluate(`${TOOL('Undo')}.click()`);
+  config = await stored();
+  check('ONE Undo takes both back; the answered line stays away, the block in Run status still offers Apply', config.targets[0].normalization_scale === 1 && config.run.advanced.initial_alpha === alpha
+    && !(await until(`!!(${READY})`, 15)), JSON.stringify({ scale: config.targets[0].normalization_scale, alpha: config.run.advanced.initial_alpha }));
+  await send('Page.reload');
+  await until(`!!(${BASELINE}) && !!(${CHIP})`, 200);
+  check('after a reload the answered line still stays away', !(await until(`!!(${READY})`, 30)) && (await evaluate(`localStorage.getItem('gator-workbench-calibration-answered-v1')`)) === dir2);
 
   check('no error in the page console', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
 });

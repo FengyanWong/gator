@@ -170,7 +170,8 @@ def test_an_invalid_baseline_ends_the_run_before_any_random_design(tmp_path):
     assert state == 'completed' and summary(layout)['stop_reason'] == 'baseline_invalid'
     assert [(e['phase'], e['valid']) for e in evaluations] == [('baseline', False)]                 # one evaluation, as without the calibration
     result = read_json(layout.run_dir / calibration.FILE)
-    assert result['status'] == 'not_calibrated' and result['reason'].startswith('0 of the 0 random designs gave a reward')
+    assert result['status'] == 'not_calibrated' and result['designs']['simulated'] == 0
+    assert result['reason'] == 'The starting design gave no valid result, so no random design was simulated.'
 
 
 def test_a_stopped_calibration_run_can_still_give_the_reference(tmp_path, monkeypatch):

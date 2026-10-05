@@ -14,6 +14,7 @@ import { RunListButton } from './panels/RunList';
 import { OutputPanel, ResearchPanel, RunPanel } from './panels/Right';
 import { AgentTab } from './panels/AgentTab';
 import { DataTab, FilesTab, LogsTab, StatusTab } from './panels/RunTabs';
+import { calibrationPlan } from './panels/calibrationPlan';
 import { CornerCheckTab } from './panels/CornerCheck';
 import { TrainingTab } from './panels/TrainingTab';
 import { CrashPanel } from './panels/CrashPanel';
@@ -58,6 +59,11 @@ const storedBottom = (): Bottom => {
  *  merge single baseline simulation and calibration to baseline simulation"): the "+ calibration" tick went. The one
  *  simulation alone is still there: Abort once the random designs begin, and the baseline counts as finished. */
 const CALIBRATION_DESIGNS = 64;
+/** "Calibration ready" (record 7.204, user: "build the prompt when the run finishes"): when the header's run is a Baseline
+ *  simulation that has ended with proposals the page does not hold yet, a line under the header says so, with Apply
+ *  calibration and Not now - so the proposals cannot be missed in Run status. Still the user's press: nothing is applied by
+ *  itself. The run whose line was answered is kept in this browser, so a reload does not ask again. */
+const CALIBRATION_ANSWERED_KEY = 'gator-workbench-calibration-answered-v1';
 
 /** Layout (specification section 2): left = project, connection, circuit; center = three editors;
  *  right = run configuration + output settings (always visible); bottom = agent, logs, status, data, files, training.
@@ -157,6 +163,20 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   // The run the header buttons act on (Start -> Pause -> Resume, Abort). It is not the run the bottom tabs show.
   const [looked, setLooked] = useState(false);
   const control = useRunControl(status, looked);
+  // The header's run at rest, its calibration result, and what Apply would do with the rows the page holds now.
+  const [calibrationAnswered, setCalibrationAnswered] = useState<string | null>(() => { try { return localStorage.getItem(CALIBRATION_ANSWERED_KEY); } catch { return null; } });
+  const calibrated: Json = control.phase === 'idle' && control.dir && control.dir !== calibrationAnswered ? control.status?.calibration?.result ?? null : null;
+  const calibrationOffer = calibrated ? calibrationPlan(calibrated, config) : null;
+  const calibrationReady = !!calibrationOffer && !calibrationOffer.otherTask && (calibrated.status !== 'calibrated' || calibrationOffer.pending > 0);
+  const answerCalibration = (apply: boolean) => {
+    const dir = control.dir;
+    if (!dir || !calibrationOffer) return;
+    if (apply) setConfig(calibrationOffer.apply);
+    setCalibrationAnswered(dir);
+    try { localStorage.setItem(CALIBRATION_ANSWERED_KEY, dir); } catch { /* a private window: asked again after a reload */ }
+    if (calibrated.status === 'calibrated') setMessage({ level: 'info', text: apply ? `Calibration applied: ${calibrationOffer.what}, as one Undo step.${calibrationOffer.afterwards}`
+      : 'Nothing was changed. The proposals stay under Run status of that run, with Apply calibration.' });
+  };
   // The run shown is read every 1.5 s while it can change by itself: a worker is alive, its state is a live one, or the
   // header is starting, resuming, pausing or ending a run. Otherwise it waits for a press on this page: every 15 s while
   // it could still be continued (paused, stopped, interrupted - another browser may continue it), once a minute once it
@@ -300,6 +320,17 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
         {store.saveError && <div className="settings-problem persistence-problem error" role="alert">
           <span>{store.saveError}</span><button onClick={store.retrySave}>Retry save</button>
           <button onClick={() => saveJson(`${config.project.task_name || 'configuration'}.json`, config)}>Export JSON</button>
+        </div>}
+        {/* "Calibration ready" (record 7.204): the Baseline simulation the header holds has ended. A line of its own under the
+            header, like the two above; it goes when it is answered, when the page holds the values, or with the next run. */}
+        {calibrationReady && calibrationOffer && <div className="calibration-ready" role="status">
+          {calibrated.status === 'calibrated'
+            ? <><span><b>Calibration ready</b>{calibrated.task_key ? ` for ${calibrated.task_key}` : ''}: {calibrationOffer.values}. <span className="hint">Proposed
+                from {calibrated.designs?.scored} random designs; nothing has changed yet. The table is under Run status.</span></span>
+              <button onClick={() => answerCalibration(true)} title={`Apply calibration: Writes ${calibrationOffer.what} into the page, as one Undo step. Nothing is simulated and no task is saved.${calibrationOffer.afterwards}`}>Apply calibration</button>
+              <button onClick={() => answerCalibration(false)} title="Not now: Leaves everything as it is. The proposals stay under Run status of this run, with Apply calibration.">Not now</button></>
+            : <><span><b>Calibration finished:</b> nothing is proposed. {calibrated.reason}</span>
+              <button onClick={() => answerCalibration(false)} title="Closes this line. The run's numbers stay under Run status.">OK</button></>}
         </div>}
         <span className="spacer" />
         <ValidationStatus validation={validation} config={config} schema={schema} />

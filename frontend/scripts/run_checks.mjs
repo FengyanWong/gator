@@ -38,7 +38,7 @@ const EXPECTED = { virtuoso_source_check: 76, connection_panel_check: 47, run_co
   agent_tab_check: 34, output_panel_check: 25, run_control_live_check: 23, typing_check: 19, model_chooser_check: 19,
   project_help_check: 17, run_list_check: 16, ngspice_window_check: 16, agent_setup_check: 16, working_copy_check: 15,
   save_now_check: 11, corner_check_check: 11, task_save_check: 10, graph_view_check: 8, blocking_issues_check: 8,
-  calibration_check: 40 };
+  calibration_check: 60 };
 const WRITERS = ['export_check', 'run_control_live_check', 'agent_tab_check', 'calibration_check'];
 const SOURCE = ['request_lifecycle_check', 'edit_state_check'];
 // Checks that insist on Vite's source preview on a port of their own and read a fixture their author made; run_checks.sh

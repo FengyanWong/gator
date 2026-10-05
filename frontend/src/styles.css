@@ -360,6 +360,9 @@ details.section.module { margin-top: 0; } details.module > summary { cursor: poi
 .calibration { margin: 0 0 8px; } .calibration h4 { margin: 2px 0 4px; } .calibration h4 .hint { font-weight: normal; }
 .calibration table.grid { width: auto; max-width: 100%; } .calibration table.grid th { position: static; cursor: help; }
 .calibration-alpha { margin: 5px 0; } .calibration .row { align-items: center; }
+/* "Calibration ready" (record 7.204): a line of its own under the header when a Baseline simulation has ended, with its two buttons. */
+.calibration-ready { order: 1; flex: 0 0 100%; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--info-bg); border: 1px solid var(--line); padding: 4px 8px; }
+.calibration-ready > span { flex: 1 1 300px; } .calibration-ready .hint { font-weight: normal; }
 .corner-check h4 { margin: 10px 0 3px; } .corner-check h4 .hint { font-weight: normal; }
 .corner-check table.grid { width: auto; } .corner-check table.grid th { position: static; cursor: default; } table.corner-grid th .hint { display: block; font-weight: normal; }
 table.corner-grid td.corner-pass { color: var(--ok); } table.corner-grid td.corner-fail { color: var(--bad); font-weight: 600; }

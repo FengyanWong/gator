@@ -1408,6 +1408,15 @@ random designs miss it, the typical miss, the Scale the page holds now, the prop
 as one Undo step. A task saved from a Virtuoso cell then needs **Save task**: it starts only with the rows it has saved.
 That save changes Specs only, so the recorded baseline is kept.
 
+**When the run has ended, the header says so** (record 7.204, user: "build the prompt when the run finishes"). A line
+of its own under the header reads, for example, *Calibration ready for real:mscr_ota7t: gain_vv 260 · ugbw_hz 1.1e+7 ·
+pm_deg 9.6 · ibias_a 2.8e-4 · Initial alpha 0.011*, with **Apply calibration** and **Not now**. Apply there does what
+the button in Run status does - the same code, one Undo step - and the page then says what was applied and, for a
+saved task, to press Save task. Not now changes nothing; the proposals stay in Run status. The line belongs to the run
+the header holds. It goes when it is answered (kept in this browser, so a reload does not ask again), when the page
+already holds the values, and when the next run starts; the next Baseline simulation asks again. A calibration that
+proposes nothing says why on the same line. Nothing is applied by itself.
+
 - **What it costs.** Each lane simulates the starting design once (the first is the baseline), then come the 64 random
   designs: 64 + the number of lanes evaluations, every one a real simulation on a real task. The question before the
   run names the number. Nothing is learned from them (no learner update), and a design that passes does not stop the run.
@@ -1452,9 +1461,10 @@ The numbers:
 "Calibration with the baseline run".
 
 **Checks.** `tests/workbench/test_wb_calibration.py` (10: the arithmetic, the run with one and with three lanes, an
-invalid baseline, a stopped run's reference, the route); `frontend/scripts/calibration_check.mjs` (21: one button and no
-tick, a real MOCK run of 65 evaluations in a browser that had unticked the old tick, the proposals, Apply as one Undo
-step, an edited row left alone).
+invalid baseline, a stopped run's reference, the route); `frontend/scripts/calibration_check.mjs` (31: one button and no
+tick, a real MOCK run of 65 evaluations in a browser that had unticked the old tick, the line under the header and Not
+now, the proposals, Apply as one Undo step, an edited row left alone, a second run whose line is answered with Apply
+calibration, one Undo, a reload).
 
 ### How a real run spends its simulations: corners two at a time, reused resets (2026-09-30, record 7.126)
 
@@ -2522,6 +2532,11 @@ circuit - the bridge connection (the LAST test result; it does not test again) a
 that only you can give. Each line says who acts. "Ask the agent to fix what it can" appears only when a
 line is the agent's (the three tables); it sends ONE request of kind `readiness`, and the reply carries its
 own checklist plus, where it had everything it needed, rows to review as a diff.
+
+Rows that are there but differ from the saved task - an edit, an applied calibration, an older page - are your press,
+not the agent's: the line gives the issue whole, its last sentence included (Save task, or Reload saved values), and
+says where the two buttons are. Until record 7.204 it cut the issue before that sentence and advised "Reload saved
+values ... or the agent writes the rows", which would have thrown away a calibration just applied.
 
 "Make it startable with the fewest changes" (on that checklist) asks the agent for the SMALLEST edit of the three
 tables that lets the run start. Rows that are already valid cannot be touched - the backend rejects such a proposal.

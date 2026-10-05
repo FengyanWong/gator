@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, bytes, copy, download, downloadPackage, Json, num, saveJson, short, si } from '../api';
 import { usePolling, useRequest } from '../store';
+import { calibrationPlan } from './calibrationPlan';
 
 const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'llm_calls', 'transitions', 'states'];
 
@@ -18,10 +19,6 @@ function SteeringCheck({ value }: { value: Json }) {
     {value.verdict && <p className="warn">{value.verdict}</p>}</div>;
 }
 
-const sameNumber = (a: unknown, b: unknown) => (a ?? null) === (b ?? null);
-/** The Specs row of the page that IS the row a run calibrated: same ID, same limits, same unit. A row whose limits were
- *  edited since is another question, and the run's answer is not written into it. */
-const sameSpecsRow = (target: Json, row: Json) => !!target && sameNumber(target.lower, row.lower) && sameNumber(target.upper, row.upper) && target.unit === row.unit;
 const limitText = (row: Json) => row.lower != null && row.upper != null ? `${si(row.lower, row.unit)} to ${si(row.upper, row.unit)}`
   : row.lower != null ? `\u2265 ${si(row.lower, row.unit)}` : `\u2264 ${si(row.upper, row.unit)}`;
 
@@ -29,27 +26,15 @@ const limitText = (row: Json) => row.lower != null && row.upper != null ? `${si(
  *  run's random designs, a Scale per Specs row (the typical miss among the designs that miss the row) and the Initial alpha
  *  (0.1 x the reward's spread among them). The run applies nothing. Apply writes the proposals into the configuration this
  *  page holds - the Scale of the Specs rows that still are the rows the run simulated, and Initial alpha in RL networks - as
- *  ONE Undo step; a task saved from a Virtuoso cell then needs Save task before it starts. */
+ *  ONE Undo step; a task saved from a Virtuoso cell then needs Save task before it starts. What Apply does is worked out
+ *  in calibrationPlan.ts, shared with the "Calibration ready" line under the header (record 7.204). */
 function Calibration({ value, live, config, setConfig }: { value: Json; live: boolean; config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void }) {
   const result: Json = value.result, request: Json = value.request ?? {};
   if (!result) return <div className="calibration"><h4>Calibration</h4><p className="hint">{live
     ? `After the baseline, ${request.designs} random designs are simulated; the proposals appear here when the run has ended.`
     : 'This run ended without a calibration result.'}</p></div>;
-  const targets: Json[] = config.targets ?? [], designs: Json = result.designs ?? {}, alpha: Json = result.initial_alpha ?? {};
-  const pageRow = (row: Json): Json | undefined => targets.find(t => t.metric_id === row.metric_id);
-  const rows: Json[] = (result.rows ?? []).map((row: Json) => { const target = pageRow(row); return { ...row, target, same: sameSpecsRow(target as Json, row) }; });
-  const otherTask = !!result.task_key && !!config.circuit?.task_id && result.task_key !== config.circuit.task_id;
-  const scales = rows.filter(r => r.proposed_scale != null && r.same);
-  const alphaNow: number | undefined = config.run?.advanced?.initial_alpha;
-  const pending = scales.filter(r => !sameNumber(r.target.normalization_scale, r.proposed_scale)).length + (alpha.proposed != null && alphaNow !== alpha.proposed ? 1 : 0);
-  const proposals = scales.length + (alpha.proposed != null ? 1 : 0);
-  // A task saved from a Virtuoso cell starts only with the rows it has saved (the check before every run), so applied
-  // scales need Save task; that save changes Specs only, and the recorded baseline stays.
-  const savedTask = String(config.circuit?.task_id ?? '').startsWith('real:');
-  const afterwards = savedTask && scales.length ? ' Then press Save task: this task starts only with the rows it has saved, and its recorded baseline is kept.' : '';
-  const apply = () => setConfig((c: Json) => ({ ...c,
-    targets: (c.targets ?? []).map((t: Json) => { const row = scales.find(r => r.metric_id === t.metric_id); return row && sameSpecsRow(t, row) ? { ...t, normalization_scale: row.proposed_scale } : t; }),
-    run: alpha.proposed == null ? c.run : { ...c.run, advanced: { ...(c.run.advanced ?? {}), initial_alpha: alpha.proposed } } }));
+  const designs: Json = result.designs ?? {};
+  const { rows, scales, alpha, alphaNow, otherTask, pending, proposals, what, afterwards, apply } = calibrationPlan(result, config);
   return <div className="calibration">
     <h4>Calibration <span className="hint">from this run's random designs: {designs.scored} of {designs.simulated} gave a reward, {designs.passing} pass{designs.passing === 1 ? 'es' : ''} every hard spec</span></h4>
     {result.status !== 'calibrated' && <p className="warn">Nothing is proposed. {result.reason}</p>}
@@ -71,12 +56,12 @@ function Calibration({ value, live, config, setConfig }: { value: Json; live: bo
       ? <><b>{short(alpha.proposed)}</b> <span className="hint">= 0.1 x the reward's spread among the random designs ({short(Number(Number(alpha.reward_sd).toPrecision(3)))}{scales.length || rows.some(r => r.proposed_scale != null) ? ', with the proposed scales' : ''})</span></>
       : <span className="hint">nothing. {alpha.note}</span>}{alpha.proposed != null && alpha.note && <span className="hint"> {alpha.note}</span>}</p>
     <div className="row">
-      <button disabled={!pending || otherTask} onClick={apply}
+      <button disabled={!pending || otherTask} onClick={() => setConfig(apply)}
         title="Apply calibration: Writes the proposed Scale into those Specs rows and the proposed Initial alpha into RL networks, as one Undo step. Nothing is simulated and no task is saved.">Apply calibration</button>
       <span className="hint">{otherTask ? `This run calibrated ${result.task_key}; the page holds ${config.circuit.task_id}.`
         : !proposals ? 'There is nothing to apply.'
         : !pending ? `The page holds these values.${afterwards}`
-        : `Sets ${scales.length ? `the Scale of ${scales.length} Specs row${scales.length === 1 ? '' : 's'}` : ''}${scales.length && alpha.proposed != null ? ' and ' : ''}${alpha.proposed != null ? 'Initial alpha' : ''}, as one Undo step.${afterwards}`}</span>
+        : `Sets ${what}, as one Undo step.${afterwards}`}</span>
     </div>
   </div>;
 }

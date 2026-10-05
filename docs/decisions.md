@@ -1097,6 +1097,12 @@ calibration functionality to that".
   longer; "Single baseline simulation" still named what the baseline is, and the tick said what is added. On by default
   because the user wants every task's baseline run to calibrate; the question before a real run names the number of
   simulations.
+- **A prompt when the run ends, still the user's press** (record 7.204, user: "after calibration is there a prompt for
+  applying those calibrated results? or is it automatic?", then "build the prompt when the run finishes"). The proposals
+  sat only in Run status and could be missed. Of the two ways offered the user took the prompt: a line under the header
+  with Apply calibration and Not now. Applying by itself was advised against - the page would hold Specs the saved task
+  does not, and block every start until Save task, without anyone having asked for the change. The line and the Run
+  status button share one piece of code, so they cannot come to differ; the answer is kept per run in the browser.
 - **One button, "Baseline simulation", always calibrating** (record 7.202, user: "can we merge single baseline simulation
   and calibration to baseline simulation"). Nothing was lost with the tick: a starting design that cannot be measured
   ends the run after one simulation, and the baseline alone is Abort once the random designs begin (a stopped run still

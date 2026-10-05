@@ -89,6 +89,15 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
                                'Press "Reload saved values" in the Project panel (left): it brings exactly these rows, free. '
                                '"Make it startable with the fewest changes" copies them too.'))
             continue
+        unsaved = [i for i in found if i.get('code') == 'task_not_saved']
+        if unsaved and len(unsaved) == len(found):
+            # The rows are there and differ from the saved task (an edit, an applied calibration, an older page): the fix
+            # is ONE press, and the issue itself says which. Said whole here: cut at 200 characters it lost exactly that
+            # sentence, and the general advice below ("Reload saved values ... or the agent writes the rows") told the
+            # user to throw away what they had just applied (found with the calibration, record 7.204).
+            items.append(_item(name, TITLES[name], 'missing', 'you', ' '.join(str(i.get('message')) for i in unsaved),
+                               '"Save task" is above the editors; "Reload saved values" is in the Project panel (left).'))
+            continue
         empty = dict(parameters=not rows['parameters'], targets=not hard, measurements=not rows['measurements'])[name]
         if found or empty:
             detail = say(found) if found else dict(

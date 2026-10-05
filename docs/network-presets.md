@@ -39,8 +39,8 @@ values and remembers them for this encoder. A preset's name is shown as in use o
 used tens to hundreds. A published batch size of 128 with 1,000 warm-up steps means that in a 60-evaluation run
 the network never learns and every action is random - which is why the presets no longer take the papers'
 training numbers. The network sizes are still the papers'; the runs that learned used 32 / 4 / 2, and each
-published size learned as early with the same training values on ngspice, and the Graph Transformer preset on Spectre
-too (record 7.199, "Measured" below). With the starting values learning began after about 150 to 600 evaluations. For comparing encoders at equal size, give every encoder the same sizes; an existing checkpoint
+published size learned as early with the same training values on ngspice, and all three presets on Spectre too
+(records 7.199 and 7.209, "Measured" below). With the starting values learning began after about 150 to 600 evaluations. For comparing encoders at equal size, give every encoder the same sizes; an existing checkpoint
 always loads with its own network.
 
 ## The presets
@@ -88,7 +88,22 @@ On Spectre, one run of the Graph Transformer starting preset (`real:mscr_ota7t`,
 Specs, parameters and reward of record 7.183's morning run, `artifacts/local/reviews/starting-presets-2026-10-05/spectre`):
 469 of 760 designs passed, the first at design 202, against 36 and 591 for that morning run (32 / 4 / 2, learning rate
 3e-4, discount 0.99); per 100 designs 0, 0, 27, 95, 94, 98, 97 and 58 of the last 60 passed. The two runs differ in
-network size, learning rate and discount at once. The RGCN and GATv2 presets were not run on Spectre here.
+network size, learning rate and discount at once.
+
+The RGCN and GATv2 presets ran the same way (record 7.209, `spectre-rgcn/` and `spectre-gatv2/` in the same folder; the
+configurations differ from the Graph Transformer run's only in the network):
+
+| On Spectre, `real:mscr_ota7t`, seed 0 | designs passing | first passing design | passing per 100 designs | last third passing |
+|---|---|---|---|---|
+| morning run (7.183): Graph Transformer 32 / 4 / 2, lr 3e-4, discount 0.99 | 36 of 760 | 591 | 0 0 0 0 0 2 16 18 | 14 % |
+| `graph_transformer` starting preset, 48 / 4 / 4 (7.199) | 469 of 760 | 202 | 0 0 27 95 94 98 97 58 | 98 % |
+| `rgcn` starting preset, 32 / 4 / 4 | 444 of 761 | 218 | 0 0 49 80 84 92 85 54 | 88 % |
+| `gatv2` starting preset, 192 / 3 / 4 | 419 of 761 | 289 | 0 0 5 86 85 93 95 55 | 93 % |
+
+All three learn on Spectre as on ngspice. One seed each: the differences between the three are not established.
+GATv2's passing designs draw the least bias current (median 527 uA against 691 uA for the Graph Transformer's and
+572 uA for RGCN's), as its ngspice runs had the lowest power; no Specs row asked for it. Its larger network made each
+design take 2.6-2.9 s against 2.0-2.1 s, with the same 1.1 s of simulation.
 
 The numbers the papers give, kept in each field's note (under `published` in the API when replaced):
 
@@ -132,8 +147,8 @@ Learning starts after 250 to 600 evaluations, so a shorter from-scratch run is a
   has fewer than 300 evaluations; the RL networks window says the first where the values are set.
 * Every starting preset holds these three and the other training numbers of the runs that learned (record 7.192);
   until then a published value stayed (`rgcn`: one update per step from the authors' code, the attention presets'
-  `gamma` 0.9). The published network sizes were measured with them on ngspice, the Graph Transformer's on Spectre too
-  (record 7.199).
+  `gamma` 0.9). The published network sizes were measured with them on ngspice and on Spectre (records 7.199 and
+  7.209).
 * An encoder whose saved values were the GATOR baseline (the old baseline saved before the change, or the baseline
   with the three values saved on 2026-10-05) is read as its starting preset since record 7.191;
   `network_settings.json` is not rewritten. A configuration already open keeps its own numbers: the window's
@@ -231,8 +246,10 @@ feature, mean-aggregated, no attention). Everything here is marked "closest netw
 
 ## What the publications do not give us
 
-* **No result on GATOR circuits.** None of these settings has been run on GPDK045 or with Spectre here.
-  A preset is a cited starting point, not evidence that it is better than the baseline.
+* **Results on GATOR circuits** (records 7.199, 7.209). The starting presets - the published network sizes with the
+  training numbers of the runs that learned - learn on ngspice `ota5` (three seeds each) and on Spectre
+  (`real:mscr_ota7t`, one run each). The papers' own training numbers were never measured here; they stay a cited
+  reference, not evidence.
 * **Scale.** Published budgets: 300 steps (CAN), 1,400-4,300 (MBTD3), 6,000-50,000 (the rest). The only
   published SAC settings (PPAAS) were used with 8,000-24,000 steps. Using them with tens of evaluations
   is an extrapolation. Warm-up in the papers is 1-33 % of the budget; nobody uses more than one update

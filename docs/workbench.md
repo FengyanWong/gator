@@ -2217,6 +2217,11 @@ JSON export, encoder selection/reset races, Undo during reset, narrow layouts an
 `tests/workbench/test_wb_read_efficiency.py` covers tail-read bounds, excluded directories, archive cleanup and
 display-cache invalidation separately from execution integrity checks.
 
+A pop-up window of the page is an `about:blank` window into which the page's stylesheet links are copied; they load after
+it opens. The harness's `browser.attach` hands a check its pop-up only once every link has its sheet (5 s at most), so
+nothing is measured in the browser's unstyled layout - measured: about one RL networks window in five was still unstyled
+when it was found, for about 100 ms (record 7.178).
+
 ## Tests
 
 ```bash

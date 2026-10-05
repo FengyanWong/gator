@@ -363,6 +363,11 @@ export async function launchEdge(tag = 'check', { width = 1680, height = 1050, l
       const session = await connect(target, { errors, prefix, consoleApi });
       sessions.push(session);
       await session.send('Runtime.enable');
+      // A pop-up of the page (popupWindow.ts) is an about:blank window into which the page's stylesheet links are copied; they
+      // load after it opens, and what a check measured before that was the browser's unstyled layout (record 7.178:
+      // pdk_check's "the list spans the narrow column" read its list at the default width now and then under load). Handed
+      // over once every link has its sheet, 5 s at most; a window without such links goes on at once.
+      await session.until(`[...document.querySelectorAll('link[rel="stylesheet"]')].every(l => l.sheet)`, 50);
       return session;
     },
     /** The pop-up with this title (a fresh profile opens pages of its own: never "any other page"); `present: false` waits

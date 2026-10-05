@@ -220,3 +220,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.175 | The editors' formula bar: the chosen cell's whole value in a box as wide as the table, typed there and written by Enter (Esc keeps the cell); lists, tick boxes and following values shown, not typed |
 | 7.176 | The lines above Parameters and Specs cut to their fact - "Independent action variables: 16 of 24 rows.", "Probes: <chips>" - their explanations in the line's tooltip |
 | 7.177 | The saved task's run-check note cut to one line ("Before every run: the editors, the task and its cell must agree."), the explanation in its tooltip |
+| 7.178 | Browser checks: a pop-up is handed over once its copied stylesheets are in (harness `attach`), and pdk_check reads the PDK window's list once it has arrived - the two timing failures of pdk_check |

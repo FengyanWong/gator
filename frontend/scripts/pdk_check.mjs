@@ -161,6 +161,9 @@ await runChecks(browser, async () => {
   const pev = expression => popup.evaluate(expression, true);
   await popup.viewport(1100, 900);
   await popup.until(`!!document.querySelector('.pdk-window')`);
+  // the list comes from a read the window starts when it opens: read it once it is there (record 7.178; read at once, it was
+  // now and then still empty under load, and the double click below then found no row)
+  await popup.until(`document.querySelectorAll('.pdk-window .pdk-list tbody tr').length > 0`, 60);
   const win = await pev(`(() => { const w = document.querySelector('.pdk-window'); return { heading: w.querySelector('h2')?.textContent, inputs: [...w.querySelectorAll('.pdk-form input')].map(i => i.placeholder),
     load: w.querySelector('button.pdk-load')?.textContent, disabled: w.querySelector('button.pdk-load')?.disabled, link: w.textContent.includes('Through connection fixture-link'),
     rows: [...w.querySelectorAll('.pdk-list tbody tr')].map(r => r.cells[0].textContent), folded: !w.querySelector('details').open }; })()`);

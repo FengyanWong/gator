@@ -258,7 +258,7 @@ await runChecks(browser, async () => {
     JSON.parse(oldValidation.postData).config.run.model_label === 'fixture-old' && JSON.parse(newValidation.postData).config.run.model_label === 'fixture-new');
   await page.fulfil(newValidation.requestId, 200, validConfiguration({ blocks_run: true, counts: { error: 1 },
     issues: [{ level: 'error', path: 'run.model_label', code: 'fixture', message: 'FIXTURE: newest configuration is blocked' }] }));
-  const blockedButton = `document.querySelector('header button[title^="ONE costed"]')?.disabled`;
+  const blockedButton = `[...document.querySelectorAll('header button')].find(b => b.textContent === 'Baseline simulation')?.disabled`;
   check('the newer validation blocks starting a run', await until(blockedButton));
   check('the superseded validation fetch is cancelled', cancelled.has(oldValidation.networkId));
   await sleep(500);

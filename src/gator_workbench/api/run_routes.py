@@ -291,6 +291,17 @@ def register(app: FastAPI, context: ApiContext):
     def logs(run_dir: str, kind: str = Query('events', pattern='^(events|errors)$'), limit: int = Query(100, ge=1, le=1000)):
         return dict(kind=kind, entries=read_jsonl_tail(context.run_path(run_dir) / 'logs' / f'{kind}.jsonl', limit))
 
+    @app.get('/api/runs/training')
+    def training(run_dir: str, flushes: int = Query(0, ge=0)):
+        """The Training tab's numbers (record 7.193): the run's recorded evaluations, learner updates and spec values
+        from flush record `flushes` on, then the journal's bundles no flush has published yet. Read-only; nothing is
+        computed into them, and nothing is simulated."""
+        from .. import training_series
+        try:
+            return training_series.read_training(context.run_path(run_dir), flushes)
+        except FileNotFoundError as exc:
+            fail(404, exc)
+
     @app.get('/api/runs/download')
     def download(run_dir: str, path: str):
         try:

@@ -1102,6 +1102,87 @@ ZIP downloads spill beyond 1 MiB to a temporary file, send 1 MiB chunks, and clo
 disconnect. File listings and packages prune excluded work directories before descending into them.
 Browser check: `frontend/scripts/export_check.mjs` (real MOCK run; needs a scratch backend, refuses port 8765).
 
+### The Training tab: charts of a run's recorded numbers (2026-10-05, record 7.193, user request)
+
+The user asked for "a Training tab beside Output in the workbench's existing bottom panel, using uPlot for live training
+graphs. Keep Output available for logs and errors." The **Training** tab sits right after **Output files**; Logs, Data
+tables and Output files are unchanged (the log and the errors stay in **Logs**). It draws one or two charts of the run
+shown in the bottom tabs, live while the run works. The charts exist on screen only: nothing drawn is written anywhere,
+and the run's data stay the data-only files listed above (export them with Data tables). By user decision this is the
+second kind of on-screen picture after the circuit pictures (7.33, 7.158): see the hard rule in CLAUDE.md.
+
+**Where the numbers come from.** Only from what the run records - never from console text, and nothing is computed into
+them. `GET /api/runs/training` (`training_series.py`) reads the run's own tables, the Parquet parts listed in
+`data/_journal/flushes.jsonl`, and then the bundles of `data/_journal/wal.jsonl` that no flush has published yet: the same
+rows, journaled before the next part is written (every 16 evaluations by default), so a live run is drawn up to its newest
+result. The training loop was not touched for it: no event, no file and no simulation was added. Columns keep their
+recorded names (`evaluations.reward`, `learner_updates.actor_loss`, ...): a chart title's tooltip names its source column.
+
+| Chart | Recorded as | Along | What it is |
+|---|---|---|---|
+| Step reward | `evaluations.reward` | evaluation | The learning reward of each evaluation (one environment step). The run records no episode return, so none is drawn. |
+| Meets every hard spec | `evaluations.all_hard_constraints_satisfied`, `status` | evaluation | 1 = every hard spec met, 0 = not; the smoothed line is the share of the last N designs that did. A timeout, a lost link, a cancelled or interrupted evaluation is no verdict on the design: a gap. |
+| Evaluation success rate | the same, phase `frozen_eval` | evaluation | Only a frozen run evaluates a policy apart from training: the share of its designs so far that met every hard spec. |
+| Worst spec miss | `normalized_constraint_violation` | evaluation | How far a design misses its worst hard spec, over the spec's scale; 0 = met. |
+| Tightest margin | `clearance_margin` | evaluation | Signed margin of the binding hard spec (older runs: not recorded). |
+| Best design so far: worst spec miss | `best_so_far_violation` | evaluation | The design the run keeps as best at each evaluation; 0 from the first design that meets every hard spec. |
+| Best feasible \<objective\> | `best_so_far_metrics` + `best_so_far_feasible` | evaluation | Only when a Specs row says "then lower/higher is better": that row's value of the best feasible design (best_design.py's rule). |
+| \<each spec\> | the `metrics` table's aggregate row of the spec | evaluation | The spec's value per evaluation, with its lower and/or upper limit as dashed lines, in the spec's canonical unit. |
+| Simulation time per evaluation | `execution_seconds` | evaluation | Start to result, every attempt included. |
+| Actor loss, Critic loss, Temperature loss, Mean TD target, Gradient norms | `learner_updates.*` | learner update | The SAC learner's own diagnostics at each recorded update. |
+| Temperature α | `learner_updates.alpha` | learner update | The entropy coefficient. |
+| Entropy estimate | `−learner_updates.mean_log_prob` | learner update | The data dictionary's definition of the entropy estimate. |
+
+"Along evaluation" = the evaluation's number in the order the run recorded it (1, 2, 3 ...; equal to `completion_index`
+except where a crash-resume re-used one, which the hover line names). "Along learner update" = `cumulative_updates`.
+What a run does not record is listed under the controls ("Not in this run: ...", a closed line), and a chosen chart the
+run cannot draw says why in its place: a frozen run has no learner updates, a run started with "save learner updates" off
+has none either, AI sizing alone has no learner, no Specs row may be marked lower/higher is better.
+
+**Training and evaluation apart.** Each evaluation's phase decides its series: **Training** (random warm-up, the SAC
+policy, AI proposals), **Evaluation** (a frozen policy: `frozen_eval`, `validation`) and **Episode start** (the reset
+design an episode begins from: no action, no reward). Each has its own colour and legend key. A Single baseline
+simulation that calibrates (record 7.197; the run's status carries `calibration`) records its random designs as warm-up
+draws, but nothing learns from them: the tab calls them **Calibration (random designs)**, and its learner charts say why
+they are empty.
+
+**Using it.**
+* **Charts**: the first and the second chart (or "(one chart)"); metrics of different units never share a chart.
+  **Smoothing**: off, or the mean of the last 10 / 20 / 50 / 100 / 200 recorded values of each series (default 20); the
+  recorded values stay as faint points under the line, and a gap stays a gap in both. Both choices are kept in this browser.
+* **Hover**: the line above a chart says the evaluation (or update) under the pointer, its phase, episode and status, and
+  the recorded value - without a pointer, the newest one. **Legend keys** switch a series off and on.
+* **Zoom**: drag across a chart. A zoomed chart holds still while new results arrive (**Follow latest** goes off).
+  **Follow latest** slides back to the newest results with the same zoom width; **Reset zoom** (or a double click on a
+  chart) shows the whole run.
+* The plots follow the bottom panel's height (the splitter) and the window's width.
+
+**When it reads, when it draws.** Nothing while another tab is shown or the browser tab is in the background. Opened, it
+asks for what is new since its last answer (a cursor of flush records; a long history comes in pages of 30,000 rows),
+then every 2 s while the run's worker lives, once more when it ends, and never for a run at rest. A chart is redrawn at
+most once a second and only when something changed; the chart objects are reused. New numbers never change the chosen
+tab. Another run starts from nothing (runs are never mixed); a run continued after a pause or a crash gets a dashed
+"continued" line where its new segment began.
+
+**Counter resets.** After a crash the run resumes from its last save point, and its learner from that save point's
+update count: the updates recorded between the save point and the crash are repeated by number. The charts keep both:
+the abandoned updates as a dashed series of their own ("abandoned at a restart") and a red line where the learner went
+on.
+
+**Memory and long runs.** A chart gets a few points per pixel column of its width: in each, the first and the last row
+and every series' smallest and largest value and its first gap, so spikes and gaps stay visible; every point drawn is a
+recorded one. The page keeps at most 50,000 evaluations and 200,000 learner updates per run in memory; past that the
+oldest half is thinned the same way, the thinned stretch is shaded and said in a line, no mean is drawn over it, and the
+counts stay the recorded ones. The run's tables keep every row. (Measured with 20,000 evaluations and 128,000 updates:
+0.6 s to read, JS heap about 54 MB.)
+
+Limits: a backend started before this tab has no `/api/runs/training`: the tab then asks for a restart of `serve`. The
+journal's tail can be missing for one read while the journal is rewritten at a save point (said in a line);
+for a run that trains at corners a spec's value is the worst over the corners, as the run records it; the charts have
+no export (the numbers are in Data tables / Output files).
+Backend tests: `tests/workbench/test_wb_training_series.py`. Browser checks: `frontend/scripts/training_tab_check.mjs`
+(hermetic, canned answers), `frontend/scripts/training_data_check.mjs` (the arithmetic, under node).
+
 ### Corner check: a run's best designs at five corners (added 2026-09-22, user request)
 
 The **Corner check** tab (after Output files) simulates the shown run's best designs again at five fixed conditions and

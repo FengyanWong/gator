@@ -4,7 +4,7 @@
 // included, are answered HERE by FIXTURE data; other GET requests pass through and every other writing request is refused.
 // So this check starts, stops and simulates NOTHING on the backend it runs against - it is safe next to a live run, and it
 // works against a backend that does not have the corner-check routes yet. The browser profile is new and temporary.
-// What it pins: the tab sits after "Output files"; the plan is read when the tab opens and when "Designs" changes, and
+// What it pins: the tab sits after "Output files" and "Training"; the plan is read when the tab opens and when "Designs" changes, and
 // says what a press costs; the explanation is folded; a MOCK check starts without a question, sends the plan it showed and
 // shows progress, a Stop button and the grid (pass / FAIL with the spec and its value / unknown with the reason), then the
 // verdicts - and stops reading once it has ended; a REAL check asks for the budget first (no = nothing sent), then the
@@ -119,7 +119,8 @@ await runChecks(browser, async () => {
   if (!tabs.includes('Corner check')) throw new Error(`this page has no "Corner check" tab (${tabs.join(', ')}): the served frontend is older than it (npm run build, then reload)`);
 
   // ---- the tab and its plan ----------------------------------------------------------------------------------------------------
-  check('the tab sits right after "Output files"', tabs[tabs.indexOf('Output files') + 1] === 'Corner check', tabs.join(' | '));
+  // since record 7.193 the Training tab stands between them (the user asked for it beside Output files)
+  check('the tab sits after "Output files" and "Training"', tabs[tabs.indexOf('Output files') + 1] === 'Training' && tabs[tabs.indexOf('Training') + 1] === 'Corner check', tabs.join(' | '));
   check('nothing about corners is read before the tab is opened', sim.planRequests.length === 0);
   await evaluate(`[...document.querySelectorAll('footer .tabs > button')].find(b => b.textContent === 'Corner check').click()`);
   check('opening it reads the plan once, for 3 designs', await until(`${TAB}?.innerText.includes('3 designs x 5 corners = 15 MOCK simulations (free)')`) && sim.planRequests.join() === '3', sim.planRequests.join());

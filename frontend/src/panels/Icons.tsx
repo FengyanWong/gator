@@ -9,7 +9,7 @@
  *  icon-only button's title starts with its label. */
 
 export type IconName = 'save' | 'play' | 'pause' | 'wait' | 'stop' | 'force-stop' | 'task' | 'add' | 'delete' | 'undo' | 'redo' | 'load' | 'delete-task' | 'export' | 'import' | 'agent-draft' | 'agent-modify' | 'task-file'
-  | 'refresh' | 'download' | 'csv' | 'zip' | 'copy' | 'check' | 'close' | 'moon' | 'sun' | 'folder';
+  | 'refresh' | 'download' | 'csv' | 'zip' | 'copy' | 'check' | 'close' | 'moon' | 'sun' | 'folder' | 'follow' | 'zoom-reset';
 
 const DRAWINGS: Record<IconName, JSX.Element> = {
   // A floppy disk: the model is written to disk while the run goes on.
@@ -66,6 +66,10 @@ const DRAWINGS: Record<IconName, JSX.Element> = {
   close: <path d="M4 4l8 8M12 4l-8 8" strokeWidth="1.8" />,
   // Folders (record 7.170): a folder, in the circle where the connection window's steps have their number.
   folder: <path d="M1.5 3.5h4.5l1.5 2h7v8h-13z" />,
+  // Follow latest (Training tab, record 7.193): an arrow running to an end line, the charts keep the newest results in view.
+  follow: <><path d="M2 8h9" /><path d="M8 5l3 3-3 3" /><path d="M14 3v10" /></>,
+  // Reset zoom: four corners opening out, the whole run again.
+  'zoom-reset': <><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" /><path d="M5.5 8h5" /></>,
 };
 
 /** `label`: the button's words, kept for screen readers and for the page checks but not drawn (`.sr-only`). */

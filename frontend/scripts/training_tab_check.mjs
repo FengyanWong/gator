@@ -1,0 +1,339 @@
+// Browser check of the Training tab (record 7.193, user request: "Add a Training tab beside Output ... using uPlot for live
+// training graphs. Keep Output available for logs and errors.").
+// Hermetic, on the shared harness: GET /api/runs/training, the run's status, the run list, files and logs are answered
+// with canned FIXTURE data shaped as the backend sends it (training_series.py); every other writing request is refused.
+// Safe against the live 8765 page. What it checks:
+//   - the tab sits right after "Output files"; Logs and Output files still show their data
+//   - a hidden Training tab reads and draws nothing; opened, it reads the history in pages, then every 2 s while the run
+//     lives; incoming numbers never change the chosen tab
+//   - charts redraw at most once a second, and not when nothing changed
+//   - the run's name, state and last metric; waiting / completed / failed / not-recorded states in plain words
+//   - hover values are the recorded values; legend toggles; drag-zoom holds while new results arrive; Follow latest and
+//     Reset zoom; resizing the bottom panel resizes the plots; the chosen charts are kept after a reload
+//   - switching runs keeps them apart; no listener or chart is left behind (window listener count, chart count)
+//   - a long history (20,000 evaluations, ~128,000 learner updates) loads in pages and stays responsive; with lower caps the
+//     memory bound thins the oldest part and says so
+// Run (Windows node through WSL interop, ~1 min):
+//   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
+import path from 'node:path';
+import { check, launchEdge, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl, NEVER_ASKED_OR_SAVED } from './lib/harness.mjs';
+
+const APP = await workbenchUrl();
+const out = outDir();
+const browser = await launchEdge('training');
+
+// ---- canned answers, shaped as training_series.read_training sends them ---------------------------------------------------
+const WORDS = new Set(['episode_id', 'phase', 'action_source', 'status', 'update_phase', 'metric_name', 'failure_reason']);
+const EVALUATION = ['commit_seq', 'completion_index', 'global_env_step', 'episode_id', 'episode_step', 'phase', 'action_source', 'status',
+  'policy_version', 'reward', 'valid', 'all_hard_constraints_satisfied', 'normalized_constraint_violation', 'clearance_margin',
+  'best_so_far_feasible', 'best_so_far_violation', 'execution_seconds', 'committed_at', 'best_so_far_objective'];
+const UPDATE = ['cumulative_updates', 'evaluations_collected', 'update_phase', 'actor_loss', 'critic_loss', 'alpha_loss', 'alpha', 'mean_log_prob',
+  'target_mean', 'critic_grad_norm', 'actor_grad_norm', 'updated_at'];
+const SPEC = ['commit_seq', 'metric_name', 'raw_value', 'satisfied', 'failure_reason'];
+function columns(rows, names) {
+  const result = { n: rows.length };
+  for (const name of names) {
+    if (!WORDS.has(name)) { result[name] = rows.map(r => r[name] ?? null); continue; }
+    const words = [], index = new Map();
+    result[name] = { values: words, codes: rows.map(r => { const v = r[name]; if (v == null) return -1; if (!index.has(v)) { index.set(v, words.length); words.push(v); } return index.get(v); }) };
+  }
+  return result;
+}
+const T0 = Date.parse('2026-10-05T12:00:00Z') / 1000;
+const reward = k => -0.3 * Math.exp(-k / 150) - 0.01 * (1 + Math.sin(k));              // a learning curve with noise
+const gain = k => (k % 37 === 0 ? null : 350 + 120 * (1 - Math.exp(-k / 120)) + 5 * Math.cos(k));
+/** A run of `n` evaluations (every 5th an episode start, every 41st a timeout) with 8 learner updates each after a warm-up. */
+function makeRun(n, { updatesPer = 8, frozen = false, calibration = false } = {}) {
+  const evaluations = [], updates = [], specs = [];
+  let cum = 0;
+  for (let k = 1; k <= n; k++) {
+    const start = (k - 1) % 5 === 0, timeout = k % 41 === 0;
+    const phase = start ? (k === 1 ? 'baseline' : 'episode_reset') : frozen ? 'frozen_eval' : k < 9 || calibration ? 'warmup' : 'search';
+    const value = gain(k), met = value !== null && value >= 400;
+    evaluations.push({ commit_seq: k, completion_index: k, global_env_step: k - Math.ceil(k / 5), episode_id: `0-${String(Math.ceil(k / 5)).padStart(6, '0')}`,
+      episode_step: (k - 1) % 5, phase, action_source: start ? 'reset' : phase === 'warmup' ? 'random_warmup' : 'sac_policy', status: timeout ? 'timeout' : 'ok',
+      policy_version: null, reward: start || timeout ? null : reward(k), valid: !timeout && value !== null, all_hard_constraints_satisfied: met,
+      normalized_constraint_violation: timeout || value === null ? null : Math.max(0, (400 - value) / 400), clearance_margin: null, best_so_far_feasible: k > 200,
+      best_so_far_violation: Math.max(0, 0.1 - k / 2000), execution_seconds: 1.2, committed_at: T0 + k, best_so_far_objective: null });
+    specs.push({ commit_seq: k, metric_name: 'gain_vv', raw_value: timeout ? null : value, satisfied: timeout || value === null ? null : met,
+      failure_reason: timeout ? 'evaluation_status_timeout' : value === null ? 'missing_or_nonfinite' : null });
+    if (!frozen && !calibration && !start && k >= 9) for (let u = 0; u < updatesPer; u++) {
+      cum += 1;
+      updates.push({ cumulative_updates: cum, evaluations_collected: k, update_phase: null, actor_loss: 0.2 * Math.sin(cum / 50), critic_loss: 0.1 * Math.exp(-cum / 900) + 0.001,
+        alpha_loss: 0, alpha: 0.01 * Math.exp(-cum / 4000), mean_log_prob: -6 + cum / 600, target_mean: -0.1, critic_grad_norm: 1, actor_grad_norm: 2, updated_at: T0 + k });
+    }
+  }
+  // prefix[k] = updates recorded with the first k evaluations: a flush's updates are a slice, not a search
+  const prefix = new Int32Array(n + 1);
+  let u = 0;
+  for (let k = 1; k <= n; k++) { while (u < updates.length && updates[u].evaluations_collected <= k) u++; prefix[k] = u; }
+  return { evaluations, updates, specs, prefix };
+}
+const DEFS = { gain_vv: { unit: 'V/V', threshold_lower: 400, threshold_upper: null, hard: true } };
+const chunk = (data, from, to) => ({ evaluations: columns(data.evaluations.slice(from, to), EVALUATION),
+  updates: columns(data.updates.slice(data.prefix[Math.min(from, data.evaluations.length)], data.prefix[Math.min(to, data.evaluations.length)]), UPDATE),
+  specs: columns(data.specs.slice(from, to), SPEC), spec_defs: DEFS });
+/** The canned backend of one run: `final` evaluations published in flushes of 16, `tail` more still in the journal. */
+function serve(run, cursor) {
+  const flushes = Math.ceil(run.final / 16), start = Math.min(cursor, flushes);
+  let served = start, rows = 0;
+  while (served < flushes) {
+    const from = served * 16, to = Math.min(run.final, from + 16);
+    const add = (to - from) * 2 + run.data.prefix[to] - run.data.prefix[from];
+    if (served > start && rows + add > 30000) break;
+    rows += add; served += 1;
+  }
+  const from = start * 16, to = Math.min(run.final, served * 16);
+  return { run_dir: run.dir, run_id: run.id, mode: run.frozen ? 'frozen' : 'scratch', mock: true, flushes: { served, total: flushes, start },
+    final: chunk(run.data, from, to), tail: served === flushes ? chunk(run.data, run.final, run.final + run.tail) : null, tail_complete: true,
+    latest_seq: run.final + (served === flushes ? run.tail : 0), objective: null,
+    learner: run.frozen ? { recorded: false, every: 1, reason: 'A frozen run evaluates a saved policy without training it: there are no learner updates, so no losses, temperature or entropy.' } : { recorded: true, every: 1, reason: null },
+    segments: [{ segment: 1, entry: 'start', started_utc: new Date(T0 * 1000).toISOString(), ended_utc: null, end_state: null, stop_reason: null }] };
+}
+const status = run => ({ state: run.state, stop_reason: run.state === 'failed' ? 'evaluation_exception' : null, error: run.state === 'failed' ? 'FIXTURE: the simulator host went away' : null,
+  run_id: run.id, mode: 'scratch', provenance: 'mock', mock: true, worker_alive: run.state === 'running', run_dir: run.dir, active_workers: [], concurrency: 1,
+  budget: { max_evaluations: 2000, charged: run.final + run.tail, in_flight: 0, completed: run.final + run.tail, failed: 0, remaining: 0, launches: 0, retries: 0, cache_hits: 0 },
+  best_design: null, first_feasible: null, paths: { run_dir: run.dir }, connection: { overall: 'not_applicable' }, summary: null,
+  calibration: run.calibration ? { request: { designs: 24, lanes: 1, evaluations: 25 }, result: null } : null,
+  manifest: { mode: 'scratch', mock: true, mock_notice: 'FIXTURE MOCK DATA' } });
+const base = '/fixture/outputs/fixture__1/runs/mock/';
+const RUNS = {
+  live: { dir: base + 'scratch__seed1__live', id: 'live', state: 'running', final: 160, tail: 5, data: makeRun(2000) },
+  failed: { dir: base + 'scratch__seed2__failed', id: 'failed', state: 'failed', final: 32, tail: 0, data: makeRun(32) },
+  empty: { dir: base + 'scratch__seed3__empty', id: 'empty', state: 'running', final: 0, tail: 0, data: makeRun(0) },
+  older: { dir: base + 'scratch__seed6__older', id: 'older', state: 'completed', final: 16, tail: 0, data: makeRun(16), older: true },
+  calibration: { dir: base + 'scratch__seed7__calibration', id: 'calibration', state: 'completed', final: 25, tail: 0, data: makeRun(25, { calibration: true }), calibration: true },
+  frozen: { dir: base + 'scratch__seed4__frozen', id: 'frozen', state: 'completed', final: 48, tail: 0, data: makeRun(48, { frozen: true }), frozen: true },
+  long: { dir: base + 'scratch__seed5__long', id: 'long', state: 'completed', final: 20000, tail: 0, data: null },
+};
+const byDir = Object.fromEntries(Object.values(RUNS).map(r => [r.dir, r]));
+
+await runChecks(browser, async () => {
+  const CONFIG = await starterConfig(APP);
+  const page = await browser.open({ consoleApi: false, width: 1600, height: 1000 });
+  const { send, evaluate, fulfil, consoleErrors } = page;
+  const reads = [];                                         // every /api/runs/training request: { run, flushes, at }
+  const answer = ({ requestId, request }) => {
+    const url = new URL(request.url), name = url.pathname, run = byDir[url.searchParams.get('run_dir')];
+    if (name === '/api/config/validate') return fulfil(requestId, 200, validConfiguration({ mock: true }));
+    if (name === '/api/runs') return fulfil(requestId, 200, { runs: [] });
+    if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
+    if (name === '/api/runs/status') return run ? fulfil(requestId, 200, status(run)) : fulfil(requestId, 404, { detail: 'Not a run directory' });
+    if (name === '/api/runs/training') {
+      if (!run) return fulfil(requestId, 404, { detail: { message: 'Not a run directory' } });
+      if (run.older) return fulfil(requestId, 404, { detail: 'Not Found' });                   // a backend without the route
+      if (run.id === 'long' && !run.data) run.data = makeRun(20000);
+      reads.push({ run: run.id, flushes: Number(url.searchParams.get('flushes')), at: Date.now() });
+      return fulfil(requestId, 200, serve(run, Number(url.searchParams.get('flushes'))));
+    }
+    if (name === '/api/runs/logs') return fulfil(requestId, 200, { kind: url.searchParams.get('kind'), entries: [{ time_utc: '2026-10-05T12:00:01+00:00', event: 'FIXTURE_event', run_id: 'live', detail: 'logs still work' }] });
+    if (name === '/api/runs/files') return fulfil(requestId, 200, { files: [{ path: 'FIXTURE/run_manifest.json', bytes: 1234, modified_utc: '2026-10-05T12:00:00+00:00' }], total_bytes: 1234, run_dir: run?.dir });
+    return page.readOrRefuse({ requestId, request });
+  };
+  // Every redraw of a chart clears its canvas: counted per canvas, with the time.
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { const clear = CanvasRenderingContext2D.prototype.clearRect; window.__draws = [];
+    CanvasRenderingContext2D.prototype.clearRect = function (...a) { const plot = this.canvas.closest && this.canvas.closest('.training-plot');
+      if (plot) window.__draws.push({ at: performance.now(), plot: [...document.querySelectorAll('.training-plot')].indexOf(plot) }); return clear.apply(this, a); };
+    window.__long = []; try { new PerformanceObserver(l => window.__long.push(...l.getEntries().map(e => e.duration))).observe({ type: 'longtask', buffered: true }); } catch {} })();` });
+  await page.intercept(['*/api/runs/*', '*/api/runs', '*/api/config/validate'], answer, { others: 'read' });
+  await page.seed({ config: CONFIG, run: RUNS.live.dir, when: 'once' });
+  await send('Page.navigate', { url: APP });
+  const until = (expression, tries = 80) => page.until(expression, tries);
+  if (!(await until(`!!document.querySelector('footer .tabs')`, 150))) throw new Error('the page never showed its bottom tabs');
+  const TRAINING = `[...document.querySelectorAll('footer .bottom-body .training')][0]`;
+  const visible = `(${TRAINING})?.checkVisibility()`;
+  const tabs = await evaluate(`[...document.querySelectorAll('footer .tabs > button')].map(b => b.textContent)`);
+  check('the Training tab sits right after Output files', tabs.indexOf('Training') === tabs.indexOf('Output files') + 1, tabs.join(' | '));
+  await sleep(2500);
+  check('while another tab is shown the Training tab reads nothing', reads.length === 0, `${reads.length} reads`);
+  const press = label => evaluate(`(() => { const b = [...document.querySelectorAll('footer .tabs > button')].find(b => b.textContent === ${JSON.stringify(label)}); b.click(); return !!b; })()`);
+  const activeTab = () => evaluate(`document.querySelector('footer .tabs > button.active')?.textContent ?? document.querySelector('footer .tabs .tab-group.active button')?.textContent`);
+
+  // ---- open: the history in pages, then charts ------------------------------------------------------------------------------
+  await press('Training');
+  check('the tab opens', await until(visible));
+  check('the history comes in (two charts drawn)', await until(`document.querySelectorAll('.training .training-plot canvas').length === 2`, 100));
+  const head = () => evaluate(`(${TRAINING}).querySelector('.training-head').innerText`);
+  check('the head names the run, its state, the counts and the last metric', await until(`/scratch__seed1__live/.test((${TRAINING}).querySelector('.training-run').textContent)
+    && /running/.test((${TRAINING}).querySelector('.badge').textContent) && /165 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)
+    && /last metric \\d\\d:\\d\\d:\\d\\d/.test((${TRAINING}).querySelector('.training-counts').textContent) && /live/.test((${TRAINING}).querySelector('.training-counts').textContent)`), await head());
+  const captions = await evaluate(`[...(${TRAINING}).querySelectorAll('figcaption')].map(f => f.textContent)`);
+  check('the first charts: step reward and the share meeting every hard spec', captions[0] === 'Step reward' && captions[1] === 'Meets every hard spec', captions.join(' | '));
+  check('the training numbers were read from cursor 0 with no page twice', reads[0]?.flushes === 0 && new Set(reads.map(r => r.flushes)).size >= 1);
+  await page.shot(path.join(out, 'training-open.png'), `(${TRAINING})`);
+
+  // ---- hover: the recorded values -----------------------------------------------------------------------------------------
+  const plotBox = (i = 0) => evaluate(`(() => { const r = [...(${TRAINING}).querySelectorAll('.training-plot .u-over')][${i}].getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; })()`);
+  const readout = (i = 0) => evaluate(`[...(${TRAINING}).querySelectorAll('.training-readout')][${i}].textContent`);
+  let box = await plotBox(0);
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w * 0.5, y: box.y + box.h * 0.5 });
+  await sleep(300);
+  const hovered = await readout(0);
+  const k = Number(/^Evaluation (\d+)/.exec(hovered)?.[1]);
+  const shownValue = Number(/Training \(recorded\) (-?[\d.e-]+)/.exec(hovered)?.[1]);
+  const expected = RUNS.live.data.evaluations[k - 1];
+  const want = expected?.reward == null ? null : +expected.reward.toPrecision(4);
+  check('hovering shows the evaluation under the pointer with its recorded reward', Number.isFinite(k) && (want === null ? !/Training \(recorded\) -?\d/.test(hovered) : shownValue === want), `${hovered} | recorded ${expected?.reward}`);
+  check('the hover line says the row\'s phase and episode', /search|warmup|episode_reset|baseline/.test(hovered) && /episode 0-\d{6} step \d/.test(hovered));
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w + 40, y: box.y - 40 });
+
+  // ---- live: new results arrive; at most one redraw a second; the chosen tab never changes ------------------------------------
+  const drawsBefore = await evaluate('window.__draws.length');
+  RUNS.live.final = 192; RUNS.live.tail = 3;
+  check('a live run is read again within about 2 s and its new results counted', await until(`/195 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 60));
+  await sleep(2600);
+  const draws = await evaluate('window.__draws');
+  const perSecond = Math.max(0, ...draws.map(d => draws.filter(e => e.plot === d.plot && e.at >= d.at && e.at < d.at + 1000).length));
+  check('a chart redraws at most once a second while results arrive', perSecond <= 2, `${draws.length - drawsBefore} redraws since, at most ${perSecond} per chart in a second`);
+  const quiet = await evaluate('window.__draws.length');
+  await sleep(4500);                                                        // two more reads that bring nothing new
+  check('nothing new, no redraw', (await evaluate('window.__draws.length')) === quiet, `${(await evaluate('window.__draws.length')) - quiet} redraws`);
+  await press('Logs');
+  const readsHidden = reads.length;
+  RUNS.live.final = 240; RUNS.live.tail = 1;
+  await sleep(4500);
+  check('incoming results do not take the tab away from Logs', (await activeTab()) === 'Logs');
+  check('Logs still shows the run\'s log', await until(`/FIXTURE_event/.test(document.querySelector('footer .bottom-body .scroll.log')?.textContent ?? '')`));
+  check('hidden, the Training tab reads nothing and draws nothing', reads.length === readsHidden && (await evaluate('window.__draws.length')) === quiet, `${reads.length - readsHidden} reads`);
+  await press('Output files');
+  check('Output files still lists the run\'s files', await until(`/FIXTURE\\/run_manifest\\.json/.test([...document.querySelectorAll('footer .bottom-body table.grid')].find(t => t.checkVisibility())?.textContent ?? '')`));
+  await press('Training');
+  check('opened again it catches up at once from where it was', await until(`/241 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 40) && reads[readsHidden]?.flushes === 12, `first read after: flushes=${reads[readsHidden]?.flushes}`);
+
+  // ---- zoom, follow latest, reset ------------------------------------------------------------------------------------------
+  box = await plotBox(0);
+  const y = box.y + box.h / 2;
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x + box.w * 0.2, y, button: 'left', clickCount: 1 });
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w * 0.35, y, button: 'left', buttons: 1 });
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w * 0.5, y, button: 'left', buttons: 1 });
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box.x + box.w * 0.5, y, button: 'left', clickCount: 1 });
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w + 40, y: box.y - 40 });
+  const FOLLOW = `[...(${TRAINING}).querySelectorAll('.training-head button')].find(b => b.textContent === 'Follow latest')`;
+  const RESET = `[...(${TRAINING}).querySelectorAll('.training-head button')].find(b => b.textContent === 'Reset zoom')`;
+  check('a drag across a chart zooms: Follow latest goes off, Reset zoom comes on', await until(`(${FOLLOW}).getAttribute('aria-pressed') === 'false' && !(${RESET}).disabled`, 30));
+  await sleep(1200);
+  const zoomed = await readout(0);
+  RUNS.live.final = 272; RUNS.live.tail = 2;
+  await until(`/274 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 60);
+  await sleep(1300);
+  const stillZoomed = await readout(0);
+  const lastShown = s => Number(/Evaluation (\d+)/.exec(s)?.[1]);
+  check('new results do not move a zoomed chart', lastShown(zoomed) === lastShown(stillZoomed) && lastShown(stillZoomed) < 200, `${zoomed} -> ${stillZoomed}`);
+  await evaluate(`(${FOLLOW}).click()`);
+  check('Follow latest slides back to the newest results', await until(`/Evaluation 274/.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`, 30), await readout(0));
+  await evaluate(`(${RESET}).click()`);
+  check('Reset zoom shows the whole run again', await until(`(${RESET}).disabled && (${FOLLOW}).getAttribute('aria-pressed') === 'true'`, 30));
+
+  // ---- the bottom panel folded to its tab line hides the tab too ----------------------------------------------------------------
+  const enter = async () => { await evaluate(`document.querySelector('footer .splitter').focus()`);
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }); };
+  await enter();
+  check('the panel folds to its tab line', await until(`document.querySelector('.layout').classList.contains('bottom-folded')`, 20));
+  const readsFolded = reads.length;
+  await sleep(4500);
+  check('folded, the live run is not read', reads.length === readsFolded, `${reads.length - readsFolded} reads`);
+  await enter();
+  const unfolded = await until(`!document.querySelector('.layout').classList.contains('bottom-folded')`, 20);
+  for (let i = 0; i < 40 && reads.length === readsFolded; i++) await sleep(100);
+  check('opened again, it reads again', unfolded && reads.length > readsFolded);
+
+  // ---- legend toggles, smoothing, another chart; the choice kept after a reload ----------------------------------------------------
+  const keys = await evaluate(`[...(${TRAINING}).querySelectorAll('.training-legend')][0].innerText`);
+  await evaluate(`[...[...(${TRAINING}).querySelectorAll('.training-legend')][0].querySelectorAll('.training-key')].find(b => /Training/.test(b.textContent)).click()`);
+  check('a legend key hides its series and says so', await until(`[...[...(${TRAINING}).querySelectorAll('.training-legend')][0].querySelectorAll('.training-key')].find(b => /Training/.test(b.textContent)).getAttribute('aria-pressed') === 'false'`), keys);
+  await evaluate(`[...[...(${TRAINING}).querySelectorAll('.training-legend')][0].querySelectorAll('.training-key')].find(b => /Training/.test(b.textContent)).click()`);
+  check('pressed again, the series is back', await until(`/Training \\(recorded\\)/.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`));
+  const SECOND = `(${TRAINING}).querySelector('select[aria-label="Second chart"]')`;
+  await page.setValue(SECOND, 'critic_loss');
+  check('a learner chart: critic loss over learner updates', await until(`[...(${TRAINING}).querySelectorAll('figcaption')][1]?.textContent === 'Critic loss' && document.querySelectorAll('.training .training-plot canvas').length === 2`));
+  const SMOOTH = `[...(${TRAINING}).querySelectorAll('.training-head label.inline')].find(l => /Smoothing/.test(l.textContent)).querySelector('select')`;
+  await page.setValue(SMOOTH, '50');
+  check('smoothing: the recorded values stay under a mean of the last 50', await until(`/Training \\(recorded\\) -?[\\d.]+.*Training: mean of last 50 -?[\\d.]+/.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`),
+    await readout(0));
+  await page.shot(path.join(out, 'training-critic-smoothed.png'), `(${TRAINING})`);
+
+  // ---- resizing the bottom panel ---------------------------------------------------------------------------------------------
+  const plotHeight = () => evaluate(`[...(${TRAINING}).querySelectorAll('.training-plot canvas')][0].getBoundingClientRect().height`);
+  const h0 = await plotHeight();
+  await evaluate(`document.querySelector('footer .splitter').focus()`);
+  for (let i = 0; i < 6; i++) { await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowUp', code: 'ArrowUp', windowsVirtualKeyCode: 38 }); await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowUp', code: 'ArrowUp', windowsVirtualKeyCode: 38 }); }
+  check('a taller bottom panel gives the plots more height', await until(`[...(${TRAINING}).querySelectorAll('.training-plot canvas')][0].getBoundingClientRect().height > ${h0} + 60`, 30), `${h0} -> ${await plotHeight()}`);
+
+  // ---- run completion: one last read, then nothing -------------------------------------------------------------------------------
+  RUNS.live.state = 'completed'; RUNS.live.final = 288; RUNS.live.tail = 0;
+  check('a completed run: its state and its last results', await until(`/completed/.test((${TRAINING}).querySelector('.badge').textContent) && /288 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 100));
+  const after = reads.length;
+  await sleep(5000);
+  check('a run at rest is not read again', reads.length === after, `${reads.length - after} reads`);
+
+  // ---- listeners and charts left behind ------------------------------------------------------------------------------------------
+  const listeners = async () => { const { result } = await send('Runtime.evaluate', { expression: 'window' }); const { listeners } = await send('DOMDebugger.getEventListeners', { objectId: result.objectId }); return listeners.length; };
+  const before = await listeners();
+  for (const id of ['alpha', 'entropy', 'spec:gain_vv', 'violation', 'actor_loss', 'critic_loss']) { await page.setValue(SECOND, id); await sleep(250); }
+  await page.setValue(SMOOTH, '0'); await sleep(300); await page.setValue(SMOOTH, '50'); await sleep(300);
+  await press('Run status'); await sleep(200); await press('Training'); await sleep(800);
+  check('no window listener left behind by six chart changes and two smoothing changes', (await listeners()) === before, `${before} -> ${await listeners()}`);
+  check('exactly two charts exist', (await evaluate(`document.querySelectorAll('.training .uplot').length`)) === 2);
+
+  // ---- other runs: kept apart; failed, waiting, not recorded --------------------------------------------------------------------------
+  const showRun = async run => { await evaluate(`localStorage.setItem('gator-workbench-current-run-v1', ${JSON.stringify(run.dir)})`); await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150); await press('Training'); };
+  await showRun(RUNS.failed);
+  check('the chosen charts are kept after a reload', await until(`[...(${TRAINING}).querySelectorAll('figcaption')][1]?.textContent === 'Critic loss'`, 60));
+  check('a failed run says so, with its error, and shows its own rows only', await until(`/failed/.test((${TRAINING}).querySelector('.badge').textContent) && /The run failed: FIXTURE/.test((${TRAINING}).innerText) && /32 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 60), await head());
+  await showRun(RUNS.older);
+  check('a backend older than the page (no such route) is said as such', await until(`/older than the page/.test((${TRAINING}).innerText)`, 60), await evaluate(`(${TRAINING}).innerText.slice(0, 200)`));
+  await showRun(RUNS.empty);
+  check('a live run with nothing recorded yet is waiting for metrics', await until(`/Waiting for metrics/.test((${TRAINING}).innerText)`, 60));
+  await showRun(RUNS.frozen);
+  await until(`/48 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 60);
+  check('a frozen run: the learner chart says why it is empty', await until(`/frozen run evaluates a saved policy/.test((${TRAINING}).innerText)`, 30));
+  await page.setValue(`(${TRAINING}).querySelector('.training-head label.inline select')`, 'eval_pass');
+  check('a frozen run has an evaluation success rate', await until(`[...(${TRAINING}).querySelectorAll('figcaption')][0]?.textContent === 'Evaluation success rate' && document.querySelectorAll('.training .training-plot canvas').length >= 1`, 30));
+  check('what the run does not record is listed with the reason', /Episode return/.test(await evaluate(`(${TRAINING}).querySelector('details.training-note summary').textContent`)));
+  await page.shot(path.join(out, 'training-frozen.png'), `(${TRAINING})`);
+
+  // ---- a long history: paged, responsive; then the memory bound -------------------------------------------------------------------
+  const loadLong = async caps => {
+    await evaluate(caps ? `localStorage.setItem('gator-workbench-training-caps-v1', ${JSON.stringify(JSON.stringify(caps))})` : `localStorage.removeItem('gator-workbench-training-caps-v1')`);
+    const started = Date.now(), first = reads.length;
+    await evaluate(`window.__long && (window.__long.length = 0)`);
+    await showRun(RUNS.long);
+    const loaded = await until(`/20000 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 600, 100);
+    return { loaded, seconds: (Date.now() - started) / 1000, pages: reads.length - first };
+  };
+  await page.setValue(`(${TRAINING}).querySelector('.training-head label.inline select')`, 'reward');
+  await showRun(RUNS.calibration);
+  check('a baseline run that calibrates: its random designs are not called Training', await until(`/Calibration \\(random designs\\)/.test([...(${TRAINING}).querySelectorAll('.training-legend')][0]?.textContent ?? '')`, 60)
+    && !/^Training$/m.test([...(await evaluate(`[...[...(${TRAINING}).querySelectorAll('.training-legend')][0].querySelectorAll('.training-key')].map(b => b.textContent).join('\\n')`)).split('\n')].join('\n')));
+  check('...and its learner chart says it learns nothing', await until(`/learns nothing/.test((${TRAINING}).innerText)`, 30));
+  const long = await loadLong(null);
+  check(`20,000 evaluations and ${RUNS.long.data.updates.length.toLocaleString('en')} learner updates load in pages`, long.loaded && long.pages >= 6, `${long.seconds.toFixed(1)} s, ${long.pages} pages`);
+  const t = Date.now(); await evaluate('1'); const ping = Date.now() - t;
+  box = await plotBox(0);
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w * 0.7, y: box.y + box.h / 2 });
+  const hoverStart = Date.now();
+  const hoverOk = await until(`/^Evaluation \\d+/.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`, 30, 20);
+  const longTasks = await evaluate('window.__long ? window.__long.filter(d => d > 1000).length : -1');
+  check('the page stays responsive with the long history drawn', ping < 500 && hoverOk && Date.now() - hoverStart < 1500, `ping ${ping} ms, hover ${Date.now() - hoverStart} ms, ${longTasks} tasks over 1 s`);
+  const heap = await evaluate('performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1');
+  console.log(`INFO  long history: ${long.seconds.toFixed(1)} s to load, JS heap ${heap} MB`);
+  const bound = await loadLong({ evaluations: 5000, updates: 20000 });
+  check('with lower caps the oldest part is thinned and the page says so; the counts are still the recorded ones', bound.loaded && await until(`/thinned to its extremes/.test((${TRAINING}).innerText)`, 30),
+    await evaluate(`(${TRAINING}).querySelector('.training-counts').textContent`));
+  const boundHeap = await evaluate('performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1');
+  console.log(`INFO  with caps 5,000 / 20,000: JS heap ${boundHeap} MB`);
+  await evaluate(`localStorage.removeItem('gator-workbench-training-caps-v1')`);
+  await page.shot(path.join(out, 'training-long.png'), `(${TRAINING})`);
+
+  // ---- the look switch redraws in the other look's colours ---------------------------------------------------------------------
+  const strokeOf = () => evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()`);
+  const before2 = await strokeOf();
+  await evaluate(`document.querySelector('header .look-switch').click()`);
+  check('the look switch: charts drawn again in the other look', await until(`document.querySelectorAll('.training .training-plot canvas').length >= 1`) && (await strokeOf()) !== before2);
+  await page.shot(path.join(out, 'training-night.png'), `(${TRAINING})`);
+  await evaluate(`document.querySelector('header .look-switch').click()`);
+
+  check('no script error on the page', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
+  reportRefused(page.refused, NEVER_ASKED_OR_SAVED);
+});

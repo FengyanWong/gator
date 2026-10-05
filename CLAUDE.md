@@ -45,8 +45,9 @@ its top). There is no `AGENTS.md`.
   Code never starts or stops the bridge tunnel or daemon on its own: only the user's explicit
   "Connect SSH" click starts the SSH tunnel (entry 7.3). Never overwrite an original schematic.
 - The workbench outputs data only: no plots, images, PDFs or analysis reports, no Python plotting
-  library. One exception, a user decision (entry 7.33): the circuit graph view draws what the network
-  sees, in the browser (cytoscape).
+  library. Exceptions by user decision, drawn in the browser only and never written to a run: the circuit
+  graph view of what the network sees (entry 7.33, cytoscape) and the Training tab's charts of a run's
+  recorded numbers (entry 7.193, uPlot).
 - Never log, display or send to an agent: credentials, tokens, license-server raw output, PDK models.
 
 ## Commands

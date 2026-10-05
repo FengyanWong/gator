@@ -15,9 +15,10 @@ import { OutputPanel, ResearchPanel, RunPanel } from './panels/Right';
 import { AgentTab } from './panels/AgentTab';
 import { DataTab, FilesTab, LogsTab, StatusTab } from './panels/RunTabs';
 import { CornerCheckTab } from './panels/CornerCheck';
+import { TrainingTab } from './panels/TrainingTab';
 import { CrashPanel } from './panels/CrashPanel';
 
-type BottomTab = 'agent' | 'status' | 'logs' | 'data' | 'files' | 'corners';
+type BottomTab = 'agent' | 'status' | 'logs' | 'data' | 'files' | 'training' | 'corners';
 
 /** A configuration the backend cannot even read (HTTP 422): one blocking issue per field it names, in its plain words
  *  (schema.describe_errors), at the place the validation report uses (parameters[1].variable_id), so the list names the
@@ -52,9 +53,10 @@ const storedBottom = (): Bottom => {
 };
 
 /** Layout (specification section 2): left = project, connection, circuit; center = three editors;
- *  right = run configuration + output settings (always visible); bottom = agent, logs, status, data, files.
- *  Tables, numbers, status and file lists - nothing is plotted. On screen only, by user decision, two pictures of the
- *  circuit: the graph view (2026-09-21) and the circuit picture in the left column (2026-10-03); nothing drawn is written. */
+ *  right = run configuration + output settings (always visible); bottom = agent, logs, status, data, files, training.
+ *  Tables, numbers, status and file lists. On screen only, by user decision: two pictures of the circuit - the graph view
+ *  (2026-09-21) and the circuit picture in the left column (2026-10-03) - and the Training tab's charts of a run's
+ *  recorded numbers (2026-10-05, record 7.193); nothing drawn is written. */
 /** The page under its crash panel (record 7.188, design advice): the configuration and its Undo history live above the panel,
  *  so a failure to draw any part of the page - this function's own work included - is shown with Undo, Export JSON and Reload
  *  instead of a blank page, and Undo draws the page again from the configuration before the last change. */
@@ -324,8 +326,8 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
               conversation into a window of its own. Two sibling buttons in one tab shape - a button inside a button is not valid. */}
           <span className={`tab-group${tab === 'agent' ? ' active' : ''}${agentDetached ? ' detached' : ''}`}>
             <button onClick={() => { setTab('agent'); unfold(); }}>Agent</button><span className="tab-slot" ref={setAgentTabSlot} /></span>
-          {(['status', 'logs', 'data', 'files', 'corners'] as Exclude<BottomTab, 'agent'>[]).filter(t => t !== 'corners' || cornersUsable).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); unfold(); }}>
-            {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', corners: 'Corner check' }[t]}</button>)}
+          {(['status', 'logs', 'data', 'files', 'training', 'corners'] as Exclude<BottomTab, 'agent'>[]).filter(t => t !== 'corners' || cornersUsable).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); unfold(); }}>
+            {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', training: 'Training', corners: 'Corner check' }[t]}</button>)}
           <span className="spacer" />
           <RunListButton runs={runs} runsError={runsError} runDir={runDir} status={status} onChoose={dir => { setRunDir(dir); if (dir) unfold(); }} onRefresh={refreshRuns} />
         </div>
@@ -336,6 +338,9 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
           {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
           {tab === 'data' && <DataTab runDir={runDir} status={status} />}
           {tab === 'files' && <FilesTab runDir={runDir} />}
+          {/* Stays mounted, like the Agent tab: its recorded numbers and chosen charts survive a look at another tab; hidden - another
+              tab, or the panel folded to its tab line - it reads and draws nothing (record 7.193). */}
+          <TrainingTab hidden={tab !== 'training' || folded} runDir={runDir} status={status} />
           {tab === 'corners' && cornersUsable && <CornerCheckTab runDir={runDir} />}
         </div>
       </footer>

@@ -58,6 +58,10 @@ label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--t
 input, select, textarea, button { font: inherit; color: var(--text); }
 table { font: inherit; }  /* a pop-up window starts as about:blank = quirks mode, where a table does not inherit the font and falls back to 16px */
 input, select, textarea { border: 1px solid var(--line); padding: 3px 5px; background: var(--field); min-width: 0; width: 100%; }
+/* A drop-down's open list in the look's own colours (record 7.173, user: "fix the color issue of the drag down menu in night
+   mode, it is hard to read"): the browser draws the list from its options. A select in an editor cell is transparent, and its
+   list came out light under Silicon Night's light text. */
+select option { background-color: var(--field); color: var(--text); } select option:disabled { color: var(--muted); }
 label.check input, td input[type=checkbox] { width: auto; }
 input.numeric { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--f-mono); }
 button { border: 1px solid var(--line); background: var(--button); padding: 3px 9px; cursor: pointer; white-space: nowrap; }

@@ -189,6 +189,12 @@ every size is shared - the page's margin, the header's border and padding, the t
 the looks set only colours and drawings (Silicon Night's seal ring is drawn inside the header's edge, as Whiteprint's
 double rule). Switching the look moves no box; `looks_check.mjs` measures fourteen of them in both looks.
 
+**Drop-down lists in the look's colours** (record 7.173, user: "fix the color issue of the drag down menu in night mode, it
+is hard to read"): the browser draws a select's open list from its options, and a select in an editor cell (Probes'
+analysis, for one) has no background of its own. Its list came out light under Silicon Night's light text. Every option
+now has the look's field colour and text colour (a disabled one the muted colour), so the list follows the look;
+`looks_check.mjs` measures every option of the page, Probes cells included, at 4.5 : 1 or more in both looks.
+
 **Colours by name.** Every colour of the page is a named value: Whiteprint's in `styles.css` (`:root`), Silicon Night's
 in `themes.css`, which also holds what each look adds. Before the looks came, the 86 colour values written into 69 rules
 were replaced by names carrying exactly the old values; screenshots of six views of the live page were identical before

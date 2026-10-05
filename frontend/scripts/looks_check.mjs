@@ -55,6 +55,17 @@ const LUMINANCE = `(rgb => { const [r, g, b] = rgb.map(x => { x /= 255; return x
 const contrasts = session => session.evaluate(`(() => { const css = getComputedStyle(document.documentElement), colour = ${COLOUR}, lum = ${LUMINANCE};
   return ${JSON.stringify(PAIRS)}.map(([fg, bg]) => { const a = lum(colour(css.getPropertyValue(fg).trim())), b = lum(colour(css.getPropertyValue(bg).trim()));
     return { pair: fg + ' on ' + bg, ratio: Math.round(100 * (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) / 100 }; }); })()`);
+/** Every option of the page's selects, as the browser draws the open list from them: its text on its own background (record
+ *  7.173, user: "fix the color issue of the drag down menu in night mode, it is hard to read"). */
+const optionColours = session => session.evaluate(`(() => { const colour = ${COLOUR}, lum = ${LUMINANCE}, seen = new Map();
+  for (const o of document.querySelectorAll('select option')) {
+    const s = getComputedStyle(o), key = s.color + ' on ' + s.backgroundColor + (o.disabled ? ' (disabled)' : '');
+    if (seen.has(key)) continue;
+    const alpha = (s.backgroundColor.match(/[\\d.]+/g) ?? []).map(Number)[3] ?? 1, a = lum(colour(s.color)), b = lum(colour(s.backgroundColor));
+    seen.set(key, { pair: key, opaque: alpha === 1, ratio: Math.round(100 * (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) / 100 });
+  }
+  return { editorOptions: document.querySelectorAll('table.editor select option').length, pairs: [...seen.values()] }; })()`);
+const PROBES_TAB = `[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.dataset.editor === 'measurements')`;
 /** Visible boxes whose own background is light (a pastel left over from the light look). */
 const lightBoxes = session => session.evaluate(`(() => { const lum = ${LUMINANCE}, found = new Set();
   for (const e of document.querySelectorAll('body *')) {
@@ -104,6 +115,13 @@ await runChecks(browser, async () => {
   const light = await contrasts(page);
   const lowLight = light.filter(c => c.ratio < 4.5);
   check('Whiteprint: every text colour on its background reads at 4.5 : 1 or more', !lowLight.length, JSON.stringify(lowLight));
+  await evaluate(`${PROBES_TAB}.click()`);          // the Probes table: its analysis column is a drop-down in each cell
+  await sleep(300);
+  const lightOptions = await optionColours(page);
+  check('Whiteprint: every drop-down list draws its options on a solid background, readable at 4.5 : 1 or more (Probes cells too)',
+    lightOptions.editorOptions > 0 && lightOptions.pairs.every(p => p.opaque && p.ratio >= 4.5), JSON.stringify(lightOptions));
+  await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.dataset.editor === 'parameters').click()`);
+  await sleep(300);
   await page.shot(path.join(out, 'looks-whiteprint.png'));
 
   await evaluate(`${SWITCH}.click()`);
@@ -114,6 +132,13 @@ await runChecks(browser, async () => {
   const dark = await contrasts(page);
   const lowDark = dark.filter(c => c.ratio < 4.5);
   check('Silicon Night: every text colour on its background reads at 4.5 : 1 or more', !lowDark.length, JSON.stringify(lowDark));
+  await evaluate(`${PROBES_TAB}.click()`);
+  await sleep(300);
+  const darkOptions = await optionColours(page);
+  check('Silicon Night: every drop-down list draws its options on a solid dark background in light text, at 4.5 : 1 or more (Probes cells too)',
+    darkOptions.editorOptions > 0 && darkOptions.pairs.every(p => p.opaque && p.ratio >= 4.5), JSON.stringify(darkOptions));
+  await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.dataset.editor === 'parameters').click()`);
+  await sleep(300);
   check('Silicon Night: no light box is left on the page (Run status)', !(await lightBoxes(page)).length, JSON.stringify(await lightBoxes(page)));
   for (const tab of ['Data tables', 'Agent']) {
     await evaluate(`[...document.querySelectorAll('footer .tabs button')].find(b => b.textContent.trim() === ${JSON.stringify(tab)}).click()`);

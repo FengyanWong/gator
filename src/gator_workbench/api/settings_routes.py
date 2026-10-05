@@ -29,7 +29,8 @@ def register(app: FastAPI, context: ApiContext):
     def get_schema():
         return dict(schema_version=schema.CONFIG_SCHEMA_VERSION, json_schema=schema.json_schema(),
                     editors={name: schema.editor_columns(name) for name in schema.SECTIONS},
-                    section_keys=schema.SECTION_KEYS, units=sorted(units._LOOKUP), run_modes=schema.RUN_MODES,
+                    section_keys=schema.SECTION_KEYS, units=sorted(units._LOOKUP), unit_forms=units.written_forms(),
+                    run_modes=schema.RUN_MODES,
                     encoder_types=schema.ENCODER_TYPES, tables=list(TABLES), data_dictionary=data_dictionary())
 
     @app.get('/api/network-settings')

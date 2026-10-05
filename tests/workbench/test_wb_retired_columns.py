@@ -104,7 +104,9 @@ def test_editor_columns_say_what_is_shown_on_request_and_what_is_hidden():
     assert [n for n, c in by['targets'].items() if c['advanced']] == ['hard', 'missing_is_failure', 'margin_sides', 'soft_weight',
                                                                        'normalization_scale', 'active', 'basis']
     assert [n for n, c in by['parameters'].items() if c['advanced']] == ['value_type', 'step', 'scale', 'ratio']
-    assert [n for s in by for n, c in by[s].items() if c['hidden']] == ['initial_value', 'result_source']
+    # the Unit of Parameters and Specs since record 7.208: every value carries its unit; Probes keep theirs (they have no values)
+    assert {s: [n for n, c in by[s].items() if c['hidden']] for s in by} == dict(parameters=['initial_value', 'unit'],
+                                                                          targets=['unit'], measurements=['result_source'])
     assert not any(c['advanced'] for c in by['measurements'].values())
     assert list(by['parameters']) == ['variable_id', 'instance_path', 'parameter_name', 'initial_value', 'unit', 'optimized',
                                       'value_type', 'lower', 'upper', 'step', 'scale', 'binding_group', 'ratio', 'notes']

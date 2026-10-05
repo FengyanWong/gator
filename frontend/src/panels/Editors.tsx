@@ -4,6 +4,7 @@ import { pointAt } from './CircuitPicture';
 import { api, Json, saveJson } from '../api';
 import { migrateConfig } from '../store';
 import { Typed } from './Typed';
+import { convert, kindUnit, quantity, readQuantity, sameQuantity, sameUnit, unitChoices, unitLabel } from '../units';
 import { MatchedDevices } from './MatchedDevices';
 
 export type Section = 'parameters' | 'targets' | 'measurements';
@@ -69,24 +70,10 @@ function LimitSelect({ row, title, onChange }: { row: Json; title: string; onCha
     {LIMIT_CHOICES.map(([c, o]) => <option key={`${c}|${o}`} value={`${c}|${o}`}>{limitLabel(c, o)}</option>)}</select>;
 }
 
-/** Readable small and large numbers (record 7.181, design advice): a bound, limit or scale of a row in an unprefixed base unit
- *  reads in engineering notation - 0.0004 A as 400µ A, 4.5e-7 m as 450n m - below 0.01 and from 10,000 up; a prefixed unit
- *  (um, pF, mV) and everything else read as stored. Exact: the digits of the shortest form are moved, never computed, and a
- *  typed "450n" is read as the number 450e-9. The formula bar shows the stored number. */
-const PREFIX: Record<number, string> = { [-15]: 'f', [-12]: 'p', [-9]: 'n', [-6]: 'µ', [-3]: 'm', 3: 'k', 6: 'M', 9: 'G', 12: 'T' };
+/** The numbers that carry their row's unit (record 7.208): written as every quantity is (units.ts - 450 nm, 400 uA), typed in
+ *  any form. Record 7.181 wrote only very small and very large numbers of an unprefixed unit this way, without the unit. */
+const QUANTITY: Record<string, string[]> = { parameters: ['lower', 'upper', 'step', 'initial_value'], targets: ['lower', 'upper', 'normalization_scale'] };
 const SUFFIX: Record<string, number> = { f: -15, p: -12, n: -9, u: -6, 'µ': -6, 'μ': -6, m: -3, k: 3, K: 3, M: 6, G: 9, T: 12 };
-const BASE_UNITS = new Set(['m', 'F', 'ohm', 'Ohm', 'Ω', 'H', 'V', 'A', 'W', 'J', 'Hz', 's']);
-const READABLE: Record<string, string[]> = { parameters: ['lower', 'upper', 'step', 'initial_value'], targets: ['lower', 'upper', 'normalization_scale'] };
-export function engineering(v: number): string {
-  const size = Math.abs(v);
-  if (!Number.isFinite(v) || v === 0 || (size >= 0.01 && size < 1e4)) return String(v);
-  const [mantissa, power] = v.toExponential().split('e');           // "-4.5", "-7": the shortest digits that read back exactly
-  const exponent = Number(power), three = Math.floor(exponent / 3) * 3, prefix = PREFIX[three];
-  if (prefix === undefined) return String(v);
-  const digits = mantissa.replace('-', '').replace('.', ''), point = 1 + exponent - three;   // the point moves 0, 1 or 2 places
-  const whole = digits.slice(0, point).padEnd(point, '0'), fraction = digits.slice(point);
-  return `${v < 0 ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}${prefix}`;
-}
 /** A typed number: plain, with an exponent (2.5e-6), or with an SI letter (2.5u, 400µ, 10k). */
 export function readNumber(text: string): number | undefined {
   const s = text.trim(), letter = /^([-+]?(?:\d+\.?\d*|\.\d+))([fpnuµμmkKMGT])$/.exec(s);
@@ -97,8 +84,9 @@ export function readNumber(text: string): number | undefined {
 /** One cell. `fixed`: why the value is shown and not typed - it follows another field (a Maestro output's Probe ID follows
  *  its output name). `off`: why the field does nothing on this row (a follower's bounds, step, scale, type and "optimized":
  *  its leader decides them) - shown greyed, with that reason as its tooltip (review of 2026-10-03). */
-function Cell({ column, value, onChange, fixed = null, off = null, readable = false }: { column: Json; value: Json; onChange: (v: Json) => void;
-  fixed?: string | null; off?: string | null; readable?: boolean }) {
+function Cell({ column, value, onChange, fixed = null, off = null, unit, stored = null, onPatch, tell }: { column: Json; value: Json;
+  onChange: (v: Json) => void; fixed?: string | null; off?: string | null; unit?: string | null; stored?: string | null;
+  onPatch?: (fields: Json) => void; tell?: (text: string) => void }) {
   const title = off ?? fixed ?? column.guidance, disabled = off !== null;
   if (column.name === 'nominal_only') return <select aria-label="Judged at" title={title} disabled={disabled}
     value={value ? 'nominal' : 'all'} onChange={e => onChange(e.target.value === 'nominal')}>
@@ -113,16 +101,51 @@ function Cell({ column, value, onChange, fixed = null, off = null, readable = fa
       {column.options.map((o: string) => <option key={o} value={o}>{o}</option>)}</select>;
   }
   if (column.type === 'boolean') return <input type="checkbox" title={title} disabled={disabled} checked={!!value} onChange={e => onChange(e.target.checked)} />;
+  if ((column.type === 'number' || column.type === 'integer') && unit !== undefined)
+    return <QuantityBox title={title} disabled={disabled} nullable={!!column.nullable} value={value} unit={unit} stored={stored} tell={tell}
+      onCommit={(v, u) => onPatch ? onPatch({ [column.name]: v, ...(u ? { unit: u } : {}) }) : onChange(v)} />;
   if (column.type === 'number' || column.type === 'integer') {
     return <Typed title={title} disabled={disabled} className="numeric" placeholder={column.nullable ? '-' : ''} value={value} onChange={onChange}
-      format={v => v == null ? '' : readable && typeof v === 'number' ? engineering(v) : String(v)}
+      format={v => v == null ? '' : String(v)}
       parse={t => { const n = readNumber(t); return t.trim() === '' ? { value: column.nullable ? null : 0 } : n !== undefined ? { value: n } : undefined; }} />;
   }
+  if (column.name === 'unit') return <UnitSelect title={title} disabled={disabled} value={value} onChange={onChange} />;
   if (column.type === 'array' || column.type === 'object') {
     return <Typed title={title + ' (JSON)'} disabled={disabled} value={value} onChange={onChange} format={v => v == null ? '' : JSON.stringify(v)}
       parse={t => { if (t.trim() === '') return { value: null }; try { return { value: JSON.parse(t) }; } catch { return undefined; } }} />;
   }
   return <input title={title} disabled={disabled} value={value ?? ''} onChange={e => onChange(e.target.value === '' && column.nullable ? null : e.target.value)} />;
+}
+
+/** A number of a row in its unit (record 7.208): written the one way (450 nm, 400 uA), typed in any form - 400u, 400 uA,
+ *  0.4mA, 4e-4. Parameters and Specs have no Unit column: `unit` is the unit the row's values are read in - its own, or the
+ *  one its parameter (w, l: a length) or its Probe says when its own is of another quantity or missing - and a plain number
+ *  is in it. A value of another quantity ("5 mV" in a length row) is left unread and said in words (`tell`). The row takes
+ *  that unit with the value (`onCommit`'s second argument) when its own was not of it; a row without a unit takes the one
+ *  the typed value says. Shown in the unit the row stores (`stored`). */
+function QuantityBox({ value, unit, stored, nullable, title, disabled, onCommit, tell }: { value: Json; unit: string | null; stored: string | null;
+  nullable: boolean; title: string; disabled: boolean; onCommit: (v: Json, unit: string | null) => void; tell?: (text: string) => void }) {
+  const adopted = useRef<string | null>(null);
+  const read = (text: string) => {
+    const r = readQuantity(text, unit);
+    if ('problem' in r) return undefined;
+    adopted.current = r.unit ?? (unit && unit !== stored ? unit : null);
+    return { value: r.value ?? (nullable ? null : 0) };
+  };
+  return <Typed title={title} disabled={disabled} className="numeric" placeholder={nullable ? '-' : ''} value={value}
+    format={v => v == null ? '' : typeof v === 'number' ? quantity(v, stored) : String(v)} parse={read} onChange={v => onCommit(v, adopted.current)}
+    onRefused={text => { const r = readQuantity(text, unit); if ('problem' in r) tell?.(r.problem); }} />;
+}
+
+/** The Probes' Unit column (record 7.208): what the probe measures, chosen from a list in English letters - a list like the
+ *  page's others (the browser's own suggestion list looked different; user, 2026-10-05). A unit not in the list stays as it
+ *  is. A Spec on the Probe follows a change of quantity (`withFollowers`). */
+function UnitSelect({ value, title, disabled, onChange }: { value: Json; title: string; disabled: boolean; onChange: (v: Json) => void }) {
+  const choices = unitChoices(), current = value ?? '';
+  const shown = choices.find(u => sameUnit(u, current)) ?? current;
+  return <select title={title} disabled={disabled} value={shown} onChange={e => { if (!sameUnit(e.target.value, current)) onChange(e.target.value); }}>
+    {!choices.includes(shown) && <option value={shown}>{shown === '' ? '(none)' : unitLabel(shown)}</option>}
+    {choices.map(u => <option key={u} value={u}>{u}</option>)}</select>;
 }
 
 /** What the formula bar shows of the chosen cell: where it is, its whole value as text, whether it is typed there, and why not. */
@@ -243,7 +266,13 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   });
   // `signal` holds a Maestro output's expression (ymax(VT("/OUT")), getData(... ?result "stb")): "signal" read like a
   // net name (review of 2026-10-03). For a profile metric it is a label of what is measured.
-  const columns: Json[] = schema.editors[tab].map((c: Json) => ({ ...c, label: c.label ?? LABELS[tab]?.[c.name] })).map((c: Json) => tab === 'measurements' && c.name === 'signal' ? { ...c, label: 'Expression' }
+  // Units in words (record 7.208): only Probes have a Unit column; the values of Parameters and Specs carry theirs.
+  const VALUE_HELP = ' Written with its unit (450 nm, 400 uA). Type 450n, 0.45 um or 0.4mA; a plain number is in the unit the row shows. '
+    + 'A Parameters row is in the unit of its parameter (w, l: a length), a Spec in its Probe\'s: a value of another quantity is refused.';
+  const columns: Json[] = schema.editors[tab].map((c: Json) => ({ ...c, label: c.label ?? LABELS[tab]?.[c.name] }))
+    .map((c: Json) => c.name === 'unit' ? { ...c, guidance: 'The unit of what this Probe measures, chosen from the list (V, A, Hz, dB, deg...). '
+      + 'A Spec on this Probe takes it.' } : QUANTITY[tab]?.includes(c.name) ? { ...c, guidance: (c.guidance ?? '') + VALUE_HELP } : c)
+    .map((c: Json) => tab === 'measurements' && c.name === 'signal' ? { ...c, label: 'Expression' }
     : tab !== 'targets' ? c : c.name === 'nominal_only'
     ? { ...c, label: 'Judged at' } : c.name === 'missing_is_failure' ? { ...c, label: 'Missing value = failed' } : c.name === 'margin_sides' ? { ...c, label: 'Margin sides' }
     : c.name === 'constraint' ? { ...c, guidance: c.guidance + ' "then lower / higher is better" is the objective: among the designs that pass '
@@ -287,11 +316,14 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // must not be frozen into the row by that. One path for a typed cell, a pasted block and a fill since record 7.184 (a pasted
   // output name had left its Probe ID behind); a limit written without its objective keeps the objective where they still pair.
   const withFollowers = (c: Json, changes: Map<number, Json>): Json => {
-    const renames: [string, string][] = [];
+    const renames: [string, string][] = [], moves: [string, string][] = [];
     const next = { ...c, [tab]: c[tab].map((r: Json, i: number) => {
       const fields = changes.get(i);
       if (!fields) return r;
       const row = { ...r, ...fields };
+      // No Unit column for Parameters (record 7.208): a row whose parameter has a known kind (w, l) is in that kind's unit.
+      if (tab === 'parameters' && 'parameter_name' in fields) { const kind = kindUnit(row.parameter_name); if (kind && !sameQuantity(row.unit, kind)) row.unit = kind; }
+      if (tab === 'measurements' && 'unit' in fields && row.unit && !sameQuantity(r.unit, row.unit)) moves.push([String(row.measurement_id), row.unit]);
       if (tab === 'measurements' && typeof fields.source_name === 'string' && r.result_source === 'ade_output'
           && /^[A-Za-z_][A-Za-z0-9_]*$/.test(fields.source_name)) {
         row.measurement_id = probeIdOf(fields.source_name);
@@ -300,7 +332,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       if (tab === 'targets') {
         const probe = typeof fields.equation === 'string' && !('unit' in fields)
           ? (c.measurements ?? []).find((m: Json) => m.measurement_id === fields.equation.trim()) : null;
-        if (probe?.unit && (!r.unit || (r.lower == null && r.upper == null))) row.unit = probe.unit;
+        if (probe?.unit && (!r.unit || !sameQuantity(r.unit, probe.unit))) row.unit = probe.unit;   // the Probe's quantity (7.208)
         if ('constraint' in fields && !('direction_after_feasible' in fields)
             && !LIMIT_CHOICES.some(([limit, objective]) => limit === row.constraint && objective === (row.direction_after_feasible ?? 'none'))) row.direction_after_feasible = 'none';
         if (!('normalization_scale' in fields) && SCALE_FIELDS.some(name => row[name] !== r[name])) row.normalization_scale = followScale(r, row);
@@ -309,11 +341,29 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     }) };
     if (renames.length) next.targets = (c.targets ?? []).map((t: Json) => typeof t.equation === 'string'
       ? { ...t, equation: renames.reduce((e, [from, to]) => renameInEquation(e, from, to), t.equation) } : t);
+    // A Probe now of another quantity: the Specs on it alone take its unit (they have no Unit column since record 7.208).
+    if (moves.length) next.targets = (next.targets ?? c.targets ?? []).map((t: Json) => {
+      const move = moves.find(([id]) => typeof t.equation === 'string' && t.equation.trim() === id);
+      if (!move || sameQuantity(t.unit, move[1])) return t;
+      const moved = { ...t, unit: move[1] };
+      return { ...moved, normalization_scale: followScale(t, moved) };                  // as a unit typed in the Spec did
+    });
     return next;
   };
+  // The unit a row's values are read in (record 7.208: no Unit column in Parameters and Specs): its own, unless what the row
+  // is says another quantity - a parameter of a known kind (w, l: m), a Spec on one Probe (the Probe's unit) - or it has none.
+  const expectedUnit = (row: Json): string | null => tab === 'parameters' ? kindUnit(row.parameter_name)
+    : tab === 'targets' ? (config.measurements ?? []).find((m: Json) => m.measurement_id === String(row.equation ?? '').trim())?.unit || null : null;
+  const effectiveUnit = (row: Json): string | null => { const e = expectedUnit(row); return e && !sameQuantity(row.unit, e) ? e : row.unit ?? null; };
   // One change of one row, several fields at once (the constraint list sets the limit and the objective): one Undo step.
   const patch = (index: number, fields: Json) => setConfig((c: Json) => withFollowers(c, new Map([[index, fields]])));
-  const update = (index: number, name: string, value: Json) => patch(index, { [name]: value });
+  // A unit changed to another of the same quantity (um -> nm, record 7.208): the row's numbers move with it, exactly, so every
+  // value stays the same; to another quantity they stay as they are.
+  const update = (index: number, name: string, value: Json) => {
+    const row = rows[index], moved: Json = { [name]: value };
+    if (name === 'unit' && row) for (const f of QUANTITY[tab] ?? []) { const n = convert(row[f], row.unit, value); if (n !== null && n !== row[f]) moved[f] = n; }
+    patch(index, moved);
+  };
   const add = () => {
     const row: Json = {};
     // A required field without a default comes as `default: null` from the schema: that means "none", not null - a new
@@ -396,7 +446,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     const why = fixedOf(activeRow, c) ?? offOf(activeRow, c) ?? choice;
     const text = tab === 'targets' && c.name === 'constraint' ? limitLabel(activeRow.constraint, activeRow.direction_after_feasible ?? 'none')
       : c.name === 'nominal_only' ? (value ? 'Nominal only' : 'All planned conditions') : c.type === 'boolean' ? (value ? 'on' : 'off')
-      : value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+      : value == null ? '' : typeof value === 'object' ? JSON.stringify(value)
+      : typeof value === 'number' && QUANTITY[tab]?.includes(c.name) ? quantity(value, activeRow.unit) : String(value);
     return { id: `${tab}|${at}|${c.name}`, where: `${c.label ?? c.name} · ${activeRow[keyField] ?? `row ${at + 1}`}`, text, editable: why === null,
       why: why ?? '', format: `${c.name} (${c.type}${c.options ? ': ' + c.options.join(' | ') : ''}${c.required ? ', required' : ''}) - ${c.guidance ?? ''}` };
   })() : null;
@@ -405,7 +456,13 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     if (!activeRow || !activeColumn) return null;
     const c = activeColumn;
     let value: Json;
-    if (c.type === 'number' || c.type === 'integer') {
+    if ((c.type === 'number' || c.type === 'integer') && QUANTITY[tab]?.includes(c.name)) {
+      const unit = effectiveUnit(activeRow), read = readQuantity(text, unit);
+      if ('problem' in read) return read.problem;
+      value = read.value ?? (c.nullable ? null : 0);
+      const takes = read.unit ?? (unit && unit !== activeRow.unit ? unit : null);
+      if (takes) { patch(at, { [c.name]: value, unit: takes }); return null; }
+    } else if (c.type === 'number' || c.type === 'integer') {
       const s = text.trim(), n = readNumber(s);
       if (s !== '' && n === undefined) return `"${s}" is not a number: type it plain, with an exponent (2.5e-6) or an SI letter (2.5u); the unit column says the unit.`;
       value = s === '' ? (c.nullable ? null : 0) : n;
@@ -483,23 +540,34 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     if (from === undefined) return setNote({ text: 'No row above in view to fill from.', warn: true });
     const value = rows[from][c.name] === undefined ? c.default : rows[from][c.name];
     const changes = new Map<number, Json>();
-    let kept = 0;
+    let kept = 0, other = 0;
     for (const i of targets) {
       if (fixedOf(rows[i], c) || offOf(rows[i], c)) { kept += 1; continue; }
-      if (exact(rows[i][c.name] === undefined ? c.default : rows[i][c.name]) !== exact(value))
-        changes.set(i, { [c.name]: value != null && typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : value });
+      // a quantity goes in the unit the target row stores (record 7.208: 600 nm into a row in m is 6e-7); another quantity is kept
+      let filled = value;
+      if (typeof value === 'number' && QUANTITY[tab]?.includes(c.name) && (rows[i].unit ?? '') !== (rows[from].unit ?? '')) {
+        filled = convert(value, rows[from].unit, rows[i].unit);
+        if (filled === null) { other += 1; continue; }
+      }
+      if (exact(rows[i][c.name] === undefined ? c.default : rows[i][c.name]) !== exact(filled))
+        changes.set(i, { [c.name]: filled != null && typeof filled === 'object' ? JSON.parse(JSON.stringify(filled)) : filled });
     }
     if (changes.size) setConfig((cfg: Json) => withFollowers(cfg, changes));
-    const what = `${c.label ?? c.name} = ${shortText(value)} of ${rows[from][keyField]}`;
+    const what = `${c.label ?? c.name} = ${typeof value === 'number' && QUANTITY[tab]?.includes(c.name) ? quantity(value, rows[from].unit) : shortText(value)} of ${rows[from][keyField]}`;
     setNote({ text: [changes.size ? `Filled ${changes.size} cell${changes.size === 1 ? '' : 's'} with ${what} (one Undo step).`
       : targets.length > kept ? `Nothing to fill: the cell${targets.length - kept === 1 ? ' holds' : 's hold'} ${what} already.` : 'Nothing filled.',
-      kept ? `${kept} cell${kept === 1 ? ' that follows' : 's that follow'} another field kept.` : ''].filter(Boolean).join(' '), warn: false });
+      kept ? `${kept} cell${kept === 1 ? ' that follows' : 's that follow'} another field kept.` : '',
+      other ? `${other} cell${other === 1 ? '' : 's'} of another quantity kept.` : ''].filter(Boolean).join(' '), warn: other > 0 });
   };
   // Ctrl+C copies out, as in a spreadsheet (record 7.184): in a ticked row, the ticked rows in view - every column in view, a
-  // header line first - as tab-separated lines for Excel; otherwise the cell alone. Numbers as stored (4.5e-7, which Excel
-  // reads), a limit as its sign. The Copy button takes the ticked rows in view, or every row in view.
-  const cellText = (row: Json, c: Json) => (c.name === 'nominal_only' ? ((row[c.name] ?? c.default) ? 'Nominal only' : 'All planned conditions')
-    : exact(row[c.name] === undefined ? c.default : row[c.name])).replace(/[\t\r\n]+/g, ' ');
+  // header line first - as tab-separated lines for Excel; otherwise the cell alone. A value with its unit, as the cell writes
+  // it (record 7.208: there is no Unit column to say it; a paste reads it back exactly); other numbers as stored, a limit as
+  // its sign. The Copy button takes the ticked rows in view, or every row in view.
+  const cellText = (row: Json, c: Json) => {
+    const value = row[c.name] === undefined ? c.default : row[c.name];
+    return (c.name === 'nominal_only' ? (value ? 'Nominal only' : 'All planned conditions')
+      : typeof value === 'number' && QUANTITY[tab]?.includes(c.name) ? quantity(value, row.unit) : exact(value)).replace(/[\t\r\n]+/g, ' ');
+  };
   const toClipboard = (text: string) => {
     const put = (e: ClipboardEvent) => { e.clipboardData?.setData('text/plain', text); e.preventDefault(); };
     document.addEventListener('copy', put, true);
@@ -520,7 +588,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // in view from that one right, as one Undo step (record 7.180). Each text is read as its column takes it; a cell that follows
   // another field, or that its leader decides, is left as it is; what cannot be read is named and left as it was. One value
   // pastes into the box as before.
-  const readAs = (c: Json, raw: string): { value?: Json; problem?: string } => {
+  const readAs = (c: Json, raw: string, row: Json): { value?: Json; problem?: string; unit?: string } => {
     const s = raw.trim();
     if (c.name === 'nominal_only') return /^nominal/i.test(s) ? { value: true } : /^all/i.test(s) ? { value: false } : { problem: `"${s}" in ${c.label ?? c.name}` };
     if (c.type === 'boolean') return /^(true|yes|on|1|x|✓)$/i.test(s) ? { value: true } : /^(false|no|off|0|)$/i.test(s) ? { value: false } : { problem: `"${s}" in ${c.label ?? c.name}` };
@@ -531,6 +599,12 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     if (c.options) {
       const option = c.options.find((o: string) => o.toLowerCase() === s.toLowerCase());
       return option !== undefined ? { value: option } : s === '' && c.nullable ? { value: null } : { problem: `"${s}" in ${c.label ?? c.name}` };
+    }
+    if ((c.type === 'number' || c.type === 'integer') && QUANTITY[tab]?.includes(c.name)) {
+      if (s === '') return c.nullable ? { value: null } : {};
+      const unit = effectiveUnit(row), read = readQuantity(s, unit);
+      return 'problem' in read ? { problem: `"${s}" in ${c.label ?? c.name}` }
+        : { value: read.value, unit: read.unit ?? (unit && unit !== row.unit ? unit : undefined) };
     }
     if (c.type === 'number' || c.type === 'integer') {
       if (s === '') return c.nullable ? { value: null } : {};
@@ -564,9 +638,9 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         const c = visible[column + j];
         if (!c) return;
         if (fixedOf(row, c) || offOf(row, c)) { kept += 1; return; }
-        const read = readAs(c, raw);
+        const read = readAs(c, raw, row);
         if (read.problem) problems.push(read.problem);
-        else if ('value' in read) { changes.set(index, { ...(changes.get(index) ?? {}), [c.name]: read.value }); cells += 1; }
+        else if ('value' in read) { changes.set(index, { ...(changes.get(index) ?? {}), [c.name]: read.value, ...(read.unit ? { unit: read.unit } : {}) }); cells += 1; }
       });
     });
     if (changes.size) setConfig((cfg: Json) => withFollowers(cfg, changes));
@@ -588,6 +662,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
 
   return (
     <section className="panel editors" data-editor={tab}>
+      <datalist id="gator-units">{unitChoices().map(u => <option key={u} value={u} />)}</datalist>
       {/* Another tab closes the Matched devices box: kept "open", coming back to Parameters mounted it again, and mounting
           is its press - it asked the backend with nobody pressing anything, and a reviewed diff was gone.
           Each editor has a colour of its own (record 7.158): its tab, its table's header row, and its ids where another editor shows them. */}
@@ -655,7 +730,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
                 onFocus={() => setActive({ index, name: c.name, key: String(row[keyField] ?? '') })}>{tab === 'targets' && c.name === 'constraint'
                 ? <LimitSelect row={row} title={c.guidance} onChange={fields => patch(index, fields)} />
                 : <Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)}
-                    fixed={fixedOf(row, c)} off={offOf(row, c)} readable={!!READABLE[tab]?.includes(c.name) && BASE_UNITS.has(row.unit)} />}</td>)}
+                    fixed={fixedOf(row, c)} off={offOf(row, c)} unit={QUANTITY[tab]?.includes(c.name) ? effectiveUnit(row) : undefined}
+                    stored={row.unit ?? null} onPatch={fields => patch(index, fields)} tell={text => setNote({ text, warn: true })} />}</td>)}
               <td className="issues">{found.map((i: Json, n: number) => <div key={n} className={`issue ${i.level}`} title={i.message}>{i.level}: {i.code}</div>)}</td>
             </tr>; })}</tbody>
         </table>

@@ -274,17 +274,18 @@ def _check_parameters(config, report, graph, record):
                 high = units.to_canonical(leader.upper, leader.unit) * ratio
                 if p.lower is not None and low < units.to_canonical(p.lower, p.unit) * (1 - 1e-12):
                     report.add('error', 'binding_violates_member_bound', path + '.lower',
-                               f'leader range x ratio reaches {low:g}, below this member lower bound')
+                               f'leader range x ratio reaches {_in(low, p.unit)}, below this member lower bound')
                 if p.upper is not None and high > units.to_canonical(p.upper, p.unit) * (1 + 1e-12):
                     report.add('error', 'binding_violates_member_bound', path + '.upper',
-                               f'leader range x ratio reaches {high:g}, above this member upper bound')
+                               f'leader range x ratio reaches {_in(high, p.unit)}, above this member upper bound')
             if (p.initial_value is not None and leader.initial_value is not None and units.known(p.unit)
                     and units.compatible(p.unit, leader.unit)):
                 expected = units.to_canonical(leader.initial_value, leader.unit) * ratio
                 actual = units.to_canonical(p.initial_value, p.unit)
                 if not math.isclose(actual, expected, rel_tol=1e-9, abs_tol=1e-18):
                     report.add('error', 'binding_initial_mismatch', path + '.initial_value',
-                               f'Initial value {actual:g} is not ratio x leader ({expected:g}); the optimizer '
+                               f'Initial value {_in(actual, p.unit)} is not ratio x leader '
+                               f'({_in(expected, p.unit)}); the optimizer '
                                'requires current values to satisfy declared bindings')
     report.facts['independent_action_variables'] = independent_action_count(parameters)
     report.facts['parameter_rows'] = len(parameters)
@@ -313,8 +314,8 @@ def _check_bindings_against_circuit(config, report, graph):
         own, lead = circuit_value(p), circuit_value(by_id[leader_id])
         if own is not None and lead is not None and not math.isclose(own, lead * ratio, rel_tol=1e-9, abs_tol=1e-18):
             report.add('error', 'binding_initial_mismatch', f'parameters[{i}]',
-                       f'In the circuit {p.instance_path}.{p.parameter_name} = {own:g}, but ratio x leader '
-                       f'({leader_id}) = {lead * ratio:g}. Change the ratio, or modify the circuit first.')
+                       f'In the circuit {p.instance_path}.{p.parameter_name} = {_in(own, p.unit)}, but ratio x leader '
+                       f'({leader_id}) = {_in(lead * ratio, p.unit)}. Change the ratio, or modify the circuit first.')
 
 
 def _check_parameters_against_circuit(config, report, graph, record):
@@ -344,7 +345,8 @@ def _check_parameters_against_circuit(config, report, graph, record):
             actual = units.to_canonical(p.initial_value, p.unit)
             if not math.isclose(actual, value.value, rel_tol=1e-9, abs_tol=1e-24):
                 report.add('error', 'initial_differs_from_circuit', path + '.initial_value',
-                           f'Configuration says {actual:g} but the circuit has {value.value:g} (canonical units)')
+                           f'Configuration says {_in(actual, p.unit)} but the circuit has '
+                           f'{_in(value.value, p.unit)}')
 
 
 def _check_measurements(config, report, *, provided_metrics):
@@ -667,6 +669,12 @@ def validate(config: WorkbenchConfig, *, graph=None, provided_metrics=None,
             report.add('error', 'task_removed', 'circuit.task_id', real_task_removed(config.circuit.task_id))
     _check_saved_task(config, report, rows_from)
     return report
+
+
+def _in(value, unit) -> str:
+    """A number in the canonical unit of `unit`, written as the editors write quantities (record 7.208: 450 nm, 1.1 GHz); in a
+    unit the registry does not know, as before."""
+    return units.text(value, units.canonical_unit(unit)) if units.known(unit) else format(value, 'g')
 
 
 def _check_saved_task(config, report, rows_from=None):

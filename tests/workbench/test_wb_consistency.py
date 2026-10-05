@@ -51,7 +51,7 @@ def test_static_validation_says_when_the_editors_differ_from_the_saved_task(tmp_
     tighter.targets[0].lower = 1.3e9
     [issue] = issues(tighter)
     assert issue['path'] == 'targets' and issue['level'] == 'error'
-    assert 'Specs differ from the saved task real:ring_osc (revision 1): osc_frequency_hz: lower 1.3e+09 here, 1.1e+09 saved' in issue['message']
+    assert 'Specs differ from the saved task real:ring_osc (revision 1): osc_frequency_hz: lower 1.3 GHz here, 1.1 GHz saved' in issue['message']
     assert 'Press Save task' in issue['message'] and 'Reload saved values' in issue['message']
     wider = cfg.model_copy(deep=True)
     wider.parameters[0].upper = wider.parameters[0].upper + 0.2

@@ -104,7 +104,7 @@ await runChecks(browser, async () => {
   const added = await saved1();
   check('a new spec row starts complete: the first probe as its equation, in its unit, a constraint, and an empty scale',
     added?.equation === 'm_score' && added?.unit === 'fixture' && added?.constraint === '>=' && added?.normalization_scale == null, JSON.stringify(added));
-  await type(1, 'metric_id', 'score_sq'); await type(1, 'equation', 'm_score ** 2'); await type(1, 'unit', 'fixture'); await type(1, 'lower', '0.5');
+  await type(1, 'metric_id', 'score_sq'); await type(1, 'equation', 'm_score ** 2'); await type(1, 'lower', '0.5');
   let [ok, found] = await issuesUntil(1, ['warning: equation_unit_unchecked', 'info: spec_adds_registry_entry'], ['error', 'blocker']);
   const row = async () => JSON.stringify(await saved1())
     + ' | page issues: ' + JSON.stringify(await evaluate(`[...document.querySelectorAll('.editors .issue')].map(d => d.textContent.trim())`));

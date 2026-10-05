@@ -1,8 +1,9 @@
 // Browser check of typing into the workbench's boxes (Typed.tsx; review of 2026-09-22), key by key as a person types -
 // Input.dispatchKeyEvent per character, not one insertText of the whole string, because the old boxes broke BETWEEN keys:
 //   - a number cell of Parameters / Probes / Specs keeps the typed text while it has focus: "1.5" and "4.5e-7" typed key by
-//     key are stored as 1.5 and 4.5e-7 (the old cell showed "1." as "1", so 1.5 became 15); an emptied cell shows the
-//     stored value again on blur; Undo while a cell has focus replaces the typed text;
+//     key are stored as 1.5 and 4.5e-7, in the row's unit (the old cell showed "1." as "1", so 1.5 became 15); a stored value
+//     is written with its prefix and unit (record 7.208); an emptied cell shows the stored value again on blur; Undo while a
+//     cell has focus replaces the typed text;
 //   - "More columns": Specs shows soft_weight after it, a value typed there stays when the columns are hidden again, and
 //     Probes has none since its conditions and aggregation were retired (record 7.105; conditions was the editors' only
 //     JSON cell, so no JSON cell is typed into any more);
@@ -87,8 +88,13 @@ await runChecks(browser, async () => {
     (config?.run?.model_source?.run_dir ?? null) === null, `${JSON.stringify(config?.run?.model_source ?? null)}; default model asked ${defaultAsks.length} time(s)`);
 
   // ---- (a) number cells keep what is being typed ----------------------------------------------------------------------------
+  // Record 7.208: a number box of a row writes its value with an SI prefix and the unit (1 µm); a plain number typed into it
+  // is in the row's unit, the one the Unit column shows.
+  const symbolOf = unit => ({ um: 'm', 'µm': 'm', nm: 'm', mm: 'm', 'Ω': 'ohm', '°': 'deg' })[unit] ?? unit;
   await openTab('Parameters');
   check('(set-up) the Parameters tab holds the starter rows', (await evaluate(`${EDITORS}.querySelectorAll('table.editor tbody tr').length`)) === CONFIG.parameters.length);
+  const upperShown = await valueOf(CELL(0, 'upper'));
+  check('a bound is written with its prefix and unit (7.208)', new RegExp(`^[-\\d.]+ [fpnumkMGT]?${symbolOf(CONFIG.parameters[0].unit)}$`).test(upperShown), upperShown);
   await focusAll(CELL(0, 'upper')); await typeKeys('1.');
   check('a half-typed "1." stays in the cell while it has focus', (await valueOf(CELL(0, 'upper'))) === '1.', await valueOf(CELL(0, 'upper')));
   await typeKeys('5');
@@ -150,13 +156,15 @@ await runChecks(browser, async () => {
   config = await saved();
   check('on blur it shows the stored value again (a required number: 0)', config.parameters[0].ratio === 0 && (await valueOf(CELL(0, 'ratio'))) === String(config.parameters[0].ratio),
     `${config.parameters[0].ratio} / ${JSON.stringify(await valueOf(CELL(0, 'ratio')))}`);
+  const beforeShown = await valueOf(CELL(0, 'upper'));
   await focusAll(CELL(0, 'upper')); await typeKeys('2.');
   config = await saved();
   check('(set-up) "2." typed over 1.5: stored 2, the cell shows "2."', config.parameters[0].upper === 2 && (await valueOf(CELL(0, 'upper'))) === '2.', `${config.parameters[0].upper} / ${await valueOf(CELL(0, 'upper'))}`);
   await evaluate(`${TOOL('Undo')}.click()`);                                     // a click by code: the cell keeps its focus
   config = await saved();
   const undone = await evaluate(`({ focused: document.activeElement === ${CELL(0, 'upper')}, value: ${CELL(0, 'upper')}.value })`);
-  check('Undo while the cell has focus replaces the typed "2." with the value it brings back (1.5)', config.parameters[0].upper === 1.5 && undone.focused && undone.value === '1.5', JSON.stringify(undone));
+  check('Undo while the cell has focus replaces the typed "2." with the value it brings back (1.5, written with its unit)', config.parameters[0].upper === 1.5
+    && undone.focused && undone.value === beforeShown, `${JSON.stringify(undone)} (it showed ${beforeShown})`);
   await blur(CELL(0, 'upper'));
 
   // ---- (a) a new row gets a free ID -----------------------------------------------------------------------------------------------

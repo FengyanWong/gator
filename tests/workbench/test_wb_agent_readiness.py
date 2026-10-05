@@ -66,9 +66,9 @@ def test_empty_tables_are_the_agents_to_fix_and_everything_else_is_the_users(tmp
 def test_rows_that_differ_from_the_saved_task_are_one_press_of_the_users_and_the_issue_says_which(tmp_path):
     """Record 7.204: after "Apply calibration" the Specs hold Scales the saved task does not. The checklist used to cut
     the issue before its last sentence and to advise "Reload saved values ... or the agent writes the rows"."""
-    message = ('Specs differ from the saved task real:demo (revision 1): gain_vv: normalization_scale 260 here, (none) saved; ibias_a: '
-               'normalization_scale 0.00028 here, (none) saved; pm_deg: normalization_scale 9.6 here, (none) saved; ugbw_hz: normalization_scale '
-               '1.1e+07 here, (none) saved. Press Save task to save the rows as they are now, or Reload saved values to take the saved rows back.')
+    message = ('Specs differ from the saved task real:demo (revision 1): gain_vv: normalization_scale 260 V/V here, (none) saved; ibias_a: '
+               'normalization_scale 280 uA here, (none) saved; pm_deg: normalization_scale 9.6 deg here, (none) saved; ugbw_hz: normalization_scale '
+               '11 MHz here, (none) saved. Press Save task to save the rows as they are now, or Reload saved values to take the saved rows back.')
     report = readiness.build(complete(tmp_path), task=task(), validation=dict(blocks_run=True, issues=[issue('error', 'task_not_saved', 'targets', message)], facts={}))
     item = by_id(report)['targets']
     assert item['status'] == 'missing' and item['who'] == 'you' and item['detail'] == message          # whole, its last sentence included

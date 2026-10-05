@@ -737,7 +737,10 @@ ADVANCED_COLUMNS = {'targets': ('soft_weight', 'active', 'basis', 'missing_is_fa
 # Columns the editors do not show at all: the value follows from elsewhere, and the rows keep it (task files, both hashes,
 # the agent, the parked AnalogGym import). initial_value was never filled in a saved task - Save task empties it - and
 # result_source is the task's one way of measuring: a new Probes row takes it from the rows there (review of 2026-10-03).
-HIDDEN_COLUMNS = {'parameters': ('initial_value',), 'measurements': ('result_source',)}
+# Since record 7.208 also the Unit of Parameters and Specs (user: "can you delete the unit column but keep the rules for
+# value"): every value there is written with its unit, a Parameters row's quantity follows its parameter (w, l: a length)
+# and a Spec's its Probe; the rows keep their unit, and Probes keep the column (they have no values).
+HIDDEN_COLUMNS = {'parameters': ('initial_value', 'unit'), 'measurements': ('result_source',), 'targets': ('unit',)}
 
 
 def editor_columns(section: str) -> list[dict]:

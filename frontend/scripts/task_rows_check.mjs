@@ -184,7 +184,8 @@ await runChecks(browser, async () => {
   await setInput(MODEL_LABEL, 'my-amplifier');
   await choose('Task', 'real:gpdk045_ota7');
   check('untouched MOCK rows are exchanged for the OTA7\'s', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`) && (await column('metric_id')).includes('gain_db_at_start'), await note());
-  check(LIVE ? 'LIVE: the OTA7 has its own numbers (53.3 dB)' : 'the OTA7 has its own numbers', (await column('lower')).includes('53.3'), JSON.stringify(await column('lower')));
+  // Record 7.208: a limit is written with its unit (53.3 dB).
+  check(LIVE ? 'LIVE: the OTA7 has its own numbers (53.3 dB)' : 'the OTA7 has its own numbers', (await column('lower')).includes('53.3 dB'), JSON.stringify(await column('lower')));
   check('a typed RL model label stays while the task label follows independently', (await labelValue()) === 'my-amplifier'
     && (await config()).run.model_label === 'my-amplifier' && (await config()).project.task_name === 'gpdk045_ota7');
   check('Reload saved values is available for resetting the current task', await evaluate(`!!${BUTTON(PANEL, 'Reload saved values')}`));
@@ -192,11 +193,11 @@ await runChecks(browser, async () => {
   answers.push(false);
   await evaluate(`${BUTTON(PANEL, 'Reload saved values')}.click()`);
   await until(`!${PANEL}.querySelector('[role="status"]')`);
-  check('Cancel reload preserves edits', (await column('lower')).includes('54'));
+  check('Cancel reload preserves edits', (await column('lower')).some(v => v === '54' || v === '54 dB'), JSON.stringify(await column('lower')));   // typed, or written
   answers.push(true);
   await evaluate(`${BUTTON(PANEL, 'Reload saved values')}.click()`);
   check('the button puts the task\'s own numbers back and keeps the typed name as well', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`)
-    && (await column('lower')).includes('53.3') && !(await column('lower')).includes('54') && (await labelValue()) === 'my-amplifier', JSON.stringify(await column('lower')));
+    && (await column('lower')).includes('53.3 dB') && !(await column('lower')).includes('54 dB') && (await labelValue()) === 'my-amplifier', JSON.stringify(await column('lower')));
 
   if (!LIVE) {
     // ---- a circuit without targets of record: nothing is invented -----------------------------------------------------
@@ -221,7 +222,7 @@ await runChecks(browser, async () => {
     delayTask = null; await held.shift()();
     await until(`!${PANEL}.querySelector('[role="status"]')`);
     check('edits made while loading also require a decision', (await value('Task')) === 'real:ring_demo'
-      && (await column('lower')).includes('0.000002'));
+      && (await config()).parameters[0].lower === 0.000002, JSON.stringify(await column('lower')));
     answers.push(true);
     await choose('Task', 'real:gpdk045_ota5');
     await until(`${FIELD('Task')}.value === 'real:gpdk045_ota5'`);
@@ -234,7 +235,7 @@ await runChecks(browser, async () => {
     delayTask = null; await held.shift()(); await sleep(300);
     await openTab('Specs');
     check('a delayed earlier selection cannot replace the latest task', (await value('Task')) === 'real:gpdk045_ota7'
-      && (await column('lower')).includes('53.3'));
+      && (await column('lower')).includes('53.3 dB'), JSON.stringify(await column('lower')));
   }
 
   // ---- a configuration saved with a removed MOCK task (status record 7.59: four MOCK tasks became one) ---------------------

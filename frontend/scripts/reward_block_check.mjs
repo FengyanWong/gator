@@ -9,7 +9,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/reward_block_check.mjs)" [screenshot-dir]
 import path from 'node:path';
 import { NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
-import { check, launchEdge, outDir, runChecks, starterConfig, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -116,10 +116,22 @@ await runChecks(browser, async () => {
   await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => /^More columns/.test(b.textContent.trim())).click()`);
   check('after it both are there, the scale headed "Scale"', await page.until(`${EDITORS}.querySelector('th[data-field="normalization_scale"]')?.textContent.trim() === 'Scale'
     && !!${EDITORS}.querySelector('th[data-field="hard"]')`), JSON.stringify(await heads()));
+  // Specs have no Unit column since record 7.208: a Spec takes its Probe's unit, so the unit is set on the Probe (a list).
+  check('Specs show no Unit column (record 7.208)', !(await heads()).includes('unit'), JSON.stringify(await heads()));
+  const openTab = name => evaluate(`[...${EDITORS}.querySelectorAll('.tabs button')].find(b => b.textContent.trim().startsWith('${name}')).click()`);
+  const probeUnit = async unit => { await openTab('Probes'); await page.until(`!!(${CELL(0, 'unit')})`);
+    await page.setValue(CELL(0, 'unit'), unit, { event: 'change' }); await sleep(200); await openTab('Specs'); await page.until(`!!(${CELL(0, 'lower')})`); };
+  await openTab('Probes'); await page.until(`!!(${CELL(0, 'unit')})`);
+  check('the Probes\' Unit is a list like the page\'s others, in English letters', await evaluate(`(() => { const s = ${CELL(0, 'unit')};
+    const o = [...s.options].map(x => x.value); return s.tagName === 'SELECT' && ['V', 'A', 'Hz', 'dB', 'deg', 'ohm'].every(u => o.includes(u)) && !o.some(u => /[µμΩ°]/.test(u)); })()`));
+  await openTab('Specs'); await page.until(`!!(${CELL(0, 'lower')})`);
   // row 0: a dB row that still holds the suggestion of before (3): the next limit edit takes it to today's (6)
-  await type(0, 'unit', 'dB'); await type(0, 'normalization_scale', '3'); await type(0, 'lower', '40');
+  await probeUnit('dB');
+  await page.saved();                                       // the page stores 0.8 s after the last change
+  check('a Spec on a Probe set to dB takes dB', (await page.stored()).targets[0].unit === 'dB', (await page.stored()).targets[0].unit);
+  await type(0, 'normalization_scale', '3'); await type(0, 'lower', '40');
   check('a dB row still holding the old suggestion of 3 follows the next limit edit to 6', (await scaleOf(0)) === 6, String(await scaleOf(0)));
-  await type(0, 'unit', 'deg'); await type(0, 'lower', '60');
+  await probeUnit('deg'); await type(0, 'lower', '60');
   check('a phase row is sized by its limit (60), no longer by 10 degrees', (await scaleOf(0)) === 60, String(await scaleOf(0)));
   await page.setValue(CELL(0, 'constraint'), 'interval|none'); await type(0, 'lower', '45'); await type(0, 'upper', '55');
   check('an interval is sized by its larger bound (55), no longer by half its width', (await scaleOf(0)) === 55, String(await scaleOf(0)));

@@ -51,10 +51,10 @@ def test_rows_of_an_earlier_revision_would_undo_what_was_saved_since(tmp_path):
     undone = consistency.undone_by_saving(page(), 'ring_osc', saved)       # exactly revision 1's rows: told without a base
     assert (undone['base'], undone['current']) == (1, 2)
     assert undone['items'] == [dict(section='targets', row='osc_frequency_hz', change='field', field='normalization_scale',
-                                    saved=2e8, here=1e9)]
+                                    saved=2e8, here=1e9, unit='Hz')]
     assert consistency.describe_undone('ring_osc', undone) == (
         "real:ring_osc was saved again after these rows were loaded: it is revision 2 now, the rows here are revision 1's. "
-        'Saving them would undo what was saved since: Specs osc_frequency_hz: normalization_scale 2e+08 saved, 1e+09 here.')
+        'Saving them would undo what was saved since: Specs osc_frequency_hz: normalization_scale 200 MHz saved, 1 GHz here.')
     assert consistency.undone_by_saving(page(specs=[LOOSE]), 'ring_osc', saved) is None          # the saved rows
     # An edit of the user's own on top of revision 1: without the revision the rows came from nothing can be told;
     # with it, only what was saved since is named - not the user's own change.

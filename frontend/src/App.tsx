@@ -3,6 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerE
 import { api, ApiError, Json, NO_ANSWER, plainError, saveJson } from './api';
 import { Look, LOOK_NAMES, setLook, useLook } from './theme';
 import { Icon } from './panels/Icons';
+import { setUnitForms } from './units';
 import { rowsFrom, useConfig, usePolling, useRequest } from './store';
 import { CircuitPanel } from './panels/Left';
 import { ConnectionButton } from './panels/Connection';
@@ -114,6 +115,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
 
   useEffect(() => {
     Promise.all([api.schema(), api.meta()]).then(([s, m]) => {
+      setUnitForms(s.unit_forms);                    // how quantities are written and read (record 7.208)
       setSchema(s); setMeta(m);
       // Restore the previous concurrency on a fresh browser (default 1 when none was ever used). Blocked site storage
       // counts as a fresh browser: the page then starts from the default configuration too (useConfig).

@@ -9,6 +9,10 @@
 //   - a block pasted from Excel (tab-separated lines) fills the rows in view from the cell down and the columns from it right,
 //     as one Undo step; a text a column cannot read is named and left as it was; lines below the last row are named; cells
 //     that a leader decides are kept;
+//   - (record 7.208) a bound is written with its prefix and unit in English letters (450 nm, 2 um) in the cell and the
+//     formula bar, never a Greek letter; 450n, 0.6 µm and a plain number (in the row's unit) are read; another quantity is
+//     refused in words; no Unit column: a row whose parameter becomes m (a multiplier) is a count, and a length again when
+//     it is w;
 //   - (record 7.182) the tick box and the row's ID stay at the left while the table scrolls sideways, the ID right beside the
 //     tick box on Parameters (whose tick-box column a tie toggle widens) and on Specs (a narrow one), also when that column
 //     changes size with no new render; nothing covers them, and nothing passing under shows through them;
@@ -98,21 +102,47 @@ await runChecks(browser, async () => {
   check('cells a leader decides are kept: nothing pasted, said so', (await evaluate(`document.querySelector('.paste-note').textContent`)) === 'Nothing pasted. 2 cells that follow another field kept.'
     && await evaluate(stored(`(c.parameters[${follower}].lower ?? null) === ${JSON.stringify(config.parameters[follower].lower ?? null)}`)), await evaluate(`document.querySelector('.paste-note')?.textContent`));
 
-  // ---- readable numbers (record 7.181): a bound of a row in a base unit reads in engineering notation, typed either way ----------------
+  // ---- one way of writing a quantity (record 7.208, replacing 7.181's readable numbers): every bound is written with its prefix
+  //      and unit, typed in any form; a plain number is in the row's unit; no Unit column - a row's quantity follows its parameter
+  //      ---------------------------------------------------------------------------------------------------------------------------
   const metre = config.parameters.findIndex((p, i) => p.unit === 'm' && typeof p.lower === 'number' && p.lower > 0 && p.lower < 0.01 && !tied.includes(i));
   if (metre >= 0) {
     await evaluate(`document.querySelector('section.editors button[title^="Undo:"]').click()`); await sleep(300);   // the pastes above undone
-    const shownNumber = await evaluate(`${BOX(metre, 'lower')}.value`);
-    check(`a bound in metres reads in engineering notation (${config.parameters[metre].lower} m as ${shownNumber} m)`, /^[\d.]+[fpnµm]$/.test(shownNumber), shownNumber);
+    const NOTE = `document.querySelector('.paste-note')?.textContent ?? ''`, shownOf = field => evaluate(`${BOX(metre, field)}.value`);
+    const typeIn = async (field, text) => { await page.setValue(BOX(metre, field), text, { event: 'input', focus: true }); await evaluate(`${BOX(metre, field)}.blur()`); await sleep(250); };
+    const shownNumber = await shownOf('lower');
+    check(`a bound in metres is written with its prefix and unit (${config.parameters[metre].lower} m as ${shownNumber})`, /^[\d.]+ [fpnum]?m$/.test(shownNumber), shownNumber);
     await evaluate(`${BOX(metre, 'lower')}.focus()`); await sleep(200);
-    check('...and the formula bar shows the stored number', (await evaluate(`document.querySelector('.formula-bar textarea').value`)) === String(await evaluate(stored(`c.parameters[${metre}].lower`))),
+    check('...and the formula bar writes it the same way', (await evaluate(`document.querySelector('.formula-bar textarea').value`)) === shownNumber,
       await evaluate(`document.querySelector('.formula-bar textarea').value`));
-    await page.setValue(BOX(metre, 'lower'), '450n', { event: 'input' });
-    check('"450n" typed is the number 4.5e-7', await page.until(stored(`c.parameters[${metre}].lower === 4.5e-7`), 30), String(await evaluate(stored(`c.parameters[${metre}].lower`))));
-    await evaluate(`${BOX(metre, 'lower')}.blur()`); await sleep(200);
-    check('...and reads 450n once the box is left', (await evaluate(`${BOX(metre, 'lower')}.value`)) === '450n', await evaluate(`${BOX(metre, 'lower')}.value`));
-    await page.setValue(BOX(metre, 'unit'), 'um', { event: 'input' }); await sleep(300);
-    check('a bound of a row in a prefixed unit (um) reads as stored', (await evaluate(`${BOX(metre, 'lower')}.value`)) === '4.5e-7', await evaluate(`${BOX(metre, 'lower')}.value`));
+    await typeIn('lower', '450n');
+    check('"450n" typed is the number 4.5e-7, written 450 nm', await page.until(stored(`c.parameters[${metre}].lower === 4.5e-7`), 30) && (await shownOf('lower')) === '450 nm',
+      `${await evaluate(stored(`c.parameters[${metre}].lower`))} / ${await shownOf('lower')}`);
+    await typeIn('lower', '0.6 µm');
+    check('"0.6 µm" typed is 6e-7, written 600 nm', await page.until(stored(`c.parameters[${metre}].lower === 6e-7`), 30) && (await shownOf('lower')) === '600 nm',
+      `${await evaluate(stored(`c.parameters[${metre}].lower`))} / ${await shownOf('lower')}`);
+    await typeIn('lower', '0.000002');
+    check('a plain number is in the row\'s unit, metres: 0.000002 is 2 um', await page.until(stored(`c.parameters[${metre}].lower === 0.000002`), 30) && (await shownOf('lower')) === '2 um',
+      `${await evaluate(stored(`c.parameters[${metre}].lower`))} / ${await shownOf('lower')}`);
+    await typeIn('lower', '5 mV');
+    check('another quantity is refused in words and changes nothing', (await evaluate(stored(`c.parameters[${metre}].lower`))) === 0.000002
+      && (await evaluate(NOTE)).includes('is a voltage; this row holds a length (m)') && (await shownOf('lower')) === '2 um', await evaluate(NOTE));
+    // No Unit column in Parameters since record 7.208 (user: "can you delete the unit column but keep the rules for value"): a
+    // row's quantity follows its parameter - w is a length, m a multiplier (a count).
+    check('Parameters show no Unit column', !(await evaluate(`[...document.querySelectorAll('section.editors table.editor thead th')].some(h => h.dataset.field === 'unit')`)));
+    const parameterOf = config.parameters[metre].parameter_name;
+    await typeIn('parameter_name', 'm');
+    check('a row whose parameter becomes m (a multiplier) is a count: plain numbers, a length refused', await page.until(stored(`c.parameters[${metre}].unit === 'count'`), 30)
+      && (await shownOf('lower')) === '0.000002', `${await evaluate(stored(`c.parameters[${metre}].unit`))} / ${await shownOf('lower')}`);
+    await typeIn('lower', '4 um');
+    check('...a length typed into it is refused in words', (await evaluate(NOTE)).includes('is a length; this row holds a count'), await evaluate(NOTE));
+    await typeIn('parameter_name', parameterOf);
+    check(`back to ${parameterOf}: a length again (metres)`, await page.until(stored(`c.parameters[${metre}].unit === 'm'`), 30)
+      && (await shownOf('lower')) === '2 um', `${await evaluate(stored(`c.parameters[${metre}].unit`))} / ${await shownOf('lower')}`);
+    await typeIn('lower', '3n');
+    check('...and its values read as lengths again', await page.until(stored(`c.parameters[${metre}].lower === 3e-9`), 30) && (await shownOf('lower')) === '3 nm', await shownOf('lower'));
+    check('no cell of the table writes a Greek letter (user: "dont use greek characters for unit")',
+      !(await evaluate(`[...document.querySelectorAll('section.editors table.editor input')].some(i => /[µμΩ°]/.test(i.value))`)));
   } else check('the task has a bound in metres to read', false, JSON.stringify(config.parameters.map(p => [p.unit, p.lower])));
 
   // ---- the tick box and the row's ID in view while the table scrolls sideways (record 7.182) -------------------------------------------

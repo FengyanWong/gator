@@ -432,12 +432,32 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   takes the 84 px of a text box; the Issues column is narrow while no row has an issue. At 1680 x 1050 the LDO task's
   Parameters table fits without scrolling sideways.
 
-- **Readable numbers** (record 7.181). A bound, limit or scale of a row in an unprefixed base unit (m, F, ohm, H, V, A, W,
-  J, Hz, s) reads in engineering notation below 0.01 and from 10,000 up: the LDO's quiescent-current limit 0.0004 A reads
-  `400µ` A, a width 4.5e-7 m `450n` m, 1.5e6 Hz `1.5M`. A prefixed unit (um, pF, mV) and every other number read as stored.
-  A cell, the formula bar and a pasted block take a number plain, with an exponent (2.5e-6) or an SI letter (2.5u, 400µ,
-  10k, 1.5M); the formula bar shows the stored number. Exact both ways: the shortest digits of the number are moved, never
-  computed, and "450n" is read as 450e-9.
+- **One way of writing a quantity** (record 7.208, user: "a unified way of unit representation in the parameters probes
+  and specs windows considering the convenience usage of users", chose "Prefix per value"; then "dont use greek characters
+  for unit, use english letters instead"; it replaces record 7.181's readable numbers). Every bound, limit and scale is
+  written as Virtuoso's forms write it - the number, an SI prefix and the unit, in English letters: a width `1.205 um`, a
+  length `45 nm`, a resistor `9.535 kohm`, the LDO's quiescent-current limit `400 uA`, a bandwidth `100 MHz`, a PSRR
+  `-30 dB`, a phase margin `60 deg`; a count and a plain number without a unit. The digits are the stored number's own,
+  moved and never computed, so what is shown is exactly what is stored; no stored number or unit changes by being shown
+  (tasks, baselines and hashes are untouched).
+  - **Typing.** A cell, the formula bar and a pasted block read `450n`, `450 nm`, `0.45 um`, `4.5e-7`, `400 uA`, `0.4mA`,
+    `2.2 kohm`, `60 deg` - and the Greek spellings `µm`, `kΩ`, `°` too. A plain number is in the row's unit; a prefix or a
+    unit says its own. Another quantity (`200 mV` in a current row) or an unknown unit is left unread, and a line under the
+    formula bar says why in words.
+  - **No Unit column in Parameters and Specs** (user: "can you delete the unit column but keep the rules for value";
+    the rows keep their unit). A row's quantity comes from what it is: a parameter of a known kind (w and l lengths, m and
+    nf counts, r a resistance, c a capacitance), a Spec on one Probe from that Probe; otherwise the unit the row has. A
+    value must be of that quantity: a length takes `m`, `mm`, `um`, `nm` ..., and `5 mV` is refused in words. A row whose
+    parameter changes (w -> m) takes the new kind's unit; a row without a unit takes the one its first typed value says.
+    Ctrl+C copies a value as the cell writes it (`2 um`), and a paste reads it back; Ctrl+D fills a value converted into
+    the target row's unit, and a row of another quantity is kept.
+  - **Probes keep their Unit column** - they have no values: it says what the probe measures, chosen from a list like the
+    page's other lists, in English letters (V, A, Hz, dB, deg ...). A Spec on the Probe follows a change of quantity, its
+    Scale as a typed unit made it before.
+  - **Everywhere the same.** Run status, Corner check, the graph view and the Training tab write quantities this way too
+    (four significant digits there), and the check's messages do: "osc_frequency_hz: lower 1.3 GHz here, 1.1 GHz saved".
+    The page and the backend use one unit table (`units.py`, sent with `/api/schema`); `unit_text_check.mjs` checks that
+    both write the same 34 cases alike. Copy and Ctrl+D fill still carry the stored numbers, which Excel reads.
 - **The ID in view** (record 7.182, design advice). While a table scrolls sideways the tick box and the row's ID stay at
   the left and the other columns pass under them, a line marking the ID's edge while they do. The ID sits right beside the
   tick-box column, whose width the page measures, also when a narrower window changes it: a tie toggle widens it on

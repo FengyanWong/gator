@@ -121,7 +121,7 @@ await runChecks(browser, async () => {
   let graph = await drawn();
   check('every device and net is a node, every connection a line', graph.nodes.length === 9 && graph.edges.length === WIRES.length, `${graph.nodes.length} nodes, ${graph.edges.length} lines`);
   const node = id => graph.nodes.find(n => n.id === id);
-  check('a sized device reads id, kind and "now -> proposed"', node('d:M1').label === 'M1\nnmos\nw 2 \u00b5m -> 5.2 \u00b5m' && node('d:M1').sized === 1 && node('d:CL').label === 'CL\ncapacitor\nc 1 pF -> 2.55 pF', JSON.stringify([node('d:M1').label, node('d:CL').label]));
+  check('a sized device reads id, kind and "now -> proposed"', node('d:M1').label === 'M1\nnmos\nw 2 um -> 5.2 um' && node('d:M1').sized === 1 && node('d:CL').label === 'CL\ncapacitor\nc 1 pF -> 2.55 pF', JSON.stringify([node('d:M1').label, node('d:CL').label]));
   check('a device the policy does not size reads id and kind only', node('d:M2').label === 'M2\npmos' && node('d:M2').sized === 0);
   check('lines carry the terminal and the attention of block 1 / mean / "what a device takes"', WIRES.every(([d, t, , toDevice]) => { const e = edgeOf(graph, d, t); return e.label === t && Math.abs(e.attention - toDevice[0]) < 1e-9; }));
   check('more attention = a thicker line', edgeOf(graph, 'VB', 'P').width > edgeOf(graph, 'M1', 'D').width && edgeOf(graph, 'M1', 'D').width > edgeOf(graph, 'M1', 'G').width,
@@ -188,7 +188,7 @@ await runChecks(browser, async () => {
 
   // ---- the tables beside the picture ------------------------------------------------------------------------------------------------------
   const groups = await evaluate(`[...${DIALOG}.querySelectorAll('table.graph-groups tbody tr')].map(r => [...r.cells].map(c => c.innerText.replace(/\\s+/g, ' ').trim()))`);
-  check('sizes: now, what the policy proposes, what the run tried', groups.length === 2 && groups[0].join('|') === 'wn M1|2 \u00b5m|5.2 \u00b5m z 0.20|2.75 \u00b5m z -0.50' && groups[1].join('|') === 'cl CL|1 pF|2.55 pF z 0.00|2.795 pF z 0.10', JSON.stringify(groups));
+  check('sizes: now, what the policy proposes, what the run tried', groups.length === 2 && groups[0].join('|') === 'wn M1|2 um|5.2 um z 0.20|2.75 um z -0.50' && groups[1].join('|') === 'cl CL|1 pF|2.55 pF z 0.00|2.795 pF z 0.10', JSON.stringify(groups));
   check('how to read attention is said next to the picture', /FIXTURE reading: attention is normalized per RECEIVING node/.test(await evaluate(`${DIALOG}.querySelector('.graph-reading').innerText`)));
   await evaluate(`(${CY}.getElementById('d:M1').emit('tap'), true)`); await sleep(300);
   const around = await evaluate(`[...${DIALOG}.querySelectorAll('table.graph-around tbody tr')].map(r => [...r.cells].map(c => c.textContent.trim()))`);
@@ -206,7 +206,7 @@ await runChecks(browser, async () => {
   await evaluate(`[...${DIALOG}.querySelectorAll('button')].find(b => b.textContent === '<').click()`);
   check('"<" asks once for the evaluation before', (await waitAsked(2)) === 2 && asked[1].evaluation === 19 && await until(`/Evaluation 19 of this run/.test(${DIALOG}.innerText)`, 50), JSON.stringify(asked[1]));
   graph = await drawn();
-  check('... and the picture follows (other sizes on the device)', graph.nodes.find(n => n.id === 'd:M1').label === 'M1\nnmos\nw 1.9 \u00b5m -> 5.2 \u00b5m', graph.nodes.find(n => n.id === 'd:M1').label);
+  check('... and the picture follows (other sizes on the device)', graph.nodes.find(n => n.id === 'd:M1').label === 'M1\nnmos\nw 1.9 um -> 5.2 um', graph.nodes.find(n => n.id === 'd:M1').label);
   await evaluate(`(() => { const i = ${DIALOG}.querySelector('.graph-step input'); i.focus(); i.select(); })()`); await networkPage.send('Input.insertText', { text: '2' });
   await evaluate(`[...${DIALOG}.querySelectorAll('button')].find(b => b.textContent === 'Show').click()`);
   check('a typed evaluation + Show asks once for it; at the first one "<" is off', (await waitAsked(3)) === 3 && asked[2].evaluation === 2

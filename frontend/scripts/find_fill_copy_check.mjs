@@ -104,7 +104,10 @@ await runChecks(browser, async () => {
   await ctrl('d', 68);
   check('Ctrl+D: the cell takes the value of the row above in view', await storedUntil(`c.parameters.find(p => p.variable_id === ${JSON.stringify(last)})?.upper === ${JSON.stringify(aboveUpper)}`),
     `${await stored(`c.parameters.find(p => p.variable_id === ${JSON.stringify(last)})?.upper`)} / ${aboveUpper}`);
-  check('...said under the formula bar', (await evaluate(NOTE)).startsWith(`Filled 1 cell with Upper = ${aboveUpper} of ${above}`), await evaluate(NOTE));
+  // the value as the cells write it (record 7.208: 20 um), as the row above shows it
+  const aboveShown = await evaluate(`${BOX(above, 'upper')}.value`);
+  check('...said under the formula bar, as the cells write it', (await evaluate(NOTE)).startsWith(`Filled 1 cell with Upper = ${aboveShown} of ${above}`),
+    `${await evaluate(NOTE)} (the row above shows ${aboveShown})`);
   await evaluate(UNDO);
   check('...one Undo step takes it back', await storedUntil(`c.parameters.find(p => p.variable_id === ${JSON.stringify(last)})?.upper === ${JSON.stringify(P.find(p => p.variable_id === last).upper)}`));
   const top = inView[0], notesOf = Object.fromEntries(P.map(p => [p.variable_id, p.notes ?? '']));
@@ -135,11 +138,15 @@ await runChecks(browser, async () => {
   // ---- Ctrl+C and Copy ---------------------------------------------------------------------------------------------------------------
   const heads = await evaluate(`[...document.querySelectorAll('table.editor thead th[data-field]')].map(h => h.textContent.replace(/ \\*$/, ''))`);
   const fields = await evaluate(`[...document.querySelectorAll('table.editor thead th[data-field]')].map(h => h.dataset.field)`);
-  const line = async id => { const row = (await stored(`c.parameters.find(p => p.variable_id === ${JSON.stringify(id)})`)) ?? {}; return fields.map(f => row[f] == null ? '' : String(row[f])).join('\t'); };
+  // A value with its unit is copied as the cell writes it (record 7.208: there is no Unit column to say it), other fields as stored.
+  const QUANTITY = ['lower', 'upper', 'step', 'initial_value'];
+  const line = async id => { const row = (await stored(`c.parameters.find(p => p.variable_id === ${JSON.stringify(id)})`)) ?? {};
+    const shown = await Promise.all(fields.map(f => QUANTITY.includes(f) ? evaluate(`${BOX(id, f)}.value`) : null));
+    return fields.map((f, j) => QUANTITY.includes(f) ? shown[j] : row[f] == null ? '' : String(row[f])).join('\t'); };
   await choose(BOX(above, 'lower'));
   await ctrl('c', 67);
-  const aboveLower = String(await stored(`c.parameters.find(p => p.variable_id === ${JSON.stringify(above)}).lower`));
-  check('Ctrl+C in a cell: the cell alone, the number as stored', (await evaluate('window.__copied')) === aboveLower
+  const aboveLower = await evaluate(`${BOX(above, 'lower')}.value`);
+  check('Ctrl+C in a cell: the cell alone, the value with its unit as the cell writes it (7.208)', (await evaluate('window.__copied')) === aboveLower
     && (await evaluate(NOTE)) === `Copied Lower of ${above}: ${aboveLower}.`, `${await evaluate('window.__copied')} | ${await evaluate(NOTE)}`);
   await tick(above); await tick(last);
   await choose(BOX(last, 'lower'));

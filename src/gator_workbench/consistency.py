@@ -84,9 +84,16 @@ def saved_task(config, *, with_entry=True):
     return None if entry is None else (name, entry, saved)
 
 
-def _brief(value) -> str:
+# The fields that hold a number in their row's unit: written as the editors write them (record 7.208: 1.3 GHz, 400 uA).
+QUANTITY_FIELDS = dict(parameters=('lower', 'upper', 'step', 'initial_value'), targets=('lower', 'upper', 'normalization_scale'))
+
+
+def _brief(value, unit=None) -> str:
     if value is None:
         return '(none)'
+    if unit is not None and isinstance(value, (int, float)) and not isinstance(value, bool):
+        from . import units
+        return units.text(value, unit)
     if isinstance(value, float):
         return format(value, '.6g')                                  # 1.3e+09, not 1300000000.0
     text = value if isinstance(value, str) else json.dumps(value, default=str)
@@ -110,6 +117,8 @@ def row_differences(config, saved) -> dict:
             continue
         if now == kept:
             continue
+        unit_of = {row.get(key): row.get('unit') for row in kept + now}
+        in_unit = lambda item, field, value: _brief(value, unit_of.get(item['key']) if field in QUANTITY_FIELDS.get(section, ()) else None)
         lines = []
         for item in structured_diff({section: kept}, {section: now}):
             if item['change'] == 'added':
@@ -117,7 +126,8 @@ def row_differences(config, saved) -> dict:
             elif item['change'] == 'removed':
                 lines.append(f'{item["key"]} is saved but not here')
             else:
-                fields = ', '.join(f'{f["field"]} {_brief(f["after"])} here, {_brief(f["before"])} saved' for f in item['fields'][:3])
+                fields = ', '.join(f'{f["field"]} {in_unit(item, f["field"], f["after"])} here, {in_unit(item, f["field"], f["before"])} saved'
+                                   for f in item['fields'][:3])
                 more = len(item['fields']) - 3
                 lines.append(f'{item["key"]}: {fields}' + (f' (and {more} more)' if more > 0 else ''))
         found[section] = lines or ['the same rows, in another order']
@@ -230,7 +240,7 @@ def undone_by_saving(config, name, saved, base=None) -> dict | None:
                 for field in sorted(set(before or {}) | set(after)):
                     if (before or {}).get(field) != after.get(field) and row.get(field) != after.get(field):
                         items.append(dict(section=section, row=row_id, change='field', field=field, saved=after.get(field),
-                                          here=row.get(field)))
+                                          here=row.get(field), unit=after.get('unit')))
     return dict(base=origin, current=current, items=items) if items else None
 
 
@@ -240,7 +250,8 @@ def undone_lines(undone) -> list[str]:
     for item in undone['items']:
         where = f'{labels[item["section"]]} {item["row"]}'
         if item['change'] == 'field':
-            out.append(f'{where}: {item["field"]} {_brief(item["saved"])} saved, {_brief(item["here"])} here')
+            unit = item.get('unit') if item['field'] in QUANTITY_FIELDS.get(item['section'], ()) else None
+            out.append(f'{where}: {item["field"]} {_brief(item["saved"], unit)} saved, {_brief(item["here"], unit)} here')
         elif item['change'] == 'removed':
             out.append(f'{where} is saved but not here')
         else:

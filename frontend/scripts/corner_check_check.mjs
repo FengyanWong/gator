@@ -128,7 +128,7 @@ await runChecks(browser, async () => {
   check('the MOCK notice is shown', now.includes('FIXTURE MOCK: the toy score has its optimum moved'));
   check('Check is on, and reads only "Check"', await evaluate(`!!(${BUTTON('Check')}) && !${BUTTON('Check')}.disabled && ${BUTTON('Check')}.classList.contains('primary')`));
   const designRows = await evaluate(`[...document.querySelectorAll('table.corner-designs tbody tr')].map(r => r.textContent)`);
-  check('the three designs are listed, safest first, with their margin and sizes', designRows.length === 3 && /0\.21.*unity_gain_hz/.test(designRows[0]) && designRows[0].includes('input_pair 4.2 \u00b5m'), designRows[0]);
+  check('the three designs are listed, safest first, with their margin and sizes', designRows.length === 3 && /0\.21.*unity_gain_hz/.test(designRows[0]) && designRows[0].includes('input_pair 4.2 um'), designRows[0]);
   check('the counts and the corners are said in one line', now.includes('12 feasible evaluations, 9 different designs') && now.includes('ss_hot_low (SS, 125 \u00b0C, 0.9 V)'));
   check('the explanation is folded (one click away)', await evaluate(`(() => { const d = [...document.querySelectorAll('.corner-check details')].find(x => x.querySelector('summary')?.textContent === 'What the corner check does');
     return !!d && !d.open && ![...d.querySelectorAll('p')].some(p => p.checkVisibility()); })()`));
@@ -149,7 +149,7 @@ await runChecks(browser, async () => {
   let grid = await cells();
   check('the grid has one row per design and one column per corner, plus the verdict', grid.length === 3 && grid.every(r => r.length === 7), JSON.stringify(grid.map(r => r.length)));
   check('finished corners say pass / FAIL with the spec and its value; the corner in flight says running', grid[0].slice(1, 6).every(c => c === 'pass')
-    && grid[1][3] === 'FAIL supply_power_w 2.6 \u00b5W' && grid[1][4] === 'running...' && grid[2][2] === '-' && grid[0][6] === 'checking...', JSON.stringify(grid[1]));
+    && grid[1][3] === 'FAIL supply_power_w 2.6 uW' && grid[1][4] === 'running...' && grid[2][2] === '-' && grid[0][6] === 'checking...', JSON.stringify(grid[1]));
   check('the check is read again while it works', await waitFor(() => (sim.statusReads[C1] ?? 0) >= 3, 50), String(sim.statusReads[C1]));
   sim.failStatus = true;
   await evaluate(`${BUTTON('Refresh')}.click()`);
@@ -171,7 +171,7 @@ await runChecks(browser, async () => {
   check('a MOCK check says nothing about a cell', !(await text()).includes('cell'));
   check('the worst values are folded', await evaluate(`(() => { const d = [...document.querySelectorAll('.corner-result details')][0]; return !!d && !d.open; })()`));
   await evaluate(`[...document.querySelectorAll('.corner-result details')][0].open = true`);
-  check('... and list each spec with its corner', await until(`[...document.querySelectorAll('.corner-result details table tbody tr')].some(r => r.textContent.includes('supply_power_w') && r.textContent.includes('1.65 \u00b5W') && r.textContent.includes('ff_cold_high'))`));
+  check('... and list each spec with its corner', await until(`[...document.querySelectorAll('.corner-result details table tbody tr')].some(r => r.textContent.includes('supply_power_w') && r.textContent.includes('1.65 uW') && r.textContent.includes('ff_cold_high'))`));
   await shot('corners-3-done.png');
 
   // ---- a REAL circuit: the budget question first (no = nothing sent), then the connection question --------------------------------------------

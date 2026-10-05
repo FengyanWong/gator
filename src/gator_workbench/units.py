@@ -98,3 +98,80 @@ def scale_to_canonical(value: float, unit: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise UnitError('Only finite numbers can be converted')
     return float(value) * _LOOKUP[unit][1]
+
+
+# ---------------------------------------------------------------------- the written form of a quantity (record 7.208)
+# One way of writing a quantity in the whole workbench (user: "a unified way of unit representation in the parameters probes
+# and specs windows considering the convenience usage of users", chose "Prefix per value"): the number, an SI prefix and the
+# unit, as Virtuoso's forms write them - 1.2 um, 45 nm, 9.535 kohm, 400 uA, 100 MHz, -30 dB, 60 deg. In English letters only
+# (user: "dont use greek characters for unit, use english letters instead"): u for micro, ohm, deg; the Greek spellings
+# (µm, kΩ, °) are still read. The digits are the stored number's own, moved and never computed. The page writes and reads
+# quantities with the same table (`written_forms`, sent with /api/schema); stored numbers and units never change.
+PREFIXABLE = {'m', 'F', 'ohm', 'H', 'V', 'A', 'W', 'J', 'Hz', 's', 'Vrms', 'V/s', 'Hz/V', 'V/sqrt(Hz)', 'A/sqrt(Hz)', 'V/A'}
+SYMBOLS = {'Ohm': 'ohm', 'Ω': 'ohm', 'degree': 'deg', '°': 'deg', 'C': 'degC', '°C': 'degC', '1': '', 'ratio': '', 'unitless': '',
+           '': '', 'count': '', 'fixture': ''}
+QUANTITIES = {'m': 'a length', 'F': 'a capacitance', 'ohm': 'a resistance', 'H': 'an inductance', 'V': 'a voltage',
+              'A': 'a current', 'W': 'a power', 'J': 'an energy', 'Hz': 'a frequency', 's': 'a time', 'deg': 'an angle',
+              'rad': 'an angle', 'dB': 'a level in dB', 'dBc/Hz': 'a phase noise', 'V/sqrt(Hz)': 'a voltage noise density',
+              'A/sqrt(Hz)': 'a current noise density', 'V^2/Hz': 'a noise power density', 'Vrms': 'an rms voltage',
+              'V/s': 'a slew rate', 'Hz/V': 'a tuning gain', 'V/V': 'a voltage ratio', 'V/A': 'a regulation in V/A',
+              '%': 'a percentage', 'count': 'a count', '1': 'a plain number', 'degC': 'a temperature', 'fixture': 'a fixture value'}
+_PREFIXES = {-18: 'a', -15: 'f', -12: 'p', -9: 'n', -6: 'u', -3: 'm', 0: '', 3: 'k', 6: 'M', 9: 'G', 12: 'T'}
+
+
+def written_forms() -> dict:
+    """The table the page writes and reads quantities with: every accepted spelling -> [canonical, factor, offset], the
+    canonical units that take an SI prefix, how a unit is written (Ω as ohm), what quantity it is, and the unit of each
+    parameter kind."""
+    return dict(spellings={spelling: list(rule) for spelling, rule in sorted(_LOOKUP.items())}, prefixable=sorted(PREFIXABLE),
+                symbols=SYMBOLS, quantities=QUANTITIES,
+                # the unit a parameter of these names is sized in (w and l lengths, m and nf counts...): the editors have no
+                # Unit column for Parameters since record 7.208, so this decides what a value typed in such a row must be
+                kinds={name: unit for name, unit in PARAMETER_KIND_UNITS.items() if unit})
+
+
+def symbol(unit: str) -> str:
+    """How a unit is written, in English letters: Ω as ohm, ° as deg; a plain number or a count without one."""
+    return SYMBOLS.get(unit, unit)
+
+
+def _join(number: str, written: str) -> str:
+    return f'{number} {written}' if written else number
+
+
+def _shortest(value: float) -> str:
+    text = repr(float(value))
+    return text[:-2] if text.endswith('.0') else text
+
+
+def text(value, unit: str | None) -> str:
+    """A stored number of a row in `unit`, written the one way: 4.5e-7 in m as 450 nm, 0.6 in um as 600 nm, 0.0004 in A as
+    400 uA, 1e8 in Hz as 100 MHz, -30 in dB as -30 dB. Not a number: as it is."""
+    from decimal import Decimal
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return '' if value is None else str(value)
+    unit = unit or ''
+    rule = _LOOKUP.get(unit)
+    if rule is None or rule[0] not in PREFIXABLE or rule[2] != 0.0:
+        return _join(_shortest(value), symbol(unit) if rule is None or rule[1] == 1.0 else unit)
+    canonical, factor, _offset = rule
+    shift = round(math.log10(factor))
+    if abs(10.0 ** shift - factor) > 1e-12 * factor:
+        return _join(_shortest(value), unit)
+    if value == 0:                                             # in the row's own prefix: 0 um
+        return _join('0', f'{_PREFIXES.get(shift, "")}{symbol(canonical)}')
+    sign, digits, exponent = Decimal(_shortest(abs(value))).normalize().as_tuple()
+    digits = ''.join(map(str, digits))
+    exponent += shift
+    lead = exponent + len(digits) - 1
+    if not -18 <= lead < 15:                                   # beyond the prefixes: the exponent form, in the canonical unit
+        number = f'{digits[0]}{"." + digits[1:] if len(digits) > 1 else ""}e{lead}'
+        return _join(f'{"-" if value < 0 else ""}{number}', symbol(canonical))
+    prefix = lead // 3 * 3
+    moved = exponent - prefix
+    if moved >= 0:
+        number = digits + '0' * moved
+    else:
+        point = len(digits) + moved
+        number = f'{digits[:point]}.{digits[point:]}' if point > 0 else f'0.{"0" * -point}{digits}'
+    return _join(f'{"-" if value < 0 else ""}{number}', f'{_PREFIXES[prefix]}{symbol(canonical)}')

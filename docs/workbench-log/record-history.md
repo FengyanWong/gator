@@ -303,3 +303,5 @@ One row per commit, newest last.
 | `d34573c` | 10-05 22:13 | 7.215 | key numbers per run in the Training tab; "Can continue" checks that a save point exists (session "Training tab with live graphs") |
 | `223cca9` | 10-05 22:14 | - | record only: names the commits of records 7.212, 7.213 and 7.215, the Live line of 7.212, and the table rows for 8d90167, 7df7728, c928f9d and d34573c |
 | `372c8da` | 10-05 23:00 | 7.218 | fewer boxes inside boxes: a callout inside a panel, the header or a window drawn by a rule at its left without a frame, only a status keeping its faint fill, no rule for a callout inside a callout; 3 nested boxes on the page -> 1 (a field) |
+| `7bafccd` | 10-05 23:01 | - | record only: names the commit of record 7.218, and the table rows for 223cca9 and 372c8da |
+| `4258714` | 10-05 23:21 | 7.211 | calibration on Spectre did not help on mscr_ota7t (Graph Transformer starting preset, two seeds per arm); a Baseline simulation on the six other MScR tasks; docs only (session "Single baseline simulation merge", committed by "Virtuoso read whole flow") |

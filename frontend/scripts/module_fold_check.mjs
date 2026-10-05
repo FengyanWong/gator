@@ -52,7 +52,7 @@ await runChecks(browser, async () => {
   const RUN = panel('Run configuration'), OUTPUT = panel('Output settings'), RESEARCH = `[...document.querySelectorAll('.right .panel')][2]`;
   const fold = p => `${p}.querySelector('details.module')`;
   const MODE = `[...${RUN}.querySelectorAll('label')].find(l => l.firstChild?.textContent?.trim() === 'Mode')?.querySelector('select')`;
-  const BUDGET_BOX = `[...${RUN}.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent.trim() === 'Evaluation budget (max_evaluations)')?.querySelector('input')`;
+  const BUDGET_BOX = `[...${RUN}.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent.trim() === 'Evaluation budget')?.querySelector('input')`;
   const state = p => evaluate(`(() => { const d = ${fold(p)}, s = d.querySelector(':scope > summary'); return { open: d.open, heading: s.querySelector('h3').textContent,
     line: s.querySelector('.module-summary')?.textContent ?? null, title: s.querySelector('.module-summary')?.title ?? null,
     attention: s.querySelector('.module-attention')?.textContent ?? null, kind: s.querySelector('.module-attention')?.className ?? null,

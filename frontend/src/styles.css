@@ -75,6 +75,33 @@ button.primary { background: var(--accent-fill); color: var(--on-accent); border
 table.grid { border-collapse: collapse; width: 100%; } table.grid th, table.grid td { border: 1px solid var(--line); padding: 2px 5px; text-align: left; vertical-align: top; white-space: nowrap; }
 table.grid th { background: var(--head); position: sticky; top: 0; cursor: help; font-weight: 400; font-family: var(--f-label); letter-spacing: .02em; } table.grid.small td { white-space: normal; word-break: break-word; }
 table.editor td { padding: 0; } table.editor td input, table.editor td select { border: none; min-width: 84px; background: transparent; }
+/* record 7.182 (user: "move the conection button to the header"): the Connection button as a cell of the header's title block -
+   its name over the connection and its state, like the cells beside it; a message of the button floats under it. */
+header .connection-launcher { position: relative; display: flex; margin: 0; padding: 0; border: none; border-radius: 0; background: none; box-shadow: none; }
+header button.connection-button { width: auto; display: grid; grid-template-columns: auto auto; align-items: center; gap: 3px 7px; padding: 0 12px;
+  border: none; border-left: 1px solid var(--rule); border-radius: 0; background: none; text-align: left; }
+header button.connection-button:hover { background: var(--hover); }
+header .connection-button-name { grid-column: 1 / -1; font: 600 8.5px/1 var(--f-label); letter-spacing: .17em; text-transform: uppercase; color: var(--muted); }
+header .connection-button-what { order: 0; flex: none; font: 12.5px/1.15 var(--f-mono); color: var(--text); max-width: 26ch; white-space: nowrap; }
+header .connection-button .badge { order: 0; font-size: 9.5px; padding: 0 5px; }
+header .connection-launcher > p { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; width: max-content; max-width: 440px; margin: 0;
+  padding: 4px 8px; background: var(--bad-bg); border: 1px solid var(--bad-line); }
+/* record 7.182 (design advice: keep the ID column in view): the tick box and the row's ID stay at the left while a table scrolls
+   sideways - the ID at the tick-box column's own width (--sel-w, measured by the page); behind them the panel's colour, which a
+   zebra or an error row paints over. */
+/* Lines drawn by each cell (right and bottom; the first column and the head row also left and top) instead of collapsed ones:
+   a collapsed line stays with the columns passing under a sticky cell, and their text showed through the cell's edges. */
+table.editor { border-collapse: separate; border-spacing: 0; }
+table.editor th, table.editor td { border-width: 0 1px 1px 0; }
+table.editor tr > :first-child { border-left-width: 1px; } table.editor thead th { border-top-width: 1px; }
+table.editor th.sel, table.editor td.sel { position: sticky; left: 0; z-index: 2; }
+table.editor :is(th, td):is([data-field="variable_id"], [data-field="measurement_id"], [data-field="metric_id"]) { position: sticky; left: var(--sel-w, 0px); z-index: 2; }
+table.editor thead th:is(.sel, [data-field="variable_id"], [data-field="measurement_id"], [data-field="metric_id"]) { z-index: 4; }
+:where(table.editor) :where(td.sel, td[data-field="variable_id"], td[data-field="measurement_id"], td[data-field="metric_id"]) { background: var(--panel); }
+/* While columns pass under the ID, a line and a soft shadow mark its edge: the border it shared went with the column that passed. */
+.scroll.scrolled-x > table.editor :is(th, td):is([data-field="variable_id"], [data-field="measurement_id"], [data-field="metric_id"])::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 100%; width: 5px; border-left: 1px solid var(--rule); pointer-events: none;
+  background: linear-gradient(to right, rgb(0 0 0 / .1), transparent); }
 /* record 7.180 (design advice: content-sized columns): an ID wide enough to read, a leader's name too, a unit narrow; the other
    columns keep the 84 px every editor box has. */
 table.editor td[data-field="variable_id"] input, table.editor td[data-field="measurement_id"] input, table.editor td[data-field="metric_id"] input { min-width: 140px; }

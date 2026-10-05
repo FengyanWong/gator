@@ -181,12 +181,12 @@ await runChecks(browser, async () => {
   await sleep(600);
   const numeric = name => `[...document.querySelectorAll('.right label')].find(l => l.firstChild?.textContent?.trim() === ${JSON.stringify(name)})?.querySelector('input')`;
   const beforeUnrelated = asked.length;
-  await page.setValue(numeric('Evaluation budget (max_evaluations)'), '123');
+  await page.setValue(numeric('Evaluation budget'), '123');
   const renamed = await page.setValue(`document.querySelector('.right input.model-label')`, 'fixture-renamed', { event: 'input' });
   check('the RL model label box is found and renamed (the project name box until record 7.159)', renamed === 'fixture-renamed', String(renamed));
   await sleep(800);
   check('budget and model label edits do not re-inspect the checkpoint', asked.length === beforeUnrelated, `${beforeUnrelated} -> ${asked.length}`);
-  await page.setValue(numeric('Random seed (target task)'), '19');
+  await page.setValue(numeric('Random seed'), '19');
   check('a contract-affecting seed edit still refreshes compatibility', await (async () => {
     for (let i = 0; i < 30 && asked.length === beforeUnrelated; i++) await sleep(100);
     return asked.length > beforeUnrelated;

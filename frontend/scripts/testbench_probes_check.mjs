@@ -116,7 +116,7 @@ try {
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   for (let i = 0; i < 100 && !(await evaluate(`!!(${COLUMN_BUTTON('Reload saved values')})`)); i++) await sleep(100);
-  for (let i = 0; i < 60 && !(await evaluate(`/\\S/.test(document.querySelector('.left button.connection-button .connection-button-what')?.textContent.replace(/none (selected|set up yet)/, '') ?? '')`)); i++) await sleep(100);
+  for (let i = 0; i < 60 && !(await evaluate(`/\\S/.test(document.querySelector('header button.connection-button .connection-button-what')?.textContent.replace(/none (selected|set up yet)/, '') ?? '')`)); i++) await sleep(100);
   await sleep(800);
 
   // ---- a registered task's rows first: the MOCK starter (its Probe m_score, its target score) -------------------------

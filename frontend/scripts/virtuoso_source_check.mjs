@@ -196,7 +196,7 @@ try {
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   // The connection in use is named on the one "Connection" button of the left column (its window is not needed here).
-  for (let i = 0; i < 60 && !(await evaluate(`/\\S/.test(document.querySelector('.left button.connection-button .connection-button-what')?.textContent.replace(/none (selected|set up yet)/, '') ?? '')`)); i++) await sleep(100);
+  for (let i = 0; i < 60 && !(await evaluate(`/\\S/.test(document.querySelector('header button.connection-button .connection-button-what')?.textContent.replace(/none (selected|set up yet)/, '') ?? '')`)); i++) await sleep(100);
   await sleep(800);
   check('nothing is read from Virtuoso when the page opens', calls.length === 0, ops().join(' | '));
 

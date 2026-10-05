@@ -1,5 +1,5 @@
 import { Icon } from './Icons';
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { pointAt } from './CircuitPicture';
 import { api, Json, saveJson } from '../api';
 import { migrateConfig } from '../store';
@@ -203,6 +203,20 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const [openTies, setOpenTies] = useState<Record<string, boolean>>({});
   const [pasted, setPasted] = useState<{ text: string; warn: boolean } | null>(null);
   const table = useRef<HTMLTableElement>(null);
+  // The row's ID stays in view beside the tick box while the table scrolls sideways (record 7.182): it sticks at the tick-box
+  // column's own width - which a tie toggle widens on Parameters, and a narrower window can change without a new render - and a
+  // line marks its edge while columns pass under it.
+  const markScrolled = (box: HTMLElement | null | undefined) => box?.classList.toggle('scrolled-x', box.scrollLeft > 0);
+  useLayoutEffect(() => {
+    markScrolled(table.current?.parentElement);
+    const sel = table.current?.querySelector('thead th.sel');
+    if (!sel) return;
+    const measure = () => table.current?.style.setProperty('--sel-w', `${sel.getBoundingClientRect().width}px`);
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(sel);
+    return () => watch.disconnect();
+  });
   // `signal` holds a Maestro output's expression (ymax(VT("/OUT")), getData(... ?result "stb")): "signal" read like a
   // net name (review of 2026-10-03). For a profile metric it is a label of what is measured.
   const columns: Json[] = schema.editors[tab].map((c: Json) => tab === 'measurements' && c.name === 'signal' ? { ...c, label: 'Expression' }
@@ -513,7 +527,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         {(pending.diff.length > 0 || !pending.others.length) && <DiffView diff={pending.diff} />}</div>}
       <FormulaBar cell={barCell} commit={commitBar} back={backToCell} />
       {pasted && <p className={`${pasted.warn ? 'warn' : 'hint'} paste-note`}>{pasted.text}</p>}
-      <div className="scroll">
+      <div className="scroll" onScroll={e => markScrolled(e.currentTarget)}>
         <table className="grid editor" ref={table}>
           <thead><tr><th className="sel"></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
           <tbody onKeyDown={onTableKey} onPaste={onTablePaste}>{rows.map((row, index) => {

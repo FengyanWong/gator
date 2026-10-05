@@ -56,7 +56,7 @@ await runChecks(browser, async () => {
   check('...and folds it again', await page.until(FOLDED, 30));
 
   // ---- Run configuration as a property sheet ----------------------------------------------------------------------------------------
-  const sheet = await evaluate(`[${['Concurrent Spectre jobs', 'Evaluation budget (max_evaluations)', 'Random seed (target task)'].map(LABEL).join(', ')}].map(l => {
+  const sheet = await evaluate(`[${['Concurrent Spectre jobs', 'Evaluation budget', 'Random seed'].map(LABEL).join(', ')}].map(l => {
     if (!l) return null; const t = l.querySelector('span').getBoundingClientRect(), i = l.querySelector('input').getBoundingClientRect();
     return { name: l.firstChild.textContent.trim(), sameLine: Math.abs((t.top + t.bottom) / 2 - (i.top + i.bottom) / 2) < 6, boxAtRight: i.left > t.right - 1, box: Math.round(i.width) }; })`);
   check('a number\'s label and its box are on one line, the box at the right', sheet.every(s => s && s.sameLine && s.boxAtRight && s.box < 120), JSON.stringify(sheet));

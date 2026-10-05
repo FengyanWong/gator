@@ -131,6 +131,11 @@ export function App() {
   });
   const { value: polledStatus, error: statusError } = usePolling(signal => readStatus(runDir!, signal), statusEvery, !!runDir, [runDir]);
   const status = polledStatus?.run_dir === runDir ? polledStatus : null;
+  // Corner check only where corners can be used (record 7.182, design advice): the loaded circuit simulates at corners, or the run
+  // shown is MOCK (its corners are analytic). No registered circuit does since 2026-09-30 (record 7.128); the tab comes back by
+  // itself with one that does.
+  const cornersUsable = circuit?.training_capabilities?.corners === true || !!status?.manifest?.mock;
+  useEffect(() => { if (tab === 'corners' && !cornersUsable) setTab('status'); }, [tab, cornersUsable]);
   const isReal = circuit?.loaded && circuit.mock === false;
   // The run the header buttons act on (Start -> Pause -> Resume, Abort). It is not the run the bottom tabs show.
   const [looked, setLooked] = useState(false);
@@ -264,6 +269,9 @@ export function App() {
             <b>GATOR</b><span className="tb-sub">workbench</span></span>
           <LookSwitch />
           <span className="tb-facts" ref={setTitleSlot} />
+          {/* The Connection button in the title block (record 7.182, user: "move the conection button to the header"): its name
+              over the connection and its state, as the cells beside it; it opens the connection window as before. */}
+          <ConnectionButton profileId={profileId} setProfileId={(id, record) => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }), record)} />
         </div>
         {/* The hand-edited settings.json is not valid JSON: the backend works on defaults and leaves the file alone. Said on a
             line of its own under the header, as /api/meta said it when the page opened - never hidden, not dismissable. */}
@@ -285,7 +293,6 @@ export function App() {
           : <>{message.text}{(message.detail?.code || message.detail?.report) && <details onClick={e => e.stopPropagation()}><summary>Technical details</summary>
             <pre>{[message.detail.code && `code: ${message.detail.code}`, message.detail.report && JSON.stringify(message.detail.report, null, 1)].filter(Boolean).join('\n')}</pre></details>}</>}</div>}
       <aside className="left">
-        <ConnectionButton profileId={profileId} setProfileId={(id, record) => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }), record)} />
         <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId}
           onAgent={requestAgent} taskSlot={taskSlot} taskNotes={taskNotes} titleSlot={titleSlot}
           taskEpoch={taskEpoch} />
@@ -309,7 +316,7 @@ export function App() {
               conversation into a window of its own. Two sibling buttons in one tab shape - a button inside a button is not valid. */}
           <span className={`tab-group${tab === 'agent' ? ' active' : ''}${agentDetached ? ' detached' : ''}`}>
             <button onClick={() => { setTab('agent'); unfold(); }}>Agent</button><span className="tab-slot" ref={setAgentTabSlot} /></span>
-          {(['status', 'logs', 'data', 'files', 'corners'] as Exclude<BottomTab, 'agent'>[]).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); unfold(); }}>
+          {(['status', 'logs', 'data', 'files', 'corners'] as Exclude<BottomTab, 'agent'>[]).filter(t => t !== 'corners' || cornersUsable).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); unfold(); }}>
             {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', corners: 'Corner check' }[t]}</button>)}
           <span className="spacer" />
           <RunListButton runs={runs} runsError={runsError} runDir={runDir} status={status} onChoose={dir => { setRunDir(dir); if (dir) unfold(); }} onRefresh={refreshRuns} />
@@ -321,7 +328,7 @@ export function App() {
           {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
           {tab === 'data' && <DataTab runDir={runDir} status={status} />}
           {tab === 'files' && <FilesTab runDir={runDir} />}
-          {tab === 'corners' && <CornerCheckTab runDir={runDir} />}
+          {tab === 'corners' && cornersUsable && <CornerCheckTab runDir={runDir} />}
         </div>
       </footer>
     </div>

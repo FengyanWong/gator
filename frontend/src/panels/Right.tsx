@@ -366,9 +366,9 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
           onChange={e => set({ model_label: e.target.value.trim() ? e.target.value : null })} /></label>
       <Num label="Concurrent Spectre jobs" disabled={llmOnly} value={run.concurrency} onChange={v => set({ concurrency: v })} title="Independent simulation jobs at once. NOT the thread count of one simulation." />
       {circuit?.max_concurrency && run.concurrency > circuit.max_concurrency && <p className="error">This task supports at most {circuit.max_concurrency} jobs.</p>}
-      <Num label="Evaluation budget (max_evaluations)" value={run.max_evaluations} onChange={v => set({ max_evaluations: v })}
+      <Num label="Evaluation budget" value={run.max_evaluations} onChange={v => set({ max_evaluations: v })}
         title="NEW candidate evaluations that may START in the whole run, shared by all workers. Baselines, warm-up and failures count. Episode resets do not reset it." />
-      <Num label="Random seed (target task)" value={run.seed} onChange={v => set({ seed: v })} title="Seed of THIS run. The source model's pretraining seed is recorded separately." />
+      <Num label="Random seed" value={run.seed} onChange={v => set({ seed: v })} title="Seed of THIS run. The source model's pretraining seed is recorded separately." />
       <Check label="Stop at the first feasible design" value={run.stop_at_first_feasible} onChange={v => set({ stop_at_first_feasible: v })} />
       {/* The limits a run seldom changes, in one fold (record 7.179, design advice 2): the caps on launches, retries and wall
           time with the two consecutive-failure rules (7.150's "Failure limits"). Its line names the ones that are set. */}
@@ -383,8 +383,10 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
             + 'designs break may need a higher limit (1-1000).'} />
       </details>
       <h3>Reward and conditions</h3>
-      {/* From Nominal only, every corner is planned; between the two corner policies the corners chosen stay chosen. */}
-      <label>Training conditions<select value={run.conditions?.policy ?? 'off'} onChange={e => set({ conditions: {
+      {/* From Nominal only, every corner is planned; between the two corner policies the corners chosen stay chosen. Shown where
+          corners can be used, or while a saved configuration asks for them (record 7.182): with nothing but Nominal only to choose,
+          the choice and its launch table said nothing. */}
+      {(supportsCorners || robust) && <><label>Training conditions<select value={run.conditions?.policy ?? 'off'} onChange={e => set({ conditions: {
         policy: e.target.value, corners: e.target.value === 'off' ? [] : !robust || !corners.length ? cornerIds : corners } })}>
         <option value="off">Nominal only</option><option value="after_nominal" disabled={!supportsCorners}>Corners after nominal passes</option><option value="always" disabled={!supportsCorners}>Every planned corner</option></select></label>
       {robust && <div className="training-corners">
@@ -398,7 +400,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         <tr><td>Launches / step</td><td>{gated ? `1 per design that fails nominal, 1 + ${corners.length} per design that passes` : launchesPerStep}</td></tr>
         <tr><td>Launches / reset</td><td>1</td></tr>
         <tr><td>Launch cap</td><td>{run.max_spectre_launches ?? (robust ? 'Required' : 'Not set')}</td></tr>
-      </tbody></table>
+      </tbody></table></>}
       {robust && !supportsCorners && <p className="error">Training corners require the registered real OTA7 task.</p>}
       {robust && (run.max_spectre_launches == null || run.max_spectre_launches < 1) && <p className="error">A positive launch cap is required for training corners.</p>}
       {robust && (run.max_retries ?? 0) !== 0 && <p className="error">Training corners require zero automatic retries.</p>}

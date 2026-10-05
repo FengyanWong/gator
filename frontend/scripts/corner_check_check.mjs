@@ -113,6 +113,8 @@ await runChecks(browser, async () => {
   await page.seed({ config: CONFIG, run: DIR, when: 'once' });
   await send('Page.navigate', { url: APP });
   if (!(await until(`!!document.querySelector('footer .tabs')`, 150))) throw new Error('the page never showed its bottom tabs: ' + JSON.stringify(await evaluate(`document.body.innerText.slice(0, 300)`)));
+  // the tab is offered where corners can be used: a MOCK run is (record 7.182), once its status has come
+  await until(`[...document.querySelectorAll('footer .tabs > button')].some(b => b.textContent === 'Corner check')`, 60);
   const tabs = await evaluate(`[...document.querySelectorAll('footer .tabs > button')].map(b => b.textContent)`);
   if (!tabs.includes('Corner check')) throw new Error(`this page has no "Corner check" tab (${tabs.join(', ')}): the served frontend is older than it (npm run build, then reload)`);
 

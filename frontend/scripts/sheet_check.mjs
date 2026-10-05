@@ -8,7 +8,10 @@
 //     Shift+Enter up; a list keeps its own keys;
 //   - a block pasted from Excel (tab-separated lines) fills the rows in view from the cell down and the columns from it right,
 //     as one Undo step; a text a column cannot read is named and left as it was; lines below the last row are named; cells
-//     that a leader decides are kept.
+//     that a leader decides are kept;
+//   - (record 7.182) the tick box and the row's ID stay at the left while the table scrolls sideways, the ID right beside the
+//     tick box on Parameters (whose tick-box column a tie toggle widens) and on Specs (a narrow one), also when that column
+//     changes size with no new render; nothing covers them, and nothing passing under shows through them.
 // Run: bash frontend/scripts/run_checks.sh --only sheet_check. About 20 s.
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
@@ -108,6 +111,54 @@ await runChecks(browser, async () => {
     await page.setValue(BOX(metre, 'unit'), 'um', { event: 'input' }); await sleep(300);
     check('a bound of a row in a prefixed unit (um) reads as stored', (await evaluate(`${BOX(metre, 'lower')}.value`)) === '4.5e-7', await evaluate(`${BOX(metre, 'lower')}.value`));
   } else check('the task has a bound in metres to read', false, JSON.stringify(config.parameters.map(p => [p.unit, p.lower])));
+
+  // ---- the tick box and the row's ID in view while the table scrolls sideways (record 7.182) -------------------------------------------
+  for (const [tab, id] of [['parameters', 'variable_id'], ['targets', 'metric_id']]) {
+    await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.dataset.editor === '${tab}').click()`); await sleep(400);
+    // the table's box made narrower than the table, as on a small screen, and scrolled to its right end
+    await evaluate(`document.querySelector('section.editors .scroll').style.maxWidth = '420px'`); await sleep(300);
+    await evaluate(`(() => { const box = document.querySelector('section.editors .scroll'); box.scrollLeft = box.scrollWidth; })()`); await sleep(300);
+    const seen = await evaluate(`(() => { const box = document.querySelector('section.editors .scroll');
+      const edge = box.getBoundingClientRect().left + box.clientLeft, row = [...box.querySelectorAll('tbody > tr')].find(tr => !tr.hidden);
+      const tick = box.querySelector('thead th.sel').getBoundingClientRect(), head = box.querySelector('thead th[data-field="${id}"]').getBoundingClientRect();
+      const cell = row.querySelector('td[data-field="${id}"]'), c = cell.getBoundingClientRect(), t = row.querySelector('td.sel input').getBoundingClientRect();
+      const at = r => document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { scrolled: box.scrollLeft, tick: Math.round(tick.width), tickAt: +(tick.left - edge).toFixed(1), idAt: +(head.left - tick.right).toFixed(1),
+        cellAt: +(c.left - tick.right).toFixed(1), idOnTop: cell.contains(at(c)), tickOnTop: at(t) === row.querySelector('td.sel input'),
+        edge: getComputedStyle(cell, '::after').content !== 'none' }; })()`);
+    const name = tab === 'parameters' ? 'Parameters' : 'Specs';
+    check(`${name} scrolled sideways: the tick box stays at the left, the row's ID right beside it, neither covered`,
+      seen.scrolled > 50 && Math.abs(seen.tickAt) < 1.5 && Math.abs(seen.idAt) < 1.5 && Math.abs(seen.cellAt) < 1.5 && seen.idOnTop && seen.tickOnTop, JSON.stringify(seen));
+    // nothing passing under shows through the sticky heads: the tick-box head and its line with the ID, empty, have no text
+    // pixels (a collapsed table drew that line with the scrolled columns and let their text through its sliver)
+    let dark = 0;
+    for (const back of [0, 13, 29, 47]) {                  // at four places, so that some text is under the line whatever its widths
+      await evaluate(`(() => { const box = document.querySelector('section.editors .scroll'); box.scrollLeft = box.scrollWidth - box.clientWidth - ${back}; })()`); await sleep(150);
+      const clip = await evaluate(`(() => { const s = document.querySelector('thead th.sel').getBoundingClientRect(), i = document.querySelector('thead th[data-field="${id}"]').getBoundingClientRect();
+        return { x: s.left, y: s.top, width: i.left + 4 - s.left, height: s.height - 3, scale: 1 }; })()`);
+      const { data } = await send('Page.captureScreenshot', { format: 'png', clip });
+      dark += await evaluate(`(async () => { const img = new Image(); img.src = 'data:image/png;base64,${data}'; await img.decode();
+        const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+        const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (0.3 * d[k] + 0.59 * d[k + 1] + 0.11 * d[k + 2] < 110) n++; return n; })()`);
+    }
+    check(`...and nothing passing under shows through the tick-box head or its line with the ID (${name})`, dark === 0, `${dark} text pixels at four scroll places`);
+    if (tab === 'parameters') await page.shot(path.join(out, 'sheet-2-scrolled.png'), `document.querySelector('.editors')`, { maxHeight: 600 });
+    await evaluate(`document.querySelector('section.editors .scroll').scrollLeft = 0`); await sleep(300);
+    const back = await evaluate(`getComputedStyle([...document.querySelectorAll('table.editor tbody > tr')].find(tr => !tr.hidden).querySelector('td[data-field="${id}"]'), '::after').content`);
+    check(`...and a line marks the ID's edge only while columns pass under it (${name})`, seen.edge && back === 'none', JSON.stringify({ scrolled: seen.edge, back }));
+    if (tab === 'parameters') {                             // the tick-box column changing size with no new render, as in a narrower window
+      const beside = () => evaluate(`(() => { const box = document.querySelector('section.editors .scroll'); box.scrollLeft = box.scrollWidth;
+        const tick = box.querySelector('thead th.sel').getBoundingClientRect(), id = box.querySelector('thead th[data-field="${id}"]').getBoundingClientRect();
+        return [Math.round(tick.width), +(id.left - tick.right).toFixed(1)]; })()`);
+      await evaluate(`document.querySelector('thead th.sel').style.minWidth = '64px'`); await sleep(300);
+      const wide = await beside();
+      await evaluate(`document.querySelector('thead th.sel').style.minWidth = ''`); await sleep(300);
+      const narrow = await beside();
+      check('...and the ID follows the tick-box column when it changes size without a new render', wide[0] >= 64 && narrow[0] < 64
+        && Math.abs(wide[1]) < 1.5 && Math.abs(narrow[1]) < 1.5, JSON.stringify({ wide, narrow }));
+    }
+    await evaluate(`document.querySelector('section.editors .scroll').style.maxWidth = ''`);
+  }
 
   reportRefused(page.refused, NEVER_ASKED_OR_SAVED);
   check('no console error', !consoleErrors.length, consoleErrors.slice(0, 3).join(' | '));

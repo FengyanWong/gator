@@ -210,10 +210,12 @@ and after, pixel for pixel (the seventh, the Runs window, differs only in its "r
 do). The fonts are Windows' own, so nothing is downloaded: Bahnschrift for headings, tabs and table heads, Segoe UI for
 text, Consolas for numbers and ids. Another system shows its own fallbacks.
 
-**The title block.** The header names what the page works on: Task, Rev (the saved task's revision), Class · PDK and
-the RL model's label (record 7.159; its first cell was the project name until the user removed that box). They are
-read-only; the fields stay in their panels, and the circuit panel puts them in the header. The version and environment
-line moved into the tooltip of the name GATOR.
+**The title block.** The header names what the page works on: Rev (the saved task's revision), Class · PDK and the RL
+model's label (record 7.159; its first cell was the project name until the user removed that box). They are read-only;
+the fields stay in their panels, and the circuit panel puts them in the header. The version and environment line moved
+into the tooltip of the name GATOR. Since record 7.182 the **Connection** button is the block's last cell (user: "move the
+conection button to the header"), and the task name has left it (user: "remove the current task name on the header"):
+the Project column's Task list names the task.
 
 **The splitter above the bottom panel.** Drag the top edge of the bottom panel to give it more or less room;
 double-click it to fold the panel down to its tab line, and again to open it. From the keyboard: Tab to it, then the
@@ -424,6 +426,11 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   A cell, the formula bar and a pasted block take a number plain, with an exponent (2.5e-6) or an SI letter (2.5u, 400µ,
   10k, 1.5M); the formula bar shows the stored number. Exact both ways: the shortest digits of the number are moved, never
   computed, and "450n" is read as 450e-9.
+- **The ID in view** (record 7.182, design advice). While a table scrolls sideways the tick box and the row's ID stay at
+  the left and the other columns pass under them, a line marking the ID's edge while they do. The ID sits right beside the
+  tick-box column, whose width the page measures, also when a narrower window changes it: a tie toggle widens it on
+  Parameters, and on Probes and Specs it stays as narrow as the box. The editor tables draw their lines cell by cell
+  (each cell its right and bottom line), so the tick box and the ID carry theirs along and cover what passes under them.
 
 Browser check: `frontend/scripts/sheet_check.mjs`.
 
@@ -803,7 +810,9 @@ is **one button, "Connection"**, which names the connection in use, its kind and
 last test. Pressing it opens the **connection window** - a browser window of its own that holds
 everything described above (allow pop-ups for the page if the browser blocks it; the button then
 says so). Opening the window checks nothing; every rule above about button presses still holds.
-Closing the window loses nothing, and the button opens it again.
+Closing the window loses nothing, and the button opens it again. Since record 7.182 the button is the last cell of the
+header's title block (user: "move the conection button to the header"), in view whatever the columns show; the left
+column has none.
 
 A profile now says WHAT it connects to and HOW, with `"kind"`:
 
@@ -1053,6 +1062,12 @@ Browser check: `frontend/scripts/export_check.mjs` (real MOCK run; needs a scrat
 The **Corner check** tab (after Output files) simulates the shown run's best designs again at five fixed conditions and
 says, per design, whether it holds up. It is a check AFTER the optimization: nothing of it goes back into the run, its
 replay, its model or its best design.
+
+Since record 7.182 the tab is offered only where corners can be used (design advice: hide what the loaded task cannot
+use): the loaded circuit simulates at corners (the backend's `training_capabilities.corners`), or the shown run is a MOCK
+run. No saved real task does since 2026-09-30, so a real circuit shows no Corner check tab; the tab chosen when it goes
+away gives way to Run status. Run configuration's **Training conditions** choice and its launch table follow the same
+rule, and stay while a saved configuration still asks for corners, so that it can be set back to Nominal only.
 
 * **Which designs.** Recorded feasible designs first, identical widths counted once, ranked by the largest smallest
   margin under each spec's **Margin sides** setting. The real task reference is also eligible even when it fails nominal,

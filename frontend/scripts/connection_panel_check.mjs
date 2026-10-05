@@ -5,8 +5,9 @@
 // Virtuoso nor ngspice is contacted; any other writing request of the page is refused (reads pass). That makes it safe
 // against the live backend; it needs only the built page.
 // What it pins:
-//   * the connection block of the left column is ONE button, and pressing it opens the connection window (user request
-//     2026-09-21); the window is a second browser window, found by its title and driven over a second DevTools session;
+//   * the connection block is ONE button - in the left column until record 7.182, in the header's title block since (user:
+//     "move the conection button to the header") - and pressing it opens the connection window (user request 2026-09-21);
+//     the window is a second browser window, found by its title and driven over a second DevTools session;
 //   * the four kinds of connection - Virtuoso over SSH / on this machine, ngspice on this machine / over SSH - each with
 //     its own steps and wording, and "Add a connection" sending names only;
 //   * (user request 2026-09-24, status record 7.80) ONE interactive test of the connection in use when the page opens -
@@ -115,7 +116,7 @@ await runChecks(browser, async () => {
   // ---- the window: a second page, found by its title, with a DevTools session of its own ---------------------------
   const windowTarget = present => browser.window('GATOR - connection', { present, except: page.target.id });
   const attachTo = target => browser.attach(target, { errors: consoleErrors, prefix: 'window: ' });
-  const BUTTON = `document.querySelector('.left button.connection-button')`;
+  const BUTTON = `document.querySelector('header button.connection-button')`;
   const WINDOW = `document.querySelector('.connection-window')`;
   let far = null, farPage = null;
   const openWindow = async () => {
@@ -143,12 +144,12 @@ await runChecks(browser, async () => {
   await send('Page.navigate', { url: APP });
   await loaded();
 
-  // ---- the left column: ONE button ----------------------------------------------------------------------------------
-  const block = await evaluate(`(() => { const b = ${BUTTON}, panel = b?.closest('.panel'); return b ? { text: b.innerText.replace(/\\s+/g, ' ').trim(),
+  // ---- the header's title block: ONE button (record 7.182; the left column's first block until then) --------------------------
+  const block = await evaluate(`(() => { const b = ${BUTTON}, panel = b?.closest('.connection-launcher'); return b ? { text: b.innerText.replace(/\\s+/g, ' ').trim(),
     controls: panel.querySelectorAll('button, select, input, a, summary').length, headings: [...document.querySelectorAll('.left h3')].map(h => h.textContent.trim()),
-    height: Math.round(panel.getBoundingClientRect().height), first: panel === document.querySelector('.left').firstElementChild } : null; })()`);
-  check('the connection block of the left column is ONE button', !!block && block.controls === 1 && block.first, JSON.stringify(block));
-  check('it is called "Connection" and names the connection in use, its kind and the state the test made when the page opened found', !!block && /^Connection\s*lab - Virtuoso over SSH\s*OK$/.test(block.text), block?.text);
+    height: Math.round(panel.getBoundingClientRect().height), inTitleBlock: !!panel.closest('header .title-block'), leftHasNone: !document.querySelector('.left .connection-launcher') } : null; })()`);
+  check('the connection block is ONE button, in the header\'s title block, and the left column has none', !!block && block.controls === 1 && block.inTitleBlock && block.leftHasNone, JSON.stringify(block));
+  check('it is called "Connection" and names the connection in use, its kind and the state the test made when the page opened found', !!block && /^Connection\s*lab - Virtuoso over SSH\s*OK$/i.test(block.text), block?.text);
   check('the old panel (heading, steps, profile select) is gone from the column', !!block && !block.headings.some(h => /connection/i.test(h)) && block.height < 90, JSON.stringify(block));   // two lines of text; the old panel was > 300 px
   // Since 7.76 the Project column needs the connection list too (the family of the connection in use): a read of the
   // workbench's own file, no probe. Since 7.125 the button and the column share ONE read of it (api.ts).
@@ -159,7 +160,7 @@ await runChecks(browser, async () => {
   const opened = seen.find(s => s.method === 'POST');
   check('the test when the page opens is the interactive test of the connection in use, as a press sends it', JSON.stringify(opened?.body) === JSON.stringify({ profile_id: 'lab', scope: 'interactive', trigger: 'user' }), JSON.stringify(opened?.body));
   check('the button shows its result', (await evaluate(`${BUTTON}.querySelector('.badge').textContent`)) === 'OK', await evaluate(`${BUTTON}.querySelector('.badge').textContent`));
-  await shot('main', '.left', 'connection-1-left-column.png');
+  await shot('main', 'header', 'connection-1-header.png');
 
   // ---- pressing it opens the connection window; opening checks nothing ----------------------------------------------
   let mark = seen.length;
@@ -196,7 +197,7 @@ await runChecks(browser, async () => {
   check('the result shows the clock time of the test, not a running age', /^tested at \d/.test(testedHint) && !/ago|STALE|too old/.test(testedHint), testedHint);
   check('the result is shown (OK + the headline)', (await badge()) === 'OK' && (await text()).includes('FIXTURE: lab connected'), await badge());
   check('the CIW load line appears', (await text()).includes(`load("${SETUP}")`));
-  check('the button in the left column shows the new state too', (await evaluate(`${BUTTON}.querySelector('.badge').textContent`)) === 'OK');
+  check('the button in the header shows the new state too', (await evaluate(`${BUTTON}.querySelector('.badge').textContent`)) === 'OK');
   await shot('window', '.connection-window', 'connection-3-window-tested.png');
 
   mark = seen.length;

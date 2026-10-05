@@ -235,8 +235,8 @@ await runChecks(browser, async () => {
 
   // ---- the title block ------------------------------------------------------------------------------------------------------
   const facts = await evaluate(`Object.fromEntries([...document.querySelectorAll('header .tb-cell')].map(c => [c.querySelector('.tb-k').textContent, c.querySelector('.tb-v').textContent]))`);
-  check('the title block names the task, its revision, the class and PDK, and the RL model label (no project name: record 7.159)',
-    !('Project' in facts) && facts.Task === config.circuit.task_id && facts.Rev === '-' && facts['Class · PDK'] === `${config.circuit.circuit_class} · ${config.circuit.pdk_id}`
+  check('the title block names the revision, the class and PDK, and the RL model label (no project name: record 7.159; no task name: record 7.182)',
+    !('Project' in facts) && !('Task' in facts) && facts.Rev === '-' && facts['Class · PDK'] === `${config.circuit.circuit_class} · ${config.circuit.pdk_id}`
     && facts['RL model'] === config.project.task_name, JSON.stringify(facts));
   await page.setValue(`document.querySelector('.right input.model-label')`, 'ota5-gat-a', { event: 'input' });
   await sleep(200);

@@ -51,15 +51,16 @@ const copyQuestion = (r: Json) => `Work in ${r.library}/${r.cell} directly?\n\n`
   + 'So only read a COPY you made in Virtuoso (Library Manager: copy the cell and its testbench into a library of yours).\n\n'
   + `OK = ${r.library}/${r.cell} is such a copy: read it and work in it.\nCancel = read nothing.`;
 
-/** The header's title block (record 7.158): what the page works on, as a drawing names its subject - the task and its
- *  saved revision, the circuit's class and PDK labels, and the label the RL model is saved under (record 7.159: it took the
+/** The header's title block (record 7.158): what the page works on, as a drawing names its subject - the saved task's
+ *  revision, the circuit's class and PDK labels, and the label the RL model is saved under (record 7.159: it took the
  *  project name's place). Read-only; the fields themselves stay in their panels. */
 function TitleFacts({ config, revision }: { config: Json; revision: number | string | null }) {
   const ref = config.circuit;
-  const task = ref.source === 'registered_task' ? ref.task_id : ref.source === 'virtuoso' && ref.cell ? `${ref.library}/${ref.cell}` : null;
+  // No task name here (record 7.182, user: "remove the current task name on the header"): the Project column's Task list
+  // names it; the revision of the saved task stays.
   const model = config.run.search?.method === 'llm' ? 'none (LLM only)' : (config.run.model_label ?? '').trim() || config.project.task_name;
   const fact = (key: string, value: string, extra = '') => <span className={`tb-cell${extra}`}><span className="tb-k">{key}</span><span className="tb-v" title={value}>{value}</span></span>;
-  return <>{fact('Task', task || 'none chosen', ' tb-task')}{fact('Rev', revision == null ? '-' : String(revision), ' tb-rev')}
+  return <>{fact('Rev', revision == null ? '-' : String(revision), ' tb-rev')}
     {fact('Class · PDK', `${ref.circuit_class ?? 'unspecified'} · ${ref.pdk_id ?? 'unspecified'}`)}{fact('RL model', model, ' tb-model')}</>;
 }
 

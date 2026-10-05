@@ -85,7 +85,8 @@ try {
  await page.evaluate("document.querySelector('.reward-costs').scrollIntoView({block:'center'});document.querySelector('th[data-field=missing_is_failure]').scrollIntoView({block:'nearest',inline:'center'})",true);
  await page.shot(path.join(output,'reward-v21-controls.png'));
  canCorners=false;await page.send('Page.reload',{ignoreCache:true});
- check('backend capability disables corners even for OTA7 id',await page.until(`${control('Training conditions')}?.querySelector('option[value=after_nominal]')?.disabled===true`,150));
+ // Since record 7.182 a circuit without corners offers no Training conditions choice at all (it was Nominal only, the others greyed)
+ check('backend capability takes the corner choice away even for the OTA7 id',await page.until(`!${control('Training conditions')} && !document.querySelector('.reward-costs')`,150));
  // A genuinely new browser configuration uses B7; loading the saved fixture above retained its explicit fields.
  await page.evaluate("localStorage.removeItem('gator-workbench-config-v1')",true);await page.send('Page.reload',{ignoreCache:true});
  check('new configuration starts compressed/share 0.5',await page.until(`${control('Violation shape')}?.value==='compressed' && ${control('Worst hard-spec share','input')}?.value==='0.5'`,150));

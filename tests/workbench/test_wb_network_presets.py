@@ -72,13 +72,14 @@ def test_a_value_without_a_publication_is_the_gator_default_and_says_so():
         for name, field in preset['fields'].items():
             if field['basis'] in ('gator_default', 'gator_tested', 'gator_measured_with', 'not_used'):
                 assert field['value'] == flat[name], f'{encoder}.{name} claims the GATOR default but differs from it'
-            # compared and chosen on GATOR circuits (record 7.183): one of the three, saying what was measured; the other
-            # training values of those runs say that they are what the measurements were made with, not a compared optimum
-            assert (field['basis'] == 'gator_tested') == (name in presets.TESTED and field['source'] is None), (encoder, name)
-            measured_with = name in presets.LEARNED and name not in presets.TESTED and field['source'] is None
+            # compared and chosen on GATOR circuits (the three of record 7.183, the learning rate of record 7.199), saying
+            # what was measured; the other training values of those runs say that they are what the measurements were made
+            # with, not a compared optimum
+            assert (field['basis'] == 'gator_tested') == (name in presets.COMPARED and field['source'] is None), (encoder, name)
+            measured_with = name in presets.LEARNED and name not in presets.COMPARED and field['source'] is None
             assert (field['basis'] == 'gator_measured_with') == measured_with, (encoder, name)
             if field['basis'] in ('gator_tested', 'gator_measured_with'):
-                assert 'record 7.183' in field['note'], (encoder, name)
+                assert 'record 7.183' in field['note'] or 'record 7.199' in field['note'], (encoder, name)
             if field['basis'] == 'gator_measured_with':
                 assert 'The value the measurements of 2026-10-05 were made with' in field['note'], (encoder, name)
 
@@ -88,12 +89,14 @@ def test_every_preset_trains_with_the_values_of_the_runs_that_learned():
     then "All training numbers"): the network sizes stay published, every training value is the one of the runs that
     learned on GATOR circuits. A replaced published value is kept under `published` and named in the note."""
     legacy = presets.legacy_baseline()
-    assert presets.LEARNED == dict(presets.TESTED, batch_size=8, learning_rate=3e-4, warmup_transitions=8,
+    # record 7.199 (user: "use learning rate 1e-3 in the starting preset"): compared with 8 updates and discount 0, chosen
+    assert presets.LEARNED == dict(presets.TESTED, batch_size=8, learning_rate=1e-3, warmup_transitions=8,
                                    replay_capacity=10000, episode_length=4)
-    # besides the three compared values, those runs had the schema defaults - and a 32 / 4 / 2 network
-    assert {k: legacy['advanced'][k] for k in presets.LEARNED if k not in presets.TESTED} == {
-        k: v for k, v in presets.LEARNED.items() if k not in presets.TESTED}
-    runs = {**legacy['advanced'], **presets.TESTED}                    # every training number of the runs that learned
+    assert set(presets.COMPARED) == {'initial_alpha', 'updates_per_transition', 'gamma', 'learning_rate'}
+    # besides the compared values, those runs had the schema defaults - and a 32 / 4 / 2 network
+    assert {k: legacy['advanced'][k] for k in presets.LEARNED if k not in presets.COMPARED} == {
+        k: v for k, v in presets.LEARNED.items() if k not in presets.COMPARED}
+    runs = {**legacy['advanced'], **presets.LEARNED}                   # every training number of the runs that learned
     for encoder, preset in presets.PRESETS.items():
         assert presets.publication(encoder)['advanced'] == runs, encoder
         for name, field in preset['fields'].items():
@@ -103,10 +106,14 @@ def test_every_preset_trains_with_the_values_of_the_runs_that_learned():
                 assert field['note'].startswith(f"Published: {field['published']['value']:g} ("), (encoder, name)
         assert 'record 7.192' in preset['summary'] and '32 / 4 / 2' in preset['summary']
     replaced = {(e, n) for e, p in presets.PRESETS.items() for n, f in p['fields'].items() if 'published' in f}
+    # the attention presets' published learning rate is 1e-3 already: kept as published, with the GATOR note added
     assert replaced == {(e, n) for e in ('graph_transformer', 'gatv2')
-                        for n in ('learning_rate', 'gamma', 'batch_size', 'replay_capacity', 'episode_length')} | {
-        ('rgcn', n) for n in ('gamma', 'batch_size', 'warmup_transitions', 'updates_per_transition', 'replay_capacity',
-                              'episode_length')}
+                        for n in ('gamma', 'batch_size', 'replay_capacity', 'episode_length')} | {
+        ('rgcn', n) for n in ('learning_rate', 'gamma', 'batch_size', 'warmup_transitions', 'updates_per_transition',
+                              'replay_capacity', 'episode_length')}
+    for encoder in ('graph_transformer', 'gatv2'):
+        field = presets.PRESETS[encoder]['fields']['learning_rate']
+        assert field['source'] == 'li2021can' and 'Also the GATOR value.' in field['note'] and 'record 7.199' in field['note']
 
 
 def test_references_are_citable():

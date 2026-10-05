@@ -1352,9 +1352,10 @@ higher is better". Nothing else needs setting.
 **The three training values that had to change first.** With the values every earlier run used - starting temperature
 0.2, one update per evaluation - soft actor-critic is a uniform random search, and no reward setting changes what it does
 (on Spectre, two very different reward settings gave the same design in 147 of 150 positions). Every starting preset in
-RL networks trains with starting temperature 0.01, 8 updates per evaluation and discount 0, and with the other training
-numbers those runs were made with - batch 8, learning rate 3e-4, warm-up 8, replay 10,000, episode length 4 (record
-7.192); only its network size is the published one. The GATOR baseline that held the measured setting was deleted with
+RL networks trains with starting temperature 0.01, 8 updates per evaluation and discount 0, with the other training
+numbers those runs were made with - batch 8, warm-up 8, replay 10,000, episode length 4 (record 7.192) - and with
+learning rate 1e-3, which learned about 100 evaluations earlier than those runs' 3e-4 (record 7.199); only its network
+size is the published one. The GATOR baseline that held the measured setting was deleted with
 its button on 2026-10-05, record 7.191 ([network-presets.md](network-presets.md), "The three tested values"). Where it
 shows:
 

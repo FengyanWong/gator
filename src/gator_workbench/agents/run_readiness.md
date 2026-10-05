@@ -113,7 +113,9 @@ you change nothing.
   either. The tested values are `initial_alpha` 0.01, `updates_per_transition` 8 and `gamma` 0. When a
   run that trains has other values, suggest these three first. Every preset's training values are those
   of the runs that learned here (`learned` in the presets data, record 7.192); its network sizes are
-  published ones that were not measured here (those runs used 32 / 4 / 2). One update takes 0.1 to 0.15 s.
+  published ones, which learned as early as 32 / 4 / 2 with these values on ngspice; on Spectre
+  (`real:mscr_ota7t`) the Graph Transformer preset passed 469 of 760 designs, the first at design 202,
+  against 36 and 591 for the earlier setting (record 7.199). One update takes 0.1 to 0.15 s.
 * A soft actor-critic run from scratch starts to pass designs only after 250 to 600 evaluations. Say so
   when `run.max_evaluations` is below 300 and the search method is `sac`: with tens of evaluations the
   run is a random search, and a search method with an LLM is the one that works within such a budget.

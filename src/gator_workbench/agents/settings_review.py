@@ -116,7 +116,8 @@ def publication_presets() -> dict:
                 note='The network sizes were collected by hand from the cited publications (docs/network-presets.md). None was evaluated on '
                      'a circuit of this project, and they differ widely, so they must not be used for an equal-size comparison of encoders. '
                      'The three values under `tested` were compared on this project and chosen (record 7.183); `learned` are all the training values of '
-                     'the runs that learned there, which every preset now uses (record 7.192). The network sizes are still the published ones.')
+                     'the runs that learned there, which every preset now uses (record 7.192), with learning rate 1e-3, compared and chosen in '
+                     'record 7.199. The network sizes are still the published ones.')
 
 
 def task_digest(config: dict, circuit_summary: dict | None) -> dict:

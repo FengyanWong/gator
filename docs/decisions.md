@@ -1115,3 +1115,29 @@ calibration functionality to that".
   than `ota5`; the guard rails' numbers.
 
 Record 7.197. Evidence: `artifacts/local/reviews/calibration-study-2026-10-05/README.md`.
+
+## Learning rate 1e-3 in the starting presets (2026-10-05)
+
+The user, told what the calibration study had measured: "use learning rate 1e-3 in the starting preset".
+
+- **Measured** (calibration study, `artifacts/local/reviews/calibration-study-2026-10-05`, ngspice `ota5`, Graph
+  Transformer 32 / 4 / 2, 8 updates per evaluation, discount 0, 1,000 evaluations, seeds 0-2): learning rate 1e-3
+  learned at evaluation 174, 139, 179 against 251, 262, 294 with 3e-4, and 98.1 % of the last third passed against
+  93.1 %. The price: the passing designs' median power was about 5 % higher (105-110 uW against 101-103 uW). Earlier,
+  with one update per evaluation and with 4 updates at batch 32, 1e-3 had also done better (record 7.183's study).
+- **Decided:** every starting preset takes 1e-3 (`network_presets.LEARNED`). It joins starting temperature, updates
+  and discount as a value compared and chosen (`COMPARED`, basis `gator_tested`). For Graph Transformer and GATv2 the
+  published value is 1e-3 already, so their field keeps the citation and adds the measurement; RGCN's published 3e-4 is
+  replaced and kept in the note.
+- **Not changed:** the schema default (3e-4), so a configuration without an Advanced block means what it meant; the
+  recognition of an encoder put on the deleted GATOR baseline (it compares with the old baseline's own values).
+- **Then measured as a whole** (`artifacts/local/reviews/starting-presets-2026-10-05`, same circuit, budget and seeds):
+  every starting preset learns with 1e-3 - Graph Transformer 48 / 4 / 4 at 187, 219, 164 (98.5 % passing in the last
+  third), RGCN 32 / 4 / 4 at 215, 139, 183 (99.2 %), GATv2 192 / 3 / 4 at 209, 212, 300 (96.7 %). So the published
+  network sizes are kept: they learn as early as 32 / 4 / 2, at 25 to 40 % more time per run on this small circuit.
+- **And on Spectre** (the user's approval "Yes, up to 800 designs"; `real:mscr_ota7t`, one lane, seed 0, the morning
+  run's Specs, parameters and reward): the Graph Transformer starting preset passed 469 of 760 designs, the first at
+  design 202, against 36 and 591 for the morning run of record 7.183 (32 / 4 / 2, 3e-4, discount 0.99). The runs differ
+  in three settings at once, so this confirms the preset as a whole, not the learning rate alone.
+
+Record 7.199.

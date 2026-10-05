@@ -38,29 +38,57 @@ values and remembers them for this encoder. A preset's name is shown as in use o
 **The one thing to keep in mind:** the papers ran thousands of simulations per run; GATOR's real runs
 used tens to hundreds. A published batch size of 128 with 1,000 warm-up steps means that in a 60-evaluation run
 the network never learns and every action is random - which is why the presets no longer take the papers'
-training numbers. The network sizes are still the papers': the runs that learned used 32 / 4 / 2, so a
-published size has not been tried on GATOR circuits. With the starting values learning began after 250 to 600
-evaluations. For comparing encoders at equal size, give every encoder the same sizes; an existing checkpoint
+training numbers. The network sizes are still the papers'; the runs that learned used 32 / 4 / 2, and each
+published size learned as early with the same training values on ngspice, and the Graph Transformer preset on Spectre
+too (record 7.199, "Measured" below). With the starting values learning began after about 150 to 600 evaluations. For comparing encoders at equal size, give every encoder the same sizes; an existing checkpoint
 always loads with its own network.
 
 ## The presets
 
 Since record 7.192 (2026-10-05) every starting preset has the published network size and the training numbers
-of the runs that learned on GATOR circuits, the same for all three networks:
+of the runs that learned on GATOR circuits, the same for all three networks; since record 7.199 (the same day, the
+user: "use learning rate 1e-3 in the starting preset") with learning rate 1e-3:
 
 | Encoder | hidden | heads | layers | lr | gamma | tau | batch | warm-up | replay | episode |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `graph_transformer` | 48 | 4 | 4 | 3e-4 | 0 | 0.005 | 8 | 8 | 10000 | 4 |
-| `rgcn` | 32 | (4) | 4 | 3e-4 | 0 | 0.005 | 8 | 8 | 10000 | 4 |
-| `gatv2` | 192 | 3 | 4 | 3e-4 | 0 | 0.005 | 8 | 8 | 10000 | 4 |
+| `graph_transformer` | 48 | 4 | 4 | 1e-3 | 0 | 0.005 | 8 | 8 | 10000 | 4 |
+| `rgcn` | 32 | (4) | 4 | 1e-3 | 0 | 0.005 | 8 | 8 | 10000 | 4 |
+| `gatv2` | 192 | 3 | 4 | 1e-3 | 0 | 0.005 | 8 | 8 | 10000 | 4 |
 
 All three also start with `initial_alpha` 0.01, `updates_per_transition` 8, `update_every` 1,
-`target_entropy_per_action` 1 and `max_grad_norm` 10. Of the training numbers, only `initial_alpha`,
-`updates_per_transition` and `gamma` were compared and chosen (basis `gator_tested`); batch, learning rate,
-warm-up, replay and episode length are the values those measurements were made with (basis
-`gator_measured_with`): learning rate 1e-3 did better in both runs that tried it but was never run with 8 updates,
-batch 32 learned a little earlier with 4 updates at four times the cost per update, warm-up 64 brought no gain,
-replay and episode length were not varied. `tau` was not varied either; every preset already had 0.005.
+`target_entropy_per_action` 1 and `max_grad_norm` 10. Of the training numbers, `initial_alpha`,
+`updates_per_transition`, `gamma` (record 7.183) and `learning_rate` (record 7.199) were compared and chosen
+(basis `gator_tested`; for Graph Transformer and GATv2 the published learning rate is 1e-3 already, so that field
+keeps its citation and adds the measurement). Learning rate 1e-3 against 3e-4, with 8 updates and discount 0 on
+ngspice `ota5` (Graph Transformer 32 / 4 / 2, 1,000 evaluations, seeds 0-2; the calibration study,
+`artifacts/local/reviews/calibration-study-2026-10-05`): learned at evaluation 174, 139, 179 against 251, 262, 294,
+98.1 % of the last third passing against 93.1 %, the passing designs' median power 105-110 uW against 101-103 uW.
+Batch, warm-up, replay and episode length are the values those measurements were made with (basis
+`gator_measured_with`): batch 32 learned a little earlier with 4 updates at four times the cost per update, warm-up 64
+brought no gain, replay and episode length were not varied in record 7.183 (the calibration study then found replay 50
+with episode 30 worse, 87.8 % at the end). `tau` was not varied; every preset already had 0.005.
+
+**Measured** (record 7.199, `artifacts/local/reviews/starting-presets-2026-10-05`): the three starting presets as a
+whole on ngspice `ota5` (1,000 evaluations, seeds 0-2, reward compressed + share 0.5), measured as in the calibration
+study; "learned at" = the first design after which 50 of the last 100 pass.
+
+| Network, learning rate | pass % 1st / 2nd / last third | learned at | median power of passing (uW) |
+|---|---|---|---|
+| Graph Transformer 32 / 4 / 2, 3e-4 (record 7.183's runs) | 34.2 / 85.6 / 93.1 | 251, 262, 294 | 103, 101, 103 |
+| Graph Transformer 32 / 4 / 2, 1e-3 (calibration study) | 61.9 / 97.1 / 98.1 | 174, 139, 179 | 109, 105, 110 |
+| `graph_transformer` starting preset, 48 / 4 / 4 | 52.7 / 95.8 / 98.5 | 187, 219, 164 | 106, 106, 108 |
+| `rgcn` starting preset, 32 / 4 / 4 | 55.2 / 96.8 / 99.2 | 215, 139, 183 | 108, 104, 108 |
+| `gatv2` starting preset, 192 / 3 / 4 | 39.5 / 95.9 / 96.7 | 209, 212, 300 | 99, 97, 101 |
+
+All three learn, about as early as 32 / 4 / 2 at the same learning rate: the published sizes cost nothing in
+learning. They cost time: one 40-design run took 35 s at 32 / 4 / 2 against 44, 46 and 49 s (Graph Transformer, RGCN,
+GATv2) under the same load.
+
+On Spectre, one run of the Graph Transformer starting preset (`real:mscr_ota7t`, one lane, seed 0, 800 launches, the
+Specs, parameters and reward of record 7.183's morning run, `artifacts/local/reviews/starting-presets-2026-10-05/spectre`):
+469 of 760 designs passed, the first at design 202, against 36 and 591 for that morning run (32 / 4 / 2, learning rate
+3e-4, discount 0.99); per 100 designs 0, 0, 27, 95, 94, 98, 97 and 58 of the last 60 passed. The two runs differ in
+network size, learning rate and discount at once. The RGCN and GATv2 presets were not run on Spectre here.
 
 The numbers the papers give, kept in each field's note (under `published` in the API when replaced):
 
@@ -78,9 +106,10 @@ The numbers the papers give, kept in each field's note (under `published` in the
 ## The three tested values (2026-10-05, record 7.183)
 
 Every starting preset uses `initial_alpha` 0.01, `updates_per_transition` 8 and `gamma` 0 (record 7.192), with the
-other training numbers those measurements were made with (batch 8, learning rate 3e-4, warm-up 8, replay 10,000,
-episode length 4). The measurements used a 32 / 4 / 2 Graph Transformer; the presets keep the published network
-sizes, which were not measured on GATOR circuits. The GATOR baseline held exactly the measured setting until it was
+other training numbers those measurements were made with (batch 8, warm-up 8, replay 10,000, episode length 4) and
+learning rate 1e-3 (record 7.199; those measurements used 3e-4). The measurements used a 32 / 4 / 2 Graph
+Transformer; the presets keep the published network sizes, which learned as early with these values (record 7.199,
+below). The GATOR baseline held exactly the measured setting until it was
 deleted (record 7.191). The schema defaults -
 0.2, 1 and 0.99 - are what every GATOR run used before, and with them soft actor-critic is a uniform random search:
 on Spectre (`real:mscr_ota7t`) two very different reward settings gave the same design in 147 of 150 positions, and
@@ -103,7 +132,8 @@ Learning starts after 250 to 600 evaluations, so a shorter from-scratch run is a
   has fewer than 300 evaluations; the RL networks window says the first where the values are set.
 * Every starting preset holds these three and the other training numbers of the runs that learned (record 7.192);
   until then a published value stayed (`rgcn`: one update per step from the authors' code, the attention presets'
-  `gamma` 0.9). The published network sizes are still unmeasured here.
+  `gamma` 0.9). The published network sizes were measured with them on ngspice, the Graph Transformer's on Spectre too
+  (record 7.199).
 * An encoder whose saved values were the GATOR baseline (the old baseline saved before the change, or the baseline
   with the three values saved on 2026-10-05) is read as its starting preset since record 7.191;
   `network_settings.json` is not rewritten. A configuration already open keeps its own numbers: the window's

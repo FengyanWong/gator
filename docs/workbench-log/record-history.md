@@ -280,3 +280,9 @@ One row per commit, newest last.
 | `d47f72c` | 10-05 18:48 | - | record only: names the commit of record 7.202, and the table rows for d83b308 and a0bce06 |
 | `74e015d` | 10-05 18:49 | 7.202 | follow-up: typing_check finds the Baseline simulation button by its name (it looked for the old tooltip "ONE costed"); the entry says so; the table row for d47f72c |
 | `55e47aa` | 10-05 19:00 | 7.206 | the Abort question of a Baseline simulation says the baseline is kept, a task saved from a cell without a reference still gets it, and the calibration proposes only from the random designs simulated so far (at least 16) |
+| `dfef323` | 10-05 19:00 | - | record only: names the commit of record 7.206, and the table rows for 74e015d and 55e47aa |
+| `f97bc6e` | 10-05 19:21 | 7.200, 7.201 | several runs on one Training chart (session "Training tab with live graphs"); the Training tab's audit fixes - best feasible objective only when feasible, live journal rows paged with their own cursor (the user's Codex session); one commit, the two share their lines |
+| `aa5e3f9` | 10-05 19:21 | 7.203 | Save task asks before rows older than the saved task replace it; the check points to Reload saved values (session "Parameters, specs, and probes linking in Virtuoso") |
+| `d711528` | 10-05 19:21 | 7.199 | learning rate 1e-3 in the starting presets, the presets measured as a whole with one Spectre run (session "Gator baseline deletion in RL networks") |
+| `47f43cf` | 10-05 19:21 | 7.205 | up to eight Training charts at once (session "Training tab with live graphs") |
+| `e5cbcb9` | 10-05 19:21 | 7.204 | "Calibration ready": a line under the header when a Baseline simulation has ended, with Apply calibration and Not now (session "RL reward design") |

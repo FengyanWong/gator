@@ -290,3 +290,5 @@ One row per commit, newest last.
 | `d817f9a` | 10-05 21:02 | 7.209 | the RGCN and GATv2 starting presets on Spectre: first passing design 218 / 289 (Graph Transformer preset 202), last third 88 / 93 % passing; docs only (session "Reward module scoring design") |
 | `38defd1` | 10-05 21:02 | - | record only: names the commit of record 7.209, and the table rows for dba040c and d817f9a |
 | `1dd5079` | 10-05 21:11 | 7.207 | Check now says when another real run holds Virtuoso (the holder named from /proc/locks, no lock taken) instead of advising Save task (session "Run adapter working copy sync issue", committed by "Virtuoso read whole flow") |
+| `349bae4` | 10-05 21:12 | - | record only: names the commit of record 7.207, and the table rows for 38defd1 and 1dd5079 |
+| `fd82665` | 10-05 21:15 | 7.210 | the short-budget warning gives the starting presets' learning point (about 150 to 300 evaluations) beside 250 to 600 for the values before them; the threshold stays 300 |

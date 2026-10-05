@@ -16,6 +16,10 @@ What "Load PDK" reads (``bridge_read`` op ``pdk``), all read-only and at no simu
    deleted after scanning: which primitive each model is (``bsim4``, ``bjt``, ``diode``, ``resistor``...), its
    polarity, and which primitive terminal each pin reaches. PDK files are never copied; only the facts drawn from them
    and the files' SHA-256 are kept.
+3. The ideal parts every circuit holds besides its PDK's - sources, ideal R / C / L, probes, controlled sources: the
+   description of Cadence's generic library `analogLib`, in one more query that opens nothing (`IDEAL_SKILL`). Which
+   Spectre component each of its cells netlists as, and in which pin order, is then read from Virtuoso like a PDK
+   component's, not written by hand (user, 2026-10-05: "it should be recognizing all the loaded components").
 
 Nothing is guessed from a name: a family comes from the Spectre primitive, a pin role from the primitive terminal the
 pin reaches, a scale from the declared unit or else the PDK's own default value. What cannot be established stays
@@ -136,6 +140,48 @@ def pdk_skill(library):
     if not NAME.match(library or ''):
         raise ValueError('The technology library must be a plain Cadence name')
     return PDK_SKILL.replace('@LIBRARY@', library)
+
+
+# ------------------------------------------------------------------------------------------ the ideal parts
+# What a circuit holds besides its PDK's components lives in Cadence's generic library. Until record 7.190 the workbench
+# knew five of those parts from definitions written by hand into the example circuits' mapping files, and lost two of
+# them when the examples were deleted (record 7.187). Now the library says it itself, read with every PDK.
+IDEAL_LIBRARY = 'analogLib'
+IDEAL_FORMAT = 'gator-ideal-parts-1'
+# The CELL / NOCDF lines of PDK_SKILL and nothing else: no parameter, no form, no schematic opened. One line per cell
+# (180 in IC23.1's analogLib, 0.1 MB, about a second).
+IDEAL_SKILL = r'''
+let((lib lines cdf sp mp)
+  lib = ddGetObj("@LIBRARY@")
+  lines = nil
+  when(lib
+    foreach(cell lib~>cells
+      cdf = cdfGetBaseCellCDF(cell)
+      if(null(cdf) then
+        lines = cons(sprintf(nil "NOCDF|%s|%L" cell~>name cell~>views~>name) lines)
+      else
+        sp = get(cdf~>simInfo 'spectre)
+        mp = cdfFindParamByName(cdf "model")
+        lines = cons(sprintf(nil "CELL|%s|%L|%L|%L|%L|%L|%L|%L|%L|%L" cell~>name
+          if(mp mp~>defValue nil) get(sp 'termOrder) get(sp 'termMapping) get(sp 'instParameters)
+          get(sp 'otherParameters) get(sp 'propMapping) get(sp 'componentName) get(sp 'namePrefix)
+          cell~>views~>name) lines))))
+  buildString(reverse(lines) "\n"))
+'''
+# The Spectre components the optimizer's standard list has a kind for, each with the one value its instance line carries
+# (netlist name -> the standard parameter it is). All are two-terminal: Spectre's first node is the positive one. A
+# current probe is a 0 V source in series, which is how the project's own mapping always read it. Every other component
+# of the library is still read and named - pins as the library orders them - and reaches the network as "unknown", as a
+# PDK's diode or bipolar does under the standard list.
+MAX_IDEAL_PINS = 64             # analogLib's `nport` states 2,000 pins, `vcvsp` 42: an order longer than this is counted, not kept
+IDEAL_KINDS = {'vsource': ('vsource', {'dc': 'dc'}), 'isource': ('isource', {'dc': 'dc'}), 'resistor': ('resistor', {'r': 'r'}),
+               'capacitor': ('capacitor', {'c': 'c'}), 'inductor': ('inductor', {'l': 'ind'}), 'iprobe': ('vsource', {})}
+
+
+def ideal_skill(library=IDEAL_LIBRARY):
+    if not NAME.match(library or ''):
+        raise ValueError('The library of ideal parts must be a plain Cadence name')
+    return IDEAL_SKILL.replace('@LIBRARY@', library)
 
 
 class PdkError(ValueError):
@@ -924,6 +970,121 @@ def _summary(devices):
                 with_problems=sorted(m for m, d in devices.items() if d['problems']))
 
 
+# ------------------------------------------------------------------------------------------ the ideal parts' record
+def _pin_names(order):
+    """A CDF pin order as names, or None when it is absent or not a plain list. SKILL prints a pin called `t` as its
+    truth value, which the reader turns into True."""
+    if not isinstance(order, list) or not order:
+        return None
+    names = ['t' if pin is True else str(pin) for pin in order if isinstance(pin, (str, int)) or pin is True]
+    return names if len(names) == len(order) and len(set(names)) == len(names) else None
+
+
+def build_ideal_parts(library, cdf) -> dict:
+    """What the generic library says about its parts: one entry per Spectre component a cell netlists as, with every pin
+    order the library states for it and, where the standard list has a kind for the component, that kind.
+
+    Several cells share a component, and not always with the same pins: `vdc`, `vpulse`, `vsin` netlist a `vsource` with
+    two nodes, `vprbs` and the cell called `vsource` itself one with six. So a component keeps each stated pin order with
+    the cells that state it, and a netlist is read with the order that has as many pins as its lines have nodes
+    (`ideal_models`). A cell that netlists with a model named on the instance (`nmos4`, `bsim4`) is no component of its
+    own: its model belongs to a PDK."""
+    by_component, not_components = {}, []
+    for name in sorted(cdf['cells']):
+        spectre = cdf['cells'][name].get('spectre') or {}
+        component = spectre.get('component_name')
+        if not isinstance(component, str) or not component:
+            not_components.append(dict(cell=name, reason='netlists with a model named on the instance' if spectre
+                                       else 'no Spectre entry (not netlisted)'))
+            continue
+        by_component.setdefault(component, {}).setdefault(tuple(_pin_names(spectre.get('term_order')) or ()), []).append(name)
+    components = {}
+    for component in sorted(by_component):
+        orders = by_component[component]
+        # Most cells first, then the order of the cell that carries the component's own name, then the shorter one.
+        stated = sorted((pins for pins in orders if pins and len(pins) <= MAX_IDEAL_PINS),
+                        key=lambda pins: (-len(orders[pins]), component not in orders[pins], len(pins), pins))
+        kind, aliases = IDEAL_KINDS.get(component, ('unknown', {}))
+        if kind != 'unknown' and not any(len(pins) == 2 for pins in stated):
+            kind, aliases = 'unknown', {}                # never the two-terminal part the standard list means
+        if not stated:
+            basis = 'the library states no pin order for it'
+        elif kind == 'unknown':
+            basis = f'Spectre component {component}: the standard list has no kind for it, so the network sees "unknown"'
+        else:
+            basis = f'Spectre component {component} with two nodes: the first is the positive one' + (
+                ' (a current probe is a 0 V source in series)' if component == 'iprobe' else '')
+        components[component] = dict(
+            component=component, cells=sorted(cell for cells in orders.values() for cell in cells), kind=kind,
+            parameters=dict(aliases), basis=basis,
+            pin_orders=[dict(pins=list(pins), cells=sorted(orders[pins])) for pins in stated],
+            cells_without_pin_order=sorted(orders.get((), [])),
+            cells_with_too_many_pins=sorted(cell for pins, cells in orders.items() if len(pins) > MAX_IDEAL_PINS for cell in cells))
+    body = dict(format=IDEAL_FORMAT, library=library, components=components)
+    sha = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    usable = [c for c in components.values() if c['pin_orders']]
+    return dict(body, sha256=sha, read_utc=utcnow().isoformat(), not_components=not_components,
+                layout_only=cdf.get('layout_only', []),
+                summary=dict(cells=len(cdf['cells']) + len(cdf.get('layout_only', [])), components=len(components),
+                             recognized=len(usable), with_a_kind=sorted(c['component'] for c in usable if c['kind'] != 'unknown'),
+                             as_unknown=sum(1 for c in usable if c['kind'] == 'unknown'),
+                             without_pins=sorted(c['component'] for c in components.values() if not c['pin_orders'])))
+
+
+def _ideal_parts_of(read, previous):
+    """The ideal parts for a record that is being stored: what this read brought, else what an earlier read of the same
+    PDK brought (kept, with the reason this read brought nothing), else only the reason."""
+    read = read or {}
+    library = read.get('library') or IDEAL_LIBRARY
+    reason = read.get('error')
+    if read.get('cdf_text'):
+        cdf = parse_cdf_text(read['cdf_text'])
+        if cdf['cells']:
+            return build_ideal_parts(library, cdf)
+        reason = f'{library} has no cell with a component description (CDF)'
+    reason = reason or 'this read did not ask for them (an older reader)'
+    kept = (previous or {}).get('ideal_parts')
+    if isinstance(kept, dict) and kept.get('components'):
+        return dict(kept, not_read_again=reason)
+    return dict(format=IDEAL_FORMAT, library=library, components={}, error=reason)
+
+
+def ideal_models(record, node_counts=None) -> dict:
+    """The parser's device mappings for the ideal parts read with a PDK: every component the library states a pin order
+    for - its kind where the standard list has one and the line has two nodes, "unknown" with its pins named otherwise.
+    `node_counts` = {component: how many nodes its lines have in the netlist being read} picks, per component, the
+    stated order of that length; a component whose lines differ in length, or fit no stated order, gets no mapping (it
+    stays unrecognized, which the reader of the cell reports). Without it: the first order of each component."""
+    parts = (record or {}).get('ideal_parts') or {}
+    models = {}
+    for name, part in (parts.get('components') or {}).items():
+        orders = [order['pins'] for order in part.get('pin_orders') or []]
+        if node_counts is not None:
+            if name not in node_counts or len(set(node_counts[name])) != 1:
+                continue
+            orders = [pins for pins in orders if len(pins) == next(iter(node_counts[name]))]
+        if not orders:
+            continue
+        pins = orders[0]
+        standard = part['kind'] != 'unknown' and len(pins) == 2
+        models[name] = dict(kind=part['kind'] if standard else 'unknown', terminals=list(pins),
+                            roles=['positive', 'negative'] if standard else ['unknown'] * len(pins),
+                            parameters=dict(part['parameters']) if standard else {})
+    return models
+
+
+def describe_ideal_parts(record, *, brief=False):
+    """What the page shows about the ideal parts read with a PDK; None for a PDK loaded before they were read."""
+    parts = (record or {}).get('ideal_parts')
+    if not isinstance(parts, dict):
+        return None
+    out = dict(library=parts.get('library'), read_utc=parts.get('read_utc'), sha256=parts.get('sha256'),
+               summary=parts.get('summary'), error=parts.get('error'), not_read_again=parts.get('not_read_again'))
+    if not brief:
+        out.update(components=list((parts.get('components') or {}).values()), not_components=parts.get('not_components', []))
+    return out
+
+
 # ------------------------------------------------------------------------------------------ storage
 def store_root() -> Path:
     return local_settings_dir() / 'pdks'
@@ -978,7 +1139,7 @@ def describe(record, *, brief=False):
                technology_library=record['technology_library'], summary=record['summary'],
                label=label(record['vocabulary']), sources=record.get('sources', {}),
                columns=len(record['vocabulary']['parameters']), kinds=len(record['vocabulary']['device_kinds']),
-               roles=len(record['vocabulary']['terminal_roles']))
+               roles=len(record['vocabulary']['terminal_roles']), ideal_parts=describe_ideal_parts(record, brief=brief))
     if not brief:
         out.update(devices=list(record['devices'].values()), not_netlisted=record['not_netlisted'],
                    layout_only=record['layout_only'], not_used=record['model_file_definitions_not_used'],
@@ -1144,6 +1305,7 @@ def read_from_virtuoso(client, *, technology_library, model_file, decode=None):
     if not result.ok:
         raise RuntimeError('; '.join(result.errors) or 'reading the PDK description failed')
     cdf_text = decode(result.output)
+    ideal = read_ideal_parts(client, decode)
     if not REMOTE_PATH.match(model_file or '') or '/../' in model_file:
         raise ValueError('The model file must be an absolute path on the simulator host')
     scratch = Path(tempfile.mkdtemp(prefix='gator-pdk-'))
@@ -1173,8 +1335,23 @@ def read_from_virtuoso(client, *, technology_library, model_file, decode=None):
         scans = [scan_model_text(text, remote) for remote, text in files.items()]
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
-    return dict(technology_library=technology_library, cdf_text=cdf_text, scans=scans,
+    return dict(technology_library=technology_library, cdf_text=cdf_text, scans=scans, ideal=ideal,
                 sources=dict(model_files=sources, cdf=dict(library=technology_library, lines=len(cdf_text.splitlines()))))
+
+
+def read_ideal_parts(client, decode, library=IDEAL_LIBRARY) -> dict:
+    """Runs in the bridge reader process, with the PDK: the generic library's description in one read-only query.
+    Whatever goes wrong is returned as the reason - the PDK itself is read and stored all the same."""
+    from .security import redact
+    try:
+        result = client.execute_skill(ideal_skill(library), timeout=120)
+        if not result.ok:
+            return dict(library=library, error=redact('; '.join(map(str, result.errors)) or 'the query failed', 400))
+        text = decode(result.output)
+        return dict(library=library, cdf_text=text) if (text or '').strip() else dict(
+            library=library, error=f'Virtuoso knows no library called {library}, or it holds no cell')
+    except Exception as exc:
+        return dict(library=library, error=redact(f'{type(exc).__name__}: {exc}', 400))
 
 
 def finish_load(raw) -> dict:
@@ -1186,4 +1363,5 @@ def finish_load(raw) -> dict:
     record = build_record(library, cdf, raw['scans'], sources=raw.get('sources'), technology_library=library)
     if not record['devices']:
         raise PdkError(f'No cell of {library} names a Spectre model that the model files define.')
+    record['ideal_parts'] = _ideal_parts_of(raw.get('ideal'), load_record(library))
     return save_record(record)

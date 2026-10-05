@@ -507,8 +507,8 @@ def _native_draft_runtime(imported, circuit):
     notes = [f"Read from Virtuoso {imported['imported_utc'][:19]} UTC (netlist export of {imported['exported_cell']}, read-only). "
              'Shown from the local copy: read the cell again after changing it in Virtuoso.']
     if unverified:
-        notes.append(f"Device type(s) {', '.join(unverified)} are not verified in this project yet: their pins are shown "
-                     'unnamed, and nothing is assumed about them.')
+        notes.append(f"Device type(s) {', '.join(unverified)} are described neither by the cell's PDK nor by the ideal parts "
+                     'of analogLib read with it: their pins are shown unnamed, and nothing is assumed about them.')
     info = dict(circuit_class=circuit.circuit_class, pdk_id=circuit.pdk_id if circuit.pdk_id != 'unspecified'
                 else imported.get('technology_library') or 'unspecified', dut_hierarchy=circuit.dut_hierarchy,
                 netlist_sha256=imported['netlist_sha256'], parser_config_sha256=imported['mapping_sha256'],

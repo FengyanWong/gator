@@ -1747,6 +1747,44 @@ them too (since 2026-09-22): pins as the PDK itself states them.
 Tests: `tests/workbench/test_wb_pdk.py` (invented `demo045` PDK in `tests/workbench/fixtures/pdk_demo/`). Browser check:
 `frontend/scripts/pdk_check.mjs` (hermetic, fixtures only, safe against the live backend).
 
+### The ideal parts, read with the PDK (2026-10-05, record 7.190, user request)
+
+**In plain words.** A circuit holds parts that belong to no PDK: voltage and current sources, ideal resistors,
+capacitors and inductors, current probes, controlled sources. They come from Cadence's generic library `analogLib`.
+Until this record the workbench knew five of them from definitions written by hand into the example circuits' files -
+and lost two when the examples were deleted (record 7.187). Now **every read of a PDK also reads analogLib's own
+description**: which Spectre component each of its cells netlists as, and with which pins, in which order. A cell read
+from Virtuoso is recognized from that, as its PDK components are (user: "it should be recognizing all the loaded
+components").
+
+- **What is read.** One more read-only query in the same press (`pdk.IDEAL_SKILL`: one line per cell, nothing opened,
+  no parameter read): about a second for the 180 cells of IC23.1's analogLib. It is stored inside the PDK's record
+  (`ideal_parts`), so it is read whenever the PDK is: with every cell read in the Virtuoso window, with every Save task,
+  and by **Load** in the PDK window. If the query fails, the PDK is read and stored all the same, the reason is shown, and
+  what an earlier read brought is kept.
+- **What it gives.** 50 Spectre components from those 180 cells, 45 of them with a pin order. Six have a kind of their
+  own in the optimizer's standard list - `vsource`, `isource`, `resistor`, `capacitor`, `inductor`, and `iprobe` (read
+  as a 0 V source in series) - each with the one value its line carries (`dc`, `r`, `c`, an inductor's `l` as an
+  inductance). The other 39 (controlled sources, ports, switches, transmission lines ...) reach the network as
+  "unknown" with their pins named, as a PDK's diode does under the standard list: the cell can be saved and run.
+- **One component, several pin orders.** `vdc`, `vpulse` and `vsin` netlist a `vsource` with two nodes; `vprbs` and the
+  cell called `vsource` itself netlist one with six. Each component keeps every pin order its cells state, and a
+  circuit is read with the order that has as many pins as its netlist lines have nodes. Lines of two lengths under one
+  component, or of a length no cell states, leave that component unrecognized - said by name - instead of stopping
+  the reader.
+- **What stays as it was.** A part the project had verified before keeps its definition, pin names included: a current
+  source's pins are `p` and `n` in every saved task, whatever the library calls them, and the optimizer's description of
+  a circuit holds pin names. All seven saved tasks come out with the very mapping they were saved with. Only a part
+  that had no definition takes the library's.
+- **Read first.** The PDK - and analogLib with it - is read before the cell's device mapping is built, so a part that
+  this very press describes for the first time is recognized at once; it took a second read before.
+- **Where you see it.** The line under the Virtuoso window's buttons ("PDK gpdk045 read with the cell: 54 components
+  ... and 45 ideal parts of analogLib"), and the **PDK window**: an "Ideal parts" column in the list of loaded PDKs, and
+  under a shown PDK how many were read, which have a kind of their own, and a folded list of every component with its
+  kind, its pin orders and its cells. A PDK loaded before this record says that its ideal parts were not read.
+- **Not read:** generic libraries other than analogLib; a part from one stays unrecognized, and the refusal says so.
+  Five components state no pin order (a mutual inductor has no nodes of its own) and stay unrecognized too.
+
 ### What a real run writes: any value the property form lets you type (added 2026-09-22, user request)
 
 **In plain words.** A real run used to change transistor widths only. It now changes any value the PDK's property form

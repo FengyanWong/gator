@@ -407,12 +407,14 @@ class NeedsFrequency(ProfileError):
 def _checked_import(imported, name):
     """(netlist text, device mapping, core CDF readback) of an import a profile can be made from, or a plain refusal."""
     text = Path(imported['netlist_path']).read_text()
-    # The verified models, and every component of the cell's PDK once it was loaded (Load PDK: pins as the PDK states them).
+    # The verified models, and what was read from Virtuoso with the cell: every component of its PDK (pins as the PDK
+    # states them) and every ideal part of analogLib (pdk.ideal_models, record 7.190).
     mapping, unverified = native_cells.build_mapping(text, circuit_id=name, technology_library=imported.get('technology_library'))
     if unverified:
-        raise ProfileError(f'Device type(s) {", ".join(unverified)} are neither verified in this project nor described by a loaded '
-                           'PDK: their pin order is unknown, so the circuit cannot be described to the optimizer (Load PDK reads '
-                           'the PDK\'s own description of its components)')
+        raise ProfileError(f'Device type(s) {", ".join(unverified)} are described neither by the cell\'s PDK nor by the ideal parts of '
+                           'analogLib that are read with it, and this project has not verified them: their pin order is unknown, so '
+                           'the circuit cannot be described to the optimizer. Read the PDK again in the PDK window (it reads both '
+                           'descriptions); a part from another library is not read yet.')
     reference = json.loads((Path(imported['directory']) / native_cells.FILES['core_readback']).read_text())
     if any(key not in item for item in reference.get('instances', []) for key in ('name', 'lib', 'cell', 'view', 'terms', 'params')):
         raise ProfileError('This copy of the cell lacks details a profile needs (it was read by an older version): press "Read the cell again"')

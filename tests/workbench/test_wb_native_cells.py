@@ -135,7 +135,7 @@ def test_the_api_shows_a_draft_and_keeps_it_from_starting(tmp_path):
 
 
 # ---------------------------------------------------------- the cell's PDK, read in the same press (user request 2026-09-27)
-def pdk_reader(tmp_path, pdk='ok', technology_library='gpdk045'):
+def pdk_reader(tmp_path, pdk='ok', technology_library='gpdk045', netlist=EXPORT):
     """The fake reader, answering `--op pdk` too: the demo045 material (pdk='ok') or a failure (pdk='fail'). Every call's
     arguments are logged, so a test can see what the backend asked for and in which order."""
     from test_wb_pdk import raw_material
@@ -156,7 +156,7 @@ if args['--op'] == 'pdk':
     sys.exit(0)
 out = Path(args['--output'])
 out.mkdir(parents=True)
-(out / 'netlist.scs').write_text({EXPORT!r})
+(out / 'netlist.scs').write_text({netlist!r})
 (out / 'core_readback.json').write_text(json.dumps(dict(origin='fixture', instances=[])))
 print(json.dumps(dict(library=args['--library'], cell=args['--cell'], testbench_cell=args.get('--testbench'),
                       technology_library={technology_library!r})))
@@ -181,6 +181,22 @@ def test_reading_a_cell_reads_its_pdk_in_the_same_press(tmp_path):
     assert [p['pdk_id'] for p in pdk.list_pdks()] == ['demo045']                    # stored exactly as a press of Load stores it
     assert imported['device_count'] == 10 and imported['exported_cell'] == 'tb_ota5_ac_v1'   # the cell itself, as before
     assert tasks.load_task(reference(pdk_id='unspecified')).circuit['native_draft']
+
+
+def test_a_part_that_this_very_read_describes_is_recognized_in_the_cell_at_once(tmp_path):
+    """Record 7.190: the PDK - and the ideal parts of the generic library, read with it - come before the cell's device
+    mapping is built, so the first read of a cell with an ideal inductor names its pins; it took a second read before."""
+    netlist = EXPORT.rstrip('\n') + '\nLX (VOUT 0) inductor l=2n\nEX (VOUT 0 VINP VINN) vcvs gain=10\n'
+    imported = bridge_read.read(probe(tmp_path), 'lab', 'import_cell', library='GATOR_TESTS', cell='ota5_v1',
+                                command=pdk_reader(tmp_path, technology_library='demo045', netlist=netlist))
+    step = imported['pdk']
+    assert step['state'] == 'read' and step['ideal_parts']['library'] == 'analogLib' and step['ideal_parts']['summary']['recognized'] == 8
+    assert 'components' not in step['ideal_parts']                                  # the summary; the PDK window shows the list
+    assert imported['unverified_models'] == [] and imported['ideal_described_models'] == ['inductor', 'vcvs']
+    assert imported['pdk_described_models'] == [] and imported['device_count'] == 12
+    mapping = json.loads(Path(native_cells.load_import('GATOR_TESTS', 'ota5_v1')['mapping_path']).read_text())
+    assert mapping['models']['inductor']['parameters'] == {'l': 'ind'} and '+ideal-analogLib-' in mapping['mapping_version']
+    assert [c['--op'] for c in reader_calls(tmp_path)] == ['import_cell', 'pdk']     # still one read of each, in this order
 
 
 def test_a_failed_pdk_read_leaves_the_cell_read(tmp_path):

@@ -534,7 +534,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
         <PdkWindowButton profileId={profileId} circuitPdk={ref.pdk_id} />
       </div>
       {pdkStep && <p className={`pdk-step ${pdkStep.state === 'read' ? 'hint' : 'warn'}`}>{pdkStep.state === 'read'
-        ? <>PDK <b>{pdkStep.pdk_id}</b> read with the cell: {pdkStep.summary?.devices} components (version {String(pdkStep.sha256 ?? '').slice(0, 8)}). To build the network with it, choose it under Components in the RL network block.</>
+        ? <>PDK <b>{pdkStep.pdk_id}</b> read with the cell: {pdkStep.summary?.devices} components (version {String(pdkStep.sha256 ?? '').slice(0, 8)}){pdkStep.ideal_parts?.summary
+            ? ` and ${pdkStep.ideal_parts.summary.recognized} ideal parts of ${pdkStep.ideal_parts.library}` : pdkStep.ideal_parts?.error ? `; the ideal parts of ${pdkStep.ideal_parts.library} were not read (${pdkStep.ideal_parts.error})` : ''}. To build the network with it, choose it under Components in the RL network block.</>
         : pdkStep.state === 'not_read' ? <>The cell was read; its PDK <b>{pdkStep.technology_library}</b> was not: {pdkStep.reason} "PDK window..." reads it by name.</>
         : <>No PDK read with the cell: {pdkStep.reason}</>}</p>}
       {cells?.truncated && <p className="hint">Only the first {cells.cells.length} cells are listed.</p>}

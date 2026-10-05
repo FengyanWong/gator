@@ -17,7 +17,11 @@
 //   - "PDK window..." opens the PDK window: the form, the connection it reads through, the loaded PDKs (double click shows
 //     one, with every component, its pins and roles, its parameters); "Load" sends exactly the typed fields, shows that it
 //     is reading, then shows the answer and reads the list again; without a connection it cannot be pressed; closing the
-//     Virtuoso window closes it too (2026-09-29).
+//     Virtuoso window closes it too (2026-09-29);
+//   - the ideal parts read with a PDK (record 7.190: analogLib's sources, ideal R / C / L, probes, controlled sources): the
+//     window says that every read brings them, the list has their count, a shown PDK names how many were read and which have
+//     a kind of their own, their list is folded and shows both pin orders of one component; a PDK answered without them (an
+//     older server, a PDK loaded before) says that they were not read.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/pdk_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -45,10 +49,22 @@ const DEVICES = [
     pins: [{ name: 'PLUS', role: 'positive' }, { name: 'MINUS', role: 'negative' }, { name: 'B', role: 'bulk' }],
     parameters: [{ name: 'r', column: 'rad', unit: 'm', numeric: true }, { name: 'nr', column: 'nr', unit: null, numeric: true }] },
 ];
-const FIXPDK = entry('fixpdk', 3, { 'mos:n': 1, 'bjt:npn': 1, inductor: 1 }, 'a'.repeat(64));
+// FIXTURE: the ideal parts read with fixpdk - four Spectre components of the generic library; fixload is answered WITHOUT
+// them, as a server from before record 7.190 answers
+const IDEAL = { library: 'analogLib', read_utc: '2026-10-05T14:00:00+00:00', sha256: 'c'.repeat(64), error: null, not_read_again: null,
+  summary: { cells: 9, components: 4, recognized: 3, with_a_kind: ['isource', 'vsource'], as_unknown: 1, without_pins: ['mutual_inductor'] } };
+const part = (component, kind, cells, orders) => ({ component, kind, cells, basis: `FIXTURE basis of ${component}`, parameters: {},
+  pin_orders: orders.map(([pins, of]) => ({ pins, cells: of })), cells_without_pin_order: orders.length ? [] : cells, cells_with_too_many_pins: [] });
+const IDEAL_PARTS = [
+  part('isource', 'isource', ['idc'], [[['PLUS', 'MINUS'], ['idc']]]),
+  part('mtline', 'unknown', ['mtline'], [[Array.from({ length: 12 }, (_, i) => `p${i + 1}`), ['mtline']]]),
+  part('mutual_inductor', 'unknown', ['mind'], []),
+  part('vsource', 'vsource', ['vdc', 'vprbs', 'vpulse'], [[['PLUS', 'MINUS'], ['vdc', 'vpulse']], [['PLUS', 'MINUS', 'P1', 'M1', 'P2', 'M2'], ['vprbs']]]),
+];
+const FIXPDK = { ...entry('fixpdk', 3, { 'mos:n': 1, 'bjt:npn': 1, inductor: 1 }, 'a'.repeat(64)), ideal_parts: IDEAL };
 const FIXLOAD = entry('fixload', 2, { resistor: 2 }, 'b'.repeat(64));
 const details = (e, devices) => ({ ...e, devices, not_netlisted: [{ cell: 'ringfx', reason: 'FIXTURE: no Spectre entry' }], layout_only: [{ cell: 'crossfx', views: ['layout'] }],
-  not_used: ['fx_core'], parameters: [], terminal_roles: [] });
+  not_used: ['fx_core'], parameters: [], terminal_roles: [], ...(e.ideal_parts ? { ideal_parts: { ...e.ideal_parts, components: IDEAL_PARTS, not_components: [] } } : {}) });
 const STANDARD = { vocabulary: 'standard', label: 'standard (8 generic kinds)', kinds: [], parameters: [] };
 const VALID = validConfiguration();
 
@@ -180,6 +196,25 @@ await runChecks(browser, async () => {
     && bjt[3] === 'C collector, B base, E emitter, S bulk' && bjt[4] === 'area = bjt.area, m (count)', JSON.stringify(bjt));
   check('... a parameter kept under another column is shown so (the inductor radius)', shown.rows.some(r => r[1] === 'fx_ind' && r[4].startsWith('r = rad (m)')));
   check('a non-numeric setting is not listed as something the network reads', !shown.rows.find(r => r[1] === 'fx_nch')[4].includes('region'));
+  // ---- the ideal parts read with the PDK (record 7.190) -----------------------------------------------------------------------
+  const ideal = await pev(`(() => { const w = document.querySelector('.pdk-window'), list = w.querySelector('details.ideal-list');
+    return { says: w.querySelector('p.hint').textContent.includes('Each read also brings the ideal parts of analogLib'),
+      heads: [...w.querySelectorAll('.pdk-list thead th')].map(h => h.textContent), count: w.querySelector('.pdk-list tbody tr').cells[2].textContent,
+      head: w.querySelector('.ideal-head')?.textContent, what: w.querySelector('.ideal-what')?.textContent, folded: !!list && !list.open,
+      summary: list?.querySelector('summary')?.textContent }; })()`);
+  check('the window says that each read also brings the ideal parts of analogLib', ideal.says);
+  check('the list of loaded PDKs has an "Ideal parts" column with their count', ideal.heads[2] === 'Ideal parts' && ideal.count === '3', JSON.stringify([ideal.heads, ideal.count]));
+  check('a shown PDK names its ideal parts: how many, from which library, which have a kind of their own, which are "unknown"',
+    ideal.head === 'Ideal parts: 3 from analogLib' && /2 have\s+a kind of their own for the network \(isource, vsource\); the other 1 reach it as "unknown"/.test(ideal.what)
+    && /states no pin order for mutual_inductor/.test(ideal.what), JSON.stringify([ideal.head, ideal.what]));
+  check('their list is folded', ideal.folded && ideal.summary === 'The ideal parts (4)', String(ideal.summary));
+  await pev(`document.querySelector('.pdk-window details.ideal-list summary').click()`);
+  const parts = await pev(`[...document.querySelectorAll('.pdk-window details.ideal-list tbody tr')].map(r => [...r.cells].map(c => c.textContent))`);
+  const source = parts.find(r => r[0] === 'vsource') ?? [];
+  check('opened, a row names the Spectre component, its kind, every pin order and the cells', source[1] === 'vsource'
+    && source[2] === 'PLUS MINUS | PLUS MINUS P1 M1 P2 M2' && source[3] === 'vdc, vprbs, vpulse', JSON.stringify(source));
+  check('... a long pin order is cut short with its length, and a component without one shows "-"',
+    (parts.find(r => r[0] === 'mtline') ?? [])[2] === 'p1 p2 p3 p4 p5 p6 p7 p8 ... (12 pins)' && (parts.find(r => r[0] === 'mutual_inductor') ?? [])[2] === '-', JSON.stringify(parts.map(r => r[2])));
   await popup.shot(path.join(out, 'pdk-window-1-shown.png'), `document.querySelector('.pdk-window')`, { maxHeight: 1400, beyond: true });
 
   // ---- Load ---------------------------------------------------------------------------------------------------------------
@@ -194,6 +229,10 @@ await runChecks(browser, async () => {
   await popup.until(`document.querySelector('.pdk-details h3')?.textContent === 'fixload: 2 components'`, 60);
   check('Load sent exactly the typed fields (empty model file = the connection\'s)', JSON.stringify(loadBodies) === JSON.stringify([{ profile_id: 'fixture-link', technology_library: 'fixload', model_file: null }]), JSON.stringify(loadBodies));
   check('the answer is shown and the list read again', (await pev(`[...document.querySelectorAll('.pdk-list tbody tr')].map(r => r.cells[0].textContent).join()`)) === 'fixpdk,fixload' && listReads > readsBefore);
+  const older = await pev(`({ none: document.querySelector('.pdk-window .ideal-none')?.textContent ?? null, head: !!document.querySelector('.pdk-window .ideal-head'),
+    counts: [...document.querySelectorAll('.pdk-list tbody tr')].map(r => r.cells[2].textContent) })`);
+  check('a PDK answered without ideal parts (an older server, a PDK loaded before) says that they were not read', /not read with this PDK/.test(older.none ?? '') && !older.head
+    && JSON.stringify(older.counts) === '["3","not read"]', JSON.stringify(older));
   await until(`[...${SELECT}.options].some(o => o.value === 'pdk:fixload')`, 30);
   check('the newly loaded PDK can be chosen in the RL network block at once', await evaluate(`[...${SELECT}.options].some(o => o.value === 'pdk:fixload')`));
   await sleep(300);

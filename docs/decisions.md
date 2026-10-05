@@ -974,10 +974,31 @@ Record 7.183.
   "Save task" refuse six of the seven MScR tasks, unnoticed until the first save four days later.
 - **Decided now.** The two definitions live in `native_cells.ANALOGLIB_VERIFIED`: deleting an example can no longer
   take a device type away.
-- **The user's rule, still open:** "it should be recognizing all the loaded components". Ideal parts remain a
-  hand-written list (voltage source, capacitor and current probe still sit in example files). The PDK reader's query
-  takes any library: reading analogLib's own pin order and Spectre names together with the PDK would replace the list.
-  Proposed to the user, not built. One limit would remain: the optimizer package knows a fixed set of ideal kinds, so
-  a part outside it (a controlled source, a switch) stays refused until the package learns it.
+- **The user's rule:** "it should be recognizing all the loaded components". Built the same day as record 7.190 (next
+  entry).
 
 Record 7.187.
+
+## Ideal parts are read from analogLib with the PDK (2026-10-05)
+
+The user: "build it, read analogLib with the PDK". Decided while building:
+
+- **Read with the PDK, stored in the PDK's record.** One more read-only query in the same press, about a second. No
+  new store and no new button: wherever a PDK is read, the ideal parts are read. A failed query never costs the PDK.
+- **Verified definitions go first.** A part the project had verified keeps its definition, pin names included. The
+  optimizer's description of a circuit holds pin names (`graph_contract`), and a current source's pins are `p` and `n`
+  in every saved task while the library says `PLUS` and `MINUS`: taking the library's names would have changed the
+  description of every saved task at its next save, for no gain. The library's description fills what had none - and
+  would fill all of them, identically for voltage source, capacitor and probe, if the last hand-written file went.
+- **The pin order is chosen by the netlist.** One Spectre component is netlisted with different pins by different cells
+  (a `vsource` with two nodes or six), and a parser mapping has one pin list per component. So a description is used
+  only when it has as many pins as the netlist's lines have nodes; this holds for verified and PDK definitions too.
+- **No kind of its own is no refusal.** A controlled source or a port has no kind in the optimizer's standard list. It
+  is read as "unknown" with its pins named - as a PDK's diode or bipolar already is - so the cell can be saved and run.
+  The six standard kinds come from a small table of Spectre's own primitives (`pdk.IDEAL_KINDS`), not from names.
+- **The PDK first, then the cell's mapping.** The read order of a cell changed so that the first read recognizes what
+  that very read describes.
+- **Left out:** generic libraries other than analogLib; the five components for which analogLib states no pin order;
+  more than 64 pins on one line. Each is named where it is met.
+
+Record 7.190.

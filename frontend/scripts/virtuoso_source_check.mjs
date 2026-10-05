@@ -127,7 +127,10 @@ try {
       // The cell's PDK is read in the same press (2026-09-27): read on the first import, not read (in words) on the re-read.
       const pdk = body.work_here
         ? { state: 'read', technology_library: 'gpdk045', pdk_id: 'gpdk045', vocabulary: 'pdk:gpdk045', version: 'pdk-gpdk045-cccccccccccccccc', sha256: 'c'.repeat(64),
-            label: 'PDK gpdk045 (54 components, version cccccccc)', summary: { devices: 54, cells: 60, by_family: { 'mos:n': 8 }, with_problems: [] }, loaded_utc: '2026-09-27T10:00:00+00:00' }
+            label: 'PDK gpdk045 (54 components, version cccccccc)', summary: { devices: 54, cells: 60, by_family: { 'mos:n': 8 }, with_problems: [] }, loaded_utc: '2026-09-27T10:00:00+00:00',
+            // the ideal parts of analogLib, read with the PDK since record 7.190 (their summary only)
+            ideal_parts: { library: 'analogLib', read_utc: '2026-10-05T14:00:00+00:00', sha256: 'd'.repeat(64), error: null, not_read_again: null,
+              summary: { cells: 180, components: 50, recognized: 45, with_a_kind: ['vsource'], as_unknown: 39, without_pins: [] } } }
         : { state: 'not_read', technology_library: 'gpdk045', reason: 'FIXTURE: the model file is not on the host.' };
       return fulfil(requestId, 200, { library: body.library, cell: body.cell, testbench_cell: body.testbench, device_count: 3, pdk, ...(body.work_here ? { working_copy: record(body.library, body.cell) } : {}) });
     }
@@ -268,7 +271,8 @@ try {
   mark = calls.length; answers.push(true);
   await wPress('Read this cell into the workbench'); await quiet();
   check('with the testbench: read through it, with work_here, once', JSON.stringify(ops(mark)) === JSON.stringify(['import FIXTURE_DESIGNS ota5_v1 ota5_tb work_here']), ops(mark).join(' | '));
-  check('the cell\'s PDK was read in the same press, and the window says so under the buttons', (await wText()).includes('PDK gpdk045 read with the cell: 54 components (version cccccccc)'));
+  check('the cell\'s PDK was read in the same press - with the ideal parts of analogLib -, and the window says so under the buttons',
+    (await wText()).includes('PDK gpdk045 read with the cell: 54 components (version cccccccc) and 45 ideal parts of analogLib. To build the network'));
   check('the cell is then loaded and shown as a draft in the window - the column shows no hierarchy', (await wText()).includes('Read from Virtuoso. Not optimizable yet') && (await wText()).includes('Hierarchy (3 instances)')
     && !(await text()).includes('Hierarchy (') && !(await wText()).includes('Browse only'));
   check('the window says the cell itself is worked in, as declared; no "Make a working copy" anywhere', await wShown('.declared') && (await wText()).includes('Working in FIXTURE_DESIGNS/ota5_tb directly: you declared it a copy you made')

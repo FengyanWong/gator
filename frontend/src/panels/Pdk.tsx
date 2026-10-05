@@ -13,6 +13,9 @@ import { api, gateText, Json, problemText } from '../api';
 // shouldn't the PDK be loaded at the same time?"): reading a cell into the workbench reads its PDK in the same press
 // (backend bridge_read.pdk_with_import), and that window's "PDK window..." button opens this file's window to read one by
 // name and to see what was read. Nothing is read on its own.
+// Since record 7.190 every read of a PDK also brings the ideal parts of analogLib (sources, ideal R / C / L, probes,
+// controlled sources; backend pdk.build_ideal_parts): what a circuit holds besides its PDK's components is recognized from
+// Virtuoso's own description too (user, 2026-10-05: "it should be recognizing all the loaded components").
 
 const FAMILY_NAME: Record<string, string> = { 'mos:n': 'n-MOS', 'mos:p': 'p-MOS', mos: 'MOS', 'bjt:npn': 'npn', 'bjt:pnp': 'pnp', bjt: 'bipolar',
   diode: 'diode', resistor: 'resistor', capacitor: 'capacitor', varactor: 'varactor', inductor: 'inductor', other: 'other' };
@@ -117,7 +120,8 @@ function PdkWindow({ list, listError, profileId, circuitPdk }: { list: Json; lis
       <p className="hint">Reads one technology library through the connection: Virtuoso's own description of every cell (pins, the parameters
         written to the netlist, their units) and the PDK's Spectre model files (what each device is). Read-only - no cellview is changed and nothing
         is simulated. The PDK files are not kept: only what the network needs, and the files' SHA-256. Reading a cell into the workbench reads
-        its PDK by itself (since 2026-09-27); this window reads one again, or another one by name.</p>
+        its PDK by itself (since 2026-09-27); this window reads one again, or another one by name. Each read also brings the ideal parts
+        of analogLib - sources, ideal R, C and L, probes, controlled sources - which a circuit holds besides its PDK's components.</p>
       <details><summary>What is read, and how it is decided</summary>
         <p className="hint">A cell's Spectre model, pin order and netlisted parameters come from its CDF. A cell that has none of its own (a
           resistor built from a primitive) is looked into: its schematic is opened read-only and closed again. Which kind of device a model is
@@ -137,12 +141,42 @@ function PdkWindow({ list, listError, profileId, circuitPdk }: { list: Json; lis
       {listError && <p className="warn">{listError}</p>}
       <h3>Loaded PDKs</h3>
       {pdks.length === 0 ? <p className="hint">None yet.</p> : <>
-        <table className="grid small pdk-list"><thead><tr><th>PDK</th><th>Components</th><th>Loaded</th><th>Version</th></tr></thead><tbody>
+        <table className="grid small pdk-list"><thead><tr><th>PDK</th><th>Components</th><th title="The ideal parts of analogLib read with it: sources, ideal R, C and L, probes, controlled sources">Ideal parts</th><th>Loaded</th><th>Version</th></tr></thead><tbody>
           {pdks.map(p => <tr key={p.pdk_id} className={showing === p.pdk_id ? 'active' : undefined} onDoubleClick={() => show(p.pdk_id)} title="Double click to show what was read">
-            <td>{p.pdk_id}</td><td>{p.summary.devices} ({byFamily(p.summary)})</td><td>{loadedAt(p.loaded_utc)}</td><td className="mono">{p.sha256.slice(0, 8)}</td></tr>)}
+            <td>{p.pdk_id}</td><td>{p.summary.devices} ({byFamily(p.summary)})</td><td>{p.ideal_parts?.summary ? p.ideal_parts.summary.recognized : 'not read'}</td>
+            <td>{loadedAt(p.loaded_utc)}</td><td className="mono">{p.sha256.slice(0, 8)}</td></tr>)}
         </tbody></table>
         <p className="hint">Double click a row to show it. To use one, choose it under "Components" in the RL network block.</p></>}
       {shown && <PdkDetails pdk={shown} devices={devices} />}
+    </div>);
+}
+
+const pinsText = (pins: string[]) => pins.length > 8 ? `${pins.slice(0, 8).join(' ')} ... (${pins.length} pins)` : pins.join(' ');
+
+/** The ideal parts read with a PDK (record 7.190): what analogLib itself says about its sources, ideal R / C / L, probes and
+ *  controlled sources - which Spectre component each cell netlists as, and with which pins. A PDK loaded before they were
+ *  read (or by an older server) has none: the parts the project verified by hand are used until it is loaded again. */
+function IdealParts({ ideal }: { ideal: Json }) {
+  if (!ideal) return <p className="hint ideal-parts ideal-none">Ideal parts (sources, ideal R, C and L, probes): not read with this PDK - it was loaded
+    before they were read. Press Load to read them; until then only the few parts this project verified by hand are recognized.</p>;
+  const s: Json = ideal.summary, components: Json[] = ideal.components ?? [];
+  return (
+    <div className="ideal-parts">
+      <h3 className="ideal-head">Ideal parts: {s?.recognized ?? 0} from {ideal.library}</h3>
+      {ideal.error && <p className="warn">The ideal parts of {ideal.library} could not be read: {ideal.error} Until they are, only the few parts
+        this project verified by hand are recognized.</p>}
+      {ideal.not_read_again && <p className="warn">The last load did not read them again ({ideal.not_read_again}); shown as read on {loadedAt(ideal.read_utc)}.</p>}
+      {s && <p className="hint ideal-what">What a circuit holds besides its PDK's components, read from the {s.cells} cells of {ideal.library}: {s.with_a_kind.length} have
+        a kind of their own for the network ({s.with_a_kind.join(', ')}); the other {s.as_unknown} reach it as "unknown", with their pins named.
+        {s.without_pins.length > 0 && ` ${ideal.library} states no pin order for ${s.without_pins.join(', ')}: a circuit holding one is refused.`}</p>}
+      {components.length > 0 && <details className="ideal-list"><summary>The ideal parts ({components.length})</summary>
+        <table className="grid small"><thead><tr><th>Spectre component</th><th>Kind for the network</th><th>Pins</th><th>Cells</th></tr></thead><tbody>
+          {components.map(c => <tr key={c.component} title={c.basis}><td className="mono">{c.component}</td><td>{c.kind}</td>
+            <td>{c.pin_orders.length ? c.pin_orders.map((o: Json) => pinsText(o.pins)).join(' | ') : '-'}</td><td>{c.cells.join(', ')}</td></tr>)}
+        </tbody></table>
+        <p className="hint">Cells can netlist one component with different pins ("|" separates the pin orders): a circuit is read with the order that
+          has as many pins as its netlist lines have nodes. A part this project had verified before keeps the pin names its saved tasks use. Hover a row
+          for how its kind was decided.</p></details>}
     </div>);
 }
 
@@ -164,6 +198,7 @@ function PdkDetails({ pdk, devices }: { pdk: Json; devices: Json[] }) {
       </tbody></table>
       <p className="hint">Hover a row for how its kind was decided. "(m)", "(F)"...: the unit the PDK declares (or the standard parameter of the same name
         and scale); a parameter without a unit can still be varied when its Parameters row states one.</p>
+      <IdealParts ideal={pdk.ideal_parts} />
       <details><summary>Cells that are not components ({(pdk.not_netlisted?.length ?? 0) + (pdk.layout_only?.length ?? 0)})</summary>
         <ul className="hint">{(pdk.not_netlisted ?? []).map((c: Json) => <li key={c.cell}>{c.cell}: {c.reason}</li>)}
           {(pdk.layout_only ?? []).map((c: Json) => <li key={c.cell}>{c.cell}: layout only</li>)}</ul></details>

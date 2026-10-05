@@ -9,7 +9,8 @@ of its own for that listing. ``schematic.read`` always opens the view named ``sc
 and closes it again - which is why a view is never asked for: the listing only tells which cells
 HAVE a schematic. Op ``pdk`` ("Load PDK", ``pdk.read_from_virtuoso``) reads a technology library's own description
 with one ``execute_skill`` query and fetches its Spectre model files with the bridge's ``client.download_file`` into a
-temporary folder outside the repository, deleted after scanning.
+temporary folder outside the repository, deleted after scanning; one more query of the same kind reads the description
+of the ideal parts' library, analogLib (``pdk.read_ideal_parts``).
 
 Native databases are queried through the bridge, never parsed as text. What is read is shown
 AS READ: CDF parameter strings stay strings, and port order / parameter semantics are marked as
@@ -201,9 +202,12 @@ def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, ti
             raise child_error(stderr, 'bridge read failed')
         data = json.loads(stdout.strip().splitlines()[-1])
         if op == 'import_cell':
+            # The PDK - and the ideal parts read with it - before the cell's device mapping is built: a part that this very
+            # press describes for the first time is then recognized in the cell at once, not only at the next read.
+            read_pdk = pdk_with_import(monitor, profile_id, data.get('technology_library'), command=command)
             imported = native_cells.finish_import(incoming, library=library, cell=cell, testbench_cell=testbench,
                                                   technology_library=data.get('technology_library'), profile_id=profile_id)
-            return dict(imported, pdk=pdk_with_import(monitor, profile_id, data.get('technology_library'), command=command))
+            return dict(imported, pdk=read_pdk)
         if op == 'pdk':
             from . import pdk
             return pdk.describe(pdk.finish_load(data))
@@ -229,9 +233,10 @@ def pdk_with_import(monitor, profile_id, technology_library, *, command=None) ->
         described = read(monitor, profile_id, 'pdk', library=technology_library, command=command)
     except Exception as exc:                      # the gate, a timeout, the reader, a PDK nothing was recognized in: all in words
         return dict(state='not_read', technology_library=technology_library, reason=str(exc) or exc.__class__.__name__)
+    from . import pdk
     return dict(state='read', technology_library=technology_library, pdk_id=described['pdk_id'], vocabulary=described['vocabulary'],
                 label=described['label'], version=described['version'], sha256=described['sha256'], summary=described['summary'],
-                loaded_utc=described['loaded_utc'])
+                loaded_utc=described['loaded_utc'], ideal_parts=pdk.describe_ideal_parts(pdk.load_record(described['pdk_id']), brief=True))
 
 
 if __name__ == '__main__':

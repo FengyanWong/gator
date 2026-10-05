@@ -2,6 +2,8 @@
 
 The PDK here is the invented `demo045` (tests/workbench/fixtures/pdk_demo): model files in Spectre syntax and the
 query output of its "CDF", in the exact form the bridge returns it (backslashes doubled). No real PDK file is copied.
+`ideal.txt` is the same kind of answer for an invented generic library read with it (a few cells shaped like analogLib's:
+sources that share one Spectre component with two pin orders, ideal R / C / L, a probe, a controlled source).
 Everything is MOCK: the analytic toy backend, no Virtuoso, no Spectre.
 """
 import json
@@ -24,6 +26,7 @@ def raw_material():
     """What the reader process hands the backend (pdk.read_from_virtuoso), built from the fixture files."""
     scans = [pdk.scan_model_text((FIXTURE / 'models' / name).read_text(), f'/pdk/demo045/models/{name}') for name in MODEL_FILES]
     return dict(technology_library='demo045', cdf_text=(FIXTURE / 'cdf.txt').read_text(), scans=scans,
+                ideal=dict(library='analogLib', cdf_text=(FIXTURE / 'ideal.txt').read_text()),
                 sources=dict(model_files=[dict(path=f'/pdk/demo045/models/{n}', bytes=1, sha256='0' * 64) for n in MODEL_FILES]))
 
 
@@ -139,7 +142,13 @@ def test_reading_downloads_into_a_temporary_folder_and_follows_includes(tmp_path
             self.ok, self.output, self.errors = ok, output, list(errors)
 
     class FakeClient:
+        ideal = 'ok'
+
         def execute_skill(self, text, timeout):
+            if 'ddGetObj("analogLib")' in text:           # the ideal parts: one more query, which opens nothing
+                assert 'dbOpen' not in text and 'PARAM' not in text
+                return Result(output=(FIXTURE / 'ideal.txt').read_text()) if self.ideal == 'ok' else Result(
+                    ok=False, errors=['*Error* the session is busy'])
             assert 'ddGetObj("demo045")' in text and 'dbClose' in text
             return Result(output=(FIXTURE / 'cdf.txt').read_text())
 
@@ -154,8 +163,18 @@ def test_reading_downloads_into_a_temporary_folder_and_follows_includes(tmp_path
                     '/pdk/demo045/models/demo045_passive.scs']
     assert not folders[0].exists() and not str(folders[0]).startswith(str(Path(__file__).parents[2]))
     assert [s['sha256'] for s in raw['sources']['model_files']] and pdk.finish_load(raw)['summary']['devices'] == 8
+    assert raw['ideal']['library'] == 'analogLib' and raw['ideal']['cdf_text'].startswith('CELL|vdc|')   # read in the same press
+    assert pdk.load_record('demo045')['ideal_parts']['summary']['components'] == 10
     with pytest.raises(ValueError):
         pdk.read_from_virtuoso(FakeClient(), technology_library='demo045', model_file='relative/x.scs', decode=lambda t: t)
+    # The ideal parts can never cost the PDK: a failed query is a reason beside a PDK that is read and stored all the same,
+    # and what an earlier read brought is kept.
+    busy = FakeClient()
+    busy.ideal = 'fail'
+    raw = pdk.read_from_virtuoso(busy, technology_library='demo045', model_file='/pdk/demo045/models/demo045.scs', decode=lambda text: text)
+    assert raw['ideal'] == dict(library='analogLib', error='*Error* the session is busy')
+    kept = pdk.finish_load(raw)['ideal_parts']
+    assert kept['summary']['components'] == 10 and kept['not_read_again'] == '*Error* the session is busy'
 
 
 # ------------------------------------------------------------------------------------------ the network
@@ -358,11 +377,94 @@ def test_the_api_lists_shows_and_loads_a_pdk(tmp_path, monkeypatch):
     loaded = client.post('/api/pdks/load', json=dict(profile_id='lab', technology_library='demo045')).json()
     assert calls == [('lab', 'pdk', dict(library='demo045', model_file=None))]
     assert loaded['summary']['devices'] == 8 and len(loaded['devices']) == 8
+    assert loaded['ideal_parts']['summary']['recognized'] == 8 and len(loaded['ideal_parts']['components']) == 10   # shown with the PDK
     listed = client.get('/api/pdks').json()
+    assert listed['pdks'][0]['ideal_parts']['library'] == 'analogLib' and 'components' not in listed['pdks'][0]['ideal_parts']
     assert [p['vocabulary'] for p in listed['pdks']] == ['pdk:demo045'] and listed['standard']['vocabulary'] == 'standard'
     assert client.get('/api/pdks/demo045').json()['sha256'] == loaded['sha256']
     assert client.get('/api/pdks/unknown').status_code == 404
     assert client.post('/api/pdks/load', json=dict(profile_id='lab', technology_library='bad name')).status_code == 422
+
+
+# ------------------------------------------------------------------------------------------ the ideal parts
+def test_load_pdk_reads_what_the_generic_library_says_about_its_parts():
+    parts = load_demo()['ideal_parts']
+    assert parts['library'] == 'analogLib' and parts['format'] == pdk.IDEAL_FORMAT and len(parts['sha256']) == 64
+    assert parts['summary'] == dict(cells=16, components=10, recognized=8, as_unknown=2, without_pins=['mutual_inductor', 'nport'],
+                                    with_a_kind=['capacitor', 'inductor', 'iprobe', 'isource', 'resistor', 'vsource'])
+    source = parts['components']['vsource']                    # three cells netlist one component, with two pin orders
+    assert source['cells'] == ['vdc', 'vpulse', 'vsource'] and source['kind'] == 'vsource' and source['parameters'] == {'dc': 'dc'}
+    assert [(o['pins'], o['cells']) for o in source['pin_orders']] == [
+        (['PLUS', 'MINUS'], ['vdc', 'vpulse']), (['PLUS', 'MINUS', 'P1', 'M1', 'P2', 'M2'], ['vsource'])]
+    assert parts['components']['inductor']['parameters'] == {'l': 'ind'}          # `l` on an inductor's line is no length
+    assert parts['components']['iprobe']['kind'] == 'vsource' and '0 V source' in parts['components']['iprobe']['basis']
+    assert parts['components']['vcvs']['kind'] == 'unknown' and parts['components']['vcvs']['pin_orders'][0]['pins'] == ['PLUS', 'MINUS', 'NC+', 'NC-']
+    assert parts['components']['winding']['pin_orders'][0]['pins'] == ['t', 'b']    # a pin called t is not SKILL's truth value
+    assert parts['components']['mutual_inductor']['pin_orders'] == [] and parts['components']['mutual_inductor']['cells_without_pin_order'] == ['mind']
+    assert parts['components']['nport']['pin_orders'] == [] and parts['components']['nport']['cells_with_too_many_pins'] == ['bigport']
+    assert parts['not_components'] == [dict(cell='nmos4', reason='netlists with a model named on the instance'),
+                                       dict(cell='title', reason='no Spectre entry (not netlisted)')]
+    assert parts['layout_only'] == [dict(cell='gnd', views=['symbol'])]
+
+
+def test_an_ideal_part_is_read_with_the_pin_order_that_fits_the_netlist():
+    record = load_demo()
+    models = pdk.ideal_models(record)                             # without a netlist: the order most cells state
+    assert models['vsource'] == dict(kind='vsource', terminals=['PLUS', 'MINUS'], roles=['positive', 'negative'], parameters={'dc': 'dc'})
+    assert models['inductor'] == dict(kind='inductor', terminals=['PLUS', 'MINUS'], roles=['positive', 'negative'], parameters={'l': 'ind'})
+    assert models['iprobe'] == dict(kind='vsource', terminals=['PLUS', 'MINUS'], roles=['positive', 'negative'], parameters={})
+    assert models['vcvs'] == dict(kind='unknown', terminals=['PLUS', 'MINUS', 'NC+', 'NC-'], roles=['unknown'] * 4, parameters={})
+    assert 'mutual_inductor' not in models and 'nport' not in models
+    counted = pdk.ideal_models(record, dict(vsource={6}, resistor={3}, capacitor={2, 3}, inductor={4}, isource={2}))
+    assert counted['vsource'] == dict(kind='unknown', terminals=['PLUS', 'MINUS', 'P1', 'M1', 'P2', 'M2'], roles=['unknown'] * 6, parameters={})
+    assert counted['resistor'] == dict(kind='unknown', terminals=['t1', 't2', 't0'], roles=['unknown'] * 3, parameters={})
+    assert counted['isource']['kind'] == 'isource'
+    assert sorted(counted) == ['isource', 'resistor', 'vsource']     # lines of two lengths, or of a length no cell states: no mapping
+    assert pdk.ideal_models(None) == {} and pdk.ideal_models(dict(ideal_parts=dict(error='not read', components={}))) == {}
+
+
+def test_a_pdk_loaded_before_the_ideal_parts_were_read_says_so_and_changes_nothing(tmp_path):
+    record = load_demo()
+    old = {k: v for k, v in record.items() if k != 'ideal_parts'}                 # as every record stored before 7.190
+    assert pdk.describe(old)['ideal_parts'] is None and pdk.ideal_models(old) == {}
+    raw = raw_material()
+    del raw['ideal']                                                              # an older reader's answer
+    assert pdk.finish_load(raw)['ideal_parts']['summary']['components'] == 10      # what was read before is kept
+    described = pdk.describe(pdk.load_record('demo045'), brief=True)['ideal_parts']
+    assert described['not_read_again'].startswith('this read did not ask for them') and 'components' not in described
+
+
+def test_a_cell_s_ideal_parts_are_recognized_from_what_was_read_with_its_pdk():
+    from gator_workbench import native_cells
+    text = (FIXTURE / 'demo_circuit.scs').read_text() + ('LX (VOUT 0) inductor l=2n\nEX (VOUT 0 VIN 0) vcvs gain=10\n'
+                                                           'IX (VDD VOUT) isource dc=10u\nRX (VOUT 0) resistor r=1K\n')
+    load_demo()
+    mapping, unverified, origin = native_cells._mapping(text, technology_library='demo045')
+    assert unverified == [] and origin['inductor'] == origin['vcvs'] == 'ideal' and origin['dm_npn'] == 'pdk'
+    assert mapping['models']['inductor'] == dict(kind='inductor', terminals=['PLUS', 'MINUS'], roles=['positive', 'negative'], parameters={'l': 'ind'})
+    assert mapping['models']['vcvs']['terminals'] == ['PLUS', 'MINUS', 'NC+', 'NC-'] and mapping['models']['vcvs']['kind'] == 'unknown'
+    # A part the project had verified keeps the very pin names its saved tasks have: a current source's are p and n there,
+    # whatever the library calls them, so no saved task's circuit description changes.
+    assert origin['isource'] == origin['resistor'] == origin['vsource'] == 'verified'
+    assert mapping['models']['isource']['terminals'] == ['p', 'n'] and mapping['models']['resistor']['terminals'] == ['p', 'n']
+    sha = pdk.load_record('demo045')['ideal_parts']['sha256'][:12]
+    assert mapping['mapping_version'].startswith('native-draft-1+pdk-demo045-') and mapping['mapping_version'].endswith(f'+ideal-analogLib-{sha}')
+    from analog_optimizer.netlist.config import DeviceMapping, ParserConfig
+    from analog_optimizer.netlist.spectre_parser import SpectreParser
+    config = ParserConfig(models={name: DeviceMapping(kind=m['kind'], terminals=tuple(m['terminals']), roles=tuple(m['roles']),
+                                                       parameters=m['parameters']) for name, m in mapping['models'].items()})
+    graph = SpectreParser(config).parse_text(text, source='<test>', circuit_id='demo')
+    kinds = {d.id: d.kind for d in graph.devices}
+    assert kinds['LX'] == 'inductor' and kinds['EX'] == 'unknown' and graph.parameters['LX']['ind'].value == pytest.approx(2e-9)
+    # Without the PDK - and the library read with it - the same cell keeps its unrecognized parts, by name.
+    assert native_cells.build_mapping(text)[1] == ['dm_dio', 'dm_ind', 'dm_mim', 'dm_ncap', 'dm_nch', 'dm_npn', 'dm_pch', 'dm_rpoly', 'inductor', 'vcvs']
+    # A description is used only for lines it fits: a six-node source is the library's six-pin part, and lines of two
+    # lengths under one component are left unrecognized instead of stopping the parser.
+    six = text.replace('VIN (VIN 0) vsource dc=0.5', 'VIN (VIN 0 a b c d) vsource type=prbs').replace('VDD (VDD 0) vsource dc=1.0', 'VDD (VDD 0 e f g h) vsource type=prbs')
+    mapping, unverified, origin = native_cells._mapping(six, technology_library='demo045')
+    assert origin['vsource'] == 'ideal' and mapping['models']['vsource']['terminals'] == ['PLUS', 'MINUS', 'P1', 'M1', 'P2', 'M2'] and unverified == []
+    mixed = text.replace('VIN (VIN 0) vsource dc=0.5', 'VIN (VIN 0 a b c d) vsource type=prbs')
+    assert native_cells._mapping(mixed, technology_library='demo045')[1] == ['vsource']
 
 
 def test_a_cell_read_from_virtuoso_parses_its_pdk_components_once_the_pdk_is_loaded():

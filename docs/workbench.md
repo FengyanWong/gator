@@ -1402,8 +1402,10 @@ That save changes Specs only, so the recorded baseline is kept.
 - **Apply writes only what still fits.** A Specs row whose limits or unit were changed after the run is marked "not
   applied", and a run of another task than the one on the page offers nothing.
 - **The baseline alone:** press **Abort** once the random designs begin; the baseline counts as finished (the point
-  above). A starting design that cannot be measured costs one simulation anyway: the run ends after it. A browser that
-  had unticked the old tick calibrates too: that choice is no longer read.
+  above). The Abort question of a Baseline simulation says so: the baseline is kept, a task saved from a cell that has
+  no reference yet still gets it, and the calibration proposes only from the random designs simulated so far (at least
+  16 must give a reward; record 7.206). A starting design that cannot be measured costs one simulation anyway: the run
+  ends after it. A browser that had unticked the old tick calibrates too: that choice is no longer read.
 - **From a script:** `POST /api/runs/start` takes `calibration_designs` (0 to 500) with `baseline_only`; the result is
   `calibration.json` in the run folder and `calibration` in the run's status.
 

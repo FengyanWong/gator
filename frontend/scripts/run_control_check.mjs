@@ -22,7 +22,7 @@ const browser = await launchEdge('runcontrol');
 
 // ---- the simulated run (FIXTURE): one status "file" that the page polls, advanced by scripted steps ----------------
 const DIR = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task__scratch__seed0__0001';
-const sim = { dir: DIR, mock: true, state: null, alive: false, charged: 0, max: 60, stop_reason: null, beat: 0, steps: [], output: {}, starts: 0 };
+const sim = { dir: DIR, mock: true, state: null, alive: false, charged: 0, max: 60, stop_reason: null, beat: 0, steps: [], output: {}, starts: 0, calibration: null };
 const listed = () => sim.state ? [{ run_dir: DIR, run_id: 'fixture-run', task_id: 'fixture_task:0000', task_definition_hash: 'fixture', mode: 'scratch', mock: sim.mock, seed: 0,
   created_utc: '2026-09-21T00:00:00+00:00', state: sim.state, experiment: 'fixture_experiment__0001', evaluations: null, first_feasible_eval_count: null, resumability: null }] : [];
 const statusOf = () => {
@@ -34,7 +34,7 @@ const statusOf = () => {
     run_dir: sim.dir, heartbeat_utc: at, stop_reason: sim.stop_reason, error: null, active_workers: [], concurrency: 1, learner_updates: 0, first_feasible: null,
     budget: { max_evaluations: sim.max, max_launches: null, max_retries: 0, charged: sim.charged, reserved: 0, in_flight: sim.alive && sim.state === 'running' ? 1 : 0,
       completed: sim.charged, failed: 0, released: 0, remaining: sim.max - sim.charged, launches: sim.charged, retries: 0, cache_hits: 0, first_feasible: null },
-    best_design: null, persistence: null, last_checkpoint_utc: null, paths: { run_dir: sim.dir }, connection: { overall: 'not_applicable' }, summary: null,
+    best_design: null, persistence: null, last_checkpoint_utc: null, paths: { run_dir: sim.dir }, connection: { overall: 'not_applicable' }, summary: null, calibration: sim.calibration,
     manifest: { mode: 'scratch', mock: sim.mock, task_id: 'fixture_task:0000', seeds: { target_seed: 0 }, source_model: null, budgets: { max_evaluations: sim.max },
       mock_notice: sim.mock ? 'FIXTURE MOCK DATA: nothing was started.' : null } };
 };
@@ -233,6 +233,17 @@ await runChecks(browser, async () => {
   await press(ABORT); await sleep(400);
   check('Abort asks first, in plain words', lastDialog().type === 'confirm' && /^Abort this run\?/.test(lastDialog().message) && /allowed to finish/.test(lastDialog().message) && /use Pause instead/.test(lastDialog().message), lastDialog().message);
   check('answering no sends nothing', log.length === 0 && (await look()).main === 'Pause');
+  check('...and a run that is no Baseline simulation is not told about a baseline', !/Baseline simulation/.test(lastDialog().message), lastDialog().message);
+  // A Baseline simulation calibrates (record 7.202): Abort is how its baseline is kept alone, and the question says so (7.206).
+  sim.calibration = { request: { designs: 64, lanes: 1, evaluations: 65 }, result: null };
+  await sleep(3200);                                                                // two status polls (1.5 s each): the page holds it
+  answers.push(false); await press(ABORT); await sleep(400);
+  const asked = lastDialog().message.replace(/\n/g, ' ');
+  check('Abort of a Baseline simulation says the baseline is kept and what the calibration still needs', lastDialog().type === 'confirm' && /^Abort this run\?/.test(asked)
+    && /This is a Baseline simulation: its baseline \(the first simulation\) is kept/.test(asked) && /no reference yet still gets it as its reference/.test(asked)
+    && /at least 16 must give a reward/.test(asked), asked);
+  check('...and answering no sends nothing there either', log.length === 0 && (await look()).main === 'Pause');
+  sim.calibration = null; await sleep(3200);
   answers.push(true); sim.steps = [{}, { state: 'stopping', stop_reason: 'user_stop' }];
   await press(ABORT);
   check('Abort reads "Aborting..." and sends ONE graceful stop (the simulation in flight may finish)', await mainReads('Aborting...') && await waitFor(() => commands().length > 0) && commands().join() === 'stop', commands().join());

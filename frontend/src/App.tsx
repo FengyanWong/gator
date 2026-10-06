@@ -394,7 +394,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
       <aside className="left">
         <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId}
           taskSlot={taskSlot} taskNotes={taskNotes} titleSlot={titleSlot}
-          taskEpoch={taskEpoch} />
+          taskEpoch={taskEpoch} runs={runs} refreshRuns={refreshRuns} />
       </aside>
       <main>
         <Editors schema={schema} config={config} setConfig={setConfig} undo={store.undo} redo={store.redo} canUndo={store.canUndo} canRedo={store.canRedo}

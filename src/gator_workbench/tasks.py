@@ -268,6 +268,10 @@ def list_tasks():
                           pdk_id=entry.get('pdk_id') or 'gpdk045', available=blocker is None, blocker=blocker, library=entry['library'], cell=entry['core_cell'],
                           revision=entry.get('revision'), measurement=entry.get('measurement'), original=entry.get('original'),
                           verified=profiles.reference_metrics(name) is not None,
+                          # The task window (record 7.227) shows these facts of the saved task: all from its entry, no other file read.
+                          testbench=entry.get('testbench_cell'), saved_utc=entry.get('saved_utc'), created_utc=entry.get('created_utc'),
+                          baseline_recorded_utc=entry.get('baseline_recorded_utc'), status=entry.get('status'),
+                          variables=len(entry.get('optimized_variables') or ()), results=len(entry.get('provided_metrics') or ()),
                           description=f"Profile generated from {entry['library']}/{entry['core_cell']} (Virtuoso + Spectre). "
                                       + ('' if profiles.reference_metrics(name) else 'No real baseline recorded yet.')))
     from . import ngspice_tasks

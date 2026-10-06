@@ -485,3 +485,13 @@ button.training-chip-remove { border: none; background: none; padding: 0 1px; li
 @media (max-width: 700px) {
   .layout { grid-template: 'head' auto 'msg' auto 'left' minmax(240px, 45vh) 'main' minmax(360px, 60vh) 'right' minmax(240px, 45vh) 'foot' minmax(420px, 65vh) / minmax(0, 1fr); }
 }
+
+/* ---- the task window (record 7.227): the Project column's Task row = text + "Tasks..." button, the window reuses the run window's rules ---- */
+.row.task-row { align-items: center; gap: 8px; margin: 4px 0 2px; flex-wrap: nowrap; } .task-caption { flex: none; color: var(--muted); font-size: 11.5px; }
+.task-list-current { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.task-list-current code.task-list-key { font-size: 12px; } .task-list-current .task-list-mark { font-size: 11px; }
+.row.task-row button.task-list-button { flex: none; font-weight: 600; } .row.task-row button.task-list-button.open { background: var(--selected); border-color: var(--accent); }
+.task-list-blocked { flex-basis: 100%; }
+#tasks-root { height: 100vh; background: var(--panel); } .task-window .task-filter { width: 330px; }
+table.task-table td code { font-size: 12px; } table.task-table td .hint.warn { color: var(--warn); }
+.task-details h4 { margin: 10px 0 3px; } table.task-rows-table { width: auto; } table.task-rows-table td, table.task-rows-table th { padding: 2px 8px; }

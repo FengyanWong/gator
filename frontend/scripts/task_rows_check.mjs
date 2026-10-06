@@ -16,7 +16,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_rows_check.mjs)" [--live] [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { answerDialogs, validConfiguration, check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { answerDialogs, validConfiguration, check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, taskWindow, workbenchUrl } from './lib/harness.mjs';
 
 const LIVE = process.argv.includes('--live');                 // reads go to the backend; writing requests are refused either way
 const APP = await workbenchUrl();
@@ -95,12 +95,16 @@ await runChecks(browser, async () => {
   const FIELD = label => `[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)}).querySelector('input, select')`;
   const BUTTON = (scope, text) => `[...${scope}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const EDITORS = `document.querySelector('.editors')`;
-  const value = label => evaluate(`${FIELD(label)}.value`);
+  // Since record 7.227 the task is plain text + a "Tasks..." button; a choice is a double click in the task window (harness taskWindow).
+  const tw = taskWindow(page, browser);
+  const TASK_KEY = `(${PANEL}.querySelector('.task-row .task-list-key')?.textContent ?? '')`;
+  const OPENED = `!!(${PANEL}) && !!${PANEL}.querySelector('.task-row button.task-list-button')`;
+  const value = label => label === 'Task' ? tw.current() : evaluate(`${FIELD(label)}.value`);
   // The RL model's own label in Run configuration took the Project name box's place (record 7.159).
   const MODEL_LABEL = `document.querySelector('.right input.model-label')`;
   const labelValue = () => evaluate(`${MODEL_LABEL}.value`);
   const nameBox = () => evaluate(`[...document.querySelectorAll('.left label')].some(l => l.firstChild?.textContent.trim() === 'Project name')`);
-  const choose = (label, v) => page.setValue(`${FIELD(label)}`, v);
+  const choose = (label, v) => tw.choose(v, { tries: 0 });     // as the old list's change event: the waits below are the check's own
   const setInput = (element, v) => page.setValue(`${element}`, v, { event: 'input' });
   const strip = () => evaluate(`[...${EDITORS}.querySelectorAll('.tabs button')].map(b => b.textContent.trim()).join(' | ')`);
   const openTab = name => evaluate(`[...${EDITORS}.querySelectorAll('.tabs button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(name)})).click()`);
@@ -117,7 +121,7 @@ await runChecks(browser, async () => {
   await page.seed({ config: SEED, when: 'missing' });
   await page.trackSaves();                                  // the page saves 800 ms after the last change: read it with saved()
   await send('Page.navigate', { url: APP });
-  check('the page opens', await until(`!!(${PANEL}) && ${FIELD('Task')}.options.length > 1`));
+  check('the page opens', await until(OPENED));
   await openTab('Specs');
   check('on the MOCK task the only spec is the toy score', JSON.stringify(await column('metric_id')) === '["score"]' && (await value('PDK id')) === 'gpdk045', await strip());
   check('nothing was fetched or exchanged by opening the page', starters.length === 0 && (await note()) === '', JSON.stringify(starters));
@@ -166,11 +170,11 @@ await runChecks(browser, async () => {
 
   // ---- one Undo takes the choice and everything it brought back; Redo returns it ---------------------------------------
   await evaluate(`${BUTTON(EDITORS, 'Undo')}.click()`);
-  check('ONE Undo: the MOCK task, its score, its labels and its name are back', await until(`${FIELD('Task')}.value === 'synthetic:gpdk045_ota5'`) && JSON.stringify(await column('metric_id')) === '["score"]'
+  check('ONE Undo: the MOCK task, its score, its labels and its name are back', await until(`${TASK_KEY} === 'synthetic:gpdk045_ota5'`) && JSON.stringify(await column('metric_id')) === '["score"]'
     && (await value('PDK id')) === 'gpdk045' && (await config()).project.name === 'mock-gpdk045-ota5', `${await value('Task')} ${JSON.stringify(await column('metric_id'))}`);
   check('the note about another task is gone', (await note()) === '', await note());
   await evaluate(`${BUTTON(EDITORS, 'Redo')}.click()`);
-  check('Redo: the real task with its rows again', await until(`${FIELD('Task')}.value === 'real:gpdk045_ota5'`) && (await column('metric_id')).includes('gain_db_at_start'), JSON.stringify(await column('metric_id')));
+  check('Redo: the real task with its rows again', await until(`${TASK_KEY} === 'real:gpdk045_ota5'`) && (await column('metric_id')).includes('gain_db_at_start'), JSON.stringify(await column('metric_id')));
 
   // ---- resolve edits before changing the task -------------------------------------------------------------------------
   await setInput(`${EDITORS}.querySelector('table.editor tbody tr input.numeric')`, '26');
@@ -182,7 +186,7 @@ await runChecks(browser, async () => {
     && (await column('lower')).includes('26') && dialogs.at(-1)?.message.includes('unsaved'));
   answers.push(true);
   await choose('Task', 'synthetic:gpdk045_ota5');
-  check('Discard switches task and all rows without a Load press', await until(`${FIELD('Task')}.value === 'synthetic:gpdk045_ota5'`)
+  check('Discard switches task and all rows without a Load press', await until(`${TASK_KEY} === 'synthetic:gpdk045_ota5'`)
     && JSON.stringify(await column('metric_id')) === '["score"]', await note());
 
   // ---- a model label the user typed stays (it was the project name until record 7.159) -----------------------------------
@@ -230,13 +234,13 @@ await runChecks(browser, async () => {
       && (await config()).parameters[0].lower === 0.000002, JSON.stringify(await column('lower')));
     answers.push(true);
     await choose('Task', 'real:gpdk045_ota5');
-    await until(`${FIELD('Task')}.value === 'real:gpdk045_ota5'`);
+    await until(`${TASK_KEY} === 'real:gpdk045_ota5'`);
 
     delayTask = 'real:ring_demo';
     await choose('Task', delayTask);
     for (let i = 0; i < 100 && !held.length; i++) await sleep(50);
     await choose('Task', 'real:gpdk045_ota7');
-    await until(`${FIELD('Task')}.value === 'real:gpdk045_ota7'`);
+    await until(`${TASK_KEY} === 'real:gpdk045_ota7'`);
     delayTask = null; await held.shift()(); await sleep(300);
     await openTab('Specs');
     check('a delayed earlier selection cannot replace the latest task', (await value('Task')) === 'real:gpdk045_ota7'
@@ -250,13 +254,13 @@ await runChecks(browser, async () => {
     check('a task saved with the retired tolerance column loads, rows as saved', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`)
       && (await config()).targets.length === 3, await note());
     await send('Page.reload');
-    check('the page reopens on it, without the retired column', await until(`!!(${PANEL}) && ${FIELD('Task')}.options.length > 1 && ${FIELD('Task')}.value === 'real:old_saved'`)
-      && (await config()).targets.length === 3 && !(await config()).targets.some(s => 'tolerance' in s), await value('Task').catch(() => '?'));
+    check('the page reopens on it, without the retired column', await until(`${OPENED} && ${TASK_KEY} === 'real:old_saved'`)
+      && (await config()).targets.length === 3 && !(await config()).targets.some(s => 'tolerance' in s), await value('Task'));
     await choose('Task', 'real:gpdk045_ota7');
-    check('switching away after a reload asks nothing: no row was edited', await until(`${FIELD('Task')}.value === 'real:gpdk045_ota7'`) && dialogs.length === asked,
+    check('switching away after a reload asks nothing: no row was edited', await until(`${TASK_KEY} === 'real:gpdk045_ota7'`) && dialogs.length === asked,
       JSON.stringify(dialogs.slice(asked)));
     await evaluate(`${BUTTON(EDITORS, 'Undo')}.click()`);
-    await until(`${FIELD('Task')}.value === 'real:old_saved'`);
+    await until(`${TASK_KEY} === 'real:old_saved'`);
     await evaluate(`${BUTTON(PANEL, 'Reload saved values')}.click()`);
     check('Reload saved values on it asks nothing either', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`) && dialogs.length === asked,
       JSON.stringify(dialogs.slice(asked)));
@@ -273,9 +277,9 @@ await runChecks(browser, async () => {
   await evaluate(`localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(OLD))})`);
   let mark = loads.length;
   await send('Page.reload');
-  check('the page opens on the saved removed task', await until(`!!(${PANEL}) && ${FIELD('Task')}.options.length > 1 && ${FIELD('Task')}.value === 'synthetic:vco'`), await value('Task').catch(() => '?'));
-  const removedOption = await evaluate(`(() => { const o = [...${FIELD('Task')}.options].find(o => o.value === 'synthetic:vco'); return o && [o.textContent, o.disabled]; })()`);
-  check('the Task list shows it as removed, and it cannot be chosen again', JSON.stringify(removedOption) === JSON.stringify(['synthetic:vco (removed)', true]), JSON.stringify(removedOption));
+  check('the page opens on the saved removed task', await until(`${OPENED} && ${TASK_KEY} === 'synthetic:vco (removed)'`), await value('Task'));
+  const removedShown = [await tw.current(), (await tw.keys()).includes('synthetic:vco')];
+  check('the Task row shows it as removed, and the task window does not offer it', JSON.stringify(removedShown) === JSON.stringify(['synthetic:vco (removed)', false]), JSON.stringify(removedShown));
   check('a plain note says the workbench has no MOCK task now', await until(`[...${PANEL}.querySelectorAll('.note')].some(n => n.textContent.includes('synthetic:vco no longer exists') && n.textContent.includes('no MOCK task since 2026-09-30'))`),
     await evaluate(`[...${PANEL}.querySelectorAll('.note')].map(n => n.textContent).join(' | ')`));
   for (let i = 0; i < 50 && !loads.slice(mark).some(l => l.task_id === 'synthetic:vco'); i++) await sleep(100);
@@ -288,10 +292,10 @@ await runChecks(browser, async () => {
     && (await strip()) === `Parameters (${mock.parameters.length}) | Probes (1) | Specs (1)`, `${await note()} ${await strip()}`);
   check('the old project name stays in the saved configuration (no box shows it now) and the run label follows the new task', (await config()).project.name === 'mock-vco'
     && (await config()).project.task_name === 'mock_gpdk045_ota5');
-  check('the removed entry and the note are gone', !(await evaluate(`[...${FIELD('Task')}.options].some(o => o.value === 'synthetic:vco')`))
+  check('the removed entry and the note are gone', !(await tw.keys()).includes('synthetic:vco')
     && !(await evaluate(`[...${PANEL}.querySelectorAll('.note')].some(n => n.textContent.includes('no longer exists'))`)));
   await evaluate(`${BUTTON(EDITORS, 'Undo')}.click()`);
-  check('one Undo brings the saved state back', await until(`${FIELD('Task')}.value === 'synthetic:vco'`) && (await config()).project.name === 'mock-vco' && (await strip()).startsWith('Parameters (2)'), `${await value('Task')} ${await strip()}`);
+  check('one Undo brings the saved state back', await until(`${TASK_KEY} === 'synthetic:vco (removed)'`) && (await config()).project.name === 'mock-vco' && (await strip()).startsWith('Parameters (2)'), `${await value('Task')} ${await strip()}`);
   check('every edit-discard prompt was expected', dialogs.every(d => d.planned) && answers.length === 0, JSON.stringify(dialogs));
   reportRefused(refused, NEVER_ASKED);
   check('no console errors', consoleErrors.filter(e => !/404|418/.test(e)).length === 0, consoleErrors.join(' | ').slice(0, 300));

@@ -139,7 +139,8 @@ await runChecks(browser, async () => {
   await revalidate(fixtures.valid);
   check('with nothing blocking the header reads "configuration valid" and the button is gone', !(await evaluate(`!!(${BUTTON})`)) && await evaluate(`[...document.querySelectorAll('header span.ok')].some(s => s.textContent === 'configuration valid')`));
   check('the open list closed with it', !(await evaluate(`!!(${LIST})`)));
-  check('Start and the baseline simulation are enabled again', await evaluate(`!${headerButton('Start')}.disabled && !${headerButton('Baseline simulation')}.disabled`));
+  // the buttons follow in the render after the header's text; waited for, as every other state here (record 7.227: it was read in the same tick and failed by a few ms)
+  check('Start and the baseline simulation are enabled again', await until(`!${headerButton('Start')}.disabled && !${headerButton('Baseline simulation')}.disabled`, 30));
   await shot('issues-4-valid.png');
   await revalidate(fixtures.three);
   check('a new problem brings the button back, closed', (await until(`!!(${BUTTON})`, 30)) && !(await evaluate(`!!(${LIST})`)) && (await evaluate(`${BUTTON}.textContent`)) === '3 blocking issue(s)');

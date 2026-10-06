@@ -281,7 +281,7 @@ Browser check: `frontend/scripts/looks_check.mjs` (47 checks, hermetic).
 ### Choosing a registered task: whose rows Parameters, Probes and Specs show
 
 The three tabs hold rows of the *configuration*, so they belong to a task. Choosing another task in the Project
-column (**Registered task -> Task**) brings that task's rows. A fresh page has no task until you choose one (the MOCK task
+column (**Registered task -> Task**, since record 7.227 a double click in the task window behind **Tasks...**) brings that task's rows. A fresh page has no task until you choose one (the MOCK task
 that used to open there, and the verified OTA7 and LDO circuits with their targets of record, were removed on 2026-09-30,
 record 7.128):
 
@@ -313,6 +313,54 @@ record 7.128):
 
 Browser check: `frontend/scripts/task_rows_check.mjs` (fixtures, safe on the live backend; `--live` reads the real
 starters from a restarted or scratch backend). Tests: `tests/workbench/test_wb_real_starter.py`.
+
+### The task window: "Tasks..." (2026-10-06, record 7.227, user request)
+
+User: "make the loaded task a button similar to the runs... button style. It opens a new window showing all the tasks."
+
+In the Project column the registered task is no longer a drop-down list. The **Task** row names the task the page follows
+as plain text (`real:mscr_ota5t`, with a mark when something keeps it from running: `[blocked]`, `[ngspice: choose its
+connection]`, `[MOCK]`; or a placeholder: "(choose a task)", "(none: MScR/x is read from Virtuoso)", "(none: the saved
+source was removed)", "synthetic:vco (removed)"), and ONE button beside it reads **Tasks...** - the same shape as the
+bottom strip's **Runs...**. Pressing it opens the **task window**, a browser window of its own that can stay open next
+to the workbench (allow pop-ups for the page if the browser blocks it). It lists every registered task, one row each:
+
+| Column | What it says |
+|---|---|
+| Task | `real:<name>` (saved from a Virtuoso cell), `ngspice:<name>` (an ngspice netlist), a MOCK task. |
+| Kind | real / ngspice / MOCK, and under it the mark that keeps the task from running now (an ngspice task without its connection is listed too - the old list left it out while a Virtuoso connection was in use). |
+| Class | The circuit class label. |
+| Cell | The library and cell the task runs in (the copy you declared), and its testbench cell. |
+| Rev | The saved revision. |
+| Saved | When the task was last saved (local time of this computer). |
+| Baseline | When the task's reference was recorded by a finished Baseline simulation; "none" until then. |
+| Sizes / results | How many sizes the task varies, how many results its testbench measures. |
+| Newest run | The task's newest run under the output folder: started, state, evaluations, first feasible - the run the bottom tabs show when the task is chosen (record 7.212). |
+| Runs | How many runs the task has, Baseline simulations included. |
+
+* **A double click on a row** makes the page follow that task: exactly what choosing it in the old list did - its
+  Parameters, Probes and Specs come into the editors (edits you made are asked about first, Cancel keeps them), the run
+  label follows, the bottom tabs show its newest run, one Undo takes the whole choice back. The row of the task the page
+  follows is marked; the window stays open.
+* **Details** opens everything else under the row: what the task is, the cell it runs in and the cell it was saved from,
+  its netlist of record, how it is measured, created / saved / baseline times, its state, the run label, its runs - and
+  its rows: the Parameters it varies (searched rows with their ranges, follower rows), its Probes and its Specs with
+  their limits, read from the starter route when the details open.
+* A press on a column title sorts by it (again: the other way; rows without a value stay last). The filter box narrows
+  the list by any word of a row: name, kind, class, cell, a date.
+* **Nothing in the window updates by itself.** The task list is read when the button is pressed and by **Refresh list**
+  (which reads the run list again too; otherwise the run columns show the page's own run list - read when the page
+  opened and after every task choice). A workbench server started before this was added lists runs without their task:
+  the run columns then stay empty and the window says so.
+* The task row's facts (`testbench`, `saved_utc`, `created_utc`, `baseline_recorded_utc`, `status`, `variables`,
+  `results`) come with `GET /api/tasks`, all from the task's own entry file - no other file is read. A server older than
+  the page leaves those cells empty ("-").
+* **Reload saved values** and **Delete task** stay in the column under the task, as before.
+
+Browser checks: `frontend/scripts/task_list_check.mjs` (the window, double click, Details, filter, sort, Refresh, an
+older server; fixtures, safe on the live backend); the checks that used to choose a task through the drop-down
+(`task_rows_check`, `task_run_check`, `virtuoso_source_check`, `circuit_source_check`, `ngspice_window_check`) choose it
+through the window with the harness's `taskWindow`. Backend test: `tests/workbench/test_wb_task_save.py` (the facts).
 
 ### Specs are equations over Probes (added 2026-09-21, user request)
 

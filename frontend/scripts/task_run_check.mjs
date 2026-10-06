@@ -15,7 +15,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_run_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, NEVER_ASKED, outDir, reportRefused, RUN_KEY, runChecks, sleep, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, NEVER_ASKED, outDir, reportRefused, RUN_KEY, runChecks, sleep, taskWindow, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -85,24 +85,25 @@ await runChecks(browser, async () => {
   const lists = () => seen.filter(s => s === '/api/runs').length;
   const until = (expression, tries = 100) => page.until(expression, tries);
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
-  const TASK = `[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'Task').querySelector('select')`;
+  // Since record 7.227 the task is plain text + a "Tasks..." button; a choice is a double click in the task window (harness taskWindow).
+  const tw = taskWindow(page, browser);
+  const TASK_KEY = `(${PANEL}.querySelector('.task-row .task-list-key')?.textContent ?? '')`;
   const EDITORS = `document.querySelector('.editors')`;
   const BUTTON = (scope, text) => `[...${scope}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const SHOWN = `(document.querySelector('footer .tabs .run-list-current')?.textContent ?? '')`;
   const shown = () => evaluate(SHOWN);
   const names = r => `${SHOWN}.includes(${JSON.stringify(stamp(r.created_utc))}) && ${SHOWN}.includes(${JSON.stringify(` | ${r.task_name} | `)})`;
   const headerRun = () => evaluate(`localStorage.getItem(${JSON.stringify(RUN_KEY)})`);
-  // A choice in the Task list; it is done once the select holds it and the run list has been read for it.
+  // A choice in the task window; it is done once the Task row names it and the run list has been read for it.
   const choose = async (taskKey, { reads = 1 } = {}) => {
     const before = lists();
-    await page.setValue(TASK, taskKey);
-    const chosen = await until(`${TASK}.value === ${JSON.stringify(taskKey)} && !${PANEL}.querySelector('[role="status"]')`);
+    const chosen = await tw.choose(taskKey);
     for (let i = 0; i < 100 && lists() < before + reads; i++) await sleep(50);
     return chosen;
   };
   const settle = () => sleep(700);                     // room for an answer to be drawn - or for a change that must not come
   const opened = async () => {                         // the page after a navigation or a reload: task list, strip, first list read
-    const ok = await until(`!!(${PANEL}) && ${TASK}.options.length > 1 && !!document.querySelector('footer .tabs .run-list-current')`, 150);
+    const ok = await until(`!!(${PANEL}) && !!${PANEL}.querySelector('.task-row button.task-list-button') && !!document.querySelector('footer .tabs .run-list-current')`, 150);
     for (let i = 0; i < 100 && !seen.includes('/api/runs'); i++) await sleep(50);
     await settle();
     return ok;
@@ -162,16 +163,16 @@ await runChecks(browser, async () => {
   // ---- 4. Undo and Redo of the choice follow too -------------------------------------------------------------------------
   let before = lists();
   await evaluate(`${BUTTON(EDITORS, 'Undo')}.click()`);
-  check('Undo takes the choice back, and the tabs show real:alpha\'s newest run again', await until(`${TASK}.value === 'real:alpha'`) && await until(names(A2), 50) && lists() === before + 1, await shown());
+  check('Undo takes the choice back, and the tabs show real:alpha\'s newest run again', await until(`${TASK_KEY} === 'real:alpha'`) && await until(names(A2), 50) && lists() === before + 1, await shown());
   before = lists();
   await evaluate(`${BUTTON(EDITORS, 'Redo')}.click()`);
-  check('Redo: real:gamma again, and no run', await until(`${TASK}.value === 'real:gamma'`) && await until(`${SHOWN} === 'No run selected'`, 50) && lists() === before + 1, await shown());
+  check('Redo: real:gamma again, and no run', await until(`${TASK_KEY} === 'real:gamma'`) && await until(`${SHOWN} === 'No run selected'`, 50) && lists() === before + 1, await shown());
 
   // ---- 5. a reload keeps the blank: not the header's run --------------------------------------------------------------------
   seen.length = 0;
   await send('Page.reload');
   check('after a reload the page is on real:gamma and still shows no run - not the header\'s run of another task', await opened()
-    && (await evaluate(`${TASK}.value`)) === 'real:gamma' && (await shown()) === 'No run selected' && lists() === 1, `${await shown()} (${lists()} read(s))`);
+    && (await tw.current()) === 'real:gamma' && (await shown()) === 'No run selected' && lists() === 1, `${await shown()} (${lists()} read(s))`);
   check('the header still holds its run', (await headerRun()) === A1.run_dir, await headerRun());
 
   // ---- 6. a run chosen in the run window stays: also across a reload -------------------------------------------------------

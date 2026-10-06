@@ -19,7 +19,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/virtuoso_source_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { MOCK_PAGE_CONFIG, answerDialogs, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { MOCK_PAGE_CONFIG, answerDialogs, check, fail, finish, launchEdge, outDir, sleep, taskWindow, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -145,8 +145,10 @@ try {
   const BUTTON = text => `[...${PANEL}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const LAUNCH = `${PANEL}.querySelector('button.virtuoso-button')`;
   const text = () => evaluate(`${PANEL}.textContent`);
-  const value = label => evaluate(`${FIELD(label)}.value`);
-  const choose = (label, v) => page.setValue(`${FIELD(label)}`, v);
+  // Since record 7.227 the task is plain text + a "Tasks..." button; a choice is a double click in the task window (harness taskWindow).
+  const tw = taskWindow(page, browser);
+  const value = label => label === 'Task' ? tw.current() : evaluate(`${FIELD(label)}.value`);
+  const choose = (label, v) => label === 'Task' ? tw.choose(v, { tries: 0 }) : page.setValue(`${FIELD(label)}`, v);
   const type = async (label, textToType) => {                                       // the labels sit in a folded line: open it, then type
     await evaluate(`(() => { const d = ${PANEL}.querySelector('details.labels'); if (!d.open) d.querySelector('summary').click(); const i = ${FIELD(label)}; i.focus(); i.select(); })()`);
     await send('Input.insertText', { text: textToType });
@@ -208,7 +210,7 @@ try {
   // (the Project heading went with the project name box, record 7.159)
   check('the column\'s heading is Registered task - no "Circuit source", no Project name box', JSON.stringify(headings) === JSON.stringify(['Registered task']), headings.join(' | '));
   check('no Source list, no Library / Cell / Testbench boxes in the column', !(await evaluate(`!!(${LABEL('Source')}) || !!(${LABEL('Library')}) || !!(${LABEL('Cell')}) || !!(${LABEL('Testbench cell')})`)));
-  check('the Task list is there, on the MOCK task', (await value('Task')) === 'synthetic:gpdk045_ota5', await value('Task'));
+  check('the Task row names the MOCK task (no drop-down list since record 7.227)', (await value('Task')) === 'synthetic:gpdk045_ota5' && !(await evaluate(`!!${PANEL}.querySelector('.task-row select')`)), await value('Task'));
   const launcher = await evaluate(`(() => { const b = ${LAUNCH}; const row = b?.closest('.row'); return b ? { caption: b.textContent.trim(), beside: row.querySelector('.hint')?.textContent.trim() } : null; })()`);
   check('ONE short button "Virtuoso cell..." with what it is for as text beside it', !!launcher && launcher.caption === 'Virtuoso cell...' && launcher.beside === 'From a cell you copied in Virtuoso:', JSON.stringify(launcher));
   check('the labels are one folded line naming their values', await evaluate(`(() => { const d = ${PANEL}.querySelector('details.labels'); return !!d && !d.open && /^Labels: class \\w+, PDK \\w+/.test(d.querySelector('summary').textContent.trim()); })()`),
@@ -238,7 +240,7 @@ try {
   check('the Cell dropdown lists them; a cell without a schematic cannot be chosen', cellOptions.length === 5 && cellOptions.find(o => o.value === 'symbol_only')?.disabled === true
     && cellOptions.find(o => o.value === 'symbol_only').text.includes('no schematic view') && cellOptions.find(o => o.value === 'ota5_v1')?.disabled === false, JSON.stringify(cellOptions));
   check('the page follows the Virtuoso source now: the Task list shows none, its text says a cell is being chosen', (await stored())?.circuit?.source === 'virtuoso'
-    && (await value('Task')) === '' && (await evaluate(`${FIELD('Task')}.selectedOptions[0]?.textContent`)).includes('a Virtuoso cell is being chosen'), await evaluate(`${FIELD('Task')}.selectedOptions[0]?.textContent`));
+    && ((await value('Task')) ?? '').includes('a Virtuoso cell is being chosen'), await value('Task'));
   check('the PDK id is offered from the technology library (in the column\'s labels line)', (await value('PDK id')) === 'gpdk045' && (await evaluate(`${PANEL}.querySelector('details.labels summary').textContent`)).includes('PDK gpdk045'), await value('PDK id'));
   check('the testbench dropdown offers the cells that have a schematic', JSON.stringify((await wOptions('Testbench cell')).map(o => o.value)) === JSON.stringify(['', 'ota5_v1', 'ota5_tb', 'vco_fixture']), JSON.stringify(await wOptions('Testbench cell')));
 

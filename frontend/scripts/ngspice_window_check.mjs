@@ -15,7 +15,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/ngspice_window_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, outDir, PAGE_OPEN_TEST, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, PAGE_OPEN_TEST, runChecks, sleep, taskWindow, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -147,9 +147,11 @@ await runChecks(browser, async () => {
     && save.body.device_kinds === '' && save.body.circuit_class === 'unspecified' && save.body.pdk_id === 'unspecified' && save.body.source_path === `${meta.repo_root}/examples/circuits/ngspice_ota5_level1.cir`
     && Object.keys(save.body).sort().join() === 'circuit_class,device_kinds,name,pdk_id,source_path,text', JSON.stringify(save?.body ?? null).slice(0, 300));
   check('the window says the task was saved and the column follows it', (await win.evaluate(`${W}.querySelector('p.ok')?.textContent ?? ''`)).includes('Saved the new task ngspice:fixture_ota'));
-  const chosen = await evaluate(`[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'Task')?.querySelector('select').value`);
-  check('the Project column follows ngspice:fixture_ota, listed as [ngspice]', chosen === 'ngspice:fixture_ota'
-    && await evaluate(`[...${PANEL}.querySelectorAll('option')].some(o => o.value === 'ngspice:fixture_ota' && o.textContent.includes('[ngspice'))`));
+  // Since record 7.227 the task is plain text + a mark + a "Tasks..." button (harness taskWindow drives the window).
+  const tw = taskWindow(page, browser);
+  const chosen = await tw.current();
+  check('the Project column follows ngspice:fixture_ota, marked [ngspice]', chosen === 'ngspice:fixture_ota'
+    && (await evaluate(`${PANEL}.querySelector('.task-row .task-list-mark')?.textContent ?? ''`)).includes('[ngspice'), chosen);
   const config = await evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') || 'null')`);
   check('the editors hold the task\'s starter rows (Parameters, Probes) and Specs is empty', config?.parameters?.[0]?.variable_id === 'm1_w'
     && config?.measurements?.[0]?.measurement_id === 'm_vout_v' && (config?.targets ?? []).length === 0, JSON.stringify(config?.parameters ?? null).slice(0, 120));
@@ -167,9 +169,10 @@ await runChecks(browser, async () => {
 
   // ---- the launchers follow the connection in use, and so do the ngspice tasks in the Task list (records 7.76, 7.77) -----------------
   connections = [{ id: 'fixture-lab', kind: 'virtuoso_ssh', family: 'virtuoso' }, { id: 'fixture-sim', kind: 'ngspice_local', family: 'ngspice' }];
-  const TASK_SELECT = `[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'Task')?.querySelector('select')`;
   const launchers = () => evaluate(`(() => { const p = ${PANEL}; return { virtuoso: !!p.querySelector('button.virtuoso-button'), ngspice: !!p.querySelector('button.ngspice-button'),
-    tasks: [...((${TASK_SELECT})?.options ?? [])].map(o => o.textContent.trim()) }; })()`);
+    task: ((p.querySelector('.task-row .task-list-key')?.textContent ?? '') + ' ' + (p.querySelector('.task-row .task-list-mark')?.textContent ?? '')).trim() }; })()`);
+  // The task window lists EVERY task (record 7.227): an ngspice task without its connection carries the mark in its Kind cell.
+  const windowTasks = async () => (await tw.rows()).map(r => `${r.key} ${r.kind}`);
   // The page reloaded with the connection `id` in use and, when one is given, another task followed (its rows emptied; the MOCK
   // task's load passes through to the backend, read-only).
   const withConnection = async (id, task = null) => {
@@ -182,26 +185,30 @@ await runChecks(browser, async () => {
     // agree. It slept 2 s until 2026-09-30.
     for (let i = 0, last = ''; i < 40; i++) {
       const now = await launchers(), text = JSON.stringify(now);
-      if (text === last && (now.virtuoso || now.ngspice) && now.tasks.length) break;
+      if (text === last && (now.virtuoso || now.ngspice) && now.task) break;
       last = text; await sleep(300);
     }
     return launchers();
   };
-  const ngspiceListed = shown => shown.tasks.filter(t => t.startsWith('ngspice:'));
+  const ngspiceListed = rows => rows.filter(t => t.startsWith('ngspice:'));
   const onVirtuoso = await withConnection('fixture-lab');
   check('with a Virtuoso connection in use the column offers "Virtuoso cell..." only', onVirtuoso.virtuoso && !onVirtuoso.ngspice, JSON.stringify(onVirtuoso));
-  check('the ngspice task the page follows stays listed there, marked "choose its connection"', ngspiceListed(onVirtuoso).length === 1
-    && onVirtuoso.tasks.some(t => t.startsWith('ngspice:fixture_ota') && t.includes('choose its connection')), JSON.stringify(onVirtuoso.tasks));
+  check('the ngspice task the page follows is named in the Task row, marked "choose its connection"', onVirtuoso.task.startsWith('ngspice:fixture_ota') && onVirtuoso.task.includes('choose its connection'), onVirtuoso.task);
+  let listed = await windowTasks();
+  check('the task window lists it with that mark (the example shows only while ngspice is connected)', ngspiceListed(listed).length === 1 && ngspiceListed(listed)[0].includes('choose its connection'), JSON.stringify(listed));
   const onVirtuosoMock = await withConnection('fixture-lab', 'synthetic:gpdk045_ota5');
-  check('with the MOCK task followed and a Virtuoso connection in use, no ngspice task is listed (the example shows only while ngspice is connected)',
-    onVirtuosoMock.tasks.some(t => t.startsWith('synthetic:gpdk045_ota5')) && ngspiceListed(onVirtuosoMock).length === 0, JSON.stringify(onVirtuosoMock.tasks));
+  listed = await windowTasks();
+  check('with the MOCK task followed and a Virtuoso connection in use, the window still lists the ngspice task, marked "choose its connection" (the window shows every task, record 7.227)',
+    onVirtuosoMock.task.startsWith('synthetic:gpdk045_ota5') && ngspiceListed(listed).length === 1 && ngspiceListed(listed)[0].includes('choose its connection'), JSON.stringify([onVirtuosoMock.task, listed]));
   const onNgspice = await withConnection('fixture-sim');
   check('with an ngspice connection in use it offers "ngspice netlist..." only', !onNgspice.virtuoso && onNgspice.ngspice, JSON.stringify(onNgspice));
-  check('and the ngspice task is listed again', onNgspice.tasks.some(t => t.startsWith('ngspice:fixture_ota')), JSON.stringify(onNgspice.tasks));
+  listed = await windowTasks();
+  check('and the ngspice task is listed there too (the fixture task stays "choose its connection": the backend, not the page, judges a task available)', ngspiceListed(listed).length === 1, JSON.stringify(listed));
   await shot('ngspice-4-launcher-ngspice.png');
   const onNone = await withConnection(null);
   check('with no connection chosen it offers both', onNone.virtuoso && onNone.ngspice, JSON.stringify(onNone));
-  check('and lists the ngspice task (the same rule as the button)', onNone.tasks.some(t => t.startsWith('ngspice:fixture_ota')), JSON.stringify(onNone.tasks));
+  listed = await windowTasks();
+  check('and the window lists the ngspice task (the same rule as the button)', ngspiceListed(listed).length === 1, JSON.stringify(listed));
 
   check('the page asked nothing else of the backend (every request besides reads is refused here)', refused.length === 0, refused.join(' | '));
   check('no console errors in the page', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

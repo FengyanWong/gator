@@ -9,6 +9,7 @@ import { PdkWindowButton, pdksChanged } from './Pdk';
 import { WorkingCopy } from './WorkingCopy';
 import { NgspiceButton } from './Ngspice';
 import { TaskSave } from './TaskSave';
+import { TaskListButton, taskMark } from './TaskList';
 import { CheckSteps } from './Consistency';
 import { Typed } from './Typed';
 import { CircuitPicture } from './CircuitPicture';
@@ -62,10 +63,10 @@ function TitleFacts({ config, revision }: { config: Json; revision: number | str
     {fact('Class · PDK', `${ref.circuit_class ?? 'unspecified'} · ${ref.pdk_id ?? 'unspecified'}`)}{fact('RL model', model, ' tb-model')}</>;
 }
 
-export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, taskSlot, taskNotes, titleSlot = null, taskEpoch = 0 }:
+export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, taskSlot, taskNotes, titleSlot = null, taskEpoch = 0, runs = [], refreshRuns }:
   { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null;
     taskSlot: HTMLElement | null; taskNotes: HTMLElement | null;
-    titleSlot?: HTMLElement | null; taskEpoch?: number }) {
+    titleSlot?: HTMLElement | null; taskEpoch?: number; runs?: Json[]; refreshRuns?: () => Promise<Json[]> }) {
   const [tasks, setTasks] = useState<Json[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [nativeOpen, setNativeOpen] = useState(false);                    // closed until asked for; the choice then lasts across cells and Refresh
@@ -201,10 +202,9 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   const { value: family } = useRequest<string>(() => connectionProfilesShared()
     .then(p => (p.profiles ?? []).find((x: Json) => x.profile_id === profileId)?.family ?? null), [profileId], { enabled: !!profileId });
   const showVirtuoso = family !== 'ngspice', showNgspice = family !== 'virtuoso';
-  // The Task list follows the same rule for the ngspice tasks (user request 2026-09-24: the ngspice OTA example is to show
-  // only while ngspice is connected): while a Virtuoso connection is in use they are left out of the list, except the task
-  // the page follows, which stays listed and chosen (the backend marks it "choose its connection").
-  const listed = tasks.filter(t => t.kind !== 'ngspice' || showNgspice || (ref.source === 'registered_task' && t.task_key === ref.task_id));
+  // The task window follows the same rule for the ngspice tasks (user request 2026-09-24: the ngspice OTA example is to show
+  // only while ngspice is connected): while a Virtuoso connection is in use they are listed with the mark "choose its
+  // connection" (the old drop-down left them out; the window shows every task, record 7.227).
   // An ngspice netlist task (Ngspice.tsx saves it; the page then follows it). Delete takes it out of the list: its folder
   // is kept aside on the backend machine, and the page follows the first task left (the rows stay unless untouched).
   const ngspiceTask = ref.source === 'registered_task' && /^ngspice:/.test(ref.task_id ?? '') ? String(ref.task_id).slice('ngspice:'.length) : null;
@@ -369,16 +369,19 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       <h3>Registered task</h3>
       {!offered && <div className="note"><p>This configuration was saved with a Spectre netlist file{ref.netlist_path ? <> (<code>{ref.netlist_path}</code>)</> : null}.
         The workbench no longer imports netlists: choose a task below, or a Virtuoso cell in its window.</p></div>}
-      <label>Task
-        <select value={ref.source === 'registered_task' ? ref.task_id ?? '' : ''} onChange={e => { if (e.target.value) chooseTask(e.target.value); }}
-          title="The circuit the editors and a run are about. A cell read from Virtuoso becomes one of these with Save task.">
-          {ref.source !== 'registered_task' && <option value="" disabled>{virtuosoOn ? (ref.cell ? `(none: ${ref.library}/${ref.cell} is read from Virtuoso)` : '(none: a Virtuoso cell is being chosen)')
-            : '(none: the saved source was removed)'}</option>}
-          {ref.source === 'registered_task' && !ref.task_id && <option value="" disabled>(choose a task)</option>}
-          {removedMock && <option value={ref.task_id} disabled>{ref.task_id} (removed)</option>}
-          {listed.map(t => <option key={t.task_key} value={t.task_key}>{t.task_key}{t.kind === 'mock' ? '  [MOCK]' : t.kind === 'ngspice' ? (t.available ? '  [ngspice]' : '  [ngspice: choose its connection]') : t.available ? '' : '  [blocked]'}</option>)}
-        </select>
-      </label>
+      {/* The task the page follows, as plain text, and ONE button "Tasks..." that opens the task window (user request
+          2026-10-06, record 7.227): it replaced the drop-down list of tasks, as "Runs..." replaced the list of runs. The
+          text says what the list's placeholder used to: no task, a Virtuoso cell, a removed task. A choice in the
+          window is the old list's choice: chooseTask. */}
+      <div className="row task-row" title="The circuit the editors and a run are about. A cell read from Virtuoso becomes one of these with Save task.">
+        <span className="task-caption">Task</span>
+        <TaskListButton tasks={tasks} runs={runs} ngspiceOffered={showNgspice} loading={taskLoading} onChoose={key => chooseTask(key)}
+          onRefresh={() => api.tasks().then(t => { setTasks(t.tasks); return t.tasks; })} onRefreshRuns={refreshRuns}
+          current={ref.source === 'registered_task' && ref.task_id && !removedMock ? ref.task_id : null}
+          currentMark={ref.source === 'registered_task' && ref.task_id && !removedMock ? taskMark(tasks.find(t => t.task_key === ref.task_id) ?? { kind: 'real', available: true }, showNgspice) : undefined}
+          currentText={ref.source !== 'registered_task' ? (virtuosoOn ? (ref.cell ? `(none: ${ref.library}/${ref.cell} is read from Virtuoso)` : '(none: a Virtuoso cell is being chosen)')
+            : '(none: the saved source was removed)') : !ref.task_id ? '(choose a task)' : `${ref.task_id} (removed)`} />
+      </div>
       {ref.source === 'registered_task' && (<>
         {/* A configuration saved with a removed MOCK task (the four of status record 7.59; the last one, synthetic:gpdk045_ota5,
             on 2026-09-30, record 7.128): a plain note, not a red "Blocked". */}

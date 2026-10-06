@@ -423,3 +423,42 @@ export async function launchEdge(tag = 'check', { width = 1680, height = 1050, l
   }
   return browser;
 }
+
+// ---- the task window (record 7.227) ------------------------------------------------------------------------------------
+/** The Project column's registered task since record 7.227: plain text naming the task the page follows, and ONE button
+ *  "Tasks..." that opens the task window (TaskList.tsx), where a DOUBLE CLICK on a row chooses a task - what the old
+ *  drop-down's choice did. `taskWindow(page, browser)` drives it for the checks: `current()` = the key or placeholder text
+ *  the column shows, `keys()` = the tasks the window lists, `choose(key)` = open the window (once per page load: a reload
+ *  closes it), double click the row, and wait until the column shows the key. The window reads /api/tasks and /api/runs
+ *  (GET) when it opens: a hermetic check lets both through or answers them. `window` = the attached pop-up session. */
+export function taskWindow(page, browser, { width = 1500, height = 760 } = {}) {
+  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
+  const ROW = `${PANEL}.querySelector('.task-row')`;
+  const TABLE = `document.querySelector('.task-window table.task-table')`;
+  let far = null;
+  const alive = () => far && !far.closed;
+  const open = async () => {
+    if (alive()) { try { await far.evaluate('1'); return far; } catch { far = null; } }
+    if (far) { far = null; try { await browser.window('GATOR - tasks', { present: false, ms: 3000, except: page.target.id }); } catch { /* the old window lingers: attach by title below */ } }
+    await page.evaluate(`${ROW}.querySelector('button.task-list-button').click()`, true);
+    far = await browser.attach(await browser.window('GATOR - tasks', { except: page.target.id }), { errors: page.consoleErrors, prefix: 'task window: ' });
+    await far.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
+    for (let i = 0; i < 80 && !(await far.evaluate(`!!(${TABLE}) || !!document.querySelector('.task-window .task-empty, .task-window .task-list-error')`)); i++) await sleep(100);
+    await sleep(200);
+    return far;
+  };
+  const current = () => page.evaluate(`${ROW}?.querySelector('.task-list-key')?.textContent ?? null`);
+  const keys = async () => { await open(); return far.evaluate(`[...${TABLE}.querySelectorAll('tbody > tr[title]')].map(tr => tr.title)`); };
+  /** The listed tasks with their Kind cell (the mark that keeps a task from running is in it). */
+  const rows = async () => { await open(); return far.evaluate(`[...${TABLE}.querySelectorAll('tbody > tr[title]')].map(tr => ({ key: tr.title, kind: tr.children[1].textContent.trim() }))`); };
+  const choose = async (key, { tries = 100 } = {}) => {
+    await open();
+    const at = await far.evaluate(`(() => { const tr = [...${TABLE}.querySelectorAll('tbody > tr[title]')].find(tr => tr.title === ${JSON.stringify(key)}); if (!tr) return null;
+      const el = tr.children[2]; el.scrollIntoView({ block: 'center' }); const b = el.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`);
+    if (!at) throw new Error(`the task window lists no ${key}`);
+    for (const clickCount of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await far.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount });
+    return page.until(`${ROW}?.querySelector('.task-list-key')?.textContent === ${JSON.stringify(key)} && !${PANEL}.querySelector('[role="status"]')`, tries);
+  };
+  const close = async () => { if (alive()) { try { await far.send('Runtime.evaluate', { expression: 'window.close()', userGesture: true }); } catch { /* gone */ } } far = null; await sleep(200); };
+  return { open, choose, keys, rows, current, close, get window() { return far; }, PANEL, ROW, TABLE };
+}

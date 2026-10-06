@@ -151,6 +151,10 @@ def test_the_first_save_takes_the_cell_s_copy_and_registers_a_task_that_runs_on_
     assert starter['parameters'] == data['parameters'] and starter['measurements'] == data['probes'] and starter['targets'] == data['specs']
     listed = next(t for t in tasks.list_tasks() if t['task_key'] == 'real:ring_osc')
     assert listed['available'] and listed['generated']
+    # the task window's facts (record 7.227), all from the task's own entry: its testbench, when it was saved, no baseline yet,
+    # how many sizes it varies and results it measures
+    assert listed['testbench'] == TB and listed['saved_utc'] == entry['saved_utc'] and listed['baseline_recorded_utc'] is None
+    assert listed['variables'] == len(leaders) and listed['results'] == len(profiles.recipes.RING_METRICS) and listed['status'].startswith('unverified')
     runtime = tasks.load_task(schema.CircuitReference(source='registered_task', task_id='real:ring_osc'))
     assert runtime.provided_metrics == tuple(profiles.recipes.RING_METRICS) and not runtime.authorized
     config_, _, _ = tasks.generated_bridge_config('ring_osc')

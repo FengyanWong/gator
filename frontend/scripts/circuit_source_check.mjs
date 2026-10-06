@@ -14,7 +14,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/circuit_source_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, taskWindow, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const STORAGE_KEY = 'gator-workbench-config-v1';
@@ -45,10 +45,11 @@ await runChecks(browser, async () => {
   };
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
   const FIELD = label => `[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)})?.querySelector('input, select')`;
-  const SOURCE = FIELD('Task');
+  // Since record 7.227 the task is plain text + a "Tasks..." button; a choice is a double click in the task window (harness taskWindow).
+  const tw = taskWindow(page, browser);
+  const OPENED = `!!(${PANEL}) && !!${PANEL}.querySelector('.task-row button.task-list-button')`;
   const text = () => evaluate(`${PANEL}.textContent`);
-  const options = () => evaluate(`[...${SOURCE}.options].map(o => ({ value: o.value, text: o.textContent.trim(), disabled: o.disabled }))`);
-  const choose = (label, v) => page.setValue(`${FIELD(label)}`, v);
+  const choose = (label, v) => tw.choose(v, { tries: 0 });
   const settle = async (mark, ms = 6000) => { for (let waited = 0; waited < ms && loads.length === mark; waited += 100) await sleep(100); await sleep(900); };
   const saved = () => evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)}) || 'null')?.circuit ?? null`);
   const shot = async name => {                                                      // the left column scrolls: bring the task into view, clip to what is visible
@@ -61,14 +62,14 @@ await runChecks(browser, async () => {
   await page.intercept(['*/api/*'], answer);
   await page.seed({ config: CONFIG });
   await send('Page.navigate', { url: APP });
-  if (!(await until(`!!(${PANEL}) && !!(${SOURCE})`, 150))) throw new Error('the Project panel never showed its Task list | console: ' + consoleErrors.join(' | ').slice(0, 300));
+  if (!(await until(OPENED, 150))) throw new Error('the Project panel never showed its Task row | console: ' + consoleErrors.join(' | ').slice(0, 300));
   await sleep(2500);                                                                // time enough for any load the page might (wrongly) send
 
   // ---- a configuration saved with the removed source -----------------------------------------------------------------
-  const before = await options();
-  check('no task is chosen: the list shows the removed source as none, and cannot be left on it',
-    (await evaluate(`${SOURCE}.value`)) === '' && before[0]?.disabled === true && before[0].text === '(none: the saved source was removed)'
-    && before.some(o => o.value === 'synthetic:gpdk045_ota5') && !before.some(o => o.value === 'virtuoso' || o.value === 'netlist'), JSON.stringify(before));
+  const before = await tw.keys();
+  check('no task is chosen: the Task row shows the removed source as none, and the task window offers the tasks',
+    (await tw.current()) === '(none: the saved source was removed)' && before.includes('synthetic:gpdk045_ota5') && !before.some(k => k === 'virtuoso' || k === 'netlist'),
+    JSON.stringify([await tw.current(), before]));
   check('there is no Source list in the column any more', !(await evaluate(`!![...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'Source')`)));
   check('a plain note says what happened, names the saved file and what to do', (await text()).includes('This configuration was saved with a Spectre netlist file')
     && (await text()).includes(NETLIST) && (await text()).includes('The workbench no longer imports netlists: choose a task below, or a Virtuoso cell in its window.')
@@ -91,9 +92,8 @@ await runChecks(browser, async () => {
     && loads[mark].task_id === 'synthetic:gpdk045_ota5' && loads[mark].netlist_path == null && loads[mark].parser_config_path == null, JSON.stringify(loads.slice(mark)));
   // `== null`: since record 7.146 a task choice leaves both paths out instead of writing them as null; the backend reads both as null
   check('the task is read: MOCK backend, its hierarchy', (await text()).includes('MOCK evaluation backend') && (await text()).includes('Hierarchy ('));
-  const after = await options();
-  check('the removed entry and the note are gone', !after.some(o => o.value === '' ) && (await evaluate(`${SOURCE}.value`)) === 'synthetic:gpdk045_ota5'
-    && !(await text()).includes('This configuration was saved with a Spectre netlist file'), after.map(o => o.value).join(' | '));
+  check('the removed entry and the note are gone', (await tw.current()) === 'synthetic:gpdk045_ota5'
+    && !(await text()).includes('This configuration was saved with a Spectre netlist file'), await tw.current());
   await sleep(1200);                                                                // the page keeps its copy 0.8 s after a change
   const kept = await saved();
   check('the browser\'s saved copy no longer names the files', kept?.source === 'registered_task' && kept.netlist_path == null && kept.parser_config_path == null, JSON.stringify(kept));
@@ -102,7 +102,7 @@ await runChecks(browser, async () => {
   // ---- Undo brings the old configuration back, still without a request ---------------------------------------------------------
   mark = loads.length;
   await evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Undo').click()`); await sleep(1500);
-  check('Undo: the saved netlist source is back, shown as none, and nothing is sent', (await evaluate(`${SOURCE}.value`)) === ''
+  check('Undo: the saved netlist source is back, shown as none, and nothing is sent', (await tw.current()) === '(none: the saved source was removed)'
     && (await text()).includes('This configuration was saved with a Spectre netlist file') && loads.length === mark && !(await text()).includes('Hierarchy ('),
     `${loads.length - mark} request(s)`);
 

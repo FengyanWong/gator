@@ -40,7 +40,8 @@ used tens to hundreds. A published batch size of 128 with 1,000 warm-up steps me
 the network never learns and every action is random - which is why the presets no longer take the papers'
 training numbers. The network sizes are still the papers'; the runs that learned used 32 / 4 / 2, and each
 published size learned as early with the same training values on ngspice, and all three presets on Spectre too
-(records 7.199 and 7.209, "Measured" below). With the starting values learning began after about 150 to 600 evaluations. For comparing encoders at equal size, give every encoder the same sizes; an existing checkpoint
+(records 7.199 and 7.209, "Measured" below); of six other Spectre circuits the Graph Transformer preset learned on two
+and partly on a third (record 7.216). With the starting values learning began after about 150 to 600 evaluations. For comparing encoders at equal size, give every encoder the same sizes; an existing checkpoint
 always loads with its own network.
 
 ## The presets
@@ -104,6 +105,17 @@ All three learn on Spectre as on ngspice. One seed each: the differences between
 GATv2's passing designs draw the least bias current (median 527 uA against 691 uA for the Graph Transformer's and
 572 uA for RGCN's), as its ngspice runs had the lowest power; no Specs row asked for it. Its larger network made each
 design take 2.6-2.9 s against 2.0-2.1 s, with the same 1.1 s of simulation.
+
+On the six other MScR circuits (record 7.216, `spectre-circuits/` in the same folder) the Graph Transformer starting
+preset ran once each with the reward a new page starts with (both bonuses 1) and every Scale box empty, 800 launches,
+4 lanes (1 for `mscr_ldo2_rgcn`), judged by criteria written down before the runs: it learned on `mscr_ota5t` (99.6 % of
+the last third passing) and `mscr_ldo_basic` (97.2 %), partly on `mscr_ring3` (15.8 %, held back by its 0.95-1.05 GHz
+window), and not on `mscr_ldo1_rgcn` and `mscr_ldo2_rgcn`, also with 200 more designs: their one unmet row, PSRR <= -5 dB
+above 1 MHz, was met by no working design, random or learned. The hold-out `mscr_vco_lin` stopped at 60 launches, half
+its designs not oscillating. So one setting for every circuit is not shown: three of seven circuits learned, and whether
+the LDOs' row can be met on GPDK045 is open. A new task made from the hold-out after its result (`real:mscr_vco_lin_c`:
+a passing starting design, resistor ranges where the ring oscillates, missing values counted as failures) learned: 94 %
+of the last third passed, against 4.7 % of its random designs.
 
 The numbers the papers give, kept in each field's note (under `published` in the API when replaced):
 
@@ -247,10 +259,11 @@ feature, mean-aggregated, no attention). Everything here is marked "closest netw
 
 ## What the publications do not give us
 
-* **Results on GATOR circuits** (records 7.199, 7.209). The starting presets - the published network sizes with the
-  training numbers of the runs that learned - learn on ngspice `ota5` (three seeds each) and on Spectre
-  (`real:mscr_ota7t`, one run each). The papers' own training numbers were never measured here; they stay a cited
-  reference, not evidence.
+* **Results on GATOR circuits** (records 7.199, 7.209, 7.216). The starting presets - the published network sizes with
+  the training numbers of the runs that learned - learn on ngspice `ota5` (three seeds each) and on Spectre
+  (`real:mscr_ota7t`, one run each); the Graph Transformer preset also on `mscr_ota5t` and `mscr_ldo_basic`, partly on
+  `mscr_ring3`, not on `mscr_ldo1_rgcn` / `mscr_ldo2_rgcn` (record 7.216). The papers' own training numbers were never
+  measured here; they stay a cited reference, not evidence.
 * **Scale.** Published budgets: 300 steps (CAN), 1,400-4,300 (MBTD3), 6,000-50,000 (the rest). The only
   published SAC settings (PPAAS) were used with 8,000-24,000 steps. Using them with tens of evaluations
   is an extrapolation. Warm-up in the papers is 1-33 % of the budget; nobody uses more than one update

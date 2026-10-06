@@ -315,3 +315,4 @@ One row per commit, newest last.
 | `510ba0e` | 10-06 03:11 | 7.221 | optimizer: lent replay samples, no next-state work at discount 0, input-cache keys worked out once; digest f83342bc -> 4aebbfab (session "Time consumption analysis") |
 | `a39bc5b` | 10-06 03:11 | 7.221 | workbench part of the six speed items: replay call sites, shared chart work, cheaper training reads, "Can continue" for older sources, timing rules (session "Time consumption analysis") |
 | `105465f` | 10-06 03:18 | 7.223 | switching task no longer asks to discard edits nobody made; its fixed version (session "Unsaved changes blocking task switch") |
+| `9b6f30e` | 10-06 03:19 | - | record only: names the commits of records 7.219-7.223, 7.221's digest and Live line, and the table rows for 98e0a99, 36ed2af, 2825305, 510ba0e, a39bc5b and 105465f |

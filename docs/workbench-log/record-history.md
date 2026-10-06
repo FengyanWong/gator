@@ -307,3 +307,5 @@ One row per commit, newest last.
 | `4258714` | 10-05 23:21 | 7.211 | calibration on Spectre did not help on mscr_ota7t (Graph Transformer starting preset, two seeds per arm); a Baseline simulation on the six other MScR tasks; docs only (session "Single baseline simulation merge", committed by "Virtuoso read whole flow") |
 | `c170802` | 10-05 23:21 | - | record only: names the commit of record 7.211, and the table rows for 7bafccd and 4258714 |
 | `962731e` | 10-05 23:50 | 7.217 | calibration: "Apply and save" for a task saved from a cell, Scales written as quantities, a narrower window rule, no Initial alpha near the one in use (session "RL reward design", committed by "Virtuoso read whole flow") |
+| `3ce9717` | 10-05 23:51 | - | record only: names the commit of record 7.217, 7.215's Live lines, and the table rows for c170802 and 962731e |
+| `96d2225` | 10-06 02:26 | 7.216 | one setting on every MScR circuit: the Graph Transformer starting preset learns on three of seven on Spectre, not on two LDOs that miss one PSRR row; a new VCO task learns; docs only (session "Gator baseline deletion in RL networks", committed by "Virtuoso read whole flow") |

@@ -316,3 +316,8 @@ One row per commit, newest last.
 | `a39bc5b` | 10-06 03:11 | 7.221 | workbench part of the six speed items: replay call sites, shared chart work, cheaper training reads, "Can continue" for older sources, timing rules (session "Time consumption analysis") |
 | `105465f` | 10-06 03:18 | 7.223 | switching task no longer asks to discard edits nobody made; its fixed version (session "Unsaved changes blocking task switch") |
 | `9b6f30e` | 10-06 03:19 | - | record only: names the commits of records 7.219-7.223, 7.221's digest and Live line, and the table rows for 98e0a99, 36ed2af, 2825305, 510ba0e, a39bc5b and 105465f |
+| `5560c01` | 10-06 04:02 | - | record only: 7.221's backend Live line (8765 restarted at 04:00), and the table row for 9b6f30e |
+| `71f95c3` | 10-06 08:32 | 7.226, 7.224 | the Agent tab minimal: Claude Code or Codex in a terminal window of its own, What's missing? in a window; the tab's own agent and the LLM search methods removed, SAC the only search method; optimizer digest 4aebbfab -> aafdd71d (search/ and ActionMapper.encode out) (session "Agent tab minimal redesign"); with 7.224's row and entry, which it superseded (session "LLM 1/8 banner meaning") |
+| `0a07f87` | 10-06 08:32 | 7.225 | saved RL models get names of their own, numbered when a name is taken, and Rename (session "Random seed explanation") |
+| `dc1a9fd` | 10-06 08:32 | 7.227 | the Project column's task as text + a Tasks... window; six start-B tasks; the fine-tuning comparison plan (session "Task button and fine-tuning comparison plan") |
+| `40d1249` | 10-06 08:32 | 7.228 | GraphGPS and parameter-group cross-attention in the optimizer, settings, run modes, checkpoints, model inspection and frontend; optimizer digest aafdd71d -> 0b0808bc (the user's Codex session) |

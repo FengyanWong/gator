@@ -2,13 +2,13 @@
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
-- **Optimizer source digest:** `0b0808bcbf8a7d22254292b1ef60476743b043ecd8ad59cc9f0320954a7dbac8`, working tree: two
-  uncommitted steps of 2026-10-06, each to be committed on its own. Record 7.226 removed the LLM search package `search/`
-  and `ActionMapper.encode` with the LLM search methods (alone on HEAD:
-  `aafdd71dfcd1b2008f997fb91d211a614f91822d9e4afeabfe4ac88c6d1da38e`); record 7.228 added GraphGPS and parameter-group
-  cross-attention, authorized by the user; see [implementation](global-encoders.md) (alone on HEAD:
-  `061768e0806ac6c631dcb1c3ca8cfa70b4e5caaeb4a4d753b661710d1d3b26d5`). No real-simulator comparison or
-  transfer-advantage claim. Before it:
+- **Optimizer source digest:** `0b0808bcbf8a7d22254292b1ef60476743b043ecd8ad59cc9f0320954a7dbac8`, set by `40d1249`
+  (record 7.228, 2026-10-06: GraphGPS and parameter-group cross-attention added, authorized by the user; see
+  [implementation](global-encoders.md); no real-simulator comparison or transfer-advantage claim; 7.228 alone on `5560c01`
+  would hash `061768e0...`, a tree never committed). Before it:
+  `aafdd71dfcd1b2008f997fb91d211a614f91822d9e4afeabfe4ac88c6d1da38e`, set by `71f95c3` (record 7.226, 2026-10-06: the LLM
+  search package `search/` and `ActionMapper.encode` removed with the LLM search methods; nothing else in the package
+  changed). Before it:
   `4aebbfab2176605c6e984d3b42ae622335246dfed693c5b9cc39f942c0aaad73`, set by `510ba0e` (record 7.221, 2026-10-06: a
   learner step takes its replay sample lent instead of deep-copied, skips the next-state work when the discount is
   exactly 0, and keys the input cache by digests worked out once; every result and random-number state identical;
@@ -38,7 +38,8 @@ A summary for new sessions; everything below is the chronological record, oldest
   compressed violations, share 0.5, objective and margin bonus weights 1, objective shape compressed. Corner training
   (`always`, `after_nominal`) was offered for `real:gpdk045_ota7` only; no task has it since 2026-09-30 (7.128).
 - **Older checkpoints** resume exactly only under their own source: digest `4aebbfab...` (record 7.221) from `510ba0e` up to
-  the next optimizer commit - no run was saved under it (checked 2026-10-06); digest `f83342bc...` (record 7.149; every save
+  `5560c01`, the commit before 7.226's `71f95c3` - the fine-tune comparison's runs (record 7.227, started 2026-10-06 06:58
+  from a copy of `5560c01`) are saved under it; digest `f83342bc...` (record 7.149; every save
   point written before record 7.221, the eight viewing copies of 2026-10-05's Spectre runs in `outputs/` included) from
   `ab34f03` up to `2825305`, the commit before 7.221's `510ba0e` - checked 2026-10-06: that source loads the GATv2 run's final save point
   and two loads give identical next updates, the 7.221 source refuses it; under the new source such a save point still

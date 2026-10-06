@@ -48,12 +48,17 @@ const MOCK = {
 const RING = { project: { name: 'ring-demo', task_name: 'ring_demo' }, circuit: { source: 'registered_task', task_id: 'real:ring_demo', circuit_class: 'vco', pdk_id: 'gpdk045' },
   parameters: [parameter('wn', 'XU1/MN1', { lower: 6e-7, upper: 1.6e-6, step: 5e-9, optimized: true, initial_value: 1e-6 })],
   measurements: [probe('osc_frequency_hz', 'Hz', 'tran'), probe('supply_power_w', 'W', 'tran')], targets: [] };
-const STARTERS = { 'synthetic:gpdk045_ota5': MOCK, 'real:gpdk045_ota5': ota('gpdk045_ota5', 25.01), 'real:gpdk045_ota7': ota('gpdk045_ota7', 53.3), 'real:ring_demo': RING };
+// A task saved before Specs' target/tolerance columns retired (2026-10-03): its file still carries `tolerance: 0` on every
+// spec, as real:mscr_ota7t, mscr_ring3 and mscr_vco_lin did when the user could not switch away from them (record 7.223).
+const OLD_SAVED = (o => ({ ...o, targets: o.targets.map(s => ({ ...s, tolerance: 0 })) }))(ota('old_saved', 30));
+const STARTERS = { 'synthetic:gpdk045_ota5': MOCK, 'real:gpdk045_ota5': ota('gpdk045_ota5', 25.01), 'real:gpdk045_ota7': ota('gpdk045_ota7', 53.3), 'real:ring_demo': RING,
+  'real:old_saved': OLD_SAVED };
 const TASKS = [{ task_key: 'synthetic:gpdk045_ota5', kind: 'mock', circuit_class: 'opamp', pdk_id: 'gpdk045', available: true, starter_project: MOCK.project },
   ...['gpdk045_ota5', 'gpdk045_ota7'].map(n => ({ task_key: `real:${n}`, kind: 'real', circuit_class: 'opamp', pdk_id: 'gpdk045', available: true, blocker: null,
     starter_project: { name: n.replace(/_/g, '-'), task_name: n } })),
   { task_key: 'real:gpdk045_vco', kind: 'real', circuit_class: 'vco', available: true, blocker: null },        // as an OLDER backend lists it: no pdk_id, no starter, no names
-  { task_key: 'real:ring_demo', kind: 'real', circuit_class: 'vco', pdk_id: 'gpdk045', generated: true, available: true, blocker: null, starter_project: RING.project }];
+  { task_key: 'real:ring_demo', kind: 'real', circuit_class: 'vco', pdk_id: 'gpdk045', generated: true, available: true, blocker: null, starter_project: RING.project },
+  { task_key: 'real:old_saved', kind: 'real', circuit_class: 'opamp', pdk_id: 'gpdk045', generated: true, available: true, blocker: null, starter_project: OLD_SAVED.project }];
 // A removed MOCK task (status record 7.59) loads as the backend answers it: not loaded, with its plain reason.
 const REMOVED = ['synthetic:opamp', 'synthetic:opamp_two_stage', 'synthetic:ldo', 'synthetic:vco'];
 const gone = taskId => ({ loaded: false, blocker: `${taskId} no longer exists: the workbench has one MOCK task now, synthetic:gpdk045_ota5 - FIXTURE`, interface_contract: null });
@@ -236,6 +241,25 @@ await runChecks(browser, async () => {
     await openTab('Specs');
     check('a delayed earlier selection cannot replace the latest task', (await value('Task')) === 'real:gpdk045_ota7'
       && (await column('lower')).includes('53.3 dB'), JSON.stringify(await column('lower')));
+
+    // ---- a task saved before a column retired (record 7.223; user 2026-10-06: "I cant switch from mscr ota7t to other
+    // registered tasks as it says unsaved changes but I cant see where it is"): the page drops the retired `tolerance`
+    // when it reloads, and rows are compared as a reload leaves them, on both sides - so nothing is asked.
+    const asked = dialogs.length;
+    await choose('Task', 'real:old_saved');
+    check('a task saved with the retired tolerance column loads, rows as saved', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`)
+      && (await config()).targets.length === 3, await note());
+    await send('Page.reload');
+    check('the page reopens on it, without the retired column', await until(`!!(${PANEL}) && ${FIELD('Task')}.options.length > 1 && ${FIELD('Task')}.value === 'real:old_saved'`)
+      && (await config()).targets.length === 3 && !(await config()).targets.some(s => 'tolerance' in s), await value('Task').catch(() => '?'));
+    await choose('Task', 'real:gpdk045_ota7');
+    check('switching away after a reload asks nothing: no row was edited', await until(`${FIELD('Task')}.value === 'real:gpdk045_ota7'`) && dialogs.length === asked,
+      JSON.stringify(dialogs.slice(asked)));
+    await evaluate(`${BUTTON(EDITORS, 'Undo')}.click()`);
+    await until(`${FIELD('Task')}.value === 'real:old_saved'`);
+    await evaluate(`${BUTTON(PANEL, 'Reload saved values')}.click()`);
+    check('Reload saved values on it asks nothing either', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`) && dialogs.length === asked,
+      JSON.stringify(dialogs.slice(asked)));
   }
 
   // ---- a configuration saved with a removed MOCK task (status record 7.59: four MOCK tasks became one) ---------------------

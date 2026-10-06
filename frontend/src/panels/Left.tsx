@@ -1,4 +1,4 @@
-import { noteRowsFrom, useAsyncAction, useRequest } from '../store';
+import { migrateConfig, noteRowsFrom, useAsyncAction, useRequest } from '../store';
 import { CircuitDetails, gateText, namedTestbench, NativeSchematic, useVirtuosoBrowser } from './CircuitBrowser';
 import { Icon } from './Icons';
 import { useEffect, useRef, useState } from 'react';
@@ -39,7 +39,12 @@ const SETUP_PROMPT = 'Read this circuit and say in two or three sentences what i
 
 /** The three editors, by their configuration keys: Parameters, Specs, Probes. */
 const ROW_SECTIONS = ['parameters', 'targets', 'measurements'];
-const sameRows = (config: Json, starter: Json) => ROW_SECTIONS.every(s => JSON.stringify(config[s] ?? []) === JSON.stringify(starter[s] ?? []));
+/** The three tables as a reload leaves them (store.ts migrateConfig), for comparing: a task saved before a column retired
+ *  still carries it (`tolerance: 0` on every spec of mscr_ota7t/ring3/vco_lin) and the page drops it when it reloads, so
+ *  the rows compared as they came never matched again - switching task asked to discard edits nobody made (record 7.223).
+ *  Both sides, as rows on the page can carry a retired field too (an answer that still names one). */
+const tablesOf = (config: Json): Json => migrateConfig(Object.fromEntries(ROW_SECTIONS.map(s => [s, config?.[s] ?? []])));
+const sameRows = (config: Json, starter: Json) => { const a = tablesOf(config), b = tablesOf(starter); return ROW_SECTIONS.every(s => sameJson(a[s], b[s])); };
 const noRows = (config: Json) => ROW_SECTIONS.every(s => !(config[s] ?? []).length);
 
 /** Asked before a cell is read (window.confirm, the project's confirmation style): the workbench writes into the cell it
@@ -273,9 +278,9 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     if (mine !== followCount.current) return;
     const now = latest.current;
     const untouched = !(now.measurements ?? []).length || brought.current.includes(JSON.stringify(now.measurements))
-      || (!!starter && sameJson(now.measurements, starter.measurements));
+      || (!!starter && sameJson(tablesOf(now).measurements, tablesOf(starter).measurements));
     if (!untouched) { setProbeNote({ state: 'kept', found }); return; }
-    const staleTargets = !!starter && (now.targets ?? []).length > 0 && sameJson(now.targets, starter.targets);
+    const staleTargets = !!starter && (now.targets ?? []).length > 0 && sameJson(tablesOf(now).targets, tablesOf(starter).targets);
     brought.current.push(JSON.stringify(found.rows));
     setConfig(c => ({ ...c, measurements: found.rows, ...(staleTargets ? { targets: [] } : {}) }), press);
     setProbeNote({ state: 'brought', found, clearedTask: staleTargets ? taskId : null });

@@ -122,7 +122,9 @@ The header has one main run button and **Abort** next to it. The main button cha
   copies - Save now, Pause and save, Stop and save, Force cancel - went, as they did what Save now, Pause, Abort and
   Force abort do there. The tab keeps **Continue** (a paused, stopped or interrupted run, with a new total budget) and
   **Export status**. Continue waits, and says why, when the run folder holds no save point to go on from - a copy made
-  without its save points, or deleted ones (record 7.215: `GET /api/runs/status` names it as `save_point`). A run that is live when the page opens - started from another browser or the CLI - is taken into
+  without its save points, or deleted ones (record 7.215: `GET /api/runs/status` names it as `save_point`) - and when
+  that save point was written by an older version of the optimizer code: continuing needs exactly that version, while
+  fine-tune and frozen still load its model (record 7.221: `save_point_code` `older`). A run that is live when the page opens - started from another browser or the CLI - is taken into
   the header; a second run live at the same time as the header's own has no run buttons on this page.
 * The run shown is read every 1.5 s while it can change by itself: a worker is alive, its state is a live one, or the
   header is starting, resuming, pausing or ending a run and it is the run shown (status record 7.115, 2026-09-30; the
@@ -1102,7 +1104,7 @@ it). The window lists every run under the output folder, newest first, one row p
 | Evaluations | Candidate designs simulated, of the budget: `25 / 60`. |
 | First feasible | The number of evaluations spent when the first design met every target; "none" if no design has. |
 | Data | MOCK (synthetic backend, not a circuit result) or real. |
-| Can continue | yes (full saved state), model only (usable for fine_tune / frozen), no. "no" also when the run folder no longer holds the save point its summary names - a copy made without its save points, deleted ones (record 7.215); Details says so under "Saved state". |
+| Can continue | yes (full saved state), model only (usable for fine_tune / frozen), no. "no" also when the run folder no longer holds the save point its summary names - a copy made without its save points, deleted ones (record 7.215); Details says so under "Saved state". "model only" also for a full save point written by an older version of the optimizer code, which only that version can continue (record 7.221); Details says so too. |
 
 * **A double click on a row** puts that run into the bottom tabs; the row is marked (blue, with a bar at its left
   edge) and the window stays open. **Clear** empties the tabs again. Neither stops, changes or deletes anything. The
@@ -1285,7 +1287,12 @@ double-counting. More pages are fetched immediately,
 then every 2 s while the run's worker lives, once more when it ends, and never for a run at rest. A chart is redrawn at
 most once a second and only when something changed; the chart objects are reused. New numbers never change the chosen
 tab. Another run starts from nothing (runs are never mixed); a run continued after a pause or a crash gets a dashed
-"continued" line where its new segment began.
+"continued" line where its new segment began. Since record 7.221 an answer reads the run's configuration and manifest
+once each, and its flush log only from where the previous answer stopped, after checking that it is still the same
+file with the same bytes (the same file, not shorter, its first 4 kB and last record unchanged; anything else is read
+whole again); the configuration's objective is kept while its text is unchanged. The worker's state, the manifest,
+the journal's tail and the Parquet parts are read for every answer. The caches are bounded and change what an answer
+costs, never what it says: an unchanged poll of an 800-evaluation run on D: took 30 ms instead of 57.
 
 **Counter resets.** After a crash the run resumes from its last save point, and its learner from that save point's
 update count: the updates recorded between the save point and the crash are repeated by number. The charts keep both:
@@ -1299,7 +1306,13 @@ and unflushed rows (7.201); past that the oldest half is thinned the same way, t
 in a line, no mean is drawn over it, and the counts and evaluation numbers stay the recorded ones. Oversized buffers
 and unused word entries are released after thinning. If independent extremes outnumber the available slots, the row
 bound takes precedence. The run's tables keep every row. (Measured with 20,000 evaluations and 128,000 updates:
-0.6 s to read, JS heap about 54 MB.)
+0.6 s to read, JS heap about 54 MB.) Since record 7.221 the charts of a run share what they derive from its rows -
+categories, pass flags, the learner's restarts and its rows in the order of each x axis, running means kept as
+checkpoints - and bring it up to date as rows arrive (after a new flush, thinning or a learner restart only from the
+first changed row); a chart then works out only the rows in view. The values are the same numbers as before
+(`training_data_check.mjs` compares them with the earlier builders), and the shared part goes with the run's store.
+A changed frame of eight charts on a live run of 121,712 updates took 25-31 ms of the browser's main thread
+instead of 110 ms.
 
 Limits: a backend started before this tab has no `/api/runs/training`: the tab then asks for a restart of `serve`. The
 journal's tail can be missing for one read while the journal is rewritten at a save point (said in a line);

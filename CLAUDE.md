@@ -62,7 +62,12 @@ PYTHONPATH=src ~/analog-optimizer-venv/bin/python -m gator_workbench.cli serve
 cd frontend && npx tsc --noEmit     # type-check only (Windows npx through WSL interop)
 cd frontend && npm run build        # = tsc --noEmit && vite build (a bare `npx vite build` does NOT type-check)
 "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/<name>.mjs)"   # a browser check (no `node` in WSL)
+OMP_NUM_THREADS=1 PYTHONPATH=src ~/analog-optimizer-venv/bin/python tests/perf/learner_update_profile.py --wait-load 6   # learner step timing
 ```
+
+Timing on this shared machine: follow `docs/performance-measurement.md` (quiet machine before EACH timed arm, resources
+and load recorded). While another session simulates or measures, run the regression with `-n 4` and the browser checks
+with `--lanes 2`, never the 12-worker suite beside a timed experiment.
 
 The full regression takes about 1 min with `-n 12 --dist loadgroup` on a quiet machine (53 s on 2026-09-30) and
 2-3 min while other sessions load it (86-196 s measured with `--dist load` on 2026-09-29), more than the Bash tool's

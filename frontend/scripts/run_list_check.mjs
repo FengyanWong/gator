@@ -33,7 +33,8 @@ const DONE = run(1, { created_utc: '2026-09-20T16:16:40+00:00', started_utc: '20
   stop_reason: 'budget_exhausted', evaluations: 60, first_feasible_eval_count: 23, resumability: 'full_state',
   segments: [seg(1, 'start', '2026-09-20T16:16:43+00:00', '2026-09-20T16:17:01+00:00', 'completed', 'budget_exhausted', 17.82)] });
 const RESUMED = run(2, { created_utc: '2026-09-21T10:00:00+00:00', started_utc: '2026-09-21T10:00:03+00:00', ended_utc: '2026-09-21T12:15:00+00:00', active_seconds: 900, paused_seconds: 7200,
-  state: 'completed', stop_reason: 'budget_exhausted', evaluations: 40, max_evaluations: 40, resumability: 'full_state', mode: 'fine_tune',
+  // its full save point was written by an older version of the optimizer code: the backend lists it as model only (7.221)
+  state: 'completed', stop_reason: 'budget_exhausted', evaluations: 40, max_evaluations: 40, resumability: 'weights_only', save_point_code: 'older', mode: 'fine_tune',
   segments: [seg(1, 'start', '2026-09-21T10:00:03+00:00', '2026-09-21T10:10:00+00:00', 'paused', 'user_pause', 600), seg(2, 'resume', '2026-09-21T12:10:00+00:00', '2026-09-21T12:15:00+00:00', 'completed', 'budget_exhausted', 300)] });
 const PAUSED = run(3, { created_utc: '2026-09-21T13:00:00+00:00', started_utc: '2026-09-21T13:00:04+00:00', ended_utc: '2026-09-21T13:30:00+00:00', active_seconds: 1790, state: 'paused',
   stop_reason: 'user_pause', evaluations: 25, resumability: 'full_state', segments: [seg(1, 'start', '2026-09-21T13:00:04+00:00', '2026-09-21T13:30:00+00:00', 'paused', 'user_pause', 1790)] });
@@ -53,6 +54,7 @@ const statusOf = r => ({ state: r.state, run_id: r.run_id, mode: r.mode, entry: 
     remaining: r.max_evaluations - (r.evaluations ?? 0), launches: r.evaluations ?? 0, retries: 0, cache_hits: 0, first_feasible: null },
   best_design: { evaluation_id: 'fixture', feasible: false, metrics: { gain_db: 41.5 }, violation: 0.125, variables: [{ variable_id: 'input_pair_width', value: 2.3455777695373655e-6, unit: 'm', optimized: true }, { variable_id: 'load_capacitance', value: 2.5e-13, unit: 'F', optimized: true }] }, persistence: null,   // a LIST, as the engine writes it
   last_checkpoint_utc: r.ended_utc, connection_profile_id: null, bytes_written: 1234567, active_seconds: r.active_seconds, paths: { run_dir: r.run_dir }, connection: { overall: 'not_applicable' },
+  save_point: 'ckpt-000040', save_point_code: r.save_point_code ?? 'current',
   summary: { time: { active_seconds: r.active_seconds, paused_seconds: r.paused_seconds, sum_job_runtime_seconds: 412.5 }, output: { resumability: 'full_state', completeness: 'complete', latest_checkpoint: 'ckpt-000040' } },
   manifest: { mode: r.mode, mock: r.mock, task_id: r.task_id, seeds: { target_seed: r.seed }, source_model: { run_id: null }, budgets: { max_evaluations: r.max_evaluations },
     mock_notice: r.mock ? 'FIXTURE MOCK DATA: nothing was run.' : null } });
@@ -199,15 +201,21 @@ await runChecks(browser, async () => {
   await pressIn(PAUSED, 'Hide details');
   await pressIn(RESUMED, 'Details'); await sleep(600);
   const resumedDetails = await far.evaluate(`(() => { const d = ${WINDOW}.querySelector('.run-details'); return { count: ${WINDOW}.querySelectorAll('.run-details').length, paused: [...d.querySelectorAll('table.run-facts tr')].find(tr => tr.children[0].textContent === 'Paused between segments')?.children[1].textContent,
+    saved: [...d.querySelectorAll('table.run-facts tr')].find(tr => tr.children[0].textContent === 'Saved state')?.children[1].textContent,
     segments: [...d.querySelectorAll('table.run-segments tbody tr')].map(tr => [...tr.children].map(td => td.textContent)) }; })()`);
   check('one run\'s details are open at a time', resumedDetails.count === 1);
   check('a continued run lists its segments: how each began and ended, and how long it worked', JSON.stringify(resumedDetails.segments) === JSON.stringify([
     ['1', 'start', stamp('2026-09-21T10:00:03+00:00'), stamp('2026-09-21T10:10:00+00:00'), 'paused', 'user_pause', '10 min 00 s'],
     ['2', 'resume', stamp('2026-09-21T12:10:00+00:00'), stamp('2026-09-21T12:15:00+00:00'), 'completed', 'budget_exhausted', '5 min 00 s']]) && resumedDetails.paused === '2 h 00 min', JSON.stringify(resumedDetails));
+  check('the details of a run saved by an older version of the optimizer code say why it cannot be continued (7.221)',
+    resumedDetails.saved === 'model only: the latest save ckpt-000040 is a full save point written by an older version of the optimizer code - only that version can continue it; fine-tune and frozen still load its model',
+    JSON.stringify(resumedDetails.saved));
   await shot('far', '.run-window', 'runs-3-details.png');
   await pressIn(FAILED, 'Details'); await sleep(600);
   check('a failed run\'s details carry its error', (await far.evaluate(`[...${WINDOW}.querySelectorAll('table.run-facts tr')].find(tr => tr.children[0].textContent === 'Error')?.children[1].textContent`)) === FAILED.error);
   await pressIn(FAILED, 'Hide details');
+  check('... and its row reads "model only" under Can continue (7.221)', rowOf(await table(), RESUMED)?.['Can continue'] === 'model only',
+    JSON.stringify(rowOf(await table(), RESUMED)));
 
   // ---- 5. filter and sort -------------------------------------------------------------------------------------------------------
   await typeFilter('paused');

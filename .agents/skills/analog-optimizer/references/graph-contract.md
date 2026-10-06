@@ -144,12 +144,12 @@ feature_schema / masks / per_graph_context
 
 ### 当前训练输入缓存
 
-`SACLearner` 已默认启用两层 CPU LRU：2048 条完整观测输入、64 个静态拓扑模板。各编码器（当时六种，2026-09-26 起只剩 GT/RGCN/GATv2）共用同一机制，各 learner 独立持有；缓存不属于学习权重或 replay 原始记录。
+`SACLearner` 已默认启用两层 CPU LRU：8192 条完整观测输入（2026-10-06 记录 7.221 起，原为 2048；另有 256 MiB 张量字节上限）、64 个静态拓扑模板。各编码器（当时六种，2026-09-26 起只剩 GT/RGCN/GATv2）共用同一机制，各 learner 独立持有；缓存不属于学习权重或 replay 原始记录。
 
 - `TopologyTensorCache` 复用 kind/net roles/端口正反向边/ordinal/组绑定/mutable；有序节点、边、组、关系、绑定、schema 改变即失效。`to_pyg(..., topology_cache=cache)` 每次仍校验并刷新动态尺寸、mask、组域及来源/回写 metadata。
-- `ObservationTensorCache` 复用完整原始输入、context 和组特征。键为完整 Observation 与 FeatureSchema/SpecSchema 的本地内容摘要，覆盖尺寸、目标、测量/mask、预算、status、origin、工况及来源，不能只用对象地址或 job ID。replay 深拷贝仍应命中；名字仅用于索引和回写一致性，不是学习语义或图同构证明。
+- `ObservationTensorCache` 复用完整原始输入、context 和组特征。键为完整 Observation 与 FeatureSchema/SpecSchema 的本地内容摘要，覆盖尺寸、目标、测量/mask、预算、status、origin、工况及来源，不能只用对象地址或 job ID。记录 7.221 起键为 schema 摘要（按 (FeatureSchema, SpecSchema) 记忆）+ 整条观测的内容摘要（`observation_digest`）：replay 的学习路径 `ReplayBuffer.update_learner` 借出未复制的 transition，并把每条已入库 transition 两个观测的摘要只算一次后传入；其他调用（`act()`、公共 `sample()` 之后的 `update()`）每次完整摘要。内容相同的观测（含深拷贝）命中同一条目；PDK 视图（`PdkViewLearner`）生成新对象，按其自身内容摘要。名字仅用于索引和回写一致性，不是学习语义或图同构证明。
 - `batch_observations(..., cache=cache)` 每次拼接新 batch、调整索引并复制 opaque metadata；调用方修改返回张量或 metadata 不应污染缓存。静态模板对外返回独立张量。
-- 容量按条目计，超限 LRU 淘汰；两项容量均设为 0 可关闭，`learner.input_cache.info()/clear()` 用于检查与释放。缓存淘汰/重启后允许重新转换，不承诺无限期“只转换一次”。
+- 容量按条目计（可选 `max_bytes` 字节上限，`info()` 另报淘汰次数与张量字节），超限 LRU 淘汰；两项容量均设为 0 可关闭，`learner.input_cache.info()/clear()` 用于检查与释放。缓存淘汰/重启后允许重新转换，不承诺无限期“只转换一次”。
 - 不缓存 embedding、attention、Q、动作或梯度；每次按当前参数执行网络前向/反向。带邻接缓存的算子必须关闭跨批缓存（已删除的 GCN 编码器用 `GCNConv(cached=False)`），避免混合拓扑误用上一批邻接。缓存不写入 checkpoint，冷恢复按需重建且下一步训练应精确一致。
 - 真实候选的参数回读、网表导出/解析与一致性核验保留；这不是仿真结果缓存。转换阶段计时与完整 SAC 更新分别记录，不把训练端提速当成 Spectre 或端到端提速。
 

@@ -42,7 +42,7 @@ const started = () => ({ run_dir: sim.dir, run_id: 'fixture-run', mock: sim.mock
   mock_notice: sim.mock ? 'FIXTURE MOCK DATA: nothing was started.' : null });
 // Section 12: a second, PAUSED run that the bottom tabs can show while the header's run is live (listed from then on).
 const OTHER = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task__scratch__seed1__0002';
-let otherListed = false;
+let otherListed = false, otherOlder = false;     // otherOlder: its save point was written by older optimizer code (7.221)
 // Section 13: a run this browser remembers that is gone (deleted, or outside the allowed roots): its status is a 404.
 const GONE = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task__scratch__seed9__0009';
 let goneAsked = 0;
@@ -52,6 +52,7 @@ const otherStatus = () => ({ state: 'paused', run_id: 'fixture-run-2', mode: 'sc
   heartbeat_utc: '2026-09-20T00:10:00+00:00', stop_reason: 'user_pause', error: null, active_workers: [], concurrency: 1, learner_updates: 0, first_feasible: null,
   budget: { max_evaluations: 60, max_launches: null, max_retries: 0, charged: 7, reserved: 0, in_flight: 0, completed: 7, failed: 0, released: 0, remaining: 53, launches: 7, retries: 0, cache_hits: 0, first_feasible: null },
   best_design: null, persistence: null, last_checkpoint_utc: null, paths: { run_dir: OTHER }, connection: { overall: 'not_applicable' }, summary: null,
+  save_point: 'ckpt-000007', save_point_code: otherOlder ? 'older' : 'current',
   manifest: { mode: 'scratch', mock: true, task_id: 'fixture_task:0000', seeds: { target_seed: 1 }, source_model: null, budgets: { max_evaluations: 60 }, mock_notice: 'FIXTURE MOCK DATA: nothing was started.' } });
 const validReport = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: true };
 
@@ -344,6 +345,14 @@ await runChecks(browser, async () => {
   check('once the header\'s run is paused, Continue of the other run is offered again', await until(`!!(${CONTINUE}) && !${CONTINUE}.disabled && ${CONTINUE}.title.startsWith('Continue: A paused')`),
     await evaluate(`${CONTINUE}?.title ?? ''`));
   check('nothing was continued meanwhile', !log.some(l => l.name === '/api/runs/continue'), JSON.stringify(log.map(l => l.name)));
+  // Record 7.221: a run whose save point was written by an older version of the optimizer code cannot be continued (an exact
+  // resume needs that code); its Continue goes off with the reason once the paused run is read again (every 15 s).
+  otherOlder = true;
+  check('a run saved by an older version of the optimizer code: its Continue is off and the tooltip says why (7.221)',
+    await until(`!!(${CONTINUE}) && ${CONTINUE}.disabled && /older version of the optimizer code/.test(${CONTINUE}.title) && /fine-tune or frozen/.test(${CONTINUE}.title)`, 250),
+    await evaluate(`${CONTINUE}?.title ?? ''`));
+  check('... and nothing was continued', !log.some(l => l.name === '/api/runs/continue'), JSON.stringify(log.map(l => l.name)));
+  otherOlder = false;
 
   // ---- 13. a remembered run that is gone is let go of - not asked for every 1.5 s for ever (review of 2026-09-29) -----------------
   await forget();

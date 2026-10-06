@@ -1256,7 +1256,9 @@ def learner_class(vocabulary):
         return SACLearner
 
     class PdkViewLearner(SACLearner):
-        def batch(self, observations):
+        def batch(self, observations, *, digests=None):
+            # The network sees new objects (the PDK's view): digests of the recorded observations do not describe
+            # them, so the input cache keys the viewed observations by their own content (record 7.221).
             return super().batch([vocabulary.view(o) for o in observations])
     return PdkViewLearner
 

@@ -17,7 +17,10 @@
 //     same x; the choice is kept after a reload and lets go of the learner charts' zoom; units in the chart titles are
 //     written in English letters (units.ts)
 //   - key numbers (record 7.215): one row per run on the charts with the recorded values, folded and kept so after a reload
-// Run (Windows node through WSL interop, ~1 min):
+//   - shared chart preparation (record 7.221): a long live run (19,000 evaluations, ~121,000 learner updates) drawn on as
+//     results arrive, its newest values the recorded ones; the cost of its changed frames said (INFO); switching runs in
+//     the run window and taking a compared run off give their rows back (JS heap and typed arrays after a collection)
+// Run (Windows node through WSL interop, ~1.5 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
 import { check, launchEdge, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl, NEVER_ASKED_OR_SAVED } from './lib/harness.mjs';
@@ -121,12 +124,14 @@ const RUNS = {
   twin: { dir: base + 'scratch__seed8__twin', id: 'twin', state: 'completed', alive: true, final: 304, tail: 2, data: makeRun(400) },   // whole flushes of 16: a published flush never changes
   frozen: { dir: base + 'scratch__seed4__frozen', id: 'frozen', state: 'completed', final: 48, tail: 0, data: makeRun(48, { frozen: true }), frozen: true },
   long: { dir: base + 'scratch__seed5__long', id: 'long', state: 'completed', final: 20000, tail: 0, data: null },
+  // the long run's rows as a live run (record 7.221): 19,008 evaluations published (whole flushes of 16), the rest to come
+  longlive: { dir: base + 'scratch__seed10__longlive', id: 'longlive', state: 'running', final: 19008, tail: 2, data: null },
   // learns once per evaluation (as the SAC defaults before record 7.183 did); its spec's unit written with a Greek letter
   once: { dir: base + 'scratch__seed9__once', id: 'once', state: 'completed', final: 288, tail: 0, data: makeRun(288, { updatesPer: 1, spec: 'i_bias', unit: '\u00b5A' }) },
 };
 const byDir = Object.fromEntries(Object.values(RUNS).map(r => [r.dir, r]));
 let listRuns = false;                                 // GET /api/runs lists the runs only for the comparison part
-const runRows = () => ['live', 'failed', 'frozen', 'twin', 'once'].map((id, i) => ({ run_dir: RUNS[id].dir, run_id: id, task_name: 'fixture_task', mode: RUNS[id].frozen ? 'frozen' : 'scratch',
+const runRows = () => ['live', 'failed', 'frozen', 'twin', 'once', 'long'].map((id, i) => ({ run_dir: RUNS[id].dir, run_id: id, task_name: 'fixture_task', mode: RUNS[id].frozen ? 'frozen' : 'scratch',
   seed: i + 1, state: RUNS[id].state === 'running' ? 'completed' : RUNS[id].state, created_utc: `2026-10-05T1${i}:00:00+00:00`, evaluations: RUNS[id].final + RUNS[id].tail, mock: true }))
   .map(r => (r.run_id === 'once' ? { ...r, seed: 1, created_utc: '2026-10-05T10:00:00+00:00' } : r));      // reads as the live run but for its folder id
 
@@ -144,7 +149,7 @@ await runChecks(browser, async () => {
     if (name === '/api/runs/training') {
       if (!run) return fulfil(requestId, 404, { detail: { message: 'Not a run directory' } });
       if (run.older) return fulfil(requestId, 404, { detail: 'Not Found' });                   // a backend without the route
-      if (run.id === 'long' && !run.data) run.data = makeRun(20000);
+      if ((run.id === 'long' || run.id === 'longlive') && !run.data) run.data = RUNS.long.data ?? (RUNS.long.data = makeRun(20000));
       const tailCursor = url.searchParams.get('tail_cursor');
       reads.push({ run: run.id, flushes: Number(url.searchParams.get('flushes')), tailCursor, at: Date.now() });
       return fulfil(requestId, 200, serve(run, Number(url.searchParams.get('flushes')), tailCursor));
@@ -156,7 +161,9 @@ await runChecks(browser, async () => {
   // Every redraw of a chart clears its canvas: counted per canvas, with the time.
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { const clear = CanvasRenderingContext2D.prototype.clearRect; window.__draws = [];
     CanvasRenderingContext2D.prototype.clearRect = function (...a) { const plot = this.canvas.closest && this.canvas.closest('.training-plot');
-      if (plot) window.__draws.push({ at: performance.now(), plot: [...document.querySelectorAll('.training-plot')].indexOf(plot) }); return clear.apply(this, a); };
+      if (plot) { const at = performance.now(); window.__draws.push({ at, plot: [...document.querySelectorAll('.training-plot')].indexOf(plot) });
+        queueMicrotask(() => (window.__drawMs ??= []).push(performance.now() - at)); }   // uPlot draws on from here, in one go
+      return clear.apply(this, a); };
     window.__long = []; try { new PerformanceObserver(l => window.__long.push(...l.getEntries().map(e => e.duration))).observe({ type: 'longtask', buffered: true }); } catch {} })();` });
   await page.intercept(['*/api/runs/*', '*/api/runs', '*/api/runs?*', '*/api/config/validate'], answer, { others: 'read' });
   await page.seed({ config: CONFIG, run: RUNS.live.dir, when: 'once' });
@@ -315,6 +322,7 @@ await runChecks(browser, async () => {
 
   // ---- listeners and charts left behind ------------------------------------------------------------------------------------------
   const listeners = async () => { const { result } = await send('Runtime.evaluate', { expression: 'window' }); const { listeners } = await send('DOMDebugger.getEventListeners', { objectId: result.objectId }); return listeners.length; };
+  await until(`document.querySelectorAll('.training .uplot').length === 2`, 60); await sleep(300);    // after the reload: both charts made again
   const before = await listeners();
   for (const id of ['alpha', 'entropy', 'spec:gain_vv', 'violation', 'actor_loss', 'critic_loss']) { await page.setValue(SECOND, id); await sleep(250); }
   await page.setValue(SMOOTH, '0'); await sleep(300); await page.setValue(SMOOTH, '50'); await sleep(300);
@@ -513,6 +521,99 @@ await runChecks(browser, async () => {
   console.log(`INFO  with caps 5,000 / 20,000: JS heap ${boundHeap} MB`);
   await evaluate(`localStorage.removeItem('gator-workbench-training-caps-v1')`);
   await page.shot(path.join(out, 'training-long.png'), `(${TRAINING})`);
+
+  // ---- shared chart preparation (record 7.221): a long live run; switching runs and comparing give their rows back --------------
+  // Each run keeps what its charts derive from its rows and brings it up to date as rows arrive. Here: a long live run with
+  // eight charts drawn on as results arrive (its newest values the recorded ones; INFO: a changed frame's main-thread time and
+  // uPlot's share, Performance.getMetrics), then memory: the JS heap plus the typed arrays' buffers (Runtime.getHeapUsage
+  // after a collection) when a long run is shown and left again through the run window, and when it is compared and taken off.
+  // the lower of two readings, each after a collection: what the page holds, not what a moment's work has not given back yet
+  const heapNow = async () => { let least = Infinity; for (let i = 0; i < 2; i++) { await send('HeapProfiler.collectGarbage'); await sleep(300);
+    const h = await send('Runtime.getHeapUsage'); least = Math.min(least, (h.usedSize + (h.backingStorageSize ?? 0)) / 1048576); } return least; };
+  const mb = v => `${v.toFixed(1)} MB`;
+  const countsText = () => evaluate(`(${TRAINING})?.querySelector('.training-counts')?.textContent ?? ''`);
+  await showRun(RUNS.longlive);
+  check('a long live run loads: 19,008 evaluations published, the journal read on', await until(`/19010 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 600, 100),
+    await countsText());
+  for (let i = 0; i < 8 && (await figures()) < 8; i++) { await evaluate(`(${ADD}).click()`); await sleep(150); }
+  check('eight charts of the long live run are drawn', await until(`(${TRAINING}).querySelectorAll('figure.training-chart canvas').length === 8`, 100));
+  await sleep(2500);
+  await send('Performance.enable');
+  const metrics = async () => Object.fromEntries((await send('Performance.getMetrics')).metrics.map(m => [m.name, m.value]));
+  await evaluate('window.__drawMs = []');
+  const m0 = await metrics(), draws0 = await evaluate('window.__draws.length'), started = Date.now();
+  for (let i = 0; i < 8; i++) {                 // two new evaluations in the journal every 2 s; every 8 a flush publishes 16
+    RUNS.longlive.tail += 2;
+    if (RUNS.longlive.tail >= 18) { RUNS.longlive.final += 16; RUNS.longlive.tail -= 16; }
+    await sleep(2000);
+  }
+  await sleep(1500);
+  const m1 = await metrics(), elapsed = (Date.now() - started) / 1000;
+  const redraws = (await evaluate('window.__draws.length')) - draws0, drawMs = await evaluate('window.__drawMs.reduce((a, b) => a + b, 0)');
+  const frames = Math.max(1, Math.round(redraws / 8)), newest = RUNS.longlive.final + RUNS.longlive.tail;
+  console.log(`INFO  long live run (${newest} evaluations, ${RUNS.long.data.prefix[newest].toLocaleString('en')} learner updates, 8 charts): ${frames} changed frames in ${elapsed.toFixed(0)} s;`
+    + ` main thread ${((m1.TaskDuration - m0.TaskDuration) * 1000 / frames).toFixed(1)} ms per frame (scripts ${((m1.ScriptDuration - m0.ScriptDuration) * 1000 / frames).toFixed(1)} ms),`
+    + ` of it uPlot drawing ${(drawMs / frames).toFixed(1)} ms; JS heap and arrays ${mb(await heapNow())}`);
+  check('the long live run is drawn on as results arrive: its newest evaluation on the first chart', await until(`/^Newest: Evaluation ${newest} /.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`, 60),
+    await readout(0));
+  // the newest learner update and its mean of the last 50, as recorded (the learner's numbers derived as rows arrived)
+  const newestText = await readout(1), parsed = /^Newest: Learner update (\d+) · after (\d+) evaluations · Critic loss \(recorded\) (\S+) · Critic loss: mean of last 50 (\S+)/.exec(newestText);
+  const lastUpdate = RUNS.long.data.updates[RUNS.long.data.prefix[newest] - 1], window50 = RUNS.long.data.updates.slice(RUNS.long.data.prefix[newest] - 50, RUNS.long.data.prefix[newest]);
+  check('...its newest learner update with the recorded critic loss and the mean of the last 50 recorded ones', !!parsed && Number(parsed[1]) === lastUpdate.cumulative_updates
+    && Number(parsed[2]) === lastUpdate.evaluations_collected && Number(parsed[3]) === +lastUpdate.critic_loss.toPrecision(4)
+    && Number(parsed[4]) === +(window50.reduce((sum, u) => sum + u.critic_loss, 0) / 50).toPrecision(4), `${newestText} | recorded: update ${lastUpdate.cumulative_updates}, ${lastUpdate.critic_loss}`);
+  RUNS.longlive.state = 'completed';
+
+  // switching runs in the run window, three times to the long run and back: each time its rows are given back
+  listRuns = true;
+  await showRun(RUNS.live);
+  await until(`/288 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 60);
+  const RUNS_BUTTON = `document.querySelector('footer .tabs button.run-list-button')`;
+  /** The run window (Runs...): a double click on the run's row shows it in the bottom tabs; the window is closed again. */
+  const pickRun = async run => {
+    await evaluate(`${RUNS_BUTTON}.click()`, true);
+    const target = await browser.window('GATOR - runs', { present: true, except: page.target.id });
+    const far = await browser.attach(target, { errors: consoleErrors, prefix: 'run window: ' });
+    await far.send('Emulation.setDeviceMetricsOverride', { width: 1500, height: 860, deviceScaleFactor: 1, mobile: false });
+    let at = null;
+    for (let i = 0; i < 60 && !at; i++) {
+      at = await far.evaluate(`(() => { const tr = [...document.querySelectorAll('.run-window table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(run.dir)});
+        if (!tr) return null; const el = tr.children[4]; el.scrollIntoView({ block: 'center' }); const b = el.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`);
+      if (!at) await sleep(100);
+    }
+    if (at) for (const clickCount of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await far.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount });
+    await send('Target.closeTarget', { targetId: target.id }); await browser.window('GATOR - runs', { present: false, except: page.target.id }); far.close();
+    await press('Training');
+    return !!at;
+  };
+  await until(`(${TRAINING}).querySelectorAll('figure.training-chart canvas').length === 8`, 60); await sleep(500);
+  const start = await heapNow(), rounds = [];
+  for (let round = 0; round < 4; round++) {
+    const went = await pickRun(RUNS.long) && await until(`/20000 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 600, 100)
+      && await until(`(${TRAINING}).querySelectorAll('figure.training-chart canvas').length === 8`, 60);
+    const withLong = await heapNow();
+    const back = await pickRun(RUNS.live) && await until(`/288 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 100);
+    await sleep(500);
+    rounds.push({ went, back, withLong, after: await heapNow() });
+  }
+  console.log(`INFO  run switching: ${mb(start)} with the short run shown; ${rounds.map(r => `${mb(r.withLong)} with the long run, ${mb(r.after)} back`).join('; ')}`);
+  check('switching to a long run and back in the run window, four times: each time its rows are given back (JS heap and arrays after a collection)',
+    rounds.every(r => r.went && r.back && r.withLong - start > 10 && r.after - start < 0.2 * (r.withLong - start)) && rounds[3].after - rounds[0].after < 4,
+    rounds.map(r => `${r.went && r.back ? '' : 'NOT SWITCHED '}${mb(r.withLong)} -> ${mb(r.after)}`).join(', ') + ` (start ${mb(start)})`);
+  // a long run compared, then taken off the charts: its rows go with it
+  const alone = await heapNow();
+  await page.setValue(COMPARE, RUNS.long.dir);
+  const compared = await until(`[...(${TRAINING}).querySelectorAll('details.training-keys tbody tr')].length === 2
+    && /^20000$/.test([...(${TRAINING}).querySelectorAll('details.training-keys tbody tr')][1]?.cells[1]?.textContent ?? '')`, 600, 100);
+  await sleep(1500);
+  const withCompared = await heapNow();
+  await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip-remove')][0].click()`);
+  const removed = await until(`!(${TRAINING}).querySelector('.training-compared')`, 30);
+  await sleep(500);
+  const afterRemoved = await heapNow();
+  check('a long run compared and taken off again: its rows are given back', compared && removed && withCompared - alone > 10 && afterRemoved - alone < 0.2 * (withCompared - alone),
+    `${mb(alone)} -> ${mb(withCompared)} compared -> ${mb(afterRemoved)} taken off`);
+  listRuns = false;
 
   // ---- the look switch redraws in the other look's colours ---------------------------------------------------------------------
   const strokeOf = () => evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()`);

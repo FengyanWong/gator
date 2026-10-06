@@ -12,12 +12,24 @@
 //     the mean is over the last N evaluations, compared runs learning 8 and 1 times per evaluation share the slots of an x
 //   - key numbers (record 7.215): first passing design, passing share of the last 100 evaluations, best design's miss,
 //     entropy and temperature at the start and the end - the recorded values, episode starts and no-verdict rows left out
-// Run: "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_data_check.mjs)"   (about 1 s)
-import { fileURLToPath } from 'node:url';
+//   - shared chart preparation (record 7.221): a store kept up to date over many answers draws exactly what a new store fed
+//     the same answers at once draws (random runs: pages, flushes, journal rewrites, spec values joining earlier pages,
+//     learner restarts, resumes, thinning, missing metrics), and - given the trainingData.ts before 7.221 - exactly what the
+//     builders before it drew; the preparation stays bounded and goes with its store
+// Run: "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_data_check.mjs)"   (a few seconds)
+//   [--seeds N] (random runs, default 12)   [--reference <trainingData.ts before 7.221>] or TRAINING_DATA_REFERENCE=<it>:
+//   e.g. git show c170802:frontend/src/panels/trainingData.ts > <file>.ts - each step of each random run also against it
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import v8 from 'node:v8';
+import vm from 'node:vm';
 
 const data = await import(new URL('../src/panels/trainingData.ts', import.meta.url).href);
 const { TrainingStore, build, buildCompare, catalog, decimate, smooth, smoothOver, updateBranches, viewRange, setCaps, passFlags, keyNumbers, RECENT, ENDS } = data;
 if (fileURLToPath(import.meta.url) && !TrainingStore) throw new Error('trainingData.ts did not load');
+const argv = process.argv.slice(2), option = (name, fallback = null) => { const i = argv.indexOf(name); return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback; };
 
 let passed = 0, failed = 0;
 const check = (name, ok, info = '') => { if (ok) passed++; else failed++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  -> ' + info : ''}`); };
@@ -393,6 +405,318 @@ const valuesOf = (built, label) => built.series.find(s => s.label === label)?.va
   check('no passing design yet, no learner: said as none, not as 0', n.firstPass === null && n.entropy === null && n.alpha === null && n.recent.passed === 0 && n.recent.from === 1,
     JSON.stringify(n));
   check('an empty run: nothing but the count', same(keyNumbers(new TrainingStore('/fixture/empty')), { evaluations: 0, firstPass: null, recent: null, bestMiss: null, entropy: null, alpha: null }));
+}
+
+// ---- 10. shared chart preparation (record 7.221) ------------------------------------------------------------------------------
+// What the charts derive from a run's rows is kept per run and brought up to date as rows arrive. The charts must draw the very
+// same numbers: compared exactly (a number by Object.is: -0 is not 0; the same keys, the same order of values), never "close".
+{
+  // the trainingData.ts before record 7.221, when given: imported from a folder of its own (node needs a package.json there)
+  const referencePath = option('--reference') ?? process.env.TRAINING_DATA_REFERENCE ?? null;
+  let reference = null;
+  if (referencePath) {                                             // once imported, the copy is not needed any more
+    const referenceDir = mkdtempSync(path.join(tmpdir(), 'gator-training-reference-'));
+    try {
+      copyFileSync(referencePath, path.join(referenceDir, 'trainingData.ts'));
+      writeFileSync(path.join(referenceDir, 'package.json'), '{ "type": "module" }\n');
+      reference = await import(pathToFileURL(path.join(referenceDir, 'trainingData.ts')).href);
+    } finally { rmSync(referenceDir, { recursive: true, force: true }); }
+  }
+  /** The first difference of two values, or null. */
+  const differ = (a, b, where = '') => {
+    if (typeof a !== typeof b) return `${where}: ${typeof a} vs ${typeof b} (${String(a)} vs ${String(b)})`;
+    if (typeof a === 'number') return Object.is(a, b) ? null : `${where}: ${a} vs ${b}`;
+    if (a === null || b === null || typeof a !== 'object') return a === b ? null : `${where}: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`;
+    if (Array.isArray(a) !== Array.isArray(b)) return `${where}: array vs object`;
+    if (Array.isArray(a)) {
+      if (a.length !== b.length) return `${where}: length ${a.length} vs ${b.length}`;
+      for (let i = 0; i < a.length; i++) { const d = differ(a[i], b[i], `${where}[${i}]`); if (d) return d; }
+      return null;
+    }
+    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
+    if (ka.join() !== kb.join()) return `${where}: keys ${ka.join()} vs ${kb.join()}`;
+    for (const key of ka) { const d = differ(a[key], b[key], `${where}.${key}`); if (d) return d; }
+    return null;
+  };
+  const random = seed => { let s = (seed * 2654435761) >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; };
+  const viewFor = (rnd, extent) => {
+    const [a, b] = extent ?? [1, 10], span = Math.max(1, b - a), pick = rnd();
+    if (pick < 0.4) return { mode: 'all' };
+    if (pick < 0.7) return { mode: 'follow', width: Math.max(1, Math.round(span * rnd() * 0.6)) };
+    const lo = Math.round((a - span * 0.1 + rnd() * span * 1.1) * 10) / 10;
+    return { mode: 'fixed', min: lo, max: lo + Math.max(0.5, Math.round(rnd() * span * 5) / 10) };
+  };
+  /** Every chart (twice, with random smoothing, view, width, learner x and calibration), the catalog and the key numbers of
+   *  each pair (store, other: another module's store or a store fed the same answers at once), then comparisons of 1-4 runs.
+   *  Returns [comparisons, first difference or null]. */
+  const compareAll = (rnd, pairs) => {
+    let count = 0, first = null;
+    const note = (what, d) => { count += 1; if (d && !first) first = `${what}: ${d}`; };
+    for (const { store, other, module } of pairs) {
+      for (const context of [{}, { calibration: true }]) {
+        note('catalog', differ(catalog(store, context), module.catalog(other, context)));
+        note('key numbers', differ(keyNumbers(store, context), module.keyNumbers(other, context)));
+      }
+      for (const id of [...catalog(store).map(c => c.id), 'no_such_chart']) for (let c = 0; c < 2; c++) {
+        const smoothing = [0, 10, 20, 50][Math.floor(rnd() * 4)], learnerX = rnd() < 0.5 ? 'update' : 'evaluation', buckets = [16, 20, 40, 800][Math.floor(rnd() * 4)];
+        const context = rnd() < 0.15 ? { calibration: true } : {};
+        const view = viewFor(rnd, module.build(other, id, smoothing, { mode: 'all' }, buckets, context, learnerX).extent);
+        note(`${id} smoothing ${smoothing} ${JSON.stringify(view)} width ${buckets} by ${learnerX}`, differ(build(store, id, smoothing, view, buckets, context, learnerX),
+          module.build(other, id, smoothing, view, buckets, context, learnerX)));
+      }
+    }
+    for (let c = 0; c < 6 && pairs.length; c++) {
+      const chosen = [...pairs].sort(() => rnd() - 0.5).slice(0, 1 + Math.floor(rnd() * Math.min(4, pairs.length))), module = chosen[0].module;
+      const ids = catalog(chosen[0].store).map(x => x.id), id = rnd() < 0.05 ? 'no_such_chart' : ids[Math.floor(rnd() * ids.length)];
+      const smoothing = [0, 10, 20][Math.floor(rnd() * 3)], learnerX = rnd() < 0.5 ? 'update' : 'evaluation', buckets = [16, 30, 800][Math.floor(rnd() * 3)];
+      const context = rnd() < 0.15 ? { calibration: true } : undefined;
+      const mine = chosen.map((p, i) => ({ store: p.store, label: `R${i}`, context: i ? undefined : context }));
+      const theirs = chosen.map((p, i) => ({ store: p.other, label: `R${i}`, context: i ? undefined : context }));
+      const view = viewFor(rnd, module.buildCompare(theirs, id, smoothing, { mode: 'all' }, buckets, learnerX).extent);
+      note(`${chosen.length} runs compared on ${id} smoothing ${smoothing} ${JSON.stringify(view)} width ${buckets} by ${learnerX}`,
+        differ(buildCompare(mine, id, smoothing, view, buckets, learnerX), module.buildCompare(theirs, id, smoothing, view, buckets, learnerX)));
+    }
+    return [count, first];
+  };
+  const fedAtOnce = (dir, answers) => { const store = new TrainingStore(dir); for (const a of answers) store.apply(a); return store; };
+
+  // -- a random run as training_series.read_training answers it: history in flushes, then journal pages; spec values that come a
+  //    page after their evaluation, journal rewrites, late answers; restarts of the learner (its count back, maybe the
+  //    evaluations' too), resumes, counts of -0 and 0, missing counts and metrics, a spec appearing late, unused words
+  const WORD_COLUMNS = new Set(['episode_id', 'phase', 'action_source', 'status', 'update_phase', 'metric_name', 'failure_reason']);
+  const randomColumns = (rows, names, rnd) => {
+    const out = { n: rows.length };
+    for (const name of names) {
+      const values = rows.map(r => (r[name] === undefined ? null : r[name]));
+      if (!WORD_COLUMNS.has(name)) { out[name] = values; continue; }
+      const words = rnd() < 0.2 ? ['unused-word'] : [];
+      out[name] = { values: words, codes: values.map(v => (v === null ? -1 : words.includes(v) ? words.indexOf(v) : words.push(v) - 1)) };
+    }
+    return out;
+  };
+  const simulate = (seed, { learner = true, counts = 'yes', restarts = 0.02, specs = ['gain', 'pm'], frozen = false, zeros = false, decibels = false } = {}) => {
+    const rnd = random(seed), pick = list => list[Math.floor(rnd() * list.length)], dir = `/fixture/random/${seed}`;
+    const value = (p, scale = 1) => (rnd() < p ? null : (rnd() - 0.4) * scale);
+    const e = [], u = [], s = [], flushes = [];
+    let k = 0, cum = 0, collected = 0, lag = 0, late = false;
+    let segments = [{ segment: 1, entry: 'start', started_utc: new Date(1.7e9 * 1000).toISOString(), ended_utc: null, end_state: null, stop_reason: null }];
+    let served = 0, cursor = null, tailE = 0, tailU = 0, tailS = 0, tag = 0;
+    const flushed = () => flushes[flushes.length - 1] ?? [0, 0, 0];
+    const part = (e0, e1, u0, u1, s0, s1) => ({ evaluations: randomColumns(e.slice(e0, e1), EVALUATION, rnd), updates: randomColumns(u.slice(u0, u1), UPDATE, rnd),
+      specs: randomColumns(s.slice(s0, s1), SPEC, rnd), spec_defs: Object.fromEntries([...specs, 'late_spec'].map((name, i) =>
+        [name, { unit: i === 1 ? 'deg' : decibels ? 'dB' : 'V/V', threshold_lower: i === 0 ? 0 : null, threshold_upper: i === 1 ? 100 : null, hard: true }])) });
+    const meta = () => ({ run_dir: dir, run_id: dir, mode: 'scratch', mock: true, objective: rnd() < 0.5 ? { metric: specs[0] ?? 'gain', direction: 'max' } : null,
+      learner: learner ? { recorded: true, every: 1, reason: null } : { recorded: false, every: 1, reason: 'FIXTURE: no learner updates' }, segments });
+    return {
+      dir,
+      grow(m) {
+        for (let i = 0; i < m; i++) {
+          k += 1;
+          const start = k === 1 || rnd() < 0.15, t = 1.7e9 + k * 2 + (rnd() < 0.05 ? -3 : 0);
+          const phase = start ? (k === 1 ? 'baseline' : pick(['episode_reset', 'episode_reset', 'preflight'])) : frozen ? pick(['frozen_eval', 'validation'])
+            : k < 6 ? 'warmup' : rnd() < 0.08 ? pick(['frozen_eval', 'llm_search', 'adapt']) : 'search';
+          e.push({ commit_seq: k + (rnd() < 0.02 ? 1000 : 0), completion_index: k, global_env_step: k, episode_id: `0-${Math.ceil(k / 5)}`, episode_step: k % 5, phase,
+            action_source: start ? 'reset' : 'sac_policy', status: rnd() < 0.85 ? 'ok' : pick(['timeout', 'measurement_error', 'invalid_design', 'nonconverged', 'cancelled']),
+            policy_version: null, reward: start ? null : value(0.1), valid: rnd() < 0.9 ? true : rnd() < 0.5 ? false : null,
+            all_hard_constraints_satisfied: rnd() < 0.1 ? null : rnd() < 0.4, normalized_constraint_violation: value(0.15, 2), clearance_margin: rnd() < 0.3 ? null : value(0.1, 3),
+            best_so_far_feasible: rnd() < 0.1 ? null : rnd() < 0.5, best_so_far_violation: value(0.1), execution_seconds: value(0.05, 10), committed_at: t,
+            best_so_far_objective: value(0.3, 100) });
+          for (const name of [...specs, ...(late ? ['late_spec'] : [])]) if (rnd() < 0.9) {
+            const v = value(0.15, 500);
+            s.push({ commit_seq: e[e.length - 1].commit_seq, metric_name: name, raw_value: v, satisfied: v === null ? null : v > 0,
+              failure_reason: v === null ? pick(['missing_or_nonfinite', 'evaluation_status_timeout']) : null });
+          }
+          if (!late && rnd() < 0.01) late = true;
+          if (learner && !start && k >= 4) for (let j = pick([0, 1, 1, 2, 8]); j > 0; j--) {
+            // a restart: the count goes back; with 'back' the evaluations' count too, from then on `lag` behind
+            if (rnd() < restarts && cum > 3) { cum = Math.max(0, cum - 1 - Math.floor(rnd() * 12)); if (counts === 'back') lag = 1 + Math.floor(rnd() * 4); }
+            cum += 1; collected = Math.max(0, k - lag);
+            const early = zeros && u.length < 6;
+            u.push({ cumulative_updates: rnd() < 0.005 ? null : early && rnd() < 0.5 ? (rnd() < 0.5 ? -0 : 0) : cum,
+              evaluations_collected: counts === 'none' ? null : early ? (rnd() < 0.5 ? -0 : 0) : rnd() < 0.01 ? null : collected,
+              update_phase: rnd() < 0.5 ? null : 'learn', actor_loss: value(0.05), critic_loss: value(0.05, 3), alpha_loss: value(0.3), alpha: value(0.02, 0.1),
+              mean_log_prob: value(0.05, 5), target_mean: value(0.05), critic_grad_norm: value(0.02, 4), actor_grad_norm: value(0.02, 4), updated_at: t + 0.5 });
+          }
+        }
+      },
+      resume() { segments = [...segments, { segment: segments.length + 1, entry: 'resume', started_utc: new Date((1.7e9 + k * 2 + 1) * 1000).toISOString(), ended_utc: null, end_state: null, stop_reason: null }]; },
+      flush() { if (e.length > flushed()[0]) flushes.push([e.length, u.length, s.length]); },
+      /** The answer to the page's next read: unread flushes first, then journal pages (or the journal again from its start). */
+      next(rewrite) {
+        const total = flushes.length;
+        if (served < total) {
+          const to = Math.min(total, served + 1 + Math.floor(rnd() * 3)), [e0, u0, s0] = flushes[served - 1] ?? [0, 0, 0], [e1, u1, s1] = flushes[to - 1];
+          const answer = { ...meta(), flushes: { served: to, total, start: served }, final: part(e0, e1, u0, u1, s0, s1), tail: null, tail_complete: true, latest_seq: e.length,
+            tail_page: { start: cursor, cursor: null, reset: true, more: false } };
+          if (to === total) {
+            const [fe, fu, fs] = flushed();
+            tailE = Math.min(e.length, fe + Math.floor(rnd() * 4)); tailU = Math.min(u.length, fu + Math.floor(rnd() * 20)); tailS = Math.min(s.length, fs + Math.floor(rnd() * 6));
+            answer.tail = part(fe, tailE, fu, tailU, fs, tailS);
+            answer.tail_page = { start: cursor, cursor: `c${++tag}`, reset: true, more: tailE < e.length };
+          }
+          served = to; cursor = answer.tail_page.cursor;
+          return answer;
+        }
+        const [fe, fu, fs] = flushed();
+        if (rewrite || cursor === null) {
+          tailE = Math.min(e.length, fe + Math.floor(rnd() * 6)); tailU = Math.min(u.length, fu + Math.floor(rnd() * 30)); tailS = Math.min(s.length, fs + Math.floor(rnd() * 8));
+          const answer = { ...meta(), flushes: { served, total, start: served }, final: part(0, 0, 0, 0, 0, 0), tail: part(fe, tailE, fu, tailU, fs, tailS),
+            tail_complete: rnd() < 0.9, latest_seq: e.length, tail_page: { start: cursor, cursor: `c${++tag}`, reset: true, more: tailE < e.length } };
+          cursor = answer.tail_page.cursor;
+          return answer;
+        }
+        const e1 = Math.min(e.length, tailE + Math.floor(rnd() * 5)), u1 = Math.min(u.length, tailU + Math.floor(rnd() * 40)), s1 = Math.min(s.length, tailS + Math.floor(rnd() * 12));
+        const answer = { ...meta(), flushes: { served, total, start: served }, final: part(0, 0, 0, 0, 0, 0), tail: part(tailE, e1, tailU, u1, tailS, s1),
+          tail_complete: true, latest_seq: e.length, tail_page: { start: cursor, cursor: `c${++tag}`, reset: false, more: e1 < e.length } };
+        tailE = e1; tailU = u1; tailS = s1; cursor = answer.tail_page.cursor;
+        return answer;
+      },
+    };
+  };
+  /** One random scenario: 1-4 runs read side by side, the charts compared at random steps. Returns a line for the check. */
+  const scenario = seed => {
+    // two random streams: the runs (the same for a seed, with or without the old builders) and which charts a frame compares
+    const rnd = random(seed * 7 + 1), sample = random(seed * 7 + 3), profile = ['normal', 'normal', 'restarts', 'quiet', 'zeros'][Math.floor(rnd() * 5)];
+    const spacing = [1, 2, 3, 7, 16, 64, 4096][Math.floor(rnd() * 7)];
+    const caps = profile === 'restarts' || rnd() < 0.4 ? { evaluations: 64 + Math.floor(rnd() * 200), updates: 64 + Math.floor(rnd() * 600) } : { evaluations: 50000, updates: 200000 };
+    data.setSpacing(spacing); setCaps(caps); reference?.setCaps(caps);
+    const runs = Array.from({ length: 1 + Math.floor(rnd() * 4) }, (_, r) => simulate(seed * 10 + r, profile === 'restarts'
+      ? { counts: rnd() < 0.7 ? 'back' : 'yes', restarts: 0.02 + rnd() * 0.06 }
+      : { learner: rnd() < 0.9, counts: rnd() < 0.15 ? 'none' : rnd() < 0.3 ? 'back' : 'yes', restarts: rnd() < 0.5 ? 0 : rnd() * 0.05,
+        specs: rnd() < 0.15 ? [] : ['gain', 'pm'], frozen: rnd() < 0.1, zeros: profile === 'zeros', decibels: rnd() < 0.2 }));
+    const pairs = runs.map(run => ({ run, store: new TrainingStore(run.dir), old: reference && new reference.TrainingStore(run.dir), answers: [] }));
+    let warmCold = 0, againstOld = 0, firstDifference = null;
+    for (let step = 0, steps = 25 + Math.floor(rnd() * 40); step < steps; step++) {
+      for (const pair of pairs) {
+        const what = rnd();
+        if (what < 0.5) pair.run.grow(1 + Math.floor(rnd() * 12));
+        else if (what < 0.65) { pair.run.grow(Math.floor(rnd() * 6)); pair.run.flush(); }
+        else if (what < 0.68) pair.run.resume();
+        else if (what < 0.7) pair.run.grow(40 + Math.floor(rnd() * 120));
+        // quiet: many reads between two frames, more changes than a reader remembers (Changes keeps 64)
+        const reads = profile === 'quiet' && rnd() < 0.15 ? 70 + Math.floor(rnd() * 30) : rnd() < 0.3 ? 0 : 1 + Math.floor(rnd() * 3);
+        for (let i = 0; i < reads; i++) {
+          if (reads > 10 && rnd() < 0.5) { pair.run.grow(1 + Math.floor(rnd() * 3)); if (rnd() < 0.5) pair.run.flush(); }
+          const answer = pair.run.next(rnd() < (reads > 10 ? 0.3 : 0.05));
+          const applied = pair.store.apply(answer);
+          if (pair.old && pair.old.apply(answer) !== applied && !firstDifference) firstDifference = `step ${step}: apply answered differently`;
+          pair.answers.push(answer);
+          if (rnd() < 0.05) { const stale = { ...answer, flushes: { ...answer.flushes, start: answer.flushes.start - 1 } }; pair.store.apply(stale); pair.old?.apply(stale); pair.answers.push(stale); }
+        }
+      }
+      if (rnd() < 0.6) {               // a frame: against the old builders if given, against stores fed every answer at once
+        if (reference) { const [n, d] = compareAll(sample, pairs.map(p => ({ store: p.store, other: p.old, module: reference }))); againstOld += n; if (d && !firstDifference) firstDifference = `step ${step}, old builders: ${d}`; }
+        const [n, d] = compareAll(sample, pairs.map(p => ({ store: p.store, other: fedAtOnce(p.run.dir, p.answers), module: data })));
+        warmCold += n; if (d && !firstDifference) firstDifference = `step ${step}, fed at once: ${d}`;
+      }
+    }
+    data.setSpacing(4096); setCaps({ evaluations: 50000, updates: 200000 }); reference?.setCaps({ evaluations: 50000, updates: 200000 });
+    const sizes = pairs.map(p => `${p.store.counts().evaluations}/${p.store.counts().updates}${p.store.thinnedEvaluations || p.store.thinnedUpdates ? ' thinned' : ''}`).join(', ');
+    return { line: `random runs ${seed} (${profile}, checkpoints every ${spacing}; evaluations/updates ${sizes})`, warmCold, againstOld, firstDifference };
+  };
+
+  // -- the record of changes: a reader gets the first row that may differ, one that missed too many starts again
+  const changes = new data.Changes(), seen = changes.stamp;
+  changes.note(5); changes.note(3); changes.note(9);
+  check('Changes: a reader that missed several changes gets the lowest first row; an up-to-date one none', changes.since(seen) === 3 && changes.since(changes.stamp) === Infinity
+    && changes.since(changes.stamp - 1) === 9);
+  for (let i = 0; i < 64; i++) changes.note(100);
+  check('Changes: a reader that missed more changes than are kept starts again from row 0', changes.since(seen) === 0 && changes.since(changes.stamp - 64) === 100);
+  const truncated = new TrainingStore('/fixture/cut');
+  truncated.apply(answer({ served: 1, total: 1, final: chunk({ evaluations: [1, 2, 3].map(s => evaluation(s)) }), tail: chunk({ evaluations: [4, 5].map(s => evaluation(s)) }) }));
+  const stamp = truncated.evaluations.changes.stamp;
+  truncated.apply(answer({ start: 1, served: 2, total: 2, final: chunk({ evaluations: [4, 5, 6].map(s => evaluation(s)) }) }));
+  check('a new flush notes where its rows replace the provisional ones', truncated.evaluations.changes.since(stamp) === 3, String(truncated.evaluations.changes.since(stamp)));
+
+  // -- stores at the edges, each compared against a store fed the same answers at once (and the old builders, if given)
+  const edge = (name, make) => {
+    const answers = make(), store = new TrainingStore(`/fixture/edge/${name}`), old = reference && new reference.TrainingStore(`/fixture/edge/${name}`);
+    const rnd = random(name.length * 31 + answers.length);
+    let n = 0, first = null;
+    for (const a of answers) {
+      store.apply(a); old?.apply(a);
+      const [c1, d1] = compareAll(rnd, [{ store, other: fedAtOnce(store.runDir, answers.slice(0, answers.indexOf(a) + 1)), module: data }]);
+      n += c1; first ??= d1;
+      if (old) { const [c2, d2] = compareAll(rnd, [{ store, other: old, module: reference }]); n += c2; first ??= d2; }
+    }
+    check(`kept up to date = derived at once${reference ? ' = the builders before 7.221' : ''}: ${name}`, first === null, first ?? `${n} comparisons`);
+    return store;
+  };
+  // a restart arrives in the journal, then its flush replaces it: what it marked abandoned is derived again
+  edge('a learner restart in the journal, then flushed', () => {
+    const first = Array.from({ length: 40 }, (_, i) => update(i + 1, { evaluations_collected: 1 + Math.floor(i / 4) }));
+    const again = Array.from({ length: 30 }, (_, i) => update(31 + i, { evaluations_collected: 11 + Math.floor(i / 4), actor_loss: 5 + i }));
+    const rows = Array.from({ length: 20 }, (_, i) => evaluation(i + 1));
+    return [answer({ served: 1, total: 1, final: chunk({ evaluations: rows.slice(0, 10), updates: first }), tail: chunk({ evaluations: rows.slice(10, 15), updates: again.slice(0, 10) }), tail_page: { start: null, cursor: 'a', reset: true, more: false } }),
+      answer({ start: 1, served: 1, total: 1, final: chunk(), tail: chunk({ evaluations: rows.slice(15), updates: again.slice(10, 20) }), tail_page: { start: 'a', cursor: 'b', reset: false, more: false } }),
+      answer({ start: 1, served: 2, total: 2, final: chunk({ evaluations: rows.slice(10), updates: again.slice(0, 20) }), tail: chunk({ updates: again.slice(20) }), tail_page: { start: 'b', cursor: 'c', reset: true, more: false } }),
+      answer({ start: 2, served: 2, total: 2, final: chunk(), tail: null, complete: false, tail_page: { start: 'c', cursor: null, reset: true, more: false } })];
+  });
+  // evaluations collected going back at a restart: the learner's rows by evaluation sorted; then thinned
+  edge('evaluation counts going back, sorted, then thinned', () => {
+    setCaps({ updates: 64 }); reference?.setCaps({ updates: 64 });
+    const ups = [...Array.from({ length: 50 }, (_, i) => update(i + 1, { evaluations_collected: 10 + i })), ...Array.from({ length: 50 }, (_, i) => update(41 + i, { evaluations_collected: 40 + i }))];
+    return [answer({ served: 1, total: 1, final: chunk({ evaluations: Array.from({ length: 30 }, (_, i) => evaluation(i + 1)), updates: ups.slice(0, 70) }) }),
+      answer({ start: 1, served: 2, total: 2, final: chunk({ updates: ups.slice(70) }) })];
+  });
+  setCaps({ evaluations: 50000, updates: 200000 }); reference?.setCaps({ evaluations: 50000, updates: 200000 });
+  // a spec value that joins an evaluation of an earlier page: that row's value, its mean and the spec's availability change
+  edge('a spec value joining an earlier page', () => [
+    answer({ served: 0, total: 0, final: chunk(), tail: chunk({ evaluations: [1, 2, 3, 4].map(s => evaluation(s)), specs: [1, 2].map(s => ({ commit_seq: s, metric_name: 'gain', raw_value: 10 * s, satisfied: true, failure_reason: null })) }),
+      tail_page: { start: null, cursor: 'a', reset: true, more: true } }),
+    answer({ served: 0, total: 0, final: chunk(), tail: chunk({ specs: [3, 4].map(s => ({ commit_seq: s, metric_name: 'gain', raw_value: -5 * s, satisfied: false, failure_reason: null })) }),
+      tail_page: { start: 'a', cursor: 'b', reset: false, more: false } })]);
+  // counts of -0 and 0 are one x (a comparison's x axis says 0)
+  const zero = edge('counts of -0 and 0', () => [answer({ served: 1, total: 1, final: chunk({ evaluations: [1, 2].map(s => evaluation(s)),
+    updates: [update(1, { evaluations_collected: -0 }), update(2, { evaluations_collected: 0 }), update(3, { evaluations_collected: 1 })] }) })]);
+  const zeros = buildCompare([{ store: zero, label: 'Z' }], 'actor_loss', 0, { mode: 'all' }, 800, 'evaluation');
+  check('a comparison by evaluation: counts -0 and 0 share the slots of x 0, written 0', same(zeros.x, [0, 0, 1]) && Object.is(zeros.x[0], 0) && Object.is(zeros.extent[0], 0), JSON.stringify(zeros.x));
+  // the newer half of a thinned learner history without evaluation counts: by evaluation only thinned rows have an x
+  edge('a thinned history whose newer updates have no evaluation count', () => {
+    setCaps({ updates: 64 }); reference?.setCaps({ updates: 64 });
+    return [answer({ served: 1, total: 1, final: chunk({ evaluations: [evaluation(1)], updates: Array.from({ length: 90 }, (_, i) => update(i + 1, { evaluations_collected: i < 40 ? 1 + i : null })) }) })];
+  });
+  setCaps({ evaluations: 50000, updates: 200000 }); reference?.setCaps({ evaluations: 50000, updates: 200000 });
+
+  // -- random runs: every chart of every run, the key numbers, comparisons of 1-4 runs, at random steps
+  const seeds = Number(option('--seeds', process.env.TRAINING_DATA_SEEDS ?? 12));
+  for (let seed = 1; seed <= seeds; seed++) {
+    const { line, warmCold, againstOld, firstDifference } = scenario(seed);
+    check(`${line}: kept up to date = derived at once${reference ? ' = the builders before 7.221' : ''}`, firstDifference === null && warmCold > 0,
+      firstDifference ?? `${warmCold} charts and key numbers compared${reference ? `, ${againstOld} against the old builders` : ''}`);
+  }
+  if (!reference) console.log('INFO  the builders before record 7.221 were not compared: give --reference <their trainingData.ts> (git show c170802:frontend/src/panels/trainingData.ts)');
+
+  // -- the screen thinning cannot loop on an x that is not a number (before 7.221 it never ended)
+  const xs = Array.from({ length: 200 }, (_, i) => (i === 50 ? NaN : i + 1));
+  check('decimate: a row whose x is not a number is a pixel column of its own', decimate(xs, [xs.map(v => v)], 0, 200, 1, 200, 16).includes(50));
+
+  // -- bounded and released: the running means kept per run are capped; a store's preparation goes with the store
+  const big = new TrainingStore('/fixture/bounded');
+  big.apply(answer({ served: 1, total: 1, final: chunk({ evaluations: Array.from({ length: 300 }, (_, i) => evaluation(i + 1, { phase: i % 3 ? 'search' : 'frozen_eval' })),
+    updates: Array.from({ length: 900 }, (_, i) => update(i + 1, { evaluations_collected: 1 + Math.floor(i / 3) })) }) }));
+  for (const smoothing of [10, 20, 50, 100, 200]) for (const learnerX of ['update', 'evaluation']) for (const { id } of catalog(big)) build(big, id, smoothing, { mode: 'all' }, 800, {}, learnerX);
+  const size = data.preparedSize(big);
+  check('the running means kept per run are capped (the least recently used go): 48', size.means === 48 && size.indexes <= 8, JSON.stringify(size));
+  setCaps({ evaluations: 64, updates: 128 });
+  big.apply(answer({ start: 1, served: 2, total: 2, final: chunk({ evaluations: [evaluation(301)], updates: [update(901, { evaluations_collected: 301 })] }) }));
+  for (const { id } of catalog(big)) build(big, id, 20, { mode: 'all' }, 800);
+  const thinned = data.preparedSize(big);
+  setCaps({ evaluations: 50000, updates: 200000 });
+  check('after thinning the preparation shrinks with the rows it holds', thinned.bytes < size.bytes, `${size.bytes} -> ${thinned.bytes} bytes`);
+  v8.setFlagsFromString('--expose-gc');
+  const gc = vm.runInNewContext('gc');
+  let collected = 0;
+  const registry = new FinalizationRegistry(() => { collected += 1; });
+  (() => {                                                        // a run shown, then another chosen: the first store is dropped
+    const gone = new TrainingStore('/fixture/gone');
+    gone.apply(answer({ served: 1, total: 1, final: chunk({ evaluations: [1, 2, 3].map(s => evaluation(s)), updates: [update(1), update(2)] }) }));
+    for (const { id } of catalog(gone)) build(gone, id, 20, { mode: 'all' }, 800);
+    keyNumbers(gone); buildCompare([{ store: gone, label: 'G' }, { store: big, label: 'B' }], 'critic_loss', 20, { mode: 'all' }, 800);
+    registry.register(gone, 'store');
+  })();
+  for (let i = 0; i < 20 && !collected; i++) { gc(); await new Promise(r => setTimeout(r, 20)); }
+  check('a store no longer shown is collected with its chart preparation (nothing else holds it)', collected === 1);
 }
 
 console.log(failed ? `${failed} of ${passed + failed} check(s) FAILED` : `all ${passed} checks passed`);

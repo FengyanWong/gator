@@ -105,6 +105,7 @@ export function StatusTab({ status, runDir, error, onContinue, continueBlocked, 
   const hasV2 = Object.prototype.hasOwnProperty.call(b ?? {}, 'first_nominal_feasible');
   const continuable = !status.worker_alive && ['paused', 'stopped', 'interrupted'].includes(status.state);
   const noSavePoint = status.save_point === null;      // the folder holds no save point to go on from (record 7.215; older backends: undefined)
+  const olderCode = status.save_point_code === 'older';  // written by an older optimizer source: Continue needs that source (7.221)
   return (<div className="status-grid">
     <SteeringCheck value={status.steering} />
     {status.manifest?.mock && <p className="mock">{status.manifest.mock_notice}</p>}
@@ -137,8 +138,9 @@ export function StatusTab({ status, runDir, error, onContinue, continueBlocked, 
       {status.error && <tr><td>Error</td><td className="error">{status.error}</td></tr>}
     </tbody></table>
     <div className="row">
-      <button disabled={!continuable || noSavePoint || !!continueBlocked} onClick={onContinue}
+      <button disabled={!continuable || noSavePoint || olderCode || !!continueBlocked} onClick={onContinue}
         title={continuable && noSavePoint ? 'Continue: this run folder holds no save point - a copy made without them, or they were deleted - so there is nothing to go on from.'
+          : continuable && olderCode ? 'Continue: this run was saved by an older version of the optimizer code, and continuing it needs exactly that version. Its model still loads in a new run: fine-tune or frozen.'
           : continuable && continueBlocked ? `Continue: ${continueBlocked}`
           : 'Continue: A paused, stopped or interrupted run goes on in the same run folder, from its saved state, with its own saved configuration.'}><Icon name="play" label="Continue" /></button>
       <button onClick={() => saveJson(`${runName(status.run_dir)}__status.json`, { exported_utc: new Date().toISOString(), ...status })}

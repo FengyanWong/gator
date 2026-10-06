@@ -70,7 +70,7 @@ Virtuoso schematic / exported Spectre netlist
 - 器件端口顺序和参数含义必须来自解析出的定义、CDF/PDK 映射或用户配置，不凭名称猜测。
 - 使用统一 `CircuitGraph` 与参数组表，支持不同器件数、net 数和可调参数数；图对象不依赖 bridge 活连接。
 - 未知器件/未解析表达式必须明确标记。涉及优化的未知语义必须报错，不静默丢器件、接地或填零。
-- 静态拓扑与动态尺寸/测量分开存储；learner 已默认启用有界静态模板和完整观测输入缓存，replay 深拷贝按内容命中。尺寸/规格/schema 变化须刷新对应输入，不能缓存 encoder 更新后的过期 embedding；容量与失效规则见 [图契约](references/graph-contract.md)。
+- 静态拓扑与动态尺寸/测量分开存储；learner 已默认启用有界静态模板和完整观测输入缓存，按内容摘要命中；学习更新经 `ReplayBuffer.update_learner` 借出 replay 中的 transition（不深拷贝，观测摘要每条只算一次），公共 `sample()` 仍深拷贝；gamma 恰为 0 时更新跳过下一状态的 batch/actor/target critic，结果与随机数状态逐位不变（2026-10-06 记录 7.221）。尺寸/规格/schema 变化须刷新对应输入，不能缓存 encoder 更新后的过期 embedding；容量与失效规则见 [图契约](references/graph-contract.md)。
 - PyG batch 不可产生跨电路边；padding、缺失参数、无效测量必须有独立 mask。
 - M1 已有 `graph/neural.py` 的固定语义同构导出与 dense 节点视图；不要直接将 device/net 的不同含义 x 列自动拼成共同语义。参数组 batch 偏移分别按组数和节点数计算，具体见 [图契约](references/graph-contract.md)。
 

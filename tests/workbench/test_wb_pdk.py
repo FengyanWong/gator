@@ -257,6 +257,45 @@ def test_the_learner_acts_learns_saves_and_loads_only_with_its_own_list(demo_tas
         SACLearner.load(tmp_path / 'state.pt', experiment=experiment, model_config=net)
 
 
+def test_the_pdk_view_learner_takes_lent_replay_samples_like_copied_ones(demo_task, tmp_path):
+    """Record 7.221: ReplayBuffer.update_learner hands a PdkViewLearner the stored transitions plus their digests; the
+    view makes new objects, so the learner keys them by their own content - same updates as from copied samples."""
+    import torch
+    from analog_optimizer.models import ModelConfig
+    from analog_optimizer.training.replay import ReplayBuffer, Transition
+    vocabulary = pdk.vocabulary_of_record(demo_task)
+    config = demo_config(tmp_path)
+    runtime = tasks.load_task(config.circuit)
+    from gator_workbench.compile import compile_task
+    compiled = compile_task(config, runtime.base_graph)
+    factory = tasks.SyntheticEnvFactory(compiled.graph, compiled.specs, dict(tasks.MOCK_TARGETS), str(tmp_path / 'work'), 3, 30.0, False)
+    experiment = dict(origin='synthetic', split='train', designs=['demo'])
+    net = ModelConfig(hidden_dim=16, heads=2, layers=1)
+    learners = []
+    for _ in range(2):
+        torch.manual_seed(4)
+        learners.append(pdk.learner_class(vocabulary)(experiment=experiment, model_config=net, feature_schema=vocabulary.schema))
+    replays = [ReplayBuffer(32, origin='synthetic', seed=1) for _ in range(2)]
+    with factory(0) as env:
+        observation, _ = env.reset()
+        for step in range(8):
+            proposal = learners[0].act([observation], deterministic=True)[0]
+            following, reward, terminated, truncated, info = env.step(proposal)
+            if info['replay_eligible']:
+                applied = following.graph.assignments({g.id: g.value for g in following.graph.parameter_groups if g.mutable})
+                for replay in replays:
+                    replay.add(Transition(observation, proposal, reward, following, terminated, truncated, not terminated,
+                                          applied, f'c{step}', 'memory'))
+            observation = env.reset()[0] if terminated or truncated else following
+    for _ in range(3):
+        before = torch.get_rng_state()
+        expected = learners[1].update(replays[1].sample(4))
+        torch.set_rng_state(before)
+        assert replays[0].update_learner(learners[0], 4) == expected
+    for a, b in zip(learners[0].actor.parameters(), learners[1].actor.parameters()):
+        assert torch.equal(a, b)
+
+
 # ------------------------------------------------------------------------------------------ configuration and checks
 def test_the_standard_list_keeps_every_existing_hash(tmp_path):
     config = make_config(tmp_path)

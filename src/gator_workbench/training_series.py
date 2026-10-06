@@ -16,15 +16,21 @@ empty tail for that answer and the next read finds the rows in a part.
 What is NOT here, because the run does not record it: an episode return (the reward is recorded per evaluation - the
 step reward), a separate evaluation of the policy during training (only a frozen run evaluates a policy), and an
 objective when no Specs row says "then lower/higher is better". The answer says so instead of inventing them.
+
+Polling cost (record 7.221): an answer reads the configuration and the manifest once each, the flush log only from where
+the previous answer stopped, and keeps the configuration's objective while its text is unchanged (see "Caches" below).
+A cache changes what an answer costs, never what it says; ``read_training(..., cached=False)`` reads every file whole.
 """
 from __future__ import annotations
 
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import json
 import math
 import os
 from pathlib import Path
+import stat
 import threading
 
 from .layout import RunLayout
@@ -371,18 +377,230 @@ def journal_page(path, after_seq, objective, cursor=None, *, max_rows=MAX_ROWS):
     return chunk, page, True, seq
 
 
+# --------------------------------------------------------------------------------------------------------------- Caches
+# Record 7.221. A poll of an unchanged 800-evaluation run read its whole flush log (64 records, 109 kB: ~14 ms on the
+# 9p-mounted D: drive, read line by line), its configuration twice and its manifest twice (~4 ms a file). Kept now:
+# * the flush log's complete records, read on from a byte offset. The log is append-only (storage/dataset.py appends one
+#   fsynced record per flush and never rewrites a complete one; a writer reopening it only cuts off an unfinished last
+#   line), so a poll reads only the bytes after the last complete record it holds - after checking that the log is still
+#   that file with those bytes: the same device and inode, not shorter, the same size only with the same times, its
+#   first 4 kB and the last record it read (at least the last 4 kB) unchanged. A run made again at the same path, a
+#   replaced or cut log, fails one of them and is read whole again. A log that cannot be opened, or holds a complete
+#   line that is not JSON, is read exactly as before (read_jsonl): its answer - or its error, with the line's number -
+#   is the same. Not seen: a record in the middle rewritten in place while the log also grew - which no writer does.
+# * the configuration's parse, validation and objective, kept while its text is the same. The text is read every time:
+#   on that drive a stat costs about as much as reading the 14 kB file, and only the text proves it unchanged.
+# Never kept: the manifest (a resume adds a segment), the worker's state and lock, the journal's tail (rewritten at save
+# points), the Parquet parts, and a read that failed or found no file. Both caches are bounded (least recently used goes
+# first) and shared by the server's threads under one lock that is never held while a file is read.
+FLUSH_INDEX_RUNS = 16              # runs whose flush records are kept (the Training tab draws up to four at once)
+FLUSH_INDEX_BYTES = 16 << 20       # flush-log bytes kept parsed, all runs together (~1.2 bytes of memory per byte)
+CONFIG_CACHE_RUNS = 32             # runs whose configuration's objective is kept
+CONFIG_CACHE_BYTES = 4 << 20       # configuration text kept, all runs together (a configuration is ~15 kB)
+_ANCHOR = 4096                     # bytes compared at least, at the start and at the end of what was read
+_FLUSH_FIELDS = ('flush_id', 'last_seq', 'parts', 'rows')     # all that read_training reads of a flush record
+_CACHE_LOCK = threading.Lock()
+_FLUSH_LOGS = OrderedDict()        # flushes.jsonl (absolute path) -> _FlushLog; least recently used first
+_CONFIGS = OrderedDict()           # effective_config.json (absolute path) -> (text, parsed, objective)
+_STATS = dict.fromkeys(('flush_reads', 'flush_unchanged', 'flush_appended', 'flush_rebuilt', 'flush_fallbacks',
+                        'flush_evictions', 'flush_bytes_read', 'flush_bytes_parsed', 'config_hits', 'config_misses',
+                        'config_evictions'), 0)
+
+
+class _FlushLog:
+    """One flush log as it was last read: its complete records (the fields read_training reads; a record that is not a
+    JSON object stays whole, so it fails where it always did), where the last complete one ends (`offset`) and where it
+    begins (`last`), the unfinished bytes after it (`pending`), and what proves the log unchanged: device and inode,
+    size and times, its first _ANCHOR bytes (`head`) and the bytes before `offset` (`tail`): the last record, and at
+    least _ANCHOR bytes. Made from `data`, the bytes read from `start` on (the last tail's start, or 0)."""
+    __slots__ = ('identity', 'times', 'size', 'offset', 'last', 'head', 'tail', 'pending', 'records')
+
+    def __init__(self, info, start, data, offset, last, head, records):
+        self.identity, self.times = (info.st_dev, info.st_ino), (info.st_mtime_ns, info.st_ctime_ns)
+        self.size, self.offset, self.last, self.head, self.records = start + len(data), offset, last, head, records
+        window = max(start, min(offset - _ANCHOR, offset if last is None else last))
+        self.tail, self.pending = data[window - start:offset - start], data[offset - start:]
+
+
+def _pread(fd, size, offset):
+    """`size` bytes from `offset`; fewer only at the end of the file."""
+    chunks = []
+    while size > 0:
+        chunk = os.pread(fd, size, offset)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        size -= len(chunk)
+        offset += len(chunk)
+    return b''.join(chunks)
+
+
+def _complete_records(data):
+    """read_jsonl's reading of these bytes: each newline-terminated line is a record, a blank one is skipped, the bytes
+    after the last newline are not acknowledged yet. Returns (records, bytes used, where the last record begins or
+    None), or None when a complete line is not JSON - read_jsonl then raises its error, with the line's number."""
+    lines = data.split(b'\n')
+    used = len(data) - len(lines.pop())          # the bytes after the last newline (none when it ends with one)
+    records, last, position = [], None, 0
+    try:
+        for line in lines:
+            text = line.strip()
+            if text:
+                record = json.loads(text)
+                records.append({k: record[k] for k in _FLUSH_FIELDS if k in record} if type(record) is dict else record)
+                last = position
+            position += len(line) + 1
+    except Exception:
+        return None
+    return records, used, last
+
+
+def _note(**counts):
+    with _CACHE_LOCK:
+        for name, count in counts.items():
+            _STATS[name] += count
+
+
+def _forget(key):
+    """Not read here: the caller reads the log as before. Nothing is kept of it."""
+    with _CACHE_LOCK:
+        _FLUSH_LOGS.pop(key, None)
+        _STATS['flush_fallbacks'] += 1
+
+
+def _keep(key, entry):
+    with _CACHE_LOCK:
+        _FLUSH_LOGS.pop(key, None)
+        if entry.offset <= FLUSH_INDEX_BYTES:
+            _FLUSH_LOGS[key] = entry
+        held = sum(kept.offset for kept in _FLUSH_LOGS.values())
+        while _FLUSH_LOGS and (len(_FLUSH_LOGS) > FLUSH_INDEX_RUNS or held > FLUSH_INDEX_BYTES):
+            _, old = _FLUSH_LOGS.popitem(last=False)
+            held -= old.offset
+            _STATS['flush_evictions'] += 1
+
+
+def _flush_records(path):
+    """The records read_jsonl(path) gives (the fields read_training reads), reading only what was appended since the
+    last answer while the log is provably the same file. None when it cannot be read so - no such file, not a regular
+    file, a log larger than the whole cache, a complete line that is not JSON: the caller reads it as before."""
+    key = os.path.abspath(path)
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return _forget(key)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > FLUSH_INDEX_BYTES:
+            return _forget(key)
+        with _CACHE_LOCK:
+            entry = _FLUSH_LOGS.get(key)
+            _STATS['flush_reads'] += 1
+        if (entry is not None and entry.identity == (info.st_dev, info.st_ino) and info.st_size >= entry.offset
+                and (info.st_size != entry.size or entry.times == (info.st_mtime_ns, info.st_ctime_ns))):
+            start = entry.offset - len(entry.tail)                  # 0 when the tail holds the head as well
+            data = _pread(fd, info.st_size - start, start)
+            head = _pread(fd, len(entry.head), 0) if start else entry.head
+            if data[:len(entry.tail)] == entry.tail and head == entry.head:
+                read = len(data) + (len(head) if start else 0)
+                fresh = data[len(entry.tail):]
+                if fresh == entry.pending:                          # nothing new (the size and the times agree)
+                    _note(flush_unchanged=1, flush_bytes_read=read)
+                    _keep(key, entry)
+                    return entry.records
+                parsed = _complete_records(fresh)
+                if parsed is None:
+                    return _forget(key)
+                added, used, last = parsed
+                offset, records = entry.offset + used, entry.records + tuple(added)
+                _keep(key, _FlushLog(info, start, data, offset, entry.last if last is None else entry.offset + last,
+                                     entry.head if start else data[:min(offset, _ANCHOR)], records))
+                _note(flush_appended=1, flush_bytes_read=read, flush_bytes_parsed=used)
+                return records
+        # The first read, another file, or bytes that changed where they never do: the whole log again.
+        data = _pread(fd, info.st_size, 0)
+        parsed = _complete_records(data)
+        if parsed is None:
+            return _forget(key)
+        records, used, last = parsed
+        records = tuple(records)
+        _keep(key, _FlushLog(info, 0, data, used, last, data[:min(used, _ANCHOR)], records))
+        _note(flush_rebuilt=1, flush_bytes_read=len(data), flush_bytes_parsed=used)
+        return records
+    finally:
+        os.close(fd)
+
+
+def _config(path, cached=True):
+    """effective_config.json as read_json(path, default=None) reads it - once per answer, for both the objective and the
+    learner line - with its objective. Kept while the text is the same (a resume rewrites the file); a missing file or a
+    text that is not JSON is never kept. The parsed configuration handed out is shared: it is read, never changed."""
+    try:
+        text = Path(path).read_text(encoding='utf8')
+    except FileNotFoundError:
+        return None, None
+    key = os.path.abspath(path)
+    if cached:
+        with _CACHE_LOCK:
+            kept = _CONFIGS.get(key)
+            if kept is not None and kept[0] == text:
+                _CONFIGS.move_to_end(key)
+                _STATS['config_hits'] += 1
+                return kept[1], _copy(kept[2])
+    config = json.loads(text)
+    objective = _objective(config)
+    if cached:
+        with _CACHE_LOCK:
+            _STATS['config_misses'] += 1
+            _CONFIGS.pop(key, None)
+            if len(text) <= CONFIG_CACHE_BYTES:
+                _CONFIGS[key] = (text, config, objective)
+            held = sum(len(kept[0]) for kept in _CONFIGS.values())
+            while _CONFIGS and (len(_CONFIGS) > CONFIG_CACHE_RUNS or held > CONFIG_CACHE_BYTES):
+                _, old = _CONFIGS.popitem(last=False)
+                held -= len(old[0])
+                _STATS['config_evictions'] += 1
+    return config, _copy(objective)
+
+
+def _copy(objective):
+    """The objective an answer carries is its own: a caller changing it cannot change the kept one."""
+    return dict(objective) if isinstance(objective, dict) else objective
+
+
+def clear_caches():
+    """Forget every kept flush log and configuration, and the counts (tests and measurements; costs only)."""
+    with _CACHE_LOCK:
+        _FLUSH_LOGS.clear()
+        _CONFIGS.clear()
+        for name in _STATS:
+            _STATS[name] = 0
+
+
+def cache_stats():
+    """What the caches hold and did since clear_caches(): runs, records and log bytes kept, reads by kind, bytes read
+    and parsed from flush logs, configuration hits."""
+    with _CACHE_LOCK:
+        kept = list(_FLUSH_LOGS.values())
+        return dict(_STATS, flush_runs=len(kept), flush_records_held=sum(len(e.records) for e in kept),
+                    flush_bytes_held=sum(e.offset for e in kept), config_runs=len(_CONFIGS))
+
+
+def _objective(config):
+    from . import schema
+    from .compile import build_specs
+    if not config:
+        return None
+    try:
+        return build_specs(schema.WorkbenchConfig.model_validate(config))[2]
+    except Exception:                       # a configuration this backend can no longer read: no objective is claimed
+        return None
+
+
 def run_objective(run_dir):
     """The run's objective as its best-design tracker uses it (compile.build_specs: the last active Specs row whose
     "then lower/higher is better" is set), from the run's own effective_config.json; None when there is none."""
-    from . import schema
-    from .compile import build_specs
-    raw = read_json(RunLayout(run_dir).effective_config, default=None)
-    if not raw:
-        return None
-    try:
-        return build_specs(schema.WorkbenchConfig.model_validate(raw))[2]
-    except Exception:                       # a configuration this backend can no longer read: no objective is claimed
-        return None
+    return _objective(read_json(RunLayout(run_dir).effective_config, default=None))
 
 
 def learner_record(run_dir):
@@ -390,6 +608,11 @@ def learner_record(run_dir):
     layout = RunLayout(run_dir)
     config = read_json(layout.effective_config, default={}) or {}
     manifest = read_json(layout.manifest, default={}) or {}
+    return _learner(config, manifest)
+
+
+def _learner(config, manifest):
+    """learner_record from the configuration and the manifest already read."""
     output, run = config.get('output') or {}, config.get('run') or {}
     method = (run.get('search') or {}).get('method', 'sac')
     every = output.get('learner_update_log_every') or 1
@@ -405,18 +628,23 @@ def learner_record(run_dir):
     return dict(recorded=True, every=every, reason=None)
 
 
-def read_training(run_dir, flushes=0, *, max_rows=MAX_ROWS, tail_cursor=None):
+def read_training(run_dir, flushes=0, *, max_rows=MAX_ROWS, tail_cursor=None, cached=True):
     """The Training tab's answer for one run: the rows of flush records [flushes, served) and, once served is the last
-    one, the journal's tail. Raises FileNotFoundError when the folder holds no run data."""
+    one, the journal's tail. Raises FileNotFoundError when the folder holds no run data. The configuration and the
+    manifest are read once; `cached=False` also reads the flush log whole and compiles the configuration again (the
+    answer is the same - the tests compare both)."""
     layout = RunLayout(Path(run_dir))
     data = layout.data
-    if not (data / '_journal').is_dir():
-        raise FileNotFoundError('This folder holds no recorded run data.')
-    records = read_jsonl(data / '_journal' / 'flushes.jsonl')
+    journal = data / '_journal'
+    records = _flush_records(journal / 'flushes.jsonl') if cached else None
+    if records is None:                     # not read from where the last answer stopped: exactly as before 7.221
+        if not journal.is_dir():
+            raise FileNotFoundError('This folder holds no recorded run data.')
+        records = read_jsonl(journal / 'flushes.jsonl')
     total = len(records)
     start = max(0, min(int(flushes), total))
     manifest = read_json(layout.manifest, default={}) or {}
-    objective = run_objective(layout.run_dir)
+    config, objective = _config(layout.effective_config, cached)
     chosen, rows = [], 0
     for record in records[start:]:
         if chosen and rows + sum(record['rows'].get(t, 0) for t in ('evaluations', 'learner_updates', 'metrics')) > max_rows:
@@ -441,6 +669,6 @@ def read_training(run_dir, flushes=0, *, max_rows=MAX_ROWS, tail_cursor=None):
                 mock=manifest.get('mock'), state=status.get('state'), worker_alive=bool(status.get('worker_alive')),
                 flushes=dict(served=served, total=total, start=start),
                 final=final.as_json(), tail=tail, tail_complete=tail_complete, latest_seq=latest, tail_page=tail_page,
-                objective=objective, learner=learner_record(layout.run_dir),
+                objective=objective, learner=_learner(config or {}, manifest),
                 segments=[{k: s.get(k) for k in ('segment', 'entry', 'started_utc', 'ended_utc', 'end_state', 'stop_reason')}
                           for s in manifest.get('segments') or []])

@@ -2,8 +2,12 @@
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
-- **Optimizer source digest:** `f83342bcc50a7b385cadad1770d8ae06962d48fa4cdbcb76ceceef08bcb7cc77`, set by `ab34f03`
-  (record 7.149, 2026-10-02: the windows are checked before each native export only, not before every write). Before it:
+- **Optimizer source digest:** `4aebbfab2176605c6e984d3b42ae622335246dfed693c5b9cc39f942c0aaad73`, record 7.221 (2026-10-06, *uncommitted*: a
+  learner step takes its replay sample lent instead of deep-copied, skips the next-state work when the discount is
+  exactly 0, and keys the input cache by digests worked out once; every result and random-number state identical;
+  input cache 8,192 entries). Before it: `f83342bcc50a7b385cadad1770d8ae06962d48fa4cdbcb76ceceef08bcb7cc77`, set by
+  `ab34f03` (record 7.149, 2026-10-02: the windows are checked before each native export only, not before every
+  write). Before it:
   `34bc85f4472fddf90a0245515121c4ffc2dd4632ce30561c9026e46efb41e89b`, set by `1c308a5`
   (records 7.137, 7.140, 7.142 and 7.143, 2026-10-02: the native preparation reads the cell three times per
   candidate, not five; by default it builds most netlists from the readback, with a native export every 5th candidate; a
@@ -24,7 +28,11 @@ A summary for new sessions; everything below is the chronological record, oldest
   `clipped`. New workbench configurations start with the set compared in training on 2026-10-05 (record 7.183):
   compressed violations, share 0.5, objective and margin bonus weights 1, objective shape compressed. Corner training
   (`always`, `after_nominal`) was offered for `real:gpdk045_ota7` only; no task has it since 2026-09-30 (7.128).
-- **Older checkpoints** resume exactly only under their own source: digest `02127bc3...` (M6 pilot, six encoders) from
+- **Older checkpoints** resume exactly only under their own source: digest `f83342bc...` (record 7.149; every save
+  point written before record 7.221, the eight viewing copies of 2026-10-05's Spectre runs in `outputs/` included) from
+  `ab34f03` up to the commit before 7.221's - checked 2026-10-06: that source loads the GATv2 run's final save point
+  and two loads give identical next updates, the 7.221 source refuses it; under the new source such a save point still
+  loads for fine-tune and frozen (a warning) but not for Continue; digest `02127bc3...` (M6 pilot, six encoders) from
   `bbdfe36`; `aa987cf0...` (five encoders incl. MLP, GCN, GATv1) from `9bc488f`; `f087a4ce...` (reward v2) from
   `1135b8b` up to the commit before `8cf53ae`; `3f00832c...` (reward v2.1) from `8cf53ae` up to the commit before `4634200`; `100945fb...` (LLM sizing) from `4634200` up to the commit before `898b134`; `f42a3098...` (record 7.126) from `898b134` up to the commit before `5362ebb`; `0d045b8e...` (record 7.129) from `5362ebb` up to the commit before `8edbf6d`; `46327861...` (record 7.132) from `8edbf6d` up to the commit before `c700032`; `41983cc7...` (record 7.144) from `c700032` up to the commit before `1c308a5`. Digests never committed (`66ce02ab...`, `046e35c6...`, `78e8ca37...`, `c3a340b9...`, `e3f8c5b8...` and `efa93649...`, the working trees of records 7.137-7.143, used by scratch trial runs only; `75c7cfac...`, `5e8a1bc1...`, `11e62657...`, `3473ed9c...`, and
   `27a36b2b...`, the LLM sizing build before the duplicate-check fix, which Astra's acceptance evidence names) are in

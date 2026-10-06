@@ -69,3 +69,22 @@ def test_the_status_answer_names_the_save_point_continue_would_use(tmp_path):
     assert status(whole)['save_point'] == POINT and status(copy)['save_point'] is None
     listed = {row['run_id']: row['resumability'] for row in client.get('/api/runs', params=dict(output_root=str(tmp_path))).json()['runs']}
     assert listed == {'aaaaaaaaaaaa': 'full_state', 'cccccccccccc': 'none'}
+
+
+def test_a_save_point_of_older_optimizer_code_reads_model_only(tmp_path):
+    """Record 7.221: Continue (an exact resume) needs the optimizer source its save point was written by. A full save
+    point of another source digest reads "model only" in the run list and 'older' in the status; fine-tune and frozen
+    still load it (checkpoints.check_compatibility only warns about the digest there)."""
+    from analog_optimizer.training.sac import source_digest
+    current = fabricate(tmp_path, 'scratch__seed0__aaaaaaaaaaaa', state='stopped')
+    older = fabricate(tmp_path, 'scratch__seed0__bbbbbbbbbbbb', state='stopped')
+    copy = fabricate(tmp_path, 'scratch__seed0__cccccccccccc', save=False, state='stopped')
+    for run, digest in ((current, source_digest()), (older, '0' * 64)):
+        metadata = run / 'checkpoints' / POINT / 'metadata.json'
+        metadata.write_text(json.dumps(dict(json.loads(metadata.read_text()), contract=dict(code_sha256=digest))))
+    assert rows(tmp_path) == {'aaaaaaaaaaaa': 'full_state', 'bbbbbbbbbbbb': 'weights_only', 'cccccccccccc': 'none'}
+    assert runs.save_point_code(current) == 'current' and runs.save_point_code(older) == 'older'
+    assert runs.save_point_code(copy) is None
+    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False))
+    status = lambda run: client.get('/api/runs/status', params=dict(run_dir=str(run))).json()
+    assert [status(run)['save_point_code'] for run in (current, older, copy)] == ['current', 'older', None]

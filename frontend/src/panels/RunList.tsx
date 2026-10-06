@@ -61,7 +61,7 @@ const COLUMNS: Column[] = [
   { key: 'feasible', title: 'First feasible', help: 'How many evaluations had been spent when the first design met every target. "none" = no design has met them.', value: r => r.first_feasible_eval_count ?? null },
   { key: 'experiment', title: 'Experiment', help: 'The experiment folder the run belongs to.', value: r => r.experiment ?? '' },
   { key: 'data', title: 'Data', help: 'MOCK = the built-in synthetic backend, not a circuit result. real = Virtuoso / Spectre simulations.', value: r => (r.mock ? 'mock' : 'real') },
-  { key: 'resume', title: 'Can continue', help: 'Whether the saved state allows this run to be continued: yes (full state), model only (usable for fine_tune / frozen), no - also when the run folder no longer holds its save point (a copy made without them, or deleted ones).', value: r => r.resumability ?? '' },
+  { key: 'resume', title: 'Can continue', help: 'Whether the saved state allows this run to be continued: yes (full state), model only (usable for fine_tune / frozen - also a full save point written by an older version of the optimizer code, which only that version can continue), no - also when the run folder no longer holds its save point (a copy made without them, or deleted ones).', value: r => r.resumability ?? '' },
 ];
 
 /** Everything else about one run. `row` is its line of the list; `info` is /api/runs/status, read when the details open. */
@@ -84,6 +84,9 @@ function RunDetails({ row, info, error, onCopy, copied }: { row: Json; info: Jso
     // a save point the summary names but the run folder no longer holds (a copy made without them, deleted ones): said (7.215)
     ['Saved state', summary?.output ? (info?.save_point === null && summary.output.resumability !== 'none'
       ? `none: the run's summary names its save point ${summary.output.latest_checkpoint ?? ''} as ${summary.output.resumability}, but the run folder no longer holds it (a copy made without its save points, or they were deleted); nothing to continue from`
+      // a full save point of an older optimizer source: only that source can continue it (record 7.221)
+      : info?.save_point_code === 'older' && summary.output.resumability === 'full_state'
+      ? `model only: the latest save ${summary.output.latest_checkpoint ?? ''} is a full save point written by an older version of the optimizer code - only that version can continue it; fine-tune and frozen still load its model`
       : `${summary.output.resumability} (${summary.output.completeness} output, latest save ${summary.output.latest_checkpoint ?? 'none'})`) : null],
     ['Parallel simulations', info?.concurrency ? `${info.concurrency}` : null],
     ['Connection', info?.connection_profile_id ?? (info ? 'none (not needed)' : null)],

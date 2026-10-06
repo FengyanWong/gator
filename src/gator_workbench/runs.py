@@ -15,6 +15,7 @@ from pathlib import Path
 import subprocess
 import sys
 import threading
+import time
 from uuid import uuid4
 
 from . import CONFIG_SCHEMA_VERSION, OUTPUT_LAYOUT_VERSION, checkpoints as ckpt, modes
@@ -740,11 +741,42 @@ def save_point(run_dir) -> str | None:
         return None
 
 
+_SOURCE_DIGEST = dict(value=None, at=0.0)
+
+
+def current_source_digest(max_age=30.0) -> str:
+    """The optimizer source digest a run started now would record (training.sac.source_digest hashes every file under
+    src/analog_optimizer/). Kept for 30 s: the hashing takes ~0.4 s on the 9p mount and the run list asks per request.
+    Only for what the page says; a start checks the digest itself (runs.prepare_run, checkpoints.check_compatibility)."""
+    now = time.monotonic()
+    if _SOURCE_DIGEST['value'] is None or now - _SOURCE_DIGEST['at'] > max_age:
+        from analog_optimizer.training.sac import source_digest
+        _SOURCE_DIGEST.update(value=source_digest(), at=now)
+    return _SOURCE_DIGEST['value']
+
+
+def save_point_code(run_dir) -> str | None:
+    """'current' or 'older': whether the latest save point was written by the optimizer source the repository holds now.
+    Continue (an exact resume, SACLearner.load) needs exactly that source; a save point of 'older' source still loads
+    for fine-tune and frozen, where the digest is only a warning (record 7.221). None: no readable save point."""
+    try:
+        saved = ckpt.read_metadata(ckpt.resolve_checkpoint(run_dir, 'latest'))['contract']['code_sha256']
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return 'current' if saved == current_source_digest() else 'older'
+
+
 def _resumability(run_dir, summary):
     """The run window's "Can continue" (record 7.215): what the summary says the latest save point allows, while that
-    save point is still in the run folder; 'none' once it is gone, whatever the summary wrote when the run came to rest."""
+    save point is still in the run folder; 'none' once it is gone, whatever the summary wrote when the run came to rest.
+    A full save point written by an older optimizer source reads 'weights_only' ("model only"): Continue needs that
+    source, fine-tune and frozen still load the model (record 7.221)."""
     claimed = (summary.get('output') or {}).get('resumability')
-    return claimed if claimed in (None, 'none') or save_point(run_dir) else 'none'
+    if claimed in (None, 'none'):
+        return claimed
+    if not save_point(run_dir):
+        return 'none'
+    return 'weights_only' if claimed == 'full_state' and save_point_code(run_dir) == 'older' else claimed
 
 
 def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True):

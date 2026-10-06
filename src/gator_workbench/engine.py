@@ -1076,7 +1076,7 @@ class RunEngine:
             if self.freeze is not None:
                 self.freeze.apply()
             started = self._clock()
-            update = self.learner.update(self.replay.sample(adv.batch_size))
+            update = self.replay.update_learner(self.learner, adv.batch_size)   # lent, not copied (7.221)
             if update['updates'] % every == 0:
                 rows.append(dict(run_id=self.run_id, update_id=f"{self.run_id}:u{update['updates']:09d}",
                                  updated_at=iso(), evaluations_collected=self.ledger.completed if self.search else commit_seq,
@@ -1099,7 +1099,7 @@ class RunEngine:
         if self.freeze is not None:
             self.freeze.apply()
         started = self._clock()
-        update = self.learner.update(self.replay.sample(adv.batch_size))
+        update = self.replay.update_learner(self.learner, adv.batch_size)   # lent, not copied (7.221)
         schedule.trained += 1
         keys = ('actor_loss', 'critic_loss', 'alpha_loss', 'alpha', 'mean_log_prob', 'target_mean',
                 'critic_grad_norm', 'actor_grad_norm')

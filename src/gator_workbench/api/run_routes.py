@@ -222,6 +222,7 @@ def register(app: FastAPI, context: ApiContext):
                                     connection_gate=manifest.get('connection_gate'), mock_notice=manifest.get('mock_notice')),
                       summary=read_json(layout.summary, default=None))
         result['save_point'] = runs.save_point(path)        # what Continue would go on from; None: there is none (7.215)
+        result['save_point_code'] = runs.save_point_code(path) if result['save_point'] else None   # 'older': no Continue (7.221)
         profile = (result.get('connection_profile_id') or None)
         result['connection'] = context.monitor.status(profile) if profile else dict(overall='not_applicable')
         # A baseline run asked to calibrate (record 7.197): what it was asked, and its proposals once the run has written them.

@@ -11,7 +11,7 @@ from analog_optimizer.envs.sizing import Observation
 from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
 from analog_optimizer.graph.pyg_converter import FeatureSchema, TopologyTensorCache, to_pyg
 from analog_optimizer.measurements.specs import MetricSpec
-from analog_optimizer.models.inputs import ObservationTensorCache, SpecSchema, batch_observations
+from analog_optimizer.models.inputs import ObservationTensorCache, SpecSchema, batch_observations, observation_digest
 
 
 @pytest.fixture(autouse=True)
@@ -266,3 +266,85 @@ def test_bounded_lru_eviction_clear_and_disabled_mode(opamp, ldo):
         equal_batch(batch_observations([a], cache=disabled), batch_observations([a]))
     assert disabled.info()['entries'] == disabled.topologies.info()['entries'] == 0
     assert disabled.info()['hits'] == disabled.topologies.info()['hits'] == 0
+
+
+# ------------------------------------------------------------ record 7.221: owner digests, byte accounting and bounds
+def test_digest_is_the_whole_content(opamp):
+    obs = observation(opamp)
+    assert observation_digest(obs) == observation_digest(deepcopy(obs))
+    for change in (lambda o: o.metrics.__setitem__('score', .7), lambda o: o.graph.metadata.__setitem__('x', [1]),
+                   lambda o: resize(o.graph)):
+        changed = deepcopy(obs)
+        change(changed)
+        assert observation_digest(changed) != observation_digest(obs)
+
+
+def test_owner_digests_share_entries_with_content_keys_and_give_identical_batches(opamp, ldo):
+    """An owner (the replay's learner path) passes digests instead of having the observations re-hashed: the same
+    entries are found as by content keys, the batch is identical, and nothing is converted twice."""
+    observations = [observation(opamp), observation(ldo)]
+    cache = ObservationTensorCache()
+    expected = batch_observations(observations)
+    equal_batch(expected, batch_observations(observations, cache=cache))
+    owned = batch_observations(deepcopy(observations), cache=cache, digests=[observation_digest(o) for o in observations])
+    equal_batch(expected, owned)
+    assert cache.info()['hits'] == 2 and cache.info()['misses'] == 2
+    fresh = ObservationTensorCache()
+    equal_batch(expected, batch_observations(observations, cache=fresh, digests=[observation_digest(o) for o in observations]))
+    equal_batch(expected, batch_observations(deepcopy(observations), cache=fresh))      # content keys find owner entries
+    assert fresh.info()['hits'] == 2 and fresh.info()['misses'] == 2
+
+
+def test_owner_digests_still_separate_schemas(opamp):
+    cache = ObservationTensorCache()
+    obs = observation(opamp)
+    digest = observation_digest(obs)
+    fs, ss = FeatureSchema(), SpecSchema()
+    variants = [(fs, ss), (replace(fs, references=(2e-6,) + fs.references[1:]), ss),
+                (fs, replace(ss, metrics=tuple(reversed(ss.metrics))))]
+    for feature_schema, spec_schema in variants:
+        equal_batch(batch_observations([obs], feature_schema, spec_schema, cache=cache, digests=[digest]),
+                    batch_observations([obs], feature_schema, spec_schema))
+    assert cache.info()['misses'] == 3
+    equal_batch(batch_observations([obs], FeatureSchema(), SpecSchema(), cache=cache, digests=[digest]),
+                batch_observations([obs]))                     # an EQUAL schema object finds the same entry
+    assert cache.info()['hits'] == 1
+
+
+def test_digests_must_match_the_observations_and_a_disabled_cache_ignores_them(opamp, ldo):
+    observations = [observation(opamp), observation(ldo)]
+    with pytest.raises(ValueError, match='One digest per observation'):
+        batch_observations(observations, cache=ObservationTensorCache(), digests=[observation_digest(observations[0])])
+    disabled = ObservationTensorCache(0, topology_capacity=0)
+    equal_batch(batch_observations(observations, cache=disabled, digests=[b'x' * 32, b'y' * 32]),
+                batch_observations(observations))
+    equal_batch(batch_observations(observations, digests=[b'x' * 32, b'y' * 32]), batch_observations(observations))
+    assert disabled.info()['entries'] == 0
+
+
+def test_tensor_bytes_evictions_and_the_optional_byte_bound(opamp, ldo):
+    a, b = observation(opamp), observation(ldo)
+    cache = ObservationTensorCache()
+    batch_observations([a], cache=cache)
+    one = cache.info()['tensor_bytes']
+    assert one > 0 and cache.info()['evictions'] == 0 and cache.info()['max_bytes'] is None
+    batch_observations([b], cache=cache)
+    both = cache.info()['tensor_bytes']
+    assert both > one
+    counted = ObservationTensorCache(1)
+    for obs in (a, b, a):
+        batch_observations([obs], cache=counted)
+    assert counted.info()['entries'] == 1 and counted.info()['evictions'] == 2 and counted.info()['tensor_bytes'] == one
+    bounded = ObservationTensorCache(10, max_bytes=both - 1)
+    for obs in (a, b):
+        equal_batch(batch_observations([obs], cache=bounded), batch_observations([obs]))
+    assert bounded.info()['entries'] == 1 and bounded.info()['evictions'] == 1
+    assert bounded.info()['tensor_bytes'] == both - one        # the newest entry stays even when it alone is large
+    tiny = ObservationTensorCache(10, max_bytes=0)
+    equal_batch(batch_observations([a], cache=tiny), batch_observations([a]))
+    assert tiny.info()['entries'] == 1
+    bounded.clear()
+    assert bounded.info()['tensor_bytes'] == bounded.info()['evictions'] == bounded.info()['entries'] == 0
+    with pytest.raises(ValueError):
+        ObservationTensorCache(4, max_bytes=-1)
+

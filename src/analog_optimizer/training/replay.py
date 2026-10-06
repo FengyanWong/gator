@@ -10,7 +10,7 @@ import random
 
 from analog_optimizer.envs.sizing import Observation, graph_contract, same_parameters, parameter_rows
 from analog_optimizer.measurements.specs import REWARD_VERSION, RewardSettings
-from analog_optimizer.models.inputs import validate_observation
+from analog_optimizer.models.inputs import observation_digest, validate_observation
 from analog_optimizer.parameters.actions import ActionMapper
 
 
@@ -128,6 +128,7 @@ class ReplayBuffer:
         self.store = store
         self._items, self._position, self.insertions = [], 0, 0
         self._rng = random.Random(seed)
+        self._digests = {}   # id(stored transition) -> (it, its observations' digests); disposable, never saved
 
     def __len__(self):
         return len(self._items)
@@ -141,6 +142,7 @@ class ReplayBuffer:
         if len(self._items) < self.capacity:
             self._items.append(transition)
         else:
+            self._digests.pop(id(self._items[self._position]), None)
             self._items[self._position] = transition
         self._position = (self._position + 1) % self.capacity
         self.insertions += 1
@@ -151,10 +153,33 @@ class ReplayBuffer:
             # and both states. Admission need not reconstruct graphs from SQLite.
             self.store.call('verify_transition', transition.candidate_id, transition.fingerprint())
 
-    def sample(self, batch_size):
+    def _draw(self, batch_size):
         if type(batch_size) is not int or not 1 <= batch_size <= len(self):
             raise ValueError('Insufficient replay for sampling without replacement')
-        return deepcopy(self._rng.sample(self._items, batch_size))
+        return self._rng.sample(self._items, batch_size)
+
+    def sample(self, batch_size):
+        """Deep copies: a caller may change what it gets without changing the replay."""
+        return deepcopy(self._draw(batch_size))
+
+    def update_learner(self, learner, batch_size):
+        """``learner.update`` on a sample drawn exactly as ``sample`` draws it (same generator, items and order), WITHOUT
+        the deep copy: 8 recorded Spectre transitions took ~28 ms to copy, a third of a Graph Transformer update
+        (record 7.221).
+
+        The stored transitions are lent to ``learner.update`` for this call only and are never returned to the caller.
+        SACLearner.update only reads them (validation, batching, rewards); the tests fingerprint the whole replay around
+        updates. Every other caller keeps ``sample``. The observations' content digests are worked out once per stored
+        transition and passed along, so the learner's input cache does not hash them again on every update."""
+        transitions = self._draw(batch_size)
+        return learner.update(transitions, digests=[self._observation_digests(t) for t in transitions])
+
+    def _observation_digests(self, transition):
+        entry = self._digests.get(id(transition))
+        if entry is None or entry[0] is not transition:
+            entry = self._digests[id(transition)] = (transition, (observation_digest(transition.observation),
+                                                                  observation_digest(transition.next_observation)))
+        return entry[1]
 
     def state_dict(self, *, copy=True):
         """copy=False for a checkpoint written at once: pickling makes its own copy (the same bytes)."""

@@ -228,56 +228,104 @@ def _prepare_observation(observation, feature_schema, spec_schema, topology_cach
     return _PreparedObservation(graph, context, group_features, group_ids)
 
 
+def observation_digest(observation):
+    """Content digest of a whole observation: graph, sizes, goal, measurements and masks, budget, status, conditions and
+    provenance. Two observations with equal content (a deepcopy included) get the same digest; any change to any
+    field, nested ones included, gives another. Pickle is only used for local serialization/hashing."""
+    return hashlib.sha256(pickle.dumps(observation, protocol=5)).digest()
+
+
+def _tensor_bytes(prepared):
+    """Bytes of the tensors one cached entry holds (each entry owns its tensors: the topology cache hands out copies)."""
+    tensors = [prepared.context, prepared.group_features]
+    tensors += [value for store in prepared.graph.stores for value in store.values() if isinstance(value, torch.Tensor)]
+    return sum(t.element_size() * t.nelement() for t in tensors)
+
+
 class ObservationTensorCache:
     """Learner-local LRU of deterministic CPU inputs, never learned representations.
 
-    Full content keys survive replay deepcopy and detect changes to nested mutable
-    data. Pickle is only used for local serialization/hashing, never deserialization.
-    Cache eviction or a cold checkpoint restore only changes conversion cost.
+    The key is a content digest of the feature/spec schemas plus one of the whole observation: it survives replay
+    deepcopy and detects changes to nested mutable data. A caller hashes the observation on every lookup unless it
+    passes the observation's digest itself, which only an owner that guarantees the observation stays unchanged may do
+    (the replay buffer's learner path, ``ReplayBuffer.update_learner``, record 7.221). Pickle is only used for local
+    serialization/hashing, never deserialization. Bounded by entries (``capacity``) and optionally by tensor bytes
+    (``max_bytes``); eviction or a cold checkpoint restore only changes conversion cost.
     """
 
-    def __init__(self, capacity=2048, *, topology_capacity=64):
+    def __init__(self, capacity=2048, *, topology_capacity=64, max_bytes=None):
         if type(capacity) is not int or capacity < 0:
             raise ValueError('Observation cache capacity must be a nonnegative integer')
-        self.capacity = capacity
-        self._items = OrderedDict()
+        if max_bytes is not None and (type(max_bytes) is not int or max_bytes < 0):
+            raise ValueError('Observation cache byte bound must be a nonnegative integer or None')
+        self.capacity, self.max_bytes = capacity, max_bytes
+        self._items = OrderedDict()         # key -> (prepared input, its tensor bytes)
+        self._schema_keys = {}              # (feature schema, spec schema) -> digest; both are deeply immutable
         self.topologies = TopologyTensorCache(topology_capacity)
-        self.hits = self.misses = 0
+        self.hits = self.misses = self.evictions = self.tensor_bytes = 0
 
     def clear(self):
         self._items.clear()
+        self._schema_keys.clear()
         self.topologies.clear()
-        self.hits = self.misses = 0
+        self.hits = self.misses = self.evictions = self.tensor_bytes = 0
 
     def info(self):
-        return dict(hits=self.hits, misses=self.misses, entries=len(self._items),
-                    capacity=self.capacity, topologies=self.topologies.info())
+        return dict(hits=self.hits, misses=self.misses, entries=len(self._items), capacity=self.capacity,
+                    evictions=self.evictions, tensor_bytes=self.tensor_bytes, max_bytes=self.max_bytes,
+                    topologies=self.topologies.info())
 
-    def _prepare(self, observation, feature_schema, spec_schema):
+    def _schema_key(self, feature_schema, spec_schema):
+        pair = (feature_schema, spec_schema)    # hashable, as the topology cache's key already requires
+        key = self._schema_keys.get(pair)
+        if key is None:
+            if len(self._schema_keys) >= 16:
+                self._schema_keys.clear()
+            key = self._schema_keys[pair] = hashlib.sha256(pickle.dumps(pair, protocol=5)).digest()
+        return key
+
+    def _prepare(self, observation, feature_schema, spec_schema, digest=None):
         if not self.capacity:
             self.misses += 1
             return _prepare_observation(observation, feature_schema, spec_schema, self.topologies)
-        key = hashlib.sha256(pickle.dumps(
-            (feature_schema, spec_schema, observation), protocol=5)).digest()
-        if key in self._items:
+        if digest is None:
+            digest = observation_digest(observation)
+        key = hashlib.sha256(self._schema_key(feature_schema, spec_schema) + digest).digest()
+        entry = self._items.get(key)
+        if entry is not None:
             self.hits += 1
             self._items.move_to_end(key)
-            return self._items[key]
+            return entry[0]
         self.misses += 1
         prepared = _prepare_observation(observation, feature_schema, spec_schema, self.topologies)
-        self._items[key] = prepared
-        if len(self._items) > self.capacity:
-            self._items.popitem(last=False)
+        size = _tensor_bytes(prepared)
+        self._items[key] = (prepared, size)
+        self.tensor_bytes += size
+        while len(self._items) > self.capacity or (
+                self.max_bytes is not None and self.tensor_bytes > self.max_bytes and len(self._items) > 1):
+            _, (_, evicted) = self._items.popitem(last=False)
+            self.tensor_bytes -= evicted
+            self.evictions += 1
         return prepared
 
 
-def batch_observations(observations, feature_schema=None, spec_schema=None, *, cache=None):
+def batch_observations(observations, feature_schema=None, spec_schema=None, *, cache=None, digests=None):
+    """`digests`: optional ``observation_digest`` of each observation, from an owner that guarantees the observations
+    stay unchanged; with a cache they replace re-hashing the observations (without a cache they are not needed)."""
     feature_schema, spec_schema = feature_schema or FeatureSchema(), spec_schema or SpecSchema()
     observations = tuple(observations)
     if not observations:
         raise ValueError('Empty observation batch')
-    prepare = _prepare_observation if cache is None else cache._prepare
-    prepared = [prepare(o, feature_schema, spec_schema) for o in observations]
+    if digests is not None:
+        digests = tuple(digests)
+        if len(digests) != len(observations):
+            raise ValueError('One digest per observation is required')
+    if cache is None:
+        prepared = [_prepare_observation(o, feature_schema, spec_schema) for o in observations]
+    elif digests is None:
+        prepared = [cache._prepare(o, feature_schema, spec_schema) for o in observations]
+    else:
+        prepared = [cache._prepare(o, feature_schema, spec_schema, d) for o, d in zip(observations, digests)]
     contexts = torch.stack([p.context for p in prepared])
     graph = Batch.from_data_list([p.graph for p in prepared])
     # Tensor collation allocates new storage; opaque metadata needs its own copy - of the one part that can change (the

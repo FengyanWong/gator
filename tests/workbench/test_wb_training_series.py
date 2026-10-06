@@ -103,8 +103,8 @@ def reference_learner_record(run_dir):
         return dict(recorded=False, every=every, reason='A frozen run evaluates a saved policy without training it: '
                     'there are no learner updates, so no losses, temperature or entropy.')
     if method == 'llm':
-        return dict(recorded=False, every=every, reason='AI sizing only: this run has no RL learner, so no losses, '
-                    'temperature or entropy.')
+        return dict(recorded=False, every=every, reason='An LLM-only run has no RL learner, so no losses, temperature '
+                    'or entropy.')
     if output.get('save_learner_updates') is False:
         return dict(recorded=False, every=every, reason='This run was started with "save learner updates" off '
                     '(Output settings), so its losses, temperature and entropy were not recorded.')
@@ -437,7 +437,7 @@ def test_learner_record_says_why_nothing_was_recorded(tmp_path):
     write(dict(output=dict(save_learner_updates=False), run=dict(mode='scratch')))
     assert 'save learner updates' in training_series.learner_record(layout_dir)['reason']
     write(dict(output={}, run=dict(mode='scratch', search=dict(method='llm'))))
-    assert training_series.learner_record(layout_dir)['reason'].startswith('AI sizing only')
+    assert training_series.learner_record(layout_dir)['reason'].startswith('An LLM-only run')     # a run made before 2026-10-06
     write(dict(output=dict(learner_update_log_every=5), run=dict(mode='scratch')))
     assert training_series.learner_record(layout_dir) == dict(recorded=True, every=5, reason=None)
 

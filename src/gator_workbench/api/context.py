@@ -1,14 +1,12 @@
-"""Per-application services for path authorization, configuration and cached run readiness."""
+"""Per-application services for path authorization, configuration and the start checklist."""
 from __future__ import annotations
 from pathlib import Path
 from pydantic import ValidationError
-from .. import bridge_connect, connection, runs, schema, tasks
-from ..agents import ProposalStore
-from ..agents import readiness as agent_readiness
+from .. import bridge_connect, connection, readiness, runs, schema, tasks
 from ..paths import OutputRoots, PathNotAllowed, refuse_nul
 from ..security import redact
 from .support import fail, load_runtime, validate_loaded
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -17,11 +15,9 @@ class ApiContext:
     input_roots: list[Path]
     monitor: connection.ConnectionMonitor
     connector: bridge_connect.BridgeConnector
-    proposals: ProposalStore
-    tool_sessions: dict = field(default_factory=dict)
 
     def load_config(self, raw):
-        """Authorize and load a configuration once for validation, readiness or an agent request."""
+        """Authorize and load a configuration once, for validation or the start checklist."""
         config = self.parse_config(raw)
         runtime, blocked = load_runtime(config)
         return config, runtime, blocked
@@ -84,5 +80,5 @@ class ApiContext:
                 except Exception as exc:                   # it does not compile: a start would be refused for that alone
                     problem = redact(f'{type(exc).__name__}: {exc}', 300)
             profile = dict(rows=fixed, matches=matches, error=problem)
-        return agent_readiness.build(config.model_dump(mode='json'), task=runtime, task_blocker=(blocked or {}).get('blocker'),
+        return readiness.build(config.model_dump(mode='json'), task=runtime, task_blocker=(blocked or {}).get('blocker'),
                                      validation=report, connection=link, output=output, profile=profile)

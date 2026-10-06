@@ -61,8 +61,11 @@ export function migrateConfig(config: Json): Json {
   out = withoutExpressionProbes(out);
   if (Array.isArray(out.targets)) out = { ...out, targets: out.targets.map(migrateTarget) };
   if (Array.isArray(out.measurements)) out = { ...out, measurements: out.measurements.map((row: Json) => without(row, RETIRED_MEASUREMENT_KEYS)) };
-  // "Threads per job" retired on 2026-09-29: no simulator ever used it. The backend drops it too and hashes it at 1.
-  if (config.run && typeof config.run === 'object' && 'threads_per_job' in config.run) out = { ...out, run: without(config.run, ['threads_per_job']) };
+  // "Threads per job" retired on 2026-09-29: no simulator ever used it. The backend drops it too and hashes it at 1. The
+  // Search method block went on 2026-10-06 (record 7.226: SAC is the only search method): the backend drops it too, and
+  // refuses a start that still asks for an LLM method - kept here, it would be refused at every Start.
+  if (config.run && typeof config.run === 'object' && ('threads_per_job' in config.run || 'search' in config.run))
+    out = { ...out, run: without(config.run, ['threads_per_job', 'search']) };
   // "Experiment group" and "Test tasks" retired on 2026-10-03 (record 7.163): nothing read them. The backend drops them too.
   if (config.research && typeof config.research === 'object' && ('experiment_group' in config.research || 'test_tasks' in config.research))
     out = { ...out, research: without(config.research, ['experiment_group', 'test_tasks']) };

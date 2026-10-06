@@ -20,7 +20,6 @@
 //                                 a check that answers only some routes hermetic)
 //   page.seed / trackSaves / saved / stored     the page's configuration in localStorage and its 800 ms save timer
 //   page.shot(file, element | clip)             a PNG of one element (or of the page), brought to the front first
-//   keepAgentSettings(url)        the agent settings before a check changes them, and restore() for `finally`
 //   check / fail / finish, outDir PASS / FAIL lines, the summary, exit code 1 on any failure; the screenshot folder
 //   runChecks(browser, body)      a check's body, then its end: an exception is counted (fail), Edge closed, finish()
 //   reportRefused(refused, never) the INFO line of the writing requests refused, and the check that none is a NEVER_* one
@@ -90,9 +89,9 @@ export function reportRefused(refused, never = null) {
   console.log(`INFO  writing requests the page sent on its own, all refused here: ${refused.length ? [...new Set(refused)].join(', ') : 'none'}`);
   if (never) check(never[0], !refused.some(r => never[1].test(r)), refused.join(', '));
 }
-export const NEVER_ASKED = ['the page asked to start, continue, command, connect or call an agent on its own: never',
+export const NEVER_ASKED = ['the page asked to start, continue, command, connect or open an agent CLI on its own: never',
   /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/)/];
-export const NEVER_ASKED_OR_SAVED = ['the page asked to start, continue, command, connect, save settings or call an agent on its own: never',
+export const NEVER_ASKED_OR_SAVED = ['the page asked to start, continue, command, connect, save settings or open an agent CLI on its own: never',
   /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/|network-settings)/];
 /** The page's confirm/alert dialogs on `session` answered from `answers` in order (true = OK; none left = Cancel), each
  *  recorded in `dialogs` with whether this check planned it. */
@@ -157,29 +156,8 @@ export function outDir(args = process.argv.slice(2)) {
   return dir;
 }
 
-// ---- agent settings a check changes (on a scratch backend) ---------------------------------------------------------------
-const AGENT_KEYS = ['provider', 'model', 'effort', 'timeout_seconds', 'permission_mode', 'allowed_tools', 'max_turns', 'stream'];
-/** The agent settings as the backend has them now, or null when they cannot be read (then change nothing). `restore()`
- *  puts exactly these back - call it in `finally` - and checks that provider, model and effort are as they were. */
-export async function keepAgentSettings(base) {
-  const url = new URL('api/agent/settings', base);
-  const read = async () => (await fetch(url)).json();
-  let original = null;
-  for (let attempt = 0; attempt < 6 && !original; attempt++) { original = await read().catch(() => null); if (!original) await sleep(500); }
-  if (!original) return null;
-  return {
-    original,
-    async restore() {
-      const body = Object.fromEntries(AGENT_KEYS.map(k => [k, original[k]]));
-      const ok = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.ok, () => false);
-      const now = ok ? await read().catch(() => null) : null;
-      check('agent settings are back as they were', !!now && ['provider', 'model', 'effort'].every(k => now[k] === original[k]), now ? `${now.provider} / ${now.model} / ${now.effort}` : 'restore failed');
-    },
-  };
-}
-
 // ---- what a hermetic check lets through --------------------------------------------------------------------------------
-/** POST requests that only read or compute on the backend (nothing is written, started, probed or asked of an agent). */
+/** POST requests that only read or compute on the backend (nothing is written, started, probed or opened). */
 const READ_POSTS = new Set(['/api/config/validate', '/api/config/diff', '/api/agent/readiness', '/api/runs/model', '/api/runs/model/structure', '/api/runs/model/graph-view']);
 const bodyOf = request => { try { return JSON.parse(request.postData ?? '{}') ?? {}; } catch { return {}; } };
 export function readOnly(request) {

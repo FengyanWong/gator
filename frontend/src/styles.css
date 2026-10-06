@@ -12,8 +12,7 @@
   /* an editor row not saved in the task (record 7.222): a changed row, its changed cells, the bar of a changed / new row */
   --unsaved-row: #fcf5e1; --unsaved-cell: #f5e0a3; --unsaved-mark: #c08510; --added-mark: #3f9a6b;
   --neutral-bg: #e9eef2; --neutral-text: #4c5f73; --na-bg: #f1f4f6; --unresolved: #6a3fa0;
-  --user-bg: #e3ebf5; --user-line: #bccbe0; --thinking-bg: #f1f5f8; --thinking-line: #c3d0db;
-  --checklist-bg: #fcf8ee; --checklist-line: #c9b26a; --detach-hover: #d3dde6; --log-line: #e3e9ee; --backdrop: rgba(19, 48, 79, .32);
+  --log-line: #e3e9ee; --backdrop: rgba(19, 48, 79, .32);
   /* the stronger rule of headers and table heads, alternate rows, the paper's grid */
   --rule: #9db1c4; --zebra: #f5f8fa; --grid-line: #dde5ea;
   /* each editor's own colour (its tab, its table's header row, its ids elsewhere) */
@@ -71,7 +70,7 @@ button:hover:not(:disabled) { border-color: var(--accent); } button:disabled { o
 button.primary { background: var(--accent-fill); color: var(--on-accent); border-color: var(--accent-fill); } button.active { background: var(--selected); border-color: var(--accent); }
 .row { display: flex; gap: 6px; align-items: flex-end; flex-wrap: wrap; margin: 4px 0; } .spacer { flex: 1; }
 .tabs { display: flex; gap: 2px; align-items: center; border-bottom: 1px solid var(--line); padding: 4px 6px 0; } .tabs button { border-bottom: none; }
-.tabs > button, .tabs .tab-group > button { font-family: var(--f-label); letter-spacing: .02em; }
+.tabs > button { font-family: var(--f-label); letter-spacing: .02em; }
 .toolbar { display: flex; gap: 4px; align-items: center; padding: 6px 0; flex-wrap: wrap; }
 .scroll { overflow: auto; flex: 1; min-height: 0; max-width: 100%; }
 table.grid { border-collapse: collapse; width: 100%; } table.grid th, table.grid td { border: 1px solid var(--line); padding: 2px 5px; text-align: left; vertical-align: top; white-space: nowrap; }
@@ -187,64 +186,18 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 4px 0; font-size: 1
 ul.tree { list-style: none; margin: 2px 0; padding-left: 12px; border-left: 1px dotted var(--line); } ul.tree li span { cursor: default; }
 .path { font-family: var(--f-mono); font-size: 11px; word-break: break-all; white-space: normal !important; cursor: copy; }
 .confirm { border-left: 3px solid var(--accent); padding: 4px 10px; margin: 8px 0; }   /* a callout: record 7.218 */ .diff-added td { background: var(--added-bg); } .diff-removed td { background: var(--bad-bg); }
-.agent { display: grid; grid-template-columns: 260px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 10px; height: 100%; } .agent-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: 'using using' 'chat compose'; gap: 4px 8px; min-height: 0; }
-/* The bottom panel is wide and short: conversation, message box and notes stand side by side, each at the full height, so a proposal never squeezes the conversation. */
-.agent-using { grid-area: using; color: var(--muted); font-size: 11.5px; display: flex; gap: 10px; align-items: center; justify-content: space-between; } .agent-using b { color: var(--text); font-weight: 600; }
-/* The start checklist: the workbench's own (free) one and the one in an agent's reply look the same. */
-.msg.checklist { align-self: stretch; max-width: none; border-color: var(--checklist-line); background: var(--checklist-bg); } ul.checklist { list-style: none; margin: 4px 0 2px; padding: 0; }
-ul.checklist li { margin: 3px 0; padding-left: 22px; position: relative; } .check-mark { position: absolute; left: 2px; width: 16px; text-align: center; font-weight: 700; }
+/* The Agent tab (record 7.226): the two buttons that open Claude Code or Codex in a terminal window of its own, the free
+   "What's missing?" at the right end, one headline and one folded help line. */
+.agent { padding: 2px 0; } .agent-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .agent-headline { margin: 6px 0 2px; }
+.agent-help { margin: 2px 0; } .agent-help > summary { cursor: pointer; } .agent-help p { margin: 4px 0; max-width: 110ch; }
+.agent-said { margin: 6px 0 0; } .agent-said code { font-family: var(--f-mono); font-size: 11px; word-break: break-all; }
+/* The start checklist, in the window of "What's missing?". */
+ul.checklist { list-style: none; margin: 4px 0 8px; padding: 0; }
+ul.checklist li { margin: 5px 0; padding-left: 22px; position: relative; } .check-mark { position: absolute; left: 2px; width: 16px; text-align: center; font-weight: 700; }
 .check-who { margin-left: 6px; padding: 0 5px; border: 1px solid var(--line); border-radius: 8px; font-size: 10.5px; color: var(--muted); background: var(--field); }
 .check-detail { color: var(--muted); } .check-missing .check-detail { color: var(--text); } .check-action { color: var(--accent); }
 .check-done b, .check-not_applicable b { font-weight: 400; }
-/* A settings review: one row per suggested setting, applied by the user one by one. */
-.agent-actions { display: inline-flex; gap: 8px; align-items: center; flex: none; } .agent-actions label.check { flex: none; margin: 0; font-size: 11.5px; color: var(--muted); }
-.msg:has(.suggestions) { max-width: none; align-self: stretch; } .suggestions { margin-top: 5px; } .suggestions td { vertical-align: top; } .suggestions td:first-child b, .suggestions td:nth-child(2), .suggestions td:nth-child(3) { white-space: nowrap; word-break: normal; } .suggestions tr.applied td { background: var(--added-bg); }
-.suggestions .quote { font-style: italic; color: var(--muted); margin-top: 2px; } .suggestions a, .ideas a { color: var(--accent); }
-.ideas { margin-top: 8px; padding: 2px 10px; border-left: 3px solid var(--line); } .ideas ul { margin: 3px 0; padding-left: 18px; } .ideas li { margin: 3px 0; }
-.selection-info { margin: 2px 0 6px; max-height: 140px; overflow: auto; border-left: 3px solid var(--line); padding: 2px 10px; } .selection-info ul { margin: 0; padding-left: 16px; } .selection-info li { margin: 2px 0; word-break: break-word; }
-/* Next to a proposal's diff: the workbench's own verdict on the result, and every value that is only a placeholder. */
 .verdict { margin: 6px 0 4px; font-weight: 600; } .verdict .hint { font-weight: 400; }
-.provisional { margin: 6px 0; padding: 5px 10px; border-left: 3px solid var(--warn-line); background: var(--warn-bg); } .provisional ul { margin: 3px 0 0; padding-left: 18px; } .provisional code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
-.agent-side { overflow: auto; min-height: 0; padding-right: 4px; }  /* scrolls by itself: its length must not push the message box out of the panel */
-/* The conversation: one bubble per message. Yours on the right, the agent's on the left, workbench remarks small and centred. */
-.chat { grid-area: chat; overflow: auto; border: 1px solid var(--line); padding: 8px 10px; min-height: 60px; background: var(--sunk); display: flex; flex-direction: column; gap: 7px; }
-.chat-empty { margin: auto; max-width: 60ch; text-align: center; }
-.msg { flex: none; align-self: flex-start; max-width: min(92%, 90ch); padding: 5px 10px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); line-height: 1.5; }
-.msg .who { color: var(--muted); font-size: 11px; font-weight: 600; } .msg .when { font-weight: 400; margin-left: 4px; }
-.msg .text { word-break: break-word; } .msg.user .text { white-space: pre-wrap; } .msg .text p { margin: 0 0 5px; } .msg .text p:last-child, .msg .text ul:last-child, .msg .text ol:last-child { margin-bottom: 0; }
-.msg .text ul, .msg .text ol { margin: 2px 0 5px; padding-left: 20px; } .msg .text li { margin: 1px 0; }
-.msg code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; background: var(--head); border-radius: 3px; padding: 0 3px; }
-.msg.user { align-self: flex-end; background: var(--user-bg); border-color: var(--user-line); } .msg.reply { border-left: 3px solid var(--accent); }
-.msg.error { background: var(--bad-bg); border-color: var(--bad-line); color: var(--bad); } .msg.error .who { color: var(--bad); }
-.msg.system { align-self: center; max-width: 80ch; border: none; background: none; padding: 0 8px; color: var(--muted); font-size: 11.5px; text-align: center; } .msg.system .who { display: inline; font-weight: 400; margin-right: 6px; } .msg.system .text { display: inline; } .msg.system .text p { display: inline; }
-.msg.pending { border-color: var(--accent); border-left: 3px solid var(--accent); color: var(--accent); } .msg.focused { box-shadow: 0 0 0 2px var(--user-line); }
-/* A live answer (status record 7.48): the thinking summary scrolls in a small box of its own and the reply grows under it.
-   Afterwards the thinking stays with the reply, folded into one line. */
-.msg.pending .live-reply { color: var(--text); margin-top: 3px; } .msg.pending .live-status { margin-top: 2px; }
-.thinking-live, .thought-text { overflow: auto; margin: 3px 0; padding: 2px 8px; border-left: 2px solid var(--thinking-line); background: var(--thinking-bg); color: var(--muted); font-size: .92em; line-height: 1.45; }
-.thinking-live { max-height: 9.5em; } .thought-text { max-height: 16em; text-align: left; }
-.thinking-live .thinking-head { position: sticky; top: -2px; background: var(--thinking-bg); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
-.thinking-live p, .thought-text p { margin: 0 0 4px; } .thinking-live p:last-child, .thought-text p:last-child { margin-bottom: 0; }
-.live-steps { margin: 2px 0; padding-left: 16px; color: var(--muted); font-size: .92em; } .live-steps li { margin: 1px 0; word-break: break-word; }
-details.thought { margin: 1px 0 2px; color: var(--muted); } details.thought summary { cursor: pointer; font-size: 11px; }
-button.detach { width: 100%; margin-bottom: 4px; }
-/* The agent tab is one tab shape holding two buttons: its label and, where a browser tab has its close button, the pop-out control. */
-.tabs .tab-group { display: inline-flex; align-items: center; border: 1px solid var(--line); border-bottom: none; background: var(--button); } .tabs .tab-group:hover { border-color: var(--accent); }
-.tabs .tab-group.active { background: var(--selected); border-color: var(--accent); } .tabs .tab-group > button { border: none; background: none; padding-right: 5px; }
-.tabs .tab-group.detached > button { font-style: italic; color: var(--muted); } .tab-slot { display: inline-flex; }
-.tabs .tab-group button.tab-detach { display: inline-flex; padding: 2px; margin-right: 4px; border-radius: 3px; color: var(--muted); line-height: 0; }
-.tabs .tab-group button.tab-detach:hover { background: var(--detach-hover); color: var(--text); } .agent-away { padding: 14px; color: var(--muted); }
-/* Detached into a window of its own: larger type, and the notes become a full-height column beside the chat
-   (`display: contents` lifts the message box and the notes out of their shared row into the window's grid). */
-#agent-root { height: 100vh; padding: 10px; background: var(--panel); }
-.agent.detached { font-size: 14px; grid-template-columns: 250px minmax(0, 1fr); gap: 12px; } .agent.detached .chat { font-size: 14.5px; padding: 12px 14px; gap: 10px; }
-.agent.detached .agent-main { grid-template-columns: minmax(0, 1fr) minmax(240px, 30%); grid-template-rows: auto minmax(30vh, 1fr) auto; grid-template-areas: 'using using' 'chat notes' 'compose notes'; gap: 8px 12px; }
-.agent.detached .compose { display: contents; } .agent.detached .compose-main { grid-area: compose; max-height: 55vh; } .agent.detached .notes { grid-area: notes; } .agent.detached .agent-using { font-size: 13px; }
-.agent.detached textarea { font-size: 14px; min-height: 84px; } .agent.detached .notes li, .agent.detached .notes-title { font-size: 13px; } .agent.detached .notes-head, .agent.detached .msg .who { font-size: 12px; } .agent.detached .hint { font-size: 12.5px; }
-.compose { grid-area: compose; display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 40%); grid-template-rows: minmax(0, 1fr); gap: 8px; min-height: 0; } .compose-main { min-width: 0; min-height: 0; overflow: auto; } .compose-main .confirm { overflow-x: auto; margin-top: 0; } .compose-main textarea { display: block; } .compose-main .row select { width: auto; }
-.notes { position: relative; border: 1px solid var(--line); background: var(--surface-2); min-height: 110px; } .notes-scroll { position: absolute; inset: 0; overflow: auto; padding: 0 7px 5px; }
-.notes-head { position: sticky; top: 0; background: var(--surface-2); color: var(--muted); font-size: 11px; padding: 4px 0 2px; } .notes-title { font-weight: 600; font-size: 11.5px; margin-top: 3px; }
-.notes ul { margin: 1px 0 4px; padding-left: 16px; } .notes li { font-size: 11.5px; margin: 2px 0; word-break: break-word; }
 button.notes-link { border: none; background: none; padding: 0 3px; color: var(--accent); text-decoration: underline; font-size: 11px; white-space: normal; }
 .log div { font-family: ui-monospace, Consolas, monospace; font-size: 11px; border-bottom: 1px solid var(--log-line); padding: 1px 0; word-break: break-all; }
 .step { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 5px; } .step-head { font-weight: 600; font-size: 12px; }
@@ -260,10 +213,10 @@ button.notes-link { border: none; background: none; padding: 0 3px; color: var(-
 .connection-button-name { font-weight: 600; flex: 1; } .connection-button .badge { order: 1; }
 .connection-button-what { order: 2; flex: 0 0 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 11.5px; }
 .connection-launcher .error { margin: 5px 2px 0; }
-#connection-root, #virtuoso-root, #pdk-root, #ngspice-root, #task-file-root { min-height: 100vh; background: var(--panel); }
+#connection-root, #virtuoso-root, #pdk-root, #ngspice-root, #task-file-root, #missing-root { min-height: 100vh; background: var(--panel); }
 /* The task file is edited in a monospace box of the window's height (it was the browser's two-line default). */
 .task-file { padding: 14px 18px; } .task-file textarea { display: block; width: 100%; height: 70vh; font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.35; }
-.connection-window, .virtuoso-window, .pdk-window { max-width: 760px; margin: 0 auto; padding: 14px 18px 24px; font-size: 13.5px; } .pdk-window { max-width: 1060px; }
+.connection-window, .virtuoso-window, .pdk-window, .missing-window { max-width: 760px; margin: 0 auto; padding: 14px 18px 24px; font-size: 13.5px; } .pdk-window { max-width: 1060px; }
 .connection-window h2, .virtuoso-window h2, .pdk-window h2 { margin: 0 0 8px; font-size: 17px; } .connection-window p, .virtuoso-window p, .pdk-window p { margin: 5px 0; }
 .connection-window .hint, .connection-window label, .connection-window .steps-list, .virtuoso-window .hint, .virtuoso-window label, .virtuoso-window .steps-list, .pdk-window .hint, .pdk-window label { font-size: 12.5px; }
 .connection-window .step { margin-top: 10px; padding-top: 8px; } .connection-window .step-head { font-size: 13.5px; }
@@ -405,12 +358,6 @@ table.corner-checks tr { cursor: default; } table.corner-checks tr.current > td 
 /* An import confirmation or the Matched devices box scrolls by itself (its Apply / Cancel first): a long diff grew past the
    clipped panel, the table shrank to nothing and Apply could not be reached (audit 2026-09-30). */
 .editors > .confirm, .editors > .matched-devices { flex: none; max-height: 45vh; overflow: auto; }
-/* The run's AI sizing thread has a row of its own above the conversation and scrolls there: as an unplaced grid item it
-   took an extra row and left the message box and its buttons with no height at all (audit 2026-09-30). */
-.agent-main:has(> .sizing-thread) { grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: 'using using' 'thread compose' 'chat compose'; }
-.agent.detached .agent-main:has(> .sizing-thread) { grid-template-rows: auto minmax(0, 1fr) minmax(30vh, 1fr) auto; grid-template-areas: 'using using' 'thread notes' 'chat notes' 'compose notes'; }
-.sizing-thread { grid-area: thread; min-height: 0; overflow: auto; border: 1px solid var(--line); padding: 4px 8px; }
-.sizing-thread h3 { margin-top: 2px; }
 .persistence-problem { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .persistence-problem > span { flex: 1 1 300px; }
 /* ---- record 7.158: the header's title block, the look switch, the splitter, each editor's colour, one-line ids, the circuit
@@ -468,16 +415,16 @@ table.grid.small.data-table td.json-cell { word-break: break-all; min-width: 24c
    drawings only, so switching the look never moves anything; looks_check.mjs measures it. */
 header { border-width: 1.5px; padding: 7px 12px; }
 .tabs { border-bottom-width: 1.5px; }
-.tabs > button:not(.run-list-button), .tabs .tab-group { border-width: 1.5px; }
-.tabs > button.active:not(.run-list-button), .tabs .tab-group.active { margin-bottom: -1.5px; border-bottom: 1.5px solid transparent; }
+.tabs > button:not(.run-list-button) { border-width: 1.5px; }
+.tabs > button.active:not(.run-list-button) { margin-bottom: -1.5px; border-bottom: 1.5px solid transparent; }
 .editors > .tabs > button[data-editor]::before { content: ''; display: inline-block; box-sizing: border-box; width: 15px; height: 15px;
   margin-right: 6px; vertical-align: middle; border: 1px solid var(--editor); background: repeating-linear-gradient(45deg, var(--editor) 0 1.4px, transparent 1.4px 3.6px); }
 /* One tab style in both looks (record 7.164, user: "day and night tab style different, change the day style to night one"):
    the editors' layer swatches above, and every tab strip drawn alike - the chosen tab raised with an underline (the
    editor's colour on an editor tab), the others plain. :root[data-theme] keeps these at the weight the look rules had: over
    a plain button, under an editor's colour and an error row. */
-:root[data-theme] :where(.tabs > button:not(.run-list-button), .tabs .tab-group) { background: transparent; border-color: transparent; color: var(--muted); border-radius: 3px 3px 0 0; }
-:root[data-theme] :where(.tabs > button.active:not(.run-list-button), .tabs .tab-group.active) { background: var(--button); color: var(--text); border-color: var(--line); box-shadow: inset 0 -2px 0 var(--accent); }
+:root[data-theme] :where(.tabs > button:not(.run-list-button)) { background: transparent; border-color: transparent; color: var(--muted); border-radius: 3px 3px 0 0; }
+:root[data-theme] :where(.tabs > button.active:not(.run-list-button)) { background: var(--button); color: var(--text); border-color: var(--line); box-shadow: inset 0 -2px 0 var(--accent); }
 @media (min-width: 1101px) { .layout { padding: 19px; } }
 /* Folded to its tab line: the rows above take the room (the narrow layouts below keep their own heights). */
 @media (min-width: 1101px) {
@@ -533,14 +480,7 @@ button.training-chip-remove { border: none; background: none; padding: 0 1px; li
   .layout { height: auto; min-height: 100%; grid-template: 'head head' auto 'msg msg' auto 'left right' minmax(240px, 45vh) 'main main' minmax(360px, 60vh) 'foot foot' minmax(420px, 65vh) / minmax(0, 1fr) minmax(0, 1fr); }
   .left, .right, footer, header { min-width: 0; }
   footer > .tabs { flex-wrap: wrap; }
-  .agent:not(.detached) { height: auto; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; }
-  .agent:not(.detached) .agent-side { max-height: 240px; }
-  .agent:not(.detached) .agent-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 180px auto; grid-template-areas: 'using' 'chat' 'compose'; }
-  .agent:not(.detached) .agent-main:has(> .sizing-thread) { grid-template-rows: auto 180px 180px auto; grid-template-areas: 'using' 'thread' 'chat' 'compose'; }
-  .agent-using { flex-wrap: wrap; }
-  .compose-main textarea { min-height: 100px; }
 }
 @media (max-width: 700px) {
   .layout { grid-template: 'head' auto 'msg' auto 'left' minmax(240px, 45vh) 'main' minmax(360px, 60vh) 'right' minmax(240px, 45vh) 'foot' minmax(420px, 65vh) / minmax(0, 1fr); }
-  .agent:not(.detached) .compose { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 140px; }
 }

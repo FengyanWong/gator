@@ -33,10 +33,8 @@ def test_fixed_bias_is_not_overridden_by_an_extra_assignment():
         native_values(bundle, {('M1','w'):2e-6,('I1','dc'):30e-6})
 
 
-@pytest.mark.parametrize('method',['sac','llm_warmstart','llm','sac_llm_rescue'])
-def test_benchmark_domain_and_scoring_checks_apply_to_every_mode(tmp_path,method):
+def test_benchmark_domain_and_scoring_checks(tmp_path):
     config=make_config(tmp_path)
-    config.run.search.method=method
     bundle=dict(native_initial={'I_bias':20e-6},fixed_native_values={'I_bias':20e-6},
                 metric_units={'score':'fixture'},scoring='feasibility_only')
     validate_benchmark_config(config,bundle)
@@ -51,39 +49,6 @@ def test_benchmark_domain_and_scoring_checks_apply_to_every_mode(tmp_path,method
     config.measurements=[]
     with pytest.raises(ValueError,match='Every benchmark metric'):
         validate_benchmark_config(config,bundle)
-
-
-def test_comparison_reports_best_feasible_probe_rows(tmp_path,monkeypatch):
-    examples=Path(__file__).resolve().parents[2]/'examples'
-    monkeypatch.syspath_prepend(str(examples))
-    from benchmark_llm_sizing import run_arm
-    config=make_config(tmp_path,threshold=0.,run=dict(max_evaluations=3))
-    result=run_arm(config,'sac',tmp_path/'comparison')
-    best=result['best_feasible_probes']
-    assert result['state']=='completed' and result['llm_calls']==0
-    assert best['metrics_descriptive_only'] is True
-    assert best['evaluation_id']==result['summary']['best_feasible_evaluation_id']
-    assert any(row['measurement_id']=='m_score' and row['valid'] for row in best['rows'])
-
-
-def test_comparison_accepts_imported_starter_without_run_settings(tmp_path,monkeypatch):
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2]/'examples'))
-    import benchmark_llm_sizing as driver
-    from gator_workbench import ngspice_tasks
-    config=make_config(tmp_path)
-    data=config.model_dump(mode='json')
-    starter={k:data[k] for k in ('project','circuit','parameters','measurements','targets')}
-    bundle=dict(name='fixture',native_initial={},fixed_native_values={},metric_units={'score':'fixture'},scoring='feasibility_only')
-    monkeypatch.setattr(driver.tasks,'load_task',lambda *args,**kwargs:SimpleNamespace(
-        mock=False,connection_family='ngspice',circuit={'analoggym_task':True}))
-    monkeypatch.setattr(ngspice_tasks,'load',lambda *args:(dict(starter=starter,analoggym=bundle),''))
-    def intercepted(*args,**kwargs):
-        raise StopIteration('Preparation reached; no simulation')
-    monkeypatch.setattr(driver.runs,'prepare_run',intercepted)
-    with pytest.raises(StopIteration,match='Preparation reached'):
-        driver.run_arm(config,'sac',tmp_path/'comparison',authorize_ngspice=True,
-            plan={'comparison':dict(protocol='llm-sizing-comparison-v2', circuits=['fixture'],
-                                    evaluations_per_run=config.run.max_evaluations,seeds=[config.run.seed])})
 
 
 @pytest.mark.parametrize('parameter',['mf','mult'])

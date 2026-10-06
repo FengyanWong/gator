@@ -40,16 +40,16 @@ def test_a_continued_run_that_cannot_start_stays_resumable_and_says_why(tmp_path
     assert status['error'] == 'RuntimeError: effective_config.json no longer matches the task this run was created for'
 
 
-def test_the_agent_settings_save_says_when_nothing_was_saved(tmp_path):
+def test_a_settings_file_with_a_typo_is_never_overwritten(tmp_path):
     path = paths.local_settings_dir() / 'settings.json'
     path.parent.mkdir(parents=True, exist_ok=True)
-    text = '{"agent_web_domains": ["example.org",]}\n'                     # a hand edit with a trailing comma
+    text = '{"output_root": "/somewhere",}\n'                             # a hand edit with a trailing comma
     path.write_text(text)
-    client = TestClient(workbench_app(tmp_path))
-    answer = client.put('/api/agent/settings', json=dict(provider='disabled'))
-    assert answer.status_code == 200 and answer.json()['saved'] is False and path.read_text() == text
+    runs.save_settings(concurrency=2)
+    assert path.read_text() == text and runs.read_settings()[1] is not None
     path.write_text('{}')                                                  # fixed by the user
-    assert client.put('/api/agent/settings', json=dict(provider='disabled')).json()['saved'] is True
+    runs.save_settings(concurrency=2)
+    assert runs.read_settings() == (dict(concurrency=2), None)
 
 
 def test_the_last_routes_that_took_a_nul_byte_as_a_server_error_refuse_it(tmp_path):

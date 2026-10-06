@@ -1,24 +1,17 @@
-"""Shared HTTP responses, circuit loading and agent settings."""
+"""Shared HTTP responses and circuit loading."""
 from __future__ import annotations
-import asyncio
-import json
 import os
 from pathlib import Path
 import stat
 import tempfile
-import threading
 from urllib.parse import quote
 import zipfile
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
-from .. import agents, runs, tasks
-from ..agents import AgentError, AgentSettings
-from ..agents import catalog as agent_catalog
+from .. import tasks
 from ..security import redact
 from ..validation import validate
 
-
-KEEPALIVE_SECONDS = 10.0        # a live agent answer sends a comment line when it has nothing else: a page that left is noticed
 
 def compatibility_unchecked(exc) -> dict:
     """The configuration on the page does not compile, so a saved model cannot be compared with it YET. Said in plain
@@ -130,57 +123,6 @@ def file_snapshot(path: Path, chunk_size: int = 1 << 20):
     return size, chunks()
 
 
-def sse(kind: str, data) -> str:
-    """One Server-Sent Event. json.dumps escapes every line break, so `data` is always a single line."""
-    return f"event: {kind}\ndata: {json.dumps(data, default=str, separators=(',', ':'))}\n\n"
-
-
-def live_answer(request, provider, finish, done=None, outcome=None):
-    """The agent's answer as Server-Sent Events (status record 7.48): `progress` while it works (agents/live.py), then ONE
-    `result` (the proposal, exactly as the JSON answer) or ONE `error` (exactly as the 409 detail). The agent runs on a
-    thread of its own. If the page goes away first, the request is cancelled: nobody would see the answer. `done` is
-    called once the agent is finished, however it ended (the request's tools are closed with it). `outcome` says what the
-    request's tools did, so a FAILURE can say it too - a failed request may already have written the working copy."""
-    async def events():
-        loop, inbox = asyncio.get_running_loop(), asyncio.Queue()
-
-        def post(kind, data):
-            try:
-                loop.call_soon_threadsafe(inbox.put_nowait, (kind, data))
-            except RuntimeError:                  # the event loop is gone: the server is stopping
-                pass
-
-        def work():
-            try:
-                post('result', finish(provider.propose(request, on_event=lambda event: post('progress', event))))
-            except AgentError as exc:
-                post('error', dict(exc.as_dict(), configuration_unchanged=True, **(outcome() if outcome else {})))
-            except Exception as exc:              # the JSON answer would be an HTTP 500; a stream must still end with a verdict
-                post('error', dict(code='internal_error', meaning='The workbench failed while handling the reply.',
-                                   detail=redact(f'{type(exc).__name__}: {exc}', 1000), configuration_unchanged=True,
-                                   **(outcome() if outcome else {})))
-            finally:
-                if done is not None:
-                    done()
-        threading.Thread(target=work, name=f'agent-{request.request_id[:8]}', daemon=True).start()
-        finished = False
-        try:
-            while True:
-                try:
-                    kind, data = await asyncio.wait_for(inbox.get(), KEEPALIVE_SECONDS)
-                except asyncio.TimeoutError:
-                    yield ': working\n\n'
-                    continue
-                yield sse(kind, data)
-                if kind != 'progress':
-                    finished = True
-                    return
-        finally:
-            if not finished:
-                agents.REGISTRY.cancel(request.request_id)
-    return StreamingResponse(events(), media_type='text/event-stream', headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no'})
-
-
 def fail(status, message, **extra):
     raise HTTPException(status, detail=dict(message=redact(str(message), 2000), **extra))
 
@@ -204,7 +146,7 @@ def load_runtime(config, *, allow_real=False):
     try:
         if allow_real:
             return tasks.load_task(config.circuit, allow_real=True, profile_id=config.run.connection_profile_id), None
-        # The page's loads - validation, the task, Matched devices, the saved-model check, the agent: a saved task is kept
+        # The page's loads - validation, the task, Matched devices, the saved-model check, the checklist: a saved task is kept
         # while its files are unchanged (tasks.load_task_view, review of 2026-10-01).
         return tasks.load_task_view(config.circuit, profile_id=config.run.connection_profile_id), None
     except tasks.TaskBlocked as exc:
@@ -214,10 +156,9 @@ def load_runtime(config, *, allow_real=False):
 
 
 def validate_loaded(config, runtime, *, roots=None, reachability=True, rows_from=None):
-    """Static validation against the loaded circuit, the SAME way for the page, the start checklist, the settings
-    review and an applied proposal. A cell read from Virtuoso that has no task yet (a native draft) provides metrics
-    nobody knows: they are not checked - an empty list reported every probe as `metric_not_provided` in the agent's
-    checklist while the page showed none. `reachability=False` leaves out the corner reachability evidence, a warning
+    """Static validation against the loaded circuit, the SAME way for the page and the start checklist. A cell read
+    from Virtuoso that has no task yet (a native draft) provides metrics nobody knows: they are not checked - an empty
+    list reported every probe as `metric_not_provided` in the checklist while the page showed none. `reachability=False` leaves out the corner reachability evidence, a warning
     that reads recorded runs: for a caller that keeps only the errors and blockers."""
     draft = runtime is not None and bool(runtime.circuit.get('native_draft'))
     report = validate(config, graph=None if runtime is None else runtime.base_graph,
@@ -232,17 +173,3 @@ def validate_loaded(config, runtime, *, roots=None, reachability=True, rows_from
         if evidence and evidence['warning']:
             report.add('warning', 'corner_reachability', 'run.conditions', evidence['warning'])
     return report
-
-
-def agent_settings() -> AgentSettings:
-    saved = runs.load_settings().get('agent') or {}
-    saved['provider'] = agents.default_provider_name(saved.get('provider'))
-    saved['allowed_tools'] = tuple(saved.get('allowed_tools') or ())
-    # The two CLIs take different effort levels. A level kept from the other provider (or a hand-edited file)
-    # means "the CLI's default" rather than an error that would take the whole Agent tab down.
-    if saved.get('effort') not in agent_catalog.efforts_for(saved['provider']):
-        saved['effort'] = None
-    # A request has no time limit (status record 7.48): the page shows it working and "Cancel request" stops it.
-    # A limit kept in the file from before (300 s was the default) is ignored.
-    saved.pop('timeout_seconds', None)
-    return AgentSettings(**saved).validate()

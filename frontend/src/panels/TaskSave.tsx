@@ -30,14 +30,6 @@ const parseFrequency = (text: string) => {
 };
 const suggestTaskName = (cell: string | null | undefined) =>
   (cell ?? '').toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^[^a-z]+/, '').slice(0, 40);
-/** Sent by the Agent tab when an approved setup was written into the working copy, naming the parts it wrote (analyses,
- *  variables, bindings). The same parts set here earlier from the task file are older now and are dropped: Save task
- *  then takes them from the copy. */
-export const COPY_SETUP_WRITTEN = 'gator-copy-setup-written';
-/** Sent instead when the approved setup could NOT be written (Virtuoso out of reach), carrying its parts: they become what
- *  Save task sends, so the next save writes them into the copy (the job "Write to Virtuoso" had until 2026-09-22). */
-export const COPY_SETUP_PENDING = 'gator-copy-setup-pending';
-
 /** "Apply and save" (record 7.217): another part of the page asks the open task's Save task to run, as a press on it would.
  *  The save is sent in the render after the request, so a change made in the same click is in it. The answer comes at
  *  once: whether Save task took it, or why not (another task, no Save task on the page, a save already running). */
@@ -87,17 +79,6 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
     rootId: 'task-file-root', rootClass: 'task-file-window', onClose: () => setFile(null), closeOnUnmount: true });
   // Another task or cell: its extras, its messages, a typed name or frequency and an open task file (the old task's) go.
   useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); setNewer(null); setName(''); setFrequency(''); setFile(null); fileWindow.popup?.close(); }, [task, library, cell]);
-  useEffect(() => {
-    const written = (e: Event) => setExtras((x: Json) => {
-      const next = { ...x };
-      for (const part of (e as CustomEvent<string[]>).detail ?? []) delete next[part];
-      return next;
-    });
-    const pending = (e: Event) => setExtras((x: Json) => ({ ...x, ...((e as CustomEvent<Json>).detail ?? {}) }));
-    window.addEventListener(COPY_SETUP_WRITTEN, written);
-    window.addEventListener(COPY_SETUP_PENDING, pending);
-    return () => { window.removeEventListener(COPY_SETUP_WRITTEN, written); window.removeEventListener(COPY_SETUP_PENDING, pending); };
-  }, []);
 
   // The save running in the backend, read when Save task appears and then every second while one runs (`own`: this
   // page's press is on its way; `followed`: a save the page did not send, asked about until an answer says it ended -

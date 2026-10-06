@@ -9,6 +9,9 @@ from dataclasses import dataclass
 
 from .. import TABLE_SCHEMA_VERSION
 
+# The llm_* phases, the sources llm_proposal and seeded_warmup, the evaluations' llm_call_id and the llm_calls table were
+# written by the LLM search methods removed on 2026-10-06 (record 7.226). They stay declared so that the runs that recorded
+# them read and are described as before (the data dictionary is unchanged); no run writes them any more.
 PHASES = ('baseline', 'episode_reset', 'warmup', 'adapt', 'search', 'validation', 'frozen_eval', 'preflight',
           'llm_warmup', 'llm_search', 'llm_rescue')
 ACTION_SOURCES = ('reset', 'random_warmup', 'sac_policy', 'mean_policy', 'sampled_policy', 'llm_proposal', 'seeded_warmup')

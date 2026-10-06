@@ -1,4 +1,4 @@
-// Hermetic regression: no simulations, agent calls or backend settings writes. Only temporary browser storage changes.
+// Hermetic regression: no simulations, agent launches or backend settings writes. Only temporary browser storage changes.
 import { NETWORK_DOCUMENT, openNetworks } from './lib/rl_networks.mjs';
 import path from 'node:path';
 import { check, launchEdge, outDir, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
@@ -7,7 +7,7 @@ const APP = await workbenchUrl(), out = outDir();
 const browser = await launchEdge('reliability');
 await runChecks(browser, async () => {
   const config = await starterConfig(APP);
-  config.run = { ...config.run, mode: 'scratch' }; delete config.run.search; delete config.run.model_source;
+  config.run = { ...config.run, mode: 'scratch' }; delete config.run.model_source;
   const settings = await (await fetch(new URL('api/network-settings', APP))).json();
   const page = await browser.open(), pending = [], writes = [];
   let hold = false, holdWrites = false;
@@ -106,9 +106,10 @@ await runChecks(browser, async () => {
   for (const width of [960, 640]) {
     await page.viewport(width, 900); await sleep(100);
     const geometry = await page.evaluate(`({ main: document.querySelector('main').getBoundingClientRect().width,
-      page: document.documentElement.scrollWidth, width: innerWidth, box: document.querySelector('.compose-main textarea').getBoundingClientRect().width })`);
+      page: document.documentElement.scrollWidth, width: innerWidth,
+      clis: [...document.querySelectorAll('.agent-row button')].map(b => Math.round(b.getBoundingClientRect().width)) })`);
     check(`${width}px viewport keeps usable editors without page overflow`, geometry.main > width - 40 && geometry.page <= width, JSON.stringify(geometry));
-    check(`${width}px viewport keeps the Agent message box usable`, geometry.box > 200, JSON.stringify(geometry));
+    check(`${width}px viewport keeps the Agent tab's three buttons usable`, geometry.clis.length === 3 && geometry.clis.every(w => w > 50), JSON.stringify(geometry));
   }
   await page.evaluate(`document.querySelector('main').scrollIntoView()`);
   await page.shot(path.join(out, 'reliability-narrow.png'));

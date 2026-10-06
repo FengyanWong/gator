@@ -274,7 +274,7 @@ await runChecks(browser, async () => {
   holdValidation = false;
 
   reportRefused(refused);
-  check('the page asked to start, continue, command, connect or call an agent on its own: never',
+  check('the page asked to start, continue, command, connect or open an agent CLI on its own: never',
     !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|virtuoso\/|network-settings)/.test(r)), refused.join(', '));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
 });

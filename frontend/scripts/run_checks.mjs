@@ -8,7 +8,7 @@
 // The hermetic checks share backend A and one preview of this tree's build. The two that start real MOCK runs (export,
 // run_control_live) take backend B, one after the other: a page takes over any live run of its backend when it opens,
 // so two of them side by side would adopt each other's run. request_lifecycle needs Vite's source preview; reward_v21
-// and llm_sizing need it on a fixed port and a fixture of their own (PORTED below). The reward_v2 real/frontend checks
+// needs it on a fixed port and a fixture of its own (PORTED below). The reward_v2 real/frontend checks
 // read recorded evidence and are skipped. model_structure fails while the newest saved model under repo/outputs predates
 // the current network code (types not verified): that is the data, not the runner.
 import { spawn, execFileSync } from 'node:child_process';
@@ -35,16 +35,15 @@ for (const api of [hermeticApi, writerApi].filter(Boolean))
 
 // The last measured serial durations (s): the longest start first, and a check's time limit is 3x its duration.
 const EXPECTED = { virtuoso_source_check: 76, connection_panel_check: 47, run_control_check: 46, testbench_probes_check: 43,
-  agent_tab_check: 34, output_panel_check: 25, run_control_live_check: 23, typing_check: 19, model_chooser_check: 19,
-  project_help_check: 17, run_list_check: 16, ngspice_window_check: 16, agent_setup_check: 16, working_copy_check: 15,
+  agent_tab_check: 10, output_panel_check: 25, run_control_live_check: 23, typing_check: 19, model_chooser_check: 19,
+  project_help_check: 17, run_list_check: 16, ngspice_window_check: 16, working_copy_check: 15,
   save_now_check: 11, corner_check_check: 11, task_save_check: 10, graph_view_check: 8, blocking_issues_check: 8,
   calibration_check: 60, calibration_save_check: 14 };
-const WRITERS = ['export_check', 'run_control_live_check', 'agent_tab_check', 'calibration_check'];
+const WRITERS = ['export_check', 'run_control_live_check', 'calibration_check'];
 const SOURCE = ['request_lifecycle_check', 'edit_state_check'];
 // Checks that insist on Vite's source preview on a port of their own and read a fixture their author made; run_checks.sh
 // passes the flag - and allows the fixture's folder on backend A - only when that fixture exists.
-const PORTED = { reward_v21_check: { port: 5191, flag: '--reward-fixture', needs: 'its fixture run under /tmp/gator-reward-v21-browser' },
-  llm_sizing_check: { port: 5193, flag: '--llm-fixture', needs: 'artifacts/local/llm-sizing/browser-fixture' } };
+const PORTED = { reward_v21_check: { port: 5191, flag: '--reward-fixture', needs: 'its fixture run under /tmp/gator-reward-v21-browser' } };
 const SKIPPED = { reward_v2_frontend_check: 'needs recorded real-qualification evidence folders',
   reward_v2_real_check: 'needs recorded real-qualification evidence folders' };
 for (const [name, p] of Object.entries(PORTED)) if (!flag(p.flag)) SKIPPED[name] = `needs ${p.needs} (run_checks.sh)`;

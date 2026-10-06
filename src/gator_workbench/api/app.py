@@ -1,6 +1,5 @@
 """Local same-origin FastAPI backend. Compose feature routes after preloading the optimizer."""
 from __future__ import annotations
-from contextlib import asynccontextmanager
 from pathlib import Path
 import threading
 from fastapi import FastAPI
@@ -8,13 +7,12 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .. import __version__, bridge_connect, connection, runs
-from ..agents import REGISTRY, ProposalStore
 from ..paths import OutputRoots, repo_root
 from ..preload import preload
 from ..security import redact
 from .context import ApiContext
 from . import agent_routes, circuit_routes, run_routes, settings_routes
-from .support import attachment, file_snapshot, live_answer  # compatibility exports
+from .support import attachment, file_snapshot  # compatibility exports
 
 LOOPBACK_HOSTS = ('127.0.0.1', 'localhost', '::1')
 WILDCARD_HOSTS = ('0.0.0.0', '::', '')
@@ -32,23 +30,15 @@ def trusted_hosts(host=None) -> list[str]:
     return list(dict.fromkeys(f'[{name}]' if ':' in name else name for name in names))
 
 
-@asynccontextmanager
-async def lifespan(app):
-    yield
-    REGISTRY.stop_all()                   # the agent CLIs this backend started stop with it
-
-
 def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=True, monitor=None,
                auto_check_on_start=True, connection_stale_seconds=120.0, connector=None, host=None) -> FastAPI:
     # Endpoints run in a thread pool and import the optimizer lazily: two first imports at once corrupt
     # torch_geometric for the life of the process. Import it here, before any thread or request exists.
     preload()
-    app = FastAPI(title='GATOR workbench', version=__version__, docs_url='/api/docs', openapi_url='/api/openapi.json',
-                  lifespan=lifespan)
+    app = FastAPI(title='GATOR workbench', version=__version__, docs_url='/api/docs', openapi_url='/api/openapi.json')
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts(host))
     roots = OutputRoots(extra_output_roots)
     input_roots = [repo_root().resolve()] + [Path(p).expanduser().resolve() for p in extra_input_roots]
-    proposals = ProposalStore()
 
     def active_run(profile_id):
         for run in runs.list_runs(roots, include_mock=False)[:20]:
@@ -60,7 +50,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     monitor = monitor or connection.ConnectionMonitor(active_run_lookup=active_run,
                                                       stale_after_seconds=float(connection_stale_seconds))
     connector = connector or bridge_connect.BridgeConnector()
-    app.state.roots, app.state.monitor, app.state.proposals, app.state.connector = roots, monitor, proposals, connector
+    app.state.roots, app.state.monitor, app.state.connector = roots, monitor, connector
 
     def auto_check():
         """Once at backend start: the CHEAP layers of the active profile (package, profile, tunnel state).
@@ -76,7 +66,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         app.state.auto_check_thread.start()
 
     # ------------------------------------------------------------------ helpers
-    context = ApiContext(roots, input_roots, monitor, connector, proposals)
+    context = ApiContext(roots, input_roots, monitor, connector)
     for routes in (settings_routes, circuit_routes, run_routes, agent_routes):
         routes.register(app, context)
 

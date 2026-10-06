@@ -70,7 +70,7 @@ try {
   const dialogs = []; const answers = [];                                           // confirm(): answered as planned; an unplanned one is refused and reported
   const answer = async ({ requestId, request }) => {
     const pathname = new URL(request.url).pathname;
-    if (pathname === '/api/agent/propose') { agentRequests++; return fulfil(requestId, 418, { detail: { message: 'FIXTURE: no agent request is expected' } }); }
+    if (pathname === '/api/agent/open') { agentRequests++; return fulfil(requestId, 418, { detail: { message: 'FIXTURE: no agent CLI is opened here' } }); }
     if (pathname === '/api/tasks') {                                                 // the real list + the tasks saved in this check
       const real = await (await fetch(new URL('api/tasks', APP))).json();
       return fulfil(requestId, 200, { ...real, tasks: [...real.tasks, ...[...created].map(key => ({ task_key: `real:${key.split('/')[1]}`, kind: 'real', available: true, generated: true }))] });
@@ -193,7 +193,7 @@ try {
   const wShown = selector => far.evaluate(`(() => { const e = ${WIN}.querySelector(${JSON.stringify(selector)}); return !!e && e.checkVisibility(); })()`);
   const shotWindow = name => far.shot(path.join(out, name), WIN, { scale: 2, maxHeight: 1600, beyond: true });
 
-  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose', '*/api/tasks', '*/api/tasks/starter*'], answer, { others: 'read', connection: 'lab' });
+  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/open', '*/api/tasks', '*/api/tasks/starter*'], answer, { others: 'read', connection: 'lab' });
   await page.trackSaves();                                                          // stored() waits for the page's 800 ms save
   await page.seed({ config: MOCK_PAGE_CONFIG, when: 'once' });           // on the MOCK stand-in (record 7.128)
   await send('Page.navigate', { url: APP });
@@ -277,7 +277,7 @@ try {
     && !(await text()).includes('Hierarchy (') && !(await wText()).includes('Browse only'));
   check('the window says the cell itself is worked in, as declared; no "Make a working copy" anywhere', await wShown('.declared') && (await wText()).includes('Working in FIXTURE_DESIGNS/ota5_tb directly: you declared it a copy you made')
     && !(await wHas('Make a working copy')) && !(await evaluate(`!!(${BUTTON('Make a working copy')})`)));
-  check('one button "Read setup", and "Ask the agent to set up" can be pressed', await wHas('Read setup') && !(await far.evaluate(`${wButton('Ask the agent to set up')}.disabled`)));
+  check('one button "Read setup", and no "Ask the agent to set up" any more (record 7.226)', await wHas('Read setup') && !(await wHas('Ask the agent to set up')));
   await shotWindow('virtuoso-2b-draft.png');
   mark = calls.length;
   await wPress('Read the cell again'); await quiet();
@@ -285,10 +285,7 @@ try {
     && dialogs.length === 3, `${ops(mark).join(' | ')} / ${dialogs.length} dialog(s)`);
   check('a PDK that will not read is said so beside the cell, which is read all the same', (await wText()).includes('its PDK gpdk045 was not: FIXTURE: the model file is not on the host.')
     && (await wText()).includes('Read from Virtuoso. Not optimizable yet'));
-  await wPress('Ask the agent to set up'); await sleep(800);
-  const box = await evaluate(`document.querySelector('footer textarea')?.value ?? ''`);
-  check('"Ask the agent to set up" opens the Agent tab of the workbench with the request written out', box.includes('which sizes to vary') && box.includes('what it is') && box.includes('working copy'), box.slice(0, 80));
-  check('nothing was sent to the agent by itself', agentRequests === 0, `${agentRequests} request(s)`);
+  check('no agent CLI was opened by itself', agentRequests === 0, `${agentRequests} request(s)`);
 
   // ---- Save task from the window's cell: refused in words, asks the frequency once, then the task opens in the column ---------
   check('no Create profile form, no Save as', !(await wHas('Create profile')) && !(await far.evaluate(`!!(${wLabel('Circuit type')})`)) && !(await evaluate(`!!(${TASK_BUTTON('Save as')})`)));

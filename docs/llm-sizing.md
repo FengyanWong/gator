@@ -1,6 +1,12 @@
 # SAC and LLM sizing
 
-The Run panel has four search methods. The backend schema supplies their identifiers to the frontend;
+> **Removed on 2026-10-06 (record 7.226).** SAC is the only search method since: the Search method box, the three LLM
+> methods, their sizing thread, hints and call ceilings, the optimizer's `search/` package and the benchmark's comparison
+> driver are gone (the user: "SAC is the only default and other methods should be launched through agent tab opened agent
+> cli"). Ask Claude Code or Codex from the Agent tab instead ([workbench.md](workbench.md), "The Agent tab"). Runs made
+> with these methods stay readable and are not continued. This page describes the methods as they were.
+
+The Run panel had four search methods. The backend schema supplies their identifiers to the frontend;
 the API validates the same restrictions that the page shows.
 
 | Search method | What proposes designs | What learns |

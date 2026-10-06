@@ -31,10 +31,9 @@ def test_a_configuration_without_a_label_keeps_its_hashes():
 
 
 def test_only_a_run_that_saves_a_model_is_filed_under_a_label():
-    run = lambda method, save=True: SimpleNamespace(output=SimpleNamespace(save_checkpoints=save), run=SimpleNamespace(search=SimpleNamespace(method=method)))
-    assert runs.saves_rl_model(run('sac')) and runs.saves_rl_model(run('llm_warmstart'))
-    assert not runs.saves_rl_model(run('llm'))                  # LLM only: no policy weights
-    assert not runs.saves_rl_model(run('sac', save=False))      # a Baseline simulation
+    run = lambda save=True: SimpleNamespace(output=SimpleNamespace(save_checkpoints=save))
+    assert runs.saves_rl_model(run())
+    assert not runs.saves_rl_model(run(save=False))             # a Baseline simulation
 
 
 def test_a_run_is_remembered_under_its_label_not_the_project_name(tmp_path):

@@ -1,9 +1,9 @@
 """What is still missing before this RL run can start - computed by the backend, never by a model.
 
 One function turns facts the backend already has (the loaded task or its blocker, the static validation
-report, the run/output settings, the LAST KNOWN connection result) into an ordered checklist. It is the
-zero-cost answer shown in the Agent tab, and the same data is handed to the agent so that a paid request
-starts from the truth instead of guessing it.
+report, the run/output settings, the LAST KNOWN connection result) into an ordered checklist: the free answer of
+"What's missing?" in the Agent tab, each item with what to do about it. (It lived in the Agent tab's agent package
+until 2026-10-06, record 7.226, when that agent was replaced by the Claude Code and Codex buttons.)
 
 Nothing here probes anything: no bridge contact, no simulator, no CLI, no model. In particular it reads the
 connection monitor's cached status only - a fresh connection test stays an explicit user action.
@@ -11,32 +11,13 @@ Words only: no host, account, port, path or profile content is put into a checkl
 """
 from __future__ import annotations
 
-import re
-
 TABLES = ('parameters', 'measurements', 'targets')                                  # checklist order = the editor tab order
 BLOCKING = ('error', 'blocker')
 TITLES = dict(parameters='Parameters', measurements='Probes', targets='Specs')      # = the editor tab names (frontend Editors.tsx)
 LEARNING_WARNINGS = ('budget_within_warmup', 'budget_below_batch')
-ROW_KEYS = dict(parameters='variable_id', targets='metric_id', measurements='measurement_id')      # = schema.SECTION_KEYS
-ROW_PATH = re.compile(r'^(parameters|targets|measurements)\[(\d+)\]')
-
-
-def changeable_rows(config: dict, blocking) -> dict:
-    """Rows of the three tables that carry a blocking issue, per section: a list of row IDs, or '*' when an issue is
-    about the section as a whole (then any of its rows may be the cause). Every other row is valid as it stands, and a
-    `minimal_start` proposal may not replace or remove it."""
-    found = {name: set() for name in TABLES}
-    for issue in blocking:
-        path = str(issue.get('path') or '')
-        match = ROW_PATH.match(path)
-        if match:
-            section, index = match.group(1), int(match.group(2))
-            rows = config.get(section) or []
-            if found[section] != '*' and index < len(rows):
-                found[section].add(str(rows[index].get(ROW_KEYS[section])))
-        elif path.split('.', 1)[0] in TABLES:
-            found[path.split('.', 1)[0]] = '*'
-    return {name: rows if rows == '*' else sorted(rows) for name, rows in found.items()}
+# An item an agent can help with: Claude Code or Codex, opened from the Agent tab in this folder, can draft its rows from a
+# description. Everything else is the user's own step.
+AGENT_HELP = ' Claude Code or Codex (Agent tab) can also draft the rows from your description.'
 
 
 def _section(path) -> str:
@@ -71,7 +52,7 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
         items.append(_item('circuit', 'Circuit', 'missing', 'you', str(task_blocker or 'No circuit could be read.')[:400],
                            'Choose the circuit under "Circuit source" (left) and load it.'))
 
-    # 2-4. the three tables: the only part an agent proposal can change
+    # 2-4. the three tables
     rows = {name: len(config.get(name) or []) for name in TABLES}
     hard = [t for t in (config.get('targets') or []) if t.get('hard') and t.get('active', True)]
     registered = (config.get('circuit') or {}).get('source') == 'registered_task'
@@ -86,8 +67,7 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
                                   else 'The configured variables differ from them, so the run would be refused the moment it starts.'
                                   if mismatch else 'None is configured yet.'))
             items.append(_item(name, TITLES[name], 'missing', 'agent', detail,
-                               'Press "Reload saved values" in the Project panel (left): it brings exactly these rows, free. '
-                               '"Make it startable with the fewest changes" copies them too.'))
+                               'Press "Reload saved values" in the Project panel (left): it brings exactly these rows, free.'))
             continue
         unsaved = [i for i in found if i.get('code') == 'task_not_saved']
         if unsaved and len(unsaved) == len(found):
@@ -103,10 +83,11 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
             detail = say(found) if found else dict(
                 parameters='No optimized variable yet.', targets='No active hard constraint yet, so nothing defines "feasible".',
                 measurements='No probe is defined; every spec is an equation over probes.')[name]
-            action = ('State the requirement and where it comes from; the agent can then write the rows.' if name == 'targets'
-                      else f'Fill in the "{TITLES[name]}" tab, or ask the agent to draft it from the circuit.')
+            action = ('Write each requirement in the "Specs" tab, with where it comes from.' if name == 'targets'
+                      else f'Fill in the "{TITLES[name]}" tab.')
             if registered:                  # a registered task brings its own rows: free, exact, and the first thing to try
-                action = 'Press "Reload saved values" in the Project panel (left) for this task\'s own rows. Or: ' + action
+                action = 'Press "Reload saved values" in the Project panel (left) for this task\'s own rows, or ' + action[0].lower() + action[1:]
+            action += AGENT_HELP
             items.append(_item(name, TITLES[name], 'missing', 'agent', detail, action))
         else:
             count = len(hard) if name == 'targets' else rows[name]
@@ -173,15 +154,6 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
                        'Nothing blocks a start.' if ready else f"{len(missing)} item(s) above still block a start.",
                        'Press "Baseline simulation" (one costed evaluation of the starting design, then 64 random designs '
                        'for the calibration) or "Start".' if ready else ''))
-    return dict(ready=ready, next=missing[0] if missing else items[-1], items=items, facts=validation.get('facts') or {},
-                # Metric names the simulation backend really returns for this circuit: a target on anything else is refused.
-                provided_metrics=sorted(str(m) for m in (getattr(task, 'provided_metrics', None) or ()))[:80],
-                changeable_rows=dict(changeable_rows(config, blocking), **(dict(parameters='*') if mismatch else {})),
-                # A real profile's own variables: the ONLY Parameters rows its backend accepts. Not provisional.
-                required_parameter_rows=fixed,
-                run=dict(mode=mode, max_evaluations=budget, concurrency=run.get('concurrency', 1), seed=run.get('seed'),
-                         encoder=(run.get('network') or {}).get('encoder_type'), mock=mock),
-                issues=[dict(level=i.get('level'), code=i.get('code'), path=i.get('path'), message=str(i.get('message'))[:300])
-                        for i in issues if i.get('level') != 'info'][:40],
+    return dict(ready=ready, next=missing[0] if missing else items[-1], items=items,
                 note='Computed by the backend from the live configuration. No model was called, nothing was probed: '
                      'the connection line is the LAST test result, not a new one.')

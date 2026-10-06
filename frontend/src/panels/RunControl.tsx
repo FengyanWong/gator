@@ -1,4 +1,3 @@
-import { searchPhase } from './SearchSettings';
 import { Icon, IconName } from './Icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRequest } from '../store';
@@ -122,11 +121,11 @@ const realQuestion = (report: Json) => `This runs REAL simulations${report?.task
 /** The backend never starts on a guess: it refuses, creates nothing, and names what it needs - the budget of a REAL
  *  simulation, a model trained on another task, connection layers it could not check. Each question is put to the
  *  user once and the request is repeated with the answers. Returns null when the user said no. */
-export async function launchWithConsent(send: (flags: Json) => Promise<Json>, options: { real: boolean; authorizeText: string; transfer?: boolean; llm?: boolean }): Promise<Json | null> {
+export async function launchWithConsent(send: (flags: Json) => Promise<Json>, options: { real: boolean; authorizeText: string; transfer?: boolean }): Promise<Json | null> {
   const flags: Json = {};
-  if (options.real || options.llm) {
+  if (options.real) {
     if (!window.confirm(options.authorizeText)) return null;
-    if (options.real) flags.authorize_real_simulation = true;
+    flags.authorize_real_simulation = true;
   }
   for (;;) {
     try { return await send(flags); } catch (e: any) {
@@ -148,13 +147,11 @@ export async function launchWithConsent(send: (flags: Json) => Promise<Json>, op
 export function resumeRun(dir: string, status: Json, maxEvaluations: number | null): Promise<Json | null> {
   const budget = status?.budget, total = maxEvaluations ?? budget?.max_evaluations;
   const left = budget && typeof total === 'number' ? Math.max(0, total - budget.charged) : null;
-  const search = status?.search, real = (status?.mock ?? status?.manifest?.mock) === false;
-  const ai = search ? `\nAI: up to ${Math.max(0, search.max_calls - search.calls)} remaining calls (${search.calls} of ${search.max_calls} used).` +
-    (search.max_notional_usd == null ? ' Dollar cost is not reported.' : ` Total notional cost ceiling: $${search.max_notional_usd}.`) : '';
+  const real = (status?.mock ?? status?.manifest?.mock) === false;
   return launchWithConsent(flags => api.continueRun({ run_dir: dir, max_evaluations: maxEvaluations, ...flags }), {
-    real, llm: !!search,
+    real,
     authorizeText: (real ? 'This continues REAL simulations (Virtuoso/Spectre, or ngspice for an ngspice netlist task).\n' : 'This continues the synthetic run.\n') + (left === null ? 'Authorize the rest of its evaluation budget?'
-      : `Authorize up to ${left} more candidate evaluation(s)? (${budget.charged} of ${total} are used.)`) + ai });
+      : `Authorize up to ${left} more candidate evaluation(s)? (${budget.charged} of ${total} are used.)`) });
 }
 
 const used = (status: Json) => status?.budget ? ` ${status.budget.charged} / ${status.budget.max_evaluations}` : '';
@@ -176,7 +173,7 @@ async function cannotResume(dir: string): Promise<string | null> {
     const config = response.ok ? await response.json() : null;
     const output = config?.output;
     if (output?.save_checkpoints === false) return 'model checkpoints are switched off';
-    if (output?.save_replay_snapshots === false && config?.run?.search?.method !== 'llm') return 'replay snapshots are switched off';
+    if (output?.save_replay_snapshots === false) return 'replay snapshots are switched off';
   } catch { /* ask nothing */ }
   return null;
 }
@@ -296,7 +293,6 @@ export function RunButtons({ control, blocked, onStart, onResumed, onMessage, on
   const note = describe(status, phase, forced);
   return (<>
     {dir && note && <button className={`run-chip ${phase}`} onClick={() => onShow(dir)} title={`The current run: ${dir}\nPress to show it under Run status.`}>{note}</button>}
-    {status?.search && <span className="llm-run-progress" title={searchPhase(status.search)}>LLM {status.search.calls} / {status.search.max_calls} · {searchPhase(status.search)}</span>}
     <button className="run-save" disabled={phase !== 'running' || !!saving} onClick={saveNow}
       title={phase === 'running' ? 'Save now: The model is saved now, without pausing: the simulation in flight finishes first (with several in parallel, all of them), the model is written as a new save point, '
         + 'and the run goes on by itself. The save point can be chosen later under "RL model to load".'

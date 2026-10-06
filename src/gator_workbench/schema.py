@@ -402,27 +402,27 @@ class ConditionsConfig(_Model):
 RETIRED_RUN_FIELDS = {'threads_per_job': 1}
 
 
-class SearchSettings(_Model):
-    method: Literal['sac', 'llm_warmstart', 'llm', 'sac_llm_rescue'] = 'sac'
-    provider: Optional[Literal['claude_code', 'codex']] = None
-    model: Optional[str] = Field(None, max_length=120)
-    effort: Optional[str] = Field(None, max_length=32)
-    candidates_per_call: int = Field(4, ge=1, le=32, strict=True)
-    max_llm_calls: Optional[int] = Field(None, ge=1, le=10000, strict=True)
-    max_llm_notional_usd: Optional[float] = Field(None, gt=0, allow_inf_nan=False)
-    llm_call_timeout_seconds: float = Field(600, gt=0, le=7200, allow_inf_nan=False)
-    warm_start_count: Optional[int] = Field(None, ge=1, le=100000, strict=True)
-    initial_sac_updates: int = Field(8, ge=1, le=1024, strict=True)
-    rescue_stagnation_evaluations: int = Field(8, ge=1, le=100000, strict=True)
-    rescue_max_rounds: int = Field(2, ge=1, le=10000, strict=True)
-    hints_allowed: bool = True
+# The LLM search methods, removed on 2026-10-06 (record 7.226; the user: "SAC is the only default and other methods should be
+# launched through agent tab opened agent cli"), with the names the page gave them. SAC is the only search method since. A
+# configuration that still carries `run.search` loads: the before-validator drops the block, and both hashes never saw it at
+# its default (`_hashed`), so every SAC configuration keeps its hashes. Starting one that asks for a removed method is
+# refused (api/run_routes.py), and so is continuing a run that used one (runs.py): its records stay readable.
+REMOVED_SEARCH_METHODS = {'llm_warmstart': 'LLM warm start -> SAC', 'llm': 'LLM only', 'sac_llm_rescue': 'SAC with LLM rescue'}
+
+
+def removed_search_method(config) -> str | None:
+    """The removed search method a raw configuration (a dict, as sent or as saved) asks for, or None."""
+    run = config.get('run') if isinstance(config, dict) else None
+    search = run.get('search') if isinstance(run, dict) else None
+    method = search.get('method') if isinstance(search, dict) else None
+    return method if method in REMOVED_SEARCH_METHODS else None
 
 
 class RunSettings(_Model):
     @model_validator(mode='before')
     @classmethod
     def _retired_fields(cls, data):
-        return _without_retired(data, RETIRED_RUN_FIELDS)
+        return _without_retired(data, dict(RETIRED_RUN_FIELDS, search=None))
 
     mode: Literal['scratch', 'resume', 'fine_tune', 'frozen'] = 'scratch'
     model_label: Optional[str] = Field(None, max_length=80,
@@ -456,7 +456,6 @@ class RunSettings(_Model):
     frozen_action: Literal['deterministic', 'sampled'] = Field('deterministic',
         description='frozen mode only: mean action or a sample from the fixed policy.')
     network: NetworkConfig = Field(default_factory=NetworkConfig)
-    search: SearchSettings = Field(default_factory=SearchSettings)
     reward: RewardConfig = Field(default_factory=RewardConfig)
     conditions: ConditionsConfig = Field(default_factory=ConditionsConfig)
     model_source: ModelSource = Field(default_factory=ModelSource)
@@ -466,28 +465,6 @@ class RunSettings(_Model):
     continual_learning: bool = Field(False,
         description='Explicit opt-in to inherit weights fine-tuned on a previous test task. Default starts every '
                     'test task from the fixed source checkpoint.')
-
-    @model_validator(mode='after')
-    def _search_contract(self):
-        search = self.search
-        if search.method == 'sac':
-            return self
-        if search.max_llm_calls is None:
-            raise ValueError('Choose a maximum number of AI calls before starting an LLM search')
-        if search.provider == 'claude_code' and search.max_llm_notional_usd is None:
-            raise ValueError('Claude sizing needs a notional cost ceiling')
-        if self.mode == 'frozen':
-            raise ValueError('A frozen policy supports SAC only')
-        if search.method == 'llm':
-            if self.mode == 'fine_tune' or self.concurrency != 1:
-                raise ValueError('LLM only uses one simulation lane and supports scratch or resume, without an RL model')
-            if self.mode == 'scratch' and self.model_source.run_dir:
-                raise ValueError('LLM only does not load a saved RL model; clear the model source or resume AI search progress')
-        if search.method == 'llm_warmstart':
-            count = search.warm_start_count or max(8, self.advanced.batch_size, self.advanced.warmup_transitions)
-            if count < self.advanced.batch_size or self.advanced.replay_capacity < count:
-                raise ValueError('Starting designs must fill one training batch and fit in the replay buffer')
-        return self
 
 
 # --------------------------------------------------------------------------- output
@@ -648,7 +625,8 @@ def _hashed(data):
     Parameters and Probes fields retired on 2026-09-26 (record 7.92) and 2026-09-29 (record 7.105, the Probes' conditions
     and aggregation) are hashed as present at their old defaults, for the
     same reason again; a row that stated another value for one of them (it never ran, or the run refused it) hashes
-    differently since. So is the retired `run.threads_per_job` (2026-09-29, RETIRED_RUN_FIELDS). The RL model's label
+    differently since. So is the retired `run.threads_per_job` (2026-09-29, RETIRED_RUN_FIELDS). The search block retired
+    on 2026-10-06 (record 7.226) is hashed as absent, as it was at its default. The RL model's label
     (`run.model_label`, record 7.159) is hashed as absent while it is not set. The research labels retired on 2026-10-03
     (record 7.163, RETIRED_RESEARCH_FIELDS) are hashed as present at their old defaults, and so are the Specs' target and
     tolerance and the Probes' expression retired the same day (RETIRED_TARGET_FIELDS, RETIRED_MEASUREMENT_FIELDS): a spec
@@ -663,8 +641,7 @@ def _hashed(data):
         if run.get('model_label') is None:
             run.pop('model_label', None)
         reward = run.get('reward')
-        if run.get('search') == SearchSettings().model_dump(mode='json'):
-            run.pop('search')
+        run.pop('search', None)              # retired on 2026-10-06 (REMOVED_SEARCH_METHODS); at its default it was absent
         if isinstance(reward, dict):
             reward = {k: v for k, v in reward.items() if not
                       (k == 'nominal_gate_band' and v == 0.5 or k == 'objective_shape' and v == 'clipped')}

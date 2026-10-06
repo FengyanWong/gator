@@ -214,7 +214,7 @@ await runChecks(browser, async () => {
     switched.every(s => s.method === 'GET' && ['status', 'profiles'].includes(s.name)) && switched.filter(s => s.name === 'status').length === 1, switched.map(s => `${s.method} ${s.name}`).join(', '));
   check('Virtuoso on this machine: "Set up local bridge", no SSH wording in the steps', shown.includes('Set up the bridge on this machine') && (await buttons()).includes('Set up local bridge')
     && !(await buttons()).includes('Connect SSH') && shown.includes('no SSH and no tunnel') && shown.includes('Load the bridge in the Virtuoso CIW'), (await buttons()).join(' | '));
-  check('a Virtuoso connection shows no ngspice note', !shown.includes('agent aid is under construction') && !shown.includes('What an ngspice connection runs'));
+  check('a Virtuoso connection shows no ngspice note', !shown.includes('What an ngspice connection runs'));
   mark = seen.length;
   await press('Set up local bridge');
   await settle(mark);
@@ -229,8 +229,8 @@ await runChecks(browser, async () => {
     && JSON.stringify((await buttons()).filter(b => !/Add a connection|^Folders/.test(b))) === JSON.stringify(['Test connection', 'Details']), (await buttons()).join(' | '));
   check('what an ngspice connection runs is said plainly, as a neutral note (not as an error)', shown.includes('What an ngspice connection runs: the ngspice netlist tasks')
     && (await far.evaluate(`!!${WINDOW}.querySelector('.note') && !${WINDOW}.querySelector('.note.error, .note .error, .blocker')`)));
-  check('the note says that the ngspice agent aid is under construction (user request 2026-09-24)', shown.includes('The ngspice agent aid is under construction')
-    && await far.evaluate(`!!${WINDOW}.querySelector('.note p.agent-aid')`), shown.slice(0, 200));
+  check('the note no longer speaks of an agent aid: the Agent tab\'s own agent went on 2026-10-06 (record 7.226)', !shown.includes('agent aid')
+    && await far.evaluate(`!${WINDOW}.querySelector('.note p.agent-aid')`), shown.slice(0, 200));
   mark = seen.length;
   await press('Test connection');
   await settle(mark);

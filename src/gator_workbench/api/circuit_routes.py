@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from pydantic import ValidationError
 from .. import bridge_read, runs, schema, tasks
 from .. import consistency, ngspice_tasks, profiles, structures, task_files, task_saving, virtuoso_setup, working_copy
-from ..agents.prompts import circuit_summary
+from ..circuit_summary import circuit_summary
 from ..native_cells import load_import as load_cell_import
 from ..paths import PathNotAllowed, refuse_nul
 from ..security import redact
@@ -324,7 +324,7 @@ def register(app: FastAPI, context: ApiContext):
 
     @app.post('/api/config/diff')
     def config_diff(body: DiffBody):
-        from ..agents.proposals import structured_diff
+        from ..diffs import structured_diff
         return dict(diff=structured_diff(body.before, body.after))
 
     @app.post('/api/parameters/matched')
@@ -332,7 +332,7 @@ def register(app: FastAPI, context: ApiContext):
         """Matched devices... (status record 7.103): the structures of the loaded circuit and the ties they suggest for
         the Parameters rows; with `apply`, also those rows with the chosen ties made, their diff and what validation says
         about them. Local files only: nothing is simulated, nothing is stored - the page applies the rows or not."""
-        from ..agents.proposals import structured_diff
+        from ..diffs import structured_diff
         from ..validation import independent_action_count
         config, runtime, blocked = context.load_config(body.config)
         if runtime is None:

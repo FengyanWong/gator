@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from gator_workbench import corner_check as cc, reachability, reward_diagnostics, spec_equations
 from gator_workbench.storage.atomic import read_json
 from gator_workbench.storage.dataset import DatasetReader
-from helpers import cli, execute, make_config, workbench_app  # noqa: F401  (cli: a fixture)
+from helpers import execute, make_config, workbench_app
 
 UNITS = dict(gain_db_at_start='dB', unity_gain_hz='Hz', phase_margin_estimate_deg='deg', supply_power_w='W', output_dc_v='V',
              unity_downward_crossings='count')

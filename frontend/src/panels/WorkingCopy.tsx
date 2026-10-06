@@ -6,8 +6,8 @@ import { api, gateText, Json, problemText } from '../api';
  *  cell (outputs = Probes, specs = the starting Specs rows). Since 2026-09-23 (user request) the workbench makes no copy
  *  of its own: the user copies the cell in Virtuoso, and reading it asks whether it is such a copy - "OK" declares it the
  *  cell the flow works in (the backend's working-copy record then names the cell itself). A copy the workbench made
- *  before that date (`<library>_GATOR`) keeps its record and its wording. Every action is an explicit press. Two presses
- *  write the cell and read it back: approving the agent's setup and "Save task". This panel only reads: "Read setup" takes
+ *  before that date (`<library>_GATOR`) keeps its record and its wording. Every action is an explicit press. "Save task"
+ *  writes the cell and reads it back (until 2026-10-06 approving the Agent tab's setup did too). This panel only reads: "Read setup" takes
  *  what the cell's Maestro test says into Probes and Specs (for changes someone made in Maestro). Nothing happens on load,
  *  nothing syncs by itself. */
 
@@ -87,7 +87,7 @@ export function WorkingCopy({ profileId, library, cell, record, config, setConfi
   if (!record) return (
     <div className="working-copy">
       <p className="warn">Not yet the cell the task flow works in: press <b>Read the cell again</b> - it asks whether this cell is a copy you made,
-        and "OK" makes it that cell. The agent's setup and Save task write into it.</p>
+        and "OK" makes it that cell. Save task writes into it.</p>
     </div>);
 
   const declared = !!record.declared;
@@ -114,12 +114,12 @@ export function WorkingCopy({ profileId, library, cell, record, config, setConfi
           {busy === 'read' ? 'Reading...' : 'Read setup'}</button></div>}
       <details className="more hint"><summary>How the editors and the cell's Maestro relate</summary>
         <p>Each Maestro output of the cell is a Probes row (source <i>ade_output</i>, the expression in <i>signal</i>); a Maestro spec is the
-          Specs row on that one probe. Units, ranges, weights and the other optimizer settings exist only in the workbench. Two presses
-          write the cell, and both read it back: approving the agent's setup and <b>Save task</b>. <b>Read setup</b> goes the other way:
+          Specs row on that one probe. Units, ranges, weights and the other optimizer settings exist only in the workbench. <b>Save task</b>
+          writes the cell and reads it back. <b>Read setup</b> goes the other way:
           after you changed outputs or specs in Maestro yourself, it takes them into Probes and Specs. Analyses and variables changed in
           Maestro are not taken over (Save task writes the task's own again): change those in the <b>Task file</b>.</p></details>
-      {setup && !setup.exists && <p className="hint">The cell has no Maestro setup yet. Ask the agent to set it up, or fill Probes and Specs and
-        press <b>Save task</b>: it writes them into the cell.</p>}
+      {setup && !setup.exists && <p className="hint">The cell has no Maestro setup yet. Fill Probes and Specs and press <b>Save task</b>: it writes
+        them into the cell.</p>}
       {setup && setup.exists && !setup.test && <p className="warn">The cell's Maestro view has no test <code>GATOR</code>{setup.tests?.length ? <> (it has: {setup.tests.join(', ')})</> : ''}.</p>}
       {summary && <p className="hint">Test <code>GATOR</code>: {summary}.</p>}
       {setup?.test && !Object.keys(setup.analyses ?? {}).length && <p className="warn">The test has no analysis yet: its outputs measure nothing until one is set.</p>}

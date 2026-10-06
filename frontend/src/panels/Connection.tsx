@@ -20,7 +20,7 @@ const testedAt = (iso: string) => {
 
 /** The connection block of the left column: ONE button (user request 2026-09-21). Pressing it opens the connection
  *  window - a browser window of its own, drawn through a portal, so the state below lives here and nothing has to be
- *  synchronised between two windows (the mechanism of the detached Agent conversation).
+ *  synchronised between two windows (popupWindow.ts).
  *
  *  What it connects to is the profile's KIND: Virtuoso over SSH, Virtuoso on this machine, ngspice on this machine,
  *  ngspice over SSH. The steps and their wording follow the kind; the backend names the kinds, this file only words them.
@@ -228,10 +228,7 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
     <div className="note"><p><b>What an ngspice connection runs: the ngspice netlist tasks</b> (Project column, "ngspice netlist..."). Every evaluation of such
       a task is one <code>ngspice -b</code> run {local ? 'on this machine' : 'on that machine, through ssh (the deck goes in on stdin; paths in it are that machine\'s)'};
       the test above is what a run checks first. Virtuoso cells and the verified GPDK045 tasks still need a Virtuoso connection; mock runs and
-      everything offline need no connection at all.</p>
-      {/* User request 2026-09-24: say in the connection module that the agent's aid for ngspice is under construction. */}
-      <p className="agent-aid"><b>The ngspice agent aid is under construction.</b> The agent's setup help - reading a circuit and proposing its parameters,
-        probes and specs - works for Virtuoso cells only so far; an ngspice deck is set up by hand in the ngspice window.</p></div>
+      everything offline need no connection at all.</p></div>
   </>);
 
   const addForm = adding && (

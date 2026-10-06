@@ -1,14 +1,14 @@
 /** Icon-only buttons (user request 2026-09-24, in two steps: icons next to the words, then "remove the text"): the
  *  header's Save now / Start-Pause-Resume / Abort, "Save task" in the editors' tab line, the editors' Add / Delete
  *  selected / Undo / Redo, and the Project column's Load task / Delete task. Each icon is a 16 x 16 stroke drawing in
- *  the button's own colour (currentColor), the same style as the tab pop-out arrow in AgentTab.tsx.
+ *  the button's own colour (currentColor).
  *
  *  The label is still there, only not on screen: `<Icon name label />` puts it in a visually hidden span, so a screen
  *  reader names the button, and the button's textContent stays exactly its label ("Pause", "Save now", "Load task",
  *  ...), which the page checks under scripts/ read and compare. A sighted user gets the label from the tooltip: every
  *  icon-only button's title starts with its label. */
 
-export type IconName = 'save' | 'play' | 'pause' | 'wait' | 'stop' | 'force-stop' | 'task' | 'add' | 'delete' | 'undo' | 'redo' | 'load' | 'delete-task' | 'export' | 'import' | 'agent-draft' | 'agent-modify' | 'task-file'
+export type IconName = 'save' | 'play' | 'pause' | 'wait' | 'stop' | 'force-stop' | 'task' | 'add' | 'delete' | 'undo' | 'redo' | 'load' | 'delete-task' | 'export' | 'import' | 'task-file'
   | 'refresh' | 'download' | 'csv' | 'zip' | 'copy' | 'check' | 'close' | 'moon' | 'sun' | 'folder' | 'follow' | 'zoom-reset';
 
 const DRAWINGS: Record<IconName, JSX.Element> = {
@@ -44,10 +44,6 @@ const DRAWINGS: Record<IconName, JSX.Element> = {
   export: <><path d="M8 9.5V2" /><path d="M5 5l3-3 3 3" /><path d="M2.5 10v3.5h11V10" /></>,
   // Import JSON...: an arrow into a document, a file's rows come in.
   import: <><path d="M8 1.5h2.5L13 4v10.5H4V10" /><path d="M10.5 1.5V4H13" /><path d="M1.5 7h7M6.5 4.5L9 7l-2.5 2.5" /></>,
-  // Draft with agent...: a sparkle, the agent proposes.
-  'agent-draft': <><path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4z" fill="currentColor" stroke="none" /><path d="M3 2.5v2.5M1.75 3.75h2.5" /></>,
-  // Modify selected with agent...: a pencil with a sparkle, the agent changes the ticked rows.
-  'agent-modify': <><path d="M11.5 3.5l2 2-7.5 7.5H4v-2z" /><path d="M10 5l2 2" /><path d="M3.5 1.5v3M2 3h3" /></>,
   // Task file: a document with lines, the task as one readable file.
   'task-file': <><path d="M4 1.5h5.5L13 5v9.5H4z" /><path d="M9.5 1.5V5H13" /><path d="M6 8.5h4.5M6 11h4.5" /></>,
   // Refresh: an arrow around, read again.

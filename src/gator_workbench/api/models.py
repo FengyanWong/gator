@@ -49,11 +49,6 @@ class ContinueBody(Body):
     acknowledge_unknown_connection: bool = False
 
 
-class HintBody(Body):
-    run_dir: str
-    text: str = Field(min_length=1, max_length=1500)
-
-
 class CornerCheckBody(Body):
     run_dir: str
     designs: int = Field(corner_check.MAX_DESIGNS, ge=1, le=corner_check.MAX_DESIGNS)
@@ -184,40 +179,9 @@ class NgspiceNameBody(Body):
     name: str = Field(pattern=ngspice_tasks.NAME.pattern)
 
 
-class AgentSettingsBody(Body):
-    provider: str
-    model: str | None = None
-    effort: str | None = None
-    timeout_seconds: float | None = None      # IGNORED: a request has no time limit (7.48). Accepted because older pages send it
-    permission_mode: str = 'dontAsk'
-    allowed_tools: list[str] = []
-    max_turns: int | None = None
-    stream: bool = True
-
-
-class ProposeBody(Body):
-    kind: str
-    prompt: str
-    config: dict
-    selection: list[dict] = []
-    request_id: str | None = None
-    web: bool = False                  # settings_review only: this ONE request may search the web and open publication sites
-    run_dir: str | None = None         # run_review only: the run whose output the agent is given a digest of
-
-
-class ImportBody(ProposeBody):
-    result: dict | str
-
-
-class ApproveBody(Body):
-    proposal_id: str
-    proposal_hash: str
-    config: dict
-
-
-class ApplyBody(Body):
-    proposal_id: str
-    config: dict
+class OpenCliBody(Body):
+    """The Agent tab's buttons: which CLI to open. Nothing else: the folder, the window and how the CLI starts are fixed."""
+    cli: str = Field(pattern='^(claude|codex)$')
 
 
 class DiffBody(Body):
@@ -229,14 +193,6 @@ class MatchedBody(Body):
     """Matched devices... (status record 7.103): the configuration, and - to see the change - the suggestions to make."""
     config: dict
     apply: list[str] | None = Field(None, max_length=500)
-
-
-class CancelBody(Body):
-    request_id: str
-
-
-class RejectBody(Body):
-    proposal_id: str
 
 
 class ExportBody(Body):

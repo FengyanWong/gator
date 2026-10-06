@@ -177,7 +177,7 @@ await runChecks(browser, async () => {
   await sleep(2500);
   check('while another tab is shown the Training tab reads nothing', reads.length === 0, `${reads.length} reads`);
   const press = label => evaluate(`(() => { const b = [...document.querySelectorAll('footer .tabs > button')].find(b => b.textContent === ${JSON.stringify(label)}); b.click(); return !!b; })()`);
-  const activeTab = () => evaluate(`document.querySelector('footer .tabs > button.active')?.textContent ?? document.querySelector('footer .tabs .tab-group.active button')?.textContent`);
+  const activeTab = () => evaluate(`document.querySelector('footer .tabs > button.active')?.textContent`);
 
   // ---- open: the history in pages, then charts ------------------------------------------------------------------------------
   await press('Training');

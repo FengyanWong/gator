@@ -10,7 +10,7 @@ from analog_optimizer.netlist.config import DeviceMapping, ParserConfig
 from analog_optimizer.netlist.spectre_parser import SpectreParser
 
 from gator_workbench import ngspice_netlist, ngspice_tasks as nt, schema, structures, tasks
-from gator_workbench.agents.prompts import circuit_summary
+from gator_workbench.circuit_summary import circuit_summary
 from gator_workbench.validation import independent_action_count, validate
 from helpers import workbench_app
 

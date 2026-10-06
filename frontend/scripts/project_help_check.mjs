@@ -200,8 +200,8 @@ try {
   await win.click(win.BUTTON('Read this cell into the workbench')); await quiet(); await far.until(`${WIN}.textContent.includes('Not optimizable yet')`);
   check('reading asked once whether the cell is a copy the user made', dialogs.length === 1 && dialogs[0].startsWith(`Work in ${LIBRARY}/ring_a directly?`), dialogs.join(' | '));
   check('draft: the headline is in view', await win.shown('Read from Virtuoso. Not optimizable yet: it has no circuit profile.'));
-  check('draft: what to do with it is folded under "What you can do with it now"', await win.shown('What you can do with it now') && await win.folded('The workbench holds the export of this cell') && await win.folded('Its answer is a proposal'));
-  check('draft: the two buttons stay in view', await win.buttonShown('Ask the agent to set up') && await win.buttonShown('Read the cell again'));
+  check('draft: what to do with it is folded under "What you can do with it now"', await win.shown('What you can do with it now') && await win.folded('The workbench holds the export of this cell') && await win.folded('it writes the rows into this cell\'s Maestro view'));
+  check('draft: its button stays in view', await win.buttonShown('Read the cell again') && !(await win.buttonShown('Ask the agent to set up')));
   check('draft: the cell is named as worked in directly, in view', await win.shown(`Working in ${LIBRARY}/tb_ring_a directly: you declared it a copy you made`));
   check('draft: "Then save it as a task:" points to Save task above the editors, the explanation is folded', await win.shown('Then save it as a task:') && await win.shown('What Save task does')
     && await win.folded('Saving again makes the next revision') && !(await far.evaluate(`!!(${win.BUTTON('Save task')})`)));
@@ -235,7 +235,7 @@ try {
   await shotColumn('help-5-generated-profile.png');
 
   reportRefused(refused);
-  check('the page asked to start, continue, command, connect or call an agent on its own: never', !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify)/.test(r)), refused.join(', '));
+  check('the page asked to start, continue, command, connect or open an agent CLI on its own: never', !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify)/.test(r)), refused.join(', '));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
 } catch (error) {
   fail(error);

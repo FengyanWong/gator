@@ -229,16 +229,16 @@ export function DiffView({ diff }: { diff: Json[] }) {
  *  the toolbar) - the save sits with the rows it stores (user request 2026-09-22). No "Save" button of its own any more:
  *  the configuration is kept in this browser by itself (store.ts, 0.8 s after each change), and a second "Save" next to
  *  "Save task" only confused. */
-function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, validation, onAgent, taskSlot, taskNotes }:
+function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, validation, taskSlot, taskNotes }:
   { schema: Json; config: Json; setConfig: (c: Json | ((c: Json) => Json)) => void; undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean;
-    validation: Json; onAgent: (kind: string, selection: Json[]) => void;
+    validation: Json;
     taskSlot: (element: HTMLElement | null) => void; taskNotes: (element: HTMLElement | null) => void }) {
   const [tab, setTab] = useState<Section>('parameters');
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [help, setHelp] = useState<Json>(null);
   // "More columns" shows the columns most rows leave at their default (Specs: soft_weight, active, basis; the Probes' two,
-  // conditions and aggregation, were retired in record 7.105). They exist whether shown or not: Add fills them, the agent
-  // may set them, a task file keeps them.
+  // conditions and aggregation, were retired in record 7.105). They exist whether shown or not: Add fills them, an
+  // import may set them, a task file keeps them.
   const [more, setMore] = useState<boolean>(() => { try { return localStorage.getItem(MORE_KEY) === 'shown'; } catch { return false; } });
   const showMore = (now: boolean) => { setMore(now); try { localStorage.setItem(MORE_KEY, now ? 'shown' : 'hidden'); } catch { /* no storage: the choice lasts for this page */ } };
   // `rows`: an import of one table's rows - Apply writes that table alone; null = a whole configuration, which replaces all.
@@ -742,8 +742,6 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         <span className="spacer" />
         {hidden.length > 0 && <button className="text" onClick={() => showMore(!more)} title={(more ? 'Fewer columns: hide ' : 'More columns: also show ') + hidden.map(c => c.label ?? c.name).join(', ') + '. They keep their values either way.'}>{more ? 'Fewer columns' : `More columns (${hidden.length})`}</button>}
         {tab === 'parameters' && <button className="text" onClick={() => setMatched(n => n + 1)} title="Matched devices...: Reads the circuit for differential pairs, current-mirror loads, matched loads and cascodes and suggests tying their sizes. Press again to refresh the results. You review a diff; nothing is applied automatically.">Matched devices...</button>}
-        <button onClick={() => onAgent(tab, [])} title="Draft with agent...: Opens the Agent tab set to draft this tab's rows. Nothing is sent until you write what you need there and press Enter; its proposal is a diff you approve."><Icon name="agent-draft" label="Draft with agent..." /></button>
-        <button disabled={!selection.length} onClick={() => onAgent('modify_fields', selection)} title="Modify selected with agent...: Ask the agent for a change to the ticked rows. You review a diff; nothing is applied automatically."><Icon name="agent-modify" label="Modify selected with agent..." /></button>
       </div>
       <div className="task-notes" ref={taskNotes} />
       {tab === 'parameters' && matched > 0 && <MatchedDevices key={matched} config={config} setConfig={setConfig} onClose={() => setMatched(0)} />}

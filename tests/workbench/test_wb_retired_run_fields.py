@@ -6,7 +6,6 @@ import copy
 import json
 
 from gator_workbench import schema
-from gator_workbench.agents import settings_review
 from helpers import make_config
 
 
@@ -31,5 +30,4 @@ def test_the_hash_sees_it_at_its_old_default_as_before(tmp_path):
 
 
 def test_nothing_offers_or_records_it_any_more():
-    assert 'threads_per_job' not in settings_review.SUGGESTIBLE['run']              # the agent's settings review
     assert 'threads_per_job' not in schema.RunSettings.model_fields

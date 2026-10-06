@@ -3,7 +3,7 @@
 prepare_run   validate -> compile -> create a UNIQUE run directory (or reopen the original one for
               resume) -> write manifest, effective config, input snapshot, experiment files.
 launch_worker start the detached worker process. Its lifetime does not depend on the HTTP server,
-              a browser tab or any agent CLI session; the run lock prevents duplicates.
+              a browser tab or a terminal; the run lock prevents duplicates.
 send_command  pause / stop / cancel through a control file.
 """
 from __future__ import annotations
@@ -20,11 +20,11 @@ from uuid import uuid4
 
 from . import CONFIG_SCHEMA_VERSION, OUTPUT_LAYOUT_VERSION, checkpoints as ckpt, modes
 from .compile import CompileError, compile_task
-from .engine import RunEngine, RunLock, learner_experiment
+from .engine import RunLock, learner_experiment
 from .layout import (RunLayout, code_provenance, environment_versions, find_runs, new_experiment_dir, new_run_dir,
                      read_run)
 from .paths import OutputRoots, default_output_root, is_mock_path, local_settings_dir, repo_root
-from .schema import WorkbenchConfig, canonical_json, config_hash, task_definition_hash
+from .schema import REMOVED_SEARCH_METHODS, WorkbenchConfig, canonical_json, config_hash, task_definition_hash
 from .storage.atomic import read_json, write_json
 from .storage.dataset import utcnow, write_data_dictionary
 from .summary import durations
@@ -57,8 +57,8 @@ _SETTINGS_LOCK = threading.RLock()
 
 
 def read_settings() -> tuple[dict, str | None]:
-    """(settings, problem). The user edits this file by hand (agent_web_domains): a typo in it used to take /api/meta,
-    /api/runs and the Agent tab down with HTTP 500. It now reads as empty, and `problem` says why in plain words."""
+    """(settings, problem). The user may edit this file by hand: a typo in it used to take /api/meta and /api/runs down
+    with HTTP 500. It now reads as empty, and `problem` says why in plain words."""
     path = local_settings_dir() / 'settings.json'
     try:
         settings = read_json(path, default={})
@@ -162,11 +162,8 @@ def suggest_mode(config: WorkbenchConfig, source_run_dir=None, task=None) -> dic
         return dict(mode='scratch', reason=f'The selected run has no usable checkpoint: {exc}',
                     requires_confirmation=False)
     same = meta['task_definition_hash'] == task_definition_hash(config)
-    if meta['restoration_capability'] == 'search_state':
-        if same and config.run.search.method == 'llm':
-            return dict(mode='resume', reason='AI search history, queue and budget can be resumed for this task.',
-                        requires_confirmation=False)
-        return dict(mode='scratch', reason='This save contains AI search progress and no policy model.',
+    if meta['restoration_capability'] == 'search_state':        # from an LLM-only run (a method removed on 2026-10-06)
+        return dict(mode='scratch', reason='This save holds the search progress of an LLM-only run and no RL model.',
                     requires_confirmation=False)
     if same and meta['restoration_capability'] == 'full_state':
         return dict(mode='resume', reason='Full training state exists for the same task.', requires_confirmation=False)
@@ -276,26 +273,13 @@ def model_label(config: WorkbenchConfig) -> str:
 
 
 def saves_rl_model(config: WorkbenchConfig) -> bool:
-    """Whether a run writes an RL model to disk: one with save points on, other than LLM only (no policy weights). A
-    Baseline simulation saves none."""
-    return bool(config.output.save_checkpoints) and config.run.search.method != 'llm'
+    """Whether a run writes an RL model to disk: one with save points on. A Baseline simulation saves none."""
+    return bool(config.output.save_checkpoints)
 
 
 def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False, confirm_transfer=False,
-                monitor=None, acknowledge_unknown=False, benchmark_control=None):
+                monitor=None, acknowledge_unknown=False):
     """Returns (RunLayout, manifest). Raises RunRejected with the validation/compatibility report."""
-    # Model/provider choices are frozen into the effective run, independent of later Agent-tab changes.
-    if benchmark_control is not None and (benchmark_control not in ('matched_random', 'matched_seeded')
-                                          or config.run.search.method != 'llm_warmstart'):
-        raise RunRejected('Unknown benchmark initialization control', code='benchmark_control')
-    if config.run.search.method != 'sac' and benchmark_control is None:
-        from .agents.sizing import resolve_settings
-        config = config.model_copy(deep=True)
-        try:
-            config.run.search = resolve_settings(config.run.search)
-            config = WorkbenchConfig.model_validate(config.model_dump(mode='json'))
-        except ValueError as exc:
-            raise RunRejected(str(exc), code='search_settings') from exc
     try:
         task = load_task(config.circuit, allow_real=allow_real, profile_id=config.run.connection_profile_id)
     except TaskBlocked as exc:
@@ -427,43 +411,19 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
                     relative_run_dir=str(layout.run_dir.relative_to(experiment_dir))),
         segments=[dict(segment=1, entry='start', requested_utc=now)], notes=list(task.notes))
     manifest['notes'] += _input_snapshot(layout, task, compiled, config)
-    if config.run.search.method != 'sac':
-        manifest['authorization'].update(llm_calls=config.run.search.max_llm_calls,
-                                        llm_notional_usd=config.run.search.max_llm_notional_usd)
-        manifest['search_settings'] = config.run.search.model_dump(mode='json')
-        if benchmark_control is not None:
-            manifest['benchmark_control'] = benchmark_control
-            manifest['authorization'].update(llm_calls=0, llm_notional_usd=None)
-        if config.run.search.method == 'llm':
-            manifest['architecture'].update(network=None, sac=None)
-        elif config.run.search.method == 'llm_warmstart':
-            count = config.run.search.warm_start_count or max(8, config.run.advanced.batch_size,
-                                                             config.run.advanced.warmup_transitions)
-            manifest['search_settings']['resolved_warm_start_count'] = count
-            if config.run.max_evaluations < count + warm_start_resets(count, config.run.advanced.episode_length, task.mock):
-                manifest['notes'].append('The simulation budget cannot collect all starting transitions plus resets; '
-                                         'SAC handover may not be reached. The budget was not increased.')
     write_json(layout.effective_config, config.model_dump(mode='json'))
     write_json(layout.manifest, manifest)
     write_json(layout.status, dict(state='created', run_id=run_id, mode=config.run.mode, mock=task.mock,
                                    paths=layout.subpaths(), heartbeat_utc=now))
     _register_in_experiment(experiment_dir, manifest, compiled, task, created)
     # The newest run that saves an RL model is remembered under the model's label (record 7.159): Resume, fine_tune and
-    # frozen start from it. A run that saves no model (a Baseline simulation, LLM only) leaves the label alone.
+    # frozen start from it. A run that saves no model (a Baseline simulation) leaves the label alone.
     with _SETTINGS_LOCK:             # the last_run merge reads and writes under the lock every other save takes
         remembered = load_settings().get('last_run', {})
         if saves_rl_model(config):
             remembered = {**remembered, model_label(config): str(layout.run_dir)}
         save_settings(output_root=config.output.output_root, concurrency=config.run.concurrency, last_run=remembered)
     return layout, manifest
-
-
-def warm_start_resets(count, episode_length, mock) -> int:
-    """The resets a warm start pays for while it collects `count` starting transitions: one per episode, but a real run
-    simulates only every RunEngine.RESET_RECHECK_EVERY-th reset and starts the others from the last simulated one, for
-    free (record 7.126; a MOCK run simulates every reset)."""
-    resets = (count + episode_length - 1) // episode_length
-    return resets if mock else -(-resets // RunEngine.RESET_RECHECK_EVERY)
 
 
 def _prepare_resume(config, roots, task, task_hash, gate):
@@ -495,14 +455,20 @@ def _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifes
                           report=suggest_mode(config, run_dir), code='task_changed')
     if manifest['mock'] != task.mock:
         raise RunRejected('Mock/real provenance differs from the run being resumed', code='mock_isolation')
+    removed = (manifest.get('search_settings') or {}).get('method')
+    if removed:
+        # A run keeps the search method it started with: one of the LLM methods removed on 2026-10-06 is not continued as
+        # SAC. Its records stay readable, and its RL model (all but LLM only have one) can start a new run.
+        raise RunRejected(f'This run used the search method "{REMOVED_SEARCH_METHODS.get(removed, removed)}", which was removed '
+                          'on 2026-10-06: SAC is the only search method now, and a run is never continued with another '
+                          'method than it started with. Its results stay readable. '
+                          + ('It holds no RL model.' if removed == 'llm' else 'To go on from its RL model, start a new run in '
+                             'Mode fine_tune with this run chosen in RL networks.'), code='search_method_removed')
     try:
         meta = ckpt.read_metadata(ckpt.resolve_checkpoint(run_dir, 'latest'))
     except FileNotFoundError as exc:
         raise RunRejected(f'Nothing to resume: {exc}', code='no_checkpoint')
     previous = WorkbenchConfig.model_validate(read_json(layout.effective_config))
-    if config.run.search != previous.run.search:
-        raise RunRejected('Search method, AI settings and call ceilings cannot change on exact resume; start a new run.',
-                          code='search_settings_changed')
     if (config.run.reward != previous.run.reward or config.run.conditions != previous.run.conditions
             or config.run.network.operating_points != previous.run.network.operating_points):
         raise RunRejected('Reward settings, condition plan and operating-point inputs cannot change on exact resume. '
@@ -515,18 +481,11 @@ def _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifes
                           'evaluations this run already consumed; resume keeps existing counters', code='budget')
     compiled = compile_task(merged, task.base_graph)
     from .pdk import run_vocabulary
-    if merged.run.search.method == 'llm':
-        try:
-            ckpt.load_search_state(ckpt.resolve_checkpoint(run_dir, 'latest'))
-        except ValueError as exc:
-            raise RunRejected(str(exc), code='incompatible_checkpoint') from exc
-        compatibility = dict(compatible=True, restoration_capability='search_state', checks=[])
-    else:
-        contract = modes.current_contract(learner_experiment(merged, task, task_hash),
-                                          modes.model_config_from(merged.run.network),
-                                          modes.sac_config_from(merged.run.advanced), compiled.spec_schema,
-                                          run_vocabulary(run_dir), runtime=modes.runtime_options(merged, run_vocabulary(run_dir)))
-        compatibility = ckpt.check_compatibility(meta, mode='resume', task_definition_hash=task_hash, contract=contract)
+    contract = modes.current_contract(learner_experiment(merged, task, task_hash),
+                                      modes.model_config_from(merged.run.network),
+                                      modes.sac_config_from(merged.run.advanced), compiled.spec_schema,
+                                      run_vocabulary(run_dir), runtime=modes.runtime_options(merged, run_vocabulary(run_dir)))
+    compatibility = ckpt.check_compatibility(meta, mode='resume', task_definition_hash=task_hash, contract=contract)
     if not compatibility['compatible']:
         raise RunRejected('The latest checkpoint cannot be fully resumed. No fallback to scratch is performed.',
                           report=compatibility, code='incompatible_checkpoint')
@@ -790,7 +749,6 @@ def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True):
             manifest, summary, status = info['manifest'], info['summary'], run_status(run_dir)
             budget = status.get('budget') or {}     # current while a worker is on the run; the summary is written when it rests
             runs.append(_RunRow(manifest, run_dir=str(run_dir), run_id=manifest.get('run_id'), task_id=manifest.get('task_id'),
-                                search=status.get('search') or manifest.get('search'),
                                 task_definition_hash=manifest.get('task_definition_hash'), mode=manifest.get('mode'),
                                 mock=manifest.get('mock'), seed=(manifest.get('seeds') or {}).get('target_seed'),
                                 created_utc=manifest.get('created_utc'), state=status.get('state'),

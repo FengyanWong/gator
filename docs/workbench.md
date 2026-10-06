@@ -22,9 +22,9 @@ lists every section with its line number; a section says what its feature does N
 [Reward and training conditions](#reward-and-training-conditions) ·
 [The right column](#the-right-column-settings-saved-models-and-the-graph-view) ·
 [The PDK and what a run writes back](#the-pdk-and-what-a-real-run-writes-back-into-virtuoso) ·
-[A task's Virtuoso side](#a-tasks-virtuoso-side-the-cell-it-works-in-saving-the-agent-the-run) ·
+[A task's Virtuoso side](#a-tasks-virtuoso-side-the-cell-it-works-in-saving-the-run) ·
 [Reload saved data](#reload-saved-data) ·
-[Agent providers](#agent-providers) ·
+[The Agent tab](#the-agent-tab-claude-code-or-codex-in-a-window-of-its-own-2026-10-06-record-7226) ·
 [Code organization](#code-organization) ·
 [Tests](#tests)
 
@@ -168,7 +168,7 @@ ring around the header, alignment marks in the corners, a hatched layer swatch o
 blue, Probes metal 2 magenta, Specs metal 3 teal), and Start glows while it can be pressed. The moon / sun icon at the
 left of the header switches them; nothing changes by itself. The choice is kept in this browser
 (`gator-workbench-look-v1`) and set before the page draws (`index.html`), so a dark choice never flashes light. Every
-pop-up window (Connection, Virtuoso, ngspice, PDK, Runs, RL networks, Task file, the Agent conversation) takes the look
+pop-up window (Connection, Virtuoso, ngspice, PDK, Runs, RL networks, Task file, What's missing?) takes the look
 when it opens and follows the switch while open (`theme.ts` `followLook`, called by `popupWindow.ts`). The circuit graph
 view takes its canvas, line and label colours from the look and changes them on a switch; its node fills stay the
 picture's own key.
@@ -181,7 +181,6 @@ the hand, as over the rest of the line, since a press opens or closes the module
 level, Training sources, Task order K, Pretrain seed, Ablation labels) into a closed "Transfer study" line. Experiment
 group and Test tasks were removed: nothing read them (Output settings' experiment name groups a run's folder). A
 configuration saved with them still loads without them, and keeps its configuration hash (`RETIRED_RESEARCH_FIELDS`).
-Run configuration says "Search method" once, as the field's own label.
 
 **One tab style** (record 7.164, user: "day and night tab style different, change the day style to night one"): both
 looks draw every tab strip alike, the chosen tab raised with an underline, an editor tab in its editor's colour, and
@@ -241,7 +240,7 @@ columns keeps its frame too. The rules are shared by both looks (`styles.css`). 
 
 **The splitter above the bottom panel.** Drag the top edge of the bottom panel to give it more or less room;
 double-click it to fold the panel down to its tab line, and again to open it. From the keyboard: Tab to it, then the
-arrow keys (24 px a press) or Enter. A press on one of its tabs, on the header's run line or an agent request opens it
+arrow keys (24 px a press) or Enter. A press on one of its tabs or on the header's run line opens it
 again, and since record 7.179 so do Start, Resume and a run chosen in Runs.... While no run is shown (a fresh page, a run
 that is gone) it starts folded to its tab line: its tabs show a run, and with none it took a third of the page saying "No
 run selected"; opened by hand it stays open for that page. The height and the fold are kept in this browser (`gator-workbench-bottom-v1`), and the
@@ -558,7 +557,7 @@ Where it applies: a cell read from Virtuoso (the ties go into the task at **Save
 afterwards: a task runs with the rows it was saved with), an ngspice task (its rows start one per size, so the pair and the
 load of the example OTA go from 7 to 5 independent variables), the MOCK task. A **verified** built-in task
 (there is none left since 2026-09-30) fixed its rows: the structures were listed for information and nothing offered.
-The agent sees the same sentences: `circuit_summary` carries them as `structures`.
+The circuit panel's summary carries the same sentences: `circuit_summary` holds them as `structures`.
 
 Backend `structures.py` (`recognize`, `plan_ties`, `apply_ties`), route `POST /api/parameters/matched` (`{config, apply}`;
 local files only). Tests: `tests/workbench/test_wb_matched_devices.py` (the circuits of record, hand-made netlists with
@@ -583,8 +582,7 @@ Netlists as such are still used: the MOCK task is the OTA5's netlist, and a Virt
 through Virtuoso's own netlist export. The best design is written as `optimized_dut.scs` only when
 every varied device is a top-level instance: a device inside a subcircuit (the OTA5's `XU1/M1`, real
 or MOCK) would mean editing a definition every instance shares, so the file is not created and the
-run's `artifact_manifest.json` says why; `parameters.csv` always holds the values. The agent's circuit-modification working copy is still written, but only as a
-file for your records: the workbench cannot load it as a circuit any more.
+run's `artifact_manifest.json` says why; `parameters.csv` always holds the values.
 
 ### An ngspice netlist as a task: the ngspice window (added 2026-09-23, user request)
 
@@ -737,10 +735,9 @@ to say.
   `configs/local/workbench/native_cells/<library>/<cell>/`, and the cell then loads from it without
   contacting Virtuoso: you can look at it, fill the three editors (the centre tabs, in this order:
   **Parameters** = what may vary, **Probes** = what is measured and how, **Specs** = equations over
-  those probes and the limits they must meet) and
-  **Ask the agent to set up** - the Agent tab opens with the request written out; its proposal, once
-  approved there, fills the editors and is written into that cell's Maestro view (see "The agent sets the
-  task up" below). Device types this project has not verified (for example the MIM invented model) are shown
+  those probes and the limits they must meet; **Read setup** takes what the cell's Maestro test already holds) and
+  save it with **Save task**, which writes the rows into that cell's Maestro view. (Until 2026-10-06 "Ask the agent
+  to set up" had the Agent tab's agent propose them; record 7.226.) Device types this project has not verified (for example the MIM invented model) are shown
   with unnamed pins. Such a cell still cannot run: Start stays disabled (`circuit_profile_missing`) until
   it is saved as a task.
 * **Save task** (at the right end of the editors' tab line since 2026-09-22; the note points there) replaced the
@@ -946,9 +943,6 @@ A profile now says WHAT it connects to and HOW, with `"kind"`:
   the sentence to show), a Virtuoso task started on an ngspice connection is refused in words before anything is
   probed, and so is an ngspice task on a Virtuoso connection. The GPDK045 models are Spectre-format files: an
   ngspice deck needs models ngspice can read (its own `.model` lines, or an open PDK's files).
-* **The ngspice agent aid is under construction** (a note under the ngspice steps, user request 2026-09-24):
-  the agent's setup help - reading a circuit and proposing its parameters, probes and specs - works for Virtuoso
-  cells only so far; an ngspice deck is set up by hand in the ngspice window.
 * **Add a connection** (in the window). `GET /api/connection/setup` reports, per kind, what was found
   on the backend machine (bridge env file and package; the `ngspice` and `ssh` programs; the Host
   NAMES of `~/.ssh/config` - names only, the rest of that file is never read out).
@@ -1041,7 +1035,7 @@ Routes:
 A server started before 7.168 answers 404; the window then asks for a restart.
 
 Code: `directories.py` (the folders, reading, checks), `bridge_connect.save_directories`, and where the folders are used:
-`paths.bridge_state_dir`, `layout.local_scratch`, `bridge_connect.detect_setup`, `agents/diagnostics.skill_visibility`,
+`paths.bridge_state_dir`, `layout.local_scratch`, `bridge_connect.detect_setup`,
 and `bridge_setup` (`_remote_path`, `_ic_folders`, `maestro_netlist`). The window is
 `frontend/src/panels/ConnectionFolders.tsx`. Tests: `tests/workbench/test_wb_directories.py`; browser check
 `connection_panel_check.mjs` ("Folders").
@@ -1212,10 +1206,11 @@ instead - the number of evaluations collected when the update ran, the evaluatio
 after one evaluation (8 with the starting presets, 1 with the SAC defaults before record 7.183) share its x.
 What a run does not record is listed under the controls ("Not in this run: ...", a closed line), and a chosen chart the
 run cannot draw says why in its place: a frozen run has no learner updates, a run started with "save learner updates" off
-has none either, AI sizing alone has no learner, no Specs row may be marked lower/higher is better.
+has none either, an LLM-only run (a search method removed on 2026-10-06) has no learner, no Specs row may be marked
+lower/higher is better.
 
 **Training and evaluation apart.** Each evaluation's phase decides its series: **Training** (random warm-up, the SAC
-policy, AI proposals), **Evaluation** (a frozen policy: `frozen_eval`, `validation`) and **Episode start** (the reset
+policy, and the AI proposals of runs made before 2026-10-06), **Evaluation** (a frozen policy: `frozen_eval`, `validation`) and **Episode start** (the reset
 design an episode begins from: no action, no reward). Each has its own colour and legend key. A Baseline simulation,
 which calibrates (records 7.197 and 7.202; the run's status carries `calibration`), records its random designs as warm-up
 draws, but nothing learns from them: the tab calls them **Calibration (random designs)**, and its learner charts say why
@@ -1418,7 +1413,7 @@ stored per configuration; empty inherits the actor learning rate. No separate st
 1,000-update unit check, so new configurations leave it empty. Attributed failures continue the episode, while its normal
 horizon and configured success ending still apply.
 
-Run status, Data tables and the agent's reward-review digest show the last 50 scored designs' p90−p10 reward spread
+Run status and Data tables show the last 50 scored designs' p90−p10 reward spread
 and latest exploration bonus. When the spread is smaller, they show the brief's plain-language steering warning.
 The start checklist also warns when recorded evidence has no design meeting all hard specs at all planned conditions,
 names the best recorded design's worst misses and points to Corner check. This is a warning, not a start blocker or
@@ -1426,10 +1421,10 @@ proof that the targets are impossible. It reads existing tables/checks and expli
 folders; it never launches a simulation or changes targets.
 
 Code: the steering check is `src/gator_workbench/reward_diagnostics.py` (`steering`, over the evaluations and learner
-updates tables; `load` feeds `steering` in `GET /api/runs/status`, and `agents/run_digest.py` uses `steering` too). The
+updates tables; `load` feeds `steering` in `GET /api/runs/status`). The
 corner warning is `src/gator_workbench/reachability.py` (`check`, then `assess`): static validation runs it when the
-training conditions are not Nominal only and nothing else blocks the start, so the page, the start checklist, the
-settings review and an applied proposal all see the same warning (code `corner_reachability`). It rejudges recorded
+training conditions are not Nominal only and nothing else blocks the start, so the page and the start checklist see the
+same warning (code `corner_reachability`). It rejudges recorded
 designs against the current hard specs: those of earlier runs of the same task with unchanged probes under the output
 root (the configured one, else the remembered one), their Corner check results, and for `real:gpdk045_ota7` the
 reference and designs of reward v2's qualification (folders named in the code, never a scan of `artifacts/`).
@@ -1485,7 +1480,7 @@ shows:
   line, and warns a from-scratch SAC run below 300 evaluations (`budget_below_sac_learning`): learning started after 250
   to 600 evaluations in the tests, and after about 150 to 300 with the starting presets (record 7.199; the warning says
   so since record 7.210). The page's starting budget stays 60 - every evaluation of a real task is a simulation
-  you authorize - so a new SAC configuration carries that warning until the budget is raised or an LLM method is chosen.
+  you authorize - so a new SAC configuration carries that warning until the budget is raised.
 - **An encoder you had put on the GATOR baseline** reads as its starting preset since record 7.191 (the settings file
   is not rewritten). A configuration already open keeps its own numbers; the window's This run / Saved default table
   shows the differences, and **Use saved defaults** applies the preset. There are no preset buttons any more: typing a
@@ -1830,32 +1825,25 @@ Spectre on the same values), so it could not give correct values; `docs/plan-per
 
 ## The right column: settings, saved models and the graph view
 
-### SAC and LLM search methods (2026-09-30, record 7.116)
+### Search: SAC only (2026-10-06, record 7.226)
 
-**Search method** offers exactly SAC, LLM warm start → SAC, LLM only, and SAC with LLM rescue.
-The schema supplies the method identifiers; the page and API enforce the same model-loading and concurrency rules.
-Warm start collects simulated starting experience, completes initial SAC updates, then hands over without another
-random warm-up. LLM only uses one baseline and one lane, saves search progress without policy weights, and has no
-numeric fallback. Rescue leaves SAC running while a stall-triggered AI request is pending. SAC remains the default.
+SAC is the only search method. The **Search method** box and the four methods it offered - SAC, LLM warm start → SAC, LLM
+only, SAC with LLM rescue (record 7.116) - were removed on the user's request of 2026-10-06 ("SAC is the only default and
+other methods should be launched through agent tab opened agent cli"), together with everything that served them: the AI
+call and cost ceilings, the AI thread and hints of a run, the header's "LLM n / m", the run engine's search session, the
+sizing CLI clients and, with the user's approval, the optimizer package's `search/` and `ActionMapper.encode` (one
+fingerprint step, `docs/decisions.md`). Help from a language model during an optimization - a run that is stuck, a design
+to look at - is asked of Claude Code or Codex from the Agent tab, in words (below, "The Agent tab").
 
-Each AI run freezes its provider/model/effort, has explicit call/cost ceilings, and owns a sizing thread in the Agent
-tab. The thread is read while the Agent tab (or its own window) shows it, and followed every second only while an AI
-run is live - a SAC run has none (record 7.125); it has a scrolling row of its own above the conversation. Hints apply
-to a future eligible call and mark the run steered. Phase, call and rescue counts are saved and shown
-consistently. See [LLM sizing](llm-sizing.md) for settings, failure behavior, recovery and the benchmark limits.
-
-The four sizing methods are deployed on the local frontend and backend at port 8765 (2026-09-30, record 7.123).
-The production build, 123 scratch browser checks and a read-only live browser check passed; the full regression
-rerun passed 1,615 tests with one documented expected Agent-tab schema failure. Live model validation and the
-performance comparison remain unapproved and unrun. The free SKY130 benchmark uses the user's feasibility-only decision: upstream pass targets, all metrics as
-descriptive Probes, and bias currents fixed at upstream starting values in every arm. Calibration and comparison independently
-recheck every passing design against the original evaluator at 1e-9 relative tolerance, stopping on disagreement.
-The revised comparison plan removes the 60-evaluation pattern-success gate, uses a common provisional 2,000-candidate
-budget, and reports uncapped constraint progress and incomplete runs alongside success. Verification is separate
-from learning and search budgets. The completed short-run calibration stays as historical evidence.
-SAC's general current-group limitation remains; a read-only FeatureSchema experiment confirmed that a static current
-column works, while a tunable current group still fails unit validation. No optimizer current-unit implementation was added.
-The development record also documents one accidentally launched, server-rejected Codex request; the no-calls gate failed.
+What stays readable: a run made with one of the methods keeps its folder, tables (`llm_calls` included, with its
+`llm_call_id` and phases in the evaluations) and its data dictionary; the Training tab, Data tables, Output files and
+Corner check read it as before. It is not continued: Continue and Resume refuse it in words (`search_method_removed`)
+rather than going on as SAC, because a run keeps the method it started with; its RL model (every method but LLM only has
+one) can start a new run in Mode fine_tune. A configuration saved with the box still loads: the schema drops `run.search`,
+and both hashes are unchanged for SAC (the block was hashed as absent at its default). A page older than the server that
+still sends a removed method is refused at Start with "reload the page", and the page drops the block from the
+configuration it keeps when it loads (`store.ts` `migrateConfig`). See [LLM sizing](llm-sizing.md) for the methods as
+they were.
 
 ### Run configuration and the RL networks window (2026-10-02, record 7.150)
 
@@ -1863,9 +1851,9 @@ The development record also documents one accidentally launched, server-rejected
 stands the network in use, in short (record 7.160, user: "show the current network selection next to the RL network
 button in short"): the encoder and hidden / heads / layers, `GT 48/4/4` (GT = graph_transformer; `–` where an encoder
 has no heads), then "op. points" and the component list when they are on, and "saved model" in a Mode that loads one,
-whose network the run takes. A loading Mode without a chosen model reads "no saved model chosen", LLM only "not used
-(LLM only)". The tooltip says all of it in full.
-**Search method** is the second setting. The button opens a separate window containing the encoder and sizes,
+whose network the run takes. A loading Mode without a chosen model reads "no saved model chosen". The tooltip says all of
+it in full. The RL model label is the second setting (the Search method box went on 2026-10-06, record 7.226). The button
+opens a separate window containing the encoder and sizes,
 operating-point input switch, the Advanced RL settings directly below it (record 7.195, user: "move the advanced
 setting to beneath the nominal device op checkbox"; a Mode that loads a model has no network block, so there they close
 the window), Components list, the "In use" line of the starting preset, saved-model chooser, model facts, compatibility
@@ -1874,9 +1862,8 @@ Budgets, concurrency, seed, the run limits (one Limits fold since record 7.179),
 
 Pressing the button again focuses the existing window. It has no close button of its own (record 7.163, user: "delete
 the cross button in RL network window"): the browser's close keeps all configuration edits; pending settings saves and model compatibility checks continue in the main page. Undo/Redo also
-work for typing in the window. A blocked popup is explained beside the launcher. With LLM only selected, the launcher
-is disabled and an already open window explains that this method has no RL network. Switching back restores the
-controls. Reloading or leaving the workbench closes its window.
+work for typing in the window. A blocked popup is explained beside the launcher. Reloading or leaving the workbench closes
+its window.
 
 Network settings that need attention leave a notice in Run configuration, including its folded warning/error mark.
 Browser checks: `frontend/scripts/network_panel_check.mjs`, `model_chooser_check.mjs`, `model_structure_check.mjs`,
@@ -1887,10 +1874,10 @@ Browser checks: `frontend/scripts/network_panel_check.mjs`, `model_chooser_check
 User: "remove the project name box in the Project module. Give the RL model its own label, independent of the project
 name." The project name did one thing: the backend remembered each project's newest run, and a Mode that loads a model
 (resume, fine_tune, frozen) started from that run's `latest` save by itself. That job is now the **RL model label**'s, a
-box in Run configuration, directly below **Search method**:
+box in Run configuration, directly below Mode and its RL networks button:
 - empty, the label is the task's run label (`project.task_name`, shown as the box's grey placeholder);
 - a run that saves an RL model is remembered under its label (`settings.json` `last_run`); a Baseline simulation
-  and an LLM-only run save none and leave the label alone (before, a baseline under the same project name pushed its
+  saves none and leaves the label alone (before, a baseline under the same project name pushed its
   project's model out);
 - the default model is the newest one saved under the label (`GET /api/runs/default-model?label=`); runs remembered under
   a project name before still answer through the configuration's unshown old `project.name`;
@@ -1935,7 +1922,7 @@ presets - sets up a NEW network and is shown in Mode `scratch` only. In `resume`
 shown: a saved model only loads into the network it was trained with (the backend refuses any other one in all three
 Modes), so the configuration takes the network of the chosen model by itself and the model's facts start with a
 "Network" row. Only the network follows; the training numbers under "Advanced" stay yours. A network that arrives
-from elsewhere while a model is loaded (an imported configuration, an applied agent suggestion) is taken back too,
+from elsewhere while a model is loaded (an imported or opened configuration) is taken back too,
 and the panel says so. Back in `scratch` the block returns and shows the network that was last in use.
 
 Choosing an encoder loads its remembered settings. A delayed reply or preset reset only changes the configuration
@@ -2207,12 +2194,13 @@ as in the verified mappings. Tasks saved before keep the old mapping until they 
 Tests: `tests/workbench/test_wb_cdf_write.py` (recorded REAL form rules of the ring oscillator, `fixtures/ring_osc/
 core_cdf.json`; a fake Virtuoso that runs the writer's SKILL with emulated callbacks - folding, clamping, bookkeeping).
 
-## A task's Virtuoso side: the cell it works in, saving, the agent, the run
+## A task's Virtuoso side: the cell it works in, saving, the run
 
 ### The cell the task flow works in: the user's own copy (2026-09-23, user request) and its Maestro setup
 
-The first part of the task flow the user asked for on 2026-09-21 (cell + testbench -> the agent sets up parameters,
-probes and specs IN Virtuoso -> read back -> edited anywhere -> "Save task"). It lives in the note "Read from Virtuoso"
+The first part of the task flow the user asked for on 2026-09-21 (cell + testbench -> parameters, probes and specs set
+up IN Virtuoso -> read back -> edited anywhere -> "Save task"; until 2026-10-06 the Agent tab's agent could do the setting
+up, record 7.226). It lives in the note "Read from Virtuoso"
 of the Virtuoso window, under the buttons of a cell read into the workbench, and every step is a button.
 
 **The user's own copy (since 2026-09-23).** The workbench makes NO copy of a cell any more. Copy the cell and its
@@ -2248,8 +2236,8 @@ the `working_copies` folder of the settings folder in use (`working_copy.state_p
 simulation needs and measures: the model file (the connection's, section `tt`), the analyses, the outputs (Cadence
 calculator expressions on testbench nets and branches) and a spec per output (`>`, `<` or a range), plus design variables
 and the instance parameters set to them. A Maestro output is a Probes row with source `ade_output` (the output name in
-*source_name*, the expression in *signal*); a Maestro spec is the Specs row whose equation is that one probe. Two presses
-write the copy, and both read it back: approving the agent's setup and **Save task**. **Read setup** ("Changed its
+*source_name*, the expression in *signal*); a Maestro spec is the Specs row whose equation is that one probe. **Save task**
+writes the copy and reads it back. **Read setup** ("Changed its
 Maestro test yourself?") goes the other way in one press: it shows a one-line summary and takes the outputs and specs into
 Probes and Specs (units are suggested from the expression and marked so; a unit or an optimizer setting already chosen on
 a row of the same name stays, and a limit - Maestro keeps plain numbers in base units - is converted into that unit; one
@@ -2270,8 +2258,7 @@ uploaded) and registers that file with the Maestro test as a model file **withou
 `include "<that file>"` above the PDK model include, so Maestro's own runs and every deck the optimizer builds from
 that netlist start the circuit the same way. Reading the setup back reads the file too, so a start voltage changed or a
 file deleted in Virtuoso is a difference the check before every run reports; changing them drops a recorded baseline,
-because what is simulated changed. The agent may propose them (`setup.initial_conditions`), and a net name or a value
-that is not a voltage is refused before anyone can approve it. A circuit that settles by itself needs none.
+because what is simulated changed. A net name or a value that is not a voltage is refused before anything is written. A circuit that settles by itself needs none.
 
 **What may be a Maestro variable.** Only values of analogLib's own resistor, capacitor, inductor and sources. A PDK
 device derives other values from its parameters or clamps them: on the live GPDK045 a transistor width set to a variable
@@ -2297,12 +2284,9 @@ only, safe against the live backend).
 ### Saving a task: Save task and the task file (added 2026-09-22, user request; Save as removed 2026-09-23)
 
 The second part of the flow. **Save task** replaces the former Create profile form (user decision: the form, its Circuit
-type box and its expected-frequency field went once Save task worked). Only a person presses it: the agent has no tool
-that saves a task (its `virtuoso_work` tools, relayed through `POST /api/agent/tools`, read Virtuoso and write the
-working copy's Maestro setup only; see "The agent works in Virtuoso itself").
+type box and its expected-frequency field went once Save task worked). Only a person presses it.
 
-**Where.** At the right end of the editors' tab line (Parameters | Probes | Specs), above "Modify selected with
-agent..." - the save sits with the rows it stores (user request 2026-09-22; it used to be in the note "Read from
+**Where.** At the right end of the editors' tab line (Parameters | Probes | Specs) - the save sits with the rows it stores (user request 2026-09-22; it used to be in the note "Read from
 Virtuoso", which now only says "Then save it as a task: Save task is above the editors" with "What Save task does"
 folded). For a cell read from Virtuoso: a New task name (the cell's name when left empty), **Save task** and **Task
 file**. On an open task (Registered task): "Task real:<name>, revision N", **Save task** and **Task file**. Their
@@ -2361,8 +2345,8 @@ by Maestro; all results of one circuit type (`backend_profile`, e.g. what the te
 ring oscillator or the op-amp, measured by the workbench as before. Mixed probes, or probes that fit both types, are
 refused in plain words. Then, with no simulation:
 1. a task measured by Maestro writes its outputs, specs (from the rows) and analyses, variables and bindings (from a task
-   file applied on the page or an approved agent setup that could not be written, else as the copy was last written -
-   by the last save or the agent's approved setup) into its working copy and reads them back - they must match;
+   file applied on the page, else as the copy was last written -
+   by the last save) into its working copy and reads them back - they must match;
 2. the working copy is read into the workbench again (netlist export + CDF readback, read-only): the reference every run
    of the task is compared with;
 3. the task's files are generated from that copy (the same generator Create profile used, with its checks), next to
@@ -2398,88 +2382,6 @@ Save task refuses them with the way forward.
 Tests: `tests/workbench/test_wb_task_save.py` (fake bridge processes, the recorded ring-oscillator export). Browser
 check: `frontend/scripts/task_save_check.mjs` (hermetic; the task file window, Apply, Save task; no Save as);
 `virtuoso_source_check.mjs`, `project_help_check.mjs` and `testbench_probes_check.mjs` follow the window.
-
-### The agent sets the task up: one proposal, written into the working copy (added 2026-09-22, user request)
-
-The third part of the flow. **Ask the agent to set up** (in the Virtuoso window's note, beside Read the cell again)
-replaced "Ask the agent for suggestions" (user decision 2026-09-21: removed once this worked). It waits until the cell is
-declared the one the flow works in (or, for an older task, has its made copy), then opens the Agent tab with the request
-kind `virtuoso_setup` and the request written out: say in two or three
-sentences what the circuit is and how it works, then set it up for optimization in its working copy - which transistor
-widths to vary (grouped where devices must match), what to measure as Maestro outputs with the analyses they need, and
-specs. Add your own requirements to the words ("more than 1.1 GHz"); nothing is sent until you press Enter.
-
-**What the agent is given.** Besides the circuit (read from your cell; instance paths and nets are the same in the copy)
-and the three editors, the copy as data: its library, cells and Maestro test `GATOR`, what the workbench last wrote
-into that test, which instance values may be Maestro variables (see "What may be a Maestro variable" above), the
-calculator functions an output may call, and the connection's model file. It answers with rows for Parameters, Probes
-and Specs plus a `setup` part - analyses with their options, design variables, and the instance values set to them. A
-part it leaves out stays in the copy as it is.
-
-**Checked before anyone can approve it.** The backend refuses a proposal whose setup could not be written as it stands:
-an output calling a function outside the allowed list, a variable on a PDK device, an output reading an analysis the
-setup does not set, a malformed part. The Agent tab shows the reasons; there is nothing to approve.
-
-**Approve, apply and write the copy.** The proposal shows its row changes and, under them, the Maestro setup and where it
-goes ("Maestro setup of the working copy `<library>/<testbench>`" - the cell you read as your copy). One approval covers both, bound to
-the proposal's content with the setup. The press fills the editors (one Undo step) and writes the setup - with the
-outputs and specs of the rows - into the copy's test (gated, under the Virtuoso session lock), reads it back and says
-whether the copy now matches. If Virtuoso cannot be reached, the rows are applied all the same and the message says to
-press **Save task** once it can be: the page keeps the approved analyses, variables and bindings for that save, which
-writes them into the copy (until 2026-09-22 the message pointed to the removed "Write to Virtuoso", which wrote only
-the outputs and specs). No simulation either way, and nothing becomes a task until you press **Save task**,
-which takes the analyses, variables and bindings written into the copy over (on an open task too: they are newer than
-the ones saved with it). The same parts applied earlier from a task file are dropped on the page when the write
-succeeds; a failed write replaces them with the approved ones.
-
-Tests: `tests/workbench/test_wb_agent_setup.py` (what the request tells the agent, the proposal and its bound approval,
-the refusals, apply writing into the copy through a fake write process, the rows applied when Virtuoso is down, no copy
-yet). Browser check: `frontend/scripts/agent_setup_check.mjs` (hermetic: canned agent and Virtuoso answers, every other
-writing request refused - safe against the live backend).
-
-### The agent works in Virtuoso itself: the kind `virtuoso_work` (added 2026-09-22, user request)
-
-The same job, with the agent doing the Virtuoso side itself instead of handing over one proposal. Choose the kind
-**virtuoso_work** in the Agent tab (next to the message box) and ask for what you want; it needs a working copy, like
-the setup proposal above.
-
-**What it may do.** While it works it can:
-
-* read from Virtuoso: the libraries, the cells of a library, and any schematic with its instances, parameters and nets;
-* look at the working copy of this task: its names, which instance values may be a Maestro variable, the calculator
-  functions an output may call, the model file, and what the workbench last wrote into it;
-* read the copy's Maestro test as it stands;
-* **write the Maestro setup into that working copy** - analyses, outputs, specs, variables, bindings and initial
-  conditions - and read it back, correcting what did not land, as often as it needs (twelve writes at most).
-
-**What it may not do, by construction.** There is no tool for anything else, and the workbench refuses a call for one:
-it cannot touch any cell but the task's working copy (since 2026-09-23 the cell you declared as your copy), write device
-sizes (those are the optimizer's, written inside a run and restored
-afterwards - a size written between runs would make every run refuse to start until you save the task again), start a
-simulation, run a command, read a file or read the web. A request that may read publications is never a request that may
-write into Virtuoso, so nothing a web page says can reach your design.
-
-**What you still approve.** The answer is the same proposal as ever: the rows for Parameters, Probes and Specs, which
-change nothing until you approve the diff. What the agent wrote in Virtuoso went into the copy while it worked - so if
-you reject the rows, press **Read setup** to take the copy's own setup back into the editors, or write the copy again.
-Under the reply, one folded line says how many steps it took in Virtuoso, whether the copy was written, and which calls
-the workbench refused; while it works, each step appears in the chat as it happens ("Virtuoso: listing the cells of
-GPDK045_RINGOSC", "Writing into the working copy: analyses, outputs, specs").
-
-**How it works.** The workbench starts its own tool server (`gator_workbench/agent_tools.py`) beside the agent CLI and
-grants that one request exactly the tools of its kind (`--mcp-config` with `--strict-mcp-config`, so no other tool server
-exists, and each tool named in `--allowedTools`). The server itself decides nothing: it relays every call to
-`POST /api/agent/tools` of the workbench with a one-time token that stops working the moment the request ends. The
-backend (`agents/tools.py`) checks the grant and the budget, resolves WHICH working copy from your configuration - never
-from the agent's arguments - and then calls the very functions the buttons use, with the connection gate, the Virtuoso
-session lock, the name checks and the records unchanged. Every call is written to
-`configs/local/workbench/agent_tool_calls.jsonl`.
-
-Tests: `tests/workbench/test_wb_agent_tools.py` (what each tool does and refuses, the budget, the closed session, the
-protocol, the flags the CLI is given, the settings file that can neither widen nor add a tool, and the whole chain over
-a real socket with the fake CLI driving the real tool server). The protocol and the flags were also tried once against
-the real `claude` CLI with a stub backend (2026-09-22): it listed the granted tools, called them with the request's
-token, and never saw the one it was not granted.
 
 ### The check before every run: editors, saved task and working copy agree (added 2026-09-22, user request)
 
@@ -2592,176 +2494,73 @@ rows = DatasetReader('<run>/data').rows('evaluations')            # fixed snapsh
 transitions = TrajectoryLoader('<run>').transitions()             # optimizer Transition objects, validated
 ```
 
-## Agent providers
+## The Agent tab: Claude Code or Codex in a window of its own (2026-10-06, record 7.226)
 
-`ClaudeCodeProvider` (default when `claude` is on the backend PATH), `CodexProvider`,
-`DisabledProvider` (task-description export + structured-result import). Proposals only:
-prompt on stdin, argv array, no shell, no write/exec tools, no permission bypass; applying needs an
-approval bound to the proposal, configuration and circuit hashes. Agent model/effort are
-independent of RL checkpoints and simulation budgets, and agents are never in the SAC loop. A request
-has no time limit (since 2026-09-21): "Cancel request" stops it. One request kind goes further, and
-only in one direction: `virtuoso_work` (2026-09-22) is granted the workbench's own Virtuoso tools -
-reads, and the Maestro setup of the task's working copy - for as long as it runs; see "The agent works
-in Virtuoso itself". The tables it proposes still need the user's approval.
+The tab is minimal since 2026-10-06 (user: "rewrite the whole agent tab to minimal. Have two buttons to open claude code cli
+or codex cli in local shell targeting the current workbench working directory with the permission of a usual agent
+launch"). It holds, on one line, the folder the CLIs open in, **Claude Code**, **Codex** and, at the right end, **What's
+missing?**; under it one headline and one closed line, "What to ask it".
 
-**What the agent may use (since 2026-10-05, record 7.186).** Every Claude Code request starts with a NAMED list of
-built-in tools (`--tools`), no longer with "everything except a deny list".
-- The list is `ToolSearch` (it loads the tools below), `Read`, `Grep` and `Glob` (inside the empty scratch folder),
-  plus `WebSearch` and `WebFetch` for an online settings review.
-- A tool the CLI adds later is therefore not offered. That includes the ones that reach outside a request: messages
-  to your other Claude sessions, routines on claude.ai, phone notifications, artifacts, workflows and scheduled
-  prompts. Until then all 18 real requests had been offered them; none used one.
-- **Your claude.ai documents** (the Docs connector of your claude.ai account) may be read (`read`, `query`, `guide`)
-  and never changed: `create`, `update`, `delete`, `batch` and `export` are denied. That is your decision of
-  2026-10-05.
-- **"Work in Virtuoso" keeps all six Virtuoso tools,** so the agent can still reach Virtuoso and finds out when the
-  connection is down. The last connection test result stays in every request's checklist.
-- **Sizing calls of the run engine** start with no built-in tool at all and no documents.
-- **How it was checked:** on the real `claude` 2.1.278 at no cost. The CLI was started with an unknown model name, so
-  it listed each request's tools and the API then refused the model (0 USD).
-  `tests/workbench/test_wb_agent_boundary.py` pins the command line.
+**A press opens the CLI in a terminal window of its own, in the workbench's folder** (the repository the backend serves,
+where CLAUDE.md and the docs are). The CLI starts as you would start it yourself: the workbench passes no permission
+option, no settings file, no model and no prompt, so what it may do is what your own settings say (Claude Code:
+`~/.claude/settings.json` and the folder's `.claude/`; Codex: `config.toml` in its home), it is signed in with your own
+account, and the session is in your history like any other. The workbench sends it nothing, reads nothing it says and does
+not wait for it. Describe what you need there: "the run shown in the workbench is stuck on the gain spec: look at its
+designs and suggest what to change", "draft the Specs rows from these requirements". Claude Code reads the project's
+rules (CLAUDE.md) by itself; tell Codex to read CLAUDE.md first.
 
-**Model and effort lists** (`agents/catalog.py`, served with `GET /api/agent/settings`; showing them calls no model;
-since 2026-10-03). Codex: the Codex app's own list of the models the signed-in account may use, read (never written)
-from its `models_cache.json` - in `$CODEX_HOME`, `~/.codex`, and from WSL in `C:\Users\<name>\.codex` of the desktop
-app; the most recently written file wins, and `GATOR_CODEX_MODELS_CACHE` names one file or `off` (the test suite sets
-`off`). The app refreshes that file by itself; the tab reads it on every settings read, and "Re-read list" (Codex only)
-reads it again without reloading the page. Models the app hides are left out, each model keeps its own effort levels
-(sizing drops a level the chosen model lacks), a retiring one is marked, and only names, descriptions, levels and
-retirement dates are taken - never the account part of the file. Without the file the hand table is shown, with the
-reason. Claude Code cannot list its models, so its list is a table kept by hand from
-code.claude.com/docs/en/model-config and the API price list (checked 2026-10-03); `default`, `opusplan` and the `[1m]`
-spellings are left out on purpose (the module says why). Any other name is accepted under "Custom...".
+How (`src/gator_workbench/agent_cli.py`, routes `GET /api/agent/clis`, `POST /api/agent/open` with `{cli}` only):
+- **Claude Code** is the `claude` on the backend's PATH, else the standalone install `~/.local/bin/claude`; its home is
+  `~/.claude`, so `claude --resume` in the folder lists the session.
+- **Codex** is a `codex` on the PATH, else the newest Linux build the Codex desktop app ships for its WSL agent
+  (`<home>/bin/wsl/<build>/codex`). The start sets the environment that app gives its own WSL agent: `CODEX_HOME` = the
+  Windows user's `.codex` (sign-in, `config.toml`, sessions) and `CODEX_SQLITE_HOME` = `~/.codex/sqlite`, with the app's
+  build folders first on the PATH (one holds the `rg` Codex searches with) - so the session is in the app's history. A
+  `$CODEX_HOME` the backend has wins.
+- The backend writes a short start script to `~/.local/state/gator/agent-cli/<cli>.sh` (into the folder, the CLI exactly
+  as typed, then your own login shell, so the window stays open when the CLI ends) and opens a window for it: from WSL
+  Windows Terminal (`wt.exe -w new new-tab --title ... wsl.exe -d <distro> -- bash -l <script>`), else a console through
+  PowerShell's Start-Process, else a Linux desktop's terminal. The window owns nothing of the backend: its own session, no
+  inherited streams, and no variable of the backend travels into it (from WSL `WSLENV` is emptied; on a Linux desktop the
+  markers a Claude Code session sets for its children are taken out), so stopping the server leaves the CLI running.
+  Windows programs start through the WSL interop socket the server inherited; a server that outlived the session that
+  started it uses the distro's own socket (`/run/WSL/1_interop`) instead.
+- A CLI that is not installed is a disabled button with the reason; a window that cannot be opened says why, with the
+  command to type in a terminal of your own (and Copy).
+- `GATOR_AGENT_CLI_LAUNCH=off` makes every launch a dry run that says what it would open and writes nothing: the test suite
+  (`tests/conftest.py`) and the browser checks' backends (`run_checks.sh`) set it, so no test opens a window.
 
-Codex proposals use a strict output schema with closed objects and required nullable optional fields. The flexible
-row values and Maestro dictionaries travel as JSON text and are decoded before the shared backend validation;
-Claude Code and manual import keep their existing format. Malformed encoded objects are schema failures, and the
-normal scope and approval checks still apply (record 7.174; `agents/codex_schema.py`).
-
-Bridge skills exist in `~/virtuoso-bridge-lite/skills/` and the project's Codex-style
-`.agents/skills/`, but **not** in a Claude Code discovery location. `GET /api/agent/diagnostics`
-reports this and proposes (never executes) symlinks into `.claude/skills/`.
-
-### The conversation in a window of its own
-
-The "Agent" tab carries a small pop-out control at its right end, where a browser tab has its close
-button. It moves the conversation - chat, a request in flight, an open proposal, the settings - into a browser
-window of its own, with larger type and the notes as a full-height column; nothing restarts, and the bottom panel
-stays free for the other tabs. Back again: the same control, "Bring back into the workbench" inside that window,
-or simply closing the window (the panel's own "Bring it back here" went on 2026-09-29, 7.109). The browser must
-allow pop-ups for this page.
-
-### Watching the answer being written (added 2026-09-21, user request)
-
-With the Claude Code provider an answer is no longer held back until it is complete. While the agent works, its
-bubble shows:
-
-- **Thinking**: a readable summary of the model's thinking, in a small box that follows the newest line. Scroll up in
-  it to read, and it stays where you are until you scroll back to the bottom. It is a summary the model service
-  writes, not the raw thoughts, and a question that needs little thought may show none;
-- steps such as "Searching the web: ..." or "Opening <address>" during an online settings review, and a line when the
-  model service is busy and the CLI retries;
-- the reply itself, growing a few words at a time, then "Writing the proposed rows...", "Writing the warnings...".
-
-When the answer is complete it replaces the bubble exactly as before (diff, suggestions, checklist, side window), and
-the thinking stays with it, folded into one line, "▸ Thinking - 1 min 20 s", one click away. The diff, the checked
-suggestions and "After you approve: ..." still appear only at the end, because the workbench works them out on the
-complete answer. The explanation is written before the rows now, so it can be read while the rows are produced.
-
-**There is no time limit any more.** It used to be 300 s (900 s with publications online), and an effort-max request
-can take longer. The seconds keep counting in the bubble. "Cancel request" stops the agent, and what had arrived
-stays in the chat under the cancel line, folded ("Thinking", "Reply so far"). Closing or reloading the page also stops
-the request, since nobody would see its answer.
-
-It costs nothing extra: the same request, and the thinking is billed the same whether it is shown or not. A workbench
-server started before this change answers in one piece (the page accepts both) and still stops a request after
-300 s: restart `serve` once.
-
-**With the Codex provider** (added the same evening) the bubble shows what Codex reports while it works, in the same
-places: each reasoning summary as its paragraph is done, commands it runs and web searches as steps, and the reply when
-the answer is complete. Codex reports whole steps, not words, so its reply appears in one piece at the end.
-Reasoning summaries are Codex's default; a `model_reasoning_summary = "none"` in your Codex configuration switches them
-off. This is built from the Codex documentation and has not been tried with a real `codex`: none is on the
-backend's PATH. (The Codex desktop app on this machine ships a Linux CLI inside its settings folder, so the provider
-could be tried for real; a request costs usage, so that is the user's decision.) It needs `--json` in
-`codex exec --help` (the SDK's older name `--experimental-json` also works);
-otherwise the answer arrives in one piece, as before, and the bubble says so. Online research stays Claude Code only.
-
-How it works: the page asks `POST /api/agent/propose` for a stream (`Accept: text/event-stream`, Server-Sent Events:
-`progress` events, then one `result` or one `error` with exactly the JSON answer or the 409 detail of a plain
-request). The backend reads the CLI's output line by line (`--include-partial-messages`, `--thinking-display
-summarized`, environment `CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING=1`; `agents/live.py`). The pieces are for
-display only: the proposal still comes from the CLI's final result and goes through the same checks. If a CLI version
-refuses one of these options, the request is repeated once without them (an unknown option fails before any model
-call) and the answer arrives in one piece. Codex: `codex exec --json` prints its events as JSON lines (thread / turn /
-item events carrying whole reasoning, command, web-search and message items), read by `CodexTranslator` in the same
-file. The proposal is still the output file (`--output-last-message`), or the last agent message of the stream if a
-CLI version wrote no file.
+What went with the tab's own agent on 2026-10-06 (records 7.6-7.186 built it): the conversation and its window, the
+provider, model and effort lists, the live answer, proposals with diff and approval, "Review settings" (with publications
+online), "Review results", the export and import of a task description, the kinds `virtuoso_setup` ("Ask the agent to set
+up" in the Virtuoso window) and `virtuoso_work` (the agent's own Virtuoso tools, `agent_tools.py`), and the editors' "Draft
+with agent..." and "Modify selected with agent...". Every one of them was a request to the in-tab agent; the CLIs do the same
+from a description, with the access your own settings give them. The saved `agent` block in `settings.json` is no longer
+read. Two pieces other functions use moved: the row diff (`diffs.py`, Matched devices, Import JSON, rows not saved) and the
+circuit summary (`circuit_summary.py`, the circuit panel).
 
 ### What is missing before the run can start
 
-"What's missing?" (under the message box) is answered by the backend, free: no agent request,
-nothing probed. It lists, in the order a start is gated: circuit, Parameters, Probes, Specs (the three
-editor tabs, in tab order), other blocking issues, run configuration, output folder and - for a real
-circuit - the bridge connection (the LAST test result; it does not test again) and the budget authorization
-that only you can give. Each line says who acts. "Ask the agent to fix what it can" appears only when a
-line is the agent's (the three tables); it sends ONE request of kind `readiness`, and the reply carries its
-own checklist plus, where it had everything it needed, rows to review as a diff.
+"What's missing?" is answered by the backend, free: no agent, nothing probed (`readiness.py`, `POST /api/agent/readiness`).
+It opens a window of its own with the verdict ("Nothing blocks a start", or how many items block it and which is next) and
+the list, in the order a start is gated: circuit, Parameters, Probes, Specs (the three editor tabs, in tab order), other
+blocking issues, run configuration, output folder and - for a real circuit - the connection (the LAST test result; it does
+not test again) and the budget authorization that only you can give. Each line says whose step it is ("yours", or "an agent
+can help" for the three tables) and what to do; for the tables that includes Reload saved values for a saved task and that
+Claude Code or Codex (Agent tab) can draft the rows from your description. It is worked out when the button is pressed, from
+the configuration on the page, and never by itself: press it again after a change (it brings the window to the front and
+fills it anew).
 
-Rows that are there but differ from the saved task - an edit, an applied calibration, an older page - are your press,
-not the agent's: the line gives the issue whole, its last sentence included (Save task, or Reload saved values), and
-says where the two buttons are. Until record 7.204 it cut the issue before that sentence and advised "Reload saved
-values ... or the agent writes the rows", which would have thrown away a calibration just applied.
-
-"Make it startable with the fewest changes" (on that checklist) asks the agent for the SMALLEST edit of the three
-tables that lets the run start. Rows that are already valid cannot be touched - the backend rejects such a proposal.
-Where you gave no number it may use a PROVISIONAL one, but only from data it can point to: a range around a device's
-present size, or "no worse than the design as it stands" from the recorded baseline of a real circuit. Those rows
-are listed in a yellow box next to the diff and say PROVISIONAL in their basis; replace them with your requirements
-when you have them. For a verified real circuit the optimized variables are not a choice: the profile fixes them, the
-agent copies them exactly, and the checklist reports any other set as missing (the run would be refused the moment it
-starts). Under every proposal the workbench itself says whether the run would start after approval. "Fix only what
-needs no assumption" is the strict variant: it writes nothing you did not give every number for.
-
-### Reviewing the settings, with or without publications read online
-
-"Review settings" (above the conversation) asks the agent to look at the run configuration, the RL network, the RL
-training settings and the output settings - not at your circuit - and to suggest values, each with its source. The
-reply is a table: setting, its value now, the suggested value, why and where it comes from, and **Apply**. Applying
-is your own edit of that one setting (undoable like any edit); the agent and the backend apply nothing. Every row was
-tried on a copy of your configuration first, so an illegal value cannot be applied, and a value that only works
-together with another row says so. An agent may never suggest the circuit, the connection, a model to load, the
-output folder or a name.
-
-Tick "check publications online" for ONE review that may search the web and open publication sites (arXiv, IEEE
-Xplore, ACM, OpenReview, GitHub and a few more; add hosts under `agent_web_domains` in
-`configs/local/workbench/settings.json`). It takes minutes and more usage, works with the Claude Code provider only,
-and the agent is then told the kind of circuit and your settings but nothing of the design itself. It must cite
-what it opened, with a quote. A published value is a starting point with a citation, not evidence that it is better
-on your circuit. If a publication uses a network that does not exist here, it is listed as an idea: adding an
-encoder is a change of the optimizer's code that a development session has to make, and it changes the fingerprint
-that every saved model and the recorded audits are checked against.
-
-### Letting the agent read a run's results
-
-"Review results" (under the message box; choose the run with "Runs..." first) asks the agent what happened in
-that run and what to change next. The agent reads no file: the workbench condenses the run's own records - outcome and
-budget, when the first feasible design came, every target against the best design, where the search spent its
-evaluations and whether it kept hitting a bound, what failed and why, whether the learner moved - and hands that over
-as data. The reply explains the run in plain language with the numbers it rests on. Changes come as rows you apply one
-by one (settings) or as a diff to approve (the three tables). It is told not to draw conclusions about an encoder,
-transfer or an algorithm from one run, and that the score of a MOCK run is not a circuit quantity.
-
-The agent's brief on what a run needs is a plain file, `src/gator_workbench/agents/run_readiness.md`. It is
-added to every agent request of every provider and to the exported task description, and it is read again
-for each request, so an edit needs no restart. Keep it short (it is paid for on every request) and true to
-what the workbench does. It is guidance below the fixed rules: it cannot widen what an agent may change.
-This is deliberately not a Claude `SKILL.md`: the agent runs in an empty directory with no tool that could
-load one, and a skill would not reach Codex or the exported task.
+Rows that are there but differ from the saved task - an edit, an applied calibration, an older page - are your press: the
+line gives the issue whole, its last sentence included (Save task, or Reload saved values), and says where the two buttons
+are (record 7.204). For a verified real circuit the optimized variables are not a choice: the profile fixes them, and the
+checklist reports any other set as missing, since the run would be refused the moment it starts.
 
 ## What the frontend audit changed (2026-09-30, record 7.125)
 
-The user chose all four groups of `artifacts/local/reviews/frontend-audit-2026-09-30.md`. What a user notices:
+The user chose all four groups of `artifacts/local/reviews/frontend-audit-2026-09-30.md`. What a user notices (the Agent
+tab's conversation, the AI threads and the AI sizing settings named here went on 2026-10-06, record 7.226):
 
 * **A real run is never authorized with MOCK wording.** When the backend says a run is real although the page still
   took it for MOCK (a task chosen a moment before its circuit was read), the question is built from the backend's own
@@ -2805,31 +2604,32 @@ ended run's log is read once more after its worker ended. Overlapping tests of t
 
 `src/gator_workbench/api/app.py` initializes the app and registers four feature modules: settings and
 connections, circuits and tasks, runs and exports, and agents. `api/models.py` owns HTTP request schemas;
-`api/context.py` shares input/output authorization, configuration loading and the cached readiness
-checklist; `api/support.py` shares response and streaming helpers. The HTTP routes and schemas are unchanged.
-The page's task loads (`support.load_runtime`: validation, the task, Matched devices, the saved-model check, the agent)
+`api/context.py` shares input/output authorization, configuration loading and the start checklist; `api/support.py`
+shares response helpers. The agent module (`api/agent_routes.py`) has three routes since 2026-10-06: the CLIs found, a CLI
+opened (`agent_cli.py`) and the checklist (`readiness.py`).
+The page's task loads (`support.load_runtime`: validation, the task, Matched devices, the saved-model check, the checklist)
 go through `tasks.load_task_view`, which keeps a saved task (`real:<name>`) while its folder, its files, the connection
 file and the conditions file are unchanged; the link is checked at every call. A run, the corner check and the command
 line load it from the files (7.131).
 The legacy copy route still refuses copying; Save-as remains a supported backend request.
 
-The frontend keeps the agent conversation in `panels/AgentTab.tsx` and the run tabs in `panels/RunTabs.tsx`.
+The frontend keeps the Agent tab in `panels/AgentTab.tsx` and the run tabs in `panels/RunTabs.tsx`.
 `CircuitBrowser.tsx` owns the Virtuoso browsing chain and circuit details; `Left.tsx` coordinates task selection.
 Shared async actions and stale-response handling live in `store.ts`. Ordinary advanced numeric fields use
 one descriptor list and defaults from the backend schema; byte units and checkpoint intervals retain their
-specialized controls. The Agent tab stays mounted when another tab is selected.
+specialized controls. The Agent tab stays mounted when another tab is selected (its "What's missing?" window stays filled).
 
 Reads managed by `useRequest` and direct JSON GETs have a 30-second deadline. Changing a selection, disabling a read
 or leaving its view cancels the hook's owned transport; shared cached reads keep their own bounded lifetime.
 Refresh replaces an outstanding hook read. Polling still allows one read at a
 time and interval changes retain the current result and outstanding request. Late replies from callbacks that ignore
-cancellation are discarded too. Writes and streaming agent responses keep their own lifecycle and are not retried by
+cancellation are discarded too. Writes keep their own lifecycle and are not retried by
 this mechanism. Log, output-folder and model-structure read errors offer a retry; failed validation blocks starting.
 
 The configuration validation key is serialized only when the configuration changes. The editors skip renders when
 their inputs are unchanged, and validation issues are grouped once by row rather than filtered for every row (7.130).
 
-Tests share fake CLI installation and isolated HTTP servers in `tests/workbench/helpers.py`, plus controlled
+Tests share isolated HTTP servers and the MOCK helpers in `tests/workbench/helpers.py`, plus controlled
 browser input, passing validation replies, and optional connection fixtures in `frontend/scripts/lib/harness.mjs`.
 `frontend/scripts/request_lifecycle_check.mjs` runs against a Vite source preview with controlled in-memory replies
 and React StrictMode; it checks slow polls, reversed replies, cancellation, deadlines, hung-read replacement, retries,
@@ -2865,19 +2665,18 @@ What it does:
   if it then passes.
 
 Some checks get special handling:
-- The two that start real MOCK runs (export, run_control_live) and agent_tab, which saves provider preferences, share
-  a backend of their own and run one after the other. agent_tab explicitly seeds its provider and restores settings.
+- The two that start real MOCK runs (export, run_control_live) share a backend of their own and run one after the other.
+- Both backends run with `GATOR_AGENT_CLI_LAUNCH=off`: whatever a check presses, no terminal window opens (agent_tab
+  answers its own requests anyway).
 - request_lifecycle gets Vite's source preview.
-- reward_v21 and llm_sizing run only when their fixtures exist and their fixed ports are free.
+- reward_v21 runs only when its fixture exists and its fixed port is free.
 - The reward_v2 real/frontend checks read recorded evidence and are skipped.
 
 The whole batch took 198 s, instead of about 9 minutes one check after another.
 
-Provider tests use a fake CLI fixture; connection tests use fake bridge clients and a fake probe
-process. No test starts a real agent session or contacts a real Virtuoso. The live answer is also
-checked against a recorded REAL stream of the `claude` CLI (`tests/workbench/fixtures/claude_live_recorded.ndjson`,
-see `test_wb_agent_live.py`), and in a browser by `frontend/scripts/agent_live_check.mjs` (hermetic by default;
-`--live` watches a scratch backend stream from the fake CLI; run lines in its header).
+Connection tests use fake bridge clients and a fake probe process. No test opens an agent CLI or contacts a real
+Virtuoso: the Agent tab's launcher is tested with fake CLIs and fake terminals (`test_wb_agent_cli.py`, which also runs a
+start script for real with a fake CLI), and the suite runs with `GATOR_AGENT_CLI_LAUNCH=off`.
 
 The header shows blocking issues as a red button, "N blocking issue(s)": a press lists every one of
 them in full (level, code, field and editor row, message), including those that belong to no editor

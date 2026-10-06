@@ -3,7 +3,7 @@
 // as virtuoso_source_check.mjs: a throwaway headless Edge over the DevTools protocol against a served workbench page
 // (default http://127.0.0.1:8765/).
 // Every /api/virtuoso/* request and every circuit load of the Virtuoso source is answered with a canned FIXTURE answer, so
-// Virtuoso is never contacted and the check does not depend on the backend version; the agent is never called. Other
+// Virtuoso is never contacted and the check does not depend on the backend version; no agent CLI is opened. Other
 // requests (schema, the synthetic:gpdk045_ota5 starter, validation) go to the backend and are read-only; any other writing
 // request of the page is refused here (hermetic).
 // The canned Probes rows are what profiles.testbench_probes answers for the recorded ring oscillator (fixtures/ring_osc).
@@ -59,7 +59,7 @@ try {
   const calls = []; let agentRequests = 0; const dialogs = [];
   const answer = async ({ requestId, request }) => {
     const pathname = new URL(request.url).pathname;
-    if (pathname === '/api/agent/propose') { agentRequests++; return fulfil(requestId, 418, { detail: { message: 'FIXTURE: no agent request is expected' } }); }
+    if (pathname === '/api/agent/open') { agentRequests++; return fulfil(requestId, 418, { detail: { message: 'FIXTURE: no agent CLI is opened here' } }); }
     if (pathname === '/api/circuit/load') {
       const circuit = JSON.parse(request.postData ?? '{}').circuit ?? {};
       if (circuit.source !== 'virtuoso') return send('Fetch.continueRequest', { requestId });
@@ -111,7 +111,7 @@ try {
   const imports = (from = 0) => calls.slice(from).filter(c => c.op === 'import').map(c => `${c.cell} ${c.testbench ?? '-'}`);
   const shot = name => far.shot(path.join(out, name), WIN, { scale: 2, maxHeight: 1400, beyond: true });
 
-  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/propose'], answer, { others: 'read', connection: 'lab' });
+  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/agent/open'], answer, { others: 'read', connection: 'lab' });
   await page.seed({ config: MOCK_PAGE_CONFIG, when: 'once' });           // on the MOCK stand-in (record 7.128)
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
@@ -218,7 +218,7 @@ try {
   await choose('Testbench cell', 'other_tb'); await press('Refresh'); await sleep(600);
   check('Refresh never replaces a chosen testbench', (await value('Testbench cell')) === 'other_tb', await value('Testbench cell'));
 
-  check('nothing was sent to the agent', agentRequests === 0, `${agentRequests} request(s)`);
+  check('no agent CLI was opened', agentRequests === 0, `${agentRequests} request(s)`);
   check('the only question on screen was the one about the copy, asked once', dialogs.length === 1 && dialogs[0].includes('COPY you made'), dialogs.join(' | '));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
 } catch (error) {

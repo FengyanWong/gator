@@ -80,7 +80,6 @@ def build_run_summary(engine, final_state, checkpoint, persistence_ok):
                     released_reservations=snapshot['released'],
                     gradient_updates=int(getattr(engine.learner, 'updates', 0)) if not engine.frozen else 0,
                     policy_version_loaded=int(engine.learner.updates) if engine.frozen else None),
-        search=engine.search.status() if getattr(engine, 'search', None) else None,
         budget=dict(max_evaluations=snapshot['max_evaluations'], max_spectre_launches=snapshot['max_launches'],
                     max_retries=snapshot['max_retries'], remaining=snapshot['remaining'],
                     definition='new candidate evaluations STARTED in the whole run, shared by all workers'),
@@ -96,9 +95,6 @@ def build_run_summary(engine, final_state, checkpoint, persistence_ok):
         time=dict(active_seconds=active, paused_seconds=paused,
                   sum_job_runtime_seconds=counters['sum_job_runtime_seconds'],
                   note='sum_job_runtime_seconds adds parallel jobs and is NOT elapsed time'),
-        agent_usage=dict(tracked_here=bool(getattr(engine, 'search', None)),
-                         table='llm_calls' if getattr(engine, 'search', None) else None,
-                         note='Sizing calls have their own counters and never share the simulation budget.'),
         best_design=None if best is None else dict(
             evaluation_id=best['evaluation_id'], feasible=best['feasible'], metrics=best['metrics'],
             metric_units=best['metric_units'], normalized_constraint_violation=best['violation'],

@@ -6,7 +6,7 @@
 // the page is refused (reads pass). What it pins (user request
 // 2026-09-22, "go on part 2"):
 //   - an open task names itself and its revision; two short buttons: Save task, Task file - at the right end of the
-//     editors' tab line, above "Modify selected with agent...", not in the Project panel (user request 2026-09-22); no
+//     editors' tab line, not in the Project panel (user request 2026-09-22); no
 //     "Save as" since 2026-09-23 (the workbench makes no copies: another task is another copy the user makes and reads);
 //   - "Task file" opens a window with the task as one readable file (its _help included); "Apply to editors" checks it and
 //     fills the editors (one Undo step); a broken file is refused with its problems and changes nothing;
@@ -161,10 +161,10 @@ await runChecks(browser, async () => {
     && ![...${PANEL}.querySelectorAll('button')].some(b => ['Save task', 'Save as', 'Task file'].includes(b.textContent.trim()))`));
   const place = await evaluate(`(() => { const bar = ${BLOCK}.getBoundingClientRect(), tabs = ${BLOCK}.closest('.tabs'), line = tabs.getBoundingClientRect();
     const first = tabs.querySelector('button').getBoundingClientRect();
-    const modify = [...document.querySelectorAll('.editors .toolbar button')].find(b => b.textContent.trim() === 'Modify selected with agent...').getBoundingClientRect();
+    const modify = [...document.querySelectorAll('.editors .toolbar button')].pop().getBoundingClientRect();         // the toolbar's right end
     return { right: line.right - bar.right, sameLine: bar.top < first.bottom && bar.bottom > first.top, above: bar.bottom <= modify.top + 1,
              over: bar.left < modify.right && bar.right > modify.left }; })()`);
-  check('on the tab line, at its right end, above "Modify selected with agent..."', place.sameLine && place.right < 12 && place.above && place.over, JSON.stringify(place));
+  check('on the tab line, at its right end, above the toolbar\'s last button', place.sameLine && place.right < 12 && place.above && place.over, JSON.stringify(place));
   check('only a person can press it, said on the button', await evaluate(`${BUTTON('Save task')}.title.includes('Only you can press it.')`));
 
   // ---- the task file in a window of its own ---------------------------------------------------------------------------------------

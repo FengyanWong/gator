@@ -90,7 +90,7 @@ def test_steering_missing_latest_update_does_not_use_stale_bonus():
 
 
 def test_readiness_exposes_nonblocking_reachability_warning():
-    from gator_workbench.agents.readiness import build
+    from gator_workbench.readiness import build
     result = build(ota().model_dump(mode='json'), validation=dict(blocks_run=False, issues=[dict(
         level='warning', code='corner_reachability', path='run.conditions', message='The reference misses gain. Use Corner check.')]))
     item = next(i for i in result['items'] if i['id'] == 'corner_reachability')

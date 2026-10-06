@@ -14,9 +14,6 @@ def issues(config):
     return report, {i.code: i for i in report.issues}
 
 
-LLM = dict(method='llm_warmstart', provider='codex', max_llm_calls=2)
-
-
 def test_values_with_which_the_search_stays_random_are_named(tmp_path):
     report, found = issues(make_config(tmp_path))                       # the schema defaults: temperature 0.2, one update
     slow = found['sac_values_random_search']
@@ -35,9 +32,7 @@ def test_values_with_which_the_search_stays_random_are_named(tmp_path):
 
 
 def test_only_a_run_that_trains_is_told(tmp_path):
-    assert 'sac_values_random_search' in issues(make_config(tmp_path, run=dict(search=LLM)))[1]      # the warm start trains too
-    llm_only = make_config(tmp_path, run=dict(search=dict(LLM, method='llm')))
-    assert 'sac_values_random_search' not in issues(llm_only)[1]
+    assert 'sac_values_random_search' in issues(make_config(tmp_path))[1]
     for mode in ('resume', 'frozen'):                                   # a saved run keeps its own values; frozen never updates
         loaded = make_config(tmp_path, run=dict(mode=mode, model_source=dict(run_dir=str(tmp_path))))
         assert 'sac_values_random_search' not in issues(loaded)[1], mode
@@ -53,8 +48,7 @@ def test_a_budget_below_the_start_of_learning_is_named_for_a_from_scratch_sac_ru
     assert validation.SAC_LEARNS_AFTER == 300
     assert 'budget_below_sac_learning' in issues(make_config(tmp_path, run=dict(max_evaluations=299)))[1]
     assert 'budget_below_sac_learning' not in issues(make_config(tmp_path, run=dict(max_evaluations=300)))[1]
-    # an LLM proposes within a small budget by design, and a loaded model has already learned
-    assert 'budget_below_sac_learning' not in issues(make_config(tmp_path, run=dict(max_evaluations=60, search=LLM)))[1]
+    # a loaded model has already learned
     loaded = make_config(tmp_path, run=dict(max_evaluations=60, mode='fine_tune', model_source=dict(run_dir=str(tmp_path))))
     assert 'budget_below_sac_learning' not in issues(loaded)[1]
 

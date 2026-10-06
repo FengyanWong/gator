@@ -6,7 +6,6 @@ import { ModelChooser } from './ModelChooser';
 import { CircuitGraphView } from './CircuitGraphView';
 import { ModelStructure } from './ModelStructure';
 import { ComponentList } from './Pdk';
-import { SearchSettings } from './SearchSettings';
 import { Typed } from './Typed';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 
@@ -138,7 +137,6 @@ const SHORT_ENCODER: Record<string, string> = { graph_transformer: 'GT', rgcn: '
 
 export function RunPanel({ config, setConfig, runs, circuit, schema }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json; schema: Json }) {
   const run = config.run;
-  const llmOnly = run.search?.method === 'llm';
   const set = (fields: Json, record = true) => setConfig(c => ({ ...c, run: { ...c.run, ...fields } }), record);
   const setAdv = (fields: Json) => setConfig(c => ({ ...c, run: { ...c.run, advanced: { ...(c.run.advanced ?? {}), ...fields } } }));
   const setNet = (fields: Json) => setConfig(c => ({ ...c, run: { ...c.run, network: { ...(c.run.network ?? {}), ...fields } } }));
@@ -157,7 +155,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
 
   // Only a Mode that loads the model asks about it: a model_source left over from fine_tune is ignored in scratch, and
   // was compiled and checked after every edit there all the same (audit 2026-09-30).
-  const modelChecked = run.mode !== 'scratch' && !!source.run_dir && !llmOnly;
+  const modelChecked = run.mode !== 'scratch' && !!source.run_dir;
   const { value: fresh, error, loading: modelLoading } = useRequest<Json>(signal => api.model(source.run_dir, source.checkpoint_id ?? 'latest', config, signal),
     [JSON.stringify([config.circuit, config.parameters, config.targets, config.measurements, run.mode, source,
       run.connection_profile_id, run.seed, run.network, run.advanced, run.reward, run.conditions, config.research?.split])],
@@ -285,7 +283,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   // Unknown until the encoder's settings have arrived (a new configuration holds no Advanced values of its own): no verdict then.
   const updatesPer: number | undefined = adv.updates_per_transition ?? entry?.advanced?.updates_per_transition;
   const startAlpha: number | undefined = adv.initial_alpha ?? entry?.advanced?.initial_alpha;
-  const sacSlow = llmOnly || run.mode === 'frozen' || run.mode === 'resume' ? [] : [
+  const sacSlow = run.mode === 'frozen' || run.mode === 'resume' ? [] : [
     updatesPer !== undefined && updatesPer < 4 ? `${updatesPer} update${updatesPer === 1 ? '' : 's'} per evaluation` : null,
     startAlpha !== undefined && startAlpha > 0.05 ? `a starting temperature of ${startAlpha}` : null].filter(Boolean) as string[];
   const starved = run.mode !== 'frozen' && typeof budget === 'number' && (budget <= (adv.warmup_transitions ?? 0) || budget < (adv.batch_size ?? 0) + 1);
@@ -305,7 +303,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   useEffect(() => {
     if (!loads) { followed.current = null; return; }
     if (!archDiffers) return;
-    // The SAME model a second time = something else changed the network meanwhile (an applied agent suggestion, an
+    // The SAME model a second time = something else changed the network meanwhile (an imported or
     // opened configuration). It is taken back as well, but said: a silent revert would read as a button that does nothing.
     const key = JSON.stringify([source.run_dir, model?.description?.checkpoint_id, savedNet]);
     if (followed.current === key) setNetMessage({ level: 'warn', text: `The network stays ${savedNet.encoder_type} ${savedModel.hidden_dim}/${savedModel.heads}/${savedModel.layers}: this run loads a saved model, and a saved model only loads into the network it was trained with. A new network needs Mode scratch.` });
@@ -337,10 +335,10 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   // the RL network button in short"). In a Mode that loads a model the configuration's network is that model's (above).
   const hidden = net.hidden_dim ?? entry?.network?.hidden_dim ?? 32, heads = net.heads ?? entry?.network?.heads ?? 4, layers = net.layers ?? entry?.network?.layers ?? 2;
   const components = net.vocabulary && net.vocabulary !== 'standard' ? net.vocabulary.replace(/^pdk:/, '') : null;
-  const netShort = llmOnly ? 'not used (LLM only)' : loads && !source.run_dir ? 'no saved model chosen'
+  const netShort = loads && !source.run_dir ? 'no saved model chosen'
     : [`${SHORT_ENCODER[encoder] ?? encoder} ${hidden}/${usesHeads ? heads : '–'}/${layers}`, net.operating_points ? 'op. points' : null,
       components ? `${components} parts` : null, loads ? 'saved model' : null].filter(Boolean).join(' · ');
-  const netTitle = llmOnly ? 'LLM only does not use an RL network.' : loads && !source.run_dir ? `Mode ${run.mode} loads a saved model: choose one in RL networks; the run then uses its network.`
+  const netTitle = loads && !source.run_dir ? `Mode ${run.mode} loads a saved model: choose one in RL networks; the run then uses its network.`
     : `The network in use: ${encoder}, hidden ${hidden}, ${usesHeads ? `heads ${heads}` : 'no attention heads'}, layers ${layers}; nominal operating points ${net.operating_points ? 'on' : 'off'}; `
       + `components ${components ?? 'standard'}${loads ? `. It is the network of the saved model this run loads (${source.run_dir}).` : '.'} RL networks... changes it.`;
   const limitsSet = [run.max_spectre_launches != null ? `${run.max_spectre_launches} launches` : null, (run.max_retries ?? 0) > 0 ? `${run.max_retries} retries` : null,
@@ -351,7 +349,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const networkError = error || netMessage?.level === 'error' || !offeredEncoders.includes(encoder)
     || (modelChecked && model?.compatibility?.compatible === false);
   const networkWarning = netMessage?.level === 'warn' || (!loads && (differs || entry?.problem))
-    || (starved && run.search?.method !== 'llm_warmstart') || archDiffers || sacSlow.length > 0;
+    || starved || archDiffers || sacSlow.length > 0;
   // The training numbers, with the warning about values that leave the search random right above them. In scratch they sit
   // directly below "Nominal device operating points" (user, 2026-10-05: "move the advanced setting to beneath the nominal
   // device op checkbox", record 7.195); a Mode that loads a model shows no network block, so there they close the window -
@@ -379,23 +377,20 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
     <Module id="run" title="Run configuration" summary={folded}>
       <label title="scratch: random init, new run. resume: same task, same run, full state. fine_tune: compatible weights, new task, new run with a parent. frozen: no updates at all.">Mode
         <select value={run.mode} onChange={e => set({ mode: e.target.value })}>
-          {(llmOnly ? ['scratch', 'resume'] : run.search?.method && run.search.method !== 'sac' ? ['scratch', 'resume', 'fine_tune'] : ['scratch', 'resume', 'fine_tune', 'frozen']).map(m => <option key={m} value={m}>{m}</option>)}</select></label>
-      <div className="rl-networks-row"><span className={`hint net-short${llmOnly || (loads && !source.run_dir) ? '' : ' net-code'}`} title={netTitle}>{netShort}</span>
-        <button className="rl-networks-open" disabled={llmOnly}
-          title={llmOnly ? 'LLM only does not use an RL network.' : 'Open RL network settings, saved models, and model views.'}
+          {['scratch', 'resume', 'fine_tune', 'frozen'].map(m => <option key={m} value={m}>{m}</option>)}</select></label>
+      <div className="rl-networks-row"><span className={`hint net-short${loads && !source.run_dir ? '' : ' net-code'}`} title={netTitle}>{netShort}</span>
+        <button className="rl-networks-open" title="Open RL network settings, saved models, and model views."
           onClick={() => networkWindow.open()}>RL networks...</button></div>
       {networkWindow.blocked && <p className="error" role="alert">{BLOCKED}</p>}
-      {!llmOnly && (networkError || networkWarning) && <p className={networkError ? 'error' : 'warn'}>Review the settings in RL networks.</p>}
+      {(networkError || networkWarning) && <p className={networkError ? 'error' : 'warn'}>Review the settings in RL networks.</p>}
       {/* Only while the model is checked: in scratch the last check's suggestion stayed, never asked again (review of 2026-10-01) */}
       {modelChecked && model?.suggestion && model.suggestion.mode !== run.mode && <p className="warn">Suggested: <button className="text-link mode-suggestion"
         title={`Set Mode to ${model.suggestion.mode}`} onClick={() => set({ mode: model.suggestion.mode })}>{model.suggestion.mode}</button> - {model.suggestion.reason}
         {model.suggestion.requires_confirmation ? ' (needs your confirmation)' : ''}</p>}
-      <SearchSettings run={run} schema={schema} set={set} />
-      {/* Below Search method: Mode first, Search method second (record 7.150). */}
       <label title={`RL model label: the name this run's RL model is saved under. Mode resume, fine_tune and frozen start from the newest model saved under it. Empty: the task's run label (${config.project.task_name}).`}>RL model label
-        <input className="model-label" value={run.model_label ?? ''} placeholder={config.project.task_name} disabled={llmOnly} maxLength={80}
+        <input className="model-label" value={run.model_label ?? ''} placeholder={config.project.task_name} maxLength={80}
           onChange={e => set({ model_label: e.target.value.trim() ? e.target.value : null })} /></label>
-      <Num label="Concurrent Spectre jobs" disabled={llmOnly} value={run.concurrency} onChange={v => set({ concurrency: v })} title="Independent simulation jobs at once. NOT the thread count of one simulation." />
+      <Num label="Concurrent Spectre jobs" value={run.concurrency} onChange={v => set({ concurrency: v })} title="Independent simulation jobs at once. NOT the thread count of one simulation." />
       {circuit?.max_concurrency && run.concurrency > circuit.max_concurrency && <p className="error">This task supports at most {circuit.max_concurrency} jobs.</p>}
       <Num label="Evaluation budget" value={run.max_evaluations} onChange={v => set({ max_evaluations: v })}
         title="NEW candidate evaluations that may START in the whole run, shared by all workers. Baselines, warm-up and failures count. Episode resets do not reset it." />
@@ -462,20 +457,16 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       <Num label="Tightest-margin bonus weight" bounded value={run.reward?.margin_weight ?? 0} onChange={v => set({ reward: { ...run.reward, margin_weight: v } })}
         title="Complete hard-feasible plans only. Equality constraints remain mandatory but do not contribute clearance." />
       </details>
-      {llmOnly && run.mode === 'resume' && <label>AI run to resume<select value={source.run_dir ?? ''}
-        onChange={e => set({ model_source: { run_dir: e.target.value, checkpoint_id: 'latest' } })}>
-        <option value="">Choose an AI-only run</option>{runs.filter((r: Json) => r.search?.method === 'llm').map((r: Json) =>
-          <option key={r.run_dir} value={r.run_dir}>{r.task_name ?? r.run_dir}</option>)}</select></label>}
     </Module>
     {networkWindow.popup && networkWindow.root && createPortal(<section className="panel rl-networks-panel" aria-labelledby="rl-networks-title">
       {/* No close button of its own (user, 2026-10-03: "delete the cross button in RL network window"): the window's own close
           does it, and the settings are kept either way. */}
       <div className="rl-networks-heading"><h2 id="rl-networks-title">RL networks</h2></div>
       <p className="hint">Mode: <b>{run.mode}</b>. Changes apply to the current run configuration.</p>
-      {llmOnly ? <p className="hint">LLM only does not use an RL network. Choose an SAC search method in Run configuration to edit these settings.</p> : <>
+      <>
       {!loads && <>
       <h3>RL network</h3>
-      <p className="hint">Independent of the agent language model. "No weights" means scratch, but an architecture is still required.
+      <p className="hint">"No weights" means scratch, but an architecture is still required.
         Every encoder keeps its own settings in the backend: choosing one loads them, editing a value (here or under Advanced) saves it for that encoder.</p>
       <label>Encoder<select value={encoder} onChange={e => chooseEncoder(e.target.value)}>
         {offeredEncoders.map((m: string) => <option key={m} value={m}>{m}</option>)}
@@ -505,7 +496,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       </div>}
       {entry?.problem && <p className="warn">{entry.problem}</p>}</>}
       {netMessage && <p className={`net-message ${netMessage.level === 'error' ? 'error' : netMessage.level === 'warn' ? 'warn' : 'hint'}`}>{netMessage.text}</p>}
-      {starved && run.search?.method !== 'llm_warmstart' && <p className="warn">Budget {budget} with warm-up {adv.warmup_transitions} and batch size {adv.batch_size}: {budget <= (adv.warmup_transitions ?? 0) ? 'every evaluation is a random warm-up action, so the policy never acts' : 'one batch is never filled, so the network never learns'}.
+      {starved && <p className="warn">Budget {budget} with warm-up {adv.warmup_transitions} and batch size {adv.batch_size}: {budget <= (adv.warmup_transitions ?? 0) ? 'every evaluation is a random warm-up action, so the policy never acts' : 'one batch is never filled, so the network never learns'}.
         Published settings assume thousands of simulations. Lower them under Advanced or raise the budget.</p>}
       {!loads && entry && <details><summary>Where the {encoder} values come from</summary>
         <p className="hint">{entry.summary}</p>
@@ -559,7 +550,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         {run.mode === 'fine_tune' && <Check label="Continual learning (inherit weights fine-tuned on a previous test task)" value={run.continual_learning} onChange={v => set({ continual_learning: v })} />}
       </>)}
       {loads && advanced}
-      </>}
+      </>
     </section>, networkWindow.root)}
     </>
   );
@@ -567,7 +558,6 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
 
 export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Json; setConfig: (f: (c: Json) => Json) => void; meta: Json; activeRun: Json }) {
   const out = config.output;
-  const llmOnly = config.run.search?.method === 'llm';
   const set = (fields: Json) => setConfig(c => ({ ...c, output: { ...c.output, ...fields } }));
   const root = out.output_root ?? meta?.output_root ?? '';
   const [browse, setBrowse] = useState<Json>(null);
@@ -639,10 +629,10 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
         <tr><td>remote Spectre work dir</td><td className="hint">local work/ for this task; final files are written directly here (sync: local)</td></tr>
       </tbody></table></details>}
       <p className="hint always-saved" title="Always saved: configuration/provenance snapshots, per-evaluation records, actual parameters, metrics, simulator-job accounting, run summary, event/error logs (Parquet + JSON).">Always saved: configuration, evaluations, logs.</p>
-      {!llmOnly && <Check label="Learner-update log" value={out.save_learner_updates ?? true} onChange={v => set({ save_learner_updates: v })} />}
-      <Check label={llmOnly ? 'Search progress (needed to resume)' : 'Model checkpoints'} value={out.save_checkpoints ?? true} onChange={v => set({ save_checkpoints: v })} />
-      {!llmOnly && <Check label="Replay snapshots (needed for a FULL resume)" value={out.save_replay_snapshots ?? true} onChange={v => set({ save_replay_snapshots: v })} />}
-      {!llmOnly && out.save_replay_snapshots === false && <p className="warn">Without replay snapshots checkpoints are weights_only: a full training-state resume of this run will NOT be possible.</p>}
+      <Check label="Learner-update log" value={out.save_learner_updates ?? true} onChange={v => set({ save_learner_updates: v })} />
+      <Check label="Model checkpoints" value={out.save_checkpoints ?? true} onChange={v => set({ save_checkpoints: v })} />
+      <Check label="Replay snapshots (needed for a FULL resume)" value={out.save_replay_snapshots ?? true} onChange={v => set({ save_replay_snapshots: v })} />
+      {out.save_replay_snapshots === false && <p className="warn">Without replay snapshots checkpoints are weights_only: a full training-state resume of this run will NOT be possible.</p>}
       <Check label="Complete transition archive (independent of replay snapshots)" value={out.save_transition_archive ?? true} onChange={v => set({ save_transition_archive: v })} />
       <Check label="Experiment summary CSVs" value={out.export_summary_csv ?? true} onChange={v => set({ export_summary_csv: v })} />
       <Num label="Checkpoint every" nullable value={interval} placeholder="only at pause, stop, end" onChange={v => setEvery(by, v)}

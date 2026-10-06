@@ -1,24 +1,22 @@
 """Round-5 review fixes (2026-09-29): a worker that cannot start says so, settings saves that neither fail nor lose
-each other's keys, a hand-edited settings.json with a typo, license text kept from the agent, the manifest's test
-conditions, a cancel before the agent CLI starts, the Host allowlist, malformed bodies and NUL bytes, the output-folder
-size walk, the run and model lists, git without optional locks, and web links in a settings review. MOCK only: no
-Virtuoso, no simulator, no agent CLI but the fake one."""
+each other's keys, a hand-edited settings.json with a typo, the manifest's test conditions, the Host allowlist, malformed
+bodies and NUL bytes, the output-folder size walk, the run and model lists, and git without optional locks. (The round's
+agent parts - license text kept from the agent, a cancel before the agent CLI starts, web links in a settings review -
+went with the Agent tab's own agent on 2026-10-06, record 7.226.) MOCK only: no Virtuoso, no simulator."""
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import threading
-import time
 
 import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import checkpoints as ckpt, layout as layout_module, paths, runs, schema, worker
-from gator_workbench.agents import AgentError, AgentRequest, AgentSettings, ClaudeCodeProvider, base, run_digest, settings_review
 from gator_workbench.api import app as app_module
 from gator_workbench.storage import atomic, read_json
-from helpers import cli, execute, make_config, roots_for, workbench_app                        # noqa: F401  (cli: fixture)
+from helpers import execute, make_config, roots_for, workbench_app
 
 
 def prepared(root, **kwargs):
@@ -144,7 +142,7 @@ def test_our_own_incomplete_or_missing_file_is_still_a_write_failure(tmp_path, m
 def broken_settings():
     path = paths.local_settings_dir() / 'settings.json'
     path.parent.mkdir(parents=True, exist_ok=True)
-    text = '{"agent_web_domains": ["example.org",]}\n'                   # a hand edit with a trailing comma
+    text = '{"output_root": "/somewhere",}\n'                          # a hand edit with a trailing comma
     path.write_text(text)
     return path, text
 
@@ -156,9 +154,7 @@ def test_a_settings_file_with_a_typo_takes_no_page_down(tmp_path, broken_setting
     assert meta.status_code == 200 and meta.json()['remembered'] == {}
     assert meta.json()['settings_problem'] == (f'{path} is not valid JSON (line 1): fix or remove it; nothing is saved to it '
                                                'until then.')
-    assert client.get('/api/agent/settings').status_code == 200
     assert client.get('/api/runs', params=dict(output_root=str(tmp_path))).status_code == 200
-    assert client.put('/api/agent/settings', json=dict(provider='disabled')).status_code == 200
     assert path.read_text() == text                                     # never overwritten: it holds the user's own edits
 
 
@@ -180,35 +176,10 @@ def test_other_unreadable_settings_files_are_said_and_kept(text, problem):
     path.write_bytes(text if isinstance(text, bytes) else text.encode())
     settings, said = runs.read_settings()
     assert settings == {} and problem in said and 'nothing is saved to it until then' in said
-    runs.save_settings(agent=dict(provider='disabled'))
+    runs.save_settings(concurrency=2)
     assert path.read_bytes() == (text if isinstance(text, bytes) else text.encode())
     path.unlink()                                                       # no file at all is no problem
     assert runs.read_settings() == ({}, None)
-
-
-# ------------------------------------------------------------------------------- A6: license text never reaches an agent
-FLEXNET = ('bridge_reported_failure ERROR (SPECTRE-693): Unable to check out license for feature Spectre. FlexNet Licensing '
-           'error:-15,10. License path: 27000@licserv.example.org; users: alice@ws12 bob@ws07')
-
-
-def test_a_run_review_digest_withholds_license_server_text():
-    rows = [dict(evaluation_id='e1', completion_index=1, status='backend_error', failure_type='license_unavailable',
-                 diagnostics='lmgrd on the server says nothing about a license here', action_source='warmup_random'),
-            dict(evaluation_id='e2', completion_index=2, status='execution_error', failure_type='infrastructure_unclassified',
-                 diagnostics=FLEXNET, action_source='warmup_random'),        # the text reads like one, whatever its class
-            dict(evaluation_id='e3', completion_index=3, status='nonconverged', failure_type='nonconverged',
-                 diagnostics='Newton iteration did not converge at t=1e-9', action_source='warmup_random')]
-    digest = run_digest.build(status=dict(state='failed', error='RuntimeError: ' + FLEXNET), config={}, evaluations=rows,
-                              parameters=[], metrics=[], updates=[],
-                              errors=[dict(error='exception', message=FLEXNET), dict(error='persistence_failure', message='disk full')])
-    text = json.dumps(digest)
-    for secret in ('licserv', '27000', 'alice', 'FlexNet', 'lmgrd'):
-        assert secret not in text, secret
-    assert digest['run']['error'] == run_digest.LICENSE_WITHHELD
-    assert sorted(digest['failures']['typical']) == sorted([run_digest.LICENSE_WITHHELD, 'Newton iteration did not converge at t=1e-9'])
-    assert digest['failures']['by_type'] == dict(license_unavailable=1, infrastructure_unclassified=1, nonconverged=1)
-    assert digest['errors'] == [dict(error='exception', message=run_digest.LICENSE_WITHHELD),
-                                dict(error='persistence_failure', message='disk full')]    # everything else unchanged
 
 
 # ------------------------------------------------------------------------------- A11: the manifest's test conditions
@@ -222,47 +193,6 @@ def test_a_corner_run_manifest_names_its_corners(policy, who):
     stated = runs.manifest_conditions(schema.ConditionsConfig(policy=policy, corners=['ss_hot_low', 'fs_nominal']))
     assert stated['conditions'] == ['nominal', 'ss_hot_low', 'fs_nominal']
     assert 'nominal-only' not in stated['note'] and who in stated['note'] and f'policy {policy}' in stated['note']
-
-
-# ------------------------------------------------------------------------------- A14: a cancel before the CLI starts
-SLOW_CLI = [sys.executable, '-c', 'import sys, time; time.sleep(2); open(sys.argv[1], "w").write("worked")']
-
-
-def test_a_cancel_before_the_cli_is_registered_is_not_lost(tmp_path):
-    registry, marker = base.ProcessRegistry(), tmp_path / 'worked'
-    assert registry.cancel('early-0001') is False                      # nothing is running yet, so nothing is signalled ...
-    started = time.monotonic()
-    with pytest.raises(AgentError) as error:                            # ... but the request's CLI is stopped the moment it starts
-        base.run_cli(SLOW_CLI + [str(marker)], stdin_text='', cwd=tmp_path, timeout=None, request_id='early-0001', registry=registry)
-    assert error.value.code == 'cancelled' and time.monotonic() - started < 1.5
-    assert registry.active() == [] and registry.was_cancelled('early-0001')
-    # The mark outlives that CLI: a second one of the same request (claude_code repeats a refused live attempt) stops too.
-    with pytest.raises(AgentError):
-        base.run_cli(SLOW_CLI + [str(marker)], stdin_text='', cwd=tmp_path, timeout=None, request_id='early-0001', registry=registry)
-    time.sleep(2.2)
-    assert not marker.exists()                                          # neither CLI did its work
-    registry.done('early-0001')                                         # the whole request is over
-    code, _, _ = base.run_cli([sys.executable, '-c', 'pass'], stdin_text='', cwd=tmp_path, timeout=None, request_id='early-0001',
-                              registry=registry)
-    assert code == 0 and not registry.was_cancelled('early-0001')
-
-
-def test_only_the_newest_cancels_of_unknown_requests_are_kept():
-    registry = base.ProcessRegistry()
-    for number in range(registry.REMEMBERED + 10):
-        registry.cancel(f'gone-{number}')
-    assert not registry.was_cancelled('gone-0') and registry.was_cancelled(f'gone-{registry.REMEMBERED + 9}')
-
-
-def test_a_claude_request_cancelled_while_it_was_being_built_never_runs(tmp_path, cli):
-    record = cli('success')
-    request = AgentRequest(kind='targets', user_prompt='Raise the score target to 0.97',
-                           config=make_config(tmp_path).model_dump(mode='json'), circuit_summary=dict(devices=[]))
-    assert base.REGISTRY.cancel(request.request_id) is False           # the page left before the CLI was started
-    with pytest.raises(AgentError) as error:
-        ClaudeCodeProvider(AgentSettings(provider='claude_code')).propose(request)
-    assert error.value.code == 'cancelled' and not record.exists()    # the fake CLI never got as far as its record
-    assert base.REGISTRY.active() == [] and not base.REGISTRY.was_cancelled(request.request_id)   # spent with the request
 
 
 # ------------------------------------------------------------------------------- A15: the Host allowlist
@@ -405,16 +335,3 @@ def test_the_run_provenance_asks_git_without_taking_the_index_lock(monkeypatch):
     status = next(argv for argv in calls if 'status' in argv)
     assert status[:3] == ['git', '-C', str(paths.repo_root())] and status[3:] == ['--no-optional-locks', 'status', '--porcelain']
     assert provenance['git_dirty'] is True and provenance['git_dirty_paths'] == 1
-
-
-# ------------------------------------------------------------------------------- D / A5: links in a settings review
-def test_a_settings_review_keeps_only_web_links():
-    links = ['https://arxiv.org/abs/2607.14008', 'HTTP://example.org/paper', 'javascript:alert(document.domain)',
-             ' https://arxiv.org/abs/1', 'data:text/html,<script>1</script>', '/api/runs', None]
-    output = dict(suggestions=[dict(path='run.advanced.batch_size', value='16', reason='r', source='s', url=link) for link in links],
-                  encoder_ideas=[dict(name=f'idea {i}', url=link) for i, link in enumerate(links)])
-    cleaned = settings_review.normalize(output)
-    expected = ['https://arxiv.org/abs/2607.14008', 'HTTP://example.org/paper', '', '', '', '', '']
-    assert [s['url'] for s in cleaned['suggestions']] == expected and [i['url'] for i in cleaned['encoder_ideas']] == expected
-    long = 'https://arxiv.org/' + 'a' * 400
-    assert settings_review.normalize(dict(suggestions=[dict(path='run.seed', value='1', url=long)]))['suggestions'][0]['url'] == long[:300]

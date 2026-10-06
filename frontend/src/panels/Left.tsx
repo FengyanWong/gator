@@ -16,7 +16,7 @@ import { CircuitPicture } from './CircuitPicture';
 /** The connection block lives in Connection.tsx: one button in this column that opens the connection window. */
 
 /** The left column holds the Project fields and the REGISTERED TASK only (user request 2026-09-23). Reading a cell from
- *  Virtuoso - library / cell / testbench, the read, the agent's setup, the task's first save - lives in a window of its
+ *  Virtuoso - library / cell / testbench, the read, the task's first save - lives in a window of its
  *  own behind ONE button, "Virtuoso cell..." (the mechanism of the connection window: a portal into a named pop-up).
  *  An ngspice netlist (a SPICE deck pasted or loaded from a file) becomes a task the same way, behind "ngspice netlist..."
  *  (Ngspice.tsx): such a task runs on an ngspice connection and needs no Virtuoso.
@@ -29,13 +29,6 @@ const SOURCES = ['registered_task', 'virtuoso'];
 /** A dropdown must be able to show the configured value even when the list does not (yet) contain it. */
 const withCurrent = (names: string[], current?: string | null) => (current && !names.includes(current) ? [current, ...names] : names);
 const sameJson = (a: Json, b: Json) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
-
-/** What the Agent tab is asked once a cell was read from Virtuoso. Shown in the message box first: editable, never sent by
- *  itself. The request kind is `virtuoso_setup`: the rows plus the Maestro setup of the cell, written there after approval. */
-const SETUP_PROMPT = 'Read this circuit and say in two or three sentences what it is and how it works. Then set it up for optimization in its '
-  + 'working copy: which sizes to vary (transistor widths and lengths, finger counts, capacitor sides - whatever the PDK\'s form lets you type; '
-  + 'grouped where devices must match) with sensible ranges, what to measure as Maestro outputs '
-  + 'with the analyses they need, and specs on them. Add the requirements I give here: ';
 
 /** The three editors, by their configuration keys: Parameters, Specs, Probes. */
 const ROW_SECTIONS = ['parameters', 'targets', 'measurements'];
@@ -63,15 +56,15 @@ function TitleFacts({ config, revision }: { config: Json; revision: number | str
   const ref = config.circuit;
   // No task name here (record 7.182, user: "remove the current task name on the header"): the Project column's Task list
   // names it; the revision of the saved task stays.
-  const model = config.run.search?.method === 'llm' ? 'none (LLM only)' : (config.run.model_label ?? '').trim() || config.project.task_name;
+  const model = (config.run.model_label ?? '').trim() || config.project.task_name;
   const fact = (key: string, value: string, extra = '') => <span className={`tb-cell${extra}`}><span className="tb-k">{key}</span><span className="tb-v" title={value}>{value}</span></span>;
   return <>{fact('Rev', revision == null ? '-' : String(revision), ' tb-rev')}
     {fact('Class · PDK', `${ref.circuit_class ?? 'unspecified'} · ${ref.pdk_id ?? 'unspecified'}`)}{fact('RL model', model, ' tb-model')}</>;
 }
 
-export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, onAgent, taskSlot, taskNotes, titleSlot = null, taskEpoch = 0 }:
+export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, taskSlot, taskNotes, titleSlot = null, taskEpoch = 0 }:
   { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null;
-    onAgent: (kind: string, selection: Json[], prompt?: string) => void; taskSlot: HTMLElement | null; taskNotes: HTMLElement | null;
+    taskSlot: HTMLElement | null; taskNotes: HTMLElement | null;
     titleSlot?: HTMLElement | null; taskEpoch?: number }) {
   const [tasks, setTasks] = useState<Json[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -414,7 +407,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           <span className="hint">{virtuosoOn && ref.cell ? <>Read from Virtuoso: <code>{ref.library}/{ref.cell}</code></> : virtuosoOn ? 'Reading from Virtuoso: choose a cell in the window'
             : 'From a cell you copied in Virtuoso:'}</span>
           <button className="virtuoso-button" onClick={openWindow} title={popup ? 'The Virtuoso window is open: press to bring it to the front.'
-            : 'Opens the Virtuoso window: choose a library, a cell and its testbench, read the cell into the workbench (it asks whether the cell is a copy you made), let the agent set it up, save it as a task. Opening it lists the libraries of that Virtuoso - and, for the cell chosen last time, its cells and schematic - read-only; nothing comes into the workbench until you press Read.'}>Virtuoso cell...</button>
+            : 'Opens the Virtuoso window: choose a library, a cell and its testbench, read the cell into the workbench (it asks whether the cell is a copy you made), set it up, save it as a task. Opening it lists the libraries of that Virtuoso - and, for the cell chosen last time, its cells and schematic - read-only; nothing comes into the workbench until you press Read.'}>Virtuoso cell...</button>
         </div>}
         {showVirtuoso && blocked && <p className="error">{BLOCKED}</p>}
         {showNgspice && <div className="row virtuoso-launcher ngspice-launcher">
@@ -573,9 +566,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           <p><b>To start a profile for this cell</b>, read it into the workbench
             {chosen.testbench_cell ? <> through the testbench <code>{chosen.testbench_cell}</code>.</> : <> (choose its <b>Testbench cell</b> above first, if it has one).</>}</p>
           <details className="more"><summary>What reading the cell does</summary>
-            <p>Virtuoso exports the netlist and the device sizes are read. Read-only, no simulation, some seconds. The agent can then tell you
-              what the circuit is and suggest what to vary. Reading asks once whether the cell is a copy you made; "OK" makes it the cell
-              the task flow works in.</p></details>
+            <p>Virtuoso exports the netlist and the device sizes are read. Read-only, no simulation, some seconds. Reading asks once whether
+              the cell is a copy you made; "OK" makes it the cell the task flow works in.</p></details>
           <div className="row"><button className="primary" disabled={!readable} onClick={importCell}>
             {importing ? 'Reading the cell from Virtuoso...' : 'Read this cell into the workbench'}</button></div>
           <details><summary>Technical details</summary><p>{circuit.blocker}</p>
@@ -585,20 +577,16 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
         <div className="note">
           <p><b>Read from Virtuoso. Not optimizable yet: it has no circuit profile.</b></p>
           <details className="more"><summary>What you can do with it now</summary>
-            <p>The workbench holds the export of this cell, so you can look at it, fill the three editors and let the agent help. Start stays disabled.</p>
-            <p>Next: ask the agent to set it up - it says what the circuit is and proposes what to vary, what to measure (Maestro outputs, with
-              their analyses) and specs. Its answer is a proposal in the Agent tab; once you approve it there, the three editors are filled and
-              the setup is written into this cell's Maestro view (the copy you declared) and read back. Change any row you like, then press
-              <b> Save task</b>.</p>
+            <p>The workbench holds the export of this cell, so you can look at it and fill the three editors. Start stays disabled.</p>
+            <p>Next: fill Parameters, Probes and Specs - <b>Read setup</b> below takes the outputs and specs of the cell's Maestro test - then press
+              <b> Save task</b>: it writes the rows into this cell's Maestro view (the copy you declared) and reads it back. Claude Code or Codex
+              (Agent tab) can help with any of it, from what you describe.</p>
           </details>
           {(circuit.circuit?.testbench_cell ?? null) !== (ref.testbench_cell ?? null) && (
             <p className="warn tb-stale">This cell was read {circuit.circuit?.testbench_cell ? <>through <code>{circuit.circuit.testbench_cell}</code></> : 'without a testbench'}.
               Press <b>Read the cell again</b> to read it {ref.testbench_cell ? <>through <code>{ref.testbench_cell}</code></> : 'without one'}: Probes then follow it.</p>)}
           {!circuit.working_copy?.verified && copyWarning}
           <div className="row">
-            <button className="primary" disabled={!circuit.working_copy?.verified} onClick={() => onAgent('virtuoso_setup', [], SETUP_PROMPT)}
-              title={circuit.working_copy?.verified ? 'Opens the Agent tab with the request written out. Nothing is sent until you press Enter in its message box.'
-                : 'Read the cell again and confirm that it is a copy you made: the agent\'s setup is written into it.'}>Ask the agent to set up</button>
             <button disabled={!readable} onClick={importCell} title="After a change in Virtuoso, or to export through another testbench cell. Read-only.">{importing ? 'Reading...' : 'Read the cell again'}</button>
           </div>
           <WorkingCopy profileId={profileId} library={ref.library} cell={ref.cell} record={circuit.working_copy} config={config} setConfig={setConfig} />
@@ -635,8 +623,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       {!(virtuosoOn && circuit?.loaded) && nativeSchematic}
     </div>);
   // The first save of a cell read from Virtuoso. It lives with the column, not in the Virtuoso window: its buttons sit on
-  // the editors' tab line and hold what waits for the save (task-file parts applied, an agent setup approved while
-  // Virtuoso was out of reach) - closing the window took all of that away (audit 2026-09-30).
+  // the editors' tab line and hold what waits for the save (task-file parts applied) - closing the window took that away
+  // (audit 2026-09-30).
   const firstSave = virtuosoOn && circuit?.loaded && circuit.native_draft && !taskNote && (
     <TaskSave profileId={profileId} library={ref.library} cell={ref.cell} task={null} hasCopy={!!circuit.working_copy?.verified}
       config={config} setConfig={setConfig} onSaved={taskSaved} onSavedElsewhere={savedElsewhere} bar={taskSlot} notes={taskNotes} />);

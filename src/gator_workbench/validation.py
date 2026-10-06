@@ -198,10 +198,10 @@ def _check_parameters(config, report, graph, record):
             report.add('error', 'conflicting_targets', path,
                        f'{p.variable_id} and {targets[key]} both write {p.instance_path}.{p.parameter_name}')
         targets[key] = p.variable_id
-        if p.parameter_name == 'dc' and units.canonical_unit(p.unit) == 'A' and config.run.search.method != 'llm':
+        if p.parameter_name == 'dc' and units.canonical_unit(p.unit) == 'A':
             report.add('blocker', 'current_group_not_supported_by_sac', path + '.unit',
                        'The SAC encoder cannot represent current-source values in amperes yet. '
-                       'Remove this parameter row to keep the circuit\'s current fixed, or choose LLM only. '
+                       'Remove this parameter row to keep the circuit\'s current fixed. '
                        'Marking this row fixed still leaves an unsupported group in the encoder input.')
         facts = _pdk_facts(record, graph, p)
         if facts is not None:                       # a component of the PDK the network is built with
@@ -542,7 +542,7 @@ def _check_run(config, report, record):
     # without an Advanced block still gets - starting temperature 0.2, one update per evaluation - leave soft actor-critic
     # a uniform random search under every reward setting. The schema defaults stay (old configurations and checkpoints
     # keep their meaning); a run that would train with such values is told.
-    trains = run.mode in ('scratch', 'fine_tune') and run.search.method != 'llm'
+    trains = run.mode in ('scratch', 'fine_tune')
     slow = []
     if adv.updates_per_transition < 4:
         slow.append(f'{adv.updates_per_transition} update{"" if adv.updates_per_transition == 1 else "s"} per evaluation')
@@ -554,12 +554,12 @@ def _check_run(config, report, record):
                    'with 1 update per evaluation the designs stayed a uniform random search for 1,500 evaluations, and a '
                    'starting temperature of 0.2 delayed learning to about evaluation 1,000. The tested values are 8 updates '
                    'per evaluation, starting temperature 0.01 and discount 0, under Advanced in RL networks.')
-    if run.mode == 'scratch' and run.search.method == 'sac' and run.max_evaluations < SAC_LEARNS_AFTER:
+    if run.mode == 'scratch' and run.max_evaluations < SAC_LEARNS_AFTER:
         report.add('warning', 'budget_below_sac_learning', 'run.max_evaluations',
                    f'Soft actor-critic from scratch started to pass designs after about 150 to 300 evaluations with the '
                    f'starting presets in GATOR\'s tests of 2026-10-05 (after 250 to 600 with the values tested before them). '
                    f'With {run.max_evaluations} evaluations this run has little or no time to learn: raise the budget to '
-                   'several hundred, or choose a search method with an LLM.')
+                   'several hundred.')
     vocabulary = getattr(run.network, 'vocabulary', 'standard') or 'standard'
     if vocabulary != 'standard':                  # the schema admits 'pdk:<name>' only: `record` is _pdk_record's load of <name>
         from .pdk import label

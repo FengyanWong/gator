@@ -4,7 +4,7 @@
 // off - and only a status keeps its faint fill (blocker, warning, MOCK / REAL, a test result); a callout inside a callout has
 // no rule of its own; the MOCK banner between the header and the columns keeps its frame; the page's own MOCK note in the
 // Project column is drawn so.
-// How: most callouts show only in a particular state (an import to confirm, a blocking issue, a test result, a proposal), so
+// How: most callouts show only in a particular state (an import to confirm, a blocking issue, a test result), so
 // one of each kind is placed in the Project column's panel and measured there; the stylesheet decides how each one is drawn.
 // Run: bash frontend/scripts/run_checks.sh --only callouts_check. About 10 s.
 import path from 'node:path';
@@ -14,9 +14,10 @@ const APP = await workbenchUrl();
 const out = outDir();
 const browser = await launchEdge('callouts');
 // class names, and whether the kind keeps a fill (a status) or has none (a neutral callout); a scoped one with its window
-const KINDS = [['note', false], ['confirm', false], ['guidance', false], ['matched-devices', false], ['ideas', false], ['selection-info', false],
+// (The Agent tab's own callouts - encoder ideas, selected rows, provisional values - went with its agent on 2026-10-06, record 7.226.)
+const KINDS = [['note', false], ['confirm', false], ['guidance', false], ['matched-devices', false],
   ['calibration-ready', false], ['connection-add', false, 'connection-window'], ['blocker', true], ['status-line level-ok', true], ['status-line level-error', true],
-  ['provisional', true], ['copy-warning', true, 'virtuoso-window'], ['mock', true], ['real', true], ['settings-problem', true]];
+  ['copy-warning', true, 'virtuoso-window'], ['mock', true], ['real', true], ['settings-problem', true]];
 
 await runChecks(browser, async () => {
   const config = { schema_version: 'gator-workbench-config-v1', ...(await starterConfig(APP)) };

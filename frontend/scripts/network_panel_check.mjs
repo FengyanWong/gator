@@ -46,10 +46,11 @@ await runChecks(browser, async () => {
     const button = body.querySelector('.rl-networks-open');
     // the button stands in one row with the network in short (user, 2026-10-03): that row is directly below Mode
     return { labels, underMode: button.closest('.rl-networks-row')?.previousElementSibling === body.querySelector('label'),
-      inlineNetwork: !!body.querySelector('.component-list, .look-open, .model-card'),
+      inlineNetwork: !!body.querySelector('.component-list, .look-open, .model-card'), search: !!document.querySelector('select[aria-label="Search method"]'),
       windows: !!window.__checkRLWindow, stopRules: body.textContent.includes('Stop after N consecutive failed evaluations') };
   })()`);
-  check('Mode is first, Search method second, and RL networks is directly below Mode', layout.labels.join('|') === 'Mode|Search method' && layout.underMode, JSON.stringify(layout));
+  check('Mode is first, RL model label second (no Search method since 2026-10-06, record 7.226), and RL networks is directly below Mode',
+    layout.labels.join('|') === 'Mode|RL model label' && layout.underMode && !layout.search, JSON.stringify(layout));
   check('network content starts closed and failure limits stay in Run configuration', !layout.inlineNetwork && !layout.windows && layout.stopRules);
   await page.shot(path.join(out, 'run-configuration.png'), `document.querySelector('.right .panel')`, { maxHeight: 900 });
   await evaluate(`(() => { const open = window.open; window.open = () => null;
@@ -147,12 +148,7 @@ await runChecks(browser, async () => {
   check('leaving and re-entering the field starts a separate Undo step', await page.until(`${alpha}.value === '0.004'`));
   await page.setValue(alpha, '', { event: 'input' });
 
-  const method = `document.querySelector('select[aria-label="Search method"]')`;
-  await page.setValue(method, 'llm');
-  check('LLM only disables the launcher and explains the unused network in an open window', await page.until(`document.querySelector('.rl-networks-open').disabled && ${NETWORK_PANEL}.textContent.includes('LLM only does not use an RL network') && !${NETWORK_PANEL}.querySelector('.component-list')`));
-  check('...and the line beside it says the network is not used', await page.until(`document.querySelector('.rl-networks-row .net-short').textContent === 'not used (LLM only)'`), await evaluate(`document.querySelector('.rl-networks-row .net-short').textContent`));
-  await page.setValue(method, 'sac');
-  check('returning to SAC restores the network controls and their values', await page.until(`!document.querySelector('.rl-networks-open').disabled && !!${NETWORK_PANEL}.querySelector('.component-list')`) && (await numbers())[0] === String(rgcn.hidden_dim));
+  check('the network controls and their values are there (SAC is the only search method)', await page.until(`!document.querySelector('.rl-networks-open').disabled && !!${NETWORK_PANEL}.querySelector('.component-list')`) && (await numbers())[0] === String(rgcn.hidden_dim));
   await networkPage.evaluate('window.close()');
   await browser.window('GATOR - RL networks', { present: false });
   networkPage = await openNetworks(page, browser);

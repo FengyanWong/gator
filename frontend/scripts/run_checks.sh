@@ -15,8 +15,9 @@ trap cleanup EXIT
 free_port() { "$python" -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
 serve() {   # <settings folder> <port> <log> [serve options...]
   local settings="$1" port="$2" log="$3"; shift 3
-  # The workbench has no MOCK task since 2026-09-30 (record 7.128): the checks' backends register the tests' stand-in.
-  (cd "$repo" && GATOR_WORKBENCH_SETTINGS_DIR="$settings" \
+  # The workbench has no MOCK task since 2026-09-30 (record 7.128): the checks' backends register the tests' stand-in. They
+  # never open a terminal window either, whatever a check presses: an Agent-tab launch is a dry run (record 7.226).
+  (cd "$repo" && GATOR_WORKBENCH_SETTINGS_DIR="$settings" GATOR_AGENT_CLI_LAUNCH=off \
     GATOR_WORKBENCH_SYNTHETIC_FIXTURES="$repo/tests/workbench/fixtures/synthetic_fixtures.json" PYTHONPATH=src \
     exec "$python" -m gator_workbench.cli serve --port "$port" "$@" > "$log" 2>&1) &
   pids+=($!)
@@ -24,8 +25,6 @@ serve() {   # <settings folder> <port> <log> [serve options...]
 port_a="$(free_port)"; port_b="$(free_port)"
 extra_a=(); flags=()                                    # checks that need a fixture their author made (see PORTED)
 if [ -d /tmp/gator-reward-v21-browser ]; then extra_a+=(--allow-root /tmp/gator-reward-v21-browser); flags+=(--reward-fixture); fi
-llm="$repo/artifacts/local/llm-sizing/browser-fixture"
-if [ -d "$llm" ]; then extra_a+=(--allow-root "$llm"); flags+=(--llm-fixture); fi
 serve "$tmp/settings-a" "$port_a" "$tmp/backend-a.log" "${extra_a[@]}"
 serve "$tmp/settings-b" "$port_b" "$tmp/backend-b.log" --allow-root "$tmp/out-b"
 for port in "$port_a" "$port_b"; do

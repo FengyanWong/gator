@@ -2,7 +2,7 @@
 from __future__ import annotations
 from pathlib import Path
 from fastapi import FastAPI, Query
-from .. import __version__, agents, bridge_connect, bridge_read, connection, directories, runs, schema, units
+from .. import __version__, bridge_connect, bridge_read, connection, directories, runs, schema, units
 from .. import network_presets
 from ..layout import environment_versions
 from ..paths import PathNotAllowed, default_output_root, directory_bytes, repo_root
@@ -22,7 +22,6 @@ def register(app: FastAPI, context: ApiContext):
                     output_root=runs.remembered_output_root(), allowed_output_roots=[str(r) for r in context.roots.roots],
                     allowed_input_roots=[str(r) for r in context.input_roots],
                     produces='data, configurations, models, netlists and logs only - no plots, images or reports',
-                    agent_provider_default=agents.default_provider_name((settings.get('agent') or {}).get('provider')),
                     settings_problem=settings_problem)
 
     @app.get('/api/schema')

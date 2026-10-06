@@ -202,20 +202,6 @@ def test_measurements_must_use_results_the_circuit_type_produces(tmp_path):
     assert profiles.create_profile('ring_m', right, recipe='ring_oscillator', expected_frequency_hz=1e9)['task_key'] == 'real:ring_m'
 
 
-def test_the_agent_is_told_what_a_real_backend_can_measure_and_write(tmp_path):
-    read_cell(tmp_path)
-    connection_file()
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False, monitor=probe(tmp_path)))
-    body = dict(kind='draft_config', prompt='what is this circuit?', config=config().model_dump(mode='json'))
-    task = json.dumps(client.post('/api/agent/export-task', json=body).json())
-    assert 'results_by_circuit_type' in task and 'osc_frequency_hz' in task and 'property form of its instance' in task
-    profiles.create_profile('ring_osc_3stage', config(), recipe='ring_oscillator', expected_frequency_hz=1.2e9)
-    registered = config().model_dump(mode='json')
-    registered['circuit'] = dict(source='registered_task', task_id='real:ring_osc_3stage')
-    task = json.dumps(client.post('/api/agent/export-task', json=dict(body, config=registered)).json())
-    assert 'results_provided' in task and 'osc_frequency_hz' in task and 'results_by_circuit_type' not in task
-
-
 def test_the_no_simulation_check_is_gated_and_reports_the_step_that_failed(tmp_path):
     from gator_workbench import profile_preflight
     read_cell(tmp_path)

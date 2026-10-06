@@ -619,9 +619,9 @@ def _learner(config, manifest):
     if manifest.get('mode') == 'frozen' or run.get('mode') == 'frozen':
         return dict(recorded=False, every=every, reason='A frozen run evaluates a saved policy without training it: '
                     'there are no learner updates, so no losses, temperature or entropy.')
-    if method == 'llm':
-        return dict(recorded=False, every=every, reason='AI sizing only: this run has no RL learner, so no losses, '
-                    'temperature or entropy.')
+    if method == 'llm':                  # a run of the search method "LLM only", removed on 2026-10-06 (record 7.226)
+        return dict(recorded=False, every=every, reason='An LLM-only run has no RL learner, so no losses, temperature '
+                    'or entropy.')
     if output.get('save_learner_updates') is False:
         return dict(recorded=False, every=every, reason='This run was started with "save learner updates" off '
                     '(Output settings), so its losses, temperature and entropy were not recorded.')

@@ -13,8 +13,8 @@
 //     opens it, the arrow keys and Enter do the same from the keyboard; kept in this browser; hidden on narrow windows;
 //   - each editor's colour on its tab and its table's header row; the Specs line offers the Probe ids as chips (same text);
 //   - Data tables: one line per row - ids end in "...", the whole value on hover, a click copies it; no word cut in two;
-//   - Research experiments: the two retired labels dropped from a saved configuration, three labels shown, six folded; one
-//     "Search method" (record 7.163);
+//   - Research experiments: the two retired labels dropped from a saved configuration, three labels shown, six folded; no
+//     "Search method" any more (record 7.226; one, as its label, since 7.163);
 //   - the circuit picture: folded at first like every block of the Project column, drawn from the loaded circuit; pointing at a
 //     Parameters row lights its device and the one tied to it; its fold is kept in this browser.
 // Run: WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=<a scratch build> "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w
@@ -44,7 +44,7 @@ const TABLE = { table: 'evaluations', total_rows: 1, cutoff_commit_seq: 1,
 const PAIRS = [['--text', '--panel'], ['--muted', '--panel'], ['--accent', '--panel'], ['--bad', '--panel'], ['--warn', '--panel'], ['--ok', '--panel'],
   ['--text', '--bg'], ['--text', '--field'], ['--muted', '--field'], ['--text', '--button'], ['--text', '--head'], ['--text', '--card'], ['--text', '--sunk'],
   ['--muted', '--sunk'], ['--text', '--selected'], ['--text', '--hover'], ['--text', '--info-bg'], ['--text', '--warn-bg'], ['--text', '--bad-bg'],
-  ['--text', '--user-bg'], ['--text', '--code-bg'], ['--text', '--zebra'], ['--bad', '--bad-bg'], ['--ok', '--ok-bg'], ['--warn', '--busy-bg'],
+  ['--text', '--code-bg'], ['--text', '--zebra'], ['--bad', '--bad-bg'], ['--ok', '--ok-bg'], ['--warn', '--busy-bg'],
   ['--neutral-text', '--neutral-bg'], ['--muted', '--na-bg'], ['--on-accent', '--accent-fill'], ['--on-accent', '--bad-fill'], ['--on-warn', '--warn-fill'],
   ['--param', '--param-head'], ['--probe', '--probe-head'], ['--spec', '--spec-head'], ['--probe', '--probe-chip'], ['--param', '--panel'],
   ['--probe', '--panel'], ['--spec', '--panel'], ['--unresolved', '--panel'], ['--text', '--cp-nmos'], ['--text', '--cp-pmos'], ['--text', '--cp-passive'],
@@ -165,7 +165,7 @@ await runChecks(browser, async () => {
     check('...and follows the switch while it is open', await runs.evaluate(`document.documentElement.dataset.theme`) === 'whiteprint' && await theme() === 'whiteprint');
   }
 
-  // ---- Research experiments (record 7.163) and one "Search method" -------------------------------------------------------
+  // ---- Research experiments (record 7.163) and no "Search method" (record 7.226) ------------------------------------------
   check('a saved configuration with the retired research labels loads without them, keeping the others',
     !!validated && !('experiment_group' in validated.research) && !('test_tasks' in validated.research) && validated.research.method_label === 'fixture-method', JSON.stringify(validated?.research));
   const research = await evaluate(`(() => { const d = [...document.querySelectorAll('.right details.panel')].find(x => x.querySelector(':scope > summary h3')?.textContent === 'Research experiments');
@@ -190,7 +190,7 @@ await runChecks(browser, async () => {
   check('...and the pointer over its name is the hand, not the help question mark, as over Run configuration\'s name',
     heading?.cursor === 'pointer' && heading.moduleCursor === 'pointer', JSON.stringify(heading && [heading.cursor, heading.moduleCursor]));
   const searchWords = await evaluate(`[...document.querySelectorAll('.right .module-body h3, .right .module-body label')].filter(e => (e.firstChild?.textContent ?? '').trim().toLowerCase() === 'search method').length`);
-  check('"Search method" is said once in Run configuration (no heading over its own label)', searchWords === 1, String(searchWords));
+  check('"Search method" is said nowhere in Run configuration: SAC is the only search method (record 7.226)', searchWords === 0, String(searchWords));
   // the 0-to-1 reward boxes: number boxes with the backend's range, drawn without the browser's up/down arrows (record 7.171,
   // user: "remove the toggle for these 0 to 1 value boxes"); the pointer rests on the first one, its box focused, as when typing
   const BOUNDED = ['Worst hard-spec share', 'Objective bonus weight', 'Tightest-margin bonus weight'];

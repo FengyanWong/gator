@@ -140,7 +140,7 @@ await runChecks(browser, async () => {
   // ---- a cell read before the question: no record ----------------------------------------------------------------------------
   check('no record: no "Make a working copy" and no "Read setup"; the line says to read the cell again', !(await far.evaluate(`!!(${BUTTON('Make a working copy')}) || !!(${BUTTON('Read setup')})`))
     && (await blockText()).includes('Not yet the cell the task flow works in') && (await blockText()).includes('Read the cell again'), await blockText());
-  check('"Ask the agent to set up" waits for it', await far.evaluate(`${WBUTTON('Ask the agent to set up')}.disabled`));
+  check('no "Ask the agent to set up" any more (record 7.226)', !(await far.evaluate(`!!${WBUTTON('Ask the agent to set up')}`)));
   await shot('working-copy-1-none.png');
   let mark = calls.length; answers.push(true);
   await far.evaluate(`${WBUTTON('Read the cell again')}.click()`, true); await settle(1500);
@@ -199,8 +199,8 @@ await runChecks(browser, async () => {
     && JSON.stringify(await stored()) === before, await blockText());
   mode = 'no-view';
   await press('Read setup'); await settle();
-  check('a cell without a Maestro view says how it gets one: the agent or Save task', (await blockText()).includes('The cell has no Maestro setup yet')
-    && (await blockText()).includes('Save task') && JSON.stringify(await stored()) === before, await blockText());
+  check('a cell without a Maestro view says how it gets one: Save task', (await blockText()).includes('The cell has no Maestro setup yet')
+    && (await blockText()).includes('Save task') && !(await blockText()).includes('Ask the agent') && JSON.stringify(await stored()) === before, await blockText());
 
   // ---- a blocked link and an older backend read plainly ---------------------------------------------------------------------
   mode = 'blocked';

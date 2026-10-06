@@ -2,7 +2,10 @@
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
-- **Optimizer source digest:** `4aebbfab2176605c6e984d3b42ae622335246dfed693c5b9cc39f942c0aaad73`, set by `510ba0e` (record 7.221, 2026-10-06: a
+- **Optimizer source digest:** `aafdd71dfcd1b2008f997fb91d211a614f91822d9e4afeabfe4ac88c6d1da38e`, set by record 7.226 (2026-10-06,
+  not committed when written: the LLM search package `search/` and `ActionMapper.encode`, used by nothing else, removed
+  with the LLM search methods; nothing else in the package changed). Before it:
+  `4aebbfab2176605c6e984d3b42ae622335246dfed693c5b9cc39f942c0aaad73`, set by `510ba0e` (record 7.221, 2026-10-06: a
   learner step takes its replay sample lent instead of deep-copied, skips the next-state work when the discount is
   exactly 0, and keys the input cache by digests worked out once; every result and random-number state identical;
   input cache 8,192 entries). Before it: `f83342bcc50a7b385cadad1770d8ae06962d48fa4cdbcb76ceceef08bcb7cc77`, set by
@@ -28,7 +31,8 @@ A summary for new sessions; everything below is the chronological record, oldest
   `clipped`. New workbench configurations start with the set compared in training on 2026-10-05 (record 7.183):
   compressed violations, share 0.5, objective and margin bonus weights 1, objective shape compressed. Corner training
   (`always`, `after_nominal`) was offered for `real:gpdk045_ota7` only; no task has it since 2026-09-30 (7.128).
-- **Older checkpoints** resume exactly only under their own source: digest `f83342bc...` (record 7.149; every save
+- **Older checkpoints** resume exactly only under their own source: digest `4aebbfab...` (record 7.221) from `510ba0e` up to
+  the commit before record 7.226 - no run was saved under it (checked 2026-10-06); digest `f83342bc...` (record 7.149; every save
   point written before record 7.221, the eight viewing copies of 2026-10-05's Spectre runs in `outputs/` included) from
   `ab34f03` up to `2825305`, the commit before 7.221's `510ba0e` - checked 2026-10-06: that source loads the GATv2 run's final save point
   and two loads give identical next updates, the 7.221 source refuses it; under the new source such a save point still
@@ -1222,3 +1226,40 @@ The user, told what the calibration study had measured: "use learning rate 1e-3 
   in three settings at once, so this confirms the preset as a whole, not the learning rate alone.
 
 Record 7.199.
+
+## SAC is the only search method; the Agent tab opens Claude Code or Codex (2026-10-06, record 7.226)
+
+The user: "rewrite the whole agent tab to minimal. Have two buttons to open claude code cli or codex cli in local shell
+targeting the current workbench working directory with the permission of a usual agent launch (depend on personal
+setting.) It shares the claude.ai or codex account history. For the LLM aided opt part, delete the search method box and
+comments on the frontend. SAC is the only default and other methods should be launched through agent tab opened agent cli
+user description (e.g. help the design when opt stuck). With deletion of the search method box, optimize related code on
+the optimizer side. The button what is missing can be kept with a window showing what should be done."
+
+- **Decided:** SAC is the only search method. The Search method box and its LLM methods (record 7.116) go, with the AI
+  call and cost ceilings, the run's AI thread and hints, the header's "LLM n / m" and the engine's search session. Help
+  from a language model during an optimization is asked of Claude Code or Codex, opened from the Agent tab.
+- **Optimizer source digest `4aebbfab...` -> `aafdd71d...`**, one step, the user's answer "Yes, delete it" to whether the
+  package's LLM search code goes too: `search/` (proposers, schedule, the LLM proposer) and `ActionMapper.encode` (its
+  inverse mapping, used by nothing else). No other package line changed. No saved run pins `4aebbfab...`: every save
+  point under `outputs/` is `f83342bc...` or older, so what resumes today still resumes, and fine_tune and frozen load
+  as before.
+  That digest is the step alone on HEAD; landed in a working tree that also holds record 7.228's uncommitted
+  encoders (another session, same morning), the tree hashes `0b0808bc...` until each step is committed on its own.
+- **The comparison driver of the parked SKY130 benchmark** (`examples/benchmark_llm_sizing.py`, `llm_sizing_evidence.py`,
+  and the engine's `seed_proposer` / `evaluation_observer` hooks it used) is deleted (the user: "Delete the driver"). The
+  AnalogGym import, its 17 tasks and the calibration stay parked and untouched.
+- **What stays:** a run made with an LLM method stays readable - its tables keep their declared columns (`llm_calls`,
+  `llm_call_id`, the llm_* phases), so the data dictionary is unchanged - and is never continued as SAC (code
+  `search_method_removed`); its RL model, where it has one, can start a new fine_tune run. A configuration that carries
+  `run.search` loads without it, with both hashes unchanged for SAC (the block was hashed as absent at its default).
+- **Proven unchanged:** the same seeded MOCK runs (scratch with seeds 11 and 23, a resume, frozen and fine_tune from the
+  first) under the old and the new code record identical values in every table (evaluations, parameters, metrics,
+  learner updates, transitions, simulator jobs); only timestamps, random ids, temporary paths and the state references
+  derived from the run id differ. `status.json` loses its `search` key (null for SAC) and `run_summary.json` its
+  `search` and `agent_usage` keys.
+- **The Agent tab** keeps two buttons that open the CLI in a terminal window of its own, in the repository, started as
+  the user starts it (no permission option, model or prompt from the workbench; the user's account and history; Codex
+  with the Codex app's own home), and "What's missing?" in a window of its own. Everything of the tab's own agent goes
+  (records 7.6-7.186): conversation, providers and model lists, proposals, reviews, the Virtuoso setup and tools.
+

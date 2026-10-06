@@ -7,13 +7,13 @@ export type Json = any;
 
 export class ApiError extends Error {
   constructor(public status: number, public detail: Json) {
-    // Agent errors carry {code, meaning, detail} rather than {message}; a plain HTTPException carries a string.
+    // A refusal carries {message, code, ...}; some carry {detail} or {meaning}; a plain HTTPException carries a string.
     super([detail?.message, detail?.detail, detail?.meaning, detail].find(v => typeof v === 'string' && v) ?? `HTTP ${status}`);
   }
 }
 
 /** Bound reads even when a callback ignores cancellation. The fetch signal also releases the browser connection.
- *  Writes and streamed agent work have their own lifecycle and are never retried by this helper. */
+ *  Writes have their own lifecycle and are never retried by this helper. */
 export async function readWithDeadline<T>(read: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal, timeoutMs = 30000): Promise<T> {
   const controller = new AbortController();
   const abort = () => controller.abort(signal?.reason);
@@ -52,31 +52,6 @@ async function answer(response: Response): Promise<Json> {
   try { data = text ? JSON.parse(text) : null; } catch { data = { message: text.slice(0, 500) }; }
   if (!response.ok) throw new ApiError(response.status, data?.detail ?? data);
   return data;
-}
-
-// An agent request whose answer arrives LIVE, as Server-Sent Events: `onProgress` gets the thinking summary and the reply
-// text while they are written (backend agents/live.py). It ends like `call`: with the proposal, or with an ApiError(409)
-// carrying the same detail. A server older than live answers ignores the Accept header and sends one JSON body: taken as is.
-async function proposeLive(body: Json, onProgress: (event: Json) => void): Promise<Json> {
-  const response = await fetch('/api/agent/propose', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify(body) });
-  if (!response.ok || !response.body || !(response.headers.get('Content-Type') ?? '').startsWith('text/event-stream')) return answer(response);
-  const reader = response.body.getReader(), decoder = new TextDecoder();
-  let buffer = '';
-  for (;;) {
-    const { value, done } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    for (let end = buffer.indexOf('\n\n'); end >= 0; end = buffer.indexOf('\n\n')) {
-      const frame = buffer.slice(0, end), kind = /^event: ?(.*)$/m.exec(frame)?.[1], data = /^data: ?(.*)$/m.exec(frame)?.[1];
-      buffer = buffer.slice(end + 2);
-      if (!kind || data === undefined) continue;                  // a keep-alive comment while the agent works
-      const payload = JSON.parse(data);
-      if (kind === 'result') return payload;
-      if (kind === 'error') throw new ApiError(409, payload);
-      onProgress(payload);
-    }
-    if (done) throw new Error('the connection to the workbench server closed before the answer was complete');
-  }
 }
 
 const q = (params: Record<string, string | number | boolean | undefined | null>) =>
@@ -155,19 +130,11 @@ export const api = {
   cornerStart: (body: Json) => call('POST', '/api/runs/corner-check/start', body),
   cornerStatus: (run_dir: string, check_id: string, signal?: AbortSignal) => call('GET', '/api/runs/corner-check/status' + q({ run_dir, check_id }), undefined, signal),
   cornerStop: (run_dir: string, check_id: string) => call('POST', '/api/runs/corner-check/stop', { run_dir, check_id }),
-  agentSettings: () => call('GET', '/api/agent/settings'),
-  llmThread: (run_dir: string) => call('GET', `/api/runs/llm-thread?run_dir=${encodeURIComponent(run_dir)}`),
-  llmHint: (run_dir: string, text: string) => call('POST', '/api/runs/llm-hint', { run_dir, text }),
-  saveAgentSettings: (body: Json) => call('PUT', '/api/agent/settings', body),
-  agentDiagnostics: () => call('GET', '/api/agent/diagnostics'),
-  agentReadiness: (config: Json) => call('POST', '/api/agent/readiness', { config }),      // free: no model is called, nothing is probed
-  proposeLive,              // POST /api/agent/propose: live events when the backend streams, else its plain JSON answer
-  cancelAgent: (request_id: string) => call('POST', '/api/agent/cancel', { request_id }),
-  exportTask: (body: Json) => call('POST', '/api/agent/export-task', body),
-  importResult: (body: Json) => call('POST', '/api/agent/import-result', body),
-  approve: (body: Json) => call('POST', '/api/agent/approve', body),
-  apply: (body: Json) => call('POST', '/api/agent/apply', body),
-  reject: (proposal_id: string) => call('POST', '/api/agent/reject', { proposal_id }),
+  // The Agent tab (record 7.226): the folder and the two CLIs found (free), one of them opened in a terminal window of its own,
+  // and the free checklist of what a run still needs - no model is called, nothing is probed.
+  agentClis: () => call('GET', '/api/agent/clis'),
+  openCli: (cli: 'claude' | 'codex') => call('POST', '/api/agent/open', { cli }),
+  agentReadiness: (config: Json) => call('POST', '/api/agent/readiness', { config }),
   // Load PDK (backend pdk.py): the PDKs loaded so far, one of them in full, and an explicit read through a connection.
   pdks: () => call('GET', '/api/pdks'),
   pdk: (pdk_id: string) => call('GET', '/api/pdks/' + encodeURIComponent(pdk_id)),
@@ -226,17 +193,6 @@ export const plainError = (e: any): string => e instanceof ApiError ? schemaProb
 export const gateText = (gate: Json) => gate.blocking?.includes('connection_kind') ? (gate.next_steps?.[0] ?? 'This kind of connection cannot do that.')
   : `Virtuoso cannot be reached (${[...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') || gate.status}). Bring the link up in the Connection window (the "Connection" button in the workbench), then try again.`;
 
-/** The Agent tab's settings, read ONCE for the page and shared: the AI sizing settings show what the Agent tab saved
- *  last. They used to keep the settings read when the page opened ("Same as the Agent tab (old model)"), while a run
- *  takes the saved ones (audit 2026-09-30), and both panels asked for them. */
-let agentSettingsRead: Promise<Json> | null = null;
-const agentSettingsReaders = new Set<(settings: Json) => void>();
-export function agentSettingsShared(): Promise<Json> {
-  if (!agentSettingsRead) agentSettingsRead = api.agentSettings().catch(e => { agentSettingsRead = null; throw e; });
-  return agentSettingsRead;
-}
-export function agentSettingsSaved(settings: Json) { agentSettingsRead = Promise.resolve(settings); agentSettingsReaders.forEach(reader => reader(settings)); }
-export function onAgentSettings(reader: (settings: Json) => void) { agentSettingsReaders.add(reader); return () => { agentSettingsReaders.delete(reader); }; }
 /** The connection list (the workbench's own file, no probe), read once and shared: the connection window and the Project
  *  column's launchers each read it when the page opened. A connection created in the window hands its new list on. */
 let profilesRead: Promise<Json> | null = null;

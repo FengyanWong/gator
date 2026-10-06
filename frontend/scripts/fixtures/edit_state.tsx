@@ -27,7 +27,7 @@ function TaskFixture() {
   fixture.state = { task: config.circuit.task_id, parameter: config.parameters[0]?.variable_id, loaded: circuit?.task_key };
   fixture.edit = (name: string) => setConfig((c: Json) => ({ ...c, parameters: rows(name) }));
   fixture.switchTask = (name: string) => setConfig((c: Json) => ({ ...c, circuit: { ...c.circuit, task_id: `real:${name}` }, parameters: rows(`task_${name}`) }));
-  return <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId="fixture" onAgent={() => {}}
+  return <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId="fixture"
     taskSlot={document.getElementById('bar')} taskNotes={document.getElementById('notes')} />;
 }
 

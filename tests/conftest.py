@@ -13,9 +13,9 @@ FIXTURES = ROOT / "tests" / "fixtures" / "synthetic"
 # on the toy backend that was synthetic:gpdk045_ota5 - before anything imports gator_workbench.tasks; the run workers
 # and lanes a test starts inherit the variable.
 os.environ.setdefault("GATOR_WORKBENCH_SYNTHETIC_FIXTURES", str(ROOT / "tests" / "workbench" / "fixtures" / "synthetic_fixtures.json"))
-# The Agent tab's Codex model list is read from the Codex app's own file when the machine has one (agents/catalog.py).
-# The tests never read the user's: a test of that reader points the variable at a file of its own.
-os.environ["GATOR_CODEX_MODELS_CACHE"] = "off"
+# The Agent tab's buttons open Claude Code or Codex in a terminal window (agent_cli.py): never from a test. With the
+# variable off a launch is a dry run that says what it would have opened and writes nothing.
+os.environ["GATOR_AGENT_CLI_LAUNCH"] = "off"
 
 
 @pytest.fixture(autouse=True, scope="session")

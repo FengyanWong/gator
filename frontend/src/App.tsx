@@ -104,7 +104,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const [tab, setTab] = useState<BottomTab>('status');
   const [bottom, setBottom] = useState<Bottom>(storedBottom);
   // Folded while no run is shown (record 7.179, design advice 1): its tabs show a run, and with none it was a third of the page
-  // saying "No run selected". A tab, the Agent, the splitter, a started or a chosen run opens it; the kept height and fold stay.
+  // saying "No run selected". A tab, the splitter, a started or a chosen run opens it; the kept height and fold stay.
   const [opened, setOpened] = useState(false);
   const folded = bottom.folded || (!runDir && !opened);
   const changeBottom = useCallback((change: (b: Bottom) => Bottom) => setBottom(b => {
@@ -112,16 +112,12 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     if (next !== b) try { localStorage.setItem(BOTTOM_KEY, JSON.stringify(next)); } catch { /* a private window: not remembered */ }
     return next;
   }), []);
-  // A press that asks to see something in the bottom panel (one of its tabs, an agent request, the header's run) opens it.
+  // A press that asks to see something in the bottom panel (one of its tabs, the header's run) opens it.
   const unfold = useCallback(() => { setOpened(true); changeBottom(b => (b.folded ? { ...b, folded: false } : b)); }, [changeBottom]);
   const toggleBottom = () => (folded ? unfold() : changeBottom(b => ({ ...b, folded: true })));
-  const [agentRequest, setAgentRequest] = useState<{ kind: string; selection: Json[]; prompt?: string } | null>(null);
-  const requestAgent = useCallback((kind: string, selection: Json[], prompt?: string) => { setAgentRequest({ kind, selection, prompt }); setTab('agent'); unfold(); }, [unfold]);
   const [titleSlot, setTitleSlot] = useState<HTMLElement | null>(null);            // the header's title block: the circuit panel puts the task's facts there
-  const [agentTabSlot, setAgentTabSlot] = useState<HTMLElement | null>(null);      // on the tab itself: where AgentTab puts its pop-out control
   const [taskSlot, setTaskSlot] = useState<HTMLElement | null>(null);              // editors' tab line: where the circuit panel puts "Save task"
   const [taskNotes, setTaskNotes] = useState<HTMLElement | null>(null);            // under the editors' toolbar: its messages and questions
-  const [agentDetached, setAgentDetached] = useState(false);
   const [message, setMessage] = useState<Json>(null);
   const [fatal, setFatal] = useState<string | null>(null);
   const profileId: string | null = config.run.connection_profile_id ?? null;
@@ -274,17 +270,14 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     const calibration_designs = baseline_only ? CALIBRATION_DESIGNS : 0, lanes: number = config.run.concurrency ?? 1;
     const budget = baseline_only ? lanes + calibration_designs : config.run.max_evaluations;
     const calibrationText = calibration_designs ? `\n(${lanes === 1 ? 'The baseline' : `The starting design once on each of ${lanes} lanes`}, then ${calibration_designs} random designs for the calibration.)` : '';
-    const search = config.run.search;
-    const llm = !baseline_only && !!search && search.method !== 'sac';
-    const llmText = llm ? `\nAI sizing: up to ${search.max_llm_calls ?? 'unset'} model calls${search.max_llm_notional_usd != null ? `, notional cost ceiling $${search.max_llm_notional_usd}` : ' (no reported dollar cost for Codex)'}.` : '';
     control.setPending('start');
     try {
       // A refusal creates nothing; what the backend asks for (real budget, a model from another task, unknown
       // connection layers) is put to the user and the start is repeated with the answers.
       // An ngspice netlist task is real too (circuit simulations, counted and recorded as such), only without a license.
-      const started = await launchWithConsent(flags => api.start({ config, baseline_only, ...(calibration_designs ? { calibration_designs } : {}), ...flags }), { real: !!isReal, transfer: true, llm,
+      const started = await launchWithConsent(flags => api.start({ config, baseline_only, ...(calibration_designs ? { calibration_designs } : {}), ...flags }), { real: !!isReal, transfer: true,
         authorizeText: (!isReal ? `Start ${budget} synthetic MOCK evaluations?` : circuit?.simulator === 'ngspice' ? `This starts ngspice simulations of the task (no license; every one is counted as a real evaluation).\nRun a budget of ${budget} candidate evaluation(s)?`
-          : `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?`) + calibrationText + llmText });
+          : `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?`) + calibrationText });
       if (started) launchedRun(started, 'start'); else setMessage({ level: 'info', text: 'Not started: you answered no, so nothing was created.' });
     } catch (e: any) { failed(e); } finally { control.setPending(null); }
   };
@@ -400,12 +393,12 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
             <pre>{[message.detail.code && `code: ${message.detail.code}`, message.detail.report && JSON.stringify(message.detail.report, null, 1)].filter(Boolean).join('\n')}</pre></details>}</>}</div>}
       <aside className="left">
         <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId}
-          onAgent={requestAgent} taskSlot={taskSlot} taskNotes={taskNotes} titleSlot={titleSlot}
+          taskSlot={taskSlot} taskNotes={taskNotes} titleSlot={titleSlot}
           taskEpoch={taskEpoch} />
       </aside>
       <main>
         <Editors schema={schema} config={config} setConfig={setConfig} undo={store.undo} redo={store.redo} canUndo={store.canUndo} canRedo={store.canRedo}
-          validation={validation} onAgent={requestAgent} taskSlot={setTaskSlot} taskNotes={setTaskNotes} />
+          validation={validation} taskSlot={setTaskSlot} taskNotes={setTaskNotes} />
       </main>
       <aside className="right">
         <RunPanel schema={schema.json_schema} config={config} setConfig={setConfig} runs={runs} circuit={circuit} />
@@ -418,18 +411,13 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
           title="Drag to give the bottom panel more or less room. Double-click: fold it down to its tab line, or open it again. Kept in this browser."
           onPointerDown={dragBottom} onDoubleClick={toggleBottom} onKeyDown={keyBottom} />
         <div className="tabs">
-          {/* The agent tab carries a small control at its right end, where a browser tab has its close button: it moves the
-              conversation into a window of its own. Two sibling buttons in one tab shape - a button inside a button is not valid. */}
-          <span className={`tab-group${tab === 'agent' ? ' active' : ''}${agentDetached ? ' detached' : ''}`}>
-            <button onClick={() => { setTab('agent'); unfold(); }}>Agent</button><span className="tab-slot" ref={setAgentTabSlot} /></span>
-          {(['status', 'logs', 'data', 'files', 'training', 'corners'] as Exclude<BottomTab, 'agent'>[]).filter(t => t !== 'corners' || cornersUsable).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); unfold(); }}>
-            {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', training: 'Training', corners: 'Corner check' }[t]}</button>)}
+          {(['agent', 'status', 'logs', 'data', 'files', 'training', 'corners'] as BottomTab[]).filter(t => t !== 'corners' || cornersUsable).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); unfold(); }}>
+            {{ agent: 'Agent', status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', training: 'Training', corners: 'Corner check' }[t]}</button>)}
           <span className="spacer" />
           <RunListButton runs={runs} runsError={runsError} runDir={runDir} status={status} onChoose={dir => { setRunDir(dir); if (dir) unfold(); }} onRefresh={refreshRuns} />
         </div>
         <div className="bottom-body">
-          <AgentTab hidden={tab !== 'agent'} config={config} setConfig={setConfig} request={agentRequest} clearRequest={() => setAgentRequest(null)}
-            tabSlot={agentTabSlot} onDetached={setAgentDetached} runDir={runDir} runActive={!!status?.worker_alive} />
+          <AgentTab hidden={tab !== 'agent'} config={config} />
           {tab === 'status' && <StatusTab status={status} runDir={runDir} error={statusError} onContinue={continueRun} continueBlocked={continueBlocked} config={config} setConfig={setConfig} />}
           {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
           {tab === 'data' && <DataTab runDir={runDir} status={status} />}

@@ -112,16 +112,6 @@ class RawDataset:
     def next_seq(self) -> int:
         return self.last_seq + 1
 
-    def append_auxiliary(self, key, rows):
-        """Journal a training/call event without inventing an evaluation.
-
-        The unified event cursor advances; actual evaluation counts still come from
-        the budget ledger. The same WAL, idempotence and recovery rules apply.
-        """
-        if set(rows) - {'learner_updates', 'llm_calls'}:
-            raise ValueError('Auxiliary events may contain only training updates or sizing calls')
-        return self.commit(dict(evaluation_id=f'aux:{key}', commit_seq=self.next_seq(), rows=rows))
-
     def commit(self, bundle) -> bool:
         """Durably acknowledge one evaluation bundle. Idempotent on evaluation_id.
 

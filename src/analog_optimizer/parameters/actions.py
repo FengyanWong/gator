@@ -33,31 +33,6 @@ class ActionMapper:
         if not self.groups:
             raise ValueError('An environment needs at least one mutable parameter group')
 
-    def encode(self, values: Mapping[str, float]) -> dict[str, float]:
-        """Invert the physical mapping before grid projection; never clip invalid input."""
-        if set(values) != set(self.group_ids):
-            raise ValueError('Values must contain exactly the mutable group IDs')
-        result = {}
-        for group in self.groups:
-            value = values[group.id]
-            # The span ParameterGroup.validate allows at a bound (record 7.140): a design read from a netlist can sit
-            # one float step past the bound it equals ("180n" is 1.8000000000000002e-07 against 1.8e-07).
-            slack = 1e-12 * max(abs(group.lower), abs(group.upper))
-            if (isinstance(value, bool) or not isinstance(value, (int, float))
-                    or not math.isfinite(value) or not group.lower - slack <= value <= group.upper + slack):
-                raise ValueError(f'{group.id}: value must be finite and inside its physical bounds')
-            if value <= group.lower:
-                z = -1.0
-            elif value >= group.upper:
-                z = 1.0
-            elif group.scale == 'log':
-                z = 2 * ((math.log(value) - math.log(group.lower)) /
-                         (math.log(group.upper) - math.log(group.lower))) - 1
-            else:
-                z = 2 * (value - group.lower) / (group.upper - group.lower) - 1
-            result[group.id] = z
-        return result
-
     def legalize(self, proposal: Mapping[str, float]) -> LegalizedAction:
         if set(proposal) != set(self.group_ids):
             raise ValueError('Action must contain exactly the mutable group IDs')

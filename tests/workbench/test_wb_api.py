@@ -1,10 +1,9 @@
-"""HTTP API: one schema for forms/agents/execution, restricted paths, run control through a detached
-worker, connection endpoints, agent proposals. Mock backend and fake CLI/probe fixtures only."""
+"""HTTP API: one schema for forms and execution, restricted paths, run control through a detached worker,
+connection endpoints. Mock backend and fake probe fixtures only."""
 import io
 import json
 import os
 from pathlib import Path
-import stat
 import sys
 import time
 import zipfile
@@ -20,7 +19,6 @@ from gator_workbench.storage.tables import TABLES
 from helpers import make_config
 
 REPO = Path(__file__).resolve().parents[2]
-FIXTURE = Path(__file__).parent / 'fixtures' / 'fake_cli.py'
 
 
 def probe(tmp_path, **states):
@@ -118,10 +116,15 @@ def test_the_removed_netlist_source_is_refused_in_plain_words(client, tmp_path):
 def test_routes_without_a_caller_are_gone(client):
     # 2026-09-22: circuit changes proposed by the agent (a netlist file nothing could load), the Create profile form's
     # route (Save task replaced it) and the mode suggestion (it comes with /api/runs/model) were removed.
-    for path in ('/api/circuit/modify', '/api/virtuoso/profile', '/api/runs/suggest-mode'):
+    # 2026-10-06 (record 7.226): the Agent tab's own agent and the LLM search methods.
+    for path in ('/api/circuit/modify', '/api/virtuoso/profile', '/api/runs/suggest-mode', '/api/agent/propose',
+                 '/api/agent/approve', '/api/agent/apply', '/api/agent/reject', '/api/agent/cancel', '/api/agent/export-task',
+                 '/api/agent/import-result', '/api/agent/tools', '/api/runs/llm-hint'):
         assert client.post(path, json={}).status_code in (404, 405), path
+    for path in ('/api/agent/settings', '/api/agent/diagnostics', '/api/runs/llm-thread?run_dir=x'):
+        assert client.get(path).status_code in (404, 405), path
     # A malformed body is refused with 422 like everywhere else, not a 500.
-    for path in ('/api/config/diff', '/api/aggregates/export', '/api/agent/cancel', '/api/agent/reject'):
+    for path in ('/api/config/diff', '/api/aggregates/export', '/api/agent/open', '/api/agent/readiness'):
         assert client.post(path, json={'unexpected': 1}).status_code == 422, path
 
 
@@ -319,62 +322,6 @@ def test_cells_of_a_library_are_listed_with_their_views(tmp_path):
                                  monitor=probe(tmp_path, tunnel='failed', daemon='not_checked')))
     blocked = down.post('/api/virtuoso/cells', json=dict(profile_id='lab', library='GATOR_TESTS'))
     assert blocked.status_code == 409 and blocked.json()['detail']['gate']['blocking'] == ['tunnel']
-
-
-# ------------------------------------------------------------------------------- agent endpoints
-@pytest.fixture
-def fake_claude(tmp_path, monkeypatch):
-    bin_dir = tmp_path / 'bin'
-    bin_dir.mkdir()
-    target = bin_dir / 'claude'
-    target.write_text(f'#!{sys.executable}\n' + FIXTURE.read_text())
-    target.chmod(target.stat().st_mode | stat.S_IXUSR)
-    monkeypatch.setenv('PATH', f'{bin_dir}{os.pathsep}{os.environ["PATH"]}')
-    monkeypatch.setenv('FAKE_CLI_SCENARIO', 'success')
-    return monkeypatch
-
-
-def test_agent_proposal_approval_and_application_over_http(client, tmp_path, fake_claude):
-    settings = client.get('/api/agent/settings').json()
-    assert settings['provider'] == 'claude_code' and 'independent of RL checkpoints' in settings['note']
-    raw = config_json(tmp_path)
-    proposal = client.post('/api/agent/propose', json=dict(kind='targets', prompt='raise to 0.97', config=raw)).json()
-    assert proposal['status'] == 'proposed' and proposal['diff'][0]['key'] == 'score' and proposal['origin'] == 'claude_code'
-    not_yet = client.post('/api/agent/apply', json=dict(proposal_id=proposal['proposal_id'], config=raw))
-    assert not_yet.status_code == 409 and not_yet.json()['detail']['configuration_unchanged']
-    client.post('/api/agent/approve', json=dict(proposal_id=proposal['proposal_id'], proposal_hash=proposal['proposal_hash'], config=raw))
-    edited = json.loads(json.dumps(raw))
-    edited['run']['max_evaluations'] += 5
-    stale = client.post('/api/agent/apply', json=dict(proposal_id=proposal['proposal_id'], config=edited))
-    assert stale.status_code == 409 and 'no longer valid' in stale.json()['detail']['message']
-    again = client.post('/api/agent/propose', json=dict(kind='targets', prompt='raise to 0.97', config=raw)).json()
-    client.post('/api/agent/approve', json=dict(proposal_id=again['proposal_id'], proposal_hash=again['proposal_hash'], config=raw))
-    applied = client.post('/api/agent/apply', json=dict(proposal_id=again['proposal_id'], config=raw)).json()
-    assert applied['config']['targets'][0]['lower'] == 0.97 and applied['validation']['blocks_run'] is False
-    assert 'No circuit was written and no simulation was started' in applied['note']
-    fake_claude.setenv('FAKE_CLI_SCENARIO', 'nonzero')
-    failed = client.post('/api/agent/propose', json=dict(kind='targets', prompt='x', config=raw))
-    assert failed.status_code == 409 and failed.json()['detail']['code'] == 'nonzero_exit' and failed.json()['detail']['configuration_unchanged']
-
-
-def test_agent_settings_cannot_grant_write_tools_and_manual_mode_works(client, tmp_path, fake_claude):
-    for bad in (dict(provider='claude_code', allowed_tools=['Bash']), dict(provider='claude_code', permission_mode='bypassPermissions'),
-                dict(provider='nonsense'), dict(provider='claude_code', cli_path='/bin/sh')):
-        assert client.put('/api/agent/settings', json=bad).status_code == 422, bad
-    assert client.put('/api/agent/settings', json=dict(provider='disabled')).json()['saved']
-    raw = config_json(tmp_path)
-    disabled = client.post('/api/agent/propose', json=dict(kind='targets', prompt='x', config=raw))
-    assert disabled.status_code == 409 and disabled.json()['detail']['code'] == 'disabled'
-    task = client.post('/api/agent/export-task', json=dict(kind='targets', prompt='raise it', config=raw)).json()
-    assert 'raise it' in task['prompt'] and task['output_json_schema']
-    import importlib.util
-    spec = importlib.util.spec_from_file_location('fake_cli_fixture', FIXTURE)
-    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-    imported = client.post('/api/agent/import-result', json=dict(kind='targets', prompt='raise it', config=raw, result=module.GOOD)).json()
-    assert imported['origin'] == 'manual_import' and imported['provider'] == 'disabled'
-    diagnostics = client.get('/api/agent/diagnostics').json()
-    assert diagnostics['selected'] == 'disabled' and diagnostics['skills']['verification_level']
-    assert 'sk-ant' not in json.dumps(diagnostics)
 
 
 def test_automatic_checks_are_cheap_only_at_start_and_on_profile_change(tmp_path, monkeypatch):

@@ -324,6 +324,8 @@ Old configurations that name a removed function still load with their hashes unc
 
 | What | Where | State |
 |---|---|---|
+| Lower- and moderate-risk performance improvements | `docs/plan-low-moderate-risk-performance.md`; 7.220 | Current Claude handoff: charts, API reads, CPU contention, conditional gamma-zero calculation, replay copies and input cache; behavior tests and old-checkpoint recovery; plan only |
+| Performance and learning efficiency: 13 proposals | `docs/plan-performance-and-learning-efficiency.md`; 7.219 | Broader review retained for reference; implementation scope narrowed by 7.220 to six lower/moderate-risk items; no runtime changes |
 | Finalist Monte Carlo check | `docs/plan-finalist-monte-carlo.md`; 7.103, 7.104 | Plan only, decisions open. It names OTA7 and LDO, which are gone since 7.128 |
 | OTA7 with a current-reference bias | `docs/plan-ota7-current-reference-variant.md`; 7.110 | Plan only |
 | Robust reward and wider network input | `docs/plan-robust-reward-and-network.md`, `docs/plan-reward-v2-real-flow.md` | Reward v2/v2.1 and corner training built from it; the Monte Carlo part not built |

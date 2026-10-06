@@ -1094,7 +1094,7 @@ it). The window lists every run under the output folder, newest first, one row p
 | Finished | When the run came to rest: completed, stopped, failed. A paused run shows the time with "(paused)"; a run that is working reads "still running"; a run whose worker died wrote no end, so it reads "last seen ..." (its last sign of life). |
 | Duration | How long the run was actually WORKING. The time it sat paused is not counted (the cell's tooltip and the details name it); a working run reads "... so far". |
 | State | The state, and under it why the run stopped (`budget_exhausted`, `user_pause`, ...). |
-| Task, Mode, Seed, Experiment | What the run was. |
+| Task, Mode, Model, Seed, Experiment | What the run was. Model = the name of the RL model it saves (record 7.225); empty for a Baseline simulation or an LLM-only run. |
 | Evaluations | Candidate designs simulated, of the budget: `25 / 60`. |
 | First feasible | The number of evaluations spent when the first design met every target; "none" if no design has. |
 | Data | MOCK (synthetic backend, not a circuit result) or real. |
@@ -1888,6 +1888,17 @@ box in Run configuration, directly below Mode and its RL networks button:
 `run.model_label` is part of the configuration; it is hashed as absent while it is empty, so configurations and runs
 from before keep their hashes, and it changes no task hash. Tests: `tests/workbench/test_wb_model_label.py`.
 
+**Names of their own, and renaming (2026-10-06, record 7.225).** No two models under one output root carry the same
+name. At a start, a label a model carries already gets the first free number - `mscr_ota7t`, `mscr_ota7t (2)`,
+`mscr_ota7t (3)` - and the run manifest holds the name given; the label itself stays what the run is remembered under,
+so the Modes that load a model still start from the newest model saved under the label. Models saved before this
+record are numbered the same way when they are listed, oldest first. The Runs window shows the name in its **Model**
+column. Under the chosen card of "RL model to load" (and of "Saved models (look only)") a **Name** box and **Rename**
+give the model a new name (`POST /api/runs/model/rename`, kept in the run folder's `model_label.json`; the manifest
+keeps the name given at the start, and a live run can be renamed too). A name another model under the output folder
+carries is refused and said under the box. A renamed model can be loaded by typing its name into the RL model label
+box: the default model is the model that carries the label when no run was started under it.
+
 ### Folding the right column's modules (added 2026-09-21, user request)
 
 "Run configuration" and "Output settings" fold into one line with a click on their heading (the "Research
@@ -1901,7 +1912,7 @@ Browser check: `frontend/scripts/module_fold_check.mjs` (fixtures only; safe aga
 
 A **run** is one training session (one press of Start) with its own folder; the models it saved are its
 **save points** (`checkpoints/<id>/`). With Mode `resume`, `fine_tune` or `frozen`, the RL networks window's "RL model to
-load" block lists every run that holds a model as a card (task, circuit, **network**, evaluations of training, last
+load" block lists every run that holds a model as a card (the model's own name - see "The RL model's label" -, circuit, **network**, evaluations of training, last
 save; tags `MOCK`, `weights only`) and then offers every save point of the chosen run: "Latest
 save" (follows the run) or a dated one (always the same model). Runs without a save point are not listed. The list
 is `GET /api/runs/models`: small metadata files only, read when the block opens, when a run starts and on

@@ -56,6 +56,7 @@ const COLUMNS: Column[] = [
   { key: 'state', title: 'State', help: 'How the run stands, and under it why it stopped.', value: r => r.state ?? '' },
   { key: 'task', title: 'Task', help: 'The task (circuit and its targets) the run optimizes.', value: r => taskOf(r) },
   { key: 'mode', title: 'Mode', help: 'scratch = from random weights; fine_tune / frozen / resume = from a saved model.', value: r => r.mode ?? '' },
+  { key: 'model', title: 'Model', help: 'The name of the RL model this run saves; every model under the output folder has one of its own, so a name already given gets a number. Empty for a run that saves none (a baseline, LLM only).', value: r => r.model_label ?? null },
   { key: 'seed', title: 'Seed', help: 'The random seed of the run.', value: r => r.seed ?? null },
   { key: 'evaluations', title: 'Evaluations', help: 'Candidate designs simulated so far, of the budget the run was given.', value: r => r.evaluations ?? null },
   { key: 'feasible', title: 'First feasible', help: 'How many evaluations had been spent when the first design met every target. "none" = no design has met them.', value: r => r.first_feasible_eval_count ?? null },
@@ -142,7 +143,7 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
 
   const current: Json = runs.find(r => r.run_dir === runDir) ?? null;
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
-  const text = (r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_key, r.task_id, r.mode, `seed${r.seed}`, r.state, r.stop_reason, r.experiment, r.mock ? 'mock' : 'real', folder(r.run_dir)].join(' ').toLowerCase();
+  const text = (r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_key, r.task_id, r.mode, r.model_label, `seed${r.seed}`, r.state, r.stop_reason, r.experiment, r.mock ? 'mock' : 'real', folder(r.run_dir)].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === sort.key) ?? COLUMNS[0];
   // Empty cells stay at the bottom whichever way the column is sorted. Only while the window is open: the page redraws
   // on every status poll, and a closed window needs no sorted list.
@@ -182,7 +183,7 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
             <td className={end.css} title={end.title}>{end.text}</td>
             <td className="numeric" title={r.paused_seconds ? `Working time. It also sat paused for ${span(r.paused_seconds)}.` : undefined}>{span(r.active_seconds) ?? '-'}{isLive(r) && r.active_seconds != null && ' so far'}</td>
             <td><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>{r.stop_reason && <div className="hint">{r.stop_reason}</div>}</td>
-            <td title={r.task_id}>{taskOf(r)}</td><td>{r.mode}</td><td className="numeric">{r.seed}</td>
+            <td title={r.task_id}>{taskOf(r)}</td><td>{r.mode}</td><td>{r.model_label ?? '-'}</td><td className="numeric">{r.seed}</td>
             <td className="numeric">{r.evaluations ?? '-'}{r.max_evaluations != null && ` / ${r.max_evaluations}`}</td>
             <td className="numeric">{r.first_feasible_eval_count != null ? `at ${r.first_feasible_eval_count}` : r.evaluations != null ? 'none' : '-'}</td>
             <td>{r.experiment}</td>

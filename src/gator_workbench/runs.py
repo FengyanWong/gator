@@ -370,12 +370,18 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
     config.output.output_root, config.output.experiment_id = str(roots.resolve(output_root)), experiment_id
     research, pretrain_seed, pretrain_origin = _research_block(config, source_manifest)
     initial, initial_hash = _initial_dimensions(compiled)
+    # The name this run's model goes by (record 7.225): the label in use, numbered when a model under this output root
+    # carries it already - "ota7t", "ota7t (2)", "ota7t (3)". The label itself stays the key the run is remembered under.
+    given_label = None
+    if saves_rl_model(config):
+        taken = set(ckpt.unique_model_labels(model_label_rows(config.output.output_root)).values())
+        given_label = ckpt.free_model_label(model_label(config), taken)
     now = utcnow().isoformat()
     manifest = dict(
         layout_version=OUTPUT_LAYOUT_VERSION, config_schema_version=CONFIG_SCHEMA_VERSION,
         experiment_id=experiment_id, experiment_name=config.output.experiment_name, run_id=run_id,
         task_id=f'{config.project.task_name}:{task_hash[:16]}', task_name=config.project.task_name,
-        model_label=model_label(config) if saves_rl_model(config) else None,
+        model_label=given_label,
         task_definition_hash=task_hash, config_sha256=config_hash(config),
         comparison_pair_id=research['comparison_pair_id'], task_order=research['task_order'],
         run_kind='optimization', mode=config.run.mode, provenance='mock' if task.mock else 'real', mock=task.mock,
@@ -762,5 +768,27 @@ def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True):
                                 # The registered task it ran (real:<name>, ngspice:<name>, as the Task list names it): choosing
                                 # that task shows its newest run (App.tsx, record 7.212).
                                 task_key=(manifest.get('circuit') or {}).get('task_key'),
-                                **run_timing(manifest, status)))
+                                **ckpt.model_label_of(run_dir, manifest), **run_timing(manifest, status)))
+    # The name of each run's model, no two alike under this root (record 7.225): the run window and the saved-model
+    # cards show it; `renamed` says whether it was given by a rename.
+    names = ckpt.unique_model_labels(runs)
+    for row in runs:
+        row['model_label'] = names.get(row['run_dir'])
     return sorted(runs, key=lambda r: r['created_utc'] or '', reverse=True)
+
+
+def model_label_rows(output_root) -> list[dict]:
+    """Every run under an output root (real and mock) with the name of its model, read lean - the manifest and
+    model_label.json only - for the numbering at a start and the taken names at a rename (record 7.225)."""
+    rows = []
+    for data_root in (Path(output_root), Path(output_root) / 'mock'):
+        for run_dir in find_runs(data_root):
+            manifest = read_json(run_dir / 'run_manifest.json', default=None) or {}
+            rows.append(dict(run_dir=str(run_dir), created_utc=manifest.get('created_utc'), **ckpt.model_label_of(run_dir, manifest)))
+    return rows
+
+
+def output_root_of(run_dir) -> Path:
+    """The output root a run folder lies under: <root>[/mock]/<experiment>/runs/<task>/<run>."""
+    data_root = Path(run_dir).parents[3]
+    return data_root.parent if data_root.name == 'mock' else data_root

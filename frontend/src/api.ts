@@ -110,6 +110,7 @@ export const api = {
   model: (run_dir: string, checkpoint_id: string, config?: Json, signal?: AbortSignal) => call('POST', '/api/runs/model', { run_dir, checkpoint_id, config }, signal),
   defaultModel: (label: string, project?: string) => call('GET', '/api/runs/default-model' + q({ label, project })),
   savedModels: (output_root?: string, signal?: AbortSignal) => call('GET', '/api/runs/models' + q({ output_root }), undefined, signal),
+  renameModel: (run_dir: string, model_label: string) => call('POST', '/api/runs/model/rename', { run_dir, model_label }),
   modelStructure: (run_dir: string, checkpoint_id: string, signal?: AbortSignal) => call('POST', '/api/runs/model/structure', { run_dir, checkpoint_id }, signal),
   modelGraphView: (run_dir: string, checkpoint_id: string, evaluation: number | null) => call('POST', '/api/runs/model/graph-view', { run_dir, checkpoint_id, evaluation }),
   start: (body: Json) => call('POST', '/api/runs/start', body),

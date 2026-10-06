@@ -22,6 +22,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
+import re
 import shutil
 from uuid import uuid4
 
@@ -431,9 +432,97 @@ def saved_models(run_entries) -> list[dict]:
             manifest = read_json(Path(entry['run_dir']) / 'run_manifest.json', default=None) or {}
         circuit = manifest.get('circuit') or {}
         models.append(dict(
-            entry, task_name=manifest.get('task_name'), model_label=manifest.get('model_label'), circuit_task=circuit.get('task_key'),
+            # The model's name: the run row carries it, unique under the output root (runs.list_runs, record 7.225); a row
+            # built elsewhere falls back to the manifest's.
+            entry, task_name=manifest.get('task_name'), circuit_task=circuit.get('task_key'),
+            model_label=entry.get('model_label') or model_label_of(entry['run_dir'], manifest)['model_label'],
             circuit_class=circuit.get('circuit_class'), latest=listing['latest'], best_policy=listing['best_policy'],
             checkpoints=listing['checkpoints'], network=newest['network'], saved_utc=newest['created_utc'],
             trained_evaluations=newest['evaluations'], learner_updates=newest['learner_updates'],
             restoration_capability=newest['restoration_capability']))
     return sorted(models, key=lambda model: model['saved_utc'] or '', reverse=True)
+
+
+# ---------------------------------------------------------------------------- the model's name (record 7.225)
+# A run's model is named by the manifest's `model_label` (the label in use at the start, record 7.159). No two models
+# under one output root carry the same name: at the start a name already given gets the first free number, "ota7t (2)",
+# "ota7t (3)" (the user's request of 2026-10-06: "for saved rl models with same names add numbering to them by default");
+# models from before are numbered the same way when they are listed, oldest first. A rename writes `model_label.json`
+# in the run folder: the engine rewrites the manifest from memory while a run lives, and never that file.
+MODEL_LABEL_FILE = 'model_label.json'
+MODEL_LABEL_MAX = 80
+
+
+class ModelNameTaken(ValueError):
+    pass
+
+
+def model_label_of(run_dir, manifest=None) -> dict:
+    """``{'model_label': name or None, 'renamed': bool}``: the name a run's model was renamed to, else the one its
+    manifest was given at the start; None for a run that saves no model (a baseline, LLM only)."""
+    renamed = read_json(Path(run_dir) / MODEL_LABEL_FILE, default=None) or {}
+    label = renamed.get('model_label') if isinstance(renamed, dict) else None
+    if isinstance(label, str) and label.strip():
+        return dict(model_label=label.strip(), renamed=True)
+    if manifest is None:
+        manifest = read_json(Path(run_dir) / 'run_manifest.json', default=None) or {}
+    if 'model_label' not in manifest:
+        # A run from before the label (record 7.159) was filed under its task name; it has a model only if it saved one.
+        label = manifest.get('task_name') if (Path(run_dir) / 'checkpoints' / 'latest.json').is_file() else None
+    else:
+        label = manifest.get('model_label')
+    return dict(model_label=label.strip() if isinstance(label, str) and label.strip() else None, renamed=False)
+
+
+def numbered(label, n) -> str:
+    return f'{label} ({n})'
+
+
+def free_model_label(label, taken) -> str:
+    """`label` itself when no model carries it, else the first free "label (n)" from 2 up - counted from the name
+    without its own number, so a taken "ota (2)" becomes "ota (3)", never "ota (2) (2)"."""
+    if label not in taken:
+        return label
+    own = re.fullmatch(r'(.+) \((\d+)\)', label)
+    base, n = (own.group(1), 2) if own else (label, 2)
+    while numbered(base, n) in taken:
+        n += 1
+    return numbered(base, n)
+
+
+def unique_model_labels(rows) -> dict:
+    """run_dir -> the name its model goes by, no two alike. Rows: dicts with run_dir, created_utc, model_label and
+    renamed (as model_label_of gives them); a row without a model is left out. Renamed models keep their names (taken
+    first); the others are taken oldest first, and a name already taken gets its first free number."""
+    taken, names = set(), {}
+    ordered = sorted(rows, key=lambda row: (row.get('created_utc') or '', row['run_dir']))
+    for renamed_pass in (True, False):
+        for row in ordered:
+            label = row.get('model_label')
+            if not label or bool(row.get('renamed')) != renamed_pass:
+                continue
+            name = free_model_label(label, taken)
+            taken.add(name)
+            names[row['run_dir']] = name
+    return names
+
+
+def rename_model(run_dir, label, *, taken) -> dict:
+    """Gives the model of `run_dir` the name `label` (model_label.json). `taken`: the names of the OTHER models under
+    the output root - a name among them is refused (ModelNameTaken), nothing is numbered on a rename: the user chose
+    the name. ValueError for an empty or over-long name."""
+    label = (label or '').strip()
+    if not label:
+        raise ValueError('A model needs a name.')
+    if len(label) > MODEL_LABEL_MAX:
+        raise ValueError(f'A model name has at most {MODEL_LABEL_MAX} characters.')
+    if label in taken:
+        raise ModelNameTaken(f'A model named "{label}" exists already under this output folder. Choose another name.')
+    run_dir = Path(run_dir)
+    before = read_json(run_dir / MODEL_LABEL_FILE, default=None) or {}
+    previous = model_label_of(run_dir)['model_label']
+    given = (read_json(run_dir / 'run_manifest.json', default=None) or {}).get('model_label')
+    record = dict(model_label=label, previous=previous, given_at_start=given, renamed_utc=utcnow().isoformat(),
+                  history=[*(before.get('history') or []), *([dict(model_label=previous, until_utc=utcnow().isoformat())] if previous else [])])
+    write_json(run_dir / MODEL_LABEL_FILE, record)
+    return record

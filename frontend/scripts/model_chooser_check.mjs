@@ -65,7 +65,7 @@ await runChecks(browser, async () => {
   const CONFIG = { ...starter, run: { ...starter.run, mode: 'scratch', network: NET }, output: { experiment_name: 'fixture', ...(ROOT ? { output_root: ROOT } : {}) }, research: {} };
   const page = await browser.open({ consoleApi: false });
   const { send, evaluate, fulfil, consoleErrors } = page;
-  const refused = []; const asked = []; let lists = 0, canned = true, served = MODELS;
+  const refused = []; const asked = []; const renames = []; let lists = 0, canned = true, served = MODELS;
   const answer = ({ requestId, request }) => {
     const name = new URL(request.url).pathname;
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
@@ -78,6 +78,14 @@ await runChecks(browser, async () => {
         what: 'FIXTURE: Parameter row "mp1_w" is set to be optimized but has no lower and no upper bound. Fill in both bounds in the Parameters table.',
         note: 'FIXTURE: This says nothing about the saved model.', technical: 'CompileError: mp1_w: bounds are required' }; }
       return found ? fulfil(requestId, 200, found) : fulfil(requestId, 404, { detail: { message: 'FIXTURE: no such checkpoint' } });
+    }
+    if (name === '/api/runs/model/rename') {                                         // record 7.225: answered here, so nothing is renamed on the backend
+      const body = JSON.parse(request.postData ?? '{}'); renames.push(body);
+      const mine = served.find(x => x.run_dir === body.run_dir), clash = served.find(x => x.run_dir !== body.run_dir && (x.model_label ?? x.task_name) === body.model_label);
+      if (!mine) return fulfil(requestId, 404, { detail: { message: 'FIXTURE: Not a run directory' } });
+      if (clash) return fulfil(requestId, 409, { detail: { message: `FIXTURE: A model named "${body.model_label}" exists already under this output folder. Choose another name.`, code: 'name_taken' } });
+      const previous = mine.model_label ?? mine.task_name; served = served.map(x => x === mine ? { ...x, model_label: body.model_label } : x);
+      return fulfil(requestId, 200, { run_dir: body.run_dir, model_label: body.model_label, previous });
     }
     if (name === '/api/config/diff') return page.pass(requestId);                      // the diff is a pure comparison: nothing is written
     return page.readOrRefuse({ requestId, request }, refused);
@@ -245,6 +253,29 @@ await runChecks(browser, async () => {
   await evaluate(`${card(D.task_name)}.click()`); await until(`${card(D.task_name)}.getAttribute('aria-checked') === 'true'`, 30);
   offered = await options();
   check('a run with a selected best policy offers it, by name', offered[1]?.value === 'best_policy' && /^Best policy \(picked by a validation rule\): 30 evaluations/.test(offered[1].text), JSON.stringify(offered.map(o => o.value)));
+
+  // ---- renaming the chosen model (record 7.225; user: "add a functionality of rename saved model") ---------------------------------
+  const NAME = `${RIGHT}.querySelector('input.model-rename')`, RENAME = `${RIGHT}.querySelector('button.model-rename-apply')`;
+  const note = () => evaluate(`${RIGHT}.querySelector('.model-rename-note')?.textContent ?? ''`);
+  check('under the chosen card a Name box shows the model\'s name, and Rename is disabled while the name is unchanged',
+    (await evaluate(`${NAME}?.value`)) === D.task_name && (await evaluate(`${RENAME}?.disabled`)) === true, JSON.stringify(await evaluate(`[${NAME}?.value, ${RENAME}?.disabled]`)));
+  await page.setValue(NAME, B.task_name, { event: 'input' });
+  check('a typed name enables Rename', await until(`${RENAME}.disabled === false`, 20));
+  await evaluate(`${RENAME}.click()`);
+  check('a name another model carries is refused, and said in plain words under the box', await until(`/exists already/.test(${RIGHT}.querySelector('.model-rename-note.warn')?.textContent ?? '')`, 40)
+    && renames.length === 1 && renames[0].run_dir === D.run_dir && renames[0].model_label === B.task_name, `${renames.length} request(s): ${await note()}`);
+  check('... and the card keeps its name', (await cards()).some(c => c.title === D.task_name && c.active));
+  const NEW_NAME = 'FIXTURE renamed (2)', listsBeforeRename = lists;
+  await page.setValue(NAME, `  ${NEW_NAME}  `, { event: 'input' }); await evaluate(`${RENAME}.click()`);
+  check('a free name renames the model: the list is read again once and the card carries the new name', await until(`${card(NEW_NAME)}?.getAttribute('aria-checked') === 'true'`, 40)
+    && lists === listsBeforeRename + 1 && renames[1]?.model_label === NEW_NAME, `${lists - listsBeforeRename} read(s); ${JSON.stringify(renames[1])}`);
+  check('... the note says so, the box shows the new name and Rename is disabled again', /Renamed to "FIXTURE renamed \(2\)"/.test(await note()) && (await evaluate(`${NAME}.value`)) === NEW_NAME
+    && (await evaluate(`${RENAME}.disabled`)) === true, JSON.stringify([await note(), await evaluate(`${NAME}.value`)]));
+  await sleep(1100);
+  check('... and nothing about the run changed: the configuration still holds the same model and save point', (await stored())?.run_dir === D.run_dir && (await stored())?.checkpoint_id === 'latest', JSON.stringify(await stored()));
+  await reveal(NAME); await shot('models-2b-rename.png');
+  await page.setValue(NAME, D.task_name, { event: 'input' }); await evaluate(`${RENAME}.click()`);          // its old name again, for the sections below
+  check('renaming back works the same way', await until(`${card(D.task_name)}?.getAttribute('aria-checked') === 'true'`, 40) && renames.length === 3, `${renames.length} request(s)`);
 
   // ---- filter, refresh, no timer ---------------------------------------------------------------------------------------------------
   check('with more than 5 models a filter box is shown', await evaluate(`!!${RIGHT}.querySelector('input.model-filter')`));

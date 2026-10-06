@@ -260,6 +260,7 @@ button.model-card { display: flex; flex-direction: column; gap: 1px; width: 100%
 button.model-card.active { border-left: 3px solid var(--accent); } .model-title { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 12.5px; }
 .model-tag { font-size: 10px; font-weight: 600; padding: 0 5px; color: var(--muted); } .model-tag.mock-tag { background: var(--warn-bg); border-color: var(--mock-line); color: var(--text); }
 input.model-filter { width: 100%; margin: 2px 0; } select.model-point { max-width: 100%; }
+.row.model-rename-row { flex-wrap: nowrap; } .row.model-rename-row label { flex: 1; min-width: 0; } .row.model-rename-row input.model-rename { width: 100%; } .row.model-rename-row button { flex: none; }
 table.grid.small.model-facts td:first-child, table.grid.small.run-facts td:first-child { white-space: nowrap; word-break: normal; width: 1%; color: var(--muted); }
 /* Network structure of the chosen saved model: a short summary in the narrow run panel, the full layer table in a wide dialog. Tables only. */
 details.structure { margin: 6px 0; } details.structure > summary { cursor: pointer; } .structure-part { margin: 6px 0; } table.structure-sections th { position: static; cursor: default; }

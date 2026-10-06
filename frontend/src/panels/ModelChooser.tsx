@@ -1,5 +1,5 @@
 import { useRequest } from '../store';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, copy, Json } from '../api';
 
 // Which saved RL model a resume / fine_tune / frozen run loads. Plain words on purpose: a "run" is one training
@@ -7,6 +7,8 @@ import { api, copy, Json } from '../api';
 // The list comes from /api/runs/models (small metadata files only); the chosen model is verified by /api/runs/model.
 // Every card names the model's network: in these Modes the run panel shows no block for a NEW network, the run uses the
 // network of the chosen model (Right.tsx, `loads`).
+// Every model has a name of its own (record 7.225): the run's RL model label, numbered by the backend when a model under the
+// output folder carries it already ("ota7t (2)"); the Name box under the chosen card renames it (POST /api/runs/model/rename).
 const KIND: Record<string, string> = { periodic: 'automatic save', manual: 'saved with "Save now"', pause: 'saved at pause', stop: 'saved at stop',
   final: 'saved at the end of the run', safety: 'safety save' };
 const when = (utc?: string | null) => { const d = utc ? new Date(utc) : null;
@@ -24,13 +26,29 @@ export function ModelChooser({ mode, source, onChoose, runs, outputRoot, lookOnl
   // not at every keystroke (each read lists every run and its save points on the slow D: drive; audit 2026-09-30).
   const { value: models, error, loading, refresh: load } = useRequest<Json[]>(
     signal => api.savedModels(outputRoot ?? undefined, signal).then(r => r.models ?? []), [runs], { enabled: wanted, keepPrevious: true });
+  const current: Json = models?.find(m => m.run_dir === source.run_dir) ?? null;
+  // Renaming the chosen model: the Name box follows the chosen card (and its new name once the list is read again); the
+  // note about a rename stays until another model is chosen.
+  const [name, setName] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [renameNote, setRenameNote] = useState<{ level: 'hint' | 'warn'; text: string } | null>(null);
+  const shownName = (m: Json): string => m?.model_label ?? m?.task_name ?? m?.task_id ?? '';
+  useEffect(() => { setName(shownName(current)); }, [current?.run_dir, current?.model_label]);
+  useEffect(() => { setRenameNote(null); setRenaming(false); }, [current?.run_dir]);
+  const typed = name.trim();
+  const canRename = !!current && !renaming && !!typed && typed !== shownName(current);
+  const rename = () => {
+    if (!canRename) return;
+    setRenaming(true); setRenameNote(null);
+    api.renameModel(current.run_dir, typed).then(r => { setRenameNote({ level: 'hint', text: `Renamed to "${r.model_label}".` }); load(); })
+      .catch(e => setRenameNote({ level: 'warn', text: e.message })).finally(() => setRenaming(false));
+  };
   if (!wanted) return (<>
     <h3>RL model to load</h3>
     <p className="hint model-none">None. Mode is <b>scratch</b>, so training starts from random weights and no saved model is loaded.
       To reuse a saved model, change Mode in Run configuration: <b>fine_tune</b> keeps training it in a new run,
       <b> frozen</b> uses it as it is without any learning, <b>resume</b> continues the run that saved it.</p></>);
 
-  const current: Json = models?.find(m => m.run_dir === source.run_dir) ?? null;
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
   const text = (m: Json) => [m.model_label, m.task_name, m.task_id, m.circuit_task, m.circuit_class, netLabel(m.network), m.mode, m.state, m.mock ? 'mock' : 'real', `seed${m.seed}`].join(' ').toLowerCase();
   const shown = (models ?? []).filter(m => m.run_dir === source.run_dir || words.every(w => text(m).includes(w)));
@@ -67,6 +85,12 @@ export function ModelChooser({ mode, source, onChoose, runs, outputRoot, lookOnl
         </button>); })}</div>}
     {models && !!models.length && !shown.length && <p className="hint">No saved model matches the filter.</p>}
     {current && <>
+      <div className="row model-rename-row">
+        <label title="The name this model is listed under. Every model under the output folder has a name of its own: a name another model carries is refused.">Name
+          <input className="model-rename" value={name} maxLength={80} disabled={renaming} onChange={e => setName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); rename(); } }} /></label>
+        <button className="model-rename-apply" disabled={!canRename} onClick={rename} title="Give this saved model the name in the box.">{renaming ? 'Renaming...' : 'Rename'}</button></div>
+      {renameNote && <p className={`${renameNote.level === 'warn' ? 'warn' : 'hint'} model-rename-note`}>{renameNote.text}</p>}
       <label title="Latest save = the most recently SAFELY saved state of that run (default). It is not automatically the best policy.">Save point
         <select className="model-point" value={chosen} onChange={e => onChoose(current.run_dir, e.target.value)}>
           <option value="latest">Latest save (default): {newest ? pointLabel(newest) : 'none'}</option>

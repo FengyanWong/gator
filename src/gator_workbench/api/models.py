@@ -205,5 +205,11 @@ class ModelStructureBody(Body):
     checkpoint_id: str = Field('latest', max_length=120)
 
 
+class RenameModelBody(Body):
+    """A saved model's new name (record 7.225)."""
+    run_dir: str
+    model_label: str = Field(max_length=200)        # the route says the real limit (80) in plain words
+
+
 class GraphViewBody(ModelStructureBody):
     evaluation: int | None = Field(None, ge=1)      # which archived evaluation of that run; empty = the last one the save point had seen

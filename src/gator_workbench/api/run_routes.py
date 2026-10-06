@@ -11,7 +11,7 @@ from ..paths import PathNotAllowed, safe_child
 from ..storage.atomic import read_json, read_jsonl_tail
 from ..storage.dataset import DatasetReader, map_to_dict, utcnow
 from ..storage.tables import TABLES
-from .models import CommandBody, ContinueBody, CornerCheckBody, CornerStopBody, ExportBody, GraphViewBody, ModelStructureBody, StartBody
+from .models import CommandBody, ContinueBody, CornerCheckBody, CornerStopBody, ExportBody, GraphViewBody, ModelStructureBody, RenameModelBody, StartBody
 from .support import attachment, compatibility_unchecked, fail, file_snapshot, run_files, zip_download
 from .context import ApiContext
 
@@ -81,9 +81,37 @@ def register(app: FastAPI, context: ApiContext):
         `best`. `project`: the project name runs were remembered under before the label, asked when the label has none."""
         remembered = runs.load_settings().get('last_run') or {}
         last = (remembered.get(label.strip()) if label and label.strip() else None) or (remembered.get(project) if project else None)
+        if not last and label and label.strip():
+            # No run was started under this label: a model that CARRIES the name (given at a start or by a rename,
+            # record 7.225) answers instead - the newest one under the remembered output root.
+            try:
+                rows = runs.model_label_rows(runs.remembered_output_root())
+            except OSError:
+                rows = []
+            names = ckpt.unique_model_labels(rows)
+            carrying = [row for row in rows if names.get(row['run_dir']) == label.strip()]
+            last = max(carrying, key=lambda row: row.get('created_utc') or '')['run_dir'] if carrying else None
         if not last or not context.roots.is_allowed(last) or not (Path(last) / 'checkpoints' / 'latest.json').is_file():
             return dict(run_dir=None, checkpoint_id='latest', reason='No saved model under this label yet.')
         return dict(run_dir=last, checkpoint_id='latest', description=ckpt.describe(last, 'latest'))
+
+    @app.post('/api/runs/model/rename')
+    def rename_model(body: RenameModelBody):
+        """Gives a saved model a new name (record 7.225; user: "add a functionality of rename saved model"). Kept in the
+        run folder's model_label.json - the manifest keeps the name the run was given at its start, and the engine
+        never rewrites that file, so a live run can be renamed too. A name another model under the same output root
+        carries is refused (409 name_taken): the user chose it, nothing is numbered here."""
+        run_dir = context.run_path(body.run_dir)
+        rows = runs.model_label_rows(runs.output_root_of(run_dir))
+        names = ckpt.unique_model_labels(rows)
+        taken = {name for directory, name in names.items() if directory != str(run_dir)}
+        try:
+            record = ckpt.rename_model(run_dir, body.model_label, taken=taken)
+        except ckpt.ModelNameTaken as exc:
+            fail(409, exc, code='name_taken')
+        except ValueError as exc:
+            fail(422, exc)
+        return dict(run_dir=str(run_dir), model_label=record['model_label'], previous=record['previous'])
 
     @app.get('/api/runs/models')
     def saved_models(output_root: str | None = None, include_mock: bool = True):

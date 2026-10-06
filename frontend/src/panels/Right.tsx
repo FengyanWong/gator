@@ -387,7 +387,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       {modelChecked && model?.suggestion && model.suggestion.mode !== run.mode && <p className="warn">Suggested: <button className="text-link mode-suggestion"
         title={`Set Mode to ${model.suggestion.mode}`} onClick={() => set({ mode: model.suggestion.mode })}>{model.suggestion.mode}</button> - {model.suggestion.reason}
         {model.suggestion.requires_confirmation ? ' (needs your confirmation)' : ''}</p>}
-      <label title={`RL model label: the name this run's RL model is saved under. Mode resume, fine_tune and frozen start from the newest model saved under it. Empty: the task's run label (${config.project.task_name}).`}>RL model label
+      <label title={`RL model label: the name this run's RL model is saved under. Mode resume, fine_tune and frozen start from the newest model saved under it. Empty: the task's run label (${config.project.task_name}). A name a saved model carries already gets a number: ${label} (2), ${label} (3). Saved models can be renamed in RL networks.`}>RL model label
         <input className="model-label" value={run.model_label ?? ''} placeholder={config.project.task_name} maxLength={80}
           onChange={e => set({ model_label: e.target.value.trim() ? e.target.value : null })} /></label>
       <Num label="Concurrent Spectre jobs" value={run.concurrency} onChange={v => set({ concurrency: v })} title="Independent simulation jobs at once. NOT the thread count of one simulation." />

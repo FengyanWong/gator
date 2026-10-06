@@ -28,6 +28,7 @@ from .storage.dataset import utcnow
 
 PURPOSES = {
     'run_manifest.json': 'Identity and provenance of the run',
+    'model_label.json': "The model's name after a rename (the manifest keeps the name given at the start)",
     'effective_config.json': 'Exact validated configuration that was executed',
     'run_summary.json': 'Per-run research statistics',
     'artifact_manifest.json': 'This file list',

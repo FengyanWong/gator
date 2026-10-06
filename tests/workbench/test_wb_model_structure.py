@@ -18,7 +18,7 @@ from helpers import SMALL_NET, ScriptedEnvFactory, execute, make_config
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
 pytestmark = pytest.mark.xdist_group('test_wb_model_structure')
 
-ENCODERS = ('graph_transformer', 'rgcn', 'gatv2')
+ENCODERS = ('graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention')
 
 
 @pytest.fixture(scope='module')
@@ -86,7 +86,7 @@ def test_never_used_is_what_real_gradients_say_and_every_layer_is_explained(tmp_
         assert all(row['note'] for row in rows if row['unused'])
         assert all(row['role'] and row['section'] != 'Other' for row in rows), [r['path'] for r in rows if not r['role']]
         assert [row['section'] for row in rows if row['section'].startswith('Block')].count('Block 2') > 0       # 2 layers asked
-    if encoder == 'graph_transformer':
+    if encoder in ('graph_transformer', 'graph_gps', 'group_cross_attention'):
         assert flagged == {'encoder.blocks.0.attention.lin_skip', 'encoder.blocks.1.attention.lin_skip'}
     else:
         assert flagged == set()

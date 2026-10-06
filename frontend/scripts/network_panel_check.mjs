@@ -74,7 +74,21 @@ await runChecks(browser, async () => {
   check('beside the button, the network in short: GT hidden/heads/layers, the words left of the button, the whole of it in the tooltip',
     short?.text.startsWith(`GT ${gt.hidden_dim}/${gt.heads}/${gt.layers}`) && short.left && short.title.startsWith('The network in use: graph_transformer'), JSON.stringify(short));
   const options = await evaluate(`[...[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel label')].find(l => l.firstChild?.textContent === 'Encoder').querySelectorAll('option')].map(o => o.value)`);
-  check('the encoder list offers only Graph Transformer, RGCN and GATv2', JSON.stringify(options) === JSON.stringify(['graph_transformer', 'rgcn', 'gatv2']), JSON.stringify(options));
+  check('the encoder list offers all five backend encoders', JSON.stringify(options) === JSON.stringify(['graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention']), JSON.stringify(options));
+  for (const encoder of ['graph_gps', 'group_cross_attention']) {
+    await select(encoder);
+    const STRUCTURE = `${NETWORK_PANEL}.querySelector('select.structural-encoding')`;
+    check(`${encoder}: structural settings and experimental status are visible`, await page.until(`!!${STRUCTURE} && !!${NETWORK_PANEL}.querySelector('.encoder-experimental')`));
+    check(`${encoder}: its own structural default is loaded`, await evaluate(`${STRUCTURE}.value`) === settings.settings[encoder].network.structural_encoding);
+    await page.setValue(STRUCTURE, encoder === 'graph_gps' ? 'none' : 'rwse');
+    const changed = await nextWrite();
+    const body = changed ? JSON.parse(changed.postData) : {};
+    check(`${encoder}: structural edits are included in the saved settings`, changed?.url.endsWith(`/api/network-settings/${encoder}`)
+      && body.network?.structural_encoding === (encoder === 'graph_gps' ? 'none' : 'rwse'));
+    if (changed) await fulfil(changed.requestId, 200, { ...settings.settings[encoder], ...body, origin: 'custom' });
+  }
+  await select('graph_transformer');
+  await page.until(`!${NETWORK_PANEL}.querySelector('select.structural-encoding')`);
   check('heads is editable for graph_transformer', !(await evaluate(`${box('heads')}.querySelector('input').disabled`)));
   // record 7.195 (user: "move the advanced setting to beneath the nominal device op checkbox")
   const order = await evaluate(`(() => { const box = [...${NETWORK_PANEL}.querySelectorAll('label.check')].find(l => l.textContent === 'Nominal device operating points');

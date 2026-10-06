@@ -20,7 +20,8 @@ from analog_optimizer.training.runtime import write_report_preserving_error
 from .transfer import aggregate_runs, freeze_protocol, validate_split
 
 
-ENCODER_LABELS = dict(graph_transformer='gt', rgcn='rgcn', gatv2='gatv2')
+ENCODER_LABELS = dict(graph_transformer='gt', rgcn='rgcn', gatv2='gatv2',
+                      graph_gps='gps', group_cross_attention='group_ca')
 
 
 def benchmark_models(settings):
@@ -43,7 +44,8 @@ def benchmark_models(settings):
         raise ValueError('encoders must be a nonempty, unique list of supported encoder types')
     models = {ENCODER_LABELS[name]: ModelConfig(
         encoder_type=name, hidden_dim=settings.get('hidden_dim', 32),
-        heads=settings.get('heads', 4), layers=settings.get('layers', 2)) for name in selected}
+        heads=settings.get('heads', 4), layers=settings.get('layers', 2),
+        structural_encoding=settings.get('structural_encodings', {}).get(name)) for name in selected}
     names = tuple(f'{key}_{phase}' for key in models for phase in ('scratch', 'frozen', 'adapt')) + ('random', 'pattern_search')
     methods = {}
     for name in names:

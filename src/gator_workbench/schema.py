@@ -19,7 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from . import CONFIG_SCHEMA_VERSION
 
-ENCODER_TYPES = ('graph_transformer', 'rgcn', 'gatv2')
+ENCODER_TYPES = ('graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention')
+GLOBAL_ENCODERS = ('graph_gps', 'group_cross_attention')
 REMOVED_ENCODERS = {'port_gnn': ('2026-09-24', 'bbdfe36'),
                     'mlp': ('2026-09-26', '9bc488f'), 'gcn': ('2026-09-26', '9bc488f')}
 RUN_MODES = ('scratch', 'resume', 'fine_tune', 'frozen')
@@ -301,16 +302,27 @@ STANDARD_VOCABULARY = 'standard'
 
 
 class NetworkConfig(_Model):
-    encoder_type: Literal['graph_transformer', 'rgcn', 'gatv2'] = 'graph_transformer'
+    encoder_type: Literal['graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention'] = 'graph_transformer'
     hidden_dim: int = Field(32, ge=4, le=1024)
     heads: int = Field(4, ge=1, le=32)
     layers: int = Field(2, ge=1, le=16)
+    structural_encoding: Literal['none', 'rwse'] | None = Field(None,
+        description='Topology-only random-walk return probabilities at 2, 4, 8, 16 steps. GraphGPS defaults to rwse; '
+                    'parameter-group cross-attention defaults to none. Supported by these two encoders only.')
     operating_points: bool = Field(False, description='Include measured nominal device operating points and missing-value masks.')
     vocabulary: str = Field(STANDARD_VOCABULARY, max_length=80, pattern=r'^(standard|pdk:[A-Za-z_][A-Za-z0-9_.\-]{0,63})$',
         description='Which components the network knows. standard: the 8 generic kinds (MOS, R, C, L, sources) every '
                     'model saved before 2026-09-21 was trained with; other parts are "unknown". pdk:<technology '
                     'library>: every component of that PDK, loaded with "Load PDK..." (gator_workbench.pdk). A model '
                     'trained with one list loads only with the same list.')
+
+    @model_validator(mode='after')
+    def _structural_encoding(self):
+        if self.structural_encoding is None:
+            object.__setattr__(self, 'structural_encoding', 'rwse' if self.encoder_type == 'graph_gps' else 'none')
+        if self.structural_encoding != 'none' and self.encoder_type not in GLOBAL_ENCODERS:
+            raise ValueError('rwse requires graph_gps or group_cross_attention')
+        return self
 
     @field_validator('encoder_type', mode='before')
     @classmethod
@@ -664,6 +676,8 @@ def _hashed(data):
             network.pop('vocabulary')
         if network.get('operating_points') is False:
             network.pop('operating_points')
+        if network.get('structural_encoding') in (None, 'none') and network.get('encoder_type') not in GLOBAL_ENCODERS:
+            network.pop('structural_encoding', None)
         data['run'] = dict(run, network=network)
     for section, retired in (('parameters', RETIRED_PARAMETER_FIELDS), ('measurements', RETIRED_MEASUREMENT_FIELDS)):
         rows = data.get(section) if isinstance(data, dict) else None

@@ -406,7 +406,8 @@ def list_checkpoints(run_dir) -> dict:
             learner_updates=counters.get('learner_updates'), replay_size=counters.get('replay_size'),
             restoration_capability=meta.get('restoration_capability'),
             missing_components=meta.get('missing_components') or [],
-            network={key: network.get(key) for key in ('encoder_type', 'hidden_dim', 'heads', 'layers')},
+            network={key: network[key] for key in ('encoder_type', 'hidden_dim', 'heads', 'layers',
+                                                   'structural_encoding', 'architecture_version') if key in network},
             is_latest=directory.name == latest, is_best_policy=directory.name == best.get('selected')))
     points.sort(key=lambda point: (point['created_utc'] or '', point['checkpoint_id']))
     return dict(run_dir=str(run_dir), latest=latest if any(p['is_latest'] for p in points) else None,

@@ -95,7 +95,7 @@ function Module({ id, title, summary, children }: { id: string; title: string; s
 
 // Settings stored per encoder in the backend (src/gator_workbench/network_presets.py). The lists are
 // only a fallback for the moment before the backend answers; the backend's own lists are used afterwards.
-const NETWORK_FIELDS = ['hidden_dim', 'heads', 'layers'];
+const NETWORK_FIELDS = ['hidden_dim', 'heads', 'layers', 'structural_encoding'];
 const pick = (source: Json, fields: string[]): Json =>
   Object.fromEntries(fields.filter(f => source?.[f] !== undefined && source?.[f] !== null).map(f => [f, source[f]]));
 const Check = ({ label, value, onChange, title, disabled }: { label: string; value: boolean; onChange: (v: boolean) => void; title?: string; disabled?: boolean }) => (
@@ -124,7 +124,7 @@ const ADVANCED_ROWS: NumberField[][] = [
 ];
 
 const NETWORK_SETTING_LABELS: Record<string, string> = {
-  hidden_dim: 'Hidden width', heads: 'Heads', layers: 'Layers',
+  hidden_dim: 'Hidden width', heads: 'Heads', layers: 'Layers', structural_encoding: 'Structural encoding',
   ...Object.fromEntries(ADVANCED_ROWS.flat().map(([name, label]) => [name, label])),
 };
 
@@ -133,7 +133,7 @@ const REWARD_NAMES: Record<string, string> = { violation_shape: 'violation shape
   objective_weight: 'objective bonus weight', objective_shape: 'objective shape', margin_weight: 'tightest-margin bonus weight' };
 
 /** The encoders in short, for the line beside RL networks... (the window names them in full). */
-const SHORT_ENCODER: Record<string, string> = { graph_transformer: 'GT', rgcn: 'RGCN', gatv2: 'GATv2' };
+const SHORT_ENCODER: Record<string, string> = { graph_transformer: 'GT', rgcn: 'RGCN', gatv2: 'GATv2', graph_gps: 'GPS', group_cross_attention: 'Group attention' };
 
 export function RunPanel({ config, setConfig, runs, circuit, schema }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json; schema: Json }) {
   const run = config.run;
@@ -202,8 +202,9 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
     && currentNetwork.current.encoder === name && currentNetwork.current.mode === run.mode
     && (expected === undefined || expected === networkKey(currentNetwork.current.mode, currentNetwork.current.net, currentNetwork.current.adv));
   const entry: Json = netSettings?.settings?.[encoder] ?? null;
-  const offeredEncoders: string[] = netSettings?.encoders ?? ['graph_transformer', 'rgcn', 'gatv2'];
-  const usesHeads: boolean = entry ? !!entry.uses_heads : ['graph_transformer', 'gatv2'].includes(encoder);
+  const offeredEncoders: string[] = netSettings?.encoders ?? ['graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention'];
+  const usesHeads: boolean = entry ? !!entry.uses_heads : encoder !== 'rgcn';
+  const usesStructure: boolean = entry ? !!entry.supports_structural_encoding : ['graph_gps', 'group_cross_attention'].includes(encoder);
   const remember = (e: Json) => setNetSettings((s: Json) => s && ({ ...s, settings: { ...s.settings, [e.encoder_type]: e } }));
   // The component list is not a per-encoder setting: another encoder keeps the list that was chosen.
   const keepList = (network: Json) => ({ operating_points: network?.operating_points ?? false,
@@ -297,6 +298,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const label: string = (run.model_label ?? '').trim() || config.project.task_name;
   const savedModel: Json = loads ? model?.description?.contract?.model_config : null;
   const savedNet: Json = savedModel?.encoder_type ? { encoder_type: savedModel.encoder_type, ...pick(savedModel, netFields),
+    structural_encoding: savedModel.structural_encoding ?? (savedModel.encoder_type === 'graph_gps' ? 'rwse' : 'none'),
     operating_points: !!model?.description?.contract?.feature_schema?.op_columns?.length } : null;
   const archDiffers = !!savedNet && Object.keys(savedNet).some(f => savedNet[f] !== (f === 'encoder_type' ? encoder : net[f]));
   const followed = useRef<string | null>(null);
@@ -469,13 +471,17 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       <p className="hint">"No weights" means scratch, but an architecture is still required.
         Every encoder keeps its own settings in the backend: choosing one loads them, editing a value (here or under Advanced) saves it for that encoder.</p>
       <label>Encoder<select value={encoder} onChange={e => chooseEncoder(e.target.value)}>
-        {offeredEncoders.map((m: string) => <option key={m} value={m}>{m}</option>)}
+        {offeredEncoders.map((m: string) => <option key={m} value={m}>{netSettings?.settings?.[m]?.label ?? m}</option>)}
         {!offeredEncoders.includes(encoder) && <option value={encoder}>{encoder} (removed from the optimizer)</option>}</select></label>
-      {!offeredEncoders.includes(encoder) && <p className="error">{encoder} is unavailable. Choose Graph Transformer, RGCN, or GATv2. Existing models need their matching historical optimizer version.</p>}
+      {!offeredEncoders.includes(encoder) && <p className="error">{encoder} is unavailable. Choose an available encoder. Existing models need their matching historical optimizer version.</p>}
       <div className="row"><Num label="hidden" value={net.hidden_dim ?? entry?.network?.hidden_dim ?? 32} onChange={v => editNet({ hidden_dim: v })} />
         <Num label="heads" value={net.heads ?? entry?.network?.heads ?? 4} onChange={v => editNet({ heads: v })} disabled={!usesHeads} note={usesHeads ? undefined : 'ignored by this encoder'}
-          title={usesHeads ? 'Attention heads. hidden must be divisible by heads.' : 'Only graph_transformer and gatv2 have attention heads. The number is still written into the checkpoint, so it is kept fixed here.'} />
+          title={usesHeads ? 'Attention heads. hidden must be divisible by heads.' : 'RGCN does not use attention heads. The number is kept in the checkpoint.'} />
         <Num label="layers" value={net.layers ?? entry?.network?.layers ?? 2} onChange={v => editNet({ layers: v })} /></div>
+      {usesStructure && <label>Structural encoding<select className="structural-encoding" value={net.structural_encoding ?? entry?.network?.structural_encoding ?? 'none'}
+        onChange={e => editNet({ structural_encoding: e.target.value })}>
+        <option value="none">None</option><option value="rwse">Random-walk returns (2, 4, 8, 16 steps)</option></select></label>}
+      {entry?.experimental && <p className="hint encoder-experimental">Experimental encoder. Transfer performance and these starting settings have not been validated.</p>}
       <Check label="Nominal device operating points" value={net.operating_points ?? false} onChange={v => setNet({ operating_points: v })}
         title="Measured nominal device values and validity masks. Corner operating points are recorded but never replace the nominal network input. Changing this changes the model input schema." />
       {advanced}
@@ -500,9 +506,10 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         Published settings assume thousands of simulations. Lower them under Advanced or raise the budget.</p>}
       {!loads && entry && <details><summary>Where the {encoder} values come from</summary>
         <p className="hint">{entry.summary}</p>
+        {entry.architecture_reference && <p className="hint">Architecture reference: <a href={entry.architecture_reference.url} target="_blank" rel="noreferrer">{entry.architecture_reference.short}</a>. The starting values are project choices.</p>}
         <table className="grid small"><thead><tr><th>Setting</th><th>Preset</th><th>Basis</th><th>Source and note</th></tr></thead><tbody>
           {[...netFields, ...advFields].map(f => { const p = entry.provenance?.[f]; const ref = p?.source ? netSettings.references?.[p.source] : null; return (
-            <tr key={f}><td>{f}</td><td className="numeric">{num(p?.value)}</td><td>{p?.basis}{p?.match === 'closest' ? ', closest network' : ''}</td>
+            <tr key={f}><td>{f}</td><td className="numeric">{typeof p?.value === 'string' ? p.value : num(p?.value)}</td><td>{p?.basis}{p?.match === 'closest' ? ', closest network' : ''}</td>
               <td>{ref && <a href={ref.url} target="_blank" rel="noreferrer">{ref.short}</a>} {p?.note}</td></tr>); })}
         </tbody></table>
         <p className="hint">{netSettings.scale_note}</p></details>}

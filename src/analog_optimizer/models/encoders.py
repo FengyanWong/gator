@@ -1,15 +1,17 @@
 """Interchangeable circuit encoders with a common node/group/context contract."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import math
 
 import torch
 from torch import nn
 from torch_geometric.nn import TransformerConv, RGCNConv, GATv2Conv
+from .global_attention import CircuitAttention, RWSE_STEPS, structural_features
 
 
-ENCODER_TYPES = ('graph_transformer', 'rgcn', 'gatv2')
+ENCODER_TYPES = ('graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention')
+GLOBAL_ENCODERS = ('graph_gps', 'group_cross_attention')
 LEGACY_MODES = {'local_port_attention': 'graph_transformer'}
 # Encoders that existed and were removed. Naming one is refused in words: the models trained with it load only from
 # the last source commit that still has it (the checkpoint contract pins the source digest).
@@ -36,6 +38,8 @@ class ModelConfig:
     log_std_min: float = -5.0
     log_std_max: float = 2.0
     encoder_type: str | None = None  # Resolved to graph_transformer by default.
+    structural_encoding: str | None = None  # GPS defaults to rwse; the group readout defaults to none.
+    architecture_version: int = 1
 
     def __post_init__(self):
         if any(type(v) is not int or v < 1 for v in (self.hidden_dim, self.heads, self.layers)):
@@ -53,12 +57,26 @@ class ModelConfig:
             raise ValueError(f'Unsupported encoder_type: {encoder}')
         if legacy is not None and legacy != encoder:
             raise ValueError('encoder_type conflicts with legacy attention_mode')
-        if encoder in ('graph_transformer', 'gatv2') and self.hidden_dim % self.heads:
+        if encoder != 'rgcn' and self.hidden_dim % self.heads:
             raise ValueError('Attention hidden_dim must be divisible by heads')
+        structural = self.structural_encoding if self.structural_encoding is not None else ('rwse' if encoder == 'graph_gps' else 'none')
+        if structural not in ('none', 'rwse') or (structural != 'none' and encoder not in GLOBAL_ENCODERS):
+            raise ValueError('structural_encoding must be none, or rwse for graph_gps/group_cross_attention')
+        if type(self.architecture_version) is not int or self.architecture_version != 1:
+            raise ValueError('Unsupported encoder architecture_version')
+        object.__setattr__(self, 'structural_encoding', structural)
         object.__setattr__(self, 'encoder_type', encoder)
         object.__setattr__(self, 'attention_mode', next((k for k, v in LEGACY_MODES.items() if v == encoder), None))
         if not math.isfinite(self.log_std_min + self.log_std_max) or not -20 <= self.log_std_min < self.log_std_max <= 2:
             raise ValueError('Invalid log standard deviation limits')
+
+    def to_dict(self):
+        """Keep the existing encoders' checkpoint architecture contract unchanged."""
+        values = asdict(self)
+        if self.encoder_type not in GLOBAL_ENCODERS:
+            values.pop('structural_encoding')
+            values.pop('architecture_version')
+        return values
 
 
 def segment_sum(values, index, count):
@@ -121,11 +139,44 @@ class PortGATv2Block(nn.Module):
         return nodes + self.ff(self.norm_ff(nodes))
 
 
+class PortGPSBlock(PortAttentionBlock):
+    """GPS-style parallel local port messages and full within-circuit attention."""
+    def __init__(self, config):
+        super().__init__(config)
+        self.norm_global = nn.LayerNorm(config.hidden_dim)
+        self.global_attention = CircuitAttention(config.hidden_dim, config.heads, 'global')
+
+    def forward(self, nodes, edges, edge_features, edge_role, node_batch, count):
+        local = nodes + self.attention(self.norm_attention(nodes), edges, edge_features)
+        normalized = self.norm_global(nodes)
+        global_nodes = nodes + self.global_attention(normalized, normalized, node_batch, node_batch, count)
+        nodes = local + global_nodes
+        return nodes + self.ff(self.norm_ff(nodes))
+
+
+class GroupAttentionReadout(nn.Module):
+    """One bound, goal-conditioned query per parameter group over circuit nodes."""
+    def __init__(self, config):
+        super().__init__()
+        h = config.hidden_dim
+        self.norm_query = nn.LayerNorm(h)
+        self.norm_nodes = nn.LayerNorm(h)
+        self.cross_attention = CircuitAttention(h, config.heads, 'group')
+        self.norm_ff = nn.LayerNorm(h)
+        self.ff = mlp(h, 2 * h, h)
+
+    def forward(self, groups, nodes, batch):
+        groups = groups + self.cross_attention(self.norm_query(groups), self.norm_nodes(nodes),
+                                               batch.group_batch, batch.node_batch, len(batch.context))
+        return groups + self.ff(self.norm_ff(groups))
+
+
 def build_block(config, num_relations):
     """Architecture selection is confined to the representation layer."""
     if config.encoder_type == 'rgcn':
         return PortRGCNBlock(config, num_relations)
-    blocks = dict(graph_transformer=PortAttentionBlock, gatv2=PortGATv2Block)
+    blocks = dict(graph_transformer=PortAttentionBlock, gatv2=PortGATv2Block,
+                  graph_gps=PortGPSBlock, group_cross_attention=PortAttentionBlock)
     return blocks[config.encoder_type](config)
 
 
@@ -133,7 +184,7 @@ class CircuitEncoder(nn.Module):
     """forward(GraphBatch, actions=None) -> nodes [N,H], groups [G,H], context [B,H].
 
     Input features, action-to-member binding and readout are shared by all
-    architectures. Only node processing changes. There are no topology-sized
+    architectures. Node processing and group readout can vary. There are no topology-sized
     trainable layers. Each actor/critic owns a separate encoder instance.
     """
     def __init__(self, feature_schema, spec_schema, config, *, action_conditioned=False):
@@ -147,7 +198,7 @@ class CircuitEncoder(nn.Module):
         self.device_kind = nn.Embedding(len(feature_schema.device_kinds), h)
         self.net_values = nn.Linear(len(feature_schema.net_roles), h)
         self.context = mlp(spec_schema.width, h, h)
-        self.uses_edge_features = config.encoder_type in ('graph_transformer', 'gatv2')
+        self.uses_edge_features = config.encoder_type != 'rgcn'
         if self.uses_edge_features:
             self.port_role = nn.Embedding(2 * len(feature_schema.terminal_roles), h)
             self.port_ordinal = nn.Linear(1, h, bias=False)
@@ -160,6 +211,10 @@ class CircuitEncoder(nn.Module):
                                      for _ in range(config.layers)])
         self.group_head = mlp(3 * h, h, h)
         self.output_norm = nn.LayerNorm(h)
+        if config.structural_encoding == 'rwse':
+            self.structural_projection = nn.Linear(len(RWSE_STEPS), h)
+        if config.encoder_type == 'group_cross_attention':
+            self.group_readout = GroupAttentionReadout(config)
 
     def forward(self, batch, actions=None):
         graph = batch.graph
@@ -172,6 +227,8 @@ class CircuitEncoder(nn.Module):
         nodes = torch.cat((device_nodes, self.net_values(graph['net'].x)))
         context = self.context(batch.context)
         nodes = nodes + context[batch.node_batch]
+        if hasattr(self, 'structural_projection'):
+            nodes = nodes + self.structural_projection(structural_features(batch))
         groups = self.group_values(batch.group_features) + self.parameter_kind(graph.group_kind)
         group_index, member_index = graph.group_member_index
         if self.action_conditioned:
@@ -188,12 +245,17 @@ class CircuitEncoder(nn.Module):
             edge_features = (self.port_role(batch.edge_role) +
                              self.port_ordinal(torch.log1p(batch.edge_ordinal.float())[:, None]))
         for block in self.blocks:
-            nodes = block(nodes, batch.edge_index, edge_features, batch.edge_role)
+            if isinstance(block, PortGPSBlock):
+                nodes = block(nodes, batch.edge_index, edge_features, batch.edge_role, batch.node_batch, len(context))
+            else:
+                nodes = block(nodes, batch.edge_index, edge_features, batch.edge_role)
         nodes = self.output_norm(nodes)
         binding = (nodes[member_index] + self.parameter_kind(graph.group_member_parameter) +
                    self.binding_ratio(graph.group_member_ratio.float().log()[:, None]))
         members = segment_mean(binding, group_index, groups.shape[0])
         groups = self.group_head(torch.cat((members, groups, context[batch.group_batch]), dim=-1))
+        if hasattr(self, 'group_readout'):
+            groups = self.group_readout(groups, nodes, batch)
         return nodes, groups, context
 
 

@@ -2,7 +2,7 @@
 
 **M6 is closed at pilot scale (2026-09-20):** the cross-category pipeline was built, run on real circuits and independently audited, while the question of whether transfer or a graph transformer helps is not answered at this scale; see the closing entry in [project decisions](docs/decisions.md). In the pilot, the [three category holdouts](docs/m6-real-results.md) used exactly 2,811 Spectre calls and 1,566 SAC updates, with final circuit/baseline restoration passed. The independent audit verified all 2,811 saved candidate packages and 162 learner checkpoints with zero new simulator calls, and the regression suite of that closure passed 544 tests (the workbench, built afterwards, has its own suite - see its record for the current count). GT adaptation achieved 2/3 OTA, 3/3 LDO and 3/3 VCO successes; coordinate search achieved 3/3 in every class without pretraining. This short experiment on known circuits does not establish a GT advantage. The [frozen protocol](docs/m6-real-protocol.md), [VCO runtime qualification](docs/m6-vco-runtime.md) and earlier [synthetic benchmark](docs/m6-cross-category.md) remain separate evidence.
 
-**Current encoders (2026-09-26):** `graph_transformer`, `rgcn` and `gatv2` only. GATv2 replaces GATv1 for new training; old `gat` configurations and weights are not silently migrated. MLP and GCN have been removed from the optimizer, CLI and workbench; port-GNN was removed earlier. New M6 defaults plan 873 synthetic evaluations or 1,488 real calls. The six-encoder results above are historical. Checkpoints from before this change require their matching historical source and dependencies; see [decisions](docs/decisions.md).
+**Current encoders (2026-10-06):** `graph_transformer` (default), `rgcn`, `gatv2`, and experimental `graph_gps` / `group_cross_attention`. Both new encoders are integrated with the optimizer, workbench, saved models and attention inspection; see [architecture and usage](docs/global-encoders.md). Their transfer performance has not been established. GATv1, MLP, GCN and port-GNN remain removed. Historical M6 budgets/results apply to their original encoder selections; use explicit selections and budget previews for new comparisons. Exact resume of an older checkpoint requires its historical source and dependencies; compatible fine_tune/frozen loading retains the existing checks. See [decisions](docs/decisions.md).
 
 ## Workbench (web UI, since 2026-09-20)
 
@@ -95,7 +95,7 @@ PYTHONPATH=src python3 -m analog_optimizer.demo tests/fixtures/synthetic/vco.scs
 | `src/analog_optimizer/measurements/specs.py` | 单位、有效性、min/max/range 规格和有限奖励 |
 | `src/analog_optimizer/envs/` | 单 worker 环境、有限步数、失败处理、候选日志和恢复 |
 | `src/analog_optimizer/evaluation/` | nominal top-k/corner 汇总纯函数，以及 M5 划分检查、定额迁移实验和成本汇总；不调度 PVT/MC |
-| `src/analog_optimizer/models/` | 固定特征/规格注册表、packed batch、可切换 GT/RGCN/GATv2 编码器、group actor/critic |
+| `src/analog_optimizer/models/` | 固定特征/规格注册表、packed batch、GT/RGCN/GATv2/GraphGPS/parameter-group attention、group actor/critic |
 | `src/analog_optimizer/training/` | replay（reward v2 起可含各 PVT 工况的结果）、连续 SAC、串行/并行 collector、checkpoint 保存/恢复 |
 | `src/analog_optimizer/recording/` | 单 writer SQLite、静态去重、动态状态、摘要、容量/附件清理、checkpoint、只读查询与导出 |
 | `tests/fixtures/synthetic/` | 四个合成网表，使用同一个解析器 |

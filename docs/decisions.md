@@ -1,10 +1,14 @@
-# Current state (2026-09-30)
+# Current state (2026-10-06)
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
-- **Optimizer source digest:** `aafdd71dfcd1b2008f997fb91d211a614f91822d9e4afeabfe4ac88c6d1da38e`, set by record 7.226 (2026-10-06,
-  not committed when written: the LLM search package `search/` and `ActionMapper.encode`, used by nothing else, removed
-  with the LLM search methods; nothing else in the package changed). Before it:
+- **Optimizer source digest:** `0b0808bcbf8a7d22254292b1ef60476743b043ecd8ad59cc9f0320954a7dbac8`, working tree: two
+  uncommitted steps of 2026-10-06, each to be committed on its own. Record 7.226 removed the LLM search package `search/`
+  and `ActionMapper.encode` with the LLM search methods (alone on HEAD:
+  `aafdd71dfcd1b2008f997fb91d211a614f91822d9e4afeabfe4ac88c6d1da38e`); record 7.228 added GraphGPS and parameter-group
+  cross-attention, authorized by the user; see [implementation](global-encoders.md) (alone on HEAD:
+  `061768e0806ac6c631dcb1c3ca8cfa70b4e5caaeb4a4d753b661710d1d3b26d5`). No real-simulator comparison or
+  transfer-advantage claim. Before it:
   `4aebbfab2176605c6e984d3b42ae622335246dfed693c5b9cc39f942c0aaad73`, set by `510ba0e` (record 7.221, 2026-10-06: a
   learner step takes its replay sample lent instead of deep-copied, skips the next-state work when the discount is
   exactly 0, and keys the input cache by digests worked out once; every result and random-number state identical;
@@ -24,7 +28,9 @@ A summary for new sessions; everything below is the chronological record, oldest
   `898b134` (record 7.126: corner jobs two at a time, every 5th reset simulated, Maestro results not parsed);
   `100945fb...`, set by `4634200` (LLM sizing, records 7.116 and 7.120); `3f00832c...` before that, set by `8cf53ae`
   (reward v2.1).
-- **Encoders:** `graph_transformer` (default), `rgcn`, `gatv2`. `port_gnn` was removed on 2026-09-24; `mlp` and `gcn`
+- **Encoders:** `graph_transformer` (default), `rgcn`, `gatv2`, plus experimental `graph_gps` and
+  `group_cross_attention`. The new encoders support optional random-walk structural inputs and all four workbench
+  run modes. They preserve the parser and SAC/action contracts. `port_gnn` was removed on 2026-09-24; `mlp` and `gcn`
   on 2026-09-26, when `gatv2` replaced `gat` (GATv1).
 - **Reward:** v2.1 ([reward-v2.md](reward-v2.md)). Schema defaults keep the old arithmetic: capped violations,
   worst-spec share 0, objective and margin weights 0, conditions `off` (nominal only), gate band 0.5, objective shape
@@ -32,7 +38,7 @@ A summary for new sessions; everything below is the chronological record, oldest
   compressed violations, share 0.5, objective and margin bonus weights 1, objective shape compressed. Corner training
   (`always`, `after_nominal`) was offered for `real:gpdk045_ota7` only; no task has it since 2026-09-30 (7.128).
 - **Older checkpoints** resume exactly only under their own source: digest `4aebbfab...` (record 7.221) from `510ba0e` up to
-  the commit before record 7.226 - no run was saved under it (checked 2026-10-06); digest `f83342bc...` (record 7.149; every save
+  the next optimizer commit - no run was saved under it (checked 2026-10-06); digest `f83342bc...` (record 7.149; every save
   point written before record 7.221, the eight viewing copies of 2026-10-05's Spectre runs in `outputs/` included) from
   `ab34f03` up to `2825305`, the commit before 7.221's `510ba0e` - checked 2026-10-06: that source loads the GATv2 run's final save point
   and two loads give identical next updates, the 7.221 source refuses it; under the new source such a save point still
@@ -1243,8 +1249,7 @@ the optimizer side. The button what is missing can be kept with a window showing
   package's LLM search code goes too: `search/` (proposers, schedule, the LLM proposer) and `ActionMapper.encode` (its
   inverse mapping, used by nothing else). No other package line changed. No saved run pins `4aebbfab...`: every save
   point under `outputs/` is `f83342bc...` or older, so what resumes today still resumes, and fine_tune and frozen load
-  as before.
-  That digest is the step alone on HEAD; landed in a working tree that also holds record 7.228's uncommitted
+  as before. That digest is the step alone on HEAD; landed in a working tree that also holds record 7.228's uncommitted
   encoders (another session, same morning), the tree hashes `0b0808bc...` until each step is committed on its own.
 - **The comparison driver of the parked SKY130 benchmark** (`examples/benchmark_llm_sizing.py`, `llm_sizing_evidence.py`,
   and the engine's `seed_proposer` / `evaluation_observer` hooks it used) is deleted (the user: "Delete the driver"). The

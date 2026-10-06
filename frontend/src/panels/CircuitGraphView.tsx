@@ -39,6 +39,8 @@ function graphStyle(canvas: HTMLElement): Json {
     { selector: 'node[sized = 1]', style: { 'border-width': 3, 'border-color': accent } },
     { selector: 'node[type = "net"]', style: { shape: 'ellipse', width: 'label', height: 22, padding: '5px', 'font-size': 9 } },
     { selector: 'node[role = "supply"], node[role = "ground"]', style: { 'font-size': 11, 'font-weight': 'bold', 'border-width': 2, 'border-color': '#1c2430', height: 26, padding: '9px' } },
+    { selector: 'node[focus = 1]', style: { 'background-color': 'mapData(focusWeight, 0, 1, #f0f5ff, #73a9f0)' } },
+    { selector: 'node[query = 1]', style: { 'border-color': '#9333ea', 'border-width': 4 } },
     { selector: 'edge', style: { 'curve-style': 'bezier', label: 'data(label)', 'font-size': 8, color: muted, 'text-background-color': v('--canvas', '#fff'), 'text-background-opacity': 0.85, 'text-background-padding': '1px',
       width: 'mapData(attention, 0, 1, 1, 10)', 'line-color': `mapData(attention, 0, 1, ${edge}, ${accent})` } },
     // a link that enters a device at its gate ends in a dot there, one that enters at the bulk in a bar
@@ -66,6 +68,8 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
   const [layer, setLayer] = useState(1);
   const [head, setHead] = useState('mean');
   const [direction, setDirection] = useState('to_device');
+  const [scope, setScope] = useState('local');
+  const [query, setQuery] = useState('');
   const [picked, setPicked] = useState<{ type: string; id: string } | null>(null);
   const [bulk, setBulk] = useState(false);                         // bulk ties double most links to supply / ground; hidden at first, the network sees them all the same
   const [generic, setGeneric] = useState(false);                   // this graph names no supply / ground net: no hints, the package's own layered layout is used
@@ -79,7 +83,7 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
     const mine = ++request.current;
     setBusy(true); setError(null);
     api.modelGraphView(runDir, checkpointId, evaluation)
-      .then(v => { if (mine !== request.current) return; setView(v); setWanted(String(v.step.evaluation)); setPicked(null); setLayer(l => Math.min(l, Math.max(1, v.attention.layers)));
+      .then(v => { if (mine !== request.current) return; setView(v); setWanted(String(v.step.evaluation)); setPicked(null); setScope('local'); setQuery(''); setLayer(l => Math.min(l, Math.max(1, v.attention.layers)));
         // A head chosen for a model with more heads does not exist here: every edge was drawn at attention 0.
         setHead(h => h === 'mean' || Number(h) <= (v.attention.heads ?? 0) ? h : 'mean'); })
       .catch(e => { if (mine === request.current) setError(e.status === 404 && e.message === 'Not Found'
@@ -128,7 +132,7 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
       graph.current = cy;
       (canvas.current as Json).__cy = cy;                        // the browser check reads the drawn graph through this
       layout('hints', view);
-      paint(cy, view, layer, head, direction);
+      paint(cy, view, layer, head, direction, scope, query);
       cy.edges('[bulk = 1]').toggleClass('hidden', !bulk);
     }, (e: any) => {               // the drawing package is fetched on first use: a failed fetch left the picture blank, unexplained
       if (!cancelled) setError(`the drawing package could not be loaded (${e?.message ?? e}). Reload the page, then open the view again.`);
@@ -137,12 +141,18 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
   }, [view]);
   // Another look (the header's switch): the canvas, lines and labels take its colours; nothing moves (record 7.158).
   const pageLook = useLook();
-  useEffect(() => { if (graph.current && canvas.current && view) { graph.current.style(graphStyle(canvas.current)); paint(graph.current, view, layer, head, direction); } }, [pageLook]);
+  useEffect(() => { if (graph.current && canvas.current && view) { graph.current.style(graphStyle(canvas.current)); paint(graph.current, view, layer, head, direction, scope, query); } }, [pageLook]);
   // Another layer, head or direction: only the lines change, the picture stays where the user put it.
-  useEffect(() => { if (graph.current && view) paint(graph.current, view, layer, head, direction); }, [layer, head, direction]);
+  useEffect(() => { if (graph.current && view) paint(graph.current, view, layer, head, direction, scope, query); }, [layer, head, direction, scope, query]);
+  useEffect(() => { if (scope === 'global' && picked && picked.type !== 'connection') setQuery(`${picked.type === 'device' ? 'd' : 'n'}:${picked.id}`); }, [picked, scope]);
   useEffect(() => { graph.current?.edges('[bulk = 1]').toggleClass('hidden', !bulk); }, [bulk, view]);
 
   const attention = view?.attention;
+  const dense = view?.node_attention;
+  const queryIds: string[] = scope === 'group' ? dense?.groups ?? [] : dense?.nodes ?? [];
+  const queryId = queryIds.includes(query) ? query : queryIds[0] ?? '';
+  const weights = nodeWeights(view, scope, layer, head, queryId);
+  const layerCount = scope === 'local' ? attention?.layers ?? 0 : dense?.[`${scope}_layers`]?.length ?? 0;
   const device = picked?.type === 'device' ? view?.devices.find((d: Json) => d.id === picked.id) : null;
   const net = picked?.type === 'net' ? view?.nets.find((n: Json) => n.id === picked.id) : null;
   const connection = picked?.type === 'connection' ? view?.connections.find((c: Json) => c.id === picked.id) : null;
@@ -165,9 +175,15 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
           <button disabled={busy || view.step.evaluation <= view.step.first} onClick={() => load(view.step.evaluation - 1)} title="One archived evaluation earlier">&lt;</button>
           <button disabled={busy || view.step.evaluation >= view.step.last} onClick={() => load(view.step.evaluation + 1)} title="One archived evaluation later">&gt;</button>
           {attention.available && <>
-            <label>Layer<select className="graph-layer" value={layer} onChange={e => setLayer(Number(e.target.value))}>{Array.from({ length: attention.layers }, (_, i) => <option key={i} value={i + 1}>block {i + 1}</option>)}</select></label>
+            <label>Attention<select className="graph-scope" value={scope} onChange={e => { setScope(e.target.value); setQuery(''); setLayer(1); }}>
+              <option value="local">Local port edges</option>
+              {!!dense?.global_layers?.length && <option value="global">Global node attention</option>}
+              {!!dense?.group_layers?.length && <option value="group">Parameter-group attention</option>}</select></label>
+            <label>Layer<select className="graph-layer" value={layer} onChange={e => setLayer(Number(e.target.value))}>{Array.from({ length: layerCount }, (_, i) => <option key={i} value={i + 1}>{scope === 'group' ? 'readout' : 'block'} {i + 1}</option>)}</select></label>
             <label>Head<select className="graph-head" value={head} onChange={e => setHead(e.target.value)}><option value="mean">mean of {attention.heads}</option>{Array.from({ length: attention.heads }, (_, i) => <option key={i} value={String(i + 1)}>head {i + 1}</option>)}</select></label>
-            <label>Line thickness shows<select className="graph-direction" value={direction} onChange={e => setDirection(e.target.value)}>{Object.entries(DIRECTIONS).map(([k, text]) => <option key={k} value={k}>{text}</option>)}</select></label></>}
+            {scope === 'local' ? <label>Line thickness shows<select className="graph-direction" value={direction} onChange={e => setDirection(e.target.value)}>{Object.entries(DIRECTIONS).map(([k, text]) => <option key={k} value={k}>{text}</option>)}</select></label>
+              : <label>{scope === 'group' ? 'Parameter group' : 'Receiving node'}<select className="graph-query" value={queryId} onChange={e => setQuery(e.target.value)}>
+                {queryIds.map(id => <option key={id} value={id}>{id}</option>)}</select></label>}</>}
           <label className="check graph-bulk" title="Bulk ties are part of what the network sees, and mostly run beside a source link to supply or ground. Hidden at first to keep the picture readable; the numbers and the tables do not change."><input type="checkbox" checked={bulk} onChange={e => setBulk(e.target.checked)} />Bulk connections</label>
           <span className="spacer" />
           <button onClick={() => layout('hints')} title="Positions from what the graph says about the circuit: supply on top, ground at the bottom, every node at its place on the current path, paired devices above each other. Fixed rules, no agent.">Circuit hints</button>
@@ -182,7 +198,12 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
               {view.step.evaluation > (view.step.saved_at ?? Infinity) ? ' This state is LATER than the save point: the model never saw it while training.' : ''}</p>
             {generic && <p className="note graph-generic">This graph names no supply and no ground net, so there are no circuit hints for the positions: the drawing package's own layered layout is used.</p>}
             {!attention.available && <p className="note graph-no-attention">{attention.reason}</p>}
-            {attention.available && <div className="note graph-reading"><p>{view.reading}</p><p className="hint">Thick blue = much attention; thin dashed grey = a receiver with a single connection (always 1.0). Blue border = a device whose size the policy sets.</p></div>}
+            {attention.available && <div className="note graph-reading"><p>{scope === 'local' ? view.reading : dense?.reading}</p>
+              <p className="hint">{scope === 'local' ? 'Thick blue = much attention; thin dashed grey = a receiver with a single connection (always 1.0). Blue border = a device whose size the policy sets.'
+                : 'Darker node fill = greater weight for the chosen query, scaled to its strongest weight. Purple border = receiving node. Lines show physical connections.'}</p></div>}
+            {scope !== 'local' && <table className="grid small graph-node-attention"><thead><tr><th>Node</th><th>Attention</th><th>Uniform</th></tr></thead><tbody>
+              {(dense?.nodes ?? []).map((id: string, i: number) => <tr key={id}><td>{id}</td><td className="numeric">{fixed(weights[i], 5)}</td>
+                <td className="numeric">{fixed(1 / dense.nodes.length, 5)}</td></tr>)}</tbody></table>}
             {view.vocabulary?.name && view.vocabulary.name !== 'standard' && <p className="hint graph-vocabulary">The network of this run knows the components of <b>{view.vocabulary.label}</b>: a node shows its PDK model.</p>}
             <p className="hint graph-legend"><b>Nodes:</b> rounded boxes = transistors (blue nmos, red pmos, yellow bipolar), barrels = R / C / L and diodes, cut corners = sources, circles = nets
               (red supply, grey ground, green input, yellow output). <b>Links:</b> one ending in a dot enters the device at its gate, one ending in a bar at its bulk.
@@ -198,11 +219,11 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
             {!picked && <p className="hint graph-picked">Click a device, a net or a line. Nodes can be dragged; the wheel zooms.</p>}
             {(device || net) && <div className="graph-picked"><p><b>{(device ?? net).id}</b> - {device ? `${device.kind} (${device.model})` : `net, ${net.roles.join(' / ')}`}</p>
               {device && <p className="hint">{Object.entries(device.parameters).map(([k, v]) => `${k} = ${short(v)}`).join(', ') || 'no numeric parameters'}{device.groups.length ? ` - sized by ${device.groups.join(', ')}` : ''}</p>}
-              {attention.available && <table className="grid small graph-around"><thead><tr><th>{device ? 'Terminal' : 'Device'}</th><th>{device ? 'Net' : 'Terminal'}</th><th>Attention</th><th>Uniform</th></tr></thead><tbody>
+              {scope === 'local' && attention.available && <table className="grid small graph-around"><thead><tr><th>{device ? 'Terminal' : 'Device'}</th><th>{device ? 'Net' : 'Terminal'}</th><th>Attention</th><th>Uniform</th></tr></thead><tbody>
                 {around.map((c: Json) => { const a = attentionOf(c, layer, head, towards); return <tr key={c.id}><td>{device ? c.terminal : c.device}</td><td>{device ? c.net : c.terminal}</td>
                   <td className="numeric">{fixed(a.value)}</td><td className="numeric">{fixed(a.uniform)}</td></tr>; })}
               </tbody></table>}
-              {attention.available && <p className="hint">What <b>{(device ?? net).id}</b> takes from each of its connections (block {layer}, {head === 'mean' ? 'mean of the heads' : `head ${head}`}): the column sums to 1.</p>}</div>}
+              {scope === 'local' && attention.available && <p className="hint">What <b>{(device ?? net).id}</b> takes from each of its connections (block {layer}, {head === 'mean' ? 'mean of the heads' : `head ${head}`}): the column sums to 1.</p>}</div>}
             {connection && <div className="graph-picked"><p><b>{connection.device}.{connection.terminal}</b> - <b>{connection.net}</b></p>
               {attention.available ? <table className="grid small graph-around"><thead><tr><th>Block</th><th>Direction</th><th>Mean</th><th>Per head</th><th>Uniform</th></tr></thead><tbody>
                 {connection.attention.flatMap((slot: Json) => Object.keys(DIRECTIONS).filter(k => slot[k] !== undefined).map(k => <tr key={`${slot.layer}${k}`}><td>{slot.layer}</td>
@@ -227,9 +248,27 @@ function groundDown(cy: Json) {
     g.position({ x: xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length) + 60 * i, y: bottom + 130 }); });
 }
 
-function paint(cy: Json, view: Json, layer: number, head: string, direction: string) {
+function nodeWeights(view: Json, scope: string, layer: number, head: string, query: string): number[] {
+  const dense = view?.node_attention;
+  if (!dense || scope === 'local') return [];
+  const queries: string[] = scope === 'group' ? dense.groups : dense.nodes;
+  const index = Math.max(0, queries.indexOf(query));
+  const heads: number[][][] = dense[`${scope}_layers`]?.[layer - 1] ?? [];
+  if (!heads.length) return [];
+  return head === 'mean' ? dense.nodes.map((_: string, i: number) => heads.reduce((sum, h) => sum + h[index][i], 0) / heads.length)
+    : heads[Number(head) - 1]?.[index] ?? [];
+}
+
+function paint(cy: Json, view: Json, layer: number, head: string, direction: string, scope: string, query: string) {
+  const weights = nodeWeights(view, scope, layer, head, query);
+  const peak = Math.max(...weights, 1e-12);
+  const queryId = query || view.node_attention?.nodes?.[0];
+  cy.nodes().data({ focus: 0, query: 0 });
+  (view.node_attention?.nodes ?? []).forEach((id: string, i: number) => cy.getElementById(id).data({
+    focus: scope !== 'local' ? 1 : 0, focusWeight: (weights[i] ?? 0) / peak, query: scope === 'global' && id === queryId ? 1 : 0,
+  }));
   cy.batch(() => view.connections.forEach((c: Json) => {
-    const a = attentionOf(c, layer, head, direction);
+    const a = attentionOf(c, scope === 'local' ? layer : 0, head, direction);
     cy.getElementById(`c:${c.id}`).data({ attention: a.value ?? 0, trivial: a.trivial ? 1 : 0 });      // no attention at all: thin solid lines
   }));
 }

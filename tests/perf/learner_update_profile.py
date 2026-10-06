@@ -45,7 +45,9 @@ from analog_optimizer.training.sac import SACConfig, SACLearner, source_digest  
 # The workbench's starting presets (src/gator_workbench/network_presets.py, record 7.192).
 PRESETS = dict(graph_transformer=dict(hidden_dim=48, heads=4, layers=4),
                rgcn=dict(hidden_dim=32, heads=4, layers=4),
-               gatv2=dict(hidden_dim=192, heads=3, layers=4))
+               gatv2=dict(hidden_dim=192, heads=3, layers=4),
+               graph_gps=dict(hidden_dim=48, heads=4, layers=4, structural_encoding='rwse'),
+               group_cross_attention=dict(hidden_dim=48, heads=4, layers=4, structural_encoding='none'))
 
 
 def _dataclass(cls, values):

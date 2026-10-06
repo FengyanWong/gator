@@ -28,7 +28,7 @@ def trained(root, encoder, name, **output):
     return config, layout
 
 
-@pytest.fixture(scope='module', params=['graph_transformer', 'gatv2'])
+@pytest.fixture(scope='module', params=['graph_transformer', 'gatv2', 'graph_gps', 'group_cross_attention'])
 def transformer(tmp_path_factory, request):
     root = tmp_path_factory.mktemp('graph_view')
     return (root, *trained(root, request.param, f'view_{request.param}'))
@@ -59,6 +59,26 @@ def test_the_circuit_and_both_directions_of_attention_are_complete_and_normalize
             assert all(math.isclose(uniform, 1 / len(arriving)) for _, uniform in arriving)
     assert 'per RECEIVING node' in view['reading'] and 'not why' in view['reading']
     json.dumps(view, allow_nan=False)
+
+
+def test_global_and_group_weights_have_separate_scopes_and_real_query_ids(transformer):
+    _, _, layout = transformer
+    view = graph_view.graph_view(layout.run_dir)
+    dense, encoder = view['node_attention'], view['network']['encoder_type']
+    assert dense['nodes'] == [f"d:{d['id']}" for d in view['devices']] + [f"n:{n['id']}" for n in view['nets']]
+    assert dense['groups'] == [g['id'] for g in view['groups']]
+    assert len(dense['global_layers']) == (2 if encoder == 'graph_gps' else 0)
+    assert len(dense['group_layers']) == (1 if encoder == 'group_cross_attention' else 0)
+    for scope in ('global', 'group'):
+        for layer in dense[f'{scope}_layers']:
+            assert len(layer) == 2
+            for head in layer:
+                assert len(head) == len(dense['nodes'] if scope == 'global' else dense['groups'])
+                for query in head:
+                    assert len(query) == len(dense['nodes'])
+                    assert all(0 <= weight <= 1 for weight in query)
+                    assert sum(query) == pytest.approx(1, abs=1e-6)
+    assert 'not physical connections' in dense['reading']
 
 
 def test_the_hooks_do_not_change_what_the_policy_proposes_and_the_recorded_action_is_the_runs_own(transformer):

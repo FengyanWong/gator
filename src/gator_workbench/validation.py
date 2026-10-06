@@ -529,7 +529,7 @@ def _check_run(config, report, record):
                    'encoder_only_transfer already leaves critic heads random; critic encoders are still loaded '
                    'unless reset_critic is set')
     net = run.network
-    if net.encoder_type in ('graph_transformer', 'gatv2') and net.hidden_dim % net.heads:
+    if net.encoder_type != 'rgcn' and net.hidden_dim % net.heads:
         report.add('error', 'heads_divisibility', 'run.network', 'hidden_dim must be divisible by heads')
     if run.mode != 'frozen' and run.max_evaluations < adv.batch_size + 1:
         report.add('warning', 'budget_below_batch', 'run.max_evaluations',

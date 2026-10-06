@@ -35,15 +35,17 @@ import threading
 from pydantic import ValidationError
 
 from .paths import local_settings_dir
-from .schema import ENCODER_TYPES, AdvancedRL, NetworkConfig
+from .schema import ENCODER_TYPES, GLOBAL_ENCODERS, AdvancedRL, NetworkConfig
 from .storage.atomic import read_json, write_json
 from .storage.dataset import utcnow
 
 SETTINGS_FILE = 'network_settings.json'
 SETTINGS_SCHEMA = 'gator-workbench-network-settings-v1'
 DEFAULT_ENCODER = 'graph_transformer'
-ATTENTION_ENCODERS = ('graph_transformer', 'gatv2')         # the only blocks that read `heads`
-NETWORK_FIELDS = ('hidden_dim', 'heads', 'layers')
+ATTENTION_ENCODERS = tuple(name for name in ENCODER_TYPES if name != 'rgcn')
+NETWORK_FIELDS = ('hidden_dim', 'heads', 'layers', 'structural_encoding')
+ENCODER_LABELS = dict(graph_transformer='Graph Transformer', rgcn='RGCN', gatv2='GATv2',
+                      graph_gps='GraphGPS — port-aware', group_cross_attention='Parameter-group attention — experimental')
 ADVANCED_FIELDS = ('learning_rate', 'gamma', 'tau', 'initial_alpha', 'target_entropy_per_action', 'max_grad_norm',
                    'batch_size', 'warmup_transitions', 'update_every', 'updates_per_transition', 'replay_capacity',
                    'episode_length')
@@ -53,7 +55,7 @@ ADVANCED_FIELDS = ('learning_rate', 'gamma', 'tau', 'initial_alpha', 'target_ent
 # gator_tested: compared on GATOR circuits and chosen (COMPARED: TESTED, record 7.183; learning rate, record 7.199).
 # gator_measured_with: the value the measurements of record 7.183 were made with, not a compared optimum (LEARNED).
 # not_used: the encoder ignores the field; the value only keeps checkpoints comparable.
-BASES = ('paper', 'official_code', 'adapted', 'gator_default', 'gator_tested', 'gator_measured_with', 'not_used')
+BASES = ('paper', 'official_code', 'adapted', 'gator_default', 'gator_tested', 'gator_measured_with', 'not_used', 'experimental')
 # same: the cited work uses this kind of network. closest: no publication uses this network for the
 # purpose, so the closest published network is cited instead (the note says which and why).
 MATCHES = ('same', 'closest')
@@ -298,6 +300,39 @@ PRESETS: dict = {
         **_attention_training(' Borrowed attention-network settings, not verified GATv2 sizing settings.', 'closest')),
 }
 
+# Architecture references, not published hyperparameters or circuit-transfer results.
+REFERENCES.update(
+    rampasek2022gps=_reference('Rampášek et al., NeurIPS 2022', 'L. Rampášek et al.',
+        'Recipe for a General, Powerful, Scalable Graph Transformer', 'NeurIPS', 2022,
+        'https://arxiv.org/abs/2205.12454', 'GraphGPS graph representation',
+        'General graph benchmarks; no GATOR sizing budget.', code='https://github.com/rampasek/GraphGPS'),
+    lee2019set=_reference('Lee et al., ICML 2019', 'J. Lee et al.',
+        'Set Transformer: A Framework for Attention-based Permutation-Invariant Neural Networks', 'ICML', 2019,
+        'https://proceedings.mlr.press/v97/lee19d.html', 'Attention pooling',
+        'A reference for query-based readout, not this parameter-group SAC encoder.'))
+
+
+def _experimental_preset(encoder):
+    fields = _defaults()
+    for name, value in dict(hidden_dim=48, heads=4, layers=4,
+                            structural_encoding='rwse' if encoder == 'graph_gps' else 'none').items():
+        fields[name] = _field(value, 'experimental', note='Project starting value; not a published or measured optimum.')
+    for name in ADVANCED_FIELDS:
+        fields[name] = _field(fields[name]['value'], 'experimental',
+            note='Inherited from the existing SAC starting settings; not validated for this encoder.')
+    source = 'rampasek2022gps' if encoder == 'graph_gps' else 'lee2019set'
+    summary = ('GPS-style port-aware local messages plus full within-circuit node attention in each block.'
+               if encoder == 'graph_gps' else
+               'Local port-aware Graph Transformer plus one cross-attention readout: each parameter group queries '
+               'all nodes using its bound devices, parameter features and goals. A custom adaptation of query-based '
+               'pooling, not a claim of novelty.')
+    return dict(fields=fields, architecture_reference=source, summary=summary + ' Experimental: no measured transfer advantage. '
+                '48 / 4 / 4 matches the Graph Transformer starting size for an initial comparison. '
+                'Full global attention costs O(N²); group attention adds O(GN).')
+
+
+PRESETS.update({name: _experimental_preset(name) for name in GLOBAL_ENCODERS})
+
 
 # --------------------------------------------------------------------------- machinery
 class InvalidNetworkSettings(ValueError):
@@ -390,9 +425,11 @@ def entry(encoder) -> dict:
         except (InvalidNetworkSettings, KeyError, TypeError) as exc:       # hand-edited or outdated file
             problem = f'The saved {encoder} values were ignored: {exc}'
     origin = 'publication' if values == preset else 'custom'
-    return dict(encoder_type=encoder, uses_heads=encoder in ATTENTION_ENCODERS, origin=origin,
+    return dict(encoder_type=encoder, label=ENCODER_LABELS[encoder], uses_heads=encoder in ATTENTION_ENCODERS,
+                supports_structural_encoding=encoder in GLOBAL_ENCODERS, experimental=encoder in GLOBAL_ENCODERS, origin=origin,
                 network=values['network'], advanced=values['advanced'], publication=preset,
                 provenance=PRESETS[encoder]['fields'], summary=PRESETS[encoder]['summary'],
+                architecture_reference=REFERENCES.get(PRESETS[encoder].get('architecture_reference')),
                 saved_utc=saved.get('saved_utc') if isinstance(saved, dict) and problem is None else None,
                 problem=problem)
 

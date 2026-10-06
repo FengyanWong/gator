@@ -102,6 +102,7 @@ def test_unknown_metrics_and_over_budget_fail_before_backend(categories, tmp_pat
 
 def test_suite_budget_is_global_and_dry_run_creates_no_output(tmp_path):
     command = [sys.executable, str(ROOT/'examples/benchmark_cross_category.py'), '--dry-run',
+               '--encoders', 'graph_transformer', 'rgcn', 'gatv2',
                '--seeds', '17', '--pretrain-steps', '2', '--test-steps', '2', '--output', str(tmp_path/'output')]
     result = subprocess.run(command+['--max-calls', '189'], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

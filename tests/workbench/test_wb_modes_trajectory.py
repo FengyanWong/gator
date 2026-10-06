@@ -23,17 +23,19 @@ def latest(layout):
 
 
 def transfer_config(tmp_path, source_layout, mode, task='synthetic:gpdk045_ota5', **kwargs):
-    run = dict(dict(max_evaluations=12, mode=mode), **kwargs.pop('run', {}))
+    network = read_json(source_layout.effective_config)['run']['network']
+    run = dict(dict(max_evaluations=12, mode=mode, network=network), **kwargs.pop('run', {}))
     config = make_config(tmp_path, task, run=run, **kwargs)
     config.run.model_source.run_dir = str(source_layout.run_dir)
     return config
 
 
-@pytest.fixture(scope='module')
-def source_run(tmp_path_factory):
+@pytest.fixture(scope='module', params=['graph_transformer', 'graph_gps', 'group_cross_attention'])
+def source_run(tmp_path_factory, request):
     """One trained MOCK source model shared by the transfer tests (never modified by them)."""
     root = tmp_path_factory.mktemp('source')
-    layout, state = execute(make_config(root, run=dict(max_evaluations=24, seed=7), project=dict(task_name='source')), root)
+    network = dict(encoder_type=request.param, hidden_dim=16, heads=2, layers=1)
+    layout, state = execute(make_config(root, run=dict(max_evaluations=24, seed=7, network=network), project=dict(task_name='source')), root)
     assert state == 'completed'
     return root, layout
 

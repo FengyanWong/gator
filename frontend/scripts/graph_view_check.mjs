@@ -43,7 +43,9 @@ const WIRES = [['M1', 'D', 'out', [0.4, 0.1], [0.5, 0.2]], ['M1', 'G', 'in', [0.
   ['CL', 'P', 'out', [0.7, 0.6], [0.2, 0.3]], ['CL', 'N', '0', [0.3, 0.4], [0.4, 0.5]], ['VB', 'P', 'vb', [0.8, 0.5], [1, 1]], ['VB', 'N', '0', [0.2, 0.5], [0.1, 0.2]]];
 const intoDevice = {}, intoNet = {};
 for (const [d, , n] of WIRES) { intoDevice[d] = (intoDevice[d] ?? 0) + 1; intoNet[n] = (intoNet[n] ?? 0) + 1; }
-const view = (evaluation, { attention = true } = {}) => ({ checkpoint_id: POINT.checkpoint_id, run_dir: RUN, task_id: MODEL.task_id, network: attention ? NET : { ...NET, encoder_type: 'rgcn' }, circuit_id: 'FIXTURE', origin: 'synthetic',
+const NODE_IDS = ['d:M1', 'd:M2', 'd:CL', 'd:VB', 'n:out', 'n:in', 'n:0', 'n:vdd', 'n:vb'];
+const denseWeights = count => [0, 1].map(h => Array.from({ length: count }, (_, q) => NODE_IDS.map((_, i) => (1 + (i + q + h) % 9) / 45)));
+const view = (evaluation, { attention = true, scope = null } = {}) => ({ checkpoint_id: POINT.checkpoint_id, run_dir: RUN, task_id: MODEL.task_id, network: attention ? { ...NET, encoder_type: scope === 'global' ? 'graph_gps' : scope === 'group' ? 'group_cross_attention' : NET.encoder_type } : { ...NET, encoder_type: 'rgcn' }, circuit_id: 'FIXTURE', origin: 'synthetic',
   step: { evaluation, policy_version_then: 3, saved_at: 20, status: 'ok', first: 2, last: 20, count: 19 },
   metrics: [{ id: 'score', value: 0.61, unit: 'fixture', valid: true }],
   devices: [{ id: 'M1', kind: 'nmos', model: 'FIXTURE_n', groups: ['wn'], parameters: { w: 2e-6, l: 1e-7 } }, { id: 'M2', kind: 'pmos', model: 'FIXTURE_p', groups: [], parameters: { w: 4e-6 } },
@@ -57,6 +59,8 @@ const view = (evaluation, { attention = true } = {}) => ({ checkpoint_id: POINT.
   { id: 'cl', parameter: 'c', unit: 'F', value: 1e-12, lower: 1e-13, upper: 5e-12, scale: 'linear', mutable: true, members: [{ device: 'CL', parameter: 'c', ratio: 1 }],
     policy_action: 0, policy_value: 2.55e-12, recorded_action: 0.1, recorded_value: 2.795e-12 }],
   attention: attention ? { available: true, layers: 2, heads: 2, reason: null } : { available: false, layers: 0, heads: 0, reason: 'FIXTURE: The rgcn encoder has no attention: the picture shows the circuit and the proposed sizes only.' },
+  node_attention: { nodes: NODE_IDS, groups: ['wn', 'cl'], global_layers: scope === 'global' ? [denseWeights(9), denseWeights(9)] : [],
+    group_layers: scope === 'group' ? [denseWeights(2)] : [], reading: 'FIXTURE: global/group weights, not physical connections.' },
   reading: 'FIXTURE reading: attention is normalized per RECEIVING node; a node with a single connection always shows 1.0.', actions_note: 'FIXTURE actions note.' });
 const VALID = validConfiguration();
 
@@ -245,6 +249,25 @@ await runChecks(browser, async () => {
   await evaluate(`${DIALOG}.querySelector('button.dialog-close').click()`); await until(`!${DIALOG}.open`, 30);
   await setSelect(`[...document.querySelectorAll('.right label')].find(l => l.firstChild?.textContent?.trim() === 'Mode')?.querySelector('select')`, 'fine_tune');
   await until(`!!(${OPEN})`, 40);
+
+  // ---- global and group attention are separate node views, never added as circuit wires --------------------------------
+  for (const scope of ['global', 'group']) {
+    mode = { scope };
+    await evaluate(`${OPEN}.click()`);
+    await until(`!!(${CY}) && !!${DIALOG}.querySelector('select.graph-scope option[value="${scope}"]')`, 80);
+    await setSelect(`${DIALOG}.querySelector('select.graph-scope')`, scope);
+    await setSelect(`${DIALOG}.querySelector('select.graph-query')`, scope === 'group' ? 'cl' : 'd:M2');
+    await sleep(200);
+    check(`${scope}: every node has a normalized weight`, await evaluate(`(() => { const rows = [...${DIALOG}.querySelectorAll('table.graph-node-attention tbody tr')];
+      return rows.length === 9 && Math.abs(rows.reduce((s, r) => s + Number(r.cells[1].textContent), 0) - 1) < 0.0001; })()`));
+    check(`${scope}: highlights nodes and retains only physical wires`, await evaluate(`${CY}.nodes('[focus = 1]').length === 9 && ${CY}.edges().length === ${WIRES.length} && ${CY}.edges().every(e => e.data('attention') === 0)`));
+    check(`${scope}: queries identify ${scope === 'group' ? 'parameter groups' : 'nodes'}`, await evaluate(`${DIALOG}.querySelector('select.graph-query').options.length`) === (scope === 'group' ? 2 : 9));
+    await setSelect(`${DIALOG}.querySelector('select.graph-scope')`, 'local');
+    check(`${scope}: switching back restores local port controls`, await until(`!!${DIALOG}.querySelector('select.graph-direction') && !${DIALOG}.querySelector('table.graph-node-attention')`));
+    await evaluate(`${DIALOG}.querySelector('button.dialog-close').click()`);
+    await until(`!${DIALOG}.open`, 30);
+  }
+  mode = {};
 
   // ---- the REAL route of this backend -----------------------------------------------------------------------------------------------------------------
   const realModels = await fetch(new URL('api/runs/models' + (ROOT ? `?output_root=${encodeURIComponent(ROOT)}` : ''), APP));

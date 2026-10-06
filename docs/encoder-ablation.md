@@ -4,6 +4,15 @@
 
 项目级 [analog-optimizer skill](../.agents/skills/analog-optimizer/SKILL.md) 及学习、实验、阶段参考已同步这些约定，并修正早期“当前止于 M3”的过期范围。后续维护以实际代码和本页验收记录核对 skill，避免将接口通过误写成迁移效果成立。
 
+## 2026-10-06: two additional encoders
+
+`graph_gps` and `group_cross_attention` are implemented alongside GT/RGCN/GATv2;
+the default remains `graph_transformer`. Both share the existing parser, action
+bindings and SAC heads. See [architecture, structural ablations, integration and
+current comparison CLI](global-encoders.md). Their correctness tests are not
+transfer-performance evidence; the historical experiments below retain their
+original scope and results.
+
 ## 接口与模型定义
 
 ```python

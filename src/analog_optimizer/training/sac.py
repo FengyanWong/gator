@@ -222,7 +222,7 @@ class SACLearner:
                     feature_schema=asdict(self.feature_schema), spec_schema=asdict(self.spec_schema),
                     normalizer='fixed-references-signed-log1p-v1', action_version='absolute-group-v1',
                     critic_action='normalized_proposal', budget='finite_horizon_termination',
-                    model_config=asdict(self.model_config), config=asdict(self.config),
+                    model_config=self.model_config.to_dict(), config=asdict(self.config),
                     experiment=self.experiment, device='cpu', code_sha256=source_digest(),
                     torch_version=str(torch.__version__), pyg_version=str(torch_geometric.__version__))
 

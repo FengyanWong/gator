@@ -115,6 +115,28 @@ def capture_attention(actor, run):
     return result, captured
 
 
+def capture_dense_attention(actor, run):
+    """Inspect global/group weights only on demand; leave the policy's output untouched."""
+    import torch
+    captured, handles = [], []
+
+    def hook(module, inputs, kwargs, output):
+        with torch.no_grad():
+            _, weights = module.forward(*inputs, **dict(kwargs, need_weights=True, average_attn_weights=False))
+        captured.append(dict(kind=module.attention_kind, weights=weights.detach().cpu()))
+
+    for module in actor.modules():
+        if isinstance(module, torch.nn.MultiheadAttention) and hasattr(module, 'attention_kind'):
+            handles.append(module.register_forward_hook(hook, with_kwargs=True))
+    try:
+        with torch.no_grad():
+            result = run()
+    finally:
+        for handle in handles:
+            handle.remove()
+    return result, captured
+
+
 STANDARD_FAMILY = dict(nmos='nmos', pmos='pmos', resistor='resistor', capacitor='capacitor', inductor='inductor',
                        vsource='vsource', isource='isource')
 
@@ -153,7 +175,8 @@ def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
                                        'trained with, so the circuit cannot be shown to it the same way.')
         observation = vocabulary.view(observation)
     batch = batch_observations([observation], features, spec)
-    sample, layers = capture_attention(actor, lambda: actor.sample(batch, deterministic=True))
+    (sample, layers), dense_layers = capture_dense_attention(actor,
+        lambda: capture_attention(actor, lambda: actor.sample(batch, deterministic=True)))
     policy = batch.proposals(sample.actions)[0]
     recorded = map_to_dict(row['action']) if row.get('action') is not None else {}
 
@@ -216,6 +239,13 @@ def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
                  for d in graph.devices],
         nets=[dict(id=n.id, roles=list(n.roles)) for n in graph.nets],
         connections=list(connections.values()), groups=groups,
+        node_attention=dict(
+            nodes=[f'd:{name}' for name in device_ids] + [f'n:{name}' for name in net_ids],
+            groups=[g.id for g in graph.parameter_groups],
+            global_layers=[item['weights'][0].tolist() for item in dense_layers if item['kind'] == 'global'],
+            group_layers=[item['weights'][0].tolist() for item in dense_layers if item['kind'] == 'group'],
+            reading='Normalized over all nodes in this circuit for each query and head. These are attention weights, '
+                    'not physical connections or a causal explanation of the action.'),
         attention=dict(available=has_attention, layers=len(layers), heads=len(layers[0][1][0]) if has_attention else 0,
                        reason=None if has_attention else
                        f"The {config['encoder_type']} encoder has no attention: the picture shows the circuit and "

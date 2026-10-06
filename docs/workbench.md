@@ -1895,6 +1895,13 @@ they were.
 
 ### Run configuration and the RL networks window (2026-10-02, record 7.150)
 
+Since record 7.228, the encoder list also offers **GraphGPS — port-aware** and
+**Parameter-group attention — experimental**. Both have per-encoder structural
+input settings (`none` / random-walk returns at 2, 4, 8, 16 steps), preserved in
+configuration, saved defaults and checkpoints. Their 48/4/4 starting presets and
+inherited SAC settings are experimental. A loaded model restores the structural
+setting along with its sizes. See [architecture and compatibility](global-encoders.md).
+
 **Mode** is the first setting in Run configuration, with **RL networks...** directly underneath it. Left of the button
 stands the network in use, in short (record 7.160, user: "show the current network selection next to the RL network
 button in short"): the encoder and hidden / heads / layers, `GT 48/4/4` (GT = graph_transformer; `–` where an encoder
@@ -2008,10 +2015,17 @@ settings recorded in the save point and found exactly the saved tensors (same na
 tensor is still listed, without types. A layer is marked **never used** only when the forward pass never touches
 its weights - today that is `lin_skip` of PyG's `TransformerConv`, which the graph transformer allocates but switches
 off (`root_weight=False`): 272 of 7,314 actor parameters at 16/2/1. A test pins the flag against real gradients for
-all three supported encoders; a layer whose gradient is merely zero for the DATA at hand (`binding_ratio` when every ratio is 1)
+all five supported encoders; a layer whose gradient is merely zero for the DATA at hand (`binding_ratio` when every ratio is 1)
 is used and is not flagged. Browser check: `frontend/scripts/model_structure_check.mjs`.
 
 ### Circuit graph view (added 2026-09-21, user decision: one on-screen diagnostic picture)
+
+Record 7.228 adds attention scopes for the two new encoders: **Local port edges**,
+**Global node attention** (choose a receiving node), and **Parameter-group attention**
+(choose a group). Global/group modes color device/net nodes and show their normalized
+weights in a table; they do not add physical connections. The structure table also
+explains the new attention and structural-input layers. All of this remains a
+read-only replay on an archived state, with policy-output equivalence checked.
 
 **Where it is.** Run panel (right) > "RL model to load". With Mode `resume` / `fine_tune` / `frozen`: pick a model, and
 under its facts are the "Network structure" fold-out and the **Circuit graph view** button. With Mode `scratch` (the

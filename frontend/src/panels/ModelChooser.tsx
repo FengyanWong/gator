@@ -13,7 +13,7 @@ const KIND: Record<string, string> = { periodic: 'automatic save', manual: 'save
   final: 'saved at the end of the run', safety: 'safety save' };
 const when = (utc?: string | null) => { const d = utc ? new Date(utc) : null;
   return d && !Number.isNaN(d.getTime()) ? d.toLocaleString(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'unknown time'; };
-const netLabel = (n: Json) => n?.encoder_type ? `${n.encoder_type} ${n.hidden_dim}/${n.heads}/${n.layers}` : 'unknown network';
+const netLabel = (n: Json) => n?.encoder_type ? `${n.encoder_type} ${n.hidden_dim}/${n.heads}/${n.layers}${n.structural_encoding && n.structural_encoding !== 'none' ? ` · ${n.structural_encoding}` : ''}` : 'unknown network';
 const pointLabel = (p: Json) => `${p.evaluations ?? '?'} evaluations - ${when(p.created_utc)} - ${KIND[p.kind] ?? p.kind}${p.restoration_capability !== 'full_state' ? ' - weights only' : ''}`;
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 

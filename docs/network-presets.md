@@ -5,6 +5,16 @@ tests `tests/workbench/test_wb_network_presets.py`, browser check `frontend/scri
 (headless Edge, 41 checks; writes are intercepted, so it never changes your saved settings).
 The initial preset implementation did not change `src/analog_optimizer/`. Since 2026-09-26, the optimizer and this panel offer only `graph_transformer`, `rgcn` and `gatv2`. GATv1 was replaced by GATv2 on that date; its historical preset settings are borrowed as starting values, not a published GATv2 sizing recipe. MLP/GCN were deleted on that date, and port-GNN on 2026-09-24. Their entries below retain historical preset provenance; they are no longer selectable or editable. Old configurations are rejected explicitly, and existing checkpoints require their matching historical source and dependencies.
 
+## New experimental encoders (2026-10-06)
+
+`graph_gps` and `group_cross_attention` now each have a starting preset of
+48 hidden / 4 heads / 4 layers and the existing SAC starting values. Their
+provenance is **experimental** throughout: the measurements below concern the
+three older encoders and do not validate the new ones. GraphGPS starts with
+random-walk structural inputs (2, 4, 8, 16 steps); group attention starts with
+none. Both expose the switch and save it per encoder. Architecture references
+are separate from hyperparameter provenance. See [implementation and usage](global-encoders.md).
+
 ## In plain words
 
 Before, the panel had one set of numbers (hidden 32, heads 4, layers 2, batch 8, ...) no matter which

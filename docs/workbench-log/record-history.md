@@ -324,3 +324,5 @@ One row per commit, newest last.
 | `e384014` | 10-06 08:34 | - | record only: names the commits of records 7.224-7.228, the two optimizer digests they set, and the table rows for 5560c01, 71f95c3, 0a07f87, dc1a9fd and 40d1249 |
 | `57a191c` | 10-06 12:49 | - | the user's original workbench specification of 2026-09-20 (`gator_claude_code_fable51_frontend_data_outputs_en.md`), added as is at the root on the user's "Commit it as is" |
 | `3a95417` | 10-06 12:57 | 7.229 | the fine-tuning comparison's twelve runs: the loaded model ahead early on all six circuits, the fixed rule's bar met on three; docs only (session "Task button and fine-tuning comparison plan") |
+| `2cba8c6` | 10-06 12:57 | - | record only: names the commit of record 7.229, and the table rows for e384014, 57a191c and 3a95417 |
+| `cbf56a3` | 10-06 13:32 | 7.230 | plan: one general network from all saved experience, the six circuits from a third start, and policy drift; plan only, docs only (session "Task button and fine-tuning comparison plan") |

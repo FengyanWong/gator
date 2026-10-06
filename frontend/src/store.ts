@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 import { readWithDeadline, type Json } from './api';
 
 export const STORAGE_KEY = 'gator-workbench-config-v1';
@@ -13,7 +13,18 @@ export const noteRowsFrom = (task: string, revision: unknown) => {
   if (!Number.isInteger(revision)) return;
   rowsFromHere = { task, revision };
   try { localStorage.setItem(ROWS_FROM_KEY, JSON.stringify(rowsFromHere)); } catch { /* no storage: this tab still knows */ }
+  noteTaskSaved();
 };
+/** Saves of the task this page knows of, and saved rows loaded (record 7.222): validation is asked again on each, so the
+ *  editors' marks of rows not saved go once Save task has stored them - the rows themselves need not change - and come when
+ *  a save from elsewhere left the rows here behind. */
+let taskSaves = 0;
+const taskSaveListeners = new Set<() => void>();
+export const noteTaskSaved = () => { taskSaves += 1; taskSaveListeners.forEach(listener => listener()); };
+export const useTaskSaves = () => useSyncExternalStore(listener => {
+  taskSaveListeners.add(listener);
+  return () => { taskSaveListeners.delete(listener); };
+}, () => taskSaves);
 const HISTORY_LIMIT = 100;
 
 /** The reward a new configuration starts with, and the one the run panel describes in a sentence (record 7.183, compared

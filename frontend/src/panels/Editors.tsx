@@ -58,6 +58,10 @@ const limitLabel = (constraint: string, objective: string) => (constraint ? LIMI
   + (objective === 'minimize' ? ', then lower is better' : objective === 'maximize' ? ', then higher is better'
     : objective && objective !== 'none' ? `, then ${objective}` : '');
 
+/** A cell's tooltip with the saved task's value first, when the value here differs from it (record 7.222). */
+const withSaved = (saved: string | null | undefined, title: Json): Json =>
+  saved != null ? `Saved in the task: ${saved}.${title ? `\n${title}` : ''}` : title;
+
 function LimitSelect({ row, title, onChange }: { row: Json; title: string; onChange: (fields: Json) => void }) {
   const objective = row.direction_after_feasible ?? 'none', current = `${row.constraint}|${objective}`;
   const offered = LIMIT_CHOICES.some(([c, o]) => `${c}|${o}` === current);
@@ -83,11 +87,12 @@ export function readNumber(text: string): number | undefined {
 
 /** One cell. `fixed`: why the value is shown and not typed - it follows another field (a Maestro output's Probe ID follows
  *  its output name). `off`: why the field does nothing on this row (a follower's bounds, step, scale, type and "optimized":
- *  its leader decides them) - shown greyed, with that reason as its tooltip (review of 2026-10-03). */
-function Cell({ column, value, onChange, fixed = null, off = null, unit, stored = null, onPatch, tell }: { column: Json; value: Json;
+ *  its leader decides them) - shown greyed, with that reason as its tooltip (review of 2026-10-03). `saved`: the value the
+ *  saved task holds, when this one differs (record 7.222) - first in the tooltip. */
+function Cell({ column, value, onChange, fixed = null, off = null, unit, stored = null, onPatch, tell, saved = null }: { column: Json; value: Json;
   onChange: (v: Json) => void; fixed?: string | null; off?: string | null; unit?: string | null; stored?: string | null;
-  onPatch?: (fields: Json) => void; tell?: (text: string) => void }) {
-  const title = off ?? fixed ?? column.guidance, disabled = off !== null;
+  onPatch?: (fields: Json) => void; tell?: (text: string) => void; saved?: string | null }) {
+  const title = withSaved(saved, off ?? fixed ?? column.guidance), disabled = off !== null;
   if (column.name === 'nominal_only') return <select aria-label="Judged at" title={title} disabled={disabled}
     value={value ? 'nominal' : 'all'} onChange={e => onChange(e.target.value === 'nominal')}>
     <option value="all">All planned conditions</option><option value="nominal">Nominal only</option></select>;
@@ -652,6 +657,52 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     setNote({ text: said, warn: problems.length + beyond > 0 });
   };
 
+  // Rows not saved in the task (record 7.222, user: "In the parameter probe and spec windows, highlight the rows that are
+  // unsaved"): validation compares the rows with the saved task's file, as the check before a run does, and names per table
+  // the rows new here, the rows changed - with the saved values - and the saved rows deleted here. Marked by row ID, half a
+  // second after a change like every validation mark; nothing for a task that is not saved (a cell read, an ngspice task).
+  const unsavedIn = (s: Section): Json => validation?.unsaved_rows?.sections?.[s] ?? null;
+  const unsaved = unsavedIn(tab);
+  const isNew = (row: Json) => !!unsaved?.added?.includes(String(row[keyField] ?? ''));
+  const changeOf = (row: Json): Json => unsaved?.changed?.[String(row[keyField] ?? '')] ?? null;
+  // Specs show the objective inside the Limit list: a saved objective is that cell's.
+  const cellOf = (field: string) => tab === 'targets' && field === 'direction_after_feasible' ? 'constraint' : field;
+  // A saved value as its cell writes it: a quantity in the saved row's unit, a limit in words, a tick as on or off.
+  const savedText = (row: Json, change: Json, field: string): string => {
+    const fields = change.fields, value = fields[field];
+    if (tab === 'targets' && cellOf(field) === 'constraint')
+      return limitLabel('constraint' in fields ? fields.constraint : row.constraint,
+        ('direction_after_feasible' in fields ? fields.direction_after_feasible : row.direction_after_feasible) ?? 'none');
+    if (value == null) return '(empty)';
+    if (field === 'nominal_only') return value ? 'Nominal only' : 'All planned conditions';
+    if (typeof value === 'boolean') return value ? 'on' : 'off';
+    return typeof value === 'number' && QUANTITY[tab]?.includes(field) ? quantity(value, change.unit ?? row.unit) : shortText(value);
+  };
+  const savedIn = (row: Json, name: string): string | null => {
+    const change = changeOf(row), field = change && Object.keys(change.fields).find(f => cellOf(f) === name);
+    return field ? savedText(row, change, field) : null;
+  };
+  // What a marked row says on its tick-box cell: new, or which fields changed and what the task holds - also of the columns
+  // not in view (a Probe's unit followed by a Spec, a column behind More columns).
+  const rowNote = (row: Json): string | null => {
+    if (isNew(row)) return 'New row, not in the saved task: Save task stores it.';
+    const change = changeOf(row);
+    if (!change) return null;
+    const cells = [...new Set(Object.keys(change.fields).map(cellOf))];
+    const label = (name: string) => columns.find(c => c.name === name)?.label ?? name;
+    return `Changed since the task was saved: ${cells.map(name => `${label(name)} (saved: ${savedIn(row, name)})`).join(', ')}.`;
+  };
+  // A tab's mark: how many of its rows are not saved, and the saved rows deleted here - which no row can show.
+  const unsavedTitle = (s: Section): string | null => {
+    const u = unsavedIn(s);
+    if (!u) return null;
+    const changed = Object.keys(u.changed ?? {}).length, added = (u.added ?? []).length, removed: string[] = u.removed ?? [];
+    const parts = [changed ? `${changed} changed` : '', added ? `${added} new` : '',
+      removed.length ? `${removed.length} saved row${removed.length === 1 ? '' : 's'} deleted here (${removed.slice(0, 3).join(', ')}${removed.length > 3 ? ', ...' : ''})` : '',
+      u.reordered ? 'rows in another order' : ''].filter(Boolean);
+    return parts.length ? `Not saved in the task: ${parts.join(', ')}. Save task stores the rows as they are; Reload saved values brings back the saved ones.` : null;
+  };
+
   // Back to the cell after Enter or Esc, as a spreadsheet does.
   const backToCell = () => {
     if (!active || at < 0) return;
@@ -662,11 +713,13 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
 
   return (
     <section className="panel editors" data-editor={tab}>
-      <datalist id="gator-units">{unitChoices().map(u => <option key={u} value={u} />)}</datalist>
       {/* Another tab closes the Matched devices box: kept "open", coming back to Parameters mounted it again, and mounting
           is its press - it asked the backend with nobody pressing anything, and a reviewed diff was gone.
-          Each editor has a colour of its own (record 7.158): its tab, its table's header row, and its ids where another editor shows them. */}
-      <div className="tabs">{(Object.keys(TITLES) as Section[]).map(s => <button key={s} data-editor={s} className={s === tab ? 'active' : ''} onClick={() => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); }}>{TITLES[s]} ({(config[s] ?? []).length})</button>)}
+          Each editor has a colour of its own (record 7.158): its tab, its table's header row, and its ids where another editor shows them.
+          A tab holding rows not saved in the task carries a dot, its tooltip says how many (record 7.222). */}
+      <div className="tabs">{(Object.keys(TITLES) as Section[]).map(s => { const notSaved = unsavedTitle(s);
+        return <button key={s} data-editor={s} className={[s === tab ? 'active' : '', notSaved ? 'has-unsaved' : ''].filter(Boolean).join(' ')}
+          title={notSaved ?? undefined} onClick={() => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); }}>{TITLES[s]} ({(config[s] ?? []).length})</button>; })}
         <span className="tab-actions" ref={taskSlot} /></div>
       <div className="toolbar">
         <button onClick={add} title="Add: A new row at the end, with a free ID."><Icon name="add" label="Add" /></button>
@@ -717,21 +770,28 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
             const point = tab === 'parameters' ? { onMouseEnter: () => pointAt(devicesOf(row)), onMouseLeave: () => pointAt([]),
               onFocus: () => pointAt(devicesOf(row)), onBlur: () => pointAt([]) } : {};
             const tied = tiedCount.get(row[keyField]) ?? 0, leader = leaderOf(row), open = !!openTies[row[keyField]];
+            // Not saved in the task (record 7.222): the row is tinted, a changed cell more; folded tied rows that are not saved
+            // colour their leader's count.
+            const change = changeOf(row), note = rowNote(row);
+            const tiedNotSaved = tied > 0 ? rows.filter(r => leaderOf(r) === row[keyField] && (isNew(r) || changeOf(r))).length : 0;
             return <tr key={index} data-index={index} hidden={!inView(row, index)} {...point}
-              className={[found.some((i: Json) => i.level === 'error' || i.level === 'blocker') ? 'has-error' : '', leader ? 'tied' : ''].filter(Boolean).join(' ') || undefined}>
-              <td className="sel"><input type="checkbox" checked={!!selected[row[keyField]]} onChange={e => setSelected(s => ({ ...s, [row[keyField]]: e.target.checked }))} />
-                {tied > 0 ? <button className="tie-toggle" aria-expanded={open} onClick={() => setOpenTies(o => ({ ...o, [row[keyField]]: !open }))}
-                  title={`${tied} tied row${tied === 1 ? '' : 's'} follow${tied === 1 ? 's' : ''} this one: ${open ? 'fold' : 'show'} ${tied === 1 ? 'it' : 'them'}.`}>{open ? '▾' : '▸'}{tied}</button>
+              className={[found.some((i: Json) => i.level === 'error' || i.level === 'blocker') ? 'has-error' : '', leader ? 'tied' : '',
+                isNew(row) ? 'unsaved-new' : change ? 'unsaved-changed' : ''].filter(Boolean).join(' ') || undefined}>
+              <td className="sel" title={note ?? undefined}><input type="checkbox" checked={!!selected[row[keyField]]} onChange={e => setSelected(s => ({ ...s, [row[keyField]]: e.target.checked }))} />
+                {tied > 0 ? <button className={`tie-toggle${tiedNotSaved ? ' unsaved' : ''}`} aria-expanded={open} onClick={() => setOpenTies(o => ({ ...o, [row[keyField]]: !open }))}
+                  title={`${tied} tied row${tied === 1 ? '' : 's'} follow${tied === 1 ? 's' : ''} this one: ${open ? 'fold' : 'show'} ${tied === 1 ? 'it' : 'them'}.`
+                    + (tiedNotSaved ? ` ${tiedNotSaved} of them ${tiedNotSaved === 1 ? 'is' : 'are'} not saved in the task.` : '')}>{open ? '▾' : '▸'}{tied}</button>
                   : leader ? <span className="tie-mark" title={`Follows ${leader}: its leader's value times the ratio is written.`}>↳</span> : null}</td>
               {/* A field the row does not STATE is shown with the value the backend uses for it (hard = on, active = on ...): a
                   starter row's absent `hard` used to look unchecked although the target is hard. A box the user cleared is null,
                   not absent, and stays empty. */}
-              {visible.map(c => <td key={c.name} data-field={c.name} className={at === index && active?.name === c.name ? 'active-cell' : undefined}
+              {visible.map(c => { const saved = change ? savedIn(row, c.name) : null;
+                return <td key={c.name} data-field={c.name} className={[at === index && active?.name === c.name ? 'active-cell' : '', saved !== null ? 'unsaved-cell' : ''].filter(Boolean).join(' ') || undefined}
                 onFocus={() => setActive({ index, name: c.name, key: String(row[keyField] ?? '') })}>{tab === 'targets' && c.name === 'constraint'
-                ? <LimitSelect row={row} title={c.guidance} onChange={fields => patch(index, fields)} />
+                ? <LimitSelect row={row} title={withSaved(saved, c.guidance)} onChange={fields => patch(index, fields)} />
                 : <Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)}
                     fixed={fixedOf(row, c)} off={offOf(row, c)} unit={QUANTITY[tab]?.includes(c.name) ? effectiveUnit(row) : undefined}
-                    stored={row.unit ?? null} onPatch={fields => patch(index, fields)} tell={text => setNote({ text, warn: true })} />}</td>)}
+                    stored={row.unit ?? null} onPatch={fields => patch(index, fields)} tell={text => setNote({ text, warn: true })} saved={saved} />}</td>; })}
               <td className="issues">{found.map((i: Json, n: number) => <div key={n} className={`issue ${i.level}`} title={i.message}>{i.level}: {i.code}</div>)}</td>
             </tr>; })}</tbody>
         </table>

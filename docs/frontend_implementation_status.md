@@ -264,3 +264,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.218 | Fewer boxes inside boxes (user): a callout inside a panel, the header or a window has a rule at its left and no frame; only a status keeps its faint fill; a callout inside a callout has no rule of its own |
 | 7.219 | Performance plan for Claude: all 13 proposals reviewed for behavior, compatibility and validation; plan only |
 | 7.220 | Focused Claude plan: six lower/moderate-risk speed improvements, behavior tests and checkpoint compatibility |
+| 7.222 | Rows not saved in the task highlighted in Parameters, Probes and Specs (user: "highlight the rows that are unsaved"), a dot on their tabs; validation asked again after a save |

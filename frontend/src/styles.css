@@ -9,6 +9,8 @@
   --bad-bg: #fbeeeb; --bad-line: #e2aba1; --bad-row: #fcf2f0; --bad-strong: #8c2414; --close-hover: #e81123;
   --warn-bg: #fbf3df; --warn-line: #dcc183; --mock-line: #c99a2e; --busy-bg: #fbf0d8;
   --ok-bg: #e4f2ea; --ok-line: #a3cdb3; --added-bg: #e9f5ee;
+  /* an editor row not saved in the task (record 7.222): a changed row, its changed cells, the bar of a changed / new row */
+  --unsaved-row: #fcf5e1; --unsaved-cell: #f5e0a3; --unsaved-mark: #c08510; --added-mark: #3f9a6b;
   --neutral-bg: #e9eef2; --neutral-text: #4c5f73; --na-bg: #f1f4f6; --unresolved: #6a3fa0;
   --user-bg: #e3ebf5; --user-line: #bccbe0; --thinking-bg: #f1f5f8; --thinking-line: #c3d0db;
   --checklist-bg: #fcf8ee; --checklist-line: #c9b26a; --detach-hover: #d3dde6; --log-line: #e3e9ee; --backdrop: rgba(19, 48, 79, .32);
@@ -131,6 +133,17 @@ table.editor tr.tied > td[data-field="variable_id"] input { padding-left: 16px; 
 .formula-bar textarea[readonly]:not(:disabled) { background: var(--field-disabled); color: var(--muted); }
 .formula-problem { margin: 3px 0 0 216px; }
 table.editor td.active-cell { box-shadow: inset 0 0 0 2px var(--accent); }
+/* record 7.222: rows not saved in the task - a changed row tinted and its changed cells more, a new row in the colour of an
+   added row, a bar at the start of both; an error row keeps its own colour, its changed cells still marked. A tab holding
+   such rows carries a dot; a tie toggle whose folded rows are not saved takes the colour. */
+table.editor tr.unsaved-changed:not(.has-error) > td { background: var(--unsaved-row); }
+table.editor tr.unsaved-new:not(.has-error) > td { background: var(--added-bg); }
+table.editor tr.unsaved-changed > td.unsaved-cell { background: var(--unsaved-cell); }
+table.editor tr.unsaved-changed > td.sel { box-shadow: inset 3px 0 0 var(--unsaved-mark); }
+table.editor tr.unsaved-new > td.sel { box-shadow: inset 3px 0 0 var(--added-mark); }
+table.editor .tie-toggle.unsaved { color: var(--unsaved-mark); }
+.editors > .tabs > button.has-unsaved::after { content: ''; display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%;
+  background: var(--unsaved-mark); vertical-align: 1px; }
 table.editor td input.readonly { color: var(--muted); }
 table.editor select[aria-label="Judged at"] { min-width: 180px; }
 table.editor select[aria-label="Constraint"] { min-width: 200px; }

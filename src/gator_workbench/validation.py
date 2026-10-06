@@ -94,6 +94,8 @@ class Report:
     def __init__(self):
         self.issues: list[Issue] = []
         self.facts: dict = {}
+        # The rows that differ from the saved task, row by row (record 7.222): for the page's editors only, so not in as_dict.
+        self.unsaved_rows: dict | None = None
 
     def add(self, level, code, path, message):
         self.issues.append(Issue(level, code, path, message))
@@ -680,16 +682,18 @@ def _in(value, unit) -> str:
 def _check_saved_task(config, report, rows_from=None):
     """A saved task runs exactly as it was saved (task flow part 4, consistency.py): Parameters, Probes or Specs rows that
     differ from its task file block a start until "Save task" stores them, or "Reload saved values" takes the saved
-    rows back. A resume runs the run's own saved rows, so it is not compared. Rows older than the saved task - saving
+    rows back. A resume runs the run's own saved rows, so it is not blocked. Rows older than the saved task - saving
     them would undo what was saved since - point to Reload saved values (record 7.203; `rows_from`: the revision the
-    page's rows came from, when it knows)."""
-    if config.run.mode == 'resume':
-        return
+    page's rows came from, when it knows). Which rows differ, row by row, goes to `report.unsaved_rows` in every run
+    mode: the editors mark them (record 7.222)."""
     from . import consistency
     found = consistency.saved_task(config, with_entry=False)
     if found is None:
         return
     name, _, saved = found
+    report.unsaved_rows = consistency.unsaved_rows(config, saved)
+    if config.run.mode == 'resume':
+        return
     differences = consistency.row_differences(config, saved)
     undone = consistency.undone_by_saving(config, name, saved, base=rows_from) if differences else None
     older = {item['section'] for item in undone['items']} if undone else set()

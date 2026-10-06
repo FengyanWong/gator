@@ -320,7 +320,7 @@ def register(app: FastAPI, context: ApiContext):
             report.add('blocker', 'circuit_profile_missing', 'circuit', tasks.NATIVE_DRAFT_NOT_EXECUTABLE)
         return dict(report.as_dict(), config_hash=schema.config_hash(config),
                     task_definition_hash=schema.task_definition_hash(config), circuit_blocker=blocked,
-                    mock=None if runtime is None else runtime.mock)
+                    mock=None if runtime is None else runtime.mock, unsaved_rows=report.unsaved_rows)
 
     @app.post('/api/config/diff')
     def config_diff(body: DiffBody):

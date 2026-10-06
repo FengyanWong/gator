@@ -202,6 +202,28 @@ def _file_rows(data):
     return None if not isinstance(data, dict) else _rows(lambda section: data.get(parts[section]))
 
 
+def unsaved_rows(config, saved) -> dict | None:
+    """The editors' rows that differ from the task file `saved`, row by row: what the editors mark as not saved (record
+    7.222, user: "highlight the rows that are unsaved"). Per section: the IDs of the rows here that are not saved
+    (`added`), of the saved rows not here (`removed`), the rows that differ (`changed`: the saved value of each field that
+    differs, and the saved row's unit to write it in), and whether the same rows stand in another order (`reordered`).
+    Compared as `row_differences` compares rows, so a field shown with its default equals one left out. None: the saved
+    rows no longer read with this workbench."""
+    here, kept = _rows(lambda section: getattr(config, section)), _file_rows(saved)
+    if here is None or kept is None:
+        return None
+    sections = {}
+    for section, _label, _key, _part in SECTIONS:
+        now, then = here[section], kept[section]
+        changed = {row_id: dict(fields={field: then[row_id].get(field) for field in sorted({*row, *then[row_id]})
+                                        if row.get(field) != then[row_id].get(field)}, unit=then[row_id].get('unit'))
+                   for row_id, row in now.items() if row_id in then and row != then[row_id]}
+        sections[section] = dict(added=[row_id for row_id in now if row_id not in then],
+                                 removed=[row_id for row_id in then if row_id not in now], changed=changed,
+                                 reordered=[row_id for row_id in now if row_id in then] != [row_id for row_id in then if row_id in now])
+    return dict(revision=saved.get('revision'), sections=sections)
+
+
 def undone_by_saving(config, name, saved, base=None) -> dict | None:
     """What "Save task" with the editors' rows would UNDO of the saved task real:<name>: what was saved after the
     revision the rows came from. That revision is the newest earlier one whose rows are exactly the editors' (the rows of

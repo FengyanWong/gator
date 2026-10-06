@@ -30,6 +30,7 @@
   --bad-bg: #2a1414; --bad-line: #7a2f28; --bad-row: #1e1012; --bad-strong: #e04a3d; --close-hover: #e81123;
   --warn-bg: #241c0c; --warn-line: #6e5418; --mock-line: #7a5c16; --busy-bg: #261d0b;
   --ok-bg: #0f2a1f; --ok-line: #1f6b4b; --added-bg: #0f2419;
+  --unsaved-row: #261f0e; --unsaved-cell: #45350f; --unsaved-mark: #f0b429; --added-mark: #3ad08f;
   --neutral-bg: #18202c; --neutral-text: #9aa8ba; --na-bg: #121822; --unresolved: #b58cf0;
   --user-bg: #13243f; --user-line: #24406b; --thinking-bg: #0f1520; --thinking-line: #2a3a55;
   --checklist-bg: #1d1808; --checklist-line: #6e5418; --detach-hover: #223047; --log-line: #18212e; --backdrop: rgba(0, 0, 0, .6);

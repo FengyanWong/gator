@@ -1,4 +1,4 @@
-import { noteRowsFrom, rowsFrom, useAsyncAction, useRequest } from '../store';
+import { noteRowsFrom, noteTaskSaved, rowsFrom, useAsyncAction, useRequest } from '../store';
 import { Icon } from './Icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -114,6 +114,7 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
     const id = followed.current;
     followed.current = null;
     if (!id) return;
+    noteTaskSaved();                                              // the rows here may differ from the task now (record 7.222)
     if (value.last?.id !== id) {                                  // the backend no longer knows it: it was started again
       setMessage({ level: 'warn', text: 'The save that was running ended without an answer (was the backend started again?). '
         + "Look at the task's revision before saving again." });

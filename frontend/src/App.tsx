@@ -4,7 +4,7 @@ import { api, ApiError, Json, NO_ANSWER, plainError, saveJson } from './api';
 import { Look, LOOK_NAMES, setLook, useLook } from './theme';
 import { Icon } from './panels/Icons';
 import { setUnitForms } from './units';
-import { rowsFrom, useConfig, usePolling, useRequest } from './store';
+import { rowsFrom, useConfig, usePolling, useRequest, useTaskSaves } from './store';
 import { CircuitPanel } from './panels/Left';
 import { ConnectionButton } from './panels/Connection';
 import { CheckSteps } from './panels/Consistency';
@@ -149,9 +149,11 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
 
   // Debounce validation and ignore replies for a configuration that has since changed. `sent`: the configuration the
   // report is about - its row paths (targets[3]) name rows of THAT configuration, which Delete, Undo or Import may have
-  // moved by the time it is drawn (the editors check the row before they mark it).
+  // moved by the time it is drawn (the editors check the row before they mark it). Asked again after a save of the task too
+  // (record 7.222): the rows may not change, but what they are compared with did.
   const configKey = useMemo(() => JSON.stringify(config), [config]);
-  const validationRead = useRequest<Json>(signal => api.validate(config, signal, rowsFrom(config.circuit?.task_id)).catch(rejected).then(v => ({ ...v, sent: config })), [configKey],
+  const taskSaves = useTaskSaves();
+  const validationRead = useRequest<Json>(signal => api.validate(config, signal, rowsFrom(config.circuit?.task_id)).catch(rejected).then(v => ({ ...v, sent: config })), [configKey, taskSaves],
     { delay: 500, keepPrevious: true });
   const validation = useMemo(() => validationRead.error ? { blocks_run: true, issues: [{ level: 'error', code: 'no_answer', path: '', message: validationRead.error }], facts: {} }
     : validationRead.value, [validationRead.value, validationRead.error]);

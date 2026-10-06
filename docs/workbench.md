@@ -470,6 +470,20 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
     (four significant digits there), and the check's messages do: "osc_frequency_hz: lower 1.3 GHz here, 1.1 GHz saved".
     The page and the backend use one unit table (`units.py`, sent with `/api/schema`); `unit_text_check.mjs` checks that
     both write the same 34 cases alike. Copy and Ctrl+D fill still carry the stored numbers, which Excel reads.
+- **Rows not saved in the task** (record 7.222, user: "In the parameter probe and spec windows, highlight the rows that
+  are unsaved"). For a saved task (`real:<name>`), every row of Parameters, Probes and Specs that differs from what **Save
+  task** stored is marked: a changed row is tinted amber with a bar at its start, the cells that changed a darker amber; a
+  new row is tinted green with a green bar. The tick-box cell's tooltip says what changed and what the task holds ("Changed
+  since the task was saved: Upper (saved: 1.5 um)") - also of a column not in view, such as Scale behind More columns; a
+  changed cell's tooltip starts with its saved value ("Saved in the task: 1.5 um."). A tab holding such rows carries a dot,
+  and its tooltip counts them and names the saved rows deleted here ("Not saved in the task: 3 changed, 1 new"); a tied
+  row folded under its leader colours the leader's count. An error row keeps its red; its changed cells are still marked.
+  The rows are compared by the backend as the check before every run compares them (the blocking issue "... differ from
+  the saved task"), so a mark is exactly what Save task would store or Reload saved values would undo; they follow an
+  edit half a second later, with the rest of validation. Typing the saved value back takes the mark away. After **Save
+  task** - or a save from elsewhere that the page followed to its end - the rows are compared again even when they did not
+  change, so the marks go (or come, when the other save left the rows here behind). A cell read from Virtuoso without a
+  task, an ngspice task and a test task have no saved rows to compare with: nothing is marked.
 - **The ID in view** (record 7.182, design advice). While a table scrolls sideways the tick box and the row's ID stay at
   the left and the other columns pass under them, a line marking the ID's edge while they do. The ID sits right beside the
   tick-box column, whose width the page measures, also when a narrower window changes it: a tie toggle widens it on

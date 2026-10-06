@@ -5,8 +5,8 @@ seed, different starting parameter. Load their run with their corresponding from
 fine-tune model. Write a plan of comparing these fine-tuning runs with from scratch runs. It is possible to set the ldo
 tasks with passable psrr target if necessary for the plan."
 
-Status: the six new tasks are built, saved and checked; the twelve runs were started on 2026-10-06 06:58 on the user's
-"All twelve" (`queue.sh`, one at a time); section 5's criteria were revised at 08:1x while they ran, before any verdict.
+Status: the twelve runs ran 06:58-12:03 on 2026-10-06 and are all complete; section 9 holds the results (record 7.229).
+Section 5's criteria were revised at 08:1x while they ran, before any verdict.
 
 ## 1. The question, in plain words
 
@@ -165,3 +165,51 @@ tunable bias current) stays untouched; the MScR circuits on Spectre are the test
 The twelve runs' facts in `results.md`, a record entry with the verdict by the rules above, a line in `docs/decisions.md`,
 and the B tasks' definitions in `~/mscr_circuits` (`designs.py`, `tasks_def.py`, `startb_designs.py`). Nothing in
 `src/analog_optimizer/` changes for any of this.
+
+## 9. Results (2026-10-06, record 7.229)
+
+Every run completed its 800 launches; the cell equalled its task after each; every run's record names optimizer source
+`4aebbfab`, seed 1, and each fine-tune run names its A run's last save point. From `compare.py`:
+
+| Task | Arm | Evaluations | Passing, designs 9-108 | Passes by 100 / 200 / 400 | 50 % by | Passing, last third | Reward early -> late | Working time | First pass (footnote) |
+|---|---|---|---|---|---|---|---|---|---|
+| ota5t | A | 800 | 4 % | 3 / 61 / 251 | 191 | 252/266 (95 %) | -0.141 -> 0.123 | 12.2 min | 74 |
+| ota5t | fine_tune | 800 | 90 % | 83 / 178 / 369 | 100 | 254/266 (96 %) | 0.101 -> 0.123 | 10.1 min | 14 |
+| ota5t | scratch | 800 | 11 % | 10 / 29 / 184 | 281 | 252/266 (95 %) | -0.117 -> 0.12 | 10.1 min | 22 |
+| ota7t_w | A | 800 | 0 % | 1 / 16 / 180 | 254 | 251/266 (94 %) | -0.254 -> 0.111 | 37.3 min | 5 |
+| ota7t_w | fine_tune | 800 | 93 % | 86 / 180 / 370 | 100 | 252/266 (95 %) | 0.112 -> 0.144 | 26.7 min | 10 |
+| ota7t_w | scratch | 800 | 1 % | 1 / 3 / 136 | 311 | 253/266 (95 %) | -0.314 -> 0.131 | 29.5 min | 41 |
+| ring3 | A | 800 | 2 % | 2 / 6 / 25 | not reached | 40/266 (15 %) | -0.229 -> -0.059 | 14.2 min | 46 |
+| ring3 | fine_tune | 800 | 16 % | 13 / 40 / 101 | not reached | 84/266 (32 %) | -0.059 -> -0.013 | 11.4 min | 19 |
+| ring3 | scratch | 800 | 2 % | 2 / 10 / 70 | not reached | 88/266 (33 %) | -0.22 -> -0.014 | 11.7 min | 51 |
+| vco_lin_c | A | 800 | 9 % | 13 / 20 / 164 | 291 | 250/266 (94 %) | -0.187 -> 0.052 | 46.5 min | 4 |
+| vco_lin_c | fine_tune | 800 | 89 % | 81 / 174 / 364 | 100 | 253/266 (95 %) | 0.049 -> 0.065 | 34.7 min | 16 |
+| vco_lin_c | scratch | 800 | 5 % | 5 / 6 / 20 | 525 | 213/266 (80 %) | -0.181 -> 0.041 | 35.9 min | 28 |
+| ldo1_rgcn | A | 1500 | 0 % | 0 / 0 / 0 | not reached | 0/500 (0 %) | -0.449 -> -0.166 | 29.4 min | none |
+| ldo1_rgcn | fine_tune | 800 | 27 % | 26 / 50 / 63 | not reached | 18/266 (7 %) | -0.068 -> -0.055 | 11.6 min | 19 |
+| ldo1_rgcn | scratch | 800 | 0 % | 0 / 0 / 0 | not reached | 0/266 (0 %) | -0.433 -> -0.117 | 11.8 min | none |
+| ldo2_rgcn | A | 1500 | 0 % | 0 / 0 / 0 | not reached | 0/500 (0 %) | -0.463 -> -0.194 | 71.1 min | none |
+| ldo2_rgcn | fine_tune | 800 | 4 % | 4 / 7 / 17 | not reached | 31/266 (12 %) | -0.087 -> -0.037 | 31.4 min | 35 |
+| ldo2_rgcn | scratch | 800 | 0 % | 0 / 0 / 0 | not reached | 0/266 (0 %) | -0.462 -> -0.122 | 31.6 min | none |
+
+- ota5t: C1 early passing share at least 30 points above scratch: yes (90 % vs 11 %); C2 last third within 5 points: yes (96 % vs 95 %); 50 % by 100 vs 281
+- ota7t_w: C1 early passing share at least 30 points above scratch: yes (93 % vs 1 %); C2 last third within 5 points: yes (95 % vs 95 %); 50 % by 100 vs 311
+- ring3: C1 early passing share at least 30 points above scratch: no (16 % vs 2 %); C2 last third within 5 points: yes (32 % vs 33 %); 50 % by never vs never
+- vco_lin_c: C1 early passing share at least 30 points above scratch: yes (89 % vs 5 %); C2 last third within 5 points: yes (95 % vs 80 %); 50 % by 100 vs 525
+- ldo1_rgcn: C1 early passing share at least 30 points above scratch: no (27 % vs 0 %); C2 last third within 5 points: yes (7 % vs 0 %); C3 passes at the relaxed target: yes (89 designs); 50 % by never vs never
+- ldo2_rgcn: C1 early passing share at least 30 points above scratch: no (4 % vs 0 %); C2 last third within 5 points: yes (12 % vs 0 %); C3 passes at the relaxed target: yes (58 designs); 50 % by never vs never
+
+**Verdict.** By the rule as written, C1 and C2 hold together on three of six (ota5t, ota7t_w, vco_lin_c), so the rule says
+"no transfer". What fails on the other three is the rule's absolute 30-point bar, not the data: on ring3 the loaded model
+is still ahead early (16 % against 2 %); on both LDOs it is the only arm that passes at all (89 and 58 designs against
+none). Read without that bar, the loaded model is ahead in its first 100 own proposals on all six circuits (by eight times
+or more on five) and ends as well or better on all six. Reported as it stands; one seed per arm; no claim beyond these six.
+
+**Findings beyond the verdict.** ldo1_rgcn: the loaded model transfers, then training on loses part of it (27 % early,
+7 % last third; the relaxed HF PSRR row fails 63 % of the first 200 designs, 82-88 % after; the critics were trained at the
+old -5 dB target) - to test: `reset_critic`, or a lower learning rate. ring3: both B arms end at a third passing, twice the
+A run's share; the frequency window fails about 70 % of designs in all three runs. vco_lin_c: the fresh model needs 525
+designs to reach half passing, the loaded one 100.
+
+The page with the charts: https://claude.ai/artifact/CXgftca753sS8V8gABp2HZ (section 9); the numbers:
+`artifacts/local/reviews/finetune-vs-scratch-2026-10-06/results.md`.

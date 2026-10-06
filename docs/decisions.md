@@ -1269,3 +1269,23 @@ the optimizer side. The button what is missing can be kept with a window showing
   with the Codex app's own home), and "What's missing?" in a window of its own. Everything of the tab's own agent goes
   (records 7.6-7.186): conversation, providers and model lists, proposals, reviews, the Virtuoso setup and tools.
 
+## Fine-tuning a trained model on a new starting point: no transfer-advantage claim, a measured head start (2026-10-06, record 7.229)
+
+- **What was run:** six MScR circuits (ota5t, ota7t_w, ring3, vco_lin_c, ldo1_rgcn, ldo2_rgcn), each with a model trained
+  from scratch on its original starting design (the A runs of records 7.199, 7.216 and the ota7t width task) and a new
+  task `real:mscr_<name>_b` started from a random design of record (record 7.227); on each B task one run that loads the A
+  model (Mode fine_tune) and one from random weights, seed 1, 800 launches, the A run's settings. Twelve runs, 9,600
+  Spectre launches, all completed; every save point under optimizer source `4aebbfab` (the runs import a frozen copy of
+  commit 5560c01), so they resume only under that source and load for fine-tune and frozen under the current one.
+- **Criteria of record, revised before the verdict** (the user rejected "first passing design" as the measure: a single
+  chance event, the first 8 designs of every run being random warm-ups): passing share of designs 9-108, cumulative passes
+  by 100 / 200 / 400, the "50 % by" point, last-third share; C1 = 30 points of early passing share, C2 = last third within 5
+  points, C3 = the LDOs pass at the relaxed HF PSRR target (-3 / -2.3 dB; -5 dB was never reached in 1,500 designs).
+- **What the data says:** the loaded model is ahead in its first 100 own proposals on all six circuits (90 / 93 / 89 %
+  against 11 / 1 / 5 % on ota5t / ota7t_w / vco_lin_c; 16 % against 2 % on ring3; 27 % and 4 % against 0 % on the LDOs) and
+  ends as well or better on all six. On both LDOs only the loaded model passes at the relaxed target (89 and 58 designs).
+  The fixed rule's absolute 30-point bar is met on three of six; the rule says "no transfer", the bar is what fails. One
+  seed per arm. On ldo1_rgcn the loaded model loses part of the transfer while training on (27 % early, 7 % at the end;
+  the critics were trained at the old target).
+- **Decision:** reported as measured; no claim beyond these circuits. Offered, not ordered: frozen zero-shot runs (300
+  launches), a second seed on ring3 and ldo1_rgcn, fine-tune with `reset_critic` on ldo1_rgcn.

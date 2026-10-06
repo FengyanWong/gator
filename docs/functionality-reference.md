@@ -315,6 +315,7 @@ Old configurations that name a removed function still load with their hashes unc
 
 | What | Where | State |
 |---|---|---|
+| One general network from all saved experience; six circuits from a third start; policy drift | `docs/plan-general-network.md`; 7.230 | Plan only, decisions D1-D10 open. Pool of 22 runs / 17,124 evaluations, a shared 34-metric spec registry, offline SAC through the unchanged learner, start-C comparison with "no drift" and "general vs own" criteria, rehearsal replay as the first anti-drift lever (engine change). Nothing built. |
 | Lower- and moderate-risk performance improvements | `docs/plan-low-moderate-risk-performance.md`; 7.220 | Current Claude handoff: charts, API reads, CPU contention, conditional gamma-zero calculation, replay copies and input cache; behavior tests and old-checkpoint recovery; plan only |
 | Performance and learning efficiency: 13 proposals | `docs/plan-performance-and-learning-efficiency.md`; 7.219 | Broader review retained for reference; implementation scope narrowed by 7.220 to six lower/moderate-risk items; no runtime changes |
 | Finalist Monte Carlo check | `docs/plan-finalist-monte-carlo.md`; 7.103, 7.104 | Plan only, decisions open. It names OTA7 and LDO, which are gone since 7.128 |

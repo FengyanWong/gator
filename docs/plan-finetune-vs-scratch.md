@@ -6,7 +6,7 @@ fine-tune model. Write a plan of comparing these fine-tuning runs with from scra
 tasks with passable psrr target if necessary for the plan."
 
 Status: the twelve runs ran 06:58-12:03 on 2026-10-06 and are all complete; section 9 holds the results (record 7.229).
-Section 5's criteria were revised at 08:1x while they ran, before any verdict.
+Section 5's criteria were revised at 08:09 while they ran, before any verdict.
 
 ## 1. The question, in plain words
 

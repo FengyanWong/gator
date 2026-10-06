@@ -1,6 +1,6 @@
 # Claude handoff: lower- and moderate-risk performance improvements
 
-Date: 2026-10-05. **Built on 2026-10-06 as record 7.221 (uncommitted): A-F implemented and tested; see the entry in `docs/workbench-log/7.119-and-later.md` and `artifacts/local/reviews/learner-step-7221-2026-10-06/`.**
+Date: 2026-10-05. **Built on 2026-10-06 as record 7.221 (`510ba0e` + `a39bc5b`): A-F implemented and tested; see the entry in `docs/workbench-log/7.119-and-later.md` and `artifacts/local/reviews/learner-step-7221-2026-10-06/`.**
 
 Implement the six work packages below when this handoff is assigned for execution. The objective is less computation
 and I/O while preserving the user's selected training settings, numerical calculations, data and existing controls.

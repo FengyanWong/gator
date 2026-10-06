@@ -309,3 +309,9 @@ One row per commit, newest last.
 | `962731e` | 10-05 23:50 | 7.217 | calibration: "Apply and save" for a task saved from a cell, Scales written as quantities, a narrower window rule, no Initial alpha near the one in use (session "RL reward design", committed by "Virtuoso read whole flow") |
 | `3ce9717` | 10-05 23:51 | - | record only: names the commit of record 7.217, 7.215's Live lines, and the table rows for c170802 and 962731e |
 | `96d2225` | 10-06 02:26 | 7.216 | one setting on every MScR circuit: the Graph Transformer starting preset learns on three of seven on Spectre, not on two LDOs that miss one PSRR row; a new VCO task learns; docs only (session "Gator baseline deletion in RL networks", committed by "Virtuoso read whole flow") |
+| `98e0a99` | 10-06 02:27 | - | record only: names the commit of record 7.216, 7.217's Live line, and the table rows for 3ce9717 and 96d2225 |
+| `36ed2af` | 10-06 03:11 | 7.219, 7.220 | performance plans: the 13 proposals reviewed for functionality, and the lower/moderate-risk handoff; docs only (session "Project audit", committed by "Virtuoso read whole flow") |
+| `2825305` | 10-06 03:11 | 7.222 | rows not saved in the task highlighted in Parameters, Probes and Specs (session "Parameters, specs, and probes linking in Virtuoso") |
+| `510ba0e` | 10-06 03:11 | 7.221 | optimizer: lent replay samples, no next-state work at discount 0, input-cache keys worked out once; digest f83342bc -> 4aebbfab (session "Time consumption analysis") |
+| `a39bc5b` | 10-06 03:11 | 7.221 | workbench part of the six speed items: replay call sites, shared chart work, cheaper training reads, "Can continue" for older sources, timing rules (session "Time consumption analysis") |
+| `105465f` | 10-06 03:18 | 7.223 | switching task no longer asks to discard edits nobody made; its fixed version (session "Unsaved changes blocking task switch") |

@@ -2,7 +2,7 @@
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
-- **Optimizer source digest:** `4aebbfab2176605c6e984d3b42ae622335246dfed693c5b9cc39f942c0aaad73`, record 7.221 (2026-10-06, *uncommitted*: a
+- **Optimizer source digest:** `4aebbfab2176605c6e984d3b42ae622335246dfed693c5b9cc39f942c0aaad73`, set by `510ba0e` (record 7.221, 2026-10-06: a
   learner step takes its replay sample lent instead of deep-copied, skips the next-state work when the discount is
   exactly 0, and keys the input cache by digests worked out once; every result and random-number state identical;
   input cache 8,192 entries). Before it: `f83342bcc50a7b385cadad1770d8ae06962d48fa4cdbcb76ceceef08bcb7cc77`, set by
@@ -30,7 +30,7 @@ A summary for new sessions; everything below is the chronological record, oldest
   (`always`, `after_nominal`) was offered for `real:gpdk045_ota7` only; no task has it since 2026-09-30 (7.128).
 - **Older checkpoints** resume exactly only under their own source: digest `f83342bc...` (record 7.149; every save
   point written before record 7.221, the eight viewing copies of 2026-10-05's Spectre runs in `outputs/` included) from
-  `ab34f03` up to the commit before 7.221's - checked 2026-10-06: that source loads the GATv2 run's final save point
+  `ab34f03` up to `2825305`, the commit before 7.221's `510ba0e` - checked 2026-10-06: that source loads the GATv2 run's final save point
   and two loads give identical next updates, the 7.221 source refuses it; under the new source such a save point still
   loads for fine-tune and frozen (a warning) but not for Continue; digest `02127bc3...` (M6 pilot, six encoders) from
   `bbdfe36`; `aa987cf0...` (five encoders incl. MLP, GCN, GATv1) from `9bc488f`; `f087a4ce...` (reward v2) from

@@ -398,7 +398,8 @@ loads the task; checkboxes only select it for a move. **Rename** keeps membershi
 to Unfiled without deleting any task, run or model. New tasks start in Unfiled.
 
 Folders are saved in the backend's `task_folders.json`, shared across windows and browser reloads; **Refresh list**
-reads them again. Failed reads/saves are shown and can be retried. Organization changes neither task IDs nor encoder
+reads them again. Runs and saved models have folders of their own since record 7.263 (`run_folders.json`,
+`model_folders.json`, the same lock and checks; the Runs window below), drawn by the same component (`Folders.tsx`). Failed reads/saves are shown and can be retried. Organization changes neither task IDs nor encoder
 settings, saved circuit files, revisions or run/model provenance. The initial organization uses the verified encoder
 of existing runs, plus the declared GraphGPS and Group Cross Attention task copies; historical `_rgcn` names alone
 are not encoder evidence. The initial folders contain Graph Transformer (22), GraphGPS (6), and Group Cross Attention
@@ -1211,6 +1212,15 @@ it). The window lists every run under the output folder, newest first, one row p
   **segment** (each Start or Resume: when it began and ended, how it ended, how long it worked).
 * A press on a column title sorts by it (again: the other way; rows without a value stay last). The filter box
   narrows the list by any word of a row: task, mode, state, `mock` / `real`, a date.
+* **Folders** (record 7.263; plan [frontend run workflow](plan-frontend-run-workflow.md), build step 2), as in the
+  Tasks window: **All runs**, **Unfiled** and named folders with counts on the left, the same New folder, Rename and
+  Delete folder icons. Tick runs (or the header box for every run shown), then **Move to...**; in All runs a run's folder
+  is named under its date. A folder filters the table, and the filter and sorting work inside it. Organization only:
+  no run is moved, renamed or deleted on disk, and deleting a folder sends its runs back to Unfiled. Run folders are
+  stored by run folder in `run_folders.json`: an assignment of a run that is gone stays in the file and is not counted.
+  API: `GET/POST /api/run-folders`, `PUT /api/run-folders/assign` (`run_dirs` - each must be a run under the allowed
+  output roots), `PATCH/DELETE /api/run-folders/{folder_id}`; the saved models' folders the same under
+  `/api/model-folders`, for the RL model window (build step 4).
 * **Nothing in the window updates by itself.** The list is read when the button is pressed and by **Refresh list**
   (the window says when it was read); a run's details are read when they are opened. A working run therefore shows
   its state and duration as of that time.

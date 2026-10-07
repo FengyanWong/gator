@@ -4,6 +4,9 @@
 import { quantity } from './units';
 
 export type Json = any;
+/** What a folder holds (record 7.263): tasks (by task key), runs and saved models (both by run folder). */
+export type FolderKind = 'tasks' | 'runs' | 'models';
+const FOLDER_ROUTE: Record<FolderKind, string> = { tasks: '/api/task-folders', runs: '/api/run-folders', models: '/api/model-folders' };
 
 export class ApiError extends Error {
   constructor(public status: number, public detail: Json) {
@@ -64,11 +67,13 @@ export const api = {
   networkSettings: () => call('GET', '/api/network-settings'),
   saveNetworkSettings: (encoder: string, body: Json) => call('PUT', '/api/network-settings/' + encodeURIComponent(encoder), body),
   tasks: () => call('GET', '/api/tasks'),
-  taskFolders: () => call('GET', '/api/task-folders'),
-  createTaskFolder: (name: string) => call('POST', '/api/task-folders', { name }),
-  renameTaskFolder: (id: string, name: string) => call('PATCH', '/api/task-folders/' + encodeURIComponent(id), { name }),
-  deleteTaskFolder: (id: string) => call('DELETE', '/api/task-folders/' + encodeURIComponent(id)),
-  moveTasks: (task_keys: string[], folder_id: string | null) => call('PUT', '/api/task-folders/assign', { task_keys, folder_id }),
+  // Folders (tasks: record 7.250; runs and models: 7.263): one store per kind, the same five calls.
+  folders: (kind: FolderKind) => call('GET', FOLDER_ROUTE[kind]),
+  createFolder: (kind: FolderKind, name: string) => call('POST', FOLDER_ROUTE[kind], { name }),
+  renameFolder: (kind: FolderKind, id: string, name: string) => call('PATCH', `${FOLDER_ROUTE[kind]}/${encodeURIComponent(id)}`, { name }),
+  deleteFolder: (kind: FolderKind, id: string) => call('DELETE', `${FOLDER_ROUTE[kind]}/${encodeURIComponent(id)}`),
+  moveToFolder: (kind: FolderKind, keys: string[], folder_id: string | null) =>
+    call('PUT', `${FOLDER_ROUTE[kind]}/assign`, kind === 'tasks' ? { task_keys: keys, folder_id } : { run_dirs: keys, folder_id }),
   starter: (taskKey: string) => call('GET', '/api/tasks/starter' + q({ task_key: taskKey })),
   loadCircuit: (circuit: Json) => call('POST', '/api/circuit/load', { circuit }),
   nativeLibraries: (profile_id: string) => call('POST', '/api/virtuoso/libraries', { profile_id }),

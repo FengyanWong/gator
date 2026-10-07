@@ -1,5 +1,7 @@
-"""Persistent organization must preserve task identity and unrelated concurrent edits."""
+"""Persistent organization must preserve task identity and unrelated concurrent edits. Since record 7.263 the same store
+holds the folders of runs and of models, each kind in a file of its own, keyed by run folder."""
 import json
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -73,3 +75,52 @@ def test_concurrent_changes_keep_each_other_and_duplicate_names_are_rejected():
     assert len(folders.read()['folders']) == len(folders.read()['assignments']) == 8
     with pytest.raises(folders.FolderError):
         folders.rename(ids[0], 'Folder 1')
+
+
+# ------------------------------------------------------------------------------------- runs and models (record 7.263)
+def fake_run(root, name):
+    run = root / 'out' / 'exp__0123456789ab' / 'runs' / 'task' / name
+    run.mkdir(parents=True)
+    (run / 'run_manifest.json').write_text('{}')
+    return str(run)
+
+
+def test_runs_and_models_have_folders_of_their_own_keyed_by_run_folder(client, tmp_path):
+    a, b = fake_run(tmp_path, 'scratch__seed0__aaaaaaaaaaaa'), fake_run(tmp_path, 'scratch__seed1__bbbbbbbbbbbb')
+    runs = client.post('/api/run-folders', json={'name': 'Pilot'}).json()['created_id']
+    models = client.post('/api/model-folders', json={'name': 'Pilot'}).json()['created_id']    # one name in two kinds
+    assert client.put('/api/run-folders/assign', json={'run_dirs': [a, b], 'folder_id': runs}).json()['assignments'] == {a: runs, b: runs}
+    assert client.put('/api/model-folders/assign', json={'run_dirs': [a], 'folder_id': models}).json()['assignments'] == {a: models}
+    settings = local_settings_dir()
+    assert json.loads((settings / 'run_folders.json').read_text())['assignments'] == {a: runs, b: runs}
+    assert json.loads((settings / 'model_folders.json').read_text())['assignments'] == {a: models}
+    assert client.get('/api/task-folders').json() == dict(version=1, folders={}, assignments={})     # tasks untouched
+    # A run that goes keeps its assignment (the page counts listed runs only); moving it again is refused, atomically.
+    shutil.rmtree(b)
+    assert client.get('/api/run-folders').json()['assignments'] == {a: runs, b: runs}
+    refused = client.put('/api/run-folders/assign', json={'run_dirs': [a, b], 'folder_id': None})
+    assert refused.status_code == 409 and 'Some selected runs no longer exist' in refused.json()['detail']['message']
+    outside = client.put('/api/run-folders/assign', json={'run_dirs': ['/etc'], 'folder_id': None})
+    assert outside.status_code == 409 and client.get('/api/run-folders').json()['assignments'] == {a: runs, b: runs}
+    # Rename, and delete: the runs go back to Unfiled; nothing else changes, the models' folder neither.
+    client.patch(f'/api/run-folders/{runs}', json={'name': 'Pilot runs'})
+    assert client.get('/api/run-folders').json()['folders'] == {runs: 'Pilot runs'}
+    assert client.delete(f'/api/run-folders/{runs}').json() == dict(version=1, folders={}, assignments={})
+    assert client.get('/api/model-folders').json()['assignments'] == {a: models}
+    assert client.put('/api/model-folders/assign', json={'run_dirs': [a], 'folder_id': None}).json()['assignments'] == {}
+
+
+@pytest.mark.parametrize('name', ['All runs', 'all MODELS', 'Unfiled', 'a/b'])
+def test_reserved_and_invalid_names_in_every_kind(client, name):
+    for prefix in ('/api/run-folders', '/api/model-folders', '/api/task-folders'):
+        assert client.post(prefix, json={'name': name}).status_code in (409, 422)
+        assert client.get(prefix).json()['folders'] == {}
+
+
+def test_missing_folder_and_empty_moves_in_the_run_kinds(client, tmp_path):
+    a = fake_run(tmp_path, 'scratch__seed0__cccccccccccc')
+    assert client.put('/api/run-folders/assign', json={'run_dirs': [a], 'folder_id': 'missing'}).status_code == 404
+    assert client.put('/api/model-folders/assign', json={'run_dirs': [], 'folder_id': None}).status_code == 422
+    assert client.patch('/api/model-folders/missing', json={'name': 'x'}).status_code == 404
+    assert client.delete('/api/run-folders/missing').status_code == 404
+    assert 'run list' in client.delete('/api/run-folders/missing').json()['detail']['message']

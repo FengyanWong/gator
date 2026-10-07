@@ -8,7 +8,9 @@
 // What it pins (user request 2026-09-21): the list of runs is a button, not a drop-down; pressing it opens a window with
 // every run, its start and finish time, its duration and its other facts; a DOUBLE CLICK on a row chooses the run the
 // bottom tabs show (no "Show" column), "Clear" shows none; the button only reads "Runs...", the run is named to its LEFT;
-// nothing in it updates by itself; an older server (no times in the list) is said in plain words.
+// nothing in it updates by itself; an older server (no times in the list) is said in plain words. Record 7.263: the window
+// has the Tasks window's folders - All runs, Unfiled and the user's own, runs ticked and moved with "Move to...", keyed by
+// run folder and stored with the runs' folders (/api/run-folders, answered here), never with the tasks'.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -65,9 +67,19 @@ await runChecks(browser, async () => {
   const page = await browser.open();
   const { send, evaluate, until, fulfil, consoleErrors } = page;
   const refused = []; const seen = [];
+  const runFolders = { version: 1, folders: {}, assignments: {} }; let folderSerial = 0;
   const answer = ({ requestId, request }) => {
     const url = new URL(request.url), name = url.pathname;
     if (name === '/api/config/validate') return fulfil(requestId, 200, validReport);
+    if (name.startsWith('/api/run-folders')) {                                   // the runs' folders (7.263): a store of this check's own
+      const body = JSON.parse(request.postData ?? '{}');
+      if (request.method === 'POST') { const id = String(++folderSerial).padStart(32, '0'); runFolders.folders[id] = body.name.trim(); return fulfil(requestId, 200, { ...runFolders, created_id: id }); }
+      if (request.method === 'PUT') body.run_dirs.forEach(dir => { if (body.folder_id) runFolders.assignments[dir] = body.folder_id; else delete runFolders.assignments[dir]; });
+      if (request.method === 'PATCH') runFolders.folders[name.split('/').at(-1)] = body.name;
+      if (request.method === 'DELETE') { const id = name.split('/').at(-1); delete runFolders.folders[id];
+        Object.keys(runFolders.assignments).forEach(dir => { if (runFolders.assignments[dir] === id) delete runFolders.assignments[dir]; }); }
+      return fulfil(requestId, 200, runFolders);
+    }
     if (name.startsWith('/api/runs')) seen.push(name === '/api/runs/status' ? `status ${url.searchParams.get('run_dir')}` : name);
     if (name === '/api/runs') return fulfil(requestId, 200, { runs: listed });
     if (name === '/api/runs/status') { const r = [...listed, LIVE].find(x => x.run_dir === url.searchParams.get('run_dir')); return r ? fulfil(requestId, 200, statusOf(r)) : fulfil(requestId, 404, { detail: 'Not a run directory' }); }
@@ -97,7 +109,7 @@ await runChecks(browser, async () => {
   // The table as a user reads it: one object per run row, keyed by the column titles.
   const table = () => far.evaluate(`(() => { const t = ${WINDOW}.querySelector('table.run-table'); if (!t) return null; const heads = [...t.querySelectorAll('thead th')].map(h => h.textContent.replace(/[\\u25B2\\u25BC]/g, '').trim());
     return [...t.querySelectorAll('tbody > tr:not(.run-details-row)')].map(tr => { const cells = [...tr.children]; const row = { current: tr.getAttribute('aria-current') === 'true', folder: tr.title, buttons: [...tr.querySelectorAll('button')].map(b => b.textContent.trim()).join() };
-      heads.forEach((h, i) => { if (h) row[h] = cells[i].innerText.replace(/\\s+/g, ' ').trim(); }); row.finishedTitle = cells[1].title; row.durationTitle = cells[2].title; return row; }); })()`);
+      heads.forEach((h, i) => { if (h) row[h] = cells[i].innerText.replace(/\\s+/g, ' ').trim(); }); row.finishedTitle = cells[heads.indexOf('Finished')].title; row.durationTitle = cells[heads.indexOf('Duration')].title; return row; }); })()`);
   const rowOf = (rows, r) => rows.find(x => x.folder === r.run_dir);
   const pressIn = (r, labelText) => far.evaluate(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(r.run_dir)});
     const b = tr && [...tr.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(labelText)}); if (!b) return false; b.click(); return true; })()`, true);
@@ -159,8 +171,8 @@ await runChecks(browser, async () => {
   check('a run that never began shows dashes, not zeros', r.Finished === '-' && r.Duration === '-' && r.State === 'not started' && r.Evaluations === '- / 60' && r['First feasible'] === '-', JSON.stringify(r));
   r = rowOf(rows, FAILED);
   check('a real run reads "real", a failed one "failed" with its reason', r.Data === 'real' && /^failed\s*error$/.test(r.State) && r['Can continue'] === 'no' && r.Duration === '40.0 s', JSON.stringify(r));
-  check('no row is marked as shown, and there is no "Show" column: the table starts at "Started" and a row\'s only button is "Details"', rows.every(x => !x.current && x.buttons === 'Details')
-    && (await far.evaluate(`${WINDOW}.querySelector('table.run-table thead th').textContent.replace(/[\\u25B2\\u25BC]/g, '').trim()`)) === 'Started', JSON.stringify(rows.map(x => x.buttons)));
+  check('no row is marked as shown, and there is no "Show" column: after the tick box the table starts at "Started" and a row\'s only button is "Details"', rows.every(x => !x.current && x.buttons === 'Details')
+    && (await far.evaluate(`(() => { const h = [...${WINDOW}.querySelectorAll('table.run-table thead th')]; return !!h[0].querySelector('input[type=checkbox]') && h[1].textContent.replace(/[\\u25B2\\u25BC]/g, '').trim(); })()`)) === 'Started', JSON.stringify(rows.map(x => x.buttons)));
   check('the window says how a run is shown: by a double click', /Double click a run to show it in the bottom tabs/.test(await far.evaluate(`${WINDOW}.innerText`)));
   check('the long explanation is folded: "What the columns mean" is closed', (await far.evaluate(`(() => { const d = ${WINDOW}.querySelector('details.more'); return d && !d.open && d.querySelector('summary').textContent; })()`)) === 'What the columns mean');
   check('the window says how many runs it lists, when it read them, and that nothing updates by itself', /^6 runs under the output folder, read at \d\d:\d\d:\d\d\. Nothing here updates by itself\.$/.test(await far.evaluate(`${WINDOW}.querySelector('.run-count').textContent`)),
@@ -224,7 +236,7 @@ await runChecks(browser, async () => {
   await typeFilter('real');
   check('... "real" finds the real run, "mock" is how the others are found', (await table()).map(x => x.folder).join() === FAILED.run_dir);
   await typeFilter('nothing-matches-this');
-  check('a filter that matches nothing says so', /No run matches the filter\./.test(await far.evaluate(`${WINDOW}.innerText`)) && (await table()).length === 0);
+  check('a filter that matches nothing says so', /No run matches the filter in this folder\./.test(await far.evaluate(`${WINDOW}.innerText`)) && (await table()).length === 0);
   await typeFilter('');
   check('an emptied filter brings every run back', (await table()).length === 6);
   await pressTitle('Duration'); await sleep(300);
@@ -237,6 +249,44 @@ await runChecks(browser, async () => {
   rows = await table();
   check('pressing "Finished" sorts the run that finished last first', rows[0].folder === PAUSED.run_dir && rows[1].folder === RESUMED.run_dir, rows.map(x => x.Finished).join(' | '));
   await pressTitle('Started'); await sleep(300);
+
+  // ---- 5b. folders (record 7.263): the Tasks window's folders, for runs ----------------------------------------------------------
+  await far.send('Page.enable');
+  const replies = [];
+  far.on('Page.javascriptDialogOpening', () => far.send('Page.handleJavaScriptDialog', replies.shift() ?? { accept: false }));
+  const nav = id => far.evaluate(`${WINDOW}.querySelector('.task-folders [data-folder-id="${id}"]').click()`);
+  const tick = r => far.evaluate(`[...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(r.run_dir)}).querySelector('input[type="checkbox"]').click()`);
+  const moveTo = id => far.evaluate(`(() => { const s = ${WINDOW}.querySelector('select[aria-label="Move selected runs to folder"]'); s.value = ${JSON.stringify(id)}; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  const settled = async () => { await sleep(150); return far.until(`!${WINDOW}.querySelector('.task-move-bar [role="status"]')`, 50); };
+  const folderText = id => far.evaluate(`${WINDOW}.querySelector('.task-folders [data-folder-id="${id}"]')?.textContent ?? null`);
+  const pressFolderButton = label => far.evaluate(`[...${WINDOW}.querySelectorAll('.task-folders button')].find(b => b.textContent.trim() === ${JSON.stringify(label)}).click()`, true);
+  check('the run window has folders, as the Tasks window: All runs and Unfiled, every run unfiled', (await folderText('all')) === 'All runs6' && (await folderText('unfiled')) === 'Unfiled6'
+    && (await far.evaluate(`${WINDOW}.querySelector('.task-folders').getAttribute('aria-label')`)) === 'Run folders', `${await folderText('all')} / ${await folderText('unfiled')}`);
+  replies.push({ accept: true, promptText: 'Pilot' }); await pressFolderButton('New folder'); await settled();
+  const pilot = Object.keys(runFolders.folders)[0];
+  check('"New folder" makes one - stored with the runs\' folders - and opens it, empty', !!pilot && runFolders.folders[pilot] === 'Pilot'
+    && (await table()).length === 0 && /This folder is empty\. Select runs in All runs, then use Move to/.test(await far.evaluate(`${WINDOW}.innerText`)), JSON.stringify(runFolders));
+  await nav('all'); await sleep(200);
+  await tick(DONE); await tick(PAUSED); await sleep(200);
+  check('ticked runs are counted as selected', /6 shown · 2 selected/.test(await far.evaluate(`${WINDOW}.querySelector('.task-move-bar').textContent`)),
+    await far.evaluate(`${WINDOW}.querySelector('.task-move-bar').textContent`));
+  await moveTo(pilot); await settled();
+  check('"Move to..." puts exactly those runs in the folder, by their run folder', JSON.stringify(Object.keys(runFolders.assignments).sort()) === JSON.stringify([DONE.run_dir, PAUSED.run_dir].sort())
+    && Object.values(runFolders.assignments).every(id => id === pilot), JSON.stringify(runFolders.assignments));
+  check('the counts follow: Pilot 2, Unfiled 4, All runs 6', (await folderText(pilot)) === 'Pilot2' && (await folderText('unfiled')) === 'Unfiled4' && (await folderText('all')) === 'All runs6');
+  rows = await table();
+  check('in All runs a run in a folder names it under its date', rowOf(rows, DONE).Started === `${stamp(DONE.created_utc)} Pilot` && rowOf(rows, LOST).Started === stamp(LOST.created_utc), JSON.stringify(rowOf(rows, DONE)));
+  await nav(pilot); await sleep(200);
+  check('the folder shows its runs only', (await table()).map(x => x.folder).sort().join() === [DONE.run_dir, PAUSED.run_dir].sort().join());
+  check('a double click there still shows a run in the bottom tabs', await doubleClick(PAUSED)
+    && await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(PAUSED.run_dir)})`));
+  replies.push({ accept: true, promptText: 'Pilot runs' }); await pressFolderButton('Rename'); await settled();
+  check('Rename renames the folder', runFolders.folders[pilot] === 'Pilot runs' && (await folderText(pilot)) === 'Pilot runs2');
+  replies.push({ accept: true }); await pressFolderButton('Delete folder'); await settled();
+  check('Delete folder deletes no run: its runs go back to Unfiled', Object.keys(runFolders.folders).length === 0 && Object.keys(runFolders.assignments).length === 0
+    && (await folderText('unfiled')) === 'Unfiled6' && (await table()).length === 6, JSON.stringify(runFolders));
+  await nav('all'); await sleep(200);
+  await shot('far', '.run-window', 'runs-3b-folders.png');
 
   // ---- 6. nothing updates by itself; "Refresh list" does ---------------------------------------------------------------------
   const quiet = lists(); await sleep(4000);

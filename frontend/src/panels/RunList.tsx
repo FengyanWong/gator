@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { api, bytes, Json, short } from '../api';
 import { LIVE_STATES } from './RunControl';
+import { FolderMoveBar, Folders, useFolders } from './Folders';
 
 /** Which run the bottom tabs show (user request 2026-09-21): ONE button at the right end of the bottom tab strip, where
  *  the drop-down list of runs used to be. It only reads "Runs..."; the run that is shown is named as plain text to its
@@ -12,7 +13,10 @@ import { LIVE_STATES } from './RunControl';
  *  Choosing a task in the Project column shows that task's newest run, or none (App.tsx, record 7.212).
  *
  *  Nothing here updates on a timer: the list is read when the button is pressed and by "Refresh list", a run's details
- *  when they are opened. So a run that is working shows the state and duration AS OF the read time, which is printed. */
+ *  when they are opened. So a run that is working shows the state and duration AS OF the read time, which is printed.
+ *
+ *  Folders (record 7.263, plan "Categories for runs and models"), as the Tasks window has them: All runs, Unfiled and the
+ *  user's folders on the left, runs ticked and moved with "Move to...". Organization only: a run is never moved on disk. */
 
 const two = (n: number) => String(n).padStart(2, '0');
 /** Local time, in a form that sorts and compares by eye: 2026-09-21 14:03:22. */
@@ -120,16 +124,21 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
   const [open, setOpen] = useState<string | null>(null);        // the run whose details are shown
   const [info, setInfo] = useState<{ dir: string; value?: Json; error?: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const folders = useFolders('runs');
+  const [selected, setSelected] = useState<string[]>([]);
+  const chooseFolder = (id: string) => { folders.setFolder(id); setSelected([]); setOpen(null); };
+  const select = (dir: string, checked: boolean) => setSelected(dirs => checked ? [...dirs.filter(d => d !== dir), dir] : dirs.filter(d => d !== dir));
+  const move = async (id: string) => { if (await folders.move(selected, id)) setSelected([]); };
 
   const readDetails = (dir: string) => { setInfo({ dir }); api.status(dir).then(value => setInfo(i => (i?.dir === dir ? { dir, value } : i)), e => setInfo(i => (i?.dir === dir ? { dir, error: e.message } : i))); };
-  const refresh = () => { setLoading(true); onRefresh().finally(() => setLoading(false)); if (open) readDetails(open); };
+  const refresh = () => { setLoading(true); setSelected([]); void folders.refresh(); onRefresh().finally(() => setLoading(false)); if (open) readDetails(open); };
   // Whoever had the list read - this window, or the page when a run was started - the window says when that was.
   useEffect(() => setReadAt(new Date().toLocaleTimeString([], { hour12: false })), [runs]);
   const toggle = (dir: string) => { if (open === dir) { setOpen(null); return; } setOpen(dir); readDetails(dir); };
   // A double click on a run's row shows that run in the bottom tabs (user request 2026-09-21: no "Show" column). Not when it
   // lands on the row's "Details" button: that only opens and closes the details. The word the double click selected is let go.
   const showRun = (e: MouseEvent<HTMLTableRowElement>, dir: string) => {
-    if ((e.target as HTMLElement).closest('button')) return;
+    if ((e.target as HTMLElement).closest('button, input, select, label')) return;
     (popup ?? window).getSelection()?.removeAllRanges();
     onChoose(dir);
   };
@@ -143,11 +152,12 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
 
   const current: Json = runs.find(r => r.run_dir === runDir) ?? null;
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
-  const text = (r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_key, r.task_id, r.mode, r.model_label, `seed${r.seed}`, r.state, r.stop_reason, r.experiment, r.mock ? 'mock' : 'real', folder(r.run_dir)].join(' ').toLowerCase();
+  const text = (r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_key, r.task_id, r.mode, r.model_label, `seed${r.seed}`, r.state, r.stop_reason, r.experiment, r.mock ? 'mock' : 'real', folder(r.run_dir),
+    folders.data.folders[folders.of(r.run_dir)]].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === sort.key) ?? COLUMNS[0];
   // Empty cells stay at the bottom whichever way the column is sorted. Only while the window is open: the page redraws
   // on every status poll, and a closed window needs no sorted list.
-  const shown = !popup ? [] : runs.filter(r => words.every(w => text(r).includes(w))).sort((a, b) => {
+  const shown = !popup ? [] : runs.filter(r => folders.holds(r.run_dir) && words.every(w => text(r).includes(w))).sort((a, b) => {
     const x = column.value!(a), y = column.value!(b);
     if (x == null || x === '' || y == null || y === '') return (x == null || x === '' ? 1 : 0) - (y == null || y === '' ? 1 : 0);
     return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * (sort.down ? -1 : 1);
@@ -158,13 +168,14 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
     <div className="run-window">
       <h2>Runs</h2>
       <div className="row">
-        <button onClick={refresh} disabled={loading}>Refresh list</button>
+        <button onClick={refresh} disabled={loading || folders.busy}>Refresh list</button>
         <button onClick={() => onChoose(null)} disabled={!runDir} title="The bottom tabs of the workbench show no run. Nothing is stopped or deleted.">Clear</button>
-        <input className="run-filter" placeholder="Filter: task, mode, state, mock / real, date ..." value={filter} onChange={e => setFilter(e.target.value)} />
+        <input className="run-filter" placeholder="Filter: task, mode, state, mock / real, date ..." value={filter} onChange={e => { setFilter(e.target.value); setSelected([]); }} />
         <span className="hint run-count">{loading ? 'Reading the runs...' : runsError ? 'The list could not be read.'
           : `${runs.length} run${runs.length === 1 ? '' : 's'} under the output folder${readAt ? `, read at ${readAt}` : ''}. Nothing here updates by itself.`}</span>
       </div>
       {runsError && !loading && <p className="error run-list-error">The run list could not be read: {runsError}</p>}
+      {folders.error && <p className="error" role="alert">{folders.error} Press Refresh list to retry.</p>}
       <p className="hint"><b>Double click</b> a run to show it in the bottom tabs of the workbench (Run status, Logs, Data tables, Output files); the run that is shown is marked. <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none. This window stays open until you close it.</p>
       <details className="more"><summary>What the columns mean</summary>
         <ul className="steps-list">{COLUMNS.map(c => <li key={c.key}><b>{c.title}</b>: {c.help}</li>)}
@@ -172,14 +183,25 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
       {runs.length > 0 && !timed && <p className="warn">The workbench server that is running is older than this page and does not report when a run finished or how long it took.
         Restart it (Ctrl+C in its terminal, then start `serve` again) and press "Refresh list".</p>}
       {runs.length === 0 && !loading && !runsError && <p className="hint run-empty">No run yet under this output folder. A run appears here as soon as it has been started.</p>}
+      <div className="task-browser">
+      <Folders state={folders} keys={runs.map(r => r.run_dir)} popup={popup} onSelect={chooseFolder} />
+      <div className="task-folder-content">
+      <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void move(id)} />
       {runs.length > 0 && <div className="scroll"><table className="grid run-table">
         <thead><tr>
+          <th className="task-select"><input type="checkbox" aria-label="Select all shown runs" disabled={folders.busy || !folders.ready || !shown.length}
+            checked={shown.length > 0 && shown.every(r => selected.includes(r.run_dir))}
+            ref={input => { if (input) input.indeterminate = selected.length > 0 && !shown.every(r => selected.includes(r.run_dir)); }}
+            onChange={e => setSelected(e.target.checked ? shown.map(r => r.run_dir) : [])} /></th>
           {COLUMNS.map(c => <th key={c.key} className="sortable" title={`${c.help} Press to sort.`} aria-sort={sort.key === c.key ? (sort.down ? 'descending' : 'ascending') : undefined}
             onClick={() => setSort(s => ({ key: c.key, down: s.key === c.key ? !s.down : true }))}>{c.title}{sort.key === c.key && <span className="sort-mark">{sort.down ? ' ▼' : ' ▲'}</span>}</th>)}
           <th className="plain"></th></tr></thead>
         <tbody>{shown.map(r => { const active = r.run_dir === runDir, end = finished(r); return (<Fragment key={r.run_dir}>
           <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} title={r.run_dir} onDoubleClick={e => showRun(e, r.run_dir)}>
-            <td>{stamp(r.created_utc) ?? '-'}</td>
+            <td className="task-select"><input type="checkbox" aria-label={`Select ${folder(r.run_dir)}`} checked={selected.includes(r.run_dir)}
+              disabled={folders.busy || !folders.ready} onChange={e => select(r.run_dir, e.target.checked)} /></td>
+            <td>{stamp(r.created_utc) ?? '-'}{folders.folder === 'all' && folders.data.folders[folders.of(r.run_dir)]
+              && <div className="hint task-folder-label">{folders.data.folders[folders.of(r.run_dir)]}</div>}</td>
             <td className={end.css} title={end.title}>{end.text}</td>
             <td className="numeric" title={r.paused_seconds ? `Working time. It also sat paused for ${span(r.paused_seconds)}.` : undefined}>{span(r.active_seconds) ?? '-'}{isLive(r) && r.active_seconds != null && ' so far'}</td>
             <td><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>{r.stop_reason && <div className="hint">{r.stop_reason}</div>}</td>
@@ -191,10 +213,11 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
             <td>{RESUME[r.resumability] ?? '-'}</td>
             <td><button className="notes-link" aria-expanded={open === r.run_dir} onClick={() => toggle(r.run_dir)}>{open === r.run_dir ? 'Hide details' : 'Details'}</button></td>
           </tr>
-          {open === r.run_dir && <tr className="run-details-row"><td colSpan={COLUMNS.length + 1}>
+          {open === r.run_dir && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>
             <RunDetails row={r} info={info?.dir === r.run_dir ? info?.value : null} error={info?.dir === r.run_dir ? info?.error : undefined} onCopy={copyPath} copied={copied} /></td></tr>}
         </Fragment>); })}</tbody></table></div>}
-      {runs.length > 0 && shown.length === 0 && <p className="hint">No run matches the filter.</p>}
+      {runs.length > 0 && shown.length === 0 && <p className="hint task-folder-empty">{filter ? 'No run matches the filter in this folder.' : 'This folder is empty. Select runs in All runs, then use Move to…'}</p>}
+      </div></div>
     </div>
   );
 

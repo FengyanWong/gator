@@ -521,7 +521,7 @@ table.task-table td code { font-size: 12px; } table.task-table td .hint.warn { c
 .task-folder.active { background: var(--selected); border-color: var(--accent); }
 .task-folder-actions { flex-wrap: wrap; margin-top: 8px; }
 .task-move-bar { min-height: 30px; margin-bottom: 6px; } .task-move-bar select { width: 180px; margin-left: auto; }
-table.task-table .task-select { width: 28px; text-align: center; }
-table.task-table .task-select input { margin: 0; }
+table.task-table .task-select, table.run-table .task-select { width: 28px; text-align: center; }
+table.task-table .task-select input, table.run-table .task-select input { margin: 0; }
 @media (max-width: 760px) { .task-browser { grid-template-columns: 145px minmax(0, 1fr); gap: 8px; } .task-folder-heading { flex-wrap: wrap; } }
 .task-details h4 { margin: 10px 0 3px; } table.task-rows-table { width: auto; } table.task-rows-table td, table.task-rows-table th { padding: 2px 8px; }

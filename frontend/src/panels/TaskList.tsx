@@ -2,7 +2,7 @@ import { Fragment, MouseEvent, ReactNode, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { api, Json, si } from '../api';
-import { TaskFolders, useTaskFolders } from './TaskFolders';
+import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { Icon } from './Icons';
 
 /** Which registered task the page follows (user request 2026-10-06, record 7.227: "make the loaded task a button similar to
@@ -107,12 +107,12 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   const [sort, setSort] = useState<{ key: string; down: boolean }>({ key: 'task', down: false });
   const [open, setOpen] = useState<string | null>(null);          // the task whose details are shown
   const [rows, setRows] = useState<{ key: string; value?: Json; error?: string } | null>(null);
-  const folders = useTaskFolders();
+  const folders = useFolders('tasks');
   const [selected, setSelected] = useState<string[]>([]);
   const chooseFolder = (id: string) => { folders.setFolder(id); setSelected([]); setOpen(null); };
   const select = (key: string, checked: boolean) => setSelected(keys => checked ? [...keys.filter(k => k !== key), key] : keys.filter(k => k !== key));
   const move = async (id: string) => {
-    if (await folders.change(() => api.moveTasks(selected, id === 'unfiled' ? null : id))) setSelected([]);
+    if (await folders.move(selected, id)) setSelected([]);
   };
 
   const readRows = (key: string) => { setRows({ key }); api.starter(key).then(value => setRows(r => (r?.key === key ? { key, value } : r)), e => setRows(r => (r?.key === key ? { key, error: e.message } : r))); };
@@ -139,7 +139,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   const text = (t: Json) => [t.task_key, folders.data.folders[folders.of(t.task_key)], taskMark(t, ngspiceOffered), t.circuit_class, t.pdk_id, cellOf(t), t.testbench, t.description, t.title, stamp(t.saved_utc)].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === sort.key) ?? COLUMNS[0];
   // Empty cells stay at the bottom whichever way the column is sorted. Only while the window is open.
-  const shown = !popup ? [] : tasks.filter(t => (folders.folder === 'all' || folders.of(t.task_key) === folders.folder) && words.every(w => text(t).includes(w))).sort((a, b) => {
+  const shown = !popup ? [] : tasks.filter(t => folders.holds(t.task_key) && words.every(w => text(t).includes(w))).sort((a, b) => {
     const x = column.value(a, runs), y = column.value(b, runs);
     if (x == null || x === '' || y == null || y === '') return (x == null || x === '' ? 1 : 0) - (y == null || y === '' ? 1 : 0);
     return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * (sort.down ? -1 : 1);
@@ -170,17 +170,9 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
         the run columns stay empty. Restart it (Ctrl+C in its terminal, then start `serve` again) and press "Refresh list".</p>}
       {tasks.length === 0 && !reading && !tasksError && <p className="hint task-empty">No registered task yet. Save one from a Virtuoso cell (Virtuoso cell...) or from an ngspice netlist.</p>}
       <div className="task-browser">
-      <TaskFolders state={folders} tasks={tasks} popup={popup} onSelect={chooseFolder} />
+      <Folders state={folders} keys={tasks.map(t => t.task_key)} popup={popup} onSelect={chooseFolder} />
       <div className="task-folder-content">
-      <div className="row task-move-bar">
-        <b>{folders.folder === 'all' ? 'All tasks' : folders.folder === 'unfiled' ? 'Unfiled' : folders.data.folders[folders.folder]}</b>
-        <span className="hint">{shown.length} shown{selected.length > 0 ? ` · ${selected.length} selected` : ''}</span>
-        <select aria-label="Move selected tasks to folder" value="" disabled={!selected.length || folders.busy || !folders.ready} onChange={e => void move(e.target.value)}>
-          <option value="" disabled>Move to…</option><option value="unfiled">Unfiled</option>
-          {folders.names.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-        </select>
-        {folders.busy && <span className="hint" role="status">Updating folders…</span>}
-      </div>
+      <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void move(id)} />
       {tasks.length > 0 && <div className="scroll"><table className="grid run-table task-table">
         <thead><tr>
           <th className="task-select"><input type="checkbox" aria-label="Select all shown tasks" disabled={folders.busy || !folders.ready || !shown.length}

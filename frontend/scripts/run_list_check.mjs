@@ -13,6 +13,8 @@
 // run folder and stored with the runs' folders (/api/run-folders, answered here), never with the tasks'. Record 7.264:
 // "Started from" and "Saved model" columns, and Relationships in Details (task, started from, saved model, the runs that
 // started from it, a folded history), every run named a link that shows it here and the task one that opens the Tasks window.
+// Record 7.267: a run's Details have Load run (also the double click), Show results, Continue... and New run like this; Load
+// run brings the model the run ended with, pinned with its network, as one Undo step; a run whose task is gone offers neither.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -55,6 +57,18 @@ const LIVE = run(7, { created_utc: '2026-09-21T14:00:00+00:00', started_utc: '20
 const TIMING = ['started_utc', 'ended_utc', 'last_seen_utc', 'active_seconds', 'paused_seconds', 'segments', 'task_name', 'stop_reason', 'error', 'max_evaluations'];
 const older = r => Object.fromEntries(Object.entries(r).filter(([k]) => !TIMING.includes(k)));     // a row as the server listed it before it knew the times
 let listed = [PAUSED, RESUMED, DONE, LOST, NEVER, FAILED];                                          // newest first, as the backend sorts; no live run yet (the page would take it over)
+// Record 7.267, only in section 10: an Evaluate-only run of DONE's save point 40, and a run whose task is no longer registered.
+const EVALUATED = run(8, { ...LINEAGE, mode: 'frozen', model_label: null, created_utc: '2026-09-22T09:00:00+00:00', started_utc: '2026-09-22T09:00:02+00:00', ended_utc: '2026-09-22T09:00:40+00:00',
+  active_seconds: 38, state: 'completed', stop_reason: 'budget_exhausted', evaluations: 20, max_evaluations: 20, resumability: 'weights_only', segments: [],
+  parent: { run_id: 'fixture-run-1', run_dir: `${ROOT}/mock/fixture_exp__0001/runs/fixture_task/scratch__seed1__0001`, checkpoint_id: 'ckpt-000040-final', relation: 'frozen' } });
+const GONE = run(9, { ...LINEAGE, task_key: 'real:fixture_gone', created_utc: '2026-09-16T08:00:00+00:00', started_utc: '2026-09-16T08:00:02+00:00', ended_utc: '2026-09-16T08:01:00+00:00',
+  active_seconds: 58, state: 'completed', stop_reason: 'budget_exhausted', evaluations: 10, max_evaluations: 10, resumability: 'full_state', segments: [] });
+// The save points this check answers for (POST /api/runs/model): DONE's newest (60) and its save point 40, an RGCN 32/4/2.
+const RGCN = { encoder_type: 'rgcn', hidden_dim: 32, heads: 4, layers: 2, structural_encoding: 'none' };
+const described = (run_dir, checkpoint_id, evaluations) => ({ description: { checkpoint_id, path: `${run_dir}/checkpoints/${checkpoint_id}`, kind: 'final', source_run_id: 'fixture-run-1',
+  source_task_id: 'fixture_task:0000', mode: 'scratch', created_utc: '2026-09-20T16:17:01+00:00', metadata_version: 'FIXTURE', counters: { evaluations_committed: evaluations, learner_updates: evaluations - 8, replay_size: evaluations },
+  restoration_capability: 'full_state', restorable_components: [], missing_components: [], contract: { model_config: RGCN, sac_config: {} }, file_problems: [] },
+  vocabulary: { name: 'standard', label: 'standard (8 generic kinds)', loaded: true }, compatibility: { mode: 'fine_tune', compatible: true, checks: [], checkpoint_id, source_run_id: 'fixture-run-1' } });
 const statusOf = r => ({ state: r.state, run_id: r.run_id, mode: r.mode, entry: 'start', provenance: r.mock ? 'mock' : 'real', mock: r.mock, worker_alive: r.state === 'running', run_dir: r.run_dir,
   heartbeat_utc: r.last_seen_utc ?? r.ended_utc, stop_reason: r.stop_reason, error: r.error, active_workers: [], concurrency: 2, threads_per_job: 1, learner_updates: 36, first_feasible: null,
   budget: { max_evaluations: r.max_evaluations, max_launches: null, max_retries: 0, charged: r.evaluations ?? 0, reserved: 0, in_flight: 0, completed: (r.evaluations ?? 0) - 1, failed: 1, released: 0,
@@ -73,6 +87,9 @@ await runChecks(browser, async () => {
   const { send, evaluate, until, fulfil, consoleErrors } = page;
   const refused = []; const seen = [];
   const runFolders = { version: 1, folders: {}, assignments: {} }; let folderSerial = 0;
+  // RESUMED's own configuration as it started (record 7.267, New run like this): a fine-tune of DONE, its recorded source still "latest".
+  const recorded = { [RESUMED.run_dir]: { ...CONFIG, run: { ...CONFIG.run, mode: 'fine_tune', model_label: 'fixture (2)', max_evaluations: 40, seed: 2, max_retries: 1,
+    network: RGCN, advanced: { ...(CONFIG.run.advanced ?? {}), batch_size: 16 }, model_source: { run_dir: DONE.run_dir, checkpoint_id: 'latest' } } } };
   const answer = ({ requestId, request }) => {
     const url = new URL(request.url), name = url.pathname;
     if (name === '/api/config/validate') return fulfil(requestId, 200, validReport);
@@ -90,6 +107,15 @@ await runChecks(browser, async () => {
     if (name === '/api/runs/status') { const r = [...listed, LIVE].find(x => x.run_dir === url.searchParams.get('run_dir')); return r ? fulfil(requestId, 200, statusOf(r)) : fulfil(requestId, 404, { detail: 'Not a run directory' }); }
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
     if (name === '/api/runs/models') return fulfil(requestId, 200, { models: [] });
+    if (name === '/api/runs/model') {                                            // record 7.267: the save points Load run and New run like this read
+      const body = JSON.parse(request.postData ?? '{}'), dir = `${ROOT}/mock/fixture_exp__0001/runs/fixture_task/scratch__seed1__0001`;
+      const point = body.run_dir !== dir ? null : body.checkpoint_id === 'ckpt-000040-final' ? ['ckpt-000040-final', 40] : ['latest', 'ckpt-000060-final'].includes(body.checkpoint_id) ? ['ckpt-000060-final', 60] : null;
+      return point ? fulfil(requestId, 200, described(dir, ...point)) : fulfil(requestId, 404, { detail: { message: 'FIXTURE: no save point here' } });
+    }
+    if (name === '/api/runs/download' && url.searchParams.get('path') === 'effective_config.json') {   // record 7.267: New run like this
+      const c = recorded[url.searchParams.get('run_dir')];
+      return c ? fulfil(requestId, 200, c) : fulfil(requestId, 404, { detail: 'FIXTURE: No such file' });
+    }
     if (name.startsWith('/api/runs')) return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${name} is not expected in this check` } });
     return page.readOrRefuse({ requestId, request }, refused);
   };
@@ -179,7 +205,7 @@ await runChecks(browser, async () => {
   check('no row is marked as shown, and there is no "Show" column: after the tick box the table starts at "Started" and a row\'s last button is "Details"',
     rows.every(x => !x.current && x.buttons.split(',').pop() === 'Details' && x.buttons.split(',').length <= 2)
     && (await far.evaluate(`(() => { const h = [...${WINDOW}.querySelectorAll('table.run-table thead th')]; return !!h[0].querySelector('input[type=checkbox]') && h[1].textContent.replace(/[\\u25B2\\u25BC]/g, '').trim(); })()`)) === 'Started', JSON.stringify(rows.map(x => x.buttons)));
-  check('the window says how a run is shown: by a double click', /Double click a run to show it in the bottom tabs/.test(await far.evaluate(`${WINDOW}.innerText`)));
+  check('the window says what a double click does: it loads the run (record 7.267)', /Double click a run to load it: its task comes into the editors, its model becomes the next run's model, and the bottom tabs of the workbench show its results/.test(await far.evaluate(`${WINDOW}.innerText`)));
   check('the long explanation is folded: "What the columns mean" is closed', (await far.evaluate(`(() => { const d = ${WINDOW}.querySelector('details.more'); return d && !d.open && d.querySelector('summary').textContent; })()`)) === 'What the columns mean');
   check('the window says how many runs it lists, when it read them, and that nothing updates by itself', /^6 runs under the output folder, read at \d\d:\d\d:\d\d\. Nothing here updates by itself\.$/.test(await far.evaluate(`${WINDOW}.querySelector('.run-count').textContent`)),
     await far.evaluate(`${WINDOW}.querySelector('.run-count').textContent`));
@@ -365,6 +391,82 @@ await runChecks(browser, async () => {
   await evaluate(`${BUTTON}.click()`, true); await sleep(800);
   check('pressing the button while the window is open opens no second window', (await pages()).filter(t => t.title === 'GATOR - runs').length === 1);
   await shot('main', 'footer', 'runs-4-footer-with-run.png');
+  await send('Target.closeTarget', { targetId: farPage.id }); await windowTarget(false); far.close();
+
+  // ---- 10. the actions in Details (record 7.267; plan "Load run" and "Existing runs: continued in place") -----------------------------
+  // Sections 3 and 9 loaded runs with a double click: RESUMED (a fine-tune with no save point of its own here: the one it started
+  // from, DONE's 40) and DONE (its newest, 60). Two Undo steps take the page back to New model.
+  const storedRun = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')?.run ?? null`);
+  const runWhen = async (test, tries = 60) => { for (let i = 0; i < tries; i++) { const x = await storedRun(); if (test(x)) return x; await sleep(100); } return storedRun(); };
+  const undo = () => evaluate(`document.querySelector('section.editors button[title^="Undo:"]').click()`);
+  const banner = () => evaluate(`document.querySelector('.banner')?.textContent ?? ''`);
+  const modeOf = x => x?.mode ?? 'scratch';                 // a configuration without a Mode is New model, as the backend reads it
+  const sameNet = (a, b) => !!a && ['encoder_type', 'hidden_dim', 'heads', 'layers'].every(f => a[f] === b[f]);
+  let draft = await runWhen(x => x?.model_source?.run_dir === DONE.run_dir);
+  check('(set-up) section 9\'s double click loaded DONE: Fine-tune from its newest save point, pinned', draft?.mode === 'fine_tune' && draft.model_source.checkpoint_id === 'ckpt-000060-final', JSON.stringify(draft?.model_source));
+  await undo();
+  draft = await runWhen(x => x?.model_source?.checkpoint_id === 'ckpt-000040-final');
+  check('... one Undo goes back to section 3\'s load of RESUMED: the save point it started from, DONE\'s 40', draft?.mode === 'fine_tune' && draft.model_source.run_dir === DONE.run_dir, JSON.stringify(draft?.model_source));
+  await undo();
+  draft = await runWhen(x => !x?.model_source?.run_dir);
+  check('... and one more to New model, no saved model', modeOf(draft) === 'scratch' && !draft.model_source?.run_dir, JSON.stringify(draft));
+  listed = [EVALUATED, PAUSED, RESUMED, DONE, LOST, NEVER, FAILED, GONE];
+  await openWindow();
+  const openDetails = async rr => { await far.evaluate(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(rr.run_dir)});
+    const b = [...tr.querySelectorAll('button')].find(b => b.textContent.trim() === 'Details'); if (b) b.click(); })()`, true);
+    return far.until(`[...${WINDOW}.querySelectorAll('tr.run-details-row')].some(row => row.previousElementSibling?.title === ${JSON.stringify(rr.run_dir)} && !!row.querySelector('.run-actions'))`, 40); };
+  const ACTIONS = `${WINDOW}.querySelector('tr.run-details-row .run-actions')`;
+  const actions = () => far.evaluate(`[...${ACTIONS}.querySelectorAll('button')].map(b => b.textContent.trim() + (b.disabled ? ' (off)' : ''))`);
+  const act = label => far.evaluate(`[...${ACTIONS}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(label)}).click()`, true);
+  check('(set-up) the window lists the eight runs', (await table())?.length === 8);
+  check('a run\'s Details offer Load run, Show results, Continue... and New run like this', await openDetails(DONE)
+    && JSON.stringify(await actions()) === JSON.stringify(['Load run', 'Show results', 'Continue...', 'New run like this']), JSON.stringify(await actions()));
+  // a task that is no longer registered
+  await openDetails(GONE);
+  check('a run whose task is no longer registered: Load run and New run like this are off, and the reason stands beside them',
+    JSON.stringify(await actions()) === JSON.stringify(['Load run (off)', 'Show results', 'Continue...', 'New run like this (off)'])
+    && /Not offered: its task real:fixture_gone is no longer registered/.test(await far.evaluate(`${ACTIONS}.querySelector('.run-load-why')?.textContent ?? ''`)), JSON.stringify(await actions()));
+  check('... its double click shows it, and changes nothing in the draft', await doubleClick(GONE) && await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(GONE.run_dir)})`, 40)
+    && modeOf(await runWhen(x => !!x, 5)) === 'scratch');
+  await openDetails(FAILED);
+  check('a run that names no registered task: the same, with its own reason', /Not offered: the run names no registered task/.test(await far.evaluate(`${ACTIONS}.querySelector('.run-load-why')?.textContent ?? ''`)));
+  // Load run: the model the run ended with, pinned, with its network; one Undo step; the run's results shown
+  await openDetails(DONE); await act('Load run');
+  draft = await runWhen(x => x?.model_source?.run_dir === DONE.run_dir);
+  check('Load run of a trained run: its newest save point, pinned (a concrete id, never "latest"), in Fine-tune', draft?.mode === 'fine_tune' && draft.model_source.checkpoint_id === 'ckpt-000060-final', JSON.stringify(draft?.model_source));
+  check('... with the model\'s network in the same step', sameNet(draft?.network, RGCN), JSON.stringify(draft?.network));
+  check('... the bottom tabs show the run', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DONE.run_dir)})`, 40));
+  check('... and the message names the run, its task (the page\'s own: the editors stay) and the model', /^Loaded run fixture_task \d\d-\d\d \d\d:\d\d: task synthetic:gpdk045_ota5 \(already on the page: the editors stay as they were\), Fine-tune from fixture @ 60\. Undo takes it back\.$/.test(await banner()), await banner());
+  await undo();
+  draft = await runWhen(x => !x?.model_source?.run_dir);
+  check('one Undo takes the model and the Mode back together', modeOf(draft) === 'scratch' && !draft.model_source?.run_dir && !sameNet(draft.network, RGCN), JSON.stringify({ mode: draft?.mode, source: draft?.model_source, net: draft?.network }));
+  await openDetails(EVALUATED); await act('Load run');
+  draft = await runWhen(x => x?.model_source?.run_dir === DONE.run_dir);
+  check('Load run of an Evaluate-only run: the save point it evaluated (its weights never changed), in Fine-tune', draft?.mode === 'fine_tune' && draft.model_source.checkpoint_id === 'ckpt-000040-final'
+    && /Fine-tune from fixture @ 40\./.test(await banner()), `${JSON.stringify(draft?.model_source)} | ${await banner()}`);
+  await openDetails(PAUSED); await act('Load run');
+  check('Load run of a run without a save point (and none it started from): the model stays as it was, and the message says so', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(PAUSED.run_dir)})`, 40)
+    && /the model as it was: this run has no save point and loaded none\./.test(await banner()) && (await storedRun())?.model_source?.checkpoint_id === 'ckpt-000040-final', await banner());
+  await undo();
+  draft = await runWhen(x => !x?.model_source?.run_dir);
+  check('(set-up) one Undo takes the Evaluate-only run\'s model back', modeOf(draft) === 'scratch', JSON.stringify(draft?.model_source));
+  // New run like this: the run's settings, its source from its lineage - never the "latest" its configuration recorded
+  await openDetails(RESUMED); await act('New run like this');
+  draft = await runWhen(x => x?.model_source?.run_dir === DONE.run_dir);
+  check('New run like this repeats the run: its Mode, budget, seed, limits, name, training values and network', draft?.mode === 'fine_tune' && draft.max_evaluations === 40 && draft.seed === 2 && draft.max_retries === 1
+    && draft.model_label === 'fixture (2)' && draft.advanced?.batch_size === 16 && sameNet(draft.network, RGCN), JSON.stringify(draft));
+  check('... from the save point it started from, pinned - not the "latest" its configuration recorded', draft?.model_source?.checkpoint_id === 'ckpt-000040-final', JSON.stringify(draft?.model_source));
+  check('... the shown run stays, and the message says what the next run repeats', await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(PAUSED.run_dir)})`)
+    && /^The next run repeats fixture_task \d\d-\d\d \d\d:\d\d: task synthetic:gpdk045_ota5, Fine-tune from fixture @ 40, 40 evaluations, seed 2/.test(await banner()), await banner());
+  await undo();
+  draft = await runWhen(x => !x?.model_source?.run_dir);
+  check('one Undo takes all of it back', modeOf(draft) === 'scratch' && draft.seed !== 2, JSON.stringify(draft));
+  // Continue...: Run status shows the run with its budget form open; nothing is continued by the press
+  await openDetails(PAUSED); await act('Continue...');
+  check('Continue... shows the run under Run status with its budget form open', await until(`!!document.querySelector('footer form.continue-form')`, 40)
+    && await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(PAUSED.run_dir)})`));
+  check('... and continues nothing by itself', !seen.includes('/api/runs/continue'));
+  await shot('far', '.run-window', 'runs-5-actions.png');
   await send('Target.closeTarget', { targetId: farPage.id }); await windowTarget(false); far.close();
 
   reportRefused(refused);

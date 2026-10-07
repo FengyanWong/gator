@@ -1224,9 +1224,40 @@ it). The window lists every run under the output folder, newest first, one row p
 | Data | MOCK (synthetic backend, not a circuit result) or real. |
 | Can continue | yes (full saved state), model only (usable for fine_tune / frozen), no. "no" also when the run folder no longer holds the save point its summary names - a copy made without its save points, deleted ones (record 7.215); Details says so under "Saved state". "model only" also for a full save point written by an older version of the optimizer code, which only that version can continue (record 7.221); Details says so too. |
 
-* **A double click on a row** puts that run into the bottom tabs; the row is marked (blue, with a bar at its left
-  edge) and the window stays open. **Clear** empties the tabs again. Neither stops, changes or deletes anything. The
-  header's Start / Pause / Abort keep acting on their own run, whatever is shown here.
+* **A double click on a row** is **Load run** (record 7.267; plan [frontend run workflow](plan-frontend-run-workflow.md),
+  "Load run"): the run's task comes into the editors, the model it ended with becomes the next run's model, and the
+  bottom tabs show the run - below. Where Load run is not offered, the double click only shows the run. The shown run's
+  row is marked (blue, with a bar at its left edge) and the window stays open. **Clear** empties the tabs again. Nothing
+  here stops, starts or deletes anything: the header's Start / Pause / Abort keep acting on their own run.
+* **The actions**, at the top of a run's Details (record 7.267):
+  - **Load run** (also the double click) sets three things together, as ONE Undo step for the draft:
+    - **its task**, through the Tasks window's task load: the saved rows as they are now, never the run's archive, and
+      unsaved edits are asked about first. When it is already the page's task, the editors stay as they are, edits
+      included.
+    - **the model it ended with**, pinned as "Use this save point" pins one, with its network and component list:
+      - a run that trained, its newest save point;
+      - an Evaluate-only run, the save point it evaluated (its weights never changed), else its own;
+      - a run without a save point (a baseline, a run stopped before its first save), the save point it started from.
+      - With none of these, the model stays as it was, and the message says so. The Mode stays Fine-tune or Evaluate
+        only; New model becomes Fine-tune.
+    - **its results** in the bottom tabs. The task-run link below gives way: the loaded run stays shown, not the task's
+      newest.
+
+    All or nothing: Cancel on the edits question, or a task that cannot be read, changes nothing, and the message says
+    why. The message names what came in - "Loaded run ota7t 10-06 14:02: task real:ota7t, Fine-tune from ota7t (2) @
+    420. Undo takes it back." - and says when the task was saved again since the run (the RL model window's check then
+    says whether the model still fits).
+  - **Show results**: only the bottom tabs show the run, as the double click did until record 7.267.
+  - **Continue...** (a run at rest that kept a save point): Run status shows the run with its budget form open; the run
+    goes on in its own folder from there (record 7.261).
+  - **New run like this**: the next run repeats the run - its task (through the same task load), its Mode, the save
+    point it started from (from its lineage, pinned: never the "latest" its configuration may have recorded), its
+    network, training values, reward, conditions, budget, seed, limits and the name of the model it saves (numbered at
+    the start when that name is taken). Read from the run's own `effective_config.json`; one Undo step; the shown run
+    stays.
+  - Load run and New run like this need the run's task registered now: for a run of a deleted task, or one that names
+    none, they are off and the reason stands beside them. Show results still works, and its model can still be used
+    from the RL model window.
 * **Details** open with the run's **Relationships** (record 7.264; plan, "Runs window"), from what each run's manifest
   recorded - never from names or folder paths:
   - **Task**: the task and its definition hash, a link that opens the Tasks window at it; "saved again since this run"
@@ -1277,16 +1308,19 @@ status default blank unless you choose other runs"):
   another tab of the page), the page opens on the header's run, as it always did. A browser that never kept one opens on
   the header's run.
 * A run chosen in the run window always counts: also when it is chosen while the list is still being read for a task,
-  and it stays until another task is chosen. A list that cannot be read, a server older than the page (its runs carry no
-  task; restart `serve`), and a page that leaves its tasks for a Virtuoso cell all leave the run shown as it is.
+  and it stays until another task is chosen. **Load run** changes the task WITH its run: the loaded run stays shown, not
+  the task's newest; one Undo takes the task back, and the bottom tabs follow it again (record 7.267). A list that cannot
+  be read, a server older than the page (its runs carry no task; restart `serve`), and a page that leaves its tasks for a
+  Virtuoso cell all leave the run shown as it is.
 * Only the bottom tabs follow. The header's Start / Pause / Abort keep acting on their own run: a live run of another task
   keeps its Pause and Abort, and choosing its task shows it again.
 * `GET /api/runs` carries each run's task as `task_key`, read from `run_manifest.json` (`circuit.task_key`, written
   there by every run since the first build).
 
 Browser checks: `frontend/scripts/run_list_check.mjs` (every run request answered by FIXTURE runs; safe against the
-live backend) and `frontend/scripts/task_run_check.mjs` (the run that follows the task; fixtures, safe against the live
-backend). Backend test: `tests/workbench/test_wb_run_list.py`.
+live backend; the actions of record 7.267 in its section 10) and `frontend/scripts/task_run_check.mjs` (the run that
+follows the task, and Load run's run that stays; fixtures, safe against the live backend). Backend test:
+`tests/workbench/test_wb_run_list.py`.
 
 Changing the selected run immediately hides the previous run's status, table and file list. Replies arriving late
 cannot put them back, and status commands carry the identity of the run whose status was displayed. Polling waits
@@ -2025,8 +2059,12 @@ The button opens the **RL model** window. At its top is the **Mode**, as three b
 - **Evaluate only** (`frozen`): a saved model is used as it is, with no learning.
 
 `resume` is not a choice: continuing a run is an action on that run (the header's Resume, Continue... in the Runs
-window). A configuration that still holds `resume` (an old draft) reads "Mode resume is no longer a choice" beside the
-button until a Mode is chosen.
+window). A configuration that still holds `resume` - saved before record 7.265, or imported - has **no Mode chosen**
+(record 7.267; plan "The draft"): the model line reads "No Mode chosen", Run configuration and the window say so and name
+the run it continued, a link to it in the Runs window (Continue... and Show results are there), and **Start** and
+**Calibration** wait until a Mode is chosen - never a silent New model or Fine-tune. The configuration keeps the value
+`resume`, which every backend route still reads (the command line still starts one); the page only shows it as no Mode
+chosen. A configuration without any Mode (a task's starter rows, an old file) is New model, as the backend reads it.
 
 **New model** shows:
 - **Templates**: one row per encoder, with its sizes, its training values (updates per evaluation, starting temperature,
@@ -2133,7 +2171,9 @@ marked **in use**, and the model line beside the button names it. When the run o
 save point, "The model in use has a newer save point: ... Use the newer one" offers it; nothing follows by itself. A
 model in use that is no longer listed (outside the output folder, or without a complete save point) is said, with its
 folder. Nothing is filled in by itself either: until a save point is used, the window says "No saved model is chosen
-yet", and the newest model saved under the RL model label is offered (above).
+yet", and the newest model saved under the RL model label is offered (above). Load run and New run like this in the
+Runs window take a saved model the same way, pinned with its network and component list (`frontend/src/savePoint.ts`,
+record 7.267).
 
 The list is `GET /api/runs/models`: small metadata files only, read when the table is shown, when the page reads its run
 list again (a run started, another output folder) and by **Refresh list** - never on a timer. Older periodic save points

@@ -95,12 +95,14 @@ function Calibration({ value, live, config, setConfig }: { value: Json; live: bo
  *  instead of the browser's prompt; `continueBlocked` - why it cannot go now, the backend's continuation check included -
  *  is said beside it before any press, with the backend's `alternative` (a new run that fine-tunes from the save point)
  *  as a button; a refusal of the press stays under it (`refusal`) until the run changes. `check`: that continuation check. */
-export function StatusTab({ status, runDir, error, check, continueBlocked, refusal, onContinue, onDismissRefusal, onFineTune, config, setConfig }: {
+export function StatusTab({ status, runDir, error, check, continueBlocked, refusal, onContinue, onDismissRefusal, onFineTune, config, setConfig, ask = null }: {
   status: Json; runDir: string | null; error: string | null; check: Json | null; continueBlocked: string | null; refusal: Json | null;
   onContinue: (total: number | null) => void; onDismissRefusal: () => void; onFineTune: (alternative: Json) => void;
-  config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void }) {
+  config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void; ask?: { runDir: string; serial: number } | null }) {
   const [asking, setAsking] = useState(false);                // the budget form is open
   useEffect(() => setAsking(false), [runDir]);
+  // Continue... of the Runs window (record 7.267): the form opens for the run it was pressed for.
+  useEffect(() => { if (ask && ask.runDir === runDir) setAsking(true); }, [ask?.serial]);
   // A run chosen whose answer is still on its way, or whose status cannot be read now, is said as such: this line used
   // to read "No run selected." while the strip below named the run.
   if (!status) return <p className="hint">{!runDir ? 'No run selected.' : error ? `The status of this run could not be read: ${error}` : 'Reading the run...'}</p>;

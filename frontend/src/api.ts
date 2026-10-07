@@ -133,6 +133,8 @@ export const api = {
   launchRequest: (request_id: string) => call('GET', '/api/runs/request' + q({ request_id })),
   command: (run_dir: string, command: string) => call('POST', '/api/runs/command', { run_dir, command }),
   status: (run_dir: string, signal?: AbortSignal) => call('GET', '/api/runs/status' + q({ run_dir }), undefined, signal),
+  // A run's own configuration, as it started (its effective_config.json): New run like this copies its run settings (record 7.267).
+  runConfig: (run_dir: string) => call('GET', '/api/runs/download' + q({ run_dir, path: 'effective_config.json' })),
   files: (run_dir: string, signal?: AbortSignal) => call('GET', '/api/runs/files' + q({ run_dir }), undefined, signal),
   table: (run_dir: string, table: string, limit = 25, signal?: AbortSignal) => call('GET', '/api/runs/table' + q({ run_dir, table, limit }), undefined, signal),
   logs: (run_dir: string, kind: string, signal?: AbortSignal) => call('GET', '/api/runs/logs' + q({ run_dir, kind, limit: 200 }), undefined, signal),

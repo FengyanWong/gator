@@ -10,7 +10,8 @@
 // none, Undo and Redo of the choice follow too, the page does not follow on opening, a reload keeps what was shown (a blank
 // included) unless the header holds another run by then, a run chosen in the run window while the list is read stays, a
 // failed read or an older server (runs without their task) leaves the run shown as it is, the header's own run is never
-// changed, and the run window names each run's registered task.
+// changed, and the run window names each run's registered task. Record 7.267: a run is chosen to be shown with Show results
+// (a double click LOADS it now), and Load run makes the task-run link give way: the loaded run stays shown.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_run_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -131,6 +132,15 @@ await runChecks(browser, async () => {
     for (const clickCount of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await far.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount });
     return true;
   };
+  // Show results in a run's Details (record 7.267): the run the bottom tabs show, nothing else.
+  const showResults = async r => {
+    await far.evaluate(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(r.run_dir)}); if (!tr) return;
+      if (tr.nextElementSibling?.classList.contains('run-details-row')) return; [...tr.querySelectorAll('button')].find(b => b.textContent.trim() === 'Details').click(); })()`, true);
+    const SHOW = `[...${WINDOW}.querySelectorAll('tr.run-details-row')].find(row => row.previousElementSibling?.title === ${JSON.stringify(r.run_dir)})?.querySelector('button.run-show')`;
+    if (!(await far.until(`!!(${SHOW})`, 40))) return false;
+    await far.evaluate(`${SHOW}.click()`, true);
+    return true;
+  };
   // The run table's own rows: an open Details row holds tables of its own, whose rows are not runs.
   const RUN_ROWS = `[...${WINDOW}.querySelector('table.run-table').querySelectorAll(':scope > tbody > tr:not(.run-details-row)')]`;
   const rows = () => far.evaluate(`${RUN_ROWS}.map(tr => tr.title)`);
@@ -181,7 +191,7 @@ await runChecks(browser, async () => {
   await openWindow();
   const hint = await far.evaluate(`${WINDOW}.textContent`);
   check('the run window says what choosing a task does', hint.includes('Choosing a task under Task shows its newest run, or none if it has none.'));
-  check('a double click on another task\'s run shows it', await doubleClick(B1) && await until(names(B1), 30), await shown());
+  check('Show results on another task\'s run shows it', await showResults(B1) && await until(names(B1), 30), await shown());
   seen.length = 0;
   await send('Page.reload');
   far = null;                                                       // the page closes the windows it opened
@@ -194,7 +204,7 @@ await runChecks(browser, async () => {
   holdRuns = true;
   await choose('real:beta', { reads: 1 });
   check('(the list read for real:beta is held)', held.length === 1, `${held.length} held`);
-  check('meanwhile a double click chooses real:alpha\'s Baseline simulation', await doubleClick(A1) && await until(names(A1), 30), await shown());
+  check('meanwhile Show results chooses real:alpha\'s Baseline simulation', await showResults(A1) && await until(names(A1), 30), await shown());
   holdRuns = false;
   await answerRuns(held.shift());
   await settle();
@@ -223,6 +233,20 @@ await runChecks(browser, async () => {
   await far.send('Input.insertText', { text: 'real:alpha' });
   check('the filter finds the runs of a registered task by its name', await far.until(`${RUN_ROWS}.length === 2`, 30)
     && JSON.stringify(await rows()) === JSON.stringify([A2.run_dir, A1.run_dir]), JSON.stringify(await rows()));
+
+  // ---- 10. Load run (record 7.267): the run's task comes in, and the bottom tabs keep the LOADED run - the task-run link gives way ----
+  await far.setValue(`${WINDOW}.querySelector('input.run-filter')`, '', { event: 'input' });
+  check('(set-up) the page is on real:beta, showing its newest run', await until(`${TASK_KEY} === 'real:beta'`, 60) && await until(names(B1), 50), await shown());
+  check('a double click on real:alpha\'s older run (its Baseline simulation) loads it', await doubleClick(A1));
+  check('... the page\'s task becomes real:alpha', await until(`${TASK_KEY} === 'real:alpha'`, 60), await evaluate(TASK_KEY));
+  check('... and the bottom tabs show the loaded run, not real:alpha\'s newest (the task-run link gives way)', await until(names(A1), 50), await shown());
+  await settle();
+  check('... and keep it: no list read for the task replaced it', await evaluate(names(A1)) && !(await evaluate(names(A2))), await shown());
+  check('... the message names the run and its task; this run has no model, so the model stays as it was',
+    /^Loaded run alpha\.baseline \d\d-\d\d \d\d:\d\d: task real:alpha, the model as it was: this run has no save point and loaded none\. Undo takes it back\.$/.test(await evaluate(`document.querySelector('.banner')?.textContent ?? ''`)),
+    await evaluate(`document.querySelector('.banner')?.textContent ?? ''`));
+  await evaluate(`document.querySelector('section.editors button[title^="Undo:"]').click()`);
+  check('one Undo takes the task back, and the bottom tabs follow the task again (its newest run)', await until(`${TASK_KEY} === 'real:beta'`, 60) && await until(names(B1), 50), await shown());
 
   check('the header\'s run was never changed by any of this', (await headerRun()) === A1.run_dir, await headerRun());
   check('no question was asked: the rows were untouched at every choice', dialogs.length === 0, JSON.stringify(dialogs));

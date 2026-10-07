@@ -5,6 +5,7 @@ import { api, ApiError, bytes, copy, Json, num } from '../api';
 import { modelName, SavedModels } from './ModelChooser';
 import { ENCODER_SHORT, pointEvaluations } from '../lineage';
 import { openRunsAt } from '../openAt';
+import { NETWORK_FIELDS, pick, readSavePoint, withSavePoint } from '../savePoint';
 import { ComponentList } from './Pdk';
 import { Typed } from './Typed';
 import { BLOCKED, usePopupWindow } from './popupWindow';
@@ -95,9 +96,6 @@ function Module({ id, title, summary, children }: { id: string; title: string; s
 
 // Settings stored per encoder in the backend (src/gator_workbench/network_presets.py). The lists are
 // only a fallback for the moment before the backend answers; the backend's own lists are used afterwards.
-const NETWORK_FIELDS = ['hidden_dim', 'heads', 'layers', 'structural_encoding'];
-const pick = (source: Json, fields: string[]): Json =>
-  Object.fromEntries(fields.filter(f => source?.[f] !== undefined && source?.[f] !== null).map(f => [f, source[f]]));
 const Check = ({ label, value, onChange, title, disabled }: { label: string; value: boolean; onChange: (v: boolean) => void; title?: string; disabled?: boolean }) => (
   <label className="check" title={title}><input type="checkbox" checked={!!value} disabled={disabled} onChange={e => onChange(e.target.checked)} />{label}</label>);
 
@@ -140,7 +138,7 @@ const MODES: [string, string, string][] = [
   ['fine_tune', 'Fine-tune', 'a saved model keeps learning, in a new run'],
   ['frozen', 'Evaluate only', 'a saved model is used as it is, with no learning'],
 ];
-export const MODE_NAME: Record<string, string> = { scratch: 'New model', fine_tune: 'Fine-tune', frozen: 'Evaluate only', resume: 'resume (no longer a choice)' };
+export const MODE_NAME: Record<string, string> = { scratch: 'New model', fine_tune: 'Fine-tune', frozen: 'Evaluate only', resume: 'no Mode chosen' };
 
 /** New model's templates (record 7.265): one row per encoder - its sizes and training values as the backend keeps them (the
  *  starting preset, or values edited and saved there), and how many saved models were made from it. A double click or "Use
@@ -173,7 +171,8 @@ function LookFold({ summary, children }: { summary: ReactNode; children: () => R
 }
 
 export function RunPanel({ config, setConfig, runs, circuit, schema }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json; schema: Json }) {
-  const run = config.run;
+  // A configuration without a Mode (a task's starter rows, an old file) is New model, as the backend reads it (schema default).
+  const run = config.run.mode ? config.run : { ...config.run, mode: 'scratch' };
   const set = (fields: Json, record = true) => setConfig(c => ({ ...c, run: { ...c.run, ...fields } }), record);
   const setAdv = (fields: Json) => setConfig(c => ({ ...c, run: { ...c.run, advanced: { ...(c.run.advanced ?? {}), ...fields } } }));
   const setNet = (fields: Json) => setConfig(c => ({ ...c, run: { ...c.run, network: { ...(c.run.network ?? {}), ...fields } } }));
@@ -188,7 +187,8 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
 
   // Only a Mode that loads the model asks about it: a model_source left over from fine_tune is ignored in scratch, and
   // was compiled and checked after every edit there all the same (audit 2026-09-30).
-  const modelChecked = run.mode !== 'scratch' && !!source.run_dir;
+  // A draft that still says resume (record 7.267) has no Mode chosen: it asks about no model either.
+  const modelChecked = (run.mode === 'fine_tune' || run.mode === 'frozen') && !!source.run_dir;
   const { value: fresh, error, loading: modelLoading } = useRequest<Json>(signal => api.model(source.run_dir, source.checkpoint_id ?? 'latest', config, signal),
     [JSON.stringify([config.circuit, config.parameters, config.targets, config.measurements, run.mode, source,
       run.connection_profile_id, run.seed, run.network, run.advanced, run.reward, run.conditions, config.research?.split])],
@@ -348,7 +348,10 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   // backend refuses any other network in all three). So there is nothing to set up then: the block for a NEW network
   // is shown in scratch only, and otherwise the configuration takes the network of the chosen model - the act is the
   // choice of that model. Only the network follows; the training numbers under Advanced stay the user's.
-  const loads = run.mode !== 'scratch';
+  const loads = run.mode === 'fine_tune' || run.mode === 'frozen';
+  // No Mode chosen (record 7.267): a draft that still says resume - saved before record 7.265, or imported. The page starts
+  // nothing with it (App.tsx) and names the run it continued, which Continue... in the Runs window goes on with.
+  const noMode = run.mode === 'resume';
   // The RL model's own label (record 7.159, user: "Give the RL model its own label, independent of the project name"):
   // typed here, else the task's run label. A run that saves a model files it under this name.
   const label: string = (run.model_label ?? '').trim() || config.project.task_name;
@@ -392,20 +395,10 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const nameOf = (dir: string) => { const row = runs.find(r => r.run_dir === dir); return row ? modelName(row) : String(dir).split(/[\\/]/).filter(Boolean).pop(); };
   const useSavePoint = (run_dir: string, checkpoint_id: string) => {
     setUsingPoint(true); setNetMessage(null);
-    api.model(run_dir, checkpoint_id).then((answer: Json) => {
-      const saved = answer?.description?.contract?.model_config;
-      const network: Json = saved?.encoder_type ? { encoder_type: saved.encoder_type, ...pick(saved, netFields),
-        structural_encoding: saved.structural_encoding ?? (saved.encoder_type === 'graph_gps' ? 'rwse' : 'none'),
-        operating_points: !!answer.description.contract?.feature_schema?.op_columns?.length } : null;
-      const list: string | undefined = answer?.vocabulary?.name;
-      const point = answer?.description?.checkpoint_id ?? checkpoint_id;
-      setConfig(c => {
-        const { vocabulary: _old, ...rest } = c.run.network ?? {};
-        return { ...c, run: { ...c.run, model_source: { ...(c.run.model_source ?? {}), run_dir, checkpoint_id: point },
-          network: network ? { ...rest, ...network, ...(list && list !== 'standard' ? { vocabulary: list } : {}) } : c.run.network } };
-      });
-      setNetMessage({ level: 'ok', text: `The next run ${run.mode === 'frozen' ? 'evaluates' : 'fine-tunes'} ${nameOf(run_dir)} from its save point ${point}, with its network (one Undo step takes it back).`,
-        about: JSON.stringify([run.mode, run_dir, point]) });
+    readSavePoint(run_dir, checkpoint_id, netFields).then(point => {        // savePoint.ts: Load run and New run like this take one the same way
+      setConfig(c => ({ ...c, run: withSavePoint(c.run, point) }));
+      setNetMessage({ level: 'ok', text: `The next run ${run.mode === 'frozen' ? 'evaluates' : 'fine-tunes'} ${nameOf(run_dir)} from its save point ${point.checkpoint_id}, with its network (one Undo step takes it back).`,
+        about: JSON.stringify([run.mode, run_dir, point.checkpoint_id]) });
     }).catch((e: any) => setNetMessage({ level: 'error', text: `That save point could not be read: ${e.message}` })).finally(() => setUsingPoint(false));
   };
   // A Mode is one Undo step. New model clears the saved model chosen: scratch never loads one (a source left there is a
@@ -425,7 +418,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const sourceName = source.run_dir ? nameOf(source.run_dir) : null;
   const pointAt = model?.description?.counters?.evaluations_committed ?? pointEvaluations(source.checkpoint_id);
   const modelLine = run.mode === 'scratch' ? `New model · ${entry?.label ?? encoder} template · ${netShort}`
-    : run.mode === 'resume' ? 'Mode resume is no longer a choice: choose a mode in RL model...'
+    : noMode ? 'No Mode chosen: choose one in RL model... (this configuration still says resume)'
     : !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} · no saved model chosen`
     : `${run.mode === 'frozen' ? 'Evaluate' : 'Fine-tune'} ${sourceName} · save point ${pointAt != null ? `${pointAt} evaluations` : source.checkpoint_id}`
       + (run.mode === 'frozen' ? ` · ${run.frozen_action ?? 'deterministic'} actions` : '');
@@ -439,7 +432,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
     net.vocabulary && net.vocabulary !== 'standard' ? `knows ${net.vocabulary.slice(4)}` : null].filter(Boolean).join(' - ');
   const networkError = error || netMessage?.level === 'error' || !offeredEncoders.includes(encoder)
     || (modelChecked && model?.compatibility?.compatible === false);
-  const networkWarning = netMessage?.level === 'warn' || (!loads && (differs || entry?.problem))
+  const networkWarning = netMessage?.level === 'warn' || (run.mode === 'scratch' && (differs || entry?.problem))
     || starved || archDiffers || sacSlow.length > 0;
   // The training numbers, with the warning about values that leave the search random right above them. In scratch they sit
   // directly below "Nominal device operating points" (user, 2026-10-05: "move the advanced setting to beneath the nominal
@@ -460,6 +453,11 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
       })}
     </details>
   </>;
+  // Said in Run configuration and in the window, with the run that configuration continued: Continue... is where it goes on.
+  const noModeNote = (from: Window | null) => noMode && <p className="warn no-mode">No Mode is chosen: this configuration still says resume, which is
+    no longer a choice{source.run_dir ? <> - it continued the run <button className="text-link no-mode-run" onClick={() => openRunsAt({ run_dir: source.run_dir, from })}
+      title="Open the Runs window at that run: Continue... goes on with it in its own folder, and Show results shows it.">{String(source.run_dir).split(/[\\/]/).filter(Boolean).pop()}</button></> : ''}.
+    Choose a Mode {from ? 'above' : 'in RL model...'} for the next run: Start waits until then.</p>;
   return (
     <>
     <Module id="run" title="Run configuration" summary={folded}>
@@ -468,6 +466,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         <button className="rl-networks-open" title="Open the RL model window: the Mode (New model, Fine-tune, Evaluate only), the templates of a new model, and the saved models."
           onClick={() => networkWindow.open()}>RL model...</button></div>
       {networkWindow.blocked && <p className="error" role="alert">{BLOCKED}</p>}
+      {noModeNote(null)}
       {(networkError || networkWarning) && <p className={networkError ? 'error' : 'warn'}>Review the settings in RL model.</p>}
       {/* Only while the model is checked: in scratch the last check's suggestion stayed, never asked again (review of 2026-10-01).
           "resume" is no Mode any more (record 7.265): its suggestion is the run itself, a link into the Runs window (Continue...). */}
@@ -554,9 +553,9 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         {MODES.map(([m, name, help]) => <button key={m} role="radio" aria-checked={run.mode === m} data-mode={m} className={`rl-mode${run.mode === m ? ' active' : ''}`}
           onClick={() => { if (run.mode !== m) chooseMode(m); }} title={`${name}: ${help}. One Undo step.`}>{name}</button>)}
       </div>
-      <p className="hint rl-mode-help">{MODES.find(([m]) => m === run.mode)?.[2]?.replace(/^./, c => c.toUpperCase())
-        ?? 'Mode resume is no longer a choice: a run is continued from Runs or Run status (Continue...). Choose one of the three above for the next run.'}{loads ? '. The next run uses the network of the model chosen below.' : '.'}</p>
-      {!loads && <>
+      {noMode ? noModeNote(networkWindow.popup)
+        : <p className="hint rl-mode-help">{MODES.find(([m]) => m === run.mode)?.[2]?.replace(/^./, c => c.toUpperCase())}{loads ? '. The next run uses the network of the model chosen below.' : '.'}</p>}
+      {run.mode === 'scratch' && <>
       <h3>Templates</h3>
       <p className="hint">A new model starts from one template: its network and its training values, kept per encoder in the backend. Editing a value
         below saves it for that encoder.</p>
@@ -659,7 +658,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
               onChange={e => set({ model_label: e.target.value.trim() ? e.target.value : null })} /></label></>}
         {advanced}
       </>)}
-      {!loads && <LookFold summary={<summary>Saved models, to look at <span className="hint">- Fine-tune or Evaluate only above uses one</span></summary>}>
+      {run.mode === 'scratch' && <LookFold summary={<summary>Saved models, to look at <span className="hint">- Fine-tune or Evaluate only above uses one</span></summary>}>
         {() => <SavedModels source={source} usable={null} runs={runs} outputRoot={config.output?.output_root} config={config} popup={networkWindow.popup} onUse={useSavePoint} />}</LookFold>}
     </section>, networkWindow.root)}
     </>

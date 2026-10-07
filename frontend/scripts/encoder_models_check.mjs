@@ -29,6 +29,10 @@ await runChecks(browser, async () => {
     check(`${encoder}: selecting the saved model restores its complete architecture`, await page.until(`(() => { const n = ${stored};
       return n.encoder_type === '${encoder}' && n.hidden_dim === 16 && n.heads === 2 && n.layers === 1 && n.structural_encoding === 'rwse'; })()`, 120));
     check(`${encoder}: loaded architecture is not editable as a new network`, await page.evaluate(`!${NETWORK_PANEL}.querySelector('select.structural-encoding')`));
+    // Since record 7.265 the structure and the graph view are in the saved model's Details, in the RL model window's table.
+    const ROW = `[...${NETWORK_PANEL}.querySelectorAll('tr.model-row')].find(r => r.title === ${JSON.stringify(model.run_dir)})`;
+    check(`${encoder}: the saved model is a row of the saved models table`, await page.until(`!!(${ROW})`, 300));
+    await page.evaluate(`(${ROW}).querySelector('button.notes-link').click()`);
     const structure = `${NETWORK_PANEL}.querySelector('details.structure')`;
     await page.until(`!!${structure}`, 100);
     await page.evaluate(`${structure}.querySelector('summary').click()`);

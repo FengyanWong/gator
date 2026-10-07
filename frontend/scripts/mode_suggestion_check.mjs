@@ -1,7 +1,8 @@
 // Browser check of the run panel's Mode suggestion ("Suggested: fine_tune - ..."). User request 2026-09-26: "remove the
 // Use button but make fine_tune clickable" - the suggested mode is the control itself, drawn as a link in its sentence.
 // Record 7.265: the Mode is chosen in the RL model window, so the panel names it in its model line ("Evaluate ...",
-// "Fine-tune ..."), and the suggestion names it in words ("Fine-tune").
+// "Fine-tune ..."), and the suggestion names it in words ("Fine-tune"). Record 7.267: a configuration that still says resume
+// (saved before 7.265, or imported) has no Mode chosen: it is said, with the run it continued, and nothing starts until one is.
 // Hermetic, on the shared harness (lib/harness.mjs): /api/runs/model and /api/runs/models are answered with canned data
 // labelled FIXTURE (a model trained on another task, so the backend's fine_tune suggestion applies), GET requests pass,
 // every other writing request is refused. Safe against the live page on 8765. The browser profile is new and temporary.
@@ -47,6 +48,7 @@ await runChecks(browser, async () => {
     const name = new URL(request.url).pathname;
     if (name === '/api/config/validate') return fulfil(requestId, 200, validConfiguration());
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
+    if (name === '/api/runs') return fulfil(requestId, 200, { runs: [] });            // no run to take over: the header is free at once
     if (name === '/api/runs/models') return fulfil(requestId, 200, { models: [MODEL] });
     if (name === '/api/runs/model') { described++; return fulfil(requestId, 200, DESCRIBED); }
     if (name === '/api/config/diff') return page.pass(requestId);                      // the diff is a pure comparison: nothing is written
@@ -105,6 +107,22 @@ await runChecks(browser, async () => {
   check('... saved in the configuration like any other edit', (await page.stored())?.run?.mode === 'fine_tune', JSON.stringify((await page.stored())?.run?.mode));
   check('... with the chosen model kept', (await page.stored())?.run?.model_source?.run_dir === RUN_DIR, JSON.stringify((await page.stored())?.run?.model_source));
   await page.shot(path.join(out, 'mode-suggestion-3-after.png'), MODE, { scale: 2, pad: 8 });
+
+  // ---- a configuration that still says resume (record 7.267; plan "The draft": "An old saved draft with mode: resume") ----------
+  await page.saved();
+  await evaluate(`localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify({ ...CONFIG, run: { ...CONFIG.run, mode: 'resume' } }))})`);
+  await send('Page.reload');
+  check('a configuration that still says resume: the model line says no Mode is chosen', await page.until(`(${LINE}) === 'No Mode chosen: choose one in RL model... (this configuration still says resume)'`, 150), await evaluate(LINE));
+  const NOTE = `${RIGHT}.querySelector('p.no-mode')`;
+  const noteText = () => evaluate(`(${NOTE})?.textContent.replace(/\\s+/g, ' ').trim() ?? ''`);
+  check('... Run configuration says so, naming the run it continued as a link into the Runs window', await page.until(`!!(${NOTE})?.querySelector('button.no-mode-run')`, 30)
+    && (await noteText()) === 'No Mode is chosen: this configuration still says resume, which is no longer a choice - it continued the run scratch_seed1__r1. Choose a Mode in RL model... for the next run: Start waits until then.', await noteText());
+  const HEADER = label => `[...document.querySelectorAll('header button')].find(b => b.textContent.trim() === ${JSON.stringify(label)})`;
+  check('... Start waits, and says why: never a silent New model or Fine-tune', await page.until(`(${HEADER('Start')})?.disabled === true && /^Start: Choose a Mode in the RL model window first/.test((${HEADER('Start')}).title)`, 60)
+    && await evaluate(`(${HEADER('Calibration')}).disabled`), await evaluate(`(${HEADER('Start')})?.title ?? 'no Start'`));
+  const asked = described; await sleep(1500);
+  check('... no model is asked about meanwhile, and there is no Mode suggestion', described === asked && !(await evaluate(`!!(${PARA})`)), `${described - asked} request(s)`);
+  check('... the configuration is left as it is: it still says resume (the backend still reads it)', (await page.stored())?.run?.mode === 'resume');
 
   reportRefused(refused, NEVER_ASKED_OR_SAVED);
   check('no console exception', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

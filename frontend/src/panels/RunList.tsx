@@ -23,7 +23,13 @@ import { OPEN_RUNS, openTasksAt, RunsAt } from '../openAt';
  *  Relationships (record 7.264, plan "Runs window"): "Started from" and "Saved model" columns, and in Details where the run's
  *  model came from and what came of it, with a folded history. Every run named is a link that shows it here - selected,
  *  scrolled to, its Details open - and its task opens the Tasks window at the task. Other windows open this one AT a run, or
- *  filtered to one task's runs (openAt.ts): following a link changes no draft, no shown run and no running job. */
+ *  filtered to one task's runs (openAt.ts): following a link changes no draft, no shown run and no running job.
+ *
+ *  Actions (record 7.267, plan "Load run" and "Existing runs: continued in place"), in a run's Details: **Load run** - also a
+ *  double click - brings its task into the editors and its model into the next run, and shows its results; **Show results**
+ *  only shows them in the bottom tabs; **Continue...** goes on with the run in its own folder (Run status's form); **New run
+ *  like this** makes the next run repeat it. Load run and New run like this need the run's task registered now; the
+ *  reason stands beside them when it is not, and a double click then shows the results. The draft changes are App.tsx's. */
 
 const two = (n: number) => String(n).padStart(2, '0');
 /** Local time, in a form that sorts and compares by eye: 2026-09-21 14:03:22. */
@@ -119,9 +125,17 @@ function Relationships({ row, info, runs, byDir, tasks, from, onFocus }: { row: 
   </tbody></table>);
 }
 
+/** Why Load run and New run like this are not offered for a run (record 7.267), or null. `tasks`: the registered tasks as
+ *  read when the window opened (empty until then: the load itself says so if the task is gone). */
+export function loadBlocked(row: Json, tasks: Map<string, Json>): string | null {
+  if (!row.task_key) return 'Not offered: the run names no registered task (a Virtuoso cell never saved as a task, or a run older than task keys). Show results still works, and its model can be used from the RL model window.';
+  if (tasks.size > 0 && !tasks.has(row.task_key)) return `Not offered: its task ${row.task_key} is no longer registered. Show results still works, and its model can be used from the RL model window.`;
+  return null;
+}
+
 /** Everything else about one run. `row` is its line of the list; `info` is /api/runs/status, read when the details open. */
-function RunDetails({ row, info, error, onCopy, copied, relations }: { row: Json; info: Json; error?: string; onCopy: (text: string) => void; copied: boolean;
-  relations: JSX.Element }) {
+function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { row: Json; info: Json; error?: string; onCopy: (text: string) => void; copied: boolean;
+  relations: JSX.Element; actions?: JSX.Element | null }) {
   const b = info?.budget, best = info?.best_design, first = info?.first_feasible, summary = info?.summary, source = info?.manifest?.source_model;
   const facts: [string, string | null | undefined][] = [
     ['Run id', row.run_id], ['Registered task', row.task_key], ['Task id', row.task_id], ['Experiment', row.experiment],
@@ -149,6 +163,7 @@ function RunDetails({ row, info, error, onCopy, copied, relations }: { row: Json
     ['Data written', info?.bytes_written != null ? bytes(info.bytes_written) : null],
   ];
   return (<div className="run-details">
+    {actions}
     {error && <p className="error">The details of this run could not be read: {error}</p>}
     {!info && !error && <p className="hint">Reading the run's details...</p>}
     <h4>Relationships</h4>
@@ -165,8 +180,9 @@ function RunDetails({ row, info, error, onCopy, copied, relations }: { row: Json
   </div>);
 }
 
-export function RunListButton({ runs, runsError, runDir, status, onChoose, onRefresh }: { runs: Json[]; runsError: string | null; runDir: string | null;
-  status: Json; onChoose: (runDir: string | null) => void; onRefresh: () => Promise<Json[]> }) {
+export function RunListButton({ runs, runsError, runDir, status, onChoose, onRefresh, onLoad, onNewLike, onContinue }: { runs: Json[]; runsError: string | null; runDir: string | null;
+  status: Json; onChoose: (runDir: string | null) => void; onRefresh: () => Promise<Json[]>;
+  onLoad?: (row: Json) => void; onNewLike?: (row: Json) => void; onContinue?: (row: Json) => void }) {
   // While `popup` is set, the run window is open (one pop-up window for the whole page: `popupWindow.ts`).
   const { popup, root, blocked, open: openPopup } = usePopupWindow('gator-runs',
     { title: 'GATOR - runs', features: 'popup,width=1500,height=860', rootId: 'runs-root' });
@@ -199,12 +215,24 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
   // Whoever had the list read - this window, or the page when a run was started - the window says when that was.
   useEffect(() => setReadAt(new Date().toLocaleTimeString([], { hour12: false })), [runs]);
   const toggle = (dir: string) => { if (open === dir) { setOpen(null); return; } setOpen(dir); readDetails(dir); };
-  // A double click on a run's row shows that run in the bottom tabs (user request 2026-09-21: no "Show" column). Not when it
-  // lands on the row's "Details" button: that only opens and closes the details. The word the double click selected is let go.
-  const showRun = (e: MouseEvent<HTMLTableRowElement>, dir: string) => {
+  // A double click on a run's row loads the run (record 7.267, plan "Load run"; it only showed the run until then, user
+  // request 2026-09-21: no "Show" column) - or shows it, where Load run is not offered. Not when it lands on the row's
+  // "Details" button: that only opens and closes the details. The word the double click selected is let go.
+  const showRun = (e: MouseEvent<HTMLTableRowElement>, row: Json) => {
     if ((e.target as HTMLElement).closest('button, input, select, label')) return;
     (popup ?? window).getSelection()?.removeAllRanges();
-    onChoose(dir);
+    if (onLoad && !loadBlocked(row, tasks)) onLoad(row); else onChoose(row.run_dir);
+  };
+  const actions = (r: Json) => {
+    if (!onLoad) return null;
+    const why = loadBlocked(r, tasks), continuable = !isLive(r) && !!onContinue && r.resumability !== 'none' && r.resumability != null;
+    return <div className="row run-actions">
+      <button className="run-load" disabled={!!why} onClick={() => onLoad(r)} title={why ?? 'Load run (also a double click on the run): its task comes into the editors - edits are asked about first -, its model becomes the next run\'s model, pinned, and the bottom tabs show its results. One Undo step takes the task and the model back. Nothing starts.'}>Load run</button>
+      <button className="run-show" onClick={() => onChoose(r.run_dir)} title="Show results: the bottom tabs show this run (Run status, Logs, Data tables...). Nothing else changes.">Show results</button>
+      {continuable && <button className="run-continue" onClick={() => onContinue!(r)} title="Continue...: the run goes on in its own folder, from its newest save point, with its own settings - Run status shows it, with the budget form.">Continue...</button>}
+      {onNewLike && <button className="run-like" disabled={!!why} onClick={() => onNewLike(r)} title={why ?? 'New run like this: the next run repeats this one - its task (edits are asked about first), Mode, the model it started from, network, training values, reward, conditions, budget, seed and limits. One Undo step. Nothing starts.'}>New run like this</button>}
+      {why && <span className="hint run-load-why">{why}</span>}
+    </div>;
   };
 
   const openWindow = (from?: Window | null) => {
@@ -258,7 +286,8 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
       </div>
       {runsError && !loading && <p className="error run-list-error">The run list could not be read: {runsError}</p>}
       {folders.error && <p className="error" role="alert">{folders.error} Press Refresh list to retry.</p>}
-      <p className="hint"><b>Double click</b> a run to show it in the bottom tabs of the workbench (Run status, Logs, Data tables, Output files); the run that is shown is marked. <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none. This window stays open until you close it.</p>
+      {onLoad ? <p className="hint"><b>Double click</b> a run to load it: its task comes into the editors, its model becomes the next run's model, and the bottom tabs of the workbench show its results (one Undo step takes the task and the model back; nothing starts). A run's <b>Details</b> also offer <b>Show results</b> alone, <b>Continue...</b> and <b>New run like this</b>. The run that is shown is marked; <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none. This window stays open until you close it.</p>
+        : <p className="hint"><b>Double click</b> a run to show it in the bottom tabs of the workbench (Run status, Logs, Data tables, Output files); the run that is shown is marked. <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none. This window stays open until you close it.</p>}
       <details className="more"><summary>What the columns mean</summary>
         <ul className="steps-list">{COLUMNS.map(c => <li key={c.key}><b>{c.title}</b>: {c.help}</li>)}
           <li>All times are the local time of this computer. Press a column title to sort by it. "Details" shows everything else the run recorded.</li></ul></details>
@@ -281,7 +310,7 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
             onClick={() => setSort(s => ({ key: c.key, down: s.key === c.key ? !s.down : true }))}>{c.title}{sort.key === c.key && <span className="sort-mark">{sort.down ? ' ▼' : ' ▲'}</span>}</th>)}
           <th className="plain"></th></tr></thead>
         <tbody>{shown.map(r => { const active = r.run_dir === runDir, end = finished(r), origin = startedFrom(r, byDir); return (<Fragment key={r.run_dir}>
-          <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} title={r.run_dir} onDoubleClick={e => showRun(e, r.run_dir)}>
+          <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} title={r.run_dir} onDoubleClick={e => showRun(e, r)}>
             <td className="task-select"><input type="checkbox" aria-label={`Select ${folder(r.run_dir)}`} checked={selected.includes(r.run_dir)}
               disabled={folders.busy || !folders.ready} onChange={e => select(r.run_dir, e.target.checked)} /></td>
             <td className="wrap-words">{stamp(r.created_utc) ?? '-'}{folders.folder === 'all' && folders.data.folders[folders.of(r.run_dir)]
@@ -302,7 +331,7 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
           </tr>
           {open === r.run_dir && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>
             <RunDetails row={r} info={info?.dir === r.run_dir ? info?.value : null} error={info?.dir === r.run_dir ? info?.error : undefined} onCopy={copyPath} copied={copied}
-              relations={<Relationships row={r} info={info?.dir === r.run_dir ? info?.value : null} runs={runs} byDir={byDir} tasks={tasks} from={popup} onFocus={focusRun} />} /></td></tr>}
+              actions={actions(r)} relations={<Relationships row={r} info={info?.dir === r.run_dir ? info?.value : null} runs={runs} byDir={byDir} tasks={tasks} from={popup} onFocus={focusRun} />} /></td></tr>}
         </Fragment>); })}</tbody></table></div>}
       {runs.length > 0 && shown.length === 0 && <p className="hint task-folder-empty">{filter ? 'No run matches the filter in this folder.' : 'This folder is empty. Select runs in All runs, then use Move to…'}</p>}
       </div></div>

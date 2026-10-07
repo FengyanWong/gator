@@ -1,6 +1,6 @@
 import { migrateConfig, noteRowsFrom, useAsyncAction, useRequest } from '../store';
 import { CircuitDetails, gateText, namedTestbench, NativeSchematic, useVirtuosoBrowser } from './CircuitBrowser';
-import { useEffect, useRef, useState } from 'react';
+import { MutableRefObject, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, connectionProfilesShared, Json, problemText } from '../api';
 import { BLOCKED, usePopupWindow } from './popupWindow';
@@ -84,10 +84,17 @@ function TitleFacts({ config, revision }: { config: Json; revision: number | str
     {fact('Class · PDK', `${ref.circuit_class ?? 'unspecified'} · ${ref.pdk_id ?? 'unspecified'}`)}{fact('RL model', model, ' tb-model')}</>;
 }
 
-export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, taskSlot, taskNotes, titleSlot = null, taskEpoch = 0, runs = [], refreshRuns }:
+/** The task load the Tasks window uses, for the Runs window's Load run and New run like this (record 7.267; plan "Load run":
+ *  "chooseTask becomes one task load that the Tasks and Runs windows both call"). `change` joins the task's rows in the
+ *  ONE change of the draft - one Undo step. Not loaded - the edits question answered Cancel, the task could not be read -
+ *  nothing changed, and `why` says so in a sentence. */
+export type TaskLoaded = { loaded: true } | { loaded: false; why: string };
+export type TaskLoad = (taskId: string, change?: (c: Json) => Json) => Promise<TaskLoaded>;
+
+export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, taskSlot, taskNotes, titleSlot = null, taskEpoch = 0, runs = [], refreshRuns, taskLoad }:
   { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null;
     taskSlot: HTMLElement | null; taskNotes: HTMLElement | null;
-    titleSlot?: HTMLElement | null; taskEpoch?: number; runs?: Json[]; refreshRuns?: () => Promise<Json[]> }) {
+    titleSlot?: HTMLElement | null; taskEpoch?: number; runs?: Json[]; refreshRuns?: () => Promise<Json[]>; taskLoad?: MutableRefObject<TaskLoad | null> }) {
   const [tasks, setTasks] = useState<Json[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [nativeOpen, setNativeOpen] = useState(false);                    // closed until asked for; the choice then lasts across cells and Refresh
@@ -321,7 +328,9 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   const goneMock = (taskId?: string | null) => !!taskId && taskId.startsWith('synthetic:') && tasks.length > 0 && !tasks.some(t => t.task_key === taskId);
   const removedMock = ref.source === 'registered_task' && goneMock(ref.task_id);
   // `labels`: the class and PDK id of a task just saved (the ngspice window) - not in the task list read before the save.
-  const chooseTask = async (taskId: string, labels?: { circuit_class?: string | null; pdk_id?: string | null }, reload = false) => {
+  // `change`: what else the same draft change brings (Load run: the run's model; record 7.267). True once loaded.
+  const chooseTask = async (taskId: string, labels?: { circuit_class?: string | null; pdk_id?: string | null }, reload = false,
+    change: (c: Json) => Json = c => c): Promise<TaskLoaded> => {
     const before = latest.current, mine = ++following.current;
     const currentTask = before.circuit.source === 'registered_task' ? before.circuit.task_id : null;
     const stillHere = () => mine === following.current && latest.current.circuit === before.circuit;
@@ -332,7 +341,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       const [previous, starter] = await Promise.all([
         currentTask && currentTask !== taskId ? api.starter(currentTask).catch(() => null) : null,
         api.starter(taskId)]);
-      if (!stillHere()) return;
+      if (!stillHere()) return { loaded: false, why: 'the page changed its task while the saved rows were read' };
       // Check the rows NOW: the user can edit while the read is in flight. A saved-again task may differ from the
       // rows it originally brought; either known baseline counts as untouched when switching to another task.
       const now = latest.current, baseline = currentTask === taskId ? starter : previous;
@@ -340,9 +349,9 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
         || (!reload && !!brought && sameRows(now, brought));
       if (!untouched && !window.confirm(`${reload ? 'Reload saved values' : `Switch to ${taskId}`}?\n\n`
         + 'This replaces your unsaved Parameters, Probes and Specs edits.\n'
-        + 'OK = discard those edits and load the saved rows.\nCancel = keep the current task and edits. You can save them with Save as first.')) return;
+        + 'OK = discard those edits and load the saved rows.\nCancel = keep the current task and edits. You can save them with Save as first.')) return { loaded: false, why: 'you chose Cancel, so the task and its edits stay as they were' };
       const nextCircuit = { ...starter.circuit, ...labels, source: 'registered_task', task_id: taskId };
-      setConfig(c => c.circuit !== before.circuit ? c : ({ ...c,
+      setConfig(c => c.circuit !== before.circuit ? c : change({ ...c,
         circuit: nextCircuit,
         project: { ...c.project, task_name: starter.project.task_name },
         parameters: starter.parameters, targets: starter.targets, measurements: starter.measurements }));
@@ -352,12 +361,15 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       setCircuit(null);
       if (currentTask === taskId) load(nextCircuit);
       setTaskRows({ task: taskId, state: 'brought', starter });
+      return { loaded: true };
     } catch (e: any) {
       if (stillHere()) setTaskLoadError(`Could not load ${taskId}. The current task and rows are unchanged. ${starterProblem(e, taskId)}`);
+      return { loaded: false, why: `${taskId} could not be read: ${starterProblem(e, taskId)}` };
     } finally {
       if (mine === following.current) setTaskLoading(null);
     }
   };
+  if (taskLoad) taskLoad.current = (taskId, change) => chooseTask(taskId, undefined, false, change);
   // A cell that already has a registered task - the task saved from it, or one of the verified built-in circuits - gets
   // no second task: the note names the task. One short button, because it is about THIS cell (not a list of tasks); it
   // does what choosing the task in the Project column does.

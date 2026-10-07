@@ -258,7 +258,7 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
       title={`The current run: ${dir}\nPress for the run brief: this run and every other live run, each with Show results and Open in Runs (record 7.264).`}>{note}</button>}
     <button className="run-save" disabled={phase !== 'running' || !!saving} onClick={saveNow}
       title={phase === 'running' ? 'Save now: The model is saved now, without pausing: the simulation in flight finishes first (with several in parallel, all of them), the model is written as a new save point, '
-        + 'and the run goes on by itself. The save point can be chosen later under "RL model to load".'
+        + 'and the run goes on by itself. The save point appears in the saved model\'s Details in the RL model window, where it can be used.'
         : 'Save now: Only while a run is running. A paused or ended run has already saved everything.'}><Icon name="save" label={saving ? 'Saving...' : 'Save now'} /></button>
     <button className="primary run-main" disabled={!main || !!why} onClick={main} title={`${LABELS[phase]}: ${why ?? TITLES[phase]}`}><Icon name={ICONS[phase]} label={LABELS[phase]} /></button>
     <button className="run-abort" disabled={!(phase === 'running' || phase === 'paused' || (waiting && !forced))} onClick={abort}

@@ -355,3 +355,5 @@ One row per commit, newest last.
 | `f4fc5f2` | 10-07 09:37 | 7.264 | frontend plan build step 3: relationships between runs and models, links between the windows, the run brief (session "Frontend workbench layout design") |
 | `e067135` | 10-07 09:37 | - | record only: names the commit of record 7.264 (f4fc5f2), and the table rows for 143505f and f4fc5f2 |
 | `0437262` | 10-07 10:18 | 7.256 | plan 7.256 revision 3: the telescopic cascode joins stage D as the second held-out circuit; docs only, nothing started (session "Encoder run plan revision") |
+| `853077e` | 10-07 10:19 | - | record only: names the commit of record 7.256's revision 3, and the table rows for e067135 and 0437262 (session "Encoder run plan revision") |
+| `cacfc9d` | 10-07 11:02 | 7.265 | frontend plan build step 4: the RL model window - the Mode in the load-model window, a New model template per encoder, a pinned save point (session "Frontend workbench layout design") |

@@ -331,3 +331,7 @@ One row per commit, newest last.
 | `de3f995` | 10-07 06:41 | 7.232 | the general-network plan rewritten: arm O on ota5t only, a held-out two-stage op-amp instead of leave-one-out; docs only (session "Task button and fine-tuning comparison plan") |
 | `bee0bae` | 10-07 06:41 | 7.233-7.244 | the general-network experiment: offline pretraining, qualification and publication, source rehearsal in fine-tuning, the experiment's records (14,556 + 1,388 Spectre launches), the encoder A/B/C runbook (the user's Codex session) |
 | `edf2de7` | 10-07 06:41 | 7.243, 7.245-7.251 | a new task runs its own baseline, Calibration only random designs, Save as with numbered names, task folders, names without real:, no DUT box, the preset learning-rate upgrade (the user's Codex session) |
+| `8b2d29e` | 10-07 06:42 | - | record only: names the commits of records 7.231-7.251, and the table rows for c317e18, 6a4f6ee, de3f995, bee0bae and edf2de7 |
+| `ea5cd17` | 10-07 07:05 | 7.252, 7.254 | plans: the frontend task-model and run-workflow plan and its revision around one Manager window; docs only (the user's Codex session) |
+| `de810e3` | 10-07 07:05 | 7.253 | the Agent window: the "Agent..." tab opens Claude Code or Codex in a window of its own, no tab view (session "Agent tab minimal redesign") |
+| `c0a50ed` | 10-07 07:05 | 7.255 | four browser checks follow the interface changes of 7.245, 7.248 and 7.249; test code only (session "Virtuoso read whole flow") |

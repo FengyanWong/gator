@@ -747,6 +747,21 @@ def _check_save_now(layout):
                           'Start a run with that option on to be able to save.', code='checkpoints_off')
 
 
+def worker_started(run_dir, since=0.0) -> bool:
+    """A worker has been started for this run since the time `since`: it holds the run lock (prepare_run holds a continue's
+    until it hands it over, launch_worker a start's from just before the spawn), or the status file was written after
+    `since` - prepare_run writes it as `created` and a continue's previous segment left its own, both BEFORE the launch
+    record; the worker writes it within seconds of starting. The launch-request reconciliation (record 7.271): a
+    "launching" record whose run shows neither never got its worker."""
+    layout = RunLayout(Path(run_dir))
+    try:
+        if RunLock.held(layout.control / 'run.lock'):
+            return True
+        return layout.status.is_file() and layout.status.stat().st_mtime > since
+    except OSError:
+        return False
+
+
 def run_status(run_dir) -> dict:
     layout = RunLayout(Path(run_dir))
     status = read_json(layout.status, default={}) or {}

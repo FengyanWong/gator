@@ -3,10 +3,14 @@
 The page sends an id with each Start and Continue and keeps it until the answer has arrived. The same id again - a
 second press that overtook the first, or the page asking after a reload during a slow start - gets the answer the
 first request got: the same run, never a second one. The answer is written as soon as the run exists and BEFORE its
-worker is started (`run_routes.once`), so a launch whose acknowledgement was lost on the way is still found. A refused
-request, or one that failed before anything was made, leaves no record, so the repeat the page sends with the answers
-to the backend's questions (real budget, a model from another task) is a request of its own. One small file per id in
-the workbench's own settings folder (local_settings_dir: tests and browser checks have their own), pruned after a week.
+worker is started (`run_routes.once`), as a "launching" record: it counts as the answer once the worker is there (the
+caller's `started` test: the run lock held, or a status written), as on its way until then, and as nothing once it is
+stale - a backend that died between that write and the spawn leaves a run folder that never started (`created`), and
+the launch is sent anew (record 7.271). So a launch whose acknowledgement was lost on the way is still found, and an
+unstarted run is never answered as launched. A refused request, or one that failed before anything was made, leaves no
+record, so the repeat the page sends with the answers to the backend's questions (real budget, a model from another
+task) is a request of its own. One small file per id in the workbench's own settings folder (local_settings_dir: tests
+and browser checks have their own), pruned after a week.
 """
 from __future__ import annotations
 
@@ -67,9 +71,20 @@ def _record(path: Path) -> dict | None:
     return record if isinstance(record, dict) else None
 
 
-def claim(request_id: str, kind: str) -> dict | None:
+def _answered(record: dict | None, started) -> bool:
+    """A record that holds the answer: done, or launching with its worker there (`started(answer, at)`: the record's
+    answer and the time it was written - a status the worker wrote is newer than that)."""
+    if record is None:
+        return False
+    if record.get('state') == 'done':
+        return True
+    return record.get('state') == 'launching' and started is not None and bool(started(record.get('answer') or {}, float(record.get('at') or 0.0)))
+
+
+def claim(request_id: str, kind: str, started=None) -> dict | None:
     """None: the request is new and is now on its way - answer() or drop() ends that. A dict: it was answered before,
-    and this is the answer the first request got. RequestPending: it is still on its way."""
+    and this is the answer the first request got. RequestPending: it is still on its way. `started(answer, at)`: whether a
+    launching record's run has its worker (see the module note)."""
     path = _path(request_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     _prune(path.parent)
@@ -78,7 +93,7 @@ def claim(request_id: str, kind: str) -> dict | None:
             handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         except FileExistsError:
             record = _record(path)
-            if record is not None and record.get('state') == 'done':
+            if _answered(record, started):
                 return record.get('answer')
             try:
                 age = time.time() - path.stat().st_mtime
@@ -86,12 +101,18 @@ def claim(request_id: str, kind: str) -> dict | None:
                 continue                                  # dropped meanwhile: the request is new again
             if age < STALE_PENDING_SECONDS:             # also a record just created and not written yet
                 raise RequestPending('This launch is already on its way; its answer comes in a moment.')
-            path.unlink(missing_ok=True)
+            path.unlink(missing_ok=True)                  # stale: a backend that went away, or a worker that never came
             continue
         with os.fdopen(handle, 'w', encoding='utf8') as stream:
             json.dump(dict(state='pending', kind=kind, at=time.time()), stream)
         return None
     raise RequestPending('This launch is already on its way; its answer comes in a moment.')
+
+
+def prepared(request_id: str, result: dict):
+    """The request made the run of `result`, whose worker is about to be started: a "launching" record (see the module
+    note). `answer()` with the worker's pid follows."""
+    write_json(_path(request_id), dict(state='launching', at=time.time(), answer=result))
 
 
 def answer(request_id: str, result: dict):
@@ -104,15 +125,21 @@ def drop(request_id: str):
     _path(request_id).unlink(missing_ok=True)
 
 
-def lookup(request_id: str) -> dict:
+def lookup(request_id: str, started=None) -> dict:
     """{'state': 'done', 'answer': ...}, {'state': 'pending'} or {'state': 'unknown'} (never arrived, refused, failed,
-    or older than a week). The page asks this after a reload during a launch, instead of sending it again."""
+    or older than a week). The page asks this after a reload during a launch, instead of sending it again. A launching
+    record (see the module note) is done once `started(answer, at)` says its worker is there, pending while young, and
+    unknown - and gone - once stale."""
     path = _path(request_id)
     record = _record(path)
-    if record is not None and record.get('state') == 'done':
+    if _answered(record, started):
         return dict(state='done', answer=record.get('answer'))
     try:
         age = time.time() - path.stat().st_mtime
     except FileNotFoundError:
         return dict(state='unknown')
-    return dict(state='pending') if age < STALE_PENDING_SECONDS else dict(state='unknown')
+    if age < STALE_PENDING_SECONDS:
+        return dict(state='pending')
+    if record is not None and record.get('state') == 'launching':
+        path.unlink(missing_ok=True)                      # its worker never came: the id is new again, the run folder stays
+    return dict(state='unknown')

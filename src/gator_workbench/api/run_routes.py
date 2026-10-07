@@ -63,29 +63,44 @@ def start_run(context, config, body, *, baseline_only=False, record=None):
                 paths=layout.subpaths(), connection_gate=manifest.get('connection_gate'),
                 mock_notice=manifest['mock_notice'])
     if record is not None:
-        record(made)                         # the request's answer is on disk BEFORE the worker exists (see `once`)
+        try:
+            record(made)                     # the request's answer is on disk BEFORE the worker exists (see `once`)
+        except BaseException:
+            # The lock prepare_run took for a continue's worker is let go of: held on, every later continue of this run
+            # was refused as already_running until the backend restarted (review of 2026-10-07, follow-up 1).
+            held = runs.take_lock(layout.run_dir)
+            if held is not None:
+                held.release()
+            raise
     pid = runs.launch_worker(layout, allow_real=allow_real and not manifest['mock'])
     return dict(made, worker_pid=pid)
+
+
+def worker_started(answer, at) -> bool:
+    """Whether the run a launching record (written at `at`) names has its worker (launch_requests: the `started` test)."""
+    return bool(answer.get('run_dir')) and runs.worker_started(answer['run_dir'], since=at)
 
 
 def once(request_id, kind, work):
     """A launch answered once (record 7.261): `work(record)` makes the run; the same request id again gets the answer the
     first request got instead of a second run, and a request still on its way is refused (409 request_pending). `work`
-    calls `record(answer)` as soon as the run exists and BEFORE its worker is started, so the answer is on disk whatever
-    happens next: written only after the spawn, a write that failed left the request "pending", then "unknown" a quarter
-    of an hour later, and the same id made a second run (review of 2026-10-07). A refusal, or a failure before the worker
-    exists (the worker is started last, and nothing after it raises), leaves no record: the page's repeat with the answers
-    to the backend's questions is a request of its own."""
+    calls `record(answer)` as soon as the run exists and BEFORE its worker is started - a "launching" record, the answer
+    once the worker is there (`worker_started`), on its way until then, nothing once stale (record 7.271) - so the answer
+    is on disk whatever happens next: written only after the spawn, a write that failed left the request "pending",
+    then "unknown" a quarter of an hour later, and the same id made a second run (review of 2026-10-07); written as
+    "done" before the spawn, a backend that died in between answered the repeat with a run that never started. A refusal,
+    or a failure before the worker exists (the worker is started last, and nothing after it raises), leaves no record: the
+    page's repeat with the answers to the backend's questions is a request of its own."""
     if not request_id:
         return work(lambda answer: None)
     try:
-        done = launch_requests.claim(request_id, kind)
+        done = launch_requests.claim(request_id, kind, started=worker_started)
     except launch_requests.RequestPending as exc:
         fail(409, exc, code='request_pending')
     if done is not None:
         return dict(done, repeated=True)
     try:
-        result = work(lambda answer: launch_requests.answer(request_id, answer))
+        result = work(lambda answer: launch_requests.prepared(request_id, answer))
     except BaseException:
         launch_requests.drop(request_id)
         raise
@@ -249,7 +264,7 @@ def register(app: FastAPI, context: ApiContext):
     def launch_request(request_id: str = Query(pattern=launch_requests.ID_PATTERN)):
         """What became of a launch the page sent before it was reloaded (record 7.261): done (with the run), pending, or
         unknown - it never arrived, was refused, or failed; nothing was made then."""
-        return launch_requests.lookup(request_id)
+        return launch_requests.lookup(request_id, started=worker_started)
 
     @app.get('/api/runs/continuation')
     def continuation(run_dir: str, max_evaluations: int | None = Query(None, ge=1)):

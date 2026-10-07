@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from gator_workbench import launch_requests, runs
 from gator_workbench.engine import RunLock
-from gator_workbench.storage.atomic import PersistenceError
+from gator_workbench.storage.atomic import PersistenceError, write_json
 from helpers import execute, make_config, workbench_app
 
 FINE_TUNE = 'Fine-tune from its newest save point (a new run)'
@@ -156,32 +156,79 @@ def test_the_answer_is_on_disk_before_the_worker_starts_and_survives_a_lost_ackn
     the request pending, "unknown" a quarter of an hour later, and the same id made a second run."""
     seen = []
 
-    def launch(layout, allow_real=False):
+    def launch(layout, allow_real=False):                               # a worker that starts: it writes its status
         seen.append(launch_requests.lookup('page-start-0006'))          # what the page would learn at this moment
         held = runs.take_lock(layout.run_dir)
         if held:
             held.release()
+        write_json(layout.status, dict(state='starting', run_dir=str(layout.run_dir)))
         return 4242
     monkeypatch.setattr(runs, 'launch_worker', launch)
-    real_answer = launch_requests.answer
 
-    def losing_answer(request_id, result):
-        if result.get('worker_pid') is not None:                         # the acknowledgement after the spawn is lost
-            raise PersistenceError('the drive did not take the record')
-        real_answer(request_id, result)
+    def losing_answer(request_id, result):                               # the acknowledgement after the spawn is lost
+        raise PersistenceError('the drive did not take the record')
     monkeypatch.setattr(launch_requests, 'answer', losing_answer)
     client = TestClient(workbench_app(tmp_path), raise_server_exceptions=False)
     raw = make_config(tmp_path).model_dump(mode='json')
     first = client.post('/api/runs/start', json=dict(config=raw, request_id='page-start-0006'))
     assert first.status_code == 500 and len(seen) == 1
-    assert seen[0]['state'] == 'done' and seen[0]['answer']['worker_pid'] is None  # on disk before the worker existed
-    run_dir = seen[0]['answer']['run_dir']
+    assert seen[0] == dict(state='pending')                             # on disk, launching, before the worker existed
+    run_dir = str(next(tmp_path.rglob('run_manifest.json')).parent)
     known = client.get('/api/runs/request', params=dict(request_id='page-start-0006')).json()
     assert known['state'] == 'done' and known['answer']['run_dir'] == run_dir      # the page finds the run it made
-    monkeypatch.setattr(launch_requests, 'answer', real_answer)
+    assert known['answer']['worker_pid'] is None
+    monkeypatch.setattr(launch_requests, 'answer', lambda request_id, result: launch_requests.prepared(request_id, result))
     again = client.post('/api/runs/start', json=dict(config=raw, request_id='page-start-0006')).json()
     assert again['run_dir'] == run_dir and again['repeated'] is True and len(seen) == 1     # no second run
     assert len(list(tmp_path.rglob('run_manifest.json'))) == 1
+
+
+def test_a_failed_record_write_lets_go_of_the_continue_lock(finished, tmp_path, no_worker, monkeypatch):
+    """Astra's follow-up of 2026-10-07, 1: the lock prepare_run takes for a continue's worker stayed held when the record
+    write failed, and every later continue was refused as already_running until the backend restarted."""
+    real_prepared = launch_requests.prepared
+
+    def failing(request_id, result):
+        raise PersistenceError('the drive did not take the record')
+    monkeypatch.setattr(launch_requests, 'prepared', failing)
+    client = TestClient(workbench_app(tmp_path), raise_server_exceptions=False)
+    body = dict(run_dir=str(finished), max_evaluations=9, request_id='page-continue-0002')
+    assert client.post('/api/runs/continue', json=body).status_code == 500 and no_worker == []
+    assert client.get('/api/runs/request', params=dict(request_id='page-continue-0002')).json() == dict(state='unknown')
+    monkeypatch.setattr(launch_requests, 'prepared', real_prepared)
+    retry = client.post('/api/runs/continue', json=dict(body, request_id='page-continue-0003'))
+    assert retry.status_code == 200 and no_worker == [str(finished)]
+
+
+def test_a_launching_record_is_the_run_once_its_worker_is_there_and_nothing_once_stale(tmp_path, no_worker, monkeypatch):
+    """Astra's follow-up of 2026-10-07, 2: a record written as "done" before the spawn answered the repeat with a run that
+    never started when the backend died in between. Now it is "launching": pending while young, the run once its worker
+    shows (lock or status), unknown - and the id new again - once stale."""
+    from gator_workbench.layout import RunLayout
+    client = TestClient(workbench_app(tmp_path), raise_server_exceptions=False)
+    raw = make_config(tmp_path).model_dump(mode='json')
+    first = client.post('/api/runs/start', json=dict(config=raw, request_id='page-start-0009')).json()
+    run_dir = first['run_dir']
+    # As a backend that died between the record and the spawn leaves it: launching, no worker, the run still `created`.
+    launch_requests.prepared('page-start-0009', dict(first, worker_pid=None))
+    assert runs.run_status(run_dir)['state'] == 'created'                 # prepare_run's own status, older than the record
+    assert not runs.worker_started(run_dir, since=time.time())
+    assert client.get('/api/runs/request', params=dict(request_id='page-start-0009')).json() == dict(state='pending')
+    again = client.post('/api/runs/start', json=dict(config=raw, request_id='page-start-0009'))
+    assert again.status_code == 409 and again.json()['detail']['code'] == 'request_pending' and no_worker == [run_dir]
+    old = time.time() - launch_requests.STALE_PENDING_SECONDS - 5
+    os.utime(launch_requests._path('page-start-0009'), (old, old))
+    assert client.get('/api/runs/request', params=dict(request_id='page-start-0009')).json() == dict(state='unknown')
+    assert not launch_requests._path('page-start-0009').exists()
+    anew = client.post('/api/runs/start', json=dict(config=raw, request_id='page-start-0009')).json()
+    assert anew['run_dir'] != run_dir and 'repeated' not in anew and len(no_worker) == 2    # a run of its own; the created one stays
+    assert runs.run_status(run_dir)['state'] == 'created'
+    # The worker there (its status written): the launching record is the answer, and a repeat gets that run.
+    launch_requests.prepared('page-start-0010', dict(first, worker_pid=None))
+    write_json(RunLayout(run_dir).status, dict(state='starting', run_dir=run_dir))
+    assert client.get('/api/runs/request', params=dict(request_id='page-start-0010')).json() == dict(state='done', answer=dict(first, worker_pid=None))
+    repeat = client.post('/api/runs/start', json=dict(config=raw, request_id='page-start-0010')).json()
+    assert repeat['run_dir'] == run_dir and repeat['repeated'] is True and len(no_worker) == 2
 
 
 def test_a_spawn_that_fails_leaves_no_record(tmp_path, monkeypatch):

@@ -73,7 +73,7 @@ try {
     if (name === '/api/config/validate') return page.pass(requestId);
     return page.readOrRefuse({ requestId, request }, refused);
   };
-  const onDialog = session => session.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return session.send('Page.handleJavaScriptDialog', { accept: true }); });
+  const onDialog = session => session.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return session.send('Page.handleJavaScriptDialog', { accept: true, ...(p.type === 'prompt' ? { promptText: p.defaultPrompt } : {}) }); });
   onDialog(page);
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
   const LAUNCH = `${PANEL}.querySelector('button.virtuoso-button')`;
@@ -203,10 +203,10 @@ try {
   check('draft: what to do with it is folded under "What you can do with it now"', await win.shown('What you can do with it now') && await win.folded('The workbench holds the export of this cell') && await win.folded('it writes the rows into this cell\'s Maestro view'));
   check('draft: its button stays in view', await win.buttonShown('Read the cell again') && !(await win.buttonShown('Ask the agent to set up')));
   check('draft: the cell is named as worked in directly, in view', await win.shown(`Working in ${LIBRARY}/tb_ring_a directly: you declared it a copy you made`));
-  check('draft: "Then save it as a task:" points to Save task above the editors, the explanation is folded', await win.shown('Then save it as a task:') && await win.shown('What Save task does')
-    && await win.folded('Saving again makes the next revision') && !(await far.evaluate(`!!(${win.BUTTON('Save task')})`)));
-  check('draft: the name and the two buttons are in view in the editors\' tab line of the workbench', await evaluate(`${TASK_BAR}?.querySelector('input')?.checkVisibility() ?? false`)
-    && await taskButtonShown('Save task') && await taskButtonShown('Task file') && !(await evaluate(`!!(${TASK_BUTTON('Save as')})`)));
+  check('draft: "Then save it as a task:" points to Save task above the editors, the explanation is folded', await win.shown('Then save it as a task:') && await win.shown('What Save as does')
+    && await win.folded('Save as asks for a new name') && !(await far.evaluate(`!!(${win.BUTTON('Save as')})`)));
+  check('draft: the name and the two buttons are in view in the editors\' tab line of the workbench', !(await evaluate(`!!${TASK_BAR}?.querySelector('input')`))
+    && await taskButtonShown('Save as') && await taskButtonShown('Task file') && !(await evaluate(`!!(${TASK_BUTTON('Save task')})`)));
   check('draft: the backend\'s note is one closed line "1 note on this circuit"', await win.shown('1 note on this circuit') && await win.folded(NOTE));
   await win.click(win.SUMMARY('1 note on this circuit')); await sleep(200);
   check('draft: a click shows the note', await win.shown(NOTE));
@@ -223,9 +223,9 @@ try {
   await shotWindow('help-4b-draft-hierarchy-closed.png');
 
   // ---- a saved task: in the column -----------------------------------------------------------------------------------------
-  await evaluate(`${TASK_BUTTON('Save task')}.click()`, true); await quiet(); await until(`${PANEL}.textContent.includes('Before every run')`);
-  check('saved task: the missing-baseline warning stays in view, in the column; no REAL banner (removed, record 7.156)', !(await col.present('REAL evaluation backend')) && await col.shown('No real baseline yet: run Baseline simulation first.')
-    && (await evaluate(`[...document.querySelectorAll('.left p.warn')].find(p => p.textContent.startsWith('No real baseline yet'))?.title ?? ''`)).includes("becomes the task's reference by itself"));
+  await evaluate(`${TASK_BUTTON('Save as')}.click()`, true); await quiet(); await until(`${PANEL}.textContent.includes('Before every run')`);
+  check('saved task: a missing baseline has its retry action in the column', !(await col.present('REAL evaluation backend'))
+    && await col.shown('No real baseline yet.') && await col.buttonShown('Retry baseline'));
   check('saved task: "Before every run" and "Check now" stay in view; no manual baseline button (a baseline records itself)', await col.shown('Before every run:')
     && await col.buttonShown('Check now') && !(await col.buttonShown('Record the baseline run as reference')));
   check('saved task: what the check compares is folded', await col.shown('What the check compares') && await col.folded('no ADE/Maestro window may be open on the copy'));

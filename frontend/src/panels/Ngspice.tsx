@@ -2,6 +2,7 @@ import { useAsyncAction } from '../store';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, Json, problemText } from '../api';
+import { baselineText, followTaskBaseline } from './TaskSave';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 
 /** The ngspice window (user request 2026-09-23): a SPICE deck pasted or loaded from a file on the backend machine, checked,
@@ -65,12 +66,13 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged }:
   });
   const check = () => run('check', async () => { setChecked(await api.ngspiceCheck({ text, device_kinds: kinds, source_path: sourcePath })); });
   const save = () => run('save', async () => {
-    const made = await api.ngspiceSave({ name, text, device_kinds: kinds, source_path: sourcePath, ...labels });
+    const made = await api.ngspiceSave({ name, text, device_kinds: kinds, source_path: sourcePath, profile_id: config.run.connection_profile_id, output_root: config.output.output_root, ...labels });
+    followTaskBaseline(made);
     setChecked(made.check ?? null); setLoadedFrom(made.name);
     onTasksChanged();
     await chooseTask(made.task_key, { circuit_class: made.circuit_class, pdk_id: made.pdk_id });   // a new task is not in the list read before
-    setMessage({ level: 'ok', text: `${made.created ? 'Saved the new task' : `Saved revision ${made.revision} of`} ${made.task_key}. The Project column follows it; `
-      + 'Parameters and Probes show its rows (Specs are yours to fill). It runs on an ngspice connection: choose one in the Connection window.' });
+    setMessage({ level: made.baseline?.state === 'blocked' ? 'warn' : 'ok', text: `${made.created ? 'Saved the new task' : `Saved revision ${made.revision} of`} ${made.task_key}. The Project column follows it; `
+      + 'Parameters and Probes show its rows (Specs are yours to fill). It runs on an ngspice connection: choose one in the Connection window.' + baselineText(made) });
   });
   const nameOk = NAME.test(name);
   const revision = followed && name === followed ? (circuit?.circuit?.revision ?? null) : null;
@@ -123,8 +125,9 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged }:
         <button disabled={!!busy || !text.trim()} onClick={check} title="Reads the deck on the backend: elements, what can be sized, the results it measures, problems. Stores and runs nothing.">
           {busy === 'check' ? 'Checking...' : 'Check'}</button>
         <button className="primary" disabled={!!busy || !text.trim() || !nameOk} onClick={save}
-          title={nameOk ? 'Stores the deck as the task ngspice:<name> and makes the Project column follow it. No simulation.' : 'Give the task a name first: lowercase letters, digits and _ (2-40 characters, starting with a letter).'}>
+          title={nameOk ? 'Stores the deck as the task ngspice:<name> and makes the Project column follow it. A new task automatically runs one baseline simulation.' : 'Give the task a name first: lowercase letters, digits and _ (2-40 characters, starting with a letter).'}>
           {busy === 'save' ? 'Saving...' : followed && name === followed ? 'Save (next revision)' : 'Save as task'}</button>
+        <p className="hint">Creating a task automatically runs one baseline simulation of its starting design.</p>
       </div>
       {message && <p className={message.level === 'ok' ? 'ok' : message.level === 'error' ? 'error' : 'hint'}>{message.text}</p>}
       {checked && (checked.ok === false ? <p className="error">Cannot read the deck: {checked.problem}</p> : (

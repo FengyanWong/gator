@@ -11,7 +11,7 @@ from ..paths import OutputRoots, repo_root
 from ..preload import preload
 from ..security import redact
 from .context import ApiContext
-from . import agent_routes, circuit_routes, run_routes, settings_routes
+from . import agent_routes, circuit_routes, run_routes, settings_routes, task_folder_routes
 from .support import attachment, file_snapshot  # compatibility exports
 
 LOOPBACK_HOSTS = ('127.0.0.1', 'localhost', '::1')
@@ -67,7 +67,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
 
     # ------------------------------------------------------------------ helpers
     context = ApiContext(roots, input_roots, monitor, connector)
-    for routes in (settings_routes, circuit_routes, run_routes, agent_routes):
+    for routes in (settings_routes, circuit_routes, run_routes, agent_routes, task_folder_routes):
         routes.register(app, context)
 
     @app.exception_handler(Exception)

@@ -1,6 +1,6 @@
 // Browser check of the calibration that goes with the Baseline simulation (record 7.197; one button since record 7.202, the
 // "+ calibration" tick gone): the header button alone, a REAL run on the synthetic MOCK task (free, no bridge, no Virtuoso) of
-// the baseline plus 64 random designs - also in a browser that had unticked the old tick - the proposals in Run status - a
+// 64 random designs with no baseline - also in a browser that had unticked the old tick - the proposals in Run status - a
 // Scale per Specs row and the Initial alpha - and Apply, which writes them into the page's configuration as ONE Undo step
 // and only into rows that still are the rows the run simulated. And the line under the header when the run has ended
 // (record 7.204, "Calibration ready"): Not now changes nothing and is remembered, Apply calibration there does what the
@@ -32,7 +32,7 @@ await runChecks(browser, async () => {
   const { send, evaluate, until, consoleErrors } = page;
   const dialogs = [];
   page.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return send('Page.handleJavaScriptDialog', { accept: true }); });
-  const BASELINE = `[...document.querySelectorAll('header button')].find(b => b.textContent === 'Baseline simulation')`;
+  const BASELINE = `[...document.querySelectorAll('header button')].find(b => b.textContent === 'Calibration')`;
   const CHIP = `document.querySelector('header button.run-chip')`;
   const BLOCK = `document.querySelector('footer .calibration')`, APPLY = `[...(${BLOCK}?.querySelectorAll('button') ?? [])].find(b => b.textContent === 'Apply calibration')`;
   const HINT = `${BLOCK}?.querySelector('.row .hint')?.textContent`;
@@ -53,10 +53,10 @@ await runChecks(browser, async () => {
 
   // ---- one button, no tick ----------------------------------------------------------------------------------------------
   check('no "+ calibration" tick and no Single baseline simulation in the header', await evaluate(`!document.querySelector('header input[type=checkbox]')
-    && !document.querySelector('header').textContent.includes('calibration') && !document.querySelector('header').textContent.includes('Single baseline')`));
+    && !document.querySelector('header').textContent.includes('Baseline') && !document.querySelector('header').textContent.includes('Single baseline')`));
   const title = await evaluate(`${BASELINE}.title`);
-  check('its tooltip says what follows the baseline, that nothing changes by itself, and how to keep the baseline alone',
-    /then 64 random designs over the Parameters ranges in the same run/.test(title) && /nothing changes by itself/.test(title) && /For the baseline alone, Abort once the random designs begin/.test(title), title);
+  check('its tooltip says random designs only and that nothing changes by itself',
+    /64 random designs over the Parameters ranges/.test(title) && /nothing changes by itself/.test(title) && /No starting-design baseline/.test(title), title);
   await page.shot(path.join(out, 'calibration-0-header.png'), `document.querySelector('header')`, { pad: 4 });
 
   // ---- the run: the baseline, then 64 random designs ------------------------------------------------------------------------
@@ -65,11 +65,11 @@ await runChecks(browser, async () => {
   check('a MOCK run asks nothing and starts', await until(`!!localStorage.getItem('gator-workbench-current-run-v1')`, 900) && dialogs.length === 0, JSON.stringify(dialogs));
   const dir = await evaluate(`localStorage.getItem('gator-workbench-current-run-v1')`);
   check('while it runs, Run status says what is coming', await until(`/64 random designs are simulated; the proposals appear here when the run has ended/.test(${BLOCK}?.textContent ?? '') || !!(${APPLY})`, 300));
-  check('the run completes with 65 evaluations charged', await until(`/^completed 65 \\/ 65 \\[MOCK\\]$/.test(${CHIP}?.textContent ?? '')`, 600), await evaluate(`${CHIP}?.textContent`));
+  check('the run completes with 64 evaluations charged', await until(`/^completed 64 \\/ 64 \\[MOCK\\]$/.test(${CHIP}?.textContent ?? '')`, 600), await evaluate(`${CHIP}?.textContent`));
   const status = await get('runs/status', { run_dir: dir });
   const result = status.calibration?.result, row = result?.rows?.[0];
-  check('the backend says: a baseline run asked for 64 designs, on one lane, 65 evaluations', JSON.stringify(status.calibration?.request) === JSON.stringify({ designs: 64, lanes: 1, evaluations: 65 })
-    && status.budget?.charged === 65 && status.learner_updates === 0, JSON.stringify({ request: status.calibration?.request, charged: status.budget?.charged, updates: status.learner_updates }));
+  check('the backend says: calibration asked for 64 designs and exactly 64 evaluations', JSON.stringify(status.calibration?.request) === JSON.stringify({ designs: 64, lanes: 1, evaluations: 64, random_only: true })
+    && status.budget?.charged === 64 && status.learner_updates === 0, JSON.stringify({ request: status.calibration?.request, charged: status.budget?.charged, updates: status.learner_updates }));
   check('its proposals: a Scale for the row "score" and an Initial alpha, every recorded reward worked out again', result?.status === 'calibrated' && row?.metric_id === 'score'
     && typeof row?.proposed_scale === 'number' && typeof result?.initial_alpha?.proposed === 'number' && result.reward_check.reproduced === 64, JSON.stringify(result).slice(0, 400));
   const scale = row.proposed_scale, alpha = result.initial_alpha.proposed;

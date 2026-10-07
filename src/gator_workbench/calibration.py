@@ -1,9 +1,8 @@
-"""Calibration from the random designs of a task's baseline run (record 7.197).
+"""Calibration from random designs (standalone since record 7.248; legacy combined runs remain readable).
 
-A "Baseline simulation" asked to calibrate (the page asks every time, record 7.202) goes on, after the one simulation of
-the starting design, with N random designs - uniform draws over the Parameters ranges, the very draws a run's warm-up
-makes - and this module reads what they measured. Two settings come out of it, both as PROPOSALS: nothing here changes a
-configuration or a task, the page shows them with one Apply button.
+A Calibration run evaluates N independent random designs over the Parameters ranges. The historical combined API
+first simulates the starting design, then draws its random designs; both paths use the same proposal arithmetic.
+Two settings come out of it, both as PROPOSALS: nothing here changes a configuration or a task.
 
 * Scale of a Specs row: the median miss, in the row's own unit, among the random designs that miss the row. With it a
   typical failing random design counts as a miss of 1 on every row (0.5 after the compressed shape), so no row leads
@@ -49,21 +48,27 @@ SAME_REWARD = 1e-9
 RULE = 3
 
 
-def prepare(config, designs):
+def prepare(config, designs, *, random_only=False):
     """The baseline run's configuration (a copy the caller made), changed in place for `designs` calibration designs.
 
-    Every lane simulates the starting design once (its reset - the first of them is the baseline) and then only random
-    designs: the warm-up covers all of them, no episode ends in between (a reset would cost a simulation), nothing is
+    Legacy combined runs simulate the starting design once per lane before the random designs. With `random_only`,
+    every evaluation is a random design and the engine bypasses reset simulations and replay.
+    After its resets the legacy path runs only random designs: the warm-up covers all of them, no episode ends in between (a reset would cost a simulation), nothing is
     learned from them (an update is never due), a passing design does not stop the run, and a streak of designs that
     cannot be measured does not either - how many could not be is part of the answer."""
     run, adv = config.run, config.run.advanced
     lanes = run.concurrency
-    run.max_evaluations = lanes + designs
+    run.max_evaluations = designs if random_only else lanes + designs
     run.stop_at_first_feasible = False
     run.max_consecutive_failures = max(run.max_consecutive_failures, lanes + designs)
     adv.warmup_transitions, adv.episode_length, adv.episode_terminates_on_success = designs, designs, False
     adv.update_every = designs + 1
-    return dict(designs=designs, lanes=lanes, evaluations=lanes + designs)
+    request = dict(designs=designs, lanes=lanes, evaluations=run.max_evaluations)
+    if random_only:
+        request['random_only'] = True
+        run.rehearsal = None
+        config.output.save_transition_archive = False
+    return request
 
 
 def _finite(value):

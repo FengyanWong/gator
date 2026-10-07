@@ -91,7 +91,7 @@ await runChecks(browser, async () => {
     return send('Page.handleJavaScriptDialog', { accept: !!accept, promptText: '' });   // a prompt() answered with nothing typed
   });
   const MAIN = `document.querySelector('header button.run-main')`, ABORT = `document.querySelector('header button.run-abort')`, CHIP = `document.querySelector('header button.run-chip')`;
-  const BASELINE = `[...document.querySelectorAll('header button')].find(b => b.textContent === 'Baseline simulation')`;
+  const BASELINE = `[...document.querySelectorAll('header button')].find(b => b.textContent === 'Calibration')`;
   const look = () => evaluate(`({ main: ${MAIN}?.textContent, mainOff: ${MAIN}?.disabled, abort: ${ABORT}?.textContent, abortOff: ${ABORT}?.disabled, chip: ${CHIP}?.textContent ?? null,
     baselineOff: ${BASELINE}?.disabled, banner: document.querySelector('.banner')?.textContent ?? null, remembered: localStorage.getItem(${JSON.stringify(RUN_KEY)}) })`);
   const mainReads = (label, tries) => until(`${MAIN}?.textContent === ${JSON.stringify(label)}`, tries);
@@ -153,7 +153,7 @@ await runChecks(browser, async () => {
   check('while the backend is starting the run the button reads "Starting..." and is disabled', await mainReads('Starting...') && (await look()).mainOff === true);
   v = await look();
   check('Abort and the baseline simulation are disabled meanwhile', v.abortOff === true && v.baselineOff === true, JSON.stringify(v));
-  check('ONE start request was sent, for a full run with the page\'s configuration', log.length === 1 && log[0].name === '/api/runs/start' && log[0].body.baseline_only === false
+  check('ONE start request was sent, for a full run with the page\'s configuration', log.length === 1 && log[0].name === '/api/runs/start' && log[0].body.calibration_only === false
     && log[0].body.config?.schema_version === CONFIG.schema_version && !('authorize_real_simulation' in log[0].body), JSON.stringify(log.map(l => l.name)));
   sim.steps = [{}, {}, { state: 'starting' }, { state: 'running' }];
   await held(); held = null;
@@ -240,8 +240,8 @@ await runChecks(browser, async () => {
   await sleep(3200);                                                                // two status polls (1.5 s each): the page holds it
   answers.push(false); await press(ABORT); await sleep(400);
   const asked = lastDialog().message.replace(/\n/g, ' ');
-  check('Abort of a Baseline simulation says the baseline is kept and what the calibration still needs', lastDialog().type === 'confirm' && /^Abort this run\?/.test(asked)
-    && /This is a Baseline simulation: its baseline \(the first simulation\) is kept/.test(asked) && /no reference yet still gets it as its reference/.test(asked)
+  check('Abort of Calibration says what its partial proposal needs', lastDialog().type === 'confirm' && /^Abort this run\?/.test(asked)
+    && !/baseline/.test(asked) && /Calibration proposes only from the random designs simulated so far/.test(asked)
     && /at least 16 must give a reward/.test(asked), asked);
   check('...and answering no sends nothing there either', log.length === 0 && (await look()).main === 'Pause');
   sim.calibration = null; await sleep(3200);

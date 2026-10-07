@@ -6,12 +6,9 @@ import { api, gateText, Json, problemText } from '../api';
 import { TaskFileWindow } from './TaskFile';
 import { usePopupWindow } from './popupWindow';
 
-/** "Save task" - a person's press only - and the task file. `task` = the open task (Save task updates it); without one,
- *  the first save of the cell read from Virtuoso (the cell the user declared as their copy is then the task's). The
- *  extras - what the task file holds beside the rows (analyses, variables, bindings, the ring oscillator's rough
- *  frequency, notes) - live here until the save. "Save as" went on 2026-09-23 with the copies the workbench made:
- *  another task is another copy the user makes in Virtuoso, read in the Virtuoso window and saved from there (the backend
- *  still answers `as_new` for the API).
+/** "Save as" prompts for a numbered new name (record 7.246). An open task is saved through the existing `as_new`
+ *  API, with its own DUT/testbench copies; a cell's first save takes the copy the user declared. Calibration's explicit
+ *  "Apply and save" still updates its current task. The extras beside the rows live here until either kind of save.
  *  Shown at the right end of the editors' tab line (`bar`), its messages and questions under their toolbar (`notes`) -
  *  user request 2026-09-22: the save sits with the rows it stores. The component stays in the circuit panel, which owns
  *  the cell and the task; two portals put it there.
@@ -30,6 +27,18 @@ const parseFrequency = (text: string) => {
 };
 const suggestTaskName = (cell: string | null | undefined) =>
   (cell ?? '').toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^[^a-z]+/, '').slice(0, 40);
+/** Keep successive copies in one numbering sequence when their original task is still in the list. */
+const numberedName = (original: string, used: Set<string>) => {
+  const match = original.match(/^(.*)_(\d+)$/);
+  const base = match && Number.isSafeInteger(Number(match[2]) + 1) && used.has(match[1]) ? match[1] : original;
+  let number = match && base !== original ? Number(match[2]) + 1 : 2;
+  for (;;) {
+    const suffix = `_${number++}`;
+    const candidate = base.slice(0, 40 - suffix.length) + suffix;
+    if (!used.has(candidate)) return candidate;
+  }
+};
+type SaveChoice = { name: string; asNew: boolean };
 /** "Apply and save" (record 7.217): another part of the page asks the open task's Save task to run, as a press on it would.
  *  The save is sent in the render after the request, so a change made in the same click is in it. The answer comes at
  *  once: whether Save task took it, or why not (another task, no Save task on the page, a save already running). */
@@ -40,11 +49,19 @@ export function requestTaskSave(taskKey: string): { task: string; taken: boolean
   return detail;
 }
 
+export const TASK_BASELINE_STARTED = 'gator-task-baseline-started';
+export const baselineText = (made: Json) => made.baseline?.state === 'started'
+  ? ' Its baseline is starting automatically: one simulation of its starting design.'
+  : made.baseline?.state === 'blocked' ? ` The task is saved, but its baseline could not start: ${made.baseline.reason}` : '';
+export const followTaskBaseline = (made: Json) => {
+  if (made.baseline?.run_dir) window.dispatchEvent(new CustomEvent(TASK_BASELINE_STARTED, { detail: made.baseline }));
+};
+
 /** What a save that ended says: this page's own, or one it followed. */
 const savedText = (made: Json) => {
   const kept = made.created ? '' : made.baseline_kept ? ' The recorded baseline still holds.'
-    : made.changed?.length ? ' The recorded baseline no longer holds (what is measured changed): run a new baseline.' : '';
-  return `${made.created ? `Saved the new task ${made.task_key}.` : `Saved ${made.task_key}, revision ${made.revision}.`}${kept}`;
+    : made.changed?.length ? ' The recorded baseline no longer holds (what is measured changed).' : '';
+  return `${made.created ? `Saved the new task ${made.task_key}.` : `Saved ${made.task_key}, revision ${made.revision}.`}${kept}${baselineText(made)}`;
 };
 /** The line a running save shows, from the backend's count (its seconds too: the page keeps no clock). The bar stands
  *  halfway through the step that is running. */
@@ -60,7 +77,7 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   profileId: string | null; library: string | null; cell: string | null; task: string | null; revision?: number | null;
   hasCopy: boolean; config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; onSaved: (made: Json, sentConfig: Json) => void;
   onSavedElsewhere: (last: Json) => void; onReload?: () => void; bar: HTMLElement | null; notes: HTMLElement | null }) {
-  const [name, setName] = useState('');
+  const [choice, setChoice] = useState<SaveChoice | null>(null);
   const [message, setMessage] = useState<Json>(null);
   const [extras, setExtras] = useState<Json>({});
   const [askFrequency, setAskFrequency] = useState(false);                    // the save asked for the ring oscillator's rough frequency
@@ -78,7 +95,7 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   const fileWindow = usePopupWindow('gator-task-file', { title: 'GATOR - Task file', features: 'popup,width=760,height=900',
     rootId: 'task-file-root', rootClass: 'task-file-window', onClose: () => setFile(null), closeOnUnmount: true });
   // Another task or cell: its extras, its messages, a typed name or frequency and an open task file (the old task's) go.
-  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); setNewer(null); setName(''); setFrequency(''); setFile(null); fileWindow.popup?.close(); }, [task, library, cell]);
+  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); setNewer(null); setChoice(null); setFrequency(''); setFile(null); fileWindow.popup?.close(); }, [task, library, cell]);
 
   // The save running in the backend, read when Save task appears and then every second while one runs (`own`: this
   // page's press is on its way; `followed`: a save the page did not send, asked about until an answer says it ended -
@@ -103,13 +120,16 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
       return;
     }
     const last = value.last;
-    setMessage(last.ok ? { level: 'ok', text: `The save that was running has ended. ${savedText(last.answer)}` }
+    setMessage(last.ok ? { level: last.answer?.baseline?.state === 'blocked' ? 'warn' : 'ok', text: `The save that was running has ended. ${savedText(last.answer)}` }
       : { level: last.problem?.code === 'needs_expected_frequency' ? 'warn' : 'error', text: `The save that was running ended without saving: ${last.problem?.message}` });
+    if (last.ok) followTaskBaseline(last.answer);
     onSavedElsewhere(last);
   }, [backend.value]);
 
-  const suggested = suggestTaskName(cell);
-  const taskName = task ?? (name || suggested);
+  const suggested = task || suggestTaskName(cell) || 'task';
+  const taskName = choice?.name ?? suggested;
+  const stillHere = () => mounted.current && latest.current.config.circuit === config.circuit
+    && latest.current.profileId === profileId && latest.current.library === library && latest.current.cell === cell && latest.current.task === task;
   const report = (e: any) => {
     setMessage({ level: 'error', text: problemText(e, gateText) });
   };
@@ -118,24 +138,44 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
     else if (e.detail?.code === 'saved_task_newer') setNewer(e.detail);
     else report(e);
   }, () => { setMessage(null); setNewer(null); });
-  const save = (more: Json = {}, replaceNewer = false) => run('save', async () => {
+  const storeTask = async (selected: SaveChoice, more: Json = {}, replaceNewer = false) => {
     const sent = { ...extras, ...more };
-    const stillHere = () => mounted.current && latest.current.config.circuit === config.circuit
-      && latest.current.profileId === profileId && latest.current.library === library && latest.current.cell === cell && latest.current.task === task;
+    setChoice(selected);
     let made: Json;
     own.current = true; backend.refresh();
     const base = task ? rowsFrom(`real:${task}`) : null;            // which saved revision the rows came from (record 7.203)
-    try { made = await api.taskSave({ profile_id: profileId, name: taskName, config, library, cell, task, as_new: false, extras: sent,
+    try { made = await api.taskSave({ profile_id: profileId, name: selected.name, config, library, cell, task, as_new: selected.asNew, extras: sent,
       base_revision: base, replace_newer: replaceNewer }); }
     catch (e) { if (stillHere()) throw e; return; }
     finally { own.current = false; backend.refresh(); }
+    followTaskBaseline(made);
     if (!stillHere()) return;
     noteRowsFrom(made.task_key, made.revision);
     setExtras((current: Json) => current === extras ? sent : current); setAskFrequency(false);
     const edited = ['parameters', 'measurements', 'targets'].some(key => latest.current.config[key] !== config[key]);
-    setMessage({ level: 'ok', text: `${savedText(made)}${edited ? ' Newer editor changes are kept and are not included in this save.' : ''}` });
+    setMessage({ level: made.baseline?.state === 'blocked' ? 'warn' : 'ok', text: `${savedText(made)}${edited ? ' Newer editor changes are kept and are not included in this save.' : ''}` });
     onSaved(made, config);
+  };
+  const save = (more: Json = {}, replaceNewer = false) => run('save', () => storeTask(choice ?? { name: suggested, asNew: false }, more, replaceNewer));
+  const saveAs = () => run('naming', async () => {
+    let listed: Json;
+    try { listed = await api.tasks(); } catch (e) { if (stillHere()) throw e; return; }
+    if (!stillHere()) return;
+    const used = new Set<string>((listed.tasks ?? []).map((t: Json) => String(t.task_key).replace(/^[^:]+:/, '')));
+    if (task) used.add(task);
+    let proposed = numberedName(suggested, used);
+    let problem = '';
+    for (;;) {
+      const entered = window.prompt(`${problem}Save as: new task name\nUse 2–40 lowercase letters, digits or underscores, starting with a letter.\n`
+        + (task ? 'Creates a new task with its own DUT and testbench copies, then runs one baseline simulation automatically.' : 'Saves the cell you declared as a new task, then runs one baseline simulation automatically.'), proposed);
+      if (entered === null || !stillHere()) return;
+      proposed = entered.trim();
+      if (!NAME.test(proposed)) { problem = 'That name is invalid.\n\n'; continue; }
+      if (used.has(proposed)) { problem = 'That name is already in use. Choose a new name.\n\n'; continue; }
+      return saveNew({ name: proposed, asNew: !!task });
+    }
   });
+  const saveNew = (selected: SaveChoice) => run('save', () => storeTask(selected));
   // "Apply and save": the request names the task; this Save task answers at once, and saves with the rows of the next render.
   useEffect(() => {
     const request = (e: Event) => {
@@ -147,7 +187,7 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
     window.addEventListener(SAVE_TASK_REQUEST, request);
     return () => window.removeEventListener(SAVE_TASK_REQUEST, request);
   }, []);
-  useEffect(() => { if (asked) save(); }, [asked]);
+  useEffect(() => { if (asked) run('save', () => storeTask({ name: suggested, asNew: false })); }, [asked]);
   const openFile = async () => {
     setMessage(null);
     // Already open: bring it forward and keep what is typed in it (a second press used to replace the draft silently).
@@ -167,7 +207,7 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
     setExtras((x: Json) => ({ ...x, ...more }));
   };
   const frequencyValue = parseFrequency(frequency);
-  const canSave = !!profileId && (task ? true : hasCopy) && NAME.test(taskName) && !busy && !running;
+  const canSave = !!profileId && (task ? true : hasCopy) && !busy && !running;
   able.current = { can: canSave && !askFrequency && !!task, why: running ? `the save of ${running.task_key} is still running`
     : busy ? 'Save task is busy' : !profileId ? 'no connection is chosen' : askFrequency ? 'Save task waits for the rough frequency' : '' };
   const progress = running ? progressOf(running) : busy === 'save' ? { value: 0, max: 1, text: `Saving real:${taskName} - starting` } : null;
@@ -176,15 +216,13 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   return (<>
     {bar && createPortal(
       <div className="task-save">
-        {!task && <label title="Lowercase letters, digits and _. It becomes the task real:<name>.">New task name
-          <input value={name} placeholder={suggested} onChange={e => setName(e.target.value)} /></label>}
         {task && <span className="hint">Task <code>real:{task}</code>{revision ? `, revision ${revision}` : ''}</span>}
-        <button className="primary" disabled={!canSave || askFrequency} onClick={() => save()}
-          title={'Save task: ' + waits + (task ? 'Stores the rows of Parameters, Probes and Specs as this task (its next revision). ' : hasCopy
+        <button className="primary" disabled={!canSave || askFrequency} onClick={saveAs}
+          title={'Save as: ' + waits + 'Asks for a new task name, with the next available numbered name suggested. ' + (task ? 'Stores the rows of Parameters, Probes and Specs as a new task with its own DUT and testbench copies. ' : hasCopy
             ? 'Stores the rows of Parameters, Probes and Specs as a new task of this cell. '
             : 'Read the cell in the Virtuoso window first and confirm that it is a copy you made: the task is saved into that cell. ')
-            + 'It writes the cell in Virtuoso to match and reads it back; no simulation. Only you can press it.'}>
-          <Icon name="task" label={busy === 'save' || running ? 'Saving...' : 'Save task'} /></button>
+            + 'It writes the cell in Virtuoso to match and reads it back, then automatically runs one baseline simulation. Only you can press it.'}>
+          <Icon name="task" label={busy === 'save' || running ? 'Saving...' : 'Save as'} /></button>
         <button disabled={!!busy} onClick={openFile} title="Task file: The task as one readable file, in a window of its own: open it, change it, apply it to the editors."><Icon name="task-file" label="Task file" /></button>
       </div>, bar)}
     {notes && said && createPortal(
@@ -193,7 +231,7 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
         {askFrequency && <div className="row">
           <label title="Rough is enough: it only sizes the transient (60 periods, measured after 20).">Rough oscillation frequency
             <input value={frequency} placeholder="e.g. 1.2G" onChange={e => setFrequency(e.target.value)} /></label>
-          <button className="primary" disabled={!(frequencyValue > 0) || !canSave} onClick={() => save({ expected_frequency_hz: frequencyValue })} title="Save task: With this frequency."><Icon name="task" label="Save task" /></button></div>}
+          <button className="primary" disabled={!(frequencyValue > 0) || !canSave} onClick={() => save({ expected_frequency_hz: frequencyValue })} title="Save as: Keeps the chosen name and saves with this frequency."><Icon name="task" label="Save as" /></button></div>}
         {newer && <div className="task-save-newer">
           <p className="warn">{newer.message}</p>
           <div className="row">

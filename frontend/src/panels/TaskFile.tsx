@@ -24,7 +24,7 @@ export function TaskFileWindow({ root, text, title, onApply, onClose }: {
     setProblems(checked.problems);
     if (checked.ok) {
       onApply(checked.rows, checked.extras);
-      setMessage({ level: 'ok', text: 'Applied: the editors now hold these rows. Press "Save task" to store them; Undo takes them back.' });
+      setMessage({ level: 'ok', text: 'Applied: the editors now hold these rows. Press "Save as" to store them as a new task; Undo takes them back.' });
     }
   });
 
@@ -34,7 +34,7 @@ export function TaskFileWindow({ root, text, title, onApply, onClose }: {
     <div className="task-file">
       <h3>{title}</h3>
       <p className="hint">Change it here or in the editors. <b>Apply to editors</b> checks it and fills the editors; nothing is saved until you press
-        <b> Save task</b>. The <code>_help</code> part says what each part is.</p>
+        <b> Save as</b>. The <code>_help</code> part says what each part is.</p>
       <textarea spellCheck={false} value={draft} onChange={e => { setDraft(e.target.value); setProblems(null); setMessage(null); }} />
       <div className="row">
         <button className="primary" disabled={!!busy} onClick={apply}>{busy ? 'Checking...' : 'Apply to editors'}</button>

@@ -69,6 +69,7 @@ button { border: 1px solid var(--line); background: var(--button); padding: 3px 
 button:hover:not(:disabled) { border-color: var(--accent); } button:disabled { opacity: .45; cursor: not-allowed; }
 button.primary { background: var(--accent-fill); color: var(--on-accent); border-color: var(--accent-fill); } button.active { background: var(--selected); border-color: var(--accent); }
 .row { display: flex; gap: 6px; align-items: flex-end; flex-wrap: wrap; margin: 4px 0; } .spacer { flex: 1; }
+.row.circuit-labels { align-items: flex-start; } .circuit-class { flex: 1; min-width: 0; }
 .tabs { display: flex; gap: 2px; align-items: center; border-bottom: 1px solid var(--line); padding: 4px 6px 0; } .tabs button { border-bottom: none; }
 .tabs > button { font-family: var(--f-label); letter-spacing: .02em; }
 .toolbar { display: flex; gap: 4px; align-items: center; padding: 6px 0; flex-wrap: wrap; }
@@ -494,4 +495,17 @@ button.training-chip-remove { border: none; background: none; padding: 0 1px; li
 .task-list-blocked { flex-basis: 100%; }
 #tasks-root { height: 100vh; background: var(--panel); } .task-window .task-filter { width: 330px; }
 table.task-table td code { font-size: 12px; } table.task-table td .hint.warn { color: var(--warn); }
+.task-browser { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 14px; align-items: start; }
+.task-folder-content { min-width: 0; } .task-folder-content .scroll { overflow-x: auto; }
+.task-folders { display: flex; flex-direction: column; gap: 4px; border-right: 1px solid var(--line); padding-right: 12px; }
+.task-folder-heading { justify-content: space-between; margin-bottom: 6px; }
+.task-folder { display: flex; justify-content: space-between; gap: 8px; text-align: left; width: 100%; }
+.task-folder > span:first-child { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.task-folder > .hint { flex-shrink: 0; }
+.task-folder.active { background: var(--selected); border-color: var(--accent); }
+.task-folder-actions { flex-wrap: wrap; margin-top: 8px; }
+.task-move-bar { min-height: 30px; margin-bottom: 6px; } .task-move-bar select { width: 180px; margin-left: auto; }
+table.task-table .task-select { width: 28px; text-align: center; }
+table.task-table .task-select input { margin: 0; }
+@media (max-width: 760px) { .task-browser { grid-template-columns: 145px minmax(0, 1fr); gap: 8px; } .task-folder-heading { flex-wrap: wrap; } }
 .task-details h4 { margin: 10px 0 3px; } table.task-rows-table { width: auto; } table.task-rows-table td, table.task-rows-table th { padding: 2px 8px; }

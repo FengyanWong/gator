@@ -8,7 +8,8 @@ import { BLOCKED, usePopupWindow } from './popupWindow';
 import { PdkWindowButton, pdksChanged } from './Pdk';
 import { WorkingCopy } from './WorkingCopy';
 import { NgspiceButton } from './Ngspice';
-import { TaskSave } from './TaskSave';
+import { TaskBaseline } from './TaskBaseline';
+import { TaskSave, baselineText } from './TaskSave';
 import { TaskListButton, taskMark } from './TaskList';
 import { CheckSteps } from './Consistency';
 import { Typed } from './Typed';
@@ -30,6 +31,27 @@ const SOURCES = ['registered_task', 'virtuoso'];
 /** A dropdown must be able to show the configured value even when the list does not (yet) contain it. */
 const withCurrent = (names: string[], current?: string | null) => (current && !names.includes(current) ? [current, ...names] : names);
 const sameJson = (a: Json, b: Json) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+
+const CIRCUIT_CLASSES = ['opamp', 'ldo', 'vco', 'bandgap', 'comparator', 'oscillator', 'unspecified'];
+/** Use the page's themed dropdown; its Custom option keeps arbitrary research labels editable. */
+function CircuitClass({ value, onChange }: { value?: string | null; onChange: (value: string) => void }) {
+  const current = value || 'unspecified';
+  const [editing, setEditing] = useState(false);
+  const custom = editing || !CIRCUIT_CLASSES.includes(current);
+  return <div className="circuit-class">
+    <label title="What kind of circuit this is: opamp, ldo, vco, ... A label for your records. Results tables are grouped by it, and the validator uses it to check a claim such as 'tested on an unseen circuit class'.">Circuit class
+    <select value={custom ? '' : current} onChange={e => {
+      setEditing(e.target.value === '');
+      if (e.target.value) onChange(e.target.value);
+    }}>
+      {CIRCUIT_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+      <option value="">Custom...</option>
+    </select></label>
+    {custom && <label>Custom circuit class<Typed spellCheck={false} value={current}
+      format={v => v ?? ''} parse={text => ({ value: text || 'unspecified' })}
+      onChange={v => { setEditing(true); onChange(v); }} /></label>}
+  </div>;
+}
 
 /** The three editors, by their configuration keys: Parameters, Specs, Probes. */
 const ROW_SECTIONS = ['parameters', 'targets', 'measurements'];
@@ -319,7 +341,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
         || (!reload && !!brought && sameRows(now, brought));
       if (!untouched && !window.confirm(`${reload ? 'Reload saved values' : `Switch to ${taskId}`}?\n\n`
         + 'This replaces your unsaved Parameters, Probes and Specs edits.\n'
-        + 'OK = discard those edits and load the saved rows.\nCancel = keep the current task and edits. You can save them with Save task first.')) return;
+        + 'OK = discard those edits and load the saved rows.\nCancel = keep the current task and edits. You can save them with Save as first.')) return;
       const nextCircuit = { ...starter.circuit, ...labels, source: 'registered_task', task_id: taskId };
       setConfig(c => c.circuit !== before.circuit ? c : ({ ...c,
         circuit: nextCircuit,
@@ -347,7 +369,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
         Choose it under <b>Task</b> in the Project column.</p>
       <details className="more"><summary>What this means</summary>
         <p>The workbench can already optimize this cell - through that task, in the Project column.{builtIn ? ' A verified built-in circuit gets no second task.'
-          : ' Open it to change it (Save task). Another task needs another copy of the cell: make one in Virtuoso and read it here. To start over from this cell, open the task and press Delete task.'}</p></details>
+          : ' Open it and use Save as to store edited rows as a new task with its own copy. To start over from this cell, open the task and press Delete task.'}</p></details>
     </div>) : null;
   // What was read straight from Virtuoso. It is a line of the Hierarchy block; while no circuit is loaded (browse only)
   // there is no such block and it stands alone at the end of the window.
@@ -373,7 +395,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           2026-10-06, record 7.227): it replaced the drop-down list of tasks, as "Runs..." replaced the list of runs. The
           text says what the list's placeholder used to: no task, a Virtuoso cell, a removed task. A choice in the
           window is the old list's choice: chooseTask. */}
-      <div className="row task-row" title="The circuit the editors and a run are about. A cell read from Virtuoso becomes one of these with Save task.">
+      <div className="row task-row" title="The circuit the editors and a run are about. A cell read from Virtuoso becomes one of these with Save as.">
         <span className="task-caption">Task</span>
         <TaskListButton tasks={tasks} runs={runs} ngspiceOffered={showNgspice} loading={taskLoading} onChoose={key => chooseTask(key)}
           onRefresh={() => api.tasks().then(t => { setTasks(t.tasks); return t.tasks; })} onRefreshRuns={refreshRuns}
@@ -424,12 +446,9 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           <p>Nothing was erased. They are kept on the backend machine in <code>{deletedHere.kept_copy}</code>.</p></details>
       </>)}
       {/* The labels of the circuit, saved with every run: one folded line whose text names them. */}
-      <details className="more hint labels"><summary>Labels: class <b>{ref.circuit_class ?? 'unspecified'}</b>, PDK <b>{ref.pdk_id ?? 'unspecified'}</b>{ref.dut_hierarchy ? <>, DUT <b>{ref.dut_hierarchy}</b></> : null}</summary>
-        <label title="A DUT may be identified inside one testbench; separate DUT/testbench files are not required.">DUT hierarchy / subcircuit<input value={ref.dut_hierarchy ?? ''} onChange={e => patch({ dut_hierarchy: e.target.value || null })} /></label>
-        <div className="row">
-          <label title="What kind of circuit this is: opamp, ldo, vco, ... A label for your records. Results tables are grouped by it, and the validator uses it to check a claim such as 'tested on an unseen circuit class'.">Circuit class
-            <Typed list="circuit-classes" value={ref.circuit_class} format={v => v ?? ''} parse={t => ({ value: t || 'unspecified' })} onChange={v => patch({ circuit_class: v })} />
-            <datalist id="circuit-classes">{['opamp', 'ldo', 'vco', 'bandgap', 'comparator', 'oscillator', 'unspecified'].map(c => <option key={c} value={c} />)}</datalist></label>
+      <details className="more hint labels"><summary>Labels: class <b>{ref.circuit_class ?? 'unspecified'}</b>, PDK <b>{ref.pdk_id ?? 'unspecified'}</b></summary>
+        <div className="row circuit-labels">
+          <CircuitClass value={ref.circuit_class} onChange={v => patch({ circuit_class: v })} />
           <label title="Which process design kit (technology) the circuit is built in, e.g. gpdk045. Written into the run records so a result can be traced to its technology. PDK files are never copied.">PDK id
             <Typed value={ref.pdk_id} format={v => v ?? ''} parse={t => ({ value: t || 'unspecified' })} onChange={v => patch({ pdk_id: v })} /></label>
         </div>
@@ -455,19 +474,9 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
                 (runs made before keep their own copy).</p></details>
           </div>
         </>)}
-        {/* Until the task has its reference. A finished Baseline simulation records it by itself (status record 7.78);
-            one whose measurement was refused is named with the reason, instead of the same standing advice. The standing advice is
-            one line since record 7.188 (design advice: shorter notes), its explanation in the tooltip. */}
-        {circuit.generated_profile && !circuit.baseline_recorded && (circuit.baseline_attempt
-          ? <p className="warn">The Baseline simulation <code>{String(circuit.baseline_attempt.run_id ?? '').slice(0, 12)}</code>
-              {circuit.baseline_attempt.ended_utc ? ` (${String(circuit.baseline_attempt.ended_utc).slice(0, 16).replace('T', ' ')} UTC)` : ''} gave no usable
-              baseline: {circuit.baseline_attempt.reason} Run <b>Baseline simulation</b> again once that is put right; a finished one becomes
-              the task's reference by itself.</p>
-          : <p className="warn" title={'Baseline simulation is one real Spectre run: the starting design, then 64 random designs for the calibration; '
-              + "it asks for your budget first. Its first simulation becomes the task's reference by itself, before any optimization run."}>No real baseline
-              yet: run <b>Baseline simulation</b> first.</p>)}
+        <TaskBaseline key={circuit.task_key} circuit={circuit} config={config} refresh={() => load(ref)} />
         {saved && saved.task_key === ref.task_id && <p className="ok">Saved the new task <code>{saved.task_key}</code>. It runs in
-          <code> {saved.copy?.library}/{saved.copy?.testbench}</code>{saved.copy?.library === saved.original?.library ? ' - the cell you declared as your copy' : ' - its working copy'}; nothing has been simulated yet.</p>}
+          <code> {saved.copy?.library}/{saved.copy?.testbench}</code>{saved.copy?.library === saved.original?.library && saved.copy?.cell === saved.original?.cell ? ' - the cell you declared as your copy' : ' - its working copy'}.{baselineText(saved)}</p>}
         {/* The circuit picture (record 7.158) above the long note, so it is in view while Parameters rows are pointed at. */}
         <CircuitPicture circuit={circuit} />
         {generatedName && (
@@ -477,7 +486,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
               config={config} setConfig={setConfig} onSaved={taskSaved} onSavedElsewhere={savedElsewhere}
               onReload={() => chooseTask(ref.task_id, undefined, true)} bar={taskSlot} notes={taskNotes} />
             {/* One line; the explanation is its tooltip (record 7.177, user: "reduce the texts this part"). */}
-            <p title={'Start, Baseline simulation and Resume first check that the editors, this saved task and its cell in Virtuoso agree. '
+            <p title={'Start, Calibration and Resume first check that the editors, this saved task and its cell in Virtuoso agree. '
               + 'The check simulates nothing; a difference starts nothing and says what to do.'}><b>Before every run:</b> the editors, the task and its cell must agree.</p>
             <details className="more"><summary>What the check compares</summary>
               <ul className="steps-list">
@@ -582,7 +591,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
           <details className="more"><summary>What you can do with it now</summary>
             <p>The workbench holds the export of this cell, so you can look at it and fill the three editors. Start stays disabled.</p>
             <p>Next: fill Parameters, Probes and Specs - <b>Read setup</b> below takes the outputs and specs of the cell's Maestro test - then press
-              <b> Save task</b>: it writes the rows into this cell's Maestro view (the copy you declared) and reads it back. Claude Code or Codex
+              <b> Save as</b>: it writes the rows into this cell's Maestro view (the copy you declared) and reads it back. Claude Code or Codex
               (Agent tab) can help with any of it, from what you describe.</p>
           </details>
           {(circuit.circuit?.testbench_cell ?? null) !== (ref.testbench_cell ?? null) && (
@@ -615,12 +624,11 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
               <ul className="steps-list">{Object.entries(noteHere.found.not_fitting).map(([type, why]: [string, any]) => <li key={type}><b>{type}</b>: {why}</li>)}</ul></details>}
           </>)}
           {/* The save itself sits at the right end of the editors' tab line (TaskSave portals, user request 2026-09-22). */}
-          <p><b>Then save it as a task:</b> <b>Save task</b> is above the editors in the workbench, next to their tabs.</p>
-          <details className="more hint"><summary>What Save task does</summary>
+          <p><b>Then save it as a task:</b> <b>Save as</b> is above the editors in the workbench, next to their tabs.</p>
+          <details className="more hint"><summary>What Save as does</summary>
             <p>It checks the rows, makes this cell's Maestro test say what the task says (its outputs, specs and analyses, read back afterwards),
-              reads the cell into the workbench again and stores the task file with the task's files next to it. No simulation. Saving again
-              makes the next revision of the same task; the recorded baseline is kept only if what is measured did not change. Another task
-              needs another copy of the cell: make one in Virtuoso and read it here.</p></details>
+              reads the cell into the workbench again and stores the task file with the task's files next to it, then runs one baseline simulation automatically. Save as
+              asks for a new name with numbering. On a saved task it creates another task with its own DUT and testbench copies.</p></details>
         </div>)}
       {virtuosoOn && circuit?.loaded && circuitInfo}
       {!(virtuosoOn && circuit?.loaded) && nativeSchematic}

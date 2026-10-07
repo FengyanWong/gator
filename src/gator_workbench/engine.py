@@ -173,6 +173,7 @@ class RunEngine:
         self.mode = self.manifest['mode']                    # the run's ORIGINAL mode
         self.entry = self.manifest['segments'][-1]['entry']  # 'start' | 'resume'
         self.frozen = self.mode == 'frozen'
+        self.calibration_only = bool((self.manifest.get('calibration') or {}).get('random_only'))
         self.provenance = 'mock' if task.mock else 'real'
         self.use_processes = (not task.mock) if use_processes is None else use_processes
         self._lane_factory, self._clock = lane_factory, clock
@@ -288,7 +289,7 @@ class RunEngine:
         self.previous_best_waveform = None
         # A baseline run asked to calibrate (record 7.197): until its baseline evaluation is committed and valid, no other
         # lane starts and no random design is drawn (`_dispatch`, `_commit`). Any other run never waits.
-        self._baseline_checked = not self.manifest.get('calibration') or self.entry == 'resume'
+        self._baseline_checked = self.calibration_only or not self.manifest.get('calibration') or self.entry == 'resume'
         self.encoder = None
         if self.archive:
             self.encoder = StateEncoder(self.layout.data / 'states' / 'static', task_id=self.task_id,
@@ -610,9 +611,9 @@ class RunEngine:
         if not self._baseline_checked and self.counters['baseline_done']:      # the baseline is in flight: see `_commit`
             return
         state = self.lane_state[lane.lane_id]
-        if state['needs_reset'] and self._reuse_reset(lane, state):
+        if not self.calibration_only and state['needs_reset'] and self._reuse_reset(lane, state):
             return self._dispatch_reused_reset(lane, state)
-        allowance = 1 if state['needs_reset'] else lane.info.get('step_launches', 1)
+        allowance = 1 if state['needs_reset'] and not self.calibration_only else lane.info.get('step_launches', 1)
         evaluation_id = self.ledger.reserve(launches=allowance)
         if evaluation_id is None:
             state['finished'] = True
@@ -623,7 +624,12 @@ class RunEngine:
             return
         proposed_at = utcnow()
         policy_version = None
-        if state['needs_reset']:
+        if self.calibration_only:
+            op, source, phase = 'calibration', 'random_warmup', 'warmup'
+            proposal = {g: self.rng.uniform(-1, 1) for g in lane.info['group_ids']}
+            self.counters['episodes'] += 1
+            state['episode_id'] = f'{lane.lane_id}-{self.counters["episodes"]:06d}'
+        elif state['needs_reset']:
             op, proposal, source = 'reset', None, 'reset'
             phase = 'episode_reset' if self.counters['baseline_done'] else 'baseline'
             self.counters['baseline_done'] = True
@@ -824,7 +830,7 @@ class RunEngine:
         # ---- learner receipt: replay admission and the updates it triggers
         transition_rows, state_rows, update_rows, admitted = [], [], [], False
         eligible = bool(info.get('replay_eligible')) if step else False
-        if op_is_step and step is not None and observation is not None and reward is not None:
+        if not self.calibration_only and op_is_step and step is not None and observation is not None and reward is not None:
             transition = None
             if eligible:
                 from analog_optimizer.training.replay import Transition

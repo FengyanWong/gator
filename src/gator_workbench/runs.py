@@ -278,7 +278,7 @@ def saves_rl_model(config: WorkbenchConfig) -> bool:
 
 
 def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False, confirm_transfer=False,
-                monitor=None, acknowledge_unknown=False):
+                monitor=None, acknowledge_unknown=False, remember_concurrency=True):
     """Returns (RunLayout, manifest). Raises RunRejected with the validation/compatibility report."""
     if config.run.rehearsal is not None:
         roots.resolve(config.run.rehearsal.pool_manifest)
@@ -430,7 +430,8 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
         remembered = load_settings().get('last_run', {})
         if saves_rl_model(config):
             remembered = {**remembered, model_label(config): str(layout.run_dir)}
-        save_settings(output_root=config.output.output_root, concurrency=config.run.concurrency, last_run=remembered)
+        save_settings(output_root=config.output.output_root, last_run=remembered,
+                      **(dict(concurrency=config.run.concurrency) if remember_concurrency else {}))
     return layout, manifest
 
 

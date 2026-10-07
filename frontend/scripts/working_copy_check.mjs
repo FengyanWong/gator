@@ -200,7 +200,7 @@ await runChecks(browser, async () => {
   mode = 'no-view';
   await press('Read setup'); await settle();
   check('a cell without a Maestro view says how it gets one: Save task', (await blockText()).includes('The cell has no Maestro setup yet')
-    && (await blockText()).includes('Save task') && !(await blockText()).includes('Ask the agent') && JSON.stringify(await stored()) === before, await blockText());
+    && (await blockText()).includes('Save as') && !(await blockText()).includes('Ask the agent') && JSON.stringify(await stored()) === before, await blockText());
 
   // ---- a blocked link and an older backend read plainly ---------------------------------------------------------------------
   mode = 'blocked';

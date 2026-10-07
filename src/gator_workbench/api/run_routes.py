@@ -22,6 +22,49 @@ class ModelBody(ModelStructureBody):
     config: dict | None = None
 
 
+
+def start_run(context, config, body, *, baseline_only=False):
+    allow_real = bool(body.authorize_real_simulation)
+    designs, calibrating = getattr(body, 'calibration_designs', 0), None
+    random_only = getattr(body, 'calibration_only', False)
+    if random_only and (baseline_only or not designs):
+        fail(400, 'Calibration needs random designs and cannot also request a baseline.')
+    if designs and not (baseline_only or random_only):
+        fail(400, 'Calibration designs belong to the Baseline simulation (baseline_only), or Calibration (calibration_only), not to an optimization run.')
+    if baseline_only or random_only:
+        config = config.model_copy(deep=True)
+        config.run.mode, config.run.max_evaluations = 'scratch', 1         # exactly ONE costed evaluation
+        config.output.save_checkpoints = False
+        config.project.task_name = f'{config.project.task_name}.{"calibration" if random_only else "baseline"}'
+        config.run.rehearsal = None
+        if designs:                                # ... and then the random designs of the calibration (record 7.197)
+            calibrating = calibration.prepare(config, designs, random_only=random_only)
+    try:
+        layout, manifest = runs.prepare_run(config, context.roots, allow_real=allow_real,
+                                            confirm_transfer=getattr(body, 'confirm_transfer', False), monitor=context.monitor,
+                                            acknowledge_unknown=body.acknowledge_unknown_connection,
+                                            remember_concurrency=not getattr(body, 'automatic_baseline', False))
+    except runs.RunRejected as exc:
+        fail(409, exc, code=exc.code, report=exc.report)
+    except PathNotAllowed as exc:
+        fail(403, exc)
+    if baseline_only or random_only:
+        manifest['run_kind'] = 'calibration' if random_only else 'baseline_preflight'
+        manifest['notes'].append('Calibration: random designs only; no starting-design evaluation.' if random_only else
+                                 'Baseline simulation: a costed preflight evaluation, not a free check.')
+        if calibrating:
+            manifest['calibration'] = calibrating
+            manifest['notes'].append((f'Calibration: {calibrating["designs"]} random designs over the ' if random_only else
+                                      f'With calibration: after the baseline, {calibrating["designs"]} random designs over the ') +
+                                     'Parameters ranges (each of them a costed evaluation; nothing is learned from them).')
+        from ..storage.atomic import write_json
+        write_json(layout.manifest, manifest)
+    pid = runs.launch_worker(layout, allow_real=allow_real and not manifest['mock'])
+    return dict(run_dir=str(layout.run_dir), run_id=manifest['run_id'], mock=manifest['mock'], worker_pid=pid,
+                paths=layout.subpaths(), connection_gate=manifest.get('connection_gate'),
+                mock_notice=manifest['mock_notice'])
+
+
 def register(app: FastAPI, context: ApiContext):
     @app.get('/api/runs')
     def get_runs(output_root: str | None = None, include_mock: bool = True):
@@ -150,40 +193,6 @@ def register(app: FastAPI, context: ApiContext):
         except ValueError as exc:                  # GraphViewUnavailable included: said in plain words
             fail(409, exc)
 
-    def _start(config, body, *, baseline_only=False):
-        allow_real = bool(body.authorize_real_simulation)
-        designs, calibrating = getattr(body, 'calibration_designs', 0), None
-        if designs and not baseline_only:
-            fail(400, 'Calibration designs belong to the Baseline simulation (baseline_only), not to an optimization run.')
-        if baseline_only:
-            config = config.model_copy(deep=True)
-            config.run.mode, config.run.max_evaluations = 'scratch', 1         # exactly ONE costed evaluation
-            config.output.save_checkpoints = False
-            config.project.task_name = f'{config.project.task_name}.baseline'
-            if designs:                                # ... and then the random designs of the calibration (record 7.197)
-                calibrating = calibration.prepare(config, designs)
-        try:
-            layout, manifest = runs.prepare_run(config, context.roots, allow_real=allow_real,
-                                                confirm_transfer=getattr(body, 'confirm_transfer', False), monitor=context.monitor,
-                                                acknowledge_unknown=body.acknowledge_unknown_connection)
-        except runs.RunRejected as exc:
-            fail(409, exc, code=exc.code, report=exc.report)
-        except PathNotAllowed as exc:
-            fail(403, exc)
-        if baseline_only:
-            manifest['run_kind'] = 'baseline_preflight'
-            manifest['notes'].append('Baseline simulation: a costed preflight evaluation, not a free check.')
-            if calibrating:
-                manifest['calibration'] = calibrating
-                manifest['notes'].append(f'With calibration: after the baseline, {calibrating["designs"]} random designs over the '
-                                         'Parameters ranges (each of them a costed evaluation; nothing is learned from them).')
-            from ..storage.atomic import write_json
-            write_json(layout.manifest, manifest)
-        pid = runs.launch_worker(layout, allow_real=allow_real and not manifest['mock'])
-        return dict(run_dir=str(layout.run_dir), run_id=manifest['run_id'], mock=manifest['mock'], worker_pid=pid,
-                    paths=layout.subpaths(), connection_gate=manifest.get('connection_gate'),
-                    mock_notice=manifest['mock_notice'])
-
     @app.post('/api/runs/start')
     def start(body: StartBody):
         removed = schema.removed_search_method(body.config)
@@ -193,7 +202,7 @@ def register(app: FastAPI, context: ApiContext):
             fail(409, f'Not started: this configuration asks for the search method "{schema.REMOVED_SEARCH_METHODS[removed]}", '
                       'which was removed on 2026-10-06 - SAC is the only search method now. The page is older than the '
                       'server: reload it, check Run configuration, and press Start again.', code='search_method_removed')
-        return _start(context.parse_config(body.config), body, baseline_only=body.baseline_only)
+        return start_run(context, context.parse_config(body.config), body, baseline_only=body.baseline_only)
 
     @app.post('/api/runs/continue')
     def continue_run(body: ContinueBody):
@@ -202,7 +211,7 @@ def register(app: FastAPI, context: ApiContext):
         config.run.mode, config.run.model_source.run_dir = 'resume', str(run_dir)
         if body.max_evaluations:
             config.run.max_evaluations = body.max_evaluations
-        return _start(config, body)
+        return start_run(context, config, body)
 
     @app.post('/api/runs/command')
     def command(body: CommandBody):

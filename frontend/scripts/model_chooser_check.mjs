@@ -321,7 +321,9 @@ await runChecks(browser, async () => {
   else {
     const expected = (await real.json()).models;
     canned = false; await setSelect(labelled('Mode'), 'frozen');
-    const ok = await until(`${RIGHT}.querySelectorAll('button.model-card').length === ${expected.length} && !/Reading the saved models/.test(${RIGHT}.innerText)`, 80);
+    // This scans the growing on-disk model library, unlike the fixtures above. Allow the page's own 30-second read
+    // deadline: eight seconds can expire while a valid request is still reading save points on the shared drive.
+    const ok = await until(`${RIGHT}.querySelectorAll('button.model-card').length === ${expected.length} && !/Reading the saved models/.test(${RIGHT}.innerText)`, 300);
     check(`against the real route: ${expected.length} saved model(s) on this backend, ${expected.length} card(s)`, ok, `${(await cards()).length} card(s)`);
     check('... each card carries its run folder', (await evaluate(`[...${RIGHT}.querySelectorAll('button.model-card')].map(b => b.title)`)).join() === expected.map(m => m.run_dir).join());
     await shot('models-4-real.png');

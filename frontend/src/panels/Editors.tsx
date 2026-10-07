@@ -685,7 +685,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // What a marked row says on its tick-box cell: new, or which fields changed and what the task holds - also of the columns
   // not in view (a Probe's unit followed by a Spec, a column behind More columns).
   const rowNote = (row: Json): string | null => {
-    if (isNew(row)) return 'New row, not in the saved task: Save task stores it.';
+    if (isNew(row)) return 'New row, not in the saved task: Save as stores it in a new task.';
     const change = changeOf(row);
     if (!change) return null;
     const cells = [...new Set(Object.keys(change.fields).map(cellOf))];
@@ -700,7 +700,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     const parts = [changed ? `${changed} changed` : '', added ? `${added} new` : '',
       removed.length ? `${removed.length} saved row${removed.length === 1 ? '' : 's'} deleted here (${removed.slice(0, 3).join(', ')}${removed.length > 3 ? ', ...' : ''})` : '',
       u.reordered ? 'rows in another order' : ''].filter(Boolean);
-    return parts.length ? `Not saved in the task: ${parts.join(', ')}. Save task stores the rows as they are; Reload saved values brings back the saved ones.` : null;
+    return parts.length ? `Not saved in the task: ${parts.join(', ')}. Save as stores the rows in a new task; Reload saved values brings back the saved ones.` : null;
   };
 
   // Back to the cell after Enter or Esc, as a spreadsheet does.

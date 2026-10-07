@@ -87,7 +87,7 @@ export function WorkingCopy({ profileId, library, cell, record, config, setConfi
   if (!record) return (
     <div className="working-copy">
       <p className="warn">Not yet the cell the task flow works in: press <b>Read the cell again</b> - it asks whether this cell is a copy you made,
-        and "OK" makes it that cell. Save task writes into it.</p>
+        and "OK" makes it that cell. Save as writes into it on the first save.</p>
     </div>);
 
   const declared = !!record.declared;
@@ -114,11 +114,11 @@ export function WorkingCopy({ profileId, library, cell, record, config, setConfi
           {busy === 'read' ? 'Reading...' : 'Read setup'}</button></div>}
       <details className="more hint"><summary>How the editors and the cell's Maestro relate</summary>
         <p>Each Maestro output of the cell is a Probes row (source <i>ade_output</i>, the expression in <i>signal</i>); a Maestro spec is the
-          Specs row on that one probe. Units, ranges, weights and the other optimizer settings exist only in the workbench. <b>Save task</b>
+          Specs row on that one probe. Units, ranges, weights and the other optimizer settings exist only in the workbench. <b>Save as</b>
           writes the cell and reads it back. <b>Read setup</b> goes the other way:
           after you changed outputs or specs in Maestro yourself, it takes them into Probes and Specs. Analyses and variables changed in
-          Maestro are not taken over (Save task writes the task's own again): change those in the <b>Task file</b>.</p></details>
-      {setup && !setup.exists && <p className="hint">The cell has no Maestro setup yet. Fill Probes and Specs and press <b>Save task</b>: it writes
+          Maestro are not taken over (saving writes the task's own): change those in the <b>Task file</b>.</p></details>
+      {setup && !setup.exists && <p className="hint">The cell has no Maestro setup yet. Fill Probes and Specs and press <b>Save as</b>: it writes
         them into the cell.</p>}
       {setup && setup.exists && !setup.test && <p className="warn">The cell's Maestro view has no test <code>GATOR</code>{setup.tests?.length ? <> (it has: {setup.tests.join(', ')})</> : ''}.</p>}
       {summary && <p className="hint">Test <code>GATOR</code>: {summary}.</p>}
@@ -127,7 +127,7 @@ export function WorkingCopy({ profileId, library, cell, record, config, setConfi
       {fresh && setup.changed && <p className="ok">Probes and Specs now show the cell's outputs and specs; your units, notes, analyses, citations and optimizer settings stayed. Undo
         brings the previous rows back.</p>}
       {fresh && setup.test && setup.rows?.measurements?.length > 0 && !setup.changed && diffs && (diffs.length === 0 ? <p className="ok">The editors already say what the cell says.</p>
-        : <p className="warn">It differs from the editors in {diffs.length} place{diffs.length === 1 ? '' : 's'} that Probes and Specs do not hold: <b>Save task</b> makes
+        : <p className="warn">It differs from the editors in {diffs.length} place{diffs.length === 1 ? '' : 's'} that Probes and Specs do not hold: <b>Save as</b> makes
           the cell say what the task says.</p>)}
       {diffs && diffs.length > 0 && <details className="more hint"><summary>What differed ({diffs.length})</summary>
         <ul className="steps-list">{diffs.map(d => <li key={d}>{d}</li>)}</ul></details>}

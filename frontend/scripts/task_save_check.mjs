@@ -1,17 +1,7 @@
-// Browser check of saved tasks (TaskSave.tsx, TaskFile.tsx): an open task's "Save task" (next revision) and the task
-// file in a window of its own. Same approach as working_copy_check.mjs: a throwaway
-// headless Edge over the DevTools protocol against a workbench page (default http://127.0.0.1:8765/; GATOR_WORKBENCH_URL for
-// a preview of a temporary build). EVERY /api/virtuoso/* request, the circuit load and the task list of the open task are
-// answered with canned FIXTURES, so Virtuoso is never contacted and nothing is saved anywhere; any other writing request of
-// the page is refused (reads pass). What it pins (user request
-// 2026-09-22, "go on part 2"):
-//   - an open task names itself and its revision; two short buttons: Save task, Task file - at the right end of the
-//     editors' tab line, not in the Project panel (user request 2026-09-22); no
-//     "Save as" since 2026-09-23 (the workbench makes no copies: another task is another copy the user makes and reads);
-//   - "Task file" opens a window with the task as one readable file (its _help included); "Apply to editors" checks it and
-//     fills the editors (one Undo step); a broken file is refused with its problems and changes nothing;
-//   - "Save task" sends the rows, the task and what the file added (analyses) and reports the revision and the baseline;
-//     nothing happens on load.
+// Browser check of TaskSave and TaskFile. The main Save as button names a separate task with a numbered prompt;
+// calibration's explicit update request retains revision/stale-row handling. All Virtuoso requests are canned fixtures,
+// and other writing requests are refused: no real task or cell is written. Covers the file window, progress, cancellation,
+// invalid/duplicate names, numbered suggestions, task selection after saving, and in-place update compatibility.
 // Record 7.198 (user: "show saving (is it possible to show progress?) and if the backend is saving dont allow another save
 // task press even after refreshing page"), with the backend's save state answered as a FIXTURE too:
 //   - while a save runs, its step shows under the toolbar and Save task is closed; nothing is asked once no save runs;
@@ -27,7 +17,7 @@
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; WSLENV carries the URL into it):
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_save_check.mjs)" [screenshot-dir]
 import path from 'node:path';
-import { answerDialogs, check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -38,6 +28,7 @@ const consoleErrors = [];
 const ROWS = [{ variable_id: 'wn', instance_path: 'XU1/MN1', parameter_name: 'w', unit: 'um', optimized: true, lower: 0.6, upper: 1.6, step: 0.005 }];
 const PROBES = [{ measurement_id: 'm_osc_frequency_hz', analysis: 'tran', result_source: 'backend_profile', source_name: 'osc_frequency_hz', unit: 'Hz' }];
 const SPECS = [{ metric_id: 'osc_frequency_hz', equation: 'm_osc_frequency_hz', unit: 'Hz', constraint: '>=', lower: 1.1e9, normalization_scale: 1e9 }];
+const AUTO_BASELINE = '/fixture/new-task.baseline';
 const tasksKnown = new Set(['real:ring_osc']);
 const generated = task => ({ loaded: true, task_key: task, mock: false, native_draft: false, generated_profile: true, baseline_recorded: true, complete: true,
   diagnostics: [], circuit: {}, hierarchy: { XU1: { MN1: {} } }, analysis_context: null, evaluation_backend: 'FIXTURE', max_concurrency: 4,
@@ -61,6 +52,13 @@ await runChecks(browser, async () => {
   const answer = async params => {
     const { requestId, request } = params;
     const url = new URL(request.url), pathname = url.pathname, body = JSON.parse(request.postData ?? '{}');
+    if (pathname === '/api/runs/status' && url.searchParams.get('run_dir') === AUTO_BASELINE)
+      return fulfil(requestId, 200, { state: 'completed', run_id: 'auto-baseline', run_dir: AUTO_BASELINE, worker_alive: false,
+        mode: 'scratch', mock: false, heartbeat_utc: '2026-10-07T12:00:00Z', active_workers: [], concurrency: 1,
+        learner_updates: 0, stop_reason: 'budget_exhausted', error: null, calibration: null, save_point: null,
+        budget: { charged: 1, completed: 1, failed: 0, max_evaluations: 1, launches: 1, remaining: 0 },
+        paths: { run_dir: AUTO_BASELINE }, connection: { overall: 'not_applicable' },
+        manifest: { mode: 'scratch', mock: false, seeds: { target_seed: 0 }, budgets: { max_evaluations: 1 } } });
     if (pathname === '/api/config/validate') { validations.push(body); return page.readOrRefuse(params, page.refused, { reads: true }); }
     if (pathname === '/api/tasks/saving') {
       statusReads++;
@@ -110,6 +108,7 @@ await runChecks(browser, async () => {
     }
     if (op === 'task/save') {
       if (body.as_new) { tasksKnown.add(`real:${body.name}`); return fulfil(requestId, 200, { task_key: `real:${body.name}`, name: body.name, revision: 1, created: true, runnable: true,
+        baseline: { state: 'started', run_dir: AUTO_BASELINE, run_id: 'auto-baseline', mock: false },
         circuit_class: 'vco', pdk_id: 'gpdk045', parameters: ROWS, baseline_kept: false, changed: [], copy: { library: 'GPDK045_RINGOSC_GATOR', cell: `ring_osc_3stage_${body.name}`, testbench: `tb_ring_osc_3stage_${body.name}` } }); }
       revision += 1;
       return fulfil(requestId, 200, { task_key: `real:${body.task}`, name: body.task, revision, created: false, runnable: true, circuit_class: 'vco', pdk_id: 'gpdk045',
@@ -122,7 +121,18 @@ await runChecks(browser, async () => {
     ['read', 'Virtuoso reads the cell into the workbench'], ['files', 'Writing the task files and checking them']].map(([id, title]) => ({ id, title }));
   const runningAt = (id, number, seconds) => ({ id, task_key: 'real:ring_osc', started_utc: '2026-10-05T16:00:00+00:00', seconds, steps: STEPS,
     step: STEPS[number - 1].id, step_number: number, step_seconds: 1, usual_seconds: 34 });
-  answerDialogs(page, answers, dialogs);
+  const promptAnswers = [], prompts = [];
+  page.on('Page.javascriptDialogOpening', p => {
+    if (p.type === 'prompt') {
+      const planned = promptAnswers.length > 0, answer = promptAnswers.shift();
+      prompts.push({ message: p.message, defaultPrompt: p.defaultPrompt, planned });
+      return send('Page.handleJavaScriptDialog', { accept: planned && answer !== null,
+        ...(planned && answer !== null ? { promptText: answer === true ? p.defaultPrompt : answer } : {}) });
+    }
+    const accept = answers.length ? answers.shift() : null;
+    dialogs.push({ message: p.message, planned: accept !== null });
+    return send('Page.handleJavaScriptDialog', { accept: !!accept });
+  });
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
   const BLOCK = `document.querySelector('.editors .tabs .task-save')`;          // the bar: right end of the editors' tab line
   const NOTES = `document.querySelector('.editors .task-notes')`;              // its messages and questions, under the toolbar
@@ -142,7 +152,7 @@ await runChecks(browser, async () => {
     for (let seen = mark; calls.length !== mark && seen !== calls.length;) { seen = calls.length; await sleep(500); }
   };
 
-  await page.intercept(['*/api/virtuoso/*', '*/api/circuit/load', '*/api/tasks', '*/api/tasks/starter*', '*/api/tasks/saving', '*/api/config/validate'], answer,
+  await page.intercept(['*/api/runs/status*', '*/api/virtuoso/*', '*/api/circuit/load', '*/api/tasks', '*/api/tasks/starter*', '*/api/tasks/saving', '*/api/config/validate'], answer,
     { others: 'read', connection: 'lab' });
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
@@ -156,7 +166,7 @@ await runChecks(browser, async () => {
   await settle(1500);
   check('nothing is saved or read from Virtuoso on load', calls.length === 0, calls.map(c => c.op).join(' | '));
   check('the open task names itself and its revision', (await blockText()).includes('Task real:ring_osc, revision 1'), await blockText());
-  check('two short buttons: Save task, Task file - no Save as', await evaluate(`!!(${BUTTON('Save task')}) && !(${BUTTON('Save as')}) && !!(${BUTTON('Task file')})`));
+  check('two short buttons: Save as and Task file', await evaluate(`!!(${BUTTON('Save as')}) && !(${BUTTON('Save task')}) && !!(${BUTTON('Task file')})`));
   check('they sit in the editors\' tab line, none in the Project panel', await evaluate(`!!${BLOCK}.closest('.tabs') && !${PANEL}.querySelector('.task-save')
     && ![...${PANEL}.querySelectorAll('button')].some(b => ['Save task', 'Save as', 'Task file'].includes(b.textContent.trim()))`));
   const place = await evaluate(`(() => { const bar = ${BLOCK}.getBoundingClientRect(), tabs = ${BLOCK}.closest('.tabs'), line = tabs.getBoundingClientRect();
@@ -165,7 +175,7 @@ await runChecks(browser, async () => {
     return { right: line.right - bar.right, sameLine: bar.top < first.bottom && bar.bottom > first.top, above: bar.bottom <= modify.top + 1,
              over: bar.left < modify.right && bar.right > modify.left }; })()`);
   check('on the tab line, at its right end, above the toolbar\'s last button', place.sameLine && place.right < 12 && place.above && place.over, JSON.stringify(place));
-  check('only a person can press it, said on the button', await evaluate(`${BUTTON('Save task')}.title.includes('Only you can press it.')`));
+  check('only a person can press it, said on the button', await evaluate(`${BUTTON('Save as')}.title.includes('Only you can press it.')`));
 
   // ---- the task file in a window of its own ---------------------------------------------------------------------------------------
   await press('Task file', true); await settle(1500);
@@ -180,7 +190,7 @@ await runChecks(browser, async () => {
   let config = await stored();
   for (let i = 0; i < 30 && config.targets[0].lower !== 1.25e9; i++) { await sleep(100); config = await stored(); }   // the page stores a moment later
   check('"Apply to editors" checks the file and fills the editors', calls.at(-1).op === 'task/file/check' && config.targets[0].lower === 1.25e9, JSON.stringify(config.targets));
-  check('the window says what happened and that nothing is saved yet', (await popupEval(`return d.querySelector('.task-file').textContent`)).includes('Press "Save task" to store them'));
+  check('the window says what happened and that nothing is saved yet', (await popupEval(`return d.querySelector('.task-file').textContent`)).includes('Press "Save as" to store them'));
   edited.probes[0].analysis = 'sometimes';
   await typeInto(`${POPUP}.document.querySelector('.task-file textarea')`, JSON.stringify(edited, null, 2));
   await popupEval(`[...d.querySelectorAll('.task-file button')].find(b => b.textContent.trim() === 'Apply to editors').click()`); await settle();
@@ -189,9 +199,11 @@ await runChecks(browser, async () => {
     && config.measurements[0].analysis === 'tran', config.measurements[0].analysis);
   await popupEval(`[...d.querySelectorAll('.task-file button')].find(b => b.textContent.trim() === 'Close').click()`); await settle(600);
 
-  // ---- Save task: the next revision of the same task --------------------------------------------------------------------------------
+  const updateTask = () => evaluate(`window.dispatchEvent(new CustomEvent('gator-save-task-request', { detail: { task: 'real:ring_osc' } }))`);
+
+  // ---- Calibration's explicit update: the next revision of the same task --------------------------------------------------------------------------------
   let mark = calls.length;
-  await press('Save task'); await settle(1500);
+  await updateTask(); await settle(1500);
   const saveCall = calls.slice(mark).find(c => c.op === 'task/save');
   check('before the page knows where its rows came from, Save task says none (7.203)', saveCall?.base_revision === null && saveCall?.replace_newer === false,
     JSON.stringify({ base: saveCall?.base_revision, replace: saveCall?.replace_newer }));
@@ -201,9 +213,9 @@ await runChecks(browser, async () => {
   await sleep(500);
   check('the open task shows its new revision', (await blockText()).includes('revision 2'), await blockText());
 
-  // ---- no "Save as" (2026-09-23): the open task never sends as_new; another task is another copy, read in the Virtuoso window ----
+  // Calibration still updates the current task through its explicit request.
   check('nothing under the toolbar asks for a new task name', !(await evaluate(`[...${NOTES}?.querySelectorAll('label') ?? []].some(l => l.firstChild?.textContent.trim() === 'New task name')`)));
-  check('no save of this check was sent as_new', calls.filter(c => c.op === 'task/save').every(c => c.as_new === false), JSON.stringify(calls.filter(c => c.op === 'task/save').map(c => c.as_new)));
+  check('calibration update requests never create another task', calls.filter(c => c.op === 'task/save').every(c => c.as_new === false), JSON.stringify(calls.filter(c => c.op === 'task/save').map(c => c.as_new)));
   check('the task\'s block in the column names it and offers Check now', (await evaluate(`${PANEL}.textContent`)).includes('Before every run:')
     && (await evaluate(`[...${PANEL}.querySelectorAll('button')].some(b => b.textContent.trim() === 'Check now')`)));
 
@@ -214,7 +226,7 @@ await runChecks(browser, async () => {
   const closed = () => evaluate(`${SAVE}?.disabled ?? null`);
   check('the page asked the backend about a running save when Save task appeared', statusReads >= 1, `${statusReads} reads`);
   hold = true; let reads = statusReads;
-  await evaluate(`${SAVE}.click()`);
+  await updateTask();
   check('its own save shows a line under the toolbar at once', await page.until(`!!(${LINE})`, 30), await notesText());
   await page.until(`(${LINE}?.textContent ?? '').includes('step 2 of 4')`, 40);
   check('it follows the steps the backend counts', (await lineText()) === 'Saving real:ring_osc - step 2 of 4: Virtuoso netlists the Maestro test (12 s; its last save took 34 s)',
@@ -240,7 +252,7 @@ await runChecks(browser, async () => {
   check('the reloaded page still knows where its rows came from: the check gets it (7.203)', validations.some(v => v.rows_from === 3),
     JSON.stringify(validations.map(v => v.rows_from ?? null)));
   check('and keeps Save task closed', (await closed()) === true);
-  check('its tooltip says what it waits for', (await evaluate(`${SAVE}.title`)).startsWith('Save task: Waits for the save of real:ring_osc that is running.'),
+  check('its tooltip says what it waits for', (await evaluate(`${SAVE}.title`)).startsWith('Save as: Waits for the save of real:ring_osc that is running.'),
     await evaluate(`${SAVE}.title`));
   let saves = calls.filter(c => c.op === 'task/save').length;
   await evaluate(`${SAVE}.click()`); await sleep(400);
@@ -262,7 +274,7 @@ await runChecks(browser, async () => {
   // A press that meets another save (a stale page or another tab): refused by the backend, said, and followed.
   conflict = runningAt('tab', 2, 5);
   saves = calls.filter(c => c.op === 'task/save').length;
-  await evaluate(`${SAVE}.click()`);
+  await updateTask();
   check('a save refused because another one runs says so', await page.until(`(${NOTES}?.textContent ?? '').includes('Another save is running')`, 40), await notesText());
   check('and the page follows that save, Save task closed', await page.until(`(${LINE}?.textContent ?? '').includes('step 2 of 4')`, 40) && (await closed()) === true,
     await lineText());
@@ -292,7 +304,7 @@ await runChecks(browser, async () => {
   const ASK = text => `[...(${QUESTION}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   older = true;
   let sent = calls.filter(c => c.op === 'task/save').length;
-  await evaluate(`${SAVE}.click()`);
+  await updateTask();
   check('refused as older than the saved task, the page asks under the toolbar', await page.until(`!!(${QUESTION})`, 40)
     && (await evaluate(`${QUESTION}.textContent`)).includes('it is revision 4 now, the rows here are revision 3') , await notesText());
   check('the question offers Reload saved values and Save anyway', await evaluate(`!!(${ASK('Reload saved values')}) && !!(${ASK('Save anyway')})`));
@@ -307,7 +319,7 @@ await runChecks(browser, async () => {
     await notesText());
   const savedAs = revision;
   sent = calls.filter(c => c.op === 'task/save').length;
-  await evaluate(`${SAVE}.click()`);
+  await updateTask();
   await page.until(`!!(${QUESTION})`, 40);
   check('the next save starts from the revision "Save anyway" made', calls.filter(c => c.op === 'task/save').at(-1)?.base_revision === savedAs);
   const read = starterReads;
@@ -318,9 +330,40 @@ await runChecks(browser, async () => {
     && dialogs.at(-1)?.message.startsWith('Reload saved values?') && dialogs.at(-1)?.planned, `${starterReads - read} reads`);
   older = false; await sleep(400);
   sent = calls.filter(c => c.op === 'task/save').length;
-  await evaluate(`${SAVE}.click()`); await settle(1500);
+  await updateTask(); await settle(1500);
   check('then Save task starts from the revision those rows are', calls.filter(c => c.op === 'task/save').slice(sent)[0]?.base_revision === 9,
     JSON.stringify(calls.filter(c => c.op === 'task/save').slice(sent).map(c => c.base_revision)));
+
+  // The main button creates another task. Cancellation, validation and collisions cannot overwrite the source.
+  let count = calls.filter(c => c.op === 'task/save').length;
+  promptAnswers.push(null);
+  await press('Save as', true); await settle(700);
+  check('Save as prompts with the original name plus numbering', prompts.at(-1)?.defaultPrompt === 'ring_osc_2', JSON.stringify(prompts.at(-1)));
+  check('Cancel sends no save', calls.filter(c => c.op === 'task/save').length === count);
+  tasksKnown.add('real:ring_osc_2');
+  const sourceRevision = revision;
+  promptAnswers.push(true);
+  await press('Save as', true); await settle(1500); await sleep(1000);
+  const copied = calls.filter(c => c.op === 'task/save').at(-1);
+  check('the refreshed list skips occupied numbers', prompts.at(-1)?.defaultPrompt === 'ring_osc_3');
+  check('Save as sends the new name and as_new, preserving the source revision', copied?.task === 'ring_osc' && copied?.name === 'ring_osc_3'
+    && copied?.as_new === true && revision === sourceRevision, JSON.stringify(copied));
+  check('the new task is selected after saving', (await stored()).circuit.task_id === 'real:ring_osc_3');
+  check('task creation follows its automatic one-evaluation baseline in the header', await page.until(`localStorage.getItem('gator-workbench-current-run-v1') === ${JSON.stringify(AUTO_BASELINE)}`, 50));
+  check('the creation prompt includes its one automatic simulation', /one baseline simulation automatically/.test(prompts.at(-1)?.message ?? ''));
+
+  promptAnswers.push(null);
+  await press('Save as', true); await settle(700);
+  check('a numbered copy continues the original sequence', prompts.at(-1)?.defaultPrompt === 'ring_osc_4', JSON.stringify(prompts.at(-1)));
+  count = calls.filter(c => c.op === 'task/save').length;
+  promptAnswers.push('Bad name', 'ring_osc', 'custom_saved_task');
+  await press('Save as', true); await settle(1500); await sleep(1000);
+  const custom = calls.filter(c => c.op === 'task/save').slice(count);
+  check('invalid and duplicate names are explained before any write', prompts.at(-2)?.message.includes('invalid')
+    && prompts.at(-1)?.message.includes('already in use') && custom.length === 1);
+  check('the typed name is used exactly and the new task is selected', custom[0]?.name === 'custom_saved_task'
+    && custom[0]?.as_new === true && (await stored()).circuit.task_id === 'real:custom_saved_task');
+  check('every naming prompt was planned', prompts.every(p => p.planned) && !promptAnswers.length, JSON.stringify(prompts));
 
   check('no unplanned dialog', dialogs.every(d => d.planned), JSON.stringify(dialogs));
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));

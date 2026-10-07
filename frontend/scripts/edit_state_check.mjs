@@ -55,7 +55,7 @@ try {
   const save = async () => {
     if (!await page.until('!!document.querySelector("#bar button.primary") && !document.querySelector("#bar button.primary").disabled')) throw new Error('Save task unavailable');
     const index = await page.evaluate('fixture.pending.length');
-    await page.evaluate('document.querySelector("#bar button.primary").click()');
+    await page.evaluate("window.dispatchEvent(new CustomEvent('gator-save-task-request', { detail: { task: fixture.state.task } }))");
     if (!await page.until(`fixture.pending.length === ${index + 1}`)) throw new Error('Save not sent');
     return index;
   };

@@ -2,6 +2,7 @@ import { Fragment, MouseEvent, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { api, Json, si } from '../api';
+import { TaskFolders, useTaskFolders } from './TaskFolders';
 
 /** Which registered task the page follows (user request 2026-10-06, record 7.227: "make the loaded task a button similar to
  *  the runs... button style. It opens a new window showing all the tasks"): in the Project column the task is named as plain
@@ -22,7 +23,8 @@ const stamp = (utc?: string | null) => {
   const d = utc ? new Date(utc) : null;
   return d && !Number.isNaN(d.getTime()) ? `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}` : null;
 };
-const KIND: Record<string, string> = { real: 'real', ngspice: 'ngspice', mock: 'MOCK' };
+/** Display only: saved task keys keep their namespace for selection and run/model links. */
+const taskName = (key: string) => key.replace(/^real:/, '');
 /** The mark the old list put after a task's name: what keeps it from running right now. */
 export const taskMark = (t: Json, ngspiceOffered: boolean) => t.kind === 'mock' ? '[MOCK]'
   : t.kind === 'ngspice' ? (t.available && ngspiceOffered ? '[ngspice]' : '[ngspice: choose its connection]') : t.available ? '' : '[blocked]';
@@ -37,11 +39,10 @@ const newestText = (r: Json | null) => !r ? 'none' : `${stamp(r.created_utc) ?? 
 
 type Column = { key: string; title: string; help: string; value: (t: Json, runs: Json[]) => string | number | null };
 const COLUMNS: Column[] = [
-  { key: 'task', title: 'Task', help: 'The registered task: real:<name> is a task saved from a Virtuoso cell, ngspice:<name> an ngspice netlist.', value: t => t.task_key },
-  { key: 'kind', title: 'Kind', help: 'real = Virtuoso + Spectre; ngspice = runs on an ngspice connection; MOCK = the built-in synthetic backend. A mark says what keeps the task from running now.', value: t => KIND[t.kind] ?? t.kind },
+  { key: 'task', title: 'Task', help: 'The registered task name. A mark says what keeps it from running now; synthetic tasks carry a MOCK badge.', value: t => taskName(t.task_key) },
   { key: 'class', title: 'Class', help: 'The circuit class label the task carries (opamp, ldo, oscillator, ...).', value: t => t.circuit_class ?? '' },
   { key: 'cell', title: 'Cell', help: 'The Virtuoso library and cell the task runs in (the copy you declared), with its testbench cell.', value: t => cellOf(t) },
-  { key: 'revision', title: 'Rev', help: 'The saved revision of the task: Save task stores the next one.', value: t => t.revision ?? null },
+  { key: 'revision', title: 'Rev', help: 'The saved revision of the task. Save as creates a new task at revision 1.', value: t => t.revision ?? null },
   { key: 'saved', title: 'Saved', help: 'When the task was last saved (local time of this computer).', value: t => t.saved_utc ?? null },
   { key: 'baseline', title: 'Baseline', help: 'When the task\'s reference was recorded (a finished Baseline simulation records it by itself); none = no real baseline yet.', value: t => t.baseline_recorded_utc ?? null },
   { key: 'rows', title: 'Sizes / results', help: 'How many sizes the task varies and how many results its testbench measures.', value: t => t.variables != null ? `${t.variables} / ${t.results ?? 0}` : null },
@@ -50,10 +51,10 @@ const COLUMNS: Column[] = [
 ];
 
 /** Everything else about one task, and its rows (read from the starter route when the details open). */
-function TaskDetails({ task, runs, rows, error, ngspiceOffered }: { task: Json; runs: Json[]; rows: Json; error?: string; ngspiceOffered: boolean }) {
-  const of = runsOf(runs, task.task_key), mark = taskMark(task, ngspiceOffered);
+function TaskDetails({ task, runs, rows, error }: { task: Json; runs: Json[]; rows: Json; error?: string }) {
+  const of = runsOf(runs, task.task_key);
   const facts: [string, string | null | undefined][] = [
-    ['Registered task', task.task_key], ['Kind', `${KIND[task.kind] ?? task.kind}${mark ? ' ' + mark : ''}`], ['Blocked by', task.blocker], ['What it is', task.description],
+    ['Registered task', taskName(task.task_key)], ['Blocked by', task.blocker], ['What it is', task.description],
     ['Title', task.title ?? rows?.project?.notes], ['Circuit class · PDK', `${task.circuit_class ?? 'unspecified'} · ${task.pdk_id ?? 'unspecified'}`],
     ['Runs in', task.library && task.cell ? `${task.library}/${task.cell}${task.testbench ? ` with testbench ${task.testbench}` : ''}` : null],
     ['Saved from', task.original?.cell ? `${task.original.library}/${task.original.cell}${task.original.testbench ? ` (testbench ${task.original.testbench})` : ''}` : null],
@@ -103,11 +104,20 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   const [sort, setSort] = useState<{ key: string; down: boolean }>({ key: 'task', down: false });
   const [open, setOpen] = useState<string | null>(null);          // the task whose details are shown
   const [rows, setRows] = useState<{ key: string; value?: Json; error?: string } | null>(null);
+  const folders = useTaskFolders();
+  const [selected, setSelected] = useState<string[]>([]);
+  const chooseFolder = (id: string) => { folders.setFolder(id); setSelected([]); setOpen(null); };
+  const select = (key: string, checked: boolean) => setSelected(keys => checked ? [...keys.filter(k => k !== key), key] : keys.filter(k => k !== key));
+  const move = async (id: string) => {
+    if (await folders.change(() => api.moveTasks(selected, id === 'unfiled' ? null : id))) setSelected([]);
+  };
 
   const readRows = (key: string) => { setRows({ key }); api.starter(key).then(value => setRows(r => (r?.key === key ? { key, value } : r)), e => setRows(r => (r?.key === key ? { key, error: e.message } : r))); };
   // The tasks are read through the column (so it shows the same list); "Refresh list" reads the page's run list again too.
   const refresh = (alsoRuns: boolean) => {
     setReading(true);
+    setSelected([]);
+    void folders.refresh();
     Promise.all([onRefresh().then(() => setTasksError(null), e => setTasksError(e.message)), alsoRuns && onRefreshRuns ? onRefreshRuns().catch(() => undefined) : null])
       .finally(() => { setReading(false); setReadAt(new Date().toLocaleTimeString([], { hour12: false })); });
     if (open) readRows(open);
@@ -117,16 +127,16 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   // A double click on a task's row makes the page follow that task (as a double click chooses a run in the run window). Not
   // when it lands on the row's "Details" button. The word the double click selected is let go.
   const chooseRow = (e: MouseEvent<HTMLTableRowElement>, key: string) => {
-    if ((e.target as HTMLElement).closest('button')) return;
+    if ((e.target as HTMLElement).closest('button, input, select, label')) return;
     (popup ?? window).getSelection()?.removeAllRanges();
     onChoose(key);
   };
 
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
-  const text = (t: Json) => [t.task_key, KIND[t.kind] ?? t.kind, taskMark(t, ngspiceOffered), t.circuit_class, t.pdk_id, cellOf(t), t.testbench, t.description, t.title, stamp(t.saved_utc)].join(' ').toLowerCase();
+  const text = (t: Json) => [t.task_key, folders.data.folders[folders.of(t.task_key)], taskMark(t, ngspiceOffered), t.circuit_class, t.pdk_id, cellOf(t), t.testbench, t.description, t.title, stamp(t.saved_utc)].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === sort.key) ?? COLUMNS[0];
   // Empty cells stay at the bottom whichever way the column is sorted. Only while the window is open.
-  const shown = !popup ? [] : tasks.filter(t => words.every(w => text(t).includes(w))).sort((a, b) => {
+  const shown = !popup ? [] : tasks.filter(t => (folders.folder === 'all' || folders.of(t.task_key) === folders.folder) && words.every(w => text(t).includes(w))).sort((a, b) => {
     const x = column.value(a, runs), y = column.value(b, runs);
     if (x == null || x === '' || y == null || y === '') return (x == null || x === '' ? 1 : 0) - (y == null || y === '' ? 1 : 0);
     return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * (sort.down ? -1 : 1);
@@ -136,12 +146,13 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
     <div className="run-window task-window">
       <h2>Tasks</h2>
       <div className="row">
-        <button onClick={() => refresh(true)} disabled={reading}>Refresh list</button>
-        <input className="run-filter task-filter" placeholder="Filter: name, kind, class, cell, a date ..." value={filter} onChange={e => setFilter(e.target.value)} />
+        <button onClick={() => refresh(true)} disabled={reading || folders.busy}>Refresh list</button>
+        <input className="run-filter task-filter" placeholder="Filter: name, class, cell, a date ..." value={filter} onChange={e => { setFilter(e.target.value); setSelected([]); }} />
         <span className="hint run-count task-count">{reading ? 'Reading the tasks...' : tasksError ? 'The task list could not be read.'
           : `${tasks.length} registered task${tasks.length === 1 ? '' : 's'}${readAt ? `, read at ${readAt}` : ''}. Nothing here updates by itself.`}</span>
       </div>
       {tasksError && !reading && <p className="error task-list-error">The task list could not be read: {tasksError}</p>}
+      {folders.error && <p className="error" role="alert">{folders.error} Press Refresh list to retry.</p>}
       <p className="hint"><b>Double click</b> a task to make the workbench follow it: its Parameters, Probes and Specs come into the editors (edits you made are asked about first) and the bottom tabs show its newest run. The task the page follows is marked. <b>Details</b> shows the rest, the task's rows included. This window stays open until you close it.</p>
       <details className="more"><summary>What the columns mean</summary>
         <ul className="steps-list">{COLUMNS.map(c => <li key={c.key}><b>{c.title}</b>: {c.help}</li>)}
@@ -149,15 +160,34 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
       {runs.length > 0 && !known && !reading && <p className="warn">The workbench server that is running is older than this page and does not say which task a run belongs to:
         the run columns stay empty. Restart it (Ctrl+C in its terminal, then start `serve` again) and press "Refresh list".</p>}
       {tasks.length === 0 && !reading && !tasksError && <p className="hint task-empty">No registered task yet. Save one from a Virtuoso cell (Virtuoso cell...) or from an ngspice netlist.</p>}
+      <div className="task-browser">
+      <TaskFolders state={folders} tasks={tasks} popup={popup} onSelect={chooseFolder} />
+      <div className="task-folder-content">
+      <div className="row task-move-bar">
+        <b>{folders.folder === 'all' ? 'All tasks' : folders.folder === 'unfiled' ? 'Unfiled' : folders.data.folders[folders.folder]}</b>
+        <span className="hint">{shown.length} shown{selected.length > 0 ? ` · ${selected.length} selected` : ''}</span>
+        <select aria-label="Move selected tasks to folder" value="" disabled={!selected.length || folders.busy || !folders.ready} onChange={e => void move(e.target.value)}>
+          <option value="" disabled>Move to…</option><option value="unfiled">Unfiled</option>
+          {folders.names.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        </select>
+        {folders.busy && <span className="hint" role="status">Updating folders…</span>}
+      </div>
       {tasks.length > 0 && <div className="scroll"><table className="grid run-table task-table">
         <thead><tr>
+          <th className="task-select"><input type="checkbox" aria-label="Select all shown tasks" disabled={folders.busy || !folders.ready || !shown.length}
+            checked={shown.length > 0 && shown.every(t => selected.includes(t.task_key))}
+            ref={input => { if (input) input.indeterminate = selected.length > 0 && !shown.every(t => selected.includes(t.task_key)); }}
+            onChange={e => setSelected(e.target.checked ? shown.map(t => t.task_key) : [])} /></th>
           {COLUMNS.map(c => <th key={c.key} className="sortable" title={`${c.help} Press to sort.`} aria-sort={sort.key === c.key ? (sort.down ? 'descending' : 'ascending') : undefined}
             onClick={() => setSort(s => ({ key: c.key, down: s.key === c.key ? !s.down : false }))}>{c.title}{sort.key === c.key && <span className="sort-mark">{sort.down ? ' ▼' : ' ▲'}</span>}</th>)}
           <th className="plain"></th></tr></thead>
         <tbody>{shown.map(t => { const active = t.task_key === current, mark = taskMark(t, ngspiceOffered), of = runsOf(runs, t.task_key); return (<Fragment key={t.task_key}>
-          <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} title={t.task_key} onDoubleClick={e => chooseRow(e, t.task_key)}>
-            <td><code>{t.task_key}</code>{loading === t.task_key && <span className="hint"> loading...</span>}</td>
-            <td>{t.kind === 'mock' ? <span className="badge model-tag mock-tag">MOCK</span> : KIND[t.kind] ?? t.kind}{mark && mark !== '[MOCK]' && <div className={`hint${t.available ? '' : ' warn'}`}>{mark}</div>}</td>
+          <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} data-task-key={t.task_key} title={taskName(t.task_key)} onDoubleClick={e => chooseRow(e, t.task_key)}>
+            <td className="task-select"><input type="checkbox" aria-label={`Select ${taskName(t.task_key)}`} checked={selected.includes(t.task_key)}
+              disabled={folders.busy || !folders.ready} onChange={e => select(t.task_key, e.target.checked)} /></td>
+            <td><code>{taskName(t.task_key)}</code>{loading === t.task_key && <span className="hint"> loading...</span>}
+              {folders.folder === 'all' && folders.data.folders[folders.of(t.task_key)] && <div className="hint task-folder-label">{folders.data.folders[folders.of(t.task_key)]}</div>}
+              {mark && <div className="task-mark">{t.kind === 'mock' ? <span className="badge model-tag mock-tag">MOCK</span> : <span className={`hint${t.available ? '' : ' warn'}`}>{mark}</span>}</div>}</td>
             <td>{t.circuit_class ?? ''}</td>
             <td title={t.testbench ? `testbench ${t.testbench}` : undefined}>{cellOf(t)}{t.testbench && <div className="hint">tb {t.testbench}</div>}</td>
             <td className="numeric">{t.revision ?? '-'}</td>
@@ -168,16 +198,17 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
             <td className="numeric">{known || runs.length === 0 ? of.count : '-'}</td>
             <td><button className="notes-link" aria-expanded={open === t.task_key} onClick={() => toggle(t.task_key)}>{open === t.task_key ? 'Hide details' : 'Details'}</button></td>
           </tr>
-          {open === t.task_key && <tr className="run-details-row"><td colSpan={COLUMNS.length + 1}>
-            <TaskDetails task={t} runs={runs} rows={rows?.key === t.task_key ? rows?.value : null} error={rows?.key === t.task_key ? rows?.error : undefined} ngspiceOffered={ngspiceOffered} /></td></tr>}
+          {open === t.task_key && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>
+            <TaskDetails task={t} runs={runs} rows={rows?.key === t.task_key ? rows?.value : null} error={rows?.key === t.task_key ? rows?.error : undefined} /></td></tr>}
         </Fragment>); })}</tbody></table></div>}
-      {tasks.length > 0 && shown.length === 0 && <p className="hint">No task matches the filter.</p>}
+      {shown.length === 0 && <p className="hint task-folder-empty">{filter ? 'No task matches the filter in this folder.' : 'This folder is empty. Select tasks in All tasks, then use Move to…'}</p>}
+      </div></div>
     </div>
   );
 
   return (<>
     {/* The task the page follows is said as plain text to the LEFT of the button; the button itself only reads "Tasks...". */}
-    <span className="task-list-current" title={current ?? currentText}>{current ? <code className="task-list-key">{current}</code> : <span className="task-list-key">{currentText}</span>}
+    <span className="task-list-current" title={taskName(current ?? currentText)}>{current ? <code className="task-list-key" data-task-key={current}>{taskName(current)}</code> : <span className="task-list-key">{taskName(currentText)}</span>}
       {currentMark && <span className="task-list-mark hint"> {currentMark}</span>}</span>
     <button className={`task-list-button${popup ? ' open' : ''}`} onClick={() => openPopup()}
       title={popup ? 'The task window is open: press to bring it to the front and read the lists again.' : 'Opens the task window: every registered task with its cell, revision, baseline, sizes and results, and its newest run. Double click one there to make the workbench follow it.'}>Tasks...</button>

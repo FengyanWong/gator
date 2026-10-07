@@ -33,7 +33,7 @@ export function calibrationPlan(result: Json, config: Json) {
   // A task saved from a Virtuoso cell starts only with the rows it has saved (the check before every run), so applied
   // scales need Save task; that save changes Specs only, and the recorded baseline stays.
   const savedTask = String(config.circuit?.task_id ?? '').startsWith('real:');
-  const afterwards = savedTask && scales.length ? ' Then press Save task: this task starts only with the rows it has saved, and its recorded baseline is kept.' : '';
+  const afterwards = savedTask && scales.length ? ' Use Apply and save to update this task and keep its recorded baseline, or Save as to create a new task.' : '';
   const saves = !otherTask && savedTask && scales.some(r => !sameNumber(r.target.normalization_scale, r.proposed_scale));
   /** The configuration with the proposals written in: ONE change, so one Undo step; nothing for a run of another task. */
   const apply = (c: Json): Json => otherTask ? c : ({ ...c,
@@ -45,6 +45,6 @@ export function calibrationPlan(result: Json, config: Json) {
 /** "Apply and save" (record 7.217): what the page says once Save task (TaskSave.tsx `requestTaskSave`) has answered. */
 export const savingText = (asked: { taken: boolean; why: string }) => asked.taken
   ? " Saving the task now: the progress is under the editors' tabs."
-  : ` Save task could not be started from here (${asked.why}): press Save task, above the editors.`;
+  : ` Saving could not be started from here (${asked.why}): try Apply and save again when ready, or use Save as above the editors.`;
 export const APPLY_AND_SAVE = 'then runs Save task: the rows become the task\'s next revision, the cell in Virtuoso is written to match and read back '
   + '(about half a minute, no simulation). A change of Scale alone keeps the recorded baseline.';

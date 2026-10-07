@@ -1329,3 +1329,20 @@ the optimizer side. The button what is missing can be kept with a window showing
   the critics were trained at the old target).
 - **Decision:** reported as measured; no claim beyond these circuits. Offered, not ordered: frozen zero-shot runs (300
   launches), a second seed on ring3 and ldo1_rgcn, fine-tune with `reset_critic` on ldo1_rgcn.
+
+
+## Task creation owns the baseline; Calibration samples only random designs (2026-10-07)
+
+User request: “when a task is created, run a hardcoded baseline on itself. Change the Baseline button to Calibration
+and the button only run the calibration steps”. Implemented in workbench code only (record 7.248).
+
+- New Virtuoso/Save as and ngspice tasks automatically launch their own saved starting design with a fixed nominal
+  one-evaluation/one-launch budget, one lane, seed 0, zero retries, no checkpoints or learning. Training controls do
+  not set this recipe. A known connection failure blocks it without discarding the saved task; unknown probe results
+  permit the bounded attempt. Its status persists, and missing/failed baselines offer a fixed-budget retry.
+- Calibration now makes 64 random evaluations and no initial/reset simulations, at any lane count. No replay or
+  learner updates. Scale/Initial alpha proposals and explicit application retain their previous rules.
+- In-place Virtuoso updates that invalidate a baseline trigger its replacement; specs-only saves preserve it.
+  Existing combined archives and the historical script API retain their semantics. Ordinary training is unchanged.
+- A spec-less ngspice import checks only measurement presence for its baseline, without storing performance targets
+  into the task. The actual deck and measurement receipts stay in the run.

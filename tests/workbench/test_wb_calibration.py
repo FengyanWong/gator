@@ -321,3 +321,38 @@ def test_the_start_route_takes_the_calibration_with_the_baseline_only(client, tm
     refused = client.post('/api/runs/start', json=dict(config=raw, calibration_designs=20))
     assert refused.status_code == 400 and 'Baseline simulation' in refused.json()['detail']['message']
     assert client.post('/api/runs/start', json=dict(config=raw, baseline_only=True, calibration_designs=501)).status_code == 422
+
+
+@pytest.mark.parametrize('lanes', [1, 3])
+def test_calibration_only_counts_only_random_designs_even_after_invalid_results(tmp_path, lanes):
+    config = make_config(tmp_path, run=dict(concurrency=lanes, reward=COMPRESSED))
+    request = calibration.prepare(config, 24, random_only=True)
+    config.output.save_checkpoints = False
+    layout, manifest = runs.prepare_run(config, roots_for(tmp_path))
+    manifest.update(run_kind='calibration', calibration=request)
+    write_json(layout.manifest, manifest)
+    assert run_prepared(layout, scripts={'0': {1: 'invalid_design'}}) == 'completed'
+    evaluations = rows(layout, 'evaluations', ['phase', 'action_source', 'valid', 'reward'])
+    assert len(evaluations) == 24 and any(not e['valid'] for e in evaluations)
+    assert {(e['phase'], e['action_source']) for e in evaluations} == {('warmup', 'random_warmup')}
+    assert all(e['reward'] is not None for e in evaluations if e['valid'])
+    assert read_json(layout.status)['learner_updates'] == 0
+    assert rows(layout, 'transitions') == [] and rows(layout, 'learner_updates') == []
+    assert read_json(layout.run_dir / calibration.FILE)['designs']['simulated'] == 24
+
+
+def test_calibration_route_has_no_baseline_and_does_not_load_the_selected_model(client, tmp_path):
+    raw = make_config(tmp_path, run=dict(reward=COMPRESSED)).model_dump(mode='json')
+    raw['run'].update(mode='fine_tune', model_source=dict(run_dir='/no/such/model'))
+    started = client.post('/api/runs/start', json=dict(config=raw, calibration_only=True, calibration_designs=20))
+    assert started.status_code == 200, started.text
+    directory = started.json()['run_dir']
+    status = wait_for(client, directory)
+    assert status['state'] == 'completed', status
+    assert status['summary']['totals']['candidate_evaluations_charged'] == 20
+    assert status['calibration']['request'] == dict(designs=20, lanes=1, evaluations=20, random_only=True)
+    assert status['calibration']['result']['reward_check']['reproduced'] == 20
+    assert read_json(Path(directory) / 'run_manifest.json')['run_kind'] == 'calibration'
+    assert client.post('/api/runs/start', json=dict(config=raw, calibration_only=True)).status_code == 400
+    assert client.post('/api/runs/start', json=dict(config=raw, calibration_only=True, baseline_only=True,
+                                                  calibration_designs=20)).status_code == 400

@@ -19,7 +19,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/virtuoso_source_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { MOCK_PAGE_CONFIG, answerDialogs, check, fail, finish, launchEdge, outDir, sleep, taskWindow, workbenchUrl } from './lib/harness.mjs';
+import { MOCK_PAGE_CONFIG, check, fail, finish, launchEdge, outDir, sleep, taskWindow, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -136,7 +136,17 @@ try {
     }
     return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${op} is not expected` } });
   };
-  const onDialog = session => answerDialogs(session, answers, dialogs);
+  const names = [], naming = [];
+  const onDialog = session => session.on('Page.javascriptDialogOpening', p => {
+    if (p.type === 'prompt') {
+      const planned = names.length > 0, name = names.shift();
+      naming.push({ message: p.message, defaultPrompt: p.defaultPrompt, planned });
+      return session.send('Page.handleJavaScriptDialog', { accept: planned, ...(planned ? { promptText: name } : {}) });
+    }
+    const accept = answers.length ? answers.shift() : null;
+    dialogs.push({ message: p.message, planned: accept !== null });
+    return session.send('Page.handleJavaScriptDialog', { accept: !!accept });
+  });
   onDialog(page);
   // ---- the column ------------------------------------------------------------------------------------------------------
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
@@ -290,29 +300,28 @@ try {
   check('no agent CLI was opened by itself', agentRequests === 0, `${agentRequests} request(s)`);
 
   // ---- Save task from the window's cell: refused in words, asks the frequency once, then the task opens in the column ---------
-  check('no Create profile form, no Save as', !(await wHas('Create profile')) && !(await far.evaluate(`!!(${wLabel('Circuit type')})`)) && !(await evaluate(`!!(${TASK_BUTTON('Save as')})`)));
-  check('"Save task" is offered in the editors\' tab line once the cell is declared', !(await evaluate(`${TASK_BUTTON('Save task')}.disabled`)) && (await wText()).includes('Then save it as a task'));
-  await typeTask('New task name', 'refuse_me'); await sleep(300);
+  check('no Create profile form; Save as replaces Save task', !(await wHas('Create profile')) && !(await far.evaluate(`!!(${wLabel('Circuit type')})`)) && !(await evaluate(`!!(${TASK_BUTTON('Save task')})`)));
+  check('"Save task" is offered in the editors\' tab line once the cell is declared', !(await evaluate(`${TASK_BUTTON('Save as')}.disabled`)) && (await wText()).includes('Then save it as a task'));
+  names.push('refuse_me');
   mark = calls.length;
-  await evaluate(`${TASK_BUTTON('Save task')}.click()`); await quiet();
+  await evaluate(`${TASK_BUTTON('Save as')}.click()`); await quiet();
   check('a refusal is shown in its own words and nothing changes', JSON.stringify(calls.slice(mark).map(c => [c.op, c.name, c.library, c.cell])) === JSON.stringify([['task/save', 'refuse_me', 'FIXTURE_DESIGNS', 'ota5_v1']])
     && (await taskText()).includes('can only change transistor widths') && (await stored()).circuit.source === 'virtuoso', JSON.stringify(calls.slice(mark)));
-  await evaluate(`(() => { const i = ${TASK_LABEL('New task name')}.querySelector('input'); i.focus(); i.select(); })()`); await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
-  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 }); await sleep(300);
+  names.push('ota5_v1');
   mark = calls.length;
-  await evaluate(`${TASK_BUTTON('Save task')}.click()`); await quiet();
-  check('an empty name falls back to the cell name; the ring oscillator\'s frequency is then asked once', calls.slice(mark).map(c => c.name).join() === 'ota5_v1'
+  await evaluate(`${TASK_BUTTON('Save as')}.click()`); await quiet();
+  check('the chosen name is sent; the ring oscillator\'s frequency is then asked once', calls.slice(mark).map(c => c.name).join() === 'ota5_v1'
     && (await taskText()).includes('needs a rough expected oscillation frequency') && !!(await evaluate(`!!(${TASK_LABEL('Rough oscillation frequency')})`)), JSON.stringify(calls.slice(mark)));
   await typeTask('Rough oscillation frequency', '1.2G'); await sleep(300);
   mark = calls.length;
-  await evaluate(`[...${TASK}.querySelectorAll('.task-notes button')].find(b => b.textContent.trim() === 'Save task').click()`); await quiet();
+  await evaluate(`[...${TASK}.querySelectorAll('.task-notes button')].find(b => b.textContent.trim() === 'Save as').click()`); await quiet();
   check('1.2G = 1.2e9 Hz is sent with the rows, never as_new', calls.slice(mark).length === 1 && calls[mark].extras?.expected_frequency_hz === 1.2e9 && calls[mark].as_new === false
     && Array.isArray(calls[mark].config?.parameters), JSON.stringify(calls.slice(mark)));
   check('the new task is opened in the column', (await stored()).circuit.source === 'registered_task' && (await value('Task')) === 'real:ota5_v1', await value('Task'));
   check('the column says what happened, in which cell, and what comes first', (await text()).includes('Saved the new task real:ota5_v1') && (await text()).includes('the cell you declared as your copy')
     && (await text()).includes('Baseline simulation'));
   check('the parameter editor shows the rows as saved', await evaluate(`document.querySelector('main').innerHTML.includes('wn_fixture')`));
-  check('the open task offers Save task and Task file - no Save as', await evaluate(`!!(${TASK_BUTTON('Save task')}) && !!(${TASK_BUTTON('Task file')}) && !(${TASK_BUTTON('Save as')})`));
+  check('the open task offers Save as and Task file', await evaluate(`!!(${TASK_BUTTON('Save as')}) && !!(${TASK_BUTTON('Task file')}) && !(${TASK_BUTTON('Save task')})`));
   check('the window now says it follows the task and starts from a blank library', await wShown('.follows-task') && (await wText()).includes('follows the task real:ota5_v1') && (await wValue('Library')) === '');
   await shotColumn('virtuoso-2c-task-saved.png');
   // ---- before every run: the check Start runs by itself, pressed on its own; a finished baseline records itself ----------
@@ -334,7 +343,7 @@ try {
   let shown = await wText();
   check('the cell is no longer browse-only: the window names its task', shown.includes('This cell already has a registered task: real:ota5_v1') && !shown.includes('built-in')
     && !shown.includes('Not optimizable yet') && !shown.includes('Browse only'), ops(mark).join(' | '));
-  check('no second draft is offered for it', !(await evaluate(`!!(${TASK_BUTTON('Save task')})`)) && !(await wHas('Read the cell again')) && !(await wHas('Read this cell into the workbench')));
+  check('no second draft is offered for it', !(await evaluate(`!!(${TASK_BUTTON('Save as')})`)) && !(await wHas('Read the cell again')) && !(await wHas('Read this cell into the workbench')));
   check('no "Open" shortcut (it repeated the Task list): the note says where to choose the task', JSON.stringify(await far.evaluate(`[...${WIN}.querySelectorAll('.note button')].map(b => b.textContent.trim())`)) === '[]'
     && shown.includes('Choose it under Task in the Project column.'));
   await shotWindow('virtuoso-2d-cell-has-task.png');
@@ -342,7 +351,7 @@ try {
   shown = await wText();
   check('the cell of a verified built-in circuit names that task', shown.includes('This cell already has a registered task: real:gpdk045_ota7 (a verified built-in circuit)')
     && !shown.includes('Browse only') && !shown.includes('cannot optimize it yet'));
-  check('it is not offered for reading or for a task', !(await wHas('Read this cell into the workbench')) && !(await evaluate(`!!(${TASK_BUTTON('Save task')})`)));
+  check('it is not offered for reading or for a task', !(await wHas('Read this cell into the workbench')) && !(await evaluate(`!!(${TASK_BUTTON('Save as')})`)));
   check('what that means is one folded line', await far.evaluate(`(() => { const d = [...${WIN}.querySelectorAll('.note details')].find(x => x.querySelector('summary').textContent === 'What this means');
     return !!d && !d.open && d.textContent.includes('gets no second task'); })()`));
   // Choosing that task in the Task list was checked here until 2026-09-30: no built-in circuit is offered any more (record
@@ -380,7 +389,7 @@ try {
   check('the column says what happened; where the files went is one folded line', shown.includes('Task real:ota5_v1 deleted.')
     && await evaluate(`(() => { const d = [...${PANEL}.querySelectorAll('details')].find(x => x.querySelector('summary').textContent === 'Where its files went');
       return !!d && !d.open && d.textContent.includes('/fixture/profiles/.deleted/ota5_v1'); })()`));
-  check('the cell offers Save task again', !!(await evaluate(`!!(${TASK_BUTTON('Save task')})`)) && (await wText()).includes('Not optimizable yet') && !(await wText()).includes('already has a registered task'));
+  check('the cell offers Save task again', !!(await evaluate(`!!(${TASK_BUTTON('Save as')})`)) && (await wText()).includes('Not optimizable yet') && !(await wText()).includes('already has a registered task'));
   check('the task left the Registered task list', !(await evaluate(`(async () => (await (await fetch('/api/tasks')).json()).tasks.some(t => t.task_key === 'real:ota5_v1'))()`)));
   await shotColumn('virtuoso-2g-profile-deleted.png');
 
@@ -434,6 +443,8 @@ try {
   await choose('Task', 'synthetic:gpdk045_ota5'); await sleep(1200);
   check('choosing a task in the column makes the page follow it again', (await stored()).circuit.source === 'registered_task' && (await value('Task')) === 'synthetic:gpdk045_ota5');
 
+  check('first-save naming suggests the cell name with numbering', naming[0]?.defaultPrompt === 'ota5_v1_2' && naming.every(p => p.planned), JSON.stringify(naming));
+  check('frequency retry keeps the chosen name without another prompt', naming.length === 2);
   check('every question on screen was planned by this check', dialogs.every(d => d.planned), JSON.stringify(dialogs.filter(d => !d.planned)));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
   console.log(`INFO  other writing requests the page sent on its own, all refused here: ${[...new Set(page.refused)].join(', ') || 'none'}`);

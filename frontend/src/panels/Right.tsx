@@ -188,6 +188,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   // for that encoder. The configuration always carries explicit values, so what is shown is what runs.
   const [netSettings, setNetSettings] = useState<Json>(null);
   const [netMessage, setNetMessage] = useState<{ level: string; text: string } | null>(null);
+  const [presetRateUpdated, setPresetRateUpdated] = useState(false);
   const pending = useRef<{ encoder: string; body: Json } | null>(null);
   const netRevision = useRef(0);
   const writing = useRef<Promise<void>>(Promise.resolve());
@@ -255,7 +256,28 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   };
   useEffect(() => {
     const revision = ++netRevision.current;
-    api.networkSettings().then(s => { if (netRevision.current === revision) setNetSettings(s); })
+    const expected = networkKey(run.mode, net, adv);
+    api.networkSettings().then(s => {
+      if (netRevision.current !== revision) return;
+      setNetSettings(s);
+      // The starting preset changed from 3e-4 to 1e-3 (record 7.199), but its old explicit rate stayed in browser
+      // storage. Upgrade only that otherwise-identical restored preset. Check once per browser, including when no
+      // upgrade is needed: Undo, a later edit or an imported configuration must keep its chosen rate on reload.
+      try {
+        const key = 'gator-workbench-preset-rate-2026-10-05';
+        if (localStorage.getItem(key)) return;
+        localStorage.setItem(key, 'checked');
+      } catch { return; } // Without durable storage, do not repeatedly override a rate the user may have restored.
+      const saved = s.settings?.[encoder];
+      if (!currentReply(revision, encoder, expected) || run.mode !== 'scratch'
+        || !['graph_transformer', 'rgcn', 'gatv2'].includes(encoder) || saved?.origin !== 'publication'
+        || adv.learning_rate !== 0.0003 || saved.advanced.learning_rate !== 0.001
+        || !s.network_fields.every((f: string) => net[f] === saved.network[f])
+        || !s.advanced_fields.every((f: string) => f === 'learning_rate' || adv[f] === saved.advanced[f])) return;
+      setConfig(c => networkKey(c.run.mode, c.run.network ?? {}, c.run.advanced ?? {}) !== expected ? c : ({ ...c,
+        run: { ...c.run, advanced: { ...c.run.advanced, learning_rate: saved.advanced.learning_rate } } }));
+      setPresetRateUpdated(true);
+    })
       .catch(e => { if (netRevision.current === revision) setNetMessage({ level: 'error', text: `Backend network settings unavailable (${e.message}).` }); });
     return () => { ++netRevision.current; flush(); };
   }, []);
@@ -490,6 +512,8 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
           and keep the publication preset, delete two buttons"); the one preset left became the starting preset (7.192). Typing a
           value back to its preset forgets the saved copy. */}
       {entry && <p className="hint in-use">In use: <b>{settingDifferences.length ? 'current run settings' : originLabel}</b></p>}
+      {presetRateUpdated && adv.learning_rate === 0.001 && <p className="hint preset-rate-updated" role="status">
+        Updated the restored starting preset’s learning rate from 0.0003 to 0.001. Undo in the main window restores the previous value.</p>}
       {differs && <div className="note network-differences">
         <p className="warn">Current run values differ from the saved {encoder} defaults ({originLabel}).</p>
         <p className="hint">This run uses the values shown in the controls. Saved defaults are loaded when you choose an encoder; they do not replace an existing configuration on page reload.</p>

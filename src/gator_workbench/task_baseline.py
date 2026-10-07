@@ -1,0 +1,106 @@
+"""The fixed one-evaluation baseline launched when a task is saved for the first time.
+
+The saved task supplies the circuit and rows. Training controls on the page cannot turn
+this into training, transfer, calibration, a retry, or more than one simulator launch.
+"""
+from types import SimpleNamespace
+from pathlib import Path
+from threading import Lock
+
+from . import schema, tasks, units
+from .security import redact
+from .storage.atomic import read_json, write_json
+
+_LOCK = Lock()
+FILE = 'baseline_launch.json'
+
+
+def _directory(task_key):
+    from . import profiles, ngspice_tasks
+    kind, _, name = task_key.partition(':')
+    entries = profiles.list_profiles() if kind == 'real' else ngspice_tasks.list_tasks() if kind == 'ngspice' else {}
+    if name not in entries:
+        raise ValueError('Choose a saved circuit task for its baseline.')
+    return Path(entries[name]['directory'])
+
+
+def status(task_key):
+    from . import runs
+    try:
+        result = read_json(_directory(task_key) / FILE, default=None)
+    except ValueError:
+        return None
+    if result and result.get('run_dir'):
+        current = runs.run_status(result['run_dir'])
+        result = dict(result, state=current.get('state'), worker_alive=current.get('worker_alive'),
+                      reason=current.get('error'), failed=(current.get('budget') or {}).get('failed', 0))
+    return result
+
+
+def configuration(task_key, *, profile_id=None, output_root=None):
+    starter = tasks.starter_config(task_key)
+    if task_key.startswith('ngspice:'):
+        # The imported deck stays unchanged. A current source is fixed in that deck;
+        # the SAC-compatible graph cannot expose its current as an action group.
+        starter = dict(starter, parameters=[p for p in starter.get('parameters', [])
+            if not (p.get('parameter_name') == 'dc' and units.canonical_unit(p.get('unit', '1')) == 'A')])
+    # A newly imported ngspice deck has no optimization specs yet. Check only that
+    # its measurements exist: x - x == 0 for every finite result, with no invented
+    # circuit performance target. These checks belong to this run, never the task.
+    if not starter.get('targets'):
+        starter = dict(starter, targets=[dict(metric_id=f'baseline_{i}',
+            equation=f'{row["measurement_id"]} - {row["measurement_id"]}',
+            unit=row.get('unit') or '1', constraint='>=', lower=0, normalization_scale=1)
+            for i, row in enumerate(starter.get('measurements', [])) if row.get('enabled', True)])
+    return schema.WorkbenchConfig.model_validate(dict(starter,
+        run=dict(mode='scratch', seed=0, concurrency=1, max_evaluations=1,
+                 max_spectre_launches=1, max_retries=0, connection_profile_id=profile_id,
+                 conditions=dict(policy='off'), stop_at_first_feasible=False),
+        output=dict(output_root=output_root, experiment_name='task-baselines',
+                    save_checkpoints=False, save_replay_snapshots=False,
+                    save_transition_archive=False, save_learner_updates=False)))
+
+
+def after_save(context, made, *, profile_id=None, output_root=None):
+    """Save is the authorization for one baseline. A blocked launch never undoes a saved task.
+
+    Also replace an invalidated reference after an in-place circuit/setup update;
+    a specs-only save retaining its reference does not launch anything.
+    """
+    if not made.get('created') and made.get('baseline_kept', True):
+        return
+    made['baseline'] = start(context, made['task_key'], profile_id=profile_id, output_root=output_root)
+
+
+def start(context, task_key, *, profile_id=None, output_root=None):
+    """Fixed baseline, also used to retry a failed/blocked creation baseline. Concurrent presses reuse the live run."""
+    with _LOCK:
+        return _start(context, task_key, profile_id=profile_id, output_root=output_root)
+
+
+def _start(context, task_key, *, profile_id, output_root):
+    try:
+        previous = status(task_key)
+        if previous and previous.get('worker_alive'):
+            return previous
+        from .api.run_routes import start_run
+        config = configuration(task_key, profile_id=profile_id, output_root=output_root)
+        # Creation authorizes one bounded attempt. A probe's unknown result may be
+        # resolved by that attempt; known connection/readiness failures still block.
+        body = SimpleNamespace(authorize_real_simulation=True, acknowledge_unknown_connection=True, automatic_baseline=True)
+        started = start_run(context, config, body, baseline_only=True)
+        result = dict(state='started', **started)
+    except Exception as exc:
+        detail = getattr(exc, 'detail', None)
+        reason = detail.get('message') if isinstance(detail, dict) else str(exc)
+        if isinstance(detail, dict):
+            issues = (detail.get('report') or {}).get('issues', [])
+            problems = [i['message'] for i in issues if i.get('level') in ('error', 'blocker')]
+            if problems:
+                reason = f'{reason}: ' + '; '.join(problems)
+        result = dict(state='blocked', reason=redact(reason or str(exc), 1200))
+    try:
+        write_json(_directory(task_key) / FILE, result)
+    except (ValueError, OSError):
+        pass                       # the save response still reports the launch or refusal
+    return result

@@ -33,6 +33,7 @@ class StartBody(Body):
     authorize_real_simulation: bool = False
     acknowledge_unknown_connection: bool = False
     baseline_only: bool = False
+    calibration_only: bool = False
     # With baseline_only: this many random designs after the baseline, for the calibration (calibration.py). 0 = none.
     calibration_designs: int = Field(0, ge=0, le=MAX_DESIGNS)
 
@@ -145,6 +146,12 @@ class TaskFileBody(Body):
     extras: dict | None = None
 
 
+class TaskBaselineBody(Body):
+    task_key: str
+    profile_id: str | None = Field(None, pattern=PROFILE_ID)
+    output_root: str | None = None
+
+
 class TaskFileTextBody(Body):
     text: str = Field(max_length=2_000_000)
 
@@ -173,6 +180,8 @@ class NgspiceSaveBody(NgspiceCheckBody):
     name: str = Field(pattern=ngspice_tasks.NAME.pattern)
     circuit_class: str = Field('unspecified', max_length=120)
     pdk_id: str = Field('unspecified', max_length=200)
+    profile_id: str | None = Field(None, pattern=PROFILE_ID)
+    output_root: str | None = None
 
 
 class NgspiceNameBody(Body):

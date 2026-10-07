@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from pydantic import ValidationError
 from .. import bridge_read, runs, schema, tasks
-from .. import consistency, ngspice_tasks, profiles, structures, task_files, task_saving, virtuoso_setup, working_copy
+from .. import consistency, ngspice_tasks, profiles, structures, task_baseline, task_files, task_saving, virtuoso_setup, working_copy
 from ..circuit_summary import circuit_summary
 from ..native_cells import load_import as load_cell_import
 from ..paths import PathNotAllowed, refuse_nul
@@ -12,6 +12,7 @@ from ..security import redact
 from .models import CircuitBody, ConfigBody, CopyBody, DiffBody, MatchedBody, NativeReadBody, NgspiceCheckBody, NgspiceNameBody, NgspiceReadBody, NgspiceSaveBody, ProfileActionBody, SetupBody, TaskCheckBody, TaskFileBody, TaskFileTextBody, TaskSaveBody, ValidateBody
 from .support import _bridge_call, fail, load_runtime, validate_loaded
 from .context import ApiContext
+from .models import TaskBaselineBody
 
 COPY_REFUSED = ((working_copy.CopyError, virtuoso_setup.SetupError), 'refused')
 
@@ -42,6 +43,11 @@ def register(app: FastAPI, context: ApiContext):
         when its Save task appears and follows a running save until it ends, also after it was loaded again. Memory
         only - nothing is read or contacted."""
         return task_saving.status()
+
+    @app.post('/api/tasks/baseline')
+    def retry_baseline(body: TaskBaselineBody):
+        return dict(baseline=task_baseline.start(context, body.task_key, profile_id=body.profile_id,
+                                                output_root=body.output_root))
 
     @app.post('/api/circuit/load')
     def circuit_load(body: CircuitBody):
@@ -82,7 +88,7 @@ def register(app: FastAPI, context: ApiContext):
             node = tree
             for part in device.id.split('/'):
                 node = node.setdefault(part, {})
-        return dict(loaded=True, training_capabilities=tasks.training_capabilities(runtime.task_key), task_key=runtime.task_key, mock=runtime.mock, circuit=runtime.circuit,
+        return dict(loaded=True, baseline_setup=task_baseline.status(runtime.task_key), training_capabilities=tasks.training_capabilities(runtime.task_key), task_key=runtime.task_key, mock=runtime.mock, circuit=runtime.circuit,
                     simulator=runtime.circuit.get('simulator') or ('mock' if runtime.mock else 'spectre'),
                     content_sha256=runtime.circuit.get('netlist_sha256'), provided_metrics=list(runtime.provided_metrics),
                     hierarchy=tree, summary=circuit_summary(graph, circuit=runtime.circuit), complete=graph.complete,
@@ -186,13 +192,14 @@ def register(app: FastAPI, context: ApiContext):
 
     @app.post('/api/ngspice/task/save')
     def ngspice_save(body: NgspiceSaveBody):
-        """Explicit press: the deck becomes the task ngspice:<name>, or its next revision. No simulation."""
+        """Save the deck; a new task automatically starts one fixed baseline evaluation."""
         try:
             entry = ngspice_tasks.save(body.name, body.text, device_kinds=_ngspice_kinds(body), source_path=_ngspice_source(body.source_path),
                                        circuit_class=body.circuit_class, pdk_id=body.pdk_id)
         except ngspice_tasks.NgspiceTaskError as exc:
             fail(409, exc, code='refused')
         parsed = ngspice_tasks.parse_entry(entry, body.text)
+        task_baseline.after_save(context, entry, profile_id=body.profile_id, output_root=body.output_root)
         return dict(entry, starter=ngspice_tasks.starter_config(entry['task_key']), check=dict(ok=True, **ngspice_tasks.summary(parsed)))
 
     @app.get('/api/ngspice/task')
@@ -247,7 +254,8 @@ def register(app: FastAPI, context: ApiContext):
         """Explicit click - a person's only: store the editors' rows as the task real:<name>. The first save of a cell takes
         its working copy; on an open task, Save task updates it (next revision) and Save as (`as_new`) makes another task
         with a copy of its own. A Maestro-measured task writes its setup into its copy and reads it back first; then the
-        copy is read into the workbench (read-only) and the task files are generated from it. Zero simulations.
+        copy is read into the workbench (read-only) and the task files are generated from it. A new task then starts
+        its fixed one-evaluation baseline, independently of the page's training controls.
         One save at a time (record 7.198): another one is refused while it runs, whichever page sends it, and
         GET /api/tasks/saving says how far it is."""
         if not body.profile_id:
@@ -262,6 +270,8 @@ def register(app: FastAPI, context: ApiContext):
                                                base_revision=body.base_revision, replace_newer=body.replace_newer),
                     (profiles.NeedsFrequency, 'needs_expected_frequency'), (profiles.NewerSaved, 'saved_task_newer'),
                     ((profiles.ProfileError,), 'refused'), COPY_REFUSED)
+                task_baseline.after_save(context, save.answer, profile_id=body.profile_id,
+                                         output_root=config.output.output_root)
         except task_saving.Busy as exc:
             fail(409, exc, code='save_running', running=task_saving.status()['running'])
         return save.answer

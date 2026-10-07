@@ -16,7 +16,7 @@ import { OutputPanel, ResearchPanel, RunPanel } from './panels/Right';
 import { AgentTab } from './panels/AgentTab';
 import { DataTab, FilesTab, LogsTab, StatusTab } from './panels/RunTabs';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './panels/calibrationPlan';
-import { requestTaskSave } from './panels/TaskSave';
+import { requestTaskSave, TASK_BASELINE_STARTED } from './panels/TaskSave';
 import { CornerCheckTab } from './panels/CornerCheck';
 import { TrainingTab } from './panels/TrainingTab';
 import { CrashPanel } from './panels/CrashPanel';
@@ -55,14 +55,9 @@ const storedBottom = (): Bottom => {
   catch { return { height: null, folded: false }; }
 };
 
-/** The calibration that goes with the Baseline simulation (record 7.197, user: "shouldnt each task run the baseline run? can
- *  you add the calibration functionality to that"): after the baseline, this many random designs, from which the run proposes
- *  a Scale per Specs row and the Initial alpha (Run status shows them with Apply). Always, since record 7.202 (user: "can we
- *  merge single baseline simulation and calibration to baseline simulation"): the "+ calibration" tick went. The one
- *  simulation alone is still there: Abort once the random designs begin, and the baseline counts as finished. */
+/** Calibration evaluates only random designs. Task creation owns the fixed starting-design baseline. */
 const CALIBRATION_DESIGNS = 64;
-/** "Calibration ready" (record 7.204, user: "build the prompt when the run finishes"): when the header's run is a Baseline
- *  simulation that has ended with proposals the page does not hold yet, a line under the header says so, with Apply
+/** "Calibration ready" (record 7.204, user: "build the prompt when the run finishes"): when the header's Calibration run that has ended with proposals the page does not hold yet, a line under the header says so, with Apply
  *  calibration and Not now - so the proposals cannot be missed in Run status. Still the user's press: nothing is applied by
  *  itself. The run whose line was answered is kept in this browser, so a reload does not ask again. */
 const CALIBRATION_ANSWERED_KEY = 'gator-workbench-calibration-answered-v1';
@@ -213,7 +208,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const [taskEpoch, setTaskEpoch] = useState(0);
   const lastPhase = useRef(control.phase);
   useEffect(() => {
-    if (control.phase === 'idle' && ['running', 'pausing', 'aborting', 'finishing'].includes(lastPhase.current)) setTaskEpoch(n => n + 1);
+    if (control.phase === 'idle' && ['starting', 'resuming', 'running', 'pausing', 'aborting', 'finishing'].includes(lastPhase.current)) setTaskEpoch(n => n + 1);
     lastPhase.current = control.phase;
   }, [control.phase]);
   const adopted = useRef(false);
@@ -262,20 +257,25 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
       : { level: started.mock ? 'mock' : 'info', text: `${started.mock ? started.mock_notice + ' ' : ''}Run directory: ${started.run_dir}` });
   };
   const launchedRun = (started: Json, as: 'start' | 'resume') => { control.take(started.run_dir, as); showRun(started, as); };
+  const automaticRun = useRef(launchedRun);
+  automaticRun.current = launchedRun;
+  useEffect(() => {
+    const started = (event: Event) => automaticRun.current((event as CustomEvent<Json>).detail, 'start');
+    window.addEventListener(TASK_BASELINE_STARTED, started);
+    return () => window.removeEventListener(TASK_BASELINE_STARTED, started);
+  }, []);
   const failed = (e: any) => setMessage({ level: 'error', text: plainError(e), detail: e.detail });
-  const start = async (baseline_only: boolean) => {
+  const start = async (calibration_only: boolean) => {
     setMessage(null);
-    // With the calibration every lane simulates the starting design once (the first of them is the baseline), then the
-    // random designs follow: the budget the backend sets (calibration.py `prepare`), said here before anything starts.
-    const calibration_designs = baseline_only ? CALIBRATION_DESIGNS : 0, lanes: number = config.run.concurrency ?? 1;
-    const budget = baseline_only ? lanes + calibration_designs : config.run.max_evaluations;
-    const calibrationText = calibration_designs ? `\n(${lanes === 1 ? 'The baseline' : `The starting design once on each of ${lanes} lanes`}, then ${calibration_designs} random designs for the calibration.)` : '';
+    const calibration_designs = calibration_only ? CALIBRATION_DESIGNS : 0;
+    const budget = calibration_only ? calibration_designs : config.run.max_evaluations;
+    const calibrationText = calibration_only ? `\n(${calibration_designs} random designs for calibration; no starting-design baseline.)` : '';
     control.setPending('start');
     try {
       // A refusal creates nothing; what the backend asks for (real budget, a model from another task, unknown
       // connection layers) is put to the user and the start is repeated with the answers.
       // An ngspice netlist task is real too (circuit simulations, counted and recorded as such), only without a license.
-      const started = await launchWithConsent(flags => api.start({ config, baseline_only, ...(calibration_designs ? { calibration_designs } : {}), ...flags }), { real: !!isReal, transfer: true,
+      const started = await launchWithConsent(flags => api.start({ config, calibration_only, ...(calibration_designs ? { calibration_designs } : {}), ...flags }), { real: !!isReal, transfer: true,
         authorizeText: (!isReal ? `Start ${budget} synthetic MOCK evaluations?` : circuit?.simulator === 'ngspice' ? `This starts ngspice simulations of the task (no license; every one is counted as a real evaluation).\nRun a budget of ${budget} candidate evaluation(s)?`
           : `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?`) + calibrationText });
       if (started) launchedRun(started, 'start'); else setMessage({ level: 'info', text: 'Not started: you answered no, so nothing was created.' });
@@ -362,7 +362,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
           <span>{store.saveError}</span><button onClick={store.retrySave}>Retry save</button>
           <button onClick={() => saveJson(`${config.project.task_name || 'configuration'}.json`, config)}>Export JSON</button>
         </div>}
-        {/* "Calibration ready" (record 7.204): the Baseline simulation the header holds has ended. A line of its own under the
+        {/* "Calibration ready" (record 7.204): the Calibration run the header holds has ended. A line of its own under the
             header, like the two above; it goes when it is answered, when the page holds the values, or with the next run. */}
         {calibrationReady && calibrationOffer && <div className="calibration-ready" role="status">
           {calibrated.status === 'calibrated'
@@ -380,9 +380,8 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
         <ValidationStatus validation={validation} config={config} schema={schema} />
         <button disabled={!!validation?.blocks_run || control.phase !== 'idle'} onClick={() => start(true)}
           title={control.phase !== 'idle' ? 'Not while the header holds a run that is active or paused. Abort lets go of a paused run.'
-            : `One costed evaluation of the starting design (the baseline), then ${CALIBRATION_DESIGNS} random designs over the Parameters ranges in the same run, each costed. `
-              + 'From them the run proposes a Scale for each Specs row and the Initial alpha; Run status shows them with Apply, nothing changes by itself. '
-              + 'For the baseline alone, Abort once the random designs begin.'}>Baseline simulation</button>
+            : `${CALIBRATION_DESIGNS} random designs over the Parameters ranges, each costed. No starting-design baseline. `
+              + 'Proposes a Scale for each Specs row and the Initial alpha; Run status shows them with Apply, nothing changes by itself.'}>Calibration</button>
         <RunButtons control={control} blocked={!!validation?.blocks_run} onStart={() => start(false)} onResumed={started => showRun(started, 'resume')}
           onMessage={setMessage} onShow={dir => { setRunDir(dir); setTab('status'); unfold(); }} />
       </header>

@@ -38,7 +38,7 @@ function Calibration({ value, live, config, setConfig }: { value: Json; live: bo
   const [said, setSaid] = useState<string | null>(null);                      // what "Apply and save" answered, for this result
   useEffect(() => setSaid(null), [result?.run_id]);
   if (!result) return <div className="calibration"><h4>Calibration</h4><p className="hint">{live
-    ? `After the baseline, ${request.designs} random designs are simulated; the proposals appear here when the run has ended.`
+    ? `${request.random_only ? "" : "After the baseline, "}${request.designs} random designs are simulated; the proposals appear here when the run has ended.`
     : 'This run ended without a calibration result.'}</p></div>;
   const designs: Json = result.designs ?? {};
   const { rows, scales, alpha, alphaNow, otherTask, pending, proposals, what, afterwards, saves, apply } = calibrationPlan(result, config);
@@ -74,7 +74,7 @@ function Calibration({ value, live, config, setConfig }: { value: Json; live: bo
           <button className="primary" onClick={applyAndSave}
             title={`Apply and save: Writes ${what} into the page, as one Undo step, ${APPLY_AND_SAVE}`}>Apply and save</button>
           <button onClick={() => { setSaid(null); setConfig(apply); }}
-            title="Apply only: Writes the proposed Scale into those Specs rows and the proposed Initial alpha into RL networks, as one Undo step. Nothing is simulated and no task is saved: the task starts again after Save task.">Apply only</button></>
+            title="Apply only: Writes the proposed Scale into those Specs rows and the proposed Initial alpha into RL networks, as one Undo step. Nothing is simulated and no task is saved. Use Apply and save to update this task, or Save as for a new task.">Apply only</button></>
         : <button disabled={!pending || otherTask} onClick={() => setConfig(apply)}
             title="Apply calibration: Writes the proposed Scale into those Specs rows and the proposed Initial alpha into RL networks, as one Undo step. Nothing is simulated and no task is saved.">Apply calibration</button>}
       <span className="hint">{otherTask ? `Apply waits until the page holds ${result.task_key}.`

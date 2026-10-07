@@ -140,7 +140,12 @@ class _EnvDriver:
                 observation, info = env.reset_reused()
                 self._last = None                          # so there is nothing to retry either
                 step = (observation, None, info['terminated'], info['truncated'], info)
-            elif op == 'step':
+            elif op in ('step', 'calibration'):
+                if op == 'calibration':
+                    # Independent absolute random designs need no simulated starting state or replay transition.
+                    env._require_connection()
+                    env.steps, env.episode, env._done = 0, env.episode + 1, False
+                    env._recording_observation = None
                 action = env.mapper.legalize(proposal)      # invalid input costs nothing, as in env.step
                 self._last = ('step', action)
                 step = env.step(proposal)

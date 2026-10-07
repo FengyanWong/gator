@@ -57,6 +57,7 @@ await runChecks(browser, async () => {
   let settingsProblem = null;                                                     // the last section: /api/meta says settings.json is unreadable
   const answer = params => {
     const name = new URL(params.request.url).pathname;
+    if (name === '/api/runs') return fulfil(params.requestId, 200, { runs: [] });
     if (name === '/api/config/validate') { validations++; return answerWith.status ? fulfil(params.requestId, answerWith.status, answerWith.body) : fulfil(params.requestId, 200, answerWith); }
     if (name === '/api/meta' && settingsProblem) return fulfil(params.requestId, 200, { ...META, settings_problem: settingsProblem });
     return page.readOrRefuse(params, refused);                                    // a panel asking on its own; never a start
@@ -95,7 +96,7 @@ await runChecks(browser, async () => {
   check('it counts the blocking issues only (3 of 6 reported)', (await evaluate(`${BUTTON}.textContent`)) === '3 blocking issue(s)', await evaluate(`${BUTTON}.textContent`));
   check('the old text notifier is gone', !(await evaluate(`[...document.querySelectorAll('header span')].some(s => /blocking issue/.test(s.textContent))`)));
   check('nothing is listed before a press', !(await evaluate(`!!(${LIST})`)) && (await evaluate(`${BUTTON}.getAttribute('aria-expanded')`)) === 'false');
-  check('Start and the baseline simulation are disabled', await evaluate(`${headerButton('Start')}.disabled && ${headerButton('Baseline simulation')}.disabled`));
+  check('Start and Calibration are disabled', await evaluate(`${headerButton('Start')}.disabled && ${headerButton('Calibration')}.disabled`));
   const heightClosed = await evaluate(`document.querySelector('header').getBoundingClientRect().height`);
   await shot('issues-1-closed.png');
 
@@ -140,7 +141,7 @@ await runChecks(browser, async () => {
   check('with nothing blocking the header reads "configuration valid" and the button is gone', !(await evaluate(`!!(${BUTTON})`)) && await evaluate(`[...document.querySelectorAll('header span.ok')].some(s => s.textContent === 'configuration valid')`));
   check('the open list closed with it', !(await evaluate(`!!(${LIST})`)));
   // the buttons follow in the render after the header's text; waited for, as every other state here (record 7.227: it was read in the same tick and failed by a few ms)
-  check('Start and the baseline simulation are enabled again', await until(`!${headerButton('Start')}.disabled && !${headerButton('Baseline simulation')}.disabled`, 30));
+  check('Start and Calibration are enabled again', await until(`!${headerButton('Start')}.disabled && !${headerButton('Calibration')}.disabled`, 30));
   await shot('issues-4-valid.png');
   await revalidate(fixtures.three);
   check('a new problem brings the button back, closed', (await until(`!!(${BUTTON})`, 30)) && !(await evaluate(`!!(${LIST})`)) && (await evaluate(`${BUTTON}.textContent`)) === '3 blocking issue(s)');

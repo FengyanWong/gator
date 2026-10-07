@@ -23,7 +23,7 @@ const browser = await launchEdge('calsave');
 const consoleErrors = [];
 
 // ---- canned answers: the saved task (as task_save_check.mjs), its Specs row a window of 1.1 to 1.3 GHz -------------------
-const TASK = 'real:ring_osc', DIR = '/fixture/outputs/real/calibration__0001/runs/ring_osc.baseline/scratch__seed0__0001';
+const TASK = 'real:ring_osc', DIR = '/fixture/outputs/real/calibration__0001/runs/ring_osc.calibration/scratch__seed0__0001';
 const ROWS = [{ variable_id: 'wn', instance_path: 'XU1/MN1', parameter_name: 'w', unit: 'um', optimized: true, lower: 0.6, upper: 1.6, step: 0.005 }];
 const PROBES = [{ measurement_id: 'm_osc_frequency_hz', analysis: 'tran', result_source: 'backend_profile', source_name: 'osc_frequency_hz', unit: 'Hz' }];
 const SPECS = [{ metric_id: 'osc_frequency_hz', equation: 'm_osc_frequency_hz', unit: 'Hz', constraint: 'interval', lower: 1.1e9, upper: 1.3e9, normalization_scale: 1.3e9 }];
@@ -44,13 +44,13 @@ const RESULT = { format: 'gator-calibration-1', status: 'calibrated', reason: nu
   run_id: 'fixture-run', task_key: TASK, run_state: 'completed', created_utc: '2026-10-05T17:05:00+00:00', recalculated: { from_rule: 1, to_rule: 3 } };
 const STATUS = { state: 'completed', run_id: 'fixture-run', mode: 'scratch', entry: 'start', provenance: 'real', mock: false, worker_alive: false, run_dir: DIR,
   heartbeat_utc: '2026-10-05T17:05:00+00:00', stop_reason: 'budget_exhausted', error: null, active_workers: [], concurrency: 1, learner_updates: 0, first_feasible: null,
-  budget: { max_evaluations: 65, max_launches: null, max_retries: 0, charged: 65, reserved: 0, in_flight: 0, completed: 65, failed: 0, released: 0, remaining: 0, launches: 65, retries: 0, cache_hits: 0, first_feasible: null },
+  budget: { max_evaluations: 64, max_launches: null, max_retries: 0, charged: 64, reserved: 0, in_flight: 0, completed: 64, failed: 0, released: 0, remaining: 0, launches: 64, retries: 0, cache_hits: 0, first_feasible: null },
   best_design: null, persistence: null, last_checkpoint_utc: null, paths: { run_dir: DIR }, connection: { overall: 'not_applicable' }, summary: null, save_point: null,
-  calibration: { request: { designs: 64, lanes: 1, evaluations: 65 }, result: RESULT },
-  manifest: { mode: 'scratch', mock: false, task_id: TASK, seeds: { target_seed: 0 }, source_model: null, budgets: { max_evaluations: 65 }, mock_notice: null } };
-const LISTED = { run_dir: DIR, run_id: 'fixture-run', task_id: TASK, task_key: TASK, task_name: 'ring_osc.baseline', task_definition_hash: 'fixture', mode: 'scratch', mock: false, seed: 0,
+  calibration: { request: { designs: 64, lanes: 1, evaluations: 64, random_only: true }, result: RESULT },
+  manifest: { mode: 'scratch', mock: false, task_id: TASK, seeds: { target_seed: 0 }, source_model: null, budgets: { max_evaluations: 64 }, mock_notice: null } };
+const LISTED = { run_dir: DIR, run_id: 'fixture-run', task_id: TASK, task_key: TASK, task_name: 'ring_osc.calibration', task_definition_hash: 'fixture', mode: 'scratch', mock: false, seed: 0,
   created_utc: '2026-10-05T17:03:00+00:00', started_utc: '2026-10-05T17:03:00+00:00', ended_utc: '2026-10-05T17:05:00+00:00', state: 'completed',
-  experiment: 'calibration__0001', evaluations: 65, max_evaluations: 65, first_feasible_eval_count: null, resumability: null, stop_reason: 'budget_exhausted', error: null };
+  experiment: 'calibration__0001', evaluations: 64, max_evaluations: 64, first_feasible_eval_count: null, resumability: null, stop_reason: 'budget_exhausted', error: null };
 const STEPS = [['setup', 'Virtuoso writes the Maestro test into the cell and reads it back'], ['files', 'Writing the task files and checking them']].map(([id, title]) => ({ id, title }));
 
 await runChecks(browser, async () => {
@@ -168,7 +168,7 @@ await runChecks(browser, async () => {
   await settle(1200);
   config = await stored();
   check('"Apply only" writes the Scale and sends nothing', config.targets[0].normalization_scale === 1e8 && calls.length === mark, calls.slice(mark).map(c => c.op).join(' | '));
-  check('...and says that Save task is still to be pressed', (await evaluate(HINT)) === 'The page holds these values. Then press Save task: this task starts only with the rows it has saved, and its recorded baseline is kept.', await evaluate(HINT));
+  check('...and says that Save task is still to be pressed', (await evaluate(HINT)) === 'The page holds these values. Use Apply and save to update this task and keep its recorded baseline, or Save as to create a new task.', await evaluate(HINT));
 
   // ---- while another save runs: applied, nothing sent, and the reason ------------------------------------------------------------
   await evaluate(`${UNDO}.click()`);
@@ -182,10 +182,10 @@ await runChecks(browser, async () => {
   config = await stored();
   check('"Apply and save" still applies, and sends no second save', config.targets[0].normalization_scale === 1e8 && calls.length === mark, calls.slice(mark).map(c => c.op).join(' | '));
   check('...the block says why Save task could not start, and what to press', (await evaluate(SAID))
-    === `Applied the Scale of 1 Specs row, as one Undo step. Save task could not be started from here (the save of ${TASK} is still running): press Save task, above the editors.`, await evaluate(SAID));
+    === `Applied the Scale of 1 Specs row, as one Undo step. Saving could not be started from here (the save of ${TASK} is still running): try Apply and save again when ready, or use Save as above the editors.`, await evaluate(SAID));
   await page.shot(path.join(out, 'calibration-save-3-busy.png'), `document.querySelector('footer')`);
   saving = { running: null, last: { id: 'other', task_key: TASK, ok: true, seconds: 30, answer: { task_key: TASK, revision: 3, created: false, baseline_kept: true, changed: [] } } };
-  check('when that save has ended, Save task opens again', await until(`!!(${SAVE}) && !${SAVE}.disabled && ${SAVE}.textContent.trim() === 'Save task'`, 60), await evaluate(`${SAVE}?.textContent`));
+  check('when that save has ended, Save task opens again', await until(`!!(${SAVE}) && !${SAVE}.disabled && ${SAVE}.textContent.trim() === 'Save as'`, 60), await evaluate(`${SAVE}?.textContent`));
 
   reportRefused(page.refused);
   check('no error in the page console', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

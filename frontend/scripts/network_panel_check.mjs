@@ -208,6 +208,48 @@ await runChecks(browser, async () => {
     && (await numbers())[0] === String(restored.run.network.hidden_dim)
     && await evaluate(`${NETWORK_PANEL}.querySelector('.in-use').textContent.includes('edited, saved in the backend')`));
 
+  // The screenshot's stale rate is the sole difference from the old starting preset. The one-time browser upgrade
+  // follows the current preset, without saving preferences or repeatedly undoing an intentional choice of 3e-4.
+  const rateMigrationKey = 'gator-workbench-preset-rate-2026-10-05';
+  const oldPreset = { ...restored, run: { ...restored.run,
+    network: { encoder_type: 'graph_transformer', ...gt, operating_points: true },
+    advanced: { ...settings.settings.graph_transformer.advanced, learning_rate: 0.0003 } } };
+  const restorePreset = async (config, firstVisit = true) => {
+    await page.seed({ config });
+    if (firstVisit) await evaluate(`localStorage.removeItem(${JSON.stringify(rateMigrationKey)})`);
+    await send('Page.reload');
+    networkPage = await openNetworks(page, browser);
+    await page.until(`localStorage.getItem(${JSON.stringify(rateMigrationKey)}) === 'checked'`);
+    await page.until(`JSON.parse(localStorage.getItem('gator-workbench-config-v1')).run.network.operating_points === true`);
+  };
+  await restorePreset(oldPreset);
+  check('the restored old preset upgrades its learning rate and clears the mismatch',
+    await page.until(`!!${NETWORK_PANEL}.querySelector('.preset-rate-updated') && !${differences}`)
+    && await evaluate(`${IN_USE} === 'In use: starting preset'`));
+  check('the upgraded rate is persisted without changing any other configuration value or writing preferences',
+    await page.until(`JSON.parse(localStorage.getItem('gator-workbench-config-v1')).run.advanced.learning_rate === 0.001`)
+    && JSON.stringify(await page.stored()) === JSON.stringify({ ...oldPreset, run: { ...oldPreset.run,
+      advanced: { ...oldPreset.run.advanced, learning_rate: 0.001 } } }) && paused.length === 0);
+  await networkPage.shot(path.join(out, 'network-6-preset-rate-updated.png'), NETWORK_PANEL, { maxHeight: 1100, beyond: true });
+  await evaluate(`document.querySelector('section.editors button[title^="Undo:"]').click()`);
+  check('one Undo restores the old learning rate and removes the update notice',
+    await page.until(`!!${differences} && !${NETWORK_PANEL}.querySelector('.preset-rate-updated')`)
+    && await evaluate(`${differences}.textContent.includes('0.0003')`));
+  await page.until(`JSON.parse(localStorage.getItem('gator-workbench-config-v1')).run.advanced.learning_rate === 0.0003`);
+  await restorePreset(await page.stored(), false);
+  check('reloading after Undo keeps the chosen old rate instead of upgrading again',
+    await page.until(`!!${differences}`) && (await page.stored()).run.advanced.learning_rate === 0.0003);
+  const customPreset = { ...oldPreset, run: { ...oldPreset.run,
+    network: { ...oldPreset.run.network, hidden_dim: gt.hidden_dim * 2 } } };
+  await restorePreset(customPreset);
+  check('a configuration with other custom values keeps its own learning rate on first visit',
+    await page.until(`!!${differences}`) && (await page.stored()).run.advanced.learning_rate === 0.0003
+    && !await evaluate(`!!${NETWORK_PANEL}.querySelector('.preset-rate-updated')`));
+  await restorePreset({ ...oldPreset, run: { ...oldPreset.run, mode: 'fine_tune' } });
+  check('loading a saved model never upgrades the restored learning rate',
+    (await page.stored()).run.advanced.learning_rate === 0.0003
+    && !await evaluate(`!!${NETWORK_PANEL}.querySelector('.preset-rate-updated')`) && paused.length === 0);
+
   console.log(`INFO  other writing requests the page sent on its own, all refused here: ${[...new Set(page.refused)].join(', ') || 'none'}`);
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
 });

@@ -112,7 +112,7 @@ The header has one main run button and **Abort** next to it. The main button cha
 * The header controls ONE run - the one started or resumed from this page, remembered across a reload - and shows
   it as a small text button ("running 12 / 60"; press it to see the run under Run status). It is not the run chosen
   in the list of the bottom tabs: looking at an older run's data never takes Pause and Abort away from a live run.
-  While a run is active or paused in the header, "Baseline simulation" is not available. A finished
+  While a run is active or paused in the header, "Calibration" is not available. A finished
   Baseline simulation of a task saved from a cell records its result as the task's reference by itself
   (status record 7.78): once the run has come to rest the Project column reads the task again and no longer
   says "No real baseline yet" (one line since record 7.188, its explanation in the line's tooltip).
@@ -276,7 +276,7 @@ Browser check: `frontend/scripts/looks_check.mjs` (47 checks, hermetic).
 | MOCK tasks: none since 2026-09-30 | The workbench offers no MOCK task since the user's request of 2026-09-30 (record 7.128). The last one, `synthetic:gpdk045_ota5` - the analytic toy backend (`origin=synthetic`) on the netlist and device mapping of the GPDK045 OTA5 - is refused with a plain note, as are the four toy tasks it had replaced on 2026-09-22 (status record 7.59). The toy backend stays for the tests: they register that circuit as their stand-in through `GATOR_WORKBENCH_SYNTHETIC_FIXTURES` (`tests/workbench/fixtures/synthetic_fixtures.json`, set in `tests/conftest.py`), and so do the browser checks' scratch backends (`frontend/scripts/run_checks.sh`). MOCK data stays labelled `provenance=mock`, under `<output_root>/mock/`, out of real aggregates; a model it trains never loads into a real run. |
 | `real:gpdk045_*` tasks: none left | The four verified built-in circuits were removed on user request: `real:gpdk045_ota5` and `real:gpdk045_vco` on 2026-09-23 (status record 7.73, their example cells deleted from Virtuoso), `real:gpdk045_ota7` and `real:gpdk045_ldo` on 2026-09-30 (record 7.128, with their example netlists and configurations - so the M5/M6 audits and the frozen M6 plan re-validate from a checkout before that commit). A configuration that names one opens with a plain note and cannot start; the names stay reserved. The real tasks are the ones saved from a Virtuoso cell (next row) and the ngspice ones. |
 | `ngspice:<name>` tasks (added 2026-09-23) | A SPICE deck pasted or loaded in the **ngspice netlist...** window and saved as a task. **REAL** circuit simulations by ngspice (`origin=real`, `provenance=real`), on this machine or over SSH through an ngspice connection - no license, no Virtuoso, but counted, authorized (Start asks) and recorded exactly like every real run, so the data is never mistaken for mock data. Its models never load into a MOCK run and the other way round; they are interchangeable with Virtuoso real runs as far as the network contract allows. |
-| Arbitrary native cellviews | Read-only browsing through the bridge. Optimizing one needs a saved task, which runs on a WORKING COPY of the cell - since 2026-09-23 the copy you made in Virtuoso and declared on the read; the workbench makes no copy of its own (status record 7.72): a run writes instance values into that copy (the form writer since 7.66), never into your original design, and no cellview is created or redrawn. |
+| Arbitrary native cellviews | Read-only browsing through the bridge. Optimizing one needs a saved task, which runs on a WORKING COPY of the cell - since 2026-09-23 the copy you made in Virtuoso and declared on the read; the first save uses that declared copy; Save as on a saved task makes a separate copy (record 7.246): a run writes instance values into that copy (the form writer since 7.66), never into your original design, and no cellview is created or redrawn. |
 
 ### Choosing a registered task: whose rows Parameters, Probes and Specs show
 
@@ -319,7 +319,7 @@ starters from a restarted or scratch backend). Tests: `tests/workbench/test_wb_r
 User: "make the loaded task a button similar to the runs... button style. It opens a new window showing all the tasks."
 
 In the Project column the registered task is no longer a drop-down list. The **Task** row names the task the page follows
-as plain text (`real:mscr_ota5t`, with a mark when something keeps it from running: `[blocked]`, `[ngspice: choose its
+as plain text (`mscr_ota5t`, with a mark when something keeps it from running: `[blocked]`, `[ngspice: choose its
 connection]`, `[MOCK]`; or a placeholder: "(choose a task)", "(none: MScR/x is read from Virtuoso)", "(none: the saved
 source was removed)", "synthetic:vco (removed)"), and ONE button beside it reads **Tasks...** - the same shape as the
 bottom strip's **Runs...**. Pressing it opens the **task window**, a browser window of its own that can stay open next
@@ -327,8 +327,7 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
 
 | Column | What it says |
 |---|---|
-| Task | `real:<name>` (saved from a Virtuoso cell), `ngspice:<name>` (an ngspice netlist), a MOCK task. |
-| Kind | real / ngspice / MOCK, and under it the mark that keeps the task from running now (an ngspice task without its connection is listed too - the old list left it out while a Virtuoso connection was in use). |
+| Task | The task name, without the `real:` prefix for saved Virtuoso tasks; ngspice names retain `ngspice:`. Availability marks and the MOCK badge appear beside the name. There is no Kind column or Kind detail (7.249). |
 | Class | The circuit class label. |
 | Cell | The library and cell the task runs in (the copy you declared), and its testbench cell. |
 | Rev | The saved revision. |
@@ -347,7 +346,7 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
   its rows: the Parameters it varies (searched rows with their ranges, follower rows), its Probes and its Specs with
   their limits, read from the starter route when the details open.
 * A press on a column title sorts by it (again: the other way; rows without a value stay last). The filter box narrows
-  the list by any word of a row: name, kind, class, cell, a date.
+  the list by any word of a row: name, class, cell, a date. Task names sort as displayed; canonical task IDs stay unchanged for selection, saved configurations, runs and models (7.249).
 * **Nothing in the window updates by itself.** The task list is read when the button is pressed and by **Refresh list**
   (which reads the run list again too; otherwise the run columns show the page's own run list - read when the page
   opened and after every task choice). A workbench server started before this was added lists runs without their task:
@@ -356,6 +355,23 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
   `results`) come with `GET /api/tasks`, all from the task's own entry file - no other file is read. A server older than
   the page leaves those cells empty ("-").
 * **Reload saved values** and **Delete task** stay in the column under the task, as before.
+
+**Folders** (7.250): the sidebar lists **All tasks**, **Unfiled**, and named folders with task counts.
+Use the **New folder** icon (folder with a plus) to create one. **Rename** uses a pencil and **Delete folder**
+uses a bin; all three retain tooltips and screen-reader labels (7.251). Tick tasks (or the header checkbox for all shown rows), then choose **Move to…**.
+A folder filters the table; search and sorting apply inside it. Changing the filter or folder clears selection, so
+hidden tasks cannot be moved accidentally. In All tasks, a task's folder appears below its name. Double click still
+loads the task; checkboxes only select it for a move. **Rename** keeps membership; **Delete folder** sends its tasks
+to Unfiled without deleting any task, run or model. New tasks start in Unfiled.
+
+Folders are saved in the backend's `task_folders.json`, shared across windows and browser reloads; **Refresh list**
+reads them again. Failed reads/saves are shown and can be retried. Organization changes neither task IDs nor encoder
+settings, saved circuit files, revisions or run/model provenance. The initial organization uses the verified encoder
+of existing runs, plus the declared GraphGPS and Group Cross Attention task copies; historical `_rgcn` names alone
+are not encoder evidence. The initial folders contain Graph Transformer (22), GraphGPS (6), and Group Cross Attention
+(6) tasks. API: `GET/POST /api/task-folders`, `PUT /api/task-folders/assign`, and
+`PATCH/DELETE /api/task-folders/{folder_id}`. Names are unique ignoring case. Updates merge atomically under a file
+lock; removing a folder clears only its assignments.
 
 Browser checks: `frontend/scripts/task_list_check.mjs` (the window, double click, Details, filter, sort, Refresh, an
 older server; fixtures, safe on the live backend); the checks that used to choose a task through the drop-down
@@ -733,9 +749,15 @@ the cell beside the button. Choosing a task in the column makes the page follow 
 window then starts from a blank library. Closing the window loses nothing.
 
 The column and the window keep their explanations folded: a line with a small triangle ("Labels: class
-..., PDK ..." - the column's circuit class, PDK id and DUT hierarchy boxes are one closed line naming their
+..., PDK ..." - the column's circuit class and PDK id boxes are one closed line naming their
 values -, "Why: it has no circuit profile yet", "What the check compares", "2 notes on this circuit", ...)
 opens on a click. Headlines, warnings and buttons are always in view.
+
+The **DUT hierarchy / subcircuit** input and its DUT summary value were removed from this line on
+2026-10-07 (record 7.245): saved Virtuoso tasks already determine the DUT and do not use this input.
+Existing configurations retain their hierarchy data; the circuit's hierarchy viewer remains available.
+**Circuit class** uses the same themed dropdown as the other controls; **Custom...** opens a text box
+for a class outside the suggested list. A saved custom class remains editable (record 7.245).
 
 The **Hierarchy** block at the end of the column (of the window, for a cell read from Virtuoso) is folded
 the same way: one closed line, "Hierarchy
@@ -801,7 +823,7 @@ to say.
   circuits (`real:gpdk045_ldo` for `ldo_m6_v1`, ...; the library is the one the Virtuoso connection
   states) - shows "This cell already has a registered task: `real:<name>`" and says to choose it under
   **Task** in the Project column (its **Open** button went on 2026-09-29, 7.109); change it there
-  (Save task); another task needs another copy of the cell, made in Virtuoso and read in
+  (Save as); another task gets its own copy through that save, or from another copy made in Virtuoso and read in
   the window. A built-in circuit gets no second task.
   **Delete task** (in the column's task row, at the right end next to Reload saved values (formerly Load task) since 2026-09-24 - before
   that the last line of the task's block; asks once more; was: Delete profile):
@@ -829,16 +851,15 @@ to say.
      everything a real evaluation does before Spectre starts (connect through the run adapter, export,
      compare with the record, write the deck). Free, read-only; needs the link up and no ADE/Maestro
      window open on the design. Start runs it by itself as well.
-  2. **Baseline simulation** in the header - one real Spectre run (the starting design, then 64 random
-     designs for the calibration, below); asks for your budget. When it finishes, its baseline is
-     recorded as the task's reference BY ITSELF (status record 7.78, 2026-09-24):
-     from then on every run compares its first evaluation with that result, as the verified profiles do.
-     Recorded once, never replaced. A refused measurement (incomplete, invalid) is named in the column
-     with its reason instead of the standing advice. A baseline made before 7.78 - or one whose worker
-     could not record it - is adopted when the task is next loaded: the newest completed one of the
-     task under the remembered output root, provided the task was not saved again after it.
-     The former third step, a **Record the baseline run as reference** button for a run made another way,
-     went on 2026-09-29 (status record 7.109); the route below stays for scripts.
+  2. **Save as** creates the task and starts its baseline automatically (record 7.248): the saved starting
+     design, one nominal evaluation, one simulator launch maximum, one lane, seed 0, no retries, no training or
+     calibration. Its configuration comes from the saved task, independently of the page's run controls. The
+     header follows that worker. A valid completed Virtuoso baseline becomes the task's reference automatically.
+     A failed or blocked baseline leaves the task saved, reports why and offers **Retry baseline** in the Project
+     column. The launch is recorded in the task's `baseline_launch.json` so reloads retain its status.
+  3. **Calibration** in the header is optional: 64 random designs, no baseline or episode-reset simulations.
+     Its proposals stay unapplied until **Apply calibration** or **Apply and save**. Existing combined runs remain
+     readable; scripts can still request the historical combined `baseline_only` + `calibration_designs` operation.
 
 `POST /api/virtuoso/libraries | cells | read | import`, body `{"profile_id", "library"?, "cell"?, "testbench"?}` (import:
 `"work_here"?` - the user said the cell is a copy they made; the answer then carries the `working_copy` record);
@@ -1546,13 +1567,22 @@ in [decisions.md](decisions.md).) A row whose limit is 0 needs a typed scale and
 `frontend/scripts/reward_block_check.mjs` (28: the sentence, the fold, the button, the RL networks warning and the GATOR
 baseline press, the Specs scale). The measurement: `artifacts/local/reviews/defaults-study-2026-10-05/README.md`.
 
-### Calibration with the baseline run: a Scale per Specs row and the Initial alpha (2026-10-05, record 7.197, user request)
+### Calibration: random designs only; automatic task baseline (2026-10-07, record 7.248)
 
-**In plain words.** **Baseline simulation** in the header simulates the starting design (the baseline), and the same
-run goes on: it simulates 64 random designs - uniform draws over the Parameters ranges, the draws a run's warm-up makes -
-and works out two settings from what they measure. (Until record 7.202 a tick, **+ calibration**, beside a button named
-Single baseline simulation chose the second part. The user: "can we merge single baseline simulation and calibration to
-baseline simulation"; the tick went, and **Check now** stays the free check, simulating nothing.)
+**Baseline belongs to task creation.** Save as saves the task and starts one fixed evaluation of its own starting
+circuit automatically. The task supplies the saved parameters, measurements and specs; the baseline fixes scratch mode,
+seed 0, one lane, nominal only, one evaluation/launch maximum and zero retries. It saves no model and learns nothing.
+Connection/readiness failures are reported without undoing the save. Unknown probe results permit the one bounded
+attempt; known failures still refuse it. A missing/failed baseline can be retried from the Project column. In-place
+Virtuoso updates that invalidate a reference also start a new baseline; specs-only updates retain their reference.
+New ngspice tasks run their saved deck too. Before optimization specs exist, the baseline checks measurement presence
+with `probe - probe >= 0`, using an explicit Scale of 1; these run-only checks never become task specs or performance
+claims. Current-source rows unsupported by SAC stay fixed in the saved deck, outside the baseline's action groups.
+
+**Calibration** in the header simulates **64 random designs only**, uniform draws over the Parameters ranges, and
+works out two settings from their measurements. There is no starting-design simulation, no per-lane reset simulation,
+no replay insertion and no learner update. The ordinary training path retains its existing reset checks. Older
+combined baseline/calibration runs retain their recorded meaning and remain readable.
 
 - **Scale, for each Specs row:** the typical miss - the median distance outside the limit among the random designs that
   miss the row, in the row's own unit. One example, from the free ngspice test circuit: the output-voltage row allows
@@ -1586,13 +1616,11 @@ the header holds. It goes when it is answered (kept in this browser, so a reload
 already holds the values, and when the next run starts; the next Baseline simulation asks again. A calibration that
 proposes nothing says why on the same line. Nothing is applied by itself.
 
-- **What it costs.** Each lane simulates the starting design once (the first is the baseline), then come the 64 random
-  designs: 64 + the number of lanes evaluations, every one a real simulation on a real task. The question before the
-  run names the number. Nothing is learned from them (no learner update), and a design that passes does not stop the run.
-- **No lane starts before the baseline is in.** A baseline that gives no valid result ends the run there, as a baseline
-  run of one evaluation: no random design is simulated on a task whose starting design cannot be measured.
-- **Stopped among the random designs** (Abort), the run still gives the task its reference - the baseline evaluation is
-  as finished as that of a run of one - and proposes from the designs it has, if at least 16 gave a reward.
+- **What it costs.** 64 candidate evaluations at any lane count. Each is a real simulation on a real task. The
+  budget question states 64. Passing a spec or an invalid random design does not add a baseline/reset evaluation.
+  Infrastructure failures and the ordinary launch/wall-time limits can still stop the run early.
+- **Stopped among the random designs** (Abort): proposes from the completed designs if at least 16 gave a reward.
+  Calibration does not record or replace the task's starting-design reference.
 - **What is not proposed, and said in the table instead:**
   - a row fewer than 8 random designs miss (or fewer than one in eight): too few to name a typical miss (a window
     whose Scale is wider than half of it is proposed half its width instead, below);
@@ -1628,13 +1656,11 @@ proposes nothing says why on the same line. Nothing is applied by itself.
   page's rows at all (record 7.214: an LDO's `pm_deg` used to stand as the "Scale now" of an OTA's): a line names both
   tasks, the table shows **Scale in the run** and the Initial alpha the run had, and Apply waits until the page holds
   the run's task (choose it under Registered task).
-- **The baseline alone:** press **Abort** once the random designs begin; the baseline counts as finished (the point
-  above). The Abort question of a Baseline simulation says so: the baseline is kept, a task saved from a cell that has
-  no reference yet still gets it, and the calibration proposes only from the random designs simulated so far (at least
-  16 must give a reward; record 7.206). A starting design that cannot be measured costs one simulation anyway: the run
-  ends after it. A browser that had unticked the old tick calibrates too: that choice is no longer read.
-- **From a script:** `POST /api/runs/start` takes `calibration_designs` (0 to 500) with `baseline_only`; the result is
-  `calibration.json` in the run folder and `calibration` in the run's status.
+- **From a script:** `POST /api/runs/start` takes `calibration_only: true` with `calibration_designs` (1 to 500).
+  The result is `calibration.json` and `calibration` in run status, with `random_only: true` in its request. It cannot
+  also request `baseline_only`. The historical combined API remains available for existing scripts.
+- **Retry baseline:** `POST /api/tasks/baseline` takes the saved `task_key`, connection `profile_id` and optional
+  `output_root`, and always uses the fixed single-evaluation recipe. Concurrent retries reuse a live baseline.
 
 **What was measured** (free ngspice circuit `ota5`, 1,000 evaluations per run, 3 seeds per setting; on Spectre one task,
 `real:mscr_ota7t`, two seeds per arm - record 7.211, below).
@@ -2001,6 +2027,14 @@ setting with **This run** and **Saved default** values. The run uses the current
 this run's settings (one Undo step) without writing preferences; **Save as defaults** keeps this run's settings and
 remembers them for that encoder. The publication/baseline label is shown as in use only while the values match.
 
+One browser upgrade handles the old starting preset's learning rate (record 7.243): on the first page load after this
+fix, a scratch configuration for GT, RGCN or GATv2 that exactly matches the starting preset except for learning rate
+`0.0003` takes the preset's `0.001`. The window says what changed, and one Undo restores the previous rate. A browser
+marker prevents subsequent reloads from repeating this upgrade, including after Undo or a deliberate edit. Other
+custom values, custom saved defaults and modes that load a model keep their rates. Imports or edits made while the
+initial settings request is pending take precedence. No backend preference is written; unavailable browser storage
+leaves the existing values and comparison intact.
+
 ### Network structure of a saved model (added 2026-09-21, user request)
 
 Under the facts of the chosen model, the fold-out **Network structure** shows what the saved network consists of -
@@ -2276,7 +2310,7 @@ up IN Virtuoso -> read back -> edited anywhere -> "Save task"; until 2026-10-06 
 up, record 7.226). It lives in the note "Read from Virtuoso"
 of the Virtuoso window, under the buttons of a cell read into the workbench, and every step is a button.
 
-**The user's own copy (since 2026-09-23).** The workbench makes NO copy of a cell any more. Copy the cell and its
+**The user's own copy on first read (since 2026-09-23).** Reading a cell does not make a copy. Copy the cell and its
 testbench in Virtuoso yourself (Library Manager), choose the copy in the window and press **Read this cell into the
 workbench**: the press asks (a confirm) whether the cell is a copy you made, and the warning above the button says why -
 saving a task writes the Maestro test `GATOR` into the testbench, and every run sets device sizes in the cell (put back
@@ -2287,6 +2321,8 @@ contacted beyond the read, and the check before every run keeps comparing the ce
 window then says "Working in `<library>/<testbench>` directly: you declared it a copy you made (when)", and reading a
 declared cell again asks nothing. Refused in words: a cell read without its testbench (before any export), the PDK's own
 library, an export that does not name the cell. `POST /api/virtuoso/copy` refuses (`copies_not_made`).
+Since 2026-10-07, **Save as** on an existing saved task explicitly creates a new task with its own DUT/testbench
+copies in the same working library, using `working_copy.make_task_copy` (record 7.246).
 
 Until 2026-09-23 the button **Make a working copy** did this instead: it copied the testbench the cell was read through
 and every cell of the same library under it into `<library>_GATOR` - a library the workbench added itself, bound to the
@@ -2294,8 +2330,8 @@ same technology library - and pointed the copied testbench at the copied cells (
 backed up; accepted only when the copy netlisted like the original, every copied cell came from the copy library and the
 originals read back unchanged; records under `configs/local/workbench/working_copies/<library>/<cell>/` and
 `working_copies/libraries.json`). Tasks saved on such a copy keep running on it: their records name it, their line in the
-window says "made by the workbench before 2026-09-23", and nothing migrates them. `working_copy.make` remains for Save as
-through the API and for the tests. Cell and instance names are the same in a copy as in the original, so every
+window says "made by the workbench before 2026-09-23", and nothing migrates them. `working_copy.make` remains for
+the tests; Save as uses `make_task_copy`. That operation renames copied cells while retaining device instance names, so every
 Parameters row and every probe names the same instance path either way.
 
 A saved task stores its copy's record folder (`copy_target.state_dir` in `profile.json`) as an absolute path into the
@@ -2354,26 +2390,30 @@ Tests: `tests/workbench/test_wb_working_copy.py`, `tests/workbench/test_wb_virtu
 answer shapes are the live installation's). Browser check: `frontend/scripts/working_copy_check.mjs` (hermetic, fixtures
 only, safe against the live backend).
 
-### Saving a task: Save task and the task file (added 2026-09-22, user request; Save as removed 2026-09-23)
+### Saving a task: Save as and the task file (2026-10-07, record 7.246)
 
-The second part of the flow. **Save task** replaces the former Create profile form (user decision: the form, its Circuit
-type box and its expected-frequency field went once Save task worked). Only a person presses it.
+The button above the editors is **Save as**. Each press reads the current task list and prompts for a new name,
+starting with the original task name plus numbering: `ota` → `ota_2`, then `ota_3`, skipping occupied names.
+A numbered copy continues the sequence when its original is still listed. The first save of an unsaved cell uses
+its cell name with numbering too. Names use 2–40 lowercase letters, digits and underscores, beginning with a letter;
+the suggestion leaves room for its suffix. Invalid or occupied names are explained in the prompt. Cancel writes
+nothing. If the task list cannot be read, the error is shown and no save is sent.
 
-**Where.** At the right end of the editors' tab line (Parameters | Probes | Specs) - the save sits with the rows it stores (user request 2026-09-22; it used to be in the note "Read from
-Virtuoso", which now only says "Then save it as a task: Save task is above the editors" with "What Save task does"
-folded). For a cell read from Virtuoso: a New task name (the cell's name when left empty), **Save task** and **Task
-file**. On an open task (Registered task): "Task real:<name>, revision N", **Save task** and **Task file**. Their
-messages and questions (the saved revision, a refusal, the ring oscillator's rough frequency) appear under the editors'
-toolbar. "Delete task" (was: Delete profile) stayed at the end of the task's block in the Project column until
-2026-09-24; it is in the column's task row now, at the right of Reload saved values (formerly Load task, 7.78). The editors'
-own **Save** button went at the same
-time: it kept the configuration in the browser, which the page already does by itself 0.8 s after every change (and,
-since 7.125, when the page is closed or reloaded sooner), and a second "Save" beside "Save task" only confused.
-If browser storage is full or blocked, a persistent header warning offers **Retry save** and **Export JSON** for the
-current in-memory configuration. Failed writes remain unsaved, including for the page-close retry. A successful write
-clears the warning; page-close saving still avoids replacing another tab's stored configuration (record 7.130).
+On a saved task, the existing `as_new` API creates a separate task at revision 1, with renamed DUT/testbench copies
+inside its working library; the source task and its recorded baseline remain unchanged. A first save from a cell
+uses the copy the user declared when reading it. The successful new task is selected automatically. The prompt
+explains the copy, and the existing save progress includes that step. A frequency retry retains the chosen name.
 
-Editing stays available while Save task is in flight. The reply applies normalized parameters only when those rows
+**Where.** At the right end of the editors' tab line (Parameters | Probes | Specs), beside **Task file**. An open task
+also shows "Task real:<name>, revision N". The former inline **New task name** box is gone: naming happens in the
+prompt. Messages, progress and follow-up questions appear under the toolbar. The task file's window applies rows
+and extras to the editors; **Save as** stores them as a new task.
+
+The page still keeps its configuration in the browser after edits. Browser-storage failures offer **Retry save**
+and **Export JSON**; this is separate from saving a task. Calibration's explicit **Apply and save** still updates
+the current task in place, with its existing revision and baseline rules.
+
+Editing stays available while a save is in flight. The reply applies normalized parameters only when those rows
 have not changed since the press; newer edits stay in the editors and the message says they are not saved yet. A reply
 for a task, cell or connection that is no longer selected cannot change the current rows, circuit or save message
 (record 7.174).
@@ -2385,7 +2425,7 @@ of 4: Virtuoso netlists the Maestro test (12 s; its last save took 34 s)". The s
 (`task_saving.TITLES`): Virtuoso writes the Maestro test into the cell and reads it back, netlists it, reads the cell
 into the workbench, then the task files are written and checked; a task the workbench measures itself has the last two.
 The backend keeps the save that is running (GET `/api/tasks/saving`, memory only), so:
-- Save task is closed while any save runs, and its tooltip says which save it waits for. The page asks when Save task
+- Save as is disabled while any save runs, and its tooltip says which save it waits for. The page asks when the button
   appears - also after the page is loaded again - and then every second, only while a save runs.
 - A second save is refused by the backend while one runs (409 `save_running`), whichever page or tab sends it; the
   page then follows the running one. Delete task is refused for the task being saved.
@@ -2396,8 +2436,8 @@ The backend keeps the save that is running (GET `/api/tasks/saving`, memory only
 Before, the only sign was a greyed icon (its "Saving..." is screen-reader text since the icon buttons of 7.82), and on
 2026-10-05 the user loaded the page again during two saves (record 7.194).
 
-**Rows older than the saved task** (record 7.203, user: "yes build it"). The page notes which saved revision its rows
-came from: when a task's rows are loaded (choosing the task, Reload saved values) and after each Save task. The note is
+**In-place updates with rows older than the saved task** (record 7.203, user: "yes build it"). Calibration's **Apply and save** and the update API retain this protection. Save as creates a different task and
+does not overwrite newer source revisions. The page notes which saved revision its rows came from: when a task's rows are loaded (choosing the task, Reload saved values) and after each Save task. The note is
 kept in the browser, so it outlasts a reload of the page. When the task was saved again after that - from another tab,
 by another session, or while the page still held older rows - saving the rows here would undo what was saved since:
 - Save task asks first, under the toolbar, naming what would be undone ("real:mscr_ldo2_rgcn was saved again after these
@@ -2413,10 +2453,10 @@ by another session, or while the page still held older rows - saving the rows he
   revision need the note. The saved revisions are the task's `history/r<N>/task.json`.
 This is what happened on 2026-10-05 (record 7.194): the page held the rows of revision 2, the saved task was revision 3.
 
-**What Save task does.** It reads from the Probes how the task measures: all Maestro outputs (`ade_output`) = measured
+**What saving does.** It reads from the Probes how the task measures: all Maestro outputs (`ade_output`) = measured
 by Maestro; all results of one circuit type (`backend_profile`, e.g. what the testbench brought) = that type - the
 ring oscillator or the op-amp, measured by the workbench as before. Mixed probes, or probes that fit both types, are
-refused in plain words. Then, with no simulation:
+refused in plain words. Saving first performs these preparation steps:
 1. a task measured by Maestro writes its outputs, specs (from the rows) and analyses, variables and bindings (from a task
    file applied on the page, else as the copy was last written -
    by the last save) into its working copy and reads them back - they must match;
@@ -2424,27 +2464,26 @@ refused in plain words. Then, with no simulation:
    of the task is compared with;
 3. the task's files are generated from that copy (the same generator Create profile used, with its checks), next to
    `task.json` in `configs/local/workbench/profiles/<name>/`, and the task is registered as `real:<name>`.
+4. a new task starts its fixed one-evaluation baseline automatically; an in-place update that invalidates its reference
+   also starts a replacement (record 7.248). A specs-only update retaining the reference simulates nothing.
 
 The ring oscillator's measurement needs a rough expected frequency (it sizes the transient): the first save asks for it
 once, in one line under the buttons; the task file keeps it. The task's files name the cell the flow works in (the copy
 you declared, or the made copy of an older task), so the real run adapter opens that cell - never a cell you did not
 declare or copy.
 
-**Saving again.** Save task on an open task makes its next revision under the same name (the user's decision:
-saving again never makes a new task). The previous revision is kept in `history/r<N>/` inside the task's folder, the
-old folder aside in `profiles/.deleted/`. A recorded baseline is kept only if parameters, probes, measurement, analyses,
-variables and bindings are unchanged; changing only specs or notes keeps it. **Save as** went on 2026-09-23 with the
-copies the workbench made: another task is another copy you make in Virtuoso, read in the window and saved from there
-(the backend still answers `as_new` for the API, with a renamed copy inside the same library). The first save of a cell
-takes the cell (or, for an older task, its made copy); a cell that has a task is opened through it (its note says so),
-and Delete task frees the cell again.
+**Saving again.** The main button always prompts for a new task. **Apply and save** and explicit API updates keep
+making the current task's next revision: previous revisions remain in `history/r<N>/`, with the previous folder
+under `profiles/.deleted/`. Those updates preserve a baseline only while parameters, probes, measurement, analyses,
+variables and bindings are unchanged; specs-only changes keep it. A new task from Save as starts its own baseline automatically.
+This restores Save as to the page by the user's request, superseding its removal in 7.72.
 
 **The task file.** One readable JSON file: the cell, the copy, the measurement, the Maestro part, the Parameters /
 Probes / Specs rows and notes, with a `_help` part that explains every part (JSON has no comments). **Task file** opens
 the file of the CURRENT editors in a window of its own (opened within the press; a blocked pop-up is said, and the next
 press tries again; a window already open is brought forward with its draft); **Apply to editors** checks every row with the editors' schema
 and fills the editors (one Undo step) - a broken file is refused with its problems and changes nothing. What the file
-adds beside the rows (analyses, variables, bindings, the rough frequency, notes) is sent with the next Save task.
+adds beside the rows (analyses, variables, bindings, the rough frequency, notes) is sent with the next save.
 Nothing is saved or written to Virtuoso from the window.
 
 **Running a task measured by Maestro:** see "Running a task measured by Maestro" below - Save task also has Maestro
@@ -2453,7 +2492,7 @@ once more. Tasks saved before this part (Create profile) have no working copy; t
 Save task refuses them with the way forward.
 
 Tests: `tests/workbench/test_wb_task_save.py` (fake bridge processes, the recorded ring-oscillator export). Browser
-check: `frontend/scripts/task_save_check.mjs` (hermetic; the task file window, Apply, Save task; no Save as);
+check: `frontend/scripts/task_save_check.mjs` (hermetic; the task file window, Apply, numbered Save as, cancellation, invalid/duplicate names, and in-place calibration updates);
 `virtuoso_source_check.mjs`, `project_help_check.mjs` and `testbench_probes_check.mjs` follow the window.
 
 ### The check before every run: editors, saved task and working copy agree (added 2026-09-22, user request)
@@ -2477,7 +2516,7 @@ three things must say the same thing:
    `maestro` part (outputs, specs, analyses, variables, bindings, simulator mode). Its deck is Maestro's own deck around
    the export (see "Running a task measured by Maestro"); the deck step writes it.
 
-**Start, Baseline simulation and Resume** run parts 2 and 3 by themselves, right after the connection gate and
+**Start, Calibration and Resume** run parts 2 and 3 by themselves, right after the connection gate and
 before anything is created (`runs.prepare_run`). A difference starts nothing: the banner under the header lists each step
 - passed / FAILED, what differs, and what to do (for example "The working copy was changed in Virtuoso after the task was
 saved: press Save task to take the copy as it is now, or undo the change in Virtuoso", or which ADE/Maestro windows to

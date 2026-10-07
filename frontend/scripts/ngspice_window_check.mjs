@@ -171,8 +171,8 @@ await runChecks(browser, async () => {
   connections = [{ id: 'fixture-lab', kind: 'virtuoso_ssh', family: 'virtuoso' }, { id: 'fixture-sim', kind: 'ngspice_local', family: 'ngspice' }];
   const launchers = () => evaluate(`(() => { const p = ${PANEL}; return { virtuoso: !!p.querySelector('button.virtuoso-button'), ngspice: !!p.querySelector('button.ngspice-button'),
     task: ((p.querySelector('.task-row .task-list-key')?.textContent ?? '') + ' ' + (p.querySelector('.task-row .task-list-mark')?.textContent ?? '')).trim() }; })()`);
-  // The task window lists EVERY task (record 7.227): an ngspice task without its connection carries the mark in its Kind cell.
-  const windowTasks = async () => (await tw.rows()).map(r => `${r.key} ${r.kind}`);
+  // The task window lists EVERY task (record 7.227): an ngspice task without its connection carries the mark beside its name.
+  const windowTasks = async () => (await tw.rows()).map(r => `${r.key} ${r.mark}`);
   // The page reloaded with the connection `id` in use and, when one is given, another task followed (its rows emptied; the MOCK
   // task's load passes through to the backend, read-only).
   const withConnection = async (id, task = null) => {

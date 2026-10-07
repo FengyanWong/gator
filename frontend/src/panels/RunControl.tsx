@@ -184,13 +184,10 @@ async function pauseConfirmed(dir: string): Promise<boolean> {
   const reason = await cannotResume(dir);
   return !reason || window.confirm(`This run cannot be resumed after a pause: ${reason} for it.\n\nPause anyway? It is saved and simply ends here.`);
 }
-// A Baseline simulation (it always calibrates since record 7.202) is aborted to keep the baseline alone - its tooltip says
-// so: the question says what is kept (record 7.206). A stopped one still gives a task saved from a cell its reference
-// (profiles.adopt_baseline_run); its calibration proposes from the random designs it has (calibration.MIN_SCORED).
+// A stopped calibration keeps its completed random designs and can still propose from them.
 const abortConfirmed = (status: Json) => window.confirm(`Abort this run?\n\nThe simulation that is running now is allowed to finish, so nothing already paid for is lost and the circuit is put back `
   + `as it was. Then everything is saved and the run ends.${status?.budget ? `\nUsed so far: ${status.budget.charged} of ${status.budget.max_evaluations} evaluations.` : ''}`
-  + (status?.calibration ? '\n\nThis is a Baseline simulation: its baseline (the first simulation) is kept - a task saved from a Virtuoso cell '
-    + 'that has no reference yet still gets it as its reference. The calibration proposes only from the random designs simulated so far '
+  + (status?.calibration ? '\n\nCalibration proposes only from the random designs simulated so far '
     + '(at least 16 must give a reward).' : '')
   + '\n\nTo continue this run later, use Pause instead.');
 const forceAbortConfirmed = () => window.confirm('Force abort?\n\nThis does not wait for the simulation that is running. Its evaluation is recorded as cancelled and still counts against the '

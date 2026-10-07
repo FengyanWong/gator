@@ -103,7 +103,7 @@ await runChecks(browser, async () => {
   const marked = () => evaluate(`[...document.querySelectorAll('.editors table.editor tbody tr')].filter(tr => /unsaved-/.test(tr.className)).length`);
   const tab = async name => { await evaluate(`${TAB(name)}.click()`); await sleep(300); };
   const typeIn = async (box, text) => { await page.setValue(box, text, { event: 'input', focus: true }); await evaluate(`${box}.blur()`); };
-  const BAR = `[...document.querySelectorAll('.editors .tabs .task-save button')].find(b => b.textContent.trim() === 'Save task')`;
+  const BAR = `[...document.querySelectorAll('.editors .tabs .task-save button')].find(b => b.textContent.trim() === 'Save as')`;
   const NOTES = `document.querySelector('.editors .task-notes')`;
 
   await page.intercept(['*/api/tasks', '*/api/tasks/starter*', '*/api/tasks/saving', '*/api/circuit/load', '*/api/config/validate', '*/api/virtuoso/*'], answer,
@@ -120,7 +120,7 @@ await runChecks(browser, async () => {
   check('a row as saved is not marked; a new row is marked as new, no cell of it', !/unsaved/.test(await cls(PROW('wp')) ?? '')
     && /\bunsaved-new\b/.test(await cls(PROW('w_new'))) && !(await evaluate(`!!${PROW('w_new')}.querySelector('td.unsaved-cell')`)));
   check('the tick-box cell says what changed and what the task holds', await title(`${PROW('wn')}.querySelector('td.sel')`) === 'Changed since the task was saved: Upper (saved: 1.5 um).'
-    && await title(`${PROW('w_new')}.querySelector('td.sel')`) === 'New row, not in the saved task: Save task stores it.', await title(`${PROW('wn')}.querySelector('td.sel')`));
+    && await title(`${PROW('w_new')}.querySelector('td.sel')`) === 'New row, not in the saved task: Save as stores it in a new task.', await title(`${PROW('wn')}.querySelector('td.sel')`));
   check('a changed cell\'s tooltip starts with the saved value, written as the cell writes it', (await title(BOX(PROW('wn'), 'upper'))).startsWith('Saved in the task: 1.5 um.\n')
     && !(await title(BOX(PROW('wn'), 'lower')) ?? '').startsWith('Saved'), await title(BOX(PROW('wn'), 'upper')));
   const toggle = `${PROW('wp')}.querySelector('.tie-toggle')`;
@@ -130,7 +130,7 @@ await runChecks(browser, async () => {
     && await bg(`${PROW('lerr')}.querySelector('td[data-field="upper"]')`) === await colour('--bad-row')
     && await bg(`${PROW('lerr')}.querySelector('td[data-field="lower"]')`) === await colour('--unsaved-cell'));
   check('the tabs: Parameters and Specs carry the dot with a count, Probes none', /\bhas-unsaved\b/.test(await cls(TAB('parameters')))
-    && (await title(TAB('parameters'))).startsWith('Not saved in the task: 3 changed, 1 new. Save task stores the rows as they are')
+    && (await title(TAB('parameters'))).startsWith('Not saved in the task: 3 changed, 1 new. Save as stores the rows in a new task')
     && /\bhas-unsaved\b/.test(await cls(TAB('targets'))) && (await title(TAB('targets'))).startsWith('Not saved in the task: 1 changed, 1 saved row deleted here (old_spec).')
     && !/has-unsaved/.test(await cls(TAB('measurements'))) && !(await title(TAB('measurements'))),
     `${await title(TAB('parameters'))} / ${await title(TAB('targets'))}`);
@@ -176,7 +176,7 @@ await runChecks(browser, async () => {
   await page.until(`!!(${BAR}) && !${BAR}.disabled`, 50);
   await sleep(1000);                                          // the page keeps its rows 0.8 s after the last edit
   const before = validations.length, storedBefore = JSON.stringify(await evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1')).parameters`));
-  await evaluate(`${BAR}.click()`);
+  await evaluate(`window.dispatchEvent(new CustomEvent('gator-save-task-request', { detail: { task: '${TASK}' } }))`);
   const gone = await page.until(`!document.querySelector('.editors table.editor tbody tr[class*="unsaved-"]') && !document.querySelector('.editors .tabs > button.has-unsaved')`, 60);
   await sleep(1200);
   const storedAfter = JSON.stringify(await evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1')).parameters`));

@@ -24,7 +24,7 @@ TITLES = dict(
     read='Virtuoso reads the cell into the workbench',
     files='Writing the task files and checking them',
 )
-ANSWER_KEYS = ('task_key', 'revision', 'created', 'baseline_kept', 'changed')     # what the page says about a save that ended
+ANSWER_KEYS = ('task_key', 'revision', 'created', 'baseline_kept', 'changed', 'baseline')
 
 _lock = threading.Lock()
 _running: dict | None = None          # the save going on now; changed only under _lock
@@ -66,7 +66,7 @@ def running(task_key):
     try:
         yield save
         answer = save.answer or {}
-        outcome = dict(ok=True, answer={key: answer.get(key) for key in ANSWER_KEYS})
+        outcome = dict(ok=True, answer={key: answer.get(key) for key in ANSWER_KEYS if key != 'baseline' or key in answer})
     except BaseException as exc:
         outcome = dict(ok=False, problem=_problem(exc))
         raise

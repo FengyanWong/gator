@@ -1,14 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, copy, Json, plainError } from '../api';
+import { api, Json, plainError } from '../api';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 
-/** The Agent tab, minimal since 2026-10-06 (record 7.226; the user: "rewrite the whole agent tab to minimal"). Two buttons
- *  open Claude Code or Codex in a terminal window of its own, in the workbench's folder, started as the user starts it:
- *  their own settings decide what it may do, and the session is in their claude.ai or Codex history (backend
- *  agent_cli.py). What an agent should do - draft rows, read a run, help a design whose optimization is stuck - is asked
- *  there, in words: the workbench sends it nothing. "What's missing?" opens the backend's free checklist of what a run
- *  still needs, in a window of its own, worked out when it is pressed and never by itself. */
+/** The Agent window (record 7.253; the user: "make the agent tab pop out window only (no tab view)", then "make it still a
+ *  tab style but not button style"): "Agent...", first in the bottom panel's tab line and drawn as a tab, opens it - there is
+ *  no tab view behind it any more (until 2026-10-07 the same line was the first bottom tab's content, record 7.226). The
+ *  window holds two buttons that open Claude Code or Codex in a
+ *  terminal window of its own, in the workbench's folder, started as the user starts it: their own settings decide what it
+ *  may do, and the session is in their claude.ai or Codex history (backend agent_cli.py). What an agent should do - draft
+ *  rows, read a run, help a design whose optimization is stuck - is asked there, in words: the workbench sends it nothing.
+ *  "What's missing?" fills the lower part of the same window with the backend's free checklist of what a run still needs,
+ *  worked out when it is pressed and never by itself. Opening the window reads which CLIs are installed (free); the page
+ *  itself asks the backend nothing about agents. */
 
 const MARK: Record<string, [string, string]> = { done: ['✔', 'ok'], missing: ['✘', 'error'], warning: ['!', 'warn'], unknown: ['?', 'hint'],
   not_applicable: ['–', 'hint'], at_start: ['▶', 'hint'] };
@@ -22,16 +26,22 @@ function Checklist({ items }: { items: Json[] }) {
     <span className="check-detail"> {c.detail}</span>{c.action && c.status !== 'done' && <div className="check-action">{c.action}</div>}</li>; })}</ul>;
 }
 
-// Stays mounted while another bottom tab is shown (`hidden`): the "What's missing?" window it draws stays open and filled.
-export function AgentTab({ config, hidden }: { config: Json; hidden?: boolean }) {
-  const [found, setFound] = useState<Json>(null);         // GET /api/agent/clis: the folder and the two CLIs (free)
-  const [said, setSaid] = useState<Json>(null);           // what the last press came to: { level, text, command? }
+export function AgentWindowTab({ config }: { config: Json }) {
+  const [found, setFound] = useState<Json>(null);         // GET /api/agent/clis: the folder and the two CLIs (free), read when the window opens
+  const [said, setSaid] = useState<Json>(null);           // what the last CLI press came to: { level, text, command? }
   const [opening, setOpening] = useState<string | null>(null);
   const [check, setCheck] = useState<Json>(null);         // { report?, error?, at } of the last "What's missing?"
   const [checking, setChecking] = useState(false);
-  const missing = usePopupWindow('gator-whats-missing', { title: 'GATOR - what is missing', features: 'popup,width=780,height=820', rootId: 'missing-root' });
-  useEffect(() => { api.agentClis().then(setFound).catch(e => setSaid({ level: 'error', text: plainError(e) })); }, []);
+  const agent = usePopupWindow('gator-agent', { title: 'GATOR - agent', features: 'popup,width=780,height=760', rootId: 'agent-root' });
 
+  // Opened inside the click (the pop-up rule). A window opened anew starts clean; one already open comes to the front. Either
+  // way the CLIs are looked for again, so one installed since shows.
+  const openWindow = () => {
+    const wasOpen = !!agent.popup && !agent.popup.closed;
+    agent.open();
+    if (!wasOpen) { setSaid(null); setCheck(null); setFound(null); }
+    api.agentClis().then(setFound).catch(e => setSaid({ level: 'error', text: plainError(e) }));
+  };
   const open = async (cli: 'claude' | 'codex', name: string) => {
     setOpening(cli); setSaid(null);
     try {
@@ -42,27 +52,29 @@ export function AgentTab({ config, hidden }: { config: Json; hidden?: boolean })
       setSaid({ level: 'error', text: `${name} was not opened: ${plainError(e)}`, command: e?.detail?.command });
     } finally { setOpening(null); }
   };
-  // Opened inside the click (the pop-up rule), filled when the backend answers. A second press brings the window to the
-  // front and works the list out again from the configuration as it is now.
+  // Filled when the backend answers; a second press works the list out again from the configuration as it is now.
   const whatIsMissing = () => {
-    missing.open();
     setChecking(true);
     api.agentReadiness(config).then(report => setCheck({ report, at: clock() }))
       .catch(e => setCheck({ error: plainError(e), at: clock() })).finally(() => setChecking(false));
   };
+  // The click happens in the agent window, so ITS clipboard is the one a browser lets this gesture write to.
+  const copyCommand = (text: string) => (agent.popup ?? window).navigator.clipboard?.writeText(text);
   const cliOf = (cli: string): Json => (found?.clis ?? []).find((c: Json) => c.cli === cli);
+  const directory = found?.directory ?? 'the workbench folder';
   const report = check?.report;
   const blocking = (report?.items ?? []).filter((i: Json) => i.status === 'missing' && i.id !== 'start').length;
 
-  return (<div className="agent" style={hidden ? { display: 'none' } : undefined}>
+  const view = agent.popup && agent.root && (<section className="panel agent-window" aria-labelledby="agent-title">
+    <h2 id="agent-title">Agent: Claude Code or Codex</h2>
     <div className="agent-row">
-      <span className="hint">In {found?.directory ?? 'the workbench folder'}:</span>
+      <span className="hint">In {directory}:</span>
       {CLIS.map(({ cli, name }) => { const c = cliOf(cli); return <button key={cli} className="agent-cli" disabled={!!opening || (!!found && !c?.available)}
-        onClick={() => open(cli, name)} title={c && !c.available ? c.note : `Opens ${name} in a terminal window of its own, in ${found?.directory ?? 'the workbench folder'}, `
+        onClick={() => open(cli, name)} title={c && !c.available ? c.note : `Opens ${name} in a terminal window of its own, in ${directory}, `
           + `as you start it yourself: your own ${name} settings decide what it may do, and the session is in your ${cli === 'claude' ? 'claude.ai' : 'Codex'} history.`
           + (c?.executable ? `\n${c.executable}` : '')}>{opening === cli ? 'Opening...' : name}</button>; })}
       <span className="spacer" />
-      <button className="missing" onClick={whatIsMissing} title="What's missing?: what this run still needs before it can start, and what to do about each - worked out by the workbench from the configuration as it is, in a window of its own. Free: no agent, no simulation.">What's missing?</button>
+      <button className="missing" onClick={whatIsMissing} title="What's missing?: what this run still needs before it can start, and what to do about each - worked out by the workbench from the configuration as it is, shown below. Free: no agent, no simulation.">What's missing?</button>
     </div>
     <p className="hint agent-headline">Each button opens the CLI in a terminal window of its own, in this folder, as you start it yourself: your settings, your account, your history.</p>
     <details className="agent-help"><summary>What to ask it</summary>
@@ -72,10 +84,9 @@ export function AgentTab({ config, hidden }: { config: Json; hidden?: boolean })
         CLAUDE.md first. The workbench sends it nothing and does not wait for it.</p></details>
     {found?.clis?.filter((c: Json) => !c.available).map((c: Json) => <p key={c.cli} className="hint">{c.note}</p>)}
     {said && <p className={`agent-said ${said.level}`} role="status">{said.text}
-      {said.command && <> <code>{said.command}</code> <button className="text-link" onClick={() => copy(said.command)}>Copy</button></>}</p>}
-    {missing.blocked && <p className="error" role="alert">{BLOCKED}</p>}
-    {missing.popup && missing.root && createPortal(<section className="panel missing-window" aria-labelledby="missing-title">
-      <h2 id="missing-title">What's missing before the run can start</h2>
+      {said.command && <> <code>{said.command}</code> <button className="text-link" onClick={() => copyCommand(said.command)}>Copy</button></>}</p>}
+    {(checking || check) && <section className="missing-list" aria-labelledby="missing-title">
+      <h3 id="missing-title">What's missing before the run can start</h3>
       {checking && !check ? <p className="hint">Working it out...</p>
         : check?.error ? <p className="error">{check.error}</p>
         : report && <>
@@ -83,7 +94,16 @@ export function AgentTab({ config, hidden }: { config: Json; hidden?: boolean })
             : `Not ready yet: ${blocking} item${blocking === 1 ? '' : 's'} block${blocking === 1 ? 's' : ''} a start. Next: ${report.next.title}.`}</p>
           <Checklist items={report.items} />
           <p className="hint">{report.note} Worked out at {check.at}{checking ? ' (working it out again...)' : ''}, from the configuration on the page:
-            press "What's missing?" in the Agent tab again after a change.</p></>}
-    </section>, missing.root)}
-  </div>);
+            press "What's missing?" again after a change.</p></>}
+    </section>}
+  </section>);
+
+  return (<>
+    {agent.blocked && <span className="error run-list-blocked" role="alert">{BLOCKED}</span>}
+    {/* Drawn as a tab (the strip's tab rules), never `active`: it shows nothing in the panel; `open` underlines it while its window is open. */}
+    <button className={`agent-tab${agent.popup ? ' open' : ''}`} onClick={openWindow}
+      title={agent.popup ? 'The agent window is open: press to bring it to the front.'
+        : 'Opens the agent window: Claude Code or Codex in a terminal window of its own, in the workbench\'s folder, as you start it yourself - and "What\'s missing?", the free checklist of what the run still needs.'}>Agent...</button>
+    {view && createPortal(view, agent.root!)}
+  </>);
 }

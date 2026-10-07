@@ -592,7 +592,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
             <p>The workbench holds the export of this cell, so you can look at it and fill the three editors. Start stays disabled.</p>
             <p>Next: fill Parameters, Probes and Specs - <b>Read setup</b> below takes the outputs and specs of the cell's Maestro test - then press
               <b> Save as</b>: it writes the rows into this cell's Maestro view (the copy you declared) and reads it back. Claude Code or Codex
-              (Agent tab) can help with any of it, from what you describe.</p>
+              (the Agent window: "Agent..." among the bottom tabs) can help with any of it, from what you describe.</p>
           </details>
           {(circuit.circuit?.testbench_cell ?? null) !== (ref.testbench_cell ?? null) && (
             <p className="warn tb-stale">This cell was read {circuit.circuit?.testbench_cell ? <>through <code>{circuit.circuit.testbench_cell}</code></> : 'without a testbench'}.

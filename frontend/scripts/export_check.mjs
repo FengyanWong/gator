@@ -53,7 +53,7 @@ await runChecks(browser, async () => {
   const button = text => `[...document.querySelectorAll('footer .bottom-body button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const press = text => evaluate(`${button(text)}.click()`, true);                                       // a real click: downloads need the user's gesture
   const tab = async text => { await evaluate(`[...document.querySelectorAll('footer .tabs > button')].find(b => b.textContent.trim() === ${JSON.stringify(text)}).click()`); return until(`!!(${button(text === 'Run status' ? 'Export status (JSON)' : 'Refresh')}) || ${JSON.stringify(text)} === 'Logs'`, 60); };
-  // The Agent tab stays mounted (hidden) in the same container, so everything is found from the visible tab's own button.
+  // The Training tab stays mounted (hidden) in the same container, so everything is found from the visible tab's own button.
   const HINT = text => `(${button(text)}?.closest('.row').querySelector('.hint')?.textContent ?? '')`;
   let row = 'Export status (JSON)';                                                                        // the button whose row the note is read from
   const hint = () => evaluate(HINT(row));

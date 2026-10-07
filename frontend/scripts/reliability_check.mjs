@@ -99,17 +99,18 @@ await runChecks(browser, async () => {
 
   await page.evaluate(`window.serializations = 0; window.realStringify = JSON.stringify;
     JSON.stringify = function(v, ...rest) { if (v?.schema_version === '${key}') ++window.serializations; return window.realStringify.call(this, v, ...rest); };
-    [...document.querySelectorAll('footer .tabs button')].find(b => b.textContent.trim() === 'Agent').click();`);
+    [...document.querySelectorAll('footer .tabs button')].find(b => b.textContent.trim() === 'Logs').click();`);
   await sleep(100);
   check('bottom tab switch does not serialize the full configuration', await page.evaluate('window.serializations === 0'));
   await page.evaluate('JSON.stringify = window.realStringify');
   for (const width of [960, 640]) {
     await page.viewport(width, 900); await sleep(100);
+    // The tab line's two window openers (record 7.253: the "Agent..." tab and the "Runs..." button); the CLI buttons themselves are in the Agent window now.
     const geometry = await page.evaluate(`({ main: document.querySelector('main').getBoundingClientRect().width,
       page: document.documentElement.scrollWidth, width: innerWidth,
-      clis: [...document.querySelectorAll('.agent-row button')].map(b => Math.round(b.getBoundingClientRect().width)) })`);
+      windows: [...document.querySelectorAll('footer .tabs button.agent-tab, footer .tabs button.run-list-button')].map(b => Math.round(b.getBoundingClientRect().width)) })`);
     check(`${width}px viewport keeps usable editors without page overflow`, geometry.main > width - 40 && geometry.page <= width, JSON.stringify(geometry));
-    check(`${width}px viewport keeps the Agent tab's three buttons usable`, geometry.clis.length === 3 && geometry.clis.every(w => w > 50), JSON.stringify(geometry));
+    check(`${width}px viewport keeps the tab line's Agent... tab and Runs... button usable`, geometry.windows.length === 2 && geometry.windows.every(w => w > 50), JSON.stringify(geometry));
   }
   await page.evaluate(`document.querySelector('main').scrollIntoView()`);
   await page.shot(path.join(out, 'reliability-narrow.png'));

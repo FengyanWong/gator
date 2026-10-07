@@ -137,7 +137,7 @@ export const api = {
   cornerStart: (body: Json) => call('POST', '/api/runs/corner-check/start', body),
   cornerStatus: (run_dir: string, check_id: string, signal?: AbortSignal) => call('GET', '/api/runs/corner-check/status' + q({ run_dir, check_id }), undefined, signal),
   cornerStop: (run_dir: string, check_id: string) => call('POST', '/api/runs/corner-check/stop', { run_dir, check_id }),
-  // The Agent tab (record 7.226): the folder and the two CLIs found (free), one of them opened in a terminal window of its own,
+  // The Agent window (records 7.226, 7.253): the folder and the two CLIs found (free), one of them opened in a terminal window of its own,
   // and the free checklist of what a run still needs - no model is called, nothing is probed.
   agentClis: () => call('GET', '/api/agent/clis'),
   openCli: (cli: 'claude' | 'codex') => call('POST', '/api/agent/open', { cli }),

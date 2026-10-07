@@ -1,5 +1,5 @@
 // Browser check of the RL networks window and its launcher in Run configuration.
-// Same approach as agent_tab_check.mjs: a throwaway headless Edge over the DevTools protocol against the RUNNING
+// Same approach as agent_window_check.mjs: a throwaway headless Edge over the DevTools protocol against the RUNNING
 // workbench (default http://127.0.0.1:8765/). GET /api/network-settings is answered by the real backend; every
 // PUT/POST to /api/network-settings/* is intercepted and answered with a canned entry, so nothing is ever written
 // to the user's network_settings.json. Any other writing request of the page is refused here (reads pass): hermetic.

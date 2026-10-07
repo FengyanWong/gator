@@ -1,6 +1,6 @@
-"""What is missing before a run can start: the backend's free checklist behind "What's missing?" in the Agent tab
-(readiness.py; until 2026-10-06 also the brief of the Agent tab's own agent, record 7.226). No model is called and
-nothing is probed."""
+"""What is missing before a run can start: the backend's free checklist behind "What's missing?" in the Agent window
+(readiness.py; until 2026-10-06 also the brief of the Agent tab's own agent, record 7.226; the tab became a window on
+2026-10-07, record 7.253). No model is called and nothing is probed."""
 import json
 from types import SimpleNamespace
 
@@ -52,7 +52,7 @@ def test_empty_tables_are_the_agents_to_fix_and_everything_else_is_the_users(tmp
     assert items['output']['status'] == 'done' and 'created when the run starts' in items['output']['detail']
     assert items['start']['status'] == 'missing'
     assert items['parameters']['action'].startswith('Press "Reload saved values"')            # a registered task brings its own rows
-    assert all('Claude Code or Codex (Agent tab)' in items[k]['action'] for k in ('parameters', 'targets', 'measurements'))
+    assert all('Claude Code or Codex (the Agent window)' in items[k]['action'] for k in ('parameters', 'targets', 'measurements'))
     typed = readiness.build(dict(config, circuit=dict(source='virtuoso', library='L', cell='C')), task=task(), validation=dict(blocks_run=True, issues=found, facts={}))
     assert by_id(typed)['parameters']['action'].startswith('Fill in')                                  # a cell read from Virtuoso has no starter
 
@@ -123,7 +123,7 @@ def test_the_checklist_is_free_and_computed_by_the_backend(tmp_path):
     empty = dict(config, parameters=[], targets=[], measurements=[])
     blocked = client.post('/api/agent/readiness', json=dict(config=empty)).json()
     assert not blocked['ready'] and blocked['next']['id'] == 'parameters'
-    assert 'Claude Code or Codex (Agent tab)' in blocked['next']['action']        # what an agent of the Agent tab can do
+    assert 'Claude Code or Codex (the Agent window)' in blocked['next']['action']  # what an agent opened from the Agent window can do
     assert client.post('/api/agent/readiness', json=dict(config=dict(config, run='nonsense'))).status_code == 422
 
 

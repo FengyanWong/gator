@@ -24,7 +24,7 @@ lists every section with its line number; a section says what its feature does N
 [The PDK and what a run writes back](#the-pdk-and-what-a-real-run-writes-back-into-virtuoso) ·
 [A task's Virtuoso side](#a-tasks-virtuoso-side-the-cell-it-works-in-saving-the-run) ·
 [Reload saved data](#reload-saved-data) ·
-[The Agent tab](#the-agent-tab-claude-code-or-codex-in-a-window-of-its-own-2026-10-06-record-7226) ·
+[The Agent window](#the-agent-window-claude-code-or-codex-in-a-window-of-its-own-2026-10-06-record-7226-2026-10-07-record-7253) ·
 [Code organization](#code-organization) ·
 [Tests](#tests)
 
@@ -1907,7 +1907,7 @@ other methods should be launched through agent tab opened agent cli"), together 
 call and cost ceilings, the AI thread and hints of a run, the header's "LLM n / m", the run engine's search session, the
 sizing CLI clients and, with the user's approval, the optimizer package's `search/` and `ActionMapper.encode` (one
 fingerprint step, `docs/decisions.md`). Help from a language model during an optimization - a run that is stuck, a design
-to look at - is asked of Claude Code or Codex from the Agent tab, in words (below, "The Agent tab").
+to look at - is asked of Claude Code or Codex from the Agent window, in words (below, "The Agent window").
 
 What stays readable: a run made with one of the methods keeps its folder, tables (`llm_calls` included, with its
 `llm_call_id` and phases in the evaluations) and its data dictionary; the Training tab, Data tables, Output files and
@@ -2639,12 +2639,18 @@ borrows target transitions from the ordinary replay and appends task-balanced so
 enter target replay or the launch ledger. Checkpoints retain the source sampler's RNG, pending task cycle and counts;
 resume requires the same pool. Absent rehearsal preserves old configuration and learner-contract hashes.
 
-## The Agent tab: Claude Code or Codex in a window of its own (2026-10-06, record 7.226)
+## The Agent window: Claude Code or Codex in a window of its own (2026-10-06, record 7.226; 2026-10-07, record 7.253)
 
-The tab is minimal since 2026-10-06 (user: "rewrite the whole agent tab to minimal. Have two buttons to open claude code cli
-or codex cli in local shell targeting the current workbench working directory with the permission of a usual agent
-launch"). It holds, on one line, the folder the CLIs open in, **Claude Code**, **Codex** and, at the right end, **What's
-missing?**; under it one headline and one closed line, "What to ask it".
+There is no Agent tab view since 2026-10-07 (record 7.253, user: "make the agent tab pop out window only (no tab view)",
+then "make it still a tab style but not button style"): **Agent...**, first in the bottom panel's tab line and still drawn
+as a tab (never the active one; underlined while its window is open), opens the Agent window instead of showing anything
+in the panel. The window holds, on one line, the folder the CLIs open in, **Claude Code**, **Codex** and, at the right end, **What's
+missing?**; under it one headline and one closed line, "What to ask it"; and under those, once asked for, the start
+checklist. Opening the window asks the backend which CLIs are installed (free) and nothing else; the page itself never
+asks about agents. Pressed while the window is open, **Agent...** brings it to the front and looks for the CLIs again; a
+reload of the page closes the window, and one opened anew starts clean. The line itself is record 7.226's (user: "rewrite
+the whole agent tab to minimal. Have two buttons to open claude code cli or codex cli in local shell targeting the current
+workbench working directory with the permission of a usual agent launch"), when it was the first bottom tab.
 
 **A press opens the CLI in a terminal window of its own, in the workbench's folder** (the repository the backend serves,
 where CLAUDE.md and the docs are). The CLI starts as you would start it yourself: the workbench passes no permission
@@ -2688,14 +2694,14 @@ circuit summary (`circuit_summary.py`, the circuit panel).
 ### What is missing before the run can start
 
 "What's missing?" is answered by the backend, free: no agent, nothing probed (`readiness.py`, `POST /api/agent/readiness`).
-It opens a window of its own with the verdict ("Nothing blocks a start", or how many items block it and which is next) and
-the list, in the order a start is gated: circuit, Parameters, Probes, Specs (the three editor tabs, in tab order), other
+It fills the lower part of the Agent window with the verdict ("Nothing blocks a start", or how many items block it and which
+is next) and the list, in the order a start is gated: circuit, Parameters, Probes, Specs (the three editor tabs, in tab order), other
 blocking issues, run configuration, output folder and - for a real circuit - the connection (the LAST test result; it does
 not test again) and the budget authorization that only you can give. Each line says whose step it is ("yours", or "an agent
 can help" for the three tables) and what to do; for the tables that includes Reload saved values for a saved task and that
-Claude Code or Codex (Agent tab) can draft the rows from your description. It is worked out when the button is pressed, from
-the configuration on the page, and never by itself: press it again after a change (it brings the window to the front and
-fills it anew).
+Claude Code or Codex (the Agent window) can draft the rows from your description. It is worked out when the button is
+pressed, from the configuration on the page, and never by itself: press it again after a change (it fills the list anew; a
+window opened anew starts without it).
 
 Rows that are there but differ from the saved task - an edit, an applied calibration, an older page - are your press: the
 line gives the issue whole, its last sentence included (Save task, or Reload saved values), and says where the two buttons
@@ -2758,11 +2764,11 @@ file and the conditions file are unchanged; the link is checked at every call. A
 line load it from the files (7.131).
 The legacy copy route still refuses copying; Save-as remains a supported backend request.
 
-The frontend keeps the Agent tab in `panels/AgentTab.tsx` and the run tabs in `panels/RunTabs.tsx`.
+The frontend keeps the Agent window and its "Agent..." button in `panels/Agent.tsx` and the run tabs in `panels/RunTabs.tsx`.
 `CircuitBrowser.tsx` owns the Virtuoso browsing chain and circuit details; `Left.tsx` coordinates task selection.
 Shared async actions and stale-response handling live in `store.ts`. Ordinary advanced numeric fields use
 one descriptor list and defaults from the backend schema; byte units and checkpoint intervals retain their
-specialized controls. The Agent tab stays mounted when another tab is selected (its "What's missing?" window stays filled).
+specialized controls. The Training tab stays mounted when another tab is selected (its charts survive a look at another tab).
 
 Reads managed by `useRequest` and direct JSON GETs have a 30-second deadline. Changing a selection, disabling a read
 or leaving its view cancels the hook's owned transport; shared cached reads keep their own bounded lifetime.
@@ -2820,7 +2826,7 @@ Some checks get special handling:
 The whole batch took 198 s, instead of about 9 minutes one check after another.
 
 Connection tests use fake bridge clients and a fake probe process. No test opens an agent CLI or contacts a real
-Virtuoso: the Agent tab's launcher is tested with fake CLIs and fake terminals (`test_wb_agent_cli.py`, which also runs a
+Virtuoso: the Agent window's launcher is tested with fake CLIs and fake terminals (`test_wb_agent_cli.py`, which also runs a
 start script for real with a fake CLI), and the suite runs with `GATOR_AGENT_CLI_LAUNCH=off`.
 
 The header shows blocking issues as a red button, "N blocking issue(s)": a press lists every one of

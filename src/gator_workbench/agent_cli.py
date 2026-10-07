@@ -1,5 +1,5 @@
-"""The Agent tab's two buttons (record 7.226): Claude Code or Codex in a terminal window of its own, in the workbench's
-folder.
+"""The Agent window's two buttons (record 7.226; the window itself record 7.253): Claude Code or Codex in a terminal window of
+its own, in the workbench's folder.
 
 A launch is the CLI as you would start it yourself: no permission option, no settings file, no model and no prompt from
 the workbench. What it may do is what YOUR settings say (Claude Code: ~/.claude/settings.json and the folder's .claude/;
@@ -130,7 +130,7 @@ def start_script(found: dict, directory: Path) -> str:
     """The shell lines the new window runs: into the folder, the CLI exactly as you would type it, then your own shell
     (the window stays open after the CLI ends)."""
     name = found['name']
-    lines = ['# Written by the GATOR workbench for the Agent tab\'s "%s" button; the window it opened ran it once.' % name,
+    lines = ['# Written by the GATOR workbench for the Agent window\'s "%s" button; the window it opened ran it once.' % name,
              '# The CLI starts as you start it yourself: your own settings decide what it may do.',
              f'cd {_quoted(directory)} || exit 1']
     lines += [f'export {key}={_quoted(value)}' for key, value in found['environment'].items()]
@@ -179,7 +179,7 @@ def window_argv(script: Path, title: str, env=None) -> list | None:
 
 
 def availability(env=None) -> dict:
-    """What the Agent tab shows before a press: the folder, and per CLI whether it was found. Free."""
+    """What the Agent window shows before a press: the folder, and per CLI whether it was found. Free."""
     env = os.environ if env is None else env
     directory = working_directory()
     clis = []

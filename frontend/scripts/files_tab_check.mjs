@@ -54,7 +54,7 @@ await runChecks(browser, async () => {
   const gone = () => { const h = held.shift(); return fulfil(h.requestId, 404, { detail: 'FIXTURE: No such file' }); };
   const heldSoon = async () => { for (let i = 0; i < 50 && !held.length; i++) await sleep(100); return held[0] ?? null; };
   const until = (expression, tries = 80) => page.until(expression, tries);
-  // The visible tab's table (the Agent tab stays mounted but hidden in the same footer: never "the first table").
+  // The visible tab's table (the Training tab stays mounted but hidden in the same footer: never "the first table").
   const TABLE = `[...document.querySelectorAll('footer .bottom-body table.grid')].find(t => t.checkVisibility())`;
   const HINT = `((${TABLE})?.closest('.scroll')?.previousElementSibling?.querySelector('.hint')?.textContent ?? '')`;   // parenthesised: `x ?? ''.includes()` would bind the wrong way
   const ROWS = `[...(${TABLE})?.querySelectorAll('tbody tr') ?? []]`;

@@ -2,8 +2,9 @@
 
 One function turns facts the backend already has (the loaded task or its blocker, the static validation
 report, the run/output settings, the LAST KNOWN connection result) into an ordered checklist: the free answer of
-"What's missing?" in the Agent tab, each item with what to do about it. (It lived in the Agent tab's agent package
-until 2026-10-06, record 7.226, when that agent was replaced by the Claude Code and Codex buttons.)
+"What's missing?" in the Agent window, each item with what to do about it. (It lived in the Agent tab's agent package
+until 2026-10-06, record 7.226, when that agent was replaced by the Claude Code and Codex buttons; the tab became the
+window on 2026-10-07, record 7.253.)
 
 Nothing here probes anything: no bridge contact, no simulator, no CLI, no model. In particular it reads the
 connection monitor's cached status only - a fresh connection test stays an explicit user action.
@@ -15,9 +16,9 @@ TABLES = ('parameters', 'measurements', 'targets')                              
 BLOCKING = ('error', 'blocker')
 TITLES = dict(parameters='Parameters', measurements='Probes', targets='Specs')      # = the editor tab names (frontend Editors.tsx)
 LEARNING_WARNINGS = ('budget_within_warmup', 'budget_below_batch')
-# An item an agent can help with: Claude Code or Codex, opened from the Agent tab in this folder, can draft its rows from a
+# An item an agent can help with: Claude Code or Codex, opened from the Agent window in this folder, can draft its rows from a
 # description. Everything else is the user's own step.
-AGENT_HELP = ' Claude Code or Codex (Agent tab) can also draft the rows from your description.'
+AGENT_HELP = ' Claude Code or Codex (the Agent window) can also draft the rows from your description.'
 
 
 def _section(path) -> str:

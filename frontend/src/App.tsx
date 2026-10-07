@@ -13,7 +13,7 @@ import { ValidationStatus } from './panels/Issues';
 import { LIVE_STATES, RunButtons, launchWithConsent, resumeRun, useRunControl } from './panels/RunControl';
 import { RunListButton } from './panels/RunList';
 import { OutputPanel, ResearchPanel, RunPanel } from './panels/Right';
-import { AgentTab } from './panels/AgentTab';
+import { AgentWindowTab } from './panels/Agent';
 import { DataTab, FilesTab, LogsTab, StatusTab } from './panels/RunTabs';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './panels/calibrationPlan';
 import { requestTaskSave, TASK_BASELINE_STARTED } from './panels/TaskSave';
@@ -21,7 +21,7 @@ import { CornerCheckTab } from './panels/CornerCheck';
 import { TrainingTab } from './panels/TrainingTab';
 import { CrashPanel } from './panels/CrashPanel';
 
-type BottomTab = 'agent' | 'status' | 'logs' | 'data' | 'files' | 'training' | 'corners';
+type BottomTab = 'status' | 'logs' | 'data' | 'files' | 'training' | 'corners';
 
 /** A configuration the backend cannot even read (HTTP 422): one blocking issue per field it names, in its plain words
  *  (schema.describe_errors), at the place the validation report uses (parameters[1].variable_id), so the list names the
@@ -75,7 +75,9 @@ const shownRun = (): string | null => {
 };
 
 /** Layout (specification section 2): left = project, connection, circuit; center = three editors;
- *  right = run configuration + output settings (always visible); bottom = agent, logs, status, data, files, training.
+ *  right = run configuration + output settings (always visible); bottom = status, logs, data, files, training, corner check,
+ *  with the Agent window and the run window opened from its tab line (record 7.253: the Agent tab became "Agent...", drawn
+ *  as a tab but opening a window - no tab view).
  *  Tables, numbers, status and file lists. On screen only, by user decision: two pictures of the circuit - the graph view
  *  (2026-09-21) and the circuit picture in the left column (2026-10-03) - and the Training tab's charts of a run's
  *  recorded numbers (2026-10-05, record 7.193); nothing drawn is written. */
@@ -410,18 +412,18 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
           title="Drag to give the bottom panel more or less room. Double-click: fold it down to its tab line, or open it again. Kept in this browser."
           onPointerDown={dragBottom} onDoubleClick={toggleBottom} onKeyDown={keyBottom} />
         <div className="tabs">
-          {(['agent', 'status', 'logs', 'data', 'files', 'training', 'corners'] as BottomTab[]).filter(t => t !== 'corners' || cornersUsable).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); unfold(); }}>
-            {{ agent: 'Agent', status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', training: 'Training', corners: 'Corner check' }[t]}</button>)}
+          <AgentWindowTab config={config} />
+          {(['status', 'logs', 'data', 'files', 'training', 'corners'] as BottomTab[]).filter(t => t !== 'corners' || cornersUsable).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); unfold(); }}>
+            {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', training: 'Training', corners: 'Corner check' }[t]}</button>)}
           <span className="spacer" />
           <RunListButton runs={runs} runsError={runsError} runDir={runDir} status={status} onChoose={dir => { setRunDir(dir); if (dir) unfold(); }} onRefresh={refreshRuns} />
         </div>
         <div className="bottom-body">
-          <AgentTab hidden={tab !== 'agent'} config={config} />
-          {tab === 'status' && <StatusTab status={status} runDir={runDir} error={statusError} onContinue={continueRun} continueBlocked={continueBlocked} config={config} setConfig={setConfig} />}
+          {tab === 'status' &&<StatusTab status={status} runDir={runDir} error={statusError} onContinue={continueRun} continueBlocked={continueBlocked} config={config} setConfig={setConfig} />}
           {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
           {tab === 'data' && <DataTab runDir={runDir} status={status} />}
           {tab === 'files' && <FilesTab runDir={runDir} />}
-          {/* Stays mounted, like the Agent tab: its recorded numbers and chosen charts survive a look at another tab; hidden - another
+          {/* Stays mounted: its recorded numbers and chosen charts survive a look at another tab; hidden - another
               tab, or the panel folded to its tab line - it reads and draws nothing (record 7.193). */}
           <TrainingTab hidden={tab !== 'training' || folded} runDir={runDir} status={status} runs={runs} />
           {tab === 'corners' && cornersUsable && <CornerCheckTab runDir={runDir} />}

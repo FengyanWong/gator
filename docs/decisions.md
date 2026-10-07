@@ -17,9 +17,9 @@ A summary for new sessions; everything below is the chronological record, oldest
   per encoder on the 18-archive common pool. Two proposed departures from the runbook, for the user to decide: the
   registry is the task's own in A/B and the 41-slot list in C, and loaded arms keep their learned temperature (as
   every recorded GT run did); GT needs two relaxed-target LDO A runs and two LDO B fine-tune runs for matched
-  references. Pilot budget for both encoders 60,666 launches, with the held-out stage D on the folded cascode `mscr_otafc`
-  that the session "Task button and fine-tuning comparison plan" is building (its record pending; OTA8m does not count as
-  held-out); stage A alone 11,276. Nothing started.
+  references. Pilot budget for both encoders 64,466 launches, with the held-out stage D on the folded cascode `mscr_otafc` and
+  the telescopic cascode `mscr_otatc` that the session "Task button and fine-tuning comparison plan" is building (its
+  record pending; OTA8m does not count as held-out); stage A alone 11,276. Nothing started.
 
 - **General-network offline experiment (7.233–7.243):** the user authorized the plan in
   [plan-general-network.md](plan-general-network.md), including mandatory baselines for all six start-C tasks.

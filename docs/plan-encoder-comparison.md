@@ -9,6 +9,8 @@ Status: **plan only; nothing started, no task changed, no run queued.** The twel
 what to prepare around them. The six circuits are OTA5t, OTA7t (the width task), LDO1, LDO2, RING3 and VCO_linear_c.
 Revision 2 (07:30; user: "does ota8m count as a heldout? shouldnt it only happen on the folded-cascode?"): stage D, the
 held-out test on the folded cascode only, added as section 6.3; OTA8m does not count; the budget rows follow.
+Revision 3 (10:05; user: "add the only telescopic cascode to stage D too"): the telescopic cascode `mscr_otatc` of the same
+session joins stage D as its second held-out circuit; the budget rows follow.
 
 What this plan is built from:
 
@@ -36,10 +38,10 @@ comparison is the network:
 | **A** learn from scratch | does the encoder learn each circuit within 800 launches, as well as GT? | 6 scratch | A (the task's own start), seed 0 | GT's A runs (7.199, 7.216, the ota7t width run; new matched runs for the two LDOs) |
 | **B** same circuit, new start | does its own A model carry over to a new starting design, as GT's did? | 6 scratch + 6 fine-tune | B (the random design of record, 7.227), seed 1 | GT's twelve B runs (7.229) |
 | **C** one general model | does one model of this encoder, trained offline on the recorded GT experience of the six circuits, help on a third start? | 6 frozen probes + 6 scratch + 6 general + 1 own (ota5t) | C (the 25th-percentile random design, 7.232), seed 2 | GT's C-S runs (7.239), the equal-recipe G2 runs (queued 2026-10-07 06:54), arm O (7.239) |
-| **D** held-out circuit | does the general model help on a circuit it never saw? | 1 frozen probe + 1 scratch + 1 general on the folded cascode | the folded cascode's own start, seed 0 | the folded-cascode session's probe / scratch / general runs on the same task |
+| **D** held-out circuits | does the general model help on a circuit it never saw? | per held-out circuit (the folded and the telescopic cascode): 1 frozen probe + 1 scratch + 1 general | each circuit's own start, seed 0 | the folded-cascode session's probe / scratch / general runs on the same tasks |
 
 Stage by stage, with the user's go between them: A for both new encoders first (one evening), then B for the encoders
-that learned, then C; D, the held-out folded cascode, needs only the offline general models (section 6.3). The two new encoders are GraphGPS (`graph_gps`, with random-walk structural inputs) and the
+that learned, then C; D, the two held-out cascodes, needs only the offline general models (section 6.3). The two new encoders are GraphGPS (`graph_gps`, with random-walk structural inputs) and the
 parameter-group cross-attention (`group_cross_attention`); RGCN and GATv2 can follow the same protocol later
 (section 3.6).
 
@@ -53,8 +55,8 @@ being rerun (14,400 launches saved); both are the user's decision (section 10): 
 stages A and B and the shared 41-slot one in stage C, exactly as GT ran (3.1); a loaded model keeps its learned
 temperature, as every recorded loaded GT run did (3.2).
 
-Cost of the whole pilot for the two new encoders: **60,666 Spectre launches, about 33 h of simulation**, one run at a
-time, the held-out stage D included; stage A alone **11,276 launches, about 6 h** (section 8). Offline training adds CPU hours, no launches.
+Cost of the whole pilot for the two new encoders: **64,466 Spectre launches, about 36 h of simulation**, one run at a
+time, the two-circuit held-out stage D included; stage A alone **11,276 launches, about 6 h** (section 8). Offline training adds CPU hours, no launches.
 
 ## 2. What exists today
 
@@ -349,9 +351,9 @@ with GT's G2 as its loaded arm.
 
 **Budget per encoder:** 1,800 + 9,600 + 800 = 12,200 launches, about 6-7 h; offline training 2 models, about 2 h CPU.
 
-### 6.3 Stage D: the held-out circuit is the folded cascode only (revision 2)
+### 6.3 Stage D: the held-out circuits are the folded cascode and the telescopic cascode (revisions 2 and 3)
 
-Each encoder's general model is tested on **one circuit it never saw: the folded-cascode OTA `mscr_otafc`** that the
+Each encoder's general model is tested on **circuits it never saw: first the folded-cascode OTA `mscr_otafc`** that the
 folded-cascode session (section 2.3) is building as the real held-out circuit (NMOS input pair, PMOS fold, NMOS cascode mirror load, bias network
 inside, 19 MOS; the six OTA metrics on the 1 V follower bench, Scale 6 on the dB rows; targets fixed by the
 baseline-only rule from its own 64 random draws, before any policy sees it). **OTA8m does not count** as held-out: it is
@@ -360,8 +362,16 @@ record 7.241 says it cannot establish unseen-family transfer), its results alrea
 G2 recipe comes from its follow-up, 7.243), and that session deletes its task and renames the cells `mscr_ota7t_rz`.
 Its archives stay out of every pool, as before; no arm of this plan runs on it.
 
-Per encoder, on the registered `mscr_otafc` task with its qualified baseline (65 launches, made once by that session), seed 0,
-four lanes as that session's runs, `spec_registry` = the 41-slot list (the six metrics are in it; the general model is bound
+**The second held-out circuit (revision 3): the telescopic cascode `mscr_otatc`**, built by the same session after the
+folded cascode: a single-ended port of the Analog Design Bench task `sky130-telescopic-cascode-ota-pvt-fix` (NMOS-input
+telescopic signal path, bias rails from one 50 uA reference) to GPDK045 1 V core devices, on the same unity-gain follower
+bench (0.65 V, 10 pF), with the same six OTA metrics (gain, UGB, phase margin, power, PSRR, output noise), its own
+baseline of 64 random draws and targets frozen by that session before any policy sees them (the session records the rule
+it used; for OTA8m it was the baseline-only common rank). Same arms, criteria, conditions and reference as for the folded
+cascode. A telescopic cascode has no counterpart in the pool; the typed-graph comparison records that too.
+
+Per encoder, on each registered held-out task (`mscr_otafc`, `mscr_otatc`) with its qualified baseline (65 launches each,
+made once by that session), seed 0, four lanes as that session's runs, `spec_registry` = the 41-slot list (the six metrics are in it; the general model is bound
 to it):
 
 | Arm | Mode | Model | Launches | Settings |
@@ -380,8 +390,8 @@ LDO2 graph and the fourteen others is recorded with the verdict, as 7.240 did fo
 pilot of generalization.
 
 Stage D needs only the offline general model of 6.1, not stage C's runs, so it can run right after the offline step; the
-queue puts it after that session's own runs on the task, so the GT reference exists first. **Cost per encoder: 1,900 launches**
-(300 + 800 + 800), about 1.5 h at four lanes (OTA8m's phase 3: 1,965 launches in about 1.5 h).
+queue puts it after that session's own runs on each task, so the GT reference exists first. **Cost per encoder: 3,800
+launches** (two circuits x (300 + 800 + 800)), about 3 h at four lanes (OTA8m's phase 3: 1,965 launches in about 1.5 h).
 
 ## 7. Measures and reporting rules
 
@@ -401,13 +411,13 @@ Launches:
 | Stage A | 4,800 | 4,800 | 1,600 | 76 | **11,276** |
 | Stage B | 9,600 | 9,600 | 1,600 | 390 | **21,190** |
 | Stage C | 12,200 | 12,200 | 0 (+1,800 optional probes) | 0 | **24,400** |
-| Stage D, held-out folded cascode | 1,900 | 1,900 | 0 (the folded-cascode session's runs) | 0 (its baseline) | **3,800** |
-| **Pilot, both encoders** | 28,500 | 28,500 | 3,200 | 466 | **60,666** |
+| Stage D, held-out folded + telescopic cascode | 3,800 | 3,800 | 0 (the folded-cascode session's runs) | 0 (its baselines) | **7,600** |
+| **Pilot, both encoders** | 30,400 | 30,400 | 3,200 | 466 | **64,466** |
 
 Not in the table: the six G2 arms (4,800, the folded-cascode session, running), the B-F-reset option (800),
 the optional GT probes (1,800), the GT general model from the 18-archive pool (0 launches, about 1 h CPU; it would make
 GT's C-G reference pool-matched as well: today G2 loads the 22-run model), the `C-own-data` variant (12,200 per
-encoder), repetitions (28,500 per encoder per seed triple), optional encoders (28,500 each).
+encoder), repetitions (30,400 per encoder per seed triple), optional encoders (30,400 each).
 
 Time, from the recorded GT working times per 800 launches (A runs before the 7.221 speed-ups / B and C runs after):
 ota5t 12 / 8-10 min, ring3 14 / 9-12, ldo1 15 / 9-12, ota7t_w 37 / 22-30, ldo2 38 / 26-32, vco_lin_c 47 / 35-36. A six-run
@@ -419,7 +429,7 @@ are simulator-bound, so the same figures hold for them within a few minutes per 
 | A (12 + 2 GT runs, qualification) | about 6 h | one evening |
 | B (24 + 2 GT runs, qualification) | about 10-11 h | overnight |
 | C (12 probes + 26 runs, 4 offline models) | about 13-14 h, plus about 4 h CPU before the first C launch | one day |
-| D (2 probes + 4 runs on the folded cascode) | about 3 h | an evening, after the offline models and the folded-cascode session's runs |
+| D (4 probes + 8 runs on the two cascodes) | about 6 h | an evening, after the offline models and the folded-cascode session's runs |
 
 Virtuoso is busy for a few hours today with the folded-cascode session's work (the G2 arms, then the folded-cascode cell `mscr_otafc`,
 its task and baseline); a peer CLI run or a Save task also holds it (7.207), and the queue waits.
@@ -443,8 +453,8 @@ its task and baseline); a peer CLI run or a Save task also holds it (7.207), and
    compatibility of every loaded arm against its C task proven before a lane opens.
 7. **Queue C**: per circuit probe, S, G (and O on ota5t); audits as the general-network experiment did (initial
    parameters, parent weights, target-only replay, update counts, frozen-tensor invariance, costs, restoration).
-   Then **D** on `mscr_otafc`: probe, S and G per encoder, after the folded-cascode session's own three runs on it, with the same
-   audits and the typed-graph comparison of 6.3 recorded first.
+   Then **D** on `mscr_otafc` and `mscr_otatc`: probe, S and G per encoder and circuit, after the folded-cascode session's own
+   three runs on each, with the same audits and the typed-graph comparisons of 6.3 recorded first.
 8. **Audit and deliver**: the three-encoder tables, the verdicts bounded by one seed, the budget actually spent against
    this worksheet, the record.
 
@@ -469,7 +479,7 @@ and 7.227 queues; `compare.py` of 7.227 and 7.233; `daemon_check.py` (nonce cach
    yes / no. Recommended: the model yes (it makes GT's C-G loaded arm pool-matched), the probes no.
 7. **Optional encoders (3.6):** RGCN, GATv2, GraphGPS without structural inputs: none now (recommended) / which.
 8. **Repetitions (3.7):** after the pilot.
-9. **Stage D on the folded cascode (6.3):** yes, 1,900 per encoder (recommended) / no. OTA8m is not an option.
+9. **Stage D (6.3):** decided 2026-10-07 (revision 3): both held-out cascodes, 3,800 per encoder; OTA8m is not an option.
 
 Parked, as every further plan must say: the SKY130 benchmark (AnalogGym-Opt import, calibration with zero passes, the
 tunable bias current) stays untouched; the MScR circuits on Spectre are the test bed.

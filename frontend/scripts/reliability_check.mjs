@@ -31,40 +31,44 @@ await runChecks(browser, async () => {
   await page.send('Page.navigate', { url: APP });
   await openNetworks(page, browser);
   const field = label => `[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel label')].find(l => l.firstChild?.textContent === ${JSON.stringify(label)})`;
-  const encoder = `${field('Encoder')}?.querySelector('select')`, hidden = `${field('hidden')}?.querySelector('input')`;
-  if (!await page.until(`!!(${encoder}) && !!document.querySelector('table.editor tbody tr')`)) throw new Error('Workbench did not load');
+  // Record 7.265: an encoder is chosen by "Use template" in New model's templates table (it was the Encoder select); the row in
+  // use says which. The same chooseEncoder runs underneath, so the races below are the same.
+  const hidden = `${field('hidden')}?.querySelector('input')`;
+  const encoder = `${NETWORK_DOCUMENT}.querySelector('tr.template-row.current')?.dataset.encoder`;
+  const useTemplate = name => page.evaluate(`(() => { const b = ${NETWORK_DOCUMENT}.querySelector('tr.template-row[data-encoder="${name}"] button.template-use'); if (b) b.click(); return !!b; })()`);
+  if (!await page.until(`!!${NETWORK_DOCUMENT}.querySelector('tr.template-row') && !!document.querySelector('table.editor tbody tr')`)) throw new Error('Workbench did not load');
   await page.saved(); await sleep(300);
   const waitCount = async (queue, count) => { for (let i = 0; i < 150 && queue.length < count; ++i) await sleep(20); if (queue.length < count) throw new Error(`Expected ${count} requests, got ${queue.length}`); };
   hold = true;
-  await page.setValue(encoder, 'rgcn'); await waitCount(pending, 1);
-  await page.setValue(encoder, 'gatv2'); await waitCount(pending, 2);
+  await useTemplate('rgcn'); await waitCount(pending, 1);
+  await useTemplate('gatv2'); await waitCount(pending, 2);
   const newer = structuredClone(settings); newer.settings.gatv2.network.hidden_dim = 96;
   await page.fulfil(pending[1].requestId, 200, newer);
-  check('newest encoder settings are applied', await page.until(`${encoder}.value === 'gatv2' && ${hidden}.value === '96'`));
+  check('newest encoder settings are applied', await page.until(`${encoder} === 'gatv2' && ${hidden}.value === '96'`));
   const older = structuredClone(settings); older.settings.rgcn.network.hidden_dim = 80;
   await page.fulfil(pending[0].requestId, 200, older); await sleep(100);
-  check('late encoder response cannot switch back', await page.evaluate(`${encoder}.value === 'gatv2' && ${hidden}.value === '96'`));
+  check('late encoder response cannot switch back', await page.evaluate(`${encoder} === 'gatv2' && ${hidden}.value === '96'`));
 
-  await page.setValue(encoder, 'rgcn'); await waitCount(pending, 3);
+  await useTemplate('rgcn'); await waitCount(pending, 3);
   // The edit's settings write is held from here on. These races used to be checked with the "Publication preset"
   // reset, which went with both preset buttons (record 7.191); an edit's own write meets the same ones.
   holdWrites = true;
   await page.setValue(hidden, '112', { event: 'input', focus: true });
   await page.fulfil(pending[2].requestId, 200, older); await sleep(100);
-  check('manual network edit survives an outstanding settings read', await page.evaluate(`${encoder}.value === 'rgcn' && ${hidden}.value === '112'`));
+  check('manual network edit survives an outstanding settings read', await page.evaluate(`${encoder} === 'rgcn' && ${hidden}.value === '112'`));
   await page.evaluate(`${hidden}.blur()`);
   await waitCount(writes, 1);
-  await page.setValue(encoder, 'gatv2');
-  check('switching encoders does not wait for an earlier settings write', await page.until(`${encoder}.value === 'gatv2'`));
+  await useTemplate('gatv2');
+  check('switching encoders does not wait for an earlier settings write', await page.until(`${encoder} === 'gatv2'`));
   await page.fulfil(writes[0].requestId, 200, { ...settings.settings.rgcn, network: { ...settings.settings.rgcn.network, hidden_dim: 112 }, origin: 'custom' });
   await waitCount(pending, 4); await page.fulfil(pending[3].requestId, 200, newer); await sleep(100);
-  check('a late write reply cannot replace the selected encoder', await page.evaluate(`${encoder}.value === 'gatv2' && ${hidden}.value === '96'`));
+  check('a late write reply cannot replace the selected encoder', await page.evaluate(`${encoder} === 'gatv2' && ${hidden}.value === '96'`));
   hold = false; await page.saved();
   await page.setValue(hidden, '112', { event: 'input', focus: true });
   await page.evaluate(`${hidden}.blur()`);
   await waitCount(writes, 2);
   await page.evaluate(`document.querySelector('section.editors button[title^="Undo:"]').click()`);
-  check('Undo restores a network edit while its settings write is pending', await page.until(`${encoder}.value === 'gatv2' && ${hidden}.value === '96'`));
+  check('Undo restores a network edit while its settings write is pending', await page.until(`${encoder} === 'gatv2' && ${hidden}.value === '96'`));
   await page.fulfil(writes[1].requestId, 200, { ...settings.settings.gatv2, network: { ...settings.settings.gatv2.network, hidden_dim: 80 }, origin: 'custom' });
   await sleep(100);
   check('a late write reply cannot overwrite Undo within the same encoder', await page.evaluate(`${hidden}.value === '96'`));

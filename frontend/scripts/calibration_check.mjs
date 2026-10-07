@@ -90,7 +90,7 @@ await runChecks(browser, async () => {
   const shown = await cells();
   check('one line per Specs row: limit, designs that miss it, typical miss, the Scale now and the proposal', shown.length === 1 && shown[0][0] === 'score' && shown[0][1] === '≥ 0.95'
     && shown[0][2] === `${row.misses} of 64` && shown[0][4] === '1' && shown[0][5] === String(scale), JSON.stringify(shown));
-  check('the Initial alpha: what the page holds and what is proposed', await evaluate(`${BLOCK}.querySelector('.calibration-alpha').textContent`).then(t => t.startsWith(`Initial alpha (RL networks): now 0.01; proposed ${alpha}`)),
+  check('the Initial alpha: what the page holds and what is proposed', await evaluate(`${BLOCK}.querySelector('.calibration-alpha').textContent`).then(t => t.startsWith(`Initial alpha (RL model): now 0.01; proposed ${alpha}`)),
     await evaluate(`${BLOCK}.querySelector('.calibration-alpha').textContent`));
   check('the hint says what Apply will do', (await evaluate(HINT)) === 'Sets the Scale of 1 Specs row and Initial alpha, as one Undo step.', await evaluate(HINT));
   check('nothing was applied by the run', (await stored()).targets[0].normalization_scale === 1 && (await stored()).run.advanced.initial_alpha === 0.01);
@@ -170,7 +170,7 @@ await runChecks(browser, async () => {
   check('...the Scale column is the run\'s own ("Scale in the run" 2), not the page\'s row of the same ID (1), and no row is "not applied"',
     (await evaluate(`[...${BLOCK}.querySelectorAll('thead th')].map(th => th.textContent).join('|')`)).includes('|Scale in the run|')
     && foreignCells.length === 1 && foreignCells[0][4] === '2' && foreignCells[0][5] === String(scale2) && !/not applied|no such row/.test(await evaluate(`${BLOCK}.textContent`)), JSON.stringify(foreignCells));
-  check('...the Initial alpha is the run\'s', (await evaluate(`${BLOCK}.querySelector('.calibration-alpha').textContent`)).startsWith('Initial alpha (RL networks): the run had 0.02; proposed 0.045'),
+  check('...the Initial alpha is the run\'s', (await evaluate(`${BLOCK}.querySelector('.calibration-alpha').textContent`)).startsWith('Initial alpha (RL model): the run had 0.02; proposed 0.045'),
     await evaluate(`${BLOCK}.querySelector('.calibration-alpha').textContent`));
   check('...and Apply rests, saying which task it waits for', await evaluate(`${APPLY}.disabled`) && (await evaluate(HINT)) === `Apply waits until the page holds ${OTHER}.`, await evaluate(HINT));
   await page.shot(path.join(out, 'calibration-3-other-task.png'), `document.querySelector('footer')`);

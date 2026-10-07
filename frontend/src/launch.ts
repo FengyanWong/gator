@@ -173,6 +173,7 @@ export function useLauncher({ control, features, onLaunched, onMessage }: {
     consent: { real: boolean; authorizeText: string; transfer?: boolean }, declined: string, note?: (started: Json) => string | undefined) => {
     if (going.current) return;                                // a second press anywhere finds the first one on its way
     going.current = true;
+    setRefusal(null);                                         // a new attempt: the reason of the last one goes until this one is answered
     const { control: header } = latest.current;
     const as = action === 'start' || action === 'calibration' ? 'start' : 'resume';
     header.setPending(as);

@@ -352,7 +352,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     setConfig((c: Json) => ({ ...c, run: { ...c.run, mode: 'fine_tune',
       model_source: { ...(c.run.model_source ?? {}), run_dir: alternative.run_dir, checkpoint_id: alternative.checkpoint_id } } }));
     setMessage({ level: 'info', text: `The next run fine-tunes from ${folderName(alternative.run_dir)} at its save point ${alternative.checkpoint_id}, as a new `
-      + 'run (Undo takes it back). Look at RL networks, then press Start.' });
+      + 'run (Undo takes it back). Look at RL model..., then press Start.' });
   };
 
   // ---- the splitter above the bottom panel (record 7.158): nothing moves unless it is dragged, double-clicked or keyed --------

@@ -1,5 +1,7 @@
 // Browser check of the run panel's Mode suggestion ("Suggested: fine_tune - ..."). User request 2026-09-26: "remove the
 // Use button but make fine_tune clickable" - the suggested mode is the control itself, drawn as a link in its sentence.
+// Record 7.265: the Mode is chosen in the RL model window, so the panel names it in its model line ("Evaluate ...",
+// "Fine-tune ..."), and the suggestion names it in words ("Fine-tune").
 // Hermetic, on the shared harness (lib/harness.mjs): /api/runs/model and /api/runs/models are answered with canned data
 // labelled FIXTURE (a model trained on another task, so the backend's fine_tune suggestion applies), GET requests pass,
 // every other writing request is refused. Safe against the live page on 8765. The browser profile is new and temporary.
@@ -51,7 +53,8 @@ await runChecks(browser, async () => {
     return page.readOrRefuse({ requestId, request }, refused);
   };
   const RIGHT = `document.querySelector('.right')`;
-  const MODE = `[...(${RIGHT}?.querySelectorAll('label') ?? [])].find(l => l.firstChild?.textContent?.trim() === 'Mode')?.querySelector('select')`;
+  const MODE = `${RIGHT}?.querySelector('.rl-networks-row')`;                       // the next run's model, in one line (record 7.265)
+  const LINE = `(${MODE})?.querySelector('.net-short')?.textContent ?? ''`;
   const PARA = `[...(${RIGHT}?.querySelectorAll('p.warn') ?? [])].find(p => p.textContent.startsWith('Suggested:'))`;
   const WORD = `(${PARA})?.querySelector('button')`;
   const USE = `[...document.querySelectorAll('button')].filter(b => b.textContent.trim() === 'Use').length`;
@@ -74,34 +77,34 @@ await runChecks(browser, async () => {
   await evaluate(`(${PARA})?.scrollIntoView({ block: 'center' })`);
   const text = await evaluate(`(${PARA})?.textContent`);
   check('it reads "Suggested: fine_tune - <the backend\'s reason> (needs your confirmation)"',
-    text === `Suggested: fine_tune - ${SUGGESTION.reason} (needs your confirmation)`, JSON.stringify(text));
+    text === `Suggested: Fine-tune - ${SUGGESTION.reason} (needs your confirmation)`, JSON.stringify(text));
   check('there is no "Use" button any more, anywhere on the page', (await evaluate(USE)) === 0, `${await evaluate(USE)} found`);
   const word = await evaluate(`(() => { const b = ${WORD}; if (!b) return null; const cs = getComputedStyle(b), ps = getComputedStyle(b.parentElement);
     return { tag: b.tagName, text: b.textContent, title: b.title, cursor: cs.cursor, size: cs.fontSize, paraSize: ps.fontSize, weight: cs.fontWeight, color: cs.color,
       border: cs.borderStyle, background: cs.backgroundColor, underline: cs.textDecorationLine, visible: b.checkVisibility(), disabled: b.disabled,
       accent: (name => { const s = document.createElement('span'); s.style.color = 'var(' + name + ')'; document.body.appendChild(s); const c = getComputedStyle(s).color; s.remove(); return c; })('--accent') }; })()`);   // the look's accent (record 7.158)
-  check('the suggested mode itself is the control: a button holding just the word fine_tune, visible and enabled',
-    word?.tag === 'BUTTON' && word.text === 'fine_tune' && word.visible && !word.disabled && word.cursor === 'pointer', JSON.stringify(word));
-  check('... titled with what a click does', word?.title === 'Set Mode to fine_tune', JSON.stringify(word?.title));
+  check('the suggested mode itself is the control: a button holding just its name, Fine-tune, visible and enabled',
+    word?.tag === 'BUTTON' && word.text === 'Fine-tune' && word.visible && !word.disabled && word.cursor === 'pointer', JSON.stringify(word));
+  check('... titled with what a click does', word?.title === 'Set Mode to Fine-tune', JSON.stringify(word?.title));
   check('... drawn as a link, not a box: no border, no background, bold, accent colour, at the size of its sentence',
     !!word && word.border === 'none' && word.background === 'rgba(0, 0, 0, 0)' && Number(word.weight) >= 600 && word.color === word.accent && word.size === word.paraSize, JSON.stringify(word));
   check('... not underlined until the mouse is over it', word?.underline === 'none', word?.underline);
-  await page.shot(path.join(out, 'mode-suggestion-1-shown.png'), await around(`(${MODE}).closest('label')`, PARA));
+  await page.shot(path.join(out, 'mode-suggestion-1-shown.png'), await around(MODE, PARA));
   const at = await centre(WORD);
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y }); await sleep(150);
   check('under the mouse it is underlined, like the other text links of the workbench', (await evaluate(`getComputedStyle(${WORD}).textDecorationLine`)) === 'underline');
-  await page.shot(path.join(out, 'mode-suggestion-2-hover.png'), await around(`(${MODE}).closest('label')`, PARA));
+  await page.shot(path.join(out, 'mode-suggestion-2-hover.png'), await around(MODE, PARA));
 
   // ---- the click --------------------------------------------------------------------------------------------------
-  const before = await evaluate(`(${MODE}).value`);
+  const before = (await page.stored())?.run?.mode;
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
-  check('a click on the word sets Mode to fine_tune', before === 'frozen' && await page.until(`(${MODE}).value === 'fine_tune'`, 30), `${before} -> ${await evaluate(`(${MODE}).value`)}`);
+  check('a click on the word sets Mode to Fine-tune: the model line says so', before === 'frozen' && await page.until(`(${LINE}).startsWith('Fine-tune ')`, 30), `${before} -> ${await evaluate(LINE)}`);
   check('... and the sentence goes away: the suggestion is the Mode now', await page.until(`!(${PARA})`, 30));
   await page.saved();
   check('... saved in the configuration like any other edit', (await page.stored())?.run?.mode === 'fine_tune', JSON.stringify((await page.stored())?.run?.mode));
   check('... with the chosen model kept', (await page.stored())?.run?.model_source?.run_dir === RUN_DIR, JSON.stringify((await page.stored())?.run?.model_source));
-  await page.shot(path.join(out, 'mode-suggestion-3-after.png'), `(${MODE}).closest('label')`, { scale: 2, pad: 8 });
+  await page.shot(path.join(out, 'mode-suggestion-3-after.png'), MODE, { scale: 2, pad: 8 });
 
   reportRefused(refused, NEVER_ASKED_OR_SAVED);
   check('no console exception', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

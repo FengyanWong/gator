@@ -96,12 +96,15 @@ await runChecks(browser, async () => {
   await page.seed({ config: CONFIG, when: 'once' });
   await send('Page.navigate', { url: APP });
   const networkPage = await openNetworks(page, browser);
-  if (!(await until(`!!${RIGHT}?.querySelector('select.model-point')`, 150))) throw new Error('the model chooser never showed the seeded model; the page reads: ' + JSON.stringify(await evaluate(`document.body.innerText.slice(0, 300)`)));
+  // Record 7.265: a saved model's network structure is in its Details, in the RL model window's table of saved models.
+  const ROW = dir => `[...${RIGHT}.querySelectorAll('tr.model-row')].find(r => r.title === ${JSON.stringify(dir)})`;
+  if (!(await until(`!!(${ROW(RUN)})`, 150))) throw new Error('the saved models never showed the seeded model; the page reads: ' + JSON.stringify(await evaluate(`document.body.innerText.slice(0, 300)`)));
+  await evaluate(`(${ROW(RUN)}).querySelector('button.notes-link').click()`);
   if (!(await until(`!!(${FOLD})`, 60))) throw new Error('this page has no "Network structure" fold-out: the served frontend is older than it (npm run build, then reload)');
 
   // ---- closed by default; nothing is read until it is opened ----------------------------------------------------------------
   await sleep(800);
-  check('the fold-out sits under the facts of the chosen model and is closed', await evaluate(`!${FOLD}.open && ${FOLD}.previousElementSibling?.classList.contains('model-facts')`));
+  check('the fold-out sits in the model\'s Details, under its relationships, and is closed', await evaluate(`!${FOLD}.open && ${FOLD}.previousElementSibling?.classList.contains('model-relations')`));
   check('nothing is read before it is opened', asked.length === 0, `${asked.length} request(s)`);
   await toggle();
   check('opening it reads the structure once, for the RESOLVED save point (not "latest")', (await waitAsked(1)) === 1 && lastAsked().run_dir === RUN && lastAsked().checkpoint_id === POINTS[1].checkpoint_id, JSON.stringify(lastAsked()));
@@ -139,7 +142,7 @@ await runChecks(browser, async () => {
 
   // ---- another save point re-reads it; a model without never-used weights says nothing about them -------------------------------------
   mode = { withUnused: false, scale: 2 };
-  await setSelect(`${RIGHT}.querySelector('select.model-point')`, POINTS[0].checkpoint_id);
+  await evaluate(`[...${RIGHT}.querySelectorAll('table.model-points tbody tr')].find(r => r.title === ${JSON.stringify(POINTS[0].checkpoint_id)}).click()`);   // inspect another save point
   check('choosing another save point re-reads the structure for exactly that one', (await waitAsked(2)) === 2 && lastAsked().checkpoint_id === POINTS[0].checkpoint_id, JSON.stringify(lastAsked()));
   const other = structure(POINTS[0].checkpoint_id, mode);
   check('... and the numbers follow', await until(`${FOLD}.innerText.includes(${JSON.stringify(other.totals.trained.toLocaleString('en-US') + ' trained parameters')})`, 50), (await foldText()).slice(0, 80));
@@ -169,8 +172,8 @@ await runChecks(browser, async () => {
     const expected = await real.json();
     canned = false;
     await evaluate(`[...${RIGHT}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Refresh list').click()`);
-    const CARD = `[...${RIGHT}.querySelectorAll('button.model-card')].find(b => b.title === ${JSON.stringify(first.run_dir)})`;
-    check('against the real routes: the first real model can be chosen', (await until(`!!(${CARD})`, 80)) && (await evaluate(`(${CARD}.click(), true)`)) && await until(`${CARD}.getAttribute('aria-checked') === 'true'`, 40), first.run_dir);
+    check('against the real routes: the first real model\'s Details can be opened', (await until(`!!(${ROW(first.run_dir)})`, 300))
+      && (await evaluate(`((${ROW(first.run_dir)}).querySelector('button.notes-link').click(), true)`)) && await until(`!!${RIGHT}.querySelector('table.model-points')`, 40), first.run_dir);
     await until(`!!(${FOLD}) && !${FOLD}.open`, 50); await toggle();
     const words = `${expected.totals.trained.toLocaleString('en-US')} trained parameters = actor ${expected.totals.actor.toLocaleString('en-US')} + 2 critics x ${expected.totals.critic_each.toLocaleString('en-US')}`;
     check(`... its summary equals the real route (${words})`, await until(`${FOLD}.innerText.includes(${JSON.stringify(words)})`, 80), (await foldText()).slice(0, 140));

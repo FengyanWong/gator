@@ -105,7 +105,8 @@ await runChecks(browser, async () => {
   const RUN = NETWORK_PANEL;
   const LIST = `${RUN}.querySelector('.component-list')`;
   const SELECT = `${LIST}.querySelector('select')`;
-  const ENCODER = `[...${RUN}.querySelectorAll('label')].find(l => l.firstChild?.textContent?.trim() === 'Encoder')?.querySelector('select')`;
+  // Record 7.265: the encoder is chosen in New model's templates table (it was an Encoder select); the list follows that table.
+  const ENCODER = `${RUN}.querySelector('table.template-table')`;
   const choose = (select, value) => page.setValue(`${select}`, value);
   const storedNetwork = async () => (await page.stored())?.run?.network ?? null;
   // The page keeps its configuration in this browser 800 ms after the last change (store.ts): wait for it, then read it.
@@ -124,7 +125,7 @@ await runChecks(browser, async () => {
     return { label: r.querySelector('label').firstChild.textContent.trim(), value: s.value, options: [...s.options].map(o => [o.value, o.textContent]), button: b?.textContent,
       sameRow: !!b && b.parentElement === r, what: l.querySelector('.component-what')?.textContent ?? '', helpFolded: !l.querySelector('details.component-help').open,
       afterEncoder: !!(${ENCODER}) && (${ENCODER}.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING) > 0 }; })()`);
-  check('the RL network block has a "Components" list after the encoder', line.label === 'Components' && line.afterEncoder, JSON.stringify(line.label));
+  check('the template\'s settings have a "Components" list after the templates table', line.label === 'Components' && line.afterEncoder, JSON.stringify(line.label));
   check('standard is chosen and listed first, the loaded PDK after it', line.value === 'standard' && line.options[0][0] === 'standard'
     && line.options[1]?.[0] === 'pdk:fixpdk' && line.options[1][1] === FIXPDK.label, JSON.stringify(line.options));
   check('no load button in the block any more: the PDK comes with the cell, from the Virtuoso window', !line.button, String(line.button));
@@ -143,11 +144,12 @@ await runChecks(browser, async () => {
   check('choosing the PDK writes run.network.vocabulary', network?.vocabulary === 'pdk:fixpdk', JSON.stringify(network));
   const what = await evaluate(`${LIST}.querySelector('.component-what').textContent`);
   check('... and the line names its components by family', /Knows all 3 components of fixpdk: 1 n-MOS, 1 npn, 1 inductor/.test(what), what);
-  const other = await evaluate(`[...${ENCODER}.options].map(o => o.value).find(v => v !== ${ENCODER}.value)`);
-  await choose(ENCODER, other);
+  const useTemplate = name => evaluate(`${RUN}.querySelector('tr.template-row[data-encoder="${name}"] button.template-use')?.click()`);
+  const other = await evaluate(`[...${RUN}.querySelectorAll('tr.template-row')].map(r => r.dataset.encoder).find(e => e !== ${RUN}.querySelector('tr.template-row.current')?.dataset.encoder)`);
+  await useTemplate(other);
   network = await storedWhen(n => n?.encoder_type === other);
   check('another encoder keeps the chosen list', network?.encoder_type === other && network?.vocabulary === 'pdk:fixpdk', JSON.stringify(network));
-  await choose(ENCODER, net.encoder_type);
+  await useTemplate(net.encoder_type);
   await storedWhen(n => n?.encoder_type === net.encoder_type);
   await choose(SELECT, 'standard');
   network = await storedWhen(n => n && !('vocabulary' in n));
@@ -236,9 +238,9 @@ await runChecks(browser, async () => {
   await until(`[...${SELECT}.options].some(o => o.value === 'pdk:fixload')`, 30);
   check('the newly loaded PDK can be chosen in the RL network block at once', await evaluate(`[...${SELECT}.options].some(o => o.value === 'pdk:fixload')`));
   await sleep(300);
-  {                                              // the encoder row down to the component list, in a tall viewport
+  {                                              // the templates table down to the component list, in a tall viewport
     await networkPage.viewport(1100, 2600); await sleep(300);
-    const clip = await evaluate(`(() => { ${ENCODER}.scrollIntoView({ block: 'start' }); const a = ${ENCODER}.closest('label').getBoundingClientRect(), b = ${LIST}.getBoundingClientRect();
+    const clip = await evaluate(`(() => { ${ENCODER}.scrollIntoView({ block: 'start' }); const a = ${ENCODER}.getBoundingClientRect(), b = ${LIST}.getBoundingClientRect();
       return { x: Math.min(a.x, b.x) - 4, y: a.y - 4, width: Math.max(a.right, b.right) - Math.min(a.x, b.x) + 8, height: b.bottom - a.y + 8, scale: 1.5 }; })()`);
     await networkPage.shot(path.join(out, 'pdk-2-list.png'), clip);
     await networkPage.viewport(1100, 900);

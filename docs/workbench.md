@@ -97,10 +97,11 @@ main button changes with the run:
 `Starting...`, `Pausing...`, `Resuming...`, `Aborting...` are the waiting states in between. On a real circuit
 `Pausing...` lasts as long as the rest of the simulation that is running.
 
-* **Resume and "Mode = resume" are the same machinery, used differently.** Resume is the one-press way for the run in
-  the header and does not touch the Mode box. It continues with the settings the run was STARTED with (its own
-  `effective_config.json`); edits made on the page while it was paused are not used. Mode = resume + "RL model to
-  load" is for picking up an older run, and lets the budget and a few run settings change.
+* **Resume and Continue... are the same machinery, used differently.** Resume is the one-press way for the run in the
+  header and does not touch the Mode. It continues with the settings the run was STARTED with (its own
+  `effective_config.json`); edits made on the page while it was paused are not used. **Continue...** in the Runs window
+  (record 7.261) is for picking up an older run, in its own folder, with a new total budget. `resume` is no Mode since
+  record 7.265.
 * **Abort** ends the run for good, but gently: it asks first, then lets the simulation in flight finish, saves
   everything and ends the run (`stopped`). Only while a pause or an abort is waiting for that simulation the button
   reads **Force abort**: it waits for nothing, the evaluation in flight is recorded as cancelled and stays charged,
@@ -187,7 +188,7 @@ flight finish (with several in parallel: all of them), writes a complete save po
 (full training state, kind `manual`) and goes on by itself. Nothing is charged and nothing is lost; on a real
 circuit the wait is at most the rest of the simulation that is running. The button reads "Saving..." until the run
 itself reports that request as written (`manual_save` in `status.json`), then the line under the header says at how
-many evaluations and under which id. The save point appears under "RL model to load" as `saved with "Save now"`,
+many evaluations and under which id. The save point appears in its model's Details (RL model window) as `saved with "Save now"`,
 and pruning (`output.keep_last_checkpoints`) never removes it.
 
 It is refused, in plain words, when nothing would come of it: the run is not running (a paused or ended run has
@@ -208,7 +209,7 @@ ring around the header, alignment marks in the corners, a hatched layer swatch o
 blue, Probes metal 2 magenta, Specs metal 3 teal), and Start glows while it can be pressed. The moon / sun icon at the
 left of the header switches them; nothing changes by itself. The choice is kept in this browser
 (`gator-workbench-look-v1`) and set before the page draws (`index.html`), so a dark choice never flashes light. Every
-pop-up window (Connection, Virtuoso, ngspice, PDK, Runs, RL networks, Task file, What's missing?) takes the look
+pop-up window (Connection, Virtuoso, ngspice, PDK, Runs, RL model, Task file, What's missing?) takes the look
 when it opens and follows the switch while open (`theme.ts` `followLook`, called by `popupWindow.ts`). The circuit graph
 view takes its canvas, line and label colours from the look and changes them on a switch; its node fills stay the
 picture's own key.
@@ -846,7 +847,7 @@ to say.
   OK reads it and makes it the cell the task flow works in. Virtuoso exports the netlist of the testbench
   cell and the device sizes are read. The cell's PDK is read in the same press (since 2026-09-27; see "The
   components the network knows" below): a line under the buttons says what came of it, and the PDK's component
-  list can then be chosen in the RL network block. The export is kept under
+  list can then be chosen in the RL model window (New model, the template's Components). The export is kept under
   `configs/local/workbench/native_cells/<library>/<cell>/`, and the cell then loads from it without
   contacting Virtuoso: you can look at it, fill the three editors (the centre tabs, in this order:
   **Parameters** = what may vary, **Probes** = what is measured and how, **Specs** = equations over
@@ -1245,7 +1246,7 @@ it). The window lists every run under the output folder, newest first, one row p
   stored by run folder in `run_folders.json`: an assignment of a run that is gone stays in the file and is not counted.
   API: `GET/POST /api/run-folders`, `PUT /api/run-folders/assign` (`run_dirs` - each must be a run under the allowed
   output roots), `PATCH/DELETE /api/run-folders/{folder_id}`; the saved models' folders the same under
-  `/api/model-folders`, for the RL model window (build step 4).
+  `/api/model-folders`, used by the RL model window's saved models table (record 7.265).
 * **Nothing in the window updates by itself.** The list is read when the button is pressed and by **Refresh list**
   (the window says when it was read); a run's details are read when they are opened. A working run therefore shows
   its state and duration as of that time.
@@ -1544,7 +1545,7 @@ edits until you type a scale of your own; a row with nothing to size it by yet (
 keeps an empty scale, which the backend sizes from the threshold. Saved empty scales are not filled on load. (Record
 7.112 fixed a suggestion that froze at 1 - e.g. 1 W - when a row was added before its limits were typed.)
 
-Reward and conditions holds the nominal gate band and objective shape in its Advanced fold (record 7.183, below). **RL networks... → Advanced** exposes **Alpha learning rate**,
+Reward and conditions holds the nominal gate band and objective shape in its Advanced fold (record 7.183, below). **RL model... → Advanced** exposes **Alpha learning rate**,
 stored per configuration; empty inherits the actor learning rate. No separate starting rate passed the extended
 1,000-update unit check, so new configurations leave it empty. Attributed failures continue the episode, while its normal
 horizon and configured success ending still apply.
@@ -1602,16 +1603,16 @@ higher is better". Nothing else needs setting.
 **The three training values that had to change first.** With the values every earlier run used - starting temperature
 0.2, one update per evaluation - soft actor-critic is a uniform random search, and no reward setting changes what it does
 (on Spectre, two very different reward settings gave the same design in 147 of 150 positions). Every starting preset in
-RL networks trains with starting temperature 0.01, 8 updates per evaluation and discount 0, with the other training
+the RL model window trains with starting temperature 0.01, 8 updates per evaluation and discount 0, with the other training
 numbers those runs were made with - batch 8, warm-up 8, replay 10,000, episode length 4 (record 7.192) - and with
 learning rate 1e-3, which learned about 100 evaluations earlier than those runs' 3e-4 (record 7.199); only its network
 size is the published one. The GATOR baseline that held the measured setting was deleted with
 its button on 2026-10-05, record 7.191 ([network-presets.md](network-presets.md), "The three tested values"). Where it
 shows:
 
-- **RL networks...** names values with which the search stays random ("With 1 update per evaluation and a starting
+- **RL model...** names values with which the search stays random ("With 1 update per evaluation and a starting
   temperature of 0.2, soft actor-critic learned late or not at all ..."), and Run configuration then says "Review the
-  settings in RL networks."
+  settings in RL model."
 - **Static validation** warns the same (`sac_values_random_search`) for any run that trains, also from the command
   line, and warns a from-scratch SAC run below 300 evaluations (`budget_below_sac_learning`): learning started after 250
   to 600 evaluations in the tests, and after about 150 to 300 with the starting presets (record 7.199; the warning says
@@ -1631,7 +1632,7 @@ in [decisions.md](decisions.md).) A row whose limit is 0 needs a typed scale and
 (`scale_needed_for_zero_limit`): it was silently measured against 1 of its unit.
 
 **Checks.** `tests/workbench/test_wb_tested_defaults.py` (11) and `test_wb_network_presets.py`;
-`frontend/scripts/reward_block_check.mjs` (28: the sentence, the fold, the button, the RL networks warning and the GATOR
+`frontend/scripts/reward_block_check.mjs` (28: the sentence, the fold, the button, the RL model warning and the GATOR
 baseline press, the Specs scale). The measurement: `artifacts/local/reviews/defaults-study-2026-10-05/README.md`.
 
 ### Calibration: random designs only; automatic task baseline (2026-10-07, record 7.248)
@@ -1655,12 +1656,12 @@ combined baseline/calibration runs retain their recorded meaning and remain read
   miss the row, in the row's own unit. One example, from the free ngspice test circuit: the output-voltage row allows
   0.7 to 1.2 V, so an empty Scale box means 1.2 V; the random designs that miss the row miss it by 0.042 V. With Scale
   0.042 such a miss counts as 1; with the empty box it counted as 0.035 and the reward hardly saw the row.
-- **Initial alpha** (the starting temperature in RL networks): 0.1 x the spread of the reward among the random designs,
+- **Initial alpha** (the starting temperature in the RL model window): 0.1 x the spread of the reward among the random designs,
   worked out with the proposed scales.
 
 **The run changes nothing.** Run status of that run shows the proposals: one line per Specs row - its limit, how many
 random designs miss it, the typical miss, the Scale the page holds now, the proposed Scale - then the Initial alpha, and
-**Apply calibration**. One press writes the proposed scales into the Specs rows and the Initial alpha into RL networks,
+**Apply calibration**. One press writes the proposed scales into the Specs rows and the Initial alpha into the RL model's Advanced,
 as one Undo step. Scales are written as every quantity of the page is (20 mV, 11 MHz, 9.6 deg; record 7.217).
 
 **A task saved from a Virtuoso cell: Apply and save** (record 7.217). Such a task starts only with the rows it has
@@ -1986,35 +1987,66 @@ still sends a removed method is refused at Start with "reload the page", and the
 configuration it keeps when it loads (`store.ts` `migrateConfig`). See [LLM sizing](llm-sizing.md) for the methods as
 they were.
 
-### Run configuration and the RL networks window (2026-10-02, record 7.150)
+### Run configuration and the RL model window (2026-10-02, record 7.150; renewed 2026-10-07, record 7.265)
 
-Since record 7.228, the encoder list also offers **GraphGPS — port-aware** and
+Since record 7.228, the templates also offer **GraphGPS — port-aware** and
 **Parameter-group attention — experimental**. Both have per-encoder structural
 input settings (`none` / random-walk returns at 2, 4, 8, 16 steps), preserved in
 configuration, saved defaults and checkpoints. Their 48/4/4 starting presets and
 inherited SAC settings are experimental. A loaded model restores the structural
 setting along with its sizes. See [architecture and compatibility](global-encoders.md).
 
-**Mode** is the first setting in Run configuration, with **RL networks...** directly underneath it. Left of the button
-stands the network in use, in short (record 7.160, user: "show the current network selection next to the RL network
-button in short"): the encoder and hidden / heads / layers, `GT 48/4/4` (GT = graph_transformer; `–` where an encoder
-has no heads), then "op. points" and the component list when they are on, and "saved model" in a Mode that loads one,
-whose network the run takes. A loading Mode without a chosen model reads "no saved model chosen". The tooltip says all of
-it in full. The RL model label is the second setting (the Search method box went on 2026-10-06, record 7.226). The button
-opens a separate window containing the encoder and sizes,
-operating-point input switch, the Advanced RL settings directly below it (record 7.195, user: "move the advanced
-setting to beneath the nominal device op checkbox"; a Mode that loads a model has no network block, so there they close
-the window), Components list, the "In use" line of the starting preset, saved-model chooser, model facts, compatibility
-details, network structure and circuit graph view. Changing Mode in the main page updates this window.
-Budgets, concurrency, seed, the run limits (one Limits fold since record 7.179), reward and training conditions stay in Run configuration.
+Run configuration names the next run's model in one line, beside the **RL model...** button (record 7.265, build step 4
+of the [frontend run workflow plan](plan-frontend-run-workflow.md), "RL model window"; until then the button read "RL
+networks..." and a **Mode** select stood above it, with the RL model label below):
+- "New model · Graph Transformer template · GT 48/4/4": the template, then the network in short (record 7.160, user:
+  "show the current network selection next to the RL network button in short"; GT = graph_transformer, `–` where an
+  encoder has no heads, then "op. points" and the component list when they are on);
+- "Fine-tune ota7t (2) · save point 420 evaluations" or "Evaluate ota7t (2) · save point 420 evaluations · deterministic
+  actions": the saved model by its name, and the save point the run loads;
+- "Fine-tune · no saved model chosen" until one is chosen.
+
+The tooltip says it in full. Under the line stays the model check's suggestion of another Mode ("Suggested: Fine-tune -
+..."); where the saved model's own run can be continued exactly, it links to that run in the Runs window instead
+("This model's own run can be continued exactly: open it in Runs"). Budgets, concurrency, seed, the run limits (one
+Limits fold since record 7.179), reward and training conditions stay in Run configuration.
+
+The button opens the **RL model** window. At its top is the **Mode**, as three buttons, each press one Undo step:
+- **New model** (`scratch`): a new RL model, made from one of the templates; it starts from random weights;
+- **Fine-tune** (`fine_tune`): a saved model keeps learning, in a new run;
+- **Evaluate only** (`frozen`): a saved model is used as it is, with no learning.
+
+`resume` is not a choice: continuing a run is an action on that run (the header's Resume, Continue... in the Runs
+window). A configuration that still holds `resume` (an old draft) reads "Mode resume is no longer a choice" beside the
+button until a Mode is chosen.
+
+**New model** shows:
+- **Templates**: one row per encoder, with its sizes, its training values (updates per evaluation, starting temperature,
+  discount, learning rate), where they come from (the starting preset, or edited and saved in the backend) and how many
+  saved models were made from it. **Use template** or a double click fills the next run's network and training values
+  from it, as one Undo step - what choosing an encoder did before. The template in use is marked.
+- **The ... template, for this run**: its sizes, structural input, the operating-point input, Advanced (record 7.195),
+  the Components list, the "In use" line with Use saved defaults and Save as defaults (below), and where the values come
+  from. No preset buttons (record 7.191).
+- **Name of the new model**: the RL model label (below).
+- **Saved models, to look at**, folded: the saved models table of Fine-tune (next sections), read only once the fold is
+  opened, for looking - Details, structure, graph view. Its "Use this save point" buttons are off, and looking changes
+  nothing in the configuration.
+
+**Fine-tune** and **Evaluate only** show the saved models table, then **The model in use** - its facts (network,
+components, task, reward, conditions, training, restorable, folder), a note when the configuration on the page is too
+incomplete to compare it with, and its compatibility - then the Mode's own settings: for Fine-tune, Freeze encoder,
+Encoder-only transfer, Reset critic, Continual learning and the name of the model it saves; for Evaluate only, the
+frozen actions (deterministic or sampled); then Advanced. They have no block for a new network: a saved model only loads
+into the network it was trained with.
 
 Pressing the button again focuses the existing window. It has no close button of its own (record 7.163, user: "delete
 the cross button in RL network window"): the browser's close keeps all configuration edits; pending settings saves and model compatibility checks continue in the main page. Undo/Redo also
 work for typing in the window. A blocked popup is explained beside the launcher. Reloading or leaving the workbench closes
 its window.
 
-Network settings that need attention leave a notice in Run configuration, including its folded warning/error mark.
-Browser checks: `frontend/scripts/network_panel_check.mjs`, `model_chooser_check.mjs`, `model_structure_check.mjs`,
+Settings in the window that need attention leave a notice in Run configuration ("Review the settings in RL model."), including its folded warning/error mark.
+Browser checks: `frontend/scripts/network_panel_check.mjs`, `model_chooser_check.mjs`, `mode_suggestion_check.mjs`, `model_structure_check.mjs`,
 `graph_view_check.mjs`, `pdk_check.mjs`, `module_fold_check.mjs`, `typing_check.mjs` and `reliability_check.mjs`.
 
 ### The RL model's label (2026-10-03, record 7.159)
@@ -2022,15 +2054,18 @@ Browser checks: `frontend/scripts/network_panel_check.mjs`, `model_chooser_check
 User: "remove the project name box in the Project module. Give the RL model its own label, independent of the project
 name." The project name did one thing: the backend remembered each project's newest run, and a Mode that loads a model
 (resume, fine_tune, frozen) started from that run's `latest` save by itself. That job is now the **RL model label**'s, a
-box in Run configuration, directly below Mode and its RL networks button:
+box in the RL model window since record 7.265 - "Name of the new model" in New model, "Name of the model it saves" in
+Fine-tune (until then in Run configuration, below the Mode):
 - empty, the label is the task's run label (`project.task_name`, shown as the box's grey placeholder);
 - a run that saves an RL model is remembered under its label (`settings.json` `last_run`); a Baseline simulation
   saves none and leaves the label alone (before, a baseline under the same project name pushed its
   project's model out);
-- the default model is the newest one saved under the label (`GET /api/runs/default-model?label=`); runs remembered under
-  a project name before still answer through the configuration's unshown old `project.name`;
-- the label is written into the run's manifest (`model_label`), names the model's card in the saved-model list (before:
-  the task name) and can be typed into its filter; the header's title block shows it; a folded Run configuration shows a
+- the newest model saved under the label (`GET /api/runs/default-model?label=`) is offered in Fine-tune and Evaluate
+  only, "Newest model named ...: Use", and loaded only by that press, at its newest save point, pinned (record 7.265;
+  until then a Mode that loads a model took it by itself, at `latest`); runs remembered under a project name before
+  still answer through the configuration's unshown old `project.name`;
+- the label is written into the run's manifest (`model_label`), names the model in the saved models table (before: the
+  task name) and can be typed into its filter; the header's title block shows it; a folded Run configuration shows a
   typed one.
 
 `run.model_label` is part of the configuration; it is hashed as absent while it is empty, so configurations and runs
@@ -2040,12 +2075,12 @@ from before keep their hashes, and it changes no task hash. Tests: `tests/workbe
 name. At a start, a label a model carries already gets the first free number - `mscr_ota7t`, `mscr_ota7t (2)`,
 `mscr_ota7t (3)` - and the run manifest holds the name given; the label itself stays what the run is remembered under,
 so the Modes that load a model still start from the newest model saved under the label. Models saved before this
-record are numbered the same way when they are listed, oldest first. The Runs window shows the name in its **Model**
-column. Under the chosen card of "RL model to load" (and of "Saved models (look only)") a **Name** box and **Rename**
-give the model a new name (`POST /api/runs/model/rename`, kept in the run folder's `model_label.json`; the manifest
+record are numbered the same way when they are listed, oldest first. The Runs window shows the name in its **Saved
+model** column. In a saved model's Details (RL model window) a **Name** box and **Rename** give the model a new name (`POST /api/runs/model/rename`, kept in the run folder's `model_label.json`; the manifest
 keeps the name given at the start, and a live run can be renamed too). A name another model under the output folder
-carries is refused and said under the box. A renamed model can be loaded by typing its name into the RL model label
-box: the default model is the model that carries the label when no run was started under it.
+carries is refused and said under the box. A renamed model is offered as "Newest model named ..." when its name is
+typed into the RL model label box: the default model is the model that carries the label when no run was started under
+it.
 
 ### Folding the right column's modules (added 2026-09-21, user request)
 
@@ -2056,35 +2091,66 @@ only put out of view, not switched off: its settings stay in force and keep work
 inside" or "error inside" - while something in it asks for attention, also when that appears while it is folded.
 Browser check: `frontend/scripts/module_fold_check.mjs` (fixtures only; safe against the live backend).
 
-### Choosing which saved model to load (added 2026-09-21, user request)
+### Choosing which saved model to load (added 2026-09-21, user request; a table since 2026-10-07, record 7.265)
 
-A **run** is one training session (one press of Start) with its own folder; the models it saved are its
-**save points** (`checkpoints/<id>/`). With Mode `resume`, `fine_tune` or `frozen`, the RL networks window's "RL model to
-load" block lists every run that holds a model as a card (the model's own name - see "The RL model's label" -, circuit, **network**, evaluations of training, last
-save; tags `MOCK`, `weights only`) and then offers every save point of the chosen run: "Latest
-save" (follows the run) or a dated one (always the same model). Runs without a save point are not listed. The list
-is `GET /api/runs/models`: small metadata files only, read when the block opens, when a run starts and on
-"Refresh list" - never on a timer. Older periodic save points are pruned: `output.keep_last_checkpoints` keeps the
-newest 10 periodic ones by default, and empty keeps every one. Save now, pause, stop and final save points, the latest
-one and a selected best policy are never removed. Models from outside the workbench (the M6 pilot checkpoints) cannot
-be chosen, and there is no upload: `training_state.pt` is a pickle and is only loaded from a trusted local output root.
+A **run** is one training session (one press of Start) with its own folder; the models it saved are its **save points**
+(`checkpoints/<id>/`). A **saved model** is the RL model one run saved. In Fine-tune and Evaluate only, the RL model
+window lists the saved models in a table (`SavedModels` in `frontend/src/panels/ModelChooser.tsx`), one row each, the
+most recently saved first:
+- **Name**: the model's own name (see "The RL model's label");
+- **Trained on**: its task, or "multi-task (offline)" for an offline model;
+- **Network**, in short (GT 16/2/1; in full on hover), and the **Evaluations** of training behind its newest save point;
+- **Save points** and **Last saved**;
+- **Started from**: a template, the saved model it was fine-tuned from, or recorded runs (record 7.264);
+- **Data** (MOCK or real) and **Restorable** (full state, or weights only).
 
-The selected model is compared again when a contract field changes (including circuit, rows, seed, network,
+Every column sorts; the filter finds any word of a row, its folder's name included; folders (All models, Unfiled and
+your own, with Move to...) work as in the Tasks and Runs windows and are stored in `model_folders.json` (record 7.263).
+Runs without a save point are not listed.
+
+**A click only inspects.** **Details** opens under a row, with:
+- its **Save points**, newest first: evaluations, time and kind (automatic, Save now, pause, stop, end of the run,
+  safety), with the best policy and the newest marked. A click on one selects it for the next part.
+- **Name** and **Rename** (record 7.225);
+- **With the task on the page**: the selected save point checked against the configuration on the page, an inspection;
+- **Relationships**: the run that saved it, what it started from, the models trained from it and the runs that loaded
+  it - each a link: a model is shown in this table, a run opens the Runs window at it - then its history, folded, oldest
+  first, and its folder;
+- its **Network structure** and **Circuit graph view** (below), for the selected save point.
+
+**Using one is a press.** **Use this save point** makes exactly that save point the next run's model - a concrete id,
+never "latest" - with the model's network and component list, as ONE Undo step, and says so ("The next run fine-tunes
+... (one Undo step takes it back)"). A double click on a row uses its newest save point the same way. The row is then
+marked **in use**, and the model line beside the button names it. When the run of the model in use has saved a newer
+save point, "The model in use has a newer save point: ... Use the newer one" offers it; nothing follows by itself. A
+model in use that is no longer listed (outside the output folder, or without a complete save point) is said, with its
+folder. Nothing is filled in by itself either: until a save point is used, the window says "No saved model is chosen
+yet", and the newest model saved under the RL model label is offered (above).
+
+The list is `GET /api/runs/models`: small metadata files only, read when the table is shown, when the page reads its run
+list again (a run started, another output folder) and by **Refresh list** - never on a timer. Older periodic save points
+are pruned: `output.keep_last_checkpoints` keeps the newest 10 periodic ones by default, and empty keeps every one. Save
+now, pause, stop and final save points, the latest one and a selected best policy are never removed. Models from outside
+the workbench (the M6 pilot checkpoints) cannot be chosen, and there is no upload: `training_state.pt` is a pickle and is
+only loaded from a trusted local output root.
+
+The model in use is compared again when a contract field changes (including circuit, rows, seed, network,
 learning settings, reward or conditions). Editing project labels, output options or the evaluation budget does not
 repeat that inspection. Display checksums are reused while the resolved file identity, size and modification/change
 timestamps match; `latest` is resolved on each description. Actual model loading always verifies fresh checksums.
 
 **Available encoders (2026-09-26):** Graph Transformer, RGCN and GATv2 (`gatv2`). GATv1 (`gat`) was replaced on this date; old configurations are rejected explicitly and old GAT weights cannot load into GATv2. MLP and GCN were deleted from the optimizer and workbench by user request; port-GNN was removed earlier. An old configuration naming a removed encoder is rejected explicitly. Exact resume of checkpoints saved before this package change needs matching historical optimizer source and dependencies (`9bc488f` for the preceding five-encoder version, `bbdfe36` for the recorded six-encoder physical M6 pilot). Workbench `fine_tune` and `frozen` retain their existing compatibility checks: a source-digest difference is a provenance warning if the retained architecture and all other required contracts match; this does not make deleted encoders loadable. The package changed again since (reward v2 in `1135b8b`, reward v2.1 in `8cf53ae`): the current digest, and which commit loads which older checkpoint, are at the top of `docs/decisions.md`.
 
-**The network comes with the model (2026-09-21, user request).** The "RL network" block in that window - encoder list, sizes,
-presets - sets up a NEW network and is shown in Mode `scratch` only. In `resume`, `fine_tune` and `frozen` it is not
-shown: a saved model only loads into the network it was trained with (the backend refuses any other one in all three
-Modes), so the configuration takes the network of the chosen model by itself and the model's facts start with a
-"Network" row. Only the network follows; the training numbers under "Advanced" stay yours. A network that arrives
-from elsewhere while a model is loaded (an imported or opened configuration) is taken back too,
-and the panel says so. Back in `scratch` the block returns and shows the network that was last in use.
+**The network comes with the model (2026-09-21, user request; in the same step since record 7.265).** The block that
+sets up a NEW network - templates, sizes - is in New model only. A saved model only loads into the network it was
+trained with (the backend refuses any other one in `fine_tune`, `frozen` and a legacy `resume`), so **Use this save
+point** sets the model's network and component list with it, and the model's facts start with a "Network" row. Only
+the network follows; the training numbers under "Advanced" stay yours. A network that arrives from elsewhere while a
+model is loaded (an imported or opened configuration, an old draft) is taken back, and the window says so: "The network
+stays gatv2 16/2/1: this run loads a saved model ...". Back in New model the saved model chosen is cleared in the same
+step, and the template in use is the network that was last in use.
 
-Choosing an encoder loads its remembered settings. A delayed reply or preset reset only changes the configuration
+Using a template loads its remembered settings. A delayed reply or preset reset only changes the configuration
 while that choice and its network values are still current; later choices, edits, Undo and imports take precedence.
 Preference writes and resets are ordered so an older save cannot overwrite a newer reset (record 7.130).
 
@@ -2104,7 +2170,8 @@ leaves the existing values and comparison intact.
 
 ### Network structure of a saved model (added 2026-09-21, user request)
 
-Under the facts of the chosen model, the fold-out **Network structure** shows what the saved network consists of -
+In a saved model's Details (RL model window), the fold-out **Network structure** shows what the network saved at the
+selected save point consists of -
 as tables, in keeping with "no plots". Nothing is read until it is opened (`POST /api/runs/model/structure`,
 a tensor-only read of `model_weights.pt` after its checksum matched). The summary says how many parameters are
 trained (actor + 2 critics + the entropy temperature), that 2 target copies are saved as well, and gives one small
@@ -2128,10 +2195,10 @@ weights in a table; they do not add physical connections. The structure table al
 explains the new attention and structural-input layers. All of this remains a
 read-only replay on an archived state, with policy-output equivalence checked.
 
-**Where it is.** Run panel (right) > "RL model to load". With Mode `resume` / `fine_tune` / `frozen`: pick a model, and
-under its facts are the "Network structure" fold-out and the **Circuit graph view** button. With Mode `scratch` (the
-default) the same block has **Look at a saved model**: it lists the saved models for LOOKING only - structure table and
-graph view - and changes nothing about the run (the selection is kept outside the configuration; Mode stays scratch).
+**Where it is.** RL model window > a saved model's **Details**, in any Mode (in New model under the folded "Saved
+models, to look at"): last in Details are the "Network structure" fold-out and the **Circuit graph view** button, for
+the save point selected there. Looking changes nothing about the run (record 7.265; until then the view was under the
+chosen model's card, and New model had "Look at a saved model").
 
 **Circuit graph view** (button under the structure fold-out) draws the GRAPH THE NETWORK SEES, as a node-link picture:
 one node per device (rounded box = transistor, barrel = R / C / L, cut corners = source; coloured by kind) and one per
@@ -2204,10 +2271,10 @@ reads the cell's PDK in the same press - the technology library its design libra
 connection and gate - and a line under the window's buttons says what came of it ("PDK gpdk045 read with the cell: 54
 components (version ...)", or why it was not read; a PDK that will not read never fails the cell). The window's button
 **PDK window...** opens the PDK window to read one by name (another library, another model file) and to see what was
-read. The CHOICE stays in the RL network block: under the encoder, **Components** (standard / every loaded PDK) - a
-network setting like the encoder, shown in Mode `scratch`; the block says when the chosen PDK is not loaded on this
-machine and points to the Virtuoso window. In `resume` / `fine_tune` / `frozen` the list follows the chosen model by
-itself, as its network does, and the model's facts gain a "Components" row. Saved as `run.network.vocabulary` =
+read. The CHOICE is in the RL model window: in New model, under the template's sizes, **Components** (standard /
+every loaded PDK) - a network setting like the encoder; the window says when the chosen PDK is not loaded on this
+machine and points to the Virtuoso window. In Fine-tune and Evaluate only the list comes with the saved model, as its
+network does ("Use this save point"), and the model's facts gain a "Components" row. Saved as `run.network.vocabulary` =
 `standard` (written as no field at all, so every existing configuration keeps its hashes) or `pdk:<technology
 library>`. Backend: `bridge_read.pdk_with_import` (states `read` / `not_read` / `skipped`, in the import's answer as
 `pdk`); the same reader op as the window's Load, so a PDK read again unchanged makes no new version.

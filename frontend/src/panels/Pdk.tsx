@@ -146,7 +146,7 @@ function PdkWindow({ list, listError, profileId, circuitPdk }: { list: Json; lis
             <td>{p.pdk_id}</td><td>{p.summary.devices} ({byFamily(p.summary)})</td><td>{p.ideal_parts?.summary ? p.ideal_parts.summary.recognized : 'not read'}</td>
             <td>{loadedAt(p.loaded_utc)}</td><td className="mono">{p.sha256.slice(0, 8)}</td></tr>)}
         </tbody></table>
-        <p className="hint">Double click a row to show it. To use one, choose it under "Components" in the RL network block.</p></>}
+        <p className="hint">Double click a row to show it. To use one, choose it under "Components" in the RL model window (New model).</p></>}
       {shown && <PdkDetails pdk={shown} devices={devices} />}
     </div>);
 }

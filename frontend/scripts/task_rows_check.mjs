@@ -17,6 +17,7 @@
 // Exit code 1 if any check fails.
 import path from 'node:path';
 import { answerDialogs, validConfiguration, check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, taskWindow, workbenchUrl } from './lib/harness.mjs';
+import { NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 
 const LIVE = process.argv.includes('--live');                 // reads go to the backend; writing requests are refused either way
 const APP = await workbenchUrl();
@@ -102,8 +103,9 @@ await runChecks(browser, async () => {
   const TASK_KEY = `(${PANEL}.querySelector('.task-row .task-list-key')?.dataset.taskKey ?? ${PANEL}.querySelector('.task-row .task-list-key')?.textContent ?? '')`;
   const OPENED = `!!(${PANEL}) && !!${PANEL}.querySelector('.task-row button.task-list-button')`;
   const value = label => label === 'Task' ? tw.current() : evaluate(`${FIELD(label)}.value`);
-  // The RL model's own label in Run configuration took the Project name box's place (record 7.159).
-  const MODEL_LABEL = `document.querySelector('.right input.model-label')`;
+  // The RL model's own label took the Project name box's place (record 7.159); since record 7.265 it is in the RL model window
+  // ("Name of the new model"), opened below once the page is there.
+  const MODEL_LABEL = `${NETWORK_PANEL}.querySelector('input.model-label')`;
   const labelValue = () => evaluate(`${MODEL_LABEL}.value`);
   const nameBox = () => evaluate(`[...document.querySelectorAll('.left label')].some(l => l.firstChild?.textContent.trim() === 'Project name')`);
   const choose = (label, v) => tw.choose(v, { tries: 0 });     // as the old list's change event: the waits below are the check's own
@@ -127,6 +129,7 @@ await runChecks(browser, async () => {
   await openTab('Specs');
   check('on the MOCK task the only spec is the toy score', JSON.stringify(await column('metric_id')) === '["score"]' && (await value('PDK id')) === 'gpdk045', await strip());
   check('nothing was fetched or exchanged by opening the page', starters.length === 0 && (await note()) === '', JSON.stringify(starters));
+  await openNetworks(page, browser);
 
   // ---- the reported case: choose the real OTA ------------------------------------------------------------------------
   await choose('Task', 'real:gpdk045_ota5');

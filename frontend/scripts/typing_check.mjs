@@ -10,8 +10,9 @@
 //   - a new row gets a FREE ID (rows.length + 1 repeated an existing ID after a deletion);
 //   - Research experiments: "a, b" typed key by key becomes ['a', 'b'] (the old box swallowed the comma);
 //   - Circuit class / PDK id: emptied, then typed, they take the new text (the old box put "unspecified" back at once);
-//   - in Mode scratch the page no longer writes the project's default model into run.model_source on page load; it does
-//     once Mode is switched to one that loads a model (fine_tune), and one Undo takes both back;
+//   - the page writes no saved model into run.model_source by itself: not on page load in New model (scratch), and since
+//     record 7.265 not when Fine-tune is chosen either - the newest model under the RL model label is offered, and its Use
+//     pins that model's save point (a concrete id), one Undo step;
 //   - "Stop after N consecutive failed evaluations" (the Limits fold, "Failure limits" until record 7.179) shows the engine's limit of 5 and takes a typed one;
 //   - "Import JSON..." of one table's rows writes that table alone: an edit made while its box was open stays.
 // A throwaway headless Edge over the DevTools protocol (lib/harness.mjs). HERMETIC: validation, the default model and the
@@ -23,6 +24,7 @@
 import path from 'node:path';
 import { writeFileSync } from 'node:fs';
 import { validConfiguration, check, launchEdge, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { NETWORK_PANEL, openNetworks, setMode } from './lib/rl_networks.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -30,6 +32,11 @@ const browser = await launchEdge('typing');
 
 // ---- canned answers ------------------------------------------------------------------------------------------
 const DEFAULT_RUN = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task/scratch__seed0__0001';
+// Its newest save point, as the backend describes it (`/api/runs/default-model` answers with this description since record 7.159).
+const POINT = 'ckpt-000012-fixture';
+const DESCRIBED = { checkpoint_id: POINT, path: `${DEFAULT_RUN}/checkpoints/${POINT}`, kind: 'final', source_run_id: 'fixture-run', source_task_id: 'fixture_task:0000', mode: 'scratch',
+  created_utc: '2026-09-21T10:00:00+00:00', metadata_version: 'FIXTURE', counters: { evaluations_committed: 12, learner_updates: 8, replay_size: 12 }, restoration_capability: 'full_state',
+  restorable_components: [], missing_components: [], contract: { model_config: { encoder_type: 'graph_transformer', hidden_dim: 16, heads: 2, layers: 1 }, sac_config: {} }, file_problems: [] };
 const VALID = validConfiguration({ mock: true });
 
 await runChecks(browser, async () => {
@@ -49,9 +56,12 @@ await runChecks(browser, async () => {
       if (holdValidation) { page.paused.push({ requestId, networkId: params.networkId, url: request.url, postData: request.postData }); return; }
       return page.fulfil(requestId, 200, VALID);
     }
-    if (name === '/api/runs/default-model') { defaultAsks.push(request.url); return page.fulfil(requestId, 200, { run_dir: DEFAULT_RUN, checkpoint_id: 'latest', reason: 'FIXTURE' }); }
+    if (name === '/api/runs/default-model') { defaultAsks.push(request.url); return page.fulfil(requestId, 200, { run_dir: DEFAULT_RUN, checkpoint_id: 'latest', reason: 'FIXTURE', description: DESCRIBED }); }
     if (name === '/api/runs/models') return page.fulfil(requestId, 200, { models: [] });
-    if (name === '/api/runs/model') return page.fulfil(requestId, 404, { detail: { message: 'FIXTURE: no such model' } });
+    if (name === '/api/runs/model') return JSON.parse(request.postData ?? '{}').run_dir === DEFAULT_RUN
+      ? page.fulfil(requestId, 200, { description: DESCRIBED, vocabulary: { name: 'standard', label: 'standard (8 generic kinds)', loaded: true },
+        compatibility: { mode: 'fine_tune', compatible: true, checks: [], checkpoint_id: POINT, source_run_id: 'fixture-run', restoration_capability: 'full_state', suggestion: null }, suggestion: null })
+      : page.fulfil(requestId, 404, { detail: { message: 'FIXTURE: no such model' } });
     return page.readOrRefuse(params, refused, { reads: true });
   });
   await page.trackSaves();
@@ -78,7 +88,7 @@ await runChecks(browser, async () => {
   const shot = (name, what) => page.shot(path.join(out, name), what);
 
   await send('Page.navigate', { url: APP });
-  if (!(await until(`!!${EDITORS}?.querySelector('table.editor tbody tr') && !!(${LABELLED('.right', 'Mode')})`, 150)))
+  if (!(await until(`!!${EDITORS}?.querySelector('table.editor tbody tr') && !!document.querySelector('.right button.rl-networks-open')`, 150)))
     throw new Error('the editors never showed the seeded rows; the page reads: ' + JSON.stringify(await evaluate(`document.body.innerText.slice(0, 300)`)));
 
   // ---- (d) scratch: the project's default model is NOT written on page load --------------------------------------------------
@@ -214,18 +224,30 @@ await runChecks(browser, async () => {
   await blur(PDK);
   await shot('typing-3-labels.png', `document.querySelector('.left')`);
 
-  // ---- (d) a Mode that loads a model takes the project's default model --------------------------------------------------------------
+  // ---- (d) a Mode that loads a model fills in NO model: the newest one under the RL model label is offered (record 7.265) ----------
   config = await saved();
   check('still scratch: run.model_source.run_dir is null', (config.run.model_source?.run_dir ?? null) === null, JSON.stringify(config.run.model_source ?? null));
-  await page.setValue(`${LABELLED('.right', 'Mode')}`, 'fine_tune');
+  const networkPage = await openNetworks(page, browser);
+  await setMode(networkPage, 'fine_tune');
+  const SUGGESTED = `${NETWORK_PANEL}.querySelector('.model-suggested')`;
+  check('Fine-tune offers the newest model saved under the RL model label, with its save point', await until(`/: scratch__seed0__0001, save point ${POINT}\\. Use$/.test(${SUGGESTED}?.textContent ?? '')`, 60)
+    && defaultAsks.length >= 1, await evaluate(`${SUGGESTED}?.textContent ?? 'no suggestion'`));
+  await sleep(1000);
+  config = await saved();
+  check('... and fills in nothing by itself: Mode fine_tune, no saved model chosen (until record 7.265 the page took it, at "latest")',
+    config.run.mode === 'fine_tune' && (config.run.model_source?.run_dir ?? null) === null, JSON.stringify({ mode: config.run.mode, model: config.run.model_source ?? null }));
+  await evaluate(`${SUGGESTED}.querySelector('button.model-suggested-use').click()`);
   let model = null;
   for (let i = 0; i < 40 && model?.run_dir !== DEFAULT_RUN; i++) { model = (await saved()).run.model_source ?? null; if (model?.run_dir !== DEFAULT_RUN) await sleep(150); }
-  check('once Mode is fine_tune the project\'s default model is taken (its latest save point)', model?.run_dir === DEFAULT_RUN && model?.checkpoint_id === 'latest' && defaultAsks.length >= 1, JSON.stringify(model));
-  // The page filled the model by itself: no Undo step of its own (review of 2026-09-29) - one Undo takes back the choice and what it brought.
+  check('its Use pins that save point - a concrete id, never "latest"', model?.run_dir === DEFAULT_RUN && model?.checkpoint_id === POINT, JSON.stringify(model));
   await evaluate(`${TOOL('Undo')}.click()`);
   config = await saved();
-  check('one Undo takes back Mode fine_tune together with the default model it brought', config.run.mode === 'scratch' && (config.run.model_source?.run_dir ?? null) === null,
+  check('one Undo takes back the model chosen; the Mode stays', config.run.mode === 'fine_tune' && (config.run.model_source?.run_dir ?? null) === null,
     JSON.stringify({ mode: config.run.mode, model: config.run.model_source ?? null }));
+  await evaluate(`${TOOL('Undo')}.click()`);
+  config = await saved();
+  check('... and the next one takes back the Mode', config.run.mode === 'scratch', config.run.mode);
+  await evaluate(`window.__checkRLWindow.close()`);
 
   // ---- (e) "Import JSON..." of one table's rows writes that table alone (review of 2026-09-29) ------------------------------------
   // Apply used to put back the whole configuration of the moment of the import: an edit made while the box was open was undone.
@@ -238,13 +260,15 @@ await runChecks(browser, async () => {
   await send('DOM.setFileInputFiles', { nodeId, files: [rowsFile] });
   const APPLY = `[...document.querySelectorAll('.editors .confirm button')].find(b => b.textContent.trim() === 'Apply')`;
   check('(set-up) rows for the Parameters tab wait in the confirmation box', await until(`!!(${APPLY})`, 60));
-  await page.setValue(LABELLED('.right', 'RL model label'), 'fixture-edited-meanwhile', { event: 'input' });   // the project name box until record 7.159
+  // An edit in Run configuration: the random seed (the RL model label until it moved into the RL model window, record 7.265;
+  // the project name box until record 7.159).
+  await page.setValue(LABELLED('.right', 'Random seed'), '23', { event: 'input' });
   await sleep(300);
   await evaluate(`${APPLY}.click()`);
   config = await saved();
-  check('Apply writes the imported Parameters rows and keeps an edit made while the box was open', config.run.model_label === 'fixture-edited-meanwhile'
+  check('Apply writes the imported Parameters rows and keeps an edit made while the box was open', config.run.seed === 23
     && config.parameters.length === importedRows.length && config.parameters.every(r => r.notes === 'FIXTURE imported'),
-    JSON.stringify({ label: config.run.model_label, notes: config.parameters.map(r => r.notes) }));
+    JSON.stringify({ seed: config.run.seed, notes: config.parameters.map(r => r.notes) }));
 
   // ---- (f) the stop rule's own field (decision of 2026-09-29): it had none, so its limit of 5 could not be seen or changed ------------
   const STOP_AFTER = LABELLED('.right', 'Stop after N consecutive failed evaluations');
@@ -261,14 +285,14 @@ await runChecks(browser, async () => {
   // Two configurations in flight: a late success must not clear the newer configuration's blocker.
   await sleep(700);
   holdValidation = true;
-  await page.setValue(LABELLED('.right', 'RL model label'), 'fixture-old', { event: 'input' });
+  await page.setValue(LABELLED('.right', 'Random seed'), '31', { event: 'input' });
   const oldValidation = await page.nextPaused('/api/config/validate');
-  await page.setValue(LABELLED('.right', 'RL model label'), 'fixture-new', { event: 'input' });
+  await page.setValue(LABELLED('.right', 'Random seed'), '32', { event: 'input' });
   const newValidation = await page.nextPaused('/api/config/validate');
   check('validation requests describe two different edits',
-    JSON.parse(oldValidation.postData).config.run.model_label === 'fixture-old' && JSON.parse(newValidation.postData).config.run.model_label === 'fixture-new');
+    JSON.parse(oldValidation.postData).config.run.seed === 31 && JSON.parse(newValidation.postData).config.run.seed === 32);
   await page.fulfil(newValidation.requestId, 200, validConfiguration({ blocks_run: true, counts: { error: 1 },
-    issues: [{ level: 'error', path: 'run.model_label', code: 'fixture', message: 'FIXTURE: newest configuration is blocked' }] }));
+    issues: [{ level: 'error', path: 'run.seed', code: 'fixture', message: 'FIXTURE: newest configuration is blocked' }] }));
   // the header's Calibration button (named Baseline simulation until records 7.247/7.248; the same blocking rule)
   const blockedButton = `[...document.querySelectorAll('header button')].find(b => b.textContent === 'Calibration')?.disabled`;
   check('the newer validation blocks starting a run', await until(blockedButton));

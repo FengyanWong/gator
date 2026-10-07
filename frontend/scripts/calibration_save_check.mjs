@@ -137,7 +137,7 @@ await runChecks(browser, async () => {
   check('it says that the proposals were worked out again under today\'s rule', (await evaluate(`${BLOCK}.querySelector('.recalculated')?.textContent.replace(/\\s+/g, ' ') ?? ''`))
     === "Worked out again from this run's recorded designs with today's rule; the run's own file keeps what it said at its end.", await evaluate(`${BLOCK}.textContent.slice(0, 300)`));
   const alphaLine = await evaluate(`${BLOCK}.querySelector('.calibration-alpha').textContent`);
-  check('an Initial alpha close to the one in use is not proposed, and the line says why', alphaLine === `Initial alpha (RL networks): now 0.01; proposed nothing: ${ALPHA_NOTE.replace('Not proposed: ', '')}`, alphaLine);
+  check('an Initial alpha close to the one in use is not proposed, and the line says why', alphaLine === `Initial alpha (RL model): now 0.01; proposed nothing: ${ALPHA_NOTE.replace('Not proposed: ', '')}`, alphaLine);
   check('the hint says what both buttons do', (await evaluate(HINT)) === 'Sets the Scale of 1 Specs row, as one Undo step; Apply and save also saves the task, so it can start.', await evaluate(HINT));
   await settle(1200);
   check('nothing is saved or written on load', calls.length === 0 && (await stored()).targets[0].normalization_scale === 1.3e9, calls.map(c => c.op).join(' | '));

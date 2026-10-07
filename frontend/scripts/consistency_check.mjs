@@ -120,7 +120,9 @@ await runChecks(browser, async () => {
   // banner's own close-on-click took that click too, and the fold could never be opened). Since 7.261 the line names the action.
   const FOLD = `${REFUSAL}?.querySelector('details')`;
   await evaluate(`${START}.click()`);
-  for (let i = 0; i < 40 && !(await evaluate(`!!${FOLD}`)); i++) await sleep(100);
+  // Wait for THIS refusal's words (record 7.265): the first refusal's steps hold folds of their own, and a fold found before the
+  // new line had come took the click below (the check flaked about once in six). A new press clears the old reason now as well.
+  for (let i = 0; i < 60 && !(await evaluate(`(${REFUSAL}?.innerText ?? '').startsWith('Start was refused: FIXTURE: not started for another reason.') && !!${FOLD}`)); i++) await sleep(100);
   await evaluate(`${FOLD}.querySelector('summary').click()`); await sleep(300);
   check('another refusal with a report: "details" opens and the line stays', await evaluate(`!!${FOLD} && ${FOLD}.open`)
     && (await shownText(FOLD)).includes('FIXTURE_REPORT') && (await shownText(FOLD)).includes('code: fixture_refused')

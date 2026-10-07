@@ -28,7 +28,7 @@ const limitText = (row: Json) => row.lower != null && row.upper != null ? `${si(
 /** The calibration of a Baseline simulation (record 7.197, every one since 7.202; backend calibration.py): from the
  *  run's random designs, a Scale per Specs row (the typical miss among the designs that miss the row) and the Initial alpha
  *  (0.1 x the reward's spread among them). The run applies nothing. Apply writes the proposals into the configuration this
- *  page holds - the Scale of the Specs rows that still are the rows the run simulated, and Initial alpha in RL networks - as
+ *  page holds - the Scale of the Specs rows that still are the rows the run simulated, and Initial alpha in the RL model window - as
  *  ONE Undo step; a task saved from a Virtuoso cell then needs Save task before it starts. What Apply does is worked out
  *  in calibrationPlan.ts, shared with the "Calibration ready" line under the header (record 7.204). A run of another task
  *  than the page holds shows its own Scales and Initial alpha, never the page's rows of the same ID (record 7.214).
@@ -68,7 +68,7 @@ function Calibration({ value, live, config, setConfig }: { value: Json; live: bo
         <td>{r.proposed_scale != null && <b>{si(r.proposed_scale, r.unit)}</b>}
           {r.proposed_scale != null && !r.same && !otherTask && <span className="warn"> not applied: {r.target ? 'the limits of this row were changed after the run' : 'the page has no row with this ID'}</span>}
           {r.note && <span className="hint">{r.proposed_scale != null ? ' ' : ''}{r.note}</span>}</td></tr>)}</tbody></table>}
-    <p className="calibration-alpha">Initial alpha (RL networks): {otherTask ? 'the run had' : 'now'} <b>{(otherTask ? alpha.used : alphaNow) ?? "the encoder's saved value"}</b>; proposed {alpha.proposed != null
+    <p className="calibration-alpha">Initial alpha (RL model): {otherTask ? 'the run had' : 'now'} <b>{(otherTask ? alpha.used : alphaNow) ?? "the encoder's saved value"}</b>; proposed {alpha.proposed != null
       ? <><b>{short(alpha.proposed)}</b> <span className="hint">= 0.1 x the reward's spread among the random designs ({short(Number(Number(alpha.reward_sd).toPrecision(3)))}{scales.length || rows.some(r => r.proposed_scale != null) ? ', with the proposed scales' : ''})</span></>
       : <span className="hint">nothing{alpha.note ? `: ${String(alpha.note).replace(/^Not proposed: /, '')}` : '.'}</span>}{alpha.proposed != null && alpha.note && <span className="hint"> {alpha.note}</span>}</p>
     <div className="row">
@@ -76,9 +76,9 @@ function Calibration({ value, live, config, setConfig }: { value: Json; live: bo
           <button className="primary" onClick={applyAndSave}
             title={`Apply and save: Writes ${what} into the page, as one Undo step, ${APPLY_AND_SAVE}`}>Apply and save</button>
           <button onClick={() => { setSaid(null); setConfig(apply); }}
-            title="Apply only: Writes the proposed Scale into those Specs rows and the proposed Initial alpha into RL networks, as one Undo step. Nothing is simulated and no task is saved. Use Apply and save to update this task, or Save as for a new task.">Apply only</button></>
+            title="Apply only: Writes the proposed Scale into those Specs rows and the proposed Initial alpha into the RL model's Advanced, as one Undo step. Nothing is simulated and no task is saved. Use Apply and save to update this task, or Save as for a new task.">Apply only</button></>
         : <button disabled={!pending || otherTask} onClick={() => setConfig(apply)}
-            title="Apply calibration: Writes the proposed Scale into those Specs rows and the proposed Initial alpha into RL networks, as one Undo step. Nothing is simulated and no task is saved.">Apply calibration</button>}
+            title="Apply calibration: Writes the proposed Scale into those Specs rows and the proposed Initial alpha into the RL model's Advanced, as one Undo step. Nothing is simulated and no task is saved.">Apply calibration</button>}
       <span className="hint">{otherTask ? `Apply waits until the page holds ${result.task_key}.`
         : !proposals ? 'There is nothing to apply.'
         : !pending ? `The page holds these values.${said ? '' : afterwards}`

@@ -16,7 +16,7 @@
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 30 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/graph_view_check.mjs)" [screenshot-dir]
 // Optional: GATOR_WORKBENCH_OUTPUT_ROOT (from WSL: WSLENV=GATOR_WORKBENCH_URL:GATOR_WORKBENCH_OUTPUT_ROOT). Exit code 1 on failure.
-import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
+import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks, setMode } from './lib/rl_networks.mjs';
 import path from 'node:path';
 import { validConfiguration, check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
@@ -103,7 +103,11 @@ await runChecks(browser, async () => {
   await send('Page.navigate', { url: APP });
   const networkPage = await openNetworks(page, browser);
   await networkPage.viewport(1680, 1050);
-  if (!(await until(`!!${RIGHT}?.querySelector('select.model-point')`, 150))) throw new Error('the model chooser never showed the seeded model; the page reads: ' + JSON.stringify(await evaluate(`document.body.innerText.slice(0, 300)`)));
+  // Record 7.265: the circuit graph view is in a saved model's Details, in the RL model window's table of saved models.
+  const ROW = dir => `[...${RIGHT}.querySelectorAll('tr.model-row')].find(r => r.title === ${JSON.stringify(dir)})`;
+  const details = dir => evaluate(`(() => { const b = (${ROW(dir)})?.querySelector('button.notes-link'); if (b && b.getAttribute('aria-expanded') !== 'true') b.click(); return !!b; })()`);
+  if (!(await until(`!!(${ROW(RUN)})`, 150))) throw new Error('the saved models never showed the seeded model; the page reads: ' + JSON.stringify(await evaluate(`document.body.innerText.slice(0, 300)`)));
+  await details(RUN);
   if (!(await until(`!!(${OPEN})`, 60))) throw new Error('this page has no "Circuit graph view" button: the served frontend is older than it (npm run build, then reload)');
 
   // ---- the Abort button is red -------------------------------------------------------------------------------------------------
@@ -234,20 +238,26 @@ await runChecks(browser, async () => {
   const quiet = asked.length; await sleep(1500);
   check('closed: nothing is asked, and nothing on a timer', asked.length === quiet);
 
-  // ---- reachable WITHOUT a Mode that loads a model: scratch -> "Look at a saved model" -> the same view ------------------------------------------
+  // ---- reachable WITHOUT a Mode that loads a model: New model -> "Saved models, to look at" -> the same view (record 7.265) ----------------------
   mode = {};
-  await setSelect(`[...document.querySelectorAll('.right label')].find(l => l.firstChild?.textContent?.trim() === 'Mode')?.querySelector('select')`, 'scratch');
-  check('in scratch mode the view is reached through "Look at a saved model"', await until(`!!${RIGHT}.querySelector('button.look-open')`, 40) && !(await evaluate(`!!(${OPEN})`)));
-  await evaluate(`${RIGHT}.querySelector('button.look-open').click()`);
-  await until(`${RIGHT}.querySelectorAll('button.model-card').length === 1`, 50);
-  await evaluate(`${RIGHT}.querySelector('button.model-card').click()`);
+  await setMode(networkPage, 'scratch');
+  const LOOK = `${RIGHT}.querySelector('details.look-models')`;
+  check('in New model the view is reached through the folded "Saved models, to look at"', await until(`!!(${LOOK}) && !${LOOK}.open`, 40) && !(await evaluate(`!!(${OPEN})`)));
+  await evaluate(`${LOOK}.open = true`);
+  await until(`!!(${ROW(RUN)})`, 50);
+  await details(RUN);
   await until(`!!(${OPEN}) && !${OPEN}.disabled`, 40);
   const looked = asked.length;
   await evaluate(`${OPEN}.click()`);
-  check('... it asks once for that model\'s latest save and draws it', (await waitAsked(looked + 1)) === looked + 1 && asked[looked].run_dir === RUN && asked[looked].checkpoint_id === 'latest'
+  check('... it asks once for that model\'s newest save point and draws it', (await waitAsked(looked + 1)) === looked + 1 && asked[looked].run_dir === RUN && asked[looked].checkpoint_id === POINT.checkpoint_id
     && await until(`!!(${CY}) && ${CY}.nodes().length === 9`, 80), JSON.stringify(asked[looked]));
+  check('... and nothing in the draft changed: still New model, no saved model chosen (the draft is saved 0.8 s after a change)',
+    await until(`(c => c?.run?.mode === 'scratch' && !c.run.model_source?.run_dir)(JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null'))`, 40),
+    JSON.stringify({ mode: (await page.stored())?.run?.mode, source: (await page.stored())?.run?.model_source }));
   await evaluate(`${DIALOG}.querySelector('button.dialog-close').click()`); await until(`!${DIALOG}.open`, 30);
-  await setSelect(`[...document.querySelectorAll('.right label')].find(l => l.firstChild?.textContent?.trim() === 'Mode')?.querySelector('select')`, 'fine_tune');
+  await setMode(networkPage, 'fine_tune');
+  await until(`!!(${ROW(RUN)})`, 50);
+  await details(RUN);
   await until(`!!(${OPEN})`, 40);
 
   // ---- global and group attention are separate node views, never added as circuit wires --------------------------------
@@ -280,8 +290,8 @@ await runChecks(browser, async () => {
     const expected = await real.json();
     canned = false; mode = {};
     await evaluate(`[...${RIGHT}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Refresh list').click()`);
-    const CARD = `[...${RIGHT}.querySelectorAll('button.model-card')].find(b => b.title === ${JSON.stringify(first.run_dir)})`;
-    check('against the real route: the first real model can be chosen', (await until(`!!(${CARD})`, 80)) && (await evaluate(`(${CARD}.click(), true)`)) && await until(`${CARD}.getAttribute('aria-checked') === 'true' && !${OPEN}.disabled`, 60), first.run_dir);
+    check('against the real route: the first real model\'s Details can be opened', (await until(`!!(${ROW(first.run_dir)})`, 300)) && (await details(first.run_dir))   // the real list: about 10 s on D:
+      && await until(`!!(${OPEN}) && !${OPEN}.disabled`, 60), first.run_dir);
     await sleep(600); await evaluate(`${OPEN}.click()`);
     check(`... its circuit is drawn: ${expected.devices.length} devices + ${expected.nets.length} nets, ${expected.connections.length} connections`,
       await until(`!!(${CY}) && ${CY}.nodes().length === ${expected.devices.length + expected.nets.length} && ${CY}.edges().length === ${expected.connections.length}`, 100));

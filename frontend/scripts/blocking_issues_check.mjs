@@ -68,14 +68,14 @@ await runChecks(browser, async () => {
   const rows = () => evaluate(`[...(${LIST}?.querySelectorAll('tbody tr') ?? [])].map(tr => [...tr.cells].map(td => td.textContent.trim()))`);
   const headerButton = label => `[...document.querySelectorAll('header button')].find(b => b.textContent === ${JSON.stringify(label)})`;
   // The page validates by itself half a second after any change ("Static validation", the button that asked at once, went
-  // on 2026-09-29): a change of the RL model label makes it ask again, alternating between two labels (the project name box
-  // did this until it went, record 7.159).
-  const NAME_BOX = `document.querySelector('.right input.model-label')`;
+  // on 2026-09-29): a change of the random seed makes it ask again, alternating between two seeds (the RL model label box did
+  // this until it moved into the RL model window, record 7.265; the project name box until record 7.159).
+  const SEED_BOX = `[...document.querySelectorAll('.right label')].find(l => l.firstChild?.textContent?.trim() === 'Random seed')?.querySelector('input')`;
   let flip = false;
   const revalidate = async fixture => {
     answerWith = fixture; const before = validations; flip = !flip;
-    const name = flip ? 'check-a' : 'check-b';
-    await evaluate(`(() => { const el = ${NAME_BOX}; Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value').set.call(el, ${JSON.stringify(name)});
+    const seed = flip ? '11' : '12';
+    await evaluate(`(() => { const el = ${SEED_BOX}; Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value').set.call(el, ${JSON.stringify(seed)});
       el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     for (let i = 0; i < 60 && validations === before; i++) await sleep(100);
     await sleep(300);

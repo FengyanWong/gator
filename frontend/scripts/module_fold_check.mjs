@@ -33,7 +33,7 @@ await runChecks(browser, async () => {
   const entry = stored.settings[stored.default_encoder];
   const NET = { encoder_type: stored.default_encoder, ...entry.network };
   const BUDGET = Math.max(entry.advanced.warmup_transitions ?? 0, entry.advanced.batch_size ?? 0) + 1000;
-  const LINE = `scratch - ${BUDGET} evaluations - ${NET.encoder_type} ${NET.hidden_dim}/${NET.heads}/${NET.layers}`;
+  const LINE = `New model - ${BUDGET} evaluations - ${NET.encoder_type} ${NET.hidden_dim}/${NET.heads}/${NET.layers}`;   // the Mode by its name (record 7.265)
   const CONFIG = { ...starter, run: { ...starter.run, mode: 'scratch', max_evaluations: BUDGET, network: NET, advanced: { ...(starter.run.advanced ?? {}), ...entry.advanced } },
     output: { experiment_name: 'fixture', output_root: ROOT }, research: {} };
   const page = await browser.open({ consoleApi: false });
@@ -51,7 +51,8 @@ await runChecks(browser, async () => {
   const panel = title => `[...document.querySelectorAll('.right .panel')].find(p => p.querySelector('h3')?.textContent.trim() === ${JSON.stringify(title)})`;
   const RUN = panel('Run configuration'), OUTPUT = panel('Output settings'), RESEARCH = `[...document.querySelectorAll('.right .panel')][2]`;
   const fold = p => `${p}.querySelector('details.module')`;
-  const MODE = `[...${RUN}.querySelectorAll('label')].find(l => l.firstChild?.textContent?.trim() === 'Mode')?.querySelector('select')`;
+  // The Mode is chosen in the RL model window since record 7.265: the module's first control is its "RL model..." button.
+  const MODE = `${RUN}.querySelector('button.rl-networks-open')`;
   const BUDGET_BOX = `[...${RUN}.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent.trim() === 'Evaluation budget')?.querySelector('input')`;
   const state = p => evaluate(`(() => { const d = ${fold(p)}, s = d.querySelector(':scope > summary'); return { open: d.open, heading: s.querySelector('h3').textContent,
     line: s.querySelector('.module-summary')?.textContent ?? null, title: s.querySelector('.module-summary')?.title ?? null,
@@ -84,7 +85,7 @@ await runChecks(browser, async () => {
   check('both modules start OPEN', run.open && output.open, JSON.stringify([run.open, output.open]));
   check('the heading of each module is its fold line, with unchanged text', run.heading === 'Run configuration' && output.heading === 'Output settings');
   check('open, a module shows no summary line and no mark', run.line === null && run.attention === null && output.line === null && output.attention === null, JSON.stringify([run, output]));
-  check('their controls are in view (Mode, output root)', await evaluate(`${MODE}.checkVisibility() && ${OUTPUT}.querySelector('#output-root').checkVisibility()`));
+  check('their controls are in view (RL model..., output root)', await evaluate(`${MODE}.checkVisibility() && ${OUTPUT}.querySelector('#output-root').checkVisibility()`));
   check('the third panel (Research) is not a fold: only the two asked for changed', await evaluate(`!!(${RESEARCH}) && !${RESEARCH}.querySelector('details.module')`));
   check('nothing was remembered before a fold line was used ... or only "open"', [null, 'open'].includes(await remembered('run')) && [null, 'open'].includes(await remembered('output')));
   const openHeight = run.height;
@@ -104,10 +105,10 @@ await runChecks(browser, async () => {
   check('the summary sits on its own line under the heading, inside the narrow panel', fits.noSideScroll && fits.below && fits.inside, JSON.stringify(fits));
 
   // ---- folded is not switched off: the line follows the configuration ------------------------------------------------------------
-  await page.setValue(`${MODE}`, 'frozen');
-  check('a change of the configuration shows on the folded line (Mode frozen)', await until(`${fold(RUN)}.querySelector('.module-summary')?.textContent.startsWith('frozen - ${BUDGET} evaluations')`, 30), (await state(RUN)).line);
-  await page.setValue(`${MODE}`, 'scratch');
-  await until(`${fold(RUN)}.querySelector('.module-summary')?.textContent.startsWith('scratch')`, 30);
+  await page.setValue(`${BUDGET_BOX}`, String(BUDGET + 7), { event: 'input' });
+  check('a change of the configuration shows on the folded line (the budget)', await until(`${fold(RUN)}.querySelector('.module-summary')?.textContent.startsWith('New model - ${BUDGET + 7} evaluations')`, 30), (await state(RUN)).line);
+  await page.setValue(`${BUDGET_BOX}`, String(BUDGET), { event: 'input' });
+  await until(`${fold(RUN)}.querySelector('.module-summary')?.textContent.startsWith('New model - ${BUDGET} evaluations')`, 30);
 
   // ---- remembered across a reload ---------------------------------------------------------------------------------------------------
   await sleep(1000);
@@ -120,7 +121,7 @@ await runChecks(browser, async () => {
   await clickHeading(RUN);
   check('a second click unfolds it, and that is remembered too', (await state(RUN)).open && (await evaluate(`${MODE}.checkVisibility()`)) && (await remembered('run')) === 'open');
   await type(BUDGET_BOX, '1');
-  check('(set-up) a budget of 1 marks the RL networks settings for review', await until(`[...${RUN}.querySelectorAll('.module-body p.warn')].some(p => /Review the settings in RL networks/.test(p.textContent))`, 30));
+  check('(set-up) a budget of 1 marks the RL model settings for review', await until(`[...${RUN}.querySelectorAll('.module-body p.warn')].some(p => /Review the settings in RL model/.test(p.textContent))`, 30));
   check('open, the warning is in view itself: no mark on the heading', (await state(RUN)).attention === null);
   await clickHeading(RUN);
   run = await state(RUN);

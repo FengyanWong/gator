@@ -21,6 +21,7 @@
 // frontend/scripts/looks_check.mjs)" [screenshot-dir], or bash frontend/scripts/run_checks.sh --only looks_check. About 40 s.
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
+import { NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -238,10 +239,13 @@ await runChecks(browser, async () => {
   check('the title block names the revision, the class and PDK, and the RL model label (no project name: record 7.159; no task name: record 7.182)',
     !('Project' in facts) && !('Task' in facts) && facts.Rev === '-' && facts['Class · PDK'] === `${config.circuit.circuit_class} · ${config.circuit.pdk_id}`
     && facts['RL model'] === config.project.task_name, JSON.stringify(facts));
-  await page.setValue(`document.querySelector('.right input.model-label')`, 'ota5-gat-a', { event: 'input' });
+  // The label is typed in the RL model window since record 7.265 ("Name of the new model"; in Run configuration until then).
+  await openNetworks(page, browser);
+  await page.setValue(`${NETWORK_PANEL}.querySelector('input.model-label')`, 'ota5-gat-a', { event: 'input' });
   await sleep(200);
-  check('...the RL model cell follows the label typed in Run configuration', await evaluate(`[...document.querySelectorAll('header .tb-cell')].find(c => c.querySelector('.tb-k').textContent === 'RL model')?.querySelector('.tb-v').textContent`) === 'ota5-gat-a');
-  await page.setValue(`document.querySelector('.right input.model-label')`, '', { event: 'input' });
+  check('...the RL model cell follows the label typed in the RL model window', await evaluate(`[...document.querySelectorAll('header .tb-cell')].find(c => c.querySelector('.tb-k').textContent === 'RL model')?.querySelector('.tb-v').textContent`) === 'ota5-gat-a');
+  await page.setValue(`${NETWORK_PANEL}.querySelector('input.model-label')`, '', { event: 'input' });
+  await evaluate(`window.__checkRLWindow.close()`);
   const brand = await evaluate(`document.querySelector('header .tb-brand').title`);
   check('the version and the environment are one hover away, on the name', brand.startsWith('GATOR workbench ') && brand.includes(meta.version) && brand.includes('data-only outputs'), brand);
 

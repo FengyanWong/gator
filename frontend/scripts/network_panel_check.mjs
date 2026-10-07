@@ -1,4 +1,6 @@
-// Browser check of the RL networks window and its launcher in Run configuration.
+// Browser check of the RL model window (the RL networks window until record 7.265) and its launcher in Run configuration.
+// Record 7.265: Mode and the RL model label moved into the window; New model's encoder is chosen in its templates table
+// ("Use template"), and the template's settings follow under "The ... template, for this run".
 // Same approach as agent_window_check.mjs: a throwaway headless Edge over the DevTools protocol against the RUNNING
 // workbench (default http://127.0.0.1:8765/). GET /api/network-settings is answered by the real backend; every
 // PUT/POST to /api/network-settings/* is intercepted and answered with a canned entry, so nothing is ever written
@@ -23,7 +25,7 @@ await runChecks(browser, async () => {
   };
 
   // The controls live in the named window; their React requests still originate in the workbench page.
-  const H3 = `[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel h3')].find(h => h.textContent.trim() === 'RL network')`;
+  const H3 = `[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel h3')].find(h => / template, for this run$/.test(h.textContent.trim()))`;
   // The block runs to the next heading or fold; the Advanced fold inside it (record 7.195) is part of it.
   const BLOCK = `(() => { const h = ${H3}; const items = []; for (let n = h; n && !(n !== h && n.tagName === 'H3') && (n.tagName !== 'DETAILS' || n.classList.contains('rl-advanced')); n = n.nextElementSibling) items.push(n); return items; })()`;
   const shot = async name => {
@@ -32,7 +34,7 @@ await runChecks(browser, async () => {
     await networkPage.shot(path.join(out, name), await evaluate(`(() => { const items = ${BLOCK}; const a = items[0].getBoundingClientRect(), b = items[items.length - 1].getBoundingClientRect();
       const p = ${NETWORK_PANEL}.getBoundingClientRect(); return { x: p.x, y: a.y - 4, width: p.width, height: b.bottom - a.y + 8, scale: 2 }; })()`));
   };
-  const select = name => page.setValue(`[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel label')].find(l => l.firstChild?.textContent === 'Encoder').querySelector('select')`, name);
+  const select = name => page.evaluate(`${NETWORK_DOCUMENT}.querySelector('tr.template-row[data-encoder="${name}"] button.template-use')?.click()`);   // "Use template" (no-op for the one in use)
   const box = label => `[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel .row label')].find(l => l.querySelector('span')?.firstChild?.textContent === ${JSON.stringify(label)})`;
   const numbers = () => evaluate(`['hidden', 'heads', 'layers'].map(n => [...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel .row label')].find(l => l.querySelector('span')?.firstChild?.textContent === n).querySelector('input').value)`);
   const IN_USE = `${NETWORK_PANEL}.querySelector('.in-use')?.textContent`;
@@ -42,15 +44,15 @@ await runChecks(browser, async () => {
   await page.until(`!!document.querySelector('.rl-networks-open')`, 150);
   const layout = await evaluate(`(() => {
     const body = document.querySelector('.right .module-body');
-    const labels = [...body.querySelectorAll('label')].slice(0, 2).map(l => l.firstChild.textContent.trim());
+    const labels = [...body.querySelectorAll('label')].map(l => l.firstChild.textContent.trim());
     const button = body.querySelector('.rl-networks-open');
-    // the button stands in one row with the network in short (user, 2026-10-03): that row is directly below Mode
-    return { labels, underMode: button.closest('.rl-networks-row')?.previousElementSibling === body.querySelector('label'),
+    // the button stands in one row with the next run's model in short (user, 2026-10-03; record 7.265): the module's first row
+    return { labels: labels.slice(0, 2), first: body.firstElementChild === button.closest('.rl-networks-row'), moved: !labels.includes('Mode') && !labels.includes('RL model label'),
       inlineNetwork: !!body.querySelector('.component-list, .look-open, .model-card'), search: !!document.querySelector('select[aria-label="Search method"]'),
       windows: !!window.__checkRLWindow, stopRules: body.textContent.includes('Stop after N consecutive failed evaluations') };
   })()`);
-  check('Mode is first, RL model label second (no Search method since 2026-10-06, record 7.226), and RL networks is directly below Mode',
-    layout.labels.join('|') === 'Mode|RL model label' && layout.underMode && !layout.search, JSON.stringify(layout));
+  check('RL model... and the next run\'s model come first; Mode and the RL model label are in the RL model window (record 7.265); no Search method (7.226)',
+    layout.first && layout.moved && layout.labels[0] === 'Concurrent Spectre jobs' && !layout.search, JSON.stringify(layout));
   check('network content starts closed and failure limits stay in Run configuration', !layout.inlineNetwork && !layout.windows && layout.stopRules);
   await page.shot(path.join(out, 'run-configuration.png'), `document.querySelector('.right .panel')`, { maxHeight: 900 });
   await evaluate(`(() => { const open = window.open; window.open = () => null;
@@ -61,7 +63,7 @@ await runChecks(browser, async () => {
   check('opening succeeds after a blocked attempt and clears the message', !await evaluate(`document.querySelector('.right').textContent.includes('blocked the new window')`));
   const originalWindow = networkPage.target.id;
   await evaluate(`document.querySelector('.rl-networks-open').click()`, true);
-  check('pressing the launcher again reuses the same window', (await browser.pages()).filter(p => p.title === 'GATOR - RL networks').length === 1 && (await browser.window('GATOR - RL networks')).id === originalWindow);
+  check('pressing the launcher again reuses the same window', (await browser.pages()).filter(p => p.title === 'GATOR - RL model').length === 1 && (await browser.window('GATOR - RL model')).id === originalWindow);
   for (let i = 0; i < 100 && !(await evaluate(`!!(${H3})`)); i++) await sleep(100);
   for (let i = 0; i < 50 && !(await evaluate(`!!${NETWORK_PANEL}.querySelector('.in-use')`)); i++) await sleep(100);
   await sleep(600);
@@ -71,10 +73,12 @@ await runChecks(browser, async () => {
   const gt = settings.settings.graph_transformer.network;
   check('fresh page shows the backend values of the default encoder', JSON.stringify(await numbers()) === JSON.stringify([gt.hidden_dim, gt.heads, gt.layers].map(String)), JSON.stringify(await numbers()));
   const short = await evaluate(`(() => { const e = document.querySelector('.rl-networks-row .net-short'); return e && { text: e.textContent, title: e.title, left: e.getBoundingClientRect().right <= document.querySelector('.rl-networks-open').getBoundingClientRect().left }; })()`);
-  check('beside the button, the network in short: GT hidden/heads/layers, the words left of the button, the whole of it in the tooltip',
-    short?.text.startsWith(`GT ${gt.hidden_dim}/${gt.heads}/${gt.layers}`) && short.left && short.title.startsWith('The network in use: graph_transformer'), JSON.stringify(short));
-  const options = await evaluate(`[...[...${NETWORK_DOCUMENT}.querySelectorAll('.rl-networks-panel label')].find(l => l.firstChild?.textContent === 'Encoder').querySelectorAll('option')].map(o => o.value)`);
-  check('the encoder list offers all five backend encoders', JSON.stringify(options) === JSON.stringify(['graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention']), JSON.stringify(options));
+  check('beside the button, the next run\'s model in short: New model, its template, GT hidden/heads/layers; left of the button, the whole of it in the tooltip',
+    /^New model · .+ template · GT /.test(short?.text ?? '') && short.text.includes(`GT ${gt.hidden_dim}/${gt.heads}/${gt.layers}`) && short.left
+    && short.title.startsWith('The network in use: graph_transformer'), JSON.stringify(short));
+  const options = await evaluate(`[...${NETWORK_DOCUMENT}.querySelectorAll('tr.template-row')].map(r => r.dataset.encoder)`);
+  check('the templates table offers all five backend encoders, one row each', JSON.stringify(options) === JSON.stringify(['graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention']), JSON.stringify(options));
+  check('the mode is New model: the window\'s Mode buttons say so', await evaluate(`${NETWORK_DOCUMENT}.querySelector('.rl-modes button[aria-checked="true"]')?.dataset.mode`) === 'scratch');
   for (const encoder of ['graph_gps', 'group_cross_attention']) {
     await select(encoder);
     const STRUCTURE = `${NETWORK_PANEL}.querySelector('select.structural-encoding')`;
@@ -121,7 +125,7 @@ await runChecks(browser, async () => {
   await networkPage.send('Input.insertText', { text: '64' });
   // Close before the debounced write returns: closing the view must not abandon a valid edit or its preference save.
   await networkPage.evaluate('window.close()');                                  // the window's own close (it has no button of its own)
-  await browser.window('GATOR - RL networks', { present: false });
+  await browser.window('GATOR - RL model', { present: false });
   const write = await nextWrite();
   check('an edit is sent to the backend for the chosen encoder', !!write && write.method === 'PUT' && write.url.endsWith('/api/network-settings/rgcn'), write ? `${write.method} ${write.url}` : 'no request');
   const body = write ? JSON.parse(write.postData) : {};
@@ -164,12 +168,12 @@ await runChecks(browser, async () => {
 
   check('the network controls and their values are there (SAC is the only search method)', await page.until(`!document.querySelector('.rl-networks-open').disabled && !!${NETWORK_PANEL}.querySelector('.component-list')`) && (await numbers())[0] === String(rgcn.hidden_dim));
   await networkPage.evaluate('window.close()');
-  await browser.window('GATOR - RL networks', { present: false });
+  await browser.window('GATOR - RL model', { present: false });
   networkPage = await openNetworks(page, browser);
   check('the browser close button also permits reopening', await networkPage.evaluate(`!!document.querySelector('.component-list')`));
   await send('Page.reload');
-  await browser.window('GATOR - RL networks', { present: false });
-  check('reloading the workbench closes its network window', !(await browser.pages()).some(p => p.title === 'GATOR - RL networks'));
+  await browser.window('GATOR - RL model', { present: false });
+  check('reloading the workbench closes its network window', !(await browser.pages()).some(p => p.title === 'GATOR - RL model'));
 
   // A restored configuration can intentionally differ from the remembered encoder defaults, including Advanced.
   await page.until(`!!document.querySelector('.rl-networks-open')`, 150);

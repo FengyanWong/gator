@@ -44,8 +44,8 @@ await runChecks(browser, async () => {
     && !${RIGHT}.querySelector('.module-body .warn, .module-body .error')?.closest('.reward-advanced')`));
   check('no warning line about a bonus without an objective row', !(await evaluate(`${RIGHT}.textContent.includes('No active objective')`)));
   // a new configuration takes its training values from the backend's setting for the encoder: nothing to review, also while they load
-  check('a new configuration is not sent to RL networks', await page.until(`/^GT \\d+\\/\\d+\\/\\d+/.test(document.querySelector('.rl-networks-row .net-short')?.textContent ?? '')`)
-    && !(await evaluate(`[...${RIGHT}.querySelectorAll('.warn')].some(e => e.textContent === 'Review the settings in RL networks.')`)));
+  check('a new configuration is not sent to RL model (record 7.265: the line beside it names the new model\'s template)', await page.until(`/^New model · .+ template · GT \\d+\\/\\d+\\/\\d+/.test(document.querySelector('.rl-networks-row .net-short')?.textContent ?? '')`)
+    && !(await evaluate(`[...${RIGHT}.querySelectorAll('.warn')].some(e => e.textContent === 'Review the settings in RL model.')`)));
   await page.shot(path.join(out, 'reward-1-sentence.png'), `${SENTENCE}.closest('.module-body')`, { maxHeight: 900 });
 
   // ---- another value: named, with the way back on a button ---------------------------------------------------------------
@@ -81,7 +81,7 @@ await runChecks(browser, async () => {
   check('the fold keeps the objective line', await evaluate(`${FOLD}.querySelector('.reward-objective').textContent === ${JSON.stringify('Objective: ' + objective)}`));
 
   // ---- the soft actor-critic values of before: named where they are set, gone with the encoder's saved defaults -------------
-  check('Run configuration points at RL networks', await page.until(`[...${RIGHT}.querySelectorAll('.warn')].some(e => e.textContent === 'Review the settings in RL networks.')`));
+  check('Run configuration points at RL model', await page.until(`[...${RIGHT}.querySelectorAll('.warn')].some(e => e.textContent === 'Review the settings in RL model.')`));
   const networkPage = await openNetworks(page, browser);
   const SLOW = `${NETWORK_PANEL}.querySelector('.sac-values')`;
   check('the window names 1 update per evaluation and the starting temperature 0.2, and the tested values',
@@ -94,14 +94,14 @@ await runChecks(browser, async () => {
   check('the default encoder\'s saved setting learns: 8 updates per evaluation, temperature 0.01 (the old schema values 1 and 0.2)',
     held.updates_per_transition === 8 && held.initial_alpha === 0.01 && settings.legacy_baseline.advanced.updates_per_transition === 1, JSON.stringify(held));
   await evaluate(`[...${NETWORK_PANEL}.querySelectorAll('.network-differences button')].find(b => b.textContent === 'Use saved defaults').click()`);
-  check('with "Use saved defaults" the warning is gone, here and in Run configuration', await page.until(`!${SLOW} && ![...${RIGHT}.querySelectorAll('.warn')].some(e => e.textContent === 'Review the settings in RL networks.')`),
+  check('with "Use saved defaults" the warning is gone, here and in Run configuration', await page.until(`!${SLOW} && ![...${RIGHT}.querySelectorAll('.warn')].some(e => e.textContent === 'Review the settings in RL model.')`),
     await evaluate(`${SLOW}?.textContent ?? ''`));
   await page.saved();
   const advanced = (await page.stored())?.run?.advanced ?? {};
   check('the configuration now runs the saved setting\'s 8 updates per evaluation and temperature 0.01, and nothing was written', advanced.updates_per_transition === 8
     && advanced.initial_alpha === 0.01 && advanced.gamma === held.gamma && paused.length === 0, JSON.stringify(advanced));
   await networkPage.evaluate('window.close()');
-  await browser.window('GATOR - RL networks', { present: false });
+  await browser.window('GATOR - RL model', { present: false });
 
   // ---- Specs: the scale behind "More columns", headed "Scale", suggested as the size of the limit --------------------------
   const EDITORS = `document.querySelector('.editors')`;

@@ -2,9 +2,9 @@ import { SIMPLE_REWARD, useRequest } from '../store';
 import { Fragment, ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, ApiError, bytes, copy, Json, num } from '../api';
-import { ModelChooser } from './ModelChooser';
-import { CircuitGraphView } from './CircuitGraphView';
-import { ModelStructure } from './ModelStructure';
+import { modelName, SavedModels } from './ModelChooser';
+import { ENCODER_SHORT, pointEvaluations } from '../lineage';
+import { openRunsAt } from '../openAt';
 import { ComponentList } from './Pdk';
 import { Typed } from './Typed';
 import { BLOCKED, usePopupWindow } from './popupWindow';
@@ -132,8 +132,45 @@ const NETWORK_SETTING_LABELS: Record<string, string> = {
 const REWARD_NAMES: Record<string, string> = { violation_shape: 'violation shape', worst_spec_share: 'worst hard-spec share',
   objective_weight: 'objective bonus weight', objective_shape: 'objective shape', margin_weight: 'tightest-margin bonus weight' };
 
-/** The encoders in short, for the line beside RL networks... (the window names them in full). */
-const SHORT_ENCODER: Record<string, string> = { graph_transformer: 'GT', rgcn: 'RGCN', gatv2: 'GATv2', graph_gps: 'GPS', group_cross_attention: 'Group attention' };
+/** The Mode, in the RL model window (record 7.265; plan "RL model window": "Mode selection should be merged in to load model.
+ *  Scratch mode will ask you to create a new model from the default templates. fine-tune and evaluate load existing ones").
+ *  `resume` is no choice: a run is continued from Runs or Run status (Continue..., record 7.261). */
+const MODES: [string, string, string][] = [
+  ['scratch', 'New model', 'a new RL model, made from one of the templates below; it starts from random weights'],
+  ['fine_tune', 'Fine-tune', 'a saved model keeps learning, in a new run'],
+  ['frozen', 'Evaluate only', 'a saved model is used as it is, with no learning'],
+];
+export const MODE_NAME: Record<string, string> = { scratch: 'New model', fine_tune: 'Fine-tune', frozen: 'Evaluate only', resume: 'resume (no longer a choice)' };
+
+/** New model's templates (record 7.265): one row per encoder - its sizes and training values as the backend keeps them (the
+ *  starting preset, or values edited and saved there), and how many saved models were made from it. A double click or "Use
+ *  template" fills the draft's network and training values from it, as one Undo step (`applyEntry`, what choosing an
+ *  encoder did until then). */
+function TemplatesTable({ settings, encoders, current, runs, onUse }: { settings: Json; encoders: string[]; current: string; runs: Json[]; onUse: (encoder: string) => void }) {
+  const made = (encoder: string) => runs.filter(r => r.encoder === encoder && !r.parent && r.model_label && r.run_kind !== 'offline_pretraining').length;
+  return (<table className="grid small template-table"><thead><tr>
+    <th title="The encoder of the network.">Template</th><th title="Hidden width / attention heads / layers.">Sizes</th>
+    <th title="Learner updates per evaluation, starting temperature (initial alpha), discount and learning rate.">Training</th>
+    <th title="The starting preset, or values edited and saved in the backend for this encoder.">Values</th>
+    <th title="Saved models under the output folder made from this template (new models, not fine-tuned ones).">Models made</th><th className="plain"></th></tr></thead>
+    <tbody>{encoders.map(e => { const s = settings?.settings?.[e], n = s?.network ?? {}, a = s?.advanced ?? {}, active = e === current; return (
+      <tr key={e} className={`template-row${active ? ' current' : ''}`} aria-current={active ? 'true' : undefined} data-encoder={e} onDoubleClick={() => onUse(e)}>
+        <td><b>{s?.label ?? e}</b>{s?.experimental && <span className="hint"> (experimental)</span>}</td>
+        <td className="numeric">{n.hidden_dim ?? '?'}/{s?.uses_heads === false ? '–' : n.heads ?? '?'}/{n.layers ?? '?'}{n.structural_encoding && n.structural_encoding !== 'none' ? ` · ${n.structural_encoding}` : ''}</td>
+        <td className="numeric">{a.updates_per_transition ?? '?'} updates · alpha {a.initial_alpha ?? '?'} · gamma {a.gamma ?? '?'} · lr {a.learning_rate ?? '?'}</td>
+        <td>{s ? ({ publication: 'starting preset', custom: 'edited, saved in the backend' } as Json)[s.origin] ?? s.origin : 'not read yet'}</td>
+        <td className="numeric">{made(e)}</td>
+        <td>{active ? <b className="ok">in use</b> : <button className="template-use" onClick={() => onUse(e)}
+          title={`Use template: the next run's network and training values become the ${s?.label ?? e} template's, as one Undo step.`}>Use template</button>}</td></tr>); })}
+    </tbody></table>);
+}
+
+/** New model's "Saved models, to look at" (record 7.265): folded, and the list - every run's save points, a slow read on the
+ *  D: drive - is read only once the fold is opened. Its open state goes with it when a Mode that loads a model replaces it. */
+function LookFold({ summary, children }: { summary: ReactNode; children: () => ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return <details className="look-models" onToggle={e => setOpen(e.currentTarget.open)}>{summary}{open && children()}</details>;
+}
 
 export function RunPanel({ config, setConfig, runs, circuit, schema }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json; schema: Json }) {
   const run = config.run;
@@ -141,15 +178,11 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const setAdv = (fields: Json) => setConfig(c => ({ ...c, run: { ...c.run, advanced: { ...(c.run.advanced ?? {}), ...fields } } }));
   const setNet = (fields: Json) => setConfig(c => ({ ...c, run: { ...c.run, network: { ...(c.run.network ?? {}), ...fields } } }));
   const source = run.model_source ?? {};
-  // Looking at a saved model (structure table, circuit graph view) must not need a Mode that loads it: in scratch the
-  // selection is kept HERE, outside the configuration (a model_source in scratch would be a validation warning).
-  const [looking, setLooking] = useState(false);
-  const [look, setLook] = useState<{ run_dir: string | null; checkpoint_id: string }>({ run_dir: null, checkpoint_id: 'latest' });
   const adv = run.advanced ?? {};
   const net = run.network ?? {};
   // Keep the configuration, preset writes and compatibility checks here even when the window is closed.
   const networkWindow = usePopupWindow('gator-rl-networks', {
-    title: 'GATOR - RL networks', features: 'popup,width=1100,height=900',
+    title: 'GATOR - RL model', features: 'popup,width=1180,height=920',
     rootId: 'rl-networks-root', rootClass: 'rl-networks-window', closeOnUnmount: true,
   });
 
@@ -187,7 +220,8 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   // Per-encoder settings live in the backend: choosing an encoder READS its settings, editing a value WRITES them back
   // for that encoder. The configuration always carries explicit values, so what is shown is what runs.
   const [netSettings, setNetSettings] = useState<Json>(null);
-  const [netMessage, setNetMessage] = useState<{ level: string; text: string } | null>(null);
+  // `about`: the Mode and saved model a message is about - it is shown only while they are still the ones chosen.
+  const [netMessage, setNetMessage] = useState<{ level: string; text: string; about?: string } | null>(null);
   const [presetRateUpdated, setPresetRateUpdated] = useState(false);
   const pending = useRef<{ encoder: string; body: Json } | null>(null);
   const netRevision = useRef(0);
@@ -325,13 +359,20 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const archDiffers = !!savedNet && Object.keys(savedNet).some(f => savedNet[f] !== (f === 'encoder_type' ? encoder : net[f]));
   const followed = useRef<string | null>(null);
   useEffect(() => {
-    if (!loads) { followed.current = null; return; }
-    if (!archDiffers) return;
-    // The SAME model a second time = something else changed the network meanwhile (an imported or
-    // opened configuration). It is taken back as well, but said: a silent revert would read as a button that does nothing.
+    if (!loads || !savedNet) { if (!loads) followed.current = null; return; }
     const key = JSON.stringify([source.run_dir, model?.description?.checkpoint_id, savedNet]);
-    if (followed.current === key) setNetMessage({ level: 'warn', text: `The network stays ${savedNet.encoder_type} ${savedModel.hidden_dim}/${savedModel.heads}/${savedModel.layers}: this run loads a saved model, and a saved model only loads into the network it was trained with. A new network needs Mode scratch.` });
+    const seen = followed.current === key;
     followed.current = key;
+    if (!archDiffers) return;
+    // "Use this save point" brings the network WITH the saved model (record 7.265), so a model seen with its network that now
+    // differs got another network from elsewhere - an imported or opened configuration: it is taken back, and said as a
+    // warning (a silent revert would read as a button that does nothing). A model that came without its network - an old
+    // draft, the launcher's "Fine-tune from its newest save point", an imported configuration naming another model - gets
+    // it here, said as a note.
+    const named = `${savedNet.encoder_type} ${savedModel.hidden_dim}/${savedModel.heads}/${savedModel.layers}`;
+    setNetMessage(seen ? { level: 'warn', text: `The network stays ${named}: this run loads a saved model, and a saved model only loads into the network it was trained with. A new network needs New model.` }
+      : { level: 'ok', text: `The network is now the saved model's, ${named}: a saved model only loads into the network it was trained with.`,
+        about: JSON.stringify([run.mode, source.run_dir, source.checkpoint_id]) });
     setConfig(c => ({ ...c, run: { ...c.run, network: { ...(c.run.network ?? {}), ...savedNet } } }), false);
   }, [loads, archDiffers, JSON.stringify(savedNet)]);
   useEffect(() => setNetMessage(m => m?.level === 'warn' ? null : m), [source.run_dir, source.checkpoint_id, run.mode]);
@@ -339,35 +380,61 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
   const savedList: string | undefined = loads ? model?.vocabulary?.name : undefined;
   useEffect(() => { if (savedList && savedList !== (net.vocabulary ?? 'standard')) chooseList(savedList, false); }, [savedList, net.vocabulary]);
 
-  // Default the RL model to the newest model saved under the RL model label (record 7.159; before it, under the project
-  // name, still asked for the runs remembered that way), and its `latest` checkpoint (not `best`) - in a Mode that
-  // loads a model. In scratch it used to be written into the configuration on page load: a validation warning
-  // (source_ignored_in_scratch), an undo step nobody made and a model compile on every edit. Filled by itself, it is no
-  // Undo step either: one Undo takes back the Mode choice and the model it brought.
-  // Its answer never overwrites a model chosen meanwhile, and never lands in scratch (the first reading of the default
-  // hashes the checkpoint files, which takes seconds on D:).
-  useEffect(() => {
-    if (source.run_dir || !loads) return;
-    let live = true;
-    api.defaultModel(label, config.project.name).then(d => live && d.run_dir && setConfig(c => c.run.mode === 'scratch' || c.run.model_source?.run_dir ? c
-      : { ...c, run: { ...c.run, model_source: { ...(c.run.model_source ?? {}), run_dir: d.run_dir, checkpoint_id: 'latest' } } }, false)).catch(() => undefined);
-    return () => { live = false; };
-  }, [label, loads]);
+  // The source is chosen, never filled in (record 7.265). Until then a Mode that loads a model filled it by itself with the
+  // newest model saved under the RL model label (record 7.159), at `latest`. That model is now a suggestion with a press,
+  // "Newest model named ...: Use", which pins its newest save point as any choice does.
+  const { value: suggested } = useRequest<Json>(() => api.defaultModel(label, config.project.name), [label, loads, source.run_dir],
+    { enabled: loads && !source.run_dir });
+  // "Use this save point" (record 7.265): the draft's source becomes exactly that save point - a concrete id, never "latest" -
+  // and the model's network and component list come with it, as ONE Undo step (they used to follow later, by themselves).
+  const [usingPoint, setUsingPoint] = useState(false);
+  // A saved model's name, as the saved models table lists it: from its run's row (the folder's name when the run is not listed).
+  const nameOf = (dir: string) => { const row = runs.find(r => r.run_dir === dir); return row ? modelName(row) : String(dir).split(/[\\/]/).filter(Boolean).pop(); };
+  const useSavePoint = (run_dir: string, checkpoint_id: string) => {
+    setUsingPoint(true); setNetMessage(null);
+    api.model(run_dir, checkpoint_id).then((answer: Json) => {
+      const saved = answer?.description?.contract?.model_config;
+      const network: Json = saved?.encoder_type ? { encoder_type: saved.encoder_type, ...pick(saved, netFields),
+        structural_encoding: saved.structural_encoding ?? (saved.encoder_type === 'graph_gps' ? 'rwse' : 'none'),
+        operating_points: !!answer.description.contract?.feature_schema?.op_columns?.length } : null;
+      const list: string | undefined = answer?.vocabulary?.name;
+      const point = answer?.description?.checkpoint_id ?? checkpoint_id;
+      setConfig(c => {
+        const { vocabulary: _old, ...rest } = c.run.network ?? {};
+        return { ...c, run: { ...c.run, model_source: { ...(c.run.model_source ?? {}), run_dir, checkpoint_id: point },
+          network: network ? { ...rest, ...network, ...(list && list !== 'standard' ? { vocabulary: list } : {}) } : c.run.network } };
+      });
+      setNetMessage({ level: 'ok', text: `The next run ${run.mode === 'frozen' ? 'evaluates' : 'fine-tunes'} ${nameOf(run_dir)} from its save point ${point}, with its network (one Undo step takes it back).`,
+        about: JSON.stringify([run.mode, run_dir, point]) });
+    }).catch((e: any) => setNetMessage({ level: 'error', text: `That save point could not be read: ${e.message}` })).finally(() => setUsingPoint(false));
+  };
+  // A Mode is one Undo step. New model clears the saved model chosen: scratch never loads one (a source left there is a
+  // validation warning), and coming back to Fine-tune asks for the choice again.
+  const chooseMode = (mode: string) => setConfig(c => ({ ...c, run: { ...c.run, mode,
+    ...(mode === 'scratch' && c.run.model_source?.run_dir ? { model_source: { ...c.run.model_source, run_dir: null, checkpoint_id: 'latest' } } : {}) } }));
 
 
-  // The network in use, in short, beside the RL networks button (user, 2026-10-03: "show the current network selection next to
+  // The network in use, in short, beside the RL model button (user, 2026-10-03: "show the current network selection next to
   // the RL network button in short"). In a Mode that loads a model the configuration's network is that model's (above).
   const hidden = net.hidden_dim ?? entry?.network?.hidden_dim ?? 32, heads = net.heads ?? entry?.network?.heads ?? 4, layers = net.layers ?? entry?.network?.layers ?? 2;
   const components = net.vocabulary && net.vocabulary !== 'standard' ? net.vocabulary.replace(/^pdk:/, '') : null;
-  const netShort = loads && !source.run_dir ? 'no saved model chosen'
-    : [`${SHORT_ENCODER[encoder] ?? encoder} ${hidden}/${usesHeads ? heads : '–'}/${layers}`, net.operating_points ? 'op. points' : null,
-      components ? `${components} parts` : null, loads ? 'saved model' : null].filter(Boolean).join(' · ');
-  const netTitle = loads && !source.run_dir ? `Mode ${run.mode} loads a saved model: choose one in RL networks; the run then uses its network.`
+  const netShort = [`${ENCODER_SHORT[encoder] ?? encoder} ${hidden}/${usesHeads ? heads : '–'}/${layers}`, net.operating_points ? 'op. points' : null,
+      components ? `${components} parts` : null].filter(Boolean).join(' · ');
+  // The next run's model in one line, beside the button (record 7.265; plan "RL model window": "New model · Graph Transformer
+  // template · GT 48/4/4", "Fine-tune ota7t (2) · save point 420 evaluations", "Evaluate ... · deterministic actions").
+  const sourceName = source.run_dir ? nameOf(source.run_dir) : null;
+  const pointAt = model?.description?.counters?.evaluations_committed ?? pointEvaluations(source.checkpoint_id);
+  const modelLine = run.mode === 'scratch' ? `New model · ${entry?.label ?? encoder} template · ${netShort}`
+    : run.mode === 'resume' ? 'Mode resume is no longer a choice: choose a mode in RL model...'
+    : !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} · no saved model chosen`
+    : `${run.mode === 'frozen' ? 'Evaluate' : 'Fine-tune'} ${sourceName} · save point ${pointAt != null ? `${pointAt} evaluations` : source.checkpoint_id}`
+      + (run.mode === 'frozen' ? ` · ${run.frozen_action ?? 'deterministic'} actions` : '');
+  const netTitle = loads && !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} loads a saved model: choose one in RL model...; the run then uses its network.`
     : `The network in use: ${encoder}, hidden ${hidden}, ${usesHeads ? `heads ${heads}` : 'no attention heads'}, layers ${layers}; nominal operating points ${net.operating_points ? 'on' : 'off'}; `
-      + `components ${components ?? 'standard'}${loads ? `. It is the network of the saved model this run loads (${source.run_dir}).` : '.'} RL networks... changes it.`;
+      + `components ${components ?? 'standard'}${loads ? `. It is the network of the saved model this run loads (${source.run_dir}, save point ${source.checkpoint_id}).` : '.'} RL model... changes it.`;
   const limitsSet = [run.max_spectre_launches != null ? `${run.max_spectre_launches} launches` : null, (run.max_retries ?? 0) > 0 ? `${run.max_retries} retries` : null,
     run.max_wall_seconds != null ? `${run.max_wall_seconds} s` : null].filter(Boolean) as string[];
-  const folded = [run.mode, run.model_label?.trim() ? `model ${run.model_label.trim()}` : null, typeof budget === 'number' ? `${budget} evaluations` : null,
+  const folded = [MODE_NAME[run.mode] ?? run.mode, run.model_label?.trim() ? `model ${run.model_label.trim()}` : null, typeof budget === 'number' ? `${budget} evaluations` : null,
     `${encoder} ${net.hidden_dim ?? '?'}/${net.heads ?? '?'}/${net.layers ?? '?'}`,
     net.vocabulary && net.vocabulary !== 'standard' ? `knows ${net.vocabulary.slice(4)}` : null].filter(Boolean).join(' - ');
   const networkError = error || netMessage?.level === 'error' || !offeredEncoders.includes(encoder)
@@ -391,29 +458,25 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
           onChange={v => editAdv({ [name]: v })} />);
         return i === 0 ? <Fragment key={i}>{inputs}</Fragment> : <div className="row" key={i}>{inputs}</div>;
       })}
-      <Check label="Freeze encoder (fine_tune)" value={adv.freeze_encoder} onChange={v => setAdv({ freeze_encoder: v })} />
-      <Check label="Encoder-only transfer (fine_tune)" value={adv.encoder_only_transfer} onChange={v => setAdv({ encoder_only_transfer: v })} />
-      <Check label="Reset critic (fine_tune)" value={adv.reset_critic} onChange={v => setAdv({ reset_critic: v })} />
     </details>
   </>;
   return (
     <>
     <Module id="run" title="Run configuration" summary={folded}>
-      <label title="scratch: random init, new run. resume: same task, same run, full state. fine_tune: compatible weights, new task, new run with a parent. frozen: no updates at all.">Mode
-        <select value={run.mode} onChange={e => set({ mode: e.target.value })}>
-          {['scratch', 'resume', 'fine_tune', 'frozen'].map(m => <option key={m} value={m}>{m}</option>)}</select></label>
-      <div className="rl-networks-row"><span className={`hint net-short${loads && !source.run_dir ? '' : ' net-code'}`} title={netTitle}>{netShort}</span>
-        <button className="rl-networks-open" title="Open RL network settings, saved models, and model views."
-          onClick={() => networkWindow.open()}>RL networks...</button></div>
+      {/* The Mode and the RL model label moved into the RL model window (record 7.265); here the next run's model is one line. */}
+      <div className="rl-networks-row"><span className={`hint net-short${loads && !source.run_dir ? '' : ' net-code'}`} title={netTitle}>{modelLine}</span>
+        <button className="rl-networks-open" title="Open the RL model window: the Mode (New model, Fine-tune, Evaluate only), the templates of a new model, and the saved models."
+          onClick={() => networkWindow.open()}>RL model...</button></div>
       {networkWindow.blocked && <p className="error" role="alert">{BLOCKED}</p>}
-      {(networkError || networkWarning) && <p className={networkError ? 'error' : 'warn'}>Review the settings in RL networks.</p>}
-      {/* Only while the model is checked: in scratch the last check's suggestion stayed, never asked again (review of 2026-10-01) */}
-      {modelChecked && model?.suggestion && model.suggestion.mode !== run.mode && <p className="warn">Suggested: <button className="text-link mode-suggestion"
-        title={`Set Mode to ${model.suggestion.mode}`} onClick={() => set({ mode: model.suggestion.mode })}>{model.suggestion.mode}</button> - {model.suggestion.reason}
-        {model.suggestion.requires_confirmation ? ' (needs your confirmation)' : ''}</p>}
-      <label title={`RL model label: the name this run's RL model is saved under. Mode resume, fine_tune and frozen start from the newest model saved under it. Empty: the task's run label (${config.project.task_name}). A name a saved model carries already gets a number: ${label} (2), ${label} (3). Saved models can be renamed in RL networks.`}>RL model label
-        <input className="model-label" value={run.model_label ?? ''} placeholder={config.project.task_name} maxLength={80}
-          onChange={e => set({ model_label: e.target.value.trim() ? e.target.value : null })} /></label>
+      {(networkError || networkWarning) && <p className={networkError ? 'error' : 'warn'}>Review the settings in RL model.</p>}
+      {/* Only while the model is checked: in scratch the last check's suggestion stayed, never asked again (review of 2026-10-01).
+          "resume" is no Mode any more (record 7.265): its suggestion is the run itself, a link into the Runs window (Continue...). */}
+      {modelChecked && model?.suggestion && model.suggestion.mode !== run.mode && (model.suggestion.mode === 'resume'
+        ? <p className="hint mode-suggestion-run">This model's own run can be continued exactly: <button className="text-link mode-suggestion"
+            title="Open the Runs window at that run: its Continue... goes on in its own folder." onClick={() => openRunsAt({ run_dir: source.run_dir })}>open it in Runs</button>. {model.suggestion.reason}</p>
+        : <p className="warn">Suggested: <button className="text-link mode-suggestion" title={`Set Mode to ${MODE_NAME[model.suggestion.mode] ?? model.suggestion.mode}`}
+            onClick={() => set({ mode: model.suggestion.mode })}>{MODE_NAME[model.suggestion.mode] ?? model.suggestion.mode}</button> - {model.suggestion.reason}
+            {model.suggestion.requires_confirmation ? ' (needs your confirmation)' : ''}</p>)}
       <Num label="Concurrent Spectre jobs" value={run.concurrency} onChange={v => set({ concurrency: v })} title="Independent simulation jobs at once. NOT the thread count of one simulation." />
       {circuit?.max_concurrency && run.concurrency > circuit.max_concurrency && <p className="error">This task supports at most {circuit.max_concurrency} jobs.</p>}
       <Num label="Evaluation budget" value={run.max_evaluations} onChange={v => set({ max_evaluations: v })}
@@ -484,18 +547,22 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
     </Module>
     {networkWindow.popup && networkWindow.root && createPortal(<section className="panel rl-networks-panel" aria-labelledby="rl-networks-title">
       {/* No close button of its own (user, 2026-10-03: "delete the cross button in RL network window"): the window's own close
-          does it, and the settings are kept either way. */}
-      <div className="rl-networks-heading"><h2 id="rl-networks-title">RL networks</h2></div>
-      <p className="hint">Mode: <b>{run.mode}</b>. Changes apply to the current run configuration.</p>
-      <>
+          does it, and the settings are kept either way. Record 7.265: the RL model window - the Mode at the top, then that
+          Mode's part: the templates of a new model, or the saved models to fine-tune or evaluate. */}
+      <div className="rl-networks-heading"><h2 id="rl-networks-title">RL model</h2></div>
+      <div className="rl-modes" role="radiogroup" aria-label="Mode">
+        {MODES.map(([m, name, help]) => <button key={m} role="radio" aria-checked={run.mode === m} data-mode={m} className={`rl-mode${run.mode === m ? ' active' : ''}`}
+          onClick={() => { if (run.mode !== m) chooseMode(m); }} title={`${name}: ${help}. One Undo step.`}>{name}</button>)}
+      </div>
+      <p className="hint rl-mode-help">{MODES.find(([m]) => m === run.mode)?.[2]?.replace(/^./, c => c.toUpperCase())
+        ?? 'Mode resume is no longer a choice: a run is continued from Runs or Run status (Continue...). Choose one of the three above for the next run.'}{loads ? '. The next run uses the network of the model chosen below.' : '.'}</p>
       {!loads && <>
-      <h3>RL network</h3>
-      <p className="hint">"No weights" means scratch, but an architecture is still required.
-        Every encoder keeps its own settings in the backend: choosing one loads them, editing a value (here or under Advanced) saves it for that encoder.</p>
-      <label>Encoder<select value={encoder} onChange={e => chooseEncoder(e.target.value)}>
-        {offeredEncoders.map((m: string) => <option key={m} value={m}>{netSettings?.settings?.[m]?.label ?? m}</option>)}
-        {!offeredEncoders.includes(encoder) && <option value={encoder}>{encoder} (removed from the optimizer)</option>}</select></label>
-      {!offeredEncoders.includes(encoder) && <p className="error">{encoder} is unavailable. Choose an available encoder. Existing models need their matching historical optimizer version.</p>}
+      <h3>Templates</h3>
+      <p className="hint">A new model starts from one template: its network and its training values, kept per encoder in the backend. Editing a value
+        below saves it for that encoder.</p>
+      <TemplatesTable settings={netSettings} encoders={offeredEncoders} current={encoder} runs={runs} onUse={chooseEncoder} />
+      {!offeredEncoders.includes(encoder) && <p className="error">{encoder} is unavailable. Choose an available template. Existing models need their matching historical optimizer version.</p>}
+      <h3>The {entry?.label ?? encoder} template, for this run</h3>
       <div className="row"><Num label="hidden" value={net.hidden_dim ?? entry?.network?.hidden_dim ?? 32} onChange={v => editNet({ hidden_dim: v })} />
         <Num label="heads" value={net.heads ?? entry?.network?.heads ?? 4} onChange={v => editNet({ heads: v })} disabled={!usesHeads} note={usesHeads ? undefined : 'ignored by this encoder'}
           title={usesHeads ? 'Attention heads. hidden must be divisible by heads.' : 'RGCN does not use attention heads. The number is kept in the checkpoint.'} />
@@ -524,11 +591,8 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
         <div className="row pair"><button onClick={() => applyEntry(entry)} title="Replace this run's network and Advanced values with the saved defaults for this encoder.">Use saved defaults</button>
           <button onClick={() => { queueSave(net, adv); flush(); }} title="Keep this run's values and remember them as the defaults for this encoder.">Save as defaults</button></div>
       </div>}
-      {entry?.problem && <p className="warn">{entry.problem}</p>}</>}
-      {netMessage && <p className={`net-message ${netMessage.level === 'error' ? 'error' : netMessage.level === 'warn' ? 'warn' : 'hint'}`}>{netMessage.text}</p>}
-      {starved && <p className="warn">Budget {budget} with warm-up {adv.warmup_transitions} and batch size {adv.batch_size}: {budget <= (adv.warmup_transitions ?? 0) ? 'every evaluation is a random warm-up action, so the policy never acts' : 'one batch is never filled, so the network never learns'}.
-        Published settings assume thousands of simulations. Lower them under Advanced or raise the budget.</p>}
-      {!loads && entry && <details><summary>Where the {encoder} values come from</summary>
+      {entry?.problem && <p className="warn">{entry.problem}</p>}
+      {entry && <details><summary>Where the {encoder} values come from</summary>
         <p className="hint">{entry.summary}</p>
         {entry.architecture_reference && <p className="hint">Architecture reference: <a href={entry.architecture_reference.url} target="_blank" rel="noreferrer">{entry.architecture_reference.short}</a>. The starting values are project choices.</p>}
         <table className="grid small"><thead><tr><th>Setting</th><th>Preset</th><th>Basis</th><th>Source and note</th></tr></thead><tbody>
@@ -537,17 +601,25 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
               <td>{ref && <a href={ref.url} target="_blank" rel="noreferrer">{ref.short}</a>} {p?.note}</td></tr>); })}
         </tbody></table>
         <p className="hint">{netSettings.scale_note}</p></details>}
-      <ModelChooser mode={run.mode} source={source} runs={runs} outputRoot={config.output?.output_root}
-        onChoose={(run_dir, checkpoint_id) => set({ model_source: { ...source, run_dir, checkpoint_id } })} />
-      {run.mode === 'scratch' && (!looking
-        ? <div className="row"><button className="look-open" onClick={() => setLooking(true)} title="See the network structure and the circuit graph view of any saved model. Nothing about the run changes: Mode stays scratch.">Look at a saved model</button></div>
-        : <>
-          <ModelChooser lookOnly mode="look" source={look} runs={runs} outputRoot={config.output?.output_root}
-            onChoose={(run_dir, checkpoint_id) => setLook({ run_dir, checkpoint_id })} />
-          {look.run_dir && <ModelStructure runDir={look.run_dir} checkpointId={look.checkpoint_id} />}
-          {look.run_dir && <CircuitGraphView runDir={look.run_dir} checkpointId={look.checkpoint_id} />}
-          <div className="row"><button className="look-close" onClick={() => { setLooking(false); setLook({ run_dir: null, checkpoint_id: 'latest' }); }}>Done looking</button></div></>)}
+      <h3>Name of the new model</h3>
+      <label title={`The name this run's RL model is saved under. Empty: the task's run label (${config.project.task_name}). A name a saved model carries already gets a number: ${label} (2), ${label} (3). A saved model can be renamed in its Details below.`}>RL model label
+        <input className="model-label" value={run.model_label ?? ''} placeholder={config.project.task_name} maxLength={80}
+          onChange={e => set({ model_label: e.target.value.trim() ? e.target.value : null })} /></label>
+      </>}
+      {netMessage && (!netMessage.about || netMessage.about === JSON.stringify([run.mode, source.run_dir, source.checkpoint_id]))
+        && <p className={`net-message ${netMessage.level === 'error' ? 'error' : netMessage.level === 'warn' ? 'warn' : 'hint'}`}>{netMessage.text}</p>}
+      {starved && <p className="warn">Budget {budget} with warm-up {adv.warmup_transitions} and batch size {adv.batch_size}: {budget <= (adv.warmup_transitions ?? 0) ? 'every evaluation is a random warm-up action, so the policy never acts' : 'one batch is never filled, so the network never learns'}.
+        Published settings assume thousands of simulations. Lower them under Advanced or raise the budget.</p>}
       {loads && (<>
+        <h3>Saved models</h3>
+        {/* No model is filled in by itself (record 7.265): the newest one under the RL model label is offered. */}
+        {!source.run_dir && suggested?.run_dir && <p className="note model-suggested">Newest model named <b>{label}</b>: {String(suggested.run_dir).split(/[\\/]/).filter(Boolean).pop()}
+          {suggested.description?.checkpoint_id ? `, save point ${suggested.description.checkpoint_id}` : ''}. <button className="model-suggested-use" disabled={usingPoint}
+            onClick={() => useSavePoint(suggested.run_dir, suggested.description?.checkpoint_id ?? 'latest')}>Use</button></p>}
+        {!source.run_dir && <p className="warn model-none-chosen">No saved model is chosen yet: {MODE_NAME[run.mode]} needs one. Use a save point below.</p>}
+        <SavedModels source={source} usable={run.mode === 'fine_tune' || run.mode === 'frozen' ? run.mode : null} runs={runs} outputRoot={config.output?.output_root}
+          config={config} popup={networkWindow.popup} onUse={useSavePoint} />
+        {source.run_dir && <><h3>The model in use</h3>
         {modelLoading && <p className="hint" role="status">Checking model compatibility...</p>}
         {error && <p className="error">{error}</p>}
         {model?.description && <table className="grid small model-facts"><tbody>
@@ -570,18 +642,25 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
           <tr><td>Restorable</td><td><b>{model.description.restoration_capability}</b>{model.description.missing_components.length ? ` - missing: ${model.description.missing_components.join(', ')}` : ''}</td></tr>
           <tr><td>Folder</td><td className="path" title="Click to copy" onClick={() => copy(model.description.path)}>{model.description.path}</td></tr>
         </tbody></table>}
-        {source.run_dir && <ModelStructure runDir={source.run_dir} checkpointId={model?.description?.checkpoint_id ?? null} label={model?.description?.source_task_id} />}
-        {source.run_dir && <CircuitGraphView runDir={source.run_dir} checkpointId={model?.description?.checkpoint_id ?? null} label={model?.description?.source_task_id} />}
         {model?.compatibility_unchecked && <div className="note compat-unchecked"><p><b>{model.compatibility_unchecked.title}</b></p>
           <p>{model.compatibility_unchecked.what}</p><p className="hint">{model.compatibility_unchecked.note}</p>
           <details><summary>Technical details</summary><pre className="small">{model.compatibility_unchecked.technical}</pre></details></div>}
         {model?.compatibility && !archDiffers && <details open={!model.compatibility.compatible}><summary className={model.compatibility.compatible ? '' : 'error'}>Compatibility for {model.compatibility.mode}: {model.compatibility.compatible ? 'compatible' : 'NOT compatible - there is no fallback to scratch'}</summary>
-          <ul>{model.compatibility.checks.map((c: Json) => <li key={c.component} className={`issue ${c.status === 'ok' ? 'info' : c.status === 'warning' ? 'warning' : 'error'}`}>{c.component}: {c.status} - {c.detail}</li>)}</ul></details>}
+          <ul>{model.compatibility.checks.map((c: Json) => <li key={c.component} className={`issue ${c.status === 'ok' ? 'info' : c.status === 'warning' ? 'warning' : 'error'}`}>{c.component}: {c.status} - {c.detail}</li>)}</ul></details>}</>}
+        <h3>{run.mode === 'frozen' ? 'Evaluate only' : 'Fine-tune'}: its own settings</h3>
         {run.mode === 'frozen' && <label>Frozen actions<select value={run.frozen_action ?? 'deterministic'} onChange={e => set({ frozen_action: e.target.value })}><option>deterministic</option><option>sampled</option></select></label>}
-        {run.mode === 'fine_tune' && <Check label="Continual learning (inherit weights fine-tuned on a previous test task)" value={run.continual_learning} onChange={v => set({ continual_learning: v })} />}
+        {run.mode === 'fine_tune' && <>
+          <Check label="Freeze encoder" value={adv.freeze_encoder} onChange={v => setAdv({ freeze_encoder: v })} />
+          <Check label="Encoder-only transfer" value={adv.encoder_only_transfer} onChange={v => setAdv({ encoder_only_transfer: v })} />
+          <Check label="Reset critic" value={adv.reset_critic} onChange={v => setAdv({ reset_critic: v })} />
+          <Check label="Continual learning (inherit weights fine-tuned on a previous test task)" value={run.continual_learning} onChange={v => set({ continual_learning: v })} />
+          <label title={`The name the model this run saves goes by. Empty: the task's run label (${config.project.task_name}); a name taken already gets a number.`}>Name of the model it saves
+            <input className="model-label" value={run.model_label ?? ''} placeholder={config.project.task_name} maxLength={80}
+              onChange={e => set({ model_label: e.target.value.trim() ? e.target.value : null })} /></label></>}
+        {advanced}
       </>)}
-      {loads && advanced}
-      </>
+      {!loads && <LookFold summary={<summary>Saved models, to look at <span className="hint">- Fine-tune or Evaluate only above uses one</span></summary>}>
+        {() => <SavedModels source={source} usable={null} runs={runs} outputRoot={config.output?.output_root} config={config} popup={networkWindow.popup} onUse={useSavePoint} />}</LookFold>}
     </section>, networkWindow.root)}
     </>
   );

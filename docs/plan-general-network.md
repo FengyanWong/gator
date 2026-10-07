@@ -1,13 +1,16 @@
-# Plan: one general network from all saved experience, then the six circuits from a third start (2026-10-06, record 7.230)
+# Plan: one general network from all saved experience, then the six circuits from a third start (2026-10-06, record 7.230; rewritten as record 7.232)
 
 User: "write the plan is it possible to train one general network with all the previous saved experience and then compare
 the six cases with different starting design parameter and starting seed from scratch and load the general network. how
-to avoid policy drift?"
+to avoid policy drift?" Then, after asking what arm O and leave-one-out do and whether a more complex op-amp added to the
+library could serve as the held-out test: "rewrite the plan" and "arm o trim to only ota5t circuit".
 
 Status: plan only. Nothing is built, no task is registered, no simulation has started. Every number below is read from
-the recorded runs under `outputs/` and from the source at commit `2cba8c6` (optimizer digest `0b0808bc`). Section 9 lists
-the decisions the user has to take before anything is built; sections 4 and 7 name which steps would and would not change
-the optimizer package.
+the recorded runs under `outputs/` and from the source at commit `2cba8c6` (optimizer digest `0b0808bc`); the rewrite
+changed no fact. What the rewrite changed: arm O is one run, on ota5t, a check of the offline method rather than a transfer
+measure (it repeats 7.229's question); phase 3 is a held-out two-stage op-amp built for the purpose (section 6) instead
+of leave-one-out. Section 10 lists the decisions the user has to take before anything is built; sections 4 and 8 name
+which steps would and would not change the optimizer package.
 
 ---
 
@@ -16,7 +19,7 @@ the optimizer package.
 Three questions are in the request:
 
 - (a) Can ONE network be trained from everything the workbench has recorded, without new simulation?
-- (b) Does loading it help on the six circuits (ota5t, ota7t_w, ring3, vco_lin_c, ldo1_rgcn, ldo2_rgcn) when each starts
+- (b) Does loading it help the six circuits (ota5t, ota7t_w, ring3, vco_lin_c, ldo1_rgcn, ldo2_rgcn) when each starts
   from a third starting design with a third seed, compared with training from scratch?
 - (c) How is the loaded policy kept from drifting away from what it knew while it adapts to the new task?
 
@@ -33,22 +36,23 @@ Short answers:
   training method uses the existing learner unchanged: nothing in `src/analog_optimizer/` changes, the cost is about an
   hour of CPU, no Spectre launch.
 - **(b) It can be measured the way record 7.229 measured fine-tuning:** six new start-C tasks, two arms each (scratch,
-  load-general), seed 2, 800 launches, the criteria of 7.229 plus two new ones (no drift; the general model at least as
-  good as a model of the circuit's own data). 9,600 Spectre launches, about 5 hours. An optional third arm (+4,800) tells
-  pooling across circuits apart from offline training itself.
+  load-general), seed 2, 800 launches, the criteria of 7.229 plus a "no drift" criterion. 9,600 Spectre launches, about 5
+  hours. One extra run on ota5t (a model of ota5t's own data, trained offline) checks that the offline route keeps the head
+  start 7.229 measured live. A circuit the network never saw, a two-stage op-amp built for the purpose (section 6, 1,965
+  launches), is the only test of knowledge that carries across circuits.
 - **(c) Policy drift** here means: the loaded model loses part of what it knew while its weights are updated on the new
   task. Record 7.229 saw it on ldo1_rgcn (27 % of the first 100 own proposals passed, 7 % of the last third). The lever that
   attacks the cause (rehearsal: keep drawing half of every update batch from the pooled experience) is a workbench engine
   change, not an optimizer change; three further levers are settings that exist today; the regularizers of the literature
-  that would change the optimizer are listed and not proposed (section 7).
+  that would change the optimizer are listed and not proposed (section 8).
 
 What "general" means and does not mean. The network reads the circuit graph and the Specs rows, so one network can serve
 many circuits: that is what the graph encoder and the spec context exist for. Trained on these ten circuits it is general
-over THEM; whether it helps a circuit it never saw is a separate question (phase 3, leave-one-out, section 8). The
-literature has no published joint RL sizing policy evaluated on a held-out circuit family (answer of 2026-10-06, memory
-"unified model question"). "General" is also not weight averaging: the six A models cannot be merged (different spec
-schemas, and averaging independently trained networks does not give a working one); the general network is trained anew
-from the pooled data.
+over THEM; whether it helps a circuit it never saw is what the held-out op-amp of section 6 measures. The literature has
+no published joint RL sizing policy evaluated on a held-out circuit family (answer of 2026-10-06, memory "unified model
+question"). "General" is also not weight averaging: the six A models cannot be merged (different spec schemas, and
+averaging independently trained networks does not give a working one); the general network is trained anew from the
+pooled data.
 
 ---
 
@@ -106,7 +110,7 @@ the 8 ota7t runs, the reward settings.
 - `modes.build` for fine_tune: loads the actor, the critics and targets (unless `reset_critic` or the reward contract
   changed, when they start fresh by itself) and the temperature (unless `reset_temperature`); replay, optimizers and
   counters are new; `freeze_encoder` keeps the encoders fixed. The documented rule "No source replay data and no
-  source-task dimensions are mixed in" is written into every run manifest's policy notes: rehearsal (section 7) departs
+  source-task dimensions are mixed in" is written into every run manifest's policy notes: rehearsal (section 8) departs
   from it and must be recorded as a decision.
 - The model chooser (`checkpoints.saved_models`) lists every run folder under the output root that holds a complete save
   point and a run manifest; a run's mode must be one of `scratch`, `resume`, `fine_tune`, `frozen` (`schema.RUN_MODES`).
@@ -118,6 +122,8 @@ the 8 ota7t runs, the reward settings.
   launches" and "including pre-training".
 - The ldo2 HF PSRR limit of record: the original -5 dB rows are unreachable in 1,500 designs; the B tasks' relaxed rows
   (-3 / -2.3 dB) are the targets of the comparison, as in 7.229.
+
+---
 
 ---
 
@@ -164,6 +170,8 @@ re-scoring a transition under its own, unchanged rows must give the recorded rew
 
 ---
 
+---
+
 ## 4. Training the general network offline (no Spectre)
 
 Method of record: offline SAC updates through the existing learner, fed from the pooled archive instead of a live replay.
@@ -207,6 +215,8 @@ data), an optimizer change. Neither is planned unless (a) fails its checks.
 
 ---
 
+---
+
 ## 5. The comparison on a third start (start C)
 
 **Tasks.** Six new tasks `real:mscr_<name>_c` by the start-B rule of record 7.227 with a second draw: among the valid
@@ -219,12 +229,15 @@ workbench and checked with Check now; a Baseline simulation per task is optional
 **Arms**, 800 launches each, seed 2, the A runs' settings as in 7.229 (learning rate 1e-3, alpha 0.01, 8 updates, gamma 0):
 
 - **S** scratch: random weights, the shared registry.
-- **G** load-general: fine_tune from the general model with the anti-drift settings of section 7 (rehearsal if built,
+- **G** load-general: fine_tune from the general model with the anti-drift settings of section 8 (rehearsal if built,
   decision D4; otherwise the settings-only levers).
-- **O** (optional, decision D6) load-own: fine_tune from an offline model trained by the same tool on the circuit's own
-  recorded data only (A + B runs, shared registry, same method). This is the only arm that separates "pooling across
-  circuits" from "offline training", and it checks the method against 7.229's measured head start (90 / 93 / 89 % early on
-  ota5t / ota7t_w / vco_lin_c). The A models themselves cannot serve here: they carry the task's own registry.
+- **O** load-own, on ota5t only (decision D6): fine_tune from a model the same tool trains offline on ota5t's own
+  recorded data (its A run and its two B runs, 2,400 evaluations; shared registry, same method). Arm O repeats 7.229's
+  question, an own model on a new start, so it measures nothing new about transfer; its one job is to show that the
+  offline route and the wider registry keep the head start 7.229 measured live (ota5t: 90 % of the first 100 own
+  proposals). ota5t is where that head start was largest, so any loss shows. For the other five circuits 7.229's fine-tune
+  rows are the approximate own-model reference (start B, seed 1, a live-trained model under the task's own registry). The
+  A models themselves cannot serve here: they carry the task's own registry.
 
 **Zero-shot probes first** (phase 1): the general model in frozen mode, sampled actions, 300 launches on each of the six B
 tasks (they exist; their 7.229 numbers are the reference). They measure what the network knows before any update:
@@ -243,8 +256,8 @@ the "50 % by" point, last-third share, mean reward early and late, per-row failu
 - C4 no drift (new): G's last-third share at least its early share minus 10 points, and the failure share of G's weakest
   row does not rise by more than 15 points from its first 200 designs to the rest (ldo1_rgcn in 7.229 would fail both:
   27 % to 7 %, the HF PSRR row 63 % to 82-88 %).
-- C5 general against own (new, only with arm O): G's early share within 10 points of O's on at least four circuits and
-  nowhere more than 20 points below.
+- C5 offline method (ota5t only): O's early share within 10 points of 7.229's live fine-tune (90 %), and G's within 10
+  points of O's.
 - Zero-shot: reported, no bar; a passing share above S's early share says the knowledge transferred before any update.
 
 Verdict rule: "one general network transfers to a new start" if C1 holds on at least four of six circuits, C2 on six and
@@ -253,16 +266,67 @@ circuits whose arms end within the seed spread is decision D7.
 
 ---
 
-## 6. Budget and time
+## 6. The held-out op-amp (phase 3): a circuit the network never saw
+
+Phase 2 tests the general network on circuits that are in its pool, the in-distribution case. A circuit outside the pool
+is the only test of knowledge that carries across circuits. Leave-one-out (six networks each trained without one circuit,
+one run per held-out circuit) was the first version of that test; the rewrite replaces it with a circuit built for the
+purpose. It is a true unseen circuit, in a family the pool knows from two single-stage OTAs; the general network trained on
+all ten circuits is tested as it is, no extra networks; and for a new circuit there is no own-data model, so scratch
+against load-general is the whole story. 1,965 launches instead of 4,800.
+
+**The circuit.** A two-stage Miller-compensated OTA, `real:mscr_ota8m` (name proposed): differential pair, current-mirror
+load, tail source, a common-source second stage with its current source, a bias mirror; eight transistors, a Miller
+capacitor with a nulling resistor. A textbook circuit like the rest of the MScR library, with two things the pool's
+amplifiers lack: a second stage, and a compensation network (a capacitor and a resistor inside an amplifier; the pool
+holds such parts only in the LDOs). A folded-cascode OTA (`mscr_otafc`, eleven to thirteen transistors, single stage) is
+the harder second point if the first result is positive; it is the same recipe again.
+
+**What makes it cheap.** The cell gets the ota5t pins (VINP, VINN, VOUT, IBIAS, VDD, VSS), so the ota5t testbench and its
+six metrics (gain_db, ugb_hz, pm_deg, power_w, psrr_db, noise_vrms) carry over as the B tasks' testbenches did, a copy with
+the cell name swapped. The shared registry already holds the six metrics, so no slot is added. The device kinds (1 V MOS,
+MIM capacitor, resistor) are in the component list through the LDOs. Node count and action dimensions are deliberately not
+compatibility criteria (`check_compatibility`), so the general model loads on the bigger graph with its more numerous
+parameter groups.
+
+**Rows and targets.** Parameters as in ota5t (w and l of every transistor, matched pairs as leader and followers) plus the
+Miller capacitor and the nulling resistor. Specs: the six ota5t metrics, Scale 6 on dB rows. The targets are fixed AFTER a
+Baseline simulation (the baseline design plus 64 random designs), not before: each row at a level some random designs
+reach on their own, the whole set reached by none, and the gain target above what a single-stage OTA gives (a two-stage
+amplifier is asked for 60 dB or more), so the task is not an ota5t in disguise. The LDO lesson of record 7.229: a row no
+design can reach makes every arm look the same.
+
+**Fixed before phase 0:** the circuit's spec list. The registry is fixed when the general network is trained; a slew-rate
+or settling row would need a transient testbench and a registry slot added before training. Decision D10 (recommended:
+the six ota5t metrics only).
+
+**Start and arms.** One start, the textbook sizing (start A, as the library's circuits), seed 0. First the zero-shot probe
+(frozen, sampled actions, 300 launches), then S (scratch) and G (load-general with the anti-drift settings) at 800
+launches each. With the baseline simulation: 65 + 300 + 1,600 = 1,965 launches, about 1.5 h. The cell is a few hours of the
+writer on the VM, as the six B cells were (`~/mscr_circuits`: `circuits.py`, `designs.py`, `tasks_def.py`,
+`save_tasks.py`); it can be built and baselined during phase 2a, in the same Virtuoso session of work, and its runs wait
+for phase 2's verdict.
+
+**Criteria:** C1, C2 and C4 of section 5 on this circuit; the zero-shot share reported. "The general network transfers to
+an unseen amplifier" if C1 and C2 hold; one circuit and one seed, so a second seed follows if the arms end within the seed
+spread. What the result means: the network has seen only 5T and 7T single-stage OTAs; a head start on a two-stage
+amplifier is cross-topology transfer within the family, the strongest claim this plan can make; no head start means the
+network is a memory of the circuits it saw, still useful, a narrower claim. Once run, the circuit's data joins the pool
+(eleven circuits) for the next network.
+
+---
+
+## 7. Budget and time
 
 | Phase | What | Spectre launches | Time |
 |---|---|---|---|
-| 0 | shared registry, pooling tool, offline training, held-out checks, model folder | 0 | about 1 h CPU per network, plus the tooling |
+| 0 | shared registry, pooling tool, offline training, held-out checks, model folder (the general model; the ota5t own-data model under D6) | 0 | about 1 h CPU per network, plus the tooling |
 | 1 | zero-shot probes of the general model on the six B tasks | 1,800 | about 1 h |
-| 2a | six C cells and tasks (Virtuoso writer, Check now); baselines optional | 0 (390 with baselines) | about 1 h (plus 25 min) |
+| 2a | six C cells and tasks (Virtuoso writer, Check now); baselines optional; the held-out op-amp's cell and baseline can be built here too | 0 (390 with baselines; +65 for the op-amp) | about 1 h (plus 25 min), plus a few hours for the op-amp cell |
 | 2b | arms S and G on the six C tasks | 9,600 | about 5 h (7.229's twelve ran 06:58-12:03) |
-| 2c | arm O (optional) | 4,800 | about 2.5 h |
-| 3 | leave-one-out (optional): six general models each without one circuit, one G run per held-out circuit | 4,800 | about 2.5 h, plus 6 x 1 h CPU |
+| 2c | arm O on ota5t (D6) | 800 | about 12 min |
+| 3 | the held-out op-amp: zero-shot probe, arms S and G | 1,900 (1,965 with its baseline) | about 1.5 h |
+| 3b | the folded-cascode second point, optional, after a positive phase 3 | 1,965 | about 1.5 h, plus its cell |
 
 Times per 800 launches from 7.229: ota5t 10-12 min, ring3 11-14, ldo1_rgcn 12-29, ota7t_w 27-37, ldo2_rgcn 31-71,
 vco_lin_c 35-47. The queue of 7.229 (`queue.sh`: one run at a time, the session lock, Check now before and after each run,
@@ -270,7 +334,7 @@ the nonce cache read for multi-lane runs) is reused as it is.
 
 ---
 
-## 7. Policy drift: what it is here, why it happens, how to avoid it
+## 8. Policy drift: what it is here, why it happens, how to avoid it
 
 **Two kinds.**
 
@@ -323,20 +387,24 @@ error, no sequential training.
 
 ---
 
-## 8. Procedure
+---
 
-Phase 0 (free): decisions D1-D3 and D9; the `pretrain` tool with tests; the general model and, under D6, the six
-own-circuit models; the held-out checks written into each model folder's `pretraining` block; the drift meter and the
-keep-best rule (levers 5-6) if the user wants them in this round; under D4 the rehearsal engine change with tests.
-Phase 1: the six zero-shot probes (1,800 launches). Phase 2: the C cells and tasks, then the twelve (or eighteen) runs
-through the 7.229 queue, `compare.py` extended by C4 / C5 and the zero-shot rows. Phase 3 (optional, after the verdict of
-phase 2): leave-one-out.
+## 9. Procedure
+
+Phase 0 (free): decisions D1-D3, D9 and the held-out circuit's spec list (D10, because the registry is fixed at training);
+the `pretrain` tool with tests; the general model and, under D6, the ota5t own-data model; the held-out checks written
+into each model folder's `pretraining` block; the drift meter and the keep-best rule (levers 5-6 of section 8) if the
+user wants them in this round; under D4 the rehearsal engine change with tests. Phase 1: the six zero-shot probes (1,800
+launches). Phase 2: the C cells and tasks, the held-out op-amp's cell and baseline in the same Virtuoso session of work,
+then the twelve runs plus arm O on ota5t through the 7.229 queue, `compare.py` extended by C4 / C5 and the zero-shot rows.
+Phase 3 (after the verdict of phase 2): the held-out op-amp's probe and two runs; the folded cascode only after a positive
+result.
 
 Nothing simulates without the user's word; the phases are separately approvable.
 
 ---
 
-## 9. Decisions for the user
+## 10. Decisions for the user
 
 1. **D1 References of the 8 conflicting metrics:** the proposal of section 3, or other values.
 2. **D2 The 8 older ota7t runs:** recompute their rewards under today's settings and include them (+4,326 evaluations of
@@ -346,21 +414,25 @@ Nothing simulates without the user's word; the phases are separately approvable.
 4. **D4 Build rehearsal** (engine change, the fine_tune rule of record changes): yes / no (then levers 2 and 3 only).
    Recommended: yes; it is the one lever aimed at the cause.
 5. **D5 The start-C rule:** 25th-percentile random design of record, seed 2; or another rule.
-6. **D6 Arm O** (six own-circuit offline models, +4,800 launches): yes / no. Recommended: yes.
+6. **D6 Arm O on ota5t** (one own-data offline model, one run, +800 launches): yes / no. Recommended: yes; it is the check
+   that the offline route keeps 7.229's head start, at the price of one short run.
 7. **D7 A second seed** on the circuits whose arms end within the seed spread: decided after phase 2.
 8. **D8 Optimizer-side regularizers** (KL / L2-SP / EWC / CQL): no, unless levers 1-3 fail C4.
 9. **D9 Network size:** 48 / 4 / 4 as every recorded run, unless the forgetting curve says it is too small; a larger
    network applies to both arms.
-10. **D10 Phase 3, leave-one-out:** after phase 2.
+10. **D10 The held-out op-amp:** the two-stage Miller OTA `mscr_ota8m` first, with the six ota5t metrics and no transient
+    row (a slew or settling row adds a registry slot before phase 0 and a transient testbench); its cell built during
+    phase 2a, its runs after phase 2's verdict; the folded cascode `mscr_otafc` as a second point only after a positive
+    result. Recommended as stated.
 
 Parked, as every further plan must say: the SKY130 benchmark (AnalogGym-Opt import, calibration with zero passes, the
 tunable bias current) stays untouched; the MScR circuits on Spectre are the test bed.
 
 ---
 
-## 10. What goes on record
+## 11. What goes on record
 
-This plan; a record entry (7.230); when built: the `pretrain` command, the drift meter and the keep-best rule with tests
-and their rows in `docs/functionality-reference.md`; the rehearsal decision in `docs/decisions.md` if D4 is yes; the C
-tasks' definitions in `~/mscr_circuits`; the model folders' `pretraining` blocks; the comparison's `results.md`. Under D8 =
-no, nothing in `src/analog_optimizer/` changes.
+This plan; record entries 7.230 (the plan) and 7.232 (the rewrite); when built: the `pretrain` command, the drift meter
+and the keep-best rule with tests and their rows in `docs/functionality-reference.md`; the rehearsal decision in
+`docs/decisions.md` if D4 is yes; the C tasks' and the held-out op-amp's definitions in `~/mscr_circuits`; the model
+folders' `pretraining` blocks; the comparison's `results.md`. Under D8 = no, nothing in `src/analog_optimizer/` changes.

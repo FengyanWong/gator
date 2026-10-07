@@ -116,12 +116,12 @@ await runChecks(browser, async () => {
   await sleep(600);
   const opened = { tasks: count('/api/tasks'), runs: count('/api/runs') };
 
-  // ---- 1. the Task row: plain text + one button, no drop-down -------------------------------------------------------------
+  // ---- 1. the Task row: the name is one button, no drop-down -------------------------------------------------------------
   const row = await evaluate(`(() => { const r = ${ROW}; return { caption: r.querySelector('.task-caption')?.textContent, key: r.querySelector('.task-list-key')?.textContent,
     mark: r.querySelector('.task-list-mark')?.textContent.trim() ?? null, button: r.querySelector('button.task-list-button')?.textContent, select: !!r.querySelector('select'),
-    order: [...r.children].map(e => e.className.split(' ')[0]) }; })()`);
-  check('the task is named as plain text, the button reads only "Tasks...", to the RIGHT of the name', row.caption === 'Task' && row.key === 'synthetic:gpdk045_ota5' && row.mark === '[MOCK]' && row.button === 'Tasks...'
-    && row.order.indexOf('task-list-current') < row.order.indexOf('task-list-button'), JSON.stringify(row));
+    nameIsButton: !!r.querySelector('button.task-list-button .task-list-key'), buttons: r.querySelectorAll('button').length }; })()`);
+  check('the whole task name is the only task-row button', row.caption === 'Task' && row.key === 'synthetic:gpdk045_ota5' && row.mark === '[MOCK]'
+    && row.nameIsButton && row.buttons === 1 && !row.button.includes('Tasks...'), JSON.stringify(row));
   check('there is no drop-down list of tasks in the column any more', !row.select);
   check('the button has a tooltip saying what the window is', (await evaluate(`${ROW}.querySelector('button.task-list-button').title`)).includes('every registered task'));
   await shot('task-list-1-row.png', ROW);

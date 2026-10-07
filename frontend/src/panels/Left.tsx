@@ -1,6 +1,5 @@
 import { migrateConfig, noteRowsFrom, useAsyncAction, useRequest } from '../store';
 import { CircuitDetails, gateText, namedTestbench, NativeSchematic, useVirtuosoBrowser } from './CircuitBrowser';
-import { Icon } from './Icons';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, connectionProfilesShared, Json, problemText } from '../api';
@@ -178,7 +177,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // finished Baseline simulation records its result as the task's reference by itself (status record 7.78; the
   // manual "Record the baseline run as reference" went on 2026-09-29). Explicit presses, none starts a simulation.
   // A check result goes as soon as the rows change: it was about the rows before. A message says which press it answers
-  // (`what`): the answer to Delete task stands by that button, in the task row at the top of the column.
+  // (`what`): the answer to Delete task stands by that button in the Tasks window.
   const [taskCheck, setTaskCheck] = useState<Json>(null);
   const [profileMessage, setProfileMessage] = useState<Json>(null);
   const generatedName = ref.source === 'registered_task' && circuit?.generated_profile ? String(ref.task_id ?? '').replace(/^real:/, '') : null;
@@ -205,8 +204,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // the files aside and refuses while a run of the task is working. The page then follows the cell the task was saved
   // from, which is free again for a new task.
   const [deleted, setDeleted] = useState<Json>(null);
-  const deleteProfile = () => {
-    if (!window.confirm(`Delete the task real:${deletableName}?\n\nIt leaves the Registered task list, and its cell can get a new task. Runs already made `
+  const deleteProfile = (owner: Window) => {
+    if (!owner.confirm(`Delete the task real:${deletableName}?\n\nIt leaves the Registered task list, and its cell can get a new task. Runs already made `
       + 'with it keep their data, but a paused one can no longer be resumed. A copy of the task\'s files is kept on the backend machine; the '
       + 'cell in Virtuoso stays as it is, its Maestro test included.'
       + (circuit?.baseline_recorded ? '\n\nIts recorded baseline goes with it: a new task needs a new real baseline simulation.' : ''))) return;
@@ -230,8 +229,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // An ngspice netlist task (Ngspice.tsx saves it; the page then follows it). Delete takes it out of the list: its folder
   // is kept aside on the backend machine, and the page follows the first task left (the rows stay unless untouched).
   const ngspiceTask = ref.source === 'registered_task' && /^ngspice:/.test(ref.task_id ?? '') ? String(ref.task_id).slice('ngspice:'.length) : null;
-  const deleteNgspice = () => {
-    if (!window.confirm(`Delete the task ngspice:${ngspiceTask}?\n\nIt leaves the Registered task list. Runs already made with it keep their data, `
+  const deleteNgspice = (owner: Window) => {
+    if (!owner.confirm(`Delete the task ngspice:${ngspiceTask}?\n\nIt leaves the Registered task list. Runs already made with it keep their data, `
       + 'but a paused one can no longer be resumed. Its deck and task file are kept aside on the backend machine.')) return;
     profileAction('delete', async () => {
       const gone = await api.ngspiceDelete(ngspiceTask!);
@@ -391,16 +390,18 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       <h3>Registered task</h3>
       {!offered && <div className="note"><p>This configuration was saved with a Spectre netlist file{ref.netlist_path ? <> (<code>{ref.netlist_path}</code>)</> : null}.
         The workbench no longer imports netlists: choose a task below, or a Virtuoso cell in its window.</p></div>}
-      {/* The task the page follows, as plain text, and ONE button "Tasks..." that opens the task window (user request
-          2026-10-06, record 7.227): it replaced the drop-down list of tasks, as "Runs..." replaced the list of runs. The
-          text says what the list's placeholder used to: no task, a Virtuoso cell, a removed task. A choice in the
-          window is the old list's choice: chooseTask. */}
+      {/* The task name is the button that opens the Tasks window. Choosing a row there loads its saved settings. */}
       <div className="row task-row" title="The circuit the editors and a run are about. A cell read from Virtuoso becomes one of these with Save as.">
         <span className="task-caption">Task</span>
         <TaskListButton tasks={tasks} runs={runs} ngspiceOffered={showNgspice} loading={taskLoading} onChoose={key => chooseTask(key)}
           onRefresh={() => api.tasks().then(t => { setTasks(t.tasks); return t.tasks; })} onRefreshRuns={refreshRuns}
           current={ref.source === 'registered_task' && ref.task_id && !removedMock ? ref.task_id : null}
           currentMark={ref.source === 'registered_task' && ref.task_id && !removedMock ? taskMark(tasks.find(t => t.task_key === ref.task_id) ?? { kind: 'real', available: true }, showNgspice) : undefined}
+          onDelete={ref.source === 'registered_task' && ref.task_id && !removedMock && (deletableName || ngspiceTask) ? (ngspiceTask ? deleteNgspice : deleteProfile) : undefined}
+          deleting={profileBusy === 'delete'} deleteDisabled={!!profileBusy}
+          deleteTitle={ngspiceTask ? 'Delete task: Asks once more. The task leaves the Registered task list; its deck and task file are kept aside on the backend machine, and runs already made keep their data.'
+            : 'Delete task: Asks once more. The task leaves the Registered task list and its cell can get a new one; its files are kept aside on the backend machine, and runs already made keep their data.'}
+          deleteNotice={profileMessage?.what === 'delete' && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
           currentText={ref.source !== 'registered_task' ? (virtuosoOn ? (ref.cell ? `(none: ${ref.library}/${ref.cell} is read from Virtuoso)` : '(none: a Virtuoso cell is being chosen)')
             : '(none: the saved source was removed)') : !ref.task_id ? '(choose a task)' : `${ref.task_id} (removed)`} />
       </div>
@@ -409,16 +410,6 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
             on 2026-09-30, record 7.128): a plain note, not a red "Blocked". */}
         {removedMock && <div className="note"><p><code>{ref.task_id}</code> no longer exists: the workbench has no MOCK task since
           2026-09-30. Choose one of your saved tasks under Task; it brings its own rows.</p></div>}
-        {/* Choosing a task loads its rows. Reload is only for resetting the current task to its saved values. */}
-        {ref.task_id && !removedMock && <div className="row task-buttons">
-          <button disabled={!!taskLoading} onClick={() => chooseTask(ref.task_id, undefined, true)} title="Reload saved values: Reset Parameters, Probes and Specs to the saved task. Asks before discarding edits. Project, run and output settings stay. Undo takes it back."><Icon name="load" label="Reload saved values" /></button>
-          <span className="spacer" />
-          {(deletableName || ngspiceTask) && <button disabled={!!profileBusy} onClick={ngspiceTask ? deleteNgspice : deleteProfile}
-            title={ngspiceTask ? 'Delete task: Asks once more. The task leaves the Registered task list; its deck and task file are kept aside on the backend machine, and runs already made keep their data.'
-              : 'Delete task: Asks once more. The task leaves the Registered task list and its cell can get a new one; its files are kept aside on the backend machine, and runs already made keep their data.'}>
-            <Icon name="delete-task" label={profileBusy === 'delete' ? 'Deleting...' : 'Delete task'} /></button>}
-        </div>}
-        {profileMessage?.what === 'delete' && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
         {!taskLoading && taskRows?.task === ref.task_id && sameRows(config, taskRows.starter) && <p className="hint task-rows">Parameters, Probes and Specs now show this task's rows
               {taskRows.starter.targets.length ? '' : ' - it has no targets of record, so Specs is yours to fill (its results are ready in Probes)'}. Undo brings the previous ones back.</p>}
       </>)}

@@ -281,7 +281,7 @@ Browser check: `frontend/scripts/looks_check.mjs` (47 checks, hermetic).
 ### Choosing a registered task: whose rows Parameters, Probes and Specs show
 
 The three tabs hold rows of the *configuration*, so they belong to a task. Choosing another task in the Project
-column (**Registered task -> Task**, since record 7.227 a double click in the task window behind **Tasks...**) brings that task's rows. A fresh page has no task until you choose one (the MOCK task
+column (**Registered task -> Task**, a double click in the Tasks window opened by the task-name button) brings that task's rows. A fresh page has no task until you choose one (the MOCK task
 that used to open there, and the verified OTA7 and LDO circuits with their targets of record, were removed on 2026-09-30,
 record 7.128):
 
@@ -299,8 +299,9 @@ record 7.128):
 * Edited rows prompt **before** switching: OK discards those edits and loads the chosen task; Cancel keeps both the
   current task and its edits, so they can be saved first. Edits made during the read are protected too. One **Undo**
   takes back the whole task choice, including its rows and run label.
-* **Reload saved values** replaces the old **Load task** control. It is optional, for resetting the current task to its
-  saved rows, with the same edit-discard confirmation. Normal task switching needs no extra button press.
+* The separate **Load task / Reload saved values** icon was removed in 7.260. Double-clicking the current task in the
+  Tasks window reloads its saved rows, with the same edit-discard confirmation. The explicit **Reload saved values**
+  action remains in the save-conflict message.
 * Run settings (the RL model's label included), output and research settings stay unchanged during switching and reloading. No real budget is
   suggested and no simulation, task save or Virtuoso write is triggered by selecting a task (record 7.146).
 * The bottom tabs follow the choice (record 7.212): they show the chosen task's newest run, or no run when it has none
@@ -314,15 +315,15 @@ record 7.128):
 Browser check: `frontend/scripts/task_rows_check.mjs` (fixtures, safe on the live backend; `--live` reads the real
 starters from a restarted or scratch backend). Tests: `tests/workbench/test_wb_real_starter.py`.
 
-### The task window: "Tasks..." (2026-10-06, record 7.227, user request)
+### The Tasks window: the task-name button (2026-10-07, record 7.260, user request)
 
 User: "make the loaded task a button similar to the runs... button style. It opens a new window showing all the tasks."
 
-In the Project column the registered task is no longer a drop-down list. The **Task** row names the task the page follows
-as plain text (`mscr_ota5t`, with a mark when something keeps it from running: `[blocked]`, `[ngspice: choose its
+In the Project column the **Task** row shows the task name as one button across the remaining row (`mscr_ota5t`,
+with a mark when something keeps it from running: `[blocked]`, `[ngspice: choose its
 connection]`, `[MOCK]`; or a placeholder: "(choose a task)", "(none: MScR/x is read from Virtuoso)", "(none: the saved
-source was removed)", "synthetic:vco (removed)"), and ONE button beside it reads **Tasks...** - the same shape as the
-bottom strip's **Runs...**. Pressing it opens the **task window**, a browser window of its own that can stay open next
+source was removed)", "synthetic:vco (removed)"). There is no separate **Tasks...** button beside the name.
+Pressing the name opens the **task window**, a browser window of its own that can stay open next
 to the workbench (allow pop-ups for the page if the browser blocks it). It lists every registered task, one row each:
 
 | Column | What it says |
@@ -354,7 +355,10 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
 * The task row's facts (`testbench`, `saved_utc`, `created_utc`, `baseline_recorded_utc`, `status`, `variables`,
   `results`) come with `GET /api/tasks`, all from the task's own entry file - no other file is read. A server older than
   the page leaves those cells empty ("-").
-* **Reload saved values** and **Delete task** stay in the column under the task, as before.
+* **Delete task** is inside this window, beside **Current task: <name>**, for a deletable task. It acts on the task the
+  page follows; double-click another row to change that task. Confirmation opens in this window, and failures are shown
+  beside the action. The module outside has no delete or reload icon. The backend still keeps deleted files aside and
+  refuses deletion while the task is running.
 
 **Folders** (7.250): the sidebar lists **All tasks**, **Unfiled**, and named folders with task counts.
 Use the **New folder** icon (folder with a plus) to create one. **Rename** uses a pencil and **Delete folder**
@@ -660,7 +664,7 @@ their own copy of the deck in `input_snapshot/netlist.cir`, and a changed deck i
 the deck on the backend without keeping it and says what it found: elements by kind, the values a run can vary,
 the results it measures (with a unit guessed from the result's name or its expression: `gain_db`, `ugf_hz`,
 `v(out)` -> V, `i(vdd)` -> A - edit the Probes row when the guess is wrong), the analyses, includes, diagnostics
-and, in plain words, what would stop a run. **Delete task** (in the column's task row, at the right of Reload saved values,
+and, in plain words, what would stop a run. **Delete task** (in the Tasks window, beside the current task name,
 for the task the page follows) takes
 it out of the list; its folder is kept aside on the backend machine. Nothing in the window runs a simulation.
 
@@ -825,8 +829,7 @@ to say.
   **Task** in the Project column (its **Open** button went on 2026-09-29, 7.109); change it there
   (Save as); another task gets its own copy through that save, or from another copy made in Virtuoso and read in
   the window. A built-in circuit gets no second task.
-  **Delete task** (in the column's task row, at the right end next to Reload saved values (formerly Load task) since 2026-09-24 - before
-  that the last line of the task's block; asks once more; was: Delete profile):
+  **Delete task** (in the Tasks window beside the current task name since 7.260; asks once more; was: Delete profile):
   the task leaves the list, its name is free again and the cell is free for the next Save task.
   Nothing is erased: the folder moves to `configs/local/workbench/profiles/.deleted/<name>.<time>/`,
   its recorded baseline included (a new task needs a new real baseline). Runs already made keep their

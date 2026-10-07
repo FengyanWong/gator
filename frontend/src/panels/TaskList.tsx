@@ -1,12 +1,13 @@
-import { Fragment, MouseEvent, useEffect, useState } from 'react';
+import { Fragment, MouseEvent, ReactNode, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { api, Json, si } from '../api';
 import { TaskFolders, useTaskFolders } from './TaskFolders';
+import { Icon } from './Icons';
 
 /** Which registered task the page follows (user request 2026-10-06, record 7.227: "make the loaded task a button similar to
- *  the runs... button style. It opens a new window showing all the tasks"): in the Project column the task is named as plain
- *  text and ONE button beside it reads "Tasks...". It replaced the drop-down list of tasks, as "Runs..." replaced the list of
+ *  the runs... button style. It opens a new window showing all the tasks"): in the Project column the task name is the
+ *  button that opens its window. It replaced the drop-down list of tasks, as "Runs..." replaced the list of
  *  runs (RunList.tsx). Pressing it opens the task window - a browser window of its own, drawn through a portal like the
  *  run window - with every registered task as a table: what it is, which cell it runs in, its saved revision and baseline,
  *  how many sizes and results it has, and its newest run. A double click on a row makes the page follow that task (exactly
@@ -90,9 +91,11 @@ function TaskDetails({ task, runs, rows, error }: { task: Json; runs: Json[]; ro
   </div>);
 }
 
-export function TaskListButton({ tasks, runs, current, currentText, currentMark, ngspiceOffered, loading, onChoose, onRefresh, onRefreshRuns }: { tasks: Json[]; runs: Json[];
+export function TaskListButton({ tasks, runs, current, currentText, currentMark, ngspiceOffered, loading, onChoose, onRefresh, onRefreshRuns,
+  onDelete, deleting, deleteDisabled, deleteTitle, deleteNotice }: { tasks: Json[]; runs: Json[];
   current: string | null; currentText: string; currentMark?: string; ngspiceOffered: boolean; loading: string | null; onChoose: (taskKey: string) => void;
-  onRefresh: () => Promise<Json[]>; onRefreshRuns?: () => Promise<Json[]> }) {
+  onRefresh: () => Promise<Json[]>; onRefreshRuns?: () => Promise<Json[]>;
+  onDelete?: (owner: Window) => void; deleting?: boolean; deleteDisabled?: boolean; deleteTitle?: string; deleteNotice?: ReactNode }) {
   // While `popup` is set, the task window is open (one pop-up window for the whole page: `popupWindow.ts`).
   const { popup, root, blocked, open: openPopup } = usePopupWindow('gator-tasks',
     { title: 'GATOR - tasks', features: 'popup,width=1500,height=760', rootId: 'tasks-root' });
@@ -127,7 +130,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   // A double click on a task's row makes the page follow that task (as a double click chooses a run in the run window). Not
   // when it lands on the row's "Details" button. The word the double click selected is let go.
   const chooseRow = (e: MouseEvent<HTMLTableRowElement>, key: string) => {
-    if ((e.target as HTMLElement).closest('button, input, select, label')) return;
+    if (deleting || (e.target as HTMLElement).closest('button, input, select, label')) return;
     (popup ?? window).getSelection()?.removeAllRanges();
     onChoose(key);
   };
@@ -153,6 +156,12 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
       </div>
       {tasksError && !reading && <p className="error task-list-error">The task list could not be read: {tasksError}</p>}
       {folders.error && <p className="error" role="alert">{folders.error} Press Refresh list to retry.</p>}
+      {current && onDelete && <div className="row task-window-actions">
+        <span className="hint">Current task: <code>{taskName(current)}</code></span>
+        <button disabled={deleteDisabled} onClick={() => onDelete(popup)} title={deleteTitle}>
+          <Icon name="delete-task" label={deleting ? 'Deleting...' : 'Delete task'} /></button>
+      </div>}
+      {deleteNotice}
       <p className="hint"><b>Double click</b> a task to make the workbench follow it: its Parameters, Probes and Specs come into the editors (edits you made are asked about first) and the bottom tabs show its newest run. The task the page follows is marked. <b>Details</b> shows the rest, the task's rows included. This window stays open until you close it.</p>
       <details className="more"><summary>What the columns mean</summary>
         <ul className="steps-list">{COLUMNS.map(c => <li key={c.key}><b>{c.title}</b>: {c.help}</li>)}
@@ -207,11 +216,12 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   );
 
   return (<>
-    {/* The task the page follows is said as plain text to the LEFT of the button; the button itself only reads "Tasks...". */}
-    <span className="task-list-current" title={taskName(current ?? currentText)}>{current ? <code className="task-list-key" data-task-key={current}>{taskName(current)}</code> : <span className="task-list-key">{taskName(currentText)}</span>}
-      {currentMark && <span className="task-list-mark hint"> {currentMark}</span>}</span>
     <button className={`task-list-button${popup ? ' open' : ''}`} onClick={() => openPopup()}
-      title={popup ? 'The task window is open: press to bring it to the front and read the lists again.' : 'Opens the task window: every registered task with its cell, revision, baseline, sizes and results, and its newest run. Double click one there to make the workbench follow it.'}>Tasks...</button>
+      aria-label={current ? `Open Tasks: ${taskName(current)}` : 'Open Tasks'}
+      title={popup ? 'The task window is open: press to bring it to the front and read the lists again.' : 'Opens the task window: every registered task with its cell, revision, baseline, sizes and results, and its newest run. Double click one there to make the workbench follow it.'}>
+      <span className="task-list-current" title={taskName(current ?? currentText)}>{current ? <code className="task-list-key" data-task-key={current}>{taskName(current)}</code> : <span className="task-list-key">{taskName(currentText)}</span>}
+        {currentMark && <span className="task-list-mark hint"> {currentMark}</span>}</span>
+    </button>
     {blocked && <span className="error task-list-blocked">{BLOCKED}</span>}
     {view && createPortal(view, root!)}
   </>);

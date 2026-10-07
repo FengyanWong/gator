@@ -11,7 +11,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/testbench_probes_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { MOCK_PAGE_CONFIG, check, fail, finish, launchEdge, outDir, sleep, workbenchUrl } from './lib/harness.mjs';
+import { MOCK_PAGE_CONFIG, check, fail, finish, launchEdge, outDir, sleep, taskWindow, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -115,12 +115,14 @@ try {
   await page.seed({ config: MOCK_PAGE_CONFIG, when: 'once' });           // on the MOCK stand-in (record 7.128)
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
-  for (let i = 0; i < 100 && !(await evaluate(`!!(${COLUMN_BUTTON('Reload saved values')})`)); i++) await sleep(100);
+  for (let i = 0; i < 100 && !(await evaluate(`!!${PANEL}.querySelector('button.task-list-button')`)); i++) await sleep(100);
   for (let i = 0; i < 60 && !(await evaluate(`/\\S/.test(document.querySelector('header button.connection-button .connection-button-what')?.textContent.replace(/none (selected|set up yet)/, '') ?? '')`)); i++) await sleep(100);
   await sleep(800);
 
   // ---- a registered task's rows first: the MOCK starter (its Probe m_score, its target score) -------------------------
-  await press('Reload saved values', COLUMN_BUTTON); await sleep(800);
+  const tasks = taskWindow(page, browser);
+  await tasks.choose('synthetic:gpdk045_ota5');
+  await tasks.close(); await sleep(800);
   check('the MOCK starter is in the editors', (await counts()).Specs === 1 && (await counts()).Probes === 1, JSON.stringify(await counts()));
 
   // ---- tb_<cell> is found by its name (in the window) ---------------------------------------------------------------------

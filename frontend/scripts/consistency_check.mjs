@@ -8,7 +8,7 @@
 // Run (Windows node sees a WSL variable only when WSLENV names it):
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/consistency_check.mjs)"
 import path from 'node:path';
-import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, taskWindow, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -94,7 +94,9 @@ await runChecks(browser, async () => {
   check('the reason is folded until asked for', !(await evaluate(`[...${STEPS}.querySelectorAll('details p')].find(p => p.textContent.includes('FIXTURE MN1')).checkVisibility()`)));
   await page.shot(path.join(out, 'consistency-1-check-now.png'));
   // the rows change (the saved rows come back): the result was about the rows before, so it goes
-  await evaluate(`${BUTTON('Reload saved values')}.click()`);
+  const tasks = taskWindow(page, browser);
+  await tasks.choose(TASK);
+  await tasks.close();
   for (let i = 0; i < 30 && (await evaluate(`!!(${STEPS})`)); i++) await sleep(100);
   check('once a row changes, the old result goes', !(await evaluate(`!!(${STEPS})`)));
   // Start: the budget question first, then the backend refuses with code consistency - the banner lists the steps

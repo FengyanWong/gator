@@ -156,9 +156,13 @@ await runChecks(browser, async () => {
   check('the editors hold the task\'s starter rows (Parameters, Probes) and Specs is empty', config?.parameters?.[0]?.variable_id === 'm1_w'
     && config?.measurements?.[0]?.measurement_id === 'm_vout_v' && (config?.targets ?? []).length === 0, JSON.stringify(config?.parameters ?? null).slice(0, 120));
   const column = await text();
-  check('the column shows the ngspice task block: backend line, the connection sentence, revision, results, Delete task',
+  check('the column shows the ngspice task block without a Delete task button',
     column.includes('ngspice evaluation backend') && column.includes('Choose an ngspice connection') && column.includes('revision 1') && column.includes('vout_v')
-    && await evaluate(`[...${PANEL}.querySelectorAll('button')].some(b => b.textContent.trim() === 'Delete task')`), column.slice(0, 300));
+    && !(await evaluate(`[...${PANEL}.querySelectorAll('button')].some(b => b.textContent.trim() === 'Delete task')`)), column.slice(0, 300));
+  await tw.open();
+  check('the Tasks window offers deletion beside the current ngspice task name', await tw.window.evaluate(`document.querySelector('.task-window-actions code')?.textContent === 'ngspice:fixture_ota'
+    && document.querySelector('.task-window-actions button')?.textContent.trim() === 'Delete task'`));
+  await tw.close();
   check('the launcher text names the task the page follows', (await evaluate(`${LAUNCHER}.querySelector('.hint')?.textContent`)).includes('ngspice task: fixture_ota'));
   const aligned = await evaluate(`(() => { const a = ${PANEL}.querySelector('button.virtuoso-button').getBoundingClientRect(), b = ${LAUNCHER}.querySelector('button.ngspice-button').getBoundingClientRect();
     return { sameColumn: Math.abs(a.left - b.left) < 1 && Math.abs(a.right - b.right) < 1, below: b.top > a.bottom }; })()`);

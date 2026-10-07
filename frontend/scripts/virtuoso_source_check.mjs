@@ -362,25 +362,27 @@ try {
   await wChoose('Cell', 'ota5_v1'); await quiet();
   await choose('Task', 'real:ota5_v1'); await quiet();
   check('the saved task is opened in the Task list', (await value('Task')) === 'real:ota5_v1', await value('Task'));
-  // Since 2026-09-24 (status record 7.78) Delete task stands in the task row at the top of the column, at the right end,
-  // next to "Reload saved values" (was: Load starter configuration); what it does is its tooltip.
-  const taskRow = await evaluate(`(() => { const d = ${BUTTON('Delete task')}, l = ${BUTTON('Reload saved values')}; if (!d || !l) return 'missing';
-    return d.closest('.row.task-buttons') === l.closest('.row.task-buttons') && d.getBoundingClientRect().left > l.getBoundingClientRect().right
-      && Math.abs(d.getBoundingClientRect().top - l.getBoundingClientRect().top) < 4 ? 'ok' : 'elsewhere'; })()`);
-  check('"Delete task" stands at the right of "Reload saved values", in the task row', taskRow === 'ok', taskRow);
-  check('the task row is the only place: the block does not say "To start over from the cell" any more', !(await text()).includes('To start over from the cell'));
+  // Delete is in the Tasks window, beside the current task's name. Its confirmation belongs to that window too.
+  await tw.window.send('Page.enable');
+  onDialog(tw.window);
+  const DELETE = `document.querySelector('.task-window-actions button')`;
+  const deleteTask = () => tw.window.evaluate(`${DELETE}.click()`, true);
+  const taskWindowText = () => tw.window.evaluate(`document.querySelector('.task-window').textContent`);
+  check('the task module has neither Delete task nor Reload saved values', !(await evaluate(`!!${BUTTON('Delete task')} || !!${BUTTON('Reload saved values')}`)));
+  check('Delete task is in the Tasks window beside its target name', await tw.window.evaluate(`!!${DELETE} && ${DELETE}.textContent.trim() === 'Delete task'
+    && document.querySelector('.task-window-actions code').textContent === 'ota5_v1'`));
   mark = calls.length; answers.push(false);
-  await evaluate(`${BUTTON('Delete task')}.click()`); await quiet(800);
+  await deleteTask(); await quiet(800);
   const askedDelete = dialogs[dialogs.length - 1]?.message ?? '';
   check('the press asks once more and says what goes', askedDelete.includes('Delete the task real:ota5_v1?') && askedDelete.includes('can no longer be resumed') && askedDelete.includes('copy of the task')
     && askedDelete.includes('recorded baseline goes with it'), askedDelete.slice(0, 120));
   check('"Cancel" deletes nothing', ops(mark).length === 0 && (await value('Task')) === 'real:ota5_v1', ops(mark).join(' | '));
   answers.push(true);
-  await evaluate(`${BUTTON('Delete task')}.click()`); await quiet();
-  check('a refusal is shown in its own words and the task stays', JSON.stringify(ops(mark)) === JSON.stringify(['profile/delete ota5_v1']) && (await text()).includes('is working right now')
+  await deleteTask(); await quiet();
+  check('a refusal is shown in the Tasks window and the task stays', JSON.stringify(ops(mark)) === JSON.stringify(['profile/delete ota5_v1']) && (await taskWindowText()).includes('is working right now')
     && (await value('Task')) === 'real:ota5_v1', ops(mark).join(' | '));
   deleteRefused = false; mark = calls.length; answers.push(true);
-  await evaluate(`${BUTTON('Delete task')}.click()`); await quiet();
+  await deleteTask(); await quiet();
   shown = await text();
   check('deleting is one request', JSON.stringify(ops(mark).filter(o => o.startsWith('profile'))) === JSON.stringify(['profile/delete ota5_v1']), ops(mark).join(' | '));
   check('the page goes back to the cell the task was saved from: the column names it, the window shows it', (await stored()).circuit.source === 'virtuoso'

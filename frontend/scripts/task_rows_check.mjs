@@ -199,15 +199,15 @@ await runChecks(browser, async () => {
   check(LIVE ? 'LIVE: the OTA7 has its own numbers (53.3 dB)' : 'the OTA7 has its own numbers', (await column('lower')).includes('53.3 dB'), JSON.stringify(await column('lower')));
   check('a typed RL model label stays while the task label follows independently', (await labelValue()) === 'my-amplifier'
     && (await config()).run.model_label === 'my-amplifier' && (await config()).project.task_name === 'gpdk045_ota7');
-  check('Reload saved values is available for resetting the current task', await evaluate(`!!${BUTTON(PANEL, 'Reload saved values')}`));
+  check('the task module has no separate load or reload button', !(await evaluate(`!!${BUTTON(PANEL, 'Reload saved values')}`)));
   await setInput(`${EDITORS}.querySelector('table.editor tbody tr input.numeric')`, '54');
   answers.push(false);
-  await evaluate(`${BUTTON(PANEL, 'Reload saved values')}.click()`);
+  await choose('Task', 'real:gpdk045_ota7');
   await until(`!${PANEL}.querySelector('[role="status"]')`);
-  check('Cancel reload preserves edits', (await column('lower')).some(v => v === '54' || v === '54 dB'), JSON.stringify(await column('lower')));   // typed, or written
+  check('Cancel reselecting the current task preserves edits', (await column('lower')).some(v => v === '54' || v === '54 dB'), JSON.stringify(await column('lower')));   // typed, or written
   answers.push(true);
-  await evaluate(`${BUTTON(PANEL, 'Reload saved values')}.click()`);
-  check('the button puts the task\'s own numbers back and keeps the typed name as well', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`)
+  await choose('Task', 'real:gpdk045_ota7');
+  check('reselecting the task puts its own numbers back and keeps the typed name as well', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`)
     && (await column('lower')).includes('53.3 dB') && !(await column('lower')).includes('54 dB') && (await labelValue()) === 'my-amplifier', JSON.stringify(await column('lower')));
 
   if (!LIVE) {
@@ -263,8 +263,8 @@ await runChecks(browser, async () => {
       JSON.stringify(dialogs.slice(asked)));
     await evaluate(`${BUTTON(EDITORS, 'Undo')}.click()`);
     await until(`${TASK_KEY} === 'real:old_saved'`);
-    await evaluate(`${BUTTON(PANEL, 'Reload saved values')}.click()`);
-    check('Reload saved values on it asks nothing either', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`) && dialogs.length === asked,
+    await choose('Task', 'real:old_saved');
+    check('reselecting the task asks nothing either', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`) && dialogs.length === asked,
       JSON.stringify(dialogs.slice(asked)));
   }
 

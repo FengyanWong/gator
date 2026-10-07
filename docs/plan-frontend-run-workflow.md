@@ -1,12 +1,13 @@
 # Frontend task model and run workflow
 
-Status: plan, revised twice on 2026-10-07. Nothing is built yet.
+Status: plan, revised twice on 2026-10-07, then extended. Nothing is built yet.
 
 | Record | Version |
 |---|---|
 | 7.252 (Codex) | First draft, kept as [plan-frontend-run-workflow-v1.md](plan-frontend-run-workflow-v1.md). |
 | 7.254 | Revised around one Manager window. |
-| 7.257 | This version. The user: "forget about the manager. renew the load model window so it shows content similar to tasks window and runs window. Add category functionality to model load window and runs window. For model and runs, you should be able to see relationships and model history. Mode selection should be merged in to load model. Scratch mode will ask you to create a new model from the default templates. fine-tune and evaluate load existing ones", then "add these to update the plan". |
+| 7.257 | Revised without the Manager. The user: "forget about the manager. renew the load model window so it shows content similar to tasks window and runs window. Add category functionality to model load window and runs window. For model and runs, you should be able to see relationships and model history. Mode selection should be merged in to load model. Scratch mode will ask you to create a new model from the default templates. fine-tune and evaluate load existing ones", then "add these to update the plan". |
+| 7.258 | This version: adds **Load run**. The user: "add to the plan that loading one run will load the corresponding model and task", then "on frontend". |
 
 ## The idea
 
@@ -19,6 +20,7 @@ a model is loaded.
 - **Runs and models get categories** (folders), as tasks have.
 - **Both show their relationships and a model's history:** which run trained a model, which model and save point a run
   started from, and what came of it later.
+- **Loading a run loads its task and its model** into the page, and shows its results.
 
 The page's configuration stays what it is today: the draft of the next run. Four things never change each other by
 accident:
@@ -35,8 +37,8 @@ Only Start, Baseline simulation, Resume and Continue start work, each after the 
 | Thing | What it is | Owner in the code | Changed only by | Never changed by |
 |---|---|---|---|---|
 | Browsing | each window's selection, filter, sort, folder and open details | the window's own state | clicks in that window | anything outside it; it changes nothing outside it |
-| Next run (the draft) | the editors and Run configuration, with the Mode and the model chosen in the RL model window | `useConfig` (store.ts): persisted, Undo / Redo | edits; **Load task**; **Use template**; **Use this save point**; **New run like this**; Apply calibration | browsing, showing results, launches, status polling |
-| Shown run | the run the bottom tabs show | `runDir` (App.tsx) | **Show results**; choosing a task (its newest run, record 7.212); a launch from this page | browsing, draft edits |
+| Next run (the draft) | the editors and Run configuration, with the Mode and the model chosen in the RL model window | `useConfig` (store.ts): persisted, Undo / Redo | edits; **Load task**; **Load run**; **Use template**; **Use this save point**; **New run like this**; Apply calibration | browsing, showing results, launches, status polling |
+| Shown run | the run the bottom tabs show | `runDir` (App.tsx) | **Load run**; **Show results**; choosing a task (its newest run, record 7.212); a launch from this page | browsing, draft edits |
 | Running job | the run the header's buttons act on | `useRunControl` (RunControl.tsx) | a launch from this page; adopting a run started elsewhere (always said); **Let go** | browsing, showing results, draft edits |
 
 ## What the three windows share
@@ -51,7 +53,7 @@ The Tasks window already works this way (records 7.227, 7.250, 7.251), and the o
   the window.
 - **A double click does the window's one action:**
   - Tasks: follow the task (its rows come into the editors, edits are asked about first, as today);
-  - Runs: show its results;
+  - Runs: load the run: its task, its model and its results (see **Load run**);
   - RL model: use that template or save point for the next run.
 - **Links between windows.** A task, run or model named in another window's Details is a link: it opens that window at
   the item (selected, scrolled to, Details open). Each window can be opened "at" an item. Following a link changes no
@@ -75,8 +77,50 @@ Unchanged, except that its **Newest run** and **Runs** cells become links into t
   - **Saved model:** the model this run saved, with its save points; a link.
   - **Runs that started from this run's model:** a list of links.
   - **History:** the chain of models behind this run, oldest first, folded.
-- **Actions in Details:** **Show results** (also a double click), **Continue…** (when the continuation check allows it),
-  **New run like this**.
+- **Actions in Details:** **Load run** (also a double click), **Show results** (the bottom tabs only), **Continue…** (when
+  the continuation check allows it), **New run like this**.
+
+### Load run
+
+The user: "loading one run will load the corresponding model and task", on the page. One press, or a double click on
+the run, sets three things together:
+
+- **Its task** comes into the editors through the Tasks window's task load (`chooseTask`): the saved rows as they are
+  now, never the run's archived copy (see 7.254 below), with edits asked about first, as today.
+  - When it is already the page's task, the editors stay as they are, edits included.
+  - When the task has been saved again since the run, the message says so, and the model check says whether the model
+    still fits.
+- **Its model** becomes the next run's model, pinned as **Use this save point** pins it, with its network and component
+  list. It is the model the run ended with:
+  - a run that trained (New model or Fine-tune): its newest save point;
+  - an Evaluate-only run: the save point it evaluated, since its weights never changed. When that run is no longer
+    listed, its own save point, which holds the same weights;
+  - a run with no save point (a baseline simulation, a run stopped before its first save): the save point it started
+    from. With none, the model stays as it was, and the message says so.
+
+  The Mode stays when it is Fine-tune or Evaluate only. New model, or no mode chosen, becomes Fine-tune: only those two
+  use a saved model.
+- **Its results** show in the bottom tabs. The task-run link (record 7.212) gives way here, since it would show the
+  task's newest run instead.
+
+The rules:
+
+- **One Undo step** takes back the task, its rows and the model together. The bottom tabs then follow the task, as for
+  any task choice taken back (record 7.212).
+- **All or nothing.** Cancel on the edits question, or a failed read of the task, changes nothing: not the editors, not
+  the model, not the bottom tabs. The message says why.
+- **Not offered** when the run names no task registered now (a deleted task, or a Virtuoso cell never saved as a task).
+  The reason stands beside it. **Show results** still works, and the run's model can still be used from the RL model
+  window.
+- **The header's run is never touched.** The message names what came in: "Loaded run ota7t 10-06 14:02: task ota7t,
+  Fine-tune from ota7t (2) @ 420. Undo takes it back."
+- **A model alone never changes the task.** Using a model in the RL model window changes only the model, so a model can
+  be fine-tuned on another task (the model check says whether it fits). Loading a run brings both.
+- **Load run carries a run on; New run like this repeats it.** Load run takes the run's result (its model); New run like
+  this takes its starting point and settings.
+- **In the code:** `chooseTask` (Left.tsx today) becomes one task load that the Tasks and Runs windows both call. It
+  takes the model change into its one draft change and reports whether it loaded. The shown run is set only once it
+  has, and the 7.212 effect is told that this task change came with its run.
 
 ## RL model window: the load-model window, renewed
 
@@ -279,7 +323,10 @@ Each step is shippable on its own and checked before the next.
    - Pinned save points and the suggestion instead of the silent default.
    - The model line in Run configuration. The Mode select and the look-only list go.
    - Checks: `model_chooser`, `network_panel`, `mode_suggestion`, `model_structure`, `graph_view`, rewritten for the window.
-5. **Run actions and old drafts.** New run like this, the old-draft migration, and the suggestion's link.
+5. **Run actions and old drafts.**
+   - Load run, New run like this, the old-draft migration, and the suggestion's link.
+   - Checks: `run_list` and `task_run`, with a fixture run of each kind: trained, Evaluate only, a baseline simulation,
+     and one whose task is gone.
 6. **Branch full state**, separately, under its own backend criteria.
 
 ## Acceptance
@@ -288,7 +335,7 @@ Browser checks with fixtures, and backend tests:
 
 1. **Browsing changes nothing.** Clicking, filtering, sorting, changing folder, opening Details and following links in
    all three windows leaves the draft, the shown run and the running job exactly as they were.
-2. **Each double click and each action changes exactly its target,** and each draft change is one Undo step.
+2. **Each double click and each action changes exactly its targets,** and each draft change is one Undo step.
 3. **Categories in the Runs and RL model windows** behave as the task folders do: create, rename, delete, Move to,
    counts. They survive a reload and are shared by browser tabs.
 4. **Relationships.** A fine-tune's parent, a model's children, an offline model's sources, a missing parent and a shared
@@ -298,23 +345,39 @@ Browser checks with fixtures, and backend tests:
    - Fine-tune and Evaluate only pin the save point chosen; the source run training on does not change the draft; the
      network and component list arrive in the same step;
    - the Mode select is gone from Run configuration.
-6. **Nothing else launches.** Only Start, Baseline simulation, Resume and Continue start work. A double press, or a
+6. **Load run:**
+   - the editors hold the run's task, with edits asked about first, or keep their rows when it is already the page's
+     task;
+   - the model is the one the run ended with, pinned, with its network, and the Mode is Fine-tune unless Evaluate only
+     was chosen;
+   - the bottom tabs show this run, not the task's newest, and the header's run is untouched;
+   - one Undo takes back the task and the model; Cancel or a failed task read changes nothing;
+   - a run whose task is gone offers Show results only; a run with no model leaves the model as it was and says so.
+7. **Nothing else launches.** Only Start, Baseline simulation, Resume and Continue start work. A double press, or a
    reload during a launch, makes one run.
-7. **Continue:**
+8. **Continue:**
    - the form refuses a comma typo, a fraction, a total below the evaluations used, and an exhausted budget left
      unchanged;
    - each refusal code shows its reason before the press: task changed, reward contract changed, no save point, saved by
      older code, incompatible save point, removed search method, already running, mock / real mismatch, another run live
      in the header;
    - the offered alternatives are buttons, never automatic.
-8. **Old resume drafts** never start anything by themselves, and offer the run.
-9. **Adoption:** a task-creation baseline while a run is paused in the header names that run in its message.
-10. **Unchanged:** Calibration and its Apply, task folders, the task-run link (record 7.212), Save task, the header's
-    single main button and the red Abort.
+9. **Old resume drafts** never start anything by themselves, and offer the run.
+10. **Adoption:** a task-creation baseline while a run is paused in the header names that run in its message.
+11. **Unchanged:** Calibration and its Apply, task folders, the task-run link (record 7.212) apart from Load run, Save
+    task, the header's single main button and the red Abort.
 
 ## What changed, and why
 
-**Record 7.257 (this version), on the user's words:**
+**Record 7.258, on the user's words** ("add to the plan that loading one run will load the corresponding model and
+task", "on frontend"):
+
+- **Load run** is the Runs window's action and its double click. The run's task, model and results come onto the page
+  together, as one Undo step, all or nothing. **Show results** stays, for a look at the results alone.
+- Today, choosing a run changes only the bottom tabs. They can then show one task's run while the editors hold another
+  task and the model chooser another model.
+
+**Record 7.257, on the user's words:**
 
 - **No Manager.** The Tasks, Runs and RL model windows stay separate and link to each other.
 - **The RL model window** (today's RL networks window) becomes a table with Details, like the other two, and holds the

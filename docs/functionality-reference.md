@@ -338,6 +338,7 @@ Old configurations that name a removed function still load with their hashes unc
 | Faster netlist export (options A-D) | 7.138, 7.140, 7.142 | A and B built (rows in section 3): A is on by default, B is not used by Maestro-recipe tasks. C (one SKILL call per candidate) and D (a second Virtuoso session) are not built |
 | Cheaper cell reads; a Spectre that stays alive | 7.145 | Measured or assessed, not built: reads without positions would save 7-10%; the one Virtuoso session (preparation and OCEAN measurements) is the limit; a staying-alive Spectre would gain little now |
 | SKY130 benchmark | Section 4 | Parked by the user (2026-09-30) |
+| Report of the Graph Transformer experiments, with charts | `docs/report-gt-experiments-2026-10-07.md`; 7.272 | Written 2026-10-07 from the recorded runs; the charts on a private page. |
 | The general model over several starts and seeds, against scratch | `docs/plan-general-seeds-starts.md`; 7.266 | Plan only, compact form: starts C + D, seeds 2-4, scratch recipe both arms, 400 launches, 60 runs + 6 baselines (24,390 launches, about 11 h) in approvable blocks; criteria P1-P4. Nothing started. |
 
 ## 10. Where things are recorded

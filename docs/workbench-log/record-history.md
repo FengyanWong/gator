@@ -335,3 +335,5 @@ One row per commit, newest last.
 | `ea5cd17` | 10-07 07:05 | 7.252, 7.254 | plans: the frontend task-model and run-workflow plan and its revision around one Manager window; docs only (the user's Codex session) |
 | `de810e3` | 10-07 07:05 | 7.253 | the Agent window: the "Agent..." tab opens Claude Code or Codex in a window of its own, no tab view (session "Agent tab minimal redesign") |
 | `c0a50ed` | 10-07 07:05 | 7.255 | four browser checks follow the interface changes of 7.245, 7.248 and 7.249; test code only (session "Virtuoso read whole flow") |
+| `b534719` | 10-07 07:05 | - | record only: names the commits of records 7.252-7.255, and the table rows for 8b2d29e, ea5cd17, de810e3 and c0a50ed |
+| `900fcec` | 10-07 07:13 | 7.256 | plan: the other encoders on the six circuits, the comparison plan revised around the A/B/C runbook; docs only (session "Encoder run plan revision") |

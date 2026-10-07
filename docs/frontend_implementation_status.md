@@ -22,20 +22,22 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.61-7.80.md`](workbench-log/7.61-7.80.md) | entries 7.61-7.80 |
 | [`7.81-7.100.md`](workbench-log/7.81-7.100.md) | entries 7.81-7.100 |
 | [`7.101-7.118.md`](workbench-log/7.101-7.118.md) | entries 7.101-7.118 |
-| [`7.119-and-later.md`](workbench-log/7.119-and-later.md) | entries 7.119 onwards: the OPEN file |
+| [`7.119-7.265.md`](workbench-log/7.119-7.265.md) | entries 7.119-7.265 (7.262, written later, is in the next file) |
+| [`7.266-and-later.md`](workbench-log/7.266-and-later.md) | entries 7.266 onwards: the OPEN file |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
-`7.61-and-later.md`, `7.81-and-later.md` and `7.101-and-later.md` are pointers kept for old links.
+`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md` and `7.119-and-later.md` are pointers kept for old links.
 
 **Adding an entry:** append `### 7.N <title> (<date>, <session>, <request>)` at the end of the open file, with the next
 free number (look at the table below AND at that file: sessions work in parallel), and add a one-line row at the end of
 the table below: `| 7.N | <short title, at most about 110 characters> |`. A commit gets its row at the end of the commit
 table in `record-history.md`.
 
-**Rolling the open file over:** when the open file passes entry 7.140 or 60 kB, whichever comes first, move its entries
-unchanged into `docs/workbench-log/7.119-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
-the old name as a pointer (like the two above), change the file table above, and then update `CLAUDE.md`, which names
-the open file. One Read returns about 68 kB of text: a larger open file hides its newest entries from a default read
+**Rolling the open file over:** when the open file passes entry 7.285 or 60 kB, whichever comes first, move its entries
+unchanged into `docs/workbench-log/7.266-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
+the old name as a pointer (like the four above), change the file table above, and then update `CLAUDE.md` and
+`functionality-reference.md`, which name the open file. (`7.119-and-later.md` was rolled over at entry 7.265 and 669 kB,
+2026-10-07, record 7.268 - eleven times the mark; do it in time.) One Read returns about 68 kB of text: a larger open file hides its newest entries from a default read
 (7.64).
 
 ## Entries
@@ -309,3 +311,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.263 | [Frontend workflow plan](plan-frontend-run-workflow.md), build step 2 (user: "build as the plan"): folders for runs and saved models, stored like the task folders - one store per kind (`run_folders.json`, `model_folders.json`, keyed by run folder), `/api/run-folders` and `/api/model-folders`; one `Folders` component (TaskFolders went) used by the Tasks and Runs windows; the Runs window gets All runs, Unfiled, tick boxes and Move to |
 | 7.264 | [Frontend workflow plan](plan-frontend-run-workflow.md), build step 3 (user: "build as the plan"): relationships - the Runs window's Started from and Saved model columns, Relationships and a folded history in Details (`lineage.ts`, from each manifest's `parent`, `run_kind`, `encoder`, `pretraining.sources`); links that open the Runs or Tasks window at an item (`openAt.ts`), the Tasks window's run cells among them; the run brief from the header's run chip (`RunBrief.tsx`) |
 | 7.265 | [Frontend workflow plan](plan-frontend-run-workflow.md), build step 4 (user: "build as the plan"): the RL model window - the Mode inside it (New model, Fine-tune, Evaluate only), a templates table for New model, a saved-models table with folders, Details, pinned save points and relationships for Fine-tune and Evaluate only, the suggestion instead of the silent default model, the model line beside the button; the Mode select and the look-only list went |
+| 7.268 | Astra's review of 2026-10-07 checked and fixed: the launch-request answer on disk BEFORE the worker starts, a failed lookup keeps the launch id, a failed status read keeps "checking", a half-written record counts as pending, checkpoint pruning by save time, the CLI test's PATH, the skill's five encoders, the record file rolled over (`7.119-7.265.md`, open file `7.266-and-later.md`); `launch_recovery_check` |

@@ -15,7 +15,7 @@ its top). There is no `AGENTS.md`.
    root, otherwise the plan or brief of the area in `docs/`. Do not redo finished modules from memory. Where a function
    lives (button, code, route, entries, tests, checks): `docs/functionality-reference.md`; when you add, change or
    remove a function, change its row there as well. A new entry
-   goes at the end of the open log file `docs/workbench-log/7.119-and-later.md`, plus its one-line row in the index;
+   goes at the end of the open log file `docs/workbench-log/7.266-and-later.md`, plus its one-line row in the index;
    a new commit row goes at the end of the commit table in `docs/workbench-log/record-history.md`.
 2. Preserve uncommitted user work. Never commit, push or reset without being asked. Several sessions
    share this working tree and its git index: stage explicit paths only, never `git add -A`. A bare `git commit`

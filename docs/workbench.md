@@ -118,7 +118,10 @@ main button changes with the run:
   While a run is active or paused in the header, "Calibration" is not available. A finished
   Baseline simulation of a task saved from a cell records its result as the task's reference by itself
   (status record 7.78): once the run has come to rest the Project column reads the task again and no longer
-  says "No real baseline yet" (one line since record 7.188, its explanation in the line's tooltip).
+  says "No real baseline yet" (one line since record 7.188, its explanation in the line's tooltip). Until the run the
+  header remembers has answered its first status read, the main button is not offered ("Looking up the run..."); a read
+  that gets no answer at all (the backend restarting, a failed read on the mounted drive) is asked again every 3 s for a
+  minute instead of being taken for a run at rest, which used to show Start on a live run (review of 2026-10-07).
 * A real run asks for the budget again at Resume (what is left of it). A run that was started with checkpoints or
   replay snapshots switched off cannot come back from a pause; Pause says so before it pauses.
 * The run commands are in the header only (status record 7.109, 2026-09-29, user decision): the Run status tab's
@@ -148,7 +151,12 @@ main button changes with the run:
   - **A launch is never sent twice.** Each carries a request id that the tab keeps until the answer has arrived. The
     backend answers the same id again with the run the first one made (`/api/runs/start` and `/api/runs/continue` take
     `request_id`). After a reload during a slow start the page asks what became of it (`GET /api/runs/request`)
-    instead of sending it again, and says "sent before the page was reloaded".
+    instead of sending it again, and says "sent before the page was reloaded". The backend writes that answer as soon
+    as the run exists and before it starts the worker, so a launch whose acknowledgement was lost on the way (a failure
+    inside the backend, a restart) is still found: after such an answer the page keeps the id and asks at once. When the
+    question itself gets no answer (the backend restarting) the id stays kept and the page asks again - for five
+    minutes, then again at the next press or reload - and until that is known a press sends nothing new (review of
+    2026-10-07; a failed question used to count as "unknown", and the run was forgotten).
   - **A refusal stays** on a line of its own - under the header for Start, Calibration and Resume, under Continue...
     in Run status - until what it depends on changes (the configuration, or the run), or its close button is pressed.
     It used to be the passing line under the header that any click took away. Nothing falls back to another kind of run.

@@ -51,7 +51,7 @@ const remember = (dir: string | null) => { try { dir ? localStorage.setItem(RUN_
 export function useRunControl(viewedStatus: Json, looked: boolean) {
   const [dir, setDir] = useState<string | null>(remembered);
   const [status, setStatus] = useState<Json>(null);
-  const [checked, setChecked] = useState(false);              // the held run has answered (or failed to) at least once
+  const [checked, setChecked] = useState(false);              // the held run has answered at least once (see `refresh`)
   const [pending, setPending] = useState<Pending>(null);
   const [launched, setLaunched] = useState<Launch>(null);
   const [forced, setForced] = useState(false);
@@ -62,11 +62,13 @@ export function useRunControl(viewedStatus: Json, looked: boolean) {
   // run_manifest.json by a rename when a segment starts and ends - just when this poll reads by itself - and on the
   // 9p-mounted D: drive one read at that moment can fail; letting go then took Pause and Abort off a live run.
   const gone = useRef(0);
+  // Reads of the held run that got no answer at all, in a row (the backend restarting, a read on that drive failing).
+  const unanswered = useRef(0);
 
   /** Hold another run, or none. Whatever was known belongs to the run held before (or to the time before a launch),
    *  so it is dropped, and an answer that is still on its way for it is ignored when it arrives. */
   const hold = useCallback((next: string | null, launchedAs: Launch) => {
-    gone.current = 0;
+    gone.current = unanswered.current = 0;
     current.current = { dir: next, epoch: current.current.epoch + 1 };
     remember(next);
     setDir(next); setStatus(null); setChecked(false); setPending(null); setLaunched(launchedAs); setForced(false);
@@ -81,14 +83,27 @@ export function useRunControl(viewedStatus: Json, looked: boolean) {
     const asked = current.current;
     if (!asked.dir) return Promise.resolve();
     if (reading.current?.key === asked) return reading.current.promise;
-    const promise = api.status(asked.dir).then(next => { if (current.current === asked) { gone.current = 0; accept(next); } }, e => {
-      // The remembered run is gone (deleted, or outside the allowed roots by now): let go instead of showing a dead Pause.
-      // After a first "not there" it is read once more 1.5 s later (a run at rest is not polled otherwise).
-      if (!(e instanceof ApiError && (e.status === 403 || e.status === 404) && current.current === asked)) return;
-      if (++gone.current >= 2) hold(null, null);
-      else setTimeout(() => { if (current.current === asked) refresh(); }, 1500);
-    }).then(() => { if (current.current === asked) setChecked(true); })
-      .finally(() => { if (reading.current?.key === asked) reading.current = null; });
+    const promise = api.status(asked.dir).then(next => {
+      if (current.current !== asked) return;
+      gone.current = unanswered.current = 0;
+      accept(next);
+      setChecked(true);
+    }, e => {
+      if (current.current !== asked) return;
+      if (e instanceof ApiError && (e.status === 403 || e.status === 404)) {
+        // The remembered run is gone (deleted, or outside the allowed roots by now): let go instead of showing a dead Pause.
+        // After a first "not there" it is read once more 1.5 s later (a run at rest is not polled otherwise).
+        if (++gone.current >= 2) hold(null, null);
+        else setTimeout(() => { if (current.current === asked) refresh(); }, 1500);
+        return;
+      }
+      // No answer (the backend is restarting, a read on the mounted drive failed): the run is not known to be at rest, so
+      // the header stays at "checking" - no Start on what may be a live run - and reads again in 3 s, for a minute; only
+      // then does the page go on as if the run were at rest. Any error used to count as "checked": a live run showed
+      // Start, and was never read again (review of 2026-10-07).
+      if (++unanswered.current < 20) setTimeout(() => { if (current.current === asked) refresh(); }, 3000);
+      else setChecked(true);
+    }).finally(() => { if (reading.current?.key === asked) reading.current = null; });
     reading.current = { key: asked, promise };
     return promise;
   }, [accept, hold]);

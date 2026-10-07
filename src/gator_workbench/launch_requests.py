@@ -2,10 +2,11 @@
 
 The page sends an id with each Start and Continue and keeps it until the answer has arrived. The same id again - a
 second press that overtook the first, or the page asking after a reload during a slow start - gets the answer the
-first request got: the same run, never a second one. A refused or failed request leaves no record, so the repeat the
-page sends with the answers to the backend's questions (real budget, a model from another task) is a request of its
-own. One small file per id in the workbench's own settings folder (local_settings_dir: tests and browser checks have
-their own), pruned after a week.
+first request got: the same run, never a second one. The answer is written as soon as the run exists and BEFORE its
+worker is started (`run_routes.once`), so a launch whose acknowledgement was lost on the way is still found. A refused
+request, or one that failed before anything was made, leaves no record, so the repeat the page sends with the answers
+to the backend's questions (real budget, a model from another task) is a request of its own. One small file per id in
+the workbench's own settings folder (local_settings_dir: tests and browser checks have their own), pruned after a week.
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ import time
 from pathlib import Path
 
 from .paths import local_settings_dir
-from .storage.atomic import read_json, write_json
+from .storage.atomic import write_json
 
 ID_PATTERN = r'^[A-Za-z0-9_-]{8,80}$'
 _ID = re.compile(ID_PATTERN)
@@ -55,6 +56,17 @@ def _prune(folder: Path):
             pass
 
 
+def _record(path: Path) -> dict | None:
+    """The record, or None: missing, or not readable as JSON yet - claim() creates the file first and writes it a moment
+    later, and another process reading it in between used to fail with a JSONDecodeError (review of 2026-10-07). An
+    unreadable record counts as one still on its way, by its age like any other."""
+    try:
+        record = json.loads(path.read_text(encoding='utf8'))
+    except (FileNotFoundError, ValueError, UnicodeError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
 def claim(request_id: str, kind: str) -> dict | None:
     """None: the request is new and is now on its way - answer() or drop() ends that. A dict: it was answered before,
     and this is the answer the first request got. RequestPending: it is still on its way."""
@@ -65,8 +77,8 @@ def claim(request_id: str, kind: str) -> dict | None:
         try:
             handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         except FileExistsError:
-            record = read_json(path, default=None)
-            if isinstance(record, dict) and record.get('state') == 'done':
+            record = _record(path)
+            if record is not None and record.get('state') == 'done':
                 return record.get('answer')
             try:
                 age = time.time() - path.stat().st_mtime
@@ -96,8 +108,8 @@ def lookup(request_id: str) -> dict:
     """{'state': 'done', 'answer': ...}, {'state': 'pending'} or {'state': 'unknown'} (never arrived, refused, failed,
     or older than a week). The page asks this after a reload during a launch, instead of sending it again."""
     path = _path(request_id)
-    record = read_json(path, default=None)
-    if isinstance(record, dict) and record.get('state') == 'done':
+    record = _record(path)
+    if record is not None and record.get('state') == 'done':
         return dict(state='done', answer=record.get('answer'))
     try:
         age = time.time() - path.stat().st_mtime

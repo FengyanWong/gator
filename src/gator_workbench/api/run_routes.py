@@ -23,7 +23,7 @@ class ModelBody(ModelStructureBody):
 
 
 
-def start_run(context, config, body, *, baseline_only=False):
+def start_run(context, config, body, *, baseline_only=False, record=None):
     allow_real = bool(body.authorize_real_simulation)
     designs, calibrating = getattr(body, 'calibration_designs', 0), None
     random_only = getattr(body, 'calibration_only', False)
@@ -59,18 +59,25 @@ def start_run(context, config, body, *, baseline_only=False):
                                      'Parameters ranges (each of them a costed evaluation; nothing is learned from them).')
         from ..storage.atomic import write_json
         write_json(layout.manifest, manifest)
-    pid = runs.launch_worker(layout, allow_real=allow_real and not manifest['mock'])
-    return dict(run_dir=str(layout.run_dir), run_id=manifest['run_id'], mock=manifest['mock'], worker_pid=pid,
+    made = dict(run_dir=str(layout.run_dir), run_id=manifest['run_id'], mock=manifest['mock'], worker_pid=None,
                 paths=layout.subpaths(), connection_gate=manifest.get('connection_gate'),
                 mock_notice=manifest['mock_notice'])
+    if record is not None:
+        record(made)                         # the request's answer is on disk BEFORE the worker exists (see `once`)
+    pid = runs.launch_worker(layout, allow_real=allow_real and not manifest['mock'])
+    return dict(made, worker_pid=pid)
 
 
 def once(request_id, kind, work):
-    """A launch answered once (record 7.261): `work` makes the run; the same request id again gets the answer the first
-    request got instead of a second run, and a request still on its way is refused (409 request_pending). A refusal
-    or a failure leaves no record: the page's repeat with the answers to the backend's questions is a request of its own."""
+    """A launch answered once (record 7.261): `work(record)` makes the run; the same request id again gets the answer the
+    first request got instead of a second run, and a request still on its way is refused (409 request_pending). `work`
+    calls `record(answer)` as soon as the run exists and BEFORE its worker is started, so the answer is on disk whatever
+    happens next: written only after the spawn, a write that failed left the request "pending", then "unknown" a quarter
+    of an hour later, and the same id made a second run (review of 2026-10-07). A refusal, or a failure before the worker
+    exists (the worker is started last, and nothing after it raises), leaves no record: the page's repeat with the answers
+    to the backend's questions is a request of its own."""
     if not request_id:
-        return work()
+        return work(lambda answer: None)
     try:
         done = launch_requests.claim(request_id, kind)
     except launch_requests.RequestPending as exc:
@@ -78,11 +85,11 @@ def once(request_id, kind, work):
     if done is not None:
         return dict(done, repeated=True)
     try:
-        result = work()
+        result = work(lambda answer: launch_requests.answer(request_id, answer))
     except BaseException:
         launch_requests.drop(request_id)
         raise
-    launch_requests.answer(request_id, result)
+    launch_requests.answer(request_id, result)          # the same answer, with the worker's pid now
     return result
 
 
@@ -223,19 +230,19 @@ def register(app: FastAPI, context: ApiContext):
             fail(409, f'Not started: this configuration asks for the search method "{schema.REMOVED_SEARCH_METHODS[removed]}", '
                       'which was removed on 2026-10-06 - SAC is the only search method now. The page is older than the '
                       'server: reload it, check Run configuration, and press Start again.', code='search_method_removed')
-        return once(body.request_id, 'start',
-                    lambda: start_run(context, context.parse_config(body.config), body, baseline_only=body.baseline_only))
+        return once(body.request_id, 'start', lambda record: start_run(
+            context, context.parse_config(body.config), body, baseline_only=body.baseline_only, record=record))
 
     @app.post('/api/runs/continue')
     def continue_run(body: ContinueBody):
         run_dir = context.run_path(body.run_dir)
 
-        def work():
+        def work(record):
             config = schema.WorkbenchConfig.model_validate(read_json(RunLayout(run_dir).effective_config))
             config.run.mode, config.run.model_source.run_dir = 'resume', str(run_dir)
             if body.max_evaluations:
                 config.run.max_evaluations = body.max_evaluations
-            return start_run(context, config, body)
+            return start_run(context, config, body, record=record)
         return once(body.request_id, 'continue', work)
 
     @app.get('/api/runs/request')

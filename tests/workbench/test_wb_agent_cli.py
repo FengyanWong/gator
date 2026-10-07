@@ -201,7 +201,7 @@ def test_a_launch_that_cannot_happen_says_why_and_what_to_type(tmp_path, home):
 def test_the_routes_list_the_clis_and_open_one_dry(tmp_path, home, monkeypatch):
     executable(tmp_path / 'bin' / 'claude')
     executable(tmp_path / 'bin' / 'wt.exe')
-    monkeypatch.setenv('PATH', f'{tmp_path / "bin"}:{os.environ["PATH"]}')
+    monkeypatch.setenv('PATH', f'{tmp_path / "bin"}:/usr/bin:/bin')      # not the machine's PATH: a codex installed for the user made codex=False fail
     monkeypatch.setenv('WSL_DISTRO_NAME', 'Ubuntu')
     client = TestClient(workbench_app(tmp_path))
     listed = client.get('/api/agent/clis').json()

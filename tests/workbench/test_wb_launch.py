@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from gator_workbench import launch_requests, runs
 from gator_workbench.engine import RunLock
+from gator_workbench.storage.atomic import PersistenceError
 from helpers import execute, make_config, workbench_app
 
 FINE_TUNE = 'Fine-tune from its newest save point (a new run)'
@@ -148,6 +149,58 @@ def test_a_request_whose_backend_went_away_is_new_again():
     assert launch_requests.claim('page-start-0005', 'start') is None
     with pytest.raises(ValueError):
         launch_requests.claim('../escape', 'start')
+
+
+def test_the_answer_is_on_disk_before_the_worker_starts_and_survives_a_lost_acknowledgement(tmp_path, monkeypatch):
+    """Review of 2026-10-07: the record used to be written after the worker was spawned. A write that failed then left
+    the request pending, "unknown" a quarter of an hour later, and the same id made a second run."""
+    seen = []
+
+    def launch(layout, allow_real=False):
+        seen.append(launch_requests.lookup('page-start-0006'))          # what the page would learn at this moment
+        held = runs.take_lock(layout.run_dir)
+        if held:
+            held.release()
+        return 4242
+    monkeypatch.setattr(runs, 'launch_worker', launch)
+    real_answer = launch_requests.answer
+
+    def losing_answer(request_id, result):
+        if result.get('worker_pid') is not None:                         # the acknowledgement after the spawn is lost
+            raise PersistenceError('the drive did not take the record')
+        real_answer(request_id, result)
+    monkeypatch.setattr(launch_requests, 'answer', losing_answer)
+    client = TestClient(workbench_app(tmp_path), raise_server_exceptions=False)
+    raw = make_config(tmp_path).model_dump(mode='json')
+    first = client.post('/api/runs/start', json=dict(config=raw, request_id='page-start-0006'))
+    assert first.status_code == 500 and len(seen) == 1
+    assert seen[0]['state'] == 'done' and seen[0]['answer']['worker_pid'] is None  # on disk before the worker existed
+    run_dir = seen[0]['answer']['run_dir']
+    known = client.get('/api/runs/request', params=dict(request_id='page-start-0006')).json()
+    assert known['state'] == 'done' and known['answer']['run_dir'] == run_dir      # the page finds the run it made
+    monkeypatch.setattr(launch_requests, 'answer', real_answer)
+    again = client.post('/api/runs/start', json=dict(config=raw, request_id='page-start-0006')).json()
+    assert again['run_dir'] == run_dir and again['repeated'] is True and len(seen) == 1     # no second run
+    assert len(list(tmp_path.rglob('run_manifest.json'))) == 1
+
+
+def test_a_spawn_that_fails_leaves_no_record(tmp_path, monkeypatch):
+    def launch(layout, allow_real=False):
+        raise OSError('no more processes')
+    monkeypatch.setattr(runs, 'launch_worker', launch)
+    client = TestClient(workbench_app(tmp_path), raise_server_exceptions=False)
+    raw = make_config(tmp_path).model_dump(mode='json')
+    assert client.post('/api/runs/start', json=dict(config=raw, request_id='page-start-0007')).status_code == 500
+    assert client.get('/api/runs/request', params=dict(request_id='page-start-0007')).json() == dict(state='unknown')
+
+
+def test_a_record_not_written_yet_counts_as_on_its_way():
+    path = launch_requests._path('page-start-0008')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch()                                                     # claim() has created it and not written it yet
+    assert launch_requests.lookup('page-start-0008') == dict(state='pending')
+    with pytest.raises(launch_requests.RequestPending):
+        launch_requests.claim('page-start-0008', 'start')
 
 
 def test_a_continue_sent_twice_continues_once(finished, tmp_path, no_worker):

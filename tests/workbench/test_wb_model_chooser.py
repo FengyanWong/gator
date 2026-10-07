@@ -118,6 +118,19 @@ def test_pruning_never_removes_the_selected_best_policy(tmp_path):
     assert sorted(p.name for p in store.root.glob('ckpt-*')) == [names[0], names[2], names[3]]
 
 
+def test_pruning_keeps_the_newest_saves_by_time_not_by_name(tmp_path):
+    """Review of 2026-10-07: a name is the evaluation count plus a random suffix. An offline pretraining saves every time
+    at count 0, and pruning by name kept random ones - the second newest went and the oldest stayed."""
+    store = ckpt.CheckpointStore(tmp_path, run_id='r', task_id='offline:general', task_definition_hash='h', keep_last=2)
+    saved = ['ckpt-00000000-ffffffff', 'ckpt-00000000-00000001', 'ckpt-00000000-7a7a7a7a']         # in this order
+    for n, name in enumerate(saved):
+        (store.root / name).mkdir()
+        (store.root / name / 'metadata.json').write_text(json.dumps(dict(
+            checkpoint_id=name, kind='periodic', created_utc=f'2026-10-07T00:00:0{n}+00:00')), encoding='utf8')
+    assert store._prune(saved[-1]) == [saved[0]]                                            # the oldest went
+    assert sorted(p.name for p in store.root.glob('ckpt-*')) == sorted(saved[1:])
+
+
 def test_an_incomplete_configuration_never_hides_the_saved_model(trained):
     """User report 2026-09-21: every chosen save point answered "CompileError: mp1_w: bounds are required" - a 500,
     because the configuration ON THE PAGE had an optimized row without bounds. The model's facts have nothing to do

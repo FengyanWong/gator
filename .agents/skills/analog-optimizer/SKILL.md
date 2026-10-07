@@ -31,14 +31,14 @@ Virtuoso schematic / exported Spectre netlist
   → verified extraction / parser
   → canonical CircuitGraph: devices + nets + terminal-aware connections
   → PyG representation + parameter groups + target specifications
-  → selectable encoder (default: port-aware Graph Transformer)
+  → selectable encoder (default: Graph Transformer; also RGCN, GATv2, GraphGPS, parameter-group cross-attention)
   → goal-conditioned SAC actor + action-conditioned twin graph critics
   → normalized action → legal physical parameter assignment
   → backend adapter → Virtuoso bridge / Spectre
   → validated measurements + status → observation / reward / replay
 ```
 
-- 默认使用 **Graph Transformer + goal-conditioned SAC**。通过统一编码器接口可切换的只有 Graph Transformer、RGCN 和 GATv2（`graph_transformer` / `rgcn` / `gatv2`，见 `src/analog_optimizer/models/encoders.py`）：port-GNN 已于 2026-09-24 删除（源码提交 bbdfe36 及之前仍可运行它），MLP 与 GCN 于 2026-09-26 删除，GATv1（`gat`）同日由 GATv2 取代；旧名称会被明确拒绝，旧权重不迁移（2026-09-30 同步）。不要将编码器消融扩展为更换 SAC 或增加 surrogate。
+- 默认使用 **Graph Transformer + goal-conditioned SAC**。通过统一编码器接口可切换的有 Graph Transformer、RGCN、GATv2、GraphGPS 与参数组交叉注意力（`graph_transformer` / `rgcn` / `gatv2` / `graph_gps` / `group_cross_attention`，见 `src/analog_optimizer/models/encoders.py`；后两者于 2026-10-06 加入，记录 7.228）：port-GNN 已于 2026-09-24 删除（源码提交 bbdfe36 及之前仍可运行它），MLP 与 GCN 于 2026-09-26 删除，GATv1（`gat`）同日由 GATv2 取代；旧名称会被明确拒绝，旧权重不迁移（2026-09-30 同步）。不要将编码器消融扩展为更换 SAC 或增加 surrogate。
 - 首版**不加入 surrogate**，也不把 surrogate 插成 encoder 与 SAC 之间的必经层。
 - LLM 驱动的尺寸优化：2026-09-29 用户决定按 `docs/brief-llm-sizing-for-astra.md` 加入（新子包 `src/analog_optimizer/search/`，一次 digest 变更；截至 2026-09-30 尚未开始）。对这项工作，该 brief 取代本 Skill 及其参考中“不引入 LLM 搜索 / LLM 内环”的规则；其他工作仍不默认加入 LLM（2026-09-30 同步）。
 - 优化范围先是固定拓扑的器件尺寸、偏置及被明确允许的参数；不是拓扑搜索或自动布局布线。

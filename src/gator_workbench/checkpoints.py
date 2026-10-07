@@ -212,12 +212,16 @@ class CheckpointStore:
         periodic = []
         # The selected best policy is a model somebody chose on purpose: pruning never removes it.
         best = (read_json(self.root / 'best_policy.json', default=None) or {}).get('selected')
-        for directory in sorted(self.root.glob('ckpt-*')):
+        for directory in self.root.glob('ckpt-*'):
             meta = read_json(directory / 'metadata.json', default={})
             if meta.get('kind') == 'periodic' and directory.name not in (keep_id, best):
-                periodic.append(directory)
+                periodic.append((meta.get('created_utc') or '', directory.name, directory))
+        # Oldest first BY SAVE TIME. A name is the evaluation count plus a random suffix, so names alone put the saves made
+        # at one count - every save of an offline pretraining - in random order, and pruning kept random ones (review of
+        # 2026-10-07).
+        periodic.sort()
         removed = []
-        for directory in periodic[:max(0, len(periodic) - (self.keep_last - 1))]:
+        for _, _, directory in periodic[:max(0, len(periodic) - (self.keep_last - 1))]:
             shutil.rmtree(directory)
             removed.append(directory.name)
         return removed

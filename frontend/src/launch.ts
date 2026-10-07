@@ -166,6 +166,37 @@ export function useLauncher({ control, features, onLaunched, onMessage }: {
   const going = useRef(false);
   const latest = useRef({ control, onLaunched, onMessage });
   latest.current = { control, onLaunched, onMessage };
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+
+  /** What became of a launch kept in this tab - after a reload during it, or when its answer did not arrive. Done: the run
+   *  it made is taken. On its way: "Starting..." until it is answered (a quarter of an hour at most, the backend's own
+   *  limit). Unknown: it never arrived, was refused, or failed before anything was made - nothing to take. The QUESTION
+   *  itself unanswered (the backend is restarting): the id stays kept and the question is asked again - for five minutes
+   *  here, and again on the next press or reload. A failed question used to count as "unknown", and the run that launch
+   *  had made was forgotten (review of 2026-10-07). */
+  const askAbout = useCallback((sent: SentLaunch, when: string, tries = 0, failures = 0): void => {
+    const as = sent.action === 'start' || sent.action === 'calibration' ? 'start' : 'resume';
+    const still = () => mounted.current && sentLaunch()?.id === sent.id;        // not replaced by a newer launch meanwhile
+    api.launchRequest(sent.id).then(answer => {
+      if (!still()) return;
+      if (answer?.state === 'done' && answer.answer?.run_dir) {
+        keepLaunch(null);
+        setRefusal(null);                                 // the error of the launch itself, if any: its run is here
+        latest.current.onLaunched(answer.answer, as, `The ${sent.action === 'calibration' ? 'Calibration' : sent.action} sent ${when} made this run; it was not sent again.`);
+      } else if (answer?.state === 'pending' && tries < 600) {
+        latest.current.control.setPending(as);
+        setTimeout(() => askAbout(sent, when, tries + 1, failures), 1500);
+      } else {
+        keepLaunch(null);
+        latest.current.control.setPending(null);
+      }
+    }, () => {
+      if (!still()) return;
+      if (failures < 100) { latest.current.control.setPending(as); setTimeout(() => askAbout(sent, when, tries, failures + 1), 3000); }
+      else latest.current.control.setPending(null);
+    });
+  }, []);
 
   /** Every launch: one at a time, one pending state, its request id kept until it is answered, the backend's questions,
    *  and the run handed to the header - or the refusal kept with `key`. */
@@ -177,12 +208,19 @@ export function useLauncher({ control, features, onLaunched, onMessage }: {
     const { control: header } = latest.current;
     const as = action === 'start' || action === 'calibration' ? 'start' : 'resume';
     header.setPending(as);
-    let handed = false, answered = true;
+    let handed = false, answered = true, asking = false, launch: SentLaunch | null = null;
     try {
       // A launch of this page that got no answer at all is asked about first: it may have arrived and made a run.
       const earlier = features.requests ? sentLaunch() : null;
       if (earlier) {
-        const known = await api.launchRequest(earlier.id).catch(() => ({ state: 'unknown' }));
+        let known: Json;
+        try { known = await api.launchRequest(earlier.id); } catch (e: any) {
+          // The question got no answer (the backend is restarting): that launch may have made a run, so nothing new is sent
+          // and its id stays kept for the next press. Taken for "unknown", as it used to be, a second launch went out here.
+          answered = false;
+          setRefusal({ action, text: `Not sent: what became of an earlier launch of this page could not be checked (${plainError(e)}). Try again in a moment.`, detail: e?.detail ?? null, key });
+          return;
+        }
         if (known?.state === 'done' && known.answer?.run_dir) {
           keepLaunch(null);
           setRefusal(null);
@@ -193,7 +231,7 @@ export function useLauncher({ control, features, onLaunched, onMessage }: {
         }
         if (known?.state === 'pending') { answered = false; setRefusal({ action, text: 'An earlier launch of this page is still on its way; its run comes in a moment.', detail: null, key }); return; }
       }
-      const launch: SentLaunch | null = features.requests ? { id: newRequestId(), action, run_dir: runDir, at: Date.now() } : null;
+      launch = features.requests ? { id: newRequestId(), action, run_dir: runDir, at: Date.now() } : null;
       keepLaunch(launch);
       const started = await launchWithConsent(flags => send(launch ? { ...flags, request_id: launch.id } : flags), consent);
       if (!started) { latest.current.onMessage({ level: 'info', text: declined }); return; }
@@ -201,47 +239,29 @@ export function useLauncher({ control, features, onLaunched, onMessage }: {
       handed = true;
       latest.current.onLaunched(started, as, note?.(started));
     } catch (e: any) {
-      // No answer at all - the page is going away (a reload aborts the request), or the backend stopped: the request may have
-      // arrived, so its id stays kept, and the page asks what became of it instead of sending it again.
-      answered = e instanceof ApiError;
+      // A refusal answers the request in the backend's words: nothing was made (a 4xx). No answer at all - the page is going
+      // away (a reload aborts the request), or the backend stopped - or a failure inside the backend (a 5xx) can come AFTER
+      // the run was made: the id stays kept, and the page asks what became of it instead of sending it again.
+      answered = e instanceof ApiError && e.status < 500;
       setRefusal({ action, text: plainError(e), detail: e?.detail, key });
       if (e?.detail?.code === 'already_running') latest.current.control.refresh();     // continued from elsewhere: show what is true
+      if (!answered && launch && sentLaunch()?.id === launch.id) { asking = true; askAbout(launch, 'a moment ago, whose answer did not arrive,'); }
     } finally {
       if (answered) keepLaunch(null);
       going.current = false;
-      if (!handed) latest.current.control.setPending(null);
+      if (!handed && !asking) latest.current.control.setPending(null);       // while asking, the header keeps "Starting..."
     }
-  }, [features.requests]);
+  }, [features.requests, askAbout]);
 
-  /** After a reload during a launch: the page asks what became of it instead of sending it again. Done: the run it made
-   *  is taken. On its way: "Starting..." until it is answered. Unknown: it never arrived, or was refused - nothing was made.
-   *  Asked once per launch kept (React's StrictMode mounts the page twice in development: `asked` and `mounted` hold). */
+  /** After a reload during a launch: the page asks what became of it instead of sending it again. Asked once per launch
+   *  kept (React's StrictMode mounts the page twice in development: `asked` and `mounted` hold). */
   const asked = useRef<string | null>(null);
-  const mounted = useRef(false);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
     const sent = features.requests ? sentLaunch() : null;
     if (!sent || asked.current === sent.id) return;
     asked.current = sent.id;
-    const as = sent.action === 'start' || sent.action === 'calibration' ? 'start' : 'resume';
-    const ask = (tries: number): void => {
-      api.launchRequest(sent.id).then(answer => {
-        if (!mounted.current) return;
-        if (answer?.state === 'done' && answer.answer?.run_dir) {
-          keepLaunch(null);
-          latest.current.onLaunched(answer.answer, as, `The ${sent.action === 'calibration' ? 'Calibration' : sent.action} sent before the page was reloaded `
-            + 'made this run; it was not sent again.');
-        } else if (answer?.state === 'pending' && tries < 600) {
-          latest.current.control.setPending(as);
-          setTimeout(() => ask(tries + 1), 1500);
-        } else {
-          keepLaunch(null);
-          latest.current.control.setPending(null);
-        }
-      }, () => { if (mounted.current) { keepLaunch(null); latest.current.control.setPending(null); } });
-    };
-    ask(0);
-  }, [features.requests]);
+    askAbout(sent, 'before the page was reloaded');
+  }, [features.requests, askAbout]);
 
   return { go, refusal, setRefusal, busy: going };
 }

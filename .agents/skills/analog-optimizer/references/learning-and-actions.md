@@ -1,7 +1,7 @@
 # 可切换编码器、SAC 与动作契约
 
 2026-09-26 reward-v2 更新优先于本文的旧 nominal-only/编码器说明：用户授权按
-`docs/plan-reward-v2-real-flow.md` 修改 optimizer；当前编码器是 GT/RGCN/GATv2。
+`docs/plan-reward-v2-real-flow.md` 修改 optimizer；当前编码器是 GT/RGCN/GATv2/GraphGPS/参数组交叉注意力（后两者 2026-10-06 加入，记录 7.228）。
 v2 evaluator、21N+11 输入、可选 nominal OP、完整 condition plan、replay 和 checkpoint
 契约已接入并通过 OTA7 有界真实 A/B/C 验收：73 次 Spectre（A21、B44 含一次记录失败、C8），
 总上限 77，B44 是用户另行明确批准。用户确认 unknown license 后按正常许可证流程执行，
@@ -69,13 +69,15 @@ PyG `TransformerConv` 是基于邻域的 message-passing attention，并支持 e
 
 通过 `models.ModelConfig(encoder_type=...)` 和 `models.build_encoder()` 选择。共同接口为 `encoder(GraphBatch, actions=None) → (nodes[N,H], groups[G,H], context[B,H])`。actor/Q1/Q2 使用同一种配置但独立权重；保留共同特征、规格、动作注入、参数组 readout 和 SAC heads，仅替换节点处理。
 
-当前（2026-09-30 同步，见 `src/analog_optimizer/models/encoders.py` 的 `ENCODER_TYPES`）只有前三行；其余已删除，名称被明确拒绝，旧权重不迁移：
+当前（2026-09-30 同步，见 `src/analog_optimizer/models/encoders.py` 的 `ENCODER_TYPES`）只有前五行；其余已删除，名称被明确拒绝，旧权重不迁移：
 
 | encoder_type | 当前节点处理与语义 |
 |---|---|
 | `graph_transformer`（默认） | `TransformerConv` 局部多头注意力，role/direction/ordinal 进入边特征 |
 | `rgcn` | `RGCNConv`，terminal role × direction 为 relation，逐关系 mean；不额外编码 ordinal |
 | `gatv2` | `GATv2Conv` 多头注意力（`share_weights=False`），端口边特征进入注意力；不增加自环，以外层 residual 保留自身表示 |
+| `graph_gps` | GraphGPS 式（`PortGPSBlock`，2026-10-06，记录 7.228）：每层并行的端口局部注意力消息（同 GT）与电路内全局自注意力（`CircuitAttention`）；默认 `structural_encoding='rwse'` |
+| `group_cross_attention` | GT 的局部层加参数组对节点的交叉注意力读出（`GroupAttentionReadout`，2026-10-06，记录 7.228）；可选 RWSE |
 | ~~`port_gnn`~~ | 已于 2026-09-24 删除（原 M5 端口 MLP message 与 destination mean）；仅源码提交 bbdfe36 及之前可用 |
 | ~~`mlp`~~ | 已于 2026-09-26 删除（原共享逐节点 MLP，忽略电路边/端口/ordinal）；最后含它的五编码器源码为提交 9bc488f |
 | ~~`gcn`~~ | 已于 2026-09-26 删除（原普通 `GCNConv`，忽略 role/ordinal）；同上 |

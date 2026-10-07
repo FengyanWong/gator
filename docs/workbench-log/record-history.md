@@ -339,3 +339,5 @@ One row per commit, newest last.
 | `900fcec` | 10-07 07:13 | 7.256 | plan: the other encoders on the six circuits, the comparison plan revised around the A/B/C runbook; docs only (session "Encoder run plan revision") |
 | `bc2f7d1` | 10-07 07:13 | - | record only: names the commit of record 7.256 (900fcec), and the table rows for b534719 and 900fcec |
 | `2ca0ef4` | 10-07 07:16 | 7.257 | plan: the frontend workflow without the Manager - Tasks, Runs and RL model windows with categories, relationships and model history; the Mode inside the RL model window (New model from a template, Fine-tune / Evaluate only from a pinned save point) |
+| `2704ed5` | 10-07 07:17 | - | record only: names the commit of record 7.257 (2ca0ef4), and the table rows for bc2f7d1 and 2ca0ef4 |
+| `094aa70` | 10-07 07:33 | 7.258 | plan: Load run - loading a run brings its task, its model and its results onto the page, as one Undo step; nothing built |

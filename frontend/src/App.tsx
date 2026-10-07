@@ -13,6 +13,7 @@ import { ValidationStatus } from './panels/Issues';
 import { LIVE_STATES, RunButtons, useRunControl } from './panels/RunControl';
 import { continueConsent, continueReadiness, featuresOf, launchKept, startReadiness, useContinuation, useLauncher } from './launch';
 import { LaunchRefusal } from './panels/LaunchRefusal';
+import { useRunBrief } from './panels/RunBrief';
 import { RunListButton } from './panels/RunList';
 import { OutputPanel, ResearchPanel, RunPanel } from './panels/Right';
 import { AgentWindowTab } from './panels/Agent';
@@ -295,6 +296,9 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     return () => window.removeEventListener(TASK_BASELINE_STARTED, started);
   }, []);
 
+  // The run brief (record 7.264): the header's run chip opens it; Show results there does what the chip's press did.
+  const brief = useRunBrief({ control, runs, onRefreshRuns: refreshRuns, onShow: dir => { setRunDir(dir); setTab('status'); unfold(); } });
+
   // ---- the launcher (record 7.261, launch.ts): Start, Calibration, Resume and Continue -------------------------------------
   const features = useMemo(() => featuresOf(meta), [meta]);
   const launcher = useLauncher({ control, features, onLaunched: launchedRun, onMessage: setMessage });
@@ -428,7 +432,8 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
             : `${CALIBRATION_DESIGNS} random designs over the Parameters ranges, each costed. No starting-design baseline. `
               + 'Proposes a Scale for each Specs row and the Initial alpha; Run status shows them with Apply, nothing changes by itself.'}>Calibration</button>
         <RunButtons control={control} startBlocked={startBlocked} resumeBlocked={resumeBlocked} onStart={() => start(false)} onResume={resumeHeld}
-          onMessage={setMessage} onShow={dir => { setRunDir(dir); setTab('status'); unfold(); }} />
+          onMessage={setMessage} onChip={brief.open} />
+        {brief.element}
       </header>
       {message && <div className={`banner ${message.level}`} onClick={() => setMessage(null)}>
         {/* A start refused by the check before every run: its steps say it all (what differs, what to do). */}

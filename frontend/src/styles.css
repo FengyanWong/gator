@@ -201,6 +201,8 @@ ul.checklist li { margin: 5px 0; padding-left: 22px; position: relative; } .chec
 .check-done b, .check-not_applicable b { font-weight: 400; }
 .verdict { margin: 6px 0 4px; font-weight: 600; } .verdict .hint { font-weight: 400; }
 button.notes-link { border: none; background: none; padding: 0 3px; color: var(--accent); text-decoration: underline; font-size: 11px; white-space: normal; }
+/* A link between the windows (record 7.264): a run, a task or a count that opens a window AT it - in the cell's own type. */
+button.item-link { border: none; background: none; padding: 0; color: var(--accent); text-decoration: underline; font: inherit; text-align: left; cursor: pointer; white-space: normal; }
 .log div { font-family: ui-monospace, Consolas, monospace; font-size: 11px; border-bottom: 1px solid var(--log-line); padding: 1px 0; word-break: break-all; }
 .step { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 5px; } .step-head { font-weight: 600; font-size: 12px; }
 .step-no { display: inline-block; width: 16px; height: 16px; line-height: 16px; text-align: center; border-radius: 50%; background: var(--accent-fill); color: var(--on-accent); font-size: 10.5px; margin-right: 3px; }
@@ -522,6 +524,15 @@ table.task-table td code { font-size: 12px; } table.task-table td .hint.warn { c
 .task-folder-actions { flex-wrap: wrap; margin-top: 8px; }
 .task-move-bar { min-height: 30px; margin-bottom: 6px; } .task-move-bar select { width: 180px; margin-left: auto; }
 table.task-table .task-select, table.run-table .task-select { width: 28px; text-align: center; }
+/* Names that may take two lines (record 7.264: the Started from column made the table wider than the run window). */
+table.run-table td.wrap { white-space: normal; overflow-wrap: anywhere; min-width: 6em; } tr.run-details-row > td > * { contain: inline-size; }
+table.run-table button.notes-link { min-width: 6.5em; text-align: left; }   /* "Details" and "Hide details" take the same room: a toggle moves no column */ table.run-table td.wrap-words { white-space: normal; min-width: 6.5em; }
+table.run-relations td:first-child { white-space: nowrap; width: 1%; } .run-relations details.more { display: inline-block; margin: 0; } .run-only-task { margin: 0 0 6px; }
+/* The run brief (record 7.264): a small window, one card per run - the header's first. */
+.run-brief { padding: 10px 14px; } .run-brief .brief-head { align-items: baseline; } .run-brief h2 { margin: 0 8px 6px 0; }
+.brief-card { border-left: 3px solid var(--accent); padding: 4px 0 6px 10px; margin: 10px 0; display: flex; flex-direction: column; gap: 3px; }
+.brief-progress { display: flex; align-items: center; gap: 8px; } .brief-count { font-variant-numeric: tabular-nums; }
+.brief-bar { flex: 1 1 auto; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; } .brief-bar > span { display: block; height: 100%; background: var(--ok); }
 table.task-table .task-select input, table.run-table .task-select input { margin: 0; }
 @media (max-width: 760px) { .task-browser { grid-template-columns: 145px minmax(0, 1fr); gap: 8px; } .task-folder-heading { flex-wrap: wrap; } }
 .task-details h4 { margin: 10px 0 3px; } table.task-rows-table { width: auto; } table.task-rows-table td, table.task-rows-table th { padding: 2px 8px; }

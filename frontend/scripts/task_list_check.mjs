@@ -157,6 +157,22 @@ await runChecks(browser, async () => {
     && (await cell(NG.task_key, 2)) === 'ngspice netlist' && (await cell(NG.task_key, 5)) === '-' && (await cell(NG.task_key, 3)) === '2', JSON.stringify(await Promise.all([0, 2, 3, 5].map(n => cell(NG.task_key, n)))));
   check('the MOCK task: a MOCK badge', (await cell(MOCK.task_key, 0)) === 'synthetic:gpdk045_ota5MOCK' && await far.evaluate(`!!${ROWS}.find(tr => tr.dataset.taskKey === 'synthetic:gpdk045_ota5').querySelector('.mock-tag')`));
   await far.shot(path.join(out, 'task-list-2-window.png'));
+  // Record 7.264: the Runs and Newest run cells are links into the Runs window - with this task's runs only, or at the newest run.
+  const linksBefore = { starters: seen.filter(s => s.startsWith('starter')).length, shown: await evaluate(`document.querySelector('footer .tabs .run-list-current')?.textContent ?? ''`) };
+  const runsLink = n => far.evaluate(`${ROWS}.find(tr => tr.dataset.taskKey === ${JSON.stringify(OTA.task_key)}).children[${n + 1}].querySelector('button.item-link').click()`, true);
+  await runsLink(8);
+  const runsTarget = await browser.window('GATOR - runs').catch(() => null);
+  const runsWindow = runsTarget && await browser.attach(runsTarget);
+  const RUN_ROWS = `[...document.querySelectorAll('.run-window table.run-table tbody > tr:not(.run-details-row)')]`;
+  check('the run count is a link: the Runs window opens with this task\'s runs only, and says so', !!runsWindow
+    && await runsWindow.until(`${RUN_ROWS}.length === 2 && /Only the runs of real:fixture_ota/.test(document.querySelector('.run-only-task')?.textContent ?? '')`, 80),
+    runsWindow ? await runsWindow.evaluate(`${RUN_ROWS}.map(tr => tr.title).join()`) : 'no window');
+  await runsLink(7);
+  check('the newest run is a link: the Runs window shows it, its Details open', !!runsWindow && await runsWindow.until(`(() => { const tr = ${RUN_ROWS}.find(tr => tr.title === ${JSON.stringify(NEWEST.run_dir)});
+    return !!tr && [...tr.querySelectorAll('button')].pop().getAttribute('aria-expanded') === 'true'; })()`, 80));
+  check('following them chose no task and changed the run shown', seen.filter(s => s.startsWith('starter')).length === linksBefore.starters
+    && (await evaluate(`document.querySelector('footer .tabs .run-list-current')?.textContent ?? ''`)) === linksBefore.shown, JSON.stringify(linksBefore));
+  runsWindow?.close(); if (runsTarget) { await send('Target.closeTarget', { targetId: runsTarget.id }); await browser.window('GATOR - runs', { present: false }); }
 
   // ---- 4. a double click makes the page follow the task --------------------------------------------------------------------------
   const starters = count('starter real:fixture_ota');

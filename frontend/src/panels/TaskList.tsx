@@ -1,9 +1,10 @@
-import { Fragment, MouseEvent, ReactNode, useEffect, useState } from 'react';
+import { Fragment, MouseEvent, ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { api, Json, si } from '../api';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { Icon } from './Icons';
+import { OPEN_TASKS, openRunsAt, TasksAt } from '../openAt';
 
 /** Which registered task the page follows (user request 2026-10-06, record 7.227: "make the loaded task a button similar to
  *  the runs... button style. It opens a new window showing all the tasks"): in the Project column the task name is the
@@ -126,6 +127,27 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
     if (open) readRows(open);
   };
   useEffect(() => { if (popup) refresh(false); }, [popup]);       // pressing the button is the request to see the current task list
+  // Another window's link (record 7.264, openAt.ts): this window opens AT a task - every folder, no filter, its Details open,
+  // scrolled to. Following it changes nothing on the page: the task is not chosen.
+  const [focus, setFocus] = useState<string | null>(null);
+  const focusTask = (key: string) => { folders.setFolder('all'); setFilter(''); setSelected([]); setOpen(key); readRows(key); setFocus(key); };
+  const latest = useRef({ openPopup, focusTask });
+  latest.current = { openPopup, focusTask };
+  useEffect(() => {
+    const show = (event: Event) => {
+      const at = (event as CustomEvent<TasksAt>).detail;
+      if (!at?.task_key) return;
+      latest.current.openPopup(at.from);
+      latest.current.focusTask(at.task_key);
+    };
+    window.addEventListener(OPEN_TASKS, show);
+    return () => window.removeEventListener(OPEN_TASKS, show);
+  }, []);
+  useEffect(() => {
+    if (!focus || !popup) return;
+    const row = [...popup.document.querySelectorAll<HTMLTableRowElement>('table.task-table tbody > tr')].find(tr => tr.dataset.taskKey === focus);
+    if (row) { row.scrollIntoView({ block: 'center' }); setFocus(null); }
+  });
   const toggle = (key: string) => { if (open === key) { setOpen(null); return; } setOpen(key); readRows(key); };
   // A double click on a task's row makes the page follow that task (as a double click chooses a run in the run window). Not
   // when it lands on the row's "Details" button. The word the double click selected is let go.
@@ -195,8 +217,12 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
             <td>{stamp(t.saved_utc) ?? '-'}</td>
             <td>{t.baseline_recorded_utc ? stamp(t.baseline_recorded_utc) : t.kind === 'real' && t.generated ? <span className="hint">none</span> : '-'}</td>
             <td className="numeric">{t.variables != null ? `${t.variables} / ${t.results ?? 0}` : '-'}</td>
-            <td title={of.newest?.run_dir}>{of.newest ? newestText(of.newest) : known || runs.length === 0 ? <span className="hint">none</span> : '-'}</td>
-            <td className="numeric">{known || runs.length === 0 ? of.count : '-'}</td>
+            {/* Links into the Runs window (record 7.264): at the newest run, or with this task's runs only. Nothing is chosen. */}
+            <td title={of.newest?.run_dir}>{of.newest ? <button className="item-link" onClick={() => openRunsAt({ run_dir: of.newest.run_dir, task_key: t.task_key, from: popup })}
+                title={`${of.newest.run_dir}\nOpen the Runs window at this run, with this task's runs only.`}>{newestText(of.newest)}</button>
+              : known || runs.length === 0 ? <span className="hint">none</span> : '-'}</td>
+            <td className="numeric">{known || runs.length === 0 ? (of.count ? <button className="item-link" onClick={() => openRunsAt({ task_key: t.task_key, from: popup })}
+                title="Open the Runs window with this task's runs only.">{of.count}</button> : of.count) : '-'}</td>
             <td><button className="notes-link" aria-expanded={open === t.task_key} onClick={() => toggle(t.task_key)}>{open === t.task_key ? 'Hide details' : 'Details'}</button></td>
           </tr>
           {open === t.task_key && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>

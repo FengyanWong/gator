@@ -245,8 +245,32 @@ await runChecks(browser, async () => {
   await sleep(300); const liveBefore = statusRequests; await sleep(3500);
   check('with the bottom tabs on no run, the live run is polled by the header and keeps its Pause', statusRequests > liveBefore && (await look()).main === 'Pause', `${statusRequests - liveBefore} request(s) in 3.5 s`);
   check('the header follows its progress', /^running \d+ \/ 60 \[MOCK\]$/.test((await look()).chip ?? ''), (await look()).chip ?? '');
-  await press(CHIP);
-  check('pressing the run in the header shows it under Run status again', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DIR)})`));
+  // The run brief (record 7.264, plan "The run brief"): the chip opens a small window; it only shows - Show results there does what
+  // the chip's press did until then, and Open in Runs opens the Runs window at the run.
+  const tabsBefore = await evaluate(`document.querySelector('footer .tabs .run-list-current')?.textContent ?? ''`);
+  await evaluate(`${CHIP}.click()`, true);                                       // a click that opens a window
+  const briefTarget = await browser.window('GATOR - running now').catch(() => null);
+  check('pressing the run in the header opens the run brief, a window of its own', !!briefTarget);
+  if (!briefTarget) throw new Error('the run brief did not open');
+  const brief = await browser.attach(briefTarget);
+  await brief.until(`!!document.querySelector('.brief-card')`, 50);
+  const card = await brief.evaluate(`(() => { const c = document.querySelector('.brief-card'); return c && { dir: c.dataset.runDir, text: c.innerText.replace(/\\s+/g, ' '),
+    buttons: [...c.querySelectorAll('button')].map(b => b.textContent), others: document.querySelectorAll('.brief-card').length,
+    none: document.querySelector('.brief-none')?.textContent ?? '' }; })()`);
+  check('its first card is the header\'s run: in this page\'s header, its evaluations, MOCK, Show results and Open in Runs - no run controls',
+    card?.dir === DIR && /In this page's header/.test(card.text) && /\d+ \/ 60 evaluations/.test(card.text) && /MOCK/.test(card.text)
+    && card.buttons.join() === 'Show results,Open in Runs' && card.others === 1 && /Nothing else is live/.test(card.none), JSON.stringify(card));
+  await brief.shot(path.join(out, 'run-4b-brief.png'), `document.querySelector('.run-brief')`);
+  check('opening it changed nothing: the bottom tabs show what they showed', (await evaluate(`document.querySelector('footer .tabs .run-list-current')?.textContent ?? ''`)) === tabsBefore);
+  await brief.evaluate(`[...document.querySelector('.brief-card').querySelectorAll('button')].find(b => b.textContent === 'Show results').click()`);
+  check('Show results in the brief shows the run under Run status again', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DIR)})`));
+  await brief.evaluate(`[...document.querySelector('.brief-card').querySelectorAll('button')].find(b => b.textContent === 'Open in Runs').click()`, true);
+  const runsTarget = await browser.window('GATOR - runs').catch(() => null);
+  const runsWindow = runsTarget && await browser.attach(runsTarget);
+  check('Open in Runs opens the Runs window at the run: its Details open', !!runsWindow && await runsWindow.until(`(() => { const tr = [...document.querySelectorAll('table.run-table tbody > tr')]
+    .find(tr => tr.title === ${JSON.stringify(DIR)}); return !!tr && tr.querySelector('button.notes-link')?.getAttribute('aria-expanded') === 'true'; })()`, 60));
+  runsWindow?.close(); if (runsTarget) await send('Target.closeTarget', { targetId: runsTarget.id });
+  brief.close(); await send('Target.closeTarget', { targetId: briefTarget.id });
 
   // ---- 6. a reload: the live run is still the header's run, and "Start" is never offered meanwhile ---------------------------
   await send('Page.reload'); await until(`!!(${MAIN})`, 150);

@@ -778,6 +778,18 @@ def run_timing(manifest, status) -> dict:
                 segments=[{fact: s.get(fact) for fact in SEGMENT_FACTS} for s in segments])
 
 
+def lineage(manifest) -> dict:
+    """Where a run's model came from, as its manifest recorded it (record 7.264; plan "Relationships and history: data").
+    `parent`: the run, save point and relation a fine-tune or evaluate run loaded (None for a new model); `run_kind`:
+    optimization, baseline_preflight, calibration or offline_pretraining; `encoder`: the network a new model was made
+    from (its template); `pretraining_sources`: how many recorded runs an offline model was trained on. Read, never
+    inferred from names or folder paths."""
+    sources = (manifest.get('pretraining') or {}).get('sources')
+    return dict(parent=manifest.get('parent'), run_kind=manifest.get('run_kind'),
+                encoder=((manifest.get('architecture') or {}).get('network') or {}).get('encoder_type'),
+                pretraining_sources=len(sources) if isinstance(sources, list) else None)
+
+
 class _RunRow(dict):
     """A row of list_runs - plain JSON as ever - that also keeps the manifest it was built from, as an attribute that is
     never serialized: checkpoints.saved_models is handed these rows and used to read every manifest a second time."""
@@ -860,6 +872,7 @@ def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True):
                                 # The registered task it ran (real:<name>, ngspice:<name>, as the Task list names it): choosing
                                 # that task shows its newest run (App.tsx, record 7.212).
                                 task_key=(manifest.get('circuit') or {}).get('task_key'),
+                                **lineage(manifest),
                                 **ckpt.model_label_of(run_dir, manifest), **run_timing(manifest, status)))
     # The name of each run's model, no two alike under this root (record 7.225): the run window and the saved-model
     # cards show it; `renamed` says whether it was given by a rename.

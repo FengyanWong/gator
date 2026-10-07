@@ -173,9 +173,9 @@ const LABELS: Record<Phase, string> = { idle: 'Start', checking: 'Start', starti
 
 /** `startBlocked` / `resumeBlocked`: why the main button cannot start or resume now (launch.ts readiness), or null - said
  *  as the button's tooltip. Resume itself is the launcher's (`onResume`). */
-export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onResume, onMessage, onShow }: {
+export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onResume, onMessage, onChip }: {
   control: RunControl; startBlocked: string | null; resumeBlocked: string | null; onStart: () => void; onResume: () => void;
-  onMessage: (m: Json) => void; onShow: (dir: string) => void }) {
+  onMessage: (m: Json) => void; onChip: () => void }) {
   const { dir, status, phase, forced } = control;
   const fail = (e: any) => onMessage({ level: 'error', text: plainError(e), detail: e?.detail });
   const command = (name: string, waitFor: Pending, text: string) => {
@@ -239,7 +239,8 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
   const why = phase === 'idle' ? startBlocked : phase === 'paused' ? resumeBlocked : null;
   const note = describe(status, phase, forced);
   return (<>
-    {dir && note && <button className={`run-chip ${phase}`} onClick={() => onShow(dir)} title={`The current run: ${dir}\nPress to show it under Run status.`}>{note}</button>}
+    {dir && note && <button className={`run-chip ${phase}`} onClick={onChip}
+      title={`The current run: ${dir}\nPress for the run brief: this run and every other live run, each with Show results and Open in Runs (record 7.264).`}>{note}</button>}
     <button className="run-save" disabled={phase !== 'running' || !!saving} onClick={saveNow}
       title={phase === 'running' ? 'Save now: The model is saved now, without pausing: the simulation in flight finishes first (with several in parallel, all of them), the model is written as a new save point, '
         + 'and the run goes on by itself. The save point can be chosen later under "RL model to load".'

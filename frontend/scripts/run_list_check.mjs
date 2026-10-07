@@ -10,7 +10,9 @@
 // bottom tabs show (no "Show" column), "Clear" shows none; the button only reads "Runs...", the run is named to its LEFT;
 // nothing in it updates by itself; an older server (no times in the list) is said in plain words. Record 7.263: the window
 // has the Tasks window's folders - All runs, Unfiled and the user's own, runs ticked and moved with "Move to...", keyed by
-// run folder and stored with the runs' folders (/api/run-folders, answered here), never with the tasks'.
+// run folder and stored with the runs' folders (/api/run-folders, answered here), never with the tasks'. Record 7.264:
+// "Started from" and "Saved model" columns, and Relationships in Details (task, started from, saved model, the runs that
+// started from it, a folded history), every run named a link that shows it here and the task one that opens the Tasks window.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -31,19 +33,22 @@ const seg = (segment, entry, started_utc, ended_utc = null, end_state = null, st
 const run = (n, facts) => ({ run_dir: `${ROOT}/${facts.mock === false ? '' : 'mock/'}fixture_exp__0001/runs/fixture_task/scratch__seed${n}__000${n}`, run_id: `fixture-run-${n}`, task_id: 'fixture_task:0000',
   task_name: 'fixture_task', task_definition_hash: 'fixture', mode: 'scratch', mock: true, seed: n, experiment: 'fixture_exp__0001', stop_reason: null, error: null, max_evaluations: 60,
   first_feasible_eval_count: null, resumability: null, last_seen_utc: null, paused_seconds: 0, ...facts });
-const DONE = run(1, { created_utc: '2026-09-20T16:16:40+00:00', started_utc: '2026-09-20T16:16:43+00:00', ended_utc: '2026-09-20T16:17:01+00:00', active_seconds: 17.82, state: 'completed',
+const LINEAGE = { task_key: 'synthetic:gpdk045_ota5', run_kind: 'optimization', parent: null, pretraining_sources: null };
+const DONE = run(1, { ...LINEAGE, encoder: 'graph_transformer', model_label: 'fixture', created_utc: '2026-09-20T16:16:40+00:00', started_utc: '2026-09-20T16:16:43+00:00', ended_utc: '2026-09-20T16:17:01+00:00', active_seconds: 17.82, state: 'completed',
   stop_reason: 'budget_exhausted', evaluations: 60, first_feasible_eval_count: 23, resumability: 'full_state',
   segments: [seg(1, 'start', '2026-09-20T16:16:43+00:00', '2026-09-20T16:17:01+00:00', 'completed', 'budget_exhausted', 17.82)] });
-const RESUMED = run(2, { created_utc: '2026-09-21T10:00:00+00:00', started_utc: '2026-09-21T10:00:03+00:00', ended_utc: '2026-09-21T12:15:00+00:00', active_seconds: 900, paused_seconds: 7200,
+const RESUMED = run(2, { ...LINEAGE, encoder: 'graph_transformer', model_label: 'fixture (2)',
+  parent: { run_id: 'fixture-run-1', run_dir: `${ROOT}/mock/fixture_exp__0001/runs/fixture_task/scratch__seed1__0001`, checkpoint_id: 'ckpt-000040-final', relation: 'fine_tune' },
+  created_utc: '2026-09-21T10:00:00+00:00', started_utc: '2026-09-21T10:00:03+00:00', ended_utc: '2026-09-21T12:15:00+00:00', active_seconds: 900, paused_seconds: 7200,
   // its full save point was written by an older version of the optimizer code: the backend lists it as model only (7.221)
   state: 'completed', stop_reason: 'budget_exhausted', evaluations: 40, max_evaluations: 40, resumability: 'weights_only', save_point_code: 'older', mode: 'fine_tune',
   segments: [seg(1, 'start', '2026-09-21T10:00:03+00:00', '2026-09-21T10:10:00+00:00', 'paused', 'user_pause', 600), seg(2, 'resume', '2026-09-21T12:10:00+00:00', '2026-09-21T12:15:00+00:00', 'completed', 'budget_exhausted', 300)] });
-const PAUSED = run(3, { created_utc: '2026-09-21T13:00:00+00:00', started_utc: '2026-09-21T13:00:04+00:00', ended_utc: '2026-09-21T13:30:00+00:00', active_seconds: 1790, state: 'paused',
+const PAUSED = run(3, { ...LINEAGE, encoder: 'rgcn', created_utc: '2026-09-21T13:00:00+00:00', started_utc: '2026-09-21T13:00:04+00:00', ended_utc: '2026-09-21T13:30:00+00:00', active_seconds: 1790, state: 'paused',
   stop_reason: 'user_pause', evaluations: 25, resumability: 'full_state', segments: [seg(1, 'start', '2026-09-21T13:00:04+00:00', '2026-09-21T13:30:00+00:00', 'paused', 'user_pause', 1790)] });
 const LOST = run(4, { created_utc: '2026-09-19T08:00:00+00:00', started_utc: '2026-09-19T08:00:03+00:00', ended_utc: null, last_seen_utc: '2026-09-19T08:04:00+00:00', active_seconds: 237,
   state: 'interrupted', evaluations: 31, segments: [seg(1, 'start', '2026-09-19T08:00:03+00:00')] });
 const NEVER = run(5, { created_utc: '2026-09-18T08:00:00+00:00', started_utc: null, ended_utc: null, active_seconds: null, state: null, evaluations: null, segments: [seg(1, 'start', null)] });
-const FAILED = run(6, { mock: false, created_utc: '2026-09-17T08:00:00+00:00', started_utc: '2026-09-17T08:00:05+00:00', ended_utc: '2026-09-17T08:00:45+00:00', active_seconds: 40, state: 'failed',
+const FAILED = run(6, { mock: false, run_kind: 'baseline_preflight', created_utc: '2026-09-17T08:00:00+00:00', started_utc: '2026-09-17T08:00:05+00:00', ended_utc: '2026-09-17T08:00:45+00:00', active_seconds: 40, state: 'failed',
   stop_reason: 'error', error: 'FIXTURE: a simulated failure, nothing real went wrong', evaluations: 2, resumability: 'none', segments: [seg(1, 'start', '2026-09-17T08:00:05+00:00', '2026-09-17T08:00:45+00:00', 'failed', 'error', 40)] });
 const LIVE = run(7, { created_utc: '2026-09-21T14:00:00+00:00', started_utc: '2026-09-21T14:00:03+00:00', ended_utc: null, last_seen_utc: '2026-09-21T15:06:43+00:00', active_seconds: 4000, state: 'running',
   evaluations: 12, segments: [seg(1, 'start', '2026-09-21T14:00:03+00:00')] });
@@ -107,8 +112,8 @@ await runChecks(browser, async () => {
     await sleep(500);
   };
   // The table as a user reads it: one object per run row, keyed by the column titles.
-  const table = () => far.evaluate(`(() => { const t = ${WINDOW}.querySelector('table.run-table'); if (!t) return null; const heads = [...t.querySelectorAll('thead th')].map(h => h.textContent.replace(/[\\u25B2\\u25BC]/g, '').trim());
-    return [...t.querySelectorAll('tbody > tr:not(.run-details-row)')].map(tr => { const cells = [...tr.children]; const row = { current: tr.getAttribute('aria-current') === 'true', folder: tr.title, buttons: [...tr.querySelectorAll('button')].map(b => b.textContent.trim()).join() };
+  const table = () => far.evaluate(`(() => { const t = ${WINDOW}.querySelector('table.run-table'); if (!t) return null; const heads = [...t.tHead.rows[0].cells].map(h => h.textContent.replace(/[\\u25B2\\u25BC]/g, '').trim());
+    return [...t.tBodies[0].rows].filter(tr => !tr.classList.contains('run-details-row')).map(tr => { const cells = [...tr.children]; const row = { current: tr.getAttribute('aria-current') === 'true', folder: tr.title, buttons: [...tr.querySelectorAll('button')].map(b => b.textContent.trim()).join() };
       heads.forEach((h, i) => { if (h) row[h] = cells[i].innerText.replace(/\\s+/g, ' ').trim(); }); row.finishedTitle = cells[heads.indexOf('Finished')].title; row.durationTitle = cells[heads.indexOf('Duration')].title; return row; }); })()`);
   const rowOf = (rows, r) => rows.find(x => x.folder === r.run_dir);
   const pressIn = (r, labelText) => far.evaluate(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(r.run_dir)});
@@ -171,7 +176,8 @@ await runChecks(browser, async () => {
   check('a run that never began shows dashes, not zeros', r.Finished === '-' && r.Duration === '-' && r.State === 'not started' && r.Evaluations === '- / 60' && r['First feasible'] === '-', JSON.stringify(r));
   r = rowOf(rows, FAILED);
   check('a real run reads "real", a failed one "failed" with its reason', r.Data === 'real' && /^failed\s*error$/.test(r.State) && r['Can continue'] === 'no' && r.Duration === '40.0 s', JSON.stringify(r));
-  check('no row is marked as shown, and there is no "Show" column: after the tick box the table starts at "Started" and a row\'s only button is "Details"', rows.every(x => !x.current && x.buttons === 'Details')
+  check('no row is marked as shown, and there is no "Show" column: after the tick box the table starts at "Started" and a row\'s last button is "Details"',
+    rows.every(x => !x.current && x.buttons.split(',').pop() === 'Details' && x.buttons.split(',').length <= 2)
     && (await far.evaluate(`(() => { const h = [...${WINDOW}.querySelectorAll('table.run-table thead th')]; return !!h[0].querySelector('input[type=checkbox]') && h[1].textContent.replace(/[\\u25B2\\u25BC]/g, '').trim(); })()`)) === 'Started', JSON.stringify(rows.map(x => x.buttons)));
   check('the window says how a run is shown: by a double click', /Double click a run to show it in the bottom tabs/.test(await far.evaluate(`${WINDOW}.innerText`)));
   check('the long explanation is folded: "What the columns mean" is closed', (await far.evaluate(`(() => { const d = ${WINDOW}.querySelector('details.more'); return d && !d.open && d.querySelector('summary').textContent; })()`)) === 'What the columns mean');
@@ -228,6 +234,40 @@ await runChecks(browser, async () => {
   await pressIn(FAILED, 'Hide details');
   check('... and its row reads "model only" under Can continue (7.221)', rowOf(await table(), RESUMED)?.['Can continue'] === 'model only',
     JSON.stringify(rowOf(await table(), RESUMED)));
+
+  // ---- 4b. relationships (record 7.264) ---------------------------------------------------------------------------------------
+  rows = await table();
+  check('"Started from" says where a run\'s model came from: a template, a saved model at its save point, nothing for a baseline; "Saved model" names its own',
+    rowOf(rows, DONE)['Started from'] === 'template GT' && rowOf(rows, PAUSED)['Started from'] === 'template RGCN' && rowOf(rows, RESUMED)['Started from'] === 'fixture @ 40'
+    && rowOf(rows, FAILED)['Started from'] === '-' && rowOf(rows, DONE)['Saved model'] === 'fixture' && rowOf(rows, RESUMED)['Saved model'] === 'fixture (2)',
+    JSON.stringify(rows.map(x => [x.folder.slice(-4), x['Started from'], x['Saved model']])));
+  const RELATIONS = `Object.fromEntries([...(${WINDOW}.querySelector('table.run-relations')?.querySelectorAll('tr') ?? [])].map(tr => [tr.children[0].textContent, tr.children[1].innerText.replace(/\\s+/g, ' ').trim()]))`;
+  const detailsOpen = r => far.until(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(r.run_dir)});
+    return !!tr && [...tr.querySelectorAll('button')].pop().getAttribute('aria-expanded') === 'true' && !!${WINDOW}.querySelector('table.run-relations'); })()`, 50);
+  await far.evaluate(`[...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(RESUMED.run_dir)}).querySelector('button.item-link').click()`);
+  check('the link in "Started from" shows that run here, its Details open', await detailsOpen(DONE));
+  let relations = await far.evaluate(RELATIONS);
+  check('Details name the task, where the model came from, the model it saved and the runs that started from it', relations['Task']?.startsWith('synthetic:gpdk045_ota5')
+    && relations['Started from'] === 'template GT (a new model)' && relations['Saved model'].startsWith('fixture') && /fine_tune \(fixture \(2\)\)/.test(relations['Runs that started from its model'] ?? ''),
+    JSON.stringify(relations));
+  await far.evaluate(`[...${WINDOW}.querySelector('table.run-relations').querySelectorAll('tr')].find(tr => tr.children[0].textContent === 'Runs that started from its model').querySelector('button.item-link').click()`);
+  check('... and a run that started from it is a link too', await detailsOpen(RESUMED));
+  relations = await far.evaluate(RELATIONS);
+  check('a fine-tune names the run and save point it loaded', /^fixture @ 40 \(fine-tuned from its save point ckpt-000040-final\)$/.test(relations['Started from'] ?? ''), JSON.stringify(relations));
+  const history = await far.evaluate(`(() => { const d = ${WINDOW}.querySelector('details.run-history'); d.open = true;
+    return { summary: d.querySelector('summary').textContent, steps: [...d.querySelectorAll('li')].map(li => li.innerText.replace(/\\s+/g, ' ').trim()) }; })()`);
+  check('its history is folded: one model behind it, oldest first, from the template', history.summary === '1 model behind this run, oldest first' && history.steps[0] === 'template GT'
+    && history.steps[1].startsWith('synthetic:gpdk045_ota5 · scratch · 60 evaluations · fixture') && /^this run - loaded the one above at its save point ckpt-000040-final$/.test(history.steps[2]),
+    JSON.stringify(history));
+  await far.evaluate(`[...${WINDOW}.querySelector('table.run-relations').querySelectorAll('tr')].find(tr => tr.children[0].textContent === 'Task').querySelector('button.item-link').click()`, true);
+  const taskTarget = await browser.window('GATOR - tasks').catch(() => null);
+  const tasksWindow = taskTarget && await browser.attach(taskTarget);
+  check('the task is a link: the Tasks window opens at it, its Details open, nothing chosen', !!tasksWindow
+    && await tasksWindow.until(`(() => { const tr = [...document.querySelectorAll('table.task-table tbody > tr')].find(tr => tr.dataset.taskKey === 'synthetic:gpdk045_ota5');
+      return !!tr && [...tr.querySelectorAll('button')].pop().getAttribute('aria-expanded') === 'true'; })()`, 80));
+  tasksWindow?.close(); if (taskTarget) { await send('Target.closeTarget', { targetId: taskTarget.id }); await browser.window('GATOR - tasks', { present: false }); }
+  check('following the links chose nothing: the bottom tabs show the run they showed', await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(RESUMED.run_dir)})`));
+  await pressIn(RESUMED, 'Hide details');
 
   // ---- 5. filter and sort -------------------------------------------------------------------------------------------------------
   await typeFilter('paused');

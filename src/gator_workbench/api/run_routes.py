@@ -268,10 +268,18 @@ def register(app: FastAPI, context: ApiContext):
         except Exception:                   # a diagnostic line: a missing or damaged data part leaves it empty, never the status
             result['steering'] = None
         manifest = read_json(layout.manifest, default={}) or {}
+        # The lineage (record 7.264): the run list's fields, and an offline model's recorded source runs for its Details.
+        pretraining = manifest.get('pretraining') or {}
+        sources = [dict(run_dir=s.get('run_dir'), run_id=s.get('run_id'), task=s.get('task'), evaluations=s.get('evaluations'))
+                   for s in pretraining.get('sources') or [] if isinstance(s, dict)]
         result.update(manifest=dict(mode=manifest.get('mode'), mock=manifest.get('mock'), task_id=manifest.get('task_id'),
                                     seeds=manifest.get('seeds'), source_model=manifest.get('source_model'),
                                     budgets=manifest.get('budgets'), output=manifest.get('output'),
-                                    connection_gate=manifest.get('connection_gate'), mock_notice=manifest.get('mock_notice')),
+                                    connection_gate=manifest.get('connection_gate'), mock_notice=manifest.get('mock_notice'),
+                                    **runs.lineage(manifest), task_definition_hash=manifest.get('task_definition_hash'),
+                                    created_utc=manifest.get('created_utc'),
+                                    pretraining=dict(sources=sources, source_evaluations=pretraining.get('source_evaluations'))
+                                    if pretraining else None),
                       summary=read_json(layout.summary, default=None))
         result['save_point'] = runs.save_point(path)        # what Continue would go on from; None: there is none (7.215)
         result['save_point_code'] = runs.save_point_code(path) if result['save_point'] else None   # 'older': no Continue (7.221)

@@ -112,7 +112,7 @@ main button changes with the run:
   The run stays paused on disk and can still be continued from Run status > Continue.... The button read "Abort" in that
   state until record 7.261, although it only let go.
 * The header controls ONE run - the one started or resumed from this page, remembered across a reload - and shows
-  it as a small text button ("running 12 / 60"; press it to see the run under Run status). It is not the run chosen
+  it as a small text button ("running 12 / 60"; press it for the run brief, below). It is not the run chosen
   in the list of the bottom tabs: looking at an older run's data never takes Pause and Abort away from a live run.
   While a run is active or paused in the header, "Calibration" is not available. A finished
   Baseline simulation of a task saved from a cell records its result as the task's reference by itself
@@ -128,6 +128,17 @@ main button changes with the run:
   that save point was written by an older version of the optimizer code: continuing needs exactly that version, while
   fine-tune and frozen still load its model (record 7.221: `save_point_code` `older`). A run that is live when the page opens - started from another browser or the CLI - is taken into
   the header, and the message says so; a second run live at the same time as the header's own has no run buttons on this page.
+* **The run brief** (record 7.264; plan [frontend run workflow](plan-frontend-run-workflow.md), "The run brief", added by
+  record 7.259 - user: "pressing the green running text on banner will show you small popup window showing the running
+  runs brief"). Pressing the header's run text opens a small window, "Running now": a card for the header's run, in any
+  state, then one for every other live run under the output folder (another tab, the command line, a task's baseline).
+  - Each card gives the task, mode, model name and MOCK or real; the evaluations used of the total, as a bar and in
+    numbers, with the working time and, once the rate is known, the time left; the first feasible design and the best
+    so far; where the model came from and the last save point.
+  - Its two buttons: **Show results** (the bottom tabs show the run - what pressing the run text did until then) and
+    **Open in Runs** (the Runs window at the run, its Details open). It has no run controls: the header keeps them.
+  - It only shows, and has no timer of its own. The header's card follows the header's status reads; the other cards
+    are read when the window opens and by **Refresh**, with the time they were read.
 * **One launcher** (record 7.261, `frontend/src/launch.ts`; plan [frontend run workflow](plan-frontend-run-workflow.md),
   build step 1). Start, Calibration, Resume and Continue... go one way:
   - **Each says why it cannot go**, in its tooltip, before any press: the header's run is live or still being looked
@@ -364,8 +375,8 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
 | Saved | When the task was last saved (local time of this computer). |
 | Baseline | When the task's reference was recorded by a finished Baseline simulation; "none" until then. |
 | Sizes / results | How many sizes the task varies, how many results its testbench measures. |
-| Newest run | The task's newest run under the output folder: started, state, evaluations, first feasible - the run the bottom tabs show when the task is chosen (record 7.212). |
-| Runs | How many runs the task has, Baseline simulations included. |
+| Newest run | The task's newest run under the output folder: started, state, evaluations, first feasible - the run the bottom tabs show when the task is chosen (record 7.212). A link (record 7.264): it opens the Runs window at that run, with this task's runs only. |
+| Runs | How many runs the task has, Baseline simulations included. A link (record 7.264): it opens the Runs window with this task's runs only ("Only the runs of ..."; **Show every run** takes that back). Neither link chooses the task. |
 
 * **A double click on a row** makes the page follow that task: exactly what choosing it in the old list did - its
   Parameters, Probes and Specs come into the editors (edits you made are asked about first, Cancel keeps them), the run
@@ -1196,7 +1207,9 @@ it). The window lists every run under the output folder, newest first, one row p
 | Finished | When the run came to rest: completed, stopped, failed. A paused run shows the time with "(paused)"; a run that is working reads "still running"; a run whose worker died wrote no end, so it reads "last seen ..." (its last sign of life). |
 | Duration | How long the run was actually WORKING. The time it sat paused is not counted (the cell's tooltip and the details name it); a working run reads "... so far". |
 | State | The state, and under it why the run stopped (`budget_exhausted`, `user_pause`, ...). |
-| Task, Mode, Model, Seed, Experiment | What the run was. Model = the name of the RL model it saves (record 7.225); empty for a Baseline simulation or an LLM-only run. |
+| Task, Mode, Seed, Experiment | What the run was. |
+| Started from | Where the run's model came from (record 7.264): "template GT" for a new model made from an encoder's template; "ota7t (2) @ 420" for a run that loaded a saved model - its name and the save point's evaluations, a link to the run that saved it ("(gone)" when that run is not under the output folder); "offline: 22 runs" for a model trained offline on recorded runs; "-" for a Baseline simulation or a calibration, which load none. |
+| Saved model | The name of the RL model the run saves (record 7.225; "Model" until record 7.264); empty for a Baseline simulation or an LLM-only run. |
 | Evaluations | Candidate designs simulated, of the budget: `25 / 60`. |
 | First feasible | The number of evaluations spent when the first design met every target; "none" if no design has. |
 | Data | MOCK (synthetic backend, not a circuit result) or real. |
@@ -1205,7 +1218,19 @@ it). The window lists every run under the output folder, newest first, one row p
 * **A double click on a row** puts that run into the bottom tabs; the row is marked (blue, with a bar at its left
   edge) and the window stays open. **Clear** empties the tabs again. Neither stops, changes or deletes anything. The
   header's Start / Pause / Abort keep acting on their own run, whatever is shown here.
-* **Details** opens everything else the run recorded, under its row: run folder (click to copy) and ids, created /
+* **Details** open with the run's **Relationships** (record 7.264; plan, "Runs window"), from what each run's manifest
+  recorded - never from names or folder paths:
+  - **Task**: the task and its definition hash, a link that opens the Tasks window at it; "saved again since this run"
+    when the task was saved after the run began, "no longer registered" when it is gone.
+  - **Started from**: the run and save point it loaded (a link), the template of a new model, or the recorded runs an
+    offline model was trained on (each a link, folded).
+  - **Saved model**: its name and latest save point. **Runs that started from its model**: links.
+  - **History**, folded: the chain of models behind the run, oldest first, from its template or offline sources; a
+    parent that is not under the output folder is said, never left out.
+  - Every run named is a link that shows it in this window: selected, scrolled to, its Details open. Following a link
+    chooses nothing on the page. The Tasks window and the run brief open this window the same way (at a run, or with one
+    task's runs only).
+* **Details** also open everything else the run recorded, under its row: run folder (click to copy) and ids, created /
   worker began / came to rest, working time, time paused, summed simulator job time, stop reason and error, budget
   and Spectre launches, learner updates, first feasibility, best design with its variables, the model it loaded and
   its last save, what can be restored, parallel simulations, connection, bytes written - and one line per

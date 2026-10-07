@@ -1,9 +1,11 @@
-import { Fragment, MouseEvent, useEffect, useState } from 'react';
+import { Fragment, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { api, bytes, Json, short } from '../api';
 import { LIVE_STATES } from './RunControl';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
+import { childrenOf, historyOf, startedFrom } from '../lineage';
+import { OPEN_RUNS, openTasksAt, RunsAt } from '../openAt';
 
 /** Which run the bottom tabs show (user request 2026-09-21): ONE button at the right end of the bottom tab strip, where
  *  the drop-down list of runs used to be. It only reads "Runs..."; the run that is shown is named as plain text to its
@@ -16,7 +18,12 @@ import { FolderMoveBar, Folders, useFolders } from './Folders';
  *  when they are opened. So a run that is working shows the state and duration AS OF the read time, which is printed.
  *
  *  Folders (record 7.263, plan "Categories for runs and models"), as the Tasks window has them: All runs, Unfiled and the
- *  user's folders on the left, runs ticked and moved with "Move to...". Organization only: a run is never moved on disk. */
+ *  user's folders on the left, runs ticked and moved with "Move to...". Organization only: a run is never moved on disk.
+ *
+ *  Relationships (record 7.264, plan "Runs window"): "Started from" and "Saved model" columns, and in Details where the run's
+ *  model came from and what came of it, with a folded history. Every run named is a link that shows it here - selected,
+ *  scrolled to, its Details open - and its task opens the Tasks window at the task. Other windows open this one AT a run, or
+ *  filtered to one task's runs (openAt.ts): following a link changes no draft, no shown run and no running job. */
 
 const two = (n: number) => String(n).padStart(2, '0');
 /** Local time, in a form that sorts and compares by eye: 2026-09-21 14:03:22. */
@@ -52,7 +59,7 @@ function finished(r: Json): { text: string; css?: string; title?: string } {
   return { text: '-' };
 }
 
-type Column = { key: string; title: string; help: string; value?: (r: Json) => string | number | null };
+type Column = { key: string; title: string; help: string; value?: (r: Json, byDir: Map<string, Json>) => string | number | null };
 const COLUMNS: Column[] = [
   { key: 'started', title: 'Started', help: 'When the run was created (local time of this computer).', value: r => r.created_utc ?? null },
   { key: 'finished', title: 'Finished', help: 'When the run came to rest: completed, stopped, failed or paused. A run that is working has no finish time yet.', value: r => (isLive(r) ? null : r.ended_utc ?? r.last_seen_utc ?? null) },
@@ -60,7 +67,9 @@ const COLUMNS: Column[] = [
   { key: 'state', title: 'State', help: 'How the run stands, and under it why it stopped.', value: r => r.state ?? '' },
   { key: 'task', title: 'Task', help: 'The task (circuit and its targets) the run optimizes.', value: r => taskOf(r) },
   { key: 'mode', title: 'Mode', help: 'scratch = from random weights; fine_tune / frozen / resume = from a saved model.', value: r => r.mode ?? '' },
-  { key: 'model', title: 'Model', help: 'The name of the RL model this run saves; every model under the output folder has one of its own, so a name already given gets a number. Empty for a run that saves none (a baseline, LLM only).', value: r => r.model_label ?? null },
+  { key: 'from', title: 'Started from', help: 'Where the run\'s model came from: "template GT" = a new model made from an encoder\'s template; "ota7t (2) @ 420" = the saved model it loaded and the save point (its evaluations), a link to that run; "offline: 22 runs" = a model trained offline on recorded runs; "-" = a baseline or a calibration, which loads none.',
+    value: (r, byDir) => startedFrom(r, byDir).text },
+  { key: 'model', title: 'Saved model', help: 'The name of the RL model this run saves; every model under the output folder has one of its own, so a name already given gets a number. Empty for a run that saves none (a baseline, LLM only).', value: r => r.model_label ?? null },
   { key: 'seed', title: 'Seed', help: 'The random seed of the run.', value: r => r.seed ?? null },
   { key: 'evaluations', title: 'Evaluations', help: 'Candidate designs simulated so far, of the budget the run was given.', value: r => r.evaluations ?? null },
   { key: 'feasible', title: 'First feasible', help: 'How many evaluations had been spent when the first design met every target. "none" = no design has met them.', value: r => r.first_feasible_eval_count ?? null },
@@ -69,8 +78,50 @@ const COLUMNS: Column[] = [
   { key: 'resume', title: 'Can continue', help: 'Whether the saved state allows this run to be continued: yes (full state), model only (usable for fine_tune / frozen - also a full save point written by an older version of the optimizer code, which only that version can continue), no - also when the run folder no longer holds its save point (a copy made without them, or deleted ones).', value: r => r.resumability ?? '' },
 ];
 
+/** Where this run's model came from and what came of it (record 7.264). From the run list's own fields (lineage.ts): a
+ *  run is named by its run folder, never inferred from a name. `tasks`: the registered tasks, for "saved again since". */
+function Relationships({ row, info, runs, byDir, tasks, from, onFocus }: { row: Json; info: Json; runs: Json[]; byDir: Map<string, Json>;
+  tasks: Map<string, Json>; from: Window | null; onFocus: (dir: string) => void }) {
+  const origin = startedFrom(row, byDir);
+  const task = row.task_key ? tasks.get(row.task_key) ?? null : null;
+  const savedSince = !!task?.saved_utc && !!row.created_utc && Date.parse(task.saved_utc) > Date.parse(row.created_utc);
+  const children = childrenOf(row, runs), history = historyOf(row, byDir);
+  const sources: Json[] = info?.manifest?.pretraining?.sources ?? [];
+  const behind = history.steps.length - 1;
+  const runLink = (dir: string, text: string) => byDir.has(dir)
+    ? <button className="item-link" onClick={() => onFocus(dir)} title={`${dir}\nShow this run here: selected, its Details open.`}>{text}</button>
+    : <span title={dir}>{text} <span className="hint">(not under this output folder)</span></span>;
+  const stepText = (s: Json) => `${s?.task_key ?? (s ? taskOf(s) : '?')} · ${s?.mode ?? '?'} · ${s?.evaluations ?? '?'} evaluations${s?.model_label ? ` · ${s.model_label}` : ''}`;
+  return (<table className="grid small run-relations"><tbody>
+    <tr><td>Task</td><td>{row.task_key ? <button className="item-link" onClick={() => openTasksAt({ task_key: row.task_key, from })}
+        title="Open the Tasks window at this task.">{row.task_key}</button> : taskOf(row)}
+      {row.task_definition_hash && <span className="hint"> · definition {String(row.task_definition_hash).slice(0, 12)}</span>}
+      {task?.revision != null && <span className="hint"> · revision {task.revision} now</span>}
+      {savedSince && <span className="warn"> · saved again since this run ({stamp(task.saved_utc)})</span>}
+      {row.task_key && tasks.size > 0 && !task && <span className="hint"> · no longer registered</span>}</td></tr>
+    <tr><td>Started from</td><td>{row.run_kind === 'offline_pretraining'
+        ? <>trained offline on {row.pretraining_sources ?? sources.length} recorded runs
+            {sources.length > 0 && <details className="more"><summary>the recorded runs</summary><ul className="steps-list">{sources.map((s: Json) =>
+              <li key={s.run_dir}>{runLink(s.run_dir, `${s.task ?? '?'} · ${s.evaluations ?? '?'} evaluations · ${folder(s.run_dir)}`)}</li>)}</ul></details>}</>
+        : origin.parent ? <>{runLink(origin.parent, origin.text)}{row.parent?.checkpoint_id
+            && <span className="hint">{` (${row.parent.relation === 'frozen' ? 'evaluated' : 'fine-tuned'} from its save point ${row.parent.checkpoint_id})`}</span>}</>
+        : origin.text === '-' ? <span className="hint">no model: {row.run_kind === 'calibration' ? 'a calibration' : 'a baseline simulation'} loads none</span>
+        : <>{origin.text} <span className="hint">(a new model)</span></>}</td></tr>
+    <tr><td>Saved model</td><td>{row.model_label ? <>{row.model_label}{info && <span className="hint"> · latest save point {info.save_point ?? 'none'}</span>}</>
+      : <span className="hint">none</span>}</td></tr>
+    <tr><td>Runs that started from its model</td><td>{children.length ? children.map((c, i) => <Fragment key={c.run_dir}>{i > 0 && ', '}
+      {runLink(c.run_dir, `${stamp(c.created_utc) ?? folder(c.run_dir)} ${c.mode}${c.model_label ? ` (${c.model_label})` : ''}`)}</Fragment>)
+      : <span className="hint">none under this output folder</span>}</td></tr>
+    <tr><td>History</td><td><details className="more run-history"><summary>{behind ? `${behind} model${behind > 1 ? 's' : ''} behind this run, oldest first` : 'no saved model behind this run'}</summary>
+      <ol className="steps-list"><li className={history.root.missing ? 'warn' : 'hint'}>{history.root.text}</li>
+        {history.steps.map(s => <li key={s.run_dir}>{s.run_dir === row.run_dir ? <b>this run</b> : runLink(s.run_dir, stepText(s.row))}
+          {s.checkpoint_id && <span className="hint"> - loaded the one above at its save point {s.checkpoint_id}</span>}</li>)}</ol></details></td></tr>
+  </tbody></table>);
+}
+
 /** Everything else about one run. `row` is its line of the list; `info` is /api/runs/status, read when the details open. */
-function RunDetails({ row, info, error, onCopy, copied }: { row: Json; info: Json; error?: string; onCopy: (text: string) => void; copied: boolean }) {
+function RunDetails({ row, info, error, onCopy, copied, relations }: { row: Json; info: Json; error?: string; onCopy: (text: string) => void; copied: boolean;
+  relations: JSX.Element }) {
   const b = info?.budget, best = info?.best_design, first = info?.first_feasible, summary = info?.summary, source = info?.manifest?.source_model;
   const facts: [string, string | null | undefined][] = [
     ['Run id', row.run_id], ['Registered task', row.task_key], ['Task id', row.task_id], ['Experiment', row.experiment],
@@ -100,6 +151,8 @@ function RunDetails({ row, info, error, onCopy, copied }: { row: Json; info: Jso
   return (<div className="run-details">
     {error && <p className="error">The details of this run could not be read: {error}</p>}
     {!info && !error && <p className="hint">Reading the run's details...</p>}
+    <h4>Relationships</h4>
+    {relations}
     <table className="grid small run-facts"><tbody>
       <tr><td>Run folder</td><td className="path" title="Click to copy" onClick={() => onCopy(row.run_dir)}>{row.run_dir}{copied && <b className="ok"> copied</b>}</td></tr>
       {facts.filter(([, value]) => value != null && value !== '').map(([name, value]) => <tr key={name}><td>{name}</td><td className={name === 'Error' ? 'error' : ''}>{value}</td></tr>)}
@@ -126,12 +179,23 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
   const [copied, setCopied] = useState(false);
   const folders = useFolders('runs');
   const [selected, setSelected] = useState<string[]>([]);
+  const [onlyTask, setOnlyTask] = useState<string | null>(null);   // only one task's runs: a link from the Tasks window (7.264)
+  const [tasks, setTasks] = useState<Map<string, Json>>(new Map());
+  const [focus, setFocus] = useState<string | null>(null);         // a run to scroll to once it is drawn
+  const byDir = useMemo(() => new Map(runs.map(r => [r.run_dir, r])), [runs]);
+  const readTasks = () => api.tasks().then(read => setTasks(new Map((read.tasks ?? []).map((x: Json) => [x.task_key, x]))), () => undefined);
   const chooseFolder = (id: string) => { folders.setFolder(id); setSelected([]); setOpen(null); };
   const select = (dir: string, checked: boolean) => setSelected(dirs => checked ? [...dirs.filter(d => d !== dir), dir] : dirs.filter(d => d !== dir));
   const move = async (id: string) => { if (await folders.move(selected, id)) setSelected([]); };
 
   const readDetails = (dir: string) => { setInfo({ dir }); api.status(dir).then(value => setInfo(i => (i?.dir === dir ? { dir, value } : i)), e => setInfo(i => (i?.dir === dir ? { dir, error: e.message } : i))); };
-  const refresh = () => { setLoading(true); setSelected([]); void folders.refresh(); onRefresh().finally(() => setLoading(false)); if (open) readDetails(open); };
+  const refresh = () => { setLoading(true); setSelected([]); void folders.refresh(); void readTasks(); onRefresh().finally(() => setLoading(false)); if (open) readDetails(open); };
+  /** Show one run in this window: every folder, no filter, its Details open, scrolled to. */
+  const focusRun = (dir: string) => {
+    folders.setFolder('all'); setFilter(''); setSelected([]);
+    setOnlyTask(task => (task && byDir.get(dir)?.task_key !== task ? null : task));
+    setOpen(dir); readDetails(dir); setFocus(dir);
+  };
   // Whoever had the list read - this window, or the page when a run was started - the window says when that was.
   useEffect(() => setReadAt(new Date().toLocaleTimeString([], { hour12: false })), [runs]);
   const toggle = (dir: string) => { if (open === dir) { setOpen(null); return; } setOpen(dir); readDetails(dir); };
@@ -143,10 +207,28 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
     onChoose(dir);
   };
 
-  const openWindow = () => {
+  const openWindow = (from?: Window | null) => {
     refresh();                                                   // pressing the button is the request to see the current list
-    openPopup();
+    openPopup(from);
   };
+  // Another window's link (openAt.ts): this window opens AT a run, or with one task's runs only.
+  const latest = useRef({ openWindow, focusRun });
+  latest.current = { openWindow, focusRun };
+  useEffect(() => {
+    const show = (event: Event) => {
+      const at = (event as CustomEvent<RunsAt>).detail ?? {};
+      latest.current.openWindow(at.from);
+      if (at.run_dir) { latest.current.focusRun(at.run_dir); if (at.task_key) setOnlyTask(at.task_key); }
+      else if (at.task_key) { folders.setFolder('all'); setFilter(''); setSelected([]); setOpen(null); setOnlyTask(at.task_key); }
+    };
+    window.addEventListener(OPEN_RUNS, show);
+    return () => window.removeEventListener(OPEN_RUNS, show);
+  }, []);
+  useEffect(() => {
+    if (!focus || !popup) return;
+    const row = [...popup.document.querySelectorAll<HTMLTableRowElement>('table.run-table tbody > tr')].find(tr => tr.title === focus);
+    if (row) { row.scrollIntoView({ block: 'center' }); setFocus(null); }
+  });
   // The click happens in the run window, so ITS clipboard is the one a browser lets this gesture write to.
   const copyPath = (text: string) => (popup ?? window).navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined);
 
@@ -157,8 +239,8 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
   const column = COLUMNS.find(c => c.key === sort.key) ?? COLUMNS[0];
   // Empty cells stay at the bottom whichever way the column is sorted. Only while the window is open: the page redraws
   // on every status poll, and a closed window needs no sorted list.
-  const shown = !popup ? [] : runs.filter(r => folders.holds(r.run_dir) && words.every(w => text(r).includes(w))).sort((a, b) => {
-    const x = column.value!(a), y = column.value!(b);
+  const shown = !popup ? [] : runs.filter(r => folders.holds(r.run_dir) && (!onlyTask || r.task_key === onlyTask) && words.every(w => text(r).includes(w))).sort((a, b) => {
+    const x = column.value!(a, byDir), y = column.value!(b, byDir);
     if (x == null || x === '' || y == null || y === '') return (x == null || x === '' ? 1 : 0) - (y == null || y === '' ? 1 : 0);
     return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * (sort.down ? -1 : 1);
   });
@@ -187,6 +269,8 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
       <Folders state={folders} keys={runs.map(r => r.run_dir)} popup={popup} onSelect={chooseFolder} />
       <div className="task-folder-content">
       <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void move(id)} />
+      {onlyTask && <p className="hint run-only-task">Only the runs of <code>{onlyTask}</code>{' '}
+        <button className="item-link" onClick={() => setOnlyTask(null)}>Show every run</button></p>}
       {runs.length > 0 && <div className="scroll"><table className="grid run-table">
         <thead><tr>
           <th className="task-select"><input type="checkbox" aria-label="Select all shown runs" disabled={folders.busy || !folders.ready || !shown.length}
@@ -196,25 +280,29 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
           {COLUMNS.map(c => <th key={c.key} className="sortable" title={`${c.help} Press to sort.`} aria-sort={sort.key === c.key ? (sort.down ? 'descending' : 'ascending') : undefined}
             onClick={() => setSort(s => ({ key: c.key, down: s.key === c.key ? !s.down : true }))}>{c.title}{sort.key === c.key && <span className="sort-mark">{sort.down ? ' ▼' : ' ▲'}</span>}</th>)}
           <th className="plain"></th></tr></thead>
-        <tbody>{shown.map(r => { const active = r.run_dir === runDir, end = finished(r); return (<Fragment key={r.run_dir}>
+        <tbody>{shown.map(r => { const active = r.run_dir === runDir, end = finished(r), origin = startedFrom(r, byDir); return (<Fragment key={r.run_dir}>
           <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} title={r.run_dir} onDoubleClick={e => showRun(e, r.run_dir)}>
             <td className="task-select"><input type="checkbox" aria-label={`Select ${folder(r.run_dir)}`} checked={selected.includes(r.run_dir)}
               disabled={folders.busy || !folders.ready} onChange={e => select(r.run_dir, e.target.checked)} /></td>
-            <td>{stamp(r.created_utc) ?? '-'}{folders.folder === 'all' && folders.data.folders[folders.of(r.run_dir)]
+            <td className="wrap-words">{stamp(r.created_utc) ?? '-'}{folders.folder === 'all' && folders.data.folders[folders.of(r.run_dir)]
               && <div className="hint task-folder-label">{folders.data.folders[folders.of(r.run_dir)]}</div>}</td>
-            <td className={end.css} title={end.title}>{end.text}</td>
+            <td className={`wrap-words${end.css ? ` ${end.css}` : ''}`} title={end.title}>{end.text}</td>
             <td className="numeric" title={r.paused_seconds ? `Working time. It also sat paused for ${span(r.paused_seconds)}.` : undefined}>{span(r.active_seconds) ?? '-'}{isLive(r) && r.active_seconds != null && ' so far'}</td>
             <td><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>{r.stop_reason && <div className="hint">{r.stop_reason}</div>}</td>
-            <td title={r.task_id}>{taskOf(r)}</td><td>{r.mode}</td><td>{r.model_label ?? '-'}</td><td className="numeric">{r.seed}</td>
+            <td className="wrap" title={r.task_id}>{taskOf(r)}</td><td>{r.mode}</td>
+            <td className="wrap">{origin.parent ? <button className="item-link" onClick={() => focusRun(origin.parent!)} title={`${origin.parent}\nShow the run it started from.`}>{origin.text}</button> : origin.text}
+              {origin.missing && <span className="hint" title="That run is not under this output folder."> (gone)</span>}</td>
+            <td className="wrap">{r.model_label ?? '-'}</td><td className="numeric">{r.seed}</td>
             <td className="numeric">{r.evaluations ?? '-'}{r.max_evaluations != null && ` / ${r.max_evaluations}`}</td>
             <td className="numeric">{r.first_feasible_eval_count != null ? `at ${r.first_feasible_eval_count}` : r.evaluations != null ? 'none' : '-'}</td>
-            <td>{r.experiment}</td>
+            <td className="wrap">{r.experiment}</td>
             <td>{r.mock ? <span className="badge model-tag mock-tag">MOCK</span> : 'real'}</td>
             <td>{RESUME[r.resumability] ?? '-'}</td>
             <td><button className="notes-link" aria-expanded={open === r.run_dir} onClick={() => toggle(r.run_dir)}>{open === r.run_dir ? 'Hide details' : 'Details'}</button></td>
           </tr>
           {open === r.run_dir && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>
-            <RunDetails row={r} info={info?.dir === r.run_dir ? info?.value : null} error={info?.dir === r.run_dir ? info?.error : undefined} onCopy={copyPath} copied={copied} /></td></tr>}
+            <RunDetails row={r} info={info?.dir === r.run_dir ? info?.value : null} error={info?.dir === r.run_dir ? info?.error : undefined} onCopy={copyPath} copied={copied}
+              relations={<Relationships row={r} info={info?.dir === r.run_dir ? info?.value : null} runs={runs} byDir={byDir} tasks={tasks} from={popup} onFocus={focusRun} />} /></td></tr>}
         </Fragment>); })}</tbody></table></div>}
       {runs.length > 0 && shown.length === 0 && <p className="hint task-folder-empty">{filter ? 'No run matches the filter in this folder.' : 'This folder is empty. Select runs in All runs, then use Move to…'}</p>}
       </div></div>
@@ -225,7 +313,7 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
     {blocked && <span className="error run-list-blocked">{BLOCKED}</span>}
     {/* The run that is shown is said as plain text to the LEFT of the button; the button itself only reads "Runs..." (user request 2026-09-21). */}
     <span className="run-list-current" title={runDir ?? undefined}>{current ? label(current, status?.run_dir === runDir ? status.state : null) : runDir ? folder(runDir) : 'No run selected'}</span>
-    <button className={`run-list-button${popup ? ' open' : ''}`} onClick={openWindow}
+    <button className={`run-list-button${popup ? ' open' : ''}`} onClick={() => openWindow()}
       title={popup ? 'The run window is open: press to bring it to the front and read the list again.' : 'Opens the run window: every run with its start and finish time, its duration and its results. Choose there which run these tabs show.'}>Runs...</button>
     {view && createPortal(view, root!)}
   </>);

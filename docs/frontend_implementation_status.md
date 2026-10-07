@@ -296,3 +296,5 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.249 | Task names omit `real:` in the Project row and Tasks window; Kind column/detail removed; IDs and run/model links preserved. |
 | 7.250 | Tasks window gains persistent folders, counts, create/rename/delete and bulk Move to; existing tasks grouped as Graph Transformer 22, GraphGPS 6, Group Cross Attention 6. |
 | 7.251 | Folder create/rename/delete buttons become folder-plus, pencil and bin icons; tooltips, accessible labels and behavior preserved. |
+| 7.252 | [Frontend workflow plan](plan-frontend-run-workflow.md): three modes, existing-run restoration and Resume/Continue actions, source checkpoint selection and connected history; full-state branching identified as separate backend work. Plan only. |
+| 7.254 | [Frontend workflow plan](plan-frontend-run-workflow.md) revised around the Manager (Tasks / Runs / RL models in one window): a row click only inspects, the page's configuration stays the next run's draft, existing runs are continued in place (no "Load setup" mode), one launcher with stated reasons, idempotent launches |

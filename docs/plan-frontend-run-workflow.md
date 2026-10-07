@@ -7,7 +7,8 @@ Status: plan, revised twice on 2026-10-07, then extended. Nothing is built yet.
 | 7.252 (Codex) | First draft, kept as [plan-frontend-run-workflow-v1.md](plan-frontend-run-workflow-v1.md). |
 | 7.254 | Revised around one Manager window. |
 | 7.257 | Revised without the Manager. The user: "forget about the manager. renew the load model window so it shows content similar to tasks window and runs window. Add category functionality to model load window and runs window. For model and runs, you should be able to see relationships and model history. Mode selection should be merged in to load model. Scratch mode will ask you to create a new model from the default templates. fine-tune and evaluate load existing ones", then "add these to update the plan". |
-| 7.258 | This version: adds **Load run**. The user: "add to the plan that loading one run will load the corresponding model and task", then "on frontend". |
+| 7.258 | Adds **Load run**. The user: "add to the plan that loading one run will load the corresponding model and task", then "on frontend". |
+| 7.259 | This version: adds **the run brief**. The user: "pressing the green running text on banner will show you small popup window showing the running runs brief". |
 
 ## The idea
 
@@ -21,6 +22,7 @@ a model is loaded.
 - **Both show their relationships and a model's history:** which run trained a model, which model and save point a run
   started from, and what came of it later.
 - **Loading a run loads its task and its model** into the page, and shows its results.
+- **The header's green run text opens a brief** of the runs running now, in a small pop-up window.
 
 The page's configuration stays what it is today: the draft of the next run. Four things never change each other by
 accident:
@@ -38,7 +40,7 @@ Only Start, Baseline simulation, Resume and Continue start work, each after the 
 |---|---|---|---|---|
 | Browsing | each window's selection, filter, sort, folder and open details | the window's own state | clicks in that window | anything outside it; it changes nothing outside it |
 | Next run (the draft) | the editors and Run configuration, with the Mode and the model chosen in the RL model window | `useConfig` (store.ts): persisted, Undo / Redo | edits; **Load task**; **Load run**; **Use template**; **Use this save point**; **New run like this**; Apply calibration | browsing, showing results, launches, status polling |
-| Shown run | the run the bottom tabs show | `runDir` (App.tsx) | **Load run**; **Show results**; choosing a task (its newest run, record 7.212); a launch from this page | browsing, draft edits |
+| Shown run | the run the bottom tabs show | `runDir` (App.tsx) | **Load run**; **Show results** (Runs window, run brief); choosing a task (its newest run, record 7.212); a launch from this page | browsing, draft edits |
 | Running job | the run the header's buttons act on | `useRunControl` (RunControl.tsx) | a launch from this page; adopting a run started elsewhere (always said); **Let go** | browsing, showing results, draft edits |
 
 ## What the three windows share
@@ -296,6 +298,34 @@ own job on a run, but uses steps 1, 3 and 6. Today four places do each step thei
 when the header is free or holds a run at rest, and the message names a paused run it lets go: "ota7t stays paused;
 continue it from Runs". Today the task-creation baseline replaces a paused run in the header without a word.
 
+## The run brief
+
+The user: "pressing the green running text on banner will show you small popup window showing the running runs brief".
+
+- **Opening it.** The run chip is the header's run text: green while a run starts or runs, amber while it pauses, is
+  paused or aborts. Pressing it opens a small pop-up window, "Running now", about 440 × 420, and pressing it again
+  brings the window to the front. Today the chip shows its run under Run status; that becomes a button in the brief.
+- **One card per run:**
+  - the header's run first, marked "In this page's header", in any state;
+  - then every other live run (starting, running, pausing or stopping), marked "Not in this page's header": another
+    tab, the CLI or a task-creation baseline.
+
+  Each card holds:
+  - the task, the mode and the model's name, with MOCK or real;
+  - the evaluations used of the total, as a bar and in numbers, with the working time and, once the rate is known, the
+    time left;
+  - the evaluation of the first feasible design (or "none feasible yet"), and the best design so far;
+  - what it started from (a template, or a model and save point), and its last save point (evaluations, how long ago).
+- **Two buttons per card:** **Show results** (the bottom tabs show the run under Run status, as the chip does today)
+  and **Open in Runs** (the Runs window at the run). It has no Pause, Abort or Save now: the header's buttons stay the
+  only controls.
+- **It only shows.** Opening, reading and closing it change no draft, no shown run and no running job.
+- **Data that exists already, and no new timer.**
+  - The header's card follows the header's own status poll.
+  - The other cards come from the run list (each row's state, evaluations, total, working time and first feasible
+    design) and each run's status. They are read when the window opens and on **Refresh**, with "read at".
+- **Nothing live besides the header's run:** the window says so under its card.
+
 ## Not in this delivery
 
 **Branch full state** (a new run from a full training state) needs its own backend contract, as the first draft's step 5
@@ -317,6 +347,7 @@ Each step is shippable on its own and checked before the next.
 3. **Relationships.**
    - The list and status fields, then the Runs window's columns and relationship Details.
    - Opening a window at an item, and the Tasks window's links.
+   - The run brief from the header's run chip.
 4. **The RL model window.**
    - The three Mode choices, the templates (New model), and the models table with Details, folders, relationships and
      history (Fine-tune / Evaluate only).
@@ -364,10 +395,22 @@ Browser checks with fixtures, and backend tests:
    - the offered alternatives are buttons, never automatic.
 9. **Old resume drafts** never start anything by themselves, and offer the run.
 10. **Adoption:** a task-creation baseline while a run is paused in the header names that run in its message.
-11. **Unchanged:** Calibration and its Apply, task folders, the task-run link (record 7.212) apart from Load run, Save
+11. **The run brief:**
+    - pressing the run chip opens it and changes nothing else;
+    - it shows the header's run first and every other live run, each with Show results and Open in Runs, which do what
+      they say;
+    - the header's card follows the header's poll, with no timer of its own, and the window has no run controls.
+12. **Unchanged:** Calibration and its Apply, task folders, the task-run link (record 7.212) apart from Load run, Save
     task, the header's single main button and the red Abort.
 
 ## What changed, and why
+
+**Record 7.259, on the user's words** ("pressing the green running text on banner will show you small popup window
+showing the running runs brief"):
+
+- **The run brief.** The header's run chip opens a small pop-up with a card for the header's run and one for every
+  other live run. It only shows; **Show results** takes over what the chip's press does today.
+- Today the chip's press changes the bottom tabs, and runs started elsewhere are seen only in the Runs window.
 
 **Record 7.258, on the user's words** ("add to the plan that loading one run will load the corresponding model and
 task", "on frontend"):

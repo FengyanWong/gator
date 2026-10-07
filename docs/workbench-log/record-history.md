@@ -351,3 +351,5 @@ One row per commit, newest last.
 | `d845cf9` | 10-07 08:53 | 7.261 | frontend plan build step 1: one launcher for Start, Calibration, Resume and Continue, request ids answered once, the continuation check, the budget form, Let go, adoption notices (session "Frontend workbench layout design") |
 | `87b74c8` | 10-07 08:54 | - | record only: names the commit of record 7.261, and the table rows for 85dcfa7 and d845cf9 |
 | `b12c3be` | 10-07 09:10 | 7.263 | frontend plan build step 2: folders for runs and saved models, stored like the task folders, one folder sidebar (session "Frontend workbench layout design") |
+| `143505f` | 10-07 09:10 | - | record only: names the commit of record 7.263, and the table rows for 87b74c8 and b12c3be |
+| `f4fc5f2` | 10-07 09:37 | 7.264 | frontend plan build step 3: relationships between runs and models, links between the windows, the run brief (session "Frontend workbench layout design") |

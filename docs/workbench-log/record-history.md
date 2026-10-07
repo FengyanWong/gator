@@ -349,3 +349,5 @@ One row per commit, newest last.
 | `6fa7d6b` | 10-07 08:41 | 7.260 | the task name is the button that opens the Tasks window; Delete task inside it; the load icon removed (the user's Codex session) |
 | `85dcfa7` | 10-07 08:42 | - | record only: names the commit of record 7.260, and the table rows for 3e47161 and 6fa7d6b |
 | `d845cf9` | 10-07 08:53 | 7.261 | frontend plan build step 1: one launcher for Start, Calibration, Resume and Continue, request ids answered once, the continuation check, the budget form, Let go, adoption notices (session "Frontend workbench layout design") |
+| `87b74c8` | 10-07 08:54 | - | record only: names the commit of record 7.261, and the table rows for 85dcfa7 and d845cf9 |
+| `b12c3be` | 10-07 09:10 | 7.263 | frontend plan build step 2: folders for runs and saved models, stored like the task folders, one folder sidebar (session "Frontend workbench layout design") |

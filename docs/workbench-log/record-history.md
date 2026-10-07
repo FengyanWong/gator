@@ -370,3 +370,5 @@ One row per commit, newest last.
 | `8751d21` | 10-07 14:18 | 7.262 | held-out circuits built for the purpose (folded cascode; telescopic cascode from the Analog Design Bench, CC BY-NC), the equal-recipe arms on the six C tasks, OTA8m retired; docs only (session "Task button and fine-tuning comparison plan") |
 | `543eb04` | 10-07 14:18 | - | record only: names the commit of record 7.262, and the table rows for 558dbec and 8751d21 |
 | `7df2579` | 10-07 21:34 | 7.266 | plan: the general model over several starting designs and seeds, against scratch; docs only (session "Task button and fine-tuning comparison plan") |
+| `9bcaecf` | 10-07 21:34 | - | record only: names the commit of record 7.266, and the table rows for 543eb04 and 7df2579 |
+| `0b85fd4` | 10-07 21:39 | 7.269, 7.270 | the header's Next line; Load run stops on an unreadable model and only the newest load lands (session "Frontend workbench layout design") |

@@ -341,3 +341,5 @@ One row per commit, newest last.
 | `2ca0ef4` | 10-07 07:16 | 7.257 | plan: the frontend workflow without the Manager - Tasks, Runs and RL model windows with categories, relationships and model history; the Mode inside the RL model window (New model from a template, Fine-tune / Evaluate only from a pinned save point) |
 | `2704ed5` | 10-07 07:17 | - | record only: names the commit of record 7.257 (2ca0ef4), and the table rows for bc2f7d1 and 2ca0ef4 |
 | `094aa70` | 10-07 07:33 | 7.258 | plan: Load run - loading a run brings its task, its model and its results onto the page, as one Undo step; nothing built |
+| `08f0b22` | 10-07 07:33 | - | record only: names the commit of record 7.258, and the table rows for 2704ed5 and 094aa70 |
+| `13223d8` | 10-07 07:36 | 7.256 | revision 2: stage D, the held-out test on the folded cascode only; OTA8m does not count; docs only (session "Encoder run plan revision") |

@@ -343,3 +343,5 @@ One row per commit, newest last.
 | `094aa70` | 10-07 07:33 | 7.258 | plan: Load run - loading a run brings its task, its model and its results onto the page, as one Undo step; nothing built |
 | `08f0b22` | 10-07 07:33 | - | record only: names the commit of record 7.258, and the table rows for 2704ed5 and 094aa70 |
 | `13223d8` | 10-07 07:36 | 7.256 | revision 2: stage D, the held-out test on the folded cascode only; OTA8m does not count; docs only (session "Encoder run plan revision") |
+| `1cc461d` | 10-07 07:36 | - | record only: names the commit of record 7.256's revision 2 (13223d8), and the table rows for 08f0b22 and 13223d8 |
+| `9243300` | 10-07 07:53 | 7.259 | plan: the run brief - the header's run chip opens a small pop-up with a brief of every live run; nothing built |

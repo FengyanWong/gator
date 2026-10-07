@@ -1355,3 +1355,22 @@ and the button only run the calibration steps”. Implemented in workbench code 
   Existing combined archives and the historical script API retain their semantics. Ordinary training is unchanged.
 - A spec-less ngspice import checks only measurement presence for its baseline, without storing performance targets
   into the task. The actual deck and measurement receipts stay in the run.
+
+## A circuit built for the purpose is the held-out test; the rank rule needs a phase-margin floor; the recipe sets the late phase, the weights the head start (2026-10-07, record 7.262)
+
+- **What was run:** the general model's six C-task arms redone with the scratch recipe (G2), and two held-out circuits
+  built for the purpose in library MScR: a folded-cascode OTA of our own design (`real:mscr_otafc`) and the single-ended
+  port of the Analog Design Bench telescopic-cascode task (`real:mscr_otatc`, Yilin Xu, CC BY-NC 4.0 task content kept
+  outside the repository), each with a required 64-design baseline, goals from the baseline-only rule, a frozen probe,
+  scratch and the general model with the scratch recipe. `docs/plan-general-network.md` section 23.
+- **Decisions.** (1) The head start belongs to the weights, the late phase to the recipe: G2 gives the same early shares as
+  the anti-drift arms on every circuit, while the anti-drift recipe ends higher on ring3 and ldo1; C1 stays at three of
+  six under either recipe. (2) The rank rule's phase-margin limit is replaced by the 60 deg floor for every held-out
+  circuit: at rank 30 it asked the folded cascode for PM >= 90.24 deg, which no design of 800 met jointly with the other
+  rows (both arms 0 / 800; kept on record as the first goal set). (3) Under the revised goals the start designs pass, so
+  the resets are counted in the recorded totals and the policy-only view is reported beside them. (4) The telescopic
+  cascode meets C1, C2 and C4 (73 % against 8 % early; 100 % against 89 % late) and is the one "transfers to an unseen
+  amplifier" result of the study; the folded cascode meets C2 and C4 only (+7 points early), with the caveat that LDO2's
+  pooled error amplifier is itself a folded cascode. The typed-graph audit (no whole-graph isomorphism, no pooled core
+  embedded) goes with both results. (5) OTA8m's cells are renamed `mscr_ota7t_rz` / `tb_ota7t_rz` and its task is deleted
+  (backup kept): it was the pooled OTA7t with a nulling resistor, not a held-out circuit.

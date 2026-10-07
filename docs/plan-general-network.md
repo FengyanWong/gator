@@ -5,7 +5,8 @@ the six cases with different starting design parameter and starting seed from sc
 to avoid policy drift?" Then, after asking what arm O and leave-one-out do and whether a more complex op-amp added to the
 library could serve as the held-out test: "rewrite the plan" and "arm o trim to only ota5t circuit".
 
-Status (2026-10-07): the required experiment and the authorized OTA8m follow-up are complete.
+Status (2026-10-07 afternoon): the required experiment, the OTA8m follow-up, the equal-recipe arms and the two held-out
+circuits built for the purpose (section 23, record 7.262) are complete.
 The required experiment used 14,556 new launches; the follow-up added 1,388, for 15,944 total.
 All six start-C baselines qualified with 64 random draws each (391 launches including reset overhead).
 Sections 20 and 22 hold the final results; earlier sections retain the historical protocol and execution record.
@@ -1001,3 +1002,104 @@ separate. No new baseline or source pretraining was run. The original G-800 snap
 reference for reproducing the original comparison now that the live G run has a continuation segment. All scripts,
 150 runtime files, original general checkpoint and source-pool hashes re-verify. Production source is unchanged;
 the earlier 133-test result and the nine follow-up offline checks remain the relevant checks. `git diff --check` passes.
+
+## 23. The held-out circuits built for the purpose, and the equal-recipe arms (2026-10-07, record 7.262)
+
+User: "build the folded cascode as the real held-out circuit and test the general model on it with same recipe. Delete the
+previous task but rename and keep actual circuit in the vm library. queue redo an equal-recipe comparison on the six C
+tasks"; then "build the telescopic cascode too after the folded cascode, if the circuit is from any publicated sources it
+would be better"; and the caveat "LDO2's error amplifier in the pool is itself a folded cascode ... 'held-out' here means an
+unseen circuit, bench and metric set".
+
+**The equal-recipe arms on the six C tasks (G2).** The general model loaded with the SCRATCH recipe (1e-3, eight updates,
+target-only, no rehearsal; the "fresh G" recipe of section 22), seed 2, 800 launches, the same C tasks, goals, registry,
+runtime and settings copy as the original S and G arms, so the three arms of a circuit differ only in the recipe:
+
+| C task | S: passing / early / last third | G (anti-drift recipe) | G2 (scratch recipe) |
+|---|---|---|---|
+| ota5t | 624 / 2 % / 95 % | 743 / 83 % / 95 % | 742 / 88 % / 95 % |
+| ota7t_w | 404 / 0 % / 93 % | 740 / 91 % / 95 % | 745 / 88 % / 94 % |
+| ring3 | 76 / 4 % / 12 % | 395 / 24 % / 63 % | 245 / 24 % / 30 % |
+| vco_lin_c | 462 / 4 % / 92 % | 735 / 80 % / 95 % | 740 / 83 % / 95 % |
+| ldo1_rgcn | 0 / 0 % / 0 % | 155 / 4 % / 37 % | 34 / 2 % / 8 % |
+| ldo2_rgcn | 0 / 0 % / 0 % | 87 / 0 % / 21 % | 80 / 0 % / 14 % |
+
+The recipe does not change the head start (the same 83-91 % early on ota5t, ota7t_w and vco_lin_c; 24 % on ring3; the
+LDOs at 0-4 %), so the head start is the weights' doing, not the recipe's. The late phase differs: the anti-drift recipe
+(lower learning rate, two updates, half-source rehearsal) kept improving on ring3 (63 % against 30 %) and ldo1 (37 %
+against 8 %), where the scratch recipe did not; on the four easy circuits the two recipes end alike. C1 stays at three of
+six under either recipe. 4,800 launches, 06:54-09:29.
+
+**Two held-out circuits built for the purpose.** Each registered as a task of its own in library MScR, baselined with 64
+random designs (required), goals from the baseline-only rule, then the frozen probe (300, sampled actions), scratch
+(800) and the general model with the scratch recipe (800), seed 0, through the same frozen runtime as every arm above.
+Pipeline: `artifacts/general-network-20261006/folded-cascode/` (fc_pipeline.py, fc_run.py, queue_fc.sh, graph_audit.py,
+retire_ota8m.py, trial_nodes.py, the logs, checks, configurations and results).
+
+- **Folded cascode `real:mscr_otafc`** (own design; `~/mscr_circuits` designs.OTAFC / circuits.otafc / TASKS['otafc']):
+  NMOS pair, PMOS folding sources, PMOS cascodes, an NMOS cascode mirror load, the whole bias network inside from the
+  30 uA reference (wide-swing diodes for both cascode rails); 19 transistors, 14 groups over 36 rows, the ota5t bench and
+  six metrics at 1.0 V, 0.65 V common mode, 10 pF. Start design after one resizing round (the first sat at the saturation
+  edge): 50.3 dB, 12.5 MHz, 86 deg, 0.30 mW, 58 dB PSRR, 36 uV.
+- **Telescopic cascode `real:mscr_otatc`**, the single-ended port of the Analog Design Bench task
+  `sky130-telescopic-cascode-ota-pvt-fix` (Yilin Xu; Arcadia-1/analog-design-bench, task content CC BY-NC 4.0; its files
+  stayed outside the repository): the published NMOS-input telescopic signal path and its three bias rails from one 50 uA
+  reference (the NMOS cascode rail from an input-tracking replica, I x R1 and a matched diode; the PMOS cascode rail from
+  VDD - I x R2 - a matched diode; the PMOS mirror master rail) are kept; the published circuit is fully differential with
+  a CMFB loop, so the single-ended variant takes the PMOS cascode current-mirror load and drops the loop; the replica
+  follows VINP. Ported to GPDK045 1 V devices at the published lengths; 18 transistors and two resistors, 18 groups over
+  38 rows. Two resizing rounds (every NMOS mirror device doubled for lower overdrive, the PMOS stack widened, R2 raised;
+  the PDK form caps the multiplier at 100, so the tail and the top pair use two fingers): 47.7 dB, 17.5 MHz, 87.5 deg,
+  0.24 mW, 46 dB PSRR, 29 uV, every device saturated with margin.
+
+**The goal rule needed a floor.** The rank rule of section 19 gave the folded cascode `PM >= 90.24 deg` at rank 30, a
+limit only weak, slow designs reach: the scratch arm met every other row in 44-93 % of its designs and that row in 8 %,
+and no design of 800 passed jointly (probe 0 / 300, S 0 / 800, G 0 / 800: the first goal set, kept on record). The
+revision keeps the rule for five rows and puts the phase-margin row at the standard 60 deg floor (`PM_FLOOR`,
+fc_pipeline.goals_with_pm_floor); the telescopic got the floor from the start. Under the revision 3 of the 64 random
+designs pass all six rows on each circuit, and - a difference from the rule of record, stated here - the START design of
+each circuit passes too (its power sits 1-2 % inside the power row); every episode reset re-evaluates the start, so the
+"as recorded" counts (the 7.229 definitions) contain those resets as passes; the policy-only columns leave them out.
+
+| Circuit, goals | Arm | Passing, as recorded | Early 9-108 | Last third | Policy designs: passing | Policy early (own proposals among 9-108) |
+|---|---|---|---|---|---|---|
+| folded, revision 3 | probe | 75 / 300 (25 %) | 25 % | - | 59 / 284 (21 %) | 21 / 96 |
+| folded, revision 3 | S | 471 / 800 (59 %) | 13 % | 93 % | 431 / 752 (57 %) | 9 / 92 |
+| folded, revision 3 | G | 524 / 800 (66 %) | 20 % | 95 % | 484 / 752 (64 %) | 16 / 92 |
+| telescopic | probe | 21 / 300 (7 %) | 6 % | - | 5 / 284 (2 %) | 2 / 96 |
+| telescopic | S | 322 / 800 (40 %) | 8 % | 89 % | 281 / 752 (37 %) | 3 / 92 |
+| telescopic | G | 767 / 800 (96 %) | 73 % | 100 % | 726 / 752 (97 %) | 68 / 92 |
+
+Criteria of section 5: folded cascode C1 fails (20 % against 13 %, +7 points), C2 passes (95 % against 93 %), C4 passes
+(the weakest row, power, falls from 58 % failures in the first 200 to 13 % after); telescopic cascode C1 passes (73 %
+against 8 %, +65 points), C2 passes (100 % against 89 %), C4 passes (power 10 % to 0 %). By the rule of section 6, "the
+general network transfers to an unseen amplifier" holds for the telescopic cascode and not for the folded cascode. One
+seed each; the start designs pass the goals (above); the verdict carries the caveat below.
+
+**The caveat and the typed-graph audit.** LDO2's error amplifier (ldo2_rgcn, its _b start, the _gt variant: four pooled
+runs, 5,164 evaluations) is an NMOS-input folded cascode with PMOS folding sources and cascodes and NMOS sinks, bias from
+two pins, so the folded-cascode building block is in the pool; "held-out" means an unseen circuit, bench and metric set.
+`graph_audit.py` on each circuit's baseline graph: whole-graph isomorphism with none of the fifteen archived pooled graphs
+nor OTA8m; the pooled amplifier cores (LDO2's nine-transistor amplifier, the LDO1 and ldo_basic 5T amplifiers, ota5t,
+ota7t) embed in neither new graph as a labelled subgraph (device kinds and terminal roles) - the shared fold is a shared
+idea with different wiring (the mirror in the NMOS load, the bias inside), not a copied block. The telescopic's result is
+the stronger one: its stacked-cascode structure has no pooled relative, its zero-shot probe is near zero (2 % of own
+proposals), and the loaded model still reaches 73 % in its first 100 own proposals against 8 % from scratch.
+
+**OTA8m retired** (user: "delete the previous task but rename and keep actual circuit in the vm library"): the cells were
+rebuilt from Codex's frozen draft as `MScR/mscr_ota7t_rz` and `tb_ota7t_rz` (what they are: the pooled OTA7t with a series
+nulling resistor), their readback compared with the originals instance by instance (equal; RZ's "1K" against "1.0K" is
+the same 1 kohm), then `mscr_ota8m` and `tb_ota8m` deleted; the task registration `real:mscr_ota8m` backed up
+(`folded-cascode/retired/mscr_ota8m-profile.tar.gz`) and removed from the profiles and the Tasks window's folders. Its runs
+and Codex's artifacts are untouched.
+
+**Cost.** 10,632 new launches: the six G2 arms 4,800; the folded cascode 1,965 (first goals) + 1,900 (revision 3); the
+telescopic 1,965; two automatic one-design baselines at task creation; plus 7 plain Spectre trial runs for the start designs.
+
+**Incidents, on record.** WSL's /mnt/d mount died at 09:40 (every access an I/O error; the drive fine on Windows; a peer's
+git crashed with SIGBUS); the user remounted; the first remount lacked the user id (root-owned files, tar unable to set
+times, so the workbench's Check now export step failed until the second remount at about 10:20); the backend died in the
+outage and the committing session restarted it. Maestro's netlister reuses a cached subcircuit netlist on the VM
+(`ihnl` under the trial's folder), so a rebuilt cell simulated with its old sizes until that folder was deleted before each
+trial. The rank-30 queue script died of a bash syntax error after its last stage because the file was edited while that
+instance ran (nothing lost; the next chain started from the completed state).

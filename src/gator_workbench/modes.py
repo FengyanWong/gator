@@ -177,7 +177,9 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
         policy['reset'] += ['actor/critic/temperature optimizers (new)', 'replay_buffer (new, target task only)',
                             'task_counters (new)']
         policy['notes'] += ['Preprocessing/normalization definitions are fixed references and unchanged.',
-                            'No source replay data and no source-task dimensions are mixed in.',
+                            ('Pinned source training transitions are mixed with target replay in each update; '
+                             'target replay itself starts empty.' if experiment.get('rehearsal') else
+                             'No source replay data and no source-task dimensions are mixed in.'),
                             'The source checkpoint was opened read-only; this is a new run with a parent.']
         if advanced.freeze_encoder:
             freeze = EncoderFreeze(learner)
@@ -211,14 +213,17 @@ def source_cost(source_run_dir):
     from pathlib import Path
     from .storage.atomic import read_json
     chain, total, known = [], 0, True
-    current, seen = Path(source_run_dir), set()
-    while current is not None:
+    pending, seen = [(Path(source_run_dir), True, set())], set()
+    while pending:
+        current, follow_parent, ancestors = pending.pop(0)
         summary = read_json(current / 'run_summary.json', default={})
         manifest = read_json(current / 'run_manifest.json', default={})
         run_id = manifest.get('run_id')
-        if not run_id or run_id in seen:
+        if not run_id or run_id in ancestors:
             known = False
-            break
+            continue
+        if run_id in seen:
+            continue
         seen.add(run_id)
         cost = (summary.get('target_task_cost') or {}).get('evaluations_charged')
         launches = (summary.get('target_task_cost') or {}).get('spectre_launches')
@@ -229,9 +234,15 @@ def source_cost(source_run_dir):
                           evaluations_charged=cost, spectre_launches=launches))
         total += cost or 0
         parent = (manifest.get('parent') or {}).get('run_dir')
+        if manifest.get('run_kind') == 'offline_pretraining':
+            sources = (manifest.get('pretraining') or {}).get('sources')
+            if not sources:
+                known = False
+            # Explicit pool already includes every contributing run. Inherited model cost is not
+            # extra archive data; following those parents would count some source runs twice.
+            pending.extend((Path(s['run_dir']), False, ancestors | {run_id}) for s in sources or [])
         # resume continues the same run (no separate cost); fine_tune/frozen add their parent's cost.
-        current = Path(parent) if parent and manifest.get('mode') in ('fine_tune', 'frozen') else None
-        if current is not None and not current.is_dir():
-            known, current = False, None
+        if follow_parent and parent and manifest.get('mode') in ('fine_tune', 'frozen'):
+            pending.append((Path(parent), True, ancestors | {run_id}))
     return dict(status='known' if known and chain else 'unknown',
                 evaluations_charged=total if known and chain else None, chain=chain)

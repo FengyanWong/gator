@@ -616,6 +616,9 @@ def _learner(config, manifest):
     output, run = config.get('output') or {}, config.get('run') or {}
     method = (run.get('search') or {}).get('method', 'sac')
     every = output.get('learner_update_log_every') or 1
+    if manifest.get('run_kind') == 'offline_pretraining':
+        return dict(recorded=False, every=every, reason='Offline training records its validation curve in validation.json; '
+                    'it has no simulator evaluations or online learner-update rows.')
     if manifest.get('mode') == 'frozen' or run.get('mode') == 'frozen':
         return dict(recorded=False, every=every, reason='A frozen run evaluates a saved policy without training it: '
                     'there are no learner updates, so no losses, temperature or entropy.')

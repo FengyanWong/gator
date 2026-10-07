@@ -1,6 +1,46 @@
-# Current state (2026-10-06)
+# Current state (2026-10-07)
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
+
+- **Six-circuit encoder baseline (7.244, plan only):** [A/B/C runbook](plan-encoder-baseline-abc.md)
+  fixes OTA5t, OTA7t-width, LDO1, LDO2, RING3 and VCO_linear_c as the reusable suite. New A/B/C
+  runs use the relaxed LDO HF PSRR targets (-3/-2.3 dB), fixed existing starting vectors, the common
+  41-slot registry and matched 800-launch scratch/fine-tune recipes (1e-3, eight updates, target-only;
+  loaded primary arms reset temperature to 0.01). Primary C trains every architecture separately on
+  the same eighteen historical A/B archives of those six families (15,800 recorded evaluations).
+  Encoder-specific A/B data, rehearsal and OTA8m are separately labelled extensions. Baselines are
+  required per circuit/start and reusable only after equivalence checks. Historical verdicts are
+  preserved; this request changes documentation only and starts no physical or training work.
+
+- **General-network offline experiment (7.233–7.243):** the user authorized the plan in
+  [plan-general-network.md](plan-general-network.md), including mandatory baselines for all six start-C tasks.
+  Workbench-only training and rehearsal preserve the optimizer digest. Rehearsal is an explicit exception to
+  fine_tune's default target-only batches: its bounded, pinned source training partition supplies half the batch,
+  with independent resumable sampling; target replay starts empty. Source validation and C baselines never enter it.
+  General/OTA5t-only models have completed 20,000 offline updates. Offline diagnostics allow the planned real probes;
+  the complete six-circuit comparison misses the overall criterion: C1 on three (four required), C2/C4 on all six.
+  Both LDOs pass C3; own OTA5t's 91% early versus general's 83% satisfies C5. This one-seed recipe comparison does not
+  isolate pretrained weights. Historical source costs are 17,124 / 2,400 evaluations,
+  counted separately from new launches. C qualification preserves failed designs: the four OTA7t baseline measurement
+  errors were explained by retained STB waveforms below unity across the recorded sweep, without rerunning or filling
+  missing metrics; both LDOs' analogous failures were reviewed likewise. All six C baselines are qualified with 64 random
+  draws each, zero learning and 391 launches: LDO2's periodic reset check required one supplemental exact-seed draw.
+  Spent cost includes blocked runs and the supplement. All six frozen probes and thirteen S/G/O arms are complete;
+  every independent training audit and restoration passes. Final phase-2 cost is 12,591; `phase2-reviewed.json` pins
+  the complete result. Phase 3 now has owned `mscr_ota8m`/`tb_ota8m` cells and a qualified 65-design baseline:
+  all valid, 64 random draws, zero learning, all measured DC screens pass (maximum terminal difference 0.723 V).
+  Baseline-only rank-28 goals are frozen in saved revision 2. Phase 3 completed: frozen probe 0/300, scratch 486/800,
+  general 24/800, all valid. Early S→G is 1→0/100, late 245→22/266: C1/C2 fail, C4 passes its fixed definition.
+  All restorations and independent audits pass; the queue exited. Required work is complete at exactly 14,556 new
+  launches, with seven qualified baselines, seven frozen probes and fifteen learning arms. `experiment-reviewed.json`
+  pins final evidence and source invariance. This series-RZ compensation variant of the pooled OTA7t is not a new
+  amplifier family; the complete G recipe underperforms scratch here. Optional extra seeds/folded-cascode work remain unstarted.
+  The subsequent user-authorized OTA8m follow-up is complete (section 22): unchanged G reached the 75/100 criterion
+  at charged cost 1,370 and stopped after 588 extra launches, final window 76/100. Fresh original-general weights with
+  scratch's 1e-3/eight-update/target-only recipe pass 491/800 (late 217/266), versus original G 24/800 (late 22/266).
+  Scratch's 486/800 and stronger late 245/266 prevent a clear claim of benefit over scratch. All audits/restorations
+  pass; source model/pool/runtime are unchanged, and a verified original-G-800 snapshot preserves historical evidence.
+  Follow-up cost is 1,388; total new cost is 15,944. Both original frozen-protocol verdicts remain unchanged.
 
 - **Optimizer source digest:** `0b0808bcbf8a7d22254292b1ef60476743b043ecd8ad59cc9f0320954a7dbac8`, set by `40d1249`
   (record 7.228, 2026-10-06: GraphGPS and parameter-group cross-attention added, authorized by the user; see

@@ -2567,6 +2567,39 @@ rows = DatasetReader('<run>/data').rows('evaluations')            # fixed snapsh
 transitions = TrajectoryLoader('<run>').transitions()             # optimizer Transition objects, validated
 ```
 
+### Offline archive pretraining (2026-10-06, record 7.233)
+
+`python -m gator_workbench.cli pretrain REQUEST.json --output NEW_DIRECTORY` audits an explicitly pinned set of
+archives and trains the existing SAC learner without a simulator. `--audit-only` writes the pool inventory, shared
+registry and deterministic episode split without updating a network. The JSON request contains `origin`, `runs`
+(`run_dir`, `archive_sha256`), `reference_overrides`, optional `relabel_upper` by task/metric, `seed`,
+`holdout_fraction`, `model`, `sac` (gamma 0), `updates`, `batch_size` and `checkpoint_every`.
+
+Sources remain read-only. Mixed origins, reward settings, conflicting units, duplicate runs/candidates, changed
+archives and non-reproducible rewards fail explicitly. The first version accepts standard features without OP and
+nominal-only data. Whole episodes are split before relabelling; original/derived samples stay together. Training
+draws tasks equally across shuffled cycles. Outputs are `request.json`, `pool.json`, `spec_registry.json`,
+`status.json`, `validation.json` and integrity-checked checkpoints. Synthetic output must live beneath `mock/`.
+
+These training artifacts are provisional: `trained_unqualified` means the configured offline updates finished.
+`offline_diagnostics.qualify` records per-task general/specialist critic error, deterministic actor proposals and the
+validation curve review inputs. Specialists may overlap the source holdout; their errors are descriptive references.
+`offline_publish.publish` requires an explicit recorded review and writes a separate model-only run. The chooser can
+load its weights for fine_tune/frozen; online Continue cannot resume the offline sampler. Its target cost is zero,
+while `modes.source_cost` includes every distinct source archive's evaluations once (record 7.234). Empty evaluation
+tables are supported by the run list, status and Training tab. Checkpoints declare weights-only transfer capability.
+An optional explicit `spec_registry` lets an own-circuit control use exactly the general model's slots.
+The general-network experiment's source request and progress are in
+`artifacts/general-network-20261006/`; its baseline gates and launch budget are in `docs/plan-general-network.md`.
+
+`rehearsal.build_snapshot` freezes a bounded selection from that pool's **training** partition, including its original
+LDO relabel decisions, in checksummed compressed JSON using the recording codec. `run.rehearsal` takes a
+`pool_manifest`, its `pool_sha256`, and `fraction` (default 0.5). Only fine_tune and its resume accept it. Runtime checks
+origin, reward, registry, data checksum, training membership and capacity before opening simulator lanes. Each update
+borrows target transitions from the ordinary replay and appends task-balanced source draws. Source transitions never
+enter target replay or the launch ledger. Checkpoints retain the source sampler's RNG, pending task cycle and counts;
+resume requires the same pool. Absent rehearsal preserves old configuration and learner-contract hashes.
+
 ## The Agent tab: Claude Code or Codex in a window of its own (2026-10-06, record 7.226)
 
 The tab is minimal since 2026-10-06 (user: "rewrite the whole agent tab to minimal. Have two buttons to open claude code cli

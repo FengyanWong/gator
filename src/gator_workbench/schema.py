@@ -430,6 +430,12 @@ def removed_search_method(config) -> str | None:
     return method if method in REMOVED_SEARCH_METHODS else None
 
 
+class RehearsalSettings(_Model):
+    pool_manifest: str = Field(min_length=1, max_length=1000)
+    pool_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    fraction: float = Field(0.5, gt=0, lt=1)
+
+
 class RunSettings(_Model):
     @model_validator(mode='before')
     @classmethod
@@ -472,11 +478,23 @@ class RunSettings(_Model):
     conditions: ConditionsConfig = Field(default_factory=ConditionsConfig)
     model_source: ModelSource = Field(default_factory=ModelSource)
     advanced: AdvancedRL = Field(default_factory=AdvancedRL)
+    rehearsal: Optional[RehearsalSettings] = Field(None,
+        description='Optional pinned offline training pool for fine_tune; each batch mixes source and target data.')
     cache_policy: Literal['disabled'] = Field('disabled',
         description='The existing environment has no result cache; duplicates are simulated and counted.')
     continual_learning: bool = Field(False,
         description='Explicit opt-in to inherit weights fine-tuned on a previous test task. Default starts every '
                     'test task from the fixed source checkpoint.')
+
+    @model_validator(mode='after')
+    def valid_rehearsal(self):
+        if self.rehearsal is not None:
+            if self.mode not in ('fine_tune', 'resume'):
+                raise ValueError('Rehearsal is supported only for fine_tune or its resume')
+            size = round(self.advanced.batch_size * self.rehearsal.fraction)
+            if not 0 < size < self.advanced.batch_size:
+                raise ValueError('Rehearsal batch must contain source and target transitions')
+        return self
 
 
 # --------------------------------------------------------------------------- output
@@ -652,6 +670,8 @@ def _hashed(data):
         run = dict(run, **{key: run.get(key, default) for key, default in RETIRED_RUN_FIELDS.items()})
         if run.get('model_label') is None:
             run.pop('model_label', None)
+        if run.get('rehearsal') is None:
+            run.pop('rehearsal', None)
         reward = run.get('reward')
         run.pop('search', None)              # retired on 2026-10-06 (REMOVED_SEARCH_METHODS); at its default it was absent
         if isinstance(reward, dict):

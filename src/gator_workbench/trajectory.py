@@ -113,7 +113,7 @@ class TrajectoryLoader:
         values = codec.untree(json.loads(row['observation_fields_json']))
         return Observation(graph=graph, specs=specs, **values)
 
-    def transitions(self, *, validate=True):
+    def transitions(self, *, validate=True, candidate_ids=None):
         """Every archived transition, in commit order, as optimizer ``Transition`` objects.
 
         Transitions that were never eligible for training replay (e.g. failures, frozen-mode
@@ -123,7 +123,7 @@ class TrajectoryLoader:
         from analog_optimizer.training.replay import Transition
         result = []
         for row in self.transition_rows():
-            if not row['replay_eligible_archive']:
+            if not row['replay_eligible_archive'] or (candidate_ids is not None and row['candidate_id'] not in candidate_ids):
                 continue
             if row.get('reward_version') != 'constraint_violation_v2':
                 raise ValueError('Legacy transition archive needs an explicit migration; inspect raw tables without training')

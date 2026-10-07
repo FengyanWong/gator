@@ -5,6 +5,7 @@ validate    validate a configuration JSON file
 run         prepare and execute one run in the foreground (mock tasks; real tasks need --authorize-real)
 aggregates  regenerate the five research CSV tables of an experiment from saved data
 check       zero-cost connection check of a configured bridge profile
+pretrain    audit a frozen archive pool and train offline (no simulator)
 """
 from __future__ import annotations
 
@@ -46,7 +47,17 @@ def main(argv=None):
     check = sub.add_parser('check', help='zero-cost bridge connection check')
     check.add_argument('profile_id')
     check.add_argument('--scope', choices=('cheap', 'interactive', 'full'), default='interactive')
+    pretrain = sub.add_parser('pretrain', help='offline SAC from an explicit frozen archive pool')
+    pretrain.add_argument('request', type=Path, help='JSON with pinned source runs, registry overrides and training settings')
+    pretrain.add_argument('--output', type=Path, required=True, help='new artifact directory (never overwritten)')
+    pretrain.add_argument('--audit-only', action='store_true', help='validate and split archives without training')
     args = parser.parse_args(argv)
+
+    if args.command == 'pretrain':
+        from .pretrain import execute
+        execute(json.loads(args.request.read_text()), args.output, audit_only=args.audit_only,
+                progress=lambda row: print(json.dumps(row, allow_nan=False), flush=True))
+        return 0
 
     if args.command == 'serve':
         import uvicorn

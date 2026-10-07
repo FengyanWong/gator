@@ -1,0 +1,322 @@
+"""Offline SAC on an explicit, frozen archive pool. Never constructs a simulator.
+
+This is phase 0 of plan-general-network.md. Checkpoints are provisional transfer
+weights; the specialist/proposal gates and online rehearsal still precede real runs.
+Source archives are read-only; episode splits happen before optional relabelling.
+"""
+from __future__ import annotations
+
+from collections import Counter, defaultdict
+from dataclasses import asdict, dataclass, replace
+from datetime import datetime, timezone
+import hashlib
+import json
+import math
+from pathlib import Path
+import random
+import time
+
+from .storage.atomic import read_json, write_json
+from .trajectory import TrajectoryLoader
+
+
+def identity(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
+
+
+def archive_identity(directory):
+    """Pin tables, journal, static graphs/specs and recorded configuration; no weights/unpickling."""
+    directory = Path(directory)
+    files = [directory / name for name in ('run_manifest.json', 'effective_config.json', 'run_summary.json')]
+    files += sorted((directory / 'data').rglob('*.parquet'))
+    files += sorted((directory / 'data' / 'states' / 'static').glob('*.json'))
+    files += [directory / 'data' / '_journal' / 'flushes.jsonl']
+    digest = hashlib.sha256()
+    for path in files:
+        digest.update(str(path.relative_to(directory)).encode())
+        with path.open('rb') as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b''):
+                digest.update(block)
+    return digest.hexdigest()
+
+
+def shared_registry(registries, overrides):
+    """Stable order, explicit reference conflicts, and no implicit unit conversion."""
+    from analog_optimizer.models.inputs import SpecSchema
+    entries = defaultdict(set)
+    for registry in registries:
+        for name, unit, reference in registry:
+            entries[name].add((unit, float(reference)))
+    if set(overrides) - entries.keys():
+        raise ValueError('Reference override names a metric absent from the source registries')
+    merged = []
+    for name, values in sorted(entries.items()):
+        units = {unit for unit, _ in values}
+        if len(units) != 1:
+            raise ValueError(f'Conflicting units for {name}: {sorted(units)}')
+        if len(values) > 1 and name not in overrides:
+            raise ValueError(f'Explicit reference override required for {name}')
+        merged.append((name, next(iter(units)), float(overrides.get(name, next(iter(values))[1]))))
+    # Must match compile.build_spec_schema for a WorkbenchConfig with spec_registry set.
+    return SpecSchema(version='spec-input-custom-v1', metrics=tuple(merged))
+
+
+@dataclass
+class Pool:
+    training: dict
+    validation: dict
+    schema: object
+    reward_settings: object
+    audit: dict
+
+
+def prepare_pool(request, *, progress=None):
+    """Read and validate every eligible transition, then split whole run-scoped episodes."""
+    from analog_optimizer.graph.pyg_converter import FeatureSchema
+    from analog_optimizer.models.inputs import context_features
+    origin = request['origin']
+    if origin not in ('real', 'synthetic'):
+        raise ValueError('Pool origin must be real or synthetic')
+    fraction = request.get('holdout_fraction', 0.1)
+    if not 0 < fraction < 1 or not request.get('runs'):
+        raise ValueError('Nonempty sources and a holdout_fraction between 0 and 1 are required')
+    seed = request.get('seed', 0)
+    groups, registries, sources = defaultdict(lambda: defaultdict(list)), [], []
+    run_ids, candidates, settings = set(), set(), None
+    relabel = request.get('relabel_upper', {})
+    for source in request['runs']:
+        directory = Path(source['run_dir']).resolve()
+        if archive_identity(directory) != source['archive_sha256']:
+            raise ValueError(f'Archive changed after selection: {directory}')
+        manifest = read_json(directory / 'run_manifest.json')
+        config = read_json(directory / 'effective_config.json')
+        summary = read_json(directory / 'run_summary.json')
+        task = config['circuit']['task_id']
+        run_id = manifest['run_id']
+        if run_id in run_ids:
+            raise ValueError(f'Duplicate source run: {run_id}')
+        run_ids.add(run_id)
+        if manifest.get('state') not in ('completed', 'stopped', 'failed', 'paused'):
+            raise ValueError('Source run must be quiescent before freezing its archive')
+        if manifest.get('mock') != (origin == 'synthetic') or manifest.get('provenance') != (
+                'mock' if origin == 'synthetic' else 'real'):
+            raise ValueError(f'Origin mismatch for {run_id}')
+        network = manifest['architecture']['network']
+        if network.get('operating_points') or network.get('vocabulary', 'standard') != 'standard':
+            raise ValueError('Offline pool currently requires the standard feature schema without operating points')
+        registries.append(manifest['architecture']['spec_schema']['metrics'])
+        loader = TrajectoryLoader(directory)
+        problems = loader.reader.verify()
+        if problems:
+            raise ValueError(f'Archive checksum failure: {problems}')
+        raw = loader.transition_rows()
+        eligible = [row for row in raw if row['replay_eligible_archive']]
+        transitions = loader.transitions()
+        if not transitions:
+            raise ValueError(f'No replay-eligible transitions: {run_id}')
+        counts = Counter()
+        for row, transition in zip(eligible, transitions, strict=True):
+            if transition.candidate_id in candidates:
+                raise ValueError(f'Duplicate archived candidate: {transition.candidate_id}')
+            candidates.add(transition.candidate_id)
+            if row['run_id'] != run_id or row['task_id'] != manifest['task_id']:
+                raise ValueError('Transition provenance differs from source manifest')
+            first, last = transition.observation, transition.next_observation
+            if first.origin != origin or last.origin != origin:
+                raise ValueError('Mixed observation origins in pool')
+            if (first.condition_policy != 'off' or len(first.planned_conditions) > 1 or
+                    any(c is not None and not c.nominal_only for c in first.planned_conditions)):
+                raise ValueError('Phase 0 currently supports nominal-only archives')
+            if settings is None:
+                settings = transition.reward_settings
+            if transition.reward_settings != settings:
+                raise ValueError('Mixed reward settings need an explicit migration; cannot pool as recorded')
+            # Stronger than Transition.validate's numerical tolerance: the relabelling gate.
+            if last.evaluation.reward != transition.reward:
+                raise ValueError('Unchanged-goal re-scoring does not exactly reproduce the archived reward')
+            episode = (run_id, row['worker_id'], row['episode_id'])
+            if not row['episode_id']:
+                raise ValueError('Episode identity required for leakage-free holdout')
+            groups[task][episode].append((transition, False))
+            if task in relabel:
+                changes = relabel[task]
+                known = {s.metric_id for s in first.specs}
+                if set(changes) - known:
+                    raise ValueError(f'Relabel metric absent in {task}')
+                specs = tuple(replace(s, upper=changes[s.metric_id]) if s.metric_id in changes else s
+                              for s in first.specs)
+                if any(s.comparator != 'max' for s in first.specs if s.metric_id in changes):
+                    raise ValueError('Upper-limit relabelling requires max-comparator rows')
+                a, b = replace(first, specs=specs), replace(last, specs=specs)
+                derived = replace(transition, observation=a, next_observation=b, reward=b.evaluation.reward)
+                derived.validate()
+                groups[task][episode].append((derived, True))
+                counts['relabeled'] += 1
+        # Detect source mutation during reconstruction, too.
+        if archive_identity(directory) != source['archive_sha256']:
+            raise ValueError(f'Archive changed while loading: {directory}')
+        sources.append(dict(run_dir=str(directory), run_id=run_id, task=task,
+                            archive_sha256=source['archive_sha256'],
+                            evaluations=summary['totals']['candidate_evaluations_charged'],
+                            eligible=len(transitions), excluded=len(raw) - len(transitions),
+                            relabeled=counts['relabeled']))
+        if progress:
+            progress(dict(event='source_loaded', **sources[-1]))
+    if set(relabel) - groups.keys():
+        raise ValueError('Relabel task absent from pool')
+    schema = shared_registry(registries, request.get('reference_overrides', {}))
+    if request.get('spec_registry') is not None:
+        from analog_optimizer.models.inputs import SpecSchema
+        explicit = SpecSchema(version='spec-input-custom-v1', metrics=tuple(
+            (entry['metric_id'], entry['unit'], float(entry['reference'])) for entry in request['spec_registry']))
+        units = {name: unit for name, unit, _ in explicit.metrics}
+        if any(units.get(name) != unit for name, unit, _ in schema.metrics):
+            raise ValueError('Explicit registry must cover every source metric with its recorded unit')
+        schema = explicit
+    training, validation, split = {}, {}, []
+    for task, episodes in sorted(groups.items()):
+        keys = sorted(episodes)
+        if len(keys) < 2:
+            raise ValueError(f'At least two episodes required for {task}')
+        random.Random(f'{seed}:{task}').shuffle(keys)
+        n = min(len(keys) - 1, max(1, math.ceil(len(keys) * fraction)))
+        training[task], validation[task] = [], []
+        for i, key in enumerate(keys):
+            subset = 'validation' if i < n else 'training'
+            target = validation if i < n else training
+            for transition, derived in episodes[key]:
+                # Validate the shared registry on both endpoints without constructing an encoder.
+                for observation in (transition.observation, transition.next_observation):
+                    context_features(observation, schema)
+                target[task].append(transition)
+                split.append(dict(task=task, run_id=key[0], worker_id=key[1], episode_id=key[2],
+                                  candidate_id=transition.candidate_id, relabeled=derived, subset=subset))
+    audit = dict(format='gator-offline-pool-v1', origin=origin, seed=seed, holdout_fraction=fraction,
+                 request_sha256=identity(request), sources=sources, spec_schema=asdict(schema),
+                 feature_schema=asdict(FeatureSchema()), reward_settings=asdict(settings),
+                 source_evaluations=sum(s['evaluations'] for s in sources), new_simulator_launches=0,
+                 eligible=sum(s['eligible'] for s in sources), excluded=sum(s['excluded'] for s in sources),
+                 relabeled=sum(s['relabeled'] for s in sources),
+                 per_task={t: dict(training=len(training[t]), validation=len(validation[t])) for t in training},
+                 split=split, split_sha256=identity(split), unchanged_reward_gate='exact_match',
+                 diagnostic_scope='within-source episode holdout; not an unseen-circuit transfer result')
+    return Pool(training, validation, schema, settings, audit)
+
+
+class BalancedSampler:
+    """Every task appears once in each shuffled cycle, even across batch boundaries."""
+    def __init__(self, training, seed):
+        self.training, self.rng, self.pending = training, random.Random(seed), []
+        self.counts = Counter()
+
+    def sample(self, size):
+        result = []
+        for _ in range(size):
+            if not self.pending:
+                self.pending = sorted(self.training)
+                self.rng.shuffle(self.pending)
+            task = self.pending.pop()
+            result.append(self.rng.choice(self.training[task]))
+            self.counts[task] += 1
+        return result
+
+
+def evaluate(learner, pool, batch_size=32):
+    """Held-out Q MSE versus a constant fitted on TRAINING rewards only."""
+    import torch
+    result = {}
+    with torch.no_grad():
+        for task, transitions in pool.validation.items():
+            constant = sum(t.reward for t in pool.training[task]) / len(pool.training[task])
+            error, constant_error = [0., 0.], 0.
+            for start in range(0, len(transitions), batch_size):
+                chunk = transitions[start:start + batch_size]
+                batch = learner.batch([t.observation for t in chunk])
+                actions = torch.tensor([t.proposal[g] for t, ids in zip(chunk, batch.group_ids) for g in ids])
+                reward = torch.tensor([t.reward for t in chunk], dtype=batch.context.dtype)
+                for i, critic in enumerate(learner.critics):
+                    error[i] += float(((critic(batch, actions) - reward) ** 2).sum())
+                constant_error += sum((t.reward - constant) ** 2 for t in chunk)
+            result[task] = dict(count=len(transitions), q1_mse=error[0] / len(transitions),
+                                q2_mse=error[1] / len(transitions), constant_mse=constant_error / len(transitions))
+    return result
+
+
+def execute(request, output, *, audit_only=False, progress=None):
+    """Create a new offline artifact; refuse overwrite. Provisional weights are saved periodically."""
+    import torch
+    from analog_optimizer.models import ModelConfig
+    from analog_optimizer.training.replay import ReplayBuffer
+    from analog_optimizer.training.sac import SACConfig, SACLearner
+    from .checkpoints import CheckpointStore
+    from .modes import seed_everything
+
+    output = Path(output).resolve()
+    if request['origin'] == 'synthetic' and 'mock' not in output.parts:
+        raise ValueError('Synthetic offline artifacts must be under a mock/ directory')
+    updates, batch_size = request.get('updates', 20000), request.get('batch_size', 8)
+    interval = request.get('checkpoint_every', 1000)
+    if any(type(x) is not int or x < 1 for x in (updates, batch_size, interval)):
+        raise ValueError('updates, batch_size and checkpoint_every must be positive integers')
+    output.mkdir(parents=True, exist_ok=False)
+    write_json(output / 'request.json', request)
+    started = time.monotonic()
+    learner = None
+
+    def status(state, **extra):
+        record = dict(state=state, updates=0 if learner is None else learner.updates,
+                      elapsed_seconds=time.monotonic() - started, new_simulator_launches=0,
+                      updated_utc=datetime.now(timezone.utc).isoformat(), **extra)
+        write_json(output / 'status.json', record)
+        if progress:
+            progress(record)
+
+    try:
+        status('loading')
+        pool = prepare_pool(request, progress=progress)
+        write_json(output / 'pool.json', pool.audit)
+        write_json(output / 'spec_registry.json', [dict(metric_id=n, unit=u, reference=r) for n, u, r in pool.schema.metrics])
+        if audit_only:
+            status('audited', source_evaluations=pool.audit['source_evaluations'], eligible=pool.audit['eligible'])
+            return pool.audit
+        torch.set_num_threads(1)
+        seed_everything(request.get('seed', 0))
+        experiment = dict(origin=request['origin'], split='offline_training',
+                          designs=pool.audit['sources'], pool_sha256=pool.audit['request_sha256'])
+        model = ModelConfig(**request.get('model', dict(hidden_dim=48, heads=4, layers=4)))
+        sac = SACConfig(**request.get('sac', dict(gamma=0., learning_rate=1e-3, initial_alpha=0.01, tau=0.005)))
+        if sac.gamma != 0:
+            raise ValueError('Phase-0 reward-regression diagnostics require gamma=0')
+        learner = SACLearner(experiment=experiment, spec_schema=pool.schema, model_config=model,
+                             config=sac, reward_settings=pool.reward_settings)
+        sampler = BalancedSampler(pool.training, request.get('seed', 0))
+        replay = ReplayBuffer(1, origin=request['origin'])
+        # This path has no online collector or replay. Do not advertise RunEngine resume.
+        store = CheckpointStore(output, run_id=pool.audit['request_sha256'][:24], task_id='offline:general',
+                                task_definition_hash=pool.audit['request_sha256'], save_replay=False, keep_last=2)
+        history = []
+        def checkpoint():
+            scores = evaluate(learner, pool)
+            history.append(dict(updates=learner.updates, scores=scores))
+            write_json(output / 'validation.json', history)
+            store.save(learner, replay, ledger_state={}, data_cursor=dict(commit_seq=0),
+                       counters=dict(evaluations_committed=0, learner_updates=learner.updates, replay_size=0),
+                       collector_state=None, mode='scratch', effective_experiment=experiment)
+            status('training', sampled_per_task=dict(sampler.counts), scores=scores,
+                   source_evaluations=pool.audit['source_evaluations'],
+                   parameter_counts={k: sum(p.numel() for p in v.parameters()) for k, v in
+                                     [('actor', learner.actor), ('critics', learner.critics)]})
+        checkpoint()
+        for _ in range(updates):
+            losses = learner.update(sampler.sample(batch_size))
+            if learner.updates % interval == 0 or learner.updates == updates:
+                checkpoint()
+            elif learner.updates % 100 == 0:
+                status('training', losses=losses, sampled_per_task=dict(sampler.counts))
+        status('trained_unqualified', source_evaluations=pool.audit['source_evaluations'],
+               pending_gates=['specialist critic comparison', 'actor proposal diagnostics',
+                              'forgetting-curve review', 'workbench model publication', 'online rehearsal'])
+        return pool.audit
+    except BaseException as exc:
+        status('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed', error=str(exc))
+        raise

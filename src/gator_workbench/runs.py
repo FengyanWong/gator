@@ -280,6 +280,8 @@ def saves_rl_model(config: WorkbenchConfig) -> bool:
 def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False, confirm_transfer=False,
                 monitor=None, acknowledge_unknown=False):
     """Returns (RunLayout, manifest). Raises RunRejected with the validation/compatibility report."""
+    if config.run.rehearsal is not None:
+        roots.resolve(config.run.rehearsal.pool_manifest)
     try:
         task = load_task(config.circuit, allow_real=allow_real, profile_id=config.run.connection_profile_id)
     except TaskBlocked as exc:

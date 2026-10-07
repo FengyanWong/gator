@@ -70,7 +70,7 @@ def learner_experiment(config: WorkbenchConfig, task, task_hash):
     """The learner contract identity. Budgets, concurrency and output settings are deliberately
     excluded so that extending a budget does not turn a resume into a different experiment."""
     adv = config.run.advanced
-    return dict(origin=task.origin, split=config.research.split, run_kind='gator-workbench-v1',
+    result = dict(origin=task.origin, split=config.research.split, run_kind='gator-workbench-v1',
                 designs=[dict(task_key=task.task_key, task_definition_hash=task_hash,
                               netlist_sha256=task.circuit.get('netlist_sha256'),
                               parser_config_sha256=task.circuit.get('parser_config_sha256'))],
@@ -80,6 +80,9 @@ def learner_experiment(config: WorkbenchConfig, task, task_hash):
                                updates_per_transition=adv.updates_per_transition,
                                episode_terminates_on_success=adv.episode_terminates_on_success,
                                replay_capacity=adv.replay_capacity))
+    if config.run.rehearsal is not None:
+        result['rehearsal'] = config.run.rehearsal.model_dump(mode='json')
+    return result
 
 
 class RunLock:
@@ -257,6 +260,11 @@ class RunEngine:
                             runtime=input_options)
         self.learner, self.replay, self.freeze = built['learner'], built['replay'], built['freeze']
         self.load_policy = built['policy']
+        self.rehearsal = None
+        if cfg.run.rehearsal is not None:
+            from .rehearsal import Rehearsal
+            self.rehearsal = Rehearsal(cfg.run.rehearsal, self.learner, origin=self.task.origin,
+                                       seed=cfg.run.seed, batch_size=adv.batch_size)
         if self.frozen:
             for module in (self.learner.actor, self.learner.critics, self.learner.targets):
                 module.requires_grad_(False).eval()
@@ -350,6 +358,10 @@ class RunEngine:
         self.rng.setstate(collector['rng_state'])
         self.tracker = best_design.BestDesignTracker(self.compiled.preference, collector.get('best_design'))
         self.previous_best_waveform = collector.get('previous_best_waveform')
+        if self.rehearsal is not None:
+            if 'rehearsal' not in collector:
+                raise RuntimeError('Checkpoint lacks rehearsal sampler state')
+            self.rehearsal.load_state_dict(collector['rehearsal'])
         cursor = run_state['data_cursor']
         report = dict(checkpoint_commit_seq=cursor['commit_seq'], recovery=self.dataset.recovery)
         # The best design is also written on every improvement (best_design/tracker_state.json), which reaches further
@@ -947,7 +959,8 @@ class RunEngine:
             if self.freeze is not None:
                 self.freeze.apply()
             started = self._clock()
-            update = self.replay.update_learner(self.learner, adv.batch_size)   # lent, not copied (7.221)
+            update = self.replay.update_learner(self.rehearsal or self.learner,
+                self.rehearsal.online_size if self.rehearsal else adv.batch_size)   # lent, not copied (7.221)
             if update['updates'] % every == 0:
                 rows.append(dict(run_id=self.run_id, update_id=f"{self.run_id}:u{update['updates']:09d}",
                                  updated_at=iso(), evaluations_collected=commit_seq,
@@ -1256,8 +1269,11 @@ class RunEngine:
 
     # ------------------------------------------------------------------ checkpoint
     def _collector_state(self):
-        return dict(rng_state=self.rng.getstate(), best_design=self.tracker.state_dict(),
-                    previous_best_waveform=self.previous_best_waveform)
+        result = dict(rng_state=self.rng.getstate(), best_design=self.tracker.state_dict(),
+                      previous_best_waveform=self.previous_best_waveform)
+        if self.rehearsal is not None:
+            result['rehearsal'] = self.rehearsal.state_dict()
+        return result
 
     def _checkpoint(self, kind):
         if not self.config.output.save_checkpoints:

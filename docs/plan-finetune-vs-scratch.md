@@ -8,6 +8,9 @@ tasks with passable psrr target if necessary for the plan."
 Status: the twelve runs ran 06:58-12:03 on 2026-10-06 and are all complete; section 9 holds the results (record 7.229).
 Section 5's criteria were revised at 08:09 while they ran, before any verdict.
 
+Future repetitions across encoders use the [six-circuit A/B/C run plan](plan-encoder-baseline-abc.md)
+(2026-10-07). This file preserves the historical tasks, settings, source models and results.
+
 ## 1. The question, in plain words
 
 Each of the six circuits already has one trained model: the Graph Transformer starting preset trained from random weights

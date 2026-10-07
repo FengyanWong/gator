@@ -319,7 +319,7 @@ try {
     && Array.isArray(calls[mark].config?.parameters), JSON.stringify(calls.slice(mark)));
   check('the new task is opened in the column', (await stored()).circuit.source === 'registered_task' && (await value('Task')) === 'real:ota5_v1', await value('Task'));
   check('the column says what happened, in which cell, and what comes first', (await text()).includes('Saved the new task real:ota5_v1') && (await text()).includes('the cell you declared as your copy')
-    && (await text()).includes('Baseline simulation'));
+    && (await text()).includes('No real baseline yet'));                    // record 7.248: the task starts its own baseline (Retry baseline)
   check('the parameter editor shows the rows as saved', await evaluate(`document.querySelector('main').innerHTML.includes('wn_fixture')`));
   check('the open task offers Save as and Task file', await evaluate(`!!(${TASK_BUTTON('Save as')}) && !!(${TASK_BUTTON('Task file')}) && !(${TASK_BUTTON('Save task')})`));
   check('the window now says it follows the task and starts from a blank library', await wShown('.follows-task') && (await wText()).includes('follows the task real:ota5_v1') && (await wValue('Library')) === '');

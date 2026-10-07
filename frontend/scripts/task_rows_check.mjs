@@ -97,7 +97,9 @@ await runChecks(browser, async () => {
   const EDITORS = `document.querySelector('.editors')`;
   // Since record 7.227 the task is plain text + a "Tasks..." button; a choice is a double click in the task window (harness taskWindow).
   const tw = taskWindow(page, browser);
-  const TASK_KEY = `(${PANEL}.querySelector('.task-row .task-list-key')?.textContent ?? '')`;
+  // The row shows a saved task without its real: prefix since record 7.249; its key is in data-task-key (a placeholder,
+  // "synthetic:vco (removed)", has only its text).
+  const TASK_KEY = `(${PANEL}.querySelector('.task-row .task-list-key')?.dataset.taskKey ?? ${PANEL}.querySelector('.task-row .task-list-key')?.textContent ?? '')`;
   const OPENED = `!!(${PANEL}) && !!${PANEL}.querySelector('.task-row button.task-list-button')`;
   const value = label => label === 'Task' ? tw.current() : evaluate(`${FIELD(label)}.value`);
   // The RL model's own label in Run configuration took the Project name box's place (record 7.159).

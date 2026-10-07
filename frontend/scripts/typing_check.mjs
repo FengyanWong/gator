@@ -196,15 +196,18 @@ await runChecks(browser, async () => {
   await shot('typing-2-research.png', `[...document.querySelectorAll('.right details.panel')].find(x => x.open)`);
 
   // ---- (b) Circuit class and PDK id: emptied, then typed ---------------------------------------------------------------------------------
-  const CLASS = LABELLED('.left', 'Circuit class'), PDK = LABELLED('.left', 'PDK id');
-  await focusAll(CLASS); await deleteKey();
+  // Circuit class is a drop-down since record 7.245: "Custom..." opens the "Custom circuit class" box, where free text is typed.
+  const CLASS = LABELLED('.left', 'Circuit class'), CUSTOM = LABELLED('.left', 'Custom circuit class'), PDK = LABELLED('.left', 'PDK id');
+  await page.setValue(CLASS, '');
+  check('"Custom..." in the Circuit class drop-down opens the "Custom circuit class" box', await page.until(`!!(${CUSTOM})`, 30));
+  await focusAll(CUSTOM); await deleteKey();
   config = await saved();
-  check('an emptied "Circuit class" stays empty while it is typed into (underneath: "unspecified")', (await valueOf(CLASS)) === '' && config.circuit.circuit_class === 'unspecified',
-    `${JSON.stringify(await valueOf(CLASS))} / ${config.circuit.circuit_class}`);
+  check('an emptied "Custom circuit class" stays empty while it is typed into (underneath: "unspecified")', (await valueOf(CUSTOM)) === '' && config.circuit.circuit_class === 'unspecified',
+    `${JSON.stringify(await valueOf(CUSTOM))} / ${config.circuit.circuit_class}`);
   await typeKeys('ldo');
   config = await saved();
-  check('select all + Delete, then "ldo": the class is \'ldo\' (it used to snap back to \'unspecified\')', config.circuit.circuit_class === 'ldo' && (await valueOf(CLASS)) === 'ldo',
-    `${config.circuit.circuit_class} / ${await valueOf(CLASS)}`);
+  check('select all + Delete, then "ldo": the class is \'ldo\' (it used to snap back to \'unspecified\'), and the box keeps it', config.circuit.circuit_class === 'ldo' && (await valueOf(CUSTOM)) === 'ldo',
+    `${config.circuit.circuit_class} / ${await valueOf(CUSTOM)}`);
   await focusAll(PDK); await deleteKey(); await typeKeys('gpdk090');
   config = await saved();
   check('the same for "PDK id": \'gpdk090\'', config.circuit.pdk_id === 'gpdk090' && (await valueOf(PDK)) === 'gpdk090', `${config.circuit.pdk_id} / ${await valueOf(PDK)}`);
@@ -266,7 +269,8 @@ await runChecks(browser, async () => {
     JSON.parse(oldValidation.postData).config.run.model_label === 'fixture-old' && JSON.parse(newValidation.postData).config.run.model_label === 'fixture-new');
   await page.fulfil(newValidation.requestId, 200, validConfiguration({ blocks_run: true, counts: { error: 1 },
     issues: [{ level: 'error', path: 'run.model_label', code: 'fixture', message: 'FIXTURE: newest configuration is blocked' }] }));
-  const blockedButton = `[...document.querySelectorAll('header button')].find(b => b.textContent === 'Baseline simulation')?.disabled`;
+  // the header's Calibration button (named Baseline simulation until records 7.247/7.248; the same blocking rule)
+  const blockedButton = `[...document.querySelectorAll('header button')].find(b => b.textContent === 'Calibration')?.disabled`;
   check('the newer validation blocks starting a run', await until(blockedButton));
   check('the superseded validation fetch is cancelled', cancelled.has(oldValidation.networkId));
   await sleep(500);

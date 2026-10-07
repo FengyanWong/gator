@@ -87,7 +87,9 @@ await runChecks(browser, async () => {
   const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
   // Since record 7.227 the task is plain text + a "Tasks..." button; a choice is a double click in the task window (harness taskWindow).
   const tw = taskWindow(page, browser);
-  const TASK_KEY = `(${PANEL}.querySelector('.task-row .task-list-key')?.textContent ?? '')`;
+  // The row shows a saved task without its real: prefix since record 7.249; its key is in data-task-key (a placeholder,
+  // "synthetic:vco (removed)", has only its text).
+  const TASK_KEY = `(${PANEL}.querySelector('.task-row .task-list-key')?.dataset.taskKey ?? ${PANEL}.querySelector('.task-row .task-list-key')?.textContent ?? '')`;
   const EDITORS = `document.querySelector('.editors')`;
   const BUTTON = (scope, text) => `[...${scope}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const SHOWN = `(document.querySelector('footer .tabs .run-list-current')?.textContent ?? '')`;

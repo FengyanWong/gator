@@ -353,3 +353,5 @@ One row per commit, newest last.
 | `b12c3be` | 10-07 09:10 | 7.263 | frontend plan build step 2: folders for runs and saved models, stored like the task folders, one folder sidebar (session "Frontend workbench layout design") |
 | `143505f` | 10-07 09:10 | - | record only: names the commit of record 7.263, and the table rows for 87b74c8 and b12c3be |
 | `f4fc5f2` | 10-07 09:37 | 7.264 | frontend plan build step 3: relationships between runs and models, links between the windows, the run brief (session "Frontend workbench layout design") |
+| `e067135` | 10-07 09:37 | - | record only: names the commit of record 7.264 (f4fc5f2), and the table rows for 143505f and f4fc5f2 |
+| `0437262` | 10-07 10:18 | 7.256 | plan 7.256 revision 3: the telescopic cascode joins stage D as the second held-out circuit; docs only, nothing started (session "Encoder run plan revision") |

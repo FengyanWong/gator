@@ -337,3 +337,5 @@ One row per commit, newest last.
 | `c0a50ed` | 10-07 07:05 | 7.255 | four browser checks follow the interface changes of 7.245, 7.248 and 7.249; test code only (session "Virtuoso read whole flow") |
 | `b534719` | 10-07 07:05 | - | record only: names the commits of records 7.252-7.255, and the table rows for 8b2d29e, ea5cd17, de810e3 and c0a50ed |
 | `900fcec` | 10-07 07:13 | 7.256 | plan: the other encoders on the six circuits, the comparison plan revised around the A/B/C runbook; docs only (session "Encoder run plan revision") |
+| `bc2f7d1` | 10-07 07:13 | - | record only: names the commit of record 7.256 (900fcec), and the table rows for b534719 and 900fcec |
+| `2ca0ef4` | 10-07 07:16 | 7.257 | plan: the frontend workflow without the Manager - Tasks, Runs and RL model windows with categories, relationships and model history; the Mode inside the RL model window (New model from a template, Fine-tune / Evaluate only from a pinned save point) |

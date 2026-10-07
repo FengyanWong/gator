@@ -118,7 +118,9 @@ await runChecks(browser, async () => {
   check('... Run configuration says so, naming the run it continued as a link into the Runs window', await page.until(`!!(${NOTE})?.querySelector('button.no-mode-run')`, 30)
     && (await noteText()) === 'No Mode is chosen: this configuration still says resume, which is no longer a choice - it continued the run scratch_seed1__r1. Choose a Mode in RL model... for the next run: Start waits until then.', await noteText());
   const HEADER = label => `[...document.querySelectorAll('header button')].find(b => b.textContent.trim() === ${JSON.stringify(label)})`;
-  check('... Start waits, and says why: never a silent New model or Fine-tune', await page.until(`(${HEADER('Start')})?.disabled === true && /^Start: Choose a Mode in the RL model window first/.test((${HEADER('Start')}).title)`, 60)
+  check('... the header\'s Next line says so too (record 7.269)', await page.until(`/^Next: synthetic:gpdk045_ota5 · no Mode chosen · GT 16\\/2\\/1 · \\d+ evaluations$/.test(document.querySelector('header span.next-run')?.textContent ?? '')`, 60),
+    await evaluate(`document.querySelector('header span.next-run')?.textContent ?? 'no line'`));
+  check('... Start waits, and says why: never a silent New model or Fine-tune', await page.until(`(${HEADER('Start')})?.disabled === true && /^Start: Next: .+\\. Choose a Mode in the RL model window first/.test((${HEADER('Start')}).title)`, 60)
     && await evaluate(`(${HEADER('Calibration')}).disabled`), await evaluate(`(${HEADER('Start')})?.title ?? 'no Start'`));
   const asked = described; await sleep(1500);
   check('... no model is asked about meanwhile, and there is no Mode suggestion', described === asked && !(await evaluate(`!!(${PARA})`)), `${described - asked} request(s)`);

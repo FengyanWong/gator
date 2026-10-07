@@ -301,6 +301,7 @@ table.grid td > button:has(> svg.icon) { padding: 1px 6px; vertical-align: middl
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 /* Abort is RED (user request 2026-09-21): solid, like the main button is solid blue; faded while there is nothing to abort. */
 button.run-abort { background: var(--bad-fill); color: var(--on-accent); border-color: var(--bad-fill); font-weight: 600; } button.run-abort:hover:not(:disabled) { background: var(--bad-strong); border-color: var(--bad-strong); }
+header span.next-run { flex: 1000 1 0; min-width: 14ch; max-width: max-content; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 12px var(--f-mono); }   /* record 7.269: what Start would start */
 button.run-chip { border: none; background: none; padding: 0 2px; color: var(--muted); font-variant-numeric: tabular-nums; font-family: var(--f-mono); max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
 button.run-chip.running, button.run-chip.starting, button.run-chip.resuming { color: var(--ok); } button.run-chip.pausing, button.run-chip.paused, button.run-chip.aborting { color: var(--warn); }
 /* Which run the bottom tabs show: ONE button at the right end of the tab strip (a full button, not a tab). It only reads "Runs..." and opens the run window;

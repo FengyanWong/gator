@@ -97,6 +97,14 @@ main button changes with the run:
 `Starting...`, `Pausing...`, `Resuming...`, `Aborting...` are the waiting states in between. On a real circuit
 `Pausing...` lasts as long as the rest of the simulation that is running.
 
+**What Start would start** stands beside it while it reads Start, in one line (record 7.269; plan
+[frontend run workflow](plan-frontend-run-workflow.md), "The draft"), and is the first sentence of its tooltip:
+"Next: mscr_ota7t · Fine-tune from ota7t (2) @ 420 · GT 48/4/4 · 800 evaluations" - the task (a saved task without its
+`real:` prefix, or a Virtuoso cell as library/cell), the Mode with its model and save point ("New model", "Evaluate ...
+(deterministic actions)", "no Mode chosen"), the network in short, and the budget. When Start is off, the tooltip adds
+why. The line only says: it starts nothing, and it is not shown while a run holds the header (the run chip says what
+runs then). Run configuration's model line and this line come from the same values (`RunPanel` passes them up).
+
 * **Resume and Continue... are the same machinery, used differently.** Resume is the one-press way for the run in the
   header and does not touch the Mode. It continues with the settings the run was STARTED with (its own
   `effective_config.json`); edits made on the page while it was paused are not used. **Continue...** in the Runs window
@@ -1248,7 +1256,11 @@ it). The window lists every run under the output folder, newest first, one row p
       newest.
 
     All or nothing: Cancel on the edits question, or a task that cannot be read, changes nothing, and the message says
-    why. The message names what came in - "Loaded run ota7t 10-06 14:02: task real:ota7t, Fine-tune from ota7t (2) @
+    why. So does a model that cannot be read (record 7.270, Astra's review of 2026-10-07): only a save point that is not
+    there (or not under the allowed output folders) makes Load run go on to the next one - a passing failure (the server
+    busy, a timeout) stops it, where it used to load the model the run started from and say it had worked. And only the
+    newest Load run or New run like this lands: one still on its way when another is pressed, or when a task is chosen
+    elsewhere, changes nothing. The message names what came in - "Loaded run ota7t 10-06 14:02: task real:ota7t, Fine-tune from ota7t (2) @
     420. Undo takes it back." - and says when the task was saved again since the run (the RL model window's check then
     says whether the model still fits).
   - **Show results**: only the bottom tabs show the run, as the double click did until record 7.267.

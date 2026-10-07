@@ -88,6 +88,7 @@ await runChecks(browser, async () => {
   const refused = []; const seen = [];
   const runFolders = { version: 1, folders: {}, assignments: {} }; let folderSerial = 0;
   // RESUMED's own configuration as it started (record 7.267, New run like this): a fine-tune of DONE, its recorded source still "latest".
+  let failModel = null, holdModel = false; const heldModel = [];               // record 7.270: see the /api/runs/model answer
   const recorded = { [RESUMED.run_dir]: { ...CONFIG, run: { ...CONFIG.run, mode: 'fine_tune', model_label: 'fixture (2)', max_evaluations: 40, seed: 2, max_retries: 1,
     network: RGCN, advanced: { ...(CONFIG.run.advanced ?? {}), batch_size: 16 }, model_source: { run_dir: DONE.run_dir, checkpoint_id: 'latest' } } } };
   const answer = ({ requestId, request }) => {
@@ -109,6 +110,9 @@ await runChecks(browser, async () => {
     if (name === '/api/runs/models') return fulfil(requestId, 200, { models: [] });
     if (name === '/api/runs/model') {                                            // record 7.267: the save points Load run and New run like this read
       const body = JSON.parse(request.postData ?? '{}'), dir = `${ROOT}/mock/fixture_exp__0001/runs/fixture_task/scratch__seed1__0001`;
+      // Record 7.270: a read that fails for another reason than a missing save point, and a read held back to answer late.
+      if (failModel && body.run_dir === failModel) return fulfil(requestId, 500, { detail: { message: 'FIXTURE: the server is busy' } });
+      if (holdModel && body.run_dir === dir && body.checkpoint_id === 'ckpt-000040-final' && !body.config) { heldModel.push({ requestId, body }); return; }
       const point = body.run_dir !== dir ? null : body.checkpoint_id === 'ckpt-000040-final' ? ['ckpt-000040-final', 40] : ['latest', 'ckpt-000060-final'].includes(body.checkpoint_id) ? ['ckpt-000060-final', 60] : null;
       return point ? fulfil(requestId, 200, described(dir, ...point)) : fulfil(requestId, 404, { detail: { message: 'FIXTURE: no save point here' } });
     }
@@ -461,6 +465,31 @@ await runChecks(browser, async () => {
   await undo();
   draft = await runWhen(x => !x?.model_source?.run_dir);
   check('one Undo takes all of it back', modeOf(draft) === 'scratch' && draft.seed !== 2, JSON.stringify(draft));
+  // Record 7.270 (Astra's review of 2026-10-07): a model read that FAILS - not a missing save point - stops Load run; it used to
+  // load the run's parent model instead and say it had worked. And an older Load run answered late never overwrites a newer one.
+  failModel = RESUMED.run_dir;
+  await openDetails(RESUMED); await act('Load run');
+  check('a model read that fails (the server busy, not a missing save point) stops Load run, and the message says so',
+    await until(`/^Run fixture_task \\d\\d-\\d\\d \\d\\d:\\d\\d was not loaded: its model could not be read \\(.+\\)\\. Nothing changed\\.$/.test(document.querySelector('.banner')?.textContent ?? '')`, 40), await banner());
+  draft = await runWhen(x => !!x, 10);
+  check('... nothing changed: no model chosen - not its parent\'s - and the bottom tabs still show the run they showed', modeOf(draft) === 'scratch' && !draft.model_source?.run_dir
+    && await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(PAUSED.run_dir)})`), JSON.stringify(draft?.model_source));
+  failModel = null; holdModel = true;
+  await openDetails(EVALUATED); await act('Load run');                            // the save point it evaluated is held back
+  check('(set-up) an Evaluate-only run\'s Load run waits for its model', await (async () => { for (let i = 0; i < 40 && !heldModel.length; i++) await sleep(100); return heldModel.length === 1; })());
+  await openDetails(DONE); await act('Load run');
+  draft = await runWhen(x => x?.model_source?.checkpoint_id === 'ckpt-000060-final');
+  check('meanwhile a newer Load run lands: DONE, its newest save point', draft?.model_source?.checkpoint_id === 'ckpt-000060-final'
+    && await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DONE.run_dir)})`, 40), JSON.stringify(draft?.model_source));
+  holdModel = false;
+  const late = heldModel.shift(); await fulfil(late.requestId, 200, described(late.body.run_dir, 'ckpt-000040-final', 40)); await sleep(1500);
+  draft = await runWhen(x => !!x, 5);
+  check('... and the older one, answered late, changes nothing: the newer run and its model stay', draft?.model_source?.checkpoint_id === 'ckpt-000060-final'
+    && await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DONE.run_dir)})`) && /^Loaded run fixture_task .*Fine-tune from fixture @ 60\./.test(await banner()),
+    `${JSON.stringify(draft?.model_source)} | ${await banner()}`);
+  await undo();
+  draft = await runWhen(x => !x?.model_source?.run_dir);
+  check('(set-up) one Undo takes DONE\'s model back', modeOf(draft) === 'scratch', JSON.stringify(draft?.model_source));
   // Continue...: Run status shows the run with its budget form open; nothing is continued by the press
   await openDetails(PAUSED); await act('Continue...');
   check('Continue... shows the run under Run status with its budget form open', await until(`!!document.querySelector('footer form.continue-form')`, 40)

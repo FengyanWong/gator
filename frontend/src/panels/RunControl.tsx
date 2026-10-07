@@ -187,10 +187,11 @@ const LABELS: Record<Phase, string> = { idle: 'Start', checking: 'Start', starti
   resuming: 'Resuming...', aborting: 'Aborting...', finishing: 'Finishing...' };
 
 /** `startBlocked` / `resumeBlocked`: why the main button cannot start or resume now (launch.ts readiness), or null - said
- *  as the button's tooltip. Resume itself is the launcher's (`onResume`). */
-export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onResume, onMessage, onChip }: {
+ *  as the button's tooltip. Resume itself is the launcher's (`onResume`). `next`: what Start would start, "Next: ..." (record
+ *  7.269) - beside the button while it reads Start, and the first sentence of its tooltip. */
+export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onResume, onMessage, onChip, next = null }: {
   control: RunControl; startBlocked: string | null; resumeBlocked: string | null; onStart: () => void; onResume: () => void;
-  onMessage: (m: Json) => void; onChip: () => void }) {
+  onMessage: (m: Json) => void; onChip: () => void; next?: string | null }) {
   const { dir, status, phase, forced } = control;
   const fail = (e: any) => onMessage({ level: 'error', text: plainError(e), detail: e?.detail });
   const command = (name: string, waitFor: Pending, text: string) => {
@@ -252,6 +253,7 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
   const waiting = phase === 'pausing' || phase === 'aborting';
   const main = phase === 'idle' ? onStart : phase === 'running' ? pause : phase === 'paused' ? onResume : undefined;
   const why = phase === 'idle' ? startBlocked : phase === 'paused' ? resumeBlocked : null;
+  const startable = phase === 'idle' || phase === 'checking';           // the main button reads Start
   const note = describe(status, phase, forced);
   return (<>
     {dir && note && <button className={`run-chip ${phase}`} onClick={onChip}
@@ -260,7 +262,8 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
       title={phase === 'running' ? 'Save now: The model is saved now, without pausing: the simulation in flight finishes first (with several in parallel, all of them), the model is written as a new save point, '
         + 'and the run goes on by itself. The save point appears in the saved model\'s Details in the RL model window, where it can be used.'
         : 'Save now: Only while a run is running. A paused or ended run has already saved everything.'}><Icon name="save" label={saving ? 'Saving...' : 'Save now'} /></button>
-    <button className="primary run-main" disabled={!main || !!why} onClick={main} title={`${LABELS[phase]}: ${why ?? TITLES[phase]}`}><Icon name={ICONS[phase]} label={LABELS[phase]} /></button>
+    {startable && next && <span className="next-run" title={next}>{next}</span>}
+    <button className="primary run-main" disabled={!main || !!why} onClick={main} title={`${LABELS[phase]}: ${startable && next ? `${next}. ` : ''}${why ?? TITLES[phase]}`}><Icon name={ICONS[phase]} label={LABELS[phase]} /></button>
     <button className="run-abort" disabled={!(phase === 'running' || phase === 'paused' || (waiting && !forced))} onClick={abort}
       title={phase === 'paused' ? 'Let go: The header lets go of the paused run: nothing is sent and nothing is deleted, the run can still be continued '
           + 'from Runs, and the main button goes back to Start.'

@@ -170,7 +170,12 @@ function LookFold({ summary, children }: { summary: ReactNode; children: () => R
   return <details className="look-models" onToggle={e => setOpen(e.currentTarget.open)}>{summary}{open && children()}</details>;
 }
 
-export function RunPanel({ config, setConfig, runs, circuit, schema }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json; schema: Json }) {
+/** What Start would start, as far as Run configuration knows it (record 7.269): the Mode with its model and save point, and the
+ *  network in short. The page adds the task and the budget for the header's "Next" line. */
+export type NextModel = { model: string; network: string };
+
+export function RunPanel({ config, setConfig, runs, circuit, schema, onNext }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json; schema: Json;
+  onNext?: (next: NextModel) => void }) {
   // A configuration without a Mode (a task's starter rows, an old file) is New model, as the backend reads it (schema default).
   const run = config.run.mode ? config.run : { ...config.run, mode: 'scratch' };
   const set = (fields: Json, record = true) => setConfig(c => ({ ...c, run: { ...c.run, ...fields } }), record);
@@ -422,6 +427,13 @@ export function RunPanel({ config, setConfig, runs, circuit, schema }: { config:
     : !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} · no saved model chosen`
     : `${run.mode === 'frozen' ? 'Evaluate' : 'Fine-tune'} ${sourceName} · save point ${pointAt != null ? `${pointAt} evaluations` : source.checkpoint_id}`
       + (run.mode === 'frozen' ? ` · ${run.frozen_action ?? 'deterministic'} actions` : '');
+  // The same, as the header's "Next" line names it (record 7.269; plan "The draft": "Next: ota7t · Fine-tune from ota7t (2)
+  // @ 420 · GT 48/4/4 · 800 evaluations").
+  const nextModel = run.mode === 'scratch' ? 'New model'                 // the network beside it names the template's encoder
+    : noMode ? 'no Mode chosen'
+    : !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} - no saved model chosen`
+    : `${run.mode === 'frozen' ? 'Evaluate' : 'Fine-tune from'} ${sourceName} @ ${pointAt ?? source.checkpoint_id}${run.mode === 'frozen' ? ` (${run.frozen_action ?? 'deterministic'} actions)` : ''}`;
+  useEffect(() => onNext?.({ model: nextModel, network: netShort }), [nextModel, netShort]);
   const netTitle = loads && !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} loads a saved model: choose one in RL model...; the run then uses its network.`
     : `The network in use: ${encoder}, hidden ${hidden}, ${usesHeads ? `heads ${heads}` : 'no attention heads'}, layers ${layers}; nominal operating points ${net.operating_points ? 'on' : 'off'}; `
       + `components ${components ?? 'standard'}${loads ? `. It is the network of the saved model this run loads (${source.run_dir}, save point ${source.checkpoint_id}).` : '.'} RL model... changes it.`;

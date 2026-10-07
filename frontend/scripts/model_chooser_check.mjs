@@ -121,6 +121,9 @@ await runChecks(browser, async () => {
   const stored = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')?.run ?? null`);
   const storedWhen = async (test, tries = 40) => { for (let i = 0; i < tries; i++) { const s = await stored(); if (test(s)) return s; await sleep(100); } return stored(); };
   const line = () => evaluate(`document.querySelector('.rl-networks-row .net-short')?.textContent ?? ''`);
+  // The header's "Next" line (record 7.269): what Start would start, beside it and first in its tooltip.
+  const NEXT = `document.querySelector('header span.next-run')`;
+  const startTitle = () => evaluate(`[...document.querySelectorAll('header button')].find(b => b.textContent.trim() === 'Start')?.title ?? ''`);
   const lastAsked = () => asked[asked.length - 1] ?? {};
   const sameNet = (a, b) => !!a && ['encoder_type', 'hidden_dim', 'heads', 'layers'].every(f => a[f] === b[f]);
   const shot = name => networkPage.shot(path.join(out, name), RIGHT, { scale: 1.2, maxHeight: 1400 });
@@ -137,6 +140,10 @@ await runChecks(browser, async () => {
   await sleep(600);
   check('in New model the window shows the templates, and the saved models are not read', await evaluate(`!!${RIGHT}.querySelector('table.template-table')`) && lists === 0
     && await evaluate(`${NETWORK_DOCUMENT}.querySelector('.rl-modes button[aria-checked="true"]')?.dataset.mode`) === 'scratch', `${lists} read(s)`);
+  check('the header says what Start would start: the task, New model, the network, the budget (record 7.269)',
+    await until(`/^Next: synthetic:gpdk045_ota5 · New model · GT 16\\/2\\/1 · \\d+ evaluations$/.test((${NEXT})?.textContent ?? '')`, 60)
+    && (await startTitle()).startsWith(`Start: ${await evaluate(`(${NEXT}).textContent`)}. `), `${await evaluate(`(${NEXT})?.textContent ?? 'no line'`)} | ${await startTitle()}`);
+  check('... in full: the line is not cut off at this width (1,680 pixels)', await evaluate(`(${NEXT}).scrollWidth <= (${NEXT}).clientWidth`));
   const LOOK = `${RIGHT}.querySelector('details.look-models')`;
   check('the saved models are in a closed fold, "Saved models, to look at"', await evaluate(`!!(${LOOK}) && !${LOOK}.open && /^Saved models, to look at/.test(${LOOK}.querySelector('summary').textContent)`));
   await evaluate(`${LOOK}.open = true`);
@@ -197,6 +204,8 @@ await runChecks(browser, async () => {
   check('... with the model\'s network, in the same step', sameNet(run?.network, NET), JSON.stringify(run?.network));
   check('... the row says "in use", and the model line names it with its save point', await until(`(${row(A)})?.getAttribute('aria-current') === 'true' && !!(${row(A)}).querySelector('.in-use-tag')`, 30)
     && await until(`/^Fine-tune FIXTURE_opamp_gt · save point 6 evaluations$/.test(document.querySelector('.rl-networks-row .net-short')?.textContent ?? '')`, 30), await line());
+  check('... and so does the header\'s Next line, and Start\'s tooltip with it', await until(`/^Next: synthetic:gpdk045_ota5 · Fine-tune from FIXTURE_opamp_gt @ 6 · GT 16\\/2\\/1 · \\d+ evaluations$/.test((${NEXT})?.textContent ?? '')`, 30)
+    && (await startTitle()).startsWith(`Start: ${await evaluate(`(${NEXT}).textContent`)}. `), `${await evaluate(`(${NEXT})?.textContent ?? 'no line'`)} | ${await startTitle()}`);
   check('... a newer save point is offered, never followed', await until(`/has a newer save point: 20 evaluations/.test(${RIGHT}.querySelector('.model-newer')?.textContent ?? '')`, 30)
     && (await stored())?.model_source?.checkpoint_id === early);
   await undo();

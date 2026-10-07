@@ -15,7 +15,7 @@ import { continueConsent, continueReadiness, featuresOf, launchKept, startReadin
 import { LaunchRefusal } from './panels/LaunchRefusal';
 import { useRunBrief } from './panels/RunBrief';
 import { RunListButton } from './panels/RunList';
-import { MODE_NAME, OutputPanel, ResearchPanel, RunPanel } from './panels/Right';
+import { MODE_NAME, NextModel, OutputPanel, ResearchPanel, RunPanel } from './panels/Right';
 import { modelName } from './panels/ModelChooser';
 import { readSavePoint, SavePoint, withSavePoint } from './savePoint';
 import { AgentWindowTab } from './panels/Agent';
@@ -270,11 +270,15 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   // their task: the run shown stays then, instead of every choice showing none.
   const taskKey: string | null = config.circuit?.source === 'registered_task' ? config.circuit.task_id ?? null : null;
   const followedTask = useRef(taskKey);
+  // The generation of the Runs window's Load run / New run like this (record 7.270, Astra's review of 2026-10-07): each one
+  // takes the next number and goes on only while it is still the newest - a task chosen elsewhere lets it go too.
+  const loadSerial = useRef(0);
   const shownNow = useRef(runDir);
   shownNow.current = runDir;
   useEffect(() => {
     if (taskKey === followedTask.current) return;
     followedTask.current = taskKey;
+    loadSerial.current++;                                // a task chosen elsewhere: a Load run still on its way is let go
     if (!taskKey) return;
     const before = shownNow.current;
     readRuns().then(({ list, error }) => {
@@ -324,6 +328,12 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const shownCheck = useContinuation(features, runDir, status);
   const heldCheck = useContinuation(features, control.dir, control.phase === 'paused' ? control.status : null);
   const startBlocked = startReadiness(control.phase, validation) ?? (config.run.mode === 'resume' ? NO_MODE : null);
+  // What Start would start (record 7.269; plan "The draft": "What Start will start is one line beside it ... It is also Start's
+  // tooltip, with the reason when Start is disabled"): the task, Run configuration's model and network, the budget.
+  const [nextModel, setNextModel] = useState<NextModel | null>(null);
+  const nextTask: string | null = config.circuit?.source === 'registered_task' ? (config.circuit.task_id ? String(config.circuit.task_id).replace(/^real:/, '') : null)
+    : config.circuit?.cell ? `${config.circuit.library}/${config.circuit.cell}` : null;
+  const nextLine = nextModel ? `Next: ${nextTask ?? 'no task chosen'} · ${nextModel.model} · ${nextModel.network} · ${config.run.max_evaluations} evaluations` : null;
   const resumeBlocked = control.phase === 'paused'
     ? continueReadiness({ status: control.status, check: heldCheck, phase: control.phase, held: true, total: 'unchanged' }) : null;
   const continueBlocked = continueReadiness({ status, check: shownCheck, phase: control.phase, held: control.dir === runDir, total: 'form' });
@@ -377,9 +387,14 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   /** The model a run ended with, pinned: a trained run's newest save point; an Evaluate-only run's the one it evaluated - its
    *  weights never changed -, else its own; a run with no save point (a baseline, one stopped before its first save) the
    *  one it started from. None of these: null, and the model stays as it is. */
+  // A save point that is not there (404), or not under the allowed output folders (403), is absent: the next one is tried.
+  // Any other failure - the server restarting, a timeout - stops the load, and nothing changes (record 7.270, Astra's review
+  // of 2026-10-07: a passing failure used to load the run's parent model instead, and say it had worked).
+  const readOrAbsent = (run_dir: string, checkpoint_id: string): Promise<SavePoint | null> =>
+    readSavePoint(run_dir, checkpoint_id).catch(e => { if (e instanceof ApiError && (e.status === 404 || e.status === 403)) return null; throw e; });
   const endModel = async (row: Json): Promise<SavePoint | null> => {
-    const own = () => readSavePoint(row.run_dir, 'latest').catch(() => null);
-    const parent = () => (row.parent?.run_dir && row.parent?.checkpoint_id ? readSavePoint(row.parent.run_dir, row.parent.checkpoint_id).catch(() => null) : Promise.resolve(null));
+    const own = () => readOrAbsent(row.run_dir, 'latest');
+    const parent = () => (row.parent?.run_dir && row.parent?.checkpoint_id ? readOrAbsent(row.parent.run_dir, row.parent.checkpoint_id) : Promise.resolve(null));
     return row.mode === 'frozen' ? (await parent()) ?? (await own()) : (await own()) ?? (await parent());
   };
   /** When the run's task was saved again after the run began, or null. */
@@ -390,12 +405,13 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   /** The run's task, through the Tasks window's task load, with `change` in its one draft change; when it is the page's task
    *  already, `change` alone - the editors stay as they are, edits included. The task-run link (7.212) gives way: this task
    *  change comes with its run, and the caller decides what the bottom tabs show. */
-  const withRunTask = async (row: Json, change: (c: Json) => Json, changes: boolean): Promise<TaskLoaded> => {
+  const withRunTask = async (row: Json, change: (c: Json) => Json, changes: boolean, stale: () => boolean): Promise<TaskLoaded> => {
+    if (stale()) return { loaded: false, why: 'another choice came first' };
     if (taskKey === row.task_key) { if (changes) setConfig(change); return { loaded: true }; }
     const before = followedTask.current;
     followedTask.current = row.task_key;
-    const result = await (taskLoad.current?.(row.task_key, change) ?? Promise.resolve<TaskLoaded>({ loaded: false, why: 'the task panel is not ready yet' }));
-    if (!result.loaded) followedTask.current = before;
+    const result = await (taskLoad.current?.(row.task_key, change, stale) ?? Promise.resolve<TaskLoaded>({ loaded: false, why: 'the task panel is not ready yet' }));
+    if (!result.loaded && followedTask.current === row.task_key) followedTask.current = before;
     return result;
   };
   const nameOf = (point: SavePoint) => { const row = runs.find(r => r.run_dir === point.run_dir); return row ? modelName(row) : folderName(point.run_dir); };
@@ -404,11 +420,19 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   /** Load run: its task, the model it ended with (in a Mode that loads one) and its results - one Undo step for the task and
    *  the model, all or nothing. The header's run is never touched. */
   const loadRun = async (row: Json) => {
+    const mine = ++loadSerial.current, stale = () => mine !== loadSerial.current;      // a newer choice wins, silently
     setMessage(null);
-    const [point, since] = await Promise.all([endModel(row), savedSince(row)]);
+    let point: SavePoint | null, since: string | null;
+    try { [point, since] = await Promise.all([endModel(row), savedSince(row)]); }
+    catch (e: any) {
+      if (!stale()) setMessage({ level: 'error', text: `Run ${runTitle(row)} was not loaded: its model could not be read (${plainError(e)}). Nothing changed.` });
+      return;
+    }
+    if (stale()) return;
     const mode = LOADS.includes(config.run.mode) ? config.run.mode : 'fine_tune';
     const same = taskKey === row.task_key;
-    const result = await withRunTask(row, c => (point ? { ...c, run: withSavePoint({ ...c.run, mode: LOADS.includes(c.run.mode) ? c.run.mode : 'fine_tune' }, point) } : c), !!point);
+    const result = await withRunTask(row, c => (point ? { ...c, run: withSavePoint({ ...c.run, mode: LOADS.includes(c.run.mode) ? c.run.mode : 'fine_tune' }, point) } : c), !!point, stale);
+    if (stale()) return;
     if (!result.loaded) { setMessage({ level: 'info', text: `Run ${runTitle(row)} was not loaded: ${result.why}. Nothing changed.` }); return; }
     setRunDir(row.run_dir); setTab('status'); unfold();
     setMessage({ level: 'info', text: `Loaded run ${runTitle(row)}: task ${row.task_key}${same ? ' (already on the page: the editors stay as they were)' : ''}, `
@@ -418,21 +442,25 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   /** New run like this: the next run repeats the run - its task, Mode, the save point it started from and its run settings.
    *  The shown run stays. */
   const newRunLike = async (row: Json) => {
+    const mine = ++loadSerial.current, stale = () => mine !== loadSerial.current;
     setMessage(null);
     let settings: Json = null;
     try { settings = migrateConfig(await api.runConfig(row.run_dir))?.run ?? null; }
-    catch (e: any) { setMessage({ level: 'error', text: `New run like ${runTitle(row)}: its configuration could not be read (${e.message}). Nothing changed.` }); return; }
+    catch (e: any) { if (!stale()) setMessage({ level: 'error', text: `New run like ${runTitle(row)}: its configuration could not be read (${e.message}). Nothing changed.` }); return; }
+    if (stale()) return;
     if (!settings) { setMessage({ level: 'error', text: `New run like ${runTitle(row)}: the run has no configuration of its own. Nothing changed.` }); return; }
     // A run continued under the old Mode resume repeats as what it was: a fine-tune of its model, or a new model.
     const mode = settings.mode === 'resume' ? (row.parent?.run_dir ? 'fine_tune' : 'scratch') : settings.mode;
     const from = LOADS.includes(mode) ? row.parent : null;
     const [point, since] = await Promise.all([from?.run_dir && from?.checkpoint_id ? readSavePoint(from.run_dir, from.checkpoint_id).catch(() => null) : Promise.resolve(null), savedSince(row)]);
+    if (stale()) return;
     const copied = Object.fromEntries(RUN_SETTINGS.filter(k => k in settings).map(k => [k, settings[k]]));
     const result = await withRunTask(row, c => {
       const run = { ...c.run, ...copied, mode };
       return { ...c, run: point ? withSavePoint(run, point) : { ...run, model_source: { ...(c.run.model_source ?? {}),
         run_dir: from?.run_dir ?? null, checkpoint_id: from?.run_dir ? from.checkpoint_id ?? 'latest' : 'latest' } } };
-    }, true);
+    }, true, stale);
+    if (stale()) return;
     if (!result.loaded) { setMessage({ level: 'info', text: `New run like ${runTitle(row)}: not taken, ${result.why}. Nothing changed.` }); return; }
     setMessage({ level: 'info', text: `The next run repeats ${runTitle(row)}: task ${row.task_key}, ${MODE_NAME[mode] ?? mode}`
       + (from ? ` from ${point ? `${nameOf(point)} @ ${point.evaluations ?? point.checkpoint_id}` : `${folderName(from.run_dir)}'s save point ${from.checkpoint_id} (it could not be read now)`}` : '')
@@ -520,7 +548,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
             : `${CALIBRATION_DESIGNS} random designs over the Parameters ranges, each costed. No starting-design baseline. `
               + 'Proposes a Scale for each Specs row and the Initial alpha; Run status shows them with Apply, nothing changes by itself.'}>Calibration</button>
         <RunButtons control={control} startBlocked={startBlocked} resumeBlocked={resumeBlocked} onStart={() => start(false)} onResume={resumeHeld}
-          onMessage={setMessage} onChip={brief.open} />
+          onMessage={setMessage} onChip={brief.open} next={nextLine} />
         {brief.element}
       </header>
       {message && <div className={`banner ${message.level}`} onClick={() => setMessage(null)}>
@@ -538,7 +566,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
           validation={validation} taskSlot={setTaskSlot} taskNotes={setTaskNotes} />
       </main>
       <aside className="right">
-        <RunPanel schema={schema.json_schema} config={config} setConfig={setConfig} runs={runs} circuit={circuit} />
+        <RunPanel schema={schema.json_schema} config={config} setConfig={setConfig} runs={runs} circuit={circuit} onNext={setNextModel} />
         <OutputPanel config={config} setConfig={setConfig} meta={meta} activeRun={status} />
         <ResearchPanel config={config} setConfig={setConfig} />
       </aside>

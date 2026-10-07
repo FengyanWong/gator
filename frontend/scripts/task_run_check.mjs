@@ -80,6 +80,8 @@ await runChecks(browser, async () => {
     if (name === '/api/runs/status') { const r = LISTED.find(x => x.run_dir === url.searchParams.get('run_dir')); return r ? fulfil(requestId, 200, statusOf(r)) : fulfil(requestId, 404, { detail: 'Not a run directory' }); }
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
     if (name === '/api/runs/models') return fulfil(requestId, 200, { models: [] });
+    // No fixture run has a save point: the backend answers 404, which Load run reads as "none" (record 7.270).
+    if (name === '/api/runs/model') return fulfil(requestId, 404, { detail: { message: 'FIXTURE: this run has no save point' } });
     if (name.startsWith('/api/runs')) return fulfil(requestId, 418, { detail: { message: `FIXTURE: ${name} is not expected in this check` } });
     return page.readOrRefuse(params, refused);
   };

@@ -326,3 +326,8 @@ One row per commit, newest last.
 | `3a95417` | 10-06 12:57 | 7.229 | the fine-tuning comparison's twelve runs: the loaded model ahead early on all six circuits, the fixed rule's bar met on three; docs only (session "Task button and fine-tuning comparison plan") |
 | `2cba8c6` | 10-06 12:57 | - | record only: names the commit of record 7.229, and the table rows for e384014, 57a191c and 3a95417 |
 | `cbf56a3` | 10-06 13:32 | 7.230 | plan: one general network from all saved experience, the six circuits from a third start, and policy drift; plan only, docs only (session "Task button and fine-tuning comparison plan") |
+| `c317e18` | 10-06 13:33 | - | record only: names the commit of record 7.230, and the table rows for 2cba8c6 and cbf56a3 |
+| `6a4f6ee` | 10-06 14:15 | 7.231 | encoder libraries graphgps and xatten: the six circuits as twelve new tasks for the two new encoders; twelve runs prepared, none started; docs only (session "GraphGPS and XAtten encoder tasks") |
+| `de3f995` | 10-07 06:41 | 7.232 | the general-network plan rewritten: arm O on ota5t only, a held-out two-stage op-amp instead of leave-one-out; docs only (session "Task button and fine-tuning comparison plan") |
+| `bee0bae` | 10-07 06:41 | 7.233-7.244 | the general-network experiment: offline pretraining, qualification and publication, source rehearsal in fine-tuning, the experiment's records (14,556 + 1,388 Spectre launches), the encoder A/B/C runbook (the user's Codex session) |
+| `edf2de7` | 10-07 06:41 | 7.243, 7.245-7.251 | a new task runs its own baseline, Calibration only random designs, Save as with numbered names, task folders, names without real:, no DUT box, the preset learning-rate upgrade (the user's Codex session) |

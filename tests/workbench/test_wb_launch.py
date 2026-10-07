@@ -250,6 +250,28 @@ def test_a_record_not_written_yet_counts_as_on_its_way():
         launch_requests.claim('page-start-0008', 'start')
 
 
+def test_at_the_backend_start_a_launch_left_on_its_way_is_let_go_of_unless_its_worker_is_there(tmp_path, no_worker):
+    """Astra's follow-up, the observation: after a crash and a restart a page holding the id waited a quarter of an hour
+    for "unknown". The backend that starts reconciles every record left on its way, once."""
+    from gator_workbench.layout import RunLayout
+    client = TestClient(workbench_app(tmp_path))                                     # the backend that then dies
+    raw = make_config(tmp_path).model_dump(mode='json')
+    first = client.post('/api/runs/start', json=dict(config=raw, request_id='page-start-0011')).json()   # done
+    assert launch_requests.claim('page-start-0012', 'start') is None                 # pending: died while handling it
+    launch_requests.prepared('page-start-0013', dict(first, worker_pid=None))        # launching, its worker never came
+    second = client.post('/api/runs/start', json=dict(config=raw, request_id='page-start-0015')).json()
+    launch_requests.prepared('page-start-0014', dict(second, worker_pid=None))       # launching, and its worker is there
+    write_json(RunLayout(second['run_dir']).status, dict(state='running', run_dir=second['run_dir']))
+    restarted = TestClient(workbench_app(tmp_path))
+    assert restarted.app.state.launch_requests_reconciled == dict(kept=1, dropped=2)
+    answers = {rid: restarted.get('/api/runs/request', params=dict(request_id=rid)).json() for rid in
+               ('page-start-0011', 'page-start-0012', 'page-start-0013', 'page-start-0014')}
+    assert answers['page-start-0011'] == dict(state='done', answer=first)
+    assert answers['page-start-0012'] == dict(state='unknown') and answers['page-start-0013'] == dict(state='unknown')
+    assert answers['page-start-0014'] == dict(state='done', answer=dict(second, worker_pid=None))
+    assert runs.run_status(first['run_dir'])['state'] == 'created' and len(no_worker) == 2    # nothing started by the restart
+
+
 def test_a_continue_sent_twice_continues_once(finished, tmp_path, no_worker):
     client = TestClient(workbench_app(tmp_path))
     body = dict(run_dir=str(finished), max_evaluations=9, request_id='page-continue-0001')

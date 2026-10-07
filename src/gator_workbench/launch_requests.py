@@ -7,10 +7,12 @@ worker is started (`run_routes.once`), as a "launching" record: it counts as the
 caller's `started` test: the run lock held, or a status written), as on its way until then, and as nothing once it is
 stale - a backend that died between that write and the spawn leaves a run folder that never started (`created`), and
 the launch is sent anew (record 7.271). So a launch whose acknowledgement was lost on the way is still found, and an
-unstarted run is never answered as launched. A refused request, or one that failed before anything was made, leaves no
-record, so the repeat the page sends with the answers to the backend's questions (real budget, a model from another
-task) is a request of its own. One small file per id in the workbench's own settings folder (local_settings_dir: tests
-and browser checks have their own), pruned after a week.
+unstarted run is never answered as launched. At the backend's start `reconcile()` lets go of every request left on
+its way by the previous backend, except a launching one whose worker is there: a page holding such an id learns the
+outcome at its next poll instead of after a quarter of an hour. A refused request, or one that failed before anything
+was made, leaves no record, so the repeat the page sends with the answers to the backend's questions (real budget, a
+model from another task) is a request of its own. One small file per id in the workbench's own settings folder
+(local_settings_dir: tests and browser checks have their own), pruned after a week.
 """
 from __future__ import annotations
 
@@ -118,6 +120,27 @@ def prepared(request_id: str, result: dict):
 def answer(request_id: str, result: dict):
     """The request made `result` (a run): a repeat of the id gets it, for a week."""
     write_json(_path(request_id), dict(state='done', at=time.time(), answer=result))
+
+
+def reconcile(started) -> dict:
+    """Once at the backend's start (record 7.271 addendum): a request that was on its way when the previous backend ended
+    cannot still be on its way. A launching record whose worker is there stays - it is the answer - and every other pending
+    or launching record goes, so a page holding its id learns "unknown" at its next poll (and sends its launch anew)
+    instead of after STALE_PENDING_SECONDS. Done records stay for their week. Returns the counts."""
+    kept = dropped = 0
+    for item in _folder().glob('*.json'):
+        record = _record(item)
+        if record is not None and record.get('state') == 'done':
+            continue
+        if _answered(record, started):
+            kept += 1
+            continue
+        try:
+            item.unlink()
+        except OSError:
+            continue
+        dropped += 1
+    return dict(kept=kept, dropped=dropped)
 
 
 def drop(request_id: str):

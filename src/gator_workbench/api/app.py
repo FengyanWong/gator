@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from .. import __version__, bridge_connect, connection, runs
+from .. import __version__, bridge_connect, connection, launch_requests, runs
 from ..paths import OutputRoots, repo_root
 from ..preload import preload
 from ..security import redact
@@ -69,6 +69,12 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     context = ApiContext(roots, input_roots, monitor, connector)
     for routes in (settings_routes, circuit_routes, run_routes, agent_routes, task_folder_routes):
         routes.register(app, context)
+    # Once at backend start (record 7.271 addendum): a launch request left on its way by the previous backend is let go
+    # of, unless it is a launching one whose worker is there. Must never prevent the backend from starting.
+    try:
+        app.state.launch_requests_reconciled = launch_requests.reconcile(run_routes.worker_started)
+    except Exception:
+        app.state.launch_requests_reconciled = None
 
     @app.exception_handler(Exception)
     async def unexpected(request, exc):

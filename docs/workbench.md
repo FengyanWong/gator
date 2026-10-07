@@ -156,7 +156,8 @@ main button changes with the run:
     inside the backend, a restart) is still found: after such an answer the page keeps the id and asks at once. Until
     the worker is there that record counts as "on its way", and a record whose worker never came (the backend died
     between the two) is let go of after a quarter of an hour: the launch is sent anew, and the run folder it had made
-    stays as it is, `created` (record 7.271; the page never takes an unstarted run as launched). When the
+    stays as it is, `created` (record 7.271; the page never takes an unstarted run as launched) - and a backend that
+    starts lets go of every launch the previous one left on its way at once, unless its worker is there. When the
     question itself gets no answer (the backend restarting) the id stays kept and the page asks again - for five
     minutes, then again at the next press or reload - and until that is known a press sends nothing new (review of
     2026-10-07; a failed question used to count as "unknown", and the run was forgotten).

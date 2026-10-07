@@ -11,6 +11,13 @@ A summary for new sessions; everything below is the chronological record, oldest
   Encoder-specific A/B data, rehearsal and OTA8m are separately labelled extensions. Baselines are
   required per circuit/start and reusable only after equivalence checks. Historical verdicts are
   preserved; this request changes documentation only and starts no physical or training work.
+- **Encoder comparison on the six circuits (7.256, plan only):** [plan-encoder-comparison.md](plan-encoder-comparison.md)
+  instantiates the A/B/C runbook for GraphGPS and the parameter-group cross-attention encoder: the twelve prepared
+  runs of 7.231 are stage A; B on the `_b` tasks from each encoder's own A model; C from one offline general model
+  per encoder on the 18-archive common pool. Two proposed departures from the runbook, for the user to decide: the
+  registry is the task's own in A/B and the 41-slot list in C, and loaded arms keep their learned temperature (as
+  every recorded GT run did); GT needs two relaxed-target LDO A runs and two LDO B fine-tune runs for matched
+  references. Pilot budget for both encoders 56,866 launches, stage A alone 11,276. Nothing started.
 
 - **General-network offline experiment (7.233–7.243):** the user authorized the plan in
   [plan-general-network.md](plan-general-network.md), including mandatory baselines for all six start-C tasks.

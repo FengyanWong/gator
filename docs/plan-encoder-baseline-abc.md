@@ -2,6 +2,10 @@
 
 Protocol version 1 — 2026-10-07 (Europe/London). Status: **plan written; no new runs started**.
 
+Instantiated for GraphGPS and the parameter-group cross-attention encoder, with the recorded Graph Transformer runs
+as references and two declared departures (the registry per stage, the temperature carried), in
+[plan-encoder-comparison.md](plan-encoder-comparison.md) (2026-10-07, record 7.256).
+
 The baseline suite is **OTA5t, OTA7t, LDO1, LDO2, RING3 and VCO_linear_c**. Repeat the same
 experiment with each selected encoder. Graph Transformer is the reference encoder. A measures
 learning from scratch, B measures transfer from that circuit's A model to another starting design,

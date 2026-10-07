@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .. import ngspice_tasks
 from .. import corner_check
 from ..calibration import MAX_DESIGNS
+from ..launch_requests import ID_PATTERN as LAUNCH_REQUEST_ID
 
 
 PROFILE_ID = r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$'        # a connection profile: an identifier, never a host, port or command
@@ -36,6 +37,8 @@ class StartBody(Body):
     calibration_only: bool = False
     # With baseline_only: this many random designs after the baseline, for the calibration (calibration.py). 0 = none.
     calibration_designs: int = Field(0, ge=0, le=MAX_DESIGNS)
+    # The page's id for this launch (record 7.261): the same id again gets the run the first request made.
+    request_id: str | None = Field(None, pattern=LAUNCH_REQUEST_ID)
 
 
 class CommandBody(Body):
@@ -48,6 +51,7 @@ class ContinueBody(Body):
     max_evaluations: int | None = Field(None, ge=1)
     authorize_real_simulation: bool = False
     acknowledge_unknown_connection: bool = False
+    request_id: str | None = Field(None, pattern=LAUNCH_REQUEST_ID)       # as for StartBody (record 7.261)
 
 
 class CornerCheckBody(Body):

@@ -10,6 +10,11 @@
 // SAME run without asking for a budget; a real run asks for the budget again; the header keeps a live run's Pause
 // whatever run the bottom tabs show, also across a reload, and never offers a second Start meanwhile - nor, in the Run
 // status tab, a Continue of another run (2026-09-29); a remembered run that is gone is let go of, not polled for ever.
+// Record 7.261 (the launcher, launch.ts): the second button reads "Let go" on a paused run; Continue... opens a budget form
+// (no browser prompt) that refuses a separator typo, a fraction and a total below the evaluations used; a launch carries a
+// request id, and after a reload during a start the page asks what became of it instead of sending it again; a refusal
+// stays beside its action; the backend's continuation check says why Continue cannot go on before the press, with its
+// alternative as a button; a run taken over, or a task's baseline, names the paused run the header lets go of.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -55,6 +60,18 @@ const otherStatus = () => ({ state: 'paused', run_id: 'fixture-run-2', mode: 'sc
   save_point: 'ckpt-000007', save_point_code: otherOlder ? 'older' : 'current',
   manifest: { mode: 'scratch', mock: true, task_id: 'fixture_task:0000', seeds: { target_seed: 1 }, source_model: null, budgets: { max_evaluations: 60 }, mock_notice: 'FIXTURE MOCK DATA: nothing was started.' } });
 const validReport = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: true };
+// Record 7.261: the backend's continuation check (GET /api/runs/continuation) - every run can go on, but OTHER once its save
+// point is from older optimizer code, in the backend's words, with the new run that still goes on from it - and what became
+// of a launch sent before a reload (GET /api/runs/request), answered from `requestAnswer`.
+const OLDER = 'This run was saved by an older version of the optimizer code, and continuing it needs exactly that version. Its model still loads in a new run: fine-tune or frozen.';
+let requestAnswer = null; const requestLookups = [];
+const checkOf = asked => {
+  const used = asked === OTHER ? 7 : sim.charged;
+  const answer = { run_dir: asked, eligible: true, code: null, reason: null, state: 'paused', used, total: 60, remaining: 60 - used, minimum_total: used + 1, exhausted: false,
+    save_point: 'ckpt-000007', alternative: null };
+  return asked === OTHER && otherOlder ? { ...answer, eligible: false, code: 'older_code', reason: OLDER,
+    alternative: { action: 'fine_tune', run_dir: OTHER, checkpoint_id: 'ckpt-000007', label: 'Fine-tune from its newest save point (a new run)' } } : answer;
+};
 
 await runChecks(browser, async () => {
   const CONFIG = await starterConfig(APP);     // as "Load task" merges it
@@ -68,6 +85,8 @@ await runChecks(browser, async () => {
     if (name === '/api/runs/status') { statusRequests++; const asked = url.searchParams.get('run_dir'); if (asked === GONE) goneAsked++;
       return asked === sim.dir ? fulfil(requestId, 200, statusOf()) : asked === OTHER && otherListed ? fulfil(requestId, 200, otherStatus()) : fulfil(requestId, 404, { detail: 'Not a run directory' }); }
     if (name === '/api/runs') return fulfil(requestId, 200, { runs: [...listed(), ...(otherListed ? [otherRow()] : [])] });
+    if (name === '/api/runs/continuation') return fulfil(requestId, 200, checkOf(url.searchParams.get('run_dir')));
+    if (name === '/api/runs/request') { requestLookups.push(url.searchParams.get('request_id')); return fulfil(requestId, 200, requestAnswer ?? { state: 'unknown' }); }
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
     if (name === '/api/runs/download') return fulfil(requestId, 200, { output: sim.output });
     if (['/api/runs/start', '/api/runs/continue', '/api/runs/command'].includes(name)) {
@@ -92,6 +111,9 @@ await runChecks(browser, async () => {
   });
   const MAIN = `document.querySelector('header button.run-main')`, ABORT = `document.querySelector('header button.run-abort')`, CHIP = `document.querySelector('header button.run-chip')`;
   const BASELINE = `[...document.querySelectorAll('header button')].find(b => b.textContent === 'Calibration')`;
+  const CONTINUE = `[...document.querySelectorAll('.status-grid button')].find(b => b.textContent === 'Continue...')`;
+  const FORM = `document.querySelector('.continue-form')`, FIELD = `document.querySelector('.continue-form input')`;
+  const REFUSAL = `document.querySelector('header .launch-refusal')`;
   const look = () => evaluate(`({ main: ${MAIN}?.textContent, mainOff: ${MAIN}?.disabled, abort: ${ABORT}?.textContent, abortOff: ${ABORT}?.disabled, chip: ${CHIP}?.textContent ?? null,
     baselineOff: ${BASELINE}?.disabled, banner: document.querySelector('.banner')?.textContent ?? null, remembered: localStorage.getItem(${JSON.stringify(RUN_KEY)}) })`);
   const mainReads = (label, tries) => until(`${MAIN}?.textContent === ${JSON.stringify(label)}`, tries);
@@ -155,9 +177,12 @@ await runChecks(browser, async () => {
   check('Abort and the baseline simulation are disabled meanwhile', v.abortOff === true && v.baselineOff === true, JSON.stringify(v));
   check('ONE start request was sent, for a full run with the page\'s configuration', log.length === 1 && log[0].name === '/api/runs/start' && log[0].body.calibration_only === false
     && log[0].body.config?.schema_version === CONFIG.schema_version && !('authorize_real_simulation' in log[0].body), JSON.stringify(log.map(l => l.name)));
+  check('... with a request id, kept in this tab until it is answered (7.261)', typeof log[0].body.request_id === 'string' && log[0].body.request_id.length >= 8
+    && (await evaluate(`JSON.parse(sessionStorage.getItem('gator-workbench-launch-v1') ?? 'null')?.id`)) === log[0].body.request_id, JSON.stringify(log[0].body.request_id));
   sim.steps = [{}, {}, { state: 'starting' }, { state: 'running' }];
   await held(); held = null;
   check('after Start the button reads "Pause"', await mainReads('Pause') && (await look()).mainOff === false);
+  check('... and the answered request id is no longer kept', await until(`sessionStorage.getItem('gator-workbench-launch-v1') === null`));
   v = await look();
   check('Abort is enabled, the baseline simulation is not available while the run is active', v.abort === 'Abort' && v.abortOff === false && v.baselineOff === true);
   check('the run is remembered by this browser', v.remembered === DIR, String(v.remembered));
@@ -177,7 +202,7 @@ await runChecks(browser, async () => {
   await shot('run-3-pausing.png');
   check('after the pause the button reads "Resume"', await mainReads('Resume', 150) && (await look()).mainOff === false);
   v = await look();
-  check('Abort is back to "Abort", the header says where the run stands', v.abort === 'Abort' && v.abortOff === false && /^paused at \d+ \/ 60 \[MOCK\]$/.test(v.chip ?? ''), JSON.stringify(v));
+  check('on the paused run the second button reads "Let go" (7.261), the header says where the run stands', v.abort === 'Let go' && v.abortOff === false && /^paused at \d+ \/ 60 \[MOCK\]$/.test(v.chip ?? ''), JSON.stringify(v));
   check('the baseline simulation stays unavailable while the header holds a paused run', v.baselineOff === true);
   check('the line under the header no longer says "Pausing": it says that the run is paused and saved', /^Paused at \d+ \/ 60: everything is saved/.test(v.banner ?? ''), v.banner ?? '');
   let labels = (await seen()).map(s => s[0]);
@@ -274,16 +299,36 @@ await runChecks(browser, async () => {
   check('(paused again)', await mainReads('Resume', 150));
   log.length = 0; answers.push(true);
   await press(ABORT); await sleep(400);
-  check('Abort on a paused run says that nothing is deleted', /^Let go of this paused run\?/.test(lastDialog().message) && /Nothing is deleted/.test(lastDialog().message), lastDialog().message);
+  check('"Let go" on a paused run asks first, and says that nothing is deleted', /^Let go of this paused run\?/.test(lastDialog().message) && /Nothing is deleted/.test(lastDialog().message), lastDialog().message);
   v = await look();
   check('it sends NO command; the button reads "Start", the run is no longer remembered', log.length === 0 && v.main === 'Start' && v.mainOff === false && v.remembered === null && v.chip === null, JSON.stringify(v));
-  check('the run stays on screen under Run status, with its own Continue', await evaluate(`[...document.querySelectorAll('.status-grid button')].some(b => b.textContent === 'Continue' && !b.disabled)`));
+  check('the run stays on screen under Run status, with its own Continue...', await until(`!!(${CONTINUE}) && !${CONTINUE}.disabled`));
 
   // ---- 9. the Run status tab's Continue works, and the header follows it; the tab has no run commands of its own ------------
-  log.length = 0; answers.push(true);                                           // Continue asks for a new total budget: OK with nothing typed = unchanged
+  // Continue... opens the budget form (7.261): no browser prompt; the form says what is wrong before anything is sent.
+  log.length = 0; const promptsBefore = dialogs.length;
+  await press(CONTINUE);
+  check('Continue... opens the budget form: the evaluations used, the run\'s own total in the field, and what it allows', await until(`!!(${FORM})`)
+    && await evaluate(`${FIELD}.value === '60' && ${FORM}.textContent.includes('Used ${sim.charged}') && ${FORM}.textContent.includes('Allows ${60 - sim.charged} more')`),
+    await evaluate(`${FORM}?.textContent ?? 'no form'`));
+  const typed = async text => { await page.setValue(FIELD, text, { event: 'input' }); await sleep(150);
+    return evaluate(`({ error: document.querySelector('.continue-form .continue-error')?.textContent ?? null, allows: document.querySelector('.continue-allows')?.textContent ?? '' })`); };
+  let f = await typed('12,00');
+  check('a separator typo (12,00) is refused on the form, not guessed', /between groups of three digits/.test(f.error ?? ''), JSON.stringify(f));
+  f = await typed('62.5');
+  check('a fraction is refused', /no fractions/.test(f.error ?? ''), JSON.stringify(f));
+  f = await typed(String(Math.max(0, sim.charged - 1)));
+  check('a total below (or at) the evaluations used is refused', /cannot be below|must be more than/.test(f.error ?? ''), JSON.stringify(f));
+  f = await typed('1,200');
+  check('"1,200" reads as 1200: no error, and it allows 1200 minus the used ones', f.error === null && f.allows === `Allows ${1200 - sim.charged} more`, JSON.stringify(f));
+  await press(`[...document.querySelectorAll('.continue-form button')].find(b => b.textContent === 'Cancel')`);
+  check('Cancel closes the form and sends nothing', await until(`!(${FORM})`) && log.length === 0);
   sim.steps = [{}, { state: 'running', stop_reason: null }];
-  await press(`[...document.querySelectorAll('.status-grid button')].find(b => b.textContent === 'Continue')`);
-  check('"Continue" of the Run status tab continues the run, and the header takes it: "Pause"', await mainReads('Pause') && log[0]?.name === '/api/runs/continue' && log[0]?.body.max_evaluations === null, JSON.stringify(log[0]));
+  await press(CONTINUE); await until(`!!(${FORM})`);
+  await press(`document.querySelector('.continue-form button[type=submit]')`);
+  check('the form\'s Continue with the run\'s own total continues the run unchanged, and the header takes it: "Pause"', await mainReads('Pause') && log[0]?.name === '/api/runs/continue'
+    && log[0]?.body.max_evaluations === null && typeof log[0]?.body.request_id === 'string', JSON.stringify(log[0]));
+  check('no browser prompt was used for it', dialogs.length === promptsBefore, JSON.stringify(dialogs.slice(promptsBefore)));
   check('the Run status tab offers no Save now / Pause / Stop / Force cancel of its own: the header has them (2026-09-29)',
     await evaluate(`![...document.querySelectorAll('.status-grid button')].some(b => /Save now|Pause and save|Stop and save|Force cancel/.test(b.textContent))`));
   sim.steps = [{}, { state: 'pausing' }, {}, { state: 'paused', alive: false }];
@@ -306,15 +351,20 @@ await runChecks(browser, async () => {
   answers.push(true); refuseNext = { name: '/api/runs/continue', detail: { code: 'connection_gate_blocked', message: 'FIXTURE: the connection gate blocked this action.' } };
   await press(MAIN);
   // The backend's sentence leads the banner; its code sits under "Technical details" (7.125).
-  check('a refusal is shown with its reason and the button reads "Resume" again', await until(`/^FIXTURE: the connection gate blocked this action\./.test(document.querySelector('.banner.error')?.textContent ?? '')
-    && /code: connection_gate_blocked/.test(document.querySelector('.banner.error details')?.textContent ?? '')`) && await mainReads('Resume', 20));
+  check('a refusal is shown under the header with its reason, and the button reads "Resume" again', await until(`/Resume was refused: FIXTURE: the connection gate blocked this action\./.test(${REFUSAL}?.textContent ?? '')
+    && /code: connection_gate_blocked/.test(document.querySelector('header .launch-refusal details')?.textContent ?? '')`) && await mainReads('Resume', 20));
   check('the authorization was sent with the request', log[0]?.body.authorize_real_simulation === true, JSON.stringify(log[0]?.body));
+  await sleep(2000);
+  check('the refusal stays beside the action (it is no passing line) until it is closed', await evaluate(`!!(${REFUSAL})`));
+  await press(`document.querySelector('header .launch-refusal button')`);
+  check('... and its close takes it away', await until(`!(${REFUSAL})`));
 
   // ---- 11. a live run this browser does not remember is taken over when the page opens -------------------------------------------
   await forget();
   Object.assign(sim, { dir: DIR, mock: true, state: 'running', alive: true, charged: 3, steps: [] });   // the run the list names
   await open(null);
   check('a live run found in the run list is taken over: "Pause", not "Start"', await mainReads('Pause') && (await look()).remembered === DIR);
+  check('... and the message says so (7.261)', /^The header took over fixture_task__scratch__seed0__0001, a live run started elsewhere/.test((await look()).banner ?? ''), (await look()).banner ?? '');
   check('"Start" was never offered while it was looked up', !(await seen()).some(s => s[0] === 'Start' && s[1] === false), JSON.stringify(await seen()));
   await shot('run-7-taken-over.png');
 
@@ -336,7 +386,6 @@ await runChecks(browser, async () => {
   await showInTabs(OTHER);
   check('(the Run status tab shows another run, a paused one, while the header\'s run is live)', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(OTHER)})`)
     && (await look()).main === 'Pause');
-  const CONTINUE = `[...document.querySelectorAll('.status-grid button')].find(b => b.textContent === 'Continue')`;
   const other = await evaluate(`({ off: ${CONTINUE}?.disabled, title: ${CONTINUE}?.title ?? '' })`);
   check('its Continue is off while the header\'s run is live, and its tooltip says why', other.off === true && other.title.startsWith('Continue: ') && /another run is live in the header/i.test(other.title), JSON.stringify(other));
   sim.steps = [{}, { state: 'pausing' }, {}, { state: 'paused', alive: false }];
@@ -352,7 +401,23 @@ await runChecks(browser, async () => {
     await until(`!!(${CONTINUE}) && ${CONTINUE}.disabled && /older version of the optimizer code/.test(${CONTINUE}.title) && /fine-tune or frozen/.test(${CONTINUE}.title)`, 250),
     await evaluate(`${CONTINUE}?.title ?? ''`));
   check('... and nothing was continued', !log.some(l => l.name === '/api/runs/continue'), JSON.stringify(log.map(l => l.name)));
+  // The continuation check (7.261): the reason is said beside Continue... before any press, and the backend's alternative is a button.
+  check('the reason stands beside Continue..., not only in its tooltip', await until(`/older version of the optimizer code/.test(document.querySelector('.status-grid .continue-why')?.textContent ?? '')`));
+  const ALTERNATIVE = `document.querySelector('.status-grid .continue-alternative')`;
+  check('the new run that still goes on from its model is offered as a button', (await evaluate(`${ALTERNATIVE}?.textContent ?? ''`)) === 'Fine-tune from its newest save point (a new run)');
+  await press(ALTERNATIVE);
+  check('pressing it makes the next run a fine-tune from exactly that save point, starts nothing, and says so', await until(`(() => { const c = JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null');
+    return c?.run?.mode === 'fine_tune' && c.run.model_source?.run_dir === ${JSON.stringify(OTHER)} && c.run.model_source?.checkpoint_id === 'ckpt-000007'; })()`, 40)
+    && /fine-tunes from fixture_task__scratch__seed1__0002 at its save point ckpt-000007/.test((await look()).banner ?? '') && !log.some(l => /start|continue/.test(l.name)), (await look()).banner ?? '');
   otherOlder = false;
+  // A task's baseline started by Save task (the page's own event, TaskSave.tsx): taken into the header only when that is free or holds a
+  // run at rest, and a paused run it lets go of is named (7.261). The header holds DIR, paused; OTHER stands in for the baseline run.
+  log.length = 0;
+  const baseline = { run_dir: OTHER, run_id: 'fixture-run-2', mock: true, mock_notice: 'FIXTURE MOCK DATA: nothing was started.' };
+  await evaluate(`window.dispatchEvent(new CustomEvent('gator-task-baseline-started', { detail: ${JSON.stringify(baseline)} }))`);
+  check('a task baseline while the header holds a paused run: the header takes it and names the paused run, which stays paused',
+    await until(`localStorage.getItem(${JSON.stringify(RUN_KEY)}) === ${JSON.stringify(OTHER)}`) && /fixture_task__scratch__seed0__0001 stays paused; continue it from Runs\./.test((await look()).banner ?? '')
+    && !log.some(l => l.name === '/api/runs/command'), (await look()).banner ?? '');
 
   // ---- 13. a remembered run that is gone is let go of - not asked for every 1.5 s for ever (review of 2026-09-29) -----------------
   await forget();
@@ -362,6 +427,22 @@ await runChecks(browser, async () => {
     && (await look()).main === 'Start', await evaluate(`document.querySelector('footer .tabs .run-list-current')?.textContent ?? ''`));
   const goneBefore = goneAsked; await sleep(4000);
   check('... and it is asked for no more', goneAsked === goneBefore && goneAsked >= 1, `${goneAsked - goneBefore} request(s) in 4 s, ${goneAsked} in all`);
+
+  // ---- 14. a reload during a start: the page asks what became of it by its id, and never sends it again (7.261) ----------------------
+  log.length = 0; holdNext = '/api/runs/start';
+  await press(MAIN);
+  check('(Start is on its way: "Starting...")', await mainReads('Starting...'));
+  const sentId = log[0]?.body.request_id;
+  requestAnswer = { state: 'done', answer: { ...started(), run_dir: DIR } };
+  Object.assign(sim, { dir: DIR, state: 'running', alive: true, charged: 2, steps: [] });   // the run that start made
+  held = null;                                                                     // its request belongs to the page that goes away
+  await send('Page.reload'); await until(`!!(${MAIN})`, 150);
+  check('after a reload during the start the page asks what became of it, by its id', await waitFor(() => requestLookups.includes(sentId), 60), JSON.stringify(requestLookups));
+  check('... takes the run it made into the header ("Pause") and sends no second start', await mainReads('Pause', 150) && log.filter(l => l.name === '/api/runs/start').length === 1,
+    JSON.stringify(log.map(l => l.name)));
+  check('... and says that it was not sent again', await until(`/sent before the page was reloaded made this run; it was not sent again/.test(document.querySelector('.banner')?.textContent ?? '')`, 60),
+    (await look()).banner ?? '');
+  check('... and keeps no request any more', (await evaluate(`sessionStorage.getItem('gator-workbench-launch-v1')`)) === null);
 
   reportRefused(refused);
   check('every question on screen was planned by this check', dialogs.every(d => d.planned), JSON.stringify(dialogs.filter(d => !d.planned)));

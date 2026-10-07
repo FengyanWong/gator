@@ -341,6 +341,17 @@ details.section.module { margin-top: 0; } details.module > summary { cursor: poi
 /* "Calibration ready" (record 7.204): a line of its own under the header when a Baseline simulation has ended, with its two buttons. */
 .calibration-ready { order: 1; flex: 0 0 100%; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border-left: 3px solid var(--accent); padding: 2px 10px; }
 .calibration-ready > span { flex: 1 1 300px; } .calibration-ready .hint { font-weight: normal; }
+/* The launcher (record 7.261). A refused launch: the backend's words stay on a line of their own - under the header for Start,
+   Calibration and Resume, under Continue... in Run status - until what they depend on changes, or the line is closed. */
+.launch-refusal { display: flex; gap: 6px; align-items: flex-start; border-left: 3px solid var(--bad); background: var(--bad-bg); padding: 2px 4px 2px 10px; margin: 4px 0; }
+header .launch-refusal { order: 1; flex: 0 0 100%; margin: 0; }
+.launch-refusal-text { flex: 1 1 auto; } .launch-refusal details pre { white-space: pre-wrap; max-height: 12em; overflow: auto; }
+button.launch-refusal-close { border: none; background: none; padding: 0 2px; }
+/* The budget form of Continue..., under its button: Used · New total · Allows n more; what is wrong is said under it. */
+.continue-form { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 4px 0; }
+.continue-form input { width: 9ch; font-variant-numeric: tabular-nums; } .continue-form input[aria-invalid="true"] { border-color: var(--bad); }
+.continue-allows { color: var(--muted); font-variant-numeric: tabular-nums; } .continue-error { flex: 0 0 100%; margin: 0; }
+.continue-why { flex: 1 1 260px; }
 .corner-check h4 { margin: 10px 0 3px; } .corner-check h4 .hint { font-weight: normal; }
 .corner-check table.grid { width: auto; } .corner-check table.grid th { position: static; cursor: default; } table.corner-grid th .hint { display: block; font-weight: normal; }
 table.corner-grid td.corner-pass { color: var(--ok); } table.corner-grid td.corner-fail { color: var(--bad); font-weight: 600; }

@@ -121,6 +121,11 @@ export const api = {
   modelGraphView: (run_dir: string, checkpoint_id: string, evaluation: number | null) => call('POST', '/api/runs/model/graph-view', { run_dir, checkpoint_id, evaluation }),
   start: (body: Json) => call('POST', '/api/runs/start', body),
   continueRun: (body: Json) => call('POST', '/api/runs/continue', body),
+  // One launcher (record 7.261): whether Continue can go on with a run, before the press (read-only), and what became of a
+  // launch sent before the page was reloaded (done, pending or unknown).
+  continuation: (run_dir: string, max_evaluations?: number | null, signal?: AbortSignal) =>
+    call('GET', '/api/runs/continuation' + q({ run_dir, max_evaluations }), undefined, signal),
+  launchRequest: (request_id: string) => call('GET', '/api/runs/request' + q({ request_id })),
   command: (run_dir: string, command: string) => call('POST', '/api/runs/command', { run_dir, command }),
   status: (run_dir: string, signal?: AbortSignal) => call('GET', '/api/runs/status' + q({ run_dir }), undefined, signal),
   files: (run_dir: string, signal?: AbortSignal) => call('GET', '/api/runs/files' + q({ run_dir }), undefined, signal),

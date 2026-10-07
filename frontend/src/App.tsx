@@ -10,7 +10,9 @@ import { ConnectionButton } from './panels/Connection';
 import { CheckSteps } from './panels/Consistency';
 import { Editors } from './panels/Editors';
 import { ValidationStatus } from './panels/Issues';
-import { LIVE_STATES, RunButtons, launchWithConsent, resumeRun, useRunControl } from './panels/RunControl';
+import { LIVE_STATES, RunButtons, useRunControl } from './panels/RunControl';
+import { continueConsent, continueReadiness, featuresOf, launchKept, startReadiness, useContinuation, useLauncher } from './launch';
+import { LaunchRefusal } from './panels/LaunchRefusal';
 import { RunListButton } from './panels/RunList';
 import { OutputPanel, ResearchPanel, RunPanel } from './panels/Right';
 import { AgentWindowTab } from './panels/Agent';
@@ -36,6 +38,7 @@ function rejected(e: any): Json {
   return { blocks_run: true, issues, facts: {} };
 }
 const NO_RUNS: Json[] = [];                          // one empty list: a failed read does not make the model list read again
+const folderName = (dir: string) => dir.split(/[\\/]/).filter(Boolean).pop() ?? dir;     // a run folder's own name, unique per run
 
 /** The header's look switch (record 7.158): Whiteprint by day, Silicon Night by night. An icon, like the run buttons. */
 function LookSwitch() {
@@ -96,7 +99,6 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const [circuit, setCircuit] = useState<Json>(null);
   const [runs, setRuns] = useState<Json[]>(NO_RUNS);
   const [runsError, setRunsError] = useState<string | null>(null);   // the run list could not be read: said, not shown as "no run yet"
-  const [continuing, setContinuing] = useState(false);
   const [runDir, setRunDir] = useState<string | null>(shownRun);
   const [tab, setTab] = useState<BottomTab>('status');
   const [bottom, setBottom] = useState<Bottom>(storedBottom);
@@ -214,6 +216,8 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     lastPhase.current = control.phase;
   }, [control.phase]);
   const adopted = useRef(false);
+  const controlNow = useRef(control);              // the header as it is when the list arrives (a launch recovered after a reload may hold one by then)
+  controlNow.current = control;
   useEffect(() => {
     // The list follows the output root while it is typed: read 0.5 s after the last keystroke, not once per key (each read
     // looks at every run under the root). The first read, when the page opens, goes at once.
@@ -223,8 +227,17 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
       if (adopted.current) return;
       adopted.current = true;
       const isLive = (r: Json) => LIVE_STATES.includes(r.state);
-      const running = list.some(r => r.run_dir === control.dir && isLive(r)) ? null : list.find(isLive);
-      if (running) { control.take(running.run_dir); setRunDir(running.run_dir); }
+      const header = controlNow.current;
+      const running = list.some(r => r.run_dir === header.dir && isLive(r)) ? null : list.find(isLive);
+      if (running) {
+        // Said (record 7.261), with the paused run the header held: it stays paused, and Runs continues it.
+        const resting = list.find(r => r.run_dir === header.dir && ['paused', 'interrupted'].includes(r.state));
+        header.take(running.run_dir); setRunDir(running.run_dir);
+        // A launch of this tab sent before a reload may have made it: the launcher says so once it has asked.
+        const where = launchKept() ? 'a live run' : 'a live run started elsewhere (another browser tab, the command line or a task\'s baseline)';
+        setMessage({ level: 'info', text: `The header took over ${folderName(running.run_dir)}, ${where}: its Pause and Abort act on it.`
+          + (resting ? ` ${folderName(resting.run_dir)} stays paused; continue it from Runs.` : '') });
+      }
       setLooked(true);
     }), adopted.current ? 500 : 0);
     return () => clearTimeout(timer);
@@ -253,63 +266,90 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     });
   }, [taskKey]);
 
-  const showRun = (started: Json, as: 'start' | 'resume') => {
+  const showRun = (started: Json, as: 'start' | 'resume', note = '') => {
     setRunDir(started.run_dir); setTab('status'); unfold(); refreshRuns();
-    setMessage(as === 'resume' ? { level: 'info', text: `Continuing in the original run directory: ${started.run_dir}` }
-      : { level: started.mock ? 'mock' : 'info', text: `${started.mock ? started.mock_notice + ' ' : ''}Run directory: ${started.run_dir}` });
+    const said = note ? ` ${note}` : '';
+    setMessage(as === 'resume' ? { level: 'info', text: `Continuing in the original run directory: ${started.run_dir}${said}` }
+      : { level: started.mock ? 'mock' : 'info', text: `${started.mock ? started.mock_notice + ' ' : ''}Run directory: ${started.run_dir}${said}` });
   };
-  const launchedRun = (started: Json, as: 'start' | 'resume') => { control.take(started.run_dir, as); showRun(started, as); };
-  const automaticRun = useRef(launchedRun);
-  automaticRun.current = launchedRun;
+  // On success the run becomes the header's run and the shown run, in one place, and the message names it (record 7.261);
+  // a paused run the header lets go of for it is named too - it stays paused, and Runs continues it.
+  const launchedRun = (started: Json, as: 'start' | 'resume', note?: string) => {
+    const resting = control.dir && control.dir !== started.run_dir && ['paused', 'interrupted'].includes(control.status?.state) ? control.dir : null;
+    control.take(started.run_dir, as);
+    showRun(started, as, [note, resting && `${folderName(resting)} stays paused; continue it from Runs.`].filter(Boolean).join(' '));
+  };
+  // A task's baseline simulation, started by Save task (TaskSave.tsx), is taken into the header only when the header is free
+  // or holds a run at rest (record 7.261): it used to replace a paused run without a word, and a live one too. A header that
+  // holds no run is free while the page still reads the run list ("checking").
+  const adoptBaseline = (started: Json) => {
+    if (!control.dir || control.phase === 'idle' || control.phase === 'paused') { launchedRun(started, 'start', "The task's baseline simulation has started."); return; }
+    refreshRuns();
+    setMessage({ level: 'info', text: `The task's baseline simulation runs as ${folderName(started.run_dir)}; the header keeps its own run. The baseline is under Runs.` });
+  };
+  const automaticRun = useRef(adoptBaseline);
+  automaticRun.current = adoptBaseline;
   useEffect(() => {
-    const started = (event: Event) => automaticRun.current((event as CustomEvent<Json>).detail, 'start');
+    const started = (event: Event) => automaticRun.current((event as CustomEvent<Json>).detail);
     window.addEventListener(TASK_BASELINE_STARTED, started);
     return () => window.removeEventListener(TASK_BASELINE_STARTED, started);
   }, []);
-  const failed = (e: any) => setMessage({ level: 'error', text: plainError(e), detail: e.detail });
-  const start = async (calibration_only: boolean) => {
+
+  // ---- the launcher (record 7.261, launch.ts): Start, Calibration, Resume and Continue -------------------------------------
+  const features = useMemo(() => featuresOf(meta), [meta]);
+  const launcher = useLauncher({ control, features, onLaunched: launchedRun, onMessage: setMessage });
+  // The backend's continuation check (when it has one): of the run shown, for Continue..., and of the header's paused run,
+  // for Resume - the reason either cannot go on is said before the press.
+  const shownCheck = useContinuation(features, runDir, status);
+  const heldCheck = useContinuation(features, control.dir, control.phase === 'paused' ? control.status : null);
+  const startBlocked = startReadiness(control.phase, validation);
+  const resumeBlocked = control.phase === 'paused'
+    ? continueReadiness({ status: control.status, check: heldCheck, phase: control.phase, held: true, total: 'unchanged' }) : null;
+  const continueBlocked = continueReadiness({ status, check: shownCheck, phase: control.phase, held: control.dir === runDir, total: 'form' });
+  // What a refusal depends on: the configuration for Start and Calibration; for Resume and Continue the run - its state, save
+  // point and total (a heartbeat is no reason: a paused run's status is read again and again without a change).
+  const continueKey = (dir: string | null, of: Json) => `continue|${dir}|${of?.state}|${of?.worker_alive}|${of?.save_point}|${of?.budget?.max_evaluations}`;
+  const refusal = launcher.refusal;
+  const headerRefusal = refusal && ((refusal.action === 'start' || refusal.action === 'calibration') ? refusal.key === configKey
+    : refusal.action === 'resume' && refusal.key === continueKey(control.dir, control.status)) ? refusal : null;
+  const shownRefusal = refusal?.action === 'continue' && refusal.key === continueKey(runDir, status) ? refusal : null;
+  // An ngspice netlist task is real too (circuit simulations, counted and recorded as such), only without a license.
+  const start = (calibration_only: boolean) => {
     setMessage(null);
     const calibration_designs = calibration_only ? CALIBRATION_DESIGNS : 0;
     const budget = calibration_only ? calibration_designs : config.run.max_evaluations;
     const calibrationText = calibration_only ? `\n(${calibration_designs} random designs for calibration; no starting-design baseline.)` : '';
-    control.setPending('start');
-    try {
-      // A refusal creates nothing; what the backend asks for (real budget, a model from another task, unknown
-      // connection layers) is put to the user and the start is repeated with the answers.
-      // An ngspice netlist task is real too (circuit simulations, counted and recorded as such), only without a license.
-      const started = await launchWithConsent(flags => api.start({ config, calibration_only, ...(calibration_designs ? { calibration_designs } : {}), ...flags }), { real: !!isReal, transfer: true,
+    launcher.go(calibration_only ? 'calibration' : 'start', configKey, null,
+      flags => api.start({ config, calibration_only, ...(calibration_designs ? { calibration_designs } : {}), ...flags }), { real: !!isReal, transfer: true,
         authorizeText: (!isReal ? `Start ${budget} synthetic MOCK evaluations?` : circuit?.simulator === 'ngspice' ? `This starts ngspice simulations of the task (no license; every one is counted as a real evaluation).\nRun a budget of ${budget} candidate evaluation(s)?`
-          : `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?`) + calibrationText });
-      if (started) launchedRun(started, 'start'); else setMessage({ level: 'info', text: 'Not started: you answered no, so nothing was created.' });
-    } catch (e: any) { failed(e); } finally { control.setPending(null); }
+          : `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?`) + calibrationText },
+      'Not started: you answered no, so nothing was created.');
   };
-  // "Continue" of the Run status tab: the run shown there, with the question about a new total budget.
-  // While it is on its way (seconds: the check before every run may ask Virtuoso) Continue - and the header's Resume of
-  // the same run - wait: a second press repeated both questions and then failed with "already running".
-  const continueRun = async () => {
-    if (!runDir || continuing) return;
-    const extra = window.prompt('Continue this run. New total evaluation budget (empty = unchanged):', '');
-    if (extra === null) return;
-    const held = control.dir === runDir;
-    setContinuing(true); if (held) control.setPending('resume');
-    try {
-      const started = await resumeRun(runDir, status?.run_dir === runDir ? status : null, Number(extra) >= 1 ? Math.floor(Number(extra)) : null);
-      if (!started) return;
-      // It becomes the header's run too, unless the header is busy with another live run.
-      if (control.dir === runDir || control.phase === 'idle' || control.phase === 'paused') launchedRun(started, 'resume');
-      else { refreshRuns(); setMessage({ level: 'info', text: `Continuing in the original run directory: ${started.run_dir}` }); }
-    } catch (e: any) { failed(e); } finally { setContinuing(false); if (held) control.setPending(null); }
+  // Continue... of the Run status tab: the run shown there, with the total of the budget form (null = unchanged). The
+  // header's Resume is Continue of its own paused run with the total unchanged. Both go on from the run's own saved
+  // configuration; the run becomes the header's run.
+  const continueShown = (total: number | null) => {
+    const dir = runDir;
+    if (!dir) return;
+    setMessage(null);
+    launcher.go('continue', continueKey(dir, status), dir, flags => api.continueRun({ run_dir: dir, max_evaluations: total, ...flags }),
+      continueConsent(status, shownCheck, total), 'Not continued: you answered no. The run stays as it was.');
   };
-  // ...but not while the header is busy with ANOTHER run (the case above that does not hand the run to the header): the
-  // continued run would have no Pause or Abort anywhere - the tab's run buttons went on 2026-09-29 - and two real runs
-  // would drive the one Virtuoso session. A paused run there is no hindrance: the header takes the continued run instead.
-  // Nor while the header starts or resumes a run: Continue then asked the same run to go on twice, and its end cleared
-  // the header's "resuming" while the header's own Resume was still on its way (review of 2026-10-01).
-  const continueBlocked: string | null = continuing ? 'The run is being continued; a moment.'
-    : control.phase === 'starting' || control.phase === 'resuming' ? 'The header is starting or resuming a run; a moment.'
-    : control.dir === runDir || control.phase === 'idle' || control.phase === 'paused' ? null
-    : control.phase === 'checking' ? 'The header is still looking up which run is live; a moment.'
-    : 'Another run is live in the header: pause it or let it finish first (a second live run would have no Pause or Abort on this page).';
+  const resumeHeld = () => {
+    const dir = control.dir;
+    if (!dir) return;
+    setMessage(null);
+    launcher.go('resume', continueKey(dir, control.status), dir, flags => api.continueRun({ run_dir: dir, max_evaluations: null, ...flags }),
+      continueConsent(control.status, heldCheck, null), 'Not resumed: you answered no. The run stays paused.');
+  };
+  // The backend's alternative when Continue cannot go on (a changed task, older optimizer code...): the next run on this
+  // page fine-tunes from the run's newest save point - pinned, as one Undo step. Nothing starts until Start.
+  const fineTuneFrom = (alternative: Json) => {
+    setConfig((c: Json) => ({ ...c, run: { ...c.run, mode: 'fine_tune',
+      model_source: { ...(c.run.model_source ?? {}), run_dir: alternative.run_dir, checkpoint_id: alternative.checkpoint_id } } }));
+    setMessage({ level: 'info', text: `The next run fine-tunes from ${folderName(alternative.run_dir)} at its save point ${alternative.checkpoint_id}, as a new `
+      + 'run (Undo takes it back). Look at RL networks, then press Start.' });
+  };
 
   // ---- the splitter above the bottom panel (record 7.158): nothing moves unless it is dragged, double-clicked or keyed --------
   const layoutRef = useRef<HTMLDivElement>(null);
@@ -366,6 +406,9 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
         </div>}
         {/* "Calibration ready" (record 7.204): the Calibration run the header holds has ended. A line of its own under the
             header, like the two above; it goes when it is answered, when the page holds the values, or with the next run. */}
+        {/* A refusal of Start, Calibration or Resume (record 7.261): it stays on a line of its own until what it depends on
+            changes - the configuration, or the header's run - or it is closed. */}
+        {headerRefusal && <LaunchRefusal refusal={headerRefusal} onDismiss={() => launcher.setRefusal(null)} />}
         {calibrationReady && calibrationOffer && <div className="calibration-ready" role="status">
           {calibrated.status === 'calibrated'
             ? <><span><b>Calibration ready</b>{calibrated.task_key ? ` for ${calibrated.task_key}` : ''}: {calibrationOffer.values}. <span className="hint">Proposed
@@ -380,11 +423,11 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
         </div>}
         <span className="spacer" />
         <ValidationStatus validation={validation} config={config} schema={schema} />
-        <button disabled={!!validation?.blocks_run || control.phase !== 'idle'} onClick={() => start(true)}
-          title={control.phase !== 'idle' ? 'Not while the header holds a run that is active or paused. Abort lets go of a paused run.'
+        <button disabled={!!startBlocked} onClick={() => start(true)}
+          title={startBlocked ? `Calibration: ${startBlocked}`
             : `${CALIBRATION_DESIGNS} random designs over the Parameters ranges, each costed. No starting-design baseline. `
               + 'Proposes a Scale for each Specs row and the Initial alpha; Run status shows them with Apply, nothing changes by itself.'}>Calibration</button>
-        <RunButtons control={control} blocked={!!validation?.blocks_run} onStart={() => start(false)} onResumed={started => showRun(started, 'resume')}
+        <RunButtons control={control} startBlocked={startBlocked} resumeBlocked={resumeBlocked} onStart={() => start(false)} onResume={resumeHeld}
           onMessage={setMessage} onShow={dir => { setRunDir(dir); setTab('status'); unfold(); }} />
       </header>
       {message && <div className={`banner ${message.level}`} onClick={() => setMessage(null)}>
@@ -419,7 +462,8 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
           <RunListButton runs={runs} runsError={runsError} runDir={runDir} status={status} onChoose={dir => { setRunDir(dir); if (dir) unfold(); }} onRefresh={refreshRuns} />
         </div>
         <div className="bottom-body">
-          {tab === 'status' &&<StatusTab status={status} runDir={runDir} error={statusError} onContinue={continueRun} continueBlocked={continueBlocked} config={config} setConfig={setConfig} />}
+          {tab === 'status' && <StatusTab status={status} runDir={runDir} error={statusError} check={shownCheck} continueBlocked={continueBlocked} refusal={shownRefusal}
+            onContinue={continueShown} onDismissRefusal={() => launcher.setRefusal(null)} onFineTune={fineTuneFrom} config={config} setConfig={setConfig} />}
           {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
           {tab === 'data' && <DataTab runDir={runDir} status={status} />}
           {tab === 'files' && <FilesTab runDir={runDir} />}

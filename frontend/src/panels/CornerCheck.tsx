@@ -1,7 +1,7 @@
 import { Icon } from './Icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, Json, si } from '../api';
-import { launchWithConsent } from './RunControl';
+import { launchWithConsent } from '../launch';
 import { useRequest } from '../store';
 
 /** Corner check (status record 7.62; backend corner_check.py): the shown run's safest feasible designs, simulated again at

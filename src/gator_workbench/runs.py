@@ -458,10 +458,35 @@ def _prepare_resume(config, roots, task, task_hash, gate):
 
 
 def _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifest, run_dir):
+    previous, merged, meta, compatibility = _resume_checks(config, task, task_hash, layout, manifest, run_dir)
+    history = layout.control / 'config_history'
+    history.mkdir(parents=True, exist_ok=True)
+    write_json(history / f"effective_config.segment{len(manifest['segments'])}.json", previous.model_dump(mode='json'))
+    write_json(layout.effective_config, merged.model_dump(mode='json'))
+    manifest['segments'].append(dict(segment=len(manifest['segments']) + 1, entry='resume',
+                                     requested_utc=utcnow().isoformat(), from_checkpoint=meta['checkpoint_id'],
+                                     compatibility=compatibility, connection_gate=gate,
+                                     changed_run_settings={n: getattr(merged.run, n) for n in RESUMABLE_RUN_FIELDS
+                                                           if getattr(merged.run, n) != getattr(previous.run, n)}))
+    manifest['budgets'].update(max_evaluations=merged.run.max_evaluations,
+                               max_spectre_launches=merged.run.max_spectre_launches,
+                               max_wall_seconds=merged.run.max_wall_seconds, max_retries=merged.run.max_retries)
+    manifest['state'] = 'created'
+    write_json(layout.manifest, manifest)
+    command = layout.control / 'command.json'
+    if command.exists():
+        command.unlink()                       # a stale pause must not stop the continued run immediately
+    return layout, manifest
+
+
+def _resume_checks(config, task, task_hash, layout, manifest, run_dir):
+    """Everything an exact resume checks before it writes anything - the refusals of Continue. Shared by the press
+    (under the run lock, _prepare_resume_locked) and the continuation check (record 7.261, no lock, nothing written).
+    Returns (previous configuration, merged configuration, save point metadata, compatibility report)."""
     if manifest['task_definition_hash'] != task_hash:
         raise RunRejected('The task definition changed (circuit, variables, targets or measurements). This cannot be '
                           'presented as a continuation of the same training run; use fine_tune.',
-                          report=suggest_mode(config, run_dir), code='task_changed')
+                          report=suggest_mode(config, run_dir, task=task), code='task_changed')
     if manifest['mock'] != task.mock:
         raise RunRejected('Mock/real provenance differs from the run being resumed', code='mock_isolation')
     removed = (manifest.get('search_settings') or {}).get('method')
@@ -498,24 +523,88 @@ def _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifes
     if not compatibility['compatible']:
         raise RunRejected('The latest checkpoint cannot be fully resumed. No fallback to scratch is performed.',
                           report=compatibility, code='incompatible_checkpoint')
-    history = layout.control / 'config_history'
-    history.mkdir(parents=True, exist_ok=True)
-    write_json(history / f"effective_config.segment{len(manifest['segments'])}.json", previous.model_dump(mode='json'))
-    write_json(layout.effective_config, merged.model_dump(mode='json'))
-    manifest['segments'].append(dict(segment=len(manifest['segments']) + 1, entry='resume',
-                                     requested_utc=utcnow().isoformat(), from_checkpoint=meta['checkpoint_id'],
-                                     compatibility=compatibility, connection_gate=gate,
-                                     changed_run_settings={n: getattr(merged.run, n) for n in RESUMABLE_RUN_FIELDS
-                                                           if getattr(merged.run, n) != getattr(previous.run, n)}))
-    manifest['budgets'].update(max_evaluations=merged.run.max_evaluations,
-                               max_spectre_launches=merged.run.max_spectre_launches,
-                               max_wall_seconds=merged.run.max_wall_seconds, max_retries=merged.run.max_retries)
-    manifest['state'] = 'created'
-    write_json(layout.manifest, manifest)
-    command = layout.control / 'command.json'
-    if command.exists():
-        command.unlink()                       # a stale pause must not stop the continued run immediately
-    return layout, manifest
+    return previous, merged, meta, compatibility
+
+
+# Refusals of Continue that a NEW run avoids: the save point's RL model still loads in a fine-tune.
+_FINE_TUNE_INSTEAD = ('task_changed', 'older_code', 'incompatible_checkpoint', 'reward_contract_changed',
+                      'search_method_removed')
+
+
+def continuation(run_dir, *, max_evaluations=None) -> dict:
+    """Whether Continue can go on with this run, and with which budget - answered BEFORE the press (record 7.261, plan
+    "Existing runs: continued in place"). The checks are the press's own (_resume_checks, and the validation and the
+    concurrency limit of prepare_run), on the run's own saved configuration, without the run lock and without writing
+    anything. Not asked here: the real-simulation authorization, the connection gate and the check before every run -
+    they need the user or Virtuoso, and the press asks them as before. The press checks everything again under the lock.
+
+    `max_evaluations`: a new total to check instead of the run's own. `used` counts the evaluations of the save point a
+    continuation goes on from; the new total has to be more than that (`minimum_total`). `alternative`: the new run
+    that still goes on from this run's model when Continue cannot (Fine-tune from its newest save point), or None."""
+    run_dir = Path(run_dir)
+    layout = RunLayout(run_dir)
+    manifest = read_json(layout.manifest, default=None)
+    answer = dict(run_dir=str(run_dir), eligible=False, code=None, reason=None, state=None, used=None, total=None,
+                  remaining=None, minimum_total=None, exhausted=False, save_point=None, alternative=None)
+    if not manifest:
+        return dict(answer, code='not_a_run', reason=f'{run_dir} is not a run folder.')
+    status = run_status(run_dir)
+    point = save_point(run_dir)
+    meta = None
+    if point:
+        try:
+            meta = ckpt.read_metadata(ckpt.resolve_checkpoint(run_dir, 'latest'))
+        except (OSError, ValueError):
+            meta = None
+    used = ((meta or {}).get('ledger') or {}).get('charged')
+    if used is None:
+        used = (status.get('budget') or {}).get('charged')
+    total = (manifest.get('budgets') or {}).get('max_evaluations')
+    answer.update(state=status.get('state'), save_point=point, used=used, total=total)
+    if isinstance(used, int) and isinstance(total, int):
+        answer.update(remaining=max(0, (max_evaluations or total) - used), minimum_total=used + 1, exhausted=used >= total)
+
+    def refused(code, reason):
+        alternative = None
+        if code in _FINE_TUNE_INSTEAD and point and meta and meta.get('restoration_capability') != 'search_state':
+            alternative = dict(action='fine_tune', run_dir=str(run_dir), checkpoint_id=point,
+                               label='Fine-tune from its newest save point (a new run)')
+        return dict(answer, code=code, reason=reason, alternative=alternative)
+
+    if status.get('worker_alive'):
+        return refused('already_running', 'This run is running now: a run is never continued twice.')
+    if not point:
+        return refused('no_checkpoint', 'This run folder holds no save point - none was written, or a copy was made '
+                                        'without them, or they were deleted - so there is nothing to go on from.')
+    if save_point_code(run_dir) == 'older':
+        return refused('older_code', 'This run was saved by an older version of the optimizer code, and continuing it '
+                                     'needs exactly that version. Its model still loads in a new run: fine-tune or frozen.')
+    try:
+        config = WorkbenchConfig.model_validate(read_json(layout.effective_config))
+    except (OSError, ValueError) as exc:          # a pydantic ValidationError is a ValueError
+        return refused('no_config', f"The run's saved configuration cannot be read: {exc}")
+    config.run.mode, config.run.model_source.run_dir = 'resume', str(run_dir)
+    if max_evaluations:
+        config.run.max_evaluations = max_evaluations
+    from .tasks import load_task_view
+    try:
+        task = load_task_view(config.circuit, profile_id=config.run.connection_profile_id)
+    except TaskBlocked as exc:
+        return refused('task_blocked', str(exc))
+    config = with_circuit_content(config, task)
+    report = validate(config, graph=task.base_graph, provided_metrics=set(task.provided_metrics))
+    if report.blocks_run:
+        return refused('validation', "The run's own saved configuration has blocking issues by today's checks, so it "
+                                     'cannot go on.')
+    if config.run.concurrency > task.max_concurrency:
+        return refused('concurrency', f'This task supports at most {task.max_concurrency} concurrent simulation jobs')
+    try:
+        _resume_checks(config, task, task_definition_hash(config), layout, manifest, run_dir)
+    except RunRejected as exc:
+        return refused(exc.code, str(exc))
+    except CompileError as exc:
+        return refused('compile', str(exc))
+    return dict(answer, eligible=True)
 
 
 def _register_in_experiment(experiment_dir, manifest, compiled, task, created):

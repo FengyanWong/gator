@@ -67,7 +67,8 @@ await runChecks(browser, async () => {
   // ---- 2 Run status: what the tab shows, as one JSON file named after the run --------------------------------------------------------------
   await tab('Run status');
   if (!(await until(`!!(${button('Export status (JSON)')})`, 60))) throw new Error('this page has no "Export status (JSON)" button: the served frontend is older than it (npm run build, then reload)');
-  check('Run status has "Export status (JSON)" at the end of its button row', await evaluate(`${button('Export status (JSON)')}.previousElementSibling?.textContent === 'Continue'`));
+  check('Run status has "Export status (JSON)" at the end of its button row, after Continue... (7.261)', await evaluate(`(() => { const b = ${button('Export status (JSON)')};
+    return !b.nextElementSibling && [...b.parentElement.children].some(c => c.textContent === 'Continue...'); })()`));
   await press('Export status (JSON)');
   let file = await savedFile(`${RUN}__status.json`);
   const exported = file && JSON.parse(file.toString('utf8'));

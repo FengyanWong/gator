@@ -4,6 +4,8 @@ import { api, bytes, copy, download, downloadPackage, Json, num, saveJson, short
 import { usePolling, useRequest } from '../store';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './calibrationPlan';
 import { requestTaskSave } from './TaskSave';
+import { ContinueForm } from './ContinueForm';
+import { LaunchRefusal } from './LaunchRefusal';
 
 // llm_calls - the AI calls a run of the LLM search methods recorded (removed 2026-10-06, record 7.226) - stays in its run folder.
 const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'transitions', 'states'];
@@ -88,11 +90,17 @@ function Calibration({ value, live, config, setConfig }: { value: Json; live: bo
 }
 
 /** The run the bottom tabs show. Its run commands live in the header only (Save now, Pause, Abort, Force abort): the
- *  four copies this tab had went on 2026-09-29 (user: fewer duplicate buttons). Continue stays - it sets a new budget and
- *  also continues a stopped run, which the header cannot. `continueBlocked`: why Continue waits (the header is busy with
- *  another run), or null. */
-export function StatusTab({ status, runDir, error, onContinue, continueBlocked, config, setConfig }: { status: Json; runDir: string | null; error: string | null;
-  onContinue: () => void; continueBlocked: string | null; config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void }) {
+ *  four copies this tab had went on 2026-09-29 (user: fewer duplicate buttons). Continue... stays - it sets a new budget
+ *  and also continues a stopped run, which the header cannot. Record 7.261 (the launcher): it opens the budget form
+ *  instead of the browser's prompt; `continueBlocked` - why it cannot go now, the backend's continuation check included -
+ *  is said beside it before any press, with the backend's `alternative` (a new run that fine-tunes from the save point)
+ *  as a button; a refusal of the press stays under it (`refusal`) until the run changes. `check`: that continuation check. */
+export function StatusTab({ status, runDir, error, check, continueBlocked, refusal, onContinue, onDismissRefusal, onFineTune, config, setConfig }: {
+  status: Json; runDir: string | null; error: string | null; check: Json | null; continueBlocked: string | null; refusal: Json | null;
+  onContinue: (total: number | null) => void; onDismissRefusal: () => void; onFineTune: (alternative: Json) => void;
+  config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void }) {
+  const [asking, setAsking] = useState(false);                // the budget form is open
+  useEffect(() => setAsking(false), [runDir]);
   // A run chosen whose answer is still on its way, or whose status cannot be read now, is said as such: this line used
   // to read "No run selected." while the strip below named the run.
   if (!status) return <p className="hint">{!runDir ? 'No run selected.' : error ? `The status of this run could not be read: ${error}` : 'Reading the run...'}</p>;
@@ -103,9 +111,9 @@ export function StatusTab({ status, runDir, error, onContinue, continueBlocked, 
     : 'not observed';
   const executedReward = status.summary?.reward;
   const hasV2 = Object.prototype.hasOwnProperty.call(b ?? {}, 'first_nominal_feasible');
-  const continuable = !status.worker_alive && ['paused', 'stopped', 'interrupted'].includes(status.state);
-  const noSavePoint = status.save_point === null;      // the folder holds no save point to go on from (record 7.215; older backends: undefined)
-  const olderCode = status.save_point_code === 'older';  // written by an older optimizer source: Continue needs that source (7.221)
+  // Continue... is worth a word while the run is at rest in a state it can go on from: a completed run too, once the
+  // backend's continuation check can say whether a higher total is allowed (record 7.261).
+  const resting = !status.worker_alive && (['paused', 'stopped', 'interrupted'].includes(status.state) || (status.state === 'completed' && !!check));
   return (<div className="status-grid">
     <SteeringCheck value={status.steering} />
     {status.manifest?.mock && <p className="mock">{status.manifest.mock_notice}</p>}
@@ -137,14 +145,18 @@ export function StatusTab({ status, runDir, error, onContinue, continueBlocked, 
       {status.error && <tr><td>Error</td><td className="error">{status.error}</td></tr>}
     </tbody></table>
     <div className="row">
-      <button disabled={!continuable || noSavePoint || olderCode || !!continueBlocked} onClick={onContinue}
-        title={continuable && noSavePoint ? 'Continue: this run folder holds no save point - a copy made without them, or they were deleted - so there is nothing to go on from.'
-          : continuable && olderCode ? 'Continue: this run was saved by an older version of the optimizer code, and continuing it needs exactly that version. Its model still loads in a new run: fine-tune or frozen.'
-          : continuable && continueBlocked ? `Continue: ${continueBlocked}`
-          : 'Continue: A paused, stopped or interrupted run goes on in the same run folder, from its saved state, with its own saved configuration.'}><Icon name="play" label="Continue" /></button>
+      <button className="continue-open" disabled={!!continueBlocked || asking} onClick={() => setAsking(true)}
+        title={continueBlocked ? `Continue: ${continueBlocked}` : 'Continue: A paused, stopped or interrupted run - or a completed one, with a higher total - goes on in the '
+          + 'same run folder, from its saved state, with its own saved configuration. The form asks for the total first.'}><Icon name="play" label="Continue..." /></button>
+      {resting && continueBlocked && <span className="hint continue-why">{continueBlocked}</span>}
+      {resting && check?.alternative && <button className="continue-alternative" onClick={() => onFineTune(check.alternative)}
+        title={`${check.alternative.label}: The next run on this page loads this run's save point ${check.alternative.checkpoint_id} in Mode fine_tune, as one Undo step. Nothing starts until Start.`}>{check.alternative.label}</button>}
       <button onClick={() => saveJson(`${runName(status.run_dir)}__status.json`, { exported_utc: new Date().toISOString(), ...status })}
         title="Export status (JSON): Everything this tab shows, as it is right now, in one JSON file: state, budget, best design, connection, the run's manifest and summary."><Icon name="export" label="Export status (JSON)" /></button>
     </div>
+    {asking && <ContinueForm used={check?.used ?? b?.charged ?? null} total={check?.total ?? b?.max_evaluations ?? null} blocked={continueBlocked}
+      onContinue={total => { setAsking(false); onContinue(total); }} onCancel={() => setAsking(false)} />}
+    {refusal && <LaunchRefusal refusal={refusal} onDismiss={onDismissRefusal} />}
   </div>);
 }
 

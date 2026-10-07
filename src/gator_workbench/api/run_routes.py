@@ -4,7 +4,7 @@ import mimetypes
 from pathlib import Path
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
-from .. import aggregates, checkpoints as ckpt, runs, schema
+from .. import aggregates, checkpoints as ckpt, launch_requests, runs, schema
 from .. import calibration, corner_check
 from ..layout import RunLayout
 from ..paths import PathNotAllowed, safe_child
@@ -63,6 +63,27 @@ def start_run(context, config, body, *, baseline_only=False):
     return dict(run_dir=str(layout.run_dir), run_id=manifest['run_id'], mock=manifest['mock'], worker_pid=pid,
                 paths=layout.subpaths(), connection_gate=manifest.get('connection_gate'),
                 mock_notice=manifest['mock_notice'])
+
+
+def once(request_id, kind, work):
+    """A launch answered once (record 7.261): `work` makes the run; the same request id again gets the answer the first
+    request got instead of a second run, and a request still on its way is refused (409 request_pending). A refusal
+    or a failure leaves no record: the page's repeat with the answers to the backend's questions is a request of its own."""
+    if not request_id:
+        return work()
+    try:
+        done = launch_requests.claim(request_id, kind)
+    except launch_requests.RequestPending as exc:
+        fail(409, exc, code='request_pending')
+    if done is not None:
+        return dict(done, repeated=True)
+    try:
+        result = work()
+    except BaseException:
+        launch_requests.drop(request_id)
+        raise
+    launch_requests.answer(request_id, result)
+    return result
 
 
 def register(app: FastAPI, context: ApiContext):
@@ -202,16 +223,32 @@ def register(app: FastAPI, context: ApiContext):
             fail(409, f'Not started: this configuration asks for the search method "{schema.REMOVED_SEARCH_METHODS[removed]}", '
                       'which was removed on 2026-10-06 - SAC is the only search method now. The page is older than the '
                       'server: reload it, check Run configuration, and press Start again.', code='search_method_removed')
-        return start_run(context, context.parse_config(body.config), body, baseline_only=body.baseline_only)
+        return once(body.request_id, 'start',
+                    lambda: start_run(context, context.parse_config(body.config), body, baseline_only=body.baseline_only))
 
     @app.post('/api/runs/continue')
     def continue_run(body: ContinueBody):
         run_dir = context.run_path(body.run_dir)
-        config = schema.WorkbenchConfig.model_validate(read_json(RunLayout(run_dir).effective_config))
-        config.run.mode, config.run.model_source.run_dir = 'resume', str(run_dir)
-        if body.max_evaluations:
-            config.run.max_evaluations = body.max_evaluations
-        return start_run(context, config, body)
+
+        def work():
+            config = schema.WorkbenchConfig.model_validate(read_json(RunLayout(run_dir).effective_config))
+            config.run.mode, config.run.model_source.run_dir = 'resume', str(run_dir)
+            if body.max_evaluations:
+                config.run.max_evaluations = body.max_evaluations
+            return start_run(context, config, body)
+        return once(body.request_id, 'continue', work)
+
+    @app.get('/api/runs/request')
+    def launch_request(request_id: str = Query(pattern=launch_requests.ID_PATTERN)):
+        """What became of a launch the page sent before it was reloaded (record 7.261): done (with the run), pending, or
+        unknown - it never arrived, was refused, or failed; nothing was made then."""
+        return launch_requests.lookup(request_id)
+
+    @app.get('/api/runs/continuation')
+    def continuation(run_dir: str, max_evaluations: int | None = Query(None, ge=1)):
+        """Whether Continue can go on with this run, checked before the press (record 7.261): read-only, without the run
+        lock; the press checks everything again."""
+        return runs.continuation(context.run_path(run_dir), max_evaluations=max_evaluations)
 
     @app.post('/api/runs/command')
     def command(body: CommandBody):

@@ -22,7 +22,10 @@ def register(app: FastAPI, context: ApiContext):
                     output_root=runs.remembered_output_root(), allowed_output_roots=[str(r) for r in context.roots.roots],
                     allowed_input_roots=[str(r) for r in context.input_roots],
                     produces='data, configurations, models, netlists and logs only - no plots, images or reports',
-                    settings_problem=settings_problem)
+                    settings_problem=settings_problem,
+                    # What this backend can do that an older one could not: the page sends request ids and asks the
+                    # continuation check only where they are listed (record 7.261), so it works with either.
+                    features=['launch_requests', 'continuation_check'])
 
     @app.get('/api/schema')
     def get_schema():

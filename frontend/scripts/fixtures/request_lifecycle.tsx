@@ -29,7 +29,7 @@ HTMLAnchorElement.prototype.click = function () { downloads.push(this.download);
 
 function Poll({ run, interval, timeout, controls }: { run: string; interval: number; timeout: number; controls: boolean }) {
   const result = useRequest(signal => api.status(run, signal), [run], { pollEvery: interval, timeoutMs: timeout });
-  return <><button id="refresh" onClick={result.refresh}>Refresh</button><pre id="result">{JSON.stringify(result)}</pre>{controls && <StatusTab status={result.value} runDir={null} error={null} onContinue={() => {}} continueBlocked={null} config={{}} setConfig={() => {}} />}</>;
+  return <><button id="refresh" onClick={result.refresh}>Refresh</button><pre id="result">{JSON.stringify(result)}</pre>{controls && <StatusTab status={result.value} runDir={null} error={null} check={null} refusal={null} onContinue={() => {}} onDismissRefusal={() => {}} onFineTune={() => {}} continueBlocked={null} config={{}} setConfig={() => {}} />}</>;
 }
 
 function Fixture() {

@@ -8,8 +8,10 @@ import { api, ApiError, Json, plainError } from '../api';
  *    Pause  = command `pause`: dispatch stops, the simulation in flight finishes, everything is saved, the worker exits.
  *    Resume = POST /api/runs/continue: the SAME run directory gets a new segment that restores the full saved state
  *             (the machinery of Mode = resume, with the run's own saved configuration - the Mode box is not involved).
+ *             It is Continue with the total unchanged, sent by the launcher (launch.ts, record 7.261).
  *    Abort  = command `stop` (the simulation in flight finishes, save, end). While a pause or an abort is still waiting
- *             for that simulation the button reads "Force abort" = command `cancel`, which waits for nothing.
+ *             for that simulation the button reads "Force abort" = command `cancel`, which waits for nothing. On a
+ *             paused run it reads "Let go" (record 7.261): it only lets go of the run - nothing is sent.
  *  The header controls ONE run, the "current run": the one started or resumed from this page (remembered across a
  *  reload), whatever run the bottom tabs are showing - a live run never loses its Pause and Abort. */
 
@@ -112,48 +114,6 @@ export function useRunControl(viewedStatus: Json, looked: boolean) {
 }
 export type RunControl = ReturnType<typeof useRunControl>;
 
-/** The question when the BACKEND says a run is real although the page took it for MOCK (a task chosen a moment ago
- *  whose circuit had not been read yet, or a run whose status was not known): worded from the backend's own report,
- *  never from the page's MOCK text - an OK here authorizes real simulations (audit 2026-09-30). */
-const realQuestion = (report: Json) => `This runs REAL simulations${report?.task_key ? ` of ${report.task_key}` : ''} (the page had taken it for a MOCK run).\n`
-  + `Authorize a total budget of ${report?.requested_max_evaluations ?? 'its'} candidate evaluation(s)?`;
-
-/** The backend never starts on a guess: it refuses, creates nothing, and names what it needs - the budget of a REAL
- *  simulation, a model trained on another task, connection layers it could not check. Each question is put to the
- *  user once and the request is repeated with the answers. Returns null when the user said no. */
-export async function launchWithConsent(send: (flags: Json) => Promise<Json>, options: { real: boolean; authorizeText: string; transfer?: boolean }): Promise<Json | null> {
-  const flags: Json = {};
-  if (options.real) {
-    if (!window.confirm(options.authorizeText)) return null;
-    flags.authorize_real_simulation = true;
-  }
-  for (;;) {
-    try { return await send(flags); } catch (e: any) {
-      const detail = e?.detail ?? {};
-      let flag: string | null = null, question = '';
-      if (detail.code === 'real_authorization_required')
-        [flag, question] = ['authorize_real_simulation', options.real ? options.authorizeText : realQuestion(detail.report)];
-      else if (detail.code === 'confirm_transfer' && options.transfer) [flag, question] = ['confirm_transfer', `${detail.report?.reason}\n\nLoad this model for a NEW task (fine_tune creates a new run with a parent)?`];
-      else if (detail.code === 'connection_gate_acknowledge') [flag, question] = ['acknowledge_unknown_connection', `Connection layers are UNKNOWN: ${detail.report?.uncertain?.join(', ')}.\nUnknown is not OK. Proceed anyway?`];
-      if (!flag || flags[flag]) throw e;                                          // not a question, or already answered
-      if (!window.confirm(question)) return null;
-      flags[flag] = true;
-    }
-  }
-}
-
-/** Continue a paused (or interrupted) run in its own directory, with its own saved configuration.
- *  `maxEvaluations` = a new TOTAL budget, or null to keep the run's budget. */
-export function resumeRun(dir: string, status: Json, maxEvaluations: number | null): Promise<Json | null> {
-  const budget = status?.budget, total = maxEvaluations ?? budget?.max_evaluations;
-  const left = budget && typeof total === 'number' ? Math.max(0, total - budget.charged) : null;
-  const real = (status?.mock ?? status?.manifest?.mock) === false;
-  return launchWithConsent(flags => api.continueRun({ run_dir: dir, max_evaluations: maxEvaluations, ...flags }), {
-    real,
-    authorizeText: (real ? 'This continues REAL simulations (Virtuoso/Spectre, or ngspice for an ngspice netlist task).\n' : 'This continues the synthetic run.\n') + (left === null ? 'Authorize the rest of its evaluation budget?'
-      : `Authorize up to ${left} more candidate evaluation(s)? (${budget.charged} of ${total} are used.)`) });
-}
-
 const used = (status: Json) => status?.budget ? ` ${status.budget.charged} / ${status.budget.max_evaluations}` : '';
 const WAITING = 'waiting for the simulation in flight';
 function describe(status: Json, phase: Phase, forced: boolean): string {
@@ -211,8 +171,10 @@ const ICONS: Record<Phase, IconName> = { idle: 'play', checking: 'play', startin
 const LABELS: Record<Phase, string> = { idle: 'Start', checking: 'Start', starting: 'Starting...', running: 'Pause', pausing: 'Pausing...', paused: 'Resume',
   resuming: 'Resuming...', aborting: 'Aborting...', finishing: 'Finishing...' };
 
-export function RunButtons({ control, blocked, onStart, onResumed, onMessage, onShow }: {
-  control: RunControl; blocked: boolean; onStart: () => void; onResumed: (started: Json) => void;
+/** `startBlocked` / `resumeBlocked`: why the main button cannot start or resume now (launch.ts readiness), or null - said
+ *  as the button's tooltip. Resume itself is the launcher's (`onResume`). */
+export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onResume, onMessage, onShow }: {
+  control: RunControl; startBlocked: string | null; resumeBlocked: string | null; onStart: () => void; onResume: () => void;
   onMessage: (m: Json) => void; onShow: (dir: string) => void }) {
   const { dir, status, phase, forced } = control;
   const fail = (e: any) => onMessage({ level: 'error', text: plainError(e), detail: e?.detail });
@@ -226,19 +188,6 @@ export function RunButtons({ control, blocked, onStart, onResumed, onMessage, on
     control.setPending('pause');                                                  // at once: a second press must find "Pausing..."
     if (!(await pauseConfirmed(dir!))) { control.setPending(null); return; }
     command('pause', 'pause', 'Pausing: the simulation in flight finishes first, then everything is saved. Resume continues from exactly there.');
-  };
-  const resume = async () => {
-    control.setPending('resume');
-    try {
-      const started = await resumeRun(dir!, status, null);
-      if (!started) { control.setPending(null); onMessage({ level: 'info', text: 'Not resumed: you answered no. The run stays paused.' }); return; }
-      control.take(started.run_dir, 'resume');
-      onResumed(started);
-    } catch (e: any) {
-      control.setPending(null);
-      if (e?.detail?.code === 'already_running') control.refresh();                // continued from elsewhere: show what is true
-      fail(e);
-    }
   };
   const abort = () => {
     if (phase === 'paused') {
@@ -286,7 +235,8 @@ export function RunButtons({ control, blocked, onStart, onResumed, onMessage, on
   }, [phase]);
 
   const waiting = phase === 'pausing' || phase === 'aborting';
-  const main = phase === 'idle' ? onStart : phase === 'running' ? pause : phase === 'paused' ? resume : undefined;
+  const main = phase === 'idle' ? onStart : phase === 'running' ? pause : phase === 'paused' ? onResume : undefined;
+  const why = phase === 'idle' ? startBlocked : phase === 'paused' ? resumeBlocked : null;
   const note = describe(status, phase, forced);
   return (<>
     {dir && note && <button className={`run-chip ${phase}`} onClick={() => onShow(dir)} title={`The current run: ${dir}\nPress to show it under Run status.`}>{note}</button>}
@@ -294,10 +244,12 @@ export function RunButtons({ control, blocked, onStart, onResumed, onMessage, on
       title={phase === 'running' ? 'Save now: The model is saved now, without pausing: the simulation in flight finishes first (with several in parallel, all of them), the model is written as a new save point, '
         + 'and the run goes on by itself. The save point can be chosen later under "RL model to load".'
         : 'Save now: Only while a run is running. A paused or ended run has already saved everything.'}><Icon name="save" label={saving ? 'Saving...' : 'Save now'} /></button>
-    <button className="primary run-main" disabled={!main || (phase === 'idle' && blocked)} onClick={main} title={`${LABELS[phase]}: ${TITLES[phase]}`}><Icon name={ICONS[phase]} label={LABELS[phase]} /></button>
+    <button className="primary run-main" disabled={!main || !!why} onClick={main} title={`${LABELS[phase]}: ${why ?? TITLES[phase]}`}><Icon name={ICONS[phase]} label={LABELS[phase]} /></button>
     <button className="run-abort" disabled={!(phase === 'running' || phase === 'paused' || (waiting && !forced))} onClick={abort}
-      title={phase === 'paused' ? 'Abort: Let go of the paused run: nothing is deleted, the main button goes back to Start.'
+      title={phase === 'paused' ? 'Let go: The header lets go of the paused run: nothing is sent and nothing is deleted, the run can still be continued '
+          + 'from Runs, and the main button goes back to Start.'
         : waiting ? 'Force abort: Do not wait for the simulation in flight. Only for a run that is stuck.'
-        : 'Abort: End the current run: the simulation in flight finishes, everything is saved, the run ends.'}><Icon name={waiting ? 'force-stop' : 'stop'} label={waiting ? 'Force abort' : 'Abort'} /></button>
+        : 'Abort: End the current run: the simulation in flight finishes, everything is saved, the run ends.'}>
+      <Icon name={waiting ? 'force-stop' : phase === 'paused' ? 'close' : 'stop'} label={waiting ? 'Force abort' : phase === 'paused' ? 'Let go' : 'Abort'} /></button>
   </>);
 }

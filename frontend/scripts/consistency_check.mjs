@@ -65,6 +65,8 @@ await runChecks(browser, async () => {
   const BUTTON = text => `[...(${PANEL}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const STEPS = `${PANEL}?.querySelector('.check-steps')`;
   const BANNER = `document.querySelector('.banner')`;
+  // A refused start stays on a line of its own under the header (record 7.261), no longer in the passing banner.
+  const REFUSAL = `document.querySelector('header .launch-refusal')`;
   const START = `[...document.querySelectorAll('header button')].find(b => b.textContent.trim() === 'Start')`;
   const shownText = el => evaluate(`(() => { const e = ${el}; return e && e.checkVisibility() ? e.innerText : ''; })()`);
 
@@ -99,31 +101,31 @@ await runChecks(browser, async () => {
   await tasks.close();
   for (let i = 0; i < 30 && (await evaluate(`!!(${STEPS})`)); i++) await sleep(100);
   check('once a row changes, the old result goes', !(await evaluate(`!!(${STEPS})`)));
-  // Start: the budget question first, then the backend refuses with code consistency - the banner lists the steps
+  // Start: the budget question first, then the backend refuses with code consistency - the refusal line lists the steps
   for (let i = 0; i < 30 && (await evaluate(`!${START} || ${START}.disabled`)); i++) await sleep(100);
   await evaluate(`${START}.click()`);
-  for (let i = 0; i < 40 && !(await evaluate(`!!${BANNER}`)); i++) await sleep(100);
+  for (let i = 0; i < 40 && !(await evaluate(`!!${REFUSAL}`)); i++) await sleep(100);
   const started = calls.filter(c => c.path === '/api/runs/start');
   check('Start asks for the budget, then sends one start', dialogs.some(d => d.includes('Authorize a budget')) && started.length === 1 && started[0].authorize_real_simulation === true,
     `${dialogs.join(' | ')} / ${started.length}`);
-  const banner = await shownText(BANNER);
+  const banner = await shownText(REFUSAL);
   check('a refused start lists the steps in words, once - no JSON, no repeated message line', banner.startsWith('Not started: real:ring_osc - one step does not agree.')
     && banner.includes('FAILED: The working copy in Virtuoso differs from the saved task.') && banner.split('undo the change in Virtuoso').length === 2
-    && !(await evaluate(`!!${BANNER}.querySelector('pre')`)), banner.slice(0, 300));
-  await evaluate(`[...${BANNER}.querySelectorAll('.check-steps summary')].find(x => x.textContent === 'the reason').click()`); await sleep(300);
-  check('opening a reason inside the banner does not close it', await evaluate(`!!${BANNER}`) && (await shownText(BANNER)).includes('FIXTURE MN1'));
+    && !(await evaluate(`!!${REFUSAL}.querySelector('pre')`)) && !(await evaluate(`!!${BANNER}`)), banner.slice(0, 300));
+  await evaluate(`[...${REFUSAL}.querySelectorAll('.check-steps summary')].find(x => x.textContent === 'the reason').click()`); await sleep(300);
+  check('opening a reason inside the refusal line does not close it', await evaluate(`!!${REFUSAL}`) && (await shownText(REFUSAL)).includes('FIXTURE MN1'));
   await page.shot(path.join(out, 'consistency-2-start-refused.png'));
   // Any other refusal says the backend's sentence and folds its code and report under "Technical details" (7.125: the code
-  // used to lead the banner) - which opens without closing the banner (2026-09-29: before, the
-  // banner's own close-on-click took that click too, and the fold could never be opened).
-  const FOLD = `${BANNER}?.querySelector(':scope > details')`;
+  // used to lead the banner) - which opens without closing the line (2026-09-29: before, the
+  // banner's own close-on-click took that click too, and the fold could never be opened). Since 7.261 the line names the action.
+  const FOLD = `${REFUSAL}?.querySelector('details')`;
   await evaluate(`${START}.click()`);
   for (let i = 0; i < 40 && !(await evaluate(`!!${FOLD}`)); i++) await sleep(100);
   await evaluate(`${FOLD}.querySelector('summary').click()`); await sleep(300);
-  check('another refusal with a report: "details" opens and the banner stays', await evaluate(`!!${FOLD} && ${FOLD}.open`)
+  check('another refusal with a report: "details" opens and the line stays', await evaluate(`!!${FOLD} && ${FOLD}.open`)
     && (await shownText(FOLD)).includes('FIXTURE_REPORT') && (await shownText(FOLD)).includes('code: fixture_refused')
-    && (await shownText(BANNER)).startsWith('FIXTURE: not started for another reason.'),
-    (await shownText(BANNER)).replace(/\s+/g, ' ').slice(0, 200));
+    && (await shownText(REFUSAL)).startsWith('Start was refused: FIXTURE: not started for another reason.'),
+    (await shownText(REFUSAL)).replace(/\s+/g, ' ').slice(0, 200));
   check('no other writing request was made', refused.length === 0, refused.join(' | '));
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
 });

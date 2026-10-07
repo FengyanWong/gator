@@ -85,7 +85,8 @@ PYTHONPATH=src python -m gator_workbench.cli check     <profile-id> [--scope ful
 
 ## Start, Pause, Resume, Abort (added 2026-09-21, user request)
 
-The header has one main run button and **Abort** next to it. The main button changes with the run:
+The header has one main run button and **Abort** next to it (it reads **Let go** on a paused run, record 7.261). The
+main button changes with the run:
 
 | It reads | Pressing it | What happens in the backend |
 |---|---|---|
@@ -107,8 +108,9 @@ The header has one main run button and **Abort** next to it. The main button cha
   with the sizes that were being tried. It is for a run that is stuck. A candidate handed out just before a pause or
   an abort, and stopped by it before its first simulation, is recorded the same way: cancelled, charged, nothing
   simulated, not counted as a failure of the link.
-* **Abort on a paused run** deletes nothing and sends nothing: the header lets go of the run and returns to Start.
-  The run stays paused on disk and can still be continued from Run status > Continue.
+* **Let go** on a paused run deletes nothing and sends nothing: the header lets go of the run and returns to Start.
+  The run stays paused on disk and can still be continued from Run status > Continue.... The button read "Abort" in that
+  state until record 7.261, although it only let go.
 * The header controls ONE run - the one started or resumed from this page, remembered across a reload - and shows
   it as a small text button ("running 12 / 60"; press it to see the run under Run status). It is not the run chosen
   in the list of the bottom tabs: looking at an older run's data never takes Pause and Abort away from a live run.
@@ -120,12 +122,39 @@ The header has one main run button and **Abort** next to it. The main button cha
   replay snapshots switched off cannot come back from a pause; Pause says so before it pauses.
 * The run commands are in the header only (status record 7.109, 2026-09-29, user decision): the Run status tab's
   copies - Save now, Pause and save, Stop and save, Force cancel - went, as they did what Save now, Pause, Abort and
-  Force abort do there. The tab keeps **Continue** (a paused, stopped or interrupted run, with a new total budget) and
+  Force abort do there. The tab keeps **Continue...** (a paused, stopped or interrupted run, with a new total budget) and
   **Export status**. Continue waits, and says why, when the run folder holds no save point to go on from - a copy made
   without its save points, or deleted ones (record 7.215: `GET /api/runs/status` names it as `save_point`) - and when
   that save point was written by an older version of the optimizer code: continuing needs exactly that version, while
   fine-tune and frozen still load its model (record 7.221: `save_point_code` `older`). A run that is live when the page opens - started from another browser or the CLI - is taken into
-  the header; a second run live at the same time as the header's own has no run buttons on this page.
+  the header, and the message says so; a second run live at the same time as the header's own has no run buttons on this page.
+* **One launcher** (record 7.261, `frontend/src/launch.ts`; plan [frontend run workflow](plan-frontend-run-workflow.md),
+  build step 1). Start, Calibration, Resume and Continue... go one way:
+  - **Each says why it cannot go**, in its tooltip, before any press: the header's run is live or still being looked
+    up, the configuration has blocking issues, the run cannot be continued.
+  - **One launch at a time on this page.** A second press anywhere finds "Starting..." or "Resuming...".
+  - **A launch is never sent twice.** Each carries a request id that the tab keeps until the answer has arrived. The
+    backend answers the same id again with the run the first one made (`/api/runs/start` and `/api/runs/continue` take
+    `request_id`). After a reload during a slow start the page asks what became of it (`GET /api/runs/request`)
+    instead of sending it again, and says "sent before the page was reloaded".
+  - **A refusal stays** on a line of its own - under the header for Start, Calibration and Resume, under Continue...
+    in Run status - until what it depends on changes (the configuration, or the run), or its close button is pressed.
+    It used to be the passing line under the header that any click took away. Nothing falls back to another kind of run.
+  - **Continue... opens a budget form** instead of the browser's prompt: "Used 800 · New total [1,200] · Allows 400
+    more". Whole numbers only: 1,200 reads as 1200, but 12,00 or a fraction is said to be wrong, and so is a total that
+    is not more than the evaluations used. Empty, or the run's own total, = unchanged. A completed run can go on with a
+    higher total too.
+  - **Before the press** the page asks the backend's continuation check (`GET /api/runs/continuation`, read-only:
+    the press's own checks on the run's saved configuration, without the run lock or Virtuoso). The reason stands
+    beside Continue..., and the header's Resume waits with it. Where the backend names an alternative - the task was
+    saved again, the save point is from older optimizer code - a button offers it: **Fine-tune from its newest save
+    point (a new run)** makes the next run on the page a fine-tune from exactly that save point, as one Undo step.
+  - **Taking over is said.** A live run found when the page opens, or a task's baseline simulation started by Save task,
+    becomes the header's run only when the header is free or holds a run at rest. The message names a paused run it
+    lets go of, which stays paused: "... stays paused; continue it from Runs." A task's baseline started while the
+    header's run is live stays under Runs, and the header keeps its own.
+  - The page sends request ids and asks the continuation check only where `GET /api/meta` lists them under
+    `features`. A page newer than its backend works as before until the backend is restarted.
 * The run shown is read every 1.5 s while it can change by itself: a worker is alive, its state is a live one, or the
   header is starting, resuming, pausing or ending a run and it is the run shown (status record 7.115, 2026-09-30; the
   last condition since 7.125 - a finished run in the tabs was read every 1.5 s while the header paused another run). A paused, stopped or

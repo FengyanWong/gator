@@ -372,3 +372,7 @@ One row per commit, newest last.
 | `7df2579` | 10-07 21:34 | 7.266 | plan: the general model over several starting designs and seeds, against scratch; docs only (session "Task button and fine-tuning comparison plan") |
 | `9bcaecf` | 10-07 21:34 | - | record only: names the commit of record 7.266, and the table rows for 543eb04 and 7df2579 |
 | `0b85fd4` | 10-07 21:39 | 7.269, 7.270 | the header's Next line; Load run stops on an unreadable model and only the newest load lands (session "Frontend workbench layout design") |
+| `5c261bf` | 10-07 21:39 | - | record only: names the commit of records 7.269 and 7.270, and the table rows for 9bcaecf and 0b85fd4 |
+| `6016bbd` | 10-07 21:49 | 7.272 | report of the Graph Transformer experiments of 2026-10-07; docs only (session "Task button and fine-tuning comparison plan") |
+| `616c153` | 10-08 08:14 | 7.274-7.276 | the audit of 2026-10-07: faster run-list and saved-model reads, fewer page reads and redraws, shared table code and clean-up; with 7.269/7.270's Live lines (session "Frontend workbench layout design") |
+| `dd52d67` | 10-08 08:15 | 7.273 | plan 7.256 revision 4: the lean encoder comparison started overnight; docs only (session "Encoder run plan revision") |

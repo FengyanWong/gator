@@ -154,7 +154,7 @@ def register(app: FastAPI, context: ApiContext):
                             what=str(exc), note='Read that PDK in the Virtuoso window ("PDK window..." reads one by name), or choose the '
                             'standard list. The saved model itself is fine.', technical=f'{exc.code}: {exc}')
                     else:
-                        contract = runs.learner_contract(config, runtime, task_hash, compiled.spec_schema, vocabulary)
+                        contract = runs.learner_contract(config, runtime, task_hash, compiled.spec_schema, vocabulary, cached=True)
                         meta_ = ckpt.read_metadata(description['path'])
                         mode = config.run.mode if config.run.mode != 'scratch' else 'fine_tune'
                         result['compatibility'] = ckpt.check_compatibility(meta_, mode=mode, task_definition_hash=task_hash,

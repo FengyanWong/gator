@@ -1315,6 +1315,7 @@ it). The window lists every run under the output folder, newest first, one row p
   of a run whose status says it works is looked at every time. **Refresh list** reads every run folder
   anew (`GET /api/runs?fresh=true`), for a file another tool edited in place. The first read after a backend start
   reads every run (5-7 s for about 115 runs on the D: drive, 7-13 s before), a later one only what changed (1.5 s).
+  The backend answers several requests at once, so the cache is touched under a lock (record 7.278).
 * The times come from the run's own files (`run_manifest.json` segments, `status.json`); `GET /api/runs` carries them
   as `started_utc`, `ended_utc`, `last_seen_utc`, `active_seconds`, `paused_seconds`, `segments`. A workbench server
   started before this was added lists runs without them: the window says so and asks for a restart of `serve`.
@@ -1591,7 +1592,10 @@ retries are explicit errors. Specs keeps the objective inside the **Constraint**
 only pairs that can work are offered) and shows **Judged at** only while training corners are planned (record 7.124);
 both keep the backend's enum and boolean field types. Saved-model facts show all coefficients and condition
 identities. Compatibility rechecks the entire current configuration (debounced), including reward, conditions and
-probe edits; an old compatible result is cleared while checking. The status table separates first nominal from full-plan feasibility, nominal from adverse
+probe edits; an old compatible result is cleared while checking. The contract the page's configuration gives a learner
+is kept between checks - by its network, training settings, spec schema, component list, reward and condition settings
+and the source digest of now - so a recheck builds no learner and hashes no source file for the same settings; a start
+builds it anew (record 7.278). The status table separates first nominal from full-plan feasibility, nominal from adverse
 values, and draft settings from the executed reward in the saved summary. Historical missing coverage stays unknown.
 
 ### Reward v2.1 controls and checks (2026-09-29, record 7.106)

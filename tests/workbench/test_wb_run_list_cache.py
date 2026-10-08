@@ -190,3 +190,47 @@ def test_model_label_rows_follow_a_rename(tmp_path):
     assert [row['model_label'] for row in runs.model_label_rows(tmp_path)] == ['ota']
     ckpt.rename_model(run, 'ota-renamed', taken=set())
     assert [(row['model_label'], row['renamed']) for row in runs.model_label_rows(tmp_path)] == [('ota-renamed', True)]
+
+
+# ---- the lock (record 7.278) ---------------------------------------------------------------------------------------
+class _Guarded(dict):
+    """A cache that refuses every touch made without _RUN_CACHE_LOCK. The API answers on several threads at once, and
+    two lists at once could end in "dictionary changed size during iteration" while one let go of entries and the other
+    added some (Astra's review of 2026-10-08)."""
+    def _held(self):
+        assert runs._RUN_CACHE_LOCK.locked(), 'the run cache was touched without its lock'
+
+    def get(self, *args):
+        self._held()
+        return super().get(*args)
+
+    def __setitem__(self, key, value):
+        self._held()
+        super().__setitem__(key, value)
+
+    def pop(self, *args):
+        self._held()
+        return super().pop(*args)
+
+    def __iter__(self):
+        self._held()
+        return super().__iter__()
+
+
+def test_the_cache_is_touched_under_its_lock_only_and_the_files_are_read_outside_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(runs, '_RUN_CACHE', _Guarded())
+    original = runs.read_json
+
+    def read_outside(*args, **kwargs):
+        assert not runs._RUN_CACHE_LOCK.locked(), 'a run file was read while the cache lock was held'
+        return original(*args, **kwargs)
+    monkeypatch.setattr(runs, 'read_json', read_outside)
+    kept, gone = fabricate(tmp_path, 'r1'), fabricate(tmp_path, 'r2', created='2026-10-07T11:00:00+00:00')
+    save(kept, 'ckpt-a')
+    (tmp_path / 'exp__0123456789ab' / 'runs' / 'task' / 'no-manifest').mkdir()         # a folder without a manifest: let go
+    rows = runs.list_runs(roots_for(tmp_path), tmp_path)
+    ckpt.saved_models(rows, runs.checkpoint_listing)
+    ckpt.saved_models(runs.list_runs(roots_for(tmp_path), tmp_path), runs.checkpoint_listing)
+    runs.model_label_rows(tmp_path)
+    shutil.rmtree(gone)
+    assert set(rows_of(tmp_path)) == {'r1'} and set(rows_of(tmp_path, fresh=True)) == {'r1'}

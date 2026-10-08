@@ -400,20 +400,29 @@ function RunPanelBody({ config, setConfig, runs, circuit, schema, onNext }: { co
   // "Use this save point" (record 7.265): the draft's source becomes exactly that save point - a concrete id, never "latest" -
   // and the model's network and component list come with it, as ONE Undo step (they used to follow later, by themselves).
   const [usingPoint, setUsingPoint] = useState(false);
+  // Only the newest press lands (record 7.278, Astra's review of 2026-10-08; as Load run's generation number, 7.270): a save
+  // point chosen before it and answered later changes nothing, and New model chosen meanwhile lets a pending one go.
+  const pointSerial = useRef(0);
   // A saved model's name, as the saved models table lists it: from its run's row (the folder's name when the run is not listed).
   const nameOf = (dir: string) => modelNameAt(runs, String(dir));
   const useSavePoint = (run_dir: string, checkpoint_id: string) => {
+    const mine = ++pointSerial.current, stale = () => mine !== pointSerial.current;
     setUsingPoint(true); setNetMessage(null);
     readSavePoint(run_dir, checkpoint_id, netFields).then(point => {        // savePoint.ts: Load run and New run like this take one the same way
+      if (stale()) return;
       setConfig(c => ({ ...c, run: withSavePoint(c.run, point) }));
       setNetMessage({ level: 'ok', text: `The next run ${run.mode === 'frozen' ? 'evaluates' : 'fine-tunes'} ${nameOf(run_dir)} from its save point ${point.checkpoint_id}, with its network (one Undo step takes it back).`,
         about: JSON.stringify([run.mode, run_dir, point.checkpoint_id]) });
-    }).catch((e: any) => setNetMessage({ level: 'error', text: `That save point could not be read: ${e.message}` })).finally(() => setUsingPoint(false));
+    }).catch((e: any) => { if (!stale()) setNetMessage({ level: 'error', text: `That save point could not be read: ${e.message}` }); })
+      .finally(() => { if (!stale()) setUsingPoint(false); });
   };
   // A Mode is one Undo step. New model clears the saved model chosen: scratch never loads one (a source left there is a
-  // validation warning), and coming back to Fine-tune asks for the choice again.
-  const chooseMode = (mode: string) => setConfig(c => ({ ...c, run: { ...c.run, mode,
-    ...(mode === 'scratch' && c.run.model_source?.run_dir ? { model_source: { ...c.run.model_source, run_dir: null, checkpoint_id: 'latest' } } : {}) } }));
+  // validation warning), and coming back to Fine-tune asks for the choice again. A save point still on its way is let go too.
+  const chooseMode = (mode: string) => {
+    if (mode === 'scratch') { pointSerial.current++; setUsingPoint(false); }
+    setConfig(c => ({ ...c, run: { ...c.run, mode,
+      ...(mode === 'scratch' && c.run.model_source?.run_dir ? { model_source: { ...c.run.model_source, run_dir: null, checkpoint_id: 'latest' } } : {}) } }));
+  };
 
 
   // The network in use, in short, beside the RL model button (user, 2026-10-03: "show the current network selection next to

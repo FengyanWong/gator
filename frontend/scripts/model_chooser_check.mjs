@@ -75,6 +75,7 @@ await runChecks(browser, async () => {
   const page = await browser.open({ consoleApi: false });
   const { send, evaluate, fulfil, consoleErrors } = page;
   const refused = []; const asked = []; const renames = []; let lists = 0, canned = true, served = MODELS;
+  let holdModel = false; const heldModel = [];                                     // record 7.278: a "Use" read held back, answered late
   const modelFolders = { version: 1, folders: {}, assignments: {} }; let folderSerial = 0;
   const answer = ({ requestId, request }) => {
     const name = new URL(request.url).pathname;
@@ -85,6 +86,7 @@ await runChecks(browser, async () => {
     if (name === '/api/runs/model') {
       if (!canned) return send('Fetch.continueRequest', { requestId });
       const body = JSON.parse(request.postData ?? '{}'); asked.push({ run_dir: body.run_dir, checkpoint_id: body.checkpoint_id, network: body.config?.run?.network ?? null, withConfig: !!body.config });
+      if (holdModel && !body.config) { heldModel.push({ requestId, body }); return; }
       const found = describe(body.run_dir, body.checkpoint_id);
       if (found && body.run_dir === C.run_dir && body.config) { delete found.compatibility; found.compatibility_unchecked = { title: 'FIXTURE: Not compared with your configuration yet: the configuration on this page is incomplete.',
         what: 'FIXTURE: Parameter row "mp1_w" is set to be optimized but has no lower and no upper bound. Fill in both bounds in the Parameters table.',
@@ -310,6 +312,31 @@ await runChecks(browser, async () => {
   check('... the templates are back, with the network last in use (rgcn, from the last model) as the template in use, and nothing is read',
     await until(`${RIGHT}.querySelector('tr.template-row.current')?.dataset.encoder === 'rgcn'`, 30) && lists === beforeScratch,
     await evaluate(`${RIGHT}.querySelector('tr.template-row.current')?.dataset.encoder ?? 'none'`));
+
+  // ---- only the newest "Use this save point" lands (record 7.278, Astra's review of 2026-10-08; as Load run, 7.270) ---------------
+  await setMode(networkPage, 'fine_tune'); await until(`${ROWS}.length === ${MODELS.length}`, 40);
+  holdModel = true;
+  await details(A); await until(`!!(${pointRow(early)})`, 30); await usePoint(early);                        // A's read is held back
+  const held = async () => { for (let i = 0; i < 40 && !heldModel.length; i++) await sleep(100); return heldModel.length === 1; };
+  check('(set-up) the first Use waits for its save point', await held());
+  holdModel = false;
+  await evaluate(`(${row(B)}).querySelector('td:nth-child(4)').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+  run = await storedWhen(s => s?.model_source?.run_dir === B.run_dir);
+  check('a second choice meanwhile lands: B, its newest save point, with its network', run?.model_source?.run_dir === B.run_dir && run.model_source.checkpoint_id === B.latest && sameNet(run.network, GATV2), JSON.stringify(run?.model_source));
+  let late = heldModel.shift(); await fulfil(late.requestId, 200, describe(late.body.run_dir, late.body.checkpoint_id)); await sleep(800);
+  run = await stored();
+  check('... and the first, answered late, changes nothing: B and its network stay, the note names B', run?.model_source?.run_dir === B.run_dir && run.model_source.checkpoint_id === B.latest && sameNet(run.network, GATV2)
+    && /fine-tunes FIXTURE_ldo_gat from its save point/.test(await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? ''`)),
+    `${JSON.stringify(run?.model_source)} | ${await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? 'no note'`)}`);
+  holdModel = true;
+  await details(A); await until(`!!(${pointRow(early)})`, 30); await usePoint(early);                        // held back again
+  check('(set-up) a Use waits for its save point while New model is chosen', await held());
+  await setMode(networkPage, 'scratch');
+  run = await storedWhen(s => s?.mode === 'scratch');
+  holdModel = false; late = heldModel.shift(); await fulfil(late.requestId, 200, describe(late.body.run_dir, late.body.checkpoint_id)); await sleep(800);
+  run = await stored();
+  check('New model while a Use is on its way lets it go: New model, no saved model, the network as it was, no note', run?.mode === 'scratch' && !run.model_source?.run_dir && sameNet(run.network, GATV2)
+    && !(await evaluate(`/The next run fine-tunes/.test(${RIGHT}.innerText)`)), `${JSON.stringify(run?.model_source)} ${JSON.stringify(run?.network)}`);
 
   // ---- the REAL route of this backend ---------------------------------------------------------------------------------------------------
   const real = await fetch(new URL('api/runs/models' + (ROOT ? `?output_root=${encodeURIComponent(ROOT)}` : ''), APP));

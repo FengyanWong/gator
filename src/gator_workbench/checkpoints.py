@@ -80,7 +80,14 @@ def contract_summary(learner) -> dict:
     return json.loads(json.dumps(_contract_fields(contract), allow_nan=False))
 
 
+def experiment_fields(experiment) -> dict:
+    """The two contract fields that come from the learner's experiment record. runs.learner_contract fills them in for a
+    contract it kept from another experiment of the same configuration (record 7.278)."""
+    return dict(origin=experiment['origin'], experiment_sha256=_digest(experiment))
+
+
 def _contract_fields(contract) -> dict:
+    experiment = experiment_fields(contract['experiment'])
     return dict(checkpoint_version=contract['checkpoint_version'], graph_schema=contract['graph_schema'],
                 reward_version=contract.get('reward_version'), reward_settings=contract.get('reward_settings'),
                 clearance_rule=contract.get('clearance_rule'), failure_policy=contract.get('failure_policy'),
@@ -89,9 +96,9 @@ def _contract_fields(contract) -> dict:
                 normalizer=contract['normalizer'], action_version=contract['action_version'],
                 critic_action=contract['critic_action'], budget_semantics=contract['budget'],
                 model_config=contract['model_config'], sac_config=contract['config'],
-                origin=contract['experiment']['origin'], code_sha256=contract['code_sha256'],
+                origin=experiment['origin'], code_sha256=contract['code_sha256'],
                 torch_version=contract['torch_version'], pyg_version=contract['pyg_version'],
-                experiment_sha256=_digest(contract['experiment']))
+                experiment_sha256=experiment['experiment_sha256'])
 
 
 def weight_digest(learner) -> str:

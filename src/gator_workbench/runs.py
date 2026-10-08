@@ -8,6 +8,7 @@ send_command  pause / stop / cancel through a control file.
 """
 from __future__ import annotations
 
+import copy
 from dataclasses import asdict
 import hashlib
 import json
@@ -201,11 +202,58 @@ def vocabulary_record(vocabulary) -> dict:
                 sha256=vocabulary.sha256, file=pdk.RUN_FILE)
 
 
-def learner_contract(config, task, task_hash, spec_schema, vocabulary) -> dict:
-    """The contract a learner built from this configuration has: what a saved model is checked against."""
-    return modes.current_contract(learner_experiment(config, task, task_hash), modes.model_config_from(config.run.network),
-                                  modes.sac_config_from(config.run.advanced), spec_schema, vocabulary,
-                                  runtime=modes.runtime_options(config, vocabulary))
+# ---- the contract a learner of the page's configuration would have (record 7.278) ---------------------------------
+# SACLearner.contract() is a pure function of what the learner is built from, but getting it meant building the learner
+# (five networks, 10-20 ms) and, inside contract(), hashing every file under src/analog_optimizer/ on the 9p-mounted D:
+# drive (0.35-1.4 s) - once per inspection of a saved model, which the page asks for 0.5 s after every edit and once per
+# model looked at in the RL model window. The inspection keeps the contract by everything it is made of except the
+# experiment, whose two fields are cheap (the task hash in it changes at every edit of a row). A start builds it anew.
+_CONTRACTS: dict = {}
+_CONTRACTS_LOCK = threading.Lock()
+CONTRACT_CACHE_MAX = 32
+
+
+def _contract_key(model_config, sac_config, spec_schema, vocabulary, runtime) -> str:
+    """Everything the contract is made of, as canonical JSON: the source digest of now (current_source_digest, kept 30 s),
+    the library versions, the network and training settings, the spec schema, the component list and the runtime options
+    (feature schema, reward settings, condition policy, planned conditions). A value that is not JSON raises: no key is
+    better than a wrong one."""
+    from dataclasses import is_dataclass
+    import torch
+    import torch_geometric
+
+    def plain(value):
+        if is_dataclass(value) and not isinstance(value, type):
+            return asdict(value)
+        if isinstance(value, (list, tuple)):
+            return [plain(v) for v in value]
+        return value
+    return canonical_json(dict(code=current_source_digest(), torch=str(torch.__version__), pyg=str(torch_geometric.__version__),
+                               model_config=model_config.to_dict(), sac_config=asdict(sac_config),
+                               spec_schema=None if spec_schema is None else asdict(spec_schema),
+                               vocabulary=None if vocabulary is None else dict(name=vocabulary.name, sha256=vocabulary.sha256),
+                               options={name: plain(value) for name, value in (runtime or {}).items()}))
+
+
+def learner_contract(config, task, task_hash, spec_schema, vocabulary, *, cached=False) -> dict:
+    """The contract a learner built from this configuration has: what a saved model is checked against. `cached`: the
+    page's inspection of a saved model (POST /api/runs/model) takes the kept contract, see above; a start leaves it False
+    and builds the learner, so the digest in its verdict is the source's of that moment."""
+    experiment = learner_experiment(config, task, task_hash)
+    model_config, sac_config = modes.model_config_from(config.run.network), modes.sac_config_from(config.run.advanced)
+    runtime = modes.runtime_options(config, vocabulary)
+    if not cached:
+        return modes.current_contract(experiment, model_config, sac_config, spec_schema, vocabulary, runtime=runtime)
+    key = _contract_key(model_config, sac_config, spec_schema, vocabulary, runtime)
+    with _CONTRACTS_LOCK:
+        contract = _CONTRACTS.get(key)
+    if contract is None:
+        contract = modes.current_contract(experiment, model_config, sac_config, spec_schema, vocabulary, runtime=runtime)
+        with _CONTRACTS_LOCK:
+            while len(_CONTRACTS) >= CONTRACT_CACHE_MAX:
+                _CONTRACTS.pop(next(iter(_CONTRACTS)))
+            _CONTRACTS[key] = contract
+    return dict(copy.deepcopy(contract), **ckpt.experiment_fields(experiment))
 
 
 def connection_gate(task, config, monitor, *, acknowledge_unknown=False):
@@ -878,7 +926,11 @@ def _resumability(run_dir, summary, point=None):
 # request still probes the run lock of runs whose status says they work, compares the save point's code with the
 # source digest of NOW, and works out the unique model names. An entry is read again after 10 minutes anyway, and the
 # page's "Refresh list" asks with fresh=True: a file changed in place by another tool is seen then.
+# The API answers several requests at once (FastAPI runs these routes on a thread pool), so the dict itself is read,
+# written and walked under _RUN_CACHE_LOCK only; the file reads stay outside it (record 7.278: two lists at once could
+# end in "dictionary changed size during iteration" while one let go of entries and the other added some).
 _RUN_CACHE: dict = {}
+_RUN_CACHE_LOCK = threading.Lock()
 RUN_CACHE_MAX_AGE = 600.0
 LIVE_STATES = ('starting', 'running', 'pausing', 'stopping')
 
@@ -900,23 +952,28 @@ def _run_facts(run_dir, *, fresh=False) -> dict | None:
         key = _fingerprint(run_dir)                  # BEFORE the reads: a change while they run is a miss next time
     except OSError:
         return None
-    entry, now = _RUN_CACHE.get(str(run_dir)), time.monotonic()
+    with _RUN_CACHE_LOCK:
+        entry = _RUN_CACHE.get(str(run_dir))
+    now = time.monotonic()
     if fresh or entry is None or entry['key'] != key or now - entry['at'] > RUN_CACHE_MAX_AGE:
-        manifest = read_json(Path(run_dir) / 'run_manifest.json', default=None)
+        manifest = read_json(Path(run_dir) / 'run_manifest.json', default=None)      # the reads: outside the lock
         if not isinstance(manifest, dict):
-            _RUN_CACHE.pop(str(run_dir), None)
+            with _RUN_CACHE_LOCK:
+                _RUN_CACHE.pop(str(run_dir), None)
             return None
         entry = dict(key=key, at=now, manifest=manifest, summary=read_json(Path(run_dir) / 'run_summary.json', default={}) or {},
                      status=read_json(Path(run_dir) / 'status.json', default={}) or {}, point=ckpt.latest_point(run_dir),
                      label=ckpt.model_label_of(run_dir, manifest), listing=None)
-        _RUN_CACHE[str(run_dir)] = entry
+        with _RUN_CACHE_LOCK:
+            _RUN_CACHE[str(run_dir)] = entry
     return entry
 
 
 def checkpoint_listing(row) -> dict:
     """ckpt.list_checkpoints of a list_runs row, kept with the run's cache entry that row was built from (the saved
     models re-read ~400 metadata files on every request before); read anew when the entry has changed since."""
-    entry = _RUN_CACHE.get(row['run_dir'])
+    with _RUN_CACHE_LOCK:
+        entry = _RUN_CACHE.get(row['run_dir'])
     if entry is None or entry['key'] != getattr(row, 'cache_key', None):
         return ckpt.list_checkpoints(row['run_dir'])
     if entry['listing'] is None:
@@ -960,9 +1017,11 @@ def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True, fresh=
                           **facts['label'], **run_timing(manifest, status))
             row.cache_key = facts['key']
             runs.append(row)
-    # Entries of run folders that are gone from this root are let go.
-    for key in [k for k in _RUN_CACHE if k.startswith(str(root) + os.sep) and k not in seen]:
-        _RUN_CACHE.pop(key, None)
+    # Entries of run folders that are gone from this root are let go - under the lock: another request's _run_facts may
+    # be adding entries while this one walks the dict.
+    with _RUN_CACHE_LOCK:
+        for key in [k for k in _RUN_CACHE if k.startswith(str(root) + os.sep) and k not in seen]:
+            _RUN_CACHE.pop(key, None)
     # The name of each run's model, no two alike under this root (record 7.225): the run window and the saved-model
     # cards show it; `renamed` says whether it was given by a rename.
     names = ckpt.unique_model_labels(runs)

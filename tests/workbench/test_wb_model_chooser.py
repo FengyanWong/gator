@@ -7,7 +7,7 @@ import shutil
 import pytest
 from fastapi.testclient import TestClient
 
-from gator_workbench import checkpoints as ckpt, runs
+from gator_workbench import checkpoints as ckpt, modes, runs
 from gator_workbench.api import create_app
 from gator_workbench.storage import read_json
 from helpers import SMALL_NET, execute, make_config, roots_for
@@ -86,6 +86,24 @@ def test_runs_without_a_saved_model_and_damaged_save_points_are_never_offered(tm
     for directory in root.glob('ckpt-*'):
         shutil.rmtree(directory)
     assert ckpt.saved_models(runs.list_runs(roots_for(tmp_path))) == []
+
+
+def test_the_inspection_builds_the_learner_once_for_one_configuration(trained, monkeypatch):
+    """Record 7.278: POST /api/runs/model keeps the contract of the page's configuration between checks - the same
+    body twice, and an edited row (another task hash), build one learner; the verdicts are the same."""
+    root, layout = trained
+    built, original = [], modes._new_learner
+    monkeypatch.setattr(modes, '_new_learner', lambda *args, **kwargs: built.append(1) or original(*args, **kwargs))
+    monkeypatch.setattr(runs, '_CONTRACTS', {})
+    client = TestClient(create_app(extra_output_roots=[str(root)], serve_frontend=False))
+    body = dict(run_dir=str(layout.run_dir), checkpoint_id='latest', config=make_config(root).model_dump(mode='json'))
+    first, second = client.post('/api/runs/model', json=body).json(), client.post('/api/runs/model', json=body).json()
+    assert first['compatibility']['compatible'] and first['compatibility'] == second['compatibility'] and len(built) == 1
+
+    def wider(raw):
+        raw['parameters'][0]['upper'] = raw['parameters'][0]['upper'] * 1.5
+    third = client.post('/api/runs/model', json=dict(body, config=make_config(root, mutate=wider).model_dump(mode='json'))).json()
+    assert third['compatibility']['compatible'] and len(built) == 1
 
 
 def test_the_api_serves_the_list_and_keeps_the_path_restriction(trained, tmp_path):

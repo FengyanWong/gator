@@ -114,3 +114,50 @@ anti-drift arm is the one slow learner (+0.11 in 800 designs), the recipe-bound 
 About 36,000 new Spectre launches over two days: 9,600 (own-model study), 15,944 (general network and the OTA8m
 follow-up), 10,632 (equal-recipe arms and the two held-out circuits). Open, on the user's word: the seeds-and-starts plan
 (24,390 launches, about 11 h) and a second seed on the telescopic cascode (1,600 launches).
+
+<!-- encoder-comparison-section:start -->
+## 9. The other encoders through the same stages (added 2026-10-08, running)
+
+Plan 7.256 (record 7.273) runs GraphGPS (the GT block plus a full within-circuit attention in parallel) and the
+cross-attention readout (the GT blocks plus one query per parameter group over the nodes) at the same size (48 / 4 / 4)
+through stages A (scratch, original starts), C (scratch against that encoder's offline general model on start C) and D
+(the folded and the telescopic cascode) on the same six circuits, reward, preset, starts and goals; the GT arms are the
+recorded runs above. Rules fixed before the run: A1 last third within 10 points of GT, A2 the 50 % point not later than
+GT + 100, A3 an LDO pass at the relaxed row; C1, C2, C4 as in section 2.
+
+**Stage A (complete, record 7.277):** GraphGPS keeps up with GT on all six circuits (ahead on ring3 +14 points and on the
+VCO); the cross-attention readout keeps up on five and is slower on the OTA7t width task (50 % point 189 designs later);
+GraphGPS's 3 late passes on LDO1 trigger the GT reference runs at the relaxed rows. Parameters: GT 355,157; GraphGPS
+469,925; cross-attention 412,325.
+
+| Circuit | GT (last third · 50 % by) | GraphGPS | Cross-attention | Rules |
+|---|---|---|---|---|
+| ota5t | 95 % · 50 % by 191 | 95 % · 50 % by 176 | 94 % · 50 % by 232 | GraphGPS: A1 yes, A2 yes; cross-attention: A1 yes, A2 yes |
+| ota7t_w | 94 % · 50 % by 254 | 94 % · 50 % by 336 | 94 % · 50 % by 443 | GraphGPS: A1 yes, A2 yes; cross-attention: A1 yes, A2 no |
+| ring3 | 15 % · 50 % by never | 29 % · 50 % by never | 10 % · 50 % by never | GraphGPS: A1 yes, A2 yes; cross-attention: A1 yes, A2 yes |
+| vco_lin_c | 94 % · 50 % by 291 | 98 % · 50 % by 222 | 92 % · 50 % by 361 · 725 (failed) | GraphGPS: A1 yes, A2 yes |
+| ldo1 | 0 % · 50 % by never | 1 % · 50 % by never | 0 % · 50 % by never | GraphGPS: A1 yes, A2 yes, A3 yes; cross-attention: A1 yes, A2 yes, A3 no |
+| ldo2 | 0 % · 50 % by never | 0 % · 50 % by never | 0 % · 50 % by never | GraphGPS: A1 yes, A2 yes, A3 no; cross-attention: A1 yes, A2 yes, A3 no |
+
+**Stage C (12 of 24 runs complete at 2026-10-08 15:57):** scratch -> general model, early share and last third.
+
+| Circuit | GT | GraphGPS | Cross-attention | Rules |
+|---|---|---|---|---|
+| ota5t | early 2 -> 88 % · late 95 -> 95 % | early 6 -> 90 % · late 96 -> 95 % | early 1 -> 92 % · late 95 -> 95 % | GT: C1 yes, C2 yes, C4 yes; GraphGPS: C1 yes, C2 yes, C4 yes; cross-attention: C1 yes, C2 yes, C4 yes |
+| ota7t_w | early 0 -> 88 % · late 93 -> 94 % | early 0 -> 83 % · late 96 -> 95 % | early 1 -> 84 % · late 95 -> 95 % | GT: C1 yes, C2 yes, C4 yes; GraphGPS: C1 yes, C2 yes, C4 yes; cross-attention: C1 yes, C2 yes, C4 yes |
+| ring3 | early 4 -> 24 % · late 12 -> 30 % | early 1 -> 28 % · late 18 -> 32 % | early 5 -> 33 % · late 34 -> 35 % | GT: C1 no, C2 yes, C4 yes; GraphGPS: C1 no, C2 yes, C4 yes; cross-attention: C1 no, C2 yes, C4 yes |
+| vco_lin_c | early 4 -> 83 % · late 92 -> 95 % | running (S 3 %, G - %) | not run yet | GT: C1 yes, C2 yes, C4 yes; GraphGPS: not judged yet; cross-attention: not judged yet |
+| ldo1 | early 0 -> 2 % · late 0 -> 8 % | not run yet | not run yet | GT: C1 no, C2 yes, C4 yes, C3 yes; GraphGPS: not judged yet; cross-attention: not judged yet |
+| ldo2 | early 0 -> 0 % · late 0 -> 14 % | not run yet | not run yet | GT: C1 no, C2 yes, C4 yes, C3 yes; GraphGPS: not judged yet; cross-attention: not judged yet |
+
+On the finished circuits every encoder's general model gives the same head start as GT's, with the same C1 verdict per
+circuit.
+
+**Stage D (stage D not started):** 8 runs queued after stage C (otafc, otatc x GraphGPS, cross-attention x scratch, general; seed 0,
+four lanes, the 7.262 goals). GT references (7.262): folded cascode probe 21 %, scratch 13 % / 93 %, general 20 % / 95 %
+(C1 fail +7, C2 and C4 pass); telescopic cascode probe 2 %, scratch 8 % / 89 %, general 73 % / 100 % (C1, C2, C4 pass).
+
+
+Status: Stage A complete (12 runs). Stage C: 12 of 24 runs complete. Stage D not started. Last chain line: [10-08 15:35:04] START graphgps-vco-lin-c-c-s: graph_gps scratch seed 2 800 launches 4 lane(s) from random weights. Sources: artifacts/local/reviews/encoder-comparison-2026-10-07/ (results-A.md, results-C.md, notes.md),
+docs/plan-encoder-comparison.md.
+<!-- encoder-comparison-section:end -->

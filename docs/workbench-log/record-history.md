@@ -387,3 +387,5 @@ One row per commit, newest last.
 | `9059528` | 10-08 15:59 | - | docs: the GT report's section 9, the other encoders through the same stages (no record entry) |
 | `3b9dafa` | 10-08 16:01 | - | record only: the table rows for 85af5cc and 9059528, and two stale "uncommitted" marks of 7.221 dropped |
 | `774d2f3` | 10-08 16:23 | 7.283 | Astra's review of 7.279-7.282: deferred learner-update rows kept, PDK model-file copies per host, the storage-limit deletion remembers the host folder (session "Concurrent cache and stale selection bugs") |
+| `1f64a2b` | 10-08 16:23 | - | record only: names the commit of record 7.283 (774d2f3), and the table rows for 3b9dafa and 774d2f3 |
+| `cf842b1` | 10-08 17:47 | - | docs: the GT report's section 10, the time to the first passing design, and section 9's encoder tables with the same column; the two report pages republished (session "Time to first feasible design", no record entry) |

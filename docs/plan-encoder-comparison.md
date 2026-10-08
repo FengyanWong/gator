@@ -11,6 +11,9 @@ Revision 2 (07:30; user: "does ota8m count as a heldout? shouldnt it only happen
 held-out test on the folded cascode only, added as section 6.3; OTA8m does not count; the budget rows follow.
 Revision 3 (10:05; user: "add the only telescopic cascode to stage D too"): the telescopic cascode `mscr_otatc` of the same
 session joins stage D as its second held-out circuit; the budget rows follow.
+Revision 4 (22:30; user: "take some care over the simulation cost", then "Ok i think all set. Start the whole run. Good luck and
+good night."): the lean run of section 12 is what runs; it started at 22:13. Sections 1-11 keep the full design; where section 12
+differs (stage B deferred, probes and arm O dropped, the ablation and the GT LDO references conditional), section 12 is of record.
 
 What this plan is built from:
 
@@ -490,3 +493,52 @@ This plan; record 7.256; a line in `docs/decisions.md` for choices 1-3 once made
 `compat.json`, `equivalence.json`, `queue.log`, `results.md` / `results.json` and the record entry with the tables; the
 `_a` tasks' definitions in `~/mscr_circuits` if made there; the offline models' `pretraining` blocks. Nothing in
 `src/analog_optimizer/` changes.
+
+## 12. The lean run of 2026-10-07 (revision 4): what runs, with which rules
+
+**Decisions taken** (the user's "all set" after the lean proposal): 1 registry per stage (the task's own in A, the 41-slot list in C
+and D); 2 temperature carried; 3 C on the shared `_c` tasks, D on the two held-out tasks of record 7.262; 4 the GT LDO references
+conditional; 5 stage A started; 6 no GT probes on the C starts, and a GT general model trained on the same 18-archive pool for the
+offline indicator only (no launches); 7 no optional encoders; 8 repetitions conditional; 9 stage D on both cascodes. Stage B is
+deferred, the frozen probes and arm O are dropped, the GraphGPS ablation is conditional.
+
+**What runs, in this order, one run at a time, from a frozen runtime** (`~/gator-runtime-7256` = `git archive` of HEAD `6016bbd`,
+optimizer digest `0b0808bc`, checked):
+
+| Step | Runs | Launches | Started / gate |
+|---|---|---|---|
+| Qualification | 12 one-launch baselines of the task copies through the backend; a 64-design Calibration of `mscr_ota7t_w`, seed 0 | 76 | 22:13, done 22:26 (baselines) |
+| A | the twelve 7.231 configurations, OTA5t first for both encoders | 9,600 | 22:3x, about 5 h |
+| offline | three general models (GraphGPS, cross-attention, GT) on the 18-archive pool, 20,000 updates, seed 0; diagnostics; publication of the two new ones | 0 | 22:26, CPU, beside stage A |
+| C | per circuit and encoder S then G on the `_c` tasks, seed 2, 41-slot registry, the G2 recipe | 19,200 | after A, when `C.ready` exists |
+| D | per cascode and encoder S then G, seed 0, four lanes, the 7.262 goals | 6,400 | after C, when `D.ready` exists |
+| **Total** | 44 runs | **35,282** | about 22-24 h of simulation |
+
+Mechanics: `artifacts/local/reviews/encoder-comparison-2026-10-07/` holds `stage_a.sh` (qualification, then `queue_a.sh` = the 7.231
+queue with four lines changed: the frozen runtime, the configuration folder, the log), `make_configs_cd.py` (the C and D
+configurations from the general-network experiment's `S-<circuit>.json` and record 7.262's `S.json`, the network swapped; G
+configurations once `models.json` names the published models), `queue_cd.sh`, `stage_all.sh` (the chain, gated by the two
+markers), `offline/` (the three requests, audit, trainings), `compare_runs.py` (the tables and criteria of all three stages).
+Every run: Virtuoso free, Check now before and after, the nonce-cache read before a multi-lane run, a copy of the live settings,
+output into `outputs/` where the page lists it. The audit of the pool: 15,800 source evaluations, 14,929 eligible transitions.
+
+**Pre-registered rules, applied from the results and not revised after them:**
+
+- **Stop rule (A):** an encoder whose last-third passing share on OTA5t is below 50 % gets one run with learning rate 3e-4 on
+  OTA5t (800) before its remaining runs; its learning rate for every stage is the better of the two by last-third share (tie: 1e-3).
+- **Ablation trigger (A):** GraphGPS and GT differ by more than 15 points in last-third share, or by more than 100 designs in the
+  50 % point, on two or more circuits: six GraphGPS runs without structural inputs follow stage A (4,800). Otherwise no ablation.
+- **Second seed (A):** an encoder's verdict hinges on circuits within 10 points of GT: those circuits again at seed 10 for the
+  encoder and for GT (1,600 per circuit), before the verdict is written.
+- **GT LDO references:** a new encoder passes an LDO at the relaxed target in stage A: the two `_a` tasks and GT's two runs (1,600).
+- **Gate to C:** an encoder goes into C only if it learned on the four circuits GT learned (A1 on OTA5t, OTA7t width, RING3, VCO);
+  the GT reference arms exist whatever happens. D needs only the offline models.
+- **Publication of a general model** requires the offline diagnostics (held-out critic error per task against the constant and the
+  specialist, actor proposals inside the ranges, the forgetting curve) and a recorded review; the review's limitations are quoted
+  in the results. An encoder whose model fails the "learned nothing" line on most tasks is still run in C and D (the comparison
+  is the point), with that fact beside its rows.
+
+**Reporting:** `results-A.md`, `results-C.md`, `results-D.md` (per circuit the GT reference rows and both encoders, then the
+criteria), the offline indicator table (held-out critic error per task, three encoders, one split), parameter counts and the
+cross-attention maps noted after OTA5t, and a record entry per stage. Working times are reported but never compared across the
+optimizer sources `f83342bc` / `4aebbfab` / `0b0808bc`.

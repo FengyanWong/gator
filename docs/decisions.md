@@ -19,7 +19,9 @@ A summary for new sessions; everything below is the chronological record, oldest
   every recorded GT run did); GT needs two relaxed-target LDO A runs and two LDO B fine-tune runs for matched
   references. Pilot budget for both encoders 64,466 launches, with the held-out stage D on the folded cascode `mscr_otafc` and
   the telescopic cascode `mscr_otatc` that the session "Task button and fine-tuning comparison plan" is building (its
-  record pending; OTA8m does not count as held-out); stage A alone 11,276. Nothing started.
+  record 7.262; OTA8m does not count as held-out); stage A alone 11,276. **Revision 4, 2026-10-07 22:13 (user: "Start the
+  whole run"): the lean run of its section 12 is running: A (9,600 + 76 qualification), C (19,200), D (6,400) = 35,282 launches;
+  B deferred, probes and arm O dropped, the GraphGPS ablation and the GT LDO references conditional on pre-registered rules.**
 
 - **General-network offline experiment (7.233–7.243):** the user authorized the plan in
   [plan-general-network.md](plan-general-network.md), including mandatory baselines for all six start-C tasks.

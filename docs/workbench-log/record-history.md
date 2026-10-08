@@ -385,3 +385,5 @@ One row per commit, newest last.
 | `2e44685` | 10-08 15:05 | 7.279-7.282 | the audit of 2026-10-08: the same answers faster, run speed-ups with identical results, learning after the dispatch (a switch, off by default), the simulator host's job folders removed as a run goes; the record rolled over to `7.279-and-later.md`, with record 7.278's Live line (session "Frontend workbench layout design") |
 | `85af5cc` | 10-08 15:14 | - | record only: names the commit of records 7.279-7.282 and their Live lines, and the table rows for 5c49b66 and 2e44685 (session "Frontend workbench layout design") |
 | `9059528` | 10-08 15:59 | - | docs: the GT report's section 9, the other encoders through the same stages (no record entry) |
+| `3b9dafa` | 10-08 16:01 | - | record only: the table rows for 85af5cc and 9059528, and two stale "uncommitted" marks of 7.221 dropped |
+| `774d2f3` | 10-08 16:23 | 7.283 | Astra's review of 7.279-7.282: deferred learner-update rows kept, PDK model-file copies per host, the storage-limit deletion remembers the host folder (session "Concurrent cache and stale selection bugs") |

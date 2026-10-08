@@ -376,3 +376,4 @@ One row per commit, newest last.
 | `6016bbd` | 10-07 21:49 | 7.272 | report of the Graph Transformer experiments of 2026-10-07; docs only (session "Task button and fine-tuning comparison plan") |
 | `616c153` | 10-08 08:14 | 7.274-7.276 | the audit of 2026-10-07: faster run-list and saved-model reads, fewer page reads and redraws, shared table code and clean-up; with 7.269/7.270's Live lines (session "Frontend workbench layout design") |
 | `dd52d67` | 10-08 08:15 | 7.273 | plan 7.256 revision 4: the lean encoder comparison started overnight; docs only (session "Encoder run plan revision") |
+| `98bec37` | 10-08 08:15 | - | record only: names the commits of records 7.272, 7.273 and 7.274-7.276, and the table rows for 5c261bf, 6016bbd, 616c153 and dd52d67 |

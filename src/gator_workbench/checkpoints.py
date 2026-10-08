@@ -6,6 +6,8 @@ Layout (``<run>/checkpoints/<checkpoint_id>/``)
                       critics, targets, all three optimizers, temperature, RNG states, the replay
                       snapshot (embedded) and ``run_state`` = budget ledger + data cursors + counters.
                       One file => weights, replay and counters can never be from different moments.
+                      Its zip entries are deflated, each byte-identical to what torch.save wrote, and
+                      torch.load reads it as before (record 7.284, ``save_point_compression``).
   model_weights.pt    tensors + plain contract only; loadable with ``weights_only=True``. Used by
                       fine_tune / frozen, so transfer never unpickles arbitrary objects.
   replay_buffer/manifest.json  membership of the finite replay snapshot, verifiable against the
@@ -26,9 +28,11 @@ from pathlib import Path
 import re
 import shutil
 import stat
+import tempfile
 from uuid import uuid4
 
 from . import CHECKPOINT_METADATA_VERSION
+from .save_point_compression import write_compressed
 from .storage.atomic import PersistenceError, publish, read_json, sha256_file, temporary_path, write_json
 from .storage.dataset import utcnow
 
@@ -141,9 +145,13 @@ class CheckpointStore:
                          data_cursor=data_cursor, counters=counters, collector=collector_state,
                          boundary=RECOVERABLE_BOUNDARY)
         try:
-            with _one_source_digest():
-                learner.save(staging / 'training_state.pt', saved_replay, run_state=run_state)
-                contract = contract_summary(learner)
+            # The package writes the file, reads it back and loads it again to check it (2.5 s for 42 MB): on the local disk.
+            # Only the compressed copy - every zip entry the same bytes, a third of the size - goes to the run folder (7.284).
+            with tempfile.TemporaryDirectory(prefix='gator-save-point-') as local:
+                with _one_source_digest():
+                    learner.save(Path(local) / 'training_state.pt', saved_replay, run_state=run_state)
+                    contract = contract_summary(learner)
+                write_compressed(Path(local) / 'training_state.pt', staging / 'training_state.pt')
             weights = dict(format='gator-workbench-weights-v1', contract=contract,
                            actor=learner.actor.state_dict(), critics=learner.critics.state_dict(),
                            targets=learner.targets.state_dict(), log_alpha=learner.log_alpha.detach().clone(),
@@ -329,7 +337,9 @@ def verify_files(directory, *, cached=False) -> list[str]:
                 digest = _display_digest(str(path.resolve()), (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns))
             else:
                 digest = sha256_file(path)
-            if digest != info['sha256']:
+            # The original a one-time compression replaces is recorded too: a pass stopped between writing metadata.json
+            # and replacing the file leaves that original, still whole (record 7.284).
+            if digest not in (info['sha256'], (info.get('compressed_from') or {}).get('sha256')):
                 problems.append(f'checksum mismatch {relative}')
     return problems
 

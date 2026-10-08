@@ -6,6 +6,7 @@ run         prepare and execute one run in the foreground (mock tasks; real task
 aggregates  regenerate the five research CSV tables of an experiment from saved data
 check       zero-cost connection check of a configured bridge profile
 pretrain    audit a frozen archive pool and train offline (no simulator)
+compress-save-points  compress the save points of the runs under a folder, losslessly (a dry run without --apply)
 """
 from __future__ import annotations
 
@@ -51,7 +52,25 @@ def main(argv=None):
     pretrain.add_argument('request', type=Path, help='JSON with pinned source runs, registry overrides and training settings')
     pretrain.add_argument('--output', type=Path, required=True, help='new artifact directory (never overwritten)')
     pretrain.add_argument('--audit-only', action='store_true', help='validate and split archives without training')
+    compress = sub.add_parser('compress-save-points', help='compress the save points written before record 7.284')
+    compress.add_argument('--root', type=Path, default=None, help="folder of experiments (default: the workbench's outputs/)")
+    compress.add_argument('--apply', action='store_true', help='compress; without it, only say what would be compressed')
+    compress.add_argument('--exclude', action='append', default=[],
+                          help='leave the runs of experiment folders matching this pattern alone (repeatable)')
+    compress.add_argument('--workers', type=int, default=4)
     args = parser.parse_args(argv)
+
+    if args.command == 'compress-save-points':
+        from .paths import default_output_root
+        from .save_point_compression import compress_save_points
+
+        def say(folder, result):
+            sizes = ' -> '.join(f'{result[k] / 1e6:.1f} MB' for k in ('before', 'after') if result.get(k) is not None)
+            print(f"{result['status']:<15} {folder}  {sizes}  {result.get('reason') or ''}".rstrip(), flush=True)
+        totals = compress_save_points(args.root or default_output_root(), apply=args.apply, exclude=args.exclude,
+                                      workers=args.workers, progress=say)
+        print(json.dumps(totals, indent=2), flush=True)
+        return 1 if totals['skipped'] else 0
 
     if args.command == 'pretrain':
         from .pretrain import execute

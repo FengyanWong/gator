@@ -1211,6 +1211,20 @@ Mapping to the recommended layout of the specification:
   (written by the existing `SACLearner.save`), so weights, replay and counters can never come from
   different moments. `replay_buffer/manifest.json` lists its members so it can be checked against
   the complete `transitions` archive without unpickling.
+* `training_state.pt` is **compressed** (record 7.284): its zip entries are deflated, each byte-identical
+  to what `torch.save` wrote, and `torch.load` reads it as before - so every reader, an older checkout
+  and a queue's frozen runtime included, opens it unchanged. The replay inside is plain pickle (each
+  stored step carries its circuit graph twice) and shrinks about three times (41.6 MB -> 14.4 MB at
+  level 3). The package writes the file on the local disk, where its own read-back check runs; only the
+  compressed copy, checked entry by entry against it, goes to the run folder (3.6-3.9 s per 42 MB save
+  point against 4.1-5.7 s, 14.4 MB written to the D: drive instead of 42.3 MB). `metadata.json` holds the
+  compressed file's checksum. Save points written before are compressed by
+  `gator-workbench compress-save-points [--root DIR] [--exclude PATTERN] [--apply]` (a dry run without
+  `--apply`): it checks each original against its recorded checksum (a mismatch is reported, never
+  touched), compares every entry after compressing, keeps the original's size and checksum under
+  `compressed_from` in `metadata.json`, corrects the run's `artifact_manifest.json` sizes, leaves alone a
+  run a worker holds, and completes a pass stopped between its two writes (the original it left still
+  verifies).
 * A part file belongs to the dataset only if `data/_journal/flushes.jsonl` lists it.
 * When a writer reopens a journal after a crash, it truncates only the incomplete final line before appending.
   Complete corrupt records stop recovery with a persistence error; they never silently hide later records.

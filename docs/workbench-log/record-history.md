@@ -379,3 +379,5 @@ One row per commit, newest last.
 | `98bec37` | 10-08 08:15 | - | record only: names the commits of records 7.272, 7.273 and 7.274-7.276, and the table rows for 5c261bf, 6016bbd, 616c153 and dd52d67 |
 | `81250f7` | 10-08 10:49 | - | record only: the Live lines of records 7.274-7.276, and the table row for 98bec37 |
 | `0da08fe` | 10-08 13:24 | 7.277 | encoder comparison stage A complete; with 7.273's missing index row; docs only (session "Encoder run plan revision") |
+| `af45f1c` | 10-08 13:24 | - | record only: names the commit of record 7.277, and the table rows for 81250f7 and 0da08fe |
+| `eb8eb1c` | 10-08 13:39 | 7.278 | Astra's review of 7.274-7.276: the run-list cache under a lock, only the newest "Use this save point" lands, the compatibility check keeps the page configuration's contract (session "Concurrent cache and stale selection bugs") |

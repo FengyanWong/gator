@@ -19,7 +19,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, outDir, reportRefused, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -79,7 +79,7 @@ const statusOf = r => ({ state: r.state, run_id: r.run_id, mode: r.mode, entry: 
   summary: { time: { active_seconds: r.active_seconds, paused_seconds: r.paused_seconds, sum_job_runtime_seconds: 412.5 }, output: { resumability: 'full_state', completeness: 'complete', latest_checkpoint: 'ckpt-000040' } },
   manifest: { mode: r.mode, mock: r.mock, task_id: r.task_id, seeds: { target_seed: r.seed }, source_model: { run_id: null }, budgets: { max_evaluations: r.max_evaluations },
     mock_notice: r.mock ? 'FIXTURE MOCK DATA: nothing was run.' : null } });
-const validReport = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: true };
+const validReport = validConfiguration({ mock: true });
 
 await runChecks(browser, async () => {
   const CONFIG = await starterConfig(APP);     // as "Load task" merges it
@@ -129,16 +129,12 @@ await runChecks(browser, async () => {
   // ---- the window: a second page, found by its title, with a DevTools session of its own ---------------------------
   const pages = () => browser.pages();
   const windowTarget = present => browser.window('GATOR - runs', { present, except: page.target.id });
-  const attachTo = target => browser.attach(target, { errors: consoleErrors, prefix: 'window: ' });
   const BUTTON = `document.querySelector('footer .tabs button.run-list-button')`;
   const WINDOW = `document.querySelector('.run-window')`;
   let far = null, farPage = null;
   const openWindow = async () => {
-    await evaluate(`${BUTTON}.click()`, true);
-    farPage = await windowTarget(true);
-    far = await attachTo(farPage);
-    await far.send('Emulation.setDeviceMetricsOverride', { width: 1500, height: 860, deviceScaleFactor: 1, mobile: false });   // a headless popup ignores the requested size
-    for (let i = 0; i < 50 && !(await far.evaluate(`!!(${WINDOW})`)); i++) await sleep(100);
+    far = await browser.popup(page, BUTTON, 'GATOR - runs', { width: 1500, height: 860, ready: WINDOW });
+    farPage = far.target;
     await sleep(500);
   };
   // The table as a user reads it: one object per run row, keyed by the column titles.
@@ -153,7 +149,7 @@ await runChecks(browser, async () => {
     const at = await far.evaluate(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(r.run_dir)}); if (!tr) return null;
       const el = ${onDetails} ? tr.querySelector('button') : tr.children[4]; el.scrollIntoView({ block: 'center' }); const b = el.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`);
     if (!at) return false;
-    for (const clickCount of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await far.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount });
+    await far.clickAt(at, { count: 2 });
     return true;
   };
   const pressTop = labelText => far.evaluate(`(() => { const b = [...${WINDOW}.querySelectorAll('.row button')].find(b => b.textContent.trim() === ${JSON.stringify(labelText)}); if (!b || b.disabled) return false; b.click(); return true; })()`, true);

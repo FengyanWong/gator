@@ -223,12 +223,27 @@ def run_bytes(layout: RunLayout) -> int:
     return directory_bytes(layout.run_dir)
 
 
-def find_runs(data_root) -> list[Path]:
-    """Every run directory (has run_manifest.json) under a data root."""
-    data_root = Path(data_root)
-    if not data_root.is_dir():
+def _subfolders(path, *, experiments=False) -> list[str]:
+    """The folders in `path` as pathlib's glob `*` (or `*__*`) matched them - hidden names included; [] when `path` is
+    no folder."""
+    try:
+        with os.scandir(path) as entries:
+            return [e.path for e in entries if ('__' in e.name or not experiments) and e.is_dir()]
+    except (FileNotFoundError, NotADirectoryError):
         return []
-    return sorted(p.parent for p in data_root.glob('*__*/runs/*/*/run_manifest.json'))
+
+
+def find_runs(data_root, *, manifest=True) -> list[Path]:
+    """Every run directory (has run_manifest.json) under a data root: <experiment with '__'>/runs/<task>/<run>.
+
+    Walked with os.scandir rather than glob (record 7.274): on the 9p-mounted D: drive each file operation costs
+    milliseconds, and glob also stat'ed runs/ and every run's manifest. `manifest=False` leaves out that last check, for a
+    caller that reads the manifest anyway and skips a folder without one (runs.list_runs)."""
+    found = []
+    for experiment in _subfolders(data_root, experiments=True):
+        for task in _subfolders(os.path.join(experiment, 'runs')):
+            found += [Path(run) for run in _subfolders(task) if not manifest or os.path.isfile(os.path.join(run, 'run_manifest.json'))]
+    return sorted(found)
 
 
 def read_run(run_dir, *, status=True) -> dict:

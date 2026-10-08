@@ -18,7 +18,7 @@
 // Optional: GATOR_WORKBENCH_OUTPUT_ROOT (from WSL: WSLENV=GATOR_WORKBENCH_URL:GATOR_WORKBENCH_OUTPUT_ROOT). Exit code 1 on failure.
 import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks, setMode } from './lib/rl_networks.mjs';
 import path from 'node:path';
-import { validConfiguration, check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const ROOT = process.env.GATOR_WORKBENCH_OUTPUT_ROOT || undefined;
@@ -65,7 +65,7 @@ const view = (evaluation, { attention = true, scope = null } = {}) => ({ checkpo
 const VALID = validConfiguration();
 
 await runChecks(browser, async () => {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
+  const starter = await mockStarter(APP);
   const CONFIG = { ...starter, run: { ...starter.run, mode: 'fine_tune', network: { ...NET, layers: 2 }, model_source: { run_dir: RUN, checkpoint_id: 'latest' } }, output: { experiment_name: 'fixture', ...(ROOT ? { output_root: ROOT } : {}) }, research: {} };
   const page = await browser.open({ consoleApi: false });
   const { send, evaluate, fulfil, consoleErrors } = page;

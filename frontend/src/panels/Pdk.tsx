@@ -9,10 +9,10 @@ import { api, gateText, Json, problemText } from '../api';
 // and every model saved before this existed was trained with it. A loaded PDK gives a list with EVERY component of
 // that PDK - its pins, its parameters and their scales, read from Virtuoso's own description of the technology library
 // and from its Spectre model files. Choosing the list is a network setting like the encoder, so it lives in the RL
-// network block. LOADING is the Virtuoso window's work since 2026-09-27 (user: "when loading a schematic from Virtuoso,
-// shouldn't the PDK be loaded at the same time?"): reading a cell into the workbench reads its PDK in the same press
-// (backend bridge_read.pdk_with_import), and that window's "PDK window..." button opens this file's window to read one by
-// name and to see what was read. Nothing is read on its own.
+// model window, with the network. LOADING is the Virtuoso window's work since 2026-09-27 (user:
+// "when loading a schematic from Virtuoso, shouldn't the PDK be loaded at the same time?"): reading a cell into the
+// workbench reads its PDK in the same press (backend bridge_read.pdk_with_import), and that window's "PDK window..."
+// button opens this file's window to read one by name and to see what was read. Nothing is read on its own.
 // Since record 7.190 every read of a PDK also brings the ideal parts of analogLib (sources, ideal R / C / L, probes,
 // controlled sources; backend pdk.build_ideal_parts): what a circuit holds besides its PDK's components is recognized from
 // Virtuoso's own description too (user, 2026-10-05: "it should be recognizing all the loaded components").
@@ -46,7 +46,8 @@ function usePdkList(watch: unknown) {
   return { list, error };
 }
 
-/** The line of the RL network block: which components the network knows. It only chooses; loading is the Virtuoso window's. */
+/** The Components line of the RL model window: which components the network knows. It only chooses; reading a PDK is the
+ *  Virtuoso window's. */
 export function ComponentList({ value, onChoose }: { value: string; onChoose: (v: string) => void }) {
   const { list, error } = usePdkList(true);
   const pdks: Json[] = list?.pdks ?? [];
@@ -108,7 +109,7 @@ function PdkWindow({ list, listError, profileId, circuitPdk }: { list: Json; lis
   const load = () => run('load', async () => {
       const loaded = await api.loadPdk(profileId!, library.trim() || null, modelFile.trim() || null);
       asked.current++; setShown(loaded); setShowing(loaded.pdk_id);
-      pdksChanged();              // every open list reads again - this window's too - and the RL network block's Components list shows it at once
+      pdksChanged();              // every open list reads again - this window's too - and the RL model window's Components list shows it at once
   });
   const libraryProblem = library.trim() && !/^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$/.test(library.trim()) ? 'A plain Cadence library name.' : null;
   const fileProblem = modelFile.trim() && !/^\/[A-Za-z0-9_./+\-]+$/.test(modelFile.trim()) ? 'An absolute path on the simulator host (letters, digits, / . _ - +).' : null;

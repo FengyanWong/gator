@@ -267,12 +267,9 @@ button.text-link { border: none; background: none; padding: 0; color: var(--acce
 /* The suggested Mode in the run panel is the clickable word itself (user request 2026-09-26), at the size of its sentence. */
 button.text-link.mode-suggestion { font-size: inherit; font-weight: 600; }
 .with-unit { display: flex; gap: 4px; } .with-unit input { flex: 1; } .with-unit select { flex: none; width: auto; }
-/* Saved-model chooser (run panel): one card per run that holds a model. Cards wrap their text: the right panel is narrow. */
-.model-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; margin: 4px 0; }
-button.model-card { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left; white-space: normal; padding: 5px 8px; font-size: 11.5px; overflow-wrap: anywhere; }
-button.model-card.active { border-left: 3px solid var(--accent); } .model-title { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 12.5px; }
+/* The tags of a saved model, a run or a task (in use, MOCK), and the saved models table's filter. */
 .model-tag { font-size: 10px; font-weight: 600; padding: 0 5px; color: var(--muted); } .model-tag.mock-tag { background: var(--warn-bg); border-color: var(--mock-line); color: var(--text); }
-input.model-filter { width: 100%; margin: 2px 0; } select.model-point { max-width: 100%; }
+input.model-filter { width: 100%; margin: 2px 0; }
 .row.model-rename-row { flex-wrap: nowrap; } .row.model-rename-row label { flex: 1; min-width: 0; } .row.model-rename-row input.model-rename { width: 100%; } .row.model-rename-row button { flex: none; }
 table.grid.small.model-facts td:first-child, table.grid.small.run-facts td:first-child { white-space: nowrap; word-break: normal; width: 1%; color: var(--muted); }
 /* Network structure of the chosen saved model: a short summary in the narrow run panel, the full layer table in a wide dialog. Tables only. */
@@ -333,7 +330,7 @@ details.section.module { margin-top: 0; } details.module > summary { cursor: poi
 .research-module > summary { cursor: pointer; } .research-module[open] > summary { margin-bottom: 4px; } .research-module > summary > h3 { display: inline; margin: 0; cursor: pointer; }
 .module-summary { display: block; margin: 2px 0 0 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .module-attention { margin-left: 8px; padding: 0 5px; border-radius: 3px; font-size: 10.5px; font-weight: 600; color: var(--on-warn); background: var(--warn-fill); } .module-attention.error { color: var(--on-accent); background: var(--bad-fill); }
-/* Load PDK (Pdk.tsx): the "Components" line of the RL network block, and the PDK window (a pop-up like the connection
+/* Load PDK (Pdk.tsx): the "Components" line of the RL model window, and the PDK window (a pop-up like the connection
    window; about:blank = quirks mode, so its tables are told to inherit the font). */
 /* a labelled list beside a bare button: bottom-aligned, one height for both (a centred row would put the button between the
    caption and the list) */

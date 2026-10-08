@@ -23,7 +23,7 @@
 // Exit code 1 if any check fails.
 import path from 'node:path';
 import { writeFileSync } from 'node:fs';
-import { validConfiguration, check, launchEdge, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, outDir, reportRefused, runChecks, sleep, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 import { NETWORK_PANEL, openNetworks, setMode } from './lib/rl_networks.mjs';
 
 const APP = await workbenchUrl();
@@ -40,7 +40,7 @@ const DESCRIBED = { checkpoint_id: POINT, path: `${DEFAULT_RUN}/checkpoints/${PO
 const VALID = validConfiguration({ mock: true });
 
 await runChecks(browser, async () => {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
+  const starter = await mockStarter(APP);
   const CONFIG = { schema_version: 'gator-workbench-config-v1', ...starter, run: { ...starter.run, mode: 'scratch' }, output: { experiment_name: 'fixture' }, research: {} };
   delete CONFIG.run.model_source;                                                  // no model chosen: the page may fill in a default
   const page = await browser.open();

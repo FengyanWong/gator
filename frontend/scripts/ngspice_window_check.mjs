@@ -15,7 +15,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/ngspice_window_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, outDir, PAGE_OPEN_TEST, runChecks, sleep, taskWindow, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, PAGE_OPEN_TEST, runChecks, sleep, TASK_PANEL, taskWindow, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -80,7 +80,7 @@ await runChecks(browser, async () => {
     if (name !== '/api/output/check') refused.push(`${request.method} ${name}`);
     return page.refuse(requestId, 'FIXTURE: this check lets no other request through');
   };
-  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
+  const PANEL = TASK_PANEL;
   const LAUNCHER = `${PANEL}.querySelector('.row.ngspice-launcher')`;
   const text = () => evaluate(`${PANEL}.textContent`);
   const shot = async (name, expression = `document.querySelector('.left')`) => page.shot(path.join(out, name), expression);

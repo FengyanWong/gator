@@ -18,7 +18,7 @@
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/working_copy_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { answerDialogs, check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { answerDialogs, check, launchEdge, outDir, runChecks, sleep, TASK_PANEL, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -84,18 +84,14 @@ await runChecks(browser, async () => {
   };
   const onDialog = session => answerDialogs(session, answers, dialogs);
   onDialog(page);
-  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
+  const PANEL = TASK_PANEL;
   const LAUNCH = `${PANEL}?.querySelector('button.virtuoso-button')`;
   // ---- the window: the cell's note lives there; a second page with a DevTools session of its own -----------------------------
   const WIN = `document.querySelector('.virtuoso-window')`;
   const BLOCK = `${WIN}?.querySelector('.working-copy')`;
   let far = null;
   const openWindow = async () => {
-    await evaluate(`${LAUNCH}.click()`, true);
-    far = await browser.attach(await browser.window('GATOR - Virtuoso cell', { present: true, except: page.target.id }), { errors: consoleErrors, prefix: 'window: ' });
-    await far.send('Page.enable'); onDialog(far);
-    await far.send('Emulation.setDeviceMetricsOverride', { width: 720, height: 980, deviceScaleFactor: 1, mobile: false });
-    for (let i = 0; i < 50 && !(await far.evaluate(`!!(${BLOCK})`)); i++) await sleep(100);
+    far = await browser.popup(page, LAUNCH, 'GATOR - Virtuoso cell', { width: 720, height: 980, ready: BLOCK, onDialog });
     await sleep(600);
   };
   const BUTTON = text => `[...(${BLOCK}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
@@ -103,7 +99,7 @@ await runChecks(browser, async () => {
   const blockText = () => far.evaluate(`${BLOCK}?.textContent ?? ''`);
   const visible = selector => far.evaluate(`(() => { const e = ${selector}; return !!e && e.checkVisibility(); })()`);
   const press = async label => { await far.evaluate(`${BUTTON(label)}.click()`, true); };
-  const stored = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')`);
+  const stored = page.stored;
   // Up to `ms` for the press to reach the backend; once it has, settled when 0.5 s pass with no further call (the fixture
   // answers after 0.15 s). A press that sends nothing still waits the whole `ms`. It slept `ms` every time until 2026-09-30.
   const settle = async (ms = 900) => {

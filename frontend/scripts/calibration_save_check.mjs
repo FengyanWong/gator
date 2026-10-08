@@ -97,7 +97,7 @@ await runChecks(browser, async () => {
   const NOTES = `(document.querySelector('.editors .task-notes')?.textContent ?? '')`;
   const SAVE = `[...(document.querySelector('.editors .tabs .task-save')?.querySelectorAll('button') ?? [])].find(b => /^Sav/.test(b.textContent.trim()))`;
   const UNDO = `[...document.querySelectorAll('.editors .toolbar button')].find(b => b.textContent.trim() === 'Undo')`;
-  const stored = async () => { await page.saved(); return page.stored(); };
+  const stored = page.savedConfig;
   const cells = () => evaluate(`[...(${BLOCK}?.querySelectorAll('table tbody tr') ?? [])].map(tr => [...tr.children].map(td => td.textContent.trim()))`);
   const saves = () => calls.filter(c => c.op === 'task/save');
   const settle = async (ms = 900) => {

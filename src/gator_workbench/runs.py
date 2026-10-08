@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -268,7 +269,7 @@ def manifest_conditions(conditions) -> dict:
 
 def model_label(config: WorkbenchConfig) -> str:
     """The name a run's RL model is filed under (record 7.159, the user's request of 2026-10-03: "Give the RL model its own
-    label, independent of the project name"): the label typed in Run configuration, else the task's run label."""
+    label, independent of the project name"): the label typed in the RL model window, else the task's run label."""
     return (config.run.model_label or '').strip() or config.project.task_name
 
 
@@ -497,7 +498,7 @@ def _resume_checks(config, task, task_hash, layout, manifest, run_dir):
                           'on 2026-10-06: SAC is the only search method now, and a run is never continued with another '
                           'method than it started with. Its results stay readable. '
                           + ('It holds no RL model.' if removed == 'llm' else 'To go on from its RL model, start a new run in '
-                             'Mode fine_tune with this run chosen in RL networks.'), code='search_method_removed')
+                             'Fine-tune with its model chosen in the RL model window.'), code='search_method_removed')
     try:
         meta = ckpt.read_metadata(ckpt.resolve_checkpoint(run_dir, 'latest'))
     except FileNotFoundError as exc:
@@ -807,22 +808,27 @@ def lineage(manifest) -> dict:
 
 class _RunRow(dict):
     """A row of list_runs - plain JSON as ever - that also keeps the manifest it was built from, as an attribute that is
-    never serialized: checkpoints.saved_models is handed these rows and used to read every manifest a second time."""
-    __slots__ = ('manifest',)
+    never serialized: checkpoints.saved_models is handed these rows and used to read every manifest a second time.
+    `cache_key`: the run folder's fingerprint the row was built at (checkpoint_listing, record 7.274)."""
+    __slots__ = ('manifest', 'cache_key')
 
     def __init__(self, manifest, **fields):
         super().__init__(**fields)
         self.manifest = manifest
+        self.cache_key = None
 
 
 def save_point(run_dir) -> str | None:
     """The run's latest save point as its folder holds it now (``checkpoints/latest.json`` and the save point it names),
     or None: none was written, or it is gone - a copy made without its save points (record 7.213's viewing copies of
     recorded runs), or deleted. Continue needs it: a resume refuses "Nothing to resume" without it."""
-    try:
-        return ckpt.resolve_checkpoint(run_dir, 'latest').name
-    except (OSError, ValueError):
-        return None
+    return ckpt.latest_point(run_dir)[0]
+
+
+def save_point_facts(run_dir) -> tuple[str | None, str | None]:
+    """``(save_point, save_point_code)`` from ONE read of the run's pointer (record 7.274): the polled status asks both."""
+    name, saved = ckpt.latest_point(run_dir)
+    return name, _code_of(saved) if name else None
 
 
 _SOURCE_DIGEST = dict(value=None, at=0.0)
@@ -839,56 +845,124 @@ def current_source_digest(max_age=30.0) -> str:
     return _SOURCE_DIGEST['value']
 
 
+def _code_of(saved) -> str | None:
+    return None if saved is None else 'current' if saved == current_source_digest() else 'older'
+
+
 def save_point_code(run_dir) -> str | None:
     """'current' or 'older': whether the latest save point was written by the optimizer source the repository holds now.
     Continue (an exact resume, SACLearner.load) needs exactly that source; a save point of 'older' source still loads
     for fine-tune and frozen, where the digest is only a warning (record 7.221). None: no readable save point."""
-    try:
-        saved = ckpt.read_metadata(ckpt.resolve_checkpoint(run_dir, 'latest'))['contract']['code_sha256']
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
-    return 'current' if saved == current_source_digest() else 'older'
+    return save_point_facts(run_dir)[1]
 
 
-def _resumability(run_dir, summary):
+def _resumability(run_dir, summary, point=None):
     """The run window's "Can continue" (record 7.215): what the summary says the latest save point allows, while that
     save point is still in the run folder; 'none' once it is gone, whatever the summary wrote when the run came to rest.
     A full save point written by an older optimizer source reads 'weights_only' ("model only"): Continue needs that
-    source, fine-tune and frozen still load the model (record 7.221)."""
+    source, fine-tune and frozen still load the model (record 7.221). `point`: ckpt.latest_point(run_dir), when known."""
     claimed = (summary.get('output') or {}).get('resumability')
     if claimed in (None, 'none'):
         return claimed
-    if not save_point(run_dir):
+    name, saved = point if point is not None else ckpt.latest_point(run_dir)
+    if not name:
         return 'none'
-    return 'weights_only' if claimed == 'full_state' and save_point_code(run_dir) == 'older' else claimed
+    return 'weights_only' if claimed == 'full_state' and _code_of(saved) == 'older' else claimed
 
 
-def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True):
+# ---- the run list's per-run cache (record 7.274) --------------------------------------------------------------------
+# On the 9p-mounted D: drive the run list took 6-11 s for ~100 runs (dozens of file operations per run) and the saved
+# models twice that. A run's files are only ever replaced whole (write_json: a temp file renamed into place), which
+# changes the folder's mtime - and a new or pruned save point changes checkpoints/'s. So what was read from a run
+# folder is kept while both folders' (inode, mtime, ctime) are unchanged: two stats per run instead of dozens. Each
+# request still probes the run lock of runs whose status says they work, compares the save point's code with the
+# source digest of NOW, and works out the unique model names. An entry is read again after 10 minutes anyway, and the
+# page's "Refresh list" asks with fresh=True: a file changed in place by another tool is seen then.
+_RUN_CACHE: dict = {}
+RUN_CACHE_MAX_AGE = 600.0
+LIVE_STATES = ('starting', 'running', 'pausing', 'stopping')
+
+
+def _fingerprint(run_dir):
+    own = os.stat(run_dir)
+    try:
+        points = os.stat(os.path.join(run_dir, 'checkpoints'))
+        points = (points.st_ino, points.st_mtime_ns, points.st_ctime_ns)
+    except FileNotFoundError:
+        points = None
+    return own.st_ino, own.st_mtime_ns, own.st_ctime_ns, points
+
+
+def _run_facts(run_dir, *, fresh=False) -> dict | None:
+    """What list_runs and model_label_rows read from one run folder, from the cache while the folder is unchanged; None
+    for a folder without a manifest (or one that is gone)."""
+    try:
+        key = _fingerprint(run_dir)                  # BEFORE the reads: a change while they run is a miss next time
+    except OSError:
+        return None
+    entry, now = _RUN_CACHE.get(str(run_dir)), time.monotonic()
+    if fresh or entry is None or entry['key'] != key or now - entry['at'] > RUN_CACHE_MAX_AGE:
+        manifest = read_json(Path(run_dir) / 'run_manifest.json', default=None)
+        if not isinstance(manifest, dict):
+            _RUN_CACHE.pop(str(run_dir), None)
+            return None
+        entry = dict(key=key, at=now, manifest=manifest, summary=read_json(Path(run_dir) / 'run_summary.json', default={}) or {},
+                     status=read_json(Path(run_dir) / 'status.json', default={}) or {}, point=ckpt.latest_point(run_dir),
+                     label=ckpt.model_label_of(run_dir, manifest), listing=None)
+        _RUN_CACHE[str(run_dir)] = entry
+    return entry
+
+
+def checkpoint_listing(row) -> dict:
+    """ckpt.list_checkpoints of a list_runs row, kept with the run's cache entry that row was built from (the saved
+    models re-read ~400 metadata files on every request before); read anew when the entry has changed since."""
+    entry = _RUN_CACHE.get(row['run_dir'])
+    if entry is None or entry['key'] != getattr(row, 'cache_key', None):
+        return ckpt.list_checkpoints(row['run_dir'])
+    if entry['listing'] is None:
+        entry['listing'] = ckpt.list_checkpoints(row['run_dir'])
+    return entry['listing']
+
+
+def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True, fresh=False):
+    """Every run under the output root, newest first. `fresh`: read every run folder again (the page's Refresh list)."""
     root = roots.resolve(output_root or remembered_output_root())
-    runs = []
+    runs, seen = [], set()
     for data_root, mock in ((root, False), (root / 'mock', True)):
         if mock and not include_mock:
             continue
-        for run_dir in find_runs(data_root):
-            info = read_run(run_dir, status=False)          # run_status reads status.json itself, with the lock check
-            manifest, summary, status = info['manifest'], info['summary'], run_status(run_dir)
+        for run_dir in find_runs(data_root, manifest=False):
+            facts = _run_facts(run_dir, fresh=fresh)
+            if facts is None:
+                continue
+            seen.add(str(run_dir))
+            manifest, summary, status = facts['manifest'], facts['summary'], facts['status']
+            # The lock is probed only for a run whose status says it works: the row has no `worker_alive`, so a run at
+            # rest needs no probe (run_status still probes every time for the polled status).
+            if status.get('state') in LIVE_STATES and not RunLock.held(Path(run_dir) / 'control' / 'run.lock'):
+                status = dict(status, state='interrupted')
             budget = status.get('budget') or {}     # current while a worker is on the run; the summary is written when it rests
-            runs.append(_RunRow(manifest, run_dir=str(run_dir), run_id=manifest.get('run_id'), task_id=manifest.get('task_id'),
-                                task_definition_hash=manifest.get('task_definition_hash'), mode=manifest.get('mode'),
-                                mock=manifest.get('mock'), seed=(manifest.get('seeds') or {}).get('target_seed'),
-                                created_utc=manifest.get('created_utc'), state=status.get('state'),
-                                experiment=f"{manifest.get('experiment_name')}__{manifest.get('experiment_id')}",
-                                evaluations=budget.get('charged', (summary.get('totals') or {}).get('candidate_evaluations_charged')),
-                                first_feasible_eval_count=summary.get('first_feasible_eval_count'),
-                                resumability=_resumability(run_dir, summary),
-                                # The run window (frontend RunList.tsx): what a run was, how it ended and how long it took.
-                                task_name=manifest.get('task_name'), stop_reason=status.get('stop_reason'), error=status.get('error'),
-                                max_evaluations=(manifest.get('budgets') or {}).get('max_evaluations'),
-                                # The registered task it ran (real:<name>, ngspice:<name>, as the Task list names it): choosing
-                                # that task shows its newest run (App.tsx, record 7.212).
-                                task_key=(manifest.get('circuit') or {}).get('task_key'),
-                                **lineage(manifest),
-                                **ckpt.model_label_of(run_dir, manifest), **run_timing(manifest, status)))
+            row = _RunRow(manifest, run_dir=str(run_dir), run_id=manifest.get('run_id'), task_id=manifest.get('task_id'),
+                          task_definition_hash=manifest.get('task_definition_hash'), mode=manifest.get('mode'),
+                          mock=manifest.get('mock'), seed=(manifest.get('seeds') or {}).get('target_seed'),
+                          created_utc=manifest.get('created_utc'), state=status.get('state'),
+                          experiment=f"{manifest.get('experiment_name')}__{manifest.get('experiment_id')}",
+                          evaluations=budget.get('charged', (summary.get('totals') or {}).get('candidate_evaluations_charged')),
+                          first_feasible_eval_count=summary.get('first_feasible_eval_count'),
+                          resumability=_resumability(run_dir, summary, facts['point']),
+                          # The run window (frontend RunList.tsx): what a run was, how it ended and how long it took.
+                          task_name=manifest.get('task_name'), stop_reason=status.get('stop_reason'), error=status.get('error'),
+                          max_evaluations=(manifest.get('budgets') or {}).get('max_evaluations'),
+                          # The registered task it ran (real:<name>, ngspice:<name>, as the Task list names it): choosing
+                          # that task shows its newest run (App.tsx, record 7.212).
+                          task_key=(manifest.get('circuit') or {}).get('task_key'),
+                          **lineage(manifest),
+                          **facts['label'], **run_timing(manifest, status))
+            row.cache_key = facts['key']
+            runs.append(row)
+    # Entries of run folders that are gone from this root are let go.
+    for key in [k for k in _RUN_CACHE if k.startswith(str(root) + os.sep) and k not in seen]:
+        _RUN_CACHE.pop(key, None)
     # The name of each run's model, no two alike under this root (record 7.225): the run window and the saved-model
     # cards show it; `renamed` says whether it was given by a rename.
     names = ckpt.unique_model_labels(runs)
@@ -899,12 +973,14 @@ def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True):
 
 def model_label_rows(output_root) -> list[dict]:
     """Every run under an output root (real and mock) with the name of its model, read lean - the manifest and
-    model_label.json only - for the numbering at a start and the taken names at a rename (record 7.225)."""
+    model_label.json only - for the numbering at a start and the taken names at a rename (record 7.225). Through the run
+    cache (record 7.274): a rename or a new run changes its folder, so the cache never holds an old name."""
     rows = []
     for data_root in (Path(output_root), Path(output_root) / 'mock'):
-        for run_dir in find_runs(data_root):
-            manifest = read_json(run_dir / 'run_manifest.json', default=None) or {}
-            rows.append(dict(run_dir=str(run_dir), created_utc=manifest.get('created_utc'), **ckpt.model_label_of(run_dir, manifest)))
+        for run_dir in find_runs(data_root, manifest=False):
+            facts = _run_facts(run_dir)
+            if facts is not None:
+                rows.append(dict(run_dir=str(run_dir), created_utc=facts['manifest'].get('created_utc'), **facts['label']))
     return rows
 
 

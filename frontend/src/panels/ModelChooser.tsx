@@ -1,10 +1,12 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useRequest } from '../store';
 import { api, copy, Json } from '../api';
+import { folderName } from '../format';
 import { childrenOf, ENCODER_SHORT, historyOf, startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
 import { CircuitGraphView } from './CircuitGraphView';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
+import { TableHead, useTableView } from './TableView';
 import { ModelStructure } from './ModelStructure';
 
 /** The saved models of the RL model window (record 7.265; plan "RL model window: the load-model window, renewed"). A saved
@@ -22,15 +24,17 @@ const KIND: Record<string, string> = { periodic: 'automatic save', manual: 'save
   final: 'saved at the end of the run', safety: 'safety save' };
 const when = (utc?: string | null) => { const d = utc ? new Date(utc) : null;
   return d && !Number.isNaN(d.getTime()) ? d.toLocaleString(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'unknown time'; };
-export const netLabel = (n: Json) => n?.encoder_type ? `${n.encoder_type} ${n.hidden_dim}/${n.heads}/${n.layers}${n.structural_encoding && n.structural_encoding !== 'none' ? ` · ${n.structural_encoding}` : ''}` : 'unknown network';
-// The table's short form ("GT 16/2/1", as the model line beside the RL model button writes it): the window has room for it.
-const netShort = (n: Json) => n?.encoder_type ? `${ENCODER_SHORT[n.encoder_type] ?? n.encoder_type} ${n.hidden_dim}/${n.heads}/${n.layers}${n.structural_encoding && n.structural_encoding !== 'none' ? ` · ${n.structural_encoding}` : ''}` : 'unknown network';
+/** A network in one line: "graph_transformer 16/2/1". `short`: the table's form ("GT 16/2/1", as the model line beside the RL
+ *  model button writes it): the window has room for it. */
+export const netLabel = (n: Json, short = false) => n?.encoder_type ? `${short ? ENCODER_SHORT[n.encoder_type] ?? n.encoder_type : n.encoder_type} ${n.hidden_dim}/${n.heads}/${n.layers}${n.structural_encoding && n.structural_encoding !== 'none' ? ` · ${n.structural_encoding}` : ''}` : 'unknown network';
+const netShort = (n: Json) => netLabel(n, true);
 // A name or task key may break after ':' and '_' ("synthetic:" / "gpdk045_" / "ota5"), never inside a word.
 const breakable = (text: string) => text.split(/(?<=[:_])/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>);
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
-const folderName = (dir: string) => dir.split(/[\\/]/).filter(Boolean).pop() ?? dir;
 /** The name a model is listed under. */
 export const modelName = (m: Json): string => m?.model_label ?? m?.task_name ?? m?.task_id ?? folderName(m?.run_dir ?? '');
+/** The name of the model a run folder saved: as the run list names it, or the folder's own name when it is not listed. */
+export const modelNameAt = (runs: Json[], dir: string): string => { const row = runs.find(r => r.run_dir === dir); return row ? modelName(row) : folderName(dir); };
 const trainedOn = (m: Json) => m.run_kind === 'offline_pretraining' ? 'multi-task (offline)' : m.circuit_task ?? m.task_key ?? m.circuit_class ?? 'unknown task';
 const RESTORABLE: Record<string, string> = { full_state: 'full state', weights_only: 'weights only' };
 
@@ -125,38 +129,37 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, from
 export function SavedModels({ source, usable, runs, outputRoot, config, popup, onUse }: {
   source: Json; usable: string | null; runs: Json[]; outputRoot?: string | null; config: Json; popup: Window | null;
   onUse: (run_dir: string, checkpoint_id: string) => void }) {
-  // Read again when the page's run list is read again - which follows a typed output root 0.5 s after the last key -
-  // not at every keystroke (each read lists every run and its save points on the slow D: drive; audit 2026-09-30).
-  const { value: models, error, loading, refresh: load } = useRequest<Json[]>(
-    signal => api.savedModels(outputRoot ?? undefined, signal).then(r => r.models ?? []), [runs], { keepPrevious: true });
+  // Read again when a run of the list changed - came, went, came to rest, or its model was renamed - not at every read of
+  // the run list (each read here walks every run's save points on the slow D: drive; record 7.275). A live run's new
+  // save points show at Refresh list or once it rests. Refresh list reads every run folder anew (`fresh`, record 7.274).
+  const runsKey = useMemo(() => runs.map(r => `${r.run_dir}|${r.state}|${r.ended_utc ?? ''}|${r.model_label ?? ''}`).join('\n'), [runs]);
+  const freshNext = useRef(false);
+  const { value: models, error, loading, refresh: load } = useRequest<Json[]>(signal => {
+    const fresh = freshNext.current;
+    freshNext.current = false;
+    return api.savedModels(outputRoot ?? undefined, signal, fresh).then(r => r.models ?? []);
+  }, [runsKey, outputRoot], { keepPrevious: true });
   const folders = useFolders('models');
   useEffect(() => { void folders.refresh(); }, []);
-  const [filter, setFilter] = useState('');
-  const [sort, setSort] = useState<{ key: string; down: boolean }>({ key: 'saved', down: true });
-  const [selected, setSelected] = useState<string[]>([]);
+  const table = useTableView('saved', true);
+  const { filter, setFilter, selected, setSelected } = table;
   const [open, setOpen] = useState<string | null>(null);              // the model whose Details are open
   const byDir = useMemo(() => new Map(runs.map(r => [r.run_dir, r])), [runs]);
   const list = models ?? [];
-  const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
   const text = (m: Json) => [modelName(m), m.task_name, m.task_id, trainedOn(m), m.circuit_class, netLabel(m.network), netShort(m.network), m.mode, m.state, m.mock ? 'mock' : 'real',
     `seed${m.seed}`, folders.data.folders[folders.of(m.run_dir)]].join(' ').toLowerCase();
-  const column = COLUMNS.find(c => c.key === sort.key) ?? COLUMNS[0];
-  const shown = list.filter(m => folders.holds(m.run_dir) && words.every(w => text(m).includes(w))).sort((a, b) => {
-    const x = column.value(a, byDir), y = column.value(b, byDir);
-    if (x == null || x === '' || y == null || y === '') return (x == null || x === '' ? 1 : 0) - (y == null || y === '' ? 1 : 0);
-    return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * (sort.down ? -1 : 1);
-  });
+  const column = COLUMNS.find(c => c.key === table.sort.key) ?? COLUMNS[0];
+  const shown = table.arrange(list, m => folders.holds(m.run_dir), text, m => column.value(m, byDir));
   const inUse: Json = list.find(m => m.run_dir === source.run_dir) ?? null;
   // A newer save point of the model in use is offered, never followed by itself (the source is pinned).
   const pinned = inUse?.checkpoints?.find((p: Json) => p.checkpoint_id === source.checkpoint_id);
   const newest = inUse?.checkpoints?.find((p: Json) => p.is_latest) ?? inUse?.checkpoints?.[inUse.checkpoints.length - 1];
   const newer = usable && inUse && newest && pinned && newest.checkpoint_id !== pinned.checkpoint_id && (newest.evaluations ?? 0) > (pinned.evaluations ?? 0) ? newest : null;
-  const select = (dir: string, checked: boolean) => setSelected(dirs => checked ? [...dirs.filter(d => d !== dir), dir] : dirs.filter(d => d !== dir));
-  const move = async (id: string) => { if (await folders.move(selected, id)) setSelected([]); };
   const chooseFolder = (id: string) => { folders.setFolder(id); setSelected([]); setOpen(null); };
   const useNewest = (m: Json) => { const p = m.checkpoints?.find((x: Json) => x.is_latest) ?? m.checkpoints?.[m.checkpoints.length - 1]; if (p) onUse(m.run_dir, p.checkpoint_id); };
   return (<div className="saved-models">
-    <div className="row"><button onClick={() => { load(); void folders.refresh(); }} disabled={loading}>Refresh list</button>
+    <div className="row"><button onClick={() => { freshNext.current = true; load(); void folders.refresh(); }} disabled={loading}
+      title="Refresh list: every run folder is read again from the disk.">Refresh list</button>
       <input className="model-filter" placeholder="Filter: name, task, network, mock / real ..." value={filter} onChange={e => { setFilter(e.target.value); setSelected([]); }} />
       <span className="hint model-count">{loading ? 'Reading the saved models...' : models ? `${plural(list.length, 'saved model')} under the output folder` : ''}</span></div>
     {error && <p className="error">The list of saved models could not be read: {error}</p>}
@@ -170,19 +173,15 @@ export function SavedModels({ source, usable, runs, outputRoot, config, popup, o
     {list.length > 0 && <div className="task-browser">
       {popup && <Folders state={folders} keys={list.map(m => m.run_dir)} popup={popup} onSelect={chooseFolder} />}
       <div className="task-folder-content">
-        <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void move(id)} />
+        <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void table.move(folders, id)} />
         <div className="scroll"><table className="grid run-table model-table">
-          <thead><tr><th className="task-select"><input type="checkbox" aria-label="Select all shown models" disabled={folders.busy || !folders.ready || !shown.length}
-              checked={shown.length > 0 && shown.every(m => selected.includes(m.run_dir))} onChange={e => setSelected(e.target.checked ? shown.map(m => m.run_dir) : [])} /></th>
-            {COLUMNS.map(c => <th key={c.key} className="sortable" title={`${c.help} Press to sort.`} aria-sort={sort.key === c.key ? (sort.down ? 'descending' : 'ascending') : undefined}
-              onClick={() => setSort(s => ({ key: c.key, down: s.key === c.key ? !s.down : true }))}>{c.title}{sort.key === c.key && <span className="sort-mark">{sort.down ? '\u00a0▼' : '\u00a0▲'}</span>}</th>)}
-            <th className="plain"></th></tr></thead>
+          <TableHead view={table} columns={COLUMNS} shown={shown} id={m => m.run_dir} what="models" disabled={folders.busy || !folders.ready} />
           <tbody>{shown.map(m => { const used = m.run_dir === source.run_dir, origin = startedFrom(m, byDir); return (<Fragment key={m.run_dir}>
             <tr className={`model-row${used ? ' current' : ''}`} aria-current={used ? 'true' : undefined} title={m.run_dir}
               onDoubleClick={e => { if ((e.target as HTMLElement).closest('button, input, select, label')) return; (popup ?? window).getSelection()?.removeAllRanges();
                 if (usable) useNewest(m); else setOpen(m.run_dir); }}>
               <td className="task-select"><input type="checkbox" aria-label={`Select ${modelName(m)}`} checked={selected.includes(m.run_dir)}
-                disabled={folders.busy || !folders.ready} onChange={e => select(m.run_dir, e.target.checked)} /></td>
+                disabled={folders.busy || !folders.ready} onChange={e => table.select(m.run_dir, e.target.checked)} /></td>
               <td className="wrap-words"><b>{breakable(modelName(m))}</b>{used && <span className="badge model-tag in-use-tag">in use</span>}
                 {folders.folder === 'all' && folders.data.folders[folders.of(m.run_dir)] && <div className="hint task-folder-label">{folders.data.folders[folders.of(m.run_dir)]}</div>}</td>
               <td className="wrap-words">{breakable(trainedOn(m))}</td><td className="model-net" title={netLabel(m.network)}>{netShort(m.network)}</td>

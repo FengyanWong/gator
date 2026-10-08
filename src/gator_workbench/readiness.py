@@ -107,7 +107,7 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
     detail = f"Mode {mode}, budget {budget} evaluation{'' if budget == 1 else 's'}, concurrency {run.get('concurrency', 1)}."
     if starving:
         items.append(_item('run', 'Run configuration', 'warning', 'you', detail + ' ' + say(starving),
-                           'Raise "Max evaluations" or lower batch size / warm-up under "RL network" (Advanced): as set, '
+                           'Raise "Max evaluations" or lower batch size / warm-up under Advanced in the RL model window: as set, '
                            'the run would not learn.'))
     else:
         items.append(_item('run', 'Run configuration', 'done', 'you', detail))

@@ -13,7 +13,7 @@
 // Exit code 1 if any check fails.
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
-import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -56,7 +56,7 @@ await runChecks(browser, async () => {
   const shot = (name, element) => page.shot(path.join(out, name), element);
 
   await page.intercept(['*/api/*'], answer);
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
+  const starter = await mockStarter(APP);
   const SEED = { schema_version: 'gator-workbench-config-v1', ...starter, parameters: FIXTURE.parameters,
     run: { mode: 'scratch', concurrency: 1, threads_per_job: 1, ...starter.run }, output: { experiment_name: 'fixture' }, research: {} };
   await page.seed({ config: SEED, when: 'missing' });

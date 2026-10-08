@@ -1,11 +1,12 @@
 import { SIMPLE_REWARD, useRequest } from '../store';
-import { Fragment, ReactNode, useEffect, useRef, useState } from 'react';
+import { Fragment, memo, ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, ApiError, bytes, copy, Json, num } from '../api';
-import { modelName, SavedModels } from './ModelChooser';
+import { folderName } from '../format';
+import { modelNameAt, SavedModels } from './ModelChooser';
 import { ENCODER_SHORT, pointEvaluations } from '../lineage';
 import { openRunsAt } from '../openAt';
-import { NETWORK_FIELDS, pick, readSavePoint, withSavePoint } from '../savePoint';
+import { LOADS, NETWORK_FIELDS, networkOf, pick, readSavePoint, withSavePoint } from '../savePoint';
 import { ComponentList } from './Pdk';
 import { Typed } from './Typed';
 import { BLOCKED, usePopupWindow } from './popupWindow';
@@ -139,6 +140,10 @@ const MODES: [string, string, string][] = [
   ['frozen', 'Evaluate only', 'a saved model is used as it is, with no learning'],
 ];
 export const MODE_NAME: Record<string, string> = { scratch: 'New model', fine_tune: 'Fine-tune', frozen: 'Evaluate only', resume: 'no Mode chosen' };
+// Where an encoder's settings come from. The backend still calls it `publication`; since record 7.192 it is the network size
+// from publications with every training value of the runs that learned on GATOR circuits (user: "keep this as the starting
+// preset").
+const ORIGIN: Record<string, string> = { publication: 'starting preset', custom: 'edited, saved in the backend' };
 
 /** New model's templates (record 7.265): one row per encoder - its sizes and training values as the backend keeps them (the
  *  starting preset, or values edited and saved there), and how many saved models were made from it. A double click or "Use
@@ -156,7 +161,7 @@ function TemplatesTable({ settings, encoders, current, runs, onUse }: { settings
         <td><b>{s?.label ?? e}</b>{s?.experimental && <span className="hint"> (experimental)</span>}</td>
         <td className="numeric">{n.hidden_dim ?? '?'}/{s?.uses_heads === false ? '–' : n.heads ?? '?'}/{n.layers ?? '?'}{n.structural_encoding && n.structural_encoding !== 'none' ? ` · ${n.structural_encoding}` : ''}</td>
         <td className="numeric">{a.updates_per_transition ?? '?'} updates · alpha {a.initial_alpha ?? '?'} · gamma {a.gamma ?? '?'} · lr {a.learning_rate ?? '?'}</td>
-        <td>{s ? ({ publication: 'starting preset', custom: 'edited, saved in the backend' } as Json)[s.origin] ?? s.origin : 'not read yet'}</td>
+        <td>{s ? ORIGIN[s.origin] ?? s.origin : 'not read yet'}</td>
         <td className="numeric">{made(e)}</td>
         <td>{active ? <b className="ok">in use</b> : <button className="template-use" onClick={() => onUse(e)}
           title={`Use template: the next run's network and training values become the ${s?.label ?? e} template's, as one Undo step.`}>Use template</button>}</td></tr>); })}
@@ -174,7 +179,7 @@ function LookFold({ summary, children }: { summary: ReactNode; children: () => R
  *  network in short. The page adds the task and the budget for the header's "Next" line. */
 export type NextModel = { model: string; network: string };
 
-export function RunPanel({ config, setConfig, runs, circuit, schema, onNext }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json; schema: Json;
+function RunPanelBody({ config, setConfig, runs, circuit, schema, onNext }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json; schema: Json;
   onNext?: (next: NextModel) => void }) {
   // A configuration without a Mode (a task's starter rows, an old file) is New model, as the backend reads it (schema default).
   const run = config.run.mode ? config.run : { ...config.run, mode: 'scratch' };
@@ -193,12 +198,12 @@ export function RunPanel({ config, setConfig, runs, circuit, schema, onNext }: {
   // Only a Mode that loads the model asks about it: a model_source left over from fine_tune is ignored in scratch, and
   // was compiled and checked after every edit there all the same (audit 2026-09-30).
   // A draft that still says resume (record 7.267) has no Mode chosen: it asks about no model either.
-  const modelChecked = (run.mode === 'fine_tune' || run.mode === 'frozen') && !!source.run_dir;
+  const modelChecked = LOADS.includes(run.mode) && !!source.run_dir;
   const { value: fresh, error, loading: modelLoading } = useRequest<Json>(signal => api.model(source.run_dir, source.checkpoint_id ?? 'latest', config, signal),
     [JSON.stringify([config.circuit, config.parameters, config.targets, config.measurements, run.mode, source,
       run.connection_profile_id, run.seed, run.network, run.advanced, run.reward, run.conditions, config.research?.split])],
-    { enabled: modelChecked, delay: 250 });
-  // While the SAME saved model is checked again after an edit (0.25 s and a compile), what is known about it - its facts,
+    { enabled: modelChecked, delay: 500 });     // 0.5 s after the last edit, as validation (record 7.275: at 0.25 s a check - a compile - went at almost every pause in typing)
+  // While the SAME saved model is checked again after an edit (0.5 s and a compile), what is known about it - its facts,
   // network, component list, structure and graph view - stays; only the compatibility verdict waits for the new answer
   // (an old "compatible" is never shown while checking, record 7.96). The whole block used to vanish and come back after
   // every edit, an open compatibility list closed, and an open network structure read the saved tensors again.
@@ -242,7 +247,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema, onNext }: {
     && currentNetwork.current.encoder === name && currentNetwork.current.mode === run.mode
     && (expected === undefined || expected === networkKey(currentNetwork.current.mode, currentNetwork.current.net, currentNetwork.current.adv));
   const entry: Json = netSettings?.settings?.[encoder] ?? null;
-  const offeredEncoders: string[] = netSettings?.encoders ?? ['graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention'];
+  const offeredEncoders: string[] = netSettings?.encoders ?? Object.keys(ENCODER_SHORT);
   const usesHeads: boolean = entry ? !!entry.uses_heads : encoder !== 'rgcn';
   const usesStructure: boolean = entry ? !!entry.supports_structural_encoding : ['graph_gps', 'group_cross_attention'].includes(encoder);
   const remember = (e: Json) => setNetSettings((s: Json) => s && ({ ...s, settings: { ...s.settings, [e.encoder_type]: e } }));
@@ -335,9 +340,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema, onNext }: {
     ...advFields.map(field => ({ field, current: adv[field], saved: entry.advanced[field] })),
   ].filter(row => row.current != null && row.current !== row.saved) : [];
   const differs = settingDifferences.length > 0 && !pending.current;
-  // The backend still calls it `publication`; since record 7.192 it is the network size from publications with every training
-  // value of the runs that learned on GATOR circuits (user: "keep this as the starting preset").
-  const originLabel = entry && ({ publication: 'starting preset', custom: 'edited, saved in the backend' } as Json)[entry.origin];
+  const originLabel = entry && ORIGIN[entry.origin];
   const budget: number = run.max_evaluations;
   // The soft actor-critic values measured on 2026-10-05 (record 7.183; validation.py says the same as a warning): with one
   // update per evaluation the designs stayed a uniform random search for 1,500 evaluations, and a starting temperature of
@@ -353,17 +356,18 @@ export function RunPanel({ config, setConfig, runs, circuit, schema, onNext }: {
   // backend refuses any other network in all three). So there is nothing to set up then: the block for a NEW network
   // is shown in scratch only, and otherwise the configuration takes the network of the chosen model - the act is the
   // choice of that model. Only the network follows; the training numbers under Advanced stay the user's.
-  const loads = run.mode === 'fine_tune' || run.mode === 'frozen';
+  const loads = LOADS.includes(run.mode);
   // No Mode chosen (record 7.267): a draft that still says resume - saved before record 7.265, or imported. The page starts
   // nothing with it (App.tsx) and names the run it continued, which Continue... in the Runs window goes on with.
   const noMode = run.mode === 'resume';
   // The RL model's own label (record 7.159, user: "Give the RL model its own label, independent of the project name"):
   // typed here, else the task's run label. A run that saves a model files it under this name.
   const label: string = (run.model_label ?? '').trim() || config.project.task_name;
+  // Its box, under "Name of the new model" in New model and as "Name of the model it saves" under Fine-tune's settings.
+  const labelInput = <input className="model-label" value={run.model_label ?? ''} placeholder={config.project.task_name} maxLength={80}
+    onChange={e => set({ model_label: e.target.value.trim() ? e.target.value : null })} />;
   const savedModel: Json = loads ? model?.description?.contract?.model_config : null;
-  const savedNet: Json = savedModel?.encoder_type ? { encoder_type: savedModel.encoder_type, ...pick(savedModel, netFields),
-    structural_encoding: savedModel.structural_encoding ?? (savedModel.encoder_type === 'graph_gps' ? 'rwse' : 'none'),
-    operating_points: !!model?.description?.contract?.feature_schema?.op_columns?.length } : null;
+  const savedNet: Json = loads ? networkOf(model?.description, netFields) : null;
   const archDiffers = !!savedNet && Object.keys(savedNet).some(f => savedNet[f] !== (f === 'encoder_type' ? encoder : net[f]));
   const followed = useRef<string | null>(null);
   useEffect(() => {
@@ -397,7 +401,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema, onNext }: {
   // and the model's network and component list come with it, as ONE Undo step (they used to follow later, by themselves).
   const [usingPoint, setUsingPoint] = useState(false);
   // A saved model's name, as the saved models table lists it: from its run's row (the folder's name when the run is not listed).
-  const nameOf = (dir: string) => { const row = runs.find(r => r.run_dir === dir); return row ? modelName(row) : String(dir).split(/[\\/]/).filter(Boolean).pop(); };
+  const nameOf = (dir: string) => modelNameAt(runs, String(dir));
   const useSavePoint = (run_dir: string, checkpoint_id: string) => {
     setUsingPoint(true); setNetMessage(null);
     readSavePoint(run_dir, checkpoint_id, netFields).then(point => {        // savePoint.ts: Load run and New run like this take one the same way
@@ -468,7 +472,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema, onNext }: {
   // Said in Run configuration and in the window, with the run that configuration continued: Continue... is where it goes on.
   const noModeNote = (from: Window | null) => noMode && <p className="warn no-mode">No Mode is chosen: this configuration still says resume, which is
     no longer a choice{source.run_dir ? <> - it continued the run <button className="text-link no-mode-run" onClick={() => openRunsAt({ run_dir: source.run_dir, from })}
-      title="Open the Runs window at that run: Continue... goes on with it in its own folder, and Show results shows it.">{String(source.run_dir).split(/[\\/]/).filter(Boolean).pop()}</button></> : ''}.
+      title="Open the Runs window at that run: Continue... goes on with it in its own folder, and Show results shows it.">{folderName(String(source.run_dir))}</button></> : ''}.
     Choose a Mode {from ? 'above' : 'in RL model...'} for the next run: Start waits until then.</p>;
   return (
     <>
@@ -594,7 +598,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema, onNext }: {
         Updated the restored starting preset’s learning rate from 0.0003 to 0.001. Undo in the main window restores the previous value.</p>}
       {differs && <div className="note network-differences">
         <p className="warn">Current run values differ from the saved {encoder} defaults ({originLabel}).</p>
-        <p className="hint">This run uses the values shown in the controls. Saved defaults are loaded when you choose an encoder; they do not replace an existing configuration on page reload.</p>
+        <p className="hint">This run uses the values shown in the controls. Saved defaults are loaded when you use a template; they do not replace an existing configuration on page reload.</p>
         <table className="grid small" aria-label="Network settings differences"><thead><tr><th>Setting</th><th>This run</th><th>Saved default</th></tr></thead><tbody>
           {settingDifferences.map(row => <tr key={row.field}><td title={row.field}>{NETWORK_SETTING_LABELS[row.field] ?? row.field}</td>
             <td className="numeric">{String(row.current)}</td><td className="numeric">{row.saved == null ? 'Not set' : String(row.saved)}</td></tr>)}
@@ -614,8 +618,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema, onNext }: {
         <p className="hint">{netSettings.scale_note}</p></details>}
       <h3>Name of the new model</h3>
       <label title={`The name this run's RL model is saved under. Empty: the task's run label (${config.project.task_name}). A name a saved model carries already gets a number: ${label} (2), ${label} (3). A saved model can be renamed in its Details below.`}>RL model label
-        <input className="model-label" value={run.model_label ?? ''} placeholder={config.project.task_name} maxLength={80}
-          onChange={e => set({ model_label: e.target.value.trim() ? e.target.value : null })} /></label>
+        {labelInput}</label>
       </>}
       {netMessage && (!netMessage.about || netMessage.about === JSON.stringify([run.mode, source.run_dir, source.checkpoint_id]))
         && <p className={`net-message ${netMessage.level === 'error' ? 'error' : netMessage.level === 'warn' ? 'warn' : 'hint'}`}>{netMessage.text}</p>}
@@ -624,11 +627,11 @@ export function RunPanel({ config, setConfig, runs, circuit, schema, onNext }: {
       {loads && (<>
         <h3>Saved models</h3>
         {/* No model is filled in by itself (record 7.265): the newest one under the RL model label is offered. */}
-        {!source.run_dir && suggested?.run_dir && <p className="note model-suggested">Newest model named <b>{label}</b>: {String(suggested.run_dir).split(/[\\/]/).filter(Boolean).pop()}
+        {!source.run_dir && suggested?.run_dir && <p className="note model-suggested">Newest model named <b>{label}</b>: {folderName(String(suggested.run_dir))}
           {suggested.description?.checkpoint_id ? `, save point ${suggested.description.checkpoint_id}` : ''}. <button className="model-suggested-use" disabled={usingPoint}
             onClick={() => useSavePoint(suggested.run_dir, suggested.description?.checkpoint_id ?? 'latest')}>Use</button></p>}
         {!source.run_dir && <p className="warn model-none-chosen">No saved model is chosen yet: {MODE_NAME[run.mode]} needs one. Use a save point below.</p>}
-        <SavedModels source={source} usable={run.mode === 'fine_tune' || run.mode === 'frozen' ? run.mode : null} runs={runs} outputRoot={config.output?.output_root}
+        <SavedModels source={source} usable={LOADS.includes(run.mode) ? run.mode : null} runs={runs} outputRoot={config.output?.output_root}
           config={config} popup={networkWindow.popup} onUse={useSavePoint} />
         {source.run_dir && <><h3>The model in use</h3>
         {modelLoading && <p className="hint" role="status">Checking model compatibility...</p>}
@@ -666,8 +669,7 @@ export function RunPanel({ config, setConfig, runs, circuit, schema, onNext }: {
           <Check label="Reset critic" value={adv.reset_critic} onChange={v => setAdv({ reset_critic: v })} />
           <Check label="Continual learning (inherit weights fine-tuned on a previous test task)" value={run.continual_learning} onChange={v => set({ continual_learning: v })} />
           <label title={`The name the model this run saves goes by. Empty: the task's run label (${config.project.task_name}); a name taken already gets a number.`}>Name of the model it saves
-            <input className="model-label" value={run.model_label ?? ''} placeholder={config.project.task_name} maxLength={80}
-              onChange={e => set({ model_label: e.target.value.trim() ? e.target.value : null })} /></label></>}
+            {labelInput}</label></>}
         {advanced}
       </>)}
       {run.mode === 'scratch' && <LookFold summary={<summary>Saved models, to look at <span className="hint">- Fine-tune or Evaluate only above uses one</span></summary>}>
@@ -676,6 +678,10 @@ export function RunPanel({ config, setConfig, runs, circuit, schema, onNext }: {
     </>
   );
 }
+
+/** Memoised (record 7.275): its props change with the configuration, the run list and the circuit - not with the status
+ *  polled every 1.5 s while a run works, which drew this whole panel (and the RL model window it holds) at every update. */
+export const RunPanel = memo(RunPanelBody);
 
 export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Json; setConfig: (f: (c: Json) => Json) => void; meta: Json; activeRun: Json }) {
   const out = config.output;

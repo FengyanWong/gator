@@ -10,7 +10,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/mode_suggestion_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { validConfiguration, check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -37,7 +37,7 @@ const DESCRIBED = { description: { checkpoint_id: POINT.checkpoint_id, path: `${
     source_run_id: MODEL.run_id, restoration_capability: 'full_state', suggestion: SUGGESTION }, suggestion: SUGGESTION };
 
 await runChecks(browser, async () => {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
+  const starter = await mockStarter(APP);
   // Mode frozen with that model chosen: the suggestion (fine_tune) differs from the Mode, so it is shown.
   const CONFIG = { ...starter, run: { ...starter.run, mode: 'frozen', network: NET, model_source: { run_dir: RUN_DIR, checkpoint_id: 'latest' } },
     output: { experiment_name: 'fixture' }, research: {} };
@@ -60,7 +60,7 @@ await runChecks(browser, async () => {
   const PARA = `[...(${RIGHT}?.querySelectorAll('p.warn') ?? [])].find(p => p.textContent.startsWith('Suggested:'))`;
   const WORD = `(${PARA})?.querySelector('button')`;
   const USE = `[...document.querySelectorAll('button')].filter(b => b.textContent.trim() === 'Use').length`;
-  // One picture of the Mode list and the sentence under it.
+  // One picture of the Mode buttons and the sentence under it.
   const around = (a, b) => evaluate(`(() => { const r1 = (${a}).getBoundingClientRect(), r2 = (${b}).getBoundingClientRect();
     const x = Math.min(r1.x, r2.x) - 8, y = Math.min(r1.y, r2.y) - 8;
     return { x, y, width: Math.max(r1.right, r2.right) - x + 8, height: Math.max(r1.bottom, r2.bottom) - y + 8, scale: 2 }; })()`);
@@ -99,8 +99,7 @@ await runChecks(browser, async () => {
 
   // ---- the click --------------------------------------------------------------------------------------------------
   const before = (await page.stored())?.run?.mode;
-  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
-  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+  await page.clickAt(at);
   check('a click on the word sets Mode to Fine-tune: the model line says so', before === 'frozen' && await page.until(`(${LINE}).startsWith('Fine-tune ')`, 30), `${before} -> ${await evaluate(LINE)}`);
   check('... and the sentence goes away: the suggestion is the Mode now', await page.until(`!(${PARA})`, 30));
   await page.saved();

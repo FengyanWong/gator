@@ -42,8 +42,14 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+ENV_DEFAULT_OUTPUT_ROOT = 'GATOR_WORKBENCH_DEFAULT_OUTPUT_ROOT'
+
+
 def default_output_root() -> Path:
-    return repo_root() / 'outputs'
+    """The repository's outputs/. GATOR_WORKBENCH_DEFAULT_OUTPUT_ROOT names another folder: the browser checks' scratch
+    backends (run_checks.sh) must not list the user's runs - the page takes over a live one it finds (record 7.276)."""
+    given = os.environ.get(ENV_DEFAULT_OUTPUT_ROOT)
+    return Path(given) if given else repo_root() / 'outputs'
 
 
 ENV_SETTINGS_DIR = 'GATOR_WORKBENCH_SETTINGS_DIR'

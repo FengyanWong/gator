@@ -23,7 +23,7 @@
 import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks, setMode } from './lib/rl_networks.mjs';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { validConfiguration, check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 // Optional: the output folder whose saved models the last section lists (default: the backend's own default root).
@@ -70,7 +70,7 @@ const RUNS = MODELS.map(m => ({ run_dir: m.run_dir, run_id: m.run_id, task_id: m
 const VALID = validConfiguration();
 
 await runChecks(browser, async () => {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
+  const starter = await mockStarter(APP);
   const CONFIG = { ...starter, run: { ...starter.run, mode: 'scratch', network: NET }, output: { experiment_name: 'fixture', ...(ROOT ? { output_root: ROOT } : {}) }, research: {} };
   const page = await browser.open({ consoleApi: false });
   const { send, evaluate, fulfil, consoleErrors } = page;

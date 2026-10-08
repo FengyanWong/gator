@@ -217,8 +217,8 @@ def _check_parameters(config, report, graph, record):
                 report.add('blocker', 'parameter_kind_unsupported', path + '.parameter_name',
                            f'{p.parameter_name!r} is not in the optimizer feature vocabulary '
                            f'{feature_columns}; the graph encoder cannot represent it'
-                           + (f'. The loaded PDK {knowing} knows it: choose the component list "PDK {knowing}" in the '
-                              'RL network block to vary it.' if knowing else ''))
+                           + (f'. The loaded PDK {knowing} knows it: choose the component list "PDK {knowing}" under '
+                              'Components in the RL model window to vary it.' if knowing else ''))
         if p.binding_group == p.variable_id:
             report.add('error', 'self_binding', path + '.binding_group', 'A variable cannot be bound to itself')
         leader_like = not p.binding_group
@@ -553,7 +553,7 @@ def _check_run(config, report, record):
                    f'With {" and ".join(slow)}, soft actor-critic learned late or not at all in GATOR\'s tests of 2026-10-05: '
                    'with 1 update per evaluation the designs stayed a uniform random search for 1,500 evaluations, and a '
                    'starting temperature of 0.2 delayed learning to about evaluation 1,000. The tested values are 8 updates '
-                   'per evaluation, starting temperature 0.01 and discount 0, under Advanced in RL networks.')
+                   'per evaluation, starting temperature 0.01 and discount 0, under Advanced in the RL model window.')
     if run.mode == 'scratch' and run.max_evaluations < SAC_LEARNS_AFTER:
         report.add('warning', 'budget_below_sac_learning', 'run.max_evaluations',
                    f'Soft actor-critic from scratch started to pass designs after about 150 to 300 evaluations with the '
@@ -565,8 +565,9 @@ def _check_run(config, report, record):
         from .pdk import label
         if record is None:
             report.add('blocker', 'pdk_not_loaded', 'run.network.vocabulary',
-                       f'The network is to know the components of PDK {vocabulary[4:]}, but that PDK is not loaded. Load it '
-                       'with "Load PDK..." in the RL network block, or choose the standard list.')
+                       f'The network is to know the components of PDK {vocabulary[4:]}, but that PDK is not loaded. Read it '
+                       'in the Virtuoso window (reading a cell reads its PDK; "PDK window..." reads one by name), or choose '
+                       'the standard list.')
         else:
             report.add('info', 'pdk_vocabulary', 'run.network.vocabulary',
                        f"The network is built with the component list of {label(record['vocabulary'])}. A model trained "

@@ -14,7 +14,7 @@
 //      what became of it and takes the run ("sent a moment ago, whose answer did not arrive, made this run"); exactly one
 //      POST /api/runs/start. Before 7.268 any error answer forgot the id, and "Start" was offered again.
 // Exit code 1 if any check fails.
-import { check, launchEdge, outDir, reportRefused, RUN_KEY, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, reportRefused, RUN_KEY, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 outDir();
@@ -39,7 +39,7 @@ const statusOf = () => ({ state: 'running', run_id: 'fixture-run', mode: 'scratc
     mock_notice: 'FIXTURE MOCK DATA: nothing was started.' } });
 const started = () => ({ run_dir: DIR, run_id: 'fixture-run', mock: true, worker_pid: 1, paths: { run_dir: DIR }, connection_gate: { status: 'not_applicable' },
   mock_notice: 'FIXTURE MOCK DATA: nothing was started.' });
-const validReport = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: true };
+const validReport = validConfiguration({ mock: true });
 
 await runChecks(browser, async () => {
   const CONFIG = await starterConfig(APP);

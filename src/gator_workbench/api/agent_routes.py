@@ -1,4 +1,4 @@
-"""The Agent tab (record 7.226): Claude Code or Codex in a terminal window of its own (agent_cli.py), and the free
+"""The Agent window (record 7.226; a tab until 7.253): Claude Code or Codex in a terminal window of its own (agent_cli.py), and the free
 "What's missing?" checklist (readiness.py)."""
 from __future__ import annotations
 from fastapi import FastAPI

@@ -581,7 +581,7 @@ await runChecks(browser, async () => {
         if (!tr) return null; const el = tr.children[4]; el.scrollIntoView({ block: 'center' }); const b = el.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`);
       if (!at) await sleep(100);
     }
-    if (at) for (const clickCount of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await far.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount });
+    if (at) await far.clickAt(at, { count: 2 });
     await send('Target.closeTarget', { targetId: target.id }); await browser.window('GATOR - runs', { present: false, except: page.target.id }); far.close();
     await press('Training');
     return !!at;

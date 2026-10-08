@@ -17,8 +17,13 @@ import { api, ApiError, Json, plainError } from '../api';
 
 const RUN_KEY = 'gator-workbench-current-run-v1';
 const TERMINAL = ['completed', 'paused', 'stopped', 'cancelled', 'failed'];
-const RESUMABLE = ['paused', 'interrupted'];
+/** A run at rest that can go on: paused, or interrupted (its worker died). */
+export const RESUMABLE = ['paused', 'interrupted'];
+/** A run that ended: it goes on no more. */
+export const ENDED = ['completed', 'stopped', 'cancelled', 'failed'];
 export const LIVE_STATES = ['starting', 'running', 'pausing', 'stopping'];
+/** A run of the run list whose status says it works. */
+export const isLive = (r: Json) => LIVE_STATES.includes(r.state);
 
 type Phase = 'idle' | 'checking' | 'starting' | 'running' | 'pausing' | 'paused' | 'resuming' | 'aborting' | 'finishing';
 type Launch = null | 'start' | 'resume';
@@ -64,11 +69,17 @@ export function useRunControl(viewedStatus: Json, looked: boolean) {
   const gone = useRef(0);
   // Reads of the held run that got no answer at all, in a row (the backend restarting, a read on that drive failing).
   const unanswered = useRef(0);
+  // The last status the page's own poll delivered for the held run (see `fed` below), kept when the page shows another run;
+  // `at` and `ownAt` (this hook's own last answer) say which of the two came later (`arrivals` counts them).
+  const fedLast = useRef<{ value: Json; at: number } | null>(null);
+  const ownAt = useRef(0);
+  const arrivals = useRef(0);
 
   /** Hold another run, or none. Whatever was known belongs to the run held before (or to the time before a launch),
    *  so it is dropped, and an answer that is still on its way for it is ignored when it arrives. */
   const hold = useCallback((next: string | null, launchedAs: Launch) => {
-    gone.current = unanswered.current = 0;
+    gone.current = unanswered.current = ownAt.current = 0;
+    fedLast.current = null;
     current.current = { dir: next, epoch: current.current.epoch + 1 };
     remember(next);
     setDir(next); setStatus(null); setChecked(false); setPending(null); setLaunched(launchedAs); setForced(false);
@@ -86,6 +97,7 @@ export function useRunControl(viewedStatus: Json, looked: boolean) {
     const promise = api.status(asked.dir).then(next => {
       if (current.current !== asked) return;
       gone.current = unanswered.current = 0;
+      ownAt.current = ++arrivals.current;
       accept(next);
       setChecked(true);
     }, e => {
@@ -110,22 +122,29 @@ export function useRunControl(viewedStatus: Json, looked: boolean) {
 
   // Just after a launch only answers asked for AFTER it count: the page's own poll may still deliver "paused, no worker".
   const fed = !!dir && !launched && viewedStatus?.run_dir === dir;
-  const live = pending !== null || launched !== null || !!status?.worker_alive;
+  // The page's poll of the held run is used as it arrives, worked out here (record 7.275): it was copied into this hook's
+  // state by an effect, which drew the whole page a second time at every status update. Of the two answers the later one
+  // counts, as `accept` decides between answers: unless the worker wrote it before the other (by its heartbeat). A status
+  // without a heartbeat (a start that failed) is never the older one.
+  if (fed && viewedStatus && viewedStatus !== fedLast.current?.value) fedLast.current = { value: viewedStatus, at: ++arrivals.current };
+  const fedValue: Json = fedLast.current?.value ?? null;
+  const [early, late] = (fedLast.current?.at ?? 0) > ownAt.current ? [status, fedValue] : [fedValue, status];
+  const seen: Json = !late || (early?.heartbeat_utc && late.heartbeat_utc && late.heartbeat_utc < early.heartbeat_utc) ? early : late;
+  const live = pending !== null || launched !== null || !!seen?.worker_alive;
   useEffect(() => { refresh(); }, [epoch, refresh]);            // once per held run; on page load for the remembered one
-  useEffect(() => { if (fed) { accept(viewedStatus); setChecked(true); } }, [fed, viewedStatus, accept]);
   useRequest(refresh, [dir, epoch], { enabled: !!dir && live && !fed, delay: 1500, pollEvery: 1500 });
   // A request of this page stays "pending" until the run itself shows that it arrived.
   useEffect(() => {
-    if (!status) return;
-    const alive = !!status.worker_alive;
-    if (pending === 'pause' && (!alive || ['pausing', 'paused'].includes(status.state))) setPending(null);
-    if (pending === 'abort' && (!alive || (status.state === 'stopping' && !forced))) setPending(null);
-    if (launched && (!alive || !TERMINAL.includes(status.state))) setLaunched(null);
-  }, [status, pending, launched, forced]);
+    if (!seen) return;
+    const alive = !!seen.worker_alive;
+    if (pending === 'pause' && (!alive || ['pausing', 'paused'].includes(seen.state))) setPending(null);
+    if (pending === 'abort' && (!alive || (seen.state === 'stopping' && !forced))) setPending(null);
+    if (launched && (!alive || !TERMINAL.includes(seen.state))) setLaunched(null);
+  }, [seen, pending, launched, forced]);
 
-  const unknown = !pending && (dir ? !checked && !status && !launched : !looked);
-  const phase: Phase = unknown ? 'checking' : phaseOf(status, pending, launched);
-  return { dir, status, pending, forced, phase, take, release, refresh, setPending, setForced };
+  const unknown = !pending && (dir ? !checked && !seen && !launched : !looked);
+  const phase: Phase = unknown ? 'checking' : phaseOf(seen, pending, launched);
+  return { dir, status: seen, pending, forced, phase, take, release, refresh, setPending, setForced };
 }
 export type RunControl = ReturnType<typeof useRunControl>;
 
@@ -135,7 +154,7 @@ function describe(status: Json, phase: Phase, forced: boolean): string {
   const text = ({ checking: '', starting: 'starting', resuming: 'resuming', running: `running${used(status)}`, pausing: `pausing - ${WAITING}`, finishing: 'finishing',
     aborting: forced ? 'forced abort sent' : `aborting - ${WAITING}`,
     paused: status?.state === 'interrupted' ? `interrupted at${used(status)} (the worker is gone)` : `paused at${used(status)}${status?.stop_reason === 'infrastructure_failures' ? ' (connection failures)' : ''}`,
-    idle: status ? `${status.state}${['completed', 'stopped', 'cancelled', 'failed'].includes(status.state) ? used(status) : ''}` : '' } as Record<Phase, string>)[phase];
+    idle: status ? `${status.state}${ENDED.includes(status.state) ? used(status) : ''}` : '' } as Record<Phase, string>)[phase];
   return text && (status?.mock ?? status?.manifest?.mock) ? `${text} [MOCK]` : text;
 }
 

@@ -65,8 +65,7 @@ await runChecks(browser, async () => {
       links: (${rowOf(file)}).querySelectorAll('a').length, height: (${rowOf(file)}).getBoundingClientRect().height }; })()`);
   const centre = expression => evaluate(`(() => { const r = (${expression}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   const press = async file => { await evaluate(`(${BUTTON(file)}).scrollIntoView({ block: 'center' })`); const c = await centre(BUTTON(file));   // a real click: a download needs the user's gesture
-    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: c.x, y: c.y, button: 'left', clickCount: 1 });
-    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: c.x, y: c.y, button: 'left', clickCount: 1 }); };
+    await page.clickAt(c); };
   const shot = async name => page.shot(path.join(out, name), await evaluate(`(() => { const r = (${TABLE}).closest('.scroll').previousElementSibling.getBoundingClientRect(), t = (${TABLE}).getBoundingClientRect();
     return { x: r.x - 6, y: r.y - 6, width: Math.max(r.width, t.width) + 12, height: t.bottom - r.y + 12, scale: 1.5 }; })()`));
 

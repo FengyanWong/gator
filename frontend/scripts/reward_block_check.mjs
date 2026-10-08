@@ -1,7 +1,7 @@
 // Browser check of the reward as the page states it since record 7.183 (2026-10-05): one sentence for the set of values a
 // new configuration starts with, the controls in a closed "Advanced" fold, a configuration with other values told which and
 // offered the tested set on a button; the soft actor-critic values with which the search stays random named in the RL
-// networks window, and "Use saved defaults" (the starting preset) taking them away; the Specs scale headed "Scale"
+// model window, and "Use saved defaults" (the starting preset) taking them away; the Specs scale headed "Scale"
 // behind "More columns" and suggested as the size of the limit (6 dB for dB).
 // Hermetic: reads go to the scratch backend, every writing request but validation is refused, and a network-settings
 // write is held here (none is expected: there is no GATOR baseline to press since record 7.191).

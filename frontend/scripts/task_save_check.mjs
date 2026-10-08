@@ -17,7 +17,7 @@
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; WSLENV carries the URL into it):
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_save_check.mjs)" [screenshot-dir]
 import path from 'node:path';
-import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, TASK_PANEL, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -133,14 +133,14 @@ await runChecks(browser, async () => {
     dialogs.push({ message: p.message, planned: accept !== null });
     return send('Page.handleJavaScriptDialog', { accept: !!accept });
   });
-  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
+  const PANEL = TASK_PANEL;
   const BLOCK = `document.querySelector('.editors .tabs .task-save')`;          // the bar: right end of the editors' tab line
   const NOTES = `document.querySelector('.editors .task-notes')`;              // its messages and questions, under the toolbar
   const BUTTON = text => `[...(${BLOCK}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const blockText = () => evaluate(`${BLOCK}?.textContent ?? ''`);
   const notesText = () => evaluate(`${NOTES}?.textContent ?? ''`);
   const press = (label, gesture = false) => evaluate(`${BUTTON(label)}.click()`, gesture);
-  const stored = () => evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')`);
+  const stored = page.stored;
   const POPUP = `window.open('', 'gator-task-file')`;                             // the same name returns the open window, unchanged
   const popupEval = body => evaluate(`(() => { const w = ${POPUP}; const d = w.document; ${body} })()`, true);
   const typeInto = async (selector, text) => page.setValue(`${selector}`, text, { event: 'input', userGesture: true });

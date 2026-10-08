@@ -313,9 +313,11 @@ def test_the_run_list_reads_each_status_once_and_the_model_list_no_manifest(two_
     monkeypatch.setattr(layout_module, 'read_json', lambda path, *a, **k: read.append(Path(path).name) or read_json(path, *a, **k))
     monkeypatch.setattr(runs, 'read_json', lambda path, *a, **k: read.append(Path(path).name) or read_json(path, *a, **k))
     monkeypatch.setattr(ckpt, 'read_json', lambda path, *a, **k: read.append(Path(path).name) or read_json(path, *a, **k))
-    listed = runs.list_runs(roots_for(two_runs), two_runs)
+    listed = runs.list_runs(roots_for(two_runs), two_runs, fresh=True)     # read from disk (Refresh list): each file once
     assert read.count('status.json') == 2 and read.count('run_manifest.json') == 2
     read.clear()
+    # Record 7.274: run folders unchanged since the last list are read from its cache - no file at all.
+    assert runs.list_runs(roots_for(two_runs), two_runs) == listed and read == []
     models = ckpt.saved_models(listed)
     assert 'run_manifest.json' not in read
     # rows that lost their manifest (a JSON round trip) are read from disk: the same answer

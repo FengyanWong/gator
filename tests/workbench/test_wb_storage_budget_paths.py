@@ -276,6 +276,14 @@ def test_ledger_state_roundtrip_and_reconcile_never_lowers_counters():
 
 
 # ------------------------------------------------------------------------------- output paths
+def test_the_default_output_root_can_be_another_folder(tmp_path, monkeypatch):
+    """Record 7.276: the browser checks' scratch backends list an empty folder of their own, not the user's runs."""
+    monkeypatch.delenv(paths.ENV_DEFAULT_OUTPUT_ROOT, raising=False)
+    assert paths.default_output_root() == paths.repo_root() / 'outputs'
+    monkeypatch.setenv(paths.ENV_DEFAULT_OUTPUT_ROOT, str(tmp_path))
+    assert paths.default_output_root() == tmp_path and paths.OutputRoots().roots[0] == tmp_path.resolve()
+
+
 def test_only_operator_allowed_roots_are_usable(tmp_path):
     allowed, outside = tmp_path / 'allowed', tmp_path / 'outside'
     allowed.mkdir(); outside.mkdir()

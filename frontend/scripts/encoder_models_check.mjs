@@ -1,13 +1,13 @@
 // Real saved MOCK models on an isolated backend: architecture restoration, structure and attention inspection.
 // Requires GATOR_WORKBENCH_URL and GATOR_WORKBENCH_OUTPUT_ROOT pointing to scratch fixtures with both new encoders.
 import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
-import { check, launchEdge, runChecks, workbenchUrl, reportRefused, NEVER_ASKED_OR_SAVED } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, NEVER_ASKED_OR_SAVED, reportRefused, runChecks, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const ROOT = process.env.GATOR_WORKBENCH_OUTPUT_ROOT;
 if (!process.env.GATOR_WORKBENCH_URL || new URL(APP).port === '8765' || !ROOT) throw new Error('Use a scratch backend and output root.');
 const { models } = await (await fetch(new URL(`api/runs/models?output_root=${encodeURIComponent(ROOT)}`, APP))).json();
-const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
+const starter = await mockStarter(APP);
 const browser = await launchEdge('encoder-models');
 
 await runChecks(browser, async () => {

@@ -115,16 +115,12 @@ await runChecks(browser, async () => {
 
   // ---- the window: a second page, found by its title, with a DevTools session of its own ---------------------------
   const windowTarget = present => browser.window('GATOR - connection', { present, except: page.target.id });
-  const attachTo = target => browser.attach(target, { errors: consoleErrors, prefix: 'window: ' });
   const BUTTON = `document.querySelector('header button.connection-button')`;
   const WINDOW = `document.querySelector('.connection-window')`;
   let far = null, farPage = null;
   const openWindow = async () => {
-    await evaluate(`${BUTTON}.click()`, true);
-    farPage = await windowTarget(true);
-    far = await attachTo(farPage);
-    await far.send('Emulation.setDeviceMetricsOverride', { width: 660, height: 920, deviceScaleFactor: 1, mobile: false });   // a headless popup ignores the requested size
-    for (let i = 0; i < 50 && !(await far.evaluate(`!!(${WINDOW})`)); i++) await sleep(100);
+    far = await browser.popup(page, BUTTON, 'GATOR - connection', { width: 660, height: 920, ready: WINDOW });
+    farPage = far.target;
     await sleep(400);
   };
   const text = () => far.evaluate(`${WINDOW}.innerText`);

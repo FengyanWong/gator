@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, OLDER_BACKEND, plainError, readWithDeadline, si } from '../api';
+import { runName } from '../format';
 import { useLook } from '../theme';
 import { unitLabel } from '../units';
 import { Icon } from './Icons';
@@ -70,7 +71,6 @@ const runChoice = (r: Json) => `${created(r.created_utc)} | ${taskOf(r)} | ${r.m
 
 const POLL_MS = 2000, RETRY_MS = 5000, FRAME_MS = 1000;
 const NONE: View = { mode: 'all' };
-const runName = (runDir: string) => runDir.split(/[\\/]/).filter(Boolean).pop() ?? 'run';
 const clock = (seconds: number) => new Date(seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 // a unit that is a quantity gets its SI prefix (si in api.ts); a count, a share or a normalized number is a plain number
 const PLAIN = new Set(['', 'share', 'normalized', 'nats']);

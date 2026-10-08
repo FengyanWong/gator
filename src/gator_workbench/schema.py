@@ -313,7 +313,7 @@ class NetworkConfig(_Model):
     vocabulary: str = Field(STANDARD_VOCABULARY, max_length=80, pattern=r'^(standard|pdk:[A-Za-z_][A-Za-z0-9_.\-]{0,63})$',
         description='Which components the network knows. standard: the 8 generic kinds (MOS, R, C, L, sources) every '
                     'model saved before 2026-09-21 was trained with; other parts are "unknown". pdk:<technology '
-                    'library>: every component of that PDK, loaded with "Load PDK..." (gator_workbench.pdk). A model '
+                    'library>: every component of that PDK, read with a cell or with "PDK window..." (gator_workbench.pdk). A model '
                     'trained with one list loads only with the same list.')
 
     @model_validator(mode='after')

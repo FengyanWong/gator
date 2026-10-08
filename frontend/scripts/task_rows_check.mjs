@@ -16,7 +16,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_rows_check.mjs)" [--live] [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { answerDialogs, validConfiguration, check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, taskWindow, workbenchUrl } from './lib/harness.mjs';
+import { answerDialogs, check, launchEdge, mockStarter, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, TASK_PANEL, taskWindow, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 import { NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 
 const LIVE = process.argv.includes('--live');                 // reads go to the backend; writing requests are refused either way
@@ -92,7 +92,7 @@ await runChecks(browser, async () => {
     return page.readOrRefuse(params, refused);
   };
   const until = (expression, tries = 100) => page.until(expression, tries);
-  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
+  const PANEL = TASK_PANEL;
   const FIELD = label => `[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)}).querySelector('input, select')`;
   const BUTTON = (scope, text) => `[...${scope}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const EDITORS = `document.querySelector('.editors')`;
@@ -120,7 +120,7 @@ await runChecks(browser, async () => {
 
   await page.intercept(['*/api/*'], answer);
   // The page opens as the user's did: on the MOCK task, with the rows "Load task" had given it.
-  const mock = LIVE ? await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json() : MOCK;
+  const mock = LIVE ? await mockStarter(APP) : MOCK;
   const SEED = { schema_version: 'gator-workbench-config-v1', ...mock, run: { mode: 'scratch', concurrency: 1, threads_per_job: 1, ...mock.run }, output: { experiment_name: 'fixture' }, research: {} };
   await page.seed({ config: SEED, when: 'missing' });
   await page.trackSaves();                                  // the page saves 800 ms after the last change: read it with saved()

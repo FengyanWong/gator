@@ -21,9 +21,11 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from functools import lru_cache
+import os
 from pathlib import Path
 import re
 import shutil
+import stat
 from uuid import uuid4
 
 from . import CHECKPOINT_METADATA_VERSION
@@ -264,6 +266,40 @@ def resolve_checkpoint(run_dir, checkpoint_id='latest') -> Path:
     return directory
 
 
+_ABSENT = object()
+
+
+def latest_point(run_dir) -> tuple[str | None, str | None]:
+    """``(name, code_sha256)`` of a run's latest save point as its folder holds it now, or ``(None, None)``; the digest is
+    None when metadata.json does not say it. For the run list and the polled status (record 7.274): resolve_checkpoint
+    resolves two paths per call - about 20 lookups on the 9p-mounted D: drive - where the pointer only has to name a
+    plain sub-folder (no '/', '.' or '..') that is a real folder holding metadata.json. One read of the pointer gives
+    both answers. Loading a model still goes through resolve_checkpoint."""
+    root = Path(run_dir) / 'checkpoints'
+    try:
+        pointer = read_json(root / 'latest.json', default={})
+    except (OSError, ValueError):
+        return None, None
+    target = pointer.get('checkpoint_id') if isinstance(pointer, dict) else None
+    if not isinstance(target, str) or target in ('', '.', '..') or '/' in target or '\\' in target or '\x00' in target:
+        return None, None
+    directory = root / target
+    try:
+        if not stat.S_ISDIR(os.lstat(directory).st_mode):
+            return None, None
+        meta = read_json(directory / 'metadata.json', default=_ABSENT)   # one attempt: read_json retries a missing file
+    except ValueError:
+        return target, None                          # there, but unreadable: a save point, of no known code
+    except OSError:
+        return None, None
+    if meta is _ABSENT:
+        return None, None
+    try:
+        return target, meta['contract']['code_sha256']
+    except (KeyError, TypeError):
+        return target, None
+
+
 def read_metadata(directory) -> dict:
     return read_json(Path(directory) / 'metadata.json')
 
@@ -420,13 +456,15 @@ def list_checkpoints(run_dir) -> dict:
                 checkpoints=points)
 
 
-def saved_models(run_entries) -> list[dict]:
+def saved_models(run_entries, read_listing=None) -> list[dict]:
     """The model chooser's list: every listed run that holds at least one complete save point, most
     recently saved first. ``run_entries`` are the rows of ``runs.list_runs``. A run without a save
-    point has no model to load, so it is left out instead of failing when it is selected."""
+    point has no model to load, so it is left out instead of failing when it is selected.
+    ``read_listing(row)``: how one row's save points are read - default list_checkpoints; runs.checkpoint_listing
+    reuses the run list's cache (record 7.274). Its answer is not changed here."""
     models = []
     for entry in run_entries:
-        listing = list_checkpoints(entry['run_dir'])
+        listing = dict(read_listing(entry) if read_listing else list_checkpoints(entry['run_dir']))
         # An LLM-only run's saves (a search method removed on 2026-10-06) hold no RL model.
         listing['checkpoints'] = [p for p in listing['checkpoints'] if p['restoration_capability'] != 'search_state']
         if not listing['checkpoints']:

@@ -15,7 +15,7 @@ from ..validation import validate
 
 def compatibility_unchecked(exc) -> dict:
     """The configuration on the page does not compile, so a saved model cannot be compared with it YET. Said in plain
-    words for the "RL model to load" block; the developer text stays available under "Technical details"."""
+    words for the saved model's check in the RL model window; the developer text stays available under "Technical details"."""
     import re
     text = str(exc)
     row = re.fullmatch(r'(.+): bounds are required', text)

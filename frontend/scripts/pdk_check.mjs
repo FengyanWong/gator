@@ -1,4 +1,4 @@
-// Browser check of "Load PDK" and the network's component list (Pdk.tsx, RL network block of "Run configuration";
+// Browser check of "Load PDK" and the network's component list (Pdk.tsx, the RL model window;
 // user request 2026-09-21: "make the optimizer understand all the components in one provided PDK ... add load PDK in the
 // frontend"). It uses the shared harness (lib/harness.mjs, as every other check since the review of 2026-09-22): a
 // throwaway headless Edge over the DevTools protocol against the RUNNING workbench (default http://127.0.0.1:8765/).
@@ -8,7 +8,7 @@
 // refused here: the check is hermetic and safe against the live backend. The browser profile is new and temporary, so
 // the user's saved configuration is not touched.
 // What it pins:
-//   - the RL network block has a "Components" list (standard first) and a plain line saying what the chosen list knows;
+//   - the RL model window has a "Components" list (standard first) and a plain line saying what the chosen list knows;
 //     no load button there since 2026-09-27: the PDK is read with the cell in the Virtuoso window, whose "PDK window..."
 //     button (beside Refresh) opens the PDK window;
 //   - choosing a loaded PDK writes run.network.vocabulary; the standard list is written as NO field (old servers accept
@@ -27,7 +27,7 @@
 // Exit code 1 if any check fails.
 import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 import path from 'node:path';
-import { validConfiguration, check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, outDir, runChecks, sleep, TASK_PANEL, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -69,7 +69,7 @@ const STANDARD = { vocabulary: 'standard', label: 'standard (8 generic kinds)', 
 const VALID = validConfiguration();
 
 await runChecks(browser, async () => {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
+  const starter = await mockStarter(APP);
   const stored = await (await fetch(new URL('api/network-settings', APP))).json();
   const net = { encoder_type: stored.default_encoder, ...stored.settings[stored.default_encoder].network };
   const CONFIG = { ...starter, run: { ...starter.run, mode: 'scratch', connection_profile_id: 'fixture-link', network: net,
@@ -120,7 +120,7 @@ await runChecks(browser, async () => {
   if (!(await until(`!!(${LIST})`, 50))) throw new Error('no component list: the served frontend is older than this change (build it, then reload)');
   await until(`${SELECT}.options.length > 1`, 50);
 
-  // ---- the line in the RL network block ---------------------------------------------------------------------------------
+  // ---- the line in the RL model window ----------------------------------------------------------------------------------
   const line = await evaluate(`(() => { const l = ${LIST}, s = l.querySelector('select'), b = l.querySelector('button.pdk-open'), r = l.querySelector('.component-row');
     return { label: r.querySelector('label').firstChild.textContent.trim(), value: s.value, options: [...s.options].map(o => [o.value, o.textContent]), button: b?.textContent,
       sameRow: !!b && b.parentElement === r, what: l.querySelector('.component-what')?.textContent ?? '', helpFolded: !l.querySelector('details.component-help').open,
@@ -160,7 +160,7 @@ await runChecks(browser, async () => {
   // read with the cell there). The Virtuoso window itself opens from the Project column's "Virtuoso cell..." button; its
   // libraries listing is answered with none, so nothing reaches Virtuoso. The click happens IN the Virtuoso window, which
   // is what lets the browser open a second pop-up (popupWindow.ts, `open(from)`).
-  const LAUNCH = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))?.querySelector('button.virtuoso-button')`;
+  const LAUNCH = `${TASK_PANEL}?.querySelector('button.virtuoso-button')`;
   let virtuoso = null;
   const openPdkWindow = async except => {
     if (!virtuoso) {
@@ -236,7 +236,7 @@ await runChecks(browser, async () => {
   check('a PDK answered without ideal parts (an older server, a PDK loaded before) says that they were not read', /not read with this PDK/.test(older.none ?? '') && !older.head
     && JSON.stringify(older.counts) === '["3","not read"]', JSON.stringify(older));
   await until(`[...${SELECT}.options].some(o => o.value === 'pdk:fixload')`, 30);
-  check('the newly loaded PDK can be chosen in the RL network block at once', await evaluate(`[...${SELECT}.options].some(o => o.value === 'pdk:fixload')`));
+  check('the newly loaded PDK can be chosen in the RL model window at once', await evaluate(`[...${SELECT}.options].some(o => o.value === 'pdk:fixload')`));
   await sleep(300);
   {                                              // the templates table down to the component list, in a tall viewport
     await networkPage.viewport(1100, 2600); await sleep(300);

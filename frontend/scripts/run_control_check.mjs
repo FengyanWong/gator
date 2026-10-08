@@ -19,7 +19,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, outDir, reportRefused, RUN_KEY, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, reportRefused, RUN_KEY, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -59,7 +59,7 @@ const otherStatus = () => ({ state: 'paused', run_id: 'fixture-run-2', mode: 'sc
   best_design: null, persistence: null, last_checkpoint_utc: null, paths: { run_dir: OTHER }, connection: { overall: 'not_applicable' }, summary: null,
   save_point: 'ckpt-000007', save_point_code: otherOlder ? 'older' : 'current',
   manifest: { mode: 'scratch', mock: true, task_id: 'fixture_task:0000', seeds: { target_seed: 1 }, source_model: null, budgets: { max_evaluations: 60 }, mock_notice: 'FIXTURE MOCK DATA: nothing was started.' } });
-const validReport = { blocks_run: false, counts: {}, facts: { circuit_checked: false }, issues: [], config_hash: 'fixture', task_definition_hash: 'fixture', circuit_blocker: null, mock: true };
+const validReport = validConfiguration({ mock: true });
 // Record 7.261: the backend's continuation check (GET /api/runs/continuation) - every run can go on, but OTHER once its save
 // point is from older optimizer code, in the backend's words, with the new run that still goes on from it - and what became
 // of a launch sent before a reload (GET /api/runs/request), answered from `requestAnswer`.

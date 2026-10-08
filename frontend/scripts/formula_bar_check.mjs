@@ -36,7 +36,7 @@ await runChecks(browser, async () => {
   // a cell chosen as a person does: a click on it
   const click = async expression => {
     const r = await evaluate(`(() => { const e = ${expression}; e.scrollIntoView({ block: 'center' }); const b = e.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
-    for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: r.x, y: r.y, button: 'left', clickCount: 1 });
+    await page.clickAt(r);
     await sleep(200);
   };
   const stored = expression => `(c => ${expression})(JSON.parse(localStorage.getItem('gator-workbench-config-v1')))`;

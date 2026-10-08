@@ -56,7 +56,7 @@ await runChecks(browser, async () => {
   // a cell chosen as a person does (a click), with nothing chosen inside its text
   const choose = async expression => {
     const r = await evaluate(`(() => { const e = ${expression}; e.scrollIntoView({ block: 'center' }); const b = e.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
-    for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: r.x, y: r.y, button: 'left', clickCount: 1 });
+    await page.clickAt(r);
     await sleep(150);
     await evaluate(`(() => { const e = document.activeElement; if (e instanceof HTMLInputElement && e.type !== 'checkbox') e.setSelectionRange(0, 0); })()`);
   };

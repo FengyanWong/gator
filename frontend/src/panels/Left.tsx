@@ -1,8 +1,8 @@
 import { migrateConfig, noteRowsFrom, useAsyncAction, useRequest } from '../store';
 import { CircuitDetails, gateText, namedTestbench, NativeSchematic, useVirtuosoBrowser } from './CircuitBrowser';
-import { MutableRefObject, useEffect, useRef, useState } from 'react';
+import { memo, MutableRefObject, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, connectionProfilesShared, Json, problemText } from '../api';
+import { api, connectionProfilesShared, Json, problemText, tasksShared } from '../api';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { PdkWindowButton, pdksChanged } from './Pdk';
 import { WorkingCopy } from './WorkingCopy';
@@ -91,7 +91,7 @@ function TitleFacts({ config, revision }: { config: Json; revision: number | str
 export type TaskLoaded = { loaded: true } | { loaded: false; why: string };
 export type TaskLoad = (taskId: string, change?: (c: Json) => Json, stale?: () => boolean) => Promise<TaskLoaded>;
 
-export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId, taskSlot, taskNotes, titleSlot = null, taskEpoch = 0, runs = [], refreshRuns, taskLoad }:
+function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, taskSlot, taskNotes, titleSlot = null, taskEpoch = 0, runs = [], refreshRuns, taskLoad }:
   { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null;
     taskSlot: HTMLElement | null; taskNotes: HTMLElement | null;
     titleSlot?: HTMLElement | null; taskEpoch?: number; runs?: Json[]; refreshRuns?: () => Promise<Json[]>; taskLoad?: MutableRefObject<TaskLoad | null> }) {
@@ -117,7 +117,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   const { popup, root, blocked, open: openWindow } = usePopupWindow('gator-virtuoso',
     { title: 'GATOR - Virtuoso cell', features: 'popup,width=720,height=980', rootId: 'virtuoso-root' });
 
-  useEffect(() => { api.tasks().then(t => setTasks(t.tasks)).catch(e => setError(e.message)); }, []);
+  useEffect(() => { tasksShared().then(t => setTasks(t.tasks)).catch(e => setError(e.message)); }, []);
   // follow: 'choice' (a library / cell / testbench was chosen) or 'press' (the cell was read): a Virtuoso draft that loads
   // then brings the Probes of the testbench it was read through (followTestbench).
   const load = async (reference: Json, follow: 'choice' | 'press' | null = null) => {
@@ -159,7 +159,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   // first save the column switches to the task; after saving the open task again it is loaded again (its baseline may no
   // longer hold).
   const [saved, setSaved] = useState<Json>(null);          // the last first save: said again once the task is open
-  const refreshTasks = () => api.tasks().then(t => setTasks(t.tasks)).catch(() => undefined);
+  const refreshTasks = () => tasksShared(true).then(t => setTasks(t.tasks)).catch(() => undefined);   // after a save or a delete: anew
   const taskSaved = (made: Json, sentConfig: Json) => {
     if (latest.current.circuit !== sentConfig.circuit) return;
     setDeleted(null); setSaved(made.created ? made : null);
@@ -241,7 +241,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       + 'but a paused one can no longer be resumed. Its deck and task file are kept aside on the backend machine.')) return;
     profileAction('delete', async () => {
       const gone = await api.ngspiceDelete(ngspiceTask!);
-      const left = await api.tasks().then(t => { setTasks(t.tasks); return t.tasks; }).catch(() => [] as Json[]);
+      const left = await tasksShared(true).then(t => { setTasks(t.tasks); return t.tasks; }).catch(() => [] as Json[]);
       setProfileMessage({ level: 'ok', what: 'delete', text: `Task ${gone.deleted} deleted; its files are kept in ${gone.kept_copy}.` });
       const next = left.find((t: Json) => t.task_key !== gone.deleted);
       if (next) chooseTask(next.task_key);
@@ -262,7 +262,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     setImporting(true); setNativeError(null);
     try {
       const answer = await api.nativeImport(profileId!, ref.library, ref.cell, ref.testbench_cell ?? null, declare);
-      if (answer?.pdk?.state === 'read') pdksChanged();  // the Components list in the RL network block shows it at once
+      if (answer?.pdk?.state === 'read') pdksChanged();  // the Components list in the RL model window shows it at once
       // The selects are locked while a cell is read; should the page follow another cell anyway, its own load shows it. A
       // registered task chosen meanwhile keeps the last cell's fields: the draft's load outbid the task's, and could
       // exchange its Probes (review of 2026-10-01).
@@ -400,7 +400,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
   const column = (
     <section className="panel">
       {/* No Project name box (record 7.159, user: "remove the project name box in the Project module"): the name only filed
-          the last run, which the RL model's own label in Run configuration does now. */}
+          the last run, which the RL model's own label in the RL model window does now. */}
       <h3>Registered task</h3>
       {!offered && <div className="note"><p>This configuration was saved with a Spectre netlist file{ref.netlist_path ? <> (<code>{ref.netlist_path}</code>)</> : null}.
         The workbench no longer imports netlists: choose a task below, or a Virtuoso cell in its window.</p></div>}
@@ -408,7 +408,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       <div className="row task-row" title="The circuit the editors and a run are about. A cell read from Virtuoso becomes one of these with Save as.">
         <span className="task-caption">Task</span>
         <TaskListButton tasks={tasks} runs={runs} ngspiceOffered={showNgspice} loading={taskLoading} onChoose={key => chooseTask(key)}
-          onRefresh={() => api.tasks().then(t => { setTasks(t.tasks); return t.tasks; })} onRefreshRuns={refreshRuns}
+          onRefresh={() => tasksShared(true).then(t => { setTasks(t.tasks); return t.tasks; })} onRefreshRuns={refreshRuns}
           current={ref.source === 'registered_task' && ref.task_id && !removedMock ? ref.task_id : null}
           currentMark={ref.source === 'registered_task' && ref.task_id && !removedMock ? taskMark(tasks.find(t => t.task_key === ref.task_id) ?? { kind: 'real', available: true }, showNgspice) : undefined}
           onDelete={ref.source === 'registered_task' && ref.task_id && !removedMock && (deletableName || ngspiceTask) ? (ngspiceTask ? deleteNgspice : deleteProfile) : undefined}
@@ -558,7 +558,7 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
       </div>
       {pdkStep && <p className={`pdk-step ${pdkStep.state === 'read' ? 'hint' : 'warn'}`}>{pdkStep.state === 'read'
         ? <>PDK <b>{pdkStep.pdk_id}</b> read with the cell: {pdkStep.summary?.devices} components (version {String(pdkStep.sha256 ?? '').slice(0, 8)}){pdkStep.ideal_parts?.summary
-            ? ` and ${pdkStep.ideal_parts.summary.recognized} ideal parts of ${pdkStep.ideal_parts.library}` : pdkStep.ideal_parts?.error ? `; the ideal parts of ${pdkStep.ideal_parts.library} were not read (${pdkStep.ideal_parts.error})` : ''}. To build the network with it, choose it under Components in the RL network block.</>
+            ? ` and ${pdkStep.ideal_parts.summary.recognized} ideal parts of ${pdkStep.ideal_parts.library}` : pdkStep.ideal_parts?.error ? `; the ideal parts of ${pdkStep.ideal_parts.library} were not read (${pdkStep.ideal_parts.error})` : ''}. To build the network with it, choose it under Components in the RL model window.</>
         : pdkStep.state === 'not_read' ? <>The cell was read; its PDK <b>{pdkStep.technology_library}</b> was not: {pdkStep.reason} "PDK window..." reads it by name.</>
         : <>No PDK read with the cell: {pdkStep.reason}</>}</p>}
       {cells?.truncated && <p className="hint">Only the first {cells.cells.length} cells are listed.</p>}
@@ -648,3 +648,8 @@ export function CircuitPanel({ config, setConfig, circuit, setCircuit, profileId
     revision={ref.source === 'registered_task' ? tasks.find(t => t.task_key === ref.task_id)?.revision ?? null : null} />, titleSlot);
   return <>{column}{firstSave}{titleFacts}{popup && root && createPortal(view, root)}</>;
 }
+
+/** Memoised (record 7.275): its props change with the configuration, the circuit, the run list and the task - not with
+ *  the status polled every 1.5 s while a run works, which drew the whole column (and the windows it holds) at every update.
+ *  App.tsx hands it a stable `refreshRuns` for that. */
+export const CircuitPanel = memo(CircuitPanelBody);

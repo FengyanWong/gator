@@ -2,7 +2,9 @@ import { Fragment, MouseEvent, ReactNode, useEffect, useRef, useState } from 're
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { api, Json, si } from '../api';
+import { clock, stamp } from '../format';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
+import { TableHead, useTableView } from './TableView';
 import { Icon } from './Icons';
 import { OPEN_TASKS, openRunsAt, TasksAt } from '../openAt';
 
@@ -19,12 +21,6 @@ import { OPEN_TASKS, openRunsAt, TasksAt } from '../openAt';
  *  the run list again too; otherwise the run columns show the page's own run list, read when the page opened and after
  *  every task choice, record 7.212); a task's rows when its details are opened. The window prints when it last read. */
 
-const two = (n: number) => String(n).padStart(2, '0');
-/** Local time, as the run window prints it (RunList.tsx has the same two lines; a shared module is the next tidy-up). */
-const stamp = (utc?: string | null) => {
-  const d = utc ? new Date(utc) : null;
-  return d && !Number.isNaN(d.getTime()) ? `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}` : null;
-};
 /** Display only: saved task keys keep their namespace for selection and run/model links. */
 const taskName = (key: string) => key.replace(/^real:/, '');
 /** The mark the old list put after a task's name: what keeps it from running right now. */
@@ -104,17 +100,12 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   const [readAt, setReadAt] = useState<string | null>(null);
   const [tasksError, setTasksError] = useState<string | null>(null);
   const known = runs.some(r => 'task_key' in r);                  // an older workbench server lists runs without their task
-  const [filter, setFilter] = useState('');
-  const [sort, setSort] = useState<{ key: string; down: boolean }>({ key: 'task', down: false });
+  const table = useTableView('task', false);
+  const { filter, setFilter, selected, setSelected } = table;
   const [open, setOpen] = useState<string | null>(null);          // the task whose details are shown
   const [rows, setRows] = useState<{ key: string; value?: Json; error?: string } | null>(null);
   const folders = useFolders('tasks');
-  const [selected, setSelected] = useState<string[]>([]);
   const chooseFolder = (id: string) => { folders.setFolder(id); setSelected([]); setOpen(null); };
-  const select = (key: string, checked: boolean) => setSelected(keys => checked ? [...keys.filter(k => k !== key), key] : keys.filter(k => k !== key));
-  const move = async (id: string) => {
-    if (await folders.move(selected, id)) setSelected([]);
-  };
 
   const readRows = (key: string) => { setRows({ key }); api.starter(key).then(value => setRows(r => (r?.key === key ? { key, value } : r)), e => setRows(r => (r?.key === key ? { key, error: e.message } : r))); };
   // The tasks are read through the column (so it shows the same list); "Refresh list" reads the page's run list again too.
@@ -123,7 +114,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
     setSelected([]);
     void folders.refresh();
     Promise.all([onRefresh().then(() => setTasksError(null), e => setTasksError(e.message)), alsoRuns && onRefreshRuns ? onRefreshRuns().catch(() => undefined) : null])
-      .finally(() => { setReading(false); setReadAt(new Date().toLocaleTimeString([], { hour12: false })); });
+      .finally(() => { setReading(false); setReadAt(clock()); });
     if (open) readRows(open);
   };
   useEffect(() => { if (popup) refresh(false); }, [popup]);       // pressing the button is the request to see the current task list
@@ -157,15 +148,10 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
     onChoose(key);
   };
 
-  const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
   const text = (t: Json) => [t.task_key, folders.data.folders[folders.of(t.task_key)], taskMark(t, ngspiceOffered), t.circuit_class, t.pdk_id, cellOf(t), t.testbench, t.description, t.title, stamp(t.saved_utc)].join(' ').toLowerCase();
-  const column = COLUMNS.find(c => c.key === sort.key) ?? COLUMNS[0];
-  // Empty cells stay at the bottom whichever way the column is sorted. Only while the window is open.
-  const shown = !popup ? [] : tasks.filter(t => folders.holds(t.task_key) && words.every(w => text(t).includes(w))).sort((a, b) => {
-    const x = column.value(a, runs), y = column.value(b, runs);
-    if (x == null || x === '' || y == null || y === '') return (x == null || x === '' ? 1 : 0) - (y == null || y === '' ? 1 : 0);
-    return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * (sort.down ? -1 : 1);
-  });
+  const column = COLUMNS.find(c => c.key === table.sort.key) ?? COLUMNS[0];
+  // Only while the window is open.
+  const shown = !popup ? [] : table.arrange(tasks, t => folders.holds(t.task_key), text, t => column.value(t, runs));
 
   const view = popup && root && (
     <div className="run-window task-window">
@@ -194,20 +180,13 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
       <div className="task-browser">
       <Folders state={folders} keys={tasks.map(t => t.task_key)} popup={popup} onSelect={chooseFolder} />
       <div className="task-folder-content">
-      <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void move(id)} />
+      <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void table.move(folders, id)} />
       {tasks.length > 0 && <div className="scroll"><table className="grid run-table task-table">
-        <thead><tr>
-          <th className="task-select"><input type="checkbox" aria-label="Select all shown tasks" disabled={folders.busy || !folders.ready || !shown.length}
-            checked={shown.length > 0 && shown.every(t => selected.includes(t.task_key))}
-            ref={input => { if (input) input.indeterminate = selected.length > 0 && !shown.every(t => selected.includes(t.task_key)); }}
-            onChange={e => setSelected(e.target.checked ? shown.map(t => t.task_key) : [])} /></th>
-          {COLUMNS.map(c => <th key={c.key} className="sortable" title={`${c.help} Press to sort.`} aria-sort={sort.key === c.key ? (sort.down ? 'descending' : 'ascending') : undefined}
-            onClick={() => setSort(s => ({ key: c.key, down: s.key === c.key ? !s.down : false }))}>{c.title}{sort.key === c.key && <span className="sort-mark">{sort.down ? ' ▼' : ' ▲'}</span>}</th>)}
-          <th className="plain"></th></tr></thead>
+        <TableHead view={table} columns={COLUMNS} shown={shown} id={t => t.task_key} what="tasks" disabled={folders.busy || !folders.ready} />
         <tbody>{shown.map(t => { const active = t.task_key === current, mark = taskMark(t, ngspiceOffered), of = runsOf(runs, t.task_key); return (<Fragment key={t.task_key}>
           <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} data-task-key={t.task_key} title={taskName(t.task_key)} onDoubleClick={e => chooseRow(e, t.task_key)}>
             <td className="task-select"><input type="checkbox" aria-label={`Select ${taskName(t.task_key)}`} checked={selected.includes(t.task_key)}
-              disabled={folders.busy || !folders.ready} onChange={e => select(t.task_key, e.target.checked)} /></td>
+              disabled={folders.busy || !folders.ready} onChange={e => table.select(t.task_key, e.target.checked)} /></td>
             <td><code>{taskName(t.task_key)}</code>{loading === t.task_key && <span className="hint"> loading...</span>}
               {folders.folder === 'all' && folders.data.folders[folders.of(t.task_key)] && <div className="hint task-folder-label">{folders.data.folders[folders.of(t.task_key)]}</div>}
               {mark && <div className="task-mark">{t.kind === 'mock' ? <span className="badge model-tag mock-tag">MOCK</span> : <span className={`hint${t.available ? '' : ' warn'}`}>{mark}</span>}</div>}</td>

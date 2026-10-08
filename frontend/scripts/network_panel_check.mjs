@@ -48,7 +48,7 @@ await runChecks(browser, async () => {
     const button = body.querySelector('.rl-networks-open');
     // the button stands in one row with the next run's model in short (user, 2026-10-03; record 7.265): the module's first row
     return { labels: labels.slice(0, 2), first: body.firstElementChild === button.closest('.rl-networks-row'), moved: !labels.includes('Mode') && !labels.includes('RL model label'),
-      inlineNetwork: !!body.querySelector('.component-list, .look-open, .model-card'), search: !!document.querySelector('select[aria-label="Search method"]'),
+      inlineNetwork: !!body.querySelector('.component-list, .template-table, .saved-models'), search: !!document.querySelector('select[aria-label="Search method"]'),
       windows: !!window.__checkRLWindow, stopRules: body.textContent.includes('Stop after N consecutive failed evaluations') };
   })()`);
   check('RL model... and the next run\'s model come first; Mode and the RL model label are in the RL model window (record 7.265); no Search method (7.226)',

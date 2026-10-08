@@ -9,7 +9,7 @@
 // HERMETIC (lib/harness.mjs): validation is answered with a canned valid report labelled FIXTURE, other reads pass, every
 // other writing request is refused. A temporary browser profile: the user's saved configuration is not touched.
 // Exit code 1 if any check fails.
-import { validConfiguration, check, launchEdge, reportRefused, runChecks, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, reportRefused, runChecks, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const browser = await launchEdge('editorcolumns');
@@ -23,7 +23,7 @@ const SPECS = [
   { metric_id: 'half_freq', equation: 'm_freq / 2', unit: 'Hz', constraint: '>=', lower: 5e8, upper: null, normalization_scale: 1e8 }];
 
 await runChecks(browser, async () => {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
+  const starter = await mockStarter(APP);
   const CONFIG = { schema_version: 'gator-workbench-config-v1', ...starter, measurements: PROBES, targets: SPECS,
     run: { ...starter.run, mode: 'scratch' }, output: { experiment_name: 'fixture' }, research: {} };
   delete CONFIG.run.model_source;
@@ -55,7 +55,7 @@ await runChecks(browser, async () => {
     }
     await evaluate(`${cell}.blur()`);
   };
-  const saved = async () => { await page.saved(); return page.stored(); };
+  const saved = page.savedConfig;
   if (!(await until(`!!${EDITORS}?.querySelector('table.editor tbody tr')`, 150))) throw new Error('the editors never showed rows');
 
   // ---- Probes -------------------------------------------------------------------------------------------------------

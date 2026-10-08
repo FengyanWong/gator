@@ -11,7 +11,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/testbench_probes_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { MOCK_PAGE_CONFIG, check, fail, finish, launchEdge, outDir, sleep, taskWindow, workbenchUrl } from './lib/harness.mjs';
+import { check, fail, finish, launchEdge, MOCK_PAGE_CONFIG, outDir, sleep, TASK_PANEL, taskWindow, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -81,17 +81,13 @@ try {
   // The first read asks whether the cell is a copy the user made (answered yes, once); any other question is unplanned.
   const onDialog = session => session.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return session.send('Page.handleJavaScriptDialog', { accept: dialogs.length === 1 }); });
   onDialog(page);
-  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
+  const PANEL = TASK_PANEL;
   const COLUMN_BUTTON = text => `[...${PANEL}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   // The library / cell / testbench boxes and the cell's note are in the Virtuoso window: a second page with a session of its own.
   const WIN = `document.querySelector('.virtuoso-window')`;
   let far = null;
   const openWindow = async () => {
-    await evaluate(`${PANEL}.querySelector('button.virtuoso-button').click()`, true);
-    far = await browser.attach(await browser.window('GATOR - Virtuoso cell', { present: true, except: page.target.id }), { errors: consoleErrors, prefix: 'window: ' });
-    await far.send('Page.enable'); onDialog(far);
-    await far.send('Emulation.setDeviceMetricsOverride', { width: 720, height: 1400, deviceScaleFactor: 1, mobile: false });
-    for (let i = 0; i < 50 && !(await far.evaluate(`!!(${WIN})`)); i++) await sleep(100);
+    far = await browser.popup(page, `${PANEL}.querySelector('button.virtuoso-button')`, 'GATOR - Virtuoso cell', { width: 720, height: 1400, ready: WIN, onDialog });
     await quiet();
   };
   const LABEL = label => `[...${WIN}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)})`;

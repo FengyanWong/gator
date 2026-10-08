@@ -6,7 +6,6 @@ the recording codec's whitelisted JSON types, never executable pickle.
 from collections import Counter, defaultdict
 from dataclasses import asdict, replace
 import gzip
-import hashlib
 import json
 from pathlib import Path
 import random
@@ -16,16 +15,8 @@ from analog_optimizer.recording import codec
 from analog_optimizer.training.replay import Transition
 
 from .pretrain import BalancedSampler, archive_identity, identity
-from .storage.atomic import publish, read_json, temporary_path, write_json
+from .storage.atomic import publish, read_json, sha256_file as file_sha, temporary_path, write_json
 from .trajectory import TrajectoryLoader
-
-
-def file_sha(path):
-    digest = hashlib.sha256()
-    with Path(path).open('rb') as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None):

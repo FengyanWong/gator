@@ -16,7 +16,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_run_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, NEVER_ASKED, outDir, reportRefused, RUN_KEY, runChecks, sleep, taskWindow, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, NEVER_ASKED, outDir, reportRefused, RUN_KEY, runChecks, sleep, TASK_PANEL, taskWindow, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -87,7 +87,7 @@ await runChecks(browser, async () => {
   };
   const lists = () => seen.filter(s => s === '/api/runs').length;
   const until = (expression, tries = 100) => page.until(expression, tries);
-  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
+  const PANEL = TASK_PANEL;
   // Since record 7.227 the task is plain text + a "Tasks..." button; a choice is a double click in the task window (harness taskWindow).
   const tw = taskWindow(page, browser);
   // The row shows a saved task without its real: prefix since record 7.249; its key is in data-task-key (a placeholder,
@@ -120,10 +120,8 @@ await runChecks(browser, async () => {
   let far = null;
   const openWindow = async () => {
     const before = lists();
-    await evaluate(`document.querySelector('footer .tabs button.run-list-button').click()`, true);
-    far = await browser.attach(await browser.window('GATOR - runs', { except: page.target.id }), { errors: consoleErrors, prefix: 'window: ' });
-    await far.send('Emulation.setDeviceMetricsOverride', { width: 1500, height: 860, deviceScaleFactor: 1, mobile: false });
-    for (let i = 0; i < 50 && !(await far.evaluate(`!!(${WINDOW}) && !!${WINDOW}.querySelector('table.run-table')`)); i++) await sleep(100);
+    far = await browser.popup(page, `document.querySelector('footer .tabs button.run-list-button')`, 'GATOR - runs',
+      { width: 1500, height: 860, ready: `${WINDOW}?.querySelector('table.run-table')` });
     for (let i = 0; i < 50 && lists() === before; i++) await sleep(50);
     await sleep(300);
   };
@@ -131,7 +129,7 @@ await runChecks(browser, async () => {
     const at = await far.evaluate(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(r.run_dir)}); if (!tr) return null;
       const el = tr.children[4]; el.scrollIntoView({ block: 'center' }); const b = el.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`);
     if (!at) return false;
-    for (const clickCount of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await far.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount });
+    await far.clickAt(at, { count: 2 });
     return true;
   };
   // Show results in a run's Details (record 7.267): the run the bottom tabs show, nothing else.

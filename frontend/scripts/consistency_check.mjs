@@ -8,7 +8,7 @@
 // Run (Windows node sees a WSL variable only when WSLENV names it):
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/consistency_check.mjs)"
 import path from 'node:path';
-import { check, launchEdge, outDir, runChecks, sleep, taskWindow, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, TASK_PANEL, taskWindow, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -61,7 +61,7 @@ await runChecks(browser, async () => {
     return page.readOrRefuse({ requestId, request }, refused);
   };
   page.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return send('Page.handleJavaScriptDialog', { accept: true }); });
-  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
+  const PANEL = TASK_PANEL;
   const BUTTON = text => `[...(${PANEL}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const STEPS = `${PANEL}?.querySelector('.check-steps')`;
   const BANNER = `document.querySelector('.banner')`;

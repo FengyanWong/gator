@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, Json, num } from '../api';
+import { clock, folderName, two } from '../format';
 import { startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
 import { BLOCKED, usePopupWindow } from './popupWindow';
@@ -14,7 +15,6 @@ import { LIVE_STATES, RunControl } from './RunControl';
  *  only run controls. No timer of its own: the header's card follows the header's status poll, and the other cards are read
  *  when the window opens and by Refresh, with the time they were read. */
 
-const two = (n: number) => String(n).padStart(2, '0');
 const span = (seconds?: number | null) => {
   if (seconds == null || !Number.isFinite(seconds)) return null;
   const t = Math.round(seconds), h = Math.floor(t / 3600);
@@ -24,7 +24,6 @@ const ago = (utc?: string | null) => {
   const at = utc ? Date.parse(utc) : NaN;
   return Number.isNaN(at) ? null : `${span(Math.max(0, (Date.now() - at) / 1000))} ago`;
 };
-const folderName = (dir: string) => dir.split(/[\\/]/).filter(Boolean).pop() ?? dir;
 
 /** One run's card. `row`: its line of the run list (its name, task and lineage); `status`: its status (the header's poll for
  *  the header's run, a read when the window opened for the others). */
@@ -75,7 +74,7 @@ export function useRunBrief({ control, runs, onRefreshRuns, onShow }: { control:
       const live = list.filter(r => LIVE_STATES.includes(r.state) && r.run_dir !== control.dir);
       const statuses = await Promise.all(live.map(r => api.status(r.run_dir).catch(() => null)));
       setOthers(live.map((row, i) => ({ row, status: statuses[i] })));
-    } finally { setReading(false); setReadAt(new Date().toLocaleTimeString([], { hour12: false })); }
+    } finally { setReading(false); setReadAt(clock()); }
   };
   const open = () => { openPopup(); void read(); };
   const byDir = new Map(runs.map(r => [r.run_dir, r]));

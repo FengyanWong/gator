@@ -1279,7 +1279,7 @@ def current_vocabulary(name) -> Vocabulary | None:
         raise PdkError(f'Unknown component list {name!r}')
     record = load_record(name[4:])
     if record is None:
-        raise PdkError(f'PDK {name[4:]} is not loaded. Load it with "Load PDK..." first.')
+        raise PdkError(f'PDK {name[4:]} is not loaded. Read it in the Virtuoso window first ("PDK window..." reads one by name).')
     return vocabulary_of_record(record)
 
 

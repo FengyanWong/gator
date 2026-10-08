@@ -110,9 +110,10 @@ def once(request_id, kind, work):
 
 def register(app: FastAPI, context: ApiContext):
     @app.get('/api/runs')
-    def get_runs(output_root: str | None = None, include_mock: bool = True):
+    def get_runs(output_root: str | None = None, include_mock: bool = True, fresh: bool = False):
+        """`fresh`: every run folder read again, past the run list's cache (the page's Refresh list; record 7.274)."""
         try:
-            return dict(runs=runs.list_runs(context.roots, output_root, include_mock=include_mock))
+            return dict(runs=runs.list_runs(context.roots, output_root, include_mock=include_mock, fresh=fresh))
         except PathNotAllowed as exc:
             fail(403, exc)
 
@@ -150,7 +151,7 @@ def register(app: FastAPI, context: ApiContext):
                     except runs.RunRejected as exc:
                         result['compatibility_unchecked'] = dict(
                             title='The component list of this configuration is not available',
-                            what=str(exc), note='Load that PDK with "Load PDK..." in the RL network block, or choose the '
+                            what=str(exc), note='Read that PDK in the Virtuoso window ("PDK window..." reads one by name), or choose the '
                             'standard list. The saved model itself is fine.', technical=f'{exc.code}: {exc}')
                     else:
                         contract = runs.learner_contract(config, runtime, task_hash, compiled.spec_schema, vocabulary)
@@ -200,11 +201,13 @@ def register(app: FastAPI, context: ApiContext):
         return dict(run_dir=str(run_dir), model_label=record['model_label'], previous=record['previous'])
 
     @app.get('/api/runs/models')
-    def saved_models(output_root: str | None = None, include_mock: bool = True):
+    def saved_models(output_root: str | None = None, include_mock: bool = True, fresh: bool = False):
         """The model chooser's list: every run that holds a saved RL model, with all of its save points.
-        Small metadata files only; the selected model is verified by `/api/runs/model` as before."""
+        Small metadata files only; the selected model is verified by `/api/runs/model` as before. The run list's cache
+        keeps each run's save points too (record 7.274); `fresh` reads every run folder again."""
         try:
-            return dict(models=ckpt.saved_models(runs.list_runs(context.roots, output_root, include_mock=include_mock)))
+            return dict(models=ckpt.saved_models(runs.list_runs(context.roots, output_root, include_mock=include_mock, fresh=fresh),
+                                                 runs.checkpoint_listing))
         except PathNotAllowed as exc:
             fail(403, exc)
 
@@ -303,8 +306,9 @@ def register(app: FastAPI, context: ApiContext):
                                     pretraining=dict(sources=sources, source_evaluations=pretraining.get('source_evaluations'))
                                     if pretraining else None),
                       summary=read_json(layout.summary, default=None))
-        result['save_point'] = runs.save_point(path)        # what Continue would go on from; None: there is none (7.215)
-        result['save_point_code'] = runs.save_point_code(path) if result['save_point'] else None   # 'older': no Continue (7.221)
+        # What Continue would go on from (None: there is none, 7.215) and whether that code is older (no Continue, 7.221):
+        # one read of the run's pointer for both (record 7.274; the two answers used to resolve it twice per poll).
+        result['save_point'], result['save_point_code'] = runs.save_point_facts(path)
         profile = (result.get('connection_profile_id') or None)
         result['connection'] = context.monitor.status(profile) if profile else dict(overall='not_applicable')
         # A baseline run asked to calibrate (record 7.197): what it was asked, and its proposals once the run has written them.

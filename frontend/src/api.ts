@@ -117,10 +117,11 @@ export const api = {
   // { folder: path, or null for its default }; the backend checks every value before it writes anything.
   connectionDirectories: () => call('GET', '/api/connection/directories'),
   saveConnectionDirectories: (values: Record<string, string | null>) => call('PUT', '/api/connection/directories', { values }),
-  runs: (output_root?: string) => call('GET', '/api/runs' + q({ output_root })),
+  // `fresh`: past the backend's run cache, every run folder read again - the page's Refresh list (record 7.274).
+  runs: (output_root?: string, fresh?: boolean) => call('GET', '/api/runs' + q({ output_root, fresh: fresh || undefined })),
   model: (run_dir: string, checkpoint_id: string, config?: Json, signal?: AbortSignal) => call('POST', '/api/runs/model', { run_dir, checkpoint_id, config }, signal),
   defaultModel: (label: string, project?: string) => call('GET', '/api/runs/default-model' + q({ label, project })),
-  savedModels: (output_root?: string, signal?: AbortSignal) => call('GET', '/api/runs/models' + q({ output_root }), undefined, signal),
+  savedModels: (output_root?: string, signal?: AbortSignal, fresh?: boolean) => call('GET', '/api/runs/models' + q({ output_root, fresh: fresh || undefined }), undefined, signal),
   renameModel: (run_dir: string, model_label: string) => call('POST', '/api/runs/model/rename', { run_dir, model_label }),
   modelStructure: (run_dir: string, checkpoint_id: string, signal?: AbortSignal) => call('POST', '/api/runs/model/structure', { run_dir, checkpoint_id }, signal),
   modelGraphView: (run_dir: string, checkpoint_id: string, evaluation: number | null) => call('POST', '/api/runs/model/graph-view', { run_dir, checkpoint_id, evaluation }),
@@ -220,6 +221,17 @@ export function connectionProfilesShared(): Promise<Json> {
   return profilesRead;
 }
 export function connectionProfilesChanged(list: Json) { profilesRead = Promise.resolve(list); }
+/** The registered tasks (`GET /api/tasks`, about 0.8 s on the D: drive), read once and shared by what asks within 10 s
+ *  (record 7.275): the Project column, the Runs window, Load run and New run like this each read it on their own before.
+ *  `fresh` reads anew - after a save or a delete, and on a Refresh press. */
+let tasksRead: { at: number; promise: Promise<Json> } | null = null;
+export function tasksShared(fresh = false): Promise<Json> {
+  if (fresh || !tasksRead || Date.now() - tasksRead.at > 10_000) {
+    const promise: Promise<Json> = api.tasks().catch(e => { if (tasksRead?.promise === promise) tasksRead = null; throw e; });
+    tasksRead = { at: Date.now(), promise };
+  }
+  return tasksRead.promise;
+}
 export const num = (v: unknown) => typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toPrecision(6)) : v == null ? '' : String(v);
 
 // ONE way of writing a number in the whole page (review of 2026-09-23: the SI form was written twice, in the corner

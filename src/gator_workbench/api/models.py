@@ -193,7 +193,7 @@ class NgspiceNameBody(Body):
 
 
 class OpenCliBody(Body):
-    """The Agent tab's buttons: which CLI to open. Nothing else: the folder, the window and how the CLI starts are fixed."""
+    """The Agent window's buttons: which CLI to open. Nothing else: the folder, the window and how the CLI starts are fixed."""
     cli: str = Field(pattern='^(claude|codex)$')
 
 

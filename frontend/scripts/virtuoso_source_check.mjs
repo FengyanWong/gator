@@ -19,7 +19,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/virtuoso_source_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { MOCK_PAGE_CONFIG, check, fail, finish, launchEdge, outDir, sleep, taskWindow, workbenchUrl } from './lib/harness.mjs';
+import { check, fail, finish, launchEdge, MOCK_PAGE_CONFIG, outDir, sleep, TASK_PANEL, taskWindow, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -149,7 +149,7 @@ try {
   });
   onDialog(page);
   // ---- the column ------------------------------------------------------------------------------------------------------
-  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
+  const PANEL = TASK_PANEL;
   const LABEL = label => `[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)})`;
   const FIELD = label => `${LABEL(label)}?.querySelector('input, select')`;
   const BUTTON = text => `[...${PANEL}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
@@ -164,7 +164,7 @@ try {
     await send('Input.insertText', { text: textToType });
   };
   // The page saves its configuration 800 ms after the last change: read it once no save is pending, not one step behind.
-  const stored = async () => { await page.saved(); return evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')`); };
+  const stored = page.savedConfig;
   // Save task, Task file and their messages live in the editors (tab line + under the toolbar) of the main page.
   const TASK = `document.querySelector('.editors')`;
   const TASK_BUTTON = t => `[...${TASK}.querySelectorAll('.task-save button, .task-notes button')].find(b => b.textContent.trim() === ${JSON.stringify(t)})`;
@@ -185,12 +185,8 @@ try {
   let far = null, farPage = null;
   const WIN = `document.querySelector('.virtuoso-window')`;
   const openWindow = async () => {
-    await evaluate(`${LAUNCH}.click()`, true);
-    farPage = await windowTarget(true);
-    far = await browser.attach(farPage, { errors: consoleErrors, prefix: 'window: ' });
-    await far.send('Page.enable'); onDialog(far);
-    await far.send('Emulation.setDeviceMetricsOverride', { width: 720, height: 980, deviceScaleFactor: 1, mobile: false });   // a headless popup ignores the requested size
-    for (let i = 0; i < 50 && !(await far.evaluate(`!!(${WIN})`)); i++) await sleep(100);
+    far = await browser.popup(page, LAUNCH, 'GATOR - Virtuoso cell', { width: 720, height: 980, ready: WIN, onDialog });
+    farPage = far.target;
     await sleep(400);
   };
   const wText = () => far.evaluate(`${WIN}.textContent`);

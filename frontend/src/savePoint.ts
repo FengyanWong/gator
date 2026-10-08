@@ -6,6 +6,8 @@ import { api, Json } from './api';
  *  saved model this way (record 7.267), so the draft never holds a model without its network. */
 export type SavePoint = { run_dir: string; checkpoint_id: string; network: Json | null; vocabulary: string | null; evaluations: number | null };
 
+/** The Modes that load a saved model. */
+export const LOADS = ['fine_tune', 'frozen'];
 /** The network settings a saved model fixes besides its encoder: the fallback until the backend's own list is read. */
 export const NETWORK_FIELDS = ['hidden_dim', 'heads', 'layers', 'structural_encoding'];
 export const pick = (source: Json, fields: string[]): Json =>
@@ -15,12 +17,18 @@ export const pick = (source: Json, fields: string[]): Json =>
  *  outside the allowed output roots. */
 export async function readSavePoint(run_dir: string, checkpoint_id: string, fields: string[] = NETWORK_FIELDS): Promise<SavePoint> {
   const answer: Json = await api.model(run_dir, checkpoint_id);
-  const saved = answer?.description?.contract?.model_config;
-  const network = saved?.encoder_type ? { encoder_type: saved.encoder_type, ...pick(saved, fields),
-    structural_encoding: saved.structural_encoding ?? (saved.encoder_type === 'graph_gps' ? 'rwse' : 'none'),
-    operating_points: !!answer.description.contract?.feature_schema?.op_columns?.length } : null;
+  const network = networkOf(answer?.description, fields);
   return { run_dir, checkpoint_id: answer?.description?.checkpoint_id ?? checkpoint_id, network, vocabulary: answer?.vocabulary?.name ?? null,
     evaluations: answer?.description?.counters?.evaluations_committed ?? null };
+}
+
+/** The network a saved model fixes, from its description (`POST /api/runs/model`): its encoder, `fields`, its structural
+ *  input and whether it takes operating points; null when the description names no encoder. */
+export function networkOf(description: Json, fields: string[]): Json | null {
+  const saved = description?.contract?.model_config;
+  return saved?.encoder_type ? { encoder_type: saved.encoder_type, ...pick(saved, fields),
+    structural_encoding: saved.structural_encoding ?? (saved.encoder_type === 'graph_gps' ? 'rwse' : 'none'),
+    operating_points: !!description.contract?.feature_schema?.op_columns?.length } : null;
 }
 
 /** The run settings with that save point as the source, its network and its component list: one change of the draft. */

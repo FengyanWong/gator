@@ -15,7 +15,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/project_help_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, reportRefused, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, fail, finish, launchEdge, outDir, reportRefused, sleep, TASK_PANEL, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -75,16 +75,12 @@ try {
   };
   const onDialog = session => session.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return session.send('Page.handleJavaScriptDialog', { accept: true, ...(p.type === 'prompt' ? { promptText: p.defaultPrompt } : {}) }); });
   onDialog(page);
-  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
+  const PANEL = TASK_PANEL;
   const LAUNCH = `${PANEL}.querySelector('button.virtuoso-button')`;
   const WIN = `document.querySelector('.virtuoso-window')`;
   let far = null;
   const openWindow = async () => {
-    await evaluate(`${LAUNCH}.click()`, true);
-    far = await browser.attach(await browser.window('GATOR - Virtuoso cell', { present: true, except: page.target.id }), { errors: consoleErrors, prefix: 'window: ' });
-    await far.send('Page.enable'); onDialog(far);
-    await far.send('Emulation.setDeviceMetricsOverride', { width: 720, height: 2000, deviceScaleFactor: 1, mobile: false });   // tall: the whole window on one picture
-    for (let i = 0; i < 50 && !(await far.evaluate(`!!(${WIN})`)); i++) await sleep(100);
+    far = await browser.popup(page, LAUNCH, 'GATOR - Virtuoso cell', { width: 720, height: 2000, ready: WIN, onDialog });   // tall: the whole window on one picture
     await sleep(400);
   };
   // The same questions asked of the column (page session, PANEL) and of the window (far session, WIN).

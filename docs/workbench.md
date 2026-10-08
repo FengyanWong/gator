@@ -62,7 +62,9 @@ PYTHONPATH=src ~/analog-optimizer-venv/bin/python -m gator_workbench.cli serve -
 Options: `--allow-root DIR` adds an allowed **output** root, `--allow-input-root DIR` an allowed
 **input** root (it was for the removed netlist import; now it only limits the two file paths an older
 configuration may still carry). Roots can only be added by the operator here (or with
-`GATOR_WORKBENCH_ALLOWED_ROOTS`), never from the browser, an imported file or an agent.
+`GATOR_WORKBENCH_ALLOWED_ROOTS`), never from the browser, an imported file or an agent. The default output root is
+the repository's `outputs/`; `GATOR_WORKBENCH_DEFAULT_OUTPUT_ROOT` names another folder (the browser checks' scratch
+backends use an empty one, record 7.276).
 `--host` other than localhost prints a warning: there is no authentication layer.
 `--connection-check-on-start` runs one cheap connection check at start (off by default, see
 "Connecting from the panel").
@@ -1304,7 +1306,15 @@ it). The window lists every run under the output folder, newest first, one row p
   `/api/model-folders`, used by the RL model window's saved models table (record 7.265).
 * **Nothing in the window updates by itself.** The list is read when the button is pressed and by **Refresh list**
   (the window says when it was read); a run's details are read when they are opened. A working run therefore shows
-  its state and duration as of that time.
+  its state and duration as of that time. A link from another window (the Tasks window, the run brief, a model's
+  Relationships) only opens this window at its run: the list is read again only when the window was closed or its list
+  is more than a minute old (record 7.275).
+* **The backend keeps what it read of each run** (record 7.274): a run folder is read again when it changed - every file
+  the list reads is written whole, a temporary file renamed over the old one, which changes its folder - when its save
+  points changed (a new one arrives complete, then `latest.json` is replaced), and at least every ten minutes; the lock
+  of a run whose status says it works is looked at every time. **Refresh list** reads every run folder
+  anew (`GET /api/runs?fresh=true`), for a file another tool edited in place. The first read after a backend start
+  reads every run (5-7 s for about 115 runs on the D: drive, 7-13 s before), a later one only what changed (1.5 s).
 * The times come from the run's own files (`run_manifest.json` segments, `status.json`); `GET /api/runs` carries them
   as `started_utc`, `ended_utc`, `last_seen_utc`, `active_seconds`, `paused_seconds`, `segments`. A workbench server
   started before this was added lists runs without them: the window says so and asks for a restart of `serve`.
@@ -1335,8 +1345,8 @@ status default blank unless you choose other runs"):
 
 Browser checks: `frontend/scripts/run_list_check.mjs` (every run request answered by FIXTURE runs; safe against the
 live backend; the actions of record 7.267 in its section 10) and `frontend/scripts/task_run_check.mjs` (the run that
-follows the task, and Load run's run that stays; fixtures, safe against the live backend). Backend test:
-`tests/workbench/test_wb_run_list.py`.
+follows the task, and Load run's run that stays; fixtures, safe against the live backend). Backend tests:
+`tests/workbench/test_wb_run_list.py`, `tests/workbench/test_wb_run_list_cache.py` (the cache: what it sees and when).
 
 Changing the selected run immediately hides the previous run's status, table and file list. Replies arriving late
 cannot put them back, and status commands carry the identity of the run whose status was displayed. Polling waits
@@ -2191,8 +2201,10 @@ yet", and the newest model saved under the RL model label is offered (above). Lo
 Runs window take a saved model the same way, pinned with its network and component list (`frontend/src/savePoint.ts`,
 record 7.267).
 
-The list is `GET /api/runs/models`: small metadata files only, read when the table is shown, when the page reads its run
-list again (a run started, another output folder) and by **Refresh list** - never on a timer. Older periodic save points
+The list is `GET /api/runs/models`: small metadata files only, read when the table is shown, when a run of the page's run
+list changed (a run came or went, came to rest or was renamed), for another output folder, and by **Refresh list** (every
+run folder read anew, as in the Runs window) - never on a timer. A working run's newer save points show at Refresh list
+or once it rests; the backend reuses what it read of a run that did not change (record 7.274). Older periodic save points
 are pruned: `output.keep_last_checkpoints` keeps the newest 10 periodic ones by default, and empty keeps every one. Save
 now, pause, stop and final save points, the latest one and a selected best policy are never removed. Models from outside
 the workbench (the M6 pilot checkpoints) cannot be chosen, and there is no upload: `training_state.pt` is a pickle and is
@@ -3005,7 +3017,9 @@ bash frontend/scripts/run_checks.sh
 ```
 
 What it does:
-- It starts two scratch backends with empty temporary settings folders; it never touches the backend on 8765.
+- It starts two scratch backends with empty temporary settings folders; it never touches the backend on 8765. Their
+  default output folders are empty temporary ones too (`GATOR_WORKBENCH_DEFAULT_OUTPUT_ROOT`, record 7.276): with the
+  repository's `outputs/` the page took over a run working there, in the middle of the checks.
 - It waits until Windows can reach those backends too: WSL's first successful response can precede localhost forwarding.
 - It builds this tree's frontend into a temporary folder and serves it.
 - It runs every `frontend/scripts/*_check.mjs` in 4 parallel lanes (`--lanes N`). Each check gets its own log and

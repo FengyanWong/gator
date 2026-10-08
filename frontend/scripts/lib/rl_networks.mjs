@@ -5,10 +5,10 @@ export const NETWORK_DOCUMENT = 'window.__checkRLWindow.document';
 export const NETWORK_PANEL = `${NETWORK_DOCUMENT}.querySelector('.rl-networks-panel')`;
 
 export async function openNetworks(page, browser) {
-  if (!await page.until(`!!document.querySelector('button.rl-networks-open')`, 150)) throw new Error('RL networks launcher did not appear');
+  if (!await page.until(`!!document.querySelector('button.rl-networks-open')`, 150)) throw new Error('the RL model... button did not appear');
   await page.evaluate(`(() => {
     const button = document.querySelector('button.rl-networks-open');
-    if (button.disabled) throw new Error('RL networks launcher is disabled');
+    if (button.disabled) throw new Error('the RL model... button is disabled');
     const open = window.open;
     window.open = function(...args) { return window.__checkRLWindow = open.apply(this, args); };
     try { button.click(); } finally { window.open = open; }
@@ -16,7 +16,7 @@ export async function openNetworks(page, browser) {
   const popup = await browser.attach(await browser.window('GATOR - RL model'), { errors: page.consoleErrors, prefix: 'RL model: ' });
   await popup.evaluate('void (window.__checkRLWindow = window)');
   await popup.viewport(1100, 900);
-  if (!await popup.until(`!!document.querySelector('.rl-networks-panel')`)) throw new Error('RL networks content did not appear');
+  if (!await popup.until(`!!document.querySelector('.rl-networks-panel')`)) throw new Error('the RL model window\'s content did not appear');
   return popup;
 }
 

@@ -10,7 +10,7 @@
 // Exit code 1 if any check fails.
 import path from 'node:path';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -50,7 +50,7 @@ await runChecks(browser, async () => {
   await page.intercept(['*/api/*'], answer);
   await page.trackSaves();                                  // the page saves 800 ms after the last change: read it with saved()
   // The page opens as a browser that saved its configuration BEFORE specs had equations: one probe in `measurement_id`.
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
+  const starter = await mockStarter(APP);
   const legacy = starter.targets.map(t => Object.fromEntries(Object.entries(t).map(([k, v]) => [k === 'equation' ? 'measurement_id' : k, v])));
   check('the backend knows equations (restarted after 7.52)', starter.targets[0]?.equation === 'm_score', JSON.stringify(starter.targets[0]));
   const SEED = { schema_version: 'gator-workbench-config-v1', ...starter, targets: legacy,

@@ -55,7 +55,8 @@ def test_a_page_older_than_the_server_cannot_start_a_removed_method_as_sac(tmp_p
     assert client.post('/api/config/validate', json=dict(config=raw)).status_code == 200      # the rows still validate
 
 
-@pytest.mark.parametrize('method, says', [('sac_llm_rescue', 'Mode fine_tune'), ('llm', 'It holds no RL model')])
+@pytest.mark.parametrize('method, says', [('sac_llm_rescue', 'Fine-tune with its model chosen in the RL model window'),
+                                         ('llm', 'It holds no RL model')])
 def test_a_run_made_with_a_removed_method_is_not_continued_as_sac(tmp_path, method, says):
     config = make_config(tmp_path, run=dict(max_evaluations=6))
     layout, state = execute(config, tmp_path)

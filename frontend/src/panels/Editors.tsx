@@ -259,16 +259,23 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // column's own width - which a tie toggle widens on Parameters, and a narrower window can change without a new render - and a
   // line marks its edge while columns pass under it.
   const markScrolled = (box: HTMLElement | null | undefined) => box?.classList.toggle('scrolled-x', box.scrollLeft > 0);
+  // Measured and observed again only when the tick-box header cell is another one (another tab, a new table): it ran at
+  // every render - every keystroke - with a layout read and a new ResizeObserver (record 7.275). The observer catches
+  // the width changes, and scrolling marks itself (onScroll below).
+  const watched = useRef<{ sel: Element | null; watch: ResizeObserver | null }>({ sel: null, watch: null });
   useLayoutEffect(() => {
+    const sel = table.current?.querySelector('thead th.sel') ?? null;
+    if (watched.current.sel === sel) return;
+    watched.current.watch?.disconnect();
+    watched.current = { sel, watch: null };
     markScrolled(table.current?.parentElement);
-    const sel = table.current?.querySelector('thead th.sel');
     if (!sel) return;
     const measure = () => table.current?.style.setProperty('--sel-w', `${sel.getBoundingClientRect().width}px`);
     measure();
-    const watch = new ResizeObserver(measure);
-    watch.observe(sel);
-    return () => watch.disconnect();
+    watched.current.watch = new ResizeObserver(measure);
+    watched.current.watch.observe(sel);
   });
+  useEffect(() => () => watched.current.watch?.disconnect(), []);
   // `signal` holds a Maestro output's expression (ymax(VT("/OUT")), getData(... ?result "stb")): "signal" read like a
   // net name (review of 2026-10-03). For a profile metric it is a label of what is measured.
   // Units in words (record 7.208): only Probes have a Unit column; the values of Parameters and Specs carry theirs.

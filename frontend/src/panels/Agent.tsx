@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, Json, plainError } from '../api';
+import { clock } from '../format';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 
 /** The Agent window (record 7.253; the user: "make the agent tab pop out window only (no tab view)", then "make it still a
@@ -17,7 +18,6 @@ import { BLOCKED, usePopupWindow } from './popupWindow';
 const MARK: Record<string, [string, string]> = { done: ['✔', 'ok'], missing: ['✘', 'error'], warning: ['!', 'warn'], unknown: ['?', 'hint'],
   not_applicable: ['–', 'hint'], at_start: ['▶', 'hint'] };
 const CLIS: { cli: 'claude' | 'codex'; name: string }[] = [{ cli: 'claude', name: 'Claude Code' }, { cli: 'codex', name: 'Codex' }];
-const clock = () => new Date().toLocaleTimeString([], { hour12: false });
 
 /** The start checklist: each item, whose step it is, and what to do about it. */
 function Checklist({ items }: { items: Json[] }) {

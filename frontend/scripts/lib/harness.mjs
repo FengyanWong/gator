@@ -102,9 +102,10 @@ export function answerDialogs(session, answers, dialogs) {
     return session.send('Page.handleJavaScriptDialog', { accept: !!accept });
   });
 }
+/** The MOCK task's starter rows, as the backend answers them (`GET /api/tasks/starter`). */
+export const mockStarter = async base => (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', base))).json();
 /** The MOCK task's starter configuration, as "Load task" merges it (the page needs `output` and `research`). */
-export const starterConfig = async base => ({ ...(await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', base))).json()),
-  output: { experiment_name: 'fixture' }, research: {} });
+export const starterConfig = async base => ({ ...(await mockStarter(base)), output: { experiment_name: 'fixture' }, research: {} });
 
 // ---- the URL, and the guard for checks that write -----------------------------------------------------------------------
 const liveHow = 'Start a scratch backend with its own settings folder, e.g.\n'
@@ -220,6 +221,12 @@ async function connect(target, { errors = [], prefix = '', consoleApi = true } =
       return false;
     },
     viewport: (width, height) => send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false }),
+    /** A real mouse click at `at` ({ x, y } in this page), for what needs the user's gesture (a download) or a real double
+     *  click: `count` 2 presses twice, the second with clickCount 2, as a person's double click arrives (record 7.276). */
+    async clickAt(at, { count = 1 } = {}) {
+      for (let clickCount = 1; clickCount <= count; clickCount++)
+        for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount });
+    },
 
     // ---- Fetch interception (one per session: a second Fetch.enable replaces the first) ----------------------------------
     /** Pauses the requests matching `patterns` (CDP url patterns, * and ?) and hands each to `answer(params)`. With
@@ -299,6 +306,8 @@ async function connect(target, { errors = [], prefix = '', consoleApi = true } =
     async saved() { await sleep(150); for (let i = 0; i < 100 && !(await session.evaluate('window.__saves.size === 0')); i++) await sleep(100); },
     /** The configuration as the page saved it in localStorage (null when there is none). */
     stored: () => session.evaluate(`JSON.parse(localStorage.getItem(${text(CONFIG_KEY)}) ?? 'null')`),
+    /** The same once no save is pending (`trackSaves` registered before the page loaded): not one step behind. */
+    async savedConfig() { await session.saved(); return session.stored(); },
 
     /** A PNG: of the element a JS expression yields (with `pad` px around it, at most `maxHeight` high), of a given clip
      *  { x, y, width, height, scale }, or of the whole viewport. `beyond`: the clip may reach below the window. The tab is
@@ -357,6 +366,18 @@ export async function launchEdge(tag = 'check', { width = 1680, height = 1050, l
         await sleep(100);
       }
       throw new Error(`the window "${title}" did not ${present ? 'appear' : 'close'}`);
+    },
+    /** Presses `launch` (a button, as an expression) in `page` and attaches to the pop-up titled `title` that it opens, as a
+     *  person's press does: sized `width` x `height` (a headless pop-up ignores the size it asks for), its dialogs given to
+     *  `onDialog` when set, and handed over once `ready` (an expression in the window) holds, 5 s at most. `far.target` is
+     *  the window (its id and title). Seven checks wrote this out each (record 7.276). */
+    async popup(page, launch, title, { width, height, ready = 'true', onDialog = null } = {}) {
+      await page.evaluate(`${launch}.click()`, true);
+      const far = await browser.attach(await browser.window(title, { except: page.target.id }), { errors: page.consoleErrors, prefix: 'window: ' });
+      if (onDialog) { await far.send('Page.enable'); onDialog(far); }
+      await far.viewport(width, height);
+      for (let i = 0; i < 50 && !(await far.evaluate(`!!(${ready})`)); i++) await sleep(100);
+      return far;
     },
     /** The page Edge started with, as a session: Page and Runtime enabled, the viewport set (default 1680 x 1050).
      *  consoleApi: false = only exceptions count as console errors, not console.error() calls. `errors`: the array to
@@ -425,6 +446,8 @@ export async function launchEdge(tag = 'check', { width = 1680, height = 1050, l
 }
 
 // ---- the task window (record 7.227) ------------------------------------------------------------------------------------
+/** The Project column's "Registered task" panel (an expression for `evaluate`). */
+export const TASK_PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
 /** The Project column's registered task since record 7.227: plain text naming the task the page follows, and ONE button
  *  "Tasks..." that opens the task window (TaskList.tsx), where a DOUBLE CLICK on a row chooses a task - what the old
  *  drop-down's choice did. `taskWindow(page, browser)` drives it for the checks: `current()` = the canonical key or placeholder text
@@ -432,7 +455,7 @@ export async function launchEdge(tag = 'check', { width = 1680, height = 1050, l
  *  closes it), double click the row, and wait until the column follows that key. The window reads /api/tasks and /api/runs
  *  (GET) when it opens: a hermetic check lets both through or answers them. `window` = the attached pop-up session. */
 export function taskWindow(page, browser, { width = 1500, height = 760 } = {}) {
-  const PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
+  const PANEL = TASK_PANEL;
   const ROW = `${PANEL}.querySelector('.task-row')`;
   const TABLE = `document.querySelector('.task-window table.task-table')`;
   let far = null;
@@ -456,7 +479,7 @@ export function taskWindow(page, browser, { width = 1500, height = 760 } = {}) {
     const at = await far.evaluate(`(() => { const tr = [...${TABLE}.querySelectorAll('tbody > tr[data-task-key]')].find(tr => tr.dataset.taskKey === ${JSON.stringify(key)}); if (!tr) return null;
       const el = tr.querySelector('code'); el.scrollIntoView({ block: 'center' }); const b = el.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`);
     if (!at) throw new Error(`the task window lists no ${key}`);
-    for (const clickCount of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await far.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount });
+    await far.clickAt(at, { count: 2 });
     return page.until(`${ROW}?.querySelector('.task-list-key')?.dataset.taskKey === ${JSON.stringify(key)} && !${PANEL}.querySelector('[role="status"]')`, tries);
   };
   const close = async () => { if (alive()) { try { await far.send('Runtime.evaluate', { expression: 'window.close()', userGesture: true }); } catch { /* gone */ } } far = null; await sleep(200); };

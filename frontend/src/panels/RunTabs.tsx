@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, bytes, copy, download, downloadPackage, Json, num, saveJson, short, si } from '../api';
+import { runName } from '../format';
+import { ENDED } from './RunControl';
 import { usePolling, useRequest } from '../store';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './calibrationPlan';
 import { requestTaskSave } from './TaskSave';
@@ -10,7 +12,6 @@ import { LaunchRefusal } from './LaunchRefusal';
 // llm_calls - the AI calls a run of the LLM search methods recorded (removed 2026-10-06, record 7.226) - stays in its run folder.
 const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'transitions', 'states'];
 
-const runName = (runDir: string) => runDir.split(/[\\/]/).filter(Boolean).pop() ?? 'run';    // the run folder's own name, unique per run
 
 // The spread needs two scored designs and the bonus a learner update: before that the line said "last 0 scored designs): ;".
 // No check at all (a backend that sent none) shows nothing.
@@ -119,7 +120,7 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
   return (<div className="status-grid">
     <SteeringCheck value={status.steering} />
     {status.manifest?.mock && <p className="mock">{status.manifest.mock_notice}</p>}
-    {status.calibration && <Calibration value={status.calibration} live={!!status.worker_alive || !['completed', 'failed', 'stopped', 'cancelled'].includes(status.state)} config={config} setConfig={setConfig} />}
+    {status.calibration && <Calibration value={status.calibration} live={!!status.worker_alive || !ENDED.includes(status.state)} config={config} setConfig={setConfig} />}
     <table className="grid small"><tbody>
       <tr><td>State</td><td><b>{status.state}</b>{status.stop_reason ? ` (${status.stop_reason})` : ''}{status.worker_alive ? ' - worker alive' : ''}</td></tr>
       <tr><td>Mode / model</td><td>{status.mode} {status.manifest?.source_model?.run_id ? `from ${status.manifest.source_model.run_id.slice(0, 12)} / ${status.manifest.source_model.checkpoint_id}` : '(no weights loaded)'}</td></tr>

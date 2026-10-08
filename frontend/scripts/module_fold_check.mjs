@@ -14,7 +14,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/module_fold_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { validConfiguration, check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -26,7 +26,7 @@ const REPORT = { resolved: ROOT, allowed: true, writable: true, error: null, hos
 const VALID = validConfiguration();
 
 await runChecks(browser, async () => {
-  const starter = await (await fetch(new URL('api/tasks/starter?task_key=synthetic:gpdk045_ota5', APP))).json();
+  const starter = await mockStarter(APP);
   // The network and training numbers are the ones this backend has stored, and the budget is well above its warm-up: a
   // configuration that raises no warning of its own (a differing network or a starved budget would be a warning inside).
   const stored = await (await fetch(new URL('api/network-settings', APP))).json();
@@ -62,7 +62,7 @@ await runChecks(browser, async () => {
   const clickHeading = async p => {
     await evaluate(`${fold(p)}.querySelector(':scope > summary').scrollIntoView({ block: 'center' })`); await sleep(120);
     const at = await evaluate(`(() => { const r = ${fold(p)}.querySelector(':scope > summary h3').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-    for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    await page.clickAt(at);
     await sleep(250);
   };
   const type = async (expression, text) => { await evaluate(`(() => { const i = ${expression}; i.scrollIntoView({ block: 'center' }); i.focus(); i.select(); })()`); await send('Input.insertText', { text }); await sleep(300); };

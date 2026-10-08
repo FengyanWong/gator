@@ -1,6 +1,6 @@
 import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { api, ApiError, Json, NO_ANSWER, plainError, saveJson } from './api';
+import { api, ApiError, Json, NO_ANSWER, plainError, saveJson, tasksShared } from './api';
 import { Look, LOOK_NAMES, setLook, useLook } from './theme';
 import { Icon } from './panels/Icons';
 import { setUnitForms } from './units';
@@ -10,14 +10,15 @@ import { ConnectionButton } from './panels/Connection';
 import { CheckSteps } from './panels/Consistency';
 import { Editors } from './panels/Editors';
 import { ValidationStatus } from './panels/Issues';
-import { LIVE_STATES, RunButtons, useRunControl } from './panels/RunControl';
+import { isLive, LIVE_STATES, RESUMABLE, RunButtons, useRunControl } from './panels/RunControl';
 import { continueConsent, continueReadiness, featuresOf, launchKept, startReadiness, useContinuation, useLauncher } from './launch';
 import { LaunchRefusal } from './panels/LaunchRefusal';
 import { useRunBrief } from './panels/RunBrief';
 import { RunListButton } from './panels/RunList';
 import { MODE_NAME, NextModel, OutputPanel, ResearchPanel, RunPanel } from './panels/Right';
-import { modelName } from './panels/ModelChooser';
-import { readSavePoint, SavePoint, withSavePoint } from './savePoint';
+import { modelNameAt } from './panels/ModelChooser';
+import { LOADS, readSavePoint, SavePoint, withSavePoint } from './savePoint';
+import { folderName, two } from './format';
 import { AgentWindowTab } from './panels/Agent';
 import { DataTab, FilesTab, LogsTab, StatusTab } from './panels/RunTabs';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './panels/calibrationPlan';
@@ -41,13 +42,9 @@ function rejected(e: any): Json {
   return { blocks_run: true, issues, facts: {} };
 }
 const NO_RUNS: Json[] = [];                          // one empty list: a failed read does not make the model list read again
-const folderName = (dir: string) => dir.split(/[\\/]/).filter(Boolean).pop() ?? dir;     // a run folder's own name, unique per run
-const two = (n: number) => String(n).padStart(2, '0');
 /** A run as a message names it: its task and when it was created, "ota7t 10-06 14:02" (the folder's name without a date). */
 const runTitle = (row: Json) => { const d = row.created_utc ? new Date(row.created_utc) : null;
   return d && !Number.isNaN(d.getTime()) ? `${row.task_name ?? folderName(row.run_dir)} ${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}` : folderName(row.run_dir); };
-/** The Modes that load a saved model. */
-const LOADS = ['fine_tune', 'frozen'];
 /** The run settings New run like this copies (record 7.267; plan "Existing runs: continued in place"): the Mode, the name of the
  *  model it saves, the budget and limits, the seed, the network, the training values, reward and conditions. Not the
  *  connection, the concurrency or the source (that is the save point the run loaded, read from its lineage). */
@@ -153,12 +150,21 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   // Only the newest read of the run list may answer: while the output root is typed, a half-typed path outside the roots
   // (403) used to empty the list when its answer came last.
   const listing = useRef(0);
-  const readRuns = (): Promise<{ list: Json[]; error: string | null }> => {
+  // One function for the whole page (useCallback; the output root through a ref), so the panels that take it are not drawn
+  // again at every status update (record 7.275). A list that is the same as the one held keeps that array: what depends
+  // on the runs (the saved models, the Training tab) is not asked again for nothing. `fresh`: the backend reads every
+  // run folder anew (Refresh list; record 7.274).
+  const outputRoot = useRef(config.output.output_root);
+  outputRoot.current = config.output.output_root;
+  const readRuns = useCallback((fresh = false): Promise<{ list: Json[]; error: string | null }> => {
     const mine = ++listing.current;
-    return api.runs(config.output.output_root ?? undefined).then(r => ({ list: r.runs as Json[], error: null }), e => ({ list: NO_RUNS, error: plainError(e) }))
-      .then(read => { if (mine === listing.current) { setRuns(read.list); setRunsError(read.error); } return read; });
-  };
-  const refreshRuns = (): Promise<Json[]> => readRuns().then(read => read.list);
+    return api.runs(outputRoot.current ?? undefined, fresh).then(r => ({ list: r.runs as Json[], error: null }), e => ({ list: NO_RUNS, error: plainError(e) }))
+      .then(read => {
+        if (mine === listing.current) { setRuns(held => (JSON.stringify(held) === JSON.stringify(read.list) ? held : read.list)); setRunsError(read.error); }
+        return read;
+      });
+  }, []);
+  const refreshRuns = useCallback((fresh = false): Promise<Json[]> => readRuns(fresh).then(read => read.list), [readRuns]);
 
   // Debounce validation and ignore replies for a configuration that has since changed. `sent`: the configuration the
   // report is about - its row paths (targets[3]) name rows of THAT configuration, which Delete, Undo or Import may have
@@ -237,19 +243,18 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const controlNow = useRef(control);              // the header as it is when the list arrives (a launch recovered after a reload may hold one by then)
   controlNow.current = control;
   useEffect(() => {
-    // The list follows the output root while it is typed: read 0.5 s after the last keystroke, not once per key (each read
-    // looks at every run under the root). The first read, when the page opens, goes at once.
+    // The list follows the output root while it is typed: read 1 s after the last keystroke, not once per key (each read
+    // looks at every run under the root; record 7.275). The first read, when the page opens, goes at once.
     const timer = setTimeout(() => refreshRuns().then(list => {
       // Once, when the page opens: a run that is live although this page does not hold it (started from another browser or
       // the CLI, or the browser's memory was cleared) is taken over, so the header offers Pause and Abort, not a second Start.
       if (adopted.current) return;
       adopted.current = true;
-      const isLive = (r: Json) => LIVE_STATES.includes(r.state);
       const header = controlNow.current;
       const running = list.some(r => r.run_dir === header.dir && isLive(r)) ? null : list.find(isLive);
       if (running) {
         // Said (record 7.261), with the paused run the header held: it stays paused, and Runs continues it.
-        const resting = list.find(r => r.run_dir === header.dir && ['paused', 'interrupted'].includes(r.state));
+        const resting = list.find(r => r.run_dir === header.dir && RESUMABLE.includes(r.state));
         header.take(running.run_dir); setRunDir(running.run_dir);
         // A launch of this tab sent before a reload may have made it: the launcher says so once it has asked.
         const where = launchKept() ? 'a live run' : 'a live run started elsewhere (another browser tab, the command line or a task\'s baseline)';
@@ -257,7 +262,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
           + (resting ? ` ${folderName(resting.run_dir)} stays paused; continue it from Runs.` : '') });
       }
       setLooked(true);
-    }), adopted.current ? 500 : 0);
+    }), adopted.current ? 1000 : 0);
     return () => clearTimeout(timer);
   }, [config.output.output_root]);
   // The bottom tabs follow the registered task (record 7.212, user: "after selecting specific task, it automatically load the
@@ -297,7 +302,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   // On success the run becomes the header's run and the shown run, in one place, and the message names it (record 7.261);
   // a paused run the header lets go of for it is named too - it stays paused, and Runs continues it.
   const launchedRun = (started: Json, as: 'start' | 'resume', note?: string) => {
-    const resting = control.dir && control.dir !== started.run_dir && ['paused', 'interrupted'].includes(control.status?.state) ? control.dir : null;
+    const resting = control.dir && control.dir !== started.run_dir && RESUMABLE.includes(control.status?.state) ? control.dir : null;
     control.take(started.run_dir, as);
     showRun(started, as, [note, resting && `${folderName(resting)} stays paused; continue it from Runs.`].filter(Boolean).join(' '));
   };
@@ -399,7 +404,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   };
   /** When the run's task was saved again after the run began, or null. */
   const savedSince = async (row: Json): Promise<string | null> => {
-    const task = (await api.tasks().catch(() => null))?.tasks?.find((t: Json) => t.task_key === row.task_key);
+    const task = (await tasksShared().catch(() => null))?.tasks?.find((t: Json) => t.task_key === row.task_key);
     return task?.saved_utc && row.created_utc && Date.parse(task.saved_utc) > Date.parse(row.created_utc) ? task.saved_utc : null;
   };
   /** The run's task, through the Tasks window's task load, with `change` in its one draft change; when it is the page's task
@@ -414,7 +419,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     if (!result.loaded && followedTask.current === row.task_key) followedTask.current = before;
     return result;
   };
-  const nameOf = (point: SavePoint) => { const row = runs.find(r => r.run_dir === point.run_dir); return row ? modelName(row) : folderName(point.run_dir); };
+  const nameOf = (point: SavePoint) => modelNameAt(runs, point.run_dir);
   const sinceText = (since: string | null, what: string) => since
     ? ` The task was saved again after ${what} began (${new Date(since).toLocaleString()}): the RL model window's check says whether the model still fits.` : '';
   /** Load run: its task, the model it ended with (in a Mode that loads one) and its results - one Undo step for the task and

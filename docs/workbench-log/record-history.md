@@ -381,3 +381,5 @@ One row per commit, newest last.
 | `0da08fe` | 10-08 13:24 | 7.277 | encoder comparison stage A complete; with 7.273's missing index row; docs only (session "Encoder run plan revision") |
 | `af45f1c` | 10-08 13:24 | - | record only: names the commit of record 7.277, and the table rows for 81250f7 and 0da08fe |
 | `eb8eb1c` | 10-08 13:39 | 7.278 | Astra's review of 7.274-7.276: the run-list cache under a lock, only the newest "Use this save point" lands, the compatibility check keeps the page configuration's contract (session "Concurrent cache and stale selection bugs") |
+| `5c49b66` | 10-08 13:39 | - | record only: names the commit of record 7.278, and the table rows for af45f1c and eb8eb1c |
+| `2e44685` | 10-08 15:05 | 7.279-7.282 | the audit of 2026-10-08: the same answers faster, run speed-ups with identical results, learning after the dispatch (a switch, off by default), the simulator host's job folders removed as a run goes; the record rolled over to `7.279-and-later.md`, with record 7.278's Live line (session "Frontend workbench layout design") |

@@ -17,6 +17,7 @@ cancelled; they stay charged because they started.
 """
 from __future__ import annotations
 
+from concurrent.futures import FIRST_COMPLETED, Future, wait as wait_for_futures
 from datetime import datetime, timezone
 import fcntl
 import json
@@ -24,6 +25,8 @@ import math
 import os
 from pathlib import Path
 import random
+import re
+import shlex
 import shutil
 import socket
 import time
@@ -43,6 +46,10 @@ from .trajectory import StateEncoder, TrajectoryLoader
 
 INFRASTRUCTURE_FAILURES = ('timeout', 'transport_error', 'license_error', 'backend_error')
 TERMINAL_STATES = ('completed', 'paused', 'stopped', 'cancelled', 'failed')
+TIMING_BATCH = 16                                   # evaluations per append to logs/timings.jsonl (record 7.280)
+# A Spectre job's folder on the simulator host, as the bridge names it (record 7.282): nothing else is ever deleted there.
+HOST_JOB_FOLDER = re.compile(r'^/tmp/virtuoso_bridge_[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/virtuoso_bridge_spectre/[0-9a-f]{6,64}$')
+HOST_CLEANUP_CHUNK = 200                            # folders per rm command
 # What the environment raises when the run's stop file reached a candidate before its first launch (analog_optimizer.envs.
 # sizing): nothing was simulated, the run itself stopped it.
 STOPPED_BEFORE_LAUNCH = 'Candidate stopped before nominal evaluation'
@@ -196,6 +203,14 @@ class RunEngine:
         self.events = JsonlAppender(self.layout.logs / 'events.jsonl')
         self.errors = JsonlAppender(self.layout.logs / 'errors.jsonl')
         self.dispatch_log = JsonlAppender(self.layout.data / '_journal' / 'dispatch.jsonl')
+        self._timings = []                               # what each evaluation's stages took, for logs/timings.jsonl
+        # Record 7.281 (switch run.advanced.update_after_dispatch): updates that wait until their lane has its next design,
+        # and the rows of updates learned since the last commit, which go with the next one.
+        self._learn_after_dispatch = bool(self.config.run.advanced.update_after_dispatch)
+        self._pending_updates, self._update_rows_waiting = [], []
+        # Record 7.282: the simulator host's folders of designs whose raw output this run did not keep, removed at each save
+        # point and at the end, and the runner on that host (False: not looked for yet).
+        self._host_folders, self._host_run = [], False
         final_state = 'failed'
         self.lanes, self.dataset = [], None
         self._preparation, self.preparation_report = None, None
@@ -463,6 +478,7 @@ class RunEngine:
         for name, payload in getattr(self, '_pending_events', []):
             self._event(name, **payload)
         idle_sleep = 0.002 if self.task.mock else 0.05
+        self._log_virtuoso_memory('start')
         while True:
             self._poll_control()
             self._check_limits()
@@ -476,6 +492,8 @@ class RunEngine:
                     state = self.lane_state[lane.lane_id]
                     if state['busy'] is None and not state['finished'] and self.stop_reason is None:
                         self._dispatch(lane)
+            if self._pending_updates:                    # the lanes have their next designs: now learn (7.281)
+                self._run_pending_updates()
             busy = [l for l in self.lanes if self.lane_state[l.lane_id]['busy']]
             if not busy:
                 if self.stop_reason is None and all(s['finished'] for s in self.lane_state.values()):
@@ -493,8 +511,95 @@ class RunEngine:
                     progressed = True
                     self._on_attempt(lane, handle)
             if not progressed:
-                time.sleep(idle_sleep)
+                self._wait_for_a_lane(busy, idle_sleep)
             self._write_status('running', throttle=1.0)
+
+    def _wait_for_a_lane(self, busy, seconds):
+        """Up to `seconds` until a busy lane's result is in, woken by it (record 7.280): the loop slept the whole 50 ms
+        between looks, so a result waited 25 ms on average before the scheduler took it - and its lane with it."""
+        handles = [self.lane_state[lane.lane_id]['busy']['handle'] for lane in busy]
+        futures = [getattr(handle, '_future', None) or getattr(handle, 'future', None) for handle in handles]
+        if futures and all(isinstance(future, Future) for future in futures):
+            wait_for_futures(futures, timeout=seconds, return_when=FIRST_COMPLETED)
+        else:
+            time.sleep(seconds)
+
+    def _write_timings(self):
+        """logs/timings.jsonl: what each evaluation's stages took - preparation, queue wait, parameter update, netlisting,
+        graph, simulation (record 7.280). The environment measured them, and they went with the per-candidate journal.
+        Diagnostics: written TIMING_BATCH at a time, without an fsync of their own."""
+        lines, self._timings = getattr(self, '_timings', None) or [], []
+        if not lines:
+            return
+        try:
+            with (self.layout.logs / 'timings.jsonl').open('a', encoding='utf8') as stream:
+                stream.write(''.join(json.dumps(line, default=str) + '\n' for line in lines))
+        except OSError as exc:
+            self._log_error('timings_not_written', exc)
+
+    # ------------------------------------------------------------------ the simulator host (record 7.282)
+    def _host_runner(self):
+        """run(script) on the simulator host through the bridge's own SSH runner (model_library.host_runner), or None: a
+        MOCK or ngspice run, output.keep_simulator_host_folders, or a host that cannot be reached (said in errors.jsonl)."""
+        if self._host_run is not False:
+            return self._host_run
+        self._host_run = None
+        key = str(getattr(self.task, 'task_key', '') or '')
+        if self.task.mock or not key.startswith('real:') or self.config.output.keep_simulator_host_folders:
+            return None
+        try:
+            from .model_library import host_runner
+            from .tasks import generated_bridge_config
+            self._host_run = host_runner(generated_bridge_config(key[len('real:'):], self.config.run.connection_profile_id)[0])
+        except Exception as exc:
+            self._log_error('simulator_host_unreachable', exc)
+        return self._host_run
+
+    def _remember_host_folder(self, job_dir):
+        """The host folder of a design whose raw output this run drops: its measurements.json names the result folder
+        (results_on_host, written by the Maestro measurement). Only a folder of the bridge's own form is kept for removal."""
+        if self.task.mock or self.config.output.keep_simulator_host_folders:
+            return
+        raw = (read_json(Path(job_dir) / 'measurements.json', default=None) or {}).get('results_on_host')
+        folder = os.path.dirname(raw) if isinstance(raw, str) else ''
+        if HOST_JOB_FOLDER.match(folder) and '/../' not in folder and folder not in self._host_folders:
+            self._host_folders.append(folder)
+
+    def _clean_host(self):
+        """Remove the remembered folders from the simulator host, HOST_CLEANUP_CHUNK per command: the host kept every job's
+        folder (58,000 by the morning of 2026-10-08, when its Virtuoso had grown to 10.5 GB and the queue stopped). Never
+        a pattern: each folder is named, and each one was named by this run's own measurement. A failure is said and the
+        folders are tried again at the next save point."""
+        folders = list(self._host_folders)
+        if not folders or self._host_runner() is None:
+            return
+        removed = 0
+        try:
+            for start in range(0, len(folders), HOST_CLEANUP_CHUNK):
+                chunk = folders[start:start + HOST_CLEANUP_CHUNK]
+                self._host_run('rm -rf -- ' + ' '.join(shlex.quote(folder) for folder in chunk) + '\n')
+                removed += len(chunk)
+                self._host_folders = [f for f in self._host_folders if f not in set(chunk)]
+        except Exception as exc:
+            self._log_error('simulator_host_cleanup_failed', exc)
+        if removed:
+            self._event('simulator_host_folders_removed', count=removed, left=len(self._host_folders))
+
+    def _log_virtuoso_memory(self, when):
+        """Virtuoso's memory on the simulator host at the run's start and end (record 7.282): it had grown to 10.5 GB over
+        a night of runs. Said in events.jsonl as `virtuoso_memory`; nothing is changed on the host."""
+        if self._host_runner() is None:
+            return
+        try:
+            listing = self._host_run('ps -u "$(id -un)" -o pid,rss,comm\n')      # its header line is no process
+            processes = []
+            for line in (listing or '').splitlines():
+                fields = line.split(None, 2)
+                if len(fields) == 3 and 'virtuoso' in fields[2].lower() and fields[0].isdigit() and fields[1].isdigit():
+                    processes.append(dict(pid=int(fields[0]), rss_mb=round(int(fields[1]) / 1024, 1), name=fields[2].strip()))
+            self._event('virtuoso_memory', when=when, processes=processes, total_mb=round(sum(p['rss_mb'] for p in processes), 1))
+        except Exception as exc:
+            self._log_error('virtuoso_memory_unread', exc)
 
     def _poll_control(self):
         command = read_json(self.layout.control / 'command.json', default={})
@@ -840,7 +945,12 @@ class RunEngine:
                     admitted = True
             if self.archive:
                 transition_rows, state_rows = self._transition_rows(busy, step, lane, commit_seq, admitted, record)
-            if admitted:
+            if self._pending_updates and not self._defer_updates():
+                self._run_pending_updates()              # no later commit is sure to come: earlier results' updates now (7.281)
+            if admitted and self._defer_updates():
+                if self._updates_due():                  # decided now, run once the lane has its next design (7.281)
+                    self._pending_updates.append(commit_seq)
+            elif admitted:
                 update_rows = self._maybe_update(commit_seq)
         # ---- first feasibility: decided when the scheduler receives the result
         in_flight_before = set(self.ledger.first_feasible['in_flight_evaluation_ids']) if self.ledger.first_feasible else set()
@@ -922,12 +1032,20 @@ class RunEngine:
                 infrastructure or ('invalid_measurement' if status == 'ok' else (record.get('reason_code') or status))),
             diagnostics=redact(diagnostics, 2000), terminated=terminated, truncated=truncated,
             replay_eligible=eligible, duplicate_of=record.get('duplicate_of'))
+        if self._update_rows_waiting:                    # updates learned since the last commit go with this one (7.281)
+            update_rows, self._update_rows_waiting = self._update_rows_waiting + update_rows, []
         bundle = dict(evaluation_id=evaluation_id, commit_seq=commit_seq, rows=dict(
             evaluations=[evaluation], parameters=self._parameter_rows(busy, record, evaluation_id),
             metrics=self._metric_rows(evaluation_id, raw_metrics, raw_validity, raw_units, derived, spec_values,
                                       constraint_rows, status, record.get('condition_results')),
             simulator_jobs=job_rows, learner_updates=update_rows, states=state_rows, transitions=transition_rows))
         self.dataset.commit(bundle)                              # <- durable acknowledgement
+        timings = record.get('timings')
+        if isinstance(timings, dict) and timings:
+            self._timings.append(dict(evaluation_id=evaluation_id, worker_id=lane.lane_id, phase=busy['phase'],
+                                      committed_at=iso(committed_at), seconds=timings))
+            if len(self._timings) >= TIMING_BATCH:
+                self._write_timings()
         if role is not None:
             write_json(self.layout.best_design / 'tracker_state.json',
                        dict(last_commit_seq=commit_seq, **self.tracker.state_dict()))
@@ -956,10 +1074,30 @@ class RunEngine:
     def _run_created(self):
         return datetime.fromisoformat(self.manifest['created_utc'])
 
+    def _updates_due(self):
+        adv = self.config.run.advanced
+        return len(self.replay) >= adv.batch_size and not self.replay.insertions % adv.update_every
+
     def _maybe_update(self, commit_seq):
+        return self._run_updates(commit_seq) if self._updates_due() else []
+
+    def _defer_updates(self):
+        """Whether a result's updates wait until the lanes have their next designs (record 7.281, switch
+        run.advanced.update_after_dispatch): only while budget is left and the run is not stopping - then an evaluation
+        dispatched after them is sure to commit later and carry their rows. A lane already at work is not enough: its
+        result may commit in the same pass, before the waiting updates have run."""
+        return (self._learn_after_dispatch and self.stop_reason is None and not self.forced
+                and self.ledger.remaining() > 0)
+
+    def _run_pending_updates(self):
+        """The updates of results whose lanes got their next designs first (record 7.281). Their rows go with the next
+        commit; a save point runs them first, so it holds all that was learned."""
+        pending, self._pending_updates = getattr(self, '_pending_updates', None) or [], []
+        for commit_seq in pending:
+            self._update_rows_waiting += self._run_updates(commit_seq)
+
+    def _run_updates(self, commit_seq):
         adv, rows = self.config.run.advanced, []
-        if len(self.replay) < adv.batch_size or self.replay.insertions % adv.update_every:
-            return rows
         every = self.config.output.learner_update_log_every
         for _ in range(adv.updates_per_transition):
             if self.freeze is not None:
@@ -1232,6 +1370,7 @@ class RunEngine:
                                                                        updated_utc=iso())
                         changed = True
                     else:
+                        self._remember_host_folder(Path(source))
                         shutil.rmtree(source, ignore_errors=True)
                 if self.config.output.waveform_retention != 'all':
                     # Registered temporaries only: the export package and the per-candidate journal are
@@ -1249,6 +1388,7 @@ class RunEngine:
             if previous and previous != current:
                 for key, entry in index['entries'].items():
                     if entry.get('evaluation_id', key) == previous and entry['status'] == 'retained_best':
+                        self._remember_host_folder(self.layout.run_dir / entry['path'])
                         shutil.rmtree(self.layout.run_dir / entry['path'], ignore_errors=True)
                         entry.update(status='deleted_by_policy', updated_utc=iso(), reason='superseded by a better design')
                         changed = True
@@ -1282,6 +1422,8 @@ class RunEngine:
         return result
 
     def _checkpoint(self, kind):
+        self._run_pending_updates()                      # the save point holds every update so far (7.281)
+        self._clean_host()                               # the lanes are idle: the host's dropped job folders go (7.282)
         if not self.config.output.save_checkpoints:
             self.checkpoint_due = False
             return None
@@ -1352,6 +1494,14 @@ class RunEngine:
             pass
 
     def _finalize(self, final_state):
+        self._write_timings()
+        try:
+            self._run_pending_updates()                  # before the last save point and its "unchanged" check (7.281)
+        except Exception as exc:
+            self._log_error('pending_updates_failed', exc)
+        if getattr(self, '_update_rows_waiting', None):  # no commit came after them: learned, but their rows not recorded
+            self._event('learner_update_rows_unrecorded', count=len(self._update_rows_waiting),
+                        note='the learner state and its save points hold these updates; only their rows are missing')
         problems = []
         for lane in self.lanes:
             try:
@@ -1370,6 +1520,11 @@ class RunEngine:
                 problems.append(f'preparation service: {type(exc).__name__}: {exc}')
             self._preparation = None
         self._clear_scratch()
+        try:                                             # every lane is closed: the host's dropped job folders go (7.282)
+            self._clean_host()
+            self._log_virtuoso_memory('end')
+        except Exception as exc:
+            self._log_error('simulator_host_cleanup_failed', exc)
         checkpoint = None
         persistence_ok = self.dataset is not None and self.dataset.failed is None
         if persistence_ok and hasattr(self, 'ledger'):

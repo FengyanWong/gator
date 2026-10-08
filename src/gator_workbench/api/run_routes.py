@@ -204,10 +204,11 @@ def register(app: FastAPI, context: ApiContext):
     def saved_models(output_root: str | None = None, include_mock: bool = True, fresh: bool = False):
         """The model chooser's list: every run that holds a saved RL model, with all of its save points.
         Small metadata files only; the selected model is verified by `/api/runs/model` as before. The run list's cache
-        keeps each run's save points too (record 7.274); `fresh` reads every run folder again."""
+        keeps each run's save points too (record 7.274), read many runs at a time (7.279); `fresh` reads every run
+        folder again."""
         try:
-            return dict(models=ckpt.saved_models(runs.list_runs(context.roots, output_root, include_mock=include_mock, fresh=fresh),
-                                                 runs.checkpoint_listing))
+            rows = runs.list_runs(context.roots, output_root, include_mock=include_mock, fresh=fresh)
+            return dict(models=ckpt.saved_models(rows, runs.checkpoint_listings(rows)))
         except PathNotAllowed as exc:
             fail(403, exc)
 

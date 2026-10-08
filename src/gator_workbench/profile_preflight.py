@@ -103,7 +103,7 @@ def preflight(monitor, name, profile_id, *, timeout=300.0, command=None, acknowl
     check belongs to acknowledged unknown connection layers, so this gate accepts them too."""
     from . import profiles
     directory = profiles.profile_dir(name)
-    if name not in profiles.list_profiles():
+    if profiles.profile_entry(name) is None:
         raise KeyError(name)
     # the write gate for its layer set (1-5); nothing is written
     require_gate(monitor, 'write_cellview', profile_id, 'the check', acknowledge_unknown=acknowledge_unknown)

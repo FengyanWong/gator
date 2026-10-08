@@ -20,6 +20,9 @@ def ota(**run):
 
 def test_legacy_defaults_keep_exact_pinned_hashes():
     c = ota()
+    # Pinned with the output defaults of then; record 7.280 made them a save point every 200 evaluations and the tables
+    # every 64. A configuration saved earlier states 50 and 16 and keeps its hash, which is what is pinned here.
+    c = c.model_copy(update=dict(output=c.output.model_copy(update=dict(checkpoint_every_evaluations=50, flush_every_evaluations=16))))
     assert config_hash(c) == 'a32dbd027a6769bc1d28ca48d4f55fb430e77be9b097fff3f3dce5a80785b9d7'       # pinned on the stand-in
     assert task_definition_hash(c) == '5f181ef30c4ba6b5a1663871f07d48c9ed976334b6b8babd9870a7157c8a978a'   # (7.128)
     assert c.run.reward.violation_shape == 'capped' and c.run.advanced.alpha_learning_rate is None

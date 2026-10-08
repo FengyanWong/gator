@@ -23,21 +23,23 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.81-7.100.md`](workbench-log/7.81-7.100.md) | entries 7.81-7.100 |
 | [`7.101-7.118.md`](workbench-log/7.101-7.118.md) | entries 7.101-7.118 |
 | [`7.119-7.265.md`](workbench-log/7.119-7.265.md) | entries 7.119-7.265 (7.262, written later, is in the next file) |
-| [`7.266-and-later.md`](workbench-log/7.266-and-later.md) | entries 7.266 onwards: the OPEN file |
+| [`7.266-7.278.md`](workbench-log/7.266-7.278.md) | entries 7.266-7.278 (and 7.262, written later) |
+| [`7.279-and-later.md`](workbench-log/7.279-and-later.md) | entries 7.279 onwards: the OPEN file |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
-`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md` and `7.119-and-later.md` are pointers kept for old links.
+`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md` and `7.266-and-later.md` are pointers kept for old links.
 
 **Adding an entry:** append `### 7.N <title> (<date>, <session>, <request>)` at the end of the open file, with the next
 free number (look at the table below AND at that file: sessions work in parallel), and add a one-line row at the end of
 the table below: `| 7.N | <short title, at most about 110 characters> |`. A commit gets its row at the end of the commit
 table in `record-history.md`.
 
-**Rolling the open file over:** when the open file passes entry 7.285 or 60 kB, whichever comes first, move its entries
-unchanged into `docs/workbench-log/7.266-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
-the old name as a pointer (like the four above), change the file table above, and then update `CLAUDE.md` and
+**Rolling the open file over:** when the open file passes entry 7.299 or 60 kB, whichever comes first, move its entries
+unchanged into `docs/workbench-log/7.279-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
+the old name as a pointer (like the five above), change the file table above, and then update `CLAUDE.md` and
 `functionality-reference.md`, which name the open file. (`7.119-and-later.md` was rolled over at entry 7.265 and 669 kB,
-2026-10-07, record 7.268 - eleven times the mark; do it in time.) One Read returns about 68 kB of text: a larger open file hides its newest entries from a default read
+2026-10-07, record 7.268 - eleven times the mark; do it in time. `7.266-and-later.md` was rolled over at entry 7.278
+and 75 kB, 2026-10-08, record 7.279.) One Read returns about 68 kB of text: a larger open file hides its newest entries from a default read
 (7.64).
 
 ## Entries
@@ -325,3 +327,7 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.276 | Audit of 2026-10-07, part 3: clean-up - the Tasks, Runs and saved models tables share one table code (`TableView.tsx`; each keeps its sort direction, the saved models' tick-all box shows "some ticked" too), small helpers in `format.ts`, dead model-card styles and an unused close(), messages and texts that sent users to "RL networks" or "Load PDK..." name the RL model window and the Virtuoso window, check helpers in the harness (`browser.popup`, `clickAt`, `mockStarter`, `TASK_PANEL`), and the checks' scratch backends list empty output folders (`GATOR_WORKBENCH_DEFAULT_OUTPUT_ROOT`) |
 | 7.277 | Encoder comparison, stage A complete after the host restart (24 GB, 16 cores, 272 GB): GraphGPS keeps up with the Graph Transformer on all six circuits (ahead on RING3 and the VCO, slower on OTA7t width), the cross-attention encoder on five and slower on one, three GraphGPS passes on LDO1 trigger the GT LDO references; the cross-attention VCO run stopped at 725 by the stall; stage C running (session "Encoder run plan revision"); docs only |
 | 7.278 | Astra's review of 7.274-7.276 (2026-10-08), items 1-3 checked and fixed: the run list's cache touched under a lock only (requests run on several threads; two lists at once could raise "dictionary changed size during iteration"); only the newest "Use this save point" lands and New model lets a pending one go; the compatibility check keeps the contract of the page's configuration (what cost 0.35-1.4 s per check was hashing the optimizer source on the D: drive inside `contract()`, not the five networks: 10-20 ms) - a start still builds it anew. Items 4 (checkpoint listing invalidated by status writes: the page asks for saved models only when a run's state changes) and 5 (lean name discovery: only a cold cache) left as they are |
+| 7.279 | Audit of 2026-10-08, part 1: faster edits, windows and Virtuoso actions - one task's profile read instead of all (686 -> 16 ms), the connection gate's run lookup asked last and kept 3 s, no run-cache expiry, runs and a run's files read 16 at a time, the source digest hashed in a thread, a start's git facts read during its connection check, the PDK's model files kept and downloaded only when changed, the Training and saved-model dates formatted once, polls that pause while no window is seen, memoised Runs/Logs/Files (3.95 -> 0.66 ms script per status update); the record file rolled over (`7.266-7.278.md`) |
+| 7.280 | Audit of 2026-10-08, part 2: identical-result run speed-ups - a save point every 200 evaluations and the data tables every 64 by default (a draft holding an old default exactly is upgraded once, one Undo step), the scheduler woken by a lane's result, each evaluation's stage times in `logs/timings.jsonl` |
+| 7.281 | Audit of 2026-10-08, part 3: "Send the next design before learning" (`run.advanced.update_after_dispatch`), off by default - the lanes simulate while the learner learns; the same updates and save points, each design from a policy a few updates older; the learning check runs after the encoder queue (user) |
+| 7.282 | Audit of 2026-10-08, part 4: a run removes the simulator host's job folders of the designs whose raw output it drops (each named by its measurement, at each save point and the end) and says Virtuoso's memory at its start and end; `output.keep_simulator_host_folders` keeps everything; on the user's word the 66,042 host folders older than two hours were deleted (49 GB) |

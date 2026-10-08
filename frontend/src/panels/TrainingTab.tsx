@@ -65,9 +65,25 @@ function storedCompare(): string[] {
 }
 const readError = (e: any) => (e instanceof ApiError && (e.status === 405 || (e.status === 404 && e.detail === 'Not Found')) ? OLDER_BACKEND : plainError(e));
 const taskOf = (r: Json) => r?.task_name ?? String(r?.task_id ?? '').split(':')[0];
-const created = (utc?: string | null) => (utc ? new Date(utc).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'unknown time');
-/** A run in the Compare list, as the run window names it: when, task, mode and seed, state, evaluations. */
-const runChoice = (r: Json) => `${created(r.created_utc)} | ${taskOf(r)} | ${r.mode} seed${r.seed} | ${r.state ?? 'not started'}${r.evaluations != null ? ` | ${r.evaluations} eval.` : ''}${r.mock ? ' [MOCK]' : ''}`;
+// One formatter for every date (record 7.279): toLocaleString built a new one per call, and the Compare list formatted
+// every run's date at every status update - 85 % of the page's work per update, even with the tab hidden.
+const CREATED = new Intl.DateTimeFormat([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+const created = (utc?: string | null) => {
+  if (!utc) return 'unknown time';
+  const d = new Date(utc);
+  return Number.isNaN(d.getTime()) ? 'Invalid Date' : CREATED.format(d);         // what toLocaleString said for it
+};
+/** A run in the Compare list, as the run window names it: when, task, mode and seed, state, evaluations. Worked out once
+ *  per row: a row stays the same object until the run list changes (App.tsx keeps an unchanged list, record 7.275). */
+const CHOICES = new WeakMap<object, string>();
+const runChoice = (r: Json) => {
+  let text = CHOICES.get(r);
+  if (text === undefined) {
+    text = `${created(r.created_utc)} | ${taskOf(r)} | ${r.mode} seed${r.seed} | ${r.state ?? 'not started'}${r.evaluations != null ? ` | ${r.evaluations} eval.` : ''}${r.mock ? ' [MOCK]' : ''}`;
+    CHOICES.set(r, text);
+  }
+  return text;
+};
 
 const POLL_MS = 2000, RETRY_MS = 5000, FRAME_MS = 1000;
 const NONE: View = { mode: 'all' };

@@ -194,6 +194,9 @@ runs then). Run configuration's model line and this line come from the same valu
   last condition since 7.125 - a finished run in the tabs was read every 1.5 s while the header paused another run). A paused, stopped or
   interrupted run is read every 15 s (another browser may continue it), and an ended one once a minute. Until then a
   paused or stopped run was read every 1.5 s, and each read re-reads its tables.
+* No poll reads while no window of the page can be seen - the page's tab is hidden or minimized and no pop-up window of
+  it is in view - and each reads at once when one is seen again (record 7.279; a hidden tab went on with 30-50 requests a
+  minute). A pop-up counts: Edge also calls the page hidden when its window is covered while a pop-up of it is in view.
 * Whether a run's worker is alive is read from its lock at every status read (`RunLock.held`). The test asks for a
   shared lock, so reads at the same moment never take each other for a worker (record 7.134). An exclusive test did:
   for an instant after an Abort the header went back from "Start" to "Aborting...", and a Start or Resume could be
@@ -978,6 +981,9 @@ tested the connection two or three times, about 0.9 s each. Conditions for the r
 
 A failed or uncertain result is never reused, and a real simulation always tests afresh. If the link is lost within
 those seconds, the step that then works on the cell reports the bridge's own error instead of the gate's.
+Whether a run is working on the connection (the third condition) is asked only for a result that could be reused, and
+one answer serves 3 s (record 7.279): the look reads the run list and up to 20 status files on the D: drive, 1-2.4 s,
+and it was asked first, at every gate - about ten times in one Save task.
 
 ### Connecting from the panel (added 2026-09-20, user request)
 
@@ -1194,7 +1200,7 @@ a Windows path is shown only after a token written through Linux was read back t
     best_design/{best_feasible.json, best_infeasible.json, parameters.csv, optimized_dut.scs}
     checkpoints/<id>/{training_state.pt, model_weights.pt, metadata.json, replay_buffer/manifest.json}
     checkpoints/{latest.json, best_policy.json}
-    waveforms/  logs/{events,errors}.jsonl  exports/  control/  work/
+    waveforms/  logs/{events,errors,timings}.jsonl  exports/  control/  work/
 ```
 
 Mapping to the recommended layout of the specification:
@@ -1311,11 +1317,12 @@ it). The window lists every run under the output folder, newest first, one row p
   is more than a minute old (record 7.275).
 * **The backend keeps what it read of each run** (record 7.274): a run folder is read again when it changed - every file
   the list reads is written whole, a temporary file renamed over the old one, which changes its folder - when its save
-  points changed (a new one arrives complete, then `latest.json` is replaced), and at least every ten minutes; the lock
-  of a run whose status says it works is looked at every time. **Refresh list** reads every run folder
-  anew (`GET /api/runs?fresh=true`), for a file another tool edited in place. The first read after a backend start
-  reads every run (5-7 s for about 115 runs on the D: drive, 7-13 s before), a later one only what changed (1.5 s).
-  The backend answers several requests at once, so the cache is touched under a lock (record 7.278).
+  points changed (a new one arrives complete, then `latest.json` is replaced); the lock of a run whose status says it
+  works is looked at every time. Nothing expires by age any more (record 7.279: every entry expired together after ten
+  minutes, and the saved models took 12.9 s again). **Refresh list** reads every run folder anew
+  (`GET /api/runs?fresh=true`), for a file another tool edited in place. The runs are read 16 at a time (record 7.279:
+  file operations on the D: drive overlap well), the first read after a backend start too. The backend answers several
+  requests at once, so the cache is touched under a lock (record 7.278).
 * The times come from the run's own files (`run_manifest.json` segments, `status.json`); `GET /api/runs` carries them
   as `started_utc`, `ended_utc`, `last_seen_utc`, `active_seconds`, `paused_seconds`, `segments`. A workbench server
   started before this was added lists runs without them: the window says so and asks for a restart of `serve`.
@@ -1618,7 +1625,12 @@ keeps an empty scale, which the backend sizes from the threshold. Saved empty sc
 7.112 fixed a suggestion that froze at 1 - e.g. 1 W - when a row was added before its limits were typed.)
 
 Reward and conditions holds the nominal gate band and objective shape in its Advanced fold (record 7.183, below). **RL model... → Advanced** exposes **Alpha learning rate**,
-stored per configuration; empty inherits the actor learning rate. No separate starting rate passed the extended
+stored per configuration; empty inherits the actor learning rate. Beside it, **Send the next design before learning**
+(`run.advanced.update_after_dispatch`, record 7.281, off by default, stored per configuration): a lane gets its next
+design before the learner's updates of the result it brought, so it simulates while the learner learns - an estimated
+11-27 % shorter run on last night's runs. The number of updates and what every save point holds stay as without it;
+each design comes from a policy a few updates older, and the evaluations table's `policy_version` says which. It stays
+off until a check on real tasks shows that learning is not worse. No separate starting rate passed the extended
 1,000-update unit check, so new configurations leave it empty. Attributed failures continue the episode, while its normal
 horizon and configured success ending still apply.
 
@@ -2033,6 +2045,26 @@ in `~/.local/state/gator/bridge-state` (`paths.bridge_state_dir()`, `GATOR_BRIDG
 same folder holds the session lock that runs, checks and Save task take, so every GATOR process names it the same way,
 whatever its settings folder.
 
+**The scheduler, 2026-10-08** (records 7.280-7.282; measured on the twelve 800-evaluation runs of the night before: at
+4 lanes the scheduler thread was busy 49-62 % of the time - the learner's 8 updates per result alone 34-48 % - and only
+1.2-2.1 of the 4 lanes simulated on average):
+- A save point every 200 evaluations by default (50 before): a save waits until every lane is idle, which cost 8-10 % of
+  a 4-lane run. The data tables are written every 64 evaluations (16 before; each write took 0.35-0.94 s). Neither
+  changes a result.
+- The scheduler is woken by a lane's result instead of looking every 50 ms.
+- `logs/timings.jsonl`: what each evaluation's stages took (preparation, queue wait, parameter update, netlisting,
+  graph, simulation), written 16 at a time. The environment measured them before, and they went with each
+  evaluation's journal.
+- **Send the next design before learning** (Advanced, record 7.281, off by default; see the RL model window).
+- **The simulator host's job folders** (record 7.282): the bridge keeps every Spectre job's folder on the host, and a
+  night of runs left 58,000 of them while Virtuoso grew to 10.5 GB (68,871 folders, 49 GB, again by the next noon). A
+  run now removes the host folders of the designs whose raw output it does not keep - each folder named by that
+  design's own measurement (`results_on_host`), never a pattern - at each save point (the lanes are idle then) and at
+  its end, through the bridge's own SSH runner, and says `simulator_host_folders_removed` in its events. The kept
+  designs (best and failures) keep their host folders, so they can still be measured again there.
+  `output.keep_simulator_host_folders` keeps everything. At its start and end a run says Virtuoso's memory on the host
+  (`virtuoso_memory`).
+
 Tried and removed (records 7.149 and 7.152): a Spectre that stays running in each lane, sent only each candidate's changed
 values. Its reruns took 0.05 s, but a running Spectre does not follow changes of `l` or `m` (DC up to 98% off a fresh
 Spectre on the same values), so it could not give correct values; `docs/plan-persistent-spectre.md`.
@@ -2367,7 +2399,12 @@ library>`. Backend: `bridge_read.pdk_with_import` (states `read` / `not_read` / 
    looked into: its schematic is opened read-only and closed again, as the bridge's reader does, and the primitive it
    places names the model (`resm1` -> `primRes2` with model `g45rm1`).
 2. The PDK's Spectre model files (the connection's `model_file` and everything it includes), downloaded through the
-   bridge into a temporary folder OUTSIDE the repository, scanned and deleted. They say what each model is.
+   bridge into a temporary folder OUTSIDE the repository, scanned and deleted. They say what each model is. A copy of
+   each is kept in `configs/local/workbench/pdk-model-files/<library>/` (record 7.279): every cell read and Save task
+   read the PDK again, nine downloads and 5.3 MB, 2.5-5 s, for files that do not change. One read-only query asks the
+   simulator host for each file's size and modification time, and a file is taken from the copy only when both are
+   those recorded when it was downloaded AND the copy still has its SHA-256; anything else is downloaded, as before,
+   and so is everything when that query gets no answer.
 Empty boxes = the technology library of the connection's design library and the connection's model file. The result is
 kept under `configs/local/workbench/pdks/<id>/` (git-ignored): the extracted facts and the files' SHA-256 - never the
 PDK files. Every version ever loaded stays in `versions/<sha256>.json`; a run keeps its own copy of the list it was
@@ -2982,7 +3019,9 @@ The frontend keeps the Agent window and its "Agent..." button in `panels/Agent.t
 `CircuitBrowser.tsx` owns the Virtuoso browsing chain and circuit details; `Left.tsx` coordinates task selection.
 Shared async actions and stale-response handling live in `store.ts`. Ordinary advanced numeric fields use
 one descriptor list and defaults from the backend schema; byte units and checkpoint intervals retain their
-specialized controls. The Training tab stays mounted when another tab is selected (its charts survive a look at another tab).
+specialized controls. The save point interval's default is 200 evaluations and the data tables are written every 64
+(record 7.280; 50 and 16 before): once per browser, a draft that still holds an old default exactly gets the new one,
+as one Undo step, and says so. The Training tab stays mounted when another tab is selected (its charts survive a look at another tab).
 
 Reads managed by `useRequest` and direct JSON GETs have a 30-second deadline. Changing a selection, disabling a read
 or leaving its view cancels the hook's owned transport; shared cached reads keep their own bounded lifetime.

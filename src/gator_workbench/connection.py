@@ -690,14 +690,16 @@ class ConnectionMonitor:
             result = self._results.get(profile_id)
         if result is None or result.get('kind') != kind or result.get('scope') not in ('interactive', 'full'):
             return None
-        active = self.active_run_lookup(profile_id) if self.active_run_lookup else None
-        if bool(active) != bool(result.get('run_active')):
-            return None
         age = (utcnow() - _parse_time(result['checked_utc'])).total_seconds()
         if not 0 <= age <= self.gate_reuse_seconds:
             return None
         states = {item['layer']: item['state'] for item in result['layers']}
-        return result if all(states.get(name) == 'ok' for name in needed) else None
+        if not all(states.get(name) == 'ok' for name in needed):
+            return None
+        # Asked last (record 7.279): the lookup reads the run list on the D: drive, 1-2.4 s, and only a result that could
+        # be reused needs it. It was asked first, so every gate that went on to probe paid for it twice.
+        active = self.active_run_lookup(profile_id) if self.active_run_lookup else None
+        return result if bool(active) == bool(result.get('run_active')) else None
 
     def _log(self, result):
         """Application-level diagnostics log. Never a research table, never an aggregate."""

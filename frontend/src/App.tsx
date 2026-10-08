@@ -133,6 +133,23 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const [taskSlot, setTaskSlot] = useState<HTMLElement | null>(null);              // editors' tab line: where the circuit panel puts "Save task"
   const [taskNotes, setTaskNotes] = useState<HTMLElement | null>(null);            // under the editors' toolbar: its messages and questions
   const [message, setMessage] = useState<Json>(null);
+  // Two output defaults changed (record 7.280): a save point every 200 evaluations (50 before) and the data tables written
+  // every 64 (16 before). A draft keeps the values it was made with, so, once per browser, a draft that still holds an old
+  // default exactly gets the new one - as one Undo step, and said; a value chosen otherwise is kept.
+  useEffect(() => {
+    try {
+      const key = 'gator-workbench-output-defaults-2026-10-08';
+      if (localStorage.getItem(key)) return;
+      localStorage.setItem(key, 'checked');
+    } catch { return; }                 // without lasting storage a value the user restored would be changed again
+    const out = config.output ?? {};
+    const saves = out.checkpoint_every_evaluations === 50 && out.checkpoint_every_seconds == null, tables = out.flush_every_evaluations === 16;
+    if (!saves && !tables) return;
+    setConfig((c: Json) => ({ ...c, output: { ...c.output, ...(saves ? { checkpoint_every_evaluations: 200 } : {}),
+      ...(tables ? { flush_every_evaluations: 64 } : {}) } }));
+    setMessage({ level: 'info', text: `Updated to the new defaults (record 7.280): ${[saves && 'a save point every 200 evaluations (was 50)',
+      tables && 'the data tables written every 64 evaluations (was 16)'].filter(Boolean).join(' and ')}. Undo restores the old values.` });
+  }, []);
   const [fatal, setFatal] = useState<string | null>(null);
   const profileId: string | null = config.run.connection_profile_id ?? null;
 
@@ -475,6 +492,16 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   /** Continue... of the Runs window: the run is shown under Run status with its budget form open, where it goes on. */
   const [askContinue, setAskContinue] = useState<{ runDir: string; serial: number } | null>(null);
   const continueFrom = (row: Json) => { setRunDir(row.run_dir); setTab('status'); unfold(); setAskContinue(a => ({ runDir: row.run_dir, serial: (a?.serial ?? 0) + 1 })); };
+  // The Runs window's actions as functions that stay the same and call the page's latest ones (record 7.279): with new
+  // functions at every render, the memoised window was drawn again at every status update.
+  const runActions = useRef({ loadRun, newRunLike, continueFrom, setRunDir, unfold });
+  runActions.current = { loadRun, newRunLike, continueFrom, setRunDir, unfold };
+  const runWindow = useMemo(() => ({
+    choose: (dir: string | null) => { runActions.current.setRunDir(dir); if (dir) runActions.current.unfold(); },
+    load: (row: Json) => { void runActions.current.loadRun(row); },
+    newLike: (row: Json) => { void runActions.current.newRunLike(row); },
+    continueFrom: (row: Json) => runActions.current.continueFrom(row),
+  }), []);
 
   // ---- the splitter above the bottom panel (record 7.158): nothing moves unless it is dragged, double-clicked or keyed --------
   const layoutRef = useRef<HTMLDivElement>(null);
@@ -585,8 +612,8 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
           {(['status', 'logs', 'data', 'files', 'training', 'corners'] as BottomTab[]).filter(t => t !== 'corners' || cornersUsable).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); unfold(); }}>
             {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', training: 'Training', corners: 'Corner check' }[t]}</button>)}
           <span className="spacer" />
-          <RunListButton runs={runs} runsError={runsError} runDir={runDir} status={status} onChoose={dir => { setRunDir(dir); if (dir) unfold(); }} onRefresh={refreshRuns}
-            onLoad={row => void loadRun(row)} onNewLike={row => void newRunLike(row)} onContinue={continueFrom} />
+          <RunListButton runs={runs} runsError={runsError} runDir={runDir} shownState={status?.run_dir === runDir ? status?.state ?? null : null}
+            onChoose={runWindow.choose} onRefresh={refreshRuns} onLoad={runWindow.load} onNewLike={runWindow.newLike} onContinue={runWindow.continueFrom} />
         </div>
         <div className="bottom-body">
           {tab === 'status' && <StatusTab status={status} runDir={runDir} error={statusError} check={shownCheck} continueBlocked={continueBlocked} refusal={shownRefusal}

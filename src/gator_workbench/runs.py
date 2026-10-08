@@ -8,6 +8,7 @@ send_command  pause / stop / cancel through a control file.
 """
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor
 import copy
 from dataclasses import asdict
 import hashlib
@@ -326,6 +327,20 @@ def saves_rl_model(config: WorkbenchConfig) -> bool:
     return bool(config.output.save_checkpoints)
 
 
+def _started(work) -> Future:
+    """work() begun in a thread of its own now; .result() waits for its answer, or raises what it raised."""
+    future = Future()
+
+    def run():
+        if future.set_running_or_notify_cancel():
+            try:
+                future.set_result(work())
+            except BaseException as exc:
+                future.set_exception(exc)
+    threading.Thread(target=run, name='gator-started', daemon=True).start()
+    return future
+
+
 def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False, confirm_transfer=False,
                 monitor=None, acknowledge_unknown=False, remember_concurrency=True):
     """Returns (RunLayout, manifest). Raises RunRejected with the validation/compatibility report."""
@@ -355,6 +370,9 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
         raise RunRejected(f'This task supports at most {task.max_concurrency} concurrent simulation jobs',
                           code='concurrency')
     task_hash = task_definition_hash(config)
+    # The manifest's code facts - git rev-parse and status on the 9p mount and the optimizer digest, 1.5-2 s - are read
+    # while the connection is checked (record 7.279); the manifest takes them below. A resume writes none.
+    provenance = _started(code_provenance) if config.run.mode != 'resume' else None
     gate = connection_gate(task, config, monitor, acknowledge_unknown=acknowledge_unknown)
     consistency = _check_consistency(config, task, monitor, acknowledge_unknown)
     if config.run.mode == 'resume':
@@ -462,7 +480,7 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
         connection_gate=gate, consistency_check=consistency,
         authorization=dict(real_simulation=bool(allow_real and not task.mock),
                            authorized_max_evaluations=config.run.max_evaluations if allow_real and not task.mock else None),
-        code=code_provenance(), environment=environment_versions(), created_utc=now, state='created',
+        code=provenance.result(), environment=environment_versions(), created_utc=now, state='created',
         output=dict(output_root=config.output.output_root, data_root=str(data_root),
                     experiment_dir=str(experiment_dir), run_dir=str(layout.run_dir),
                     relative_run_dir=str(layout.run_dir.relative_to(experiment_dir))),
@@ -879,18 +897,41 @@ def save_point_facts(run_dir) -> tuple[str | None, str | None]:
     return name, _code_of(saved) if name else None
 
 
-_SOURCE_DIGEST = dict(value=None, at=0.0)
+_SOURCE_DIGEST = dict(value=None, at=0.0, refreshing=False)
+_SOURCE_DIGEST_LOCK = threading.Lock()
+
+
+def _refresh_source_digest():
+    from analog_optimizer.training.sac import source_digest
+    try:
+        value = source_digest()
+        with _SOURCE_DIGEST_LOCK:
+            _SOURCE_DIGEST.update(value=value, at=time.monotonic())
+    finally:
+        with _SOURCE_DIGEST_LOCK:
+            _SOURCE_DIGEST['refreshing'] = False
 
 
 def current_source_digest(max_age=30.0) -> str:
     """The optimizer source digest a run started now would record (training.sac.source_digest hashes every file under
     src/analog_optimizer/). Kept for 30 s: the hashing takes ~0.4 s on the 9p mount and the run list asks per request.
-    Only for what the page says; a start checks the digest itself (runs.prepare_run, checkpoints.check_compatibility)."""
-    now = time.monotonic()
-    if _SOURCE_DIGEST['value'] is None or now - _SOURCE_DIGEST['at'] > max_age:
+    Once known, an older value is hashed again in a thread while the request goes on with it (record 7.279): the hash
+    inside a request made a status poll take 0.2-0.45 s every 30 s. Only for what the page says; a start checks the
+    digest itself (runs.prepare_run, checkpoints.check_compatibility)."""
+    with _SOURCE_DIGEST_LOCK:
+        value = _SOURCE_DIGEST['value']
+        refresh = (value is not None and not _SOURCE_DIGEST['refreshing']
+                   and time.monotonic() - _SOURCE_DIGEST['at'] > max_age)
+        if refresh:
+            _SOURCE_DIGEST['refreshing'] = True
+    if value is None:                                  # the first one: there is nothing to answer with meanwhile
         from analog_optimizer.training.sac import source_digest
-        _SOURCE_DIGEST.update(value=source_digest(), at=now)
-    return _SOURCE_DIGEST['value']
+        value = source_digest()
+        with _SOURCE_DIGEST_LOCK:
+            _SOURCE_DIGEST.update(value=value, at=time.monotonic())
+    elif refresh:
+        threading.Thread(target=_refresh_source_digest, name='gator-source-digest', daemon=True).start()
+    return value
 
 
 def _code_of(saved) -> str | None:
@@ -924,14 +965,19 @@ def _resumability(run_dir, summary, point=None):
 # changes the folder's mtime - and a new or pruned save point changes checkpoints/'s. So what was read from a run
 # folder is kept while both folders' (inode, mtime, ctime) are unchanged: two stats per run instead of dozens. Each
 # request still probes the run lock of runs whose status says they work, compares the save point's code with the
-# source digest of NOW, and works out the unique model names. An entry is read again after 10 minutes anyway, and the
-# page's "Refresh list" asks with fresh=True: a file changed in place by another tool is seen then.
+# source digest of NOW, and works out the unique model names. The page's "Refresh list" asks with fresh=True: a file
+# changed in place by another tool is seen then (an entry was read again after 10 minutes too until record 7.279: all
+# of them expired together, and the saved models took 12.9 s again every 10 minutes).
+# The reads of a request go through a pool of READ_THREADS threads (record 7.279): on the 9p mount the file operations
+# of many folders overlap well (16 at once: a stat 5-8 ms -> 0.2-0.5 ms each).
 # The API answers several requests at once (FastAPI runs these routes on a thread pool), so the dict itself is read,
 # written and walked under _RUN_CACHE_LOCK only; the file reads stay outside it (record 7.278: two lists at once could
 # end in "dictionary changed size during iteration" while one let go of entries and the other added some).
 _RUN_CACHE: dict = {}
 _RUN_CACHE_LOCK = threading.Lock()
-RUN_CACHE_MAX_AGE = 600.0
+READ_THREADS = 16
+_READ_POOL: list = []
+_READ_POOL_LOCK = threading.Lock()
 LIVE_STATES = ('starting', 'running', 'pausing', 'stopping')
 
 
@@ -954,14 +1000,13 @@ def _run_facts(run_dir, *, fresh=False) -> dict | None:
         return None
     with _RUN_CACHE_LOCK:
         entry = _RUN_CACHE.get(str(run_dir))
-    now = time.monotonic()
-    if fresh or entry is None or entry['key'] != key or now - entry['at'] > RUN_CACHE_MAX_AGE:
+    if fresh or entry is None or entry['key'] != key:
         manifest = read_json(Path(run_dir) / 'run_manifest.json', default=None)      # the reads: outside the lock
         if not isinstance(manifest, dict):
             with _RUN_CACHE_LOCK:
                 _RUN_CACHE.pop(str(run_dir), None)
             return None
-        entry = dict(key=key, at=now, manifest=manifest, summary=read_json(Path(run_dir) / 'run_summary.json', default={}) or {},
+        entry = dict(key=key, manifest=manifest, summary=read_json(Path(run_dir) / 'run_summary.json', default={}) or {},
                      status=read_json(Path(run_dir) / 'status.json', default={}) or {}, point=ckpt.latest_point(run_dir),
                      label=ckpt.model_label_of(run_dir, manifest), listing=None)
         with _RUN_CACHE_LOCK:
@@ -981,6 +1026,26 @@ def checkpoint_listing(row) -> dict:
     return entry['listing']
 
 
+def _read_pool() -> ThreadPoolExecutor:
+    with _READ_POOL_LOCK:
+        if not _READ_POOL:
+            _READ_POOL.append(ThreadPoolExecutor(max_workers=READ_THREADS, thread_name_prefix='gator-run-read'))
+        return _READ_POOL[0]
+
+
+def read_many(read, items) -> list:
+    """`read(item)` of every item, in their order, READ_THREADS at a time (record 7.279)."""
+    items = list(items)
+    return list(_read_pool().map(read, items)) if len(items) > 1 else [read(item) for item in items]
+
+
+def checkpoint_listings(rows):
+    """checkpoint_listing of every list_runs row, read READ_THREADS at a time: what saved_models reads one by one, as a
+    `read_listing` for it (record 7.279; the first saved models after a start read ~800 metadata files)."""
+    listings = dict(zip((row['run_dir'] for row in rows), read_many(checkpoint_listing, rows)))
+    return lambda row: listings[row['run_dir']]
+
+
 def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True, fresh=False):
     """Every run under the output root, newest first. `fresh`: read every run folder again (the page's Refresh list)."""
     root = roots.resolve(output_root or remembered_output_root())
@@ -988,8 +1053,8 @@ def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True, fresh=
     for data_root, mock in ((root, False), (root / 'mock', True)):
         if mock and not include_mock:
             continue
-        for run_dir in find_runs(data_root, manifest=False):
-            facts = _run_facts(run_dir, fresh=fresh)
+        found = find_runs(data_root, manifest=False)
+        for run_dir, facts in zip(found, read_many(lambda run_dir: _run_facts(run_dir, fresh=fresh), found)):
             if facts is None:
                 continue
             seen.add(str(run_dir))
@@ -1036,8 +1101,8 @@ def model_label_rows(output_root) -> list[dict]:
     cache (record 7.274): a rename or a new run changes its folder, so the cache never holds an old name."""
     rows = []
     for data_root in (Path(output_root), Path(output_root) / 'mock'):
-        for run_dir in find_runs(data_root, manifest=False):
-            facts = _run_facts(run_dir)
+        found = find_runs(data_root, manifest=False)
+        for run_dir, facts in zip(found, read_many(_run_facts, found)):
             if facts is not None:
                 rows.append(dict(run_dir=str(run_dir), created_utc=facts['manifest'].get('created_utc'), **facts['label']))
     return rows

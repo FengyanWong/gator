@@ -28,6 +28,7 @@ from dataclasses import asdict
 from datetime import datetime
 import json
 import math
+import os
 from pathlib import Path
 import re
 import shutil
@@ -75,6 +76,26 @@ def list_profiles() -> dict:
     return found
 
 
+def profile_entry(name) -> dict | None:
+    """`list_profiles().get(name)`, from that one profile's file (record 7.279): the list reads every profile.json in the
+    store - about 35 files on the 9p-mounted D: drive, 0.15 s - and the check of each edit, a task's load and the saved
+    model's check each wanted one. The same answer: a folder of exactly that name (a case-insensitive drive opens
+    other spellings too), readable JSON of this format naming itself."""
+    root = store_root()
+    if not isinstance(name, str) or not NAME.match(name) or not root.is_dir():
+        return None
+    entry_file = root / name / FILES['entry']
+    try:
+        if name not in os.listdir(root):
+            return None
+        entry = json.loads(entry_file.read_text())
+    except (OSError, ValueError):
+        return None
+    if entry.get('format') == FORMAT and entry.get('name') == name:
+        return dict(entry, directory=str(entry_file.parent))
+    return None
+
+
 def tasks_for_cell(library, cell) -> list:
     """The GENERATED tasks of a cell: saved from it (their `original`), or running on it (their copy is this cell)."""
     found = []
@@ -109,7 +130,7 @@ def task_for_cell(library, cell) -> dict | None:
 
 def load_profile(name):
     """The profile object for the real backend. Every check of the verified classes runs in its constructor."""
-    entry = list_profiles().get(name)
+    entry = profile_entry(name)
     if entry is None:
         raise ProfileError(f'Unknown generated profile {name!r}')
     directory = Path(entry['directory'])
@@ -145,7 +166,7 @@ def task_spec_registry(circuit) -> list | None:
     task_id = getattr(circuit, 'task_id', None) or ''
     if getattr(circuit, 'source', None) != 'registered_task' or not task_id.startswith('real:'):
         return None
-    entry = list_profiles().get(task_id[len('real:'):])
+    entry = profile_entry(task_id[len('real:'):])
     return None if entry is None else entry.get('spec_registry')
 
 
@@ -648,7 +669,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
     from .tasks import REAL_PROFILES, REMOVED_REAL_TASKS
     commands, extras = commands or {}, dict(extras or {})
     directory = profile_dir(name)                                # validates the name
-    current = list_profiles().get(task) if task else None
+    current = profile_entry(task) if task else None
     if task and current is None:
         raise ProfileError(f'Unknown task real:{task}')
     updating = current is not None and not as_new
@@ -827,7 +848,7 @@ def record_reference(name, run_dir) -> dict:
     `baseline` - and only when that evaluation is real, came from a simulation and every metric of the recipe is
     there and valid. An existing reference is never replaced: a reference that moves is not a reference."""
     from .storage.dataset import DatasetReader
-    entry = list_profiles().get(name)
+    entry = profile_entry(name)
     if entry is None:
         raise ProfileError(f'Unknown generated profile {name!r}')
     directory, run_dir = Path(entry['directory']), Path(run_dir)
@@ -929,7 +950,7 @@ def adopt_baseline_run(run_dir, manifest=None) -> dict | None:
     if manifest.get('run_kind') != BASELINE_KIND or manifest.get('mock') or not task_key.startswith('real:'):
         return None
     name = task_key[len('real:'):]
-    entry = list_profiles().get(name)
+    entry = profile_entry(name)
     if entry is None:
         return None
     # A run asked to calibrate (record 7.197) goes on after its baseline with random designs: stopped by the user among
@@ -959,21 +980,25 @@ def adopt_latest_baseline(name, data_root) -> dict | None:
     """The newest completed Baseline simulation of real:<name> under the output root becomes its reference - for
     a run made before such runs recorded themselves. Called when a generated task without a reference is loaded
     (api/app.py `circuit_load`); reads the run manifests only, one small file per run, and never once a reference
-    exists. Only the newest completed one is tried: a refusal is remembered in the entry and said in the column."""
+    exists. Only the newest completed one is tried: a refusal is remembered in the entry and said in the column.
+    The manifests come from the run list's cache, read many runs at a time (record 7.279: every manifest was read
+    on each such load, 2.3 s instead of 0.2 s)."""
+    import copy
+    from . import runs
     from .layout import find_runs
     newest = None
-    for run_dir in find_runs(data_root):
-        try:
-            manifest = json.loads((run_dir / 'run_manifest.json').read_text())
-        except (OSError, ValueError):
+    found = find_runs(data_root, manifest=False)
+    for run_dir, facts in zip(found, runs.read_many(runs._run_facts, found)):
+        if facts is None:                          # no readable manifest
             continue
+        manifest = facts['manifest']
         if (manifest.get('run_kind') == BASELINE_KIND and manifest.get('state') == 'completed' and not manifest.get('mock')
                 and (manifest.get('circuit') or {}).get('task_key') == f'real:{name}'
                 and (newest is None or (manifest.get('created_utc') or '') > newest[0])):
             newest = (manifest.get('created_utc') or '', run_dir, manifest)
     if newest is None:
         return None
-    outcome = adopt_baseline_run(newest[1], manifest=newest[2])
+    outcome = adopt_baseline_run(newest[1], manifest=copy.deepcopy(newest[2]))       # the cache's own stays as read
     return outcome if outcome and outcome['recorded'] else None
 
 
@@ -1004,7 +1029,7 @@ def delete_profile(name, *, run_rows=()) -> dict:
     Virtuoso stays where it is. Refused while a worker is on a run of the task. Runs that were made keep their data;
     a paused one can no longer be resumed. The verified built-in circuits are not in this store and cannot be deleted."""
     from .tasks import REAL_PROFILES
-    entry = list_profiles().get(name)
+    entry = profile_entry(name)
     if entry is None:
         raise ProfileError(f'real:{name} is a verified built-in circuit, not a generated profile: it cannot be deleted'
                            if name in REAL_PROFILES else f'Unknown generated profile {name!r}')

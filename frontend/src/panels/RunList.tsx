@@ -1,4 +1,4 @@
-import { Fragment, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { api, bytes, Json, short, tasksShared } from '../api';
@@ -174,8 +174,8 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
   </div>);
 }
 
-export function RunListButton({ runs, runsError, runDir, status, onChoose, onRefresh, onLoad, onNewLike, onContinue }: { runs: Json[]; runsError: string | null; runDir: string | null;
-  status: Json; onChoose: (runDir: string | null) => void; onRefresh: (fresh?: boolean) => Promise<Json[]>;
+function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRefresh, onLoad, onNewLike, onContinue }: { runs: Json[]; runsError: string | null; runDir: string | null;
+  shownState: string | null; onChoose: (runDir: string | null) => void; onRefresh: (fresh?: boolean) => Promise<Json[]>;
   onLoad?: (row: Json) => void; onNewLike?: (row: Json) => void; onContinue?: (row: Json) => void }) {
   // While `popup` is set, the run window is open (one pop-up window for the whole page: `popupWindow.ts`).
   const { popup, root, blocked, open: openPopup } = usePopupWindow('gator-runs',
@@ -324,9 +324,13 @@ export function RunListButton({ runs, runsError, runDir, status, onChoose, onRef
   return (<>
     {blocked && <span className="error run-list-blocked">{BLOCKED}</span>}
     {/* The run that is shown is said as plain text to the LEFT of the button; the button itself only reads "Runs..." (user request 2026-09-21). */}
-    <span className="run-list-current" title={runDir ?? undefined}>{current ? label(current, status?.run_dir === runDir ? status.state : null) : runDir ? folderName(runDir) : 'No run selected'}</span>
+    <span className="run-list-current" title={runDir ?? undefined}>{current ? label(current, shownState) : runDir ? folderName(runDir) : 'No run selected'}</span>
     <button className={`run-list-button${popup ? ' open' : ''}`} onClick={() => openWindow()}
       title={popup ? 'The run window is open: press to bring it to the front and read the list again.' : 'Opens the run window: every run with its start and finish time, its duration and its results. Choose there which run these tabs show.'}>Runs...</button>
     {view && createPortal(view, root!)}
   </>);
 }
+
+/** Memoised (record 7.279): it gets the shown run's state, not the whole status, and App.tsx hands it callbacks that stay
+ *  the same functions - so a status update no longer draws the open window's table (124 runs: 3,500 parts) again. */
+export const RunListButton = memo(RunListButtonBody);

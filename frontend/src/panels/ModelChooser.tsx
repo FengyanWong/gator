@@ -22,8 +22,11 @@ import { ModelStructure } from './ModelStructure';
 
 const KIND: Record<string, string> = { periodic: 'automatic save', manual: 'saved with "Save now"', pause: 'saved at pause', stop: 'saved at stop',
   final: 'saved at the end of the run', safety: 'safety save' };
+// One formatter (record 7.279): toLocaleString built one per call, for every saved model at every keystroke while the
+// RL model window was open.
+const WHEN = new Intl.DateTimeFormat(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const when = (utc?: string | null) => { const d = utc ? new Date(utc) : null;
-  return d && !Number.isNaN(d.getTime()) ? d.toLocaleString(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'unknown time'; };
+  return d && !Number.isNaN(d.getTime()) ? WHEN.format(d) : 'unknown time'; };
 /** A network in one line: "graph_transformer 16/2/1". `short`: the table's form ("GT 16/2/1", as the model line beside the RL
  *  model button writes it): the window has room for it. */
 export const netLabel = (n: Json, short = false) => n?.encoder_type ? `${short ? ENCODER_SHORT[n.encoder_type] ?? n.encoder_type : n.encoder_type} ${n.hidden_dim}/${n.heads}/${n.layers}${n.structural_encoding && n.structural_encoding !== 'none' ? ` · ${n.structural_encoding}` : ''}` : 'unknown network';

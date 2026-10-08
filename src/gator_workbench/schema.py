@@ -358,6 +358,10 @@ class AdvancedRL(_Model):
     warmup_transitions: int = Field(8, ge=0, description='Random exploration until this many replay insertions.')
     update_every: int = Field(1, ge=1, description='Run learner updates every N admitted transitions.')
     updates_per_transition: int = Field(1, ge=1, le=64, description='Update-to-data ratio (UTD).')
+    update_after_dispatch: bool = Field(False,
+        description='Send a lane its next design before the learner updates of the result it brought (record 7.281): the '
+                    'lane simulates while the learner learns. The number of updates stays the same; each design comes from '
+                    'a policy a few updates older. Off until a check on real tasks shows that learning is not worse.')
     replay_capacity: int = Field(10000, ge=1)
     episode_length: int = Field(4, ge=1, le=1000, description='Environment steps per episode (finite horizon).')
     episode_terminates_on_success: bool = Field(False,
@@ -511,7 +515,10 @@ class OutputSettings(_Model):
     save_transition_archive: bool = Field(True,
         description='Complete experience archive (every transition + states). Independent of replay snapshots.')
     export_summary_csv: bool = True
-    checkpoint_every_evaluations: Optional[int] = Field(50, ge=1)
+    checkpoint_every_evaluations: Optional[int] = Field(200, ge=1,
+        description='A periodic save point every N evaluations. 200 since record 7.280 (50 before): a save stops every '
+                    'lane until all are idle, which cost 8-10 % of a 4-lane run at 50. A crash loses at most the learning '
+                    'since the last save point; the recorded data is kept in any case.')
     checkpoint_every_seconds: Optional[float] = Field(None, gt=0)
     keep_last_checkpoints: Optional[int] = Field(10, ge=1,
         description='How many PERIODIC save points to keep, the newest ones. A save point holds the replay buffer, so '
@@ -521,9 +528,14 @@ class OutputSettings(_Model):
                     'Empty = keep every one.')
     learner_update_log_every: int = Field(1, ge=1,
         description='Write every Nth learner update. cumulative_updates stays exact regardless.')
-    flush_every_evaluations: int = Field(16, ge=1, le=100000,
-        description='Parquet part size in evaluations. Acknowledged results are journaled before this.')
+    flush_every_evaluations: int = Field(64, ge=1, le=100000,
+        description='Parquet part size in evaluations. Acknowledged results are journaled before this. 64 since record '
+                    '7.280 (16 before): each part is written inline, 0.35-0.94 s on the D: drive.')
     waveform_retention: Literal['none', 'best_and_failures', 'all'] = 'best_and_failures'
+    keep_simulator_host_folders: bool = Field(False,
+        description='Keep every Spectre job folder on the simulator host. Off (record 7.282): the folders of designs whose raw '
+                    'output this run does not keep are removed at each save point and at the end - the host kept 58,000 of '
+                    'them over one night. The run folder\'s own records and the kept designs\' raw output are not touched.')
     waveform_storage_limit_bytes: Optional[int] = Field(2 * 1024**3, ge=0,
         description='Cap on retained raw simulator output. Oldest retained failures are removed first, then '
                     'nothing else: models and primary data are never deleted automatically.')
@@ -657,11 +669,16 @@ def _hashed(data):
     same reason again; a row that stated another value for one of them (it never ran, or the run refused it) hashes
     differently since. So is the retired `run.threads_per_job` (2026-09-29, RETIRED_RUN_FIELDS). The search block retired
     on 2026-10-06 (record 7.226) is hashed as absent, as it was at its default. The RL model's label
-    (`run.model_label`, record 7.159) is hashed as absent while it is not set. The research labels retired on 2026-10-03
+    (`run.model_label`, record 7.159) is hashed as absent while it is not set, and so is the switch
+    `run.advanced.update_after_dispatch` (record 7.281) while it is off, and `output.keep_simulator_host_folders`
+    (record 7.282) while it is off. The research labels retired on 2026-10-03
     (record 7.163, RETIRED_RESEARCH_FIELDS) are hashed as present at their old defaults, and so are the Specs' target and
     tolerance and the Probes' expression retired the same day (RETIRED_TARGET_FIELDS, RETIRED_MEASUREMENT_FIELDS): a spec
     that used them, or a probe computed from others, was rewritten when it loaded and hashes differently since."""
     data = dict(data)
+    output = data.get('output') if isinstance(data, dict) else None
+    if isinstance(output, dict) and output.get('keep_simulator_host_folders') is False:          # record 7.282
+        data['output'] = {k: v for k, v in output.items() if k != 'keep_simulator_host_folders'}
     research = data.get('research') if isinstance(data, dict) else None
     if isinstance(research, dict):
         data['research'] = dict(research, **{key: research.get(key, default) for key, default in RETIRED_RESEARCH_FIELDS.items()})
@@ -685,7 +702,9 @@ def _hashed(data):
                 run['reward'] = reward
         advanced = run.get('advanced')
         if isinstance(advanced, dict) and advanced.get('alpha_learning_rate') is None:
-            run['advanced'] = {k: v for k, v in advanced.items() if k != 'alpha_learning_rate'}
+            run['advanced'] = advanced = {k: v for k, v in advanced.items() if k != 'alpha_learning_rate'}
+        if isinstance(advanced, dict) and advanced.get('update_after_dispatch') is False:          # record 7.281
+            run['advanced'] = {k: v for k, v in advanced.items() if k != 'update_after_dispatch'}
         if run.get('conditions') == ConditionsConfig().model_dump(mode='json'):
             run.pop('conditions')
         data['run'] = run

@@ -72,20 +72,23 @@ def zip_download(members, name: str):
 
 
 def run_files(root, *, exclude_roots=(), exclude_dirs=()):
-    """Prune excluded directories before touching their files. Return one stat per included file."""
+    """Prune excluded directories before touching their files. Return one stat per included file. The stats go many at
+    a time (runs.read_many, record 7.279): one by one, a run's ~760 files took 3.6 s on the 9p-mounted D: drive."""
+    from .. import runs
     root = Path(root)
-    entries = []
+    paths = []
     for directory, dirs, files in os.walk(root):
         base = Path(directory)
         dirs[:] = [d for d in dirs if d not in exclude_dirs and not (base == root and d in exclude_roots)]
-        for name in files:
-            path = base / name
-            try:
-                info = path.stat()
-            except FileNotFoundError:                 # a worker may prune a file while the directory is listed
-                continue
-            if stat.S_ISREG(info.st_mode):
-                entries.append((path, path.relative_to(root).as_posix(), info))
+        paths += [base / name for name in files]
+
+    def stat_of(path):
+        try:
+            return path.stat()
+        except FileNotFoundError:                     # a worker may prune a file while the directory is listed
+            return None
+    entries = [(path, path.relative_to(root).as_posix(), info) for path, info in zip(paths, runs.read_many(stat_of, paths))
+               if info is not None and stat.S_ISREG(info.st_mode)]
     return sorted(entries, key=lambda entry: entry[1])
 
 

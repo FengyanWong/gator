@@ -261,19 +261,27 @@ def list_tasks():
                           available=blocker is None, blocker=blocker,
                           description='Verified GPDK045 bridge profile (Virtuoso + Spectre).'))
     from . import profiles
+    # What keeps a generated task from running is the same for all of them (the active connection), and each task's
+    # reference is read once: both were read per task, the reference twice (record 7.279; 141 file opens per list).
+    shared_blocker = None
     for name, entry in profiles.list_profiles().items():         # created from a cell read out of Virtuoso
-        blocker = (profiles.MAESTRO_NOT_RUNNABLE if entry.get('recipe') == profiles.MAESTRO and not entry.get('runnable')
-                   else generated_backend_blocker(None))
+        if entry.get('recipe') == profiles.MAESTRO and not entry.get('runnable'):
+            blocker = profiles.MAESTRO_NOT_RUNNABLE
+        else:
+            if shared_blocker is None:
+                shared_blocker = (generated_backend_blocker(None),)
+            blocker = shared_blocker[0]
+        reference = profiles.reference_metrics(name)
         tasks.append(dict(task_key=f'real:{name}', kind='real', circuit_class=entry['circuit_class'], generated=True,
                           pdk_id=entry.get('pdk_id') or 'gpdk045', available=blocker is None, blocker=blocker, library=entry['library'], cell=entry['core_cell'],
                           revision=entry.get('revision'), measurement=entry.get('measurement'), original=entry.get('original'),
-                          verified=profiles.reference_metrics(name) is not None,
+                          verified=reference is not None,
                           # The task window (record 7.227) shows these facts of the saved task: all from its entry, no other file read.
                           testbench=entry.get('testbench_cell'), saved_utc=entry.get('saved_utc'), created_utc=entry.get('created_utc'),
                           baseline_recorded_utc=entry.get('baseline_recorded_utc'), status=entry.get('status'),
                           variables=len(entry.get('optimized_variables') or ()), results=len(entry.get('provided_metrics') or ()),
                           description=f"Profile generated from {entry['library']}/{entry['core_cell']} (Virtuoso + Spectre). "
-                                      + ('' if profiles.reference_metrics(name) else 'No real baseline recorded yet.')))
+                                      + ('' if reference else 'No real baseline recorded yet.')))
     from . import ngspice_tasks
     tasks.extend(ngspice_tasks.task_entries())                 # SPICE decks saved in the ngspice window
     for task in tasks:
@@ -402,7 +410,7 @@ def load_task(circuit, *, allow_real=False, profile_id=None) -> TaskRuntime:
             raise TaskBlocked(real_task_removed(key))
         if kind == 'real' and name not in REAL_PROFILES:
             from . import profiles
-            if name in profiles.list_profiles():
+            if profiles.profile_entry(name) is not None:
                 blocker = generated_backend_blocker(profile_id)
                 if blocker:
                     raise TaskBlocked(blocker, contract=REAL_INTERFACE_CONTRACT)
@@ -544,7 +552,7 @@ def generated_bridge_config(name, profile_id=None):
     blocker = generated_backend_blocker(profile_id)
     if blocker:
         raise TaskBlocked(blocker, contract=REAL_INTERFACE_CONTRACT)
-    entry = profiles.list_profiles().get(name)
+    entry = profiles.profile_entry(name)
     if entry is None:
         raise TaskBlocked(f'Unknown generated profile {name!r}')
     connection = _profile_settings(profile_id)[1]
@@ -757,7 +765,7 @@ def real_starter_config(task_key: str) -> dict:
                        notes='Computed by the circuit profile from the simulation results.')
                   for metric, unit in results.items()]
     else:
-        entry = profiles.list_profiles().get(name)
+        entry = profiles.profile_entry(name)
         if entry is None:
             raise KeyError(task_key)
         circuit_class, pdk_id = entry['circuit_class'], entry.get('pdk_id') or 'gpdk045'

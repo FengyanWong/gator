@@ -294,14 +294,16 @@ def test_run_setting_rules(tmp_path):
     report, _ = check(make_config(tmp_path, output=dict(save_replay_snapshots=False)))
     warning = next(i for i in report.issues if i.code == 'no_full_resume')
     assert warning.level == 'warning' and 'FULL training-state resume' in warning.message
-    # One checkpoint interval: every N evaluations OR every S seconds. An absent evaluations field is the default of 50.
+    # One checkpoint interval: every N evaluations OR every S seconds. An absent evaluations field is the default (200 since
+    # record 7.280).
     for both in (dict(checkpoint_every_evaluations=50, checkpoint_every_seconds=600), dict(checkpoint_every_seconds=600)):
         raw = make_config(tmp_path, output=both).model_dump(mode='json')
         if 'checkpoint_every_evaluations' not in both:
             del raw['output']['checkpoint_every_evaluations']
         report, _ = check(schema.WorkbenchConfig.model_validate(raw))
         clash = next(i for i in report.issues if i.code == 'checkpoint_interval_both')
-        assert clash.level == 'error' and report.blocks_run and 'every 50 evaluations OR every 600 seconds' in clash.message
+        every = both.get('checkpoint_every_evaluations', 200)
+        assert clash.level == 'error' and report.blocks_run and f'every {every} evaluations OR every 600 seconds' in clash.message
     for one in (dict(checkpoint_every_evaluations=50), dict(checkpoint_every_seconds=600.0), dict(checkpoint_every_evaluations=None)):
         assert 'checkpoint_interval_both' not in issues(check(make_config(tmp_path, output=one))[0])
     report, _ = check(make_config(tmp_path, run=dict(network=dict(encoder_type='gatv2', hidden_dim=30, heads=4, layers=1))))

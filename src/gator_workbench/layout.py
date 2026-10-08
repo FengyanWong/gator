@@ -38,7 +38,7 @@ PURPOSES = {
     'best_design': 'Best discovered circuit parameter sets and measurements (not a model)',
     'checkpoints': 'Model/training state; latest and best_policy pointers',
     'waveforms': 'Retained raw simulator output (never rendered)',
-    'logs': 'events.jsonl and errors.jsonl',
+    'logs': 'events.jsonl, errors.jsonl and timings.jsonl (what each evaluation\'s stages took)',
     'exports': 'On-demand derived CSV copies of raw tables',
     'control': 'Run-control commands and the single-writer lock',
     'work': 'Registered temporary simulator working directories',

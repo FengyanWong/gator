@@ -2,6 +2,7 @@
 from __future__ import annotations
 from pathlib import Path
 import threading
+import time
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +17,7 @@ from .support import attachment, file_snapshot  # compatibility exports
 
 LOOPBACK_HOSTS = ('127.0.0.1', 'localhost', '::1')
 WILDCARD_HOSTS = ('0.0.0.0', '::', '')
+ACTIVE_RUN_REUSE_SECONDS = 3.0                   # how long one look for a run that works on a connection serves (7.279)
 
 
 def trusted_hosts(host=None) -> list[str]:
@@ -40,12 +42,23 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     roots = OutputRoots(extra_output_roots)
     input_roots = [repo_root().resolve()] + [Path(p).expanduser().resolve() for p in extra_input_roots]
 
+    # The connection gate asks this at every check, and Save task checks about ten times in a row. One look serves for
+    # ACTIVE_RUN_REUSE_SECONDS (record 7.279): the look - the run list and up to 20 status files on the D: drive - took
+    # 1-2.4 s, so its answer was about that old when it came anyway.
+    looked: dict = {}
+
     def active_run(profile_id):
+        seen = looked.get(profile_id)
+        if seen is not None and time.monotonic() - seen[0] < ACTIVE_RUN_REUSE_SECONDS:
+            return seen[1]
+        found = None
         for run in runs.list_runs(roots, include_mock=False)[:20]:
             status = runs.run_status(run['run_dir'])
             if status.get('worker_alive') and status.get('connection_profile_id') == profile_id:
-                return status
-        return None
+                found = status
+                break
+        looked[profile_id] = (time.monotonic(), found)
+        return found
     # After `connection_stale_seconds` a result is shown as `unknown` with its age, never as a current `ok`.
     monitor = monitor or connection.ConnectionMonitor(active_run_lookup=active_run,
                                                       stale_after_seconds=float(connection_stale_seconds))

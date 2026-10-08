@@ -281,7 +281,7 @@ def register(app: FastAPI, context: ApiContext):
         """The task file of the CURRENT editors - what "Save task" would store - as text, laid out with its own
         explanations. Local files only: nothing is read from Virtuoso."""
         config = context.parse_config(body.config)
-        entry = profiles.list_profiles().get(body.task) if body.task else None
+        entry = profiles.profile_entry(body.task) if body.task else None
         saved = profiles.task_file(body.task) if entry else None
         if entry:
             cell, copy = entry.get('original'), entry.get('copy')

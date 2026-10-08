@@ -5,6 +5,8 @@ stats. These tests pin that the ANSWERS stay what they were, and what the cache 
 import json
 import os
 import shutil
+import threading
+import time
 
 import pytest
 
@@ -135,7 +137,7 @@ def test_a_new_or_pruned_save_point_is_seen(tmp_path, monkeypatch):
 
 def test_an_in_place_edit_is_seen_with_fresh(tmp_path):
     """The trade-off: a file written IN PLACE by another tool leaves the folder unchanged. The page's Refresh list
-    reads with fresh=True, and an entry is read again after RUN_CACHE_MAX_AGE anyway."""
+    reads with fresh=True (record 7.279: no expiry by age any more)."""
     run = fabricate(tmp_path, 'r1')
     assert rows_of(tmp_path)['r1']['state'] == 'completed'
     with open(run / 'status.json', 'r+') as stream:                      # in place: the same file, no rename
@@ -145,14 +147,18 @@ def test_an_in_place_edit_is_seen_with_fresh(tmp_path):
     assert rows_of(tmp_path, fresh=True)['r1']['state'] == 'failed'
 
 
-def test_an_old_entry_is_read_again(tmp_path, monkeypatch):
+def test_an_entry_is_kept_however_old_until_its_folder_changes(tmp_path, monkeypatch):
+    """Record 7.279: entries no longer expire after 10 minutes - they all expired together, and the saved models took
+    12.9 s again every 10 minutes. A replaced file changes the folder; an in-place edit shows at Refresh list."""
     run = fabricate(tmp_path, 'r1')
     rows_of(tmp_path)
     with open(run / 'status.json', 'r+') as stream:
         stream.truncate(0)
         stream.write(json.dumps(dict(state='failed')))
-    monkeypatch.setattr(runs, 'RUN_CACHE_MAX_AGE', 0.0)
-    assert rows_of(tmp_path)['r1']['state'] == 'failed'
+    a_day_later = time.monotonic() + 86400
+    monkeypatch.setattr(runs.time, 'monotonic', lambda: a_day_later)
+    assert rows_of(tmp_path)['r1']['state'] == 'completed' and not hasattr(runs, 'RUN_CACHE_MAX_AGE')
+    assert rows_of(tmp_path, fresh=True)['r1']['state'] == 'failed'
 
 
 def test_a_removed_run_leaves_the_list_and_the_cache(tmp_path):
@@ -193,12 +199,31 @@ def test_model_label_rows_follow_a_rename(tmp_path):
 
 
 # ---- the lock (record 7.278) ---------------------------------------------------------------------------------------
+class _OwnedLock:
+    """_RUN_CACHE_LOCK that knows which thread holds it: since record 7.279 a request reads its runs on several threads
+    at once, and one thread's file read while ANOTHER thread holds the lock is fine."""
+    def __init__(self):
+        self._lock, self.owner = threading.Lock(), None
+
+    def __enter__(self):
+        self._lock.acquire()
+        self.owner = threading.get_ident()
+        return self
+
+    def __exit__(self, *exc):
+        self.owner = None
+        self._lock.release()
+
+    def mine(self):
+        return self.owner == threading.get_ident()
+
+
 class _Guarded(dict):
     """A cache that refuses every touch made without _RUN_CACHE_LOCK. The API answers on several threads at once, and
     two lists at once could end in "dictionary changed size during iteration" while one let go of entries and the other
     added some (Astra's review of 2026-10-08)."""
     def _held(self):
-        assert runs._RUN_CACHE_LOCK.locked(), 'the run cache was touched without its lock'
+        assert runs._RUN_CACHE_LOCK.mine(), 'the run cache was touched without its lock'
 
     def get(self, *args):
         self._held()
@@ -219,10 +244,11 @@ class _Guarded(dict):
 
 def test_the_cache_is_touched_under_its_lock_only_and_the_files_are_read_outside_it(tmp_path, monkeypatch):
     monkeypatch.setattr(runs, '_RUN_CACHE', _Guarded())
+    monkeypatch.setattr(runs, '_RUN_CACHE_LOCK', _OwnedLock())
     original = runs.read_json
 
     def read_outside(*args, **kwargs):
-        assert not runs._RUN_CACHE_LOCK.locked(), 'a run file was read while the cache lock was held'
+        assert not runs._RUN_CACHE_LOCK.mine(), 'a run file was read while the cache lock was held'
         return original(*args, **kwargs)
     monkeypatch.setattr(runs, 'read_json', read_outside)
     kept, gone = fabricate(tmp_path, 'r1'), fabricate(tmp_path, 'r2', created='2026-10-07T11:00:00+00:00')
@@ -231,6 +257,7 @@ def test_the_cache_is_touched_under_its_lock_only_and_the_files_are_read_outside
     rows = runs.list_runs(roots_for(tmp_path), tmp_path)
     ckpt.saved_models(rows, runs.checkpoint_listing)
     ckpt.saved_models(runs.list_runs(roots_for(tmp_path), tmp_path), runs.checkpoint_listing)
+    ckpt.saved_models(rows, runs.checkpoint_listings(rows))                 # the route's way since 7.279: many at a time
     runs.model_label_rows(tmp_path)
     shutil.rmtree(gone)
     assert set(rows_of(tmp_path)) == {'r1'} and set(rows_of(tmp_path, fresh=True)) == {'r1'}

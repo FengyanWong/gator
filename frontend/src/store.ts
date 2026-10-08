@@ -178,11 +178,22 @@ function migrateParameter(row: Json): Json {
  *  not instanceof: a pop-up window's fields belong to that window. */
 const MERGE_MS = 1500;
 const inputWindows = new Set<Window>();
-/** A portal's native input event belongs to its own window, even though React updates the workbench's store. */
+/** A portal's native input event belongs to its own window, even though React updates the workbench's store. The
+ *  window also counts as the page being in view (pageSeen). */
 export function registerInputWindow(view: Window) {
   inputWindows.add(view);
-  return () => { inputWindows.delete(view); };
+  try { view.document.addEventListener('visibilitychange', visibilityChanged); } catch { /* closing */ }
+  return () => { inputWindows.delete(view); try { view.document.removeEventListener('visibilitychange', visibilityChanged); } catch { /* closed */ } };
 }
+
+// Polls wait while no window of the page can be seen (record 7.279): the status poll went on in a hidden browser tab,
+// 30-50 requests a minute. A pop-up window of the page counts - Edge also calls the page hidden when its window is
+// covered, while a pop-up of it is in view.
+const seenAgain = new Set<() => void>();
+export const pageSeen = () => !document.hidden
+  || [...inputWindows].some(view => { try { return !view.closed && !view.document.hidden; } catch { return false; } });
+function visibilityChanged() { if (pageSeen()) for (const resume of [...seenAgain]) resume(); }
+document.addEventListener('visibilitychange', visibilityChanged);
 function typingField(): Element | null {
   const event = window.event ?? [...inputWindows].map(view => view.event).find(Boolean);
   const e = event && ['input', 'change', 'compositionend'].includes(event.type) ? event.target as HTMLInputElement | null : null;
@@ -305,11 +316,15 @@ export function useRequest<T>(fn: (signal: AbortSignal) => Promise<T>, deps: unk
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let waiting: (() => void) | null = null;                   // the next poll, while no window of the page is seen
     // Another selection starts empty; a refresh of the SAME one keeps its answer until the new one comes (a Refresh used
     // to blank Data tables, Output files and Corner check and lose the scroll position).
     const another = !asked.current || !sameDependencies(asked.current, deps);
     asked.current = deps;
-    if ((!keepPrevious && !pollEvery && another) || !enabled) setResult({ deps, value: null, error: null });
+    // Switched off, it shows nothing whatever it holds: an empty result is kept as it is, not replaced by another empty
+    // one at every change of what it depends on - that drew the page a second time at every keystroke (record 7.279).
+    if (!enabled) setResult(r => (r.value === null && r.error === null ? r : { deps, value: null, error: null }));
+    else if (!keepPrevious && !pollEvery && another) setResult({ deps, value: null, error: null });
     setLoading(enabled);
     if (!enabled) return;
     const read = async () => {
@@ -329,7 +344,12 @@ export function useRequest<T>(fn: (signal: AbortSignal) => Promise<T>, deps: unk
         if (live && !request.controller.signal.aborted) {
           setLoading(false);
           const interval = typeof pollEvery === 'function' ? pollEvery(value) : pollEvery;
-          if (interval) timer = setTimeout(read, interval);
+          if (interval && pageSeen()) timer = setTimeout(read, interval);
+          else if (interval) {                                  // out of sight: read at once when it is seen again
+            const resume = () => { seenAgain.delete(resume); waiting = null; if (live) void read(); };
+            waiting = resume;
+            seenAgain.add(resume);
+          }
         }
       }
     };
@@ -337,7 +357,7 @@ export function useRequest<T>(fn: (signal: AbortSignal) => Promise<T>, deps: unk
     immediate.current = false;
     // Even a zero delay lets StrictMode's setup/cleanup replay cancel the first scheduled read.
     timer = setTimeout(read, wait);
-    return () => { live = false; clearTimeout(timer); };
+    return () => { live = false; clearTimeout(timer); if (waiting) seenAgain.delete(waiting); };
   }, [enabled, delay, keepPrevious, pollEvery, timeoutMs, revision, ...deps]);
   // Hide the old selection during render, before effect cleanup/reset has run. A changed polling interval
   // retains the same run's result; a changed run/table never inherits it. Validation opts into keepPrevious.

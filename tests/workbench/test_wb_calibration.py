@@ -285,6 +285,7 @@ def test_a_stopped_calibration_run_can_still_give_the_reference(tmp_path, monkey
     """Stopped by the user among the random designs, the baseline evaluation is as finished as that of a run of one."""
     entry = dict(directory=str(tmp_path), saved_utc=None)
     monkeypatch.setattr(profiles, 'list_profiles', lambda: dict(demo=entry))
+    monkeypatch.setattr(profiles, 'profile_entry', lambda name: dict(demo=entry).get(name))        # one task's entry (7.279)
     monkeypatch.setattr(profiles, 'reference_metrics', lambda name: None)
     monkeypatch.setattr(profiles, '_run_outlived_the_task', lambda entry, manifest: None)
     asked = []

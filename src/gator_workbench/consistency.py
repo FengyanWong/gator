@@ -80,7 +80,7 @@ def saved_task(config, *, with_entry=True):
     saved = profiles.task_file(name)
     if saved is None or not with_entry:
         return None if saved is None else (name, None, saved)
-    entry = profiles.list_profiles().get(name)
+    entry = profiles.profile_entry(name)
     return None if entry is None else (name, entry, saved)
 
 

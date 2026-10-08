@@ -10,7 +10,7 @@
 //     choosing another unit CONVERTS the shown number and saves nothing (1.5 GiB -> 1536 MiB); an empty box is "no limit"
 //     and stays empty; a value from outside is shown exactly, in the unit that reads best;
 //   - "Checkpoint every" is ONE number with the unit evaluations OR seconds: the other field is always emptied (also the
-//     default of 50 evaluations), another unit carries the number over, a configuration with both says so;
+//     default of 200 evaluations since record 7.280, 50 before), another unit carries the number over, a configuration with both says so;
 //   - the closing line "Pausing, stopping and normal completion always save safely..." is gone.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 30 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/output_panel_check.mjs)" [screenshot-dir]
@@ -200,9 +200,9 @@ await runChecks(browser, async () => {
     JSON.stringify(await evaluate(`[...${CP_UNIT}.options].map(o => o.value)`)) === JSON.stringify(['evaluations', 'seconds'])
     && !(await evaluate(`${PANEL}.textContent.includes('every S seconds') || ${PANEL}.textContent.includes('every N evaluations')`)));
   let c = await cp();
-  check('a configuration without the field shows the default: 50 evaluations, and writes nothing by itself', c.box === '50' && c.unit === 'evaluations' && c.e === 'absent' && c.s === 'absent' && !c.warn, JSON.stringify(c));
+  check('a configuration without the field shows the default: 200 evaluations (record 7.280), and writes nothing by itself', c.box === '200' && c.unit === 'evaluations' && c.e === 'absent' && c.s === 'absent' && !c.warn, JSON.stringify(c));
   await chooseCp('seconds'); c = await cp();
-  check('seconds carries the number over and EMPTIES the evaluations (the default of 50 too)', c.box === '50' && c.unit === 'seconds' && c.e === null && c.s === 50, JSON.stringify(c));
+  check('seconds carries the number over and EMPTIES the evaluations (the default of 200 too)', c.box === '200' && c.unit === 'seconds' && c.e === null && c.s === 200, JSON.stringify(c));
   await typeCp('600'); c = await cp();
   check('600 seconds', c.box === '600' && c.s === 600 && c.e === null, JSON.stringify(c));
   await chooseCp('evaluations'); c = await cp();
@@ -223,7 +223,7 @@ await runChecks(browser, async () => {
   await chooseCp('seconds'); c = await cp();
   check('choosing seconds keeps ITS value (600) and empties the evaluations', c.box === '600' && c.unit === 'seconds' && c.s === 600 && c.e === null && !c.warn, JSON.stringify(c));
   await editStored(`o => { delete o.checkpoint_every_evaluations; o.checkpoint_every_seconds = 600; }`); c = await cp();
-  check('seconds with the evaluations field ABSENT is both too (the default of 50 applies)', c.warn && c.box === '50' && c.e === 'absent' && c.s === 600, JSON.stringify(c));
+  check('seconds with the evaluations field ABSENT is both too (the default of 200 applies)', c.warn && c.box === '200' && c.e === 'absent' && c.s === 600, JSON.stringify(c));
   await typeCp('40'); c = await cp();
   check('typing a number keeps only that one: 40 evaluations, the seconds emptied', c.box === '40' && c.e === 40 && c.s === null && !c.warn, JSON.stringify(c));
   await editStored(`o => { o.checkpoint_every_evaluations = null; o.checkpoint_every_seconds = 120; }`); c = await cp();

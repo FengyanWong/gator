@@ -395,8 +395,10 @@ function RunPanelBody({ config, setConfig, runs, circuit, schema, onNext }: { co
   // The source is chosen, never filled in (record 7.265). Until then a Mode that loads a model filled it by itself with the
   // newest model saved under the RL model label (record 7.159), at `latest`. That model is now a suggestion with a press,
   // "Newest model named ...: Use", which pins its newest save point as any choice does.
+  // Asked 0.5 s after the last keystroke of the label, as the checks are (record 7.279): each answer walks every run's
+  // name under the output folder, and one went out at every key.
   const { value: suggested } = useRequest<Json>(() => api.defaultModel(label, config.project.name), [label, loads, source.run_dir],
-    { enabled: loads && !source.run_dir });
+    { enabled: loads && !source.run_dir, delay: 500 });
   // "Use this save point" (record 7.265): the draft's source becomes exactly that save point - a concrete id, never "latest" -
   // and the model's network and component list come with it, as ONE Undo step (they used to follow later, by themselves).
   const [usingPoint, setUsingPoint] = useState(false);
@@ -468,8 +470,12 @@ function RunPanelBody({ config, setConfig, runs, circuit, schema, onNext }: { co
       with 1 update per evaluation the designs stayed a uniform random search for 1,500 evaluations, and a starting temperature of 0.2 delayed
       learning to about evaluation 1,000. The tested values are 8 updates per evaluation, starting temperature 0.01 and discount 0 (under Advanced).</p>}
     <details className="rl-advanced"><summary>Advanced (stored per encoder, like the network sizes)</summary>
-      <p className="hint">Alpha learning rate belongs to this configuration; the other settings belong to the selected encoder. The algorithm stays soft actor-critic; only its numbers change.</p>
+      <p className="hint">Alpha learning rate and the tick box below belong to this configuration; the other settings belong to the selected encoder. The algorithm stays soft actor-critic; only its numbers change.</p>
       <Num label="Alpha learning rate" nullable value={adv.alpha_learning_rate} onChange={v => setAdv({ alpha_learning_rate: v })} title="Empty uses the actor learning rate. A separate rate is stored in this configuration." />
+      <Check label="Send the next design before learning (faster, experimental)" value={!!adv.update_after_dispatch} onChange={v => setAdv({ update_after_dispatch: v })}
+        title={'Off: after each result the learner makes its updates, then the lane gets its next design. On: the lane gets its next design first '
+          + 'and simulates while the learner learns - an estimated 11-27 % faster on the measured runs. The number of updates stays the same; each '
+          + 'design comes from a policy a few updates older. Off until a check on real tasks shows that learning is not worse (record 7.281).'} />
       {ADVANCED_ROWS.map((fields, i) => {
         const inputs = fields.map(([name, label, title]) => <Num key={name} label={label} title={title}
           value={adv[name] ?? entry?.advanced?.[name] ?? schema.$defs.AdvancedRL.properties[name].default}
@@ -717,10 +723,10 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
   const paths = activeRun?.paths;
   const tail = String(root).split(/[\\/]/).filter(Boolean).slice(-2).join('/');
   // ONE checkpoint interval, counted in evaluations OR in seconds (user request 2026-09-22). The number goes into the field
-  // of the chosen unit and the other field is emptied - also the default of 50 evaluations that an absent field means. The
-  // backend refuses both at once (validation.py, checkpoint_interval_both). Another unit carries the number over:
-  // evaluations and seconds do not convert into each other.
-  const every: Json = out.checkpoint_every_evaluations === undefined ? 50 : out.checkpoint_every_evaluations;
+  // of the chosen unit and the other field is emptied - also the default of 200 evaluations (50 before record 7.280) that an
+  // absent field means. The backend refuses both at once (validation.py, checkpoint_interval_both). Another unit carries
+  // the number over: evaluations and seconds do not convert into each other.
+  const every: Json = out.checkpoint_every_evaluations === undefined ? 200 : out.checkpoint_every_evaluations;
   const seconds: Json = out.checkpoint_every_seconds ?? null;
   const [by, setBy] = useState<Every>(() => seconds !== null && every === null ? 'seconds' : 'evaluations');
   useEffect(() => { if (seconds !== null && every === null) setBy('seconds'); else if (every !== null && seconds === null) setBy('evaluations'); }, [every, seconds]);

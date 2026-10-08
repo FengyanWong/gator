@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, bytes, copy, download, downloadPackage, Json, num, saveJson, short, si } from '../api';
 import { runName } from '../format';
@@ -198,7 +198,7 @@ export function DataTab({ runDir, status }: { runDir: string | null; status: Jso
   </div>);
 }
 
-export function FilesTab({ runDir }: { runDir: string | null }) {
+function FilesTabBody({ runDir }: { runDir: string | null }) {
   const { value: files, error, refresh } = useRequest<Json>(signal => api.files(runDir!, signal), [runDir], { enabled: !!runDir });
   const [note, setNote] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);          // the file whose download is on its way
@@ -217,7 +217,24 @@ export function FilesTab({ runDir }: { runDir: string | null }) {
         title={`Download ${f.path}: This file as it is now, to the browser's download folder.`}><Icon name={saving === f.path ? 'wait' : 'download'} label={`Download ${f.path}`} /></button></td></tr>)}</tbody></table></div></div>);
 }
 
-export function LogsTab({ runDir, alive }: { runDir: string | null; alive: boolean }) {
+const LOG_HIDDEN = ['time_utc', 'event', 'error', 'run_id', 'traceback'];
+/** The log's lines, newest first. Each is keyed by what it says and how many identical lines came before it (record
+ *  7.279): keyed by its place, every line was drawn again whenever one arrived at the top. */
+function logLines(entries: Json[]) {
+  const count = new Map<string, number>();
+  return entries.map((e: Json) => {
+    const time = (e.time_utc ?? '').slice(11, 19), name = e.event ?? e.error ?? '';
+    const text = JSON.stringify(Object.fromEntries(Object.entries(e).filter(([k]) => !LOG_HIDDEN.includes(k))));
+    const base = `${e.time_utc}|${name}|${text}`, n = (count.get(base) ?? 0) + 1;
+    count.set(base, n);
+    return { key: `${base}#${n}`, time, name, text };
+  }).reverse();
+}
+const LogLine = memo(function LogLine({ time, name, text, error }: { time: string; name: string; text: string; error: boolean }) {
+  return <div className={error ? 'error' : ''}><b>{time} {name}</b> {text}</div>;
+});
+
+function LogsTabBody({ runDir, alive }: { runDir: string | null; alive: boolean }) {
   const [kind, setKind] = useState('events');
   const [note, setNote] = useState<string | null>(null);
   // Read every 2 s while the worker lives; a run at rest is read once (when the tab opens, and once more when its worker
@@ -241,6 +258,11 @@ export function LogsTab({ runDir, alive }: { runDir: string | null; alive: boole
     <button onClick={save} title={`Download full log (${kind}.jsonl): The whole log file of this run, not only the newest 200 entries listed here. One JSON record per line.`}><Icon name="download" label={`Download full log (${kind}.jsonl)`} /></button>
     <span className="hint">{note ?? 'Newest first, the newest 200 entries at most.'}</span></div>
     {error && <p className="error">{error} <button onClick={refresh}>Retry read</button></p>}
-    <div className="scroll log">{(value?.entries ?? []).slice().reverse().map((e: Json, i: number) => <div key={i} className={kind === 'errors' ? 'error' : ''}>
-      <b>{(e.time_utc ?? '').slice(11, 19)} {e.event ?? e.error}</b> {JSON.stringify(Object.fromEntries(Object.entries(e).filter(([k]) => !['time_utc', 'event', 'error', 'run_id', 'traceback'].includes(k))))}</div>)}</div></div>);
+    <div className="scroll log">{logLines(value?.entries ?? []).map(line =>
+      <LogLine key={line.key} time={line.time} name={line.name} text={line.text} error={kind === 'errors'} />)}</div></div>);
 }
+
+/** Memoised (record 7.279): their props are the run and whether its worker lives, so a status update - every 1.5 s while
+ *  a run works - no longer draws the 200 log lines or the run's ~450 files again; their own reads still do. */
+export const LogsTab = memo(LogsTabBody);
+export const FilesTab = memo(FilesTabBody);

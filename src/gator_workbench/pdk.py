@@ -1306,9 +1306,85 @@ def schema_label(feature_schema) -> str:
 
 
 # ------------------------------------------------------------------------------------------ reading (reader process)
+# The model files of a PDK, kept by the reader between reads (record 7.279): every cell read and every Save task read
+# the PDK again, nine downloads and 5.3 MB for GPDK045, 2.5-5 s, for files that do not change. A file is taken from the
+# copy only when the simulator host reports the size and modification time recorded when it was downloaded AND the copy
+# still has the SHA-256 recorded for it; whatever cannot be told for sure is downloaded, as before. The time is asked
+# before a download: a file that changes during one is fetched again next time. Outside the PDK store (pdks/).
+STAMP_SKILL = r'''
+let((lines)
+  lines = nil
+  foreach(p list(@PATHS@)
+    lines = cons(if(isFile(p) then sprintf(nil "%s|%L|%L" p fileLength(p) fileTimeModified(p)) else sprintf(nil "%s|missing" p))
+      lines))
+  buildString(reverse(lines) "\n"))
+'''
+
+
+def remote_stamps(client, decode, paths) -> dict:
+    """{path: (bytes, modified)} of these model files on the simulator host, in one read-only query; a file not there,
+    or not told plainly, is left out. {} when the query fails: then everything is downloaded."""
+    paths = [p for p in paths if REMOTE_PATH.match(p or '') and '/../' not in p]
+    if not paths:
+        return {}
+    try:
+        result = client.execute_skill(STAMP_SKILL.replace('@PATHS@', ' '.join(f'"{p}"' for p in paths)), timeout=30)
+        text = decode(result.output) if result.ok else ''
+    except Exception:
+        return {}
+    stamps = {}
+    for line in (text or '').splitlines():
+        path, _, rest = line.partition('|')
+        size, _, modified = rest.partition('|')
+        if path in paths and size.isdigit() and modified.isdigit():
+            stamps[path] = (int(size), modified)
+    return stamps
+
+
+class ModelFileCache:
+    """The reader's copies of one technology library's model files: `index.json` {remote path: bytes, modified, sha256}
+    and the files themselves, named by their SHA-256."""
+
+    def __init__(self, technology_library):
+        self.folder = local_settings_dir() / 'pdk-model-files' / technology_library
+        index = read_json(self.folder / 'index.json', default={})
+        self.index = index if isinstance(index, dict) else {}
+
+    def paths(self):
+        return list(self.index)
+
+    def get(self, remote, stamp):
+        """The kept bytes of `remote`, or None: not kept, another stamp on the host now, or a copy that changed."""
+        known = self.index.get(remote)
+        if not stamp or not isinstance(known, dict) or (known.get('bytes'), known.get('modified')) != stamp:
+            return None
+        try:
+            data = (self.folder / str(known.get('sha256'))).read_bytes()
+        except OSError:
+            return None
+        return data if len(data) == stamp[0] and hashlib.sha256(data).hexdigest() == known.get('sha256') else None
+
+    def put(self, remote, stamp, data):
+        """Keep a download under the stamp asked for before it - only when its size is that stamp's."""
+        if not stamp or len(data) != stamp[0]:
+            return
+        digest = hashlib.sha256(data).hexdigest()
+        try:
+            self.folder.mkdir(parents=True, exist_ok=True)
+            if not (self.folder / digest).is_file():
+                tmp = self.folder / f'{digest}.part'
+                tmp.write_bytes(data)
+                tmp.replace(self.folder / digest)
+            self.index[remote] = dict(bytes=stamp[0], modified=stamp[1], sha256=digest)
+            write_json(self.folder / 'index.json', self.index)
+        except OSError:
+            pass                                        # a copy not kept is only a download next time
+
+
 def read_from_virtuoso(client, *, technology_library, model_file, decode=None):
-    """Runs in the bridge reader process. Returns the raw material for `finish_load`; writes nothing that stays.
-    The model files go to a temporary folder outside the repository and are deleted before this returns.
+    """Runs in the bridge reader process. Returns the raw material for `finish_load`. The model files go to a temporary
+    folder outside the repository and are deleted before this returns; a copy of each is kept for the next read
+    (ModelFileCache, record 7.279), and an unchanged file is taken from it instead of downloaded.
     `decode`: the bridge's ``decode_skill_output`` (injectable for tests without the bridge)."""
     if decode is None:
         from virtuoso_bridge import decode_skill_output as decode
@@ -1320,29 +1396,42 @@ def read_from_virtuoso(client, *, technology_library, model_file, decode=None):
     if not REMOTE_PATH.match(model_file or '') or '/../' in model_file:
         raise ValueError('The model file must be an absolute path on the simulator host')
     scratch = Path(tempfile.mkdtemp(prefix='gator-pdk-'))
+    cache = ModelFileCache(technology_library)
     try:
-        files, queue, sources, total = {}, [model_file], [], 0
-        while queue:
-            remote = queue.pop(0)
-            if remote in files:
-                continue
-            if len(files) >= MAX_MODEL_FILES:
-                raise RuntimeError(f'More than {MAX_MODEL_FILES} model files are included; not read further')
-            local = scratch / f'{len(files):03d}_{Path(remote).name}'
-            fetched = client.download_file(remote, local, timeout=300)
-            if not fetched.ok or not local.is_file():
-                raise RuntimeError(f"Cannot read {remote} on the simulator host: {'; '.join(fetched.errors or []) or 'download failed'}")
-            data = local.read_bytes()
-            total += len(data)
-            if total > MAX_MODEL_BYTES:
-                raise RuntimeError('The model files are larger than the reader accepts')
-            text = data.decode('utf-8', errors='replace')
-            files[remote] = text
-            sources.append(dict(path=remote, bytes=len(data), sha256=hashlib.sha256(data).hexdigest()))
-            for include in includes_of(text):
-                target = posixpath.normpath(include if include.startswith('/') else posixpath.join(posixpath.dirname(remote), include))
-                if REMOTE_PATH.match(target) and target not in files and target not in queue:
-                    queue.append(target)
+        # Breadth first, as before; each level's files new to this read are stamped in one query before any download.
+        files, sources, total = {}, [], 0
+        stamps = remote_stamps(client, decode, [model_file, *cache.paths()])
+        stamping = model_file in stamps                 # a query that failed is not asked again in this read
+        level = [model_file]
+        while level:
+            unstamped = [p for p in level if p not in stamps and p not in files]
+            if unstamped and stamping:
+                stamps.update(remote_stamps(client, decode, unstamped))
+            following = []
+            for remote in level:
+                if remote in files:
+                    continue
+                if len(files) >= MAX_MODEL_FILES:
+                    raise RuntimeError(f'More than {MAX_MODEL_FILES} model files are included; not read further')
+                data = cache.get(remote, stamps.get(remote))
+                if data is None:
+                    local = scratch / f'{len(files):03d}_{Path(remote).name}'
+                    fetched = client.download_file(remote, local, timeout=300)
+                    if not fetched.ok or not local.is_file():
+                        raise RuntimeError(f"Cannot read {remote} on the simulator host: {'; '.join(fetched.errors or []) or 'download failed'}")
+                    data = local.read_bytes()
+                    cache.put(remote, stamps.get(remote), data)
+                total += len(data)
+                if total > MAX_MODEL_BYTES:
+                    raise RuntimeError('The model files are larger than the reader accepts')
+                text = data.decode('utf-8', errors='replace')
+                files[remote] = text
+                sources.append(dict(path=remote, bytes=len(data), sha256=hashlib.sha256(data).hexdigest()))
+                for include in includes_of(text):
+                    target = posixpath.normpath(include if include.startswith('/') else posixpath.join(posixpath.dirname(remote), include))
+                    if REMOTE_PATH.match(target) and target not in files and target not in level and target not in following:
+                        following.append(target)
+            level = following
         scans = [scan_model_text(text, remote) for remote, text in files.items()]
     finally:
         shutil.rmtree(scratch, ignore_errors=True)

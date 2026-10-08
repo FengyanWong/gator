@@ -108,7 +108,7 @@ def _real_profile(task_key):
     if name in tasks.offered_real_profiles():
         return tasks._verified_profile(name)
     from . import profiles
-    if name not in profiles.list_profiles():
+    if profiles.profile_entry(name) is None:
         raise CheckRefused(f'{task_key} is no longer registered, so its designs cannot be simulated again.',
                            code='task_blocked')
     return profiles.load_profile(name)

@@ -391,3 +391,5 @@ One row per commit, newest last.
 | `cf842b1` | 10-08 17:47 | - | docs: the GT report's section 10, the time to the first passing design, and section 9's encoder tables with the same column; the two report pages republished (session "Time to first feasible design", no record entry) |
 | `5356b3f` | 10-08 17:47 | - | record only: the table rows for 1f64a2b and cf842b1 (the GT report's section 10) |
 | `72f0145` | 10-08 17:49 | - | record only: the Live line of record 7.283 (8765 restarted at 16:48) (session "Concurrent cache and stale selection bugs") |
+| `d4091ab` | 10-08 17:51 | - | record only: the table rows for 5356b3f and 72f0145 |
+| `bba4486` | 10-08 23:08 | 7.284 | save points written compressed, losslessly (each zip entry byte-identical, read by torch.load as before), and `compress-save-points` for the older ones (628 compressed, 26.56 -> 8.89 GB); with the third audit's findings (session "Frontend workbench layout design") |

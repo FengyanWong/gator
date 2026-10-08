@@ -130,25 +130,25 @@ VCO); the cross-attention readout keeps up on five and is slower on the OTA7t wi
 GraphGPS's 3 late passes on LDO1 trigger the GT reference runs at the relaxed rows. Parameters: GT 355,157; GraphGPS
 469,925; cross-attention 412,325.
 
-| Circuit | GT (last third · 50 % by) | GraphGPS | Cross-attention | Rules |
+| Circuit | GT (last third · 50 % by · time to first pass) | GraphGPS | Cross-attention | Rules |
 |---|---|---|---|---|
-| ota5t | 95 % · 50 % by 191 | 95 % · 50 % by 176 | 94 % · 50 % by 232 | GraphGPS: A1 yes, A2 yes; cross-attention: A1 yes, A2 yes |
-| ota7t_w | 94 % · 50 % by 254 | 94 % · 50 % by 336 | 94 % · 50 % by 443 | GraphGPS: A1 yes, A2 yes; cross-attention: A1 yes, A2 no |
-| ring3 | 15 % · 50 % by never | 29 % · 50 % by never | 10 % · 50 % by never | GraphGPS: A1 yes, A2 yes; cross-attention: A1 yes, A2 yes |
-| vco_lin_c | 94 % · 50 % by 291 | 98 % · 50 % by 222 | 92 % · 50 % by 361 · 725 (failed) | GraphGPS: A1 yes, A2 yes |
-| ldo1 | 0 % · 50 % by never | 1 % · 50 % by never | 0 % · 50 % by never | GraphGPS: A1 yes, A2 yes, A3 yes; cross-attention: A1 yes, A2 yes, A3 no |
-| ldo2 | 0 % · 50 % by never | 0 % · 50 % by never | 0 % · 50 % by never | GraphGPS: A1 yes, A2 yes, A3 no; cross-attention: A1 yes, A2 yes, A3 no |
+| ota5t | 95 % · 50 % by 191 · first pass 1:01 | 95 % · 50 % by 176 · first pass 0:37 | 94 % · 50 % by 232 · first pass 0:19 | GraphGPS: A1 yes, A2 yes; cross-attention: A1 yes, A2 yes |
+| ota7t_w | 94 % · 50 % by 254 · first pass 0:09 (a warm-up) | 94 % · 50 % by 336 · first pass 0:10 (a warm-up) | 94 % · 50 % by 443 · first pass 0:10 (a warm-up) | GraphGPS: A1 yes, A2 yes; cross-attention: A1 yes, A2 no |
+| ring3 | 15 % · 50 % by never · first pass 0:40 | 29 % · 50 % by never · first pass 0:34 | 10 % · 50 % by never · first pass 0:35 | GraphGPS: A1 yes, A2 yes; cross-attention: A1 yes, A2 yes |
+| vco_lin_c | 94 % · 50 % by 291 · first pass 0:12 (the start) | 98 % · 50 % by 222 · first pass 0:19 (the start) | 92 % · 50 % by 361 · first pass 0:20 (the start) · 725 (failed) | GraphGPS: A1 yes, A2 yes |
+| ldo1 | 0 % · 50 % by never · first pass never | 1 % · 50 % by never · first pass 14:20 | 0 % · 50 % by never · first pass never | GraphGPS: A1 yes, A2 yes, A3 yes; cross-attention: A1 yes, A2 yes, A3 no |
+| ldo2 | 0 % · 50 % by never · first pass never | 0 % · 50 % by never · first pass never | 0 % · 50 % by never · first pass never | GraphGPS: A1 yes, A2 yes, A3 no; cross-attention: A1 yes, A2 yes, A3 no |
 
-**Stage C (12 of 24 runs complete at 2026-10-08 15:57):** scratch -> general model, early share and last third.
+**Stage C (13 of 24 runs complete at 2026-10-08 17:27):** scratch -> general model, early share and last third.
 
 | Circuit | GT | GraphGPS | Cross-attention | Rules |
 |---|---|---|---|---|
-| ota5t | early 2 -> 88 % · late 95 -> 95 % | early 6 -> 90 % · late 96 -> 95 % | early 1 -> 92 % · late 95 -> 95 % | GT: C1 yes, C2 yes, C4 yes; GraphGPS: C1 yes, C2 yes, C4 yes; cross-attention: C1 yes, C2 yes, C4 yes |
-| ota7t_w | early 0 -> 88 % · late 93 -> 94 % | early 0 -> 83 % · late 96 -> 95 % | early 1 -> 84 % · late 95 -> 95 % | GT: C1 yes, C2 yes, C4 yes; GraphGPS: C1 yes, C2 yes, C4 yes; cross-attention: C1 yes, C2 yes, C4 yes |
-| ring3 | early 4 -> 24 % · late 12 -> 30 % | early 1 -> 28 % · late 18 -> 32 % | early 5 -> 33 % · late 34 -> 35 % | GT: C1 no, C2 yes, C4 yes; GraphGPS: C1 no, C2 yes, C4 yes; cross-attention: C1 no, C2 yes, C4 yes |
-| vco_lin_c | early 4 -> 83 % · late 92 -> 95 % | running (S 3 %, G - %) | not run yet | GT: C1 yes, C2 yes, C4 yes; GraphGPS: not judged yet; cross-attention: not judged yet |
-| ldo1 | early 0 -> 2 % · late 0 -> 8 % | not run yet | not run yet | GT: C1 no, C2 yes, C4 yes, C3 yes; GraphGPS: not judged yet; cross-attention: not judged yet |
-| ldo2 | early 0 -> 0 % · late 0 -> 14 % | not run yet | not run yet | GT: C1 no, C2 yes, C4 yes, C3 yes; GraphGPS: not judged yet; cross-attention: not judged yet |
+| ota5t | early 2 -> 88 % · late 95 -> 95 % · first pass 1:03 -> 0:27 | early 6 -> 90 % · late 96 -> 95 % · first pass 0:46 -> 0:14 | early 1 -> 92 % · late 95 -> 95 % · first pass 1:22 -> 0:11 | GT: C1 yes, C2 yes, C4 yes; GraphGPS: C1 yes, C2 yes, C4 yes; cross-attention: C1 yes, C2 yes, C4 yes |
+| ota7t_w | early 0 -> 88 % · late 93 -> 94 % · first pass 0:13 (a warm-up) -> 0:15 (a warm-up) | early 0 -> 83 % · late 96 -> 95 % · first pass 0:15 (a warm-up) -> 0:13 (a warm-up) | early 1 -> 84 % · late 95 -> 95 % · first pass 0:12 (a warm-up) -> 0:13 (a warm-up) | GT: C1 yes, C2 yes, C4 yes; GraphGPS: C1 yes, C2 yes, C4 yes; cross-attention: C1 yes, C2 yes, C4 yes |
+| ring3 | early 4 -> 24 % · late 12 -> 30 % · first pass 1:02 -> 0:27 | early 1 -> 28 % · late 18 -> 32 % · first pass 2:24 -> 0:45 | early 5 -> 33 % · late 34 -> 35 % · first pass 0:43 -> 0:48 | GT: C1 no, C2 yes, C4 yes; GraphGPS: C1 no, C2 yes, C4 yes; cross-attention: C1 no, C2 yes, C4 yes |
+| vco_lin_c | early 4 -> 83 % · late 92 -> 95 % · first pass 0:46 -> 0:57 | running (S 2 %, G 79 %) | not run yet | GT: C1 yes, C2 yes, C4 yes; GraphGPS: not judged yet; cross-attention: not judged yet |
+| ldo1 | early 0 -> 2 % · late 0 -> 8 % · first pass never -> 0:49 | not run yet | not run yet | GT: C1 no, C2 yes, C4 yes, C3 yes; GraphGPS: not judged yet; cross-attention: not judged yet |
+| ldo2 | early 0 -> 0 % · late 0 -> 14 % · first pass never -> 5:06 | not run yet | not run yet | GT: C1 no, C2 yes, C4 yes, C3 yes; GraphGPS: not judged yet; cross-attention: not judged yet |
 
 On the finished circuits every encoder's general model gives the same head start as GT's, with the same C1 verdict per
 circuit.
@@ -158,6 +158,35 @@ four lanes, the 7.262 goals). GT references (7.262): folded cascode probe 21 %, 
 (C1 fail +7, C2 and C4 pass); telescopic cascode probe 2 %, scratch 8 % / 89 %, general 73 % / 100 % (C1, C2, C4 pass).
 
 
-Status: Stage A complete (12 runs). Stage C: 12 of 24 runs complete. Stage D not started. Last chain line: [10-08 15:35:04] START graphgps-vco-lin-c-c-s: graph_gps scratch seed 2 800 launches 4 lane(s) from random weights. Sources: artifacts/local/reviews/encoder-comparison-2026-10-07/ (results-A.md, results-C.md, notes.md),
+Status: Stage A complete (12 runs). Stage C: 13 of 24 runs complete. Stage D not started. Last chain line: [10-08 17:11:47] START graphgps-vco-lin-c-c-g: graph_gps fine_tune seed 2 800 launches 4 lane(s) from /mnt/d/gator/outputs/offline-network__d457707addf8/runs/general/offline__seed0__d457707addf8. Sources: artifacts/local/reviews/encoder-comparison-2026-10-07/ (results-A.md, results-C.md, notes.md),
 docs/plan-encoder-comparison.md.
 <!-- encoder-comparison-section:end -->
+
+<!-- time-to-first-pass:start -->
+## 10. Time to the first passing design (added 2026-10-08)
+
+Working time from Start (min:sec, the run's own `first_feasible` record; model and archive loading included) until the
+first design that met every row came back from Spectre. The B/C columns count the policy's own proposals (on ota7t_w
+start C the sixth random warm-up passes in every arm at about 0:13, which would hide the difference); the A column is as
+recorded, with a passing start or warm-up marked. On the four learnable circuits the first pass comes within a minute and a
+half from either weights; the loaded model's gain is the share of passes after it. On the LDOs only the loaded weights
+ever pass. The anti-drift arms load the rehearsal archive for about 30 s before their first launch.
+
+| Circuit | A: scratch, original start | B: scratch | B: own model | C: scratch | C: general, scratch recipe | C: general, anti-drift |
+|---|---|---|---|---|---|---|
+| ota5t | 1:01 | 0:18 | 0:14 | 1:03 | 0:27 | 0:38 |
+| ota7t_w | 0:09 (a warm-up); own proposal 132 at 4:41 | 1:25 | 0:20 | 7:12 | 0:26 | 0:49 |
+| ring3 | 0:40 | 0:43 | 0:22 | 1:02 | 0:27 | 0:50 |
+| vco_lin_c | 0:12 (the start); own proposal 25 at 1:01 | 1:12 | 0:43 | 0:46 | 0:57 | 1:14 |
+| ldo1 | never | never | 0:16 | never | 0:49 | 1:06 |
+| ldo2 | never | never | 1:21 | never | 5:06 | 6:51 |
+
+| Held-out circuit (own proposals; the cascodes' starts pass at every reset, about 0:08) | scratch | general | frozen probe |
+|---|---|---|---|
+| OTA8m | 0:42 | 1:55 (scratch recipe), 5:57 (anti-drift) | none |
+| folded cascode (goals rev. 3) | 1:07 | 0:24 | 0:16 |
+| telescopic cascode | 0:25 | 0:26 | 0:34 |
+
+Computed 2026-10-08 17:29 by artifacts/local/reviews/gt-report-encoder-section/ttff.py + add_ttff.py from the runs' status.json
+and evaluations tables; the same column is in the encoder tables of section 9.
+<!-- time-to-first-pass:end -->

@@ -150,7 +150,8 @@ def _main(argv=None):
                 library = args.library or (client.library.get(settings['library']).technology_library if settings.get('library') else None)
                 if not library:
                     raise ValueError('Name the technology library: the connection states no design library to take it from')
-                raw = read_from_virtuoso(client, technology_library=library, model_file=args.model_file or settings.get('model_file'))
+                raw = read_from_virtuoso(client, technology_library=library, model_file=args.model_file or settings.get('model_file'),
+                                         cache_host=host_identity(bridge, settings, args.profile_id))
             print(json.dumps(raw))
         else:
             snapshot = client.schematic.read(args.library, args.cell, include_positions=False, param_filters=None)
@@ -158,6 +159,19 @@ def _main(argv=None):
     finally:
         client.close()
     return 0
+
+
+def host_identity(bridge, settings, profile_id) -> str:
+    """``user@host`` of the connection's Virtuoso host, under which the PDK reader keeps its copies of the model files
+    (pdk.ModelFileCache, record 7.283: a profile's host can change while its id stays); the profile id when the bridge
+    cannot say."""
+    try:
+        roles = bridge.roles(bridge.resolve_profile(settings.get('profile') or None))
+        if roles.get('daemon_host'):
+            return f"{roles.get('remote_user') or 'user'}@{roles['daemon_host']}"
+    except Exception:
+        pass
+    return profile_id
 
 
 def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, timeout=90.0, command=None, model_file=None):

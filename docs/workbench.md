@@ -1628,8 +1628,10 @@ Reward and conditions holds the nominal gate band and objective shape in its Adv
 stored per configuration; empty inherits the actor learning rate. Beside it, **Send the next design before learning**
 (`run.advanced.update_after_dispatch`, record 7.281, off by default, stored per configuration): a lane gets its next
 design before the learner's updates of the result it brought, so it simulates while the learner learns - an estimated
-11-27 % shorter run on last night's runs. The number of updates and what every save point holds stay as without it;
-each design comes from a policy a few updates older, and the evaluations table's `policy_version` says which. It stays
+11-27 % shorter run on last night's runs. The number of updates and what every save point holds stay as without it (the
+rows of updates run after the last commit go into the data as a record of their own before a save point and at the end,
+so a pause right after them loses none: record 7.283); each design comes from a policy a few updates older, and the
+evaluations table's `policy_version` says which. It stays
 off until a check on real tasks shows that learning is not worse. No separate starting rate passed the extended
 1,000-update unit check, so new configurations leave it empty. Attributed failures continue the episode, while its normal
 horizon and configured success ending still apply.
@@ -2061,7 +2063,8 @@ whatever its settings folder.
   run now removes the host folders of the designs whose raw output it does not keep - each folder named by that
   design's own measurement (`results_on_host`), never a pattern - at each save point (the lanes are idle then) and at
   its end, through the bridge's own SSH runner, and says `simulator_host_folders_removed` in its events. The kept
-  designs (best and failures) keep their host folders, so they can still be measured again there.
+  designs (best and failures) keep their host folders, so they can still be measured again there; a failure let go of
+  later for the storage limit has its host folder remembered before its copy goes, like the others (record 7.283).
   `output.keep_simulator_host_folders` keeps everything. At its start and end a run says Virtuoso's memory on the host
   (`virtuoso_memory`).
 
@@ -2400,7 +2403,8 @@ library>`. Backend: `bridge_read.pdk_with_import` (states `read` / `not_read` / 
    places names the model (`resm1` -> `primRes2` with model `g45rm1`).
 2. The PDK's Spectre model files (the connection's `model_file` and everything it includes), downloaded through the
    bridge into a temporary folder OUTSIDE the repository, scanned and deleted. They say what each model is. A copy of
-   each is kept in `configs/local/workbench/pdk-model-files/<library>/` (record 7.279): every cell read and Save task
+   each is kept in `configs/local/workbench/pdk-model-files/<user@host>/<library>/` (record 7.279; one folder per host
+   since record 7.283: the same path on two hosts can carry the same size and time with different files): every cell read and Save task
    read the PDK again, nine downloads and 5.3 MB, 2.5-5 s, for files that do not change. One read-only query asks the
    simulator host for each file's size and modification time, and a file is taken from the copy only when both are
    those recorded when it was downloaded AND the copy still has its SHA-256; anything else is downloaded, as before,

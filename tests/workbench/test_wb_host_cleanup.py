@@ -83,3 +83,27 @@ def test_keeping_the_host_folders_is_a_setting_hashed_as_absent_while_off(tmp_pa
     del raw['output']['keep_simulator_host_folders']
     assert config.output.keep_simulator_host_folders is False and schema.config_hash(config) == schema.config_hash(raw)
     assert schema.config_hash(make_config(tmp_path, output=dict(keep_simulator_host_folders=True))) != schema.config_hash(config)
+
+
+def test_a_failure_dropped_for_the_storage_limit_has_its_host_folder_remembered_first(tmp_path):
+    """Record 7.283 (Astra's review of 7.282): the storage-limit deletion in _apply_retention let the local copy go
+    without reading its host folder from it - the other two deletions did - so those folders stayed on the host."""
+    engine, events, errors = engine_like(tmp_path, runner=lambda script: '')
+    run_dir = tmp_path / 'run'
+    work, waveforms = run_dir / 'work', run_dir / 'waveforms'
+    for folder in (work, waveforms):
+        folder.mkdir(parents=True)
+    engine.layout = SimpleNamespace(run_dir=run_dir, work=work, waveforms=waveforms)
+    engine.config = make_config(tmp_path, output=dict(waveform_storage_limit_bytes=0))      # any failure kept is too much
+    engine._waveform_index = engine._work_resolved = engine._scratch = engine.previous_best_waveform = None
+    for name in ('_apply_retention', '_inside_work'):
+        setattr(engine, name, getattr(RunEngine, name).__get__(engine))
+    job = job_with(work, 'job-1', f'{BRIDGE}/0a1b2c3d/input.raw')
+    (job / 'input.raw').write_bytes(b'x' * 100)
+    engine._apply_retention([dict(source=str(job), record={}, decision='retained_failure', target='waveforms/jobs/job-1',
+                                  job_id='job-1', evaluation_id='e1', journal=None)], None)
+    assert not (waveforms / 'jobs' / 'job-1').exists() and not job.exists()          # kept, then dropped for space
+    assert engine._host_folders == [f'{BRIDGE}/0a1b2c3d']                              # its host folder goes at the next save point
+    index = json.loads((waveforms / 'index.json').read_text())
+    assert index['entries']['job-1']['status'] == 'deleted_storage_limit' and errors == []
+    assert any(e['event'] == 'waveform_retention_changed' and e['status'] == 'deleted_storage_limit' for e in events)

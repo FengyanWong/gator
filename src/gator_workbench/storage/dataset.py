@@ -97,7 +97,9 @@ class RawDataset:
         rebuffered = 0
         for bundle in read_jsonl(self.journal_dir / 'wal.jsonl'):
             key = bundle['evaluation_id']
-            if bundle['commit_seq'] > self.flushed_seq and key not in self._known:
+            # At the flushed number itself only a record not yet flushed can be unknown: a rows-only record (record_rows)
+            # written after that flush. Every flushed key is known from flushes.jsonl, since the first flush ever written.
+            if bundle['commit_seq'] >= self.flushed_seq and key not in self._known:
                 self._buffer.append(bundle)
                 self._known.add(key)
                 rebuffered += 1
@@ -125,8 +127,29 @@ class RawDataset:
             return False
         if seq != self.last_seq + 1:
             raise ValueError(f'commit_seq must be contiguous: expected {self.last_seq + 1}, got {seq}')
+        self._append(key, seq, self._normalized(bundle.get('rows', {})))
+        self.last_seq = seq
+        return True
+
+    def record_rows(self, table, rows, *, origin='rows') -> bool:
+        """Durably record rows of `table` that belong to no evaluation of their own (record 7.283: the rows of learner
+        updates run after the last commit, when no later commit is sure to carry them - a save point or a pause right
+        after them). The record takes the LAST commit's number, so a save point taken right after it holds the rows,
+        and a recovery keeps or drops them together with that evaluation; its key is its own, never an evaluation's.
+        Returns False, and writes nothing, for no rows or a table that is not enabled."""
+        if self.failed is not None:
+            raise PersistenceError(f'Dataset writer previously failed: {self.failed}')
+        if table not in TABLES:
+            raise KeyError(table)
+        if not rows or table not in self.enabled:
+            return False
+        from uuid import uuid4
+        self._append(f'{origin}:{table}:{self.last_seq}:{uuid4().hex[:12]}', self.last_seq, self._normalized({table: rows}))
+        return True
+
+    def _normalized(self, tables) -> dict:
         rows = {}
-        for table, items in bundle.get('rows', {}).items():
+        for table, items in tables.items():
             if table not in TABLES:
                 raise KeyError(table)
             if table in self.enabled:
@@ -135,6 +158,9 @@ class RawDataset:
                     for name in TIMESTAMP_COLUMNS[table]:
                         if isinstance(row[name], datetime):
                             row[name] = row[name].astimezone(timezone.utc).isoformat()
+        return rows
+
+    def _append(self, key, seq, rows):
         record = dict(evaluation_id=key, commit_seq=seq, rows=rows)
         try:
             self._wal.append(record)
@@ -143,11 +169,9 @@ class RawDataset:
             raise
         self._buffer.append(_roundtrip(record))
         self._known.add(key)
-        self.last_seq = seq
         self.last_success = utcnow()
         if len(self._buffer) >= self.flush_every:
             self.flush()
-        return True
 
     def flush(self):
         """Publish buffered bundles as closed parts. No-op when nothing is buffered."""
@@ -196,7 +220,7 @@ class RawDataset:
         """Drop journal entries already covered by a flush record (called at checkpoints)."""
         self._wal.close()
         path = self.journal_dir / 'wal.jsonl'
-        keep = [b for b in read_jsonl(path) if b['commit_seq'] > self.flushed_seq]
+        keep = [b for b in read_jsonl(path) if b['commit_seq'] >= self.flushed_seq]      # see _recover: the flushed number too
         temporary = temporary_path(path)
         with temporary.open('x', encoding='utf8') as stream:
             import json

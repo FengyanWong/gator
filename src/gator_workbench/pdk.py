@@ -1343,10 +1343,13 @@ def remote_stamps(client, decode, paths) -> dict:
 
 class ModelFileCache:
     """The reader's copies of one technology library's model files: `index.json` {remote path: bytes, modified, sha256}
-    and the files themselves, named by their SHA-256."""
+    and the files themselves, named by their SHA-256. `host`: whose files they are (record 7.283; Astra's review of
+    7.279: the stamps - size and modification time - of the same path on two hosts can agree while the files differ, and
+    the second host was served the first one's copy). The copies of each host live in a folder of their own."""
 
-    def __init__(self, technology_library):
-        self.folder = local_settings_dir() / 'pdk-model-files' / technology_library
+    def __init__(self, technology_library, host=None):
+        base = local_settings_dir() / 'pdk-model-files'
+        self.folder = (base / host_folder_name(host) if host else base) / technology_library
         index = read_json(self.folder / 'index.json', default={})
         self.index = index if isinstance(index, dict) else {}
 
@@ -1381,10 +1384,17 @@ class ModelFileCache:
             pass                                        # a copy not kept is only a download next time
 
 
-def read_from_virtuoso(client, *, technology_library, model_file, decode=None):
+def host_folder_name(host) -> str:
+    """A folder name for a host identity such as ``user@host`` or ``user@host:port``: its letters, digits, ``@``, ``.``,
+    ``-`` and ``_`` kept, anything else ``_``, at most 80 characters."""
+    return re.sub(r'[^A-Za-z0-9@._-]+', '_', str(host))[:80] or 'host'
+
+
+def read_from_virtuoso(client, *, technology_library, model_file, decode=None, cache_host=None):
     """Runs in the bridge reader process. Returns the raw material for `finish_load`. The model files go to a temporary
     folder outside the repository and are deleted before this returns; a copy of each is kept for the next read
-    (ModelFileCache, record 7.279), and an unchanged file is taken from it instead of downloaded.
+    (ModelFileCache, record 7.279), and an unchanged file is taken from it instead of downloaded. `cache_host`: the
+    identity of the host the files come from (``user@host``), under which the copies are kept (record 7.283).
     `decode`: the bridge's ``decode_skill_output`` (injectable for tests without the bridge)."""
     if decode is None:
         from virtuoso_bridge import decode_skill_output as decode
@@ -1396,7 +1406,7 @@ def read_from_virtuoso(client, *, technology_library, model_file, decode=None):
     if not REMOTE_PATH.match(model_file or '') or '/../' in model_file:
         raise ValueError('The model file must be an absolute path on the simulator host')
     scratch = Path(tempfile.mkdtemp(prefix='gator-pdk-'))
-    cache = ModelFileCache(technology_library)
+    cache = ModelFileCache(technology_library, cache_host)
     try:
         # Breadth first, as before; each level's files new to this read are stamped in one query before any download.
         files, sources, total = {}, [], 0

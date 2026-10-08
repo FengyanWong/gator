@@ -1096,6 +1096,21 @@ class RunEngine:
         for commit_seq in pending:
             self._update_rows_waiting += self._run_updates(commit_seq)
 
+    def _persist_waiting_rows(self):
+        """The rows of updates learned since the last commit, when no later commit is sure to carry them: before a save
+        point and at the end (record 7.283; Astra's review of 7.281: a pause right after them, or the save point itself,
+        counted the updates but kept no row). Written as a rows-only record at the last commit's number
+        (RawDataset.record_rows), so the save point's data cursor covers them. Nothing is lost silently: without a
+        working dataset the old event says so."""
+        rows, self._update_rows_waiting = getattr(self, '_update_rows_waiting', None) or [], []
+        if not rows:
+            return
+        if self.dataset is not None and self.dataset.failed is None:
+            self.dataset.record_rows('learner_updates', rows, origin='learner_updates_after_commit')
+        else:
+            self._event('learner_update_rows_unrecorded', count=len(rows),
+                        note='the learner state and its save points hold these updates; only their rows are missing')
+
     def _run_updates(self, commit_seq):
         adv, rows = self.config.run.advanced, []
         every = self.config.output.learner_update_log_every
@@ -1402,6 +1417,7 @@ class RunEngine:
             # retained job and cost seconds per evaluation on the 9p mount (review of 2026-09-30).
             while failures and directory_bytes(self.layout.waveforms) > limit:
                 _, key = failures.pop(0)
+                self._remember_host_folder(self.layout.run_dir / index['entries'][key]['path'])   # before the copy goes (7.283)
                 shutil.rmtree(self.layout.run_dir / index['entries'][key]['path'], ignore_errors=True)
                 index['entries'][key].update(status='deleted_storage_limit', updated_utc=iso())
                 self._event('waveform_retention_changed', evaluation_id=key, status='deleted_storage_limit')
@@ -1423,6 +1439,7 @@ class RunEngine:
 
     def _checkpoint(self, kind):
         self._run_pending_updates()                      # the save point holds every update so far (7.281)
+        self._persist_waiting_rows()                     # and its data cursor covers their rows (7.283)
         self._clean_host()                               # the lanes are idle: the host's dropped job folders go (7.282)
         if not self.config.output.save_checkpoints:
             self.checkpoint_due = False
@@ -1497,11 +1514,9 @@ class RunEngine:
         self._write_timings()
         try:
             self._run_pending_updates()                  # before the last save point and its "unchanged" check (7.281)
+            self._persist_waiting_rows()                 # no commit comes after them: their rows go as their own record (7.283)
         except Exception as exc:
             self._log_error('pending_updates_failed', exc)
-        if getattr(self, '_update_rows_waiting', None):  # no commit came after them: learned, but their rows not recorded
-            self._event('learner_update_rows_unrecorded', count=len(self._update_rows_waiting),
-                        note='the learner state and its save points hold these updates; only their rows are missing')
         problems = []
         for lane in self.lanes:
             try:

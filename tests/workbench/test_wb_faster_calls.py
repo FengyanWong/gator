@@ -248,3 +248,30 @@ def test_the_pdk_model_files_are_downloaded_only_when_the_host_holds_others():
     busy.stamps_answer = False                                                 # no answer about the files: all downloaded
     assert read(busy) == answer and sorted(busy.downloads) == sorted(files) and busy.stamp_queries == 1
     shutil.rmtree(copy.folder)
+
+
+def test_the_model_file_copies_are_kept_per_host():
+    """Record 7.283 (Astra's review of 7.279): the same path on two hosts can carry the same size and modification time
+    with different content; the copies are kept per host, so the second host is never served the first one's file."""
+    files = {f'/pdk/demo045/models/{name}': (PDK_FIXTURE / 'models' / name).read_bytes()
+             for name in ('demo045.scs', 'demo045_mos.scs', 'demo045_passive.scs')}
+    modified = {path: '1727000000' for path in files}
+    passive = '/pdk/demo045/models/demo045_passive.scs'
+    other = dict(files, **{passive: files[passive][:-1] + (b'Y' if files[passive][-1:] != b'Y' else b'Z')})    # the same length
+
+    def read(host, identity):
+        return pdk.read_from_virtuoso(host, technology_library='demo045', model_file=MODEL, decode=lambda text: text, cache_host=identity)
+    folders = [pdk.ModelFileCache('demo045', identity).folder for identity in ('minlei@vm-a', 'minlei@vm-b')]
+    assert [f.parent.name for f in folders] == ['minlei@vm-a', 'minlei@vm-b'] and folders[0].parent.parent == folders[1].parent.parent
+    assert pdk.host_folder_name('user@host:22/../x') == 'user@host_22_.._x' and pdk.host_folder_name('') == 'host'
+    try:
+        a = read(_Host(files, modified), 'minlei@vm-a')
+        second = _Host(other, modified)                                           # the same stamps, another file
+        b = read(second, 'minlei@vm-b')
+        assert sorted(second.downloads) == sorted(files)                          # its own copies: everything downloaded
+        assert b['sources']['model_files'] != a['sources']['model_files']
+        again = _Host(files, modified)
+        assert read(again, 'minlei@vm-a') == a and again.downloads == []          # the first host's copies still serve it
+    finally:
+        for folder in folders:
+            shutil.rmtree(folder.parent, ignore_errors=True)

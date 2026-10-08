@@ -377,3 +377,5 @@ One row per commit, newest last.
 | `616c153` | 10-08 08:14 | 7.274-7.276 | the audit of 2026-10-07: faster run-list and saved-model reads, fewer page reads and redraws, shared table code and clean-up; with 7.269/7.270's Live lines (session "Frontend workbench layout design") |
 | `dd52d67` | 10-08 08:15 | 7.273 | plan 7.256 revision 4: the lean encoder comparison started overnight; docs only (session "Encoder run plan revision") |
 | `98bec37` | 10-08 08:15 | - | record only: names the commits of records 7.272, 7.273 and 7.274-7.276, and the table rows for 5c261bf, 6016bbd, 616c153 and dd52d67 |
+| `81250f7` | 10-08 10:49 | - | record only: the Live lines of records 7.274-7.276, and the table row for 98bec37 |
+| `0da08fe` | 10-08 13:24 | 7.277 | encoder comparison stage A complete; with 7.273's missing index row; docs only (session "Encoder run plan revision") |

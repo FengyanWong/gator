@@ -301,6 +301,368 @@ class CircuitSizingEnv:
         self._stop_file = None if stop_file is None else Path(stop_file)
 
     def _evaluate(self, action, *, reset):
+        allowance, started, candidate_id, path, expected, record = self._begin_candidate(action, reset)
+        workspace, result, committed, finalizing = None, None, False, False
+        workspace, output_root, path = self._candidate_output(record, workspace, path, candidate_id)
+        self._done = True
+        try:
+            artifact, applied, key, graph = self._export_candidate(reset, expected, output_root, candidate_id,
+                                                                   record)
+            rows, results, stopped = self._run_conditions(reset, artifact, applied, output_root, record, path,
+                                                          candidate_id, allowance)
+            if not rows:
+                raise RuntimeError('Candidate stopped before nominal evaluation')
+            result = results[0]
+            evaluated, observation, reward, terminated, truncated, info = self._outcome(
+                result, record, key, candidate_id, rows, graph, stopped, reset, path, started)
+            if self.recorder is None:
+                record['observation'] = None if observation is None else asdict(observation)
+                self._record(path, record)
+            else:
+                finalizing = True
+                receipt = self.recorder.finish(record, result, observation, self._recording_observation,
+                                               action, rows[0].operating_points)
+                committed = True
+                info['record'] = deepcopy(record)
+                info['eval_id'] = candidate_id
+                info['receipt'] = receipt
+                self._recording_observation = deepcopy(observation)
+                self.recorder.retain_and_clean(receipt, workspace, self.backend)
+            if reset:     # kept for reset_reused - also after a retried reset; a failed one leaves nothing to reuse
+                self._reset_cache = (deepcopy((observation, info))
+                                     if observation is not None and evaluated.valid and not self._done else None)
+            return observation, reward, terminated, truncated, info
+        except BaseException as exc:
+            self._done = True
+            if reset:
+                self._reset_cache = None
+            record.update(state='execution_error', exception_type=type(exc).__name__, error=str(exc),
+                          replay_eligible=False, reward=None, simulation_calls=self.simulation_calls,
+                          elapsed_seconds=perf_counter() - started)
+            if self.recorder is None:
+                self._record(path, record)
+            elif not committed and not finalizing:
+                self.recorder.finish(record, result, None, self._recording_observation, action)
+                # An unexpected exception does not prove the simulator stopped.
+                # Keep all workspaces for explicit recovery/inspection.
+            raise
+
+    def _outcome(self, result, record, key, candidate_id, rows, graph, stopped, reset, path, started):
+        """The candidate's evaluation over its conditions, the observation, reward and end flags, and its info;
+        the record completed: (evaluated, observation, reward, terminated, truncated, info)."""
+        record.update(job_id=result.job_id, artifact_directory=str(result.artifact_directory),
+                      status=result.status.value, reason_code=result.reason_code,
+                      candidate_evaluated=result.candidate_evaluated, retryable=result.retryable,
+                      backend_kind=result.backend_kind)
+        self._seen.setdefault(key, candidate_id)
+        metrics, validity = rows[0].metrics, rows[0].metric_validity
+        evaluated = self.evaluator.evaluate_conditions(rows, planned_conditions=self.planned_conditions,
+                                                       condition_policy=self.condition_policy)
+        operating_points, unmatched = mapped_operating_points(graph, rows[0].operating_points)
+        observation = Observation(deepcopy(graph), self.evaluator.specs, metrics, validity,
+                                  dict(result.metric_units), result.status.value, result.origin,
+                                  self.max_steps - self.steps, result.job_id, self.condition,
+                                  tuple(rows), self.planned_conditions, self.condition_policy, self.evaluator.settings,
+                                  operating_points, unmatched)
+        reward, eligible, success, terminated, truncated = None, False, False, False, False
+        if evaluated.valid and not stopped:
+            reward, eligible, success = evaluated.reward, not reset, evaluated.success
+            terminated = (success and self.stop_on_success) or self.steps >= self.max_steps
+        else:
+            truncated = True
+            if result.status != SimulationStatus.MEASUREMENT_ERROR and result.status != SimulationStatus.OK:
+                observation = None  # Do not fabricate a usable next state for infrastructure failure.
+        self._done = terminated or truncated
+        info = {'candidate_id': candidate_id, 'record_path': str(path), 'status': result.status.value,
+                'success': success, 'evaluation_valid': evaluated.valid,
+                'evaluation_errors': evaluated.errors, 'violations': evaluated.violations,
+                'replay_eligible': eligible, 'bootstrap': eligible and not terminated and not truncated,
+                'terminated': terminated, 'truncated': truncated,
+                'duplicate_of': record['duplicate_of'], 'cache_hit': False,
+                'simulation_calls': self.simulation_calls, 'job_id': result.job_id}
+        info.update(candidate_evaluations=self.candidate_evaluations, confirmed_calls=self.confirmed_calls,
+                    uncertain_calls=self.uncertain_calls, conditions_complete=evaluated.complete,
+                    nominal_success=evaluated.nominal_success, robust_success=success and evaluated.complete,
+                    conditions_evaluated=len(rows), conditions_planned=len(self.planned_conditions),
+                    margins=evaluated.margins, clearance_margin=evaluated.clearance_margin,
+                    tightest_clearance_spec=evaluated.tightest_clearance_spec,
+                    clearance_excluded=evaluated.clearance_excluded,
+                    saturated_margins=evaluated.saturated_margins,
+                    worst_values=evaluated.worst_values, worst_conditions=evaluated.worst_conditions,
+                    missing_coverage=evaluated.missing_coverage,
+                    missing_counted_as_failure=evaluated.missing_counted_as_failure)
+        record.update(state='completed', **{k: v for k, v in info.items() if k not in ('record_path',)},
+                      reward=reward, metrics=metrics, metric_validity=validity,
+                      metric_units=result.metric_units,
+                      elapsed_seconds=perf_counter() - started)
+        return evaluated, observation, reward, terminated, truncated, info
+
+    def _run_conditions(self, reset, artifact, applied, output_root, record, path, candidate_id, allowance):
+        """The candidate's planned condition jobs - the nominal first, then the corners one at a time or side by side -
+        each launch intent written before its simulator starts: (condition rows, results, whether the plan stopped)."""
+        rows, results, stopped = [], [], False
+        planned_now = self.planned_conditions[:1] if reset else self.planned_conditions
+        simulation_started = perf_counter()
+        if self.recorder is not None:
+            self.recorder.start(candidate_id, dict(applied), record)
+
+        def launch(index, condition):
+            """One condition job's launch intent, written - and counted as dispatched - before its simulator may
+            start. Returns (intent, request, pending)."""
+            nonlocal allowance
+            if allowance < 1:
+                raise RuntimeError('Launch allowance exhausted before physical invocation')
+            current = artifact if index == 0 else self.backend.derive_condition_artifact(
+                artifact, output_root / 'exports', condition=condition)
+            if current.condition != condition or current.origin != self.expected_origin:
+                raise ValueError('Derived artifact condition/origin mismatch')
+            pending = int(self.expected_origin == 'real')     # only a real launch can be left unresolved
+            intent = dict(index=index, state='launch_intent', export_job_id=current.job_id,
+                          started_at=datetime.now(timezone.utc).isoformat(),
+                          condition=None if condition is None else asdict(condition), netlist_sha256=current.sha256,
+                          netlist_path=str(current.path), confirmed_calls=0, uncertain_calls=pending)
+            record['jobs'].append(intent)
+            allowance -= 1
+            self.simulation_calls += 1
+            self.uncertain_calls += pending
+            record.update(state='simulation_started', simulation_calls=self.simulation_calls,
+                          simulation_dispatched=True)
+            # The per-job intent survives a process loss, including before a result exists.
+            self._record(output_root / f'launch-{candidate_id}-{index}.json', intent)
+            if self.recorder is None:
+                self._record(path, record)
+            elif hasattr(self.recorder, 'launch_intent'):
+                self.recorder.launch_intent(candidate_id, intent)
+            required = tuple(s.metric_id for s in self.evaluator.specs if s.active and s.required
+                             and (index == 0 or not s.nominal_only))
+            return intent, SimulationRequest(current, output_root / 'simulations', required,
+                                             self.timeout_seconds, dict(applied), condition=condition), pending
+
+        def settle(index, condition, intent, pending, result, *, side_by_side=False):
+            """A finished job: its result checked against the launch, the call accounting, the completed intent and
+            the row it makes. Returns (row, invocations)."""
+            if result.origin != self.expected_origin or not same_parameters(result.applied_parameters, applied):
+                raise ValueError('Simulation result origin or parameters differ from the export')
+            if result.condition != condition or result.sample_index is not None:
+                raise ValueError('Result condition differs from the launched artifact; it cannot enter nominal replay')
+            invocations = result.simulator_invocations
+            if invocations is None and result.origin != 'real':
+                # A synthetic backend launches no simulator: its call is complete and never an uncertain
+                # launch (the recorder's convention: zero real invocations for a synthetic result).
+                invocations = 0
+            if invocations is not None and (type(invocations) is not int or not 0 <= invocations <= 1):
+                raise ValueError('A condition job must report zero or one invocation, or explicit uncertainty')
+            if invocations is not None:
+                self.uncertain_calls -= pending
+                self.confirmed_calls += invocations
+                if result.origin == 'real':
+                    self.simulation_calls += invocations - 1   # a real job that never launched costs no call
+            intent.update(state='completed', job_id=result.job_id, artifact_directory=str(result.artifact_directory),
+                          ended_at=datetime.now(timezone.utc).isoformat(), simulator_version=result.simulator_version,
+                          status=result.status.value, reason_code=result.reason_code,
+                          elapsed_seconds=result.elapsed_seconds, simulator_invocations=invocations,
+                          confirmed_calls=invocations or 0, uncertain_calls=int(invocations is None),
+                          candidate_evaluated=result.candidate_evaluated)
+            self._record(output_root / f'launch-{candidate_id}-{index}.json', intent)
+            if self.recorder is not None and hasattr(self.recorder, 'launch_result'):
+                self.recorder.launch_result(candidate_id, intent)
+            names = set(result.metrics) | set(self.evaluator.required_metrics)
+            metrics, validity = {}, {}
+            accept_measurement_error = (result.status == SimulationStatus.MEASUREMENT_ERROR and any(
+                s.active and s.required and s.missing_is_failure and (index == 0 or not s.nominal_only)
+                for s in self.evaluator.specs))
+            for name in names:
+                value = result.metrics.get(name)
+                valid = ((result.status == SimulationStatus.OK or accept_measurement_error) and result.candidate_evaluated
+                         and result.metric_validity.get(name) is True
+                         and isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value))
+                metrics[name], validity[name] = (float(value) if valid else None), valid
+            local = self.evaluator.evaluate(metrics, result.metric_units, validity)
+            for name in local.errors:
+                metrics[name], validity[name] = None, False
+            operating_points = result.operating_points
+            # The backend's "latest operating points" belong to whichever job finished last: never read them for a
+            # job that ran side by side with another.
+            if operating_points is None and result.status == SimulationStatus.OK and not side_by_side:
+                try:
+                    operating_points = self.backend.get_operating_points()
+                except UnsupportedCapability:
+                    pass
+            row = ConditionResult(condition, result.status.value, result.candidate_evaluated,
+                                  metrics, dict(result.metric_units), validity, result.job_id,
+                                  result.reason_code, {key: {name: float(value) for name, value in values.items()
+                                      if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)}
+                                      for key, values in (operating_points or {}).items() if isinstance(values, dict)})
+            missing = self.evaluator.missing_failures(row, nominal=index == 0)
+            if missing and self.evaluator.row_scorable(row, nominal=index == 0):
+                row = replace(row, reason_code='missing_counted_as_failure', missing_failure_metrics=list(missing))
+            return row, invocations
+
+        def keep(row, result):
+            rows.append(row)
+            results.append(result)
+            record['condition_results'] = [asdict(r) for r in rows]
+            if self.recorder is None:
+                self._record(path, record)
+
+        def halt(index, row, result, invocations):
+            """True when this kept row ends the plan (it still counts)."""
+            nonlocal stopped
+            attributed = result.candidate_evaluated and result.status in (SimulationStatus.INVALID_DESIGN, SimulationStatus.NONCONVERGED)
+            if invocations is None or not self.evaluator.row_scorable(row, nominal=index == 0):
+                stopped = True
+                record['conditions_stop_reason'] = 'unavailable_or_uncertain_condition'
+                return True
+            if index == 0 and not reset and self.condition_policy == 'after_nominal' and not self.evaluator.evaluate_conditions(rows).nominal_success:
+                record['conditions_stop_reason'] = 'nominal_gate_not_met'
+                return True
+            if index == 0 and attributed:
+                record['conditions_stop_reason'] = 'attributed_nominal_failure'
+                return True
+            return False
+
+        def coordinator_stop():
+            nonlocal stopped
+            if self._stop_file is not None and self._stop_file.exists():
+                stopped = True
+                record['conditions_stop_reason'] = 'coordinator_stop'
+                return True
+            return False
+
+        def one_at_a_time(indices):
+            """Returns True when the plan ended early."""
+            for index in indices:
+                if coordinator_stop():
+                    return True
+                intent, request, pending = launch(index, planned_now[index])
+                result = self.backend.run_simulation(request)
+                row, invocations = settle(index, planned_now[index], intent, pending, result)
+                keep(row, result)
+                if halt(index, row, result, invocations):
+                    return True
+            return False
+
+        def side_by_side(indices, jobs):
+            """The corners after the nominal, at most `jobs` at once (2026-09-30): each intent is written before its
+            launch, results are taken in plan order. A kept row that ends the plan stops further launches, and a job
+            that had already started after it is accounted (its intent completed) but adds no row - the rows a
+            one-at-a-time plan would have kept. Jobs launched before a coordinator stop was seen keep their rows, as
+            there. On an error every job still running is waited for and accounted before the error is raised."""
+            from collections import deque
+            from concurrent.futures import ThreadPoolExecutor
+            waiting, running, failure = deque(indices), deque(), None
+            launching, counting = True, True
+            simulate = self.backend.delegated(self.backend.run_simulation)
+            with ThreadPoolExecutor(max_workers=jobs, thread_name_prefix='condition-job') as pool:
+                while True:
+                    while launching and waiting and len(running) < jobs:
+                        if any(future.done() and future.exception() is not None for *_, future in running):
+                            launching = False            # a later job already failed: launch nothing more
+                            break
+                        if coordinator_stop():
+                            launching = False
+                            break
+                        index = waiting.popleft()
+                        try:
+                            intent, request, pending = launch(index, planned_now[index])
+                        except BaseException as exc:
+                            failure, launching, counting = exc, False, False
+                            break
+                        running.append((index, intent, pending, pool.submit(simulate, request)))
+                    if not running:
+                        break
+                    index, intent, pending, future = running.popleft()
+                    try:
+                        result = future.result()
+                        row, invocations = settle(index, planned_now[index], intent, pending, result, side_by_side=True)
+                    except BaseException as exc:
+                        if failure is None:
+                            failure = exc
+                        launching = counting = False
+                        continue
+                    if counting:
+                        keep(row, result)
+                        if halt(index, row, result, invocations):
+                            launching = counting = False
+            if failure is not None:
+                raise failure
+
+        jobs = min(self.condition_jobs, getattr(self.backend, 'concurrent_condition_jobs', 1))
+        if not one_at_a_time([0]) and len(planned_now) > 1:
+            if jobs > 1 and len(planned_now) > 2 and callable(getattr(self.backend, 'delegated', None)):
+                side_by_side(range(1, len(planned_now)), jobs)
+            else:
+                one_at_a_time(range(1, len(planned_now)))
+        record['timings']['simulation_and_measurement'] = perf_counter() - simulation_started
+        return rows, results, stopped
+
+    def _export_candidate(self, reset, expected, output_root, candidate_id, record):
+        """The candidate written and read back (or prepared whole by the backend), exported, and its graph checked
+        against the action contract: (artifact, applied parameters, their key, graph)."""
+        if self.recorder is not None and hasattr(self.backend, 'prepare_recording'):
+            self.backend.prepare_recording(self.recorder, candidate_id)
+        stage = perf_counter()
+        prepare = getattr(self.backend, 'prepare_candidate', None)
+        if callable(prepare):
+            artifact, applied = prepare(output_root / 'exports', dict(expected),
+                condition=self.condition, candidate_id=candidate_id)
+            record['timings']['candidate_preparation'] = perf_counter() - stage
+            record['timings']['queue_wait'] = self.backend.timings.get('queue_wait', 0.)
+            record['timings']['parameter_update_readback'] = self.backend.timings.get('parameter_update', 0.)
+        else:
+            if reset:
+                self.backend.restore()
+            else:
+                self.backend.set_parameters(dict(expected))
+            applied = self.backend.read_parameters()
+            record['applied_parameters'] = parameter_rows(applied)
+            if not same_parameters(applied, expected):
+                raise ValueError('Parameter readback differs from requested candidate')
+            record['timings']['parameter_update_readback'] = perf_counter() - stage
+            stage = perf_counter()
+            kwargs = {} if self.condition is None else {'condition': self.condition}
+            artifact = self.backend.generate_netlist(output_root / 'exports', **kwargs)
+        record['applied_parameters'] = parameter_rows(applied)
+        if not same_parameters(applied, expected):
+            raise ValueError('Parameter readback differs from requested candidate')
+        key = tuple(sorted(applied.items()))
+        record['duplicate_of'] = self._seen.get(key)
+        record.update(export_job_id=artifact.job_id, netlist_sha256=artifact.sha256,
+                      netlist_path=str(artifact.path))
+        if artifact.origin != self.expected_origin:
+            raise ValueError('Unexpected netlist origin')
+        if artifact.condition != self.condition:
+            raise ValueError('Exported condition differs from the nominal environment')
+        record['timings']['netlisting'] = (self.backend.timings.get('netlisting', 0.)
+                                            if callable(prepare) else perf_counter() - stage)
+        stage = perf_counter()
+        graph = self.backend.get_circuit_graph(artifact)
+        graph.validate()
+        if graph_contract(graph) != self._contract:
+            raise ValueError('Exported graph changed topology or action contract')
+        graph_values = graph.assignments({g.id: g.value for g in graph.parameter_groups if g.mutable})
+        if not same_parameters(graph_values, applied):
+            raise ValueError('Exported graph differs from parameter readback')
+        record['timings']['graph_build'] = perf_counter() - stage
+        return artifact, applied, key, graph
+
+    def _candidate_output(self, record, workspace, path, candidate_id):
+        """Where the candidate's files go: the environment's folder (its record written first), or a recording workspace
+        with room checked: (workspace, output_root, path)."""
+        if self.recorder is None:
+            self._record(path, record)  # Before restoration or the first candidate mutation.
+            output_root = self.directory
+        else:
+            from analog_optimizer.recording.space import RecordingConfig, require_filesystem_space
+            require_filesystem_space(self.directory, RecordingConfig(**self.recorder.store.call('configuration')))
+            workspace = self.recorder.begin(record)
+            output_root = Path(workspace['path'])
+            path = f"sqlite:{self.recorder.run_id}/{candidate_id}"
+        return workspace, output_root, path
+
+    def _begin_candidate(self, action, reset):
+        """The candidate's launch allowance checked against its plan, and its record as it starts: (allowance, started,
+        candidate_id, path, expected parameters, record)."""
         cost = 1 if reset else len(self.planned_conditions)
         allowance = self._launch_allowance
         self._launch_allowance = None
@@ -335,336 +697,7 @@ class CircuitSizingEnv:
                   'planned_conditions': [None if c is None else asdict(c) for c in self.planned_conditions],
                   'condition_results': [], 'jobs': [], 'reserved_launches': allowance,
                   'timings': {}}
-        workspace, result, committed, finalizing = None, None, False, False
-        if self.recorder is None:
-            self._record(path, record)  # Before restoration or the first candidate mutation.
-            output_root = self.directory
-        else:
-            from analog_optimizer.recording.space import RecordingConfig, require_filesystem_space
-            require_filesystem_space(self.directory, RecordingConfig(**self.recorder.store.call('configuration')))
-            workspace = self.recorder.begin(record)
-            output_root = Path(workspace['path'])
-            path = f"sqlite:{self.recorder.run_id}/{candidate_id}"
-        self._done = True
-        try:
-            if self.recorder is not None and hasattr(self.backend, 'prepare_recording'):
-                self.backend.prepare_recording(self.recorder, candidate_id)
-            stage = perf_counter()
-            prepare = getattr(self.backend, 'prepare_candidate', None)
-            if callable(prepare):
-                artifact, applied = prepare(output_root / 'exports', dict(expected),
-                    condition=self.condition, candidate_id=candidate_id)
-                record['timings']['candidate_preparation'] = perf_counter() - stage
-                record['timings']['queue_wait'] = self.backend.timings.get('queue_wait', 0.)
-                record['timings']['parameter_update_readback'] = self.backend.timings.get('parameter_update', 0.)
-            else:
-                if reset:
-                    self.backend.restore()
-                else:
-                    self.backend.set_parameters(dict(expected))
-                applied = self.backend.read_parameters()
-                record['applied_parameters'] = parameter_rows(applied)
-                if not same_parameters(applied, expected):
-                    raise ValueError('Parameter readback differs from requested candidate')
-                record['timings']['parameter_update_readback'] = perf_counter() - stage
-                stage = perf_counter()
-                kwargs = {} if self.condition is None else {'condition': self.condition}
-                artifact = self.backend.generate_netlist(output_root / 'exports', **kwargs)
-            record['applied_parameters'] = parameter_rows(applied)
-            if not same_parameters(applied, expected):
-                raise ValueError('Parameter readback differs from requested candidate')
-            key = tuple(sorted(applied.items()))
-            record['duplicate_of'] = self._seen.get(key)
-            record.update(export_job_id=artifact.job_id, netlist_sha256=artifact.sha256,
-                          netlist_path=str(artifact.path))
-            if artifact.origin != self.expected_origin:
-                raise ValueError('Unexpected netlist origin')
-            if artifact.condition != self.condition:
-                raise ValueError('Exported condition differs from the nominal environment')
-            record['timings']['netlisting'] = (self.backend.timings.get('netlisting', 0.)
-                                                if callable(prepare) else perf_counter() - stage)
-            stage = perf_counter()
-            graph = self.backend.get_circuit_graph(artifact)
-            graph.validate()
-            if graph_contract(graph) != self._contract:
-                raise ValueError('Exported graph changed topology or action contract')
-            graph_values = graph.assignments({g.id: g.value for g in graph.parameter_groups if g.mutable})
-            if not same_parameters(graph_values, applied):
-                raise ValueError('Exported graph differs from parameter readback')
-            record['timings']['graph_build'] = perf_counter() - stage
-            rows, results, stopped = [], [], False
-            planned_now = self.planned_conditions[:1] if reset else self.planned_conditions
-            simulation_started = perf_counter()
-            if self.recorder is not None:
-                self.recorder.start(candidate_id, dict(applied), record)
-
-            def launch(index, condition):
-                """One condition job's launch intent, written - and counted as dispatched - before its simulator may
-                start. Returns (intent, request, pending)."""
-                nonlocal allowance
-                if allowance < 1:
-                    raise RuntimeError('Launch allowance exhausted before physical invocation')
-                current = artifact if index == 0 else self.backend.derive_condition_artifact(
-                    artifact, output_root / 'exports', condition=condition)
-                if current.condition != condition or current.origin != self.expected_origin:
-                    raise ValueError('Derived artifact condition/origin mismatch')
-                pending = int(self.expected_origin == 'real')     # only a real launch can be left unresolved
-                intent = dict(index=index, state='launch_intent', export_job_id=current.job_id,
-                              started_at=datetime.now(timezone.utc).isoformat(),
-                              condition=None if condition is None else asdict(condition), netlist_sha256=current.sha256,
-                              netlist_path=str(current.path), confirmed_calls=0, uncertain_calls=pending)
-                record['jobs'].append(intent)
-                allowance -= 1
-                self.simulation_calls += 1
-                self.uncertain_calls += pending
-                record.update(state='simulation_started', simulation_calls=self.simulation_calls,
-                              simulation_dispatched=True)
-                # The per-job intent survives a process loss, including before a result exists.
-                self._record(output_root / f'launch-{candidate_id}-{index}.json', intent)
-                if self.recorder is None:
-                    self._record(path, record)
-                elif hasattr(self.recorder, 'launch_intent'):
-                    self.recorder.launch_intent(candidate_id, intent)
-                required = tuple(s.metric_id for s in self.evaluator.specs if s.active and s.required
-                                 and (index == 0 or not s.nominal_only))
-                return intent, SimulationRequest(current, output_root / 'simulations', required,
-                                                 self.timeout_seconds, dict(applied), condition=condition), pending
-
-            def settle(index, condition, intent, pending, result, *, side_by_side=False):
-                """A finished job: its result checked against the launch, the call accounting, the completed intent and
-                the row it makes. Returns (row, invocations)."""
-                if result.origin != self.expected_origin or not same_parameters(result.applied_parameters, applied):
-                    raise ValueError('Simulation result origin or parameters differ from the export')
-                if result.condition != condition or result.sample_index is not None:
-                    raise ValueError('Result condition differs from the launched artifact; it cannot enter nominal replay')
-                invocations = result.simulator_invocations
-                if invocations is None and result.origin != 'real':
-                    # A synthetic backend launches no simulator: its call is complete and never an uncertain
-                    # launch (the recorder's convention: zero real invocations for a synthetic result).
-                    invocations = 0
-                if invocations is not None and (type(invocations) is not int or not 0 <= invocations <= 1):
-                    raise ValueError('A condition job must report zero or one invocation, or explicit uncertainty')
-                if invocations is not None:
-                    self.uncertain_calls -= pending
-                    self.confirmed_calls += invocations
-                    if result.origin == 'real':
-                        self.simulation_calls += invocations - 1   # a real job that never launched costs no call
-                intent.update(state='completed', job_id=result.job_id, artifact_directory=str(result.artifact_directory),
-                              ended_at=datetime.now(timezone.utc).isoformat(), simulator_version=result.simulator_version,
-                              status=result.status.value, reason_code=result.reason_code,
-                              elapsed_seconds=result.elapsed_seconds, simulator_invocations=invocations,
-                              confirmed_calls=invocations or 0, uncertain_calls=int(invocations is None),
-                              candidate_evaluated=result.candidate_evaluated)
-                self._record(output_root / f'launch-{candidate_id}-{index}.json', intent)
-                if self.recorder is not None and hasattr(self.recorder, 'launch_result'):
-                    self.recorder.launch_result(candidate_id, intent)
-                names = set(result.metrics) | set(self.evaluator.required_metrics)
-                metrics, validity = {}, {}
-                accept_measurement_error = (result.status == SimulationStatus.MEASUREMENT_ERROR and any(
-                    s.active and s.required and s.missing_is_failure and (index == 0 or not s.nominal_only)
-                    for s in self.evaluator.specs))
-                for name in names:
-                    value = result.metrics.get(name)
-                    valid = ((result.status == SimulationStatus.OK or accept_measurement_error) and result.candidate_evaluated
-                             and result.metric_validity.get(name) is True
-                             and isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value))
-                    metrics[name], validity[name] = (float(value) if valid else None), valid
-                local = self.evaluator.evaluate(metrics, result.metric_units, validity)
-                for name in local.errors:
-                    metrics[name], validity[name] = None, False
-                operating_points = result.operating_points
-                # The backend's "latest operating points" belong to whichever job finished last: never read them for a
-                # job that ran side by side with another.
-                if operating_points is None and result.status == SimulationStatus.OK and not side_by_side:
-                    try:
-                        operating_points = self.backend.get_operating_points()
-                    except UnsupportedCapability:
-                        pass
-                row = ConditionResult(condition, result.status.value, result.candidate_evaluated,
-                                      metrics, dict(result.metric_units), validity, result.job_id,
-                                      result.reason_code, {key: {name: float(value) for name, value in values.items()
-                                          if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)}
-                                          for key, values in (operating_points or {}).items() if isinstance(values, dict)})
-                missing = self.evaluator.missing_failures(row, nominal=index == 0)
-                if missing and self.evaluator.row_scorable(row, nominal=index == 0):
-                    row = replace(row, reason_code='missing_counted_as_failure', missing_failure_metrics=list(missing))
-                return row, invocations
-
-            def keep(row, result):
-                rows.append(row)
-                results.append(result)
-                record['condition_results'] = [asdict(r) for r in rows]
-                if self.recorder is None:
-                    self._record(path, record)
-
-            def halt(index, row, result, invocations):
-                """True when this kept row ends the plan (it still counts)."""
-                nonlocal stopped
-                attributed = result.candidate_evaluated and result.status in (SimulationStatus.INVALID_DESIGN, SimulationStatus.NONCONVERGED)
-                if invocations is None or not self.evaluator.row_scorable(row, nominal=index == 0):
-                    stopped = True
-                    record['conditions_stop_reason'] = 'unavailable_or_uncertain_condition'
-                    return True
-                if index == 0 and not reset and self.condition_policy == 'after_nominal' and not self.evaluator.evaluate_conditions(rows).nominal_success:
-                    record['conditions_stop_reason'] = 'nominal_gate_not_met'
-                    return True
-                if index == 0 and attributed:
-                    record['conditions_stop_reason'] = 'attributed_nominal_failure'
-                    return True
-                return False
-
-            def coordinator_stop():
-                nonlocal stopped
-                if self._stop_file is not None and self._stop_file.exists():
-                    stopped = True
-                    record['conditions_stop_reason'] = 'coordinator_stop'
-                    return True
-                return False
-
-            def one_at_a_time(indices):
-                """Returns True when the plan ended early."""
-                for index in indices:
-                    if coordinator_stop():
-                        return True
-                    intent, request, pending = launch(index, planned_now[index])
-                    result = self.backend.run_simulation(request)
-                    row, invocations = settle(index, planned_now[index], intent, pending, result)
-                    keep(row, result)
-                    if halt(index, row, result, invocations):
-                        return True
-                return False
-
-            def side_by_side(indices, jobs):
-                """The corners after the nominal, at most `jobs` at once (2026-09-30): each intent is written before its
-                launch, results are taken in plan order. A kept row that ends the plan stops further launches, and a job
-                that had already started after it is accounted (its intent completed) but adds no row - the rows a
-                one-at-a-time plan would have kept. Jobs launched before a coordinator stop was seen keep their rows, as
-                there. On an error every job still running is waited for and accounted before the error is raised."""
-                from collections import deque
-                from concurrent.futures import ThreadPoolExecutor
-                waiting, running, failure = deque(indices), deque(), None
-                launching, counting = True, True
-                simulate = self.backend.delegated(self.backend.run_simulation)
-                with ThreadPoolExecutor(max_workers=jobs, thread_name_prefix='condition-job') as pool:
-                    while True:
-                        while launching and waiting and len(running) < jobs:
-                            if any(future.done() and future.exception() is not None for *_, future in running):
-                                launching = False            # a later job already failed: launch nothing more
-                                break
-                            if coordinator_stop():
-                                launching = False
-                                break
-                            index = waiting.popleft()
-                            try:
-                                intent, request, pending = launch(index, planned_now[index])
-                            except BaseException as exc:
-                                failure, launching, counting = exc, False, False
-                                break
-                            running.append((index, intent, pending, pool.submit(simulate, request)))
-                        if not running:
-                            break
-                        index, intent, pending, future = running.popleft()
-                        try:
-                            result = future.result()
-                            row, invocations = settle(index, planned_now[index], intent, pending, result, side_by_side=True)
-                        except BaseException as exc:
-                            if failure is None:
-                                failure = exc
-                            launching = counting = False
-                            continue
-                        if counting:
-                            keep(row, result)
-                            if halt(index, row, result, invocations):
-                                launching = counting = False
-                if failure is not None:
-                    raise failure
-
-            jobs = min(self.condition_jobs, getattr(self.backend, 'concurrent_condition_jobs', 1))
-            if not one_at_a_time([0]) and len(planned_now) > 1:
-                if jobs > 1 and len(planned_now) > 2 and callable(getattr(self.backend, 'delegated', None)):
-                    side_by_side(range(1, len(planned_now)), jobs)
-                else:
-                    one_at_a_time(range(1, len(planned_now)))
-            record['timings']['simulation_and_measurement'] = perf_counter() - simulation_started
-            if not rows:
-                raise RuntimeError('Candidate stopped before nominal evaluation')
-            result = results[0]
-            record.update(job_id=result.job_id, artifact_directory=str(result.artifact_directory),
-                          status=result.status.value, reason_code=result.reason_code,
-                          candidate_evaluated=result.candidate_evaluated, retryable=result.retryable,
-                          backend_kind=result.backend_kind)
-            self._seen.setdefault(key, candidate_id)
-            metrics, validity = rows[0].metrics, rows[0].metric_validity
-            evaluated = self.evaluator.evaluate_conditions(rows, planned_conditions=self.planned_conditions,
-                                                           condition_policy=self.condition_policy)
-            operating_points, unmatched = mapped_operating_points(graph, rows[0].operating_points)
-            observation = Observation(deepcopy(graph), self.evaluator.specs, metrics, validity,
-                                      dict(result.metric_units), result.status.value, result.origin,
-                                      self.max_steps - self.steps, result.job_id, self.condition,
-                                      tuple(rows), self.planned_conditions, self.condition_policy, self.evaluator.settings,
-                                      operating_points, unmatched)
-            reward, eligible, success, terminated, truncated = None, False, False, False, False
-            if evaluated.valid and not stopped:
-                reward, eligible, success = evaluated.reward, not reset, evaluated.success
-                terminated = (success and self.stop_on_success) or self.steps >= self.max_steps
-            else:
-                truncated = True
-                if result.status != SimulationStatus.MEASUREMENT_ERROR and result.status != SimulationStatus.OK:
-                    observation = None  # Do not fabricate a usable next state for infrastructure failure.
-            self._done = terminated or truncated
-            info = {'candidate_id': candidate_id, 'record_path': str(path), 'status': result.status.value,
-                    'success': success, 'evaluation_valid': evaluated.valid,
-                    'evaluation_errors': evaluated.errors, 'violations': evaluated.violations,
-                    'replay_eligible': eligible, 'bootstrap': eligible and not terminated and not truncated,
-                    'terminated': terminated, 'truncated': truncated,
-                    'duplicate_of': record['duplicate_of'], 'cache_hit': False,
-                    'simulation_calls': self.simulation_calls, 'job_id': result.job_id}
-            info.update(candidate_evaluations=self.candidate_evaluations, confirmed_calls=self.confirmed_calls,
-                        uncertain_calls=self.uncertain_calls, conditions_complete=evaluated.complete,
-                        nominal_success=evaluated.nominal_success, robust_success=success and evaluated.complete,
-                        conditions_evaluated=len(rows), conditions_planned=len(self.planned_conditions),
-                        margins=evaluated.margins, clearance_margin=evaluated.clearance_margin,
-                        tightest_clearance_spec=evaluated.tightest_clearance_spec,
-                        clearance_excluded=evaluated.clearance_excluded,
-                        saturated_margins=evaluated.saturated_margins,
-                        worst_values=evaluated.worst_values, worst_conditions=evaluated.worst_conditions,
-                        missing_coverage=evaluated.missing_coverage,
-                        missing_counted_as_failure=evaluated.missing_counted_as_failure)
-            record.update(state='completed', **{k: v for k, v in info.items() if k not in ('record_path',)},
-                          reward=reward, metrics=metrics, metric_validity=validity,
-                          metric_units=result.metric_units,
-                          elapsed_seconds=perf_counter() - started)
-            if self.recorder is None:
-                record['observation'] = None if observation is None else asdict(observation)
-                self._record(path, record)
-            else:
-                finalizing = True
-                receipt = self.recorder.finish(record, result, observation, self._recording_observation,
-                                               action, rows[0].operating_points)
-                committed = True
-                info['record'] = deepcopy(record)
-                info['eval_id'] = candidate_id
-                info['receipt'] = receipt
-                self._recording_observation = deepcopy(observation)
-                self.recorder.retain_and_clean(receipt, workspace, self.backend)
-            if reset:     # kept for reset_reused - also after a retried reset; a failed one leaves nothing to reuse
-                self._reset_cache = (deepcopy((observation, info))
-                                     if observation is not None and evaluated.valid and not self._done else None)
-            return observation, reward, terminated, truncated, info
-        except BaseException as exc:
-            self._done = True
-            if reset:
-                self._reset_cache = None
-            record.update(state='execution_error', exception_type=type(exc).__name__, error=str(exc),
-                          replay_eligible=False, reward=None, simulation_calls=self.simulation_calls,
-                          elapsed_seconds=perf_counter() - started)
-            if self.recorder is None:
-                self._record(path, record)
-            elif not committed and not finalizing:
-                self.recorder.finish(record, result, None, self._recording_observation, action)
-                # An unexpected exception does not prove the simulator stopped.
-                # Keep all workspaces for explicit recovery/inspection.
-            raise
+        return allowance, started, candidate_id, path, expected, record
 
     def close(self):
         if self._closed:

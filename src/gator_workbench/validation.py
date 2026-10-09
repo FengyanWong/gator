@@ -635,7 +635,7 @@ def registry_for(config):
         generated = task_spec_registry(config.circuit)       # a generated profile brings the results of its circuit type
         if generated is not None:
             return {entry['metric_id']: entry['unit'] for entry in generated}
-        from .tasks import verified_spec_registry
+        from .task_registry import verified_spec_registry
         of_record = verified_spec_registry(config.circuit)   # the verified LDO and VCO: the registry of their real experiment
         if of_record is not None:
             return {entry['metric_id']: entry['unit'] for entry in of_record[1]}
@@ -664,7 +664,7 @@ def validate(config: WorkbenchConfig, *, graph=None, provided_metrics=None,
         report.add('unresolved', 'circuit_not_loaded', 'circuit',
                    'Instance paths, parameter names and initial values were NOT checked against a circuit')
     if config.circuit.source == 'registered_task':
-        from .tasks import MOCK_TASK_REMOVED, REMOVED_MOCK_TASKS, REMOVED_REAL_TASKS, SYNTHETIC_FIXTURES, real_task_removed
+        from .task_registry import MOCK_TASK_REMOVED, REMOVED_MOCK_TASKS, REMOVED_REAL_TASKS, SYNTHETIC_FIXTURES, real_task_removed
         # Status records 7.59 and 7.128: such a configuration can never run again - unless a test registered the circuit.
         if config.circuit.task_id in REMOVED_MOCK_TASKS and config.circuit.task_id.partition(':')[2] not in SYNTHETIC_FIXTURES:
             report.add('error', 'task_removed', 'circuit.task_id', MOCK_TASK_REMOVED.format(task=config.circuit.task_id))

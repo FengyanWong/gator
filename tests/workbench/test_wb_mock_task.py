@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from gator_workbench import schema, tasks
+from gator_workbench import schema, task_registry, tasks
 from gator_workbench.storage import read_json
 from gator_workbench.api import create_app
 from helpers import MOCK_TASK, execute, make_config, rows
@@ -55,13 +55,13 @@ def test_a_short_run_is_free_and_labelled_mock(tmp_path):
 def test_the_workbench_itself_offers_no_mock_task(monkeypatch):
     monkeypatch.delenv(tasks.ENV_SYNTHETIC_FIXTURES, raising=False)
     assert tasks._registered_fixtures() == {}
-    monkeypatch.setattr(tasks, 'SYNTHETIC_FIXTURES', {})
+    monkeypatch.setattr(task_registry, 'SYNTHETIC_FIXTURES', {})
     assert not [t for t in tasks.list_tasks() if t['kind'] == 'mock']
 
 
 @pytest.mark.parametrize('removed', tasks.REMOVED_MOCK_TASKS)
 def test_a_removed_mock_task_is_refused_with_a_plain_reason(removed, monkeypatch):
-    monkeypatch.setattr(tasks, 'SYNTHETIC_FIXTURES', {})                    # as in the workbench: no stand-in registered
+    monkeypatch.setattr(task_registry, 'SYNTHETIC_FIXTURES', {})                    # as in the workbench: no stand-in registered
     with pytest.raises(tasks.TaskBlocked) as caught:
         tasks.load_task(reference(removed))
     assert str(caught.value).startswith(f'{removed} no longer exists') and 'no MOCK task' in str(caught.value)

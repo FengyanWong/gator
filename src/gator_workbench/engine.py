@@ -42,8 +42,10 @@ from .security import redact
 from .storage.atomic import JsonlAppender, PersistenceError, read_json, read_jsonl, write_json
 from .storage.dataset import DatasetReader, RawDataset, utcnow
 from .trajectory import StateEncoder, TrajectoryLoader
-from .run_lock import iso, RunLock  # re-exported: moved by the refactoring (docs/plan-refactoring.md)
-from .run_definitions import INFRASTRUCTURE_FAILURES, decode_action, learner_experiment  # re-exported: moved by the refactoring (docs/plan-refactoring.md)
+# re-exported: moved to run_lock.py by the refactoring (docs/plan-refactoring.md)
+from .run_lock import iso, RunLock
+# re-exported: moved to run_definitions.py by the refactoring (docs/plan-refactoring.md)
+from .run_definitions import INFRASTRUCTURE_FAILURES, decode_action, learner_experiment
 
 TERMINAL_STATES = ('completed', 'paused', 'stopped', 'cancelled', 'failed')
 TIMING_BATCH = 16                                   # evaluations per append to logs/timings.jsonl (record 7.280)

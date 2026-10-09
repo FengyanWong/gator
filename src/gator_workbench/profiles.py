@@ -114,7 +114,7 @@ def task_for_cell(library, cell) -> dict | None:
     if generated:
         return generated[0]
     from .connection import load_profiles
-    from .tasks import REAL_PROFILES
+    from .task_registry import REAL_PROFILES
     if not library or not cell or library not in {settings.get('library') for settings in load_profiles()['profiles'].values()
                                                   if isinstance(settings, dict)}:
         return None
@@ -367,7 +367,7 @@ def probe_results(recipe, spec_registry=None) -> dict:
 
 def probe_rows(recipe, results, signals, testbench) -> list:
     """Rows of the Probes editor: one per result, naming the testbench net or supply branch it is read from."""
-    from .tasks import RESULT_ANALYSIS
+    from .task_registry import RESULT_ANALYSIS
     label, rows = RECIPES[recipe]['label'], []
     for metric, unit in results.items():
         where, meaning = PROBES[recipe][metric]
@@ -580,7 +580,7 @@ def _generate(name, config, *, recipe, imported, staging, expected_frequency_hz=
 
 def create_profile(name, config, *, recipe, expected_frequency_hz=None) -> dict:
     """The older route (API only; the page saves tasks with `save_task`): a profile of the ORIGINAL cell."""
-    from .tasks import REAL_PROFILES
+    from .task_registry import REAL_PROFILES
     directory = profile_dir(name)
     if name in REAL_PROFILES or directory.exists():
         raise ProfileError(f'A profile called {name!r} already exists')
@@ -666,7 +666,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
       `base_revision`: the revision the page's rows came from) - are refused with what they would undo (`NewerSaved`),
       before anything is written, until the user answers "Save anyway" (`replace_newer`; record 7.203)."""
     from . import bridge_read, task_files, virtuoso_setup, working_copy
-    from .tasks import REAL_PROFILES, REMOVED_REAL_TASKS
+    from .task_registry import REAL_PROFILES, REMOVED_REAL_TASKS
     commands, extras = commands or {}, dict(extras or {})
     directory = profile_dir(name)                                # validates the name
     current = profile_entry(task) if task else None
@@ -1028,7 +1028,7 @@ def delete_profile(name, *, run_rows=()) -> dict:
     simulation, and the runs made with the profile refer to these files. The copy of the cell that was read from
     Virtuoso stays where it is. Refused while a worker is on a run of the task. Runs that were made keep their data;
     a paused one can no longer be resumed. The verified built-in circuits are not in this store and cannot be deleted."""
-    from .tasks import REAL_PROFILES
+    from .task_registry import REAL_PROFILES
     entry = profile_entry(name)
     if entry is None:
         raise ProfileError(f'real:{name} is a verified built-in circuit, not a generated profile: it cannot be deleted'

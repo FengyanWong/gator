@@ -352,10 +352,10 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
     except TaskBlocked as exc:
         raise RunRejected(str(exc), report=dict(blocker=str(exc), interface_contract=exc.contract), code='task_blocked')
     if task.circuit.get('native_draft'):                  # read from Virtuoso, no profile: not even an authorization question
-        from .tasks import NATIVE_DRAFT_NOT_EXECUTABLE
+        from .task_registry import NATIVE_DRAFT_NOT_EXECUTABLE
         raise RunRejected(NATIVE_DRAFT_NOT_EXECUTABLE, report=dict(blocker=NATIVE_DRAFT_NOT_EXECUTABLE), code='task_blocked')
     if not task.mock and not allow_real:                  # before anything is created, reserved or gated
-        from .tasks import REAL_AUTHORIZATION_REQUIRED
+        from .task_registry import REAL_AUTHORIZATION_REQUIRED
         raise RunRejected(REAL_AUTHORIZATION_REQUIRED, code='real_authorization_required',
                           report=dict(blocker=REAL_AUTHORIZATION_REQUIRED, task_key=task.task_key,
                                       requested_max_evaluations=config.run.max_evaluations))

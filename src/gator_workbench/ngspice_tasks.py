@@ -271,7 +271,7 @@ def link_for(profile_id=None):
 def runtime(task_key, name, profile_id=None, *, authorized=False):
     """The TaskRuntime of ngspice:<name>. Local files only; the connection is looked at for the notes and checked
     again when the environment is built (in the run worker)."""
-    from .tasks import REAL_AUTHORIZATION_REQUIRED, TaskBlocked, TaskRuntime
+    from .task_registry import REAL_AUTHORIZATION_REQUIRED, TaskBlocked, TaskRuntime
     try:
         entry, text = load(name)
     except KeyError:
@@ -426,7 +426,7 @@ def probe_rows(parsed: Parsed) -> list:
 
 def starter_config(task_key) -> dict:
     """The rows the editors start from: KeyError for a task that does not exist."""
-    from .tasks import starter_project
+    from .task_registry import starter_project
     name = task_key.partition(':')[2]
     entry, text = load(name)
     if entry.get('starter') and entry.get('analoggym'):

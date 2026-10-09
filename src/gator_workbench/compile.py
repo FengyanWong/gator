@@ -196,7 +196,7 @@ def _task_spec_schema(config: WorkbenchConfig):
         from .profiles import task_spec_registry
         generated = task_spec_registry(config.circuit)       # see validation.registry_for: the same fallback, the same order
         if generated is None:
-            from .tasks import verified_spec_registry
+            from .task_registry import verified_spec_registry
             of_record = verified_spec_registry(config.circuit)
             if of_record is None:
                 return SpecSchema()
@@ -217,7 +217,7 @@ def training_conditions(config):
     if config.run.conditions.policy == 'off':
         return ()
     from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
-    from .tasks import CORNER_TASKS, _verified_profile
+    from .task_registry import CORNER_TASKS, _verified_profile
     if config.circuit.task_id not in CORNER_TASKS:
         raise CompileError('No task trains at corners: the only one, the real OTA7 task, was removed on 2026-09-30')
     profile = _verified_profile(config.circuit.task_id.partition(':')[2])

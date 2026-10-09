@@ -32,7 +32,7 @@ import math
 from pathlib import Path
 import shutil
 
-from . import cdf_facts, native_cells, recipes, units
+from . import cdf_facts, cdf_rules, native_cells, recipes, units
 from .circuit_types import (MAESTRO, NEEDS_FREQUENCY, NeedsFrequency, OPAMP_NETS, RECIPES, _core_instance, _opamp_fit,
                             _ring, _supply)
 from .compile import CompileError, build_graph
@@ -169,7 +169,6 @@ def _generate(name, config, *, recipe, imported, staging, expected_frequency_hz=
                     'such values can vary too.)' if facts is None else f' (What its property form lets you type could not be '
                     f'read with the cell: {facts["error"]})')
             raise ProfileError(str(refused) + hint) from None
-        from . import cdf_rules
         try:
             rows, optimized, leaders, specs = cdf_rules.adjust(config, graph, core, facts, reference)
         except cdf_rules.RowError as exc:
@@ -233,7 +232,6 @@ def _generate(name, config, *, recipe, imported, staging, expected_frequency_hz=
             fixed_instances=[n for n in instances if n not in mos],
             writable=[dict(instance=n, lower=lo, upper=hi) for n, (lo, hi) in writable.items()]))
     else:
-        from . import cdf_rules
         try:
             rules = cdf_rules.rules_v2(recipe=recipe, core=core, facts=facts, reference=reference, compiled=compiled, specs=specs)
         except cdf_rules.RowError as exc:

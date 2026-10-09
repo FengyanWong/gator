@@ -34,7 +34,8 @@ class HostMaintenance:
         if self.task.mock or not key.startswith('real:') or self.config.output.keep_simulator_host_folders:
             return None
         try:
-            from .model_library import host_runner
+            from .model_library import host_runner  # lazy: in the try: a failure of the import is handled with the rest
+            # lazy: in the try: a failure of the import is handled with the rest
             from .tasks import generated_bridge_config
             self._host_run = host_runner(generated_bridge_config(key[len('real:'):], self.config.run.connection_profile_id)[0])
         except Exception as exc:

@@ -19,9 +19,11 @@ import math
 from dataclasses import dataclass, asdict
 
 from . import saved_rows, units
-from .pdk import parameter_facts
+from .pdk import label, parameter_facts
+from .profile_store import task_spec_registry
 from .schema import WorkbenchConfig
 from .spec_equations import parse
+from .task_registry import verified_spec_registry
 
 FEATURE_PARAMETER_KINDS = ('w', 'l', 'm', 'nf', 'r', 'c', 'ind', 'dc')
 BLOCKING = ('error', 'blocker')
@@ -561,7 +563,6 @@ def _check_run(config, report, record):
                    'several hundred.')
     vocabulary = getattr(run.network, 'vocabulary', 'standard') or 'standard'
     if vocabulary != 'standard':                  # the schema admits 'pdk:<name>' only: `record` is _pdk_record's load of <name>
-        from .pdk import label
         if record is None:
             report.add('blocker', 'pdk_not_loaded', 'run.network.vocabulary',
                        f'The network is to know the components of PDK {vocabulary[4:]}, but that PDK is not loaded. Read it '
@@ -630,11 +631,9 @@ def registry_for(config):
     if custom is None:
         if config.circuit.source == 'virtuoso':
             return None                   # a cell without a profile: its registry comes with the profile, nothing to check yet
-        from .profile_store import task_spec_registry
         generated = task_spec_registry(config.circuit)       # a generated profile brings the results of its circuit type
         if generated is not None:
             return {entry['metric_id']: entry['unit'] for entry in generated}
-        from .task_registry import verified_spec_registry
         of_record = verified_spec_registry(config.circuit)   # the verified LDO and VCO: the registry of their real experiment
         if of_record is not None:
             return {entry['metric_id']: entry['unit'] for entry in of_record[1]}
@@ -663,6 +662,7 @@ def validate(config: WorkbenchConfig, *, graph=None, provided_metrics=None,
         report.add('unresolved', 'circuit_not_loaded', 'circuit',
                    'Instance paths, parameter names and initial values were NOT checked against a circuit')
     if config.circuit.source == 'registered_task':
+        # lazy: tests patch task_registry.SYNTHETIC_FIXTURES
         from .task_registry import MOCK_TASK_REMOVED, REMOVED_MOCK_TASKS, REMOVED_REAL_TASKS, SYNTHETIC_FIXTURES, real_task_removed
         # Status records 7.59 and 7.128: such a configuration can never run again - unless a test registered the circuit.
         if config.circuit.task_id in REMOVED_MOCK_TASKS and config.circuit.task_id.partition(':')[2] not in SYNTHETIC_FIXTURES:

@@ -23,6 +23,7 @@ from analog_optimizer.backends.gpdk045 import number
 
 from . import model_library, ocean, units
 from .generic_profile import GenericMosWidthProfile, RulesError
+from .virtuoso_setup import DECK_FORMAT
 
 RING = 'ring_oscillator'
 RING_METRICS = dict(osc_frequency_hz='Hz', supply_power_w='W', supply_current_a='A', osc_minimum_swing_v='V',
@@ -227,7 +228,6 @@ class GenericMaestroProfile(GenericMosWidthProfile):
     @property
     def maestro(self) -> dict:
         if self._deck is None:
-            from .virtuoso_setup import DECK_FORMAT
             try:
                 deck = json.loads(self._deck_file.read_text())
             except (OSError, ValueError):

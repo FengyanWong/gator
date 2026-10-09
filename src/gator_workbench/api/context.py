@@ -75,6 +75,7 @@ class ApiContext:
             if config.parameters and not broken:
                 try:
                     from analog_optimizer.envs.sizing import graph_contract
+                    # lazy: in the try: a failure of the import is handled with the rest
                     from ..compile import compile_task
                     matches = graph_contract(compile_task(config, runtime.base_graph).graph) == graph_contract(runtime.base_graph)
                 except Exception as exc:                   # it does not compile: a start would be refused for that alone

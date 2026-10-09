@@ -56,7 +56,6 @@ def delete_profile(name, *, run_rows=()) -> dict:
     directory.rename(kept)
     original = entry.get('original') or {}
     if original.get('library') and original.get('cell'):             # the cell's working copy is free for a new task
-        from . import working_copy
         working_copy.release(original['library'], original['cell'], name)
         # The page puts the answer into its Circuit source: the user's OWN cell, not the working copy the task ran on (that
         # used to lead the next "Save task" to make a copy of the copy). A profile made before working copies has none.

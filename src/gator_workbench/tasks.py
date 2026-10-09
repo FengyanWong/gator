@@ -295,7 +295,6 @@ def load_task(circuit, *, allow_real=False, profile_id=None) -> TaskRuntime:
     if circuit.source == 'netlist':
         raise TaskBlocked(NETLIST_SOURCE_REMOVED)
     if circuit.source == 'virtuoso':
-        from . import native_cells
         imported = native_cells.load_import(circuit.library, circuit.cell) if circuit.library and circuit.cell else None
         if imported is None or allow_real:                   # allow_real = a run start: a cell without a profile never executes
             raise TaskBlocked((NATIVE_DRAFT_NOT_EXECUTABLE if imported else

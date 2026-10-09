@@ -13,6 +13,7 @@ from .reward_diagnostics import file_identity, kept, tables_version
 from .schema import WorkbenchConfig
 from .spec_equations import SpecPlan
 from .storage.atomic import read_json, read_jsonl
+from .units import canonical_unit
 
 
 def assess(config, designs):
@@ -31,7 +32,6 @@ def assess(config, designs):
             raw = {k: v for k, v in row.get('metrics', {}).items() if row.get('metric_validity', {}).get(k) is True
                    and isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)}
             # Wrong units cannot establish reachability, even when a number looks plausible.
-            from .units import canonical_unit
             for probe in config.measurements:
                 key = probe.source_name
                 if key and row.get('metric_units', {}).get(key) != canonical_unit(probe.unit):

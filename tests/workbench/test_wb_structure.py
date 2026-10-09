@@ -124,6 +124,20 @@ def test_no_import_cycle_beyond_the_known_ones():
                          + '; '.join(' <-> '.join(m.split('.', 1)[1] for m in c) for c in unknown))
 
 
+def own_statements(func):
+    """The statements of a function's own code: its body and every block in it, not the functions or classes it defines."""
+    stack = list(func.body)
+    while stack:
+        stmt = stack.pop(0)
+        yield stmt
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        for field in ('body', 'orelse', 'finalbody'):
+            stack.extend(getattr(stmt, field, None) or [])
+        for handler in getattr(stmt, 'handlers', None) or []:
+            stack.extend(handler.body)
+
+
 def test_every_import_of_a_workbench_module_inside_a_function_says_why():
     silent = []
     for name, info in MODULES.items():
@@ -134,7 +148,7 @@ def test_every_import_of_a_workbench_module_inside_a_function_says_why():
             for func in [n for n in ast.walk(top) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:
                 if (name, top.name if hasattr(top, 'name') else None) in ENTRY_FUNCTIONS:
                     continue
-                for stmt in func.body:
+                for stmt in own_statements(func):
                     if isinstance(stmt, (ast.Import, ast.ImportFrom)) and targets(name, stmt):
                         line, above = lines[stmt.lineno - 1], lines[stmt.lineno - 2] if stmt.lineno > 1 else ''
                         if '#' not in line[stmt.col_offset:] and not above.strip().startswith('#'):

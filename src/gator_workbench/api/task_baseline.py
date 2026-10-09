@@ -82,7 +82,7 @@ def _start(context, task_key, *, profile_id, output_root):
         previous = status(task_key)
         if previous and previous.get('worker_alive'):
             return previous
-        from .run_routes import start_run
+        from .run_routes import start_run  # lazy: in the try: a failure of the import is handled with the rest
         config = configuration(task_key, profile_id=profile_id, output_root=output_root)
         # Creation authorizes one bounded attempt. A probe's unknown result may be
         # resolved by that attempt; known connection/readiness failures still block.

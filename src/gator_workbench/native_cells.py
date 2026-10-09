@@ -99,7 +99,7 @@ def _mapping(netlist_text, *, circuit_id='native', technology_library=None) -> t
     fits = lambda found: {name: entry for name, entry in found.items() if nodes.get(name) == {len(entry['terminals'])}}
     verified, described, ideal, version, record = fits(verified_models()), {}, {}, 'native-draft-1', None
     if technology_library:
-        from .pdk import ideal_models, load_record, parse_models
+        from .pdk import ideal_models, load_record, parse_models  # lazy: tests patch pdk.load_record
         record = load_record(technology_library)
     if record is not None:
         described = {name: entry for name, entry in fits(parse_models(record)).items() if name not in verified}

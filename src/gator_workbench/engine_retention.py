@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 import shutil
 
+from .paths import directory_bytes
 from .run_lock import iso
 from .storage.atomic import read_json, write_json
 
@@ -72,7 +73,6 @@ class Retention:
             self.previous_best_waveform = current
         limit = self.config.output.waveform_storage_limit_bytes
         if limit is not None and changed:
-            from .paths import directory_bytes
             failures = sorted((v['updated_utc'], k) for k, v in index['entries'].items() if v['status'] == 'retained_failure')
             # Only failures may be deleted for space, so measure only while one is left: the folder walk grows with every
             # retained job and cost seconds per evaluation on the 9p mount (review of 2026-09-30).

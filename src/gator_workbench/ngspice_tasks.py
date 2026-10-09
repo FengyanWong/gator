@@ -22,8 +22,9 @@ from pathlib import Path
 import re
 import shutil
 
+from .analoggym import AnalogGymFactory, export_best_decks, physical_graph
 from .connection import load_profiles
-from .ngspice_backend import NgspiceEnvFactory, NgspiceLink, NgspiceLinkError
+from .ngspice_backend import LOCAL_CONCURRENCY, NgspiceEnvFactory, NgspiceLink, NgspiceLinkError
 from .ngspice_netlist import KINDS, NetlistError, Parsed, parse_text, rewrite
 from .paths import local_settings_dir
 from .storage.atomic import publish, temporary_path, write_json
@@ -92,7 +93,6 @@ def parse_entry(entry, text) -> Parsed:
     parsed = parse_text(text, source=str(Path(entry['directory']) / FILES['netlist']) if entry.get('directory') else 'netlist.cir',
                       circuit_id=entry['name'], device_kinds=entry.get('device_kinds') or {}, include_root=_include_root(entry))
     if entry.get('analoggym'):
-        from .analoggym import physical_graph
         physical_graph(parsed)
     return parsed
 
@@ -304,7 +304,6 @@ def runtime(task_key, name, profile_id=None, *, authorized=False):
         from analog_optimizer.measurements.specs import RewardSettings
         factory, options = NgspiceEnvFactory, {}
         if entry.get('analoggym'):
-            from .analoggym import AnalogGymFactory
             factory, options = AnalogGymFactory, dict(bundle=entry['analoggym'])
         return factory(text, compiled.graph, compiled.specs, link, str(work_root), adv.episode_length,
                                  adv.simulation_timeout_seconds, adv.episode_terminates_on_success, units,
@@ -335,7 +334,6 @@ def runtime(task_key, name, profile_id=None, *, authorized=False):
         link = link_for(profile_id)
         concurrency = link.max_concurrency
     except Exception:
-        from .ngspice_backend import LOCAL_CONCURRENCY
         concurrency = LOCAL_CONCURRENCY
     provided = tuple(entry['analoggym']['metric_units']) if entry.get('analoggym') else tuple(parsed.result_names)
     circuit = dict(circuit_class=entry.get('circuit_class') or 'unspecified', pdk_id=entry.get('pdk_id') or 'unspecified',
@@ -359,7 +357,6 @@ def export_deck(task):
     import math
 
     if (task.circuit or {}).get('analoggym_task'):
-        from .analoggym import export_best_decks
         entry, _ = load(task.task_key.partition(':')[2])
         def benchmark_exporter(netlist_text, graph, members):
             return export_best_decks(netlist_text, entry['analoggym'], entry['device_kinds'], members)

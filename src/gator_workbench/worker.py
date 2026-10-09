@@ -30,11 +30,12 @@ def main(argv=None):
     # `created` for ever with no error on the page (the traceback went to logs/worker.log only, review of 2026-09-29).
     try:
         import torch
-        from .engine import RunEngine
-        from .layout import RunLayout
-        from .schema import WorkbenchConfig
+        from .engine import RunEngine  # lazy: in the try: a failure of the import is handled with the rest
+        from .layout import RunLayout  # lazy: in the try: a failure of the import is handled with the rest
+        from .schema import WorkbenchConfig  # lazy: in the try: a failure of the import is handled with the rest
+        # lazy: in the try: a failure of the import is handled with the rest
         from .storage.atomic import read_json, write_json
-        from .tasks import TaskBlocked, load_task
+        from .tasks import TaskBlocked, load_task  # lazy: in the try: a failure of the import is handled with the rest
 
         layout = RunLayout(run_dir)
         config = WorkbenchConfig.model_validate(read_json(layout.effective_config))
@@ -43,6 +44,7 @@ def main(argv=None):
             # The profile the gate checked is the profile the run uses - never silently the active one.
             task = load_task(config.circuit, allow_real=args.allow_real, profile_id=config.run.connection_profile_id)
             if not task.mock and not args.allow_real:
+                # lazy: in the try: a failure of the import is handled with the rest
                 from .tasks import REAL_AUTHORIZATION_REQUIRED
                 raise TaskBlocked(REAL_AUTHORIZATION_REQUIRED)
         except TaskBlocked as exc:
@@ -56,7 +58,7 @@ def main(argv=None):
             return 2
         # One learner thread, as in the existing training entry points; simulator threads are separate.
         torch.set_num_threads(1)
-        from .run_lock import RunLock
+        from .run_lock import RunLock  # lazy: in the try: a failure of the import is handled with the rest
         lock = None if args.lock_fd is None else RunLock.adopt(layout.control / 'run.lock', args.lock_fd)
         engine = RunEngine(layout.run_dir, task=task, use_processes=False if args.threads else None, lock=lock)
     except Exception as exc:
@@ -86,7 +88,7 @@ def _record_failed_start(run_dir: Path, problem) -> None:
         return
     if isinstance(problem, BaseException):
         try:
-            from .security import redact
+            from .security import redact  # lazy: in the try: a failure of the import is handled with the rest
             problem = redact(f'{type(problem).__name__}: {problem}', 2000)
         except Exception:                                  # not even redaction imports: only the type is said
             problem = f'{type(problem).__name__} (see logs/worker.log)'
@@ -102,8 +104,8 @@ def _record_failed_start(run_dir: Path, problem) -> None:
     except Exception:
         pass
     try:
-        from .layout import RunLayout
-        from .storage.atomic import write_json
+        from .layout import RunLayout  # lazy: in the try: a failure of the import is handled with the rest
+        from .storage.atomic import write_json  # lazy: in the try: a failure of the import is handled with the rest
         write_json(run_dir / 'status.json', dict(status, paths=RunLayout(run_dir).subpaths()))
     except Exception:
         try:

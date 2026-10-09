@@ -11,10 +11,12 @@ import json
 from pathlib import Path
 import shutil
 
-from . import bridge_read, native_cells, recipes, task_files, virtuoso_setup, working_copy
+from . import bridge_read, native_cells, recipes, task_files, units, virtuoso_setup, working_copy
 from .circuit_types import MAESTRO, RECIPES
+from .compile import normalization_scale
 from .profile_generate import _generate
 from .profile_store import FILES, HISTORY, ProfileError, TASK_FILE, profile_dir, profile_entry, task_file
+from .saved_rows import describe_undone, undone_by_saving
 from .saved_tasks import TRASH, load_profile, tasks_for_cell, working_run_of
 from .storage.atomic import write_json
 from .storage.dataset import utcnow
@@ -73,35 +75,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
       `base_revision`: the revision the page's rows came from) - are refused with what they would undo (`NewerSaved`),
       before anything is written, until the user answers "Save anyway" (`replace_newer`; record 7.203)."""
     commands, extras = commands or {}, dict(extras or {})
-    directory = profile_dir(name)                                # validates the name
-    current = profile_entry(task) if task else None
-    if task and current is None:
-        raise ProfileError(f'Unknown task real:{task}')
-    updating = current is not None and not as_new
-    if updating:
-        if name != task:
-            raise ProfileError('Save task keeps the task name: use Save as for a task under another name')
-        working = working_run_of(name, run_rows)
-        if working is not None:
-            raise ProfileError(f'Run {working.get("run_id") or working["run_dir"]} of real:{name} is working right now: let it finish first')
-        if not current.get('copy_target'):
-            raise ProfileError(f'real:{name} was made before tasks had working copies: read its cell in the Virtuoso window (confirming '
-                               'that it is a copy you made) and save a new task')
-    elif name in REAL_PROFILES or f'real:{name}' in REMOVED_REAL_TASKS or directory.exists():   # a removed one's name stays reserved
-        raise ProfileError(f'A task called real:{name} already exists: choose another name')
-    # a spec must judge Probes the task has (the editors' check)
-    probes, refused = {m.measurement_id: m for m in config.measurements}, []
-    for spec in config.targets:
-        _check_equation(spec, spec.metric_id, report := Report(), probes)
-        refused += [f'Spec {spec.metric_id}: {issue.message}' for issue in report.issues if issue.level == 'error']
-    if refused:
-        raise ProfileError(' '.join(refused))
-    if updating and not replace_newer:
-        from .saved_rows import describe_undone, undone_by_saving
-        undone = undone_by_saving(config, name, task_file(name), base=base_revision)
-        if undone:
-            raise NewerSaved(describe_undone(name, undone) + ' Press Reload saved values to take the saved rows, or save anyway.',
-                             undone)
+    directory, current, updating = _saveable(name, config, task, as_new, run_rows, replace_newer, base_revision)
     kind = measurement_kind(config)
     steps = (['copy'] if current and not updating else []) + (['setup', 'deck'] if kind == MAESTRO else []) + ['read', 'files']
     mark = (lambda step: progress(step, steps)) if progress else (lambda step: None)
@@ -118,13 +92,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
                                              source_netlist=(Path(current['directory']) / FILES['structure']).read_text(),
                                              command=commands.get('copy'))
     else:
-        if not library or not cell:
-            raise ProfileError('Say which cell the task is of')
-        existing = [t for t in tasks_for_cell(library, cell)]
-        if existing:
-            raise ProfileError(f'{library}/{cell} already has the task(s) {", ".join(t["task_key"] for t in existing)}: open one and use Save as')
-        target = working_copy.draft_target(library, cell)
-        working_copy.claim(library, cell, name)
+        target = _first_save_target(library, cell, name)
         claimed = (library, cell)
     staging = directory.with_name(f'.{name}.saving')
     try:
@@ -134,12 +102,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
         base = working_copy.last_written(current['copy_target'] if current else target) or (saved or {}).get('maestro') or {}
         maestro = None
         if kind == MAESTRO:
-            setup = virtuoso_setup.from_rows(config, model_files=extras.get('model_files') or base.get('model_files') or (),
-                                             analyses=extras['analyses'] if 'analyses' in extras else base.get('analyses'),
-                                             variables=extras['variables'] if 'variables' in extras else base.get('variables'),
-                                             bindings=extras['bindings'] if 'bindings' in extras else base.get('bindings'),
-                                             initial_conditions=(extras['initial_conditions'] if 'initial_conditions' in extras
-                                                                 else base.get('initial_conditions')))
+            setup = _maestro_setup(config, extras, base)
             mark('setup')
             written = working_copy.write_setup_on(monitor, profile_id, target, setup, command=commands.get('setup'))
             if not written['matches']:
@@ -147,10 +110,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
             maestro = virtuoso_setup.normalize(written)
             # Maestro's own deck of the test, netlisted once: every evaluation runs it around the circuit it exports,
             # and OCEAN measures the outputs with their signal names translated by Maestro's own name maps.
-            probes = {m.source_name: m for m in config.measurements if m.result_source == 'ade_output'}
-            outputs = [dict(name=o['name'], expression=o['expression'], analysis=probes[o['name']].analysis if o['name'] in probes
-                            else virtuoso_setup.analysis_of(o['expression']), unit=probes[o['name']].unit if o['name'] in probes else '1')
-                       for o in maestro['outputs']]
+            probes, outputs = _maestro_outputs(config, maestro)
             mark('deck')
             deck = working_copy.maestro_deck_on(monitor, profile_id, target, outputs, command=commands.get('deck'))
         mark('read')
@@ -177,17 +137,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
                                    'Virtuoso, then save again')
             extra['maestro_deck_sha256'] = deck['sha256']
             # The network's result registry: exactly the task's outputs, each with the scale its spec normalizes by.
-            from . import units
-            from .compile import normalization_scale
-            by_probe = {t.equation.strip(): t for t in config.targets}
-            registry = []
-            for output in deck['outputs']:
-                probe = probes.get(output['name'])
-                spec = by_probe.get(probe.measurement_id) if probe is not None else None
-                scale = units.scale_to_canonical(normalization_scale(spec), spec.unit) if spec is not None else 1.0
-                registry.append(dict(metric_id=output['name'], unit=units.canonical_unit(output['unit']) if units.known(output['unit'])
-                                     else output['unit'], reference=abs(float(scale)) or 1.0))
-            extra['spec_registry'] = registry
+            extra['spec_registry'] = _spec_registry(config, deck, probes)
         result = _generate(name, config, recipe=kind, imported=imported, staging=staging, expected_frequency_hz=frequency, entry_extra=extra)
         if kind == MAESTRO:
             write_json(staging / FILES['maestro_deck'], {k: v for k, v in deck.items() if k != 'circuit'})
@@ -207,25 +157,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
         write_json(staging / TASK_FILE, data)
         changed, baseline_kept = set(), False
         if updating:
-            old = Path(current['directory'])
-            history = staging / HISTORY
-            if (old / HISTORY).is_dir():
-                shutil.copytree(old / HISTORY, history)
-            keep = history / f'r{saved.get("revision", 0) if saved else 0}'
-            keep.mkdir(parents=True, exist_ok=True)
-            for item in old.iterdir():
-                if item.is_file():
-                    shutil.copy2(item, keep / item.name)
-            changed = task_files.what_changed(saved, data)
-            if (old / FILES['reference']).is_file() and not changed & task_files.BASELINE_PARTS:
-                shutil.copy2(old / FILES['reference'], staging / FILES['reference'])
-                baseline_kept = True
-                entry = json.loads((staging / FILES['entry']).read_text())
-                write_json(staging / FILES['entry'], dict(entry, status=current.get('status', entry['status']),
-                                                          baseline_recorded_utc=current.get('baseline_recorded_utc')))
-            aside = old.parent / TRASH / f'{name}.r{saved.get("revision", 0) if saved else 0}.{utcnow().strftime("%Y%m%dT%H%M%S%fZ")}'
-            aside.parent.mkdir(parents=True, exist_ok=True)
-            old.rename(aside)
+            changed, baseline_kept = _replace_revision(name, current, saved, data, staging)
         staging.rename(directory)
         try:
             load_profile(name).check_deck() if kind == MAESTRO else load_profile(name)   # every check of the verified classes
@@ -243,3 +175,112 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
                 baseline_kept=baseline_kept, changed=sorted(changed), circuit_class=result['entry']['circuit_class'],
                 pdk_id=result['entry']['pdk_id'], parameters=[row.model_dump(mode='json') for row in result['rows']],
                 maestro_matches=None if maestro is None else True)
+
+
+def _saveable(name, config, task, as_new, run_rows, replace_newer, base_revision):
+    """The checks of save_task before anything is written: the name, the task it updates (none running), a name
+    still free for a new one, every spec judging Probes the task has, rows not older than the saved task (NewerSaved).
+    Returns (the task's folder, the entry of the open task or None, whether the save updates it)."""
+    directory = profile_dir(name)                                # validates the name
+    current = profile_entry(task) if task else None
+    if task and current is None:
+        raise ProfileError(f'Unknown task real:{task}')
+    updating = current is not None and not as_new
+    if updating:
+        if name != task:
+            raise ProfileError('Save task keeps the task name: use Save as for a task under another name')
+        working = working_run_of(name, run_rows)
+        if working is not None:
+            raise ProfileError(f'Run {working.get("run_id") or working["run_dir"]} of real:{name} is working right now: let it finish first')
+        if not current.get('copy_target'):
+            raise ProfileError(f'real:{name} was made before tasks had working copies: read its cell in the Virtuoso window (confirming '
+                               'that it is a copy you made) and save a new task')
+    elif name in REAL_PROFILES or f'real:{name}' in REMOVED_REAL_TASKS or directory.exists():   # a removed one's name stays reserved
+        raise ProfileError(f'A task called real:{name} already exists: choose another name')
+    # a spec must judge Probes the task has (the editors' check)
+    probes, refused = {m.measurement_id: m for m in config.measurements}, []
+    for spec in config.targets:
+        _check_equation(spec, spec.metric_id, report := Report(), probes)
+        refused += [f'Spec {spec.metric_id}: {issue.message}' for issue in report.issues if issue.level == 'error']
+    if refused:
+        raise ProfileError(' '.join(refused))
+    if updating and not replace_newer:
+        undone = undone_by_saving(config, name, task_file(name), base=base_revision)
+        if undone:
+            raise NewerSaved(describe_undone(name, undone) + ' Press Reload saved values to take the saved rows, or save anyway.',
+                             undone)
+    return directory, current, updating
+
+
+def _first_save_target(library, cell, name):
+    """The first save from a cell: the cell (one with no task yet) becomes the task's working copy, claimed for it."""
+    if not library or not cell:
+        raise ProfileError('Say which cell the task is of')
+    existing = [t for t in tasks_for_cell(library, cell)]
+    if existing:
+        raise ProfileError(f'{library}/{cell} already has the task(s) {", ".join(t["task_key"] for t in existing)}: open one and use Save as')
+    target = working_copy.draft_target(library, cell)
+    working_copy.claim(library, cell, name)
+    return target
+
+
+def _maestro_setup(config, extras, base):
+    """What Save task writes into the working copy's Maestro test: the rows' outputs and specs; the model files,
+    analyses, variables, bindings and initial conditions sent with this save, else those the copy was last written
+    with (`base`)."""
+    setup = virtuoso_setup.from_rows(config, model_files=extras.get('model_files') or base.get('model_files') or (),
+                                     analyses=extras['analyses'] if 'analyses' in extras else base.get('analyses'),
+                                     variables=extras['variables'] if 'variables' in extras else base.get('variables'),
+                                     bindings=extras['bindings'] if 'bindings' in extras else base.get('bindings'),
+                                     initial_conditions=(extras['initial_conditions'] if 'initial_conditions' in extras
+                                                         else base.get('initial_conditions')))
+    return setup
+
+
+def _maestro_outputs(config, maestro):
+    """(the Probes rows by their Maestro output name, the outputs Maestro's deck is netlisted to measure)."""
+    probes = {m.source_name: m for m in config.measurements if m.result_source == 'ade_output'}
+    outputs = [dict(name=o['name'], expression=o['expression'], analysis=probes[o['name']].analysis if o['name'] in probes
+                    else virtuoso_setup.analysis_of(o['expression']), unit=probes[o['name']].unit if o['name'] in probes else '1')
+               for o in maestro['outputs']]
+    return probes, outputs
+
+
+def _spec_registry(config, deck, probes):
+    """The result registry of a Maestro-measured task: exactly its outputs, each with the scale its spec normalizes by."""
+    by_probe = {t.equation.strip(): t for t in config.targets}
+    registry = []
+    for output in deck['outputs']:
+        probe = probes.get(output['name'])
+        spec = by_probe.get(probe.measurement_id) if probe is not None else None
+        scale = units.scale_to_canonical(normalization_scale(spec), spec.unit) if spec is not None else 1.0
+        registry.append(dict(metric_id=output['name'], unit=units.canonical_unit(output['unit']) if units.known(output['unit'])
+                             else output['unit'], reference=abs(float(scale)) or 1.0))
+    return registry
+
+
+def _replace_revision(name, current, saved, data, staging):
+    """A new revision of an open task: the old folder's files kept under history/r<N>/ in the new one, the recorded
+    baseline kept when nothing it depends on changed, the old folder moved aside. Returns (what changed, whether the
+    baseline was kept)."""
+    changed, baseline_kept = set(), False
+    old = Path(current['directory'])
+    history = staging / HISTORY
+    if (old / HISTORY).is_dir():
+        shutil.copytree(old / HISTORY, history)
+    keep = history / f'r{saved.get("revision", 0) if saved else 0}'
+    keep.mkdir(parents=True, exist_ok=True)
+    for item in old.iterdir():
+        if item.is_file():
+            shutil.copy2(item, keep / item.name)
+    changed = task_files.what_changed(saved, data)
+    if (old / FILES['reference']).is_file() and not changed & task_files.BASELINE_PARTS:
+        shutil.copy2(old / FILES['reference'], staging / FILES['reference'])
+        baseline_kept = True
+        entry = json.loads((staging / FILES['entry']).read_text())
+        write_json(staging / FILES['entry'], dict(entry, status=current.get('status', entry['status']),
+                                                  baseline_recorded_utc=current.get('baseline_recorded_utc')))
+    aside = old.parent / TRASH / f'{name}.r{saved.get("revision", 0) if saved else 0}.{utcnow().strftime("%Y%m%dT%H%M%S%fZ")}'
+    aside.parent.mkdir(parents=True, exist_ok=True)
+    old.rename(aside)
+    return changed, baseline_kept

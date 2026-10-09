@@ -9,6 +9,7 @@ import zipfile
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from .. import runs, tasks
+from ..reachability import check
 from ..security import redact
 from ..validation import validate
 
@@ -166,7 +167,6 @@ def validate_loaded(config, runtime, *, roots=None, reachability=True, rows_from
     report = validate(config, graph=None if runtime is None else runtime.base_graph,
                       provided_metrics=None if runtime is None or draft else set(runtime.provided_metrics), rows_from=rows_from)
     if reachability and config.run.conditions.policy != 'off' and not report.blocks_run:
-        from ..reachability import check
         try:
             evidence = check(config, roots=roots)
         except Exception:                   # recorded evidence for a warning: it never fails the validation itself

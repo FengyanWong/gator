@@ -14,8 +14,9 @@ from dataclasses import dataclass
 import math
 
 from . import spec_equations, units
+from .profile_store import task_spec_registry
 from .schema import WorkbenchConfig
-from .task_registry import CORNER_TASKS, _verified_profile
+from .task_registry import CORNER_TASKS, _verified_profile, verified_spec_registry
 from .validation import resolve_leaders
 
 
@@ -194,10 +195,8 @@ def _task_spec_schema(config: WorkbenchConfig):
     from analog_optimizer.models.inputs import SpecSchema
     custom = config.run.advanced.spec_registry
     if custom is None:
-        from .profile_store import task_spec_registry
         generated = task_spec_registry(config.circuit)       # see validation.registry_for: the same fallback, the same order
         if generated is None:
-            from .task_registry import verified_spec_registry
             of_record = verified_spec_registry(config.circuit)
             if of_record is None:
                 return SpecSchema()

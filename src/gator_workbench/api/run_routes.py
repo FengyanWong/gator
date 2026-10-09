@@ -6,10 +6,11 @@ from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
 from .. import (aggregates, calibration, checkpoints as ckpt, corner_check, graph_view, launch_requests,
                 model_structure, pdk, runs, schema, training_series)
+from ..compile import CompileError, compile_task
 from ..layout import RunLayout
 from ..paths import PathNotAllowed, safe_child
 from ..reward_diagnostics import load as steering_check
-from ..storage.atomic import read_json, read_jsonl_tail
+from ..storage.atomic import read_json, read_jsonl_tail, write_json
 from ..storage.dataset import DatasetReader, map_to_dict, utcnow
 from ..storage.tables import TABLES
 from .context import ApiContext
@@ -59,7 +60,6 @@ def start_run(context, config, body, *, baseline_only=False, record=None):
             manifest['notes'].append((f'Calibration: {calibrating["designs"]} random designs over the ' if random_only else
                                       f'With calibration: after the baseline, {calibrating["designs"]} random designs over the ') +
                                      'Parameters ranges (each of them a costed evaluation; nothing is learned from them).')
-        from ..storage.atomic import write_json
         write_json(layout.manifest, manifest)
     made = dict(run_dir=str(layout.run_dir), run_id=manifest['run_id'], mock=manifest['mock'], worker_pid=None,
                 paths=layout.subpaths(), connection_gate=manifest.get('connection_gate'),
@@ -146,7 +146,6 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
         if body.config:
             config, runtime, blocked = context.load_config(body.config)
             if runtime is not None:
-                from ..compile import CompileError, compile_task
                 config = runs.with_circuit_content(config, runtime)
                 task_hash = schema.task_definition_hash(config)
                 try:

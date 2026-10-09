@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 
 from pydantic import ValidationError
-from . import profile_store
+from . import profile_store, units
 from .diffs import structured_diff
 from .profile_store import HISTORY, ProfileError, TASK_FILE, profile_dir
 from .schema import MeasurementDefinition, OptimizationParameter, PerformanceTarget
@@ -50,7 +50,6 @@ def _brief(value, unit=None) -> str:
     if value is None:
         return '(none)'
     if unit is not None and isinstance(value, (int, float)) and not isinstance(value, bool):
-        from . import units
         return units.text(value, unit)
     if isinstance(value, float):
         return format(value, '.6g')                                  # 1.3e+09, not 1300000000.0

@@ -601,6 +601,7 @@ def preparation_session(config, circuit, limits, report):
 
 def factory_class(profile):
     if isinstance(profile, CdfWritableProfile):
+        # lazy: cdf_factory imports torch: only a run needs it (see its docstring)
         from .cdf_factory import CdfNativeEnvironmentFactory
         return CdfNativeEnvironmentFactory
     import analog_optimizer.training.parallel as verified
@@ -611,6 +612,7 @@ def __getattr__(name):
     # The run's factory lives in cdf_factory.py: its base class imports torch, which the processes that only prepare or
     # check a cell never need (review of 2026-09-30). The old name still reaches it.
     if name == 'CdfNativeEnvironmentFactory':
+        # lazy: cdf_factory imports torch: only a run needs it (see its docstring)
         from .cdf_factory import CdfNativeEnvironmentFactory
         return CdfNativeEnvironmentFactory
     raise AttributeError(f'module {__name__!r} has no attribute {name!r}')

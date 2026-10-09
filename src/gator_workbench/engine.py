@@ -189,7 +189,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         self.load_policy = built['policy']
         self.rehearsal = None
         if cfg.run.rehearsal is not None:
-            from .rehearsal import Rehearsal
+            from .rehearsal import Rehearsal  # lazy: rehearsal imports torch
             self.rehearsal = Rehearsal(cfg.run.rehearsal, self.learner, origin=self.task.origin,
                                        seed=cfg.run.seed, batch_size=adv.batch_size)
         if self.frozen:
@@ -503,6 +503,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
             self._event('connection_check', status='not_applicable', reason='mock run: no bridge is involved')
             return
         try:
+            # lazy: in the try: a failure of the import is handled with the rest
             from .connection import ConnectionMonitor
             profile = self.config.run.connection_profile_id
             result = ConnectionMonitor().check(profile, scope='interactive', trigger='run_safety')
@@ -1167,7 +1168,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         if self.manifest.get('run_kind') != 'baseline_preflight':
             return
         try:
-            from . import profiles
+            from . import profiles  # lazy: in the try: a failure of the import is handled with the rest
             outcome = profiles.adopt_baseline_run(self.layout.run_dir, manifest=self.manifest)
         except BaseException as exc:
             self._log_error('baseline_reference_failed', exc)
@@ -1184,7 +1185,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         if not self.manifest.get('calibration') or self.dataset is None:
             return
         try:
-            from . import calibration
+            from . import calibration  # lazy: in the try: a failure of the import is handled with the rest
             result = calibration.from_run(self.layout.run_dir, manifest=self.manifest)
             write_json(self.layout.run_dir / calibration.FILE, result)
         except BaseException as exc:
@@ -1205,7 +1206,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
                 return SpectreParser(ParserConfig.from_file(task.parser_config_path)).parse_text(
                     text, source=task.netlist_path, top=task.circuit.get('dut_hierarchy'))
         elif task.circuit.get('simulator') == 'ngspice':          # a SPICE deck: its own writer, values also inside a once-used subcircuit
-            from .ngspice_tasks import export_deck
+            from .ngspice_tasks import export_deck  # lazy: ngspice_tasks imports the optimizer
             exporter, netlist_name = export_deck(task), 'optimized_dut.cir'
         notes = best_design.write_outputs(
             self.layout.best_design, self.tracker,
@@ -1217,6 +1218,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         write_json(self.layout.summary, summary)
         if self.config.output.export_summary_csv:
             try:                                  # derived CSVs only; a failure here never loses raw data
+                # lazy: in the try: a failure of the import is handled with the rest
                 from .aggregates import export_aggregates
                 export_aggregates(self.layout.experiment_dir)
             except BaseException as exc:

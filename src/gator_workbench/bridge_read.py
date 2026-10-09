@@ -23,8 +23,9 @@ import json
 import re
 import sys
 
-from . import pdk
+from . import native_cells, pdk
 from .connection import RealBridge, child_error, require_gate, resolve_profile_id, run_child
+from .pdk import REMOTE_PATH
 from .security import redact
 
 NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
@@ -146,7 +147,7 @@ def _main(argv=None):
             # a temporary folder outside the repository, scanned and deleted (pdk.read_from_virtuoso). Empty = the
             # technology library of the connection's design library, and the connection's model file.
             from contextlib import redirect_stdout
-            from .pdk import read_from_virtuoso
+            from .pdk import read_from_virtuoso  # lazy: in the try: a failure of the import is handled with the rest
             with redirect_stdout(sys.stderr):                      # the bridge prints progress; stdout keeps the one JSON line
                 library = args.library or (client.library.get(settings['library']).technology_library if settings.get('library') else None)
                 if not library:
@@ -181,7 +182,6 @@ def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, ti
         if value is not None and not NAME.match(value):
             raise ValueError('library and cell must be plain Cadence names')
     if model_file is not None:
-        from .pdk import REMOTE_PATH
         if not REMOTE_PATH.match(model_file) or '/../' in model_file:
             raise ValueError('The model file must be an absolute path on the simulator host (letters, digits, / . _ - +)')
     require_gate(monitor, 'read_cellview', profile_id, 'reading the native design')
@@ -202,7 +202,6 @@ def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, ti
         if not library or not cell:
             raise ValueError('library and cell are required')
         from uuid import uuid4
-        from . import native_cells
         native_cells.cell_dir(library, cell)                       # validates both names before anything is created
         incoming = native_cells.store_root() / f'.incoming-{uuid4().hex}'       # same filesystem as its final place
         incoming.parent.mkdir(parents=True, exist_ok=True)
@@ -224,7 +223,7 @@ def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, ti
                                                   technology_library=data.get('technology_library'), profile_id=profile_id)
             return dict(imported, pdk=read_pdk)
         if op == 'pdk':
-            from . import pdk
+            from . import pdk  # lazy: in the try: a failure of the import is handled with the rest
             return pdk.describe(pdk.finish_load(data))
     finally:
         if incoming is not None and incoming.exists():             # a failed or unparseable import leaves nothing behind

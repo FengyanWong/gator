@@ -36,7 +36,21 @@
 //   3. node dom_identity_check.mjs <new> --replay <recorded> --build <dist of the build after> --compare <ref>
 // Run by hand (Windows node; replay needs no backend): "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w
 // frontend/scripts/dom_identity_check.mjs)" <out dir> [--replay <dir>] [--build <dist>] [--compare <dir>] [--looks whiteprint]
-// [--scenes rl,runs]. About 3 min for both looks.
+// [--scenes rl,runs] [--styles] [--widths 1680,1000,640]. About 3 min for both looks.
+//
+// A stylesheet's proof (plan-refactoring C11; the static half is css_order_proof.mjs) adds two options, to all three steps:
+//   --styles   beside each <NN>-<step>.html, <NN>-<step>.styles.txt: getComputedStyle of every element of the page (html, body and
+//              everything under body) and of each open pop-up window, in document order, one line per element (indented by depth:
+//              tag#id.classes and a style name), with ::before / ::after where they are drawn (content not none) and ::backdrop of an
+//              open dialog. A style is every property the browser lists for the element, custom properties included, sorted:
+//              written once per file as its difference from the document's html element (the "base" line, written in full;
+//              "-name" = a property html has and the element has not). Lossless: two files are equal byte for byte exactly when
+//              every element has the same value for every property. Taken twice, 300 ms apart, on the quiet page: the two must be
+//              equal and the DOM unchanged ("the computed styles came to rest"). --compare names the first element whose style
+//              differs and the properties that differ.
+//   --widths   the page's viewport widths, each a run of every scene (default 1680, the harness's window: the same folders as
+//              without it); a narrower width also caps each pop-up window's width. The files of width W go under <look>@<W>/.
+//   Hover and focus are not forced here: the static proof covers the order of the :hover / :focus rules.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
@@ -50,7 +64,11 @@ const option = name => { const i = args.indexOf(name); return i >= 0 ? args[i + 
 const REPLAY = option('--replay'), COMPARE = option('--compare'), BUILD = option('--build');
 const LOOKS = (option('--looks') ?? 'whiteprint,silicon').split(',');
 const ONLY = option('--scenes')?.split(',') ?? null;
-const values = new Set(['--replay', '--compare', '--build', '--looks', '--scenes'].map(option).filter(Boolean));
+const STYLES = args.includes('--styles');
+const DEFAULT_WIDTH = 1680;                               // launchEdge's window and browser.open's viewport (lib/harness.mjs)
+const WIDTHS = (option('--widths') ?? String(DEFAULT_WIDTH)).split(',').map(Number);
+if (WIDTHS.some(w => !Number.isInteger(w) || w < 200)) { console.log(`ERROR --widths takes whole pixel widths: ${option('--widths')}`); process.exit(2); }
+const values = new Set(['--replay', '--compare', '--build', '--looks', '--scenes', '--widths'].map(option).filter(Boolean));
 const OUT = path.resolve(args.find(a => !a.startsWith('--') && !values.has(a)) ?? path.join(process.cwd(), 'dom-identity'));
 mkdirSync(OUT, { recursive: true });
 const scripts = path.dirname(fileURLToPath(import.meta.url));
@@ -226,20 +244,74 @@ const FIXED_CLOCK = `(() => { const Real = Date, fixed = new Real(2026, 9, 9, 12
 const lines = html => html.replace(/ data-react[\w-]*="[^"]*"/g, '').replace(/></g, '>\n<');
 const PAGE_DOM = `(() => { const r = document.getElementById(${JSON.stringify(APP_ROOT_ID)}); return (document.documentElement.dataset.theme ?? '') + '\\n' + (r ? r.outerHTML : '(no #root)'); })()`;
 const WINDOW_DOM = `(document.documentElement.dataset.theme ?? '') + '\\n' + (document.body ? document.body.outerHTML : '(no body)')`;
+/** --styles: the computed style of every element of this document (html, body and all under body), as described at the top. */
+const STYLE_DUMP = `(() => {
+  const read = (el, pseudo) => { const cs = getComputedStyle(el, pseudo), list = [];
+    for (let i = 0; i < cs.length; i++) list.push([cs[i], cs.getPropertyValue(cs[i]).replace(/\\n/g, '\\\\n')]);
+    return list.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)); };
+  const root = document.documentElement, baseList = read(root, null), base = new Map(baseList);
+  const names = new Map(), table = [], lines = [];
+  const styleOf = list => {
+    const own = new Set(list.map(([n]) => n)), delta = [];
+    for (const [n, v] of list) if (base.get(n) !== v) delta.push(n + ':' + v);
+    for (const [n] of baseList) if (!own.has(n)) delta.push('-' + n);
+    const key = delta.join('; ');
+    if (!names.has(key)) { names.set(key, 's' + (names.size + 1)); table.push('style ' + names.get(key) + ' ' + key); }
+    return names.get(key);
+  };
+  const label = el => el.localName + (el.id ? '#' + el.id : '') + [...el.classList].map(c => '.' + c).join('');
+  const walk = (el, depth) => {
+    const pad = ' '.repeat(depth);
+    lines.push(pad + label(el) + ' ' + styleOf(read(el, null)));
+    for (const p of ['::before', '::after']) { const c = getComputedStyle(el, p).getPropertyValue('content'); if (c !== 'none' && c !== 'normal') lines.push(pad + ' ' + p + ' ' + styleOf(read(el, p))); }
+    if (el.localName === 'dialog' && el.open) lines.push(pad + ' ::backdrop ' + styleOf(read(el, '::backdrop')));
+    for (const child of el.children) if (child.localName !== 'head') walk(child, depth + 1);
+  };
+  walk(root, 0);
+  return 'base ' + baseList.map(([n, v]) => n + ':' + v).join('; ') + '\\n' + lines.join('\\n') + '\\n' + table.join('\\n');
+})()`;
+/** The first element whose style differs between two --styles files (a, b), and how: for the comparison's message. */
+function styleDifference(a, b) {
+  const parse = text => text.split(/\n(?=<!-- )/).map(section => {
+    const [head, ...rest] = section.split('\n');
+    const baseLine = rest.find(l => l.startsWith('base ')) ?? 'base ';
+    const entries = s => (s ? s.split('; ') : []);
+    const base = new Map(entries(baseLine.slice(5)).map(e => [e.slice(0, e.indexOf(':')), e.slice(e.indexOf(':') + 1)]));
+    const styles = new Map(rest.filter(l => l.startsWith('style ')).map(l => { const [, id, ...d] = l.split(' '); return [id, entries(d.join(' '))]; }));
+    const resolve = id => { const m = new Map(base); for (const e of styles.get(id) ?? []) { if (e.startsWith('-')) m.delete(e.slice(1)); else m.set(e.slice(0, e.indexOf(':')), e.slice(e.indexOf(':') + 1)); } return m; };
+    return { head, elements: rest.filter(l => !l.startsWith('base ') && !l.startsWith('style ') && l.trim()), resolve };
+  });
+  const x = parse(a), y = parse(b);
+  for (let s = 0; s < Math.max(x.length, y.length); s++) {
+    if (!x[s] || !y[s] || x[s].head !== y[s].head) return `section ${s + 1}: ${x[s]?.head ?? '(none)'} -> ${y[s]?.head ?? '(none)'}`;
+    for (let i = 0; i < Math.max(x[s].elements.length, y[s].elements.length); i++) {
+      const p = x[s].elements[i] ?? '(none)', q = y[s].elements[i] ?? '(none)';
+      const name = l => l.slice(0, l.lastIndexOf(' ')), id = l => l.slice(l.lastIndexOf(' ') + 1);
+      if (name(p) !== name(q)) return `${x[s].head} element ${i + 1}: ${p.trim()} -> ${q.trim()}`;
+      const m = x[s].resolve(id(p)), n = y[s].resolve(id(q));
+      const differ = [...new Set([...m.keys(), ...n.keys()])].filter(k => m.get(k) !== n.get(k)).sort();
+      if (differ.length) return `${x[s].head} element ${i + 1} (${name(p).trim()}): ${differ.length} propert${differ.length === 1 ? 'y' : 'ies'}: `
+        + differ.slice(0, 8).map(k => `${k}: ${m.get(k) ?? '(none)'} -> ${n.get(k) ?? '(none)'}`).join('; ');
+    }
+  }
+  return 'the same styles, written differently';
+}
 const STORAGE = `JSON.stringify({ local: Object.fromEntries(Object.keys(localStorage).sort().map(k => [k, localStorage.getItem(k)])),
   session: Object.fromEntries(Object.keys(sessionStorage).sort().map(k => [k, sessionStorage.getItem(k)])) }, null, 1)`;
 
 const written = [];
 const write = (file, text) => { const at = path.join(OUT, file); mkdirSync(path.dirname(at), { recursive: true }); writeFileSync(at, text); written.push(file); };
 
+let WIDTH = DEFAULT_WIDTH;                                // the page's width of the scenes now running (--widths)
 /** One scene: a fresh browser, the page seeded with `local` (localStorage) and `look`, then `body(steps)`. */
 async function scene(look, name, local, body) {
   if (ONLY && !ONLY.includes(name)) return;
-  const browser = await launchEdge(`dom-${name}`);
-  const dir = `${look}/${name}`, log = [], order = [], taken = [], dialogs = [], windows = new Map();     // target id -> session
+  const wide = WIDTH === DEFAULT_WIDTH, pageWidth = WIDTH, tag = wide ? look : `${look}@${pageWidth}`;
+  const browser = await launchEdge(`dom-${name}`, wide ? undefined : { width: pageWidth });
+  const dir = `${tag}/${name}`, log = [], order = [], taken = [], dialogs = [], windows = new Map();     // target id -> session
   let step = 'open', count = 0, pending = 0, n = 0, missing = 0;
   try {
-    const page = await browser.open({ consoleApi: false });
+    const page = await browser.open(wide ? { consoleApi: false } : { consoleApi: false, width: pageWidth });
     const { send, evaluate } = page;
     page.on('Page.javascriptDialogOpening', p => { dialogs.push(`${step} | ${p.type}: ${p.message}`); return send('Page.handleJavaScriptDialog', { accept: false }); });
     const keyOf = request => {
@@ -287,6 +359,16 @@ async function scene(look, name, local, body) {
       }
       return text;
     };
+    /** --styles: the computed styles of the page and of each open pop-up window (by title), as described at the top. */
+    const styleSnapshot = async () => {
+      let text = `<!-- page -->\n${await evaluate(STYLE_DUMP)}\n`;
+      for (const t of await popups()) {
+        let dump;
+        try { dump = await windows.get(t.id).evaluate(STYLE_DUMP); } catch { dump = '(closing)'; }
+        text += `<!-- window: ${t.title} -->\n${dump}\n`;
+      }
+      return text;
+    };
     /** Quiet: no request asked or answered and the same DOM, three looks 600 ms apart (20 s at most). */
     const settle = async () => {
       let last = null, lastCount = -1, quiet = 0;
@@ -304,9 +386,23 @@ async function scene(look, name, local, body) {
       async take(label, action = null) {
         step = label; taken.push(label);
         if (action) await action();
-        const text = await settle();
-        check(`${look} / ${name} / ${label}: the page came to rest`, text !== null);
-        write(`${dir}/${String(++n).padStart(2, '0')}-${label}.html`, text ?? await snapshot());
+        let text = await settle();
+        check(`${tag} / ${name} / ${label}: the page came to rest`, text !== null);
+        const file = `${dir}/${String(++n).padStart(2, '0')}-${label}`;
+        if (STYLES) {
+          // the same styles twice, 300 ms apart, on the same DOM as the quiet page's; else the page settles again (5 tries)
+          let styles = null;
+          for (let attempt = 0; attempt < 5 && styles === null; attempt++) {
+            const first = await styleSnapshot();
+            await sleep(300);
+            const second = await styleSnapshot(), now = await snapshot();
+            if (first === second && now === text) styles = first;
+            else text = (await settle()) ?? text;
+          }
+          check(`${tag} / ${name} / ${label}: the computed styles came to rest`, styles !== null);
+          write(`${file}.styles.txt`, styles ?? await styleSnapshot());
+        }
+        write(`${file}.html`, text ?? await snapshot());
       },
       /** A pop-up opened by pressing `launch` (an expression in `session`, a person's click), found by its title. */
       async popup(session, launch, title, { width = 1200, height = 900 } = {}) {
@@ -314,7 +410,7 @@ async function scene(look, name, local, body) {
         const target = await browser.window(title, { except: page.target.id, ms: 10000 });
         const far = await browser.attach(target, { errors: [], prefix: `${title}: ` });
         windows.set(target.id, far);
-        await far.viewport(width, height);
+        await far.viewport(Math.min(width, pageWidth), height);   // a narrower page (--widths) narrows its windows too
         return far;
       },
     };
@@ -322,7 +418,7 @@ async function scene(look, name, local, body) {
     for (let i = 0; i < 100 && (!held.length || Date.now() - lastArrival < 250); i++) await sleep(50);
     holding = false;
     for (const params of held.splice(0)) void answer(params);
-    check(`${look} / ${name}: the page opens`, await page.until(`!!document.querySelector('header') && !!document.querySelector('.editors')`, 200));
+    check(`${tag} / ${name}: the page opens`, await page.until(`!!document.querySelector('header') && !!document.querySelector('.editors')`, 200));
     await steps.take('open');                             // quiet before the first press: each request belongs to the step that made it
     await body(steps);
     step = 'end';
@@ -335,8 +431,8 @@ async function scene(look, name, local, body) {
     }
     write(`${dir}/requests.txt`, `${[...listed, ...dialogs.map(d => `dialog | ${d}`)].join('\n')}\n`);
     write(`${dir}/requests-order.txt`, `${order.join('\n')}\n`);
-    check(`${look} / ${name}: every request had an answer${REPLAY ? ' recorded' : ''}`, !missing, `${missing} missing`);
-  } catch (error) { fail(`${look} / ${name}: ${error?.stack ?? error}`); } finally { await browser.close(); }
+    check(`${tag} / ${name}: every request had an answer${REPLAY ? ' recorded' : ''}`, !missing, `${missing} missing`);
+  } catch (error) { fail(`${tag} / ${name}: ${error?.stack ?? error}`); } finally { await browser.close(); }
 }
 
 // ---- the scenes ------------------------------------------------------------------------------------------------------------
@@ -350,7 +446,8 @@ const FOOTER_TAB = label => `[...document.querySelectorAll('footer .tabs > butto
 const MODE = mode => `document.querySelector('.rl-modes button[data-mode="${mode}"]')`;
 
 try {
-  for (const look of LOOKS) {
+  for (const width of WIDTHS) for (const look of LOOKS) {
+    WIDTH = width;
     await scene(look, 'fresh', {}, async s => {
       let tasks = null;
       await s.take('tasks-window', async () => { tasks = await s.popup(s.page, `${TASK_PANEL}.querySelector('.task-row button.task-list-button')`, TASKS_WINDOW, { width: 1500, height: 760 }); });
@@ -414,6 +511,7 @@ try {
       const a = readFileSync(path.join(COMPARE, file), 'utf8'), b = readFileSync(path.join(OUT, file), 'utf8');
       if (a === b) { check(`identical: ${file}`, true); continue; }
       const x = a.split('\n'), y = b.split('\n'), i = x.findIndex((line, k) => line !== y[k]);
+      if (file.endsWith('.styles.txt')) { check(`identical: ${file}`, false, styleDifference(a, b)); continue; }
       check(`identical: ${file}`, false, `line ${i + 1}: ${JSON.stringify((x[i] ?? '(end)').slice(0, 300))} -> ${JSON.stringify((y[i] ?? '(end)').slice(0, 300))}`);
     }
     for (const file of mine.filter(f => !reference.includes(f))) check(`identical: ${file}`, false, 'not in the reference');

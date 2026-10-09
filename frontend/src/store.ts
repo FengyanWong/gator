@@ -1,6 +1,7 @@
 import type { Json } from './api';
 import { CONFIG_KEY } from './contract';
 import { signal } from './signal';
+import { keep, readKept } from './kept';
 
 // What the page holds besides its draw (plan-refactoring C3): this file keeps the rows-from note and the task-save signal,
 // and is the one place the page and the source fixtures import the rest from - the migrations (migrations.ts), the windows
@@ -15,13 +16,13 @@ export const STORAGE_KEY = CONFIG_KEY;
  *  (choosing it, Reload saved values) and after each Save task - for this tab, and for the next load of the page. Save
  *  task and the check send it, so rows older than the saved task are not saved over it unasked. */
 const ROWS_FROM_KEY = 'gator-workbench-rows-from-v1';
-let rowsFromHere: Json = (() => { try { return JSON.parse(localStorage.getItem(ROWS_FROM_KEY) ?? 'null'); } catch { return null; } })();
+let rowsFromHere: Json = readKept(s => JSON.parse(s.getItem(ROWS_FROM_KEY) ?? 'null'), () => null);
 export const rowsFrom = (task: string | null | undefined): number | null =>
   !!task && rowsFromHere?.task === task && Number.isInteger(rowsFromHere?.revision) ? rowsFromHere.revision : null;
 export const noteRowsFrom = (task: string, revision: unknown) => {
   if (!Number.isInteger(revision)) return;
   rowsFromHere = { task, revision };
-  try { localStorage.setItem(ROWS_FROM_KEY, JSON.stringify(rowsFromHere)); } catch { /* no storage: this tab still knows */ }
+  keep(s => s.setItem(ROWS_FROM_KEY, JSON.stringify(rowsFromHere)));   // no storage: this tab still knows
   noteTaskSaved();
 };
 /** Saves of the task this page knows of, and saved rows loaded (record 7.222): validation is asked again on each, so the

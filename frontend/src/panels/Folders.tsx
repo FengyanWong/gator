@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { api, FolderKind, Json } from '../api';
 import { Icon } from './Icons';
+import { useNewest } from '../newest';
 
 /** The folders of the workbench's windows (task folders: record 7.250; generalized in record 7.263, plan "Categories for
  *  runs and models"): the Tasks window's tasks, the Runs window's runs, and - with the RL model window, build step 4 - the
@@ -20,7 +21,7 @@ export function useFolders(kind: FolderKind) {
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
-  const request = useRef(0);
+  const request = useNewest();
   const writing = useRef(false);
   const accept = (value: FolderState) => {
     setData(value); setReady(true);
@@ -28,18 +29,18 @@ export function useFolders(kind: FolderKind) {
   };
   const refresh = async () => {
     if (writing.current) return;
-    const id = ++request.current;
+    const id = request.next();
     setBusy(true);
     try {
       const value = await api.folders(kind);
-      if (id === request.current) { accept(value); setError(''); }
+      if (id()) { accept(value); setError(''); }
     } catch (e: any) {
-      if (id === request.current) { setError(`Folders could not be read: ${e.message}`); setReady(false); }
-    } finally { if (id === request.current) setBusy(false); }
+      if (id()) { setError(`Folders could not be read: ${e.message}`); setReady(false); }
+    } finally { if (id()) setBusy(false); }
   };
   const change = async (action: () => Promise<Json>) => {
     if (writing.current || !ready) return null;
-    writing.current = true; ++request.current; setBusy(true); setError('');
+    writing.current = true; request.drop(); setBusy(true); setError('');
     try {
       const value = await action(); accept(value); return value;
     } catch (e: any) { setError(`Folders were not saved: ${e.message}`); return null; }

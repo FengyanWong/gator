@@ -10,6 +10,7 @@ import { TrainingChart } from './TrainingChart';
 import { build, buildCompare, catalog, ChartSpec, COMPARE_MAX, Context, ENDS, keyNumbers, LearnerX, RECENT, setCaps, TrainingStore, View } from './trainingData';
 import type { Built } from './trainingData';
 import type { Answer } from './trainingData';
+import { keep, readKept } from '../kept';
 
 /** The Training tab (record 7.193, user request): live charts of the shown run's RECORDED training numbers - step reward,
  *  the share of designs meeting every hard spec, the specs against their limits, the best design, and the SAC learner's
@@ -43,25 +44,25 @@ const MAX_CHARTS = 8;
 type Settings = { charts: string[]; smoothing: number; learnerX: LearnerX; keys: boolean };
 const DEFAULTS: Settings = { charts: ['reward', 'pass'], smoothing: 20, learnerX: 'update', keys: true };
 function storedSettings(): Settings {
-  try {
-    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? 'null');
+  return readKept(storage => {
+    const s = JSON.parse(storage.getItem(SETTINGS_KEY) ?? 'null');
     // any number of charts since 7.205; before it two, the second possibly null
     const charts = Array.isArray(s?.charts) ? s.charts.filter((c: unknown) => typeof c === 'string').slice(0, MAX_CHARTS) : [];
     return { charts: charts.length ? charts : DEFAULTS.charts, smoothing: SMOOTHING.includes(s?.smoothing) ? s.smoothing : DEFAULTS.smoothing,
       learnerX: s?.learnerX === 'evaluation' ? 'evaluation' : DEFAULTS.learnerX, keys: s?.keys !== false };
-  } catch { return DEFAULTS; }
+  }, () => DEFAULTS);
 }
 /** How many charts stand side by side: up to three in a row, four as two by two, then rows of three or four. */
 const columnsFor = (n: number) => (n <= 3 ? n : n === 4 ? 2 : n <= 6 ? 3 : 4);
 const chartName = (id: string) => (id.startsWith('spec:') ? id.slice(5) : id.replace(/_/g, ' '));
-try {      // a browser check of the memory bound sets lower caps for its own page (trainingData.ts setCaps)
-  const caps = JSON.parse(localStorage.getItem(TRAINING_CAPS_KEY) ?? 'null');
+keep(s => {      // a browser check of the memory bound sets lower caps for its own page (trainingData.ts setCaps)
+  const caps = JSON.parse(s.getItem(TRAINING_CAPS_KEY) ?? 'null');
   if (caps) setCaps(caps);
-} catch { /* blocked storage: the default caps */ }
+});                 // blocked storage: the default caps
 
 function storedCompare(): string[] {
-  try { const list = JSON.parse(localStorage.getItem(TRAINING_COMPARE_KEY) ?? '[]'); return Array.isArray(list) ? list.filter(d => typeof d === 'string').slice(0, COMPARE_MAX - 1) : []; }
-  catch { return []; }
+  return readKept(s => { const list = JSON.parse(s.getItem(TRAINING_COMPARE_KEY) ?? '[]'); return Array.isArray(list) ? list.filter(d => typeof d === 'string').slice(0, COMPARE_MAX - 1) : []; },
+    () => []);
 }
 const readError = (e: any) => (e instanceof ApiError && (e.status === 405 || (e.status === 404 && e.detail === 'Not Found')) ? OLDER_BACKEND : plainError(e));
 /** A run in the Compare list, as the run window names it: when, task, mode and seed, state, evaluations. Worked out once
@@ -140,7 +141,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   const [learnerX, setLearnerX] = useState<LearnerX>(() => storedSettings().learnerX);
   const [keysOpen, setKeysOpen] = useState<boolean>(() => storedSettings().keys);
   useEffect(() => {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ charts: slots.map(slot => slot.id), smoothing, learnerX, keys: keysOpen })); } catch { /* a private window: not remembered */ }
+    keep(s => s.setItem(SETTINGS_KEY, JSON.stringify({ charts: slots.map(slot => slot.id), smoothing, learnerX, keys: keysOpen })));   // a private window: not remembered
   }, [slots, smoothing, learnerX, keysOpen]);
   const store = useRef<TrainingStore | null>(null);
   const [frame, setFrame] = useState(0);                         // one more each time the charts take the store's rows
@@ -182,7 +183,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
 
   // ---- other runs on the same charts (record 7.200): each its own store, read like the shown one, apart from it
   const [compare, setCompare] = useState<string[]>(storedCompare);
-  const keepCompare = (next: string[]) => { setCompare(next); try { localStorage.setItem(TRAINING_COMPARE_KEY, JSON.stringify(next)); } catch { /* not remembered */ } };
+  const keepCompare = (next: string[]) => { setCompare(next); keep(s => s.setItem(TRAINING_COMPARE_KEY, JSON.stringify(next))); };   // not remembered without storage
   const others = compare.filter(dir => dir !== runDir).slice(0, COMPARE_MAX - 1);
   const othersKey = others.join('\n');
   const compared = useRef(new Map<string, TrainingStore>());

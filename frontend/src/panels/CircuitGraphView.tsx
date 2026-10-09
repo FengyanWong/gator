@@ -4,6 +4,7 @@ import { si } from '../units';
 import { short } from '../format';
 import { hintedLayout } from './circuitLayout';
 import { useLook } from '../theme';
+import { useNewest } from '../newest';
 
 // The circuit graph view (user decision 2026-09-21: ONE on-screen diagnostic picture; nothing drawn is ever written to
 // a run's outputs). The chosen save point is replayed by the backend on a state its own run ARCHIVED
@@ -78,22 +79,22 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
   const dialog = useRef<HTMLDialogElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
   const graph = useRef<Json>(null);                              // the cytoscape instance
-  const request = useRef(0);
+  const request = useNewest();
 
   const load = (evaluation: number | null) => {
     if (!checkpointId) return;
-    const mine = ++request.current;
+    const mine = request.next();
     setBusy(true); setError(null);
     api.modelGraphView(runDir, checkpointId, evaluation)
-      .then(v => { if (mine !== request.current) return; setView(v); setWanted(String(v.step.evaluation)); setPicked(null); setScope('local'); setQuery(''); setLayer(l => Math.min(l, Math.max(1, v.attention.layers)));
+      .then(v => { if (!mine()) return; setView(v); setWanted(String(v.step.evaluation)); setPicked(null); setScope('local'); setQuery(''); setLayer(l => Math.min(l, Math.max(1, v.attention.layers)));
         // A head chosen for a model with more heads does not exist here: every edge was drawn at attention 0.
         setHead(h => h === 'mean' || Number(h) <= (v.attention.heads ?? 0) ? h : 'mean'); })
-      .catch(e => { if (mine === request.current) setError(e.status === 404 && e.message === 'Not Found'
+      .catch(e => { if (mine()) setError(e.status === 404 && e.message === 'Not Found'
         ? 'the backend that is running is older than this view. Restart it once (the view needs one new route), then open the view again.' : e.message); })
-      .finally(() => { if (mine === request.current) setBusy(false); });
+      .finally(() => { if (mine()) setBusy(false); });
   };
   const show = () => { setView(null); setWanted(''); dialog.current?.showModal(); load(null); };
-  const close = () => { request.current++; dialog.current?.close(); graph.current?.destroy(); graph.current = null; setView(null); setError(null); };
+  const close = () => { request.drop(); dialog.current?.close(); graph.current?.destroy(); graph.current = null; setView(null); setError(null); };
   const layout = (name: string, of: Json = view) => {
     const cy = graph.current; if (!cy || !of) return;
     const hinted = name === 'hints' ? hintedLayout(of) : null;
@@ -110,7 +111,7 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
 
   // The dialog can go away while open (a Mode or model changed in another window): the drawing, its render loop and
   // its window listeners go with it, as Close does.
-  useEffect(() => () => { request.current++; graph.current?.destroy(); graph.current = null; }, []);
+  useEffect(() => () => { request.drop(); graph.current?.destroy(); graph.current = null; }, []);
   // Draw once per answer. cytoscape is fetched here, on first use.
   useEffect(() => {
     if (!view || !canvas.current) return;

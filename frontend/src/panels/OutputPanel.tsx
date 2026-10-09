@@ -1,10 +1,11 @@
 // The right column's Output settings (plan-refactoring C4, out of Right.tsx).
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRequest } from '../store';
 import { api, ApiError, copy, Json } from '../api';
 import { bytes } from '../format';
 import { OUTPUT_ROOT_ID } from '../contract';
 import { ByteSize, Check, Module, Num } from './fields';
+import { useNewest } from '../newest';
 
 type Every = 'evaluations' | 'seconds';
 
@@ -26,10 +27,10 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
   const [problem, setProblem] = useState<string | null>(null);
   // Only the newest press answers (two quick clicks in the folder list showed whichever came last), and a problem is
   // about the root it was pressed for: another root clears it.
-  const pressed = useRef(0);
-  const ask = <T,>(work: () => Promise<T>, done: (value: T) => void) => { const mine = ++pressed.current; setProblem(null);
-    work().then(v => { if (mine === pressed.current) done(v); }, e => { if (mine === pressed.current) setProblem(e.message); }); };
-  useEffect(() => { pressed.current++; setProblem(null); }, [root]);
+  const pressed = useNewest();
+  const ask = <T,>(work: () => Promise<T>, done: (value: T) => void) => { const mine = pressed.next(); setProblem(null);
+    work().then(v => { if (mine()) done(v); }, e => { if (mine()) setProblem(e.message); }); };
+  useEffect(() => { pressed.drop(); setProblem(null); }, [root]);
   const paths = activeRun?.paths;
   const tail = String(root).split(/[\\/]/).filter(Boolean).slice(-2).join('/');
   // ONE checkpoint interval, counted in evaluations OR in seconds (user request 2026-09-22). The number goes into the field

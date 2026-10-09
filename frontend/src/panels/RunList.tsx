@@ -1,6 +1,6 @@
 import { Fragment, memo, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { BLOCKED, usePopupWindow } from './popupWindow';
+import { usePopupWindow } from './popupWindow';
+import { Blocked, PopupPortal } from './popupParts';
 import { RUNS_WINDOW } from '../contract';
 import { api, Json } from '../api';
 import { tasksShared } from '../shared';
@@ -315,12 +315,12 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
   );
 
   return (<>
-    {blocked && <span className="error run-list-blocked">{BLOCKED}</span>}
+    {blocked && <Blocked as="span" className="error run-list-blocked" />}
     {/* The run that is shown is said as plain text to the LEFT of the button; the button itself only reads "Runs..." (user request 2026-09-21). */}
     <span className="run-list-current" title={runDir ?? undefined}>{current ? label(current, shownState) : runDir ? folderName(runDir) : 'No run selected'}</span>
     <button className={`run-list-button${popup ? ' open' : ''}`} onClick={() => openWindow()}
       title={popup ? 'The run window is open: press to bring it to the front and read the list again.' : 'Opens the run window: every run with its start and finish time, its duration and its results. Choose there which run these tabs show.'}>Runs...</button>
-    {view && createPortal(view, root!)}
+    <PopupPortal popup={popup} root={root}>{view}</PopupPortal>
   </>);
 }
 

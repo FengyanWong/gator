@@ -1,5 +1,6 @@
 import { LOOK_KEY } from './contract';
 import { signal } from './signal';
+import { keep } from './kept';
 
 /** The page's two looks (record 7.158, the user's choice of 2026-10-03): Whiteprint, light, a drawing sheet with the task
  *  in its title block (the default), and Silicon Night, dark like Virtuoso's canvas. A look is a name on <html>
@@ -22,7 +23,7 @@ export function setLook(look: Look) {
   current.put(look);
   put(document);
   followers.forEach(w => { try { if (!w.closed) put(w.document); } catch { /* the window went away meanwhile */ } });
-  try { localStorage.setItem(LOOK_KEY, look); } catch { /* a private window: this look lasts until the page is closed */ }
+  keep(s => s.setItem(LOOK_KEY, look));   // a private window: this look lasts until the page is closed
   current.notify();
 }
 

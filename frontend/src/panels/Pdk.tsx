@@ -1,11 +1,12 @@
 import { useAsyncAction } from '../store';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { BLOCKED, usePopupWindow } from './popupWindow';
+import { useEffect, useMemo, useState } from 'react';
+import { usePopupWindow } from './popupWindow';
+import { Blocked, PopupPortal } from './popupParts';
 import { signal } from '../signal';
 import { dateTimeOrText as loadedAt } from '../format';
 import { PDK_WINDOW } from '../contract';
 import { api, gateText, Json, problemText } from '../api';
+import { useNewest } from '../newest';
 
 // Load PDK (user request 2026-09-21; backend src/gator_workbench/pdk.py). The RL network is BUILT from a list of the
 // components it knows. The standard list is the optimizer's default (MOS, R, C, L, sources; anything else "unknown")
@@ -91,8 +92,8 @@ export function PdkWindowButton({ profileId, circuitPdk }: { profileId: string |
   const { list, error } = usePdkList(popup);
   return (<>
     <button className="pdk-open" onClick={e => openWindow(e.currentTarget.ownerDocument.defaultView)} title="Opens the PDK window: read one technology library by name through the connection (read-only, no simulation) and see what was read. Reading a cell into the workbench reads its PDK by itself.">PDK window...</button>
-    {blocked && <span className="error">{BLOCKED}</span>}
-    {popup && root && createPortal(<PdkWindow list={list} listError={error} profileId={profileId} circuitPdk={circuitPdk} />, root)}
+    {blocked && <Blocked as="span" />}
+    <PopupPortal popup={popup} root={root}><PdkWindow list={list} listError={error} profileId={profileId} circuitPdk={circuitPdk} /></PopupPortal>
   </>);
 }
 
@@ -104,13 +105,13 @@ function PdkWindow({ list, listError, profileId, circuitPdk }: { list: Json; lis
   const [showing, setShowing] = useState<string | null>(null);
   const pdks: Json[] = list?.pdks ?? [];
   // Only the newest row asked answers: a double click on A and then B showed the slower of the two under B.
-  const asked = useRef(0);
-  const show = (id: string) => { const mine = ++asked.current; setShowing(id); setError(null);
-    api.pdk(id).then(v => { if (mine === asked.current) setShown(v); }, e => { if (mine === asked.current) setError(problemText(e)); }); };
+  const asked = useNewest();
+  const show = (id: string) => { const mine = asked.next(); setShowing(id); setError(null);
+    api.pdk(id).then(v => { if (mine()) setShown(v); }, e => { if (mine()) setError(problemText(e)); }); };
   const { busy, run } = useAsyncAction(e => setError(problemText(e, gateText)), () => setError(null));
   const load = () => run('load', async () => {
       const loaded = await api.loadPdk(profileId!, library.trim() || null, modelFile.trim() || null);
-      asked.current++; setShown(loaded); setShowing(loaded.pdk_id);
+      asked.drop(); setShown(loaded); setShowing(loaded.pdk_id);
       pdksChanged();              // every open list reads again - this window's too - and the RL model window's Components list shows it at once
   });
   const libraryProblem = library.trim() && !/^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$/.test(library.trim()) ? 'A plain Cadence library name.' : null;

@@ -4,6 +4,7 @@ import type { Json } from './api';
 import { CONFIG_KEY as STORAGE_KEY } from './contract';
 import { migrateConfig } from './migrations';
 import { typingField } from './windows';
+import { keep, readKept } from './kept';
 
 const HISTORY_LIMIT = 100;
 
@@ -54,10 +55,9 @@ function configHistory(state: History, action: HistoryAction): History {
  *  stores its own effective_config.json). A change still waiting for those 0.8 s is written when the page goes away.
  *  `fresh`: this browser had no saved configuration when the page opened (blocked site storage counts as fresh). */
 export function useConfig() {
-  const [fresh] = useState(() => { try { return localStorage.getItem(STORAGE_KEY) === null; } catch { return true; } });
+  const [fresh] = useState(() => readKept(s => s.getItem(STORAGE_KEY) === null, () => true));
   const [history, dispatch] = useReducer(configHistory, undefined, (): History => {
-    let config: Json;
-    try { config = migrateConfig(JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')) ?? emptyConfig(); } catch { config = emptyConfig(); }
+    const config: Json = readKept(s => migrateConfig(JSON.parse(s.getItem(STORAGE_KEY) || 'null')) ?? emptyConfig(), () => emptyConfig());
     return { config, past: [], future: [], field: null, at: 0 };
   });
   const { config } = history;
@@ -83,7 +83,7 @@ export function useConfig() {
   latest.current = config;
   // What this page stored last (or found when it opened): the flush below only replaces that.
   const stored = useRef<string | null>(null);
-  if (stored.current === null) { try { stored.current = localStorage.getItem(STORAGE_KEY) ?? ''; } catch { stored.current = ''; } }
+  if (stored.current === null) stored.current = readKept(s => s.getItem(STORAGE_KEY) ?? '', () => '');
   const [saveError, setSaveError] = useState<string | null>(null);
   const save = useCallback(() => {
     try {
@@ -99,7 +99,7 @@ export function useConfig() {
   // A reload or a closed tab less than 0.8 s after the last change used to lose that change. Not over a configuration
   // another tab (or a check script) stored meanwhile: then the page leaves it as it is.
   useEffect(() => {
-    const flush = () => { try { if (unsaved.current && (localStorage.getItem(STORAGE_KEY) ?? '') === stored.current) save(); } catch { /* no storage */ } };
+    const flush = () => keep(s => { if (unsaved.current && (s.getItem(STORAGE_KEY) ?? '') === stored.current) save(); });   // no storage: nothing to flush
     window.addEventListener('pagehide', flush);
     return () => window.removeEventListener('pagehide', flush);
   }, []);

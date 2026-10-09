@@ -1,6 +1,7 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { Json, saveJson } from '../api';
 import { STORAGE_KEY } from '../store';
+import { keep, readKept } from '../kept';
 
 /** What the page shows when drawing it failed (record 7.188, design advice): what broke and the ways out - Undo the change that
  *  led to it, Export JSON of the configuration, Reload - instead of a blank page with nothing to press. App holds one under the
@@ -18,12 +19,12 @@ export class CrashPanel extends Component<Props, State> {
     const { error, where } = this.state;
     if (!error) return this.props.children;
     const { undo, canUndo = false, config } = this.props;
-    const saved = (): Json => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null'); } catch { return null; } };
+    const saved = (): Json => readKept(s => JSON.parse(s.getItem(STORAGE_KEY) ?? 'null'), () => null);
     const exportJson = () => { const c = config ?? saved(); if (c) saveJson(`${c.project?.task_name ?? 'configuration'}.config.json`, c); };
     const startEmpty = () => {
       if (!window.confirm('Start from an empty configuration? The saved one is downloaded first (Export JSON); its rows can come back with Import JSON.')) return;
       exportJson();
-      try { localStorage.removeItem(STORAGE_KEY); } catch { /* no storage: the page opens empty anyway */ }
+      keep(s => s.removeItem(STORAGE_KEY));   // no storage: the page opens empty anyway
       window.location.reload();
     };
     return (

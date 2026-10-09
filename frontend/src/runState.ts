@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRequest } from './store';
 import { api, ApiError, Json } from './api';
 import { HEADER_RUN_KEY } from './contract';
+import { keep, readKept } from './kept';
 
 const TERMINAL = ['completed', 'paused', 'stopped', 'cancelled', 'failed'];
 /** A run at rest that can go on: paused, or interrupted (its worker died). */
@@ -54,8 +55,8 @@ function phaseOf(status: Json, pending: Pending, launched: Launch): Phase {
   return status && RESUMABLE.includes(status.state) ? 'paused' : 'idle';
 }
 
-const remembered = (): string | null => { try { return localStorage.getItem(HEADER_RUN_KEY) || null; } catch { return null; } };
-const remember = (dir: string | null) => { try { dir ? localStorage.setItem(HEADER_RUN_KEY, dir) : localStorage.removeItem(HEADER_RUN_KEY); } catch { /* private mode */ } };
+const remembered = (): string | null => readKept(s => s.getItem(HEADER_RUN_KEY) || null, () => null);
+const remember = (dir: string | null) => keep(s => { dir ? s.setItem(HEADER_RUN_KEY, dir) : s.removeItem(HEADER_RUN_KEY); });   // private mode: not kept
 
 /** `viewedStatus` is the status the page already polls for the run shown in the bottom tabs. When that is the current
  *  run it is used as it arrives and no second poll runs. Otherwise the current run is polled here, and only while it

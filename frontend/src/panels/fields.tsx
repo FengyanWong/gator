@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useRef, useState } from 'react';
 import type { Json } from '../api';
 import { MODULE_KEY_PREFIX } from '../contract';
 import { Typed } from './Typed';
+import { keep, readKept } from '../kept';
 
 export function Num({ label, value, onChange, title, nullable, disabled, note, after, placeholder, bounded }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; nullable?: boolean; disabled?: boolean; note?: string; after?: ReactNode; placeholder?: string; bounded?: boolean }) {
   // `Typed` keeps what is being typed while the box has focus ("0." and "3e-" are steps towards 0.005 and 3e-4, not
@@ -62,10 +63,10 @@ export function ByteSize({ label, value, onChange, title, empty }: { label: stri
 // module's main values, and whether something inside asks for attention - an error or a warning is never just hidden.
 export function Module({ id, title, summary, children }: { id: string; title: string; summary: string; children: ReactNode }) {
   const key = `${MODULE_KEY_PREFIX}${id}`;
-  const [open, setOpen] = useState(() => { try { return localStorage.getItem(key) !== 'closed'; } catch { return true; } });
+  const [open, setOpen] = useState(() => readKept(s => s.getItem(key) !== 'closed', () => true));
   const [inside, setInside] = useState<'error' | 'warn' | null>(null);
   const body = useRef<HTMLDivElement>(null);
-  const toggle = (now: boolean) => { setOpen(now); try { localStorage.setItem(key, now ? 'open' : 'closed'); } catch { /* private window: not remembered */ } };
+  const toggle = (now: boolean) => { setOpen(now); keep(s => s.setItem(key, now ? 'open' : 'closed')); };   // private window: not remembered
   // Watched in the page itself, not per render: parts inside keep their own state (the model list, the graph view) and
   // can show an error without this component rendering again.
   useEffect(() => {

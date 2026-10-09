@@ -4,7 +4,8 @@ import { memo, MutableRefObject, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, Json, problemText } from '../api';
 import { connectionProfilesShared, tasksShared } from '../shared';
-import { BLOCKED, usePopupWindow } from './popupWindow';
+import { usePopupWindow } from './popupWindow';
+import { Blocked, PopupPortal } from './popupParts';
 import { VIRTUOSO_WINDOW } from '../contract';
 import { PdkWindowButton, pdksChanged } from './Pdk';
 import { WorkingCopy } from './WorkingCopy';
@@ -15,6 +16,7 @@ import { TaskListButton, taskMark } from './TaskList';
 import { CheckSteps } from './Consistency';
 import { Typed } from './Typed';
 import { CircuitPicture } from './CircuitPicture';
+import { useNewest } from '../newest';
 
 /** The connection block lives in Connection.tsx: one button in this column that opens the connection window. */
 
@@ -107,7 +109,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
   // The window's own choice: what the configuration says while the page follows a Virtuoso cell; blank while it follows a
   // task. A library chosen in the window then switches the page to the cell, as choosing the source used to.
   const chosen: Json = virtuosoOn ? ref : { library: null, cell: null, testbench_cell: null };
-  const request = useRef(0);                        // only the newest load may answer
+  const request = useNewest();                      // only the newest load may answer
   const followNext = useRef<'choice' | 'press' | null>(null);   // the next load answers a choice or a Read press: Probes may follow it
   const latest = useRef(config);                    // the configuration as it is NOW, for answers that arrive later
   latest.current = config;
@@ -123,13 +125,13 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
   // follow: 'choice' (a library / cell / testbench was chosen) or 'press' (the cell was read): a Virtuoso draft that loads
   // then brings the Probes of the testbench it was read through (followTestbench).
   const load = async (reference: Json, follow: 'choice' | 'press' | null = null) => {
-    const mine = ++request.current;
+    const mine = request.next();
     setError(null);
     try {
       const loaded = await api.loadCircuit(reference);
-      if (mine === request.current) { setCircuit(loaded); if (follow) followTestbench(loaded, follow === 'press'); }
+      if (mine()) { setCircuit(loaded); if (follow) followTestbench(loaded, follow === 'press'); }
     }
-    catch (e: any) { if (mine === request.current) { setError(e.message); setCircuit(null); } }
+    catch (e: any) { if (mine()) { setError(e.message); setCircuit(null); } }
   };
   // A registered task loads on its task alone: the Virtuoso fields the configuration still carries (the last cell read)
   // mean nothing to it, so a library or cell chosen in the window does not reload the task. The labels (circuit class,
@@ -141,12 +143,12 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
     followNext.current = null;
     // The removed netlist source is not sent to the backend (which refuses it): the column says so and waits for a
     // choice. Whatever was loaded before no longer belongs to this reference, so it is cleared.
-    if (!offered) { request.current++; setError(null); setCircuit(null); return; }
+    if (!offered) { request.drop(); setError(null); setCircuit(null); return; }
     // Another task - or the first look - loads at once. A change within the same one waits 0.4 s to settle: arrowing
     // through the Cell list of the Virtuoso window chose every cell on the way, and a cell's load may ask the bridge.
     // The previous cell's load still on its way is no longer this reference's: its answer was shown under the new cell
     // during those 0.4 s (review of 2026-10-01).
-    request.current++;
+    request.drop();
     const task = `${ref.source}|${ref.task_id}`, settle = loadedAs.current === task ? 400 : 0;
     const timer = setTimeout(() => { loadedAs.current = task; load(ref, follow && virtuosoOn ? follow : null); }, settle);
     return () => clearTimeout(timer);
@@ -289,16 +291,16 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
   // with is read from its Probes when it is saved.)
   const [probeNote, setProbeNote] = useState<Json>(null);  // { state: brought | kept | none, found, clearedTask? }
   const brought = useRef<string[]>([]);                     // Probes this panel brought from a testbench (JSON), this page session
-  const followCount = useRef(0);
+  const followCount = useNewest();
   const followTestbench = async (loaded: Json, press: boolean) => {
-    const mine = ++followCount.current;
+    const mine = followCount.next();
     const found = loaded?.loaded && loaded.native_draft && !loaded.profile_task ? loaded.testbench_probes : null;
     if (!found) { setProbeNote(null); return; }
     if (!found.rows.length) { setProbeNote({ state: 'none', found }); return; }
     if (sameJson(latest.current.measurements, found.rows)) { setProbeNote(null); return; }
     const taskId = latest.current.circuit.task_id;
     const starter = taskId ? await api.starter(taskId).catch(() => null) : null;
-    if (mine !== followCount.current) return;
+    if (!mine()) return;
     const now = latest.current;
     const untouched = !(now.measurements ?? []).length || brought.current.includes(JSON.stringify(now.measurements))
       || (!!starter && sameJson(tablesOf(now).measurements, tablesOf(starter).measurements));
@@ -323,8 +325,8 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
   const [taskRows, setTaskRows] = useState<Json>(null);
   const [taskLoading, setTaskLoading] = useState<string | null>(null);
   const [taskLoadError, setTaskLoadError] = useState<string | null>(null);
-  const following = useRef(0);
-  useEffect(() => () => { following.current++; }, []);
+  const following = useNewest();
+  useEffect(() => () => { following.drop(); }, []);
   const starterProblem = (e: any, taskId: string) => (e.status === 404 && taskId.startsWith('real:')
     ? 'This backend is older than the page and has no starting rows for a real task yet: restart it (gator_workbench.cli serve).' : e.message);
   const goneMock = (taskId?: string | null) => !!taskId && taskId.startsWith('synthetic:') && tasks.length > 0 && !tasks.some(t => t.task_key === taskId);
@@ -333,10 +335,10 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
   // `change`: what else the same draft change brings (Load run: the run's model; record 7.267). True once loaded.
   const chooseTask = async (taskId: string, labels?: { circuit_class?: string | null; pdk_id?: string | null }, reload = false,
     change: (c: Json) => Json = c => c, stale: () => boolean = () => false): Promise<TaskLoaded> => {
-    const before = latest.current, mine = ++following.current;
+    const before = latest.current, mine = following.next();
     const currentTask = before.circuit.source === 'registered_task' ? before.circuit.task_id : null;
     // `stale`: the caller's own choice was overtaken (record 7.270: a newer Load run), so this load must not land either.
-    const stillHere = () => mine === following.current && latest.current.circuit === before.circuit && !stale();
+    const stillHere = () => mine() && latest.current.circuit === before.circuit && !stale();
     const brought = taskRows?.task === currentTask ? taskRows.starter : null;
     setTaskLoadError(null);
     setTaskLoading(taskId);
@@ -360,8 +362,8 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
         project: { ...c.project, task_name: starter.project.task_name },
         parameters: starter.parameters, targets: starter.targets, measurements: starter.measurements }));
       noteRowsFrom(taskId, starter.revision);    // which saved revision these rows are (record 7.203)
-      request.current++;                         // any pending circuit view still belongs to the previous task
-      followCount.current++;                     // a pending Virtuoso probe read cannot replace the new task's rows
+      request.drop();                            // any pending circuit view still belongs to the previous task
+      followCount.drop();                        // a pending Virtuoso probe read cannot replace the new task's rows
       setCircuit(null);
       if (currentTask === taskId) load(nextCircuit);
       setTaskRows({ task: taskId, state: 'brought', starter });
@@ -370,7 +372,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
       if (stillHere()) setTaskLoadError(`Could not load ${taskId}. The current task and rows are unchanged. ${starterProblem(e, taskId)}`);
       return { loaded: false, why: `${taskId} could not be read: ${starterProblem(e, taskId)}` };
     } finally {
-      if (mine === following.current) setTaskLoading(null);
+      if (mine()) setTaskLoading(null);
     }
   };
   if (taskLoad) taskLoad.current = (taskId, change, stale) => chooseTask(taskId, undefined, false, change, stale);
@@ -441,7 +443,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
           <button className="virtuoso-button" onClick={openWindow} title={popup ? 'The Virtuoso window is open: press to bring it to the front.'
             : 'Opens the Virtuoso window: choose a library, a cell and its testbench, read the cell into the workbench (it asks whether the cell is a copy you made), set it up, save it as a task. Opening it lists the libraries of that Virtuoso - and, for the cell chosen last time, its cells and schematic - read-only; nothing comes into the workbench until you press Read.'}>Virtuoso cell...</button>
         </div>}
-        {showVirtuoso && blocked && <p className="error">{BLOCKED}</p>}
+        {showVirtuoso && blocked && <Blocked />}
         {showNgspice && <div className="row virtuoso-launcher ngspice-launcher">
           <span className="hint">{ngspiceTask ? <>ngspice task: <code>{ngspiceTask}</code></> : 'From an ngspice netlist (a SPICE deck):'}</span>
           <NgspiceButton config={config} circuit={circuit} chooseTask={chooseTask} onTasksChanged={refreshTasks} />
@@ -648,7 +650,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
       config={config} setConfig={setConfig} onSaved={taskSaved} onSavedElsewhere={savedElsewhere} bar={taskSlot} notes={taskNotes} />);
   const titleFacts = titleSlot && createPortal(<TitleFacts config={config}
     revision={ref.source === 'registered_task' ? tasks.find(t => t.task_key === ref.task_id)?.revision ?? null : null} />, titleSlot);
-  return <>{column}{firstSave}{titleFacts}{popup && root && createPortal(view, root)}</>;
+  return <>{column}{firstSave}{titleFacts}<PopupPortal popup={popup} root={root}>{view}</PopupPortal></>;
 }
 
 /** Memoised (record 7.275): its props change with the configuration, the circuit, the run list and the task - not with

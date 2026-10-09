@@ -9,6 +9,7 @@ import { Cell, LimitSelect } from './cells';
 import { DiffView } from './DiffView';
 import { exact, FOLLOWER_IGNORES, limitLabel, QUANTITY, readNumber, type Section, suggestedScale, withFollowers, withSaved } from './editorRules';
 import { type BarCell, FormulaBar } from './FormulaBar';
+import { keep, readKept } from '../kept';
 
 const TITLES: Record<Section, string> = { parameters: 'Parameters', measurements: 'Probes', targets: 'Specs' };   // key order = tab order
 const ROW_TABS = Object.keys(TITLES);
@@ -43,8 +44,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // "More columns" shows the columns most rows leave at their default (Specs: soft_weight, active, basis; the Probes' two,
   // conditions and aggregation, were retired in record 7.105). They exist whether shown or not: Add fills them, an
   // import may set them, a task file keeps them.
-  const [more, setMore] = useState<boolean>(() => { try { return localStorage.getItem(MORE_KEY) === 'shown'; } catch { return false; } });
-  const showMore = (now: boolean) => { setMore(now); try { localStorage.setItem(MORE_KEY, now ? 'shown' : 'hidden'); } catch { /* no storage: the choice lasts for this page */ } };
+  const [more, setMore] = useState<boolean>(() => readKept(s => s.getItem(MORE_KEY) === 'shown', () => false));
+  const showMore = (now: boolean) => { setMore(now); keep(s => s.setItem(MORE_KEY, now ? 'shown' : 'hidden')); };   // no storage: the choice lasts for this page
   // `rows`: an import of one table's rows - Apply writes that table alone; null = a whole configuration, which replaces all.
   const [pending, setPending] = useState<{ next: Json; diff: Json[]; others: string[]; rows: { section: Section; value: Json[] } | null } | null>(null);
   const [matched, setMatched] = useState(0);               // each toolbar press opens a fresh read; zero closes the box

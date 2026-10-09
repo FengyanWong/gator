@@ -11,6 +11,8 @@ import { LOADS, NETWORK_FIELDS, networkOf, pick, readSavePoint, withSavePoint } 
 import { usePopupWindow } from './popupWindow';
 import { PRESET_RATE_KEY, RL_MODEL_WINDOW } from '../contract';
 import { ADVANCED_ROWS, foldedText, limitsText, modelLineText, networkShort, networkSizes, networkTitle, NextModel, nextModelText, ORIGIN } from './rlModelText';
+import { useNewest } from '../newest';
+import { oncePerBrowser } from '../kept';
 
 export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json; schema: Json;
   onNext?: (next: NextModel) => void }) {
@@ -140,11 +142,7 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
       // The starting preset changed from 3e-4 to 1e-3 (record 7.199), but its old explicit rate stayed in browser
       // storage. Upgrade only that otherwise-identical restored preset. Check once per browser, including when no
       // upgrade is needed: Undo, a later edit or an imported configuration must keep its chosen rate on reload.
-      try {
-        const key = PRESET_RATE_KEY;
-        if (localStorage.getItem(key)) return;
-        localStorage.setItem(key, 'checked');
-      } catch { return; } // Without durable storage, do not repeatedly override a rate the user may have restored.
+      if (!oncePerBrowser(PRESET_RATE_KEY)) return; // Without durable storage, do not repeatedly override a rate the user may have restored.
       const saved = s.settings?.[encoder];
       if (!currentReply(revision, encoder, expected) || run.mode !== 'scratch'
         || !['graph_transformer', 'rgcn', 'gatv2'].includes(encoder) || saved?.origin !== 'publication'
@@ -234,11 +232,11 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
   const [usingPoint, setUsingPoint] = useState(false);
   // Only the newest press lands (record 7.278, Astra's review of 2026-10-08; as Load run's generation number, 7.270): a save
   // point chosen before it and answered later changes nothing, and New model chosen meanwhile lets a pending one go.
-  const pointSerial = useRef(0);
+  const pointSerial = useNewest();
   // A saved model's name, as the saved models table lists it: from its run's row (the folder's name when the run is not listed).
   const nameOf = (dir: string) => modelNameAt(runs, String(dir));
   const useSavePoint = (run_dir: string, checkpoint_id: string) => {
-    const mine = ++pointSerial.current, stale = () => mine !== pointSerial.current;
+    const mine = pointSerial.next(), stale = () => !mine();
     setUsingPoint(true); setNetMessage(null);
     readSavePoint(run_dir, checkpoint_id, netFields).then(point => {        // savePoint.ts: Load run and New run like this take one the same way
       if (stale()) return;
@@ -251,7 +249,7 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
   // A Mode is one Undo step. New model clears the saved model chosen: scratch never loads one (a source left there is a
   // validation warning), and coming back to Fine-tune asks for the choice again. A save point still on its way is let go too.
   const chooseMode = (mode: string) => {
-    if (mode === 'scratch') { pointSerial.current++; setUsingPoint(false); }
+    if (mode === 'scratch') { pointSerial.drop(); setUsingPoint(false); }
     setConfig(c => ({ ...c, run: { ...c.run, mode,
       ...(mode === 'scratch' && c.run.model_source?.run_dir ? { model_source: { ...c.run.model_source, run_dir: null, checkpoint_id: 'latest' } } : {}) } }));
   };

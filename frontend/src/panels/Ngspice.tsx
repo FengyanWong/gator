@@ -1,9 +1,9 @@
 import { useAsyncAction } from '../store';
 import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { api, Json, problemText } from '../api';
 import { baselineText, followTaskBaseline } from './TaskSave';
-import { BLOCKED, usePopupWindow } from './popupWindow';
+import { usePopupWindow } from './popupWindow';
+import { Blocked, PopupPortal } from './popupParts';
 import { NGSPICE_WINDOW } from '../contract';
 
 /** The ngspice window (user request 2026-09-23): a SPICE deck pasted or loaded from a file on the backend machine, checked,
@@ -150,7 +150,7 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged }:
   return <>
     <button className="ngspice-button" onClick={openWindow} title={popup ? 'The ngspice window is open: press to bring it to the front.'
       : 'Opens the ngspice window: paste or load a SPICE deck, check it and save it as a task that runs on an ngspice connection. Opening it runs nothing.'}>ngspice netlist...</button>
-    {blocked && <p className="error">{BLOCKED}</p>}
-    {popup && root && createPortal(view, root)}
+    {blocked && <Blocked />}
+    <PopupPortal popup={popup} root={root}>{view}</PopupPortal>
   </>;
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { readWithDeadline } from './api';
 import { pageSeen, seenAgain } from './windows';
+import { useNewest } from './newest';
 
 export function usePolling<T>(fn: (signal: AbortSignal) => Promise<T>, ms: number, enabled: boolean, deps: unknown[]) {
   return useRequest(fn, deps, { enabled, pollEvery: ms });
@@ -11,12 +12,12 @@ export function usePolling<T>(fn: (signal: AbortSignal) => Promise<T>, ms: numbe
 /** Button actions keep their feature's confirmations and messages; only the pending lifecycle is shared. */
 export function useAsyncAction(onError: (error: any, name: string) => void, onStart: () => void) {
   const [busy, setBusy] = useState<string | null>(null);
-  const generation = useRef(0);
+  const generation = useNewest();
   const run = async (name: string, action: () => Promise<unknown>) => {
-    const mine = ++generation.current;
+    const mine = generation.next();
     setBusy(name); onStart();
     try { await action(); } catch (error) { onError(error, name); }
-    finally { if (mine === generation.current) setBusy(null); }
+    finally { if (mine()) setBusy(null); }
   };
   return { busy, run };
 }

@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
 import { api, Json, plainError } from '../api';
 import { clock } from '../format';
-import { BLOCKED, usePopupWindow } from './popupWindow';
+import { usePopupWindow } from './popupWindow';
+import { Blocked, PopupPortal } from './popupParts';
 import { AGENT_WINDOW } from '../contract';
 
 /** The Agent window (record 7.253; the user: "make the agent tab pop out window only (no tab view)", then "make it still a
@@ -100,11 +100,11 @@ export function AgentWindowTab({ config }: { config: Json }) {
   </section>);
 
   return (<>
-    {agent.blocked && <span className="error run-list-blocked" role="alert">{BLOCKED}</span>}
+    {agent.blocked && <Blocked as="span" className="error run-list-blocked" role="alert" />}
     {/* Drawn as a tab (the strip's tab rules), never `active`: it shows nothing in the panel; `open` underlines it while its window is open. */}
     <button className={`agent-tab${agent.popup ? ' open' : ''}`} onClick={openWindow}
       title={agent.popup ? 'The agent window is open: press to bring it to the front.'
         : 'Opens the agent window: Claude Code or Codex in a terminal window of its own, in the workbench\'s folder, as you start it yourself - and "What\'s missing?", the free checklist of what the run still needs.'}>Agent...</button>
-    {view && createPortal(view, agent.root!)}
+    <PopupPortal popup={agent.popup} root={agent.root}>{view}</PopupPortal>
   </>);
 }

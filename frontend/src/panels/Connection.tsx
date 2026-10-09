@@ -1,7 +1,7 @@
 import { useAsyncAction } from '../store';
 import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { BLOCKED, usePopupWindow } from './popupWindow';
+import { usePopupWindow } from './popupWindow';
+import { Blocked, PopupPortal } from './popupParts';
 import { CONNECTION_WINDOW } from '../contract';
 import { api, Json } from '../api';
 import { connectionProfilesChanged, connectionProfilesShared } from '../shared';
@@ -136,7 +136,7 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
           ? <span className="badge state-not_checked" title="The connection is being tested">testing...</span>
           : <span className={`badge state-${overall}`} title={status?.checked_utc ? `Last test: ${testedAt(status.checked_utc)}` : 'Never tested'}>{STATE_LABEL[overall] ?? overall}</span>)}
       </button>
-      {blocked && <p className="error">{BLOCKED}</p>}
+      {blocked && <Blocked />}
       {error && !popup && <p className="error">{error}</p>}
     </section>
   );
@@ -309,5 +309,5 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
       </div>
     </div>
   );
-  return <>{launcher}{popup && root && createPortal(view, root)}</>;
+  return <>{launcher}<PopupPortal popup={popup} root={root}>{view}</PopupPortal></>;
 }

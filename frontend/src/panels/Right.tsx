@@ -1,7 +1,7 @@
 import { memo } from 'react';
-import { createPortal } from 'react-dom';
 import type { Json } from '../api';
 import { Module } from './fields';
+import { PopupPortal } from './popupParts';
 import { RewardConditions } from './RewardConditions';
 import { RlModelWindow } from './RlModelWindow';
 import type { NextModel } from './rlModelText';
@@ -19,7 +19,7 @@ function RunPanelBody(props: { config: Json; setConfig: (f: (c: Json) => Json, r
       <RunConfiguration m={m} />
       <RewardConditions m={m} />
     </Module>
-    {m.networkWindow.popup && m.networkWindow.root && createPortal(<RlModelWindow m={m} />, m.networkWindow.root)}
+    <PopupPortal popup={m.networkWindow.popup} root={m.networkWindow.root}><RlModelWindow m={m} /></PopupPortal>
     </>
   );
 }

@@ -16,6 +16,7 @@ import { api, ApiError, Json, plainError } from './api';
 import { useRequest } from './store';
 import { restingFor, type RunControl } from './runState';
 import { LAUNCH_KEY } from './contract';
+import { keepInTab, readKeptInTab } from './kept';
 
 export type Action = 'start' | 'calibration' | 'resume' | 'continue';
 export type Features = { requests: boolean; continuation: boolean };
@@ -26,14 +27,12 @@ export const featuresOf = (meta: Json): Features => {
 
 // ---- the launch on its way, kept in this tab (sessionStorage) until its answer has arrived ----------------------------------
 type SentLaunch = { id: string; action: Action; run_dir: string | null; at: number };
-const sentLaunch = (): SentLaunch | null => {
-  try {
-    const kept = JSON.parse(sessionStorage.getItem(LAUNCH_KEY) ?? 'null');
-    return kept && typeof kept.id === 'string' ? kept : null;
-  } catch { return null; }
-};
+const sentLaunch = (): SentLaunch | null => readKeptInTab(s => {
+  const kept = JSON.parse(s.getItem(LAUNCH_KEY) ?? 'null');
+  return kept && typeof kept.id === 'string' ? kept : null;
+}, () => null);
 const keepLaunch = (launch: SentLaunch | null) => {
-  try { if (launch) sessionStorage.setItem(LAUNCH_KEY, JSON.stringify(launch)); else sessionStorage.removeItem(LAUNCH_KEY); } catch { /* blocked storage: no recovery after a reload */ }
+  keepInTab(s => { if (launch) s.setItem(LAUNCH_KEY, JSON.stringify(launch)); else s.removeItem(LAUNCH_KEY); });   // blocked storage: no recovery after a reload
 };
 /** A launch of this tab is still waiting for its answer (or for the page to ask after a reload). */
 export const launchKept = () => sentLaunch() !== null;

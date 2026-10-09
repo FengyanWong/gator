@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
 import { api, Json } from '../api';
 import { clock, durationWhole as span, folderName, num } from '../format';
 import { startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
-import { BLOCKED, usePopupWindow } from './popupWindow';
+import { usePopupWindow } from './popupWindow';
+import { Blocked, PopupPortal } from './popupParts';
 import { RUNNING_WINDOW } from '../contract';
 import { cardLive, isLive, type RunControl } from '../runState';
 
@@ -87,5 +87,5 @@ export function useRunBrief({ control, runs, onRefreshRuns, onShow }: { control:
       {!reading && !others.some(o => o.row.run_dir !== control.dir) && <p className="hint brief-none">
         {control.dir ? 'Nothing else is live' : 'Nothing is live'} under this output folder{readAt ? ` (read at ${readAt})` : ''}.</p>}
     </div>);
-  return { open, element: <>{blocked && <span className="error run-brief-blocked">{BLOCKED}</span>}{view && createPortal(view, root!)}</> };
+  return { open, element: <>{blocked && <Blocked as="span" className="error run-brief-blocked" />}<PopupPortal popup={popup} root={root}>{view}</PopupPortal></> };
 }

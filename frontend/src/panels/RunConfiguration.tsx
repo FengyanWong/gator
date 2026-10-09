@@ -2,7 +2,7 @@
 // window's button, the budget, the seed and the limits. It only draws what useRlModel holds.
 import { folderName } from '../format';
 import { openRunsAt } from '../openAt';
-import { BLOCKED } from './popupWindow';
+import { Blocked } from './popupParts';
 import { Check, Num } from './fields';
 import { MODE_NAME } from './rlModelText';
 import type { RlModel } from './useRlModel';
@@ -23,7 +23,7 @@ export function RunConfiguration({ m }: { m: RlModel }) {
       <div className="rl-networks-row"><span className={`hint net-short${loads && !source.run_dir ? '' : ' net-code'}`} title={netTitle}>{modelLine}</span>
         <button className="rl-networks-open" title="Open the RL model window: the Mode (New model, Fine-tune, Evaluate only), the templates of a new model, and the saved models."
           onClick={() => networkWindow.open()}>RL model...</button></div>
-      {networkWindow.blocked && <p className="error" role="alert">{BLOCKED}</p>}
+      {networkWindow.blocked && <Blocked role="alert" />}
       <NoModeNote m={m} from={null} />
       {(networkError || networkWarning) && <p className={networkError ? 'error' : 'warn'}>Review the settings in RL model.</p>}
       {/* Only while the model is checked: in scratch the last check's suggestion stayed, never asked again (review of 2026-10-01).

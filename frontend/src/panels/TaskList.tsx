@@ -1,6 +1,6 @@
 import { Fragment, MouseEvent, ReactNode, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { BLOCKED, usePopupWindow } from './popupWindow';
+import { usePopupWindow } from './popupWindow';
+import { Blocked, PopupPortal } from './popupParts';
 import { TASKS_WINDOW } from '../contract';
 import { api, Json } from '../api';
 import { si } from '../units';
@@ -221,7 +221,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
       <span className="task-list-current" title={taskName(current ?? currentText)}>{current ? <code className="task-list-key" data-task-key={current}>{taskName(current)}</code> : <span className="task-list-key">{taskName(currentText)}</span>}
         {currentMark && <span className="task-list-mark hint"> {currentMark}</span>}</span>
     </button>
-    {blocked && <span className="error task-list-blocked">{BLOCKED}</span>}
-    {view && createPortal(view, root!)}
+    {blocked && <Blocked as="span" className="error task-list-blocked" />}
+    <PopupPortal popup={popup} root={root}>{view}</PopupPortal>
   </>);
 }

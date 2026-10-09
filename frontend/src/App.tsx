@@ -32,6 +32,8 @@ import { requestTaskSave, TASK_BASELINE_STARTED } from './panels/TaskSave';
 import { CornerCheckTab } from './panels/CornerCheck';
 import { TrainingTab } from './panels/TrainingTab';
 import { CrashPanel } from './panels/CrashPanel';
+import { useNewest } from './newest';
+import { keep, oncePerBrowser, readKept } from './kept';
 
 type BottomTab = 'status' | 'logs' | 'data' | 'files' | 'training' | 'corners';
 
@@ -70,10 +72,9 @@ function LookSwitch() {
 /** The bottom panel's height (record 7.158): dragged at its top edge, folded to its tab line with a double click there.
  *  Kept in this browser, like the folded modules; null = the default third of the window. */
 type Bottom = { height: number | null; folded: boolean };
-const storedBottom = (): Bottom => {
-  try { const b = JSON.parse(localStorage.getItem(BOTTOM_KEY) ?? 'null'); return { height: typeof b?.height === 'number' && b.height > 0 ? b.height : null, folded: b?.folded === true }; }
-  catch { return { height: null, folded: false }; }
-};
+const storedBottom = (): Bottom => readKept(s => {
+  const b = JSON.parse(s.getItem(BOTTOM_KEY) ?? 'null'); return { height: typeof b?.height === 'number' && b.height > 0 ? b.height : null, folded: b?.folded === true };
+}, () => ({ height: null, folded: false }));
 
 /** Calibration evaluates only random designs. Task creation owns the fixed starting-design baseline. */
 const CALIBRATION_DESIGNS = 64;
@@ -84,12 +85,10 @@ const CALIBRATION_DESIGNS = 64;
  *  again shows the run it showed - or none, after a task without runs was chosen. Unless the header holds another run by
  *  then (started in another tab of the page, say): the page opens on the header's run then, as it always did, and so does a
  *  browser that never kept one. */
-const shownRun = (): string | null => {
-  try {
-    const header = localStorage.getItem(HEADER_RUN_KEY) || null, kept = JSON.parse(localStorage.getItem(SHOWN_RUN_KEY) ?? 'null');
-    return kept && typeof kept === 'object' && (kept.header ?? null) === header ? kept.run ?? null : header;
-  } catch { return null; }
-};
+const shownRun = (): string | null => readKept(s => {
+  const header = s.getItem(HEADER_RUN_KEY) || null, kept = JSON.parse(s.getItem(SHOWN_RUN_KEY) ?? 'null');
+  return kept && typeof kept === 'object' && (kept.header ?? null) === header ? kept.run ?? null : header;
+}, () => null);
 
 /** Layout (specification section 2): left = project, connection, circuit; center = three editors;
  *  right = run configuration + output settings (always visible); bottom = status, logs, data, files, training, corner check,
@@ -122,7 +121,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const folded = bottom.folded || (!runDir && !opened);
   const changeBottom = useCallback((change: (b: Bottom) => Bottom) => setBottom(b => {
     const next = change(b);
-    if (next !== b) try { localStorage.setItem(BOTTOM_KEY, JSON.stringify(next)); } catch { /* a private window: not remembered */ }
+    if (next !== b) keep(s => s.setItem(BOTTOM_KEY, JSON.stringify(next)));   // a private window: not remembered
     return next;
   }), []);
   // A press that asks to see something in the bottom panel (one of its tabs, the header's run) opens it.
@@ -136,11 +135,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   // every 64 (16 before). A draft keeps the values it was made with, so, once per browser, a draft that still holds an old
   // default exactly gets the new one - as one Undo step, and said; a value chosen otherwise is kept.
   useEffect(() => {
-    try {
-      const key = 'gator-workbench-output-defaults-2026-10-08';
-      if (localStorage.getItem(key)) return;
-      localStorage.setItem(key, 'checked');
-    } catch { return; }                 // without lasting storage a value the user restored would be changed again
+    if (!oncePerBrowser('gator-workbench-output-defaults-2026-10-08')) return;   // without lasting storage a value the user restored would be changed again
     const out = config.output ?? {};
     const saves = out.checkpoint_every_evaluations === 50 && out.checkpoint_every_seconds == null, tables = out.flush_every_evaluations === 16;
     if (!saves && !tables) return;
@@ -165,7 +160,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   }, []);
   // Only the newest read of the run list may answer: while the output root is typed, a half-typed path outside the roots
   // (403) used to empty the list when its answer came last.
-  const listing = useRef(0);
+  const listing = useNewest();
   // One function for the whole page (useCallback; the output root through a ref), so the panels that take it are not drawn
   // again at every status update (record 7.275). A list that is the same as the one held keeps that array: what depends
   // on the runs (the saved models, the Training tab) is not asked again for nothing. `fresh`: the backend reads every
@@ -173,10 +168,10 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const outputRoot = useRef(config.output.output_root);
   outputRoot.current = config.output.output_root;
   const readRuns = useCallback((fresh = false): Promise<{ list: Json[]; error: string | null }> => {
-    const mine = ++listing.current;
+    const mine = listing.next();
     return api.runs(outputRoot.current ?? undefined, fresh).then(r => ({ list: r.runs as Json[], error: null }), e => ({ list: NO_RUNS, error: plainError(e) }))
       .then(read => {
-        if (mine === listing.current) { setRuns(held => (JSON.stringify(held) === JSON.stringify(read.list) ? held : read.list)); setRunsError(read.error); }
+        if (mine()) { setRuns(held => (JSON.stringify(held) === JSON.stringify(read.list) ? held : read.list)); setRunsError(read.error); }
         return read;
       });
   }, []);
@@ -218,10 +213,10 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const control = useRunControl(status, looked);
   // The run shown, kept with the header's run (shownRun above); again when the header takes or lets go of one.
   useEffect(() => {
-    try { localStorage.setItem(SHOWN_RUN_KEY, JSON.stringify({ run: runDir, header: control.dir })); } catch { /* a private window: not kept */ }
+    keep(s => s.setItem(SHOWN_RUN_KEY, JSON.stringify({ run: runDir, header: control.dir })));   // a private window: not kept
   }, [runDir, control.dir]);
   // The header's run at rest, its calibration result, and what Apply would do with the rows the page holds now.
-  const [calibrationAnswered, setCalibrationAnswered] = useState<string | null>(() => { try { return localStorage.getItem(CALIBRATION_ANSWERED_KEY); } catch { return null; } });
+  const [calibrationAnswered, setCalibrationAnswered] = useState<string | null>(() => readKept(s => s.getItem(CALIBRATION_ANSWERED_KEY), () => null));
   const calibrated: Json = control.phase === 'idle' && control.dir && control.dir !== calibrationAnswered ? control.status?.calibration?.result ?? null : null;
   const calibrationOffer = calibrated ? calibrationPlan(calibrated, config) : null;
   const calibrationReady = !!calibrationOffer && !calibrationOffer.otherTask && (calibrated.status !== 'calibrated' || calibrationOffer.pending > 0);
@@ -233,7 +228,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     if (how !== 'no') setConfig(calibrationOffer.apply);
     const after = how === 'save' ? savingText(requestTaskSave(config.circuit.task_id)) : calibrationOffer.afterwards;
     setCalibrationAnswered(dir);
-    try { localStorage.setItem(CALIBRATION_ANSWERED_KEY, dir); } catch { /* a private window: asked again after a reload */ }
+    keep(s => s.setItem(CALIBRATION_ANSWERED_KEY, dir));   // a private window: asked again after a reload
     if (calibrated.status === 'calibrated') setMessage({ level: 'info', text: how !== 'no' ? `Calibration applied: ${calibrationOffer.what}, as one Undo step.${after}`
       : 'Nothing was changed. The proposals stay under Run status of that run, with Apply calibration.' });
   };
@@ -293,13 +288,13 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const followedTask = useRef(taskKey);
   // The generation of the Runs window's Load run / New run like this (record 7.270, Astra's review of 2026-10-07): each one
   // takes the next number and goes on only while it is still the newest - a task chosen elsewhere lets it go too.
-  const loadSerial = useRef(0);
+  const loadSerial = useNewest();
   const shownNow = useRef(runDir);
   shownNow.current = runDir;
   useEffect(() => {
     if (taskKey === followedTask.current) return;
     followedTask.current = taskKey;
-    loadSerial.current++;                                // a task chosen elsewhere: a Load run still on its way is let go
+    loadSerial.drop();                                   // a task chosen elsewhere: a Load run still on its way is let go
     if (!taskKey) return;
     const before = shownNow.current;
     readRuns().then(({ list, error }) => {
@@ -441,7 +436,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   /** Load run: its task, the model it ended with (in a Mode that loads one) and its results - one Undo step for the task and
    *  the model, all or nothing. The header's run is never touched. */
   const loadRun = async (row: Json) => {
-    const mine = ++loadSerial.current, stale = () => mine !== loadSerial.current;      // a newer choice wins, silently
+    const mine = loadSerial.next(), stale = () => !mine();      // a newer choice wins, silently
     setMessage(null);
     let point: SavePoint | null, since: string | null;
     try { [point, since] = await Promise.all([endModel(row), savedSince(row)]); }
@@ -463,7 +458,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   /** New run like this: the next run repeats the run - its task, Mode, the save point it started from and its run settings.
    *  The shown run stays. */
   const newRunLike = async (row: Json) => {
-    const mine = ++loadSerial.current, stale = () => mine !== loadSerial.current;
+    const mine = loadSerial.next(), stale = () => !mine();
     setMessage(null);
     let settings: Json = null;
     try { settings = migrateConfig(await api.runConfig(row.run_dir))?.run ?? null; }

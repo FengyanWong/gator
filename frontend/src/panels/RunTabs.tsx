@@ -1,7 +1,8 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
-import { api, bytes, copy, download, downloadPackage, Json, num, saveJson, short, si } from '../api';
-import { runName } from '../format';
+import { api, copy, download, downloadPackage, Json, saveJson } from '../api';
+import { si } from '../units';
+import { bytes, num, runName, short } from '../format';
 import { ENDED, restingShown } from '../runState';
 import { usePolling, useRequest } from '../store';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './calibrationPlan';

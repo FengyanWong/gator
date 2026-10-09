@@ -1,6 +1,7 @@
 import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { api, ApiError, Json, NO_ANSWER, plainError, saveJson, tasksShared } from './api';
+import { api, ApiError, Json, NO_ANSWER, plainError, saveJson } from './api';
+import { tasksShared } from './shared';
 import { Look, LOOK_NAMES, setLook, useLook } from './theme';
 import { Icon } from './panels/Icons';
 import { setUnitForms } from './units';

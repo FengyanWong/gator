@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, ApiError, Json, OLDER_BACKEND, plainError, readWithDeadline, si } from '../api';
+import { api, ApiError, Json, OLDER_BACKEND, plainError, readWithDeadline } from '../api';
 import { createdAt as created, runName, runTaskOrBlank as taskOf, timeOfDay as clock, TRAINING_STATE_CLASS as STATE_CLASS } from '../format';
 import { useLook } from '../theme';
-import { unitLabel } from '../units';
+import { si, unitLabel } from '../units';
 import { Icon } from './Icons';
 import { shownLive } from '../runState';
 import { TRAINING_CAPS_KEY, TRAINING_COMPARE_KEY } from '../contract';
@@ -94,6 +94,40 @@ function usePageHidden() {
   return hidden;
 }
 
+/** What a read loop of the Training tab does besides reading (plan-refactoring C10: the shown run's loop and the compared
+ *  runs' loop were one loop with these differences). `before`: at the start of each read. `done`: an answer applied - whether
+ *  to read again in POLL_MS. `failed`: a read failed (not cancelled) - how long until it is tried again, or null for never. */
+type ReadLoop = { before?: () => void; done: (dir: string, answer: Answer) => boolean; failed: (dir: string, e: any) => number | null };
+/** Reads each run's recorded numbers that are new since its last answer - the history in pages, then again while `done`
+ *  says so - for as long as the effect stands (`deps`). `runs()` is asked when it starts: the runs to read, or null for none. */
+function useTrainingReads(runs: () => { dir: string; store: TrainingStore }[] | null, loop: ReadLoop, requestFrame: () => void, deps: unknown[]) {
+  useEffect(() => {
+    const list = runs();
+    if (!list) return;
+    let alive = true;
+    const timers: number[] = [], controller = new AbortController();
+    for (const { dir, store: run } of list) {
+      const read = async () => {
+        loop.before?.();
+        try {
+          const answer: Answer = await readWithDeadline(signal => api.training(dir, run.flushes, signal, run.tailCursor), controller.signal, 60000);
+          if (!alive) return;
+          if (run.apply(answer)) requestFrame();
+          const again = loop.done(dir, answer);
+          if (answer.flushes.served < answer.flushes.total || answer.tail_page?.more) { void read(); return; }
+          if (again) timers.push(window.setTimeout(read, POLL_MS));
+        } catch (e: any) {
+          if (!alive || controller.signal.aborted) return;
+          const after = loop.failed(dir, e);
+          if (after !== null) timers.push(window.setTimeout(read, after));
+        }
+      };
+      void read();
+    }
+    return () => { alive = false; controller.abort(); timers.forEach(t => window.clearTimeout(t)); };
+  }, deps);
+}
+
 export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean; runDir: string | null; status: Json; runs: Json[] }) {
   const look = useLook();
   const pageHidden = usePageHidden();
@@ -139,30 +173,12 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   // ---- reading: what is new since the last answer; again every 2 s while the run is live; nothing while hidden
   const liveRef = useRef(live);
   liveRef.current = live;
-  useEffect(() => {
-    const own = store.current;
-    if (!active || !own) return;
-    let alive = true, timer: number | undefined;
-    const controller = new AbortController();
-    const read = async () => {
-      setReading(r => (r.busy ? r : { ...r, busy: true }));
-      try {
-        const answer: Answer = await readWithDeadline(signal => api.training(own.runDir, own.flushes, signal, own.tailCursor), controller.signal, 60000);
-        if (!alive) return;
-        if (own.apply(answer)) requestFrame();
-        setReading({ error: null, at: Date.now(), busy: false });
-        if (answer.flushes.served < answer.flushes.total || answer.tail_page?.more) { void read(); return; }
-        if (liveRef.current) timer = window.setTimeout(read, POLL_MS);
-      } catch (e: any) {
-        if (!alive || controller.signal.aborted) return;
-        // a backend started before this tab existed has no such route (FastAPI's own 404 "Not Found"): said as such
-        setReading({ error: readError(e), at: Date.now(), busy: false });
-        if (liveRef.current) timer = window.setTimeout(read, RETRY_MS);
-      }
-    };
-    void read();
-    return () => { alive = false; controller.abort(); if (timer !== undefined) window.clearTimeout(timer); };
-  }, [active, runDir, live, retry, requestFrame]);
+  useTrainingReads(() => { const own = store.current; return active && own ? [{ dir: own.runDir, store: own }] : null; }, {
+    before: () => setReading(r => (r.busy ? r : { ...r, busy: true })),
+    done: () => { setReading({ error: null, at: Date.now(), busy: false }); return liveRef.current; },
+    // a backend started before this tab existed has no such route (FastAPI's own 404 "Not Found"): said as such
+    failed: (_dir, e) => { setReading({ error: readError(e), at: Date.now(), busy: false }); return liveRef.current ? RETRY_MS : null; },
+  }, requestFrame, [active, runDir, live, retry, requestFrame]);
 
   // ---- other runs on the same charts (record 7.200): each its own store, read like the shown one, apart from it
   const [compare, setCompare] = useState<string[]>(storedCompare);
@@ -173,31 +189,14 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   for (const dir of others) if (!compared.current.has(dir)) compared.current.set(dir, new TrainingStore(dir));
   for (const dir of [...compared.current.keys()]) if (!others.includes(dir)) compared.current.delete(dir);
   const [comparedState, setComparedState] = useState<Record<string, { error: string | null; live: boolean }>>({});
-  useEffect(() => {
-    if (!active || !others.length) return;
-    let alive = true;
-    const timers: number[] = [], controller = new AbortController();
-    for (const dir of others) {
-      const run = compared.current.get(dir);
-      if (!run) continue;
-      const read = async () => {
-        try {
-          const answer: Answer = await readWithDeadline(signal => api.training(dir, run.flushes, signal, run.tailCursor), controller.signal, 60000);
-          if (!alive) return;
-          if (run.apply(answer)) requestFrame();
-          const working = !!answer.worker_alive;
-          setComparedState(state => ({ ...state, [dir]: { error: null, live: working } }));
-          if (answer.flushes.served < answer.flushes.total || answer.tail_page?.more) { void read(); return; }
-          if (working) timers.push(window.setTimeout(read, POLL_MS));
-        } catch (e: any) {
-          if (!alive || controller.signal.aborted) return;
-          setComparedState(state => ({ ...state, [dir]: { error: readError(e), live: false } }));
-        }
-      };
-      void read();
-    }
-    return () => { alive = false; controller.abort(); timers.forEach(t => window.clearTimeout(t)); };
-  }, [active, othersKey, retry, requestFrame]);
+  useTrainingReads(() => (active && others.length ? others.flatMap(dir => { const run = compared.current.get(dir); return run ? [{ dir, store: run }] : []; }) : null), {
+    done: (dir, answer) => {
+      const working = !!answer.worker_alive;
+      setComparedState(state => ({ ...state, [dir]: { error: null, live: working } }));
+      return working;
+    },
+    failed: (dir, e) => { setComparedState(state => ({ ...state, [dir]: { error: readError(e), live: false } })); return null; },
+  }, requestFrame, [active, othersKey, retry, requestFrame]);
   const rowOf = useMemo(() => new Map(runs.map(r => [r.run_dir, r] as [string, Json])), [runs]);
   /** A run's name on a compared chart, as the run window and the Compare list show it: its experiment (the task when the
    *  experiment kept the default name), its seed and when it was made; the start of its folder's id only when two compared

@@ -2,8 +2,8 @@
 // new model, or the saved models to fine-tune or evaluate. It only draws what useRlModel holds; RunPanel portals it into
 // its pop-up window.
 import { Fragment } from 'react';
-import { copy, Json, num } from '../api';
-import { folderName } from '../format';
+import { copy, Json } from '../api';
+import { folderName, num } from '../format';
 import { SavedModels } from './ModelChooser';
 import { LOADS } from '../savePoint';
 import { ComponentList } from './Pdk';

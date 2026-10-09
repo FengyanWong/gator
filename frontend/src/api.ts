@@ -1,7 +1,6 @@
-// Thin typed client for the local backend. Every request is same-origin JSON.
+// Thin typed client for the local backend. Every request is same-origin JSON. What is not a request moved out (plan-refactoring
+// C10): the number formatters to format.ts (si to units.ts), the shared cached reads to shared.ts.
 // The browser never sends hosts, ports, commands or arbitrary paths: the backend has no such fields.
-
-import { quantity } from './units';
 
 export type Json = any;
 /** What a folder holds (record 7.263): tasks (by task key), runs and saved models (both by run folder). */
@@ -187,8 +186,6 @@ export const downloadPackage = (run_dir: string) => download('/api/runs/export-p
 export const saveJson = (name: string, value: Json) => save(name, new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
 
 export const copy = (text: string) => navigator.clipboard?.writeText(text);
-export const bytes = (n?: number | null) => n == null ? '-' : n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KiB`
-  : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MiB` : `${(n / 1073741824).toFixed(2)} GiB`;
 // A backend that does not know a route yet answers 404 / 405: it has to be restarted. A blocked connection gate is said
 // with the panel's `gateText`; anything else in the backend's own words.
 export const OLDER_BACKEND = 'This backend is older than the page and cannot do this yet: restart it (gator_workbench.cli serve).';
@@ -212,34 +209,3 @@ export const plainError = (e: any): string => e instanceof ApiError ? schemaProb
  *  a copy without the connection-kind case, and told an ngspice connection to "bring the link up"). */
 export const gateText = (gate: Json) => gate.blocking?.includes('connection_kind') ? (gate.next_steps?.[0] ?? 'This kind of connection cannot do that.')
   : `Virtuoso cannot be reached (${[...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') || gate.status}). Bring the link up in the Connection window (the "Connection" button in the workbench), then try again.`;
-
-/** The connection list (the workbench's own file, no probe), read once and shared: the connection window and the Project
- *  column's launchers each read it when the page opened. A connection created in the window hands its new list on. */
-let profilesRead: Promise<Json> | null = null;
-export function connectionProfilesShared(): Promise<Json> {
-  if (!profilesRead) profilesRead = api.connectionProfiles().catch(e => { profilesRead = null; throw e; });
-  return profilesRead;
-}
-export function connectionProfilesChanged(list: Json) { profilesRead = Promise.resolve(list); }
-/** The registered tasks (`GET /api/tasks`, about 0.8 s on the D: drive), read once and shared by what asks within 10 s
- *  (record 7.275): the Project column, the Runs window, Load run and New run like this each read it on their own before.
- *  `fresh` reads anew - after a save or a delete, and on a Refresh press. */
-let tasksRead: { at: number; promise: Promise<Json> } | null = null;
-export function tasksShared(fresh = false): Promise<Json> {
-  if (fresh || !tasksRead || Date.now() - tasksRead.at > 10_000) {
-    const promise: Promise<Json> = api.tasks().catch(e => { if (tasksRead?.promise === promise) tasksRead = null; throw e; });
-    tasksRead = { at: Date.now(), promise };
-  }
-  return tasksRead.promise;
-}
-export const num = (v: unknown) => typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toPrecision(6)) : v == null ? '' : String(v);
-
-// ONE way of writing a number in the whole page (review of 2026-09-23: the SI form was written twice, in the corner
-// check and in the graph view, with different prefix letters, and the short form twice more).
-// `short`: six significant digits without padding - 41.5 and 2.34558e-6, not 41.5000 and 0.00000234558 (device sizes
-// are that small). `si`: four significant digits, written as every quantity is since record 7.208 (units.ts `quantity`):
-// the SI prefix of the unit, in English letters (9.535 kohm, 400 uA, 60 deg), a row stored in um as metres (450 nm).
-export const short = (v: unknown) => typeof v !== 'number' ? (v == null ? '' : String(v))
-  : v !== 0 && (Math.abs(v) < 1e-3 || Math.abs(v) >= 1e6) ? v.toExponential(5).replace(/\.?0+e/, 'e') : String(Number(v.toPrecision(6)));
-export const si = (value: unknown, unit?: string | null): string =>
-  typeof value !== 'number' || !Number.isFinite(value) ? '-' : quantity(value, unit, 4);

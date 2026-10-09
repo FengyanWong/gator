@@ -76,3 +76,16 @@ export const RUN_STATE_CLASS: Record<string, string> = { completed: 'ok', runnin
 /** A run state's badge in the Training tab, as a whole class name: an interrupted run counts as failed there (TrainingTab.tsx). */
 export const TRAINING_STATE_CLASS: Record<string, string> = { completed: 'state-ok', failed: 'state-failed', cancelled: 'state-failed', interrupted: 'state-failed',
   running: 'state-busy', starting: 'state-busy', pausing: 'state-busy', stopping: 'state-busy' };
+
+// ---- numbers (plan-refactoring C10, out of api.ts) ------------------------------------------------------------------------
+/** A size in bytes, in the largest binary unit under its size: 512 B, 1.5 KiB, 2.25 GiB. */
+export const bytes = (n?: number | null) => n == null ? '-' : n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KiB`
+  : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MiB` : `${(n / 1073741824).toFixed(2)} GiB`;
+/** A number as the tables write it: whole numbers as they are, others to six significant digits; nothing for none. */
+export const num = (v: unknown) => typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toPrecision(6)) : v == null ? '' : String(v);
+// ONE way of writing a number in the whole page (review of 2026-09-23: the SI form was written twice, in the corner
+// check and in the graph view, with different prefix letters, and the short form twice more).
+// `short`: six significant digits without padding - 41.5 and 2.34558e-6, not 41.5000 and 0.00000234558 (device sizes
+// are that small). `si` (units.ts): four significant digits, written as every quantity is since record 7.208.
+export const short = (v: unknown) => typeof v !== 'number' ? (v == null ? '' : String(v))
+  : v !== 0 && (Math.abs(v) < 1e-3 || Math.abs(v) >= 1e6) ? v.toExponential(5).replace(/\.?0+e/, 'e') : String(Number(v.toPrecision(6)));

@@ -1,6 +1,7 @@
 import { Icon } from './Icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, Json, si } from '../api';
+import { api, Json } from '../api';
+import { si } from '../units';
 import { launchWithConsent } from '../launch';
 import { useRequest } from '../store';
 

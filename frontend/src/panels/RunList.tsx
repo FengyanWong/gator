@@ -2,8 +2,9 @@ import { Fragment, memo, MouseEvent, useEffect, useMemo, useRef, useState } from
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { RUNS_WINDOW } from '../contract';
-import { api, bytes, Json, short, tasksShared } from '../api';
-import { clock, durationTenths as span, folderName, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, stamp } from '../format';
+import { api, Json } from '../api';
+import { tasksShared } from '../shared';
+import { bytes, clock, durationTenths as span, folderName, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, short, stamp } from '../format';
 import { isLive } from '../runState';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';

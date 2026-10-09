@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, Json, num } from '../api';
-import { clock, durationWhole as span, folderName } from '../format';
+import { api, Json } from '../api';
+import { clock, durationWhole as span, folderName, num } from '../format';
 import { startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
 import { BLOCKED, usePopupWindow } from './popupWindow';

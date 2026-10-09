@@ -167,3 +167,9 @@ export function readQuantity(text: string, unit: string | null | undefined): { v
   if (tens === null) return { problem: wrongUnit(s, rest, u) };
   return make(tens - power);
 }
+
+/** A quantity in four significant digits, written as every quantity is since record 7.208 (`quantity`): the SI prefix of
+ *  the unit, in English letters (9.535 kohm, 400 uA, 60 deg), a row stored in um as metres (450 nm); '-' for no number.
+ *  One of the page's ways of writing a number with format.ts's `short` (review of 2026-09-23); moved from api.ts (C10). */
+export const si = (value: unknown, unit?: string | null): string =>
+  typeof value !== 'number' || !Number.isFinite(value) ? '-' : quantity(value, unit, 4);

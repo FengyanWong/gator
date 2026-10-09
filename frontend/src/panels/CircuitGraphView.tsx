@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, Json, short, si } from '../api';
+import { api, Json } from '../api';
+import { si } from '../units';
+import { short } from '../format';
 import { hintedLayout } from './circuitLayout';
 import { useLook } from '../theme';
 

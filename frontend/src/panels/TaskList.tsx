@@ -2,7 +2,8 @@ import { Fragment, MouseEvent, ReactNode, useEffect, useRef, useState } from 're
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { TASKS_WINDOW } from '../contract';
-import { api, Json, si } from '../api';
+import { api, Json } from '../api';
+import { si } from '../units';
 import { clock, stamp } from '../format';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';

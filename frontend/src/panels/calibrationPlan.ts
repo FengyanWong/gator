@@ -1,4 +1,5 @@
-import { Json, short } from '../api';
+import { Json } from '../api';
+import { short } from '../format';
 import { quantity } from '../units';
 
 const sameNumber = (a: unknown, b: unknown) => (a ?? null) === (b ?? null);

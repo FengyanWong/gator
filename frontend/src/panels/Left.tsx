@@ -2,7 +2,8 @@ import { migrateConfig, noteRowsFrom, useAsyncAction, useRequest } from '../stor
 import { CircuitDetails, gateText, namedTestbench, NativeSchematic, useVirtuosoBrowser } from './CircuitBrowser';
 import { memo, MutableRefObject, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, connectionProfilesShared, Json, problemText, tasksShared } from '../api';
+import { api, Json, problemText } from '../api';
+import { connectionProfilesShared, tasksShared } from '../shared';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { VIRTUOSO_WINDOW } from '../contract';
 import { PdkWindowButton, pdksChanged } from './Pdk';

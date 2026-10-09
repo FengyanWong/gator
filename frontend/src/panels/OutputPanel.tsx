@@ -1,7 +1,8 @@
 // The right column's Output settings (plan-refactoring C4, out of Right.tsx).
 import { useEffect, useRef, useState } from 'react';
 import { useRequest } from '../store';
-import { api, ApiError, bytes, copy, Json } from '../api';
+import { api, ApiError, copy, Json } from '../api';
+import { bytes } from '../format';
 import { OUTPUT_ROOT_ID } from '../contract';
 import { ByteSize, Check, Module, Num } from './fields';
 

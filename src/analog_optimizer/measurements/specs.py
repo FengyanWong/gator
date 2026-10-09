@@ -195,6 +195,30 @@ class SpecificationEvaluator:
             metrics=metrics, metric_units=units, metric_validity=validity),))
 
     def evaluate_conditions(self, results, *, planned_conditions=None, condition_policy='off'):
+        rows, conditions, plan, names = self._plan(results, planned_conditions, condition_policy)
+        (labels, complete, failed, missing_failures, accepted_status,
+         unavailable) = self._rows(rows, conditions, plan, names)
+        (violations, errors, worst_values, worst_valid, worst_conditions, margins, missing,
+         satisfied) = self._scores(rows, names, labels, failed, accepted_status)
+        (valid, success, nominal_success, excluded, tightest, clearance_margin, objective_improvement,
+         clearance) = self._outcome(rows, unavailable, complete, failed, violations, satisfied, accepted_status,
+                                    margins, missing)
+        reward = self._reward(valid, success, violations, nominal_success, rows, condition_policy,
+                              objective_improvement, clearance)
+        # Keep diagnostic records JSON-finite even beyond representable margin size;
+        # the saturation list makes these bounds explicit, never measured values.
+        saturated = tuple(key for key, value in margins.items() if value is not None and not math.isfinite(value))
+        margins = {key: math.copysign(sys.float_info.max, value) if key in saturated else value
+                   for key, value in margins.items()}
+        clearance_margin = margins[tightest] if tightest is not None else None
+        return Evaluation(valid, success, reward, violations, errors, complete, nominal_success,
+                          worst_values, worst_valid, worst_conditions, missing, margins,
+                          clearance_margin, tightest, excluded, objective_improvement, clearance, saturated,
+                          missing_failures)
+
+    def _plan(self, results, planned_conditions, condition_policy):
+        """The results checked against the plan of conditions (nominal first, then deterministic corners in the planned
+        order, each from its own simulation job): (rows, conditions, plan, names)."""
         if condition_policy not in ('off', 'always', 'after_nominal'):
             raise ValueError('Unknown training condition policy')
         rows = tuple(results)
@@ -219,6 +243,11 @@ class SpecificationEvaluator:
         known_jobs = [job for job in jobs if job is not None]
         if len(known_jobs) != len(set(known_jobs)):
             raise ValueError('A simulation job cannot supply two conditions')
+        return rows, conditions, plan, names
+
+    def _rows(self, rows, conditions, plan, names):
+        """Each result's condition label and standing: (labels, complete, failed, missing_failures, accepted_status,
+        unavailable)."""
         labels = tuple(names[plan.index(c)] for c in conditions)
         complete = conditions == plan
         failed = tuple(row.candidate_evaluated and row.status in ('invalid_design', 'nonconverged') for row in rows)
@@ -229,6 +258,11 @@ class SpecificationEvaluator:
                                 for i, row in enumerate(rows))
         unavailable = any(not row.candidate_evaluated or (not accepted_status[i] and not failed[i])
                           for i, row in enumerate(rows))
+        return labels, complete, failed, missing_failures, accepted_status, unavailable
+
+    def _scores(self, rows, names, labels, failed, accepted_status):
+        """Per active spec, over its conditions: the violation, error, worst value and condition, margin, missing
+        conditions and whether every condition satisfies it."""
         violations, errors, worst_values, worst_valid, worst_conditions = {}, {}, {}, {}, {}
         margins, missing, satisfied = {}, {}, {}
         for spec in self.specs:
@@ -291,6 +325,10 @@ class SpecificationEvaluator:
                 else:
                     worst = max(values, key=lambda item: item[1])
                 worst_values[key], _, worst_conditions[key] = worst
+        return violations, errors, worst_values, worst_valid, worst_conditions, margins, missing, satisfied
+
+    def _outcome(self, rows, unavailable, complete, failed, violations, satisfied, accepted_status, margins, missing):
+        """Validity, success, the nominal gate's success, the clearance margin's spec and the objective improvement."""
         valid = not unavailable and all(violations[k] is not None for k in self.required_metrics)
         success = valid and complete and not any(failed) and all(satisfied[k] for k in self.required_metrics)
         nominal_success = (accepted_status[0] and rows[0].candidate_evaluated and all(
@@ -317,6 +355,13 @@ class SpecificationEvaluator:
                 else:
                     objective_improvement = min(min(math.nextafter(1.0, 0.0), _compressed(max(0.0, v)))
                                                 for v in improvements)
+        return (valid, success, nominal_success, excluded, tightest, clearance_margin, objective_improvement,
+                clearance)
+
+    def _reward(self, valid, success, violations, nominal_success, rows, condition_policy, objective_improvement,
+                clearance):
+        """The reward of a valid evaluation (None otherwise): weighted violations, the worst-spec share, the nominal
+        gate, and for a success the objective and clearance bonuses."""
         reward = None
         if valid:
             included = [s for s in self.specs if s.active and violations[s.metric_id] is not None]
@@ -337,13 +382,4 @@ class SpecificationEvaluator:
                     reward = min(-band + (1.0 - band) * reward, math.nextafter(-band, -math.inf))
             if success and (self.settings.objective_weight or self.settings.margin_weight):
                 reward += self.settings.objective_weight * objective_improvement + self.settings.margin_weight * clearance
-        # Keep diagnostic records JSON-finite even beyond representable margin size;
-        # the saturation list makes these bounds explicit, never measured values.
-        saturated = tuple(key for key, value in margins.items() if value is not None and not math.isfinite(value))
-        margins = {key: math.copysign(sys.float_info.max, value) if key in saturated else value
-                   for key, value in margins.items()}
-        clearance_margin = margins[tightest] if tightest is not None else None
-        return Evaluation(valid, success, reward, violations, errors, complete, nominal_success,
-                          worst_values, worst_valid, worst_conditions, missing, margins,
-                          clearance_margin, tightest, excluded, objective_improvement, clearance, saturated,
-                          missing_failures)
+        return reward

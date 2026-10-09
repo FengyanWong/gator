@@ -349,7 +349,7 @@ def save_directories(values) -> dict:
     The adapter state folder does not change while its session lock is held (a run, a corner check or Save task), nor
     while GATOR_BRIDGE_STATE_DIR decides it. A value of the file that fails its check is dropped when the block is
     written again; names this backend does not know are kept."""
-    from .engine import RunLock
+    from .run_lock import RunLock
     if not isinstance(values, dict):
         raise ValueError('values must map each folder to a path, or to null for its default')
     with _CREATE_LOCK:

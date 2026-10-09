@@ -48,7 +48,8 @@ from analog_optimizer.measurements.specs import SpecificationEvaluator
 
 from . import tasks
 from .compile import CompileError, compile_task
-from .engine import INFRASTRUCTURE_FAILURES as INFRASTRUCTURE, RunLock
+from .run_definitions import INFRASTRUCTURE_FAILURES as INFRASTRUCTURE
+from .run_lock import RunLock
 from .layout import RunLayout
 from .paths import bridge_state_dir, repo_root
 from .reward_diagnostics import kept, tables_version

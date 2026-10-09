@@ -23,7 +23,8 @@ from uuid import uuid4
 
 from . import CONFIG_SCHEMA_VERSION, OUTPUT_LAYOUT_VERSION, checkpoints as ckpt, modes
 from .compile import CompileError, compile_task
-from .engine import RunLock, learner_experiment
+from .run_definitions import learner_experiment
+from .run_lock import RunLock
 from .layout import (RunLayout, code_provenance, environment_versions, find_runs, new_experiment_dir, new_run_dir,
                      read_run)
 from .paths import OutputRoots, default_output_root, is_mock_path, local_settings_dir, repo_root

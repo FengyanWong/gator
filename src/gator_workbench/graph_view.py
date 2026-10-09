@@ -154,7 +154,7 @@ def _family(device, vocabulary):
 
 
 def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
-    from .engine import decode_action
+    from .run_definitions import decode_action
     from .trajectory import TrajectoryLoader
     from analog_optimizer.models.inputs import batch_observations
     run_dir = Path(run_dir)

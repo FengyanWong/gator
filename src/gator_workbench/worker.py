@@ -56,7 +56,7 @@ def main(argv=None):
             return 2
         # One learner thread, as in the existing training entry points; simulator threads are separate.
         torch.set_num_threads(1)
-        from .engine import RunLock
+        from .run_lock import RunLock
         lock = None if args.lock_fd is None else RunLock.adopt(layout.control / 'run.lock', args.lock_fd)
         engine = RunEngine(layout.run_dir, task=task, use_processes=False if args.threads else None, lock=lock)
     except Exception as exc:

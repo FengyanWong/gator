@@ -173,7 +173,7 @@ def save_point_folders(root, *, exclude=()) -> list:
     """[(save point folder, why it is left alone or None)] for every save point of every run under `root`: a run that
     is working (a worker holds its lock), lies in an excluded experiment folder, or is a link to a folder elsewhere is
     left alone."""
-    from .engine import RunLock
+    from .run_lock import RunLock
     from .layout import find_runs
     from .paths import MOCK_SUBDIR
     root, found = Path(root).resolve(), []

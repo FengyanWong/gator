@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, Json, problemText } from '../api';
-import { DiffView } from './Editors';
+import { DiffView } from './DiffView';
 import { Icon } from './Icons';
 
 /** "Matched devices..." of the Parameters tab (status record 7.103): the structures the backend reads from the loaded

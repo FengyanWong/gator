@@ -3,196 +3,20 @@ import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState }
 import { pointAt } from './CircuitPicture';
 import { api, Json, saveJson } from '../api';
 import { migrateConfig } from '../store';
-import { Typed } from './Typed';
-import { convert, kindUnit, quantity, readQuantity, sameQuantity, sameUnit, unitChoices, unitLabel } from '../units';
+import { convert, kindUnit, quantity, readQuantity, sameQuantity } from '../units';
 import { MatchedDevices } from './MatchedDevices';
+import { Cell, LimitSelect } from './cells';
+import { DiffView } from './DiffView';
+import { exact, FOLLOWER_IGNORES, limitLabel, QUANTITY, readNumber, type Section, suggestedScale, withFollowers, withSaved } from './editorRules';
+import { type BarCell, FormulaBar } from './FormulaBar';
 
-export type Section = 'parameters' | 'targets' | 'measurements';
 const TITLES: Record<Section, string> = { parameters: 'Parameters', measurements: 'Probes', targets: 'Specs' };   // key order = tab order
 const ROW_TABS = Object.keys(TITLES);
 /** The sections a whole-configuration import replaces beside the three tables, as the confirmation names them. */
 const IMPORTED_SECTIONS: Record<string, string> = { project: 'project labels', circuit: 'circuit source', run: 'run settings',
   output: 'output settings', research: 'research labels' };
 
-/** The scale offered while nobody has typed one, or null when the row gives nothing to size it by yet: then the scale stays
- * empty and the backend sizes it from the limits (the size of the threshold, else 1), instead of freezing a bare 1 W or
- * 1 Hz into a row whose limits are typed afterwards (record 7.112).
- * One rule since record 7.183: the size of the limit - which is what an empty scale means too - and 6 dB (a factor of two)
- * for a dB row, where "a fraction of a 40 dB limit" makes each dB count for little. On the 227 recorded designs the tighter
- * suggestions of before acted as hidden weights: 10 degrees on a phase row reordered the designs, and half the width of an
- * interval put most of a ring oscillator's designs above a miss of 0.9. */
-function suggestedScale(row: Json): number | null {
-  if (row.unit === 'dB') return 6;
-  return Math.max(...[row.lower, row.upper].filter(v => typeof v === 'number').map(Math.abs), 0) || null;
-}
-/** What the page suggested until record 7.183 (3 dB, 10 degrees, half an interval): a row that still holds it was never typed
- * into, so it follows the next edit to today's suggestion instead of keeping the old number for good. */
-function formerSuggestion(row: Json): number | null {
-  if (row.unit === 'dB') return 3;
-  if (row.unit === 'deg') return 10;
-  if (row.constraint === 'interval' && row.lower != null && row.upper != null && row.upper > row.lower) return (row.upper - row.lower) / 2;
-  return null;
-}
-const SCALE_FIELDS = ['unit', 'lower', 'upper', 'constraint'];
-/** The scale after an edit of a field it depends on: an empty scale, or one still equal to the row's suggestion before the
- * edit, follows the edit; a scale the user typed stays. */
-function followScale(before: Json, after: Json): number | null {
-  const untouched = before.normalization_scale == null || before.normalization_scale === suggestedScale(before)
-    || before.normalization_scale === formerSuggestion(before);
-  return untouched ? suggestedScale(after) : after.normalization_scale;
-}
-
 const MORE_KEY = 'gator-workbench-editor-more-columns';
-
-/** Specs: the limit and the objective in ONE list. An objective means "once every hard spec passes, the lower (higher) the
- *  better" and works on the limit on its side (minimize an upper limit, maximize a lower one), so a pair that could never
- *  work (>= then lower is better) is not offered. Saved as before: `constraint` + `direction_after_feasible`. */
-const LIMIT_CHOICES: [string, string][] = [['>=', 'none'], ['>=', 'maximize'], ['<=', 'none'], ['<=', 'minimize'],
-  ['interval', 'none'], ['interval', 'minimize'], ['interval', 'maximize']];
-// "target ± tolerance" went with its two columns (review of 2026-10-03): it was exactly an interval [target - tolerance,
-// target + tolerance], and a tolerance on any other row only loosened its limit. Older rows are rewritten so when they load.
-const LIMIT_TEXT: Record<string, string> = { '>=': '≥ lower', '<=': '≤ upper', interval: 'interval' };
-// A row without a constraint read "undefined", and an objective this list does not know read like a plain limit (review of
-// 2026-10-01): both are shown as they are.
-const limitLabel = (constraint: string, objective: string) => (constraint ? LIMIT_TEXT[constraint] ?? String(constraint) : '(not set)')
-  + (objective === 'minimize' ? ', then lower is better' : objective === 'maximize' ? ', then higher is better'
-    : objective && objective !== 'none' ? `, then ${objective}` : '');
-
-/** A cell's tooltip with the saved task's value first, when the value here differs from it (record 7.222). */
-const withSaved = (saved: string | null | undefined, title: Json): Json =>
-  saved != null ? `Saved in the task: ${saved}.${title ? `\n${title}` : ''}` : title;
-
-function LimitSelect({ row, title, onChange }: { row: Json; title: string; onChange: (fields: Json) => void }) {
-  const objective = row.direction_after_feasible ?? 'none', current = `${row.constraint}|${objective}`;
-  const offered = LIMIT_CHOICES.some(([c, o]) => `${c}|${o}` === current);
-  return <select aria-label="Constraint" title={title} value={current} onChange={e => {
-      const [constraint, direction_after_feasible] = e.target.value.split('|');
-      onChange({ constraint, direction_after_feasible });
-    }}>
-    {/* a pair this list does not offer (an older row, an import) is shown as it is; validation says what is wrong with it */}
-    {!offered && <option value={current}>{limitLabel(row.constraint, objective)}</option>}
-    {LIMIT_CHOICES.map(([c, o]) => <option key={`${c}|${o}`} value={`${c}|${o}`}>{limitLabel(c, o)}</option>)}</select>;
-}
-
-/** The numbers that carry their row's unit (record 7.208): written as every quantity is (units.ts - 450 nm, 400 uA), typed in
- *  any form. Record 7.181 wrote only very small and very large numbers of an unprefixed unit this way, without the unit. */
-const QUANTITY: Record<string, string[]> = { parameters: ['lower', 'upper', 'step', 'initial_value'], targets: ['lower', 'upper', 'normalization_scale'] };
-const SUFFIX: Record<string, number> = { f: -15, p: -12, n: -9, u: -6, 'µ': -6, 'μ': -6, m: -3, k: 3, K: 3, M: 6, G: 9, T: 12 };
-/** A typed number: plain, with an exponent (2.5e-6), or with an SI letter (2.5u, 400µ, 10k). */
-export function readNumber(text: string): number | undefined {
-  const s = text.trim(), letter = /^([-+]?(?:\d+\.?\d*|\.\d+))([fpnuµμmkKMGT])$/.exec(s);
-  const n = letter ? Number(`${letter[1]}e${SUFFIX[letter[2]]}`) : s === '' ? NaN : Number(s);
-  return Number.isFinite(n) ? n : undefined;
-}
-
-/** One cell. `fixed`: why the value is shown and not typed - it follows another field (a Maestro output's Probe ID follows
- *  its output name). `off`: why the field does nothing on this row (a follower's bounds, step, scale, type and "optimized":
- *  its leader decides them) - shown greyed, with that reason as its tooltip (review of 2026-10-03). `saved`: the value the
- *  saved task holds, when this one differs (record 7.222) - first in the tooltip. */
-function Cell({ column, value, onChange, fixed = null, off = null, unit, stored = null, onPatch, tell, saved = null }: { column: Json; value: Json;
-  onChange: (v: Json) => void; fixed?: string | null; off?: string | null; unit?: string | null; stored?: string | null;
-  onPatch?: (fields: Json) => void; tell?: (text: string) => void; saved?: string | null }) {
-  const title = withSaved(saved, off ?? fixed ?? column.guidance), disabled = off !== null;
-  if (column.name === 'nominal_only') return <select aria-label="Judged at" title={title} disabled={disabled}
-    value={value ? 'nominal' : 'all'} onChange={e => onChange(e.target.value === 'nominal')}>
-    <option value="all">All planned conditions</option><option value="nominal">Nominal only</option></select>;
-  if (fixed !== null) return <input title={title} className="readonly" readOnly value={value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value)} />;
-  if (column.options) {
-    // A value the list does not hold - or none where one is required (a row from the agent or an import) - is shown as it
-    // is: the browser showed the first option as if it were chosen, and choosing that one then changed nothing.
-    const missing = value != null ? !column.options.includes(value) : !column.nullable;
-    return <select title={title} disabled={disabled} value={value ?? ''} onChange={e => onChange(e.target.value === '' && column.nullable ? null : e.target.value)}>
-      {column.nullable && <option value="">(none)</option>}{missing && <option value={value ?? ''} disabled={value == null}>{value ?? '(not set)'}</option>}
-      {column.options.map((o: string) => <option key={o} value={o}>{o}</option>)}</select>;
-  }
-  if (column.type === 'boolean') return <input type="checkbox" title={title} disabled={disabled} checked={!!value} onChange={e => onChange(e.target.checked)} />;
-  if ((column.type === 'number' || column.type === 'integer') && unit !== undefined)
-    return <QuantityBox title={title} disabled={disabled} nullable={!!column.nullable} value={value} unit={unit} stored={stored} tell={tell}
-      onCommit={(v, u) => onPatch ? onPatch({ [column.name]: v, ...(u ? { unit: u } : {}) }) : onChange(v)} />;
-  if (column.type === 'number' || column.type === 'integer') {
-    return <Typed title={title} disabled={disabled} className="numeric" placeholder={column.nullable ? '-' : ''} value={value} onChange={onChange}
-      format={v => v == null ? '' : String(v)}
-      parse={t => { const n = readNumber(t); return t.trim() === '' ? { value: column.nullable ? null : 0 } : n !== undefined ? { value: n } : undefined; }} />;
-  }
-  if (column.name === 'unit') return <UnitSelect title={title} disabled={disabled} value={value} onChange={onChange} />;
-  if (column.type === 'array' || column.type === 'object') {
-    return <Typed title={title + ' (JSON)'} disabled={disabled} value={value} onChange={onChange} format={v => v == null ? '' : JSON.stringify(v)}
-      parse={t => { if (t.trim() === '') return { value: null }; try { return { value: JSON.parse(t) }; } catch { return undefined; } }} />;
-  }
-  return <input title={title} disabled={disabled} value={value ?? ''} onChange={e => onChange(e.target.value === '' && column.nullable ? null : e.target.value)} />;
-}
-
-/** A number of a row in its unit (record 7.208): written the one way (450 nm, 400 uA), typed in any form - 400u, 400 uA,
- *  0.4mA, 4e-4. Parameters and Specs have no Unit column: `unit` is the unit the row's values are read in - its own, or the
- *  one its parameter (w, l: a length) or its Probe says when its own is of another quantity or missing - and a plain number
- *  is in it. A value of another quantity ("5 mV" in a length row) is left unread and said in words (`tell`). The row takes
- *  that unit with the value (`onCommit`'s second argument) when its own was not of it; a row without a unit takes the one
- *  the typed value says. Shown in the unit the row stores (`stored`). */
-function QuantityBox({ value, unit, stored, nullable, title, disabled, onCommit, tell }: { value: Json; unit: string | null; stored: string | null;
-  nullable: boolean; title: string; disabled: boolean; onCommit: (v: Json, unit: string | null) => void; tell?: (text: string) => void }) {
-  const adopted = useRef<string | null>(null);
-  const read = (text: string) => {
-    const r = readQuantity(text, unit);
-    if ('problem' in r) return undefined;
-    adopted.current = r.unit ?? (unit && unit !== stored ? unit : null);
-    return { value: r.value ?? (nullable ? null : 0) };
-  };
-  return <Typed title={title} disabled={disabled} className="numeric" placeholder={nullable ? '-' : ''} value={value}
-    format={v => v == null ? '' : typeof v === 'number' ? quantity(v, stored) : String(v)} parse={read} onChange={v => onCommit(v, adopted.current)}
-    onRefused={text => { const r = readQuantity(text, unit); if ('problem' in r) tell?.(r.problem); }} />;
-}
-
-/** The Probes' Unit column (record 7.208): what the probe measures, chosen from a list in English letters - a list like the
- *  page's others (the browser's own suggestion list looked different; user, 2026-10-05). A unit not in the list stays as it
- *  is. A Spec on the Probe follows a change of quantity (`withFollowers`). */
-function UnitSelect({ value, title, disabled, onChange }: { value: Json; title: string; disabled: boolean; onChange: (v: Json) => void }) {
-  const choices = unitChoices(), current = value ?? '';
-  const shown = choices.find(u => sameUnit(u, current)) ?? current;
-  return <select title={title} disabled={disabled} value={shown} onChange={e => { if (!sameUnit(e.target.value, current)) onChange(e.target.value); }}>
-    {!choices.includes(shown) && <option value={shown}>{shown === '' ? '(none)' : unitLabel(shown)}</option>}
-    {choices.map(u => <option key={u} value={u}>{u}</option>)}</select>;
-}
-
-/** What the formula bar shows of the chosen cell: where it is, its whole value as text, whether it is typed there, and why not. */
-type BarCell = { id: string; where: string; text: string; editable: boolean; why: string; format: string };
-
-/** The editors' formula bar (record 7.175, user: "add excel like single cell whole row text edit somewhere for long text editing
- *  which cant show everything in the cell"): the chosen cell's whole value in a box as wide as the table, as in a spreadsheet.
- *  What is typed there goes into the cell when Enter, Tab or leaving the box takes it - one Undo step - and Esc keeps the cell
- *  as it was. A list, a tick box and a value that follows another field are shown here, not typed. */
-function FormulaBar({ cell, commit, back }: { cell: BarCell | null; commit: (text: string) => string | null; back: () => void }) {
-  const [draft, setDraft] = useState<string | null>(null);         // null: not typing here, the box shows the cell's value
-  const [problem, setProblem] = useState<string | null>(null);
-  // The text is read from a ref too: Enter and Esc go back to the cell, which blurs the box at once, and that blur must see the
-  // text already taken or dropped - read from the render it would write a text Esc had just dropped.
-  const typed = useRef<string | null>(null);
-  const keep = (text: string | null) => { typed.current = text; setDraft(text); };
-  useEffect(() => { keep(null); setProblem(null); }, [cell?.id]);  // another cell: its own value
-  const take = () => {
-    if (typed.current === null) return true;
-    const refused = commit(typed.current);
-    setProblem(refused);
-    if (!refused) keep(null);
-    return !refused;
-  };
-  return (
-    <div className="formula">
-      <div className="formula-bar">
-        <span className="formula-where" title={cell ? cell.format : 'Click a cell of the table to see its whole value here.'}>{cell ? cell.where : 'No cell chosen'}</span>
-        <textarea rows={1} spellCheck={false} aria-label="Whole value of the chosen cell" disabled={!cell} readOnly={!cell?.editable}
-          value={draft ?? cell?.text ?? ''} placeholder={cell ? '' : 'Click a cell to see and edit its whole value here'}
-          title={!cell ? undefined : cell.editable ? 'The whole value of the chosen cell. Enter (or Tab, or clicking elsewhere) writes it into the cell; Esc keeps the cell as it was.' : cell.why}
-          onChange={e => { keep(e.target.value.replace(/\r?\n/g, ' ')); setProblem(null); }}
-          onKeyDown={e => {
-            if (e.key === 'Enter') { e.preventDefault(); if (take()) back(); }
-            else if (e.key === 'Escape') { e.preventDefault(); keep(null); setProblem(null); back(); }
-            else if (e.key === 'Tab' && !take()) e.preventDefault();
-          }}
-          onBlur={take} />
-      </div>
-      {problem && <p className="error formula-problem">{problem}</p>}
-    </div>);
-}
 
 /** The editor tables' headers in plain words (record 7.188); the field names - what the task files, Export JSON and the agent
  *  use - stay in each header's tooltip, in the formula bar's format note and on the help line a header press opens. The few
@@ -204,26 +28,6 @@ const LABELS: Record<string, Record<string, string>> = {
   targets: { metric_id: 'Spec ID', equation: 'Equation', unit: 'Unit', constraint: 'Limit', lower: 'Lower', upper: 'Upper', hard: 'Hard',
     direction_after_feasible: 'Objective', soft_weight: 'Soft weight', active: 'Active', basis: 'Basis' },
 };
-
-// What a follower row (binding_group set) leaves to its leader: the written value is the leader's times the ratio, so its own
-// bounds, step, scale, type and "optimized" do nothing (Save task even clears its bounds).
-const FOLLOWER_IGNORES = ['optimized', 'value_type', 'lower', 'upper', 'step', 'scale'];
-// A Maestro output's Probe ID is m_ + its name, as Save task names it (virtuoso_setup.probe_id); spec equations are rewritten
-// when it follows a renamed output. Equation names are plain identifiers (spec_equations.parse reads them with Python's ast).
-const probeIdOf = (outputName: string) => `m_${outputName}`;
-const renameInEquation = (equation: string, from: string, to: string) =>
-  equation.replace(new RegExp(`(?<![A-Za-z0-9_.])${from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`, 'g'), to);
-
-const exact = (v: Json) => (v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v));
-export function DiffView({ diff }: { diff: Json[] }) {
-  if (!diff.length) return <p className="hint">No differences.</p>;
-  return <table className="grid small"><thead><tr><th>Section</th><th>Row</th><th>Change</th><th>Field</th><th>Before</th><th>After</th></tr></thead>
-    <tbody>{diff.flatMap((d: Json) => d.fields.map((f: Json, i: number) => (
-      <tr key={`${d.section}/${d.key}/${f.field}`} className={`diff-${d.change}`}>
-        {i === 0 && <><td rowSpan={d.fields.length}>{d.section}</td><td rowSpan={d.fields.length}>{d.key}</td><td rowSpan={d.fields.length}>{d.change}</td></>}
-        <td>{f.field}</td><td>{exact(f.before)}</td><td>{exact(f.after)}</td>
-      </tr>)))}</tbody></table>;
-}
 
 /** `taskSlot` / `taskNotes`: where the circuit panel puts "Save task" (right end of the tab line) and its messages (under
  *  the toolbar) - the save sits with the rows it stores (user request 2026-09-22). No "Save" button of its own any more:
@@ -321,54 +125,13 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     return Object.keys(kept).length === Object.keys(s).length ? s : kept;
   }), [rows, keyField]);
 
-  // Fields that follow a change with it, in the same Undo step (review of 2026-10-03): a Maestro output's Probe ID follows its
-  // output name, and the spec equations that use the ID follow it; a spec whose equation becomes one Probe takes that Probe's
-  // unit while it has no limits yet (its unit must match the Probe's anyway; a prefix can be typed after); the scale follows
-  // only a field that really changes - picking an objective re-sends the unchanged limit, and an empty (backend-sized) scale
-  // must not be frozen into the row by that. One path for a typed cell, a pasted block and a fill since record 7.184 (a pasted
-  // output name had left its Probe ID behind); a limit written without its objective keeps the objective where they still pair.
-  const withFollowers = (c: Json, changes: Map<number, Json>): Json => {
-    const renames: [string, string][] = [], moves: [string, string][] = [];
-    const next = { ...c, [tab]: c[tab].map((r: Json, i: number) => {
-      const fields = changes.get(i);
-      if (!fields) return r;
-      const row = { ...r, ...fields };
-      // No Unit column for Parameters (record 7.208): a row whose parameter has a known kind (w, l) is in that kind's unit.
-      if (tab === 'parameters' && 'parameter_name' in fields) { const kind = kindUnit(row.parameter_name); if (kind && !sameQuantity(row.unit, kind)) row.unit = kind; }
-      if (tab === 'measurements' && 'unit' in fields && row.unit && !sameQuantity(r.unit, row.unit)) moves.push([String(row.measurement_id), row.unit]);
-      if (tab === 'measurements' && typeof fields.source_name === 'string' && r.result_source === 'ade_output'
-          && /^[A-Za-z_][A-Za-z0-9_]*$/.test(fields.source_name)) {
-        row.measurement_id = probeIdOf(fields.source_name);
-        if (r.measurement_id && r.measurement_id !== row.measurement_id) renames.push([String(r.measurement_id), row.measurement_id]);
-      }
-      if (tab === 'targets') {
-        const probe = typeof fields.equation === 'string' && !('unit' in fields)
-          ? (c.measurements ?? []).find((m: Json) => m.measurement_id === fields.equation.trim()) : null;
-        if (probe?.unit && (!r.unit || !sameQuantity(r.unit, probe.unit))) row.unit = probe.unit;   // the Probe's quantity (7.208)
-        if ('constraint' in fields && !('direction_after_feasible' in fields)
-            && !LIMIT_CHOICES.some(([limit, objective]) => limit === row.constraint && objective === (row.direction_after_feasible ?? 'none'))) row.direction_after_feasible = 'none';
-        if (!('normalization_scale' in fields) && SCALE_FIELDS.some(name => row[name] !== r[name])) row.normalization_scale = followScale(r, row);
-      }
-      return row;
-    }) };
-    if (renames.length) next.targets = (c.targets ?? []).map((t: Json) => typeof t.equation === 'string'
-      ? { ...t, equation: renames.reduce((e, [from, to]) => renameInEquation(e, from, to), t.equation) } : t);
-    // A Probe now of another quantity: the Specs on it alone take its unit (they have no Unit column since record 7.208).
-    if (moves.length) next.targets = (next.targets ?? c.targets ?? []).map((t: Json) => {
-      const move = moves.find(([id]) => typeof t.equation === 'string' && t.equation.trim() === id);
-      if (!move || sameQuantity(t.unit, move[1])) return t;
-      const moved = { ...t, unit: move[1] };
-      return { ...moved, normalization_scale: followScale(t, moved) };                  // as a unit typed in the Spec did
-    });
-    return next;
-  };
   // The unit a row's values are read in (record 7.208: no Unit column in Parameters and Specs): its own, unless what the row
   // is says another quantity - a parameter of a known kind (w, l: m), a Spec on one Probe (the Probe's unit) - or it has none.
   const expectedUnit = (row: Json): string | null => tab === 'parameters' ? kindUnit(row.parameter_name)
     : tab === 'targets' ? (config.measurements ?? []).find((m: Json) => m.measurement_id === String(row.equation ?? '').trim())?.unit || null : null;
   const effectiveUnit = (row: Json): string | null => { const e = expectedUnit(row); return e && !sameQuantity(row.unit, e) ? e : row.unit ?? null; };
   // One change of one row, several fields at once (the constraint list sets the limit and the objective): one Undo step.
-  const patch = (index: number, fields: Json) => setConfig((c: Json) => withFollowers(c, new Map([[index, fields]])));
+  const patch = (index: number, fields: Json) => setConfig((c: Json) => withFollowers(tab, c, new Map([[index, fields]])));
   // A unit changed to another of the same quantity (um -> nm, record 7.208): the row's numbers move with it, exactly, so every
   // value stays the same; to another quantity they stay as they are.
   const update = (index: number, name: string, value: Json) => {
@@ -405,32 +168,36 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // show "0 changed rows" while it replaced the run settings - review of 2026-09-29). Rows for one table write only that
   // table on Apply: the rest of the configuration as it is THEN, so an edit made while the box was open stays (it used to
   // be put back to the configuration of the moment of the import).
-  const importJson = async (f: File) => {
-    setError(null);
-    try {
-      const incoming = JSON.parse(await f.text());
-      // A whole configuration is one this workbench wrote (Export JSON): a file that merely has a schema_version - such as
-      // configs/gpdk045_conditions.json - was taken for one, and Apply left a blank page (audit 2026-09-30).
-      const whole = incoming?.schema_version === 'gator-workbench-config-v1';
-      const rowsIn = Array.isArray(incoming?.[tab]) ? incoming[tab] : Array.isArray(incoming) ? incoming : null;
-      if (whole && !(['project', 'circuit', 'run', 'output'].every(k => incoming[k] && typeof incoming[k] === 'object')
-          && ROW_TABS.every(k => incoming[k] == null || Array.isArray(incoming[k]))))
-        throw new Error('the file says it is a workbench configuration, but its sections (project, circuit, run, output and the three tables) are not all there');
-      if (!whole && !rowsIn)
-        throw new Error(`the file is neither a workbench configuration (from Export JSON) nor ${TITLES[tab]} rows (a list, or an object with "${tab}")`);
-      if (!whole && rowsIn!.some((r: Json) => !r || typeof r !== 'object' || !r[keyField]))
-        throw new Error(`every ${TITLES[tab]} row needs its ${keyField}`);
-      const next = migrateConfig(whole ? incoming : { ...config, [tab]: rowsIn });
-      const { diff } = await api.diff(config, next);
-      const others = Object.keys(IMPORTED_SECTIONS).filter(k => JSON.stringify(config[k] ?? null) !== JSON.stringify(next[k] ?? null));
-      setPending({ next, diff, others, rows: whole ? null : { section: tab, value: next[tab] } });
-    } catch (e: any) { setError(`Import failed: ${e.message}`); }
-  };
-  const applyImport = (p: NonNullable<typeof pending>) => {
-    const { rows } = p;
-    setConfig(rows ? (c: Json) => ({ ...c, [rows.section]: rows.value }) : p.next);
-    setPending(null);
-  };
+  function jsonImport() {
+    const importJson = async (f: File) => {
+      setError(null);
+      try {
+        const incoming = JSON.parse(await f.text());
+        // A whole configuration is one this workbench wrote (Export JSON): a file that merely has a schema_version - such as
+        // configs/gpdk045_conditions.json - was taken for one, and Apply left a blank page (audit 2026-09-30).
+        const whole = incoming?.schema_version === 'gator-workbench-config-v1';
+        const rowsIn = Array.isArray(incoming?.[tab]) ? incoming[tab] : Array.isArray(incoming) ? incoming : null;
+        if (whole && !(['project', 'circuit', 'run', 'output'].every(k => incoming[k] && typeof incoming[k] === 'object')
+            && ROW_TABS.every(k => incoming[k] == null || Array.isArray(incoming[k]))))
+          throw new Error('the file says it is a workbench configuration, but its sections (project, circuit, run, output and the three tables) are not all there');
+        if (!whole && !rowsIn)
+          throw new Error(`the file is neither a workbench configuration (from Export JSON) nor ${TITLES[tab]} rows (a list, or an object with "${tab}")`);
+        if (!whole && rowsIn!.some((r: Json) => !r || typeof r !== 'object' || !r[keyField]))
+          throw new Error(`every ${TITLES[tab]} row needs its ${keyField}`);
+        const next = migrateConfig(whole ? incoming : { ...config, [tab]: rowsIn });
+        const { diff } = await api.diff(config, next);
+        const others = Object.keys(IMPORTED_SECTIONS).filter(k => JSON.stringify(config[k] ?? null) !== JSON.stringify(next[k] ?? null));
+        setPending({ next, diff, others, rows: whole ? null : { section: tab, value: next[tab] } });
+      } catch (e: any) { setError(`Import failed: ${e.message}`); }
+    };
+    const applyImport = (p: NonNullable<typeof pending>) => {
+      const { rows } = p;
+      setConfig(rows ? (c: Json) => ({ ...c, [rows.section]: rows.value }) : p.next);
+      setPending(null);
+    };
+    return { importJson, applyImport };
+  }
+  const { importJson, applyImport } = jsonImport();
   // A Parameters row under the pointer (or the keyboard) lights the devices it sizes in the circuit picture of the Project
   // column: its own and those of the rows tied to it (binding_group), so w_pair lights M1 and its follower's M2 (record 7.158).
   const devicesOf = (row: Json): string[] => {
@@ -539,176 +306,184 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     const step = e.key === 'ArrowDown' || (e.key === 'Enter' && !e.shiftKey) ? 1 : e.key === 'ArrowUp' || (e.key === 'Enter' && e.shiftKey) ? -1 : 0;
     if (step && moveFrom(box, step)) e.preventDefault();
   };
-  // Ctrl+D fills down, as in a spreadsheet (record 7.184): in a ticked row, with more rows ticked, the column takes the value of
-  // the topmost ticked row in view in every ticked row in view; otherwise the cell takes the value of the row above in view. One
-  // Undo step. A cell that follows another field, or that its leader decides, is kept; an ID is not filled (each row needs its own).
-  const shortText = (v: Json) => { const t = exact(v); return !t ? '(empty)' : t.length > 40 ? `${t.slice(0, 40)}...` : t; };
-  const fillDown = (cell: HTMLElement) => {
-    const c = visible.find(v => v.name === cell.dataset.field), index = Number(cell.closest('tr')?.dataset.index);
-    if (!c || !rows[index]) return;
-    if (c.name === keyField) return setNote({ text: `An ID is not filled down: each row needs its own ${c.label ?? c.name}.`, warn: true });
-    const ticked = rowsInView.filter(i => selected[rows[i][keyField]]);
-    const [from, targets] = ticked.length > 1 && ticked.includes(index) ? [ticked[0], ticked.slice(1)] : [rowsInView[rowsInView.indexOf(index) - 1], [index]];
-    if (from === undefined) return setNote({ text: 'No row above in view to fill from.', warn: true });
-    const value = rows[from][c.name] === undefined ? c.default : rows[from][c.name];
-    const changes = new Map<number, Json>();
-    let kept = 0, other = 0;
-    for (const i of targets) {
-      if (fixedOf(rows[i], c) || offOf(rows[i], c)) { kept += 1; continue; }
-      // a quantity goes in the unit the target row stores (record 7.208: 600 nm into a row in m is 6e-7); another quantity is kept
-      let filled = value;
-      if (typeof value === 'number' && QUANTITY[tab]?.includes(c.name) && (rows[i].unit ?? '') !== (rows[from].unit ?? '')) {
-        filled = convert(value, rows[from].unit, rows[i].unit);
-        if (filled === null) { other += 1; continue; }
+  function sheetEdits() {
+    // Ctrl+D fills down, as in a spreadsheet (record 7.184): in a ticked row, with more rows ticked, the column takes the value of
+    // the topmost ticked row in view in every ticked row in view; otherwise the cell takes the value of the row above in view. One
+    // Undo step. A cell that follows another field, or that its leader decides, is kept; an ID is not filled (each row needs its own).
+    const shortText = (v: Json) => { const t = exact(v); return !t ? '(empty)' : t.length > 40 ? `${t.slice(0, 40)}...` : t; };
+    const fillDown = (cell: HTMLElement) => {
+      const c = visible.find(v => v.name === cell.dataset.field), index = Number(cell.closest('tr')?.dataset.index);
+      if (!c || !rows[index]) return;
+      if (c.name === keyField) return setNote({ text: `An ID is not filled down: each row needs its own ${c.label ?? c.name}.`, warn: true });
+      const ticked = rowsInView.filter(i => selected[rows[i][keyField]]);
+      const [from, targets] = ticked.length > 1 && ticked.includes(index) ? [ticked[0], ticked.slice(1)] : [rowsInView[rowsInView.indexOf(index) - 1], [index]];
+      if (from === undefined) return setNote({ text: 'No row above in view to fill from.', warn: true });
+      const value = rows[from][c.name] === undefined ? c.default : rows[from][c.name];
+      const changes = new Map<number, Json>();
+      let kept = 0, other = 0;
+      for (const i of targets) {
+        if (fixedOf(rows[i], c) || offOf(rows[i], c)) { kept += 1; continue; }
+        // a quantity goes in the unit the target row stores (record 7.208: 600 nm into a row in m is 6e-7); another quantity is kept
+        let filled = value;
+        if (typeof value === 'number' && QUANTITY[tab]?.includes(c.name) && (rows[i].unit ?? '') !== (rows[from].unit ?? '')) {
+          filled = convert(value, rows[from].unit, rows[i].unit);
+          if (filled === null) { other += 1; continue; }
+        }
+        if (exact(rows[i][c.name] === undefined ? c.default : rows[i][c.name]) !== exact(filled))
+          changes.set(i, { [c.name]: filled != null && typeof filled === 'object' ? JSON.parse(JSON.stringify(filled)) : filled });
       }
-      if (exact(rows[i][c.name] === undefined ? c.default : rows[i][c.name]) !== exact(filled))
-        changes.set(i, { [c.name]: filled != null && typeof filled === 'object' ? JSON.parse(JSON.stringify(filled)) : filled });
-    }
-    if (changes.size) setConfig((cfg: Json) => withFollowers(cfg, changes));
-    const what = `${c.label ?? c.name} = ${typeof value === 'number' && QUANTITY[tab]?.includes(c.name) ? quantity(value, rows[from].unit) : shortText(value)} of ${rows[from][keyField]}`;
-    setNote({ text: [changes.size ? `Filled ${changes.size} cell${changes.size === 1 ? '' : 's'} with ${what} (one Undo step).`
-      : targets.length > kept ? `Nothing to fill: the cell${targets.length - kept === 1 ? ' holds' : 's hold'} ${what} already.` : 'Nothing filled.',
-      kept ? `${kept} cell${kept === 1 ? ' that follows' : 's that follow'} another field kept.` : '',
-      other ? `${other} cell${other === 1 ? '' : 's'} of another quantity kept.` : ''].filter(Boolean).join(' '), warn: other > 0 });
-  };
-  // Ctrl+C copies out, as in a spreadsheet (record 7.184): in a ticked row, the ticked rows in view - every column in view, a
-  // header line first - as tab-separated lines for Excel; otherwise the cell alone. A value with its unit, as the cell writes
-  // it (record 7.208: there is no Unit column to say it; a paste reads it back exactly); other numbers as stored, a limit as
-  // its sign. The Copy button takes the ticked rows in view, or every row in view.
-  const cellText = (row: Json, c: Json) => {
-    const value = row[c.name] === undefined ? c.default : row[c.name];
-    return (c.name === 'nominal_only' ? (value ? 'Nominal only' : 'All planned conditions')
-      : typeof value === 'number' && QUANTITY[tab]?.includes(c.name) ? quantity(value, row.unit) : exact(value)).replace(/[\t\r\n]+/g, ' ');
-  };
-  const toClipboard = (text: string) => {
-    const put = (e: ClipboardEvent) => { e.clipboardData?.setData('text/plain', text); e.preventDefault(); };
-    document.addEventListener('copy', put, true);
-    try { return document.execCommand('copy'); } finally { document.removeEventListener('copy', put, true); }
-  };
-  const copyOut = (cell: HTMLElement | null) => {
-    const index = cell ? Number(cell.closest('tr')?.dataset.index) : -1, ticked = rowsInView.filter(i => selected[rows[i][keyField]]);
-    const block = cell ? (ticked.includes(index) ? ticked : null) : ticked.length ? ticked : rowsInView;
-    const c = cell ? visible.find(v => v.name === cell.dataset.field) : null;
-    if (!block && (!c || !rows[index])) return;
-    const text = block ? [visible.map(v => v.label ?? v.name), ...block.map(i => visible.map(v => cellText(rows[i], v)))].map(line => line.join('\t')).join('\r\n')
-      : cellText(rows[index], c);
-    if (!toClipboard(text)) return setNote({ text: 'The browser did not let the page copy: choose the text and copy it, or try the Copy button.', warn: true });
-    setNote({ text: block ? `Copied ${block.length} row${block.length === 1 ? '' : 's'} x ${visible.length} columns with a header line, for Excel; a paste back here skips that line.`
-      : `Copied ${c.label ?? c.name} of ${rows[index][keyField]}: ${shortText(text)}.`, warn: false });
-  };
-  // A block copied from Excel (tab-separated lines) pasted into a cell fills the rows in view from that one down and the columns
-  // in view from that one right, as one Undo step (record 7.180). Each text is read as its column takes it; a cell that follows
-  // another field, or that its leader decides, is left as it is; what cannot be read is named and left as it was. One value
-  // pastes into the box as before.
-  const readAs = (c: Json, raw: string, row: Json): { value?: Json; problem?: string; unit?: string } => {
-    const s = raw.trim();
-    if (c.name === 'nominal_only') return /^nominal/i.test(s) ? { value: true } : /^all/i.test(s) ? { value: false } : { problem: `"${s}" in ${c.label ?? c.name}` };
-    if (c.type === 'boolean') return /^(true|yes|on|1|x|✓)$/i.test(s) ? { value: true } : /^(false|no|off|0|)$/i.test(s) ? { value: false } : { problem: `"${s}" in ${c.label ?? c.name}` };
-    if (c.name === 'constraint' && tab === 'targets') {
-      const limit = ({ '>=': '>=', '≥': '>=', '<=': '<=', '≤': '<=', interval: 'interval' } as Record<string, string>)[s.toLowerCase()];
-      return limit ? { value: limit } : { problem: `"${s}" in ${c.label ?? c.name}` };
-    }
-    if (c.options) {
-      const option = c.options.find((o: string) => o.toLowerCase() === s.toLowerCase());
-      return option !== undefined ? { value: option } : s === '' && c.nullable ? { value: null } : { problem: `"${s}" in ${c.label ?? c.name}` };
-    }
-    if ((c.type === 'number' || c.type === 'integer') && QUANTITY[tab]?.includes(c.name)) {
-      if (s === '') return c.nullable ? { value: null } : {};
-      const unit = effectiveUnit(row), read = readQuantity(s, unit);
-      return 'problem' in read ? { problem: `"${s}" in ${c.label ?? c.name}` }
-        : { value: read.value, unit: read.unit ?? (unit && unit !== row.unit ? unit : undefined) };
-    }
-    if (c.type === 'number' || c.type === 'integer') {
-      if (s === '') return c.nullable ? { value: null } : {};
-      const n = readNumber(s);
-      return n !== undefined ? { value: n } : { problem: `"${s}" in ${c.label ?? c.name}` };
-    }
-    if (c.type === 'array' || c.type === 'object') {
-      if (s === '') return { value: null };
-      try { return { value: JSON.parse(s) }; } catch { return { problem: `"${s}" in ${c.label ?? c.name}` }; }
-    }
-    return { value: raw === '' && c.nullable ? null : raw };
-  };
-  const onTablePaste = (e: React.ClipboardEvent) => {
-    const cell = (e.target as HTMLElement).closest<HTMLElement>('td[data-field]');
-    const text = e.clipboardData.getData('text/plain').replace(/\r?\n$/, '');
-    if (!cell || !/[\t\n]/.test(text)) return;
-    e.preventDefault();
-    const shown = [...(table.current?.querySelectorAll<HTMLTableRowElement>('tbody > tr') ?? [])].filter(tr => !tr.hidden);
-    const first = shown.indexOf(cell.closest('tr') as HTMLTableRowElement), column = visible.findIndex(c => c.name === cell.dataset.field);
-    const changes = new Map<number, Json>(), problems: string[] = [];
-    let cells = 0, kept = 0, beyond = 0, lines = text.split(/\r?\n/).map(line => line.split('\t'));
-    // A first line that names the columns it lands on - the header of a copied block (record 7.184) - is skipped.
-    const names = (c: Json | undefined, v: string) => !!c && [c.name, c.label].some(n => n && n.toLowerCase() === v.trim().replace(/\s*\*$/, '').toLowerCase());
-    const header = lines.length > 1 && lines[0].every((v, j) => names(visible[column + j], v));
-    if (header) lines = lines.slice(1);
-    lines.forEach((values, i) => {
-      const tr = shown[first + i];
-      if (!tr) { beyond += 1; return; }
-      const index = Number(tr.dataset.index), row = rows[index];
-      values.forEach((raw, j) => {
-        const c = visible[column + j];
-        if (!c) return;
-        if (fixedOf(row, c) || offOf(row, c)) { kept += 1; return; }
-        const read = readAs(c, raw, row);
-        if (read.problem) problems.push(read.problem);
-        else if ('value' in read) { changes.set(index, { ...(changes.get(index) ?? {}), [c.name]: read.value, ...(read.unit ? { unit: read.unit } : {}) }); cells += 1; }
+      if (changes.size) setConfig((cfg: Json) => withFollowers(tab, cfg, changes));
+      const what = `${c.label ?? c.name} = ${typeof value === 'number' && QUANTITY[tab]?.includes(c.name) ? quantity(value, rows[from].unit) : shortText(value)} of ${rows[from][keyField]}`;
+      setNote({ text: [changes.size ? `Filled ${changes.size} cell${changes.size === 1 ? '' : 's'} with ${what} (one Undo step).`
+        : targets.length > kept ? `Nothing to fill: the cell${targets.length - kept === 1 ? ' holds' : 's hold'} ${what} already.` : 'Nothing filled.',
+        kept ? `${kept} cell${kept === 1 ? ' that follows' : 's that follow'} another field kept.` : '',
+        other ? `${other} cell${other === 1 ? '' : 's'} of another quantity kept.` : ''].filter(Boolean).join(' '), warn: other > 0 });
+    };
+    // Ctrl+C copies out, as in a spreadsheet (record 7.184): in a ticked row, the ticked rows in view - every column in view, a
+    // header line first - as tab-separated lines for Excel; otherwise the cell alone. A value with its unit, as the cell writes
+    // it (record 7.208: there is no Unit column to say it; a paste reads it back exactly); other numbers as stored, a limit as
+    // its sign. The Copy button takes the ticked rows in view, or every row in view.
+    const cellText = (row: Json, c: Json) => {
+      const value = row[c.name] === undefined ? c.default : row[c.name];
+      return (c.name === 'nominal_only' ? (value ? 'Nominal only' : 'All planned conditions')
+        : typeof value === 'number' && QUANTITY[tab]?.includes(c.name) ? quantity(value, row.unit) : exact(value)).replace(/[\t\r\n]+/g, ' ');
+    };
+    const toClipboard = (text: string) => {
+      const put = (e: ClipboardEvent) => { e.clipboardData?.setData('text/plain', text); e.preventDefault(); };
+      document.addEventListener('copy', put, true);
+      try { return document.execCommand('copy'); } finally { document.removeEventListener('copy', put, true); }
+    };
+    const copyOut = (cell: HTMLElement | null) => {
+      const index = cell ? Number(cell.closest('tr')?.dataset.index) : -1, ticked = rowsInView.filter(i => selected[rows[i][keyField]]);
+      const block = cell ? (ticked.includes(index) ? ticked : null) : ticked.length ? ticked : rowsInView;
+      const c = cell ? visible.find(v => v.name === cell.dataset.field) : null;
+      if (!block && (!c || !rows[index])) return;
+      const text = block ? [visible.map(v => v.label ?? v.name), ...block.map(i => visible.map(v => cellText(rows[i], v)))].map(line => line.join('\t')).join('\r\n')
+        : cellText(rows[index], c);
+      if (!toClipboard(text)) return setNote({ text: 'The browser did not let the page copy: choose the text and copy it, or try the Copy button.', warn: true });
+      setNote({ text: block ? `Copied ${block.length} row${block.length === 1 ? '' : 's'} x ${visible.length} columns with a header line, for Excel; a paste back here skips that line.`
+        : `Copied ${c.label ?? c.name} of ${rows[index][keyField]}: ${shortText(text)}.`, warn: false });
+    };
+    // A block copied from Excel (tab-separated lines) pasted into a cell fills the rows in view from that one down and the columns
+    // in view from that one right, as one Undo step (record 7.180). Each text is read as its column takes it; a cell that follows
+    // another field, or that its leader decides, is left as it is; what cannot be read is named and left as it was. One value
+    // pastes into the box as before.
+    const readAs = (c: Json, raw: string, row: Json): { value?: Json; problem?: string; unit?: string } => {
+      const s = raw.trim();
+      if (c.name === 'nominal_only') return /^nominal/i.test(s) ? { value: true } : /^all/i.test(s) ? { value: false } : { problem: `"${s}" in ${c.label ?? c.name}` };
+      if (c.type === 'boolean') return /^(true|yes|on|1|x|✓)$/i.test(s) ? { value: true } : /^(false|no|off|0|)$/i.test(s) ? { value: false } : { problem: `"${s}" in ${c.label ?? c.name}` };
+      if (c.name === 'constraint' && tab === 'targets') {
+        const limit = ({ '>=': '>=', '≥': '>=', '<=': '<=', '≤': '<=', interval: 'interval' } as Record<string, string>)[s.toLowerCase()];
+        return limit ? { value: limit } : { problem: `"${s}" in ${c.label ?? c.name}` };
+      }
+      if (c.options) {
+        const option = c.options.find((o: string) => o.toLowerCase() === s.toLowerCase());
+        return option !== undefined ? { value: option } : s === '' && c.nullable ? { value: null } : { problem: `"${s}" in ${c.label ?? c.name}` };
+      }
+      if ((c.type === 'number' || c.type === 'integer') && QUANTITY[tab]?.includes(c.name)) {
+        if (s === '') return c.nullable ? { value: null } : {};
+        const unit = effectiveUnit(row), read = readQuantity(s, unit);
+        return 'problem' in read ? { problem: `"${s}" in ${c.label ?? c.name}` }
+          : { value: read.value, unit: read.unit ?? (unit && unit !== row.unit ? unit : undefined) };
+      }
+      if (c.type === 'number' || c.type === 'integer') {
+        if (s === '') return c.nullable ? { value: null } : {};
+        const n = readNumber(s);
+        return n !== undefined ? { value: n } : { problem: `"${s}" in ${c.label ?? c.name}` };
+      }
+      if (c.type === 'array' || c.type === 'object') {
+        if (s === '') return { value: null };
+        try { return { value: JSON.parse(s) }; } catch { return { problem: `"${s}" in ${c.label ?? c.name}` }; }
+      }
+      return { value: raw === '' && c.nullable ? null : raw };
+    };
+    const onTablePaste = (e: React.ClipboardEvent) => {
+      const cell = (e.target as HTMLElement).closest<HTMLElement>('td[data-field]');
+      const text = e.clipboardData.getData('text/plain').replace(/\r?\n$/, '');
+      if (!cell || !/[\t\n]/.test(text)) return;
+      e.preventDefault();
+      const shown = [...(table.current?.querySelectorAll<HTMLTableRowElement>('tbody > tr') ?? [])].filter(tr => !tr.hidden);
+      const first = shown.indexOf(cell.closest('tr') as HTMLTableRowElement), column = visible.findIndex(c => c.name === cell.dataset.field);
+      const changes = new Map<number, Json>(), problems: string[] = [];
+      let cells = 0, kept = 0, beyond = 0, lines = text.split(/\r?\n/).map(line => line.split('\t'));
+      // A first line that names the columns it lands on - the header of a copied block (record 7.184) - is skipped.
+      const names = (c: Json | undefined, v: string) => !!c && [c.name, c.label].some(n => n && n.toLowerCase() === v.trim().replace(/\s*\*$/, '').toLowerCase());
+      const header = lines.length > 1 && lines[0].every((v, j) => names(visible[column + j], v));
+      if (header) lines = lines.slice(1);
+      lines.forEach((values, i) => {
+        const tr = shown[first + i];
+        if (!tr) { beyond += 1; return; }
+        const index = Number(tr.dataset.index), row = rows[index];
+        values.forEach((raw, j) => {
+          const c = visible[column + j];
+          if (!c) return;
+          if (fixedOf(row, c) || offOf(row, c)) { kept += 1; return; }
+          const read = readAs(c, raw, row);
+          if (read.problem) problems.push(read.problem);
+          else if ('value' in read) { changes.set(index, { ...(changes.get(index) ?? {}), [c.name]: read.value, ...(read.unit ? { unit: read.unit } : {}) }); cells += 1; }
+        });
       });
-    });
-    if (changes.size) setConfig((cfg: Json) => withFollowers(cfg, changes));
-    const said = [cells ? `Pasted ${cells} cell${cells === 1 ? '' : 's'} into ${changes.size} row${changes.size === 1 ? '' : 's'} (one Undo step).` : 'Nothing pasted.',
-      header ? 'The header line was skipped.' : '',
-      problems.length ? `Not read, left as they were: ${problems.slice(0, 4).join(', ')}${problems.length > 4 ? ` and ${problems.length - 4} more` : ''}.` : '',
-      kept ? `${kept} cell${kept === 1 ? '' : 's'} that follow another field kept.` : '',
-      beyond ? `${beyond} line${beyond === 1 ? '' : 's'} below the last row left out: Add rows first.` : ''].filter(Boolean).join(' ');
-    setNote({ text: said, warn: problems.length + beyond > 0 });
-  };
+      if (changes.size) setConfig((cfg: Json) => withFollowers(tab, cfg, changes));
+      const said = [cells ? `Pasted ${cells} cell${cells === 1 ? '' : 's'} into ${changes.size} row${changes.size === 1 ? '' : 's'} (one Undo step).` : 'Nothing pasted.',
+        header ? 'The header line was skipped.' : '',
+        problems.length ? `Not read, left as they were: ${problems.slice(0, 4).join(', ')}${problems.length > 4 ? ` and ${problems.length - 4} more` : ''}.` : '',
+        kept ? `${kept} cell${kept === 1 ? '' : 's'} that follow another field kept.` : '',
+        beyond ? `${beyond} line${beyond === 1 ? '' : 's'} below the last row left out: Add rows first.` : ''].filter(Boolean).join(' ');
+      setNote({ text: said, warn: problems.length + beyond > 0 });
+    };
+    return { shortText, fillDown, copyOut, onTablePaste };
+  }
+  const { shortText, fillDown, copyOut, onTablePaste } = sheetEdits();
 
   // Rows not saved in the task (record 7.222, user: "In the parameter probe and spec windows, highlight the rows that are
   // unsaved"): validation compares the rows with the saved task's file, as the check before a run does, and names per table
   // the rows new here, the rows changed - with the saved values - and the saved rows deleted here. Marked by row ID, half a
   // second after a change like every validation mark; nothing for a task that is not saved (a cell read, an ngspice task).
-  const unsavedIn = (s: Section): Json => validation?.unsaved_rows?.sections?.[s] ?? null;
-  const unsaved = unsavedIn(tab);
-  const isNew = (row: Json) => !!unsaved?.added?.includes(String(row[keyField] ?? ''));
-  const changeOf = (row: Json): Json => unsaved?.changed?.[String(row[keyField] ?? '')] ?? null;
-  // Specs show the objective inside the Limit list: a saved objective is that cell's.
-  const cellOf = (field: string) => tab === 'targets' && field === 'direction_after_feasible' ? 'constraint' : field;
-  // A saved value as its cell writes it: a quantity in the saved row's unit, a limit in words, a tick as on or off.
-  const savedText = (row: Json, change: Json, field: string): string => {
-    const fields = change.fields, value = fields[field];
-    if (tab === 'targets' && cellOf(field) === 'constraint')
-      return limitLabel('constraint' in fields ? fields.constraint : row.constraint,
-        ('direction_after_feasible' in fields ? fields.direction_after_feasible : row.direction_after_feasible) ?? 'none');
-    if (value == null) return '(empty)';
-    if (field === 'nominal_only') return value ? 'Nominal only' : 'All planned conditions';
-    if (typeof value === 'boolean') return value ? 'on' : 'off';
-    return typeof value === 'number' && QUANTITY[tab]?.includes(field) ? quantity(value, change.unit ?? row.unit) : shortText(value);
-  };
-  const savedIn = (row: Json, name: string): string | null => {
-    const change = changeOf(row), field = change && Object.keys(change.fields).find(f => cellOf(f) === name);
-    return field ? savedText(row, change, field) : null;
-  };
-  // What a marked row says on its tick-box cell: new, or which fields changed and what the task holds - also of the columns
-  // not in view (a Probe's unit followed by a Spec, a column behind More columns).
-  const rowNote = (row: Json): string | null => {
-    if (isNew(row)) return 'New row, not in the saved task: Save as stores it in a new task.';
-    const change = changeOf(row);
-    if (!change) return null;
-    const cells = [...new Set(Object.keys(change.fields).map(cellOf))];
-    const label = (name: string) => columns.find(c => c.name === name)?.label ?? name;
-    return `Changed since the task was saved: ${cells.map(name => `${label(name)} (saved: ${savedIn(row, name)})`).join(', ')}.`;
-  };
-  // A tab's mark: how many of its rows are not saved, and the saved rows deleted here - which no row can show.
-  const unsavedTitle = (s: Section): string | null => {
-    const u = unsavedIn(s);
-    if (!u) return null;
-    const changed = Object.keys(u.changed ?? {}).length, added = (u.added ?? []).length, removed: string[] = u.removed ?? [];
-    const parts = [changed ? `${changed} changed` : '', added ? `${added} new` : '',
-      removed.length ? `${removed.length} saved row${removed.length === 1 ? '' : 's'} deleted here (${removed.slice(0, 3).join(', ')}${removed.length > 3 ? ', ...' : ''})` : '',
-      u.reordered ? 'rows in another order' : ''].filter(Boolean);
-    return parts.length ? `Not saved in the task: ${parts.join(', ')}. Save as stores the rows in a new task; Reload saved values brings back the saved ones.` : null;
-  };
+  function unsavedMarks() {
+    const unsavedIn = (s: Section): Json => validation?.unsaved_rows?.sections?.[s] ?? null;
+    const unsaved = unsavedIn(tab);
+    const isNew = (row: Json) => !!unsaved?.added?.includes(String(row[keyField] ?? ''));
+    const changeOf = (row: Json): Json => unsaved?.changed?.[String(row[keyField] ?? '')] ?? null;
+    // Specs show the objective inside the Limit list: a saved objective is that cell's.
+    const cellOf = (field: string) => tab === 'targets' && field === 'direction_after_feasible' ? 'constraint' : field;
+    // A saved value as its cell writes it: a quantity in the saved row's unit, a limit in words, a tick as on or off.
+    const savedText = (row: Json, change: Json, field: string): string => {
+      const fields = change.fields, value = fields[field];
+      if (tab === 'targets' && cellOf(field) === 'constraint')
+        return limitLabel('constraint' in fields ? fields.constraint : row.constraint,
+          ('direction_after_feasible' in fields ? fields.direction_after_feasible : row.direction_after_feasible) ?? 'none');
+      if (value == null) return '(empty)';
+      if (field === 'nominal_only') return value ? 'Nominal only' : 'All planned conditions';
+      if (typeof value === 'boolean') return value ? 'on' : 'off';
+      return typeof value === 'number' && QUANTITY[tab]?.includes(field) ? quantity(value, change.unit ?? row.unit) : shortText(value);
+    };
+    const savedIn = (row: Json, name: string): string | null => {
+      const change = changeOf(row), field = change && Object.keys(change.fields).find(f => cellOf(f) === name);
+      return field ? savedText(row, change, field) : null;
+    };
+    // What a marked row says on its tick-box cell: new, or which fields changed and what the task holds - also of the columns
+    // not in view (a Probe's unit followed by a Spec, a column behind More columns).
+    const rowNote = (row: Json): string | null => {
+      if (isNew(row)) return 'New row, not in the saved task: Save as stores it in a new task.';
+      const change = changeOf(row);
+      if (!change) return null;
+      const cells = [...new Set(Object.keys(change.fields).map(cellOf))];
+      const label = (name: string) => columns.find(c => c.name === name)?.label ?? name;
+      return `Changed since the task was saved: ${cells.map(name => `${label(name)} (saved: ${savedIn(row, name)})`).join(', ')}.`;
+    };
+    // A tab's mark: how many of its rows are not saved, and the saved rows deleted here - which no row can show.
+    const unsavedTitle = (s: Section): string | null => {
+      const u = unsavedIn(s);
+      if (!u) return null;
+      const changed = Object.keys(u.changed ?? {}).length, added = (u.added ?? []).length, removed: string[] = u.removed ?? [];
+      const parts = [changed ? `${changed} changed` : '', added ? `${added} new` : '',
+        removed.length ? `${removed.length} saved row${removed.length === 1 ? '' : 's'} deleted here (${removed.slice(0, 3).join(', ')}${removed.length > 3 ? ', ...' : ''})` : '',
+        u.reordered ? 'rows in another order' : ''].filter(Boolean);
+      return parts.length ? `Not saved in the task: ${parts.join(', ')}. Save as stores the rows in a new task; Reload saved values brings back the saved ones.` : null;
+    };
+    return { isNew, changeOf, savedIn, rowNote, unsavedTitle };
+  }
+  const { isNew, changeOf, savedIn, rowNote, unsavedTitle } = unsavedMarks();
 
   // Back to the cell after Enter or Esc, as a spreadsheet does.
   const backToCell = () => {

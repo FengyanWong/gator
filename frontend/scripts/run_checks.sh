@@ -43,6 +43,25 @@ serve() {   # <settings folder> <default output folder> <port> <log> [serve opti
 port_a="$(free_port)"; port_b="$(free_port)"
 extra_a=(); flags=()                                    # checks that need a fixture their author made (see PORTED)
 if [ -d /tmp/gator-reward-v21-browser ]; then extra_a+=(--allow-root /tmp/gator-reward-v21-browser); flags+=(--reward-fixture); fi
+# encoder_models_check reads two saved MOCK models, a GraphGPS and a parameter-group cross-attention one (record 7.228):
+# made here in a folder of their own that backend A may read (record 7.292), unless --only leaves the check out or --skip
+# names it.
+case " $* " in
+  *" --skip "*encoder_models*) models="" ;;
+  *" --only "*encoder_models*) models="$tmp/encoder-models" ;;
+  *" --only "*) models="" ;;
+  *) models="$tmp/encoder-models" ;;
+esac
+if [ -n "$models" ]; then
+  mkdir -p "$tmp/settings-models" "$models"
+  if (cd "$repo" && GATOR_WORKBENCH_SETTINGS_DIR="$tmp/settings-models" GATOR_AGENT_CLI_LAUNCH=off OMP_NUM_THREADS=1 \
+      GATOR_WORKBENCH_SYNTHETIC_FIXTURES="$repo/tests/workbench/fixtures/synthetic_fixtures.json" PYTHONPATH=src \
+      "$python" frontend/scripts/fixtures/encoder_models.py "$models" > "$tmp/encoder-models.log" 2>&1); then
+    extra_a+=(--allow-root "$models"); flags+=(--encoder-models "$models")
+  else
+    echo "WARNING the encoder models were not made, so encoder_models_check is skipped:"; tail -3 "$tmp/encoder-models.log"
+  fi
+fi
 serve "$tmp/settings-a" "$tmp/out-a" "$port_a" "$tmp/backend-a.log" "${extra_a[@]}"
 serve "$tmp/settings-b" "$tmp/out-b" "$port_b" "$tmp/backend-b.log" --allow-root "$tmp/out-b"
 for port in "$port_a" "$port_b"; do

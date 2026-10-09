@@ -56,6 +56,10 @@ const PORTED = { reward_v21_check: { port: 5191, flag: '--reward-fixture', needs
 const SKIPPED = { reward_v2_frontend_check: 'needs recorded real-qualification evidence folders',
   reward_v2_real_check: 'needs recorded real-qualification evidence folders' };
 for (const [name, p] of Object.entries(PORTED)) if (!flag(p.flag)) SKIPPED[name] = `needs ${p.needs} (run_checks.sh)`;
+// encoder_models_check reads two saved MOCK models from a folder backend A allows: --encoder-models <that folder, as the
+// backend sees it>, which run_checks.sh makes (record 7.292).
+const encoderModels = option('--encoder-models');
+if (!encoderModels) SKIPPED.encoder_models_check = 'needs its two saved MOCK models (run_checks.sh makes them: --encoder-models)';
 
 const only = names(option('--only')), skip = names(option('--skip')) ?? [];
 const all = readdirSync(scripts).filter(f => f.endsWith('_check.mjs')).map(f => f.replace(/\.mjs$/, ''));
@@ -155,7 +159,8 @@ async function main() {
   }));
   const urls = await serve();
   const urlOf = name => WRITERS.includes(name) ? urls.writer : SOURCE.includes(name) ? urls.source : urls[name] ?? urls.hermetic;
-  const envOf = name => WRITERS.includes(name) ? { GATOR_SCRATCH_OUT: scratchOut } : {};
+  const envOf = name => WRITERS.includes(name) ? { GATOR_SCRATCH_OUT: scratchOut }
+    : name === 'encoder_models_check' ? { GATOR_WORKBENCH_OUTPUT_ROOT: encoderModels } : {};
   const pool = chosen.filter(n => !WRITERS.includes(n)).sort((a, b) => (EXPECTED[b] ?? 10) - (EXPECTED[a] ?? 10));
   const serial = chosen.filter(n => WRITERS.includes(n));
   console.log(`${chosen.length} checks, ${lanes} lanes (+1 for ${serial.length} scripts that write scratch settings or start MOCK runs); logs in ${out}`);

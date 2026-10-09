@@ -40,7 +40,7 @@ from .generic_profile import RULES_FORMAT, VERIFIED_WIDTH_STEP, check_writable_r
 from .paths import repo_root
 from .profile_store import FILES, FORMAT, ProfileError, profile_dir
 from .saved_tasks import load_profile, task_for_cell
-from .storage.atomic import write_json
+from .storage.atomic import UNREADABLE, read_json_quiet, write_json
 from .storage.dataset import utcnow
 from .task_registry import REAL_PROFILES
 from .validation import resolve_leaders
@@ -134,9 +134,8 @@ def _checked_import(imported, name):
 def _form_facts(imported):
     """What the property form of each instance lets a user type, read together with the cell (`cdf_facts`), or None
     for a cell read before that was recorded."""
-    try:
-        facts = json.loads((Path(imported['directory']) / cdf_facts.FILE).read_text())
-    except (OSError, ValueError):
+    facts = read_json_quiet(Path(imported['directory']) / cdf_facts.FILE, UNREADABLE)
+    if facts is UNREADABLE:
         return None
     if facts.get('format') != cdf_facts.FORMAT or (facts.get('library'), facts.get('cell')) != (imported['library'], imported['cell']):
         return None

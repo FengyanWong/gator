@@ -34,7 +34,7 @@ from uuid import uuid4
 from . import CHECKPOINT_METADATA_VERSION
 from .checkpoint_codec import write_compressed
 from .pdk import schema_label
-from .storage.atomic import PersistenceError, publish, read_json, sha256_file, temporary_path, write_json
+from .storage.atomic import PersistenceError, publish, read_dict, read_json, sha256_file, temporary_path, write_json
 from .storage.dataset import utcnow
 
 FULL_COMPONENTS = ('graph_spec_encoders', 'actor', 'twin_critics', 'target_networks', 'actor_optimizer',
@@ -229,7 +229,7 @@ class CheckpointStore:
             return []
         periodic = []
         # The selected best policy is a model somebody chose on purpose: pruning never removes it.
-        best = (read_json(self.root / 'best_policy.json', default=None) or {}).get('selected')
+        best = read_dict(self.root / 'best_policy.json').get('selected')
         for directory in self.root.glob('ckpt-*'):
             meta = read_json(directory / 'metadata.json', default={})
             if meta.get('kind') == 'periodic' and directory.name not in (keep_id, best):
@@ -489,7 +489,7 @@ def saved_models(run_entries, read_listing=None) -> list[dict]:
         newest = next((p for p in listing['checkpoints'] if p['is_latest']), listing['checkpoints'][-1])
         manifest = getattr(entry, 'manifest', None)          # a list_runs row keeps the manifest it was built from
         if manifest is None:
-            manifest = read_json(Path(entry['run_dir']) / 'run_manifest.json', default=None) or {}
+            manifest = read_dict(Path(entry['run_dir']) / 'run_manifest.json')
         circuit = manifest.get('circuit') or {}
         models.append(dict(
             # The model's name: the run row carries it, unique under the output root (runs.list_runs, record 7.225); a row
@@ -520,12 +520,12 @@ class ModelNameTaken(ValueError):
 def model_label_of(run_dir, manifest=None) -> dict:
     """``{'model_label': name or None, 'renamed': bool}``: the name a run's model was renamed to, else the one its
     manifest was given at the start; None for a run that saves no model (a baseline, LLM only)."""
-    renamed = read_json(Path(run_dir) / MODEL_LABEL_FILE, default=None) or {}
+    renamed = read_dict(Path(run_dir) / MODEL_LABEL_FILE)
     label = renamed.get('model_label') if isinstance(renamed, dict) else None
     if isinstance(label, str) and label.strip():
         return dict(model_label=label.strip(), renamed=True)
     if manifest is None:
-        manifest = read_json(Path(run_dir) / 'run_manifest.json', default=None) or {}
+        manifest = read_dict(Path(run_dir) / 'run_manifest.json')
     if 'model_label' not in manifest:
         # A run from before the label (record 7.159) was filed under its task name; it has a model only if it saved one.
         label = manifest.get('task_name') if (Path(run_dir) / 'checkpoints' / 'latest.json').is_file() else None
@@ -579,9 +579,9 @@ def rename_model(run_dir, label, *, taken) -> dict:
     if label in taken:
         raise ModelNameTaken(f'A model named "{label}" exists already under this output folder. Choose another name.')
     run_dir = Path(run_dir)
-    before = read_json(run_dir / MODEL_LABEL_FILE, default=None) or {}
+    before = read_dict(run_dir / MODEL_LABEL_FILE)
     previous = model_label_of(run_dir)['model_label']
-    given = (read_json(run_dir / 'run_manifest.json', default=None) or {}).get('model_label')
+    given = read_dict(run_dir / 'run_manifest.json').get('model_label')
     record = dict(model_label=label, previous=previous, given_at_start=given, renamed_utc=utcnow().isoformat(),
                   history=[*(before.get('history') or []), *([dict(model_label=previous, until_utc=utcnow().isoformat())] if previous else [])])
     write_json(run_dir / MODEL_LABEL_FILE, record)

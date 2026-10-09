@@ -44,6 +44,7 @@ from .cdf_rules import RULES_FORMAT
 from .generic_profile import GenericMosWidthProfile, RulesError, _same
 from .recipes import GenericMaestroProfile, GenericRingOscillatorProfile, MAESTRO, RING
 from .security import skill_string as _skill_string
+from .storage.atomic import read_json_quiet
 
 NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')       # library / cell / instance, as everywhere in the workbench
 FIELD = re.compile(r'^[A-Za-z_]\w{0,63}$')                        # a CDF parameter (form field)
@@ -524,10 +525,7 @@ PROFILE_CLASSES = {'opamp_ac': CdfWritableProfile, RING: CdfRingOscillatorProfil
 
 
 def rules_format(rules_file):
-    try:
-        return json.loads(Path(rules_file).read_text()).get('format')
-    except (OSError, ValueError):
-        return None
+    return read_json_quiet(rules_file, default={}).get('format')
 
 
 # ------------------------------------------------------------------------------------------ the backend and the factory

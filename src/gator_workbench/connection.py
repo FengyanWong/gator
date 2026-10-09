@@ -112,6 +112,12 @@ def profile_kind(settings) -> str | None:
     return kind if isinstance(kind, str) and kind in KINDS else None
 
 
+def entry_kind(settings) -> str | None:
+    """profile_kind of an entry of the connection file, an entry that is not a dict read as an empty one (the default
+    kind)."""
+    return profile_kind(settings if isinstance(settings, dict) else {})
+
+
 def family_of(kind) -> str:
     return KINDS[kind]['family'] if kind in KINDS else 'virtuoso'
 
@@ -120,7 +126,7 @@ def kind_of_profile(profile_id) -> str | None:
     """Kind of a CONFIGURED profile (reads the workbench's own connection file, nothing else). A profile that is
     not configured counts as the default kind: its check then names the missing profile itself."""
     settings = load_profiles()['profiles'].get(profile_id)
-    return DEFAULT_KIND if settings is None else profile_kind(settings if isinstance(settings, dict) else {})
+    return DEFAULT_KIND if settings is None else entry_kind(settings)
 
 
 def kind_problem(settings, local):
@@ -190,6 +196,14 @@ def load_profiles() -> dict:
         return dict(profiles={}, active=None, file=str(connection_file()), exists=connection_file().is_file())
     active = data.get('active') if data.get('active') in data['profiles'] else next(iter(data['profiles']), None)
     return dict(profiles=data['profiles'], active=active, file=str(connection_file()), exists=True)
+
+
+def named_or_active(profile_id=None) -> tuple:
+    """(the loaded connection file, the name in use, its entry): the named connection, else the active one. The name is
+    None when none is named and none is active; the entry is None when that name is not configured."""
+    loaded = load_profiles()
+    key = profile_id or loaded['active']
+    return loaded, key, (loaded['profiles'].get(key) if key else None)
 
 
 def public_profiles() -> dict:

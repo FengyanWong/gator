@@ -32,7 +32,7 @@ import re
 import sys
 
 from . import model_library, native_cells, task_registry
-from .connection import KINDS, family_of, load_profiles, profile_kind
+from .connection import KINDS, family_of, named_or_active, profile_kind
 from .paths import bridge_state_dir, local_settings_dir, repo_root
 from .spec_equations import EquationNativeFactory
 from .storage.atomic import sha256_file as _sha256
@@ -162,9 +162,8 @@ def bridge_importable() -> bool:
 
 
 def _profile_settings(profile_id=None):
-    loaded = load_profiles()
-    key = profile_id or loaded['active']
-    return loaded, (loaded['profiles'].get(key) if key else None)
+    loaded, _, settings = named_or_active(profile_id)
+    return loaded, settings
 
 
 def _not_a_virtuoso_connection(profile_id, settings):
@@ -176,6 +175,16 @@ def _not_a_virtuoso_connection(profile_id, settings):
     return (f'Connection {profile_id or "(the active one)"!r} is "{KINDS[kind]["label"]}". This circuit runs on Virtuoso + '
             'Spectre: choose a Virtuoso connection in the Connection window. An ngspice connection runs the ngspice netlist '
             'tasks (Project column: "ngspice netlist...").')
+
+
+def bridge_config_of(connection):
+    """The BridgeConfig of a real task's bindings (`real_bindings` of its connection): the env file, library, creation
+    receipt and model file it names, and the adapter's state folder."""
+    from analog_optimizer.backends.virtuoso_bridge import BridgeConfig
+    return BridgeConfig(Path(connection['env_file']).resolve(), connection['library'],
+                        Path(connection['creation_receipt']).resolve(),
+                        bridge_state_dir().resolve(), connection['model_file'],
+                        profile=connection.get('profile'))
 
 
 CIRCUIT_KEYS = ('creation_receipt', 'reference_measurements')     # these two belong to ONE circuit, not to the link
@@ -486,12 +495,8 @@ def _real_runtime(task_key, name, profile_id=None, *, authorized=False):
     connection = real_bindings(_profile_settings(profile_id)[1], name)
     if connection.get('bridge_site_packages'):
         site.addsitedir(str(Path(connection['bridge_site_packages']).resolve()))
-    from analog_optimizer.backends.virtuoso_bridge import BridgeConfig
     profile = _verified_profile(name)
-    config = BridgeConfig(Path(connection['env_file']).resolve(), connection['library'],
-                          Path(connection['creation_receipt']).resolve(),
-                          bridge_state_dir().resolve(), connection['model_file'],
-                          profile=connection.get('profile'))
+    config = bridge_config_of(connection)
     reference = json.loads(Path(connection['reference_measurements']).read_text())
     if reference.get('origin') != 'real':
         raise TaskBlocked('reference_measurements must be verified REAL baseline measurements')

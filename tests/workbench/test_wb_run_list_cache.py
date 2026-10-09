@@ -245,12 +245,17 @@ class _Guarded(dict):
 def test_the_cache_is_touched_under_its_lock_only_and_the_files_are_read_outside_it(tmp_path, monkeypatch):
     monkeypatch.setattr(run_index, '_RUN_CACHE', _Guarded())
     monkeypatch.setattr(run_index, '_RUN_CACHE_LOCK', _OwnedLock())
-    original = run_index.read_json
+    original, original_dict = run_index.read_json, run_index.read_dict
 
     def read_outside(*args, **kwargs):
         assert not run_index._RUN_CACHE_LOCK.mine(), 'a run file was read while the cache lock was held'
         return original(*args, **kwargs)
+
+    def read_dict_outside(path):                     # the empty-dict reads (refactoring package B8), checked the same way
+        assert not run_index._RUN_CACHE_LOCK.mine(), 'a run file was read while the cache lock was held'
+        return original_dict(path)
     monkeypatch.setattr(run_index, 'read_json', read_outside)
+    monkeypatch.setattr(run_index, 'read_dict', read_dict_outside)
     kept, gone = fabricate(tmp_path, 'r1'), fabricate(tmp_path, 'r2', created='2026-10-07T11:00:00+00:00')
     save(kept, 'ckpt-a')
     (tmp_path / 'exp__0123456789ab' / 'runs' / 'task' / 'no-manifest').mkdir()         # a folder without a manifest: let go

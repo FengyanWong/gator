@@ -50,14 +50,14 @@ from . import profiles, tasks
 from .cdf_write import backend_class
 from .compile import CompileError, compile_task
 from .layout import RunLayout
-from .paths import bridge_state_dir, repo_root
+from .paths import bridge_session_lock, repo_root
 from .reward_diagnostics import kept, tables_version
 from .run_definitions import INFRASTRUCTURE_FAILURES as INFRASTRUCTURE
 from .run_lock import RunLock
 from .runs import connection_gate, spawn_detached
 from .schema import WorkbenchConfig, task_definition_hash
 from .security import redact
-from .storage.atomic import JsonlAppender, read_json, read_jsonl, write_json
+from .storage.atomic import JsonlAppender, read_dict, read_json, read_jsonl, write_json
 from .storage.dataset import DatasetReader
 from .tasks import MOCK_TARGETS
 
@@ -312,7 +312,7 @@ def plan(run_dir, *, designs=MAX_DESIGNS) -> dict:
 # ================================================================================ starting one
 def bridge_busy() -> bool:
     """A real run or real check holds the adapter's session lock (the same file every real task uses)."""
-    return RunLock.held(bridge_state_dir() / 'session.lock')
+    return RunLock.held(bridge_session_lock())
 
 
 def live_checks(run_dir) -> list:
@@ -455,9 +455,9 @@ def list_checks(run_dir) -> list:
         for directory in sorted(root.iterdir(), reverse=True):
             if not CHECK_ID.match(directory.name) or not (directory / 'request.json').is_file():
                 continue
-            request = read_json(directory / 'request.json', default={}) or {}
-            alive, status = _state(directory, read_json(directory / 'status.json', default={}) or {})
-            summary = read_json(directory / 'summary.json', default=None) or {}
+            request = read_dict(directory / 'request.json')
+            alive, status = _state(directory, read_dict(directory / 'status.json'))
+            summary = read_dict(directory / 'summary.json')
             rows.append(dict(check_id=directory.name, created_utc=request.get('created_utc'), state=status.get('state'),
                              alive=alive, done=status.get('done', 0), total=request.get('simulations'),
                              mock=request.get('mock'), verdicts=summary.get('verdicts')))
@@ -467,7 +467,7 @@ def list_checks(run_dir) -> list:
 def check_status(run_dir, check_id) -> dict:
     directory = check_directory(run_dir, check_id)
     request = read_json(directory / 'request.json')
-    alive, status = _state(directory, read_json(directory / 'status.json', default={}) or {})
+    alive, status = _state(directory, read_dict(directory / 'status.json'))
     return dict(check_id=check_id, alive=alive, status=status, request=request,
                 results=read_jsonl(directory / 'results.jsonl'),
                 summary=read_json(directory / 'summary.json', default=None))
@@ -517,7 +517,7 @@ class Worker:
         self.started = self.done = self.invocations = 0
         self.error = self.restoration = None
         self.stop_requested = False
-        self.status = read_json(self.directory / 'status.json', default={}) or {}
+        self.status = read_dict(self.directory / 'status.json')
 
     # ---------------------------------------------------------------- bookkeeping
     def _write_status(self, state, **extra):
@@ -635,15 +635,12 @@ class Worker:
                 self._record(index, design, corner, condition, replace(result, condition=condition), started_utc)
 
     def _bridge_parts(self):
-        """(BridgeConfig, profile) - assembled exactly as tasks._real_runtime / generated_bridge_config do."""
-        from analog_optimizer.backends.virtuoso_bridge import BridgeConfig
+        """(BridgeConfig, profile) - assembled by the same functions as a run's (tasks.bridge_config_of,
+        tasks.generated_bridge_config)."""
         name = self.context.task_key.partition(':')[2]
         if name in tasks.REAL_PROFILES:
             connection = tasks.real_bindings(tasks._profile_settings(self.context.config.run.connection_profile_id)[1], name)
-            config = BridgeConfig(Path(connection['env_file']).resolve(), connection['library'],
-                                  Path(connection['creation_receipt']).resolve(), bridge_state_dir().resolve(),
-                                  connection['model_file'], profile=connection.get('profile'))
-            return config, self.context.profile
+            return tasks.bridge_config_of(connection), self.context.profile
         config, profile, _ = tasks.generated_bridge_config(name, self.context.config.run.connection_profile_id)
         return config, profile
 

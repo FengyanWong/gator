@@ -7,13 +7,13 @@ and profiles.py re-exports every name.
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from . import cdf_write, recipes
 from .connection import load_profiles
 from .paths import repo_root
 from .profile_store import FILES, ProfileError, list_profiles, profile_entry
+from .storage.atomic import UNREADABLE, read_json_quiet
 from .task_registry import REAL_PROFILES
 
 
@@ -38,9 +38,8 @@ def task_for_cell(library, cell) -> dict | None:
                                                   if isinstance(settings, dict)}:
         return None
     for name, info in REAL_PROFILES.items():
-        try:
-            design = json.loads((repo_root() / info['design']).read_text())
-        except (OSError, ValueError):
+        design = read_json_quiet(repo_root() / info['design'], UNREADABLE)
+        if design is UNREADABLE:
             continue
         if design.get('core_cell') == cell:
             return dict(task_key=f'real:{name}', name=name, generated=False)
@@ -67,9 +66,8 @@ def _refuse_recorded_group_values(name, mapping_file):
     """A task saved before 2026-09-22 recorded each group's value in its mapping. It then loads, passes every offline
     check and its baseline, and fails on the FIRST changed candidate with "Binding/current value mismatch" - after a
     real evaluation has been paid for. Say it before anything is started (review of 2026-09-23)."""
-    try:
-        mapping = json.loads(Path(mapping_file).read_text())
-    except (OSError, ValueError):
+    mapping = read_json_quiet(mapping_file, UNREADABLE)
+    if mapping is UNREADABLE:
         return                                   # an unreadable mapping is the profile object's own error to report
     stale = [g.get('id') for g in (mapping.get('parameter_groups') or [])
              if isinstance(g, dict) and 'value' in g and (g.get('lower') is not None or g.get('upper') is not None)]
@@ -89,9 +87,8 @@ def working_run_of(name, run_rows):
     for row in run_rows:
         if row.get('state') not in WORKING_STATES or row.get('mock'):
             continue
-        try:
-            manifest = json.loads((Path(row['run_dir']) / 'run_manifest.json').read_text())
-        except (OSError, ValueError):
+        manifest = read_json_quiet(Path(row['run_dir']) / 'run_manifest.json', UNREADABLE)
+        if manifest is UNREADABLE:
             continue
         if (manifest.get('circuit') or {}).get('task_key') == f'real:{name}':
             return row

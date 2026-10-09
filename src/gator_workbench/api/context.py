@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from pydantic import ValidationError
 from .. import bridge_connect, connection, readiness, runs, schema
-from ..paths import OutputRoots, PathNotAllowed, refuse_nul
+from ..paths import OutputRoots, PathNotAllowed, inside, refuse_nul
 from .support import fail, load_runtime, validate_loaded
 from dataclasses import dataclass
 
@@ -38,7 +38,7 @@ class ApiContext:
                 except PathNotAllowed as exc:
                     fail(403, exc)
                 resolved = Path(value).expanduser().resolve()
-                if not any(resolved == r or r in resolved.parents for r in self.input_roots):
+                if not inside(resolved, self.input_roots):
                     fail(403, f'{name} is outside the allowed input roots. Roots are added by the backend operator '
                               '(--allow-input-root), never from the browser.')
 

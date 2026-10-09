@@ -59,7 +59,7 @@ def main(argv=None):
         # One learner thread, as in the existing training entry points; simulator threads are separate.
         torch.set_num_threads(1)
         from .run_lock import RunLock  # lazy: in the try: a failure of the import is handled with the rest
-        lock = None if args.lock_fd is None else RunLock.adopt(layout.control / 'run.lock', args.lock_fd)
+        lock = None if args.lock_fd is None else RunLock.adopt(layout.run_lock, args.lock_fd)
         engine = RunEngine(layout.run_dir, task=task, use_processes=False if args.threads else None, lock=lock)
     except Exception as exc:
         _record_failed_start(run_dir, exc)

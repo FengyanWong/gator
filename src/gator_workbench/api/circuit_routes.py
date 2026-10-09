@@ -9,7 +9,7 @@ from .. import (bridge_read, consistency, ngspice_tasks, profiles, runs, schema,
 from ..circuit_summary import loaded_circuit
 from ..diffs import structured_diff
 from ..native_cells import load_import as load_cell_import
-from ..paths import PathNotAllowed, refuse_nul
+from ..paths import PathNotAllowed, inside, refuse_nul
 from ..security import redact
 from ..validation import independent_action_count
 from .context import ApiContext
@@ -181,7 +181,7 @@ def _ngspice_routes(app: FastAPI, context: ApiContext):
         if not path or '\x00' in str(path):         # a NUL byte is no file (the OS refuses it with ValueError)
             return None
         resolved = Path(path).expanduser().resolve()
-        return str(resolved) if any(resolved == r or r in resolved.parents for r in context.input_roots) else None
+        return str(resolved) if inside(resolved, context.input_roots) else None
 
     @app.post('/api/ngspice/read')
     def ngspice_read(body: NgspiceReadBody):

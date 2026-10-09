@@ -28,7 +28,7 @@ from uuid import uuid4
 from . import bridge_setup, native_cells, ocean, profile_store, virtuoso_setup
 from .connection import require_gate, resolve_profile_id
 from .paths import local_settings_dir
-from .storage.atomic import write_json
+from .storage.atomic import UNREADABLE, read_json_quiet, write_json
 from .storage.dataset import utcnow
 
 FORMAT = 'gator-working-copy-1'
@@ -87,10 +87,7 @@ def load(library, cell) -> dict | None:
 
 def _json_or_empty(path) -> dict:
     """A JSON file's content, or {} when it cannot be read."""
-    try:
-        return json.loads(Path(path).read_text())
-    except (OSError, ValueError):
-        return {}
+    return read_json_quiet(path, default={})
 
 
 def own_libraries() -> dict:
@@ -204,9 +201,8 @@ def _own(copy_library, path, technology_library, library, profile_id):
 def _keep_attempt(incoming, attempt_file, attempt, copy_library, library, profile_id):
     """A copy that stopped half-way: the library it created is still the workbench's, and what it wrote may be written
     over by the next try of the SAME copy - nothing else in that library may."""
-    try:
-        progress = json.loads((incoming / 'progress.json').read_text())
-    except (OSError, ValueError):
+    progress = read_json_quiet(incoming / 'progress.json', UNREADABLE)
+    if progress is UNREADABLE:
         return
     if progress.get('created_library'):
         _own(copy_library, progress.get('copy_path'), progress.get('copy_technology_library'), library, profile_id)
@@ -356,9 +352,8 @@ def _readbacks(original) -> dict:
         return {}
     directory, found = Path(imported['directory']), {}
     for owner, name in ((original['testbench'], 'testbench_readback.json'), (original['cell'], 'core_readback.json')):
-        try:
-            data = json.loads((directory / name).read_text())
-        except (OSError, ValueError):
+        data = read_json_quiet(directory / name, UNREADABLE)
+        if data is UNREADABLE:
             continue
         for instance in data.get('instances', []):
             found[(owner, instance['name'])] = instance

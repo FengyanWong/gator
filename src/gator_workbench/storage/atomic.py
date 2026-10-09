@@ -171,6 +171,26 @@ def read_json(path, default=_MISSING):
     raise FileNotFoundError(path)
 
 
+UNREADABLE = object()      # read_json_quiet's default where a file holding null must not read as one that cannot be read
+
+
+def read_json_quiet(path, default=None):
+    """json.loads(Path(path).read_text()), or `default` when that raises OSError or ValueError: no file, a folder, bytes
+    that are not text in the locale's encoding, not JSON. Read in the locale's encoding like the code it replaced
+    (read_json reads UTF-8 and lets a broken file raise). Pass UNREADABLE as `default` where the caller must tell a
+    file that holds null from one that cannot be read."""
+    try:
+        return json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return default
+
+
+def read_dict(path):
+    """read_json(path, default=None) or {}: the JSON of a file that holds an object; {} when the file is missing or holds
+    null, false, 0, "" or []. A file that is not JSON raises, as with read_json."""
+    return read_json(path, default=None) or {}
+
+
 class JsonlAppender:
     """Append-only JSONL with one fsync per record (the durable acknowledgement boundary).
 

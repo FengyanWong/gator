@@ -29,7 +29,7 @@ import statistics
 from types import SimpleNamespace
 from . import compile as compiler, schema, units
 from .layout import RunLayout
-from .storage import DatasetReader, read_json
+from .storage import DatasetReader, read_dict, read_json
 from .storage.dataset import utcnow
 
 FORMAT = 'gator-calibration-1'
@@ -286,7 +286,7 @@ def sentence(result) -> str:
 def from_run(run_dir, manifest=None) -> dict:
     """The calibration of a finished baseline run, from its tables and its effective configuration."""
     layout = RunLayout(run_dir)
-    manifest = manifest if manifest is not None else (read_json(layout.manifest, default={}) or {})
+    manifest = manifest if manifest is not None else read_dict(layout.manifest)
     config = schema.WorkbenchConfig.model_validate(read_json(layout.effective_config))
     reader = DatasetReader(layout.data)
     evaluations = reader.rows('evaluations', ['evaluation_id', 'dispatch_index', 'action_source', 'status', 'reward',

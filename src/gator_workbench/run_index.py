@@ -16,9 +16,9 @@ import time
 
 from . import checkpoints as ckpt
 from .run_lock import RunLock
-from .layout import find_runs
+from .layout import RunLayout, find_runs
 from .paths import OutputRoots
-from .storage.atomic import read_json
+from .storage.atomic import read_dict, read_json
 from .summary import durations
 from .settings_store import remembered_output_root
 
@@ -190,8 +190,8 @@ def _run_facts(run_dir, *, fresh=False) -> dict | None:
             with _RUN_CACHE_LOCK:
                 _RUN_CACHE.pop(str(run_dir), None)
             return None
-        entry = dict(key=key, manifest=manifest, summary=read_json(Path(run_dir) / 'run_summary.json', default={}) or {},
-                     status=read_json(Path(run_dir) / 'status.json', default={}) or {}, point=ckpt.latest_point(run_dir),
+        entry = dict(key=key, manifest=manifest, summary=read_dict(Path(run_dir) / 'run_summary.json'),
+                     status=read_dict(Path(run_dir) / 'status.json'), point=ckpt.latest_point(run_dir),
                      label=ckpt.model_label_of(run_dir, manifest), listing=None)
         with _RUN_CACHE_LOCK:
             _RUN_CACHE[str(run_dir)] = entry
@@ -245,7 +245,7 @@ def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True, fresh=
             manifest, summary, status = facts['manifest'], facts['summary'], facts['status']
             # The lock is probed only for a run whose status says it works: the row has no `worker_alive`, so a run at
             # rest needs no probe (run_status still probes every time for the polled status).
-            if status.get('state') in LIVE_STATES and not RunLock.held(Path(run_dir) / 'control' / 'run.lock'):
+            if status.get('state') in LIVE_STATES and not RunLock.held(RunLayout(run_dir).run_lock):
                 status = dict(status, state='interrupted')
             budget = status.get('budget') or {}     # current while a worker is on the run; the summary is written when it rests
             row = _RunRow(manifest, run_dir=str(run_dir), run_id=manifest.get('run_id'), task_id=manifest.get('task_id'),

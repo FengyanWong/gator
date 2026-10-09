@@ -14,7 +14,7 @@ from . import recipes, run_index
 from .circuit_types import MAESTRO
 from .layout import find_runs
 from .profile_store import FILES, ProfileError, profile_entry, reference_metrics
-from .storage.atomic import sha256_file as _sha256, write_json
+from .storage.atomic import UNREADABLE, read_json_quiet, sha256_file as _sha256, write_json
 from .storage.dataset import utcnow
 
 
@@ -74,9 +74,8 @@ def record_reference(name, run_dir) -> dict:
 def latest_baseline_run(name, run_dirs):
     """The newest run among `run_dirs` whose baseline can become the reference of real:<name>, or None."""
     for run_dir in run_dirs:
-        try:
-            config = json.loads((Path(run_dir) / 'effective_config.json').read_text())
-        except (OSError, ValueError):
+        config = read_json_quiet(Path(run_dir) / 'effective_config.json', UNREADABLE)
+        if config is UNREADABLE:
             continue
         if (config.get('circuit') or {}).get('task_id') == f'real:{name}':
             return str(run_dir)
@@ -120,9 +119,8 @@ def adopt_baseline_run(run_dir, manifest=None) -> dict | None:
     has no baseline; a run the task has outlived is left alone. A reference is never replaced."""
     run_dir = Path(run_dir)
     if manifest is None:
-        try:
-            manifest = json.loads((run_dir / 'run_manifest.json').read_text())
-        except (OSError, ValueError):
+        manifest = read_json_quiet(run_dir / 'run_manifest.json', UNREADABLE)
+        if manifest is UNREADABLE:
             return None
     task_key = (manifest.get('circuit') or {}).get('task_key') or ''
     if manifest.get('run_kind') != BASELINE_KIND or manifest.get('mock') or not task_key.startswith('real:'):

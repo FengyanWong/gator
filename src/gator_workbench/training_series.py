@@ -36,7 +36,7 @@ import threading
 from . import schema
 from .compile import build_specs
 from .layout import RunLayout
-from .storage.atomic import read_json, read_jsonl
+from .storage.atomic import read_dict, read_json, read_jsonl
 from .storage.tables import arrow_schema
 
 # The recorded columns each table gives, by their own names (storage/tables.py says what each one means). Two are
@@ -606,8 +606,8 @@ def run_objective(run_dir):
 def learner_record(run_dir):
     """Whether this run records learner updates, and in plain words why not (engine._prepare decides the same way)."""
     layout = RunLayout(run_dir)
-    config = read_json(layout.effective_config, default={}) or {}
-    manifest = read_json(layout.manifest, default={}) or {}
+    config = read_dict(layout.effective_config)
+    manifest = read_dict(layout.manifest)
     return _learner(config, manifest)
 
 
@@ -646,7 +646,7 @@ def read_training(run_dir, flushes=0, *, max_rows=MAX_ROWS, tail_cursor=None, ca
         records = read_jsonl(journal / 'flushes.jsonl')
     total = len(records)
     start = max(0, min(int(flushes), total))
-    manifest = read_json(layout.manifest, default={}) or {}
+    manifest = read_dict(layout.manifest)
     config, objective = _config(layout.effective_config, cached)
     chosen, rows = [], 0
     for record in records[start:]:

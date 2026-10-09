@@ -29,7 +29,7 @@ from .reward_diagnostics import load as steering_check
 from .run_definitions import learner_experiment
 from .run_lock import RunLock
 from .schema import REMOVED_SEARCH_METHODS, WorkbenchConfig, canonical_json, config_hash, task_definition_hash
-from .storage.atomic import read_json, write_json
+from .storage.atomic import read_dict, read_json, write_json
 from .storage.dataset import utcnow
 from .task_registry import NATIVE_DRAFT_NOT_EXECUTABLE, REAL_AUTHORIZATION_REQUIRED
 from .tasks import TaskBlocked, load_task, load_task_view
@@ -239,8 +239,8 @@ def connection_gate(task, config, monitor, *, acknowledge_unknown=False):
     # Virtuoso task never runs on ngspice. Said before the gate probes anything.
     family = getattr(task, 'connection_family', 'virtuoso')
     settings = connection.load_profiles()['profiles'].get(profile_id)
-    if settings is not None and connection.family_of(connection.profile_kind(settings if isinstance(settings, dict) else {})) != family:
-        label = connection.KINDS.get(connection.profile_kind(settings if isinstance(settings, dict) else {}) or '', {}).get('label', 'of an unknown kind')
+    if settings is not None and connection.family_of(connection.entry_kind(settings)) != family:
+        label = connection.KINDS.get(connection.entry_kind(settings) or '', {}).get('label', 'of an unknown kind')
         raise RunRejected(f'Connection {profile_id!r} is "{label}", but this task runs on '
                           + ('ngspice: choose an ngspice connection ("ngspice on this machine" or "ngspice over SSH") in the '
                              'Connection window, or add one there.' if family == 'ngspice' else
@@ -497,7 +497,7 @@ def _prepare_resume(config, roots, task, task_hash, gate):
         raise RunRejected(f'{run_dir} is not a run directory', code='not_a_run')
     # Take the run lock BEFORE reading or changing anything, and keep it until the worker ends: a second
     # "continue" (double click, reconnect) can then never append a segment or start a second worker.
-    lock = RunLock(layout.control / 'run.lock')
+    lock = RunLock(layout.run_lock)
     try:
         lock.acquire()
     except RuntimeError:
@@ -527,7 +527,7 @@ def _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifes
                                max_wall_seconds=merged.run.max_wall_seconds, max_retries=merged.run.max_retries)
     manifest['state'] = 'created'
     write_json(layout.manifest, manifest)
-    command = layout.control / 'command.json'
+    command = layout.command
     if command.exists():
         command.unlink()                       # a stale pause must not stop the continued run immediately
     return layout, manifest
@@ -568,10 +568,7 @@ def _resume_checks(config, task, task_hash, layout, manifest, run_dir):
         raise RunRejected(f"max_evaluations ({merged.run.max_evaluations}) is below the {meta['ledger']['charged']} "
                           'evaluations this run already consumed; resume keeps existing counters', code='budget')
     compiled = compile_task(merged, task.base_graph)
-    contract = modes.current_contract(learner_experiment(merged, task, task_hash),
-                                      modes.model_config_from(merged.run.network),
-                                      modes.sac_config_from(merged.run.advanced), compiled.spec_schema,
-                                      run_vocabulary(run_dir), runtime=modes.runtime_options(merged, run_vocabulary(run_dir)))
+    contract = learner_contract(merged, task, task_hash, compiled.spec_schema, run_vocabulary(run_dir))
     compatibility = ckpt.check_compatibility(meta, mode='resume', task_definition_hash=task_hash, contract=contract)
     if not compatibility['compatible']:
         raise RunRejected('The latest checkpoint cannot be fully resumed. No fallback to scratch is performed.',
@@ -662,7 +659,7 @@ def continuation(run_dir, *, max_evaluations=None) -> dict:
 # ---------------------------------------------------------------------------- worker process
 def launch_worker(layout: RunLayout, *, allow_real=False):
     """Detached process (own session). Returns the pid. Never launched by tests or at import time."""
-    lock = take_lock(layout.run_dir) or RunLock(layout.control / 'run.lock')
+    lock = take_lock(layout.run_dir) or RunLock(layout.run_lock)
     if not lock.held_here:
         try:
             lock.acquire()
@@ -699,7 +696,7 @@ def send_command(run_dir, command: str):
     if command == 'checkpoint':
         _check_save_now(layout)
     record = dict(id=uuid4().hex, command=command, issued_utc=utcnow().isoformat())
-    write_json(layout.control / 'command.json', record)
+    write_json(layout.command, record)
     return record
 
 
@@ -712,12 +709,12 @@ def _check_save_now(layout):
         ended = dict(paused='paused', stopped='stopped', completed='finished').get(status.get('state'), 'ended')
         raise RunRejected(f'This run is not running, so there is nothing new to save: its state was saved when it {ended}.',
                           code='not_running')
-    pending = (read_json(layout.control / 'command.json', default={}) or {}).get('command')
+    pending = read_dict(layout.command).get('command')
     if pending in ('pause', 'stop', 'cancel') or status.get('state') in ('pausing', 'stopping'):
         raise RunRejected('This run is already on its way to a stop' + (
             ' (forced cancel): nothing more is saved.' if pending == 'cancel' else
             ': it saves everything by itself as soon as the simulation in flight has finished.'), code='already_stopping')
-    output = (read_json(layout.effective_config, default={}) or {}).get('output') or {}
+    output = read_dict(layout.effective_config).get('output') or {}
     if output.get('save_checkpoints') is False:
         raise RunRejected('This run was started with "Model checkpoints" switched off, so it keeps no saved model. '
                           'Start a run with that option on to be able to save.', code='checkpoints_off')
@@ -731,7 +728,7 @@ def worker_started(run_dir, since=0.0) -> bool:
     "launching" record whose run shows neither never got its worker."""
     layout = RunLayout(Path(run_dir))
     try:
-        if RunLock.held(layout.control / 'run.lock'):
+        if RunLock.held(layout.run_lock):
             return True
         return layout.status.is_file() and layout.status.stat().st_mtime > since
     except OSError:
@@ -740,8 +737,8 @@ def worker_started(run_dir, since=0.0) -> bool:
 
 def run_status(run_dir) -> dict:
     layout = RunLayout(Path(run_dir))
-    status = read_json(layout.status, default={}) or {}
-    alive = RunLock.held(layout.control / 'run.lock')
+    status = read_dict(layout.status)
+    alive = RunLock.held(layout.run_lock)
     if status.get('state') in ('starting', 'running', 'pausing', 'stopping') and not alive:
         status = dict(status, state='interrupted', note='The worker process is gone without a clean shutdown. Data '
                       'acknowledged before the interruption is preserved; resume to recover and continue.')
@@ -791,7 +788,7 @@ def status_view(path, connection) -> dict:
         result['steering'] = steering_check(path)
     except Exception:                   # a diagnostic line: a missing or damaged data part leaves it empty, never the status
         result['steering'] = None
-    manifest = read_json(layout.manifest, default={}) or {}
+    manifest = read_dict(layout.manifest)
     # The lineage (record 7.264): the run list's fields, and an offline model's recorded source runs for its Details.
     pretraining = manifest.get('pretraining') or {}
     sources = [dict(run_dir=s.get('run_dir'), run_id=s.get('run_id'), task=s.get('task'), evaluations=s.get('evaluations'))

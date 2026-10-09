@@ -20,7 +20,7 @@ is not taken over.
 from __future__ import annotations
 
 
-from .paths import bridge_state_dir
+from .paths import bridge_session_lock
 from .security import redact
 from .storage.dataset import utcnow
 from .virtuoso_setup import differences
@@ -114,7 +114,7 @@ def lock_holder(path) -> str | None:
 
 def _busy_step(reason=None) -> dict:
     """Another real run or check holds the adapter's session lock: only one process drives the Virtuoso cell at a time."""
-    lock = bridge_state_dir() / 'session.lock'
+    lock = bridge_session_lock()
     holder = lock_holder(lock) or f'another process ({reason or "it did not say which"})'
     return _step('busy', False, fix=FIX_BUSY, detail=f'The run adapter\'s session lock ({lock}) is held by {holder}. Only one real '
                  'run or check works on Virtuoso at a time; nothing was read from it.')
@@ -135,7 +135,7 @@ def copy_steps(monitor, profile_id, name, entry, saved, *, acknowledge_unknown=F
     """Parts 2 and 3: the saved task against its working copy in Virtuoso. Read-only; each step says what it found."""
     from . import profile_preflight, profiles, working_copy  # lazy: profiles imports the optimizer (torch)
     commands = commands or {}
-    if lock_holder(bridge_state_dir() / 'session.lock'):           # record 7.207: the adapter could not take the lock
+    if lock_holder(bridge_session_lock()):           # record 7.207: the adapter could not take the lock
         return [_busy_step()]
     try:
         result = profile_preflight.preflight(monitor, name, profile_id, acknowledge_unknown=acknowledge_unknown,

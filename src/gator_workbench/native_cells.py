@@ -31,7 +31,7 @@ import re
 import shutil
 
 from .paths import local_settings_dir, repo_root
-from .storage.atomic import sha256_file as _sha256, write_json
+from .storage.atomic import read_json_quiet, sha256_file as _sha256, write_json
 from .storage.dataset import utcnow
 from .vocabulary import parse_models
 
@@ -69,10 +69,7 @@ def verified_models() -> dict:
     is left out rather than chosen."""
     models, conflicting = {name: dict(entry) for name, entry in ANALOGLIB_VERIFIED.items()}, set()
     for path in sorted((repo_root() / 'configs').glob('gpdk045_*.json')):
-        try:
-            raw = json.loads(path.read_text())
-        except (OSError, ValueError):
-            continue
+        raw = read_json_quiet(path)                    # None when unreadable: not a dict, so nothing is taken from it
         for name, entry in (raw.get('models') or {}).items() if isinstance(raw, dict) else ():
             clean = dict(kind=entry['kind'], terminals=list(entry['terminals']), roles=list(entry['roles']),
                          parameters=dict(entry.get('parameters') or {}))

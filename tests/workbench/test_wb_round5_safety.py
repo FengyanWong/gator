@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from gator_workbench import checkpoints as ckpt, layout as layout_module, paths, run_index, runs, schema, settings_store, worker
 from gator_workbench.api import app as app_module
-from gator_workbench.storage import atomic, read_json
+from gator_workbench.storage import atomic, read_dict, read_json
 from helpers import execute, make_config, roots_for, workbench_app
 
 
@@ -313,6 +313,9 @@ def test_the_run_list_reads_each_status_once_and_the_model_list_no_manifest(two_
     monkeypatch.setattr(layout_module, 'read_json', lambda path, *a, **k: read.append(Path(path).name) or read_json(path, *a, **k))
     monkeypatch.setattr(run_index, 'read_json', lambda path, *a, **k: read.append(Path(path).name) or read_json(path, *a, **k))
     monkeypatch.setattr(ckpt, 'read_json', lambda path, *a, **k: read.append(Path(path).name) or read_json(path, *a, **k))
+    # the empty-dict reads of these modules go through read_dict (refactoring package B8): counted the same way
+    monkeypatch.setattr(run_index, 'read_dict', lambda path: read.append(Path(path).name) or read_dict(path))
+    monkeypatch.setattr(ckpt, 'read_dict', lambda path: read.append(Path(path).name) or read_dict(path))
     listed = runs.list_runs(roots_for(two_runs), two_runs, fresh=True)     # read from disk (Refresh list): each file once
     assert read.count('status.json') == 2 and read.count('run_manifest.json') == 2
     read.clear()

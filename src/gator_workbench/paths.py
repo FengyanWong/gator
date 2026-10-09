@@ -65,6 +65,17 @@ def local_settings_dir() -> Path:
     return repo_root() / 'configs' / 'local' / 'workbench'
 
 
+def inside(path, roots) -> bool:
+    """`path` is one of `roots` or lies under one of them (all resolved already)."""
+    return any(path == root or root in path.parents for root in roots)
+
+
+def bridge_session_lock() -> Path:
+    """The run adapter's session lock (record 7.167): every process that works on the Virtuoso cell takes it - a run, a
+    corner check, Save task."""
+    return bridge_state_dir() / 'session.lock'
+
+
 def bridge_state_dir() -> Path:
     """The run adapter's state root: its session lock (`session.lock`, taken by every process that works on the Virtuoso
     cell, so that two never do at once) and a folder per session with the crash journal of each write (record 7.167).
@@ -109,9 +120,8 @@ class OutputRoots:
         if not candidate.is_absolute():
             raise PathNotAllowed('An absolute backend path is required')
         resolved = candidate.resolve()
-        for root in self.roots:
-            if resolved == root or root in resolved.parents:
-                return resolved
+        if inside(resolved, self.roots):
+            return resolved
         raise PathNotAllowed(f'{resolved} is outside the allowed output roots: '
                              + ', '.join(str(r) for r in self.roots)
                              + f'. Roots can only be added by the backend operator (--allow-root or '

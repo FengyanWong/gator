@@ -57,7 +57,7 @@ class RunLayout:
                      summary='run_summary.json', artifact_manifest='artifact_manifest.json', status='status.json',
                      input_snapshot='input_snapshot', data='data', best_design='best_design',
                      checkpoints='checkpoints', waveforms='waveforms', logs='logs', exports='exports',
-                     control='control', work='work')
+                     control='control', work='work', run_lock='control/run.lock', command='control/command.json')
         if name in table:
             return self.run_dir / table[name]
         raise AttributeError(name)

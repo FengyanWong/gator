@@ -23,7 +23,7 @@ from statistics import mean, median
 
 from . import EXPORTER_VERSION
 from .layout import RunLayout
-from .storage.atomic import publish, read_json, temporary_path, write_json
+from .storage.atomic import publish, read_dict, read_json, temporary_path, write_json
 from .storage.dataset import DatasetReader, map_to_dict, utcnow
 from .storage.tables import TABLES
 
@@ -275,7 +275,7 @@ def budget_outcome(row, budget):
 def export_aggregates(experiment_dir, *, include_mock=None, budgets=None):
     """Write all five tables into <experiment_dir>/aggregates. Returns {table: path}."""
     experiment_dir = Path(experiment_dir)
-    experiment = read_json(experiment_dir / 'experiment.json', default={}) or {}
+    experiment = read_dict(experiment_dir / 'experiment.json')
     if include_mock is None:
         include_mock = bool(experiment.get('mock'))     # a mock experiment aggregates its own (labelled) mock runs
     runs, skipped = collect_runs(experiment_dir, include_mock=include_mock)

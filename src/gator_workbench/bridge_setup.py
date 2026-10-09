@@ -28,7 +28,7 @@ from pathlib import Path
 
 from . import directories, virtuoso_setup
 from .connection import RealBridge, child_error, resolve_profile_id, run_child
-from .paths import bridge_state_dir
+from .paths import bridge_session_lock
 from .security import skill_string as _q
 
 NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
@@ -495,7 +495,7 @@ def _main(argv=None):
         if not NAME.match(value):
             raise SystemExit('library and cell names must be plain Cadence names')
     out = Path(args.output)
-    lock_path = bridge_state_dir() / 'session.lock'            # the run adapter's lock (record 7.167)
+    lock_path = bridge_session_lock()                          # the run adapter's lock (record 7.167)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open('a+') as lock:
         try:

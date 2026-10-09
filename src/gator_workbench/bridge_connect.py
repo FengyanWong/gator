@@ -273,6 +273,33 @@ class ProfileExists(FileExistsError):
     pass
 
 
+def _readable_connection_file(target):
+    """The connection file's content, or None when there is none. A file that is not a readable connection file is
+    refused: it is never replaced."""
+    existing = None
+    if target.exists():
+        try:
+            existing = read_json(target, default=None)
+        except (OSError, ValueError):                # not JSON at all
+            existing = None
+        if not isinstance(existing, dict) or not isinstance(existing.get('profiles'), dict):
+            raise FileExistsError(f'{target} exists but is not a readable connection file. It is never replaced: '
+                                  'repair or move it by hand.')
+    return existing
+
+
+def _write_connection_file(target, document, existing, suffix):
+    """Write `document` as the connection file; a file that was there is kept first as a timestamped copy next to it
+    (`<name>.before-<UTC time>-<suffix>`). Returns that copy, or None."""
+    backup = None
+    if existing is not None:
+        backup = target.with_name(f"{target.name}.before-{utcnow().strftime('%Y%m%dT%H%M%SZ')}-{suffix}")
+        shutil.copy2(target, backup)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    write_json(target, document)
+    return backup
+
+
 def create_profile(profile_id=DEFAULT_PROFILE_ID, *, kind=connection.DEFAULT_KIND, ssh_host=None, bridge_profile=None,
                    home=None) -> dict:
     """Add ONE connection profile, built from what is found on this host, to the connection file (created if
@@ -291,18 +318,10 @@ def create_profile(profile_id=DEFAULT_PROFILE_ID, *, kind=connection.DEFAULT_KIN
         raise ValueError('ssh_host is required for "ngspice over SSH" and accepted for nothing else')
     with _CREATE_LOCK:
         target = connection.connection_file()
-        existing = None
-        if target.exists():
-            try:
-                existing = read_json(target, default=None)
-            except (OSError, ValueError):                # not JSON at all
-                existing = None
-            if not isinstance(existing, dict) or not isinstance(existing.get('profiles'), dict):
-                raise FileExistsError(f'{target} exists but is not a readable connection file. It is never replaced: '
-                                      'repair or move it by hand.')
-            if profile_id in existing['profiles']:
-                raise ProfileExists(f'A connection named {profile_id!r} already exists in {target}. Existing connections are '
-                                    'never changed from the browser: pick another name, or edit the file by hand.')
+        existing = _readable_connection_file(target)
+        if existing is not None and profile_id in existing['profiles']:
+            raise ProfileExists(f'A connection named {profile_id!r} already exists in {target}. Existing connections are '
+                                'never changed from the browser: pick another name, or edit the file by hand.')
         found = detect_setup(home)
         setup = next(item for item in found['kinds'] if item['kind'] == kind)
         if family == 'virtuoso':
@@ -323,12 +342,7 @@ def create_profile(profile_id=DEFAULT_PROFILE_ID, *, kind=connection.DEFAULT_KIN
         document['profiles'] = dict(document['profiles'], **{profile_id: profile})
         if document.get('active') not in document['profiles']:
             document['active'] = profile_id
-        backup = None
-        if existing is not None:
-            backup = target.with_name(f"{target.name}.before-{utcnow().strftime('%Y%m%dT%H%M%SZ')}-{profile_id}")
-            shutil.copy2(target, backup)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        write_json(target, document)
+        backup = _write_connection_file(target, document, existing, profile_id)
     note = ('Enough for connecting and testing. Real-simulation tasks also need library, creation_receipt, model_file and '
             'reference_measurements in this file (docs/workbench.md).' if family == 'virtuoso' else
             'Enough for testing and for running the ngspice netlist tasks (Project column: "ngspice netlist..."). Virtuoso '
@@ -354,15 +368,7 @@ def save_directories(values) -> dict:
         raise ValueError('values must map each folder to a path, or to null for its default')
     with _CREATE_LOCK:
         target = connection.connection_file()
-        existing = None
-        if target.exists():
-            try:
-                existing = read_json(target, default=None)
-            except (OSError, ValueError):                # not JSON at all
-                existing = None
-            if not isinstance(existing, dict) or not isinstance(existing.get('profiles'), dict):
-                raise FileExistsError(f'{target} exists but is not a readable connection file. It is never replaced: '
-                                      'repair or move it by hand.')
+        existing = _readable_connection_file(target)
         current = directories.saved()[0]
         wanted = dict(current)
         for key, raw in values.items():
@@ -395,11 +401,7 @@ def save_directories(values) -> dict:
                 document[directories.BLOCK] = block
             else:
                 document.pop(directories.BLOCK, None)
-            if existing is not None:
-                backup = target.with_name(f"{target.name}.before-{utcnow().strftime('%Y%m%dT%H%M%SZ')}-folders")
-                shutil.copy2(target, backup)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            write_json(target, document)
+            backup = _write_connection_file(target, document, existing, 'folders')
     return dict(directories.describe(), saved=bool(changed), changed=changed, backup=None if backup is None else str(backup))
 
 

@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 
 from .checkpoints import verify_files
-from .layout import find_runs
+from .layout import RunLayout, find_runs
 from .paths import MOCK_SUBDIR
 from .run_lock import RunLock
 from .storage.atomic import publish, read_json, sha256_file, temporary_path, write_json
@@ -135,7 +135,7 @@ def save_point_folders(root, *, exclude=()) -> list:
             reason = 'excluded'
         elif root not in run_dir.resolve().parents:
             reason = 'a link to a run elsewhere'
-        elif RunLock.held(run_dir / 'control' / 'run.lock'):
+        elif RunLock.held(RunLayout(run_dir).run_lock):
             reason = 'its run is working'
         try:
             names = sorted(n for n in os.listdir(run_dir / 'checkpoints') if n.startswith('ckpt-'))

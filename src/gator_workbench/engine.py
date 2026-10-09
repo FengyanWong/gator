@@ -96,7 +96,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         self.provenance = 'mock' if task.mock else 'real'
         self.use_processes = (not task.mock) if use_processes is None else use_processes
         self._lane_factory, self._clock = lane_factory, clock
-        self.lock = lock or RunLock(self.layout.control / 'run.lock')
+        self.lock = lock or RunLock(self.layout.run_lock)
         self.stop_reason = self.requested = None
         self.forced = False
         self.error = None
@@ -449,7 +449,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
             self._log_error('timings_not_written', exc)
 
     def _poll_control(self):
-        command = read_json(self.layout.control / 'command.json', default={})
+        command = read_json(self.layout.command, default={})
         if not command or command.get('id') == getattr(self, '_last_command', None):
             return
         self._last_command = command.get('id')

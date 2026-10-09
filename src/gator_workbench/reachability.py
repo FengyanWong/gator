@@ -12,7 +12,7 @@ from .paths import OutputRoots, repo_root
 from .reward_diagnostics import file_identity, kept, tables_version
 from .schema import WorkbenchConfig
 from .spec_equations import SpecPlan
-from .storage.atomic import read_json, read_jsonl
+from .storage.atomic import read_dict, read_jsonl
 from .units import canonical_unit
 
 
@@ -110,7 +110,7 @@ def _designs(run):
 def _saved(run):
     """A run's effective_config.json as saved, read again only when the file changed (a continued run rewrites it)."""
     path = Path(run) / 'effective_config.json'
-    return kept(_SAVED, str(path), file_identity(path), lambda: read_json(path, default={}) or {})
+    return kept(_SAVED, str(path), file_identity(path), lambda: read_dict(path))
 
 
 def _qualification_reference(config, *, all_candidates=False):
@@ -154,7 +154,7 @@ def _qualification_reference(config, *, all_candidates=False):
 @lru_cache(maxsize=4)
 def _stage_a_report(root, version):
     """The stage-A report. `version`, its stat, only keys the cache."""
-    return read_json(Path(root) / 'stage-a/report.json', default={}) or {}
+    return read_dict(Path(root) / 'stage-a/report.json')
 
 
 @lru_cache(maxsize=64)
@@ -179,7 +179,7 @@ def _stage_runs(root, versions):
     """The run folders the stage-B and stage-C reports name inside `root`. `versions`, their stats, only key the cache."""
     root, paths = Path(root), []
     for stage in ('b', 'c'):
-        report = read_json(root / f'stage-{stage}/report.json', default={}) or {}
+        report = read_dict(root / f'stage-{stage}/report.json')
         directory = report.get('run_directory')
         if directory and Path(directory).resolve().is_relative_to(root.resolve()):
             paths.append(Path(directory))

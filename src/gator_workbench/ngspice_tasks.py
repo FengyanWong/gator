@@ -23,11 +23,11 @@ import re
 import shutil
 
 from .analoggym import AnalogGymFactory, export_best_decks, physical_graph
-from .connection import load_profiles
+from .connection import named_or_active
 from .ngspice_backend import LOCAL_CONCURRENCY, NgspiceEnvFactory, NgspiceLink, NgspiceLinkError
 from .ngspice_netlist import KINDS, NetlistError, Parsed, parse_text, rewrite
-from .paths import local_settings_dir
-from .storage.atomic import publish, temporary_path, write_json
+from .paths import inside, local_settings_dir
+from .storage.atomic import UNREADABLE, publish, read_json_quiet, temporary_path, write_json
 from .storage.dataset import utcnow
 from .task_registry import REAL_AUTHORIZATION_REQUIRED, TaskBlocked, TaskRuntime, starter_project
 
@@ -65,10 +65,7 @@ def list_tasks() -> dict:
     found = {}
     root = store_root()
     for entry_file in sorted(root.glob(f'*/{FILES["entry"]}')) if root.is_dir() else ():
-        try:
-            entry = json.loads(entry_file.read_text())
-        except (OSError, ValueError):
-            continue
+        entry = read_json_quiet(entry_file)            # None when unreadable: not a dict
         if isinstance(entry, dict) and entry.get('name') == entry_file.parent.name:
             found[entry['name']] = dict(entry, directory=str(entry_file.parent))
     return found
@@ -213,9 +210,8 @@ def delete(name, *, run_rows=()) -> dict:
     for row in run_rows:                                # the run list's rows: only a live run's manifest is read
         if row.get('state') not in ('starting', 'running', 'pausing', 'stopping') or not row.get('run_dir'):
             continue
-        try:
-            manifest = json.loads((Path(row['run_dir']) / 'run_manifest.json').read_text())
-        except (OSError, ValueError):
+        manifest = read_json_quiet(Path(row['run_dir']) / 'run_manifest.json', UNREADABLE)
+        if manifest is UNREADABLE:
             continue
         if (manifest.get('circuit') or {}).get('task_key') == task_key:
             raise NgspiceTaskError(f'Run {row.get("run_id") or row["run_dir"]} of {task_key} is working right now: abort it or let it finish first')
@@ -231,7 +227,7 @@ def read_file(path, roots) -> dict:
     if not isinstance(path, str) or not path.strip():
         raise NgspiceTaskError('Give the path of a netlist file on the backend machine.')
     resolved = Path(path).expanduser().resolve()
-    if not any(resolved == root or root in resolved.parents for root in roots):
+    if not inside(resolved, roots):
         raise PermissionError('The file is outside the allowed input roots. Roots are added by the backend operator '
                               '(--allow-input-root), never from the browser; or paste the netlist text instead.')
     if not resolved.is_file():
@@ -245,13 +241,11 @@ def read_file(path, roots) -> dict:
 def connection_problem(profile_id=None) -> str | None:
     """Why the named (or the active) connection cannot run this task, or None."""
     # lazy: connection.KINDS, not this module's netlist KINDS
-    from .connection import KINDS, family_of, load_profiles, profile_kind
-    loaded = load_profiles()
-    key = profile_id or loaded['active']
-    settings = loaded['profiles'].get(key) if key else None
+    from .connection import KINDS, entry_kind, family_of
+    _, key, settings = named_or_active(profile_id)
     if settings is None:
         return NEEDS_NGSPICE_CONNECTION if not key else f'Connection {key!r} is not configured. ' + NEEDS_NGSPICE_CONNECTION
-    kind = profile_kind(settings if isinstance(settings, dict) else {})
+    kind = entry_kind(settings)
     if kind is None or family_of(kind) != 'ngspice':
         label = KINDS[kind]['label'] if kind in KINDS else 'of an unknown kind'
         return f'Connection {key!r} is "{label}". ' + NEEDS_NGSPICE_CONNECTION
@@ -260,9 +254,7 @@ def connection_problem(profile_id=None) -> str | None:
 
 def link_for(profile_id=None):
     """The validated NgspiceLink of the named (or active) connection; NgspiceLinkError otherwise."""
-    loaded = load_profiles()
-    key = profile_id or loaded['active']
-    settings = loaded['profiles'].get(key) if key else None
+    settings = named_or_active(profile_id)[2]
     if settings is None:
         raise NgspiceLinkError(NEEDS_NGSPICE_CONNECTION)
     return NgspiceLink.from_settings(settings)

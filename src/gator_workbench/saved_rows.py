@@ -15,6 +15,7 @@ from . import profile_store, units
 from .diffs import structured_diff
 from .profile_store import HISTORY, ProfileError, TASK_FILE, profile_dir
 from .schema import MeasurementDefinition, OptimizationParameter, PerformanceTarget
+from .storage.atomic import UNREADABLE, read_json_quiet
 
 
 # (configuration key, editor name, row ID field, task file part)
@@ -108,9 +109,8 @@ def _read_json(path):
         return None
     key = (str(path), stat.st_mtime_ns, stat.st_size)
     if key not in _FILES:
-        try:
-            data = json.loads(path.read_text())
-        except (OSError, ValueError):
+        data = read_json_quiet(path, UNREADABLE)
+        if data is UNREADABLE:
             return None
         if len(_FILES) > 256:
             _FILES.clear()

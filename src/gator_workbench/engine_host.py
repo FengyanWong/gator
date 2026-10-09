@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 import shlex
 
-from .storage.atomic import read_json
+from .storage.atomic import read_dict
 
 
 # A Spectre job's folder on the simulator host, as the bridge names it (record 7.282): nothing else is ever deleted there.
@@ -46,7 +46,7 @@ class HostMaintenance:
         (results_on_host, written by the Maestro measurement). Only a folder of the bridge's own form is kept for removal."""
         if self.task.mock or self.config.output.keep_simulator_host_folders:
             return
-        raw = (read_json(Path(job_dir) / 'measurements.json', default=None) or {}).get('results_on_host')
+        raw = read_dict(Path(job_dir) / 'measurements.json').get('results_on_host')
         folder = os.path.dirname(raw) if isinstance(raw, str) else ''
         if HOST_JOB_FOLDER.match(folder) and '/../' not in folder and folder not in self._host_folders:
             self._host_folders.append(folder)

@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 
 from .paths import local_settings_dir
+from .storage.atomic import UNREADABLE, read_json_quiet
 
 
 NAME = re.compile(r'^[a-z][a-z0-9_]{1,39}$')
@@ -39,9 +40,8 @@ def list_profiles() -> dict:
     found = {}
     root = store_root()
     for entry_file in sorted(root.glob(f'*/{FILES["entry"]}')) if root.is_dir() else ():
-        try:
-            entry = json.loads(entry_file.read_text())
-        except (OSError, ValueError):
+        entry = read_json_quiet(entry_file, UNREADABLE)
+        if entry is UNREADABLE:
             continue
         if entry.get('format') == FORMAT and entry.get('name') == entry_file.parent.name and NAME.match(entry['name']):
             found[entry['name']] = dict(entry, directory=str(entry_file.parent))

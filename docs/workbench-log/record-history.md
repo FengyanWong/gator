@@ -397,3 +397,6 @@ One row per commit, newest last.
 | `ff2a13f` | 10-09 04:00 | 7.285 | encoder comparison stage C complete: the three general models transfer alike; docs only (session "Encoder run plan revision") |
 | `4323753` | 10-09 04:00 | - | record only: names the commit of record 7.285, and the table rows for aa132c1 and ff2a13f |
 | `ae20306` | 10-09 05:32 | 7.288 | encoder comparison stage D complete: the two held-out cascodes; docs only (session "Encoder run plan revision") |
+| `8bfb034` | 10-09 05:33 | - | record only: names the commit of record 7.288, and the table rows for 4323753 and ae20306 |
+| `b79198e` | 10-09 05:40 | 7.286 | Astra's review of 7.284: the compression pass refreshes the artifact manifest once per run, the Data tab reads only the shown columns (session "Compression integrity and manifest issues") |
+| `099defa` | 10-09 05:40 | 7.287 | plan: refactoring - the same behaviour, a structure that is easier to change; docs only (session "Refactoring plan") |

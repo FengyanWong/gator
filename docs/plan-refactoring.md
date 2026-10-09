@@ -8,8 +8,8 @@ scratchpad and are reproduced in section 7 so that the executing session can reb
 
 **State (2026-10-09, record 7.290):** groups A, B, C (C11 left out: its proof cannot see hover, focus or other widths) and D
 are done in a clean copy, one commit per package, each proved to change nothing; group E is not done (a source-digest
-change is the user's decision). Not landed in this tree yet: record 7.290 lists what each package did, what was left
-out and why.
+change is the user's decision). Landed in the live tree the same day; record 7.290 lists what each package did, what was
+left out and why.
 
 ## 0. In plain words
 

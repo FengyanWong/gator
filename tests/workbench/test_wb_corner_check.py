@@ -20,7 +20,6 @@ import pyarrow.parquet as pq
 from gator_workbench import reward_diagnostics, spec_equations
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
-pytestmark = pytest.mark.xdist_group('test_wb_corner_check')
 
 CORNERS = ('nominal', 'ss_hot_low', 'ff_cold_high', 'fs_nominal', 'sf_nominal')
 
@@ -40,6 +39,7 @@ def fingerprint(directory):
 
 
 # ------------------------------------------------------------------------------------------------ the plan (free)
+@pytest.mark.xdist_group('test_wb_corner_check')
 def test_plan_picks_the_safest_distinct_feasible_designs(finished):
     _, layout = finished
     plan = cc.plan(layout.run_dir)
@@ -58,6 +58,7 @@ def test_plan_picks_the_safest_distinct_feasible_designs(finished):
     assert math.isclose(first['min_margin'], first['spec_values']['score'] - 0.9, rel_tol=1e-9)
 
 
+@pytest.mark.xdist_group('test_wb_corner_check')
 def test_plan_with_fewer_designs_costs_fewer_simulations(finished):
     _, layout = finished
     plan = cc.plan(layout.run_dir, designs=1)
@@ -170,6 +171,7 @@ def test_an_unknown_corner_makes_a_design_inconclusive_never_failed(tmp_path, mo
     assert entry['disposition'] == ('rejected' if entry['failed_corners'] else 'inconclusive')
 
 
+@pytest.mark.xdist_group('test_wb_corner_check')
 def test_a_changed_plan_or_count_is_refused(finished):
     _, layout = finished
     with pytest.raises(cc.CheckRefused) as refused:
@@ -183,6 +185,7 @@ def test_a_changed_plan_or_count_is_refused(finished):
 
 
 # ------------------------------------------------------------------------------------------------ HTTP + detached worker
+@pytest.mark.xdist_group('test_wb_corner_check')
 def test_api_plan_start_status_and_stop(finished):
     root, layout = finished
     client = TestClient(workbench_app(root))

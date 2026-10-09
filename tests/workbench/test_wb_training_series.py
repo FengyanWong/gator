@@ -28,7 +28,6 @@ from gator_workbench.storage import RawDataset, read_json, write_json
 from gator_workbench.storage.atomic import read_jsonl
 from helpers import execute, make_config, roots_for, rows, run_prepared, workbench_app
 
-pytestmark = pytest.mark.xdist_group('test_wb_training_series')
 REPO = Path(__file__).resolve().parents[2]
 
 
@@ -186,6 +185,7 @@ def scripted_run(tmp_path_factory):
     return root, layout
 
 
+@pytest.mark.xdist_group('test_wb_training_series')
 def test_values_are_the_recorded_rows_exactly(scripted_run):
     root, layout = scripted_run
     answer = TestClient(workbench_app(root)).get('/api/runs/training', params=dict(run_dir=str(layout.run_dir), flushes=0)).json()
@@ -217,6 +217,7 @@ def test_values_are_the_recorded_rows_exactly(scripted_run):
                                                                                          'specs': {'n': 0}, 'spec_defs': {}}
 
 
+@pytest.mark.xdist_group('test_wb_training_series')
 def test_pages_add_up_to_one_answer_and_never_repeat_a_row(scripted_run):
     _, layout = scripted_run
     one = read_all(layout.run_dir)
@@ -317,6 +318,7 @@ def frozen_run(tmp_path_factory):
     return target
 
 
+@pytest.mark.xdist_group('test_wb_training_series')
 def test_a_frozen_run_is_an_evaluation_and_has_no_learner(frozen_run):
     answer = whole(read_all(frozen_run.run_dir))
     assert 'frozen_eval' in answer['evaluations']['phase'] and answer['updates'] == {}
@@ -442,6 +444,7 @@ def test_learner_record_says_why_nothing_was_recorded(tmp_path):
     assert training_series.learner_record(layout_dir) == dict(recorded=True, every=5, reason=None)
 
 
+@pytest.mark.xdist_group('test_wb_training_series')
 def test_the_route_reads_nothing_outside_a_run(scripted_run, tmp_path):
     root, layout = scripted_run
     client = TestClient(workbench_app(root))
@@ -937,6 +940,7 @@ def test_eviction_and_clearing_change_only_what_an_answer_costs(tmp_path, livene
         run.assert_whole(page)
 
 
+@pytest.mark.xdist_group('test_wb_training_series')
 def test_a_kept_run_is_still_refused_outside_the_allowed_roots(scripted_run, tmp_path):
     """The route checks the run folder (resolved, inside an allowed root, a run) before anything is read or kept."""
     root, layout = scripted_run

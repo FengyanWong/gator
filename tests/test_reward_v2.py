@@ -171,3 +171,10 @@ def test_the_registry_label_is_identity_and_the_layout_is_the_codes(opamp):
     schema = SpecSchema(version='physical-m6-registry-v1', metrics=(('a', 'V', 1.0),))
     assert schema.layout == 'spec-input-v2' and schema.width == 21 + 11
     assert load_categories(Path(__file__).resolve().parents[1])                  # constructs its own labelled registry
+
+
+def test_any_registry_label_keeps_the_v2_layout():
+    schema = SpecSchema(version='m6-toy-spec-input-v1')                # a label is identity, not a column layout
+    assert schema.layout == 'spec-input-v2' and schema.width == 21 * len(schema.metrics) + 11
+    with pytest.raises(ValueError, match='layout'):
+        SpecSchema(layout='spec-input-v1')

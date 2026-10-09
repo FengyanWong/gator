@@ -12,7 +12,6 @@ from gator_workbench.storage import read_json
 from helpers import execute, make_config, MOCK_TASK, roots_for, workbench_app
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
-pytestmark = pytest.mark.xdist_group('test_wb_run_list')
 
 
 def segment(number, started, ended=None, *, active=None, state=None, entry='start'):
@@ -95,6 +94,7 @@ def finished(tmp_path_factory):
     return root, layout
 
 
+@pytest.mark.xdist_group('test_wb_run_list')
 def test_a_real_mock_run_is_listed_with_the_times_its_manifest_holds(finished):
     root, layout = finished
     row, = runs.list_runs(roots_for(root), root)
@@ -107,6 +107,7 @@ def test_a_real_mock_run_is_listed_with_the_times_its_manifest_holds(finished):
     assert [s['end_state'] for s in row['segments']] == ['completed']
 
 
+@pytest.mark.xdist_group('test_wb_run_list')
 def test_the_api_serves_the_same_rows(finished):
     root, layout = finished
     client = TestClient(workbench_app(root))

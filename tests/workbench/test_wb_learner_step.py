@@ -10,7 +10,6 @@ from analog_optimizer.training.replay import ReplayBuffer
 from analog_optimizer.training.sac import SACLearner
 from helpers import execute, make_config, rows
 
-pytestmark = pytest.mark.xdist_group('test_wb_learner_step')
 
 EVALUATIONS = ('commit_seq', 'episode_step', 'phase', 'action_source', 'policy_version', 'reward', 'valid', 'status',
                'terminated', 'replay_eligible', 'normalized_constraint_violation')

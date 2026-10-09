@@ -18,13 +18,14 @@ import sys
 import threading
 from uuid import uuid4
 
-from . import (CONFIG_SCHEMA_VERSION, OUTPUT_LAYOUT_VERSION, checkpoints as ckpt, connection, consistency, modes, pdk,
-               run_index)
+from . import (CONFIG_SCHEMA_VERSION, OUTPUT_LAYOUT_VERSION, calibration, checkpoints as ckpt, connection,
+               consistency, modes, pdk, run_index)
 from .compile import CompileError, compile_task
 from .connection import worker_environment
 from .layout import RunLayout, code_provenance, environment_versions, new_experiment_dir, new_run_dir, read_run
 from .paths import OutputRoots, is_mock_path, repo_root
 from .pdk import run_vocabulary, write_run_vocabulary
+from .reward_diagnostics import load as steering_check
 from .run_definitions import learner_experiment
 from .run_lock import RunLock
 from .schema import REMOVED_SEARCH_METHODS, WorkbenchConfig, canonical_json, config_hash, task_definition_hash
@@ -747,3 +748,70 @@ def run_status(run_dir) -> dict:
     return dict(status, worker_alive=alive, run_dir=str(layout.run_dir))
 
 
+def model_compatibility(config, runtime, run_dir, checkpoint_path) -> dict:
+    """A saved model against a configuration (with its circuit's content) and its loaded task: the compatibility check a
+    run of that configuration would make before loading the model. Raises CompileError while the configuration does not
+    compile, and RunRejected when the component list it names is not available."""
+    task_hash = task_definition_hash(config)
+    compiled = compile_task(config, runtime.base_graph)
+    vocabulary = _vocabulary_for(config, run_dir)      # what a run of this page would use
+    contract = learner_contract(config, runtime, task_hash, compiled.spec_schema, vocabulary, cached=True)
+    meta_ = ckpt.read_metadata(checkpoint_path)
+    mode = config.run.mode if config.run.mode != 'scratch' else 'fine_tune'
+    return ckpt.check_compatibility(meta_, mode=mode, task_definition_hash=task_hash, contract=contract)
+
+
+def default_model(roots, label=None, project=None) -> dict:
+    """Default = the newest model saved under this RL model label (record 7.159), and that run's `latest`, not
+    `best`. `project`: the project name runs were remembered under before the label, asked when the label has none."""
+    remembered = load_settings().get('last_run') or {}
+    last = (remembered.get(label.strip()) if label and label.strip() else None) or (remembered.get(project) if project else None)
+    if not last and label and label.strip():
+        # No run was started under this label: a model that CARRIES the name (given at a start or by a rename,
+        # record 7.225) answers instead - the newest one under the remembered output root.
+        try:
+            rows = model_label_rows(remembered_output_root())
+        except OSError:
+            rows = []
+        names = ckpt.unique_model_labels(rows)
+        carrying = [row for row in rows if names.get(row['run_dir']) == label.strip()]
+        last = max(carrying, key=lambda row: row.get('created_utc') or '')['run_dir'] if carrying else None
+    if not last or not roots.is_allowed(last) or not (Path(last) / 'checkpoints' / 'latest.json').is_file():
+        return dict(run_dir=None, checkpoint_id='latest', reason='No saved model under this label yet.')
+    return dict(run_dir=last, checkpoint_id='latest', description=ckpt.describe(last, 'latest'))
+
+
+def status_view(path, connection) -> dict:
+    """What the page's Run status shows of a run, from its folder: its status, the steering check, the manifest's facts
+    and lineage, its summary, the save point Continue would go on from, the connection's status (`connection(profile)`:
+    the monitor's cached one) and a calibration's request and result."""
+    layout = RunLayout(path)
+    result = run_status(path)
+    try:
+        result['steering'] = steering_check(path)
+    except Exception:                   # a diagnostic line: a missing or damaged data part leaves it empty, never the status
+        result['steering'] = None
+    manifest = read_json(layout.manifest, default={}) or {}
+    # The lineage (record 7.264): the run list's fields, and an offline model's recorded source runs for its Details.
+    pretraining = manifest.get('pretraining') or {}
+    sources = [dict(run_dir=s.get('run_dir'), run_id=s.get('run_id'), task=s.get('task'), evaluations=s.get('evaluations'))
+               for s in pretraining.get('sources') or [] if isinstance(s, dict)]
+    result.update(manifest=dict(mode=manifest.get('mode'), mock=manifest.get('mock'), task_id=manifest.get('task_id'),
+                                seeds=manifest.get('seeds'), source_model=manifest.get('source_model'),
+                                budgets=manifest.get('budgets'), output=manifest.get('output'),
+                                connection_gate=manifest.get('connection_gate'), mock_notice=manifest.get('mock_notice'),
+                                **lineage(manifest), task_definition_hash=manifest.get('task_definition_hash'),
+                                created_utc=manifest.get('created_utc'),
+                                pretraining=dict(sources=sources, source_evaluations=pretraining.get('source_evaluations'))
+                                if pretraining else None),
+                  summary=read_json(layout.summary, default=None))
+    # What Continue would go on from (None: there is none, 7.215) and whether that code is older (no Continue, 7.221):
+    # one read of the run's pointer for both (record 7.274; the two answers used to resolve it twice per poll).
+    result['save_point'], result['save_point_code'] = save_point_facts(path)
+    profile = (result.get('connection_profile_id') or None)
+    result['connection'] = connection(profile) if profile else dict(overall='not_applicable')
+    # A baseline run asked to calibrate (record 7.197): what it was asked, and its proposals once the run has written them.
+    # A file written under an older rule is worked out again from the run's recorded designs (record 7.217).
+    result['calibration'] = None if not manifest.get('calibration') else dict(
+        request=manifest['calibration'], result=calibration.current(path, manifest))
+    return result

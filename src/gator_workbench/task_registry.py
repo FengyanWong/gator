@@ -213,3 +213,10 @@ def verified_spec_registry(circuit):
         return None
     record = json.loads((repo_root() / file).read_text())['schema']
     return record['version'], [dict(metric_id=name, unit=unit, reference=reference) for name, unit, reference in record['metrics']]
+
+
+def fixed_by_verified_profile(runtime) -> bool:
+    """Whether a loaded task's Parameters rows are fixed by a verified built-in circuit profile (a run accepts exactly
+    those): real:<name> of REAL_PROFILES, not a profile generated from a cell."""
+    name = runtime.task_key.partition(':')[2]
+    return runtime.task_key.startswith('real:') and name in REAL_PROFILES and not runtime.circuit.get('generated_profile')

@@ -45,3 +45,23 @@ def _is_number(text) -> bool:
         return True
     except (TypeError, ValueError):
         return False
+
+
+def loaded_circuit(runtime) -> dict:
+    """A loaded task's circuit as the page shows it after "Load": the task, its source and simulator, the results it
+    provides, its device hierarchy, its summary and diagnostics, and its profile's state."""
+    graph = runtime.base_graph
+    tree = {}
+    for device in graph.devices:
+        node = tree
+        for part in device.id.split('/'):
+            node = node.setdefault(part, {})
+    return dict(task_key=runtime.task_key, mock=runtime.mock, circuit=runtime.circuit,
+                simulator=runtime.circuit.get('simulator') or ('mock' if runtime.mock else 'spectre'),
+                content_sha256=runtime.circuit.get('netlist_sha256'), provided_metrics=list(runtime.provided_metrics),
+                hierarchy=tree, summary=circuit_summary(graph, circuit=runtime.circuit), complete=graph.complete,
+                diagnostics=[dict(code=d.code, severity=d.severity, message=d.message) for d in graph.diagnostics],
+                analysis_context=graph.metadata.get('analysis_context'), notes=runtime.notes,
+                evaluation_backend=runtime.circuit.get('evaluation_backend'), max_concurrency=runtime.max_concurrency,
+                native_draft=bool(runtime.circuit.get('native_draft')), generated_profile=bool(runtime.circuit.get('generated_profile')),
+                baseline_recorded=runtime.circuit.get('baseline_recorded'), baseline_attempt=runtime.circuit.get('baseline_attempt'))

@@ -1,18 +1,17 @@
 """Run control, saved models and data-only exports."""
 from __future__ import annotations
 import mimetypes
-from pathlib import Path
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
 from .. import (aggregates, calibration, checkpoints as ckpt, corner_check, graph_view, launch_requests,
-                model_structure, pdk, runs, schema, training_series)
-from ..compile import CompileError, compile_task
+                model_structure, runs, schema, training_series)
+from ..compile import CompileError
 from ..layout import RunLayout
 from ..paths import PathNotAllowed, safe_child
-from ..reward_diagnostics import load as steering_check
 from ..storage.atomic import read_json, read_jsonl_tail, write_json
-from ..storage.dataset import DatasetReader, map_to_dict, utcnow
+from ..storage.dataset import DatasetReader, utcnow
 from ..storage.tables import TABLES
+from ..vocabulary import run_vocabulary_facts
 from .context import ApiContext
 from .models import (CommandBody, ContinueBody, CornerCheckBody, CornerStopBody, ExportBody, GraphViewBody,
                      ModelStructureBody, RenameModelBody, StartBody)
@@ -139,36 +138,23 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
         except FileNotFoundError as exc:
             fail(404, exc)
         result = dict(description=description)
-        own = pdk.run_vocabulary(run_dir)                  # the model's component list: the page's list follows it
-        result['vocabulary'] = dict(name=own.name if own else pdk.STANDARD, label=own.label if own else pdk.label(None),
-                                    pdk_id=own.pdk_id if own else None, sha256=own.sha256 if own else None,
-                                    loaded=bool(own is None or pdk.load_record(own.pdk_id) is not None))
+        result['vocabulary'] = run_vocabulary_facts(run_dir)    # the model's component list: the page's list follows it
         if body.config:
             config, runtime, blocked = context.load_config(body.config)
             if runtime is not None:
                 config = runs.with_circuit_content(config, runtime)
-                task_hash = schema.task_definition_hash(config)
                 try:
-                    compiled = compile_task(config, runtime.base_graph)
+                    result['compatibility'] = runs.model_compatibility(config, runtime, run_dir, description['path'])
                 except CompileError as exc:
                     # The configuration ON THE PAGE is not complete yet. That is no fault of the saved model: its
                     # facts are still returned, and the page says in plain words what is missing (it used to be a
                     # 500 "CompileError: mp1_w: bounds are required" that hid the model as well).
                     result['compatibility_unchecked'] = compatibility_unchecked(exc)
-                else:
-                    try:
-                        vocabulary = runs._vocabulary_for(config, run_dir)      # what a run of this page would use
-                    except runs.RunRejected as exc:
-                        result['compatibility_unchecked'] = dict(
-                            title='The component list of this configuration is not available',
-                            what=str(exc), note='Read that PDK in the Virtuoso window ("PDK window..." reads one by name), or choose the '
-                            'standard list. The saved model itself is fine.', technical=f'{exc.code}: {exc}')
-                    else:
-                        contract = runs.learner_contract(config, runtime, task_hash, compiled.spec_schema, vocabulary, cached=True)
-                        meta_ = ckpt.read_metadata(description['path'])
-                        mode = config.run.mode if config.run.mode != 'scratch' else 'fine_tune'
-                        result['compatibility'] = ckpt.check_compatibility(meta_, mode=mode, task_definition_hash=task_hash,
-                                                                           contract=contract)
+                except runs.RunRejected as exc:
+                    result['compatibility_unchecked'] = dict(
+                        title='The component list of this configuration is not available',
+                        what=str(exc), note='Read that PDK in the Virtuoso window ("PDK window..." reads one by name), or choose the '
+                        'standard list. The saved model itself is fine.', technical=f'{exc.code}: {exc}')
                 result['suggestion'] = runs.suggest_mode(config, run_dir, task=runtime)   # the task loaded above, not a second load
         return result
 
@@ -176,21 +162,7 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
     def default_model(label: str | None = None, project: str | None = None):
         """Default = the newest model saved under this RL model label (record 7.159), and that run's `latest`, not
         `best`. `project`: the project name runs were remembered under before the label, asked when the label has none."""
-        remembered = runs.load_settings().get('last_run') or {}
-        last = (remembered.get(label.strip()) if label and label.strip() else None) or (remembered.get(project) if project else None)
-        if not last and label and label.strip():
-            # No run was started under this label: a model that CARRIES the name (given at a start or by a rename,
-            # record 7.225) answers instead - the newest one under the remembered output root.
-            try:
-                rows = runs.model_label_rows(runs.remembered_output_root())
-            except OSError:
-                rows = []
-            names = ckpt.unique_model_labels(rows)
-            carrying = [row for row in rows if names.get(row['run_dir']) == label.strip()]
-            last = max(carrying, key=lambda row: row.get('created_utc') or '')['run_dir'] if carrying else None
-        if not last or not context.roots.is_allowed(last) or not (Path(last) / 'checkpoints' / 'latest.json').is_file():
-            return dict(run_dir=None, checkpoint_id='latest', reason='No saved model under this label yet.')
-        return dict(run_dir=last, checkpoint_id='latest', description=ckpt.describe(last, 'latest'))
+        return runs.default_model(context.roots, label, project)
 
     @app.post('/api/runs/model/rename')
     def rename_model(body: RenameModelBody):
@@ -297,36 +269,7 @@ def _launch_and_control_routes(app: FastAPI, context: ApiContext):
     @app.get('/api/runs/status')
     def status(run_dir: str):
         path = context.run_path(run_dir)
-        layout = RunLayout(path)
-        result = runs.run_status(path)
-        try:
-            result['steering'] = steering_check(path)
-        except Exception:                   # a diagnostic line: a missing or damaged data part leaves it empty, never the status
-            result['steering'] = None
-        manifest = read_json(layout.manifest, default={}) or {}
-        # The lineage (record 7.264): the run list's fields, and an offline model's recorded source runs for its Details.
-        pretraining = manifest.get('pretraining') or {}
-        sources = [dict(run_dir=s.get('run_dir'), run_id=s.get('run_id'), task=s.get('task'), evaluations=s.get('evaluations'))
-                   for s in pretraining.get('sources') or [] if isinstance(s, dict)]
-        result.update(manifest=dict(mode=manifest.get('mode'), mock=manifest.get('mock'), task_id=manifest.get('task_id'),
-                                    seeds=manifest.get('seeds'), source_model=manifest.get('source_model'),
-                                    budgets=manifest.get('budgets'), output=manifest.get('output'),
-                                    connection_gate=manifest.get('connection_gate'), mock_notice=manifest.get('mock_notice'),
-                                    **runs.lineage(manifest), task_definition_hash=manifest.get('task_definition_hash'),
-                                    created_utc=manifest.get('created_utc'),
-                                    pretraining=dict(sources=sources, source_evaluations=pretraining.get('source_evaluations'))
-                                    if pretraining else None),
-                      summary=read_json(layout.summary, default=None))
-        # What Continue would go on from (None: there is none, 7.215) and whether that code is older (no Continue, 7.221):
-        # one read of the run's pointer for both (record 7.274; the two answers used to resolve it twice per poll).
-        result['save_point'], result['save_point_code'] = runs.save_point_facts(path)
-        profile = (result.get('connection_profile_id') or None)
-        result['connection'] = context.monitor.status(profile) if profile else dict(overall='not_applicable')
-        # A baseline run asked to calibrate (record 7.197): what it was asked, and its proposals once the run has written them.
-        # A file written under an older rule is worked out again from the run's recorded designs (record 7.217).
-        result['calibration'] = None if not manifest.get('calibration') else dict(
-            request=manifest['calibration'], result=calibration.current(path, manifest))
-        return result
+        return runs.status_view(path, context.monitor.status)
 
 
 def _corner_check_routes(app: FastAPI, context: ApiContext):
@@ -389,21 +332,7 @@ def _run_data_routes(app: FastAPI, context: ApiContext):
         if table not in TABLES:
             fail(404, 'Unknown table')
         reader = DatasetReader(context.run_path(run_dir) / 'data')
-        # Only the rows shown are read from disk and turned into Python: `tail` walks the parts from the newest backwards
-        # (it read every part of the run, then kept 20). And only the columns shown: the `_json` columns (a state's graph
-        # patch and observation fields, an evaluation's condition results) were read and decoded, then dropped - 7.4 MB
-        # of a VCO run's states for the 65 KB shown (Astra's review of 7.284, record 7.286).
-        columns = [c for c in TABLES[table]['columns'] if not c.name.endswith('_json')]
-        names = [c.name for c in columns]
-        part = reader.tail(table, limit, names) if tail else reader.table(table, names).slice(0, limit)
-        rows = part.to_pylist()
-        for row in rows:
-            for column in columns:
-                value = row[column.name]
-                if column.type.startswith('map') and value is not None:
-                    row[column.name] = map_to_dict(value)
-                elif hasattr(value, 'isoformat'):
-                    row[column.name] = value.isoformat()
+        names, rows = reader.shown_rows(table, limit, tail=tail)
         return dict(table=table, total_rows=reader.row_counts()[table], cutoff_commit_seq=reader.cutoff_seq,
                     columns=names, rows=rows)
 

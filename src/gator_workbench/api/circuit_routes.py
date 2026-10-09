@@ -4,9 +4,9 @@ from pathlib import Path
 from fastapi import FastAPI
 from pydantic import ValidationError
 from . import task_baseline
-from .. import (bridge_read, consistency, ngspice_tasks, profiles, runs, schema, structures, task_files, task_saving,
-                tasks, virtuoso_setup, working_copy)
-from ..circuit_summary import circuit_summary
+from .. import (bridge_read, consistency, ngspice_tasks, profiles, runs, schema, structures, task_files,
+                task_registry, task_saving, tasks, virtuoso_setup, working_copy)
+from ..circuit_summary import loaded_circuit
 from ..diffs import structured_diff
 from ..native_cells import load_import as load_cell_import
 from ..paths import PathNotAllowed, refuse_nul
@@ -96,21 +96,8 @@ def _task_routes(app: FastAPI, context: ApiContext):
             # What the testbench this copy was read through can measure: the rows the Probes tab follows.
             imported = load_cell_import(circuit.library, circuit.cell)
             native['testbench_probes'] = imported and profiles.testbench_probes(imported, graph=runtime.base_graph)
-        graph = runtime.base_graph
-        tree = {}
-        for device in graph.devices:
-            node = tree
-            for part in device.id.split('/'):
-                node = node.setdefault(part, {})
-        return dict(loaded=True, baseline_setup=task_baseline.status(runtime.task_key), training_capabilities=tasks.training_capabilities(runtime.task_key), task_key=runtime.task_key, mock=runtime.mock, circuit=runtime.circuit,
-                    simulator=runtime.circuit.get('simulator') or ('mock' if runtime.mock else 'spectre'),
-                    content_sha256=runtime.circuit.get('netlist_sha256'), provided_metrics=list(runtime.provided_metrics),
-                    hierarchy=tree, summary=circuit_summary(graph, circuit=runtime.circuit), complete=graph.complete,
-                    diagnostics=[dict(code=d.code, severity=d.severity, message=d.message) for d in graph.diagnostics],
-                    analysis_context=graph.metadata.get('analysis_context'), notes=runtime.notes,
-                    evaluation_backend=runtime.circuit.get('evaluation_backend'), max_concurrency=runtime.max_concurrency,
-                    native_draft=bool(runtime.circuit.get('native_draft')), generated_profile=bool(runtime.circuit.get('generated_profile')),
-                    baseline_recorded=runtime.circuit.get('baseline_recorded'), baseline_attempt=runtime.circuit.get('baseline_attempt'), **native)
+        return dict(loaded=True, baseline_setup=task_baseline.status(runtime.task_key),
+                    training_capabilities=tasks.training_capabilities(runtime.task_key), **loaded_circuit(runtime), **native)
 
 
 def _virtuoso_cell_routes(app: FastAPI, context: ApiContext):
@@ -308,19 +295,8 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
         """The task file of the CURRENT editors - what "Save task" would store - as text, laid out with its own
         explanations. Local files only: nothing is read from Virtuoso."""
         config = context.parse_config(body.config)
-        entry = profiles.profile_entry(body.task) if body.task else None
-        saved = profiles.task_file(body.task) if entry else None
-        if entry:
-            cell, copy = entry.get('original'), entry.get('copy')
-            state_dir = (entry.get('copy_target') or {}).get('state_dir')      # None: a task made before working copies
-            name = body.task
-        else:
-            record = working_copy.load(body.library, body.cell) if body.library and body.cell else None
-            cell = (record or {}).get('original') or (dict(library=body.library, cell=body.cell, testbench=config.circuit.testbench_cell)
-                                                        if body.library and body.cell else None)
-            copy = (record or {}).get('copy')
-            state_dir = working_copy.record_dir(body.library, body.cell) if record else None
-            name = (body.cell or 'task').lower()
+        name, cell, copy, state_dir, saved = working_copy.task_file_sources(body.task, body.library, body.cell,
+                                                                            config.circuit.testbench_cell)
         setup = working_copy.last_written(dict(state_dir=state_dir)) if state_dir else None
         data = task_files.draft(config, name=name, cell=cell, copy=copy, saved=saved, extras=body.extras,
                                 setup=dict(setup, test='GATOR') if setup else None)
@@ -371,8 +347,7 @@ def _configuration_routes(app: FastAPI, context: ApiContext):
         if runtime is None:
             return dict(applicable=False, blocked=True, why_not=f'The circuit could not be read: {blocked["blocker"]}',
                         structures=[], suggestions=[])
-        name = runtime.task_key.partition(':')[2]
-        verified = runtime.task_key.startswith('real:') and name in tasks.REAL_PROFILES and not runtime.circuit.get('generated_profile')
+        verified = task_registry.fixed_by_verified_profile(runtime)
         answer = structures.suggest(runtime.base_graph, list(config.parameters), None if verified else body.apply)
         answer.update(applicable=not verified, independent_before=independent_action_count(config.parameters))
         if verified:

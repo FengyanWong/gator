@@ -12,6 +12,9 @@ Words only: no host, account, port, path or profile content is put into a checkl
 """
 from __future__ import annotations
 
+from . import tasks
+from .security import redact
+
 TABLES = ('parameters', 'measurements', 'targets')                                  # checklist order = the editor tab order
 BLOCKING = ('error', 'blocker')
 TITLES = dict(parameters='Parameters', measurements='Probes', targets='Specs')      # = the editor tab names (frontend Editors.tsx)
@@ -184,3 +187,24 @@ def _connection_items(mock, run, connection, budget) -> list:
     elif mock is True:
         items.append(_item('connection', 'Connection', 'not_applicable', 'you', 'A synthetic (MOCK) circuit needs no connection.'))
     return items
+
+
+def profile_rows_check(config, runtime, report):
+    """A real circuit profile fixes WHICH sizes may be written and their range and grid. The engine checks that only
+    when the worker starts (after the budget was authorized), so the checklist says it: the configuration compiled
+    offline and compared with the profile. Returns dict(rows, matches, error), or None for a task that fixes no rows."""
+    fixed = tasks.profile_parameter_rows(runtime)
+    profile = None
+    if fixed:
+        matches = problem = None
+        broken = any(i['level'] in ('error', 'blocker') and str(i['path']).startswith('parameters') for i in report['issues'])
+        if config.parameters and not broken:
+            try:
+                from analog_optimizer.envs.sizing import graph_contract
+                # lazy: in the try: a failure of the import is handled with the rest
+                from .compile import compile_task
+                matches = graph_contract(compile_task(config, runtime.base_graph).graph) == graph_contract(runtime.base_graph)
+            except Exception as exc:                   # it does not compile: a start would be refused for that alone
+                problem = redact(f'{type(exc).__name__}: {exc}', 300)
+        profile = dict(rows=fixed, matches=matches, error=problem)
+    return profile

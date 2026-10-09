@@ -343,6 +343,25 @@ class DatasetReader:
                     problems.append(f'checksum mismatch {table}/{name}')
         return problems
 
+    def shown_rows(self, table, limit, tail=True):
+        """(column names, rows) of `table` as the page's Data tab shows them: the newest `limit` rows (`tail`) or the first
+        ones, JSON-ready. Only the rows shown are read from disk and turned into Python: `tail` walks the parts from the
+        newest backwards (it read every part of the run, then kept 20). And only the columns shown: the `_json` columns
+        (a state's graph patch and observation fields, an evaluation's condition results) were read and decoded, then
+        dropped - 7.4 MB of a VCO run's states for the 65 KB shown (Astra's review of 7.284, record 7.286)."""
+        columns = [c for c in TABLES[table]['columns'] if not c.name.endswith('_json')]
+        names = [c.name for c in columns]
+        part = self.tail(table, limit, names) if tail else self.table(table, names).slice(0, limit)
+        rows = part.to_pylist()
+        for row in rows:
+            for column in columns:
+                value = row[column.name]
+                if column.type.startswith('map') and value is not None:
+                    row[column.name] = map_to_dict(value)
+                elif hasattr(value, 'isoformat'):
+                    row[column.name] = value.isoformat()
+        return names, rows
+
 
 def map_to_dict(pairs):
     return None if pairs is None else {item['key']: item['value'] for item in pairs}

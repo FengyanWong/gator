@@ -2,9 +2,8 @@
 from __future__ import annotations
 from pathlib import Path
 from pydantic import ValidationError
-from .. import bridge_connect, connection, readiness, runs, schema, tasks
+from .. import bridge_connect, connection, readiness, runs, schema
 from ..paths import OutputRoots, PathNotAllowed, refuse_nul
-from ..security import redact
 from .support import fail, load_runtime, validate_loaded
 from dataclasses import dataclass
 
@@ -65,21 +64,6 @@ class ApiContext:
             output = self.roots.check(config.output.output_root or runs.remembered_output_root(), create=False, verify_windows=False)
         except Exception:                                  # a checklist must never fail because one line cannot be filled in
             output = None
-        # A real circuit profile fixes WHICH sizes may be written and their range and grid. The engine checks that only when
-        # the worker starts (after the budget was authorized), so say it here: compile offline and compare with the profile.
-        fixed = tasks.profile_parameter_rows(runtime)
-        profile = None
-        if fixed:
-            matches = problem = None
-            broken = any(i['level'] in ('error', 'blocker') and str(i['path']).startswith('parameters') for i in report['issues'])
-            if config.parameters and not broken:
-                try:
-                    from analog_optimizer.envs.sizing import graph_contract
-                    # lazy: in the try: a failure of the import is handled with the rest
-                    from ..compile import compile_task
-                    matches = graph_contract(compile_task(config, runtime.base_graph).graph) == graph_contract(runtime.base_graph)
-                except Exception as exc:                   # it does not compile: a start would be refused for that alone
-                    problem = redact(f'{type(exc).__name__}: {exc}', 300)
-            profile = dict(rows=fixed, matches=matches, error=problem)
+        profile = readiness.profile_rows_check(config, runtime, report)
         return readiness.build(config.model_dump(mode='json'), task=runtime, task_blocker=(blocked or {}).get('blocker'),
                                      validation=report, connection=link, output=output, profile=profile)

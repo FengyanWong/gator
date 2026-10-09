@@ -25,7 +25,7 @@ import shutil
 from pathlib import Path
 from uuid import uuid4
 
-from . import bridge_setup, native_cells, ocean, virtuoso_setup
+from . import bridge_setup, native_cells, ocean, profile_store, virtuoso_setup
 from .connection import require_gate, resolve_profile_id
 from .paths import local_settings_dir
 from .storage.atomic import write_json
@@ -600,3 +600,23 @@ def maestro_deck_on(monitor, profile_id, target, outputs, *, command=None, ackno
                 sha256=hashlib.sha256((head + '\0' + tail).encode()).hexdigest(), analyses=analyses, outputs=translated,
                 model_file=model_file, section=section, circuit=circuit, netlisted_utc=utcnow().isoformat(),
                 remote_netlist=answer.get('remote'))
+
+
+def task_file_sources(task, library, cell_name, testbench_cell):
+    """Where the task file of the editors comes from: the open task (`task`, real:<name> without its prefix) - its cell,
+    working copy, state folder and saved task file - or else the cell read from Virtuoso (`library`/`cell_name`) and its
+    working copy record. Returns (name, cell, copy, state folder or None, saved task file or None)."""
+    entry = profile_store.profile_entry(task) if task else None
+    saved = profile_store.task_file(task) if entry else None
+    if entry:
+        cell, copy = entry.get('original'), entry.get('copy')
+        state_dir = (entry.get('copy_target') or {}).get('state_dir')      # None: a task made before working copies
+        name = task
+    else:
+        record = load(library, cell_name) if library and cell_name else None
+        cell = (record or {}).get('original') or (dict(library=library, cell=cell_name, testbench=testbench_cell)
+                                                    if library and cell_name else None)
+        copy = (record or {}).get('copy')
+        state_dir = record_dir(library, cell_name) if record else None
+        name = (cell_name or 'task').lower()
+    return name, cell, copy, state_dir, saved

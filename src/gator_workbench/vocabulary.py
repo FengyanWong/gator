@@ -153,3 +153,12 @@ def schema_label(feature_schema) -> str:
         kinds = len((feature_schema or {}).get('device_kinds') or ()) - len(standard_schema().device_kinds)
         return f"PDK {version[4:].rsplit('-', 1)[0]} ({kinds} components, version {version.rsplit('-', 1)[-1][:8]})"
     return 'standard (8 generic kinds)'
+
+
+def run_vocabulary_facts(run_dir) -> dict:
+    """The component list a run's model was made with, as the RL model window shows it: its name, label, PDK and
+    checksum, and whether that PDK is loaded here (a model of a PDK's list loads only with that list)."""
+    own = run_vocabulary(run_dir)
+    return dict(name=own.name if own else STANDARD, label=own.label if own else label(None),
+                pdk_id=own.pdk_id if own else None, sha256=own.sha256 if own else None,
+                loaded=bool(own is None or load_record(own.pdk_id) is not None))

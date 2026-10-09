@@ -402,3 +402,52 @@ One row per commit, newest last.
 | `099defa` | 10-09 05:40 | 7.287 | plan: refactoring - the same behaviour, a structure that is easier to change; docs only (session "Refactoring plan") |
 | `40d5f4b` | 10-09 05:41 | - | record only: names the commits of records 7.286 and 7.287, and the table rows for 8bfb034, b79198e and 099defa |
 | `e18b9a9` | 10-09 11:08 | 7.289 | the encoder comparison closed: stage E and the study's verdict; docs only (session "Encoder run plan revision") |
+| `564928e` | 10-09 11:08 | - | record only: names the commit of record 7.289, and the table rows for 40d5f4b and e18b9a9 |
+| `7410f6f` | 10-09 11:26 | 7.290 | A4: RunLock to run_lock.py, the run definitions to run_definitions.py (the first of the refactoring's 48 commits, session "Refactoring plan") |
+| `23337ee` | 10-09 11:26 | 7.290 | A4: blank lines |
+| `9e71bb0` | 10-09 11:26 | 7.290 | A2: task_baseline.py into the api package |
+| `6703448` | 10-09 11:26 | 7.290 | A3: the routes modules' register() split into per-concern functions |
+| `b433faa` | 10-09 11:26 | 7.290 | A5: cli.main as _parser() and one function per subcommand |
+| `e807add` | 10-09 11:26 | 7.290 | B1 step 2: task_registry.py - the registered tasks' facts out of tasks.py |
+| `0eda4ee` | 10-09 11:26 | 7.290 | B1 steps 3-6: profile_store, saved_rows, settings_store, run_index, checkpoint_codec |
+| `687831d` | 10-09 11:26 | 7.290 | A1: honest imports - 136 in-function imports moved to the top of their modules |
+| `0ca4834` | 10-09 11:26 | 7.290 | B1 step 8 + D6: test_wb_structure.py, the package's structure rules as tests |
+| `4a9f3e9` | 10-09 11:26 | 7.290 | B2: engine.py by job - three mixins, _commit 228 -> 158 lines |
+| `00b0b1e` | 10-09 11:26 | 7.290 | B3 part 1: profiles.py by job, layered without cycles |
+| `26ee4fc` | 10-09 11:26 | 7.290 | B3 part 2: save_task 191 -> 121 lines; A1 completed |
+| `9ec81e5` | 10-09 11:26 | 7.290 | B4: pdk.py by job, layered, in five modules |
+| `5ca670a` | 10-09 11:26 | 7.290 | B5: runs.py by job; prepare_run 159 -> 95 lines |
+| `a16dd72` | 10-09 11:26 | 7.290 | B6: long functions split along their own steps |
+| `717fa35` | 10-09 11:26 | 7.290 | B7: route bodies become named functions of their modules |
+| `0350683` | 10-09 11:26 | 7.290 | B8: one helper per repeated pattern, every message unchanged |
+| `44aa1ee` | 10-09 11:27 | 7.290 | B9: public names and shared constants |
+| `1533b86` | 10-09 11:27 | 7.290 | B10: every process-lifetime cache joins caches.py |
+| `65c2f4a` | 10-09 11:27 | 7.290 | dom_identity_check: the page's DOM and request log, for refactorings (plan 4.7) |
+| `ae42979` | 10-09 11:27 | 7.290 | C1: runState.ts - the run states, their rules and useRunControl out of RunControl.tsx |
+| `476a23a` | 10-09 11:27 | 7.290 | C2: contract.ts - the names the page and its checks share |
+| `bad1a25` | 10-09 11:27 | 7.290 | C3: store.ts by concern, and one signal() for the four hand-made stores |
+| `9a6770b` | 10-09 11:27 | 7.290 | C4 step 1: the right column's fields, OutputPanel and ResearchPanel out of Right.tsx |
+| `1a1c907` | 10-09 11:27 | 7.290 | C4 step 2: the RL model window out of RunPanelBody |
+| `8a851e0` | 10-09 11:27 | 7.290 | C6: Editors.tsx by part |
+| `093c30f` | 10-09 11:27 | 7.290 | C8: the formatters in format.ts, the SI prefix tables in units.ts |
+| `5ab45ef` | 10-09 11:27 | 7.290 | C10: the Training tab's two read loops as one useTrainingReads; api.ts keeps only requests |
+| `4037e5b` | 10-09 11:27 | 7.290 | C7: shared primitives that draw today's DOM - Blocked, PopupPortal, useNewest, kept.ts |
+| `de6a681` | 10-09 11:27 | 7.290 | C5 step 1: BottomPanel.tsx - the bottom panel out of Page |
+| `8c7f159` | 10-09 11:27 | 7.290 | C5 step 2: useCalibrationOffer out of Page |
+| `d6bf5ea` | 10-09 11:27 | 7.290 | C5 step 3: useRunWindowActions out of Page |
+| `3824deb` | 10-09 11:27 | 7.290 | C5 step 4: useLaunchActions out of Page, into launch.ts beside useLauncher |
+| `abf744a` | 10-09 11:27 | 7.290 | C5 step 5: useRunList and useShownRun out of Page |
+| `9f4ef4b` | 10-09 11:27 | 7.290 | C5 step 6: useLiveRunAdoption out of Page |
+| `3a920ae` | 10-09 11:27 | 7.290 | C5 step 7: useTaskRunFollow out of Page |
+| `f75a921` | 10-09 11:27 | 7.290 | C9: Left.tsx by job |
+| `3672e85` | 10-09 11:27 | 7.290 | D5: check-script library - one ending for every check, durations from the runs |
+| `eb06dd6` | 10-09 11:27 | 7.290 | C12: trainingData.ts in parts - training/{store,series,prep,catalog,build,compare,keys}.ts behind it |
+| `9a59f00` | 10-09 11:27 | 7.290 | docs: the frontend's new files in the functionality reference and in Code organization |
+| `014b062` | 10-09 11:27 | 7.290 | D1: shared test helpers - no test module is a library any more |
+| `97175d5` | 10-09 11:27 | 7.290 | D2: test modules named after the feature - the ten round-named modules are gone |
+| `fc75596` | 10-09 11:27 | 7.290 | D3: markers where they do work |
+| `3d48a55` | 10-09 11:27 | 7.290 | D4: big test modules by concern; every moved test keeps the fixtures it ran with |
+| `000a212` | 10-09 11:27 | 7.290 | Docs: the refactoring in the docs - record 7.290, Code organization, the reference's code and test cells |
+| `e76d057` | 10-09 11:27 | 7.290 | Record 7.290: the browser checks against the refactored backend and page together |
+| `2b79f78` | 10-09 11:27 | 7.290 | Docs: the refactoring plan's row in the plans table - executed (7.290), not landed |
+| `ef1cc42` | 10-09 11:27 | 7.290 | the refactoring landed: the landed-state texts of record 7.290, its index row, the plan and the reference; the 47 above are the clean copy's commits replayed on 564928e (session "Refactoring plan") |

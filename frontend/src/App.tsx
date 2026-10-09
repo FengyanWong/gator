@@ -12,7 +12,7 @@ import { Editors } from './panels/Editors';
 import { ValidationStatus } from './panels/Issues';
 import { RunButtons } from './panels/RunControl';
 import { changesByItself, isLive, RESUMABLE, useRunControl } from './runState';
-import { CALIBRATION_ANSWERED_KEY, HEADER_RUN_KEY, SHOWN_RUN_KEY } from './contract';
+import { HEADER_RUN_KEY, SHOWN_RUN_KEY } from './contract';
 import { continueConsent, continueReadiness, featuresOf, launchKept, startReadiness, useContinuation, useLauncher } from './launch';
 import { LaunchRefusal } from './panels/LaunchRefusal';
 import { useRunBrief } from './panels/RunBrief';
@@ -23,10 +23,11 @@ import { ResearchPanel } from './panels/ResearchPanel';
 import { modelNameAt } from './panels/ModelChooser';
 import { LOADS, readSavePoint, SavePoint, withSavePoint } from './savePoint';
 import { dateTime, folderName, runTitle } from './format';
-import { APPLY_AND_SAVE, calibrationPlan, savingText } from './panels/calibrationPlan';
-import { requestTaskSave, TASK_BASELINE_STARTED } from './panels/TaskSave';
+import { APPLY_AND_SAVE } from './panels/calibrationPlan';
+import { TASK_BASELINE_STARTED } from './panels/TaskSave';
 import { CrashPanel } from './panels/CrashPanel';
 import { BottomPanel, type BottomTab, useBottomPanel } from './panels/BottomPanel';
+import { useCalibrationOffer } from './page/calibrationOffer';
 import { useNewest } from './newest';
 import { keep, oncePerBrowser, readKept } from './kept';
 
@@ -66,9 +67,6 @@ function LookSwitch() {
 
 /** Calibration evaluates only random designs. Task creation owns the fixed starting-design baseline. */
 const CALIBRATION_DESIGNS = 64;
-// "Calibration ready" (record 7.204, user: "build the prompt when the run finishes"): when the header's Calibration run that has ended with proposals the page does not hold yet, a line under the header says so, with Apply
-// calibration and Not now - so the proposals cannot be missed in Run status. Still the user's press: nothing is applied by
-// itself. The run whose line was answered is kept in this browser (CALIBRATION_ANSWERED_KEY), so a reload does not ask again.
 /** The run the bottom tabs show, kept in this browser (SHOWN_RUN_KEY) with the header's run of that moment (record 7.212): a page loaded
  *  again shows the run it showed - or none, after a task without runs was chosen. Unless the header holds another run by
  *  then (started in another tab of the page, say): the page opens on the header's run then, as it always did, and so does a
@@ -192,23 +190,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   useEffect(() => {
     keep(s => s.setItem(SHOWN_RUN_KEY, JSON.stringify({ run: runDir, header: control.dir })));   // a private window: not kept
   }, [runDir, control.dir]);
-  // The header's run at rest, its calibration result, and what Apply would do with the rows the page holds now.
-  const [calibrationAnswered, setCalibrationAnswered] = useState<string | null>(() => readKept(s => s.getItem(CALIBRATION_ANSWERED_KEY), () => null));
-  const calibrated: Json = control.phase === 'idle' && control.dir && control.dir !== calibrationAnswered ? control.status?.calibration?.result ?? null : null;
-  const calibrationOffer = calibrated ? calibrationPlan(calibrated, config) : null;
-  const calibrationReady = !!calibrationOffer && !calibrationOffer.otherTask && (calibrated.status !== 'calibrated' || calibrationOffer.pending > 0);
-  // 'save' (record 7.217, a task saved from a Virtuoso cell): Apply, then Save task as a press on it - asked in the same
-  // click, sent with the rows of the next render (TaskSave.tsx), so the page is not left differing from its saved task.
-  const answerCalibration = (how: 'save' | 'apply' | 'no') => {
-    const dir = control.dir;
-    if (!dir || !calibrationOffer) return;
-    if (how !== 'no') setConfig(calibrationOffer.apply);
-    const after = how === 'save' ? savingText(requestTaskSave(config.circuit.task_id)) : calibrationOffer.afterwards;
-    setCalibrationAnswered(dir);
-    keep(s => s.setItem(CALIBRATION_ANSWERED_KEY, dir));   // a private window: asked again after a reload
-    if (calibrated.status === 'calibrated') setMessage({ level: 'info', text: how !== 'no' ? `Calibration applied: ${calibrationOffer.what}, as one Undo step.${after}`
-      : 'Nothing was changed. The proposals stay under Run status of that run, with Apply calibration.' });
-  };
+  const { calibrated, calibrationOffer, calibrationReady, answerCalibration } = useCalibrationOffer({ control, config, setConfig, setMessage });
   // The run shown is read every 1.5 s while it can change by itself: a worker is alive, its state is a live one, or the
   // header is starting, resuming, pausing or ending a run. Otherwise it waits for a press on this page: every 15 s while
   // it could still be continued (paused, stopped, interrupted - another browser may continue it), once a minute once it

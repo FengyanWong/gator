@@ -138,11 +138,17 @@ def learner_facts(layout):
     return [row['cumulative_updates'] for row in updates], points
 
 
+def transitions(layout):
+    """How many results went into the replay buffer: every warm-up and search step (none fails in these runs)."""
+    return sum(row['phase'] in ('warmup', 'search') for row in rows(layout, 'evaluations'))
+
+
 def test_learning_after_the_dispatch_keeps_every_update_and_every_save_point(tmp_path):
     def run(folder, switch, concurrency):
         config = make_config(folder, run=dict(max_evaluations=30, concurrency=concurrency),
                              advanced=dict(updates_per_transition=3, update_after_dispatch=switch),
                              output=dict(checkpoint_every_evaluations=10))
+        assert config.run.advanced.update_every == 1                       # so each transition brings its 3 updates
         return execute(config, folder)
     for concurrency in (1, 2):
         off, state_off = run(tmp_path / f'off{concurrency}', False, concurrency)
@@ -150,7 +156,16 @@ def test_learning_after_the_dispatch_keeps_every_update_and_every_save_point(tmp
         assert state_off == state_on == 'completed'
         counts_off, points_off = learner_facts(off)
         counts_on, points_on = learner_facts(on)
-        assert counts_on == counts_off and counts_on                       # every update made, and its row recorded
+        assert counts_on and counts_off
+        if transitions(on) == transitions(off):
+            assert counts_on == counts_off                                 # every update made, and its row recorded
+        else:
+            # Two lanes: which result starts an episode depends on which lane answers first, so the two runs can split
+            # their 30 results differently - under load about one run in 16: 8 episode starts and 21 transitions against
+            # 7 and 22 (record 7.292). Once the buffer holds a batch, each transition brings its 3 updates, each with its row.
+            assert concurrency == 2
+            assert len(counts_on) - len(counts_off) == 3 * (transitions(on) - transitions(off))
+            assert counts_on == list(range(1, len(counts_on) + 1)) and counts_off == list(range(1, len(counts_off) + 1))
         if concurrency == 1:                                               # one lane: the same results arrive at the same time
             assert points_on == points_off and points_on
         events = [json.loads(line)['event'] for line in (on.logs / 'events.jsonl').read_text().splitlines()]

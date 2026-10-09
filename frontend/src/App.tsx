@@ -10,7 +10,8 @@ import { ConnectionButton } from './panels/Connection';
 import { CheckSteps } from './panels/Consistency';
 import { Editors } from './panels/Editors';
 import { ValidationStatus } from './panels/Issues';
-import { isLive, LIVE_STATES, RESUMABLE, RunButtons, useRunControl } from './panels/RunControl';
+import { RunButtons } from './panels/RunControl';
+import { changesByItself, HEADER_RUN_KEY, isLive, RESUMABLE, useRunControl } from './runState';
 import { continueConsent, continueReadiness, featuresOf, launchKept, startReadiness, useContinuation, useLauncher } from './launch';
 import { LaunchRefusal } from './panels/LaunchRefusal';
 import { useRunBrief } from './panels/RunBrief';
@@ -84,7 +85,6 @@ const CALIBRATION_ANSWERED_KEY = 'gator-workbench-calibration-answered-v1';
  *  then (started in another tab of the page, say): the page opens on the header's run then, as it always did, and so does a
  *  browser that never kept one. */
 const SHOWN_RUN_KEY = 'gator-workbench-shown-run-v1';
-const HEADER_RUN_KEY = 'gator-workbench-current-run-v1';      // RunControl.tsx: the run the header's buttons act on
 const shownRun = (): string | null => {
   try {
     const header = localStorage.getItem(HEADER_RUN_KEY) || null, kept = JSON.parse(localStorage.getItem(SHOWN_RUN_KEY) ?? 'null');
@@ -245,7 +245,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   // each read re-reads its tables. The header's phase counts only when the header's run IS the run shown (record 7.125:
   // a finished run in the tabs was read every 1.5 s while the header paused or aborted another one).
   const transitional = control.dir === runDir && ['starting', 'resuming', 'pausing', 'aborting', 'finishing'].includes(control.phase);
-  useEffect(() => setStatusEvery(!status || status.worker_alive || LIVE_STATES.includes(status.state) || transitional ? 1500
+  useEffect(() => setStatusEvery(changesByItself(status, transitional) ? 1500
     : ['completed', 'failed', 'cancelled'].includes(status.state) ? 60000 : 15000), [status?.worker_alive, status?.state, transitional]);
   // When the header's run comes to rest, the Project column reads its task again (a finished Baseline simulation
   // records the task's reference by itself, status record 7.78): a counter the column follows. Not on the page's first look,

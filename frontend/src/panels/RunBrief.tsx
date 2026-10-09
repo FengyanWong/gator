@@ -5,7 +5,7 @@ import { clock, folderName, two } from '../format';
 import { startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
 import { BLOCKED, usePopupWindow } from './popupWindow';
-import { LIVE_STATES, RunControl } from './RunControl';
+import { cardLive, isLive, type RunControl } from '../runState';
 
 /** The run brief (record 7.264; plan "The run brief", added by record 7.259 - user: "pressing the green running text on
  *  banner will show you small popup window showing the running runs brief"). The header's run chip opens a small window of
@@ -31,7 +31,7 @@ function BriefCard({ dir, row, status, header, byDir, from, onShow }: { dir: str
   byDir: Map<string, Json>; from: Window; onShow: (dir: string) => void }) {
   const budget = status?.budget;
   const used: number | null = budget?.charged ?? row?.evaluations ?? null, total: number | null = budget?.max_evaluations ?? row?.max_evaluations ?? null;
-  const live = !!status?.worker_alive || LIVE_STATES.includes(status?.state ?? row?.state);
+  const live = cardLive(status, row);
   const working: number | null = status?.active_seconds ?? row?.active_seconds ?? null;
   // The time left, once the rate is known: working time per evaluation so far, times the evaluations left.
   const left = live && used && total && working && used > 0 && total > used ? working / used * (total - used) : null;
@@ -71,7 +71,7 @@ export function useRunBrief({ control, runs, onRefreshRuns, onShow }: { control:
     setReading(true);
     try {
       const list = await onRefreshRuns();
-      const live = list.filter(r => LIVE_STATES.includes(r.state) && r.run_dir !== control.dir);
+      const live = list.filter(r => isLive(r) && r.run_dir !== control.dir);
       const statuses = await Promise.all(live.map(r => api.status(r.run_dir).catch(() => null)));
       setOthers(live.map((row, i) => ({ row, status: statuses[i] })));
     } finally { setReading(false); setReadAt(clock()); }

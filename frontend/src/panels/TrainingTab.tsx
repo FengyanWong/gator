@@ -4,7 +4,7 @@ import { runName } from '../format';
 import { useLook } from '../theme';
 import { unitLabel } from '../units';
 import { Icon } from './Icons';
-import { LIVE_STATES } from './RunControl';
+import { shownLive } from '../runState';
 import { TrainingChart } from './TrainingChart';
 import { build, buildCompare, catalog, ChartSpec, COMPARE_MAX, Context, ENDS, keyNumbers, LearnerX, RECENT, setCaps, TrainingStore, View } from './trainingData';
 import type { Built } from './trainingData';
@@ -110,7 +110,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   const look = useLook();
   const pageHidden = usePageHidden();
   const active = !hidden && !pageHidden && !!runDir;
-  const live = !!status && status.run_dir === runDir && (!!status.worker_alive || LIVE_STATES.includes(status.state));
+  const live = shownLive(status, runDir);
   // the charts on the page: a stable key each (so taking one off keeps the others' charts as they are) and what it shows
   const nextKey = useRef(0);
   const [slots, setSlots] = useState<{ key: number; id: string }[]>(() => storedSettings().charts.map(id => ({ key: nextKey.current++, id })));

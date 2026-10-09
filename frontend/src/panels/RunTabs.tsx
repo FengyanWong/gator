@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, bytes, copy, download, downloadPackage, Json, num, saveJson, short, si } from '../api';
 import { runName } from '../format';
-import { ENDED } from './RunControl';
+import { ENDED, restingShown } from '../runState';
 import { usePolling, useRequest } from '../store';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './calibrationPlan';
 import { requestTaskSave } from './TaskSave';
@@ -116,7 +116,7 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
   const hasV2 = Object.prototype.hasOwnProperty.call(b ?? {}, 'first_nominal_feasible');
   // Continue... is worth a word while the run is at rest in a state it can go on from: a completed run too, once the
   // backend's continuation check can say whether a higher total is allowed (record 7.261).
-  const resting = !status.worker_alive && (['paused', 'stopped', 'interrupted'].includes(status.state) || (status.state === 'completed' && !!check));
+  const resting = restingShown(status, check);
   return (<div className="status-grid">
     <SteeringCheck value={status.steering} />
     {status.manifest?.mock && <p className="mock">{status.manifest.mock_notice}</p>}

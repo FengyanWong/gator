@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { api, bytes, Json, short, tasksShared } from '../api';
 import { clock, folderName, stamp, two } from '../format';
-import { isLive } from './RunControl';
+import { isLive } from '../runState';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';
 import { childrenOf, historyOf, startedFrom } from '../lineage';

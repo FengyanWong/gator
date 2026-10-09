@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, Json, plainError } from './api';
 import { useRequest } from './store';
-import type { RunControl } from './panels/RunControl';
+import { restingFor, type RunControl } from './runState';
 
 export type Action = 'start' | 'calibration' | 'resume' | 'continue';
 export type Features = { requests: boolean; continuation: boolean };
@@ -129,7 +129,7 @@ export function startReadiness(phase: string, validation: Json): string | null {
 export function continueReadiness({ status, check, phase, held, total }: { status: Json; check: Json | null; phase: string; held: boolean; total: 'unchanged' | 'form' }): string | null {
   if (!status) return 'Reading the run...';
   if (status.worker_alive) return 'This run is running now.';
-  const resting = ['paused', 'stopped', 'interrupted'].includes(status.state) || (status.state === 'completed' && total === 'form' && !!check);
+  const resting = restingFor(status, check, total);
   if (!resting) return status.state === 'completed' ? 'This run has completed.' : `A ${status.state ?? 'new'} run cannot be continued.`;
   // One live run at a time on this page: a continued run becomes the header's run.
   if (phase === 'checking' || phase === 'starting' || phase === 'resuming') return HEADER_BUSY[phase];

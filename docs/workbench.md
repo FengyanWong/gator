@@ -1956,7 +1956,9 @@ the client instead of 498 ms. Most of what is left is the answer's transfer. Eve
 write uses it (`CdfBridgeBackend._read_snapshot`), as do Save task's fingerprints of the original cells and the cell
 import. A small cell gains nothing (`mscr_ota5t`, a 6 kB answer: about 16 ms either way). The foundry cells of record 7.295
 gain most: `asz_sys` answers about 100 kB, an estimated 4-5 s per read before. If the bridge's read program is ever not
-the one measured, the workbench reads with the bridge's own call.
+the one measured, the workbench reads with the bridge's own call. On Spectre (`mscr_vco_lin_c`, 6 lanes, 200
+evaluations, record 7.296), a candidate's preparation fell from 2.26 to 0.47 s and stopped queueing; the run, bound by
+Spectre, took 7.2 instead of 8.0 min.
 
 **Netlists built from the readback** (records 7.140 and 7.142). The decks of different candidates differ only in
 values: the written ones and those the PDK callbacks derive, which the readback after each write already holds (7.138).

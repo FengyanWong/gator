@@ -2,9 +2,9 @@
 
 The user asked for this plan after the fourth audit of 2026-10-09 ("Write a plan"), then said "go on" and allowed its
 first step in Virtuoso ("Yes, run it now"). It does not reopen the decision of 2026-10-02 to keep the check ("Keep the
-check", `docs/plan-measurement-off-virtuoso.md`, "Other options"). **Status: P0 done; it changed the plan.** The check
-stays exactly as it is, and the read it is made of became cheap (record 7.296). What is left is a trial on the simulator
-(P2) and the user's decision to land it (P3).
+check", `docs/plan-measurement-off-virtuoso.md`, "Other options"). **Status: done.** P0 changed the plan: the check
+stays exactly as it is, and the read it is made of became cheap (record 7.296). It landed on 2026-10-09 (`e7e6907`, live
+23:51), and P2 measured it on the simulator.
 
 ## What the check is
 
@@ -59,10 +59,11 @@ Expected per evaluation on `mscr_vco_lin_c`: two reads at about 0.07 s instead o
 preparation in the one Virtuoso session. At 6 lanes this session had started to bind (queue wait 0.46 s). The foundry cells
 of record 7.295 gain most: `asz_sys`, a ~100 kB answer, is estimated at 4-5 s per read before.
 
-## Steps left
+## P2 and P3 (done)
 
-- **P2, trial (a simulation budget, the user's go):** `mscr_vco_lin_c`, 200 evaluations, 6 lanes, seed 2, with the
-  change, against `lanes-vco_lin_c-s2-6lanes` of 2026-10-09 (the same settings, 8.0 min, preparation 2.26 s per
-  evaluation). Measure preparation, queue wait and wall time. Best on a quiet Virtuoso: another run in the session
-  slows the preparation of both.
-- **P3, the user's decision:** land it (commit, page unchanged, 8765 restart; run workers import the live code).
+- **P2, on Spectre** (the user's "Yes, right after landing"): `mscr_vco_lin_c`, 200 evaluations, 6 lanes, seed 2, the
+  configuration of `lanes-vco_lin_c-s2-6lanes` of 2026-10-09, while the encoder queue was held. Per evaluation:
+  preparation 2.26 -> 0.47 s, the read before the write 0.56 -> 0.12 s, the write and read after 0.58 -> 0.15 s, queue
+  wait 0.46 -> 0.00 s; wall time 8.0 -> 7.2 min (Spectre-bound). No failures.
+- **P3, the user's decision:** "At the LDO-to-FC boundary" of the encoder queue. As it happened, that queue's LDO runs
+  had failed for another reason and it waited on the hold before its first job, so all nine of its runs read the fast way.

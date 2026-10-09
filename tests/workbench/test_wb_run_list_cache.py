@@ -14,6 +14,11 @@ from gator_workbench import checkpoints as ckpt, run_index, runs
 from gator_workbench.layout import find_runs
 from gator_workbench.storage.atomic import write_json
 from helpers import roots_for
+from pathlib import Path
+from gator_workbench import layout as layout_module
+from gator_workbench.storage import read_dict, read_json
+from helpers import execute, make_config
+from helpers import fabricate_run
 
 
 def fabricate(root, name, *, created='2026-10-07T10:00:00+00:00', state='completed', label='ota', summary=None):
@@ -266,3 +271,87 @@ def test_the_cache_is_touched_under_its_lock_only_and_the_files_are_read_outside
     runs.model_label_rows(tmp_path)
     shutil.rmtree(gone)
     assert set(rows_of(tmp_path)) == {'r1'} and set(rows_of(tmp_path, fresh=True)) == {'r1'}
+
+
+# ------------------------------------------------------------------------------- B8: the run list and the model list
+@pytest.fixture(scope='module')
+def two_runs(tmp_path_factory):
+    root = tmp_path_factory.mktemp('lists')
+    execute(make_config(root, run=dict(max_evaluations=6), project=dict(task_name='with_model')), root)
+    runs.prepare_run(make_config(root, project=dict(task_name='just_created')), roots_for(root))
+    return root
+
+
+def test_the_run_list_reads_each_status_once_and_the_model_list_no_manifest(two_runs, monkeypatch):
+    rows = runs.list_runs(roots_for(two_runs), two_runs)
+    assert len(rows) == 2 and rows == json.loads(json.dumps(rows))     # plain JSON as ever
+    read = []
+    monkeypatch.setattr(layout_module, 'read_json', lambda path, *a, **k: read.append(Path(path).name) or read_json(path, *a, **k))
+    monkeypatch.setattr(run_index, 'read_json', lambda path, *a, **k: read.append(Path(path).name) or read_json(path, *a, **k))
+    monkeypatch.setattr(ckpt, 'read_json', lambda path, *a, **k: read.append(Path(path).name) or read_json(path, *a, **k))
+    # the empty-dict reads of these modules go through read_dict (refactoring package B8): counted the same way
+    monkeypatch.setattr(run_index, 'read_dict', lambda path: read.append(Path(path).name) or read_dict(path))
+    monkeypatch.setattr(ckpt, 'read_dict', lambda path: read.append(Path(path).name) or read_dict(path))
+    listed = runs.list_runs(roots_for(two_runs), two_runs, fresh=True)     # read from disk (Refresh list): each file once
+    assert read.count('status.json') == 2 and read.count('run_manifest.json') == 2
+    read.clear()
+    # Record 7.274: run folders unchanged since the last list are read from its cache - no file at all.
+    assert runs.list_runs(roots_for(two_runs), two_runs) == listed and read == []
+    models = ckpt.saved_models(listed)
+    assert 'run_manifest.json' not in read
+    # rows that lost their manifest (a JSON round trip) are read from disk: the same answer
+    assert models == ckpt.saved_models(json.loads(json.dumps(listed))) and [m['task_name'] for m in models] == ['with_model']
+    assert models[0]['circuit_task'] == 'synthetic:gpdk045_ota5'
+
+
+# ---- the source digest and a start's code facts ---------------------------------------------------------------------
+def test_the_source_digest_is_hashed_again_in_a_thread_once_known(monkeypatch):
+    import analog_optimizer.training.sac as sac
+    values, release = iter(['first', 'second']), threading.Event()
+
+    def digest():
+        value = next(values)
+        if value == 'second':
+            release.wait(5)
+        return value
+    monkeypatch.setattr(sac, 'source_digest', digest)
+    monkeypatch.setattr(run_index, '_SOURCE_DIGEST', dict(value=None, at=0.0, refreshing=False))
+    assert run_index.current_source_digest() == 'first'                         # the first one: hashed at once
+    assert run_index.current_source_digest(max_age=0.0) == 'first'              # older: answered at once, hashed in a thread
+    assert run_index._SOURCE_DIGEST['refreshing'] and run_index.current_source_digest(max_age=0.0) == 'first'   # one thread at a time
+    release.set()
+    for _ in range(200):
+        if not run_index._SOURCE_DIGEST['refreshing']:
+            break
+        time.sleep(0.01)
+    assert run_index.current_source_digest() == 'second'
+
+
+def test_a_started_job_gives_its_answer_or_its_error():
+    assert runs._started(lambda: 41 + 1).result(5) == 42
+
+    def fails():
+        raise ValueError('no git')
+    with pytest.raises(ValueError, match='no git'):
+        runs._started(fails).result(5)
+
+
+def test_read_many_answers_in_the_order_asked():
+    items = list(range(60))
+    assert runs.read_many(lambda n: (time.sleep(0.002 * (n % 3)), n * n)[1], items) == [n * n for n in items]
+    assert runs.read_many(str, [7]) == ['7'] and runs.read_many(str, []) == []
+
+
+def test_the_saved_models_listings_read_many_at_a_time_are_those_read_one_by_one(tmp_path):
+    for n in range(5):
+        run = fabricate_run(tmp_path, f'r{n}', created=f'2026-10-08T10:0{n}:00+00:00')
+        point = run / 'checkpoints' / f'ckpt-0000001{n}-a'
+        point.mkdir(parents=True)
+        write_json(point / 'metadata.json', dict(checkpoint_id=point.name, kind='periodic', created_utc='2026-10-08T10:10:00+00:00',
+                                                 mode='scratch', counters=dict(evaluations_committed=10, learner_updates=10, replay_size=10),
+                                                 restoration_capability='full_state', missing_components=[],
+                                                 contract=dict(code_sha256='abc', model_config=dict(encoder_type='rgcn', hidden_dim=16, heads=2, layers=1))))
+        write_json(run / 'checkpoints' / 'latest.json', dict(checkpoint_id=point.name))
+    rows = runs.list_runs(roots_for(tmp_path), tmp_path)
+    assert ckpt.saved_models(rows, runs.checkpoint_listings(rows)) == ckpt.saved_models(rows)
+    assert [r['run_id'] for r in rows] == ['r4', 'r3', 'r2', 'r1', 'r0']

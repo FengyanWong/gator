@@ -38,6 +38,9 @@ from gator_workbench.connection import ConnectionMonitor, LAYERS
 import json
 from gator_workbench import task_saving
 from gator_workbench import validation
+from gator_workbench.storage.atomic import write_json
+
+REPO = Path(__file__).resolve().parents[2]
 
 SMALL_NET = dict(encoder_type='graph_transformer', hidden_dim=16, heads=2, layers=1)
 
@@ -245,3 +248,35 @@ def issues(report, level=None):
 def check(config, task='synthetic:gpdk045_ota5'):
     runtime = tasks.load_task(config.circuit)
     return validation.validate(config, graph=runtime.base_graph, provided_metrics=set(runtime.provided_metrics)), runtime
+
+
+# ------------------------------------------------------------------------------- pauses for infrastructure failures
+def infrastructure_pause(tmp_path):
+    config = make_config(tmp_path, threshold=1.5, run=dict(max_evaluations=40, concurrency=2,
+                                                           max_consecutive_infrastructure_failures=3,
+                                                           max_consecutive_failures=50))
+    script = {n: 'timeout' for n in range(3, 40)}
+    layout, state = execute(config, tmp_path, scripts={'0': script, '1': script})
+    assert state == 'paused' and summary(layout)['stop_reason'] == 'infrastructure_failures'
+    return config, layout
+
+
+def prepared(root, **kwargs):
+    """A MOCK run as prepare_run leaves it for its worker: state `created`."""
+    layout, manifest = runs.prepare_run(make_config(root, **kwargs), roots_for(root))
+    return layout, manifest
+
+
+TOP = 4.2380000000000004e-05
+
+
+# ---- run folders read many at a time ----------------------------------------------------------------------------------
+def fabricate_run(root, name, *, created, kind=None, state='completed', task='real:ring_a'):
+    run = root / 'exp__0123456789ab' / 'runs' / 'task' / name
+    run.mkdir(parents=True)
+    write_json(run / 'run_manifest.json', dict(run_id=name, created_utc=created, mock=False, experiment_name='exp',
+                                               experiment_id='0123456789ab', task_name='task', run_kind=kind, state=state,
+                                               circuit=dict(task_key=task)))
+    write_json(run / 'status.json', dict(state=state))
+    write_json(run / 'run_summary.json', dict(output=dict(resumability='full_state')))
+    return run

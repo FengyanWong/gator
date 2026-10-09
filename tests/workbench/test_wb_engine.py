@@ -17,6 +17,11 @@ from gator_workbench.engine import RunEngine, RunLock
 from gator_workbench.storage import DatasetReader, read_json
 from gator_workbench.storage.atomic import read_jsonl
 from helpers import ScriptedEnvFactory, execute, make_config, roots_for, rows, run_prepared, summary
+from helpers import infrastructure_pause
+from gator_workbench import engine as engine_module, engine_retention
+from concurrent.futures import Future
+import threading
+from types import SimpleNamespace
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -513,3 +518,94 @@ def test_a_single_baseline_run_asks_the_task_flow_to_record_it_when_it_ends(tmp_
     manifest['run_kind'] = 'baseline_preflight'
     write_json(layout.manifest, manifest)
     assert run_prepared(layout) == 'completed' and 'reference' not in json.dumps(read_json(layout.manifest)['notes'])
+
+
+def test_a_run_paused_for_infrastructure_failures_continues_when_resumed(tmp_path):
+    config, layout = infrastructure_pause(tmp_path)
+    resumed = config.model_copy(deep=True)
+    resumed.run.mode, resumed.run.model_source.run_dir = 'resume', str(layout.run_dir)
+    again, _ = runs.prepare_run(resumed, roots_for(tmp_path))
+    assert run_prepared(again) == 'completed'                     # the link works again; it paused again at once before
+    final = summary(layout)
+    assert final['stop_reason'] == 'budget_exhausted' and final['totals']['candidate_evaluations_charged'] == 40
+
+
+def test_a_candidate_a_pause_stops_before_its_launch_is_cancelled_not_a_failure_of_the_link(tmp_path, monkeypatch):
+    from analog_optimizer.envs.sizing import CircuitSizingEnv
+    layout, _ = runs.prepare_run(make_config(tmp_path, threshold=1.5, run=dict(max_evaluations=40, concurrency=2)),
+                                 roots_for(tmp_path))
+    authorize, calls = CircuitSizingEnv.authorize_launches, {}
+
+    def pause_on_the_way(env, allowance, *, stop_file=None):
+        authorize(env, allowance, stop_file=stop_file)
+        calls[id(env)] = calls.get(id(env), 0) + (allowance > 0)
+        if calls[id(env)] == 3 and 'paused' not in calls:       # Pause is pressed while this candidate is on its way
+            calls['paused'] = True
+            runs.send_command(layout.run_dir, 'pause')
+            deadline = time.monotonic() + 30
+            while not Path(stop_file).exists() and time.monotonic() < deadline:
+                time.sleep(0.005)
+    monkeypatch.setattr(CircuitSizingEnv, 'authorize_launches', pause_on_the_way)
+    assert run_prepared(layout) == 'paused' and summary(layout)['stop_reason'] == 'user_pause'
+    evaluations = rows(layout, 'evaluations')
+    stopped = [e for e in evaluations if e['status'] == 'cancelled']
+    assert len(stopped) == 1 and stopped[0]['failure_type'] == 'cancelled'
+    assert 'stopped before nominal evaluation' in stopped[0]['diagnostics']
+    assert not [e for e in evaluations if e['failure_type'] and e['failure_type'].startswith('infrastructure')]
+
+
+# ------------------------------------------------------------------------------ B9 and D: reads per evaluation / per load
+def test_a_mock_run_resolves_its_work_folder_and_reads_the_waveform_index_once(tmp_path, monkeypatch):
+    reads, resolved = [], []
+    read_json, resolve = engine_module.read_json, Path.resolve
+
+    def counting_read(path, *args, **kwargs):
+        reads.append(Path(path).name)
+        return read_json(path, *args, **kwargs)
+    monkeypatch.setattr(engine_retention, 'read_json', counting_read)         # the retention reads waveforms/index.json
+
+    def counting_resolve(self, *args, **kwargs):
+        if self.name == 'work':
+            resolved.append(str(self))
+        return resolve(self, *args, **kwargs)
+    monkeypatch.setattr(Path, 'resolve', counting_resolve)
+    layout, state = execute(make_config(tmp_path, run=dict(max_evaluations=12)), tmp_path)
+    assert state == 'completed'
+    assert reads.count('index.json') == 1                         # it was read after every evaluation
+    assert resolved.count(str(layout.work)) == 1                  # three times per evaluation before
+
+
+def test_the_scheduler_is_woken_by_a_lane_result():
+    future = Future()
+    engine = SimpleNamespace(lane_state=dict(a=dict(busy=dict(handle=SimpleNamespace(_future=future)))))
+    lane = SimpleNamespace(lane_id='a')
+    started = time.monotonic()
+    RunEngine._wait_for_a_lane(engine, [lane], 0.05)                       # nothing finished: the whole wait
+    assert time.monotonic() - started >= 0.04
+    threading.Timer(0.02, lambda: future.set_result('done')).start()
+    started = time.monotonic()
+    RunEngine._wait_for_a_lane(engine, [lane], 5.0)                        # woken by the result, not after 5 s
+    assert time.monotonic() - started < 2.0
+    odd = SimpleNamespace(lane_state=dict(a=dict(busy=dict(handle=object()))))
+    started = time.monotonic()
+    RunEngine._wait_for_a_lane(odd, [lane], 0.05)                          # a handle without a future: a plain sleep
+    assert time.monotonic() - started >= 0.04
+
+
+def evaluation_values(layout):
+    keep = ('evaluation_id', 'reward', 'valid', 'all_hard_constraints_satisfied', 'normalized_constraint_violation', 'phase',
+            'action_source', 'policy_version')
+    ordered = sorted(rows(layout, 'evaluations'), key=lambda row: row['commit_seq'])
+    return [tuple(row[k] for k in keep[1:]) for row in ordered]
+
+
+def test_the_timings_of_each_evaluation_are_kept_and_the_table_writes_change_no_result(tmp_path):
+    small, large = tmp_path / 'small', tmp_path / 'large'
+    layout_small, state_small = execute(make_config(small, run=dict(max_evaluations=24), output=dict(flush_every_evaluations=4)), small)
+    layout_large, state_large = execute(make_config(large, run=dict(max_evaluations=24), output=dict(flush_every_evaluations=64)), large)
+    assert state_small == state_large == 'completed'
+    assert evaluation_values(layout_small) == evaluation_values(layout_large)              # the same run, other part sizes
+    lines = [json.loads(line) for line in (layout_large.logs / 'timings.jsonl').read_text().splitlines()]
+    evaluations = {row['evaluation_id'] for row in rows(layout_large, 'evaluations')}
+    assert lines and {line['evaluation_id'] for line in lines} <= evaluations
+    assert all(isinstance(line['seconds'], dict) and line['seconds'] and line['worker_id'] for line in lines)

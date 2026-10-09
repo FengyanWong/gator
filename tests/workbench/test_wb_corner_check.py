@@ -16,6 +16,8 @@ from gator_workbench import corner_check as cc
 from gator_workbench.engine import RunLock
 from gator_workbench.storage.atomic import read_json, write_json
 from helpers import execute, make_config, workbench_app
+import pyarrow.parquet as pq
+from gator_workbench import reward_diagnostics, spec_equations
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
 pytestmark = pytest.mark.xdist_group('test_wb_corner_check')
@@ -208,3 +210,52 @@ def test_api_plan_start_status_and_stop(finished):
     missing = client.get('/api/runs/corner-check/status', params=dict(run_dir=run_dir, check_id='20200101T000000Z-00000000'))
     assert missing.status_code == 404
     assert client.post('/api/runs/corner-check/stop', json=dict(run_dir=run_dir, check_id='../x')).status_code == 422
+
+
+# ------------------------------------------------------------------------------------------------ B5: the corner-check plan
+def test_a_plan_reads_the_run_tables_once_per_flush_journal(tmp_path, monkeypatch):
+    layout, _ = execute(make_config(tmp_path, threshold=0.9, run=dict(max_evaluations=12)), tmp_path)
+    first = cc.plan(layout.run_dir)
+    reads = []
+    real = pq.ParquetFile                                   # a part is read through its one open (record 7.286)
+    monkeypatch.setattr(pq, 'ParquetFile', lambda *a, **k: reads.append(a[0]) or real(*a, **k))
+    assert cc.plan(layout.run_dir) == first and cc.plan(layout.run_dir, designs=1)['designs'] == first['designs'][:1]
+    assert reads == []
+    cc._TABLES.clear()
+    assert cc.plan(layout.run_dir) == first and reads, 'the same plan as read afresh'
+    journal = layout.data / '_journal' / 'flushes.jsonl'
+    journal.write_text(journal.read_text().splitlines(True)[0])            # the tables change: only the first flush
+    cut = cc.plan(layout.run_dir)
+    assert cut['counts']['evaluations'] == 5 < first['counts']['evaluations']
+    cc._TABLES.clear()
+    assert cc.plan(layout.run_dir) == cut
+
+
+# ------------------------------------------------------------------------------------------------ A8 + A10: the corner check
+def test_a_missing_flagged_value_at_a_corner_still_writes_the_summary(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from analog_optimizer.backends.synthetic_sizing import SyntheticSizingBackend
+    flagged = make_config(tmp_path, threshold=0.9, run=dict(max_evaluations=12),
+                          mutate=lambda raw: raw['targets'][0].update(missing_is_failure=True))
+    layout, _ = execute(flagged, tmp_path)
+    original, calls = SyntheticSizingBackend.run_simulation, []
+
+    def without_score_at_ss(self, request):
+        calls.append(1)
+        result = original(self, request)
+        return replace(result, metrics={}) if len(calls) == 2 else result     # an OK result that lacks the flagged value
+    monkeypatch.setattr(SyntheticSizingBackend, 'run_simulation', without_score_at_ss)
+    directory = cc.prepare(layout.run_dir, designs=1)
+    assert cc.execute(directory) == 'completed'
+    summary = read_json(directory / 'summary.json')
+    entry = summary['designs'][0]
+    # Since the round-5 optimizer step the grading no longer raises: the corner without the flagged value fails, so the
+    # design is rejected. (Before it, the TypeError guard kept summary.json with the design inconclusive.)
+    assert entry['disposition'] == 'rejected' and 'grading_error' not in entry
+    assert summary['verdicts'] == dict(accepted=0, rejected=1, inconclusive=0)
+    assert cc.check_status(layout.run_dir, directory.name)['status']['state'] == 'completed'
+
+
+# ------------------------------------------------------------------------------------------------ D
+def test_one_finite_rule():
+    assert reward_diagnostics.is_finite_number is spec_equations.is_finite_number

@@ -9,6 +9,12 @@ from gator_workbench import compile as comp, schema, spec_equations, tasks, unit
 from gator_workbench.engine import decode_action
 from helpers import make_config
 from helpers import check, issues
+import math
+import random
+from analog_optimizer.graph.circuit_graph import ParameterBinding, ParameterGroup
+from gator_workbench import engine as engine_module
+from helpers import execute, rows
+from helpers import TOP
 
 
 # ------------------------------------------------------------------------------- units
@@ -316,3 +322,100 @@ def test_research_labels_are_optional_for_a_single_run_but_required_for_generali
 def test_without_a_circuit_checks_are_reported_as_not_performed(tmp_path):
     report = validation.validate(make_config(tmp_path))
     assert report.facts['circuit_checked'] is False and 'circuit_not_loaded' in issues(report, 'unresolved')
+
+
+# A width range as a user types it: 1.84 .. 42.38 um in 0.02 um steps. The optimizer's top grid point, lower + n*step,
+# is 4.2380000000000004e-05 m - a hair above 42.38 um (4.238e-05). OTA5's input pair is 4 um wide: on that grid.
+TYPED = dict(unit='um', lower=1.84, upper=42.38, step=0.02)
+
+
+def decimal_range(raw):
+    next(r for r in raw['parameters'] if r['variable_id'] == 'input_pair_width').update(TYPED)
+
+
+# ------------------------------------------------------------------------------ A7: the top of a decimal range
+def test_the_optimizers_top_grid_point_is_the_compiled_upper_bound_and_nothing_else_moves(tmp_path):
+    config = make_config(tmp_path, mutate=decimal_range)
+    base = tasks.load_task(config.circuit).base_graph
+    compiled = comp.compile_task(config, base)
+    group = next(g for g in compiled.graph.parameter_groups if g.id == 'input_pair_width')
+    typed = units.to_canonical(42.38, 'um')
+    assert typed == 4.238e-05 and group.upper == TOP > typed
+    assert group.project(1.0) == TOP                          # its top value is legal now: the group accepts it as its value
+    ParameterGroup(group.id, group.parameter_kind, group.unit, TOP, group.lower, group.upper, group.members,
+                   step=group.step).validate()
+    assert next(v for v in compiled.variables if v['variable_id'] == 'input_pair_width')['upper'] == TOP
+    # every other grid point is the one the typed bound gave
+    before = ParameterGroup('g', 'w', 'm', group.value, group.lower, typed, (ParameterBinding('M1', 'w'),), step=group.step)
+    for k in range(0, 2027, 7):
+        value = group.lower + k * group.step
+        assert group.project(value) == before.project(value)
+    # a range whose top point is not above its bound compiles to exactly what was typed (bitwise)
+    plain = comp.compile_task(make_config(tmp_path), base)
+    assert [(g.lower, g.upper, g.step) for g in plain.graph.parameter_groups] == [
+        (1e-06, 1e-05, None), (2e-06, 2e-05, None), (1e-06, 1e-05, None)]
+
+
+def test_a_followers_own_clamp_at_the_leaders_range_moves_with_the_top_point(tmp_path):
+    def clamp_follower(raw):
+        decimal_range(raw)
+        follower = next(r for r in raw['parameters'] if r.get('binding_group') == 'input_pair_width')
+        follower.update(unit='um', lower=1.84, upper=42.38)        # its own clamp: the same range
+    config = make_config(tmp_path, mutate=clamp_follower)
+    compiled = comp.compile_task(config, tasks.load_task(config.circuit).base_graph)
+    group = next(g for g in compiled.graph.parameter_groups if g.id == 'input_pair_width')
+    follower = group.members[1]
+    assert group.upper == TOP and follower.upper == TOP and follower.lower == 1.84e-06
+
+
+def test_grid_top_is_the_top_that_project_reaches_on_thousands_of_typed_ranges():
+    rng = random.Random(5)
+    moved = 0
+    for _ in range(20000):
+        step_um = rng.choice([0.005, 0.01, 0.02, 0.05, 0.1, 0.12, 0.2])
+        low_um = round(rng.randrange(1, 200) * step_um, 6)
+        high_um = round(low_um + rng.randrange(1, 3000) * step_um, 6)
+        lower, upper, step = (units.to_canonical(low_um, 'um'), units.to_canonical(high_um, 'um'),
+                              units.scale_to_canonical(step_um, 'um'))
+        typed = ParameterGroup('g', 'w', 'm', lower, lower, upper, (ParameterBinding('M', 'w'),), step=step)
+        top = comp.grid_top(lower, upper, step)
+        grid = lower + math.floor((upper - lower) / step + 1e-12) * step       # the optimizer's own top grid point
+        if grid <= upper:
+            assert top is upper                                  # untouched: the very float that was typed
+            continue
+        moved += 1
+        assert top == grid
+        assert typed.project(upper) == upper                     # the package clamps since the round-5 optimizer step
+        snapped = ParameterGroup('g', 'w', 'm', lower, lower, top, (ParameterBinding('M', 'w'),), step=step)
+        assert snapped.project(top) == top and snapped.project(upper) == top
+        for value in (lower, (lower + upper) / 2, upper - step):
+            assert snapped.project(value) == typed.project(value)
+    assert 3000 < moved < 10000                                   # about a quarter of such ranges overshoot
+
+
+class _AlwaysTop(random.Random):
+    """Every random warm-up proposal at the top of its range (z = +1)."""
+    def uniform(self, a, b):
+        return b
+
+
+def test_a_mock_run_that_always_proposes_the_top_of_a_decimal_range_evaluates_every_candidate(tmp_path, monkeypatch):
+    # Before: each such candidate failed "invalid bounds/current value" in the optimizer's own group check (an
+    # execution_error), and the first one ended the run.
+    prepare = engine_module.RunEngine._prepare
+
+    def always_top(self):
+        prepare(self)
+        self.rng = _AlwaysTop(0)
+    monkeypatch.setattr(engine_module.RunEngine, '_prepare', always_top)
+    config = make_config(tmp_path, run=dict(max_evaluations=9), advanced=dict(warmup_transitions=50), mutate=decimal_range)
+    layout, state = execute(config, tmp_path)
+    evaluations = rows(layout, 'evaluations', ['evaluation_id', 'action_source', 'status', 'valid', 'failure_type'])
+    steps = [e for e in evaluations if e['action_source'] == 'random_warmup']
+    assert state == 'completed' and len(evaluations) == 9 and len(steps) == 6, evaluations
+    assert all(e['status'] == 'ok' and e['valid'] for e in evaluations), evaluations
+    executed = {(r['evaluation_id'], r['instance_path']): (r['executed_value'], r['upper'], r['raw_policy_action'])
+                for r in rows(layout, 'parameters', ['evaluation_id', 'instance_path', 'executed_value', 'upper', 'raw_policy_action'])}
+    for e in steps:
+        for device in ('XU1/M1', 'XU1/M2'):                       # the leader and its follower, both at the top point
+            assert executed[e['evaluation_id'], device] == (TOP, TOP, 1.0)

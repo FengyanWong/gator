@@ -18,7 +18,10 @@ from analog_optimizer.parameters.actions import ActionMapper
 from gator_workbench import tasks
 from gator_workbench.generic_profile import GenericMosWidthProfile, RULES_FORMAT
 
-REPO = Path(__file__).resolve().parents[2]
+from helpers import REPO                                                          # the same folder as here
+from gator_workbench import compile as comp, schema
+from helpers import make_config
+from helpers import TOP
 # The bounds written into the hand-written classes whose example files remain (the OTA7 and LDO ones left with their files
 # on 2026-09-30, record 7.128, and with them the test of what the verified backend cannot honour, built on the OTA7).
 BOUNDS = dict(
@@ -151,3 +154,51 @@ def test_generated_rules_accept_and_reject_exactly_what_the_verified_class_does(
     # ---- workers receive the profile pickled ------------------------------------------------------------------------------
     clone = pickle.loads(pickle.dumps(gen))
     assert clone.validate_readback(reference) == nominal and profile_contract(clone) == profile_contract(gen)
+
+
+def _ota5_profile(tmp_path, lower, upper, step):
+    """A generated (rules file) profile of the verified OTA5 with the input pair varied over [lower, upper] in `step`."""
+    info = tasks.REAL_PROFILES['gpdk045_ota5']
+    mapping = json.loads((REPO / info['mapping']).read_text())
+    for group in mapping['parameter_groups']:
+        group.update(dict(lower=lower, upper=upper, scale='linear', step=step, mutable=True) if group['id'] == 'input_pair_width'
+                     else dict(mutable=False))
+    (tmp_path / 'mapping.json').write_text(json.dumps(mapping))
+    reference = json.loads((REPO / info['readback']).read_text())
+    mos = [f'M{i}' for i in range(1, 6)]
+    (tmp_path / 'rules.json').write_text(json.dumps(dict(
+        format=RULES_FORMAT, recipe='opamp_ac', core_instance='XU1', width_step=5e-9, mos_instances=mos,
+        fixed_instances=[i['name'] for i in reference['instances'] if i['name'] not in mos],
+        writable=[dict(instance=name, lower=lower, upper=upper) for name in ('M1', 'M2')])))
+    return GenericMosWidthProfile(rules_file=tmp_path / 'rules.json', design_file=REPO / info['design'],
+                                  mapping_file=tmp_path / 'mapping.json', reference_structure=REPO / info['structure'],
+                                  reference_readback=REPO / info['readback'],
+                                  conditions_file=REPO / 'configs/gpdk045_conditions.json')
+
+
+def test_a_generated_profile_whose_range_was_typed_in_decimals_loads_and_accepts_its_top_value(tmp_path):
+    # Before: refused at load with "Width of XU1/M1 outside its bounds or off the CDF-compatible grid" - its own check of
+    # the corners of the action space met the top grid point, a hair above the rules' upper bound.
+    profile = _ota5_profile(tmp_path, 1.84e-06, 4.238e-05, 2e-08)
+    graph = profile.optimization_graph()
+    top = ActionMapper(graph).legalize({'input_pair_width': 1.0}).assignments
+    assert set(top.values()) == {TOP}
+    profile.validate_assignment(top)
+    assert profile.bounds == {'XU1/M1': (1.84e-06, TOP), 'XU1/M2': (1.84e-06, TOP)}
+    with pytest.raises(ValueError, match='outside its bounds'):          # one grid step above the top stays refused
+        profile.validate_assignment({key: TOP + 2e-08 for key in top})
+    # Its mapping holds the typed bound (saved before compile took the top point). The rows saved with it still match what
+    # a run gets - the check at Start (tasks._generated_runtime) - and so does the graph of an exported netlist.
+    from analog_optimizer.envs.sizing import graph_contract
+    rows = [schema.OptimizationParameter.model_validate(r) for r in tasks._graph_parameter_rows(profile.graph)]
+    assert next(r for r in rows if r.variable_id == 'input_pair_width').upper == 4.238e-05
+    compiled, _ = comp.build_graph(make_config(tmp_path).model_copy(update=dict(parameters=rows)), graph)
+    assert graph_contract(compiled) == graph_contract(graph)
+    exported = profile.optimization_graph(REPO / tasks.REAL_PROFILES['gpdk045_ota5']['structure'])
+    assert graph_contract(exported) == graph_contract(graph)
+    assert next(g for g in graph.parameter_groups if g.id == 'input_pair_width').upper == TOP
+
+
+def test_a_generated_profile_whose_top_is_not_above_its_bound_keeps_its_bounds_exactly(tmp_path):
+    profile = _ota5_profile(tmp_path, 3.6e-06, 4.4e-06, 5e-09)            # the verified OTA5 range
+    assert profile.bounds == {'XU1/M1': (3.6e-06, 4.4e-06), 'XU1/M2': (3.6e-06, 4.4e-06)}

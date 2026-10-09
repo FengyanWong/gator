@@ -21,6 +21,8 @@ from analog_optimizer.training.runtime import RunResources
 from analog_optimizer.training.workers import OwnedWorker, WorkerLimits, WorkerTimeout
 from analog_optimizer.training.replay import ReplayBuffer
 from analog_optimizer.training.sac import SACLearner
+from concurrent.futures import Future, TimeoutError
+from analog_optimizer.training.workers import DeadlineFuture
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -281,3 +283,29 @@ def test_synthetic_cli_resumes_periodic_counters(tmp_path):
     final = next(row for row in reports if row['total_synthetic_calls'] == 11)
     assert final['passed'] and final['exact_resume'] and final['replay_size'] == 7
     assert final['stages_count'] == 2 and len(final['stages']) == 1
+
+
+class LateFuture:
+    """A job that finishes just after the deadline's wait gave up."""
+    def __init__(self, value):
+        self.value, self.waits = value, 0
+
+    def result(self, timeout=None):
+        if timeout is not None and self.waits == 0:
+            self.waits += 1
+            raise TimeoutError()
+        return self.value
+
+    def done(self):
+        return self.waits > 0
+
+
+def test_a_result_that_arrives_right_after_the_wait_gives_up_is_returned():
+    assert DeadlineFuture(LateFuture('ready'), 60, 'late').result() == 'ready'      # re-raised the timeout before
+
+
+def test_a_job_that_itself_timed_out_still_raises_its_own_error():
+    future = Future()
+    future.set_exception(TimeoutError('the job timed out'))
+    with pytest.raises(TimeoutError, match='the job timed out'):
+        DeadlineFuture(future, 60, 'own').result()

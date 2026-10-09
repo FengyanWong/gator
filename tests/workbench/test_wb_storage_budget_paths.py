@@ -12,6 +12,8 @@ from gator_workbench.budget import BudgetError, BudgetLedger
 from gator_workbench.storage import DatasetReader, RawDataset, data_dictionary, read_json, write_json
 from gator_workbench.storage import atomic
 from gator_workbench.storage.tables import TABLES, arrow_schema, normalize_row
+import subprocess
+from gator_workbench import layout as layout_module
 
 
 def metric_bundle(seq, *, value=0.5):
@@ -359,3 +361,114 @@ def test_safe_child_blocks_traversal(tmp_path):
     assert paths.safe_child(tmp_path / 'run', 'data/x.parquet') == tmp_path / 'run' / 'data' / 'x.parquet'
     with pytest.raises(paths.PathNotAllowed):
         paths.safe_child(tmp_path / 'run', '../secret')
+
+
+def publish_with(tmp_path):
+    """(destination, publish): `publish()` puts our file over settings.json. What happens right after our rename is
+    staged by replacing `atomic.fsync_directory`, the step that follows it."""
+    destination = tmp_path / 'settings.json'
+    destination.write_text('{"old": 1}')
+    temporary = atomic.temporary_path(destination)
+    temporary.write_text('{"ours": 1}')
+    return destination, lambda: atomic.publish(temporary, destination)
+
+
+def test_a_newer_complete_replacement_is_no_write_failure(tmp_path, monkeypatch):
+    destination, publish = publish_with(tmp_path)
+    real_fsync = atomic.fsync_directory
+
+    def another_writer_lands(path):
+        real_fsync(path)
+        newer = atomic.temporary_path(destination)
+        newer.write_text('{"a newer writer": "longer"}')
+        os.replace(newer, destination)
+    monkeypatch.setattr(atomic, 'fsync_directory', another_writer_lands)
+    assert publish() == len('{"ours": 1}')
+    assert json.loads(destination.read_text()) == {'a newer writer': 'longer'}
+
+
+def test_our_own_incomplete_or_missing_file_is_still_a_write_failure(tmp_path, monkeypatch):
+    destination, publish = publish_with(tmp_path)
+    real_fsync = atomic.fsync_directory
+
+    def grows_in_place(path):                     # the SAME file (inode) with another size: not a newer writer's file
+        real_fsync(path)
+        with destination.open('a') as stream:
+            stream.write(' ')
+    monkeypatch.setattr(atomic, 'fsync_directory', grows_in_place)
+    with pytest.raises(atomic.PersistenceError, match='size'):
+        publish()
+    destination, publish = publish_with(tmp_path)
+    monkeypatch.setattr(atomic, 'fsync_directory', lambda path: destination.unlink())
+    with pytest.raises(atomic.PersistenceError, match='not visible'):   # the 9p retry still ends in a failure when it stays gone
+        publish()
+
+
+# ------------------------------------------------------------------------------- B3: the output-folder size walk
+def rglob_bytes(path):
+    """The walk directory_bytes replaced, kept here as the reference its totals must equal."""
+    total = 0
+    path = Path(path)
+    if not path.exists():
+        return 0
+    for child in path.rglob('*'):
+        try:
+            if child.is_file() and not child.is_symlink():
+                total += child.stat().st_size
+        except OSError:
+            pass
+    return total
+
+
+def test_the_size_walk_counts_exactly_what_the_old_one_did(tmp_path):
+    outside = tmp_path / 'outside'
+    (outside / 'deep').mkdir(parents=True)
+    (outside / 'big.bin').write_bytes(b'x' * 5000)
+    (outside / 'deep' / 'more.bin').write_bytes(b'y' * 700)
+    root = tmp_path / 'root'
+    for index, folder in enumerate(('a', 'a/b', 'a/b/c', '.hidden', 'unreadable', 'listable_only', 'empty')):
+        (root / folder).mkdir(parents=True, exist_ok=True)
+        (root / folder / f'file{index}.txt').write_bytes(b'z' * (10 * index + 3))
+        (root / folder / '.dotfile').write_bytes(b'd' * (index + 1))
+    (root / 'a' / 'link_to_file').symlink_to(outside / 'big.bin')          # never counted
+    (root / 'a' / 'link_to_dir').symlink_to(outside)                       # never followed
+    (root / 'a' / 'b' / 'dangling').symlink_to(tmp_path / 'nowhere')
+    (root / 'a' / 'b' / 'hard_link').hardlink_to(root / 'a' / 'file0.txt')
+    os.mkfifo(root / 'a' / 'pipe')                                         # not a regular file
+    (root / 'unreadable' / 'inner').mkdir()
+    (root / 'unreadable' / 'inner' / 'secret.bin').write_bytes(b's' * 999)
+    os.chmod(root / 'unreadable', 0o000)
+    os.chmod(root / 'listable_only', 0o444)                                # listed, but its entries cannot be stat'ed
+    (tmp_path / 'root_link').symlink_to(root)
+    try:
+        for path in (root, root / 'a', root / 'a' / 'b', root / 'empty', tmp_path / 'root_link', tmp_path / 'root_link' / 'a',
+                     root / 'a' / 'link_to_dir', root / 'a' / 'file0.txt', root / 'a' / 'link_to_file', root / 'nothing_here',
+                     root / 'a' / 'b' / 'dangling', root / 'unreadable', root / 'listable_only', outside):
+            assert paths.directory_bytes(path) == rglob_bytes(path), path
+        assert paths.directory_bytes(root) > 0
+    finally:
+        os.chmod(root / 'unreadable', 0o755)
+        os.chmod(root / 'listable_only', 0o755)
+
+
+# ------------------------------------------------------------------------------- B10: git without optional locks
+def test_the_run_provenance_asks_git_without_taking_the_index_lock(monkeypatch):
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout=' M file.py\n' if 'status' in argv else 'abc123\n', stderr='')
+    monkeypatch.setattr(layout_module.subprocess, 'run', fake_run)
+    provenance = layout_module.code_provenance()
+    status = next(argv for argv in calls if 'status' in argv)
+    assert status[:3] == ['git', '-C', str(paths.repo_root())] and status[3:] == ['--no-optional-locks', 'status', '--porcelain']
+    assert provenance['git_dirty'] is True and provenance['git_dirty_paths'] == 1
+
+
+def test_a_json_file_is_fsynced_once(tmp_path, monkeypatch):
+    from gator_workbench.storage import atomic
+    calls, real = [], os.fsync
+    monkeypatch.setattr(os, 'fsync', lambda fd: calls.append(fd) or real(fd))
+    atomic.write_json(tmp_path / 'a.json', dict(value=1))
+    assert len(calls) == 2                                                       # the file's bytes, then its directory
+    assert [p.name for p in tmp_path.iterdir()] == ['a.json'] and read_json(tmp_path / 'a.json') == dict(value=1)

@@ -13,6 +13,7 @@ from gator_workbench import ngspice_netlist, ngspice_tasks as nt, schema, struct
 from gator_workbench.circuit_summary import circuit_summary
 from gator_workbench.validation import independent_action_count, validate
 from helpers import workbench_app
+import time
 
 REPO = Path(__file__).resolve().parents[2]
 EXAMPLE = REPO / 'examples' / 'circuits' / 'ngspice_ota5_level1.cir'
@@ -236,3 +237,26 @@ def test_the_route_says_plainly_when_the_circuit_cannot_be_read(tmp_path):
     answer = post(client, config)
     assert not answer['applicable'] and answer['blocked'] and answer['structures'] == []
     assert answer['why_not'].startswith('The circuit could not be read')
+
+
+# ------------------------------------------------------------------------------ B7: matched devices on a large circuit
+def test_matched_devices_of_800_transistors_are_found_without_trying_every_pair_against_every_pair():
+    _mos = dict(terminals=('D', 'G', 'S', 'B'), roles=('drain', 'gate', 'source', 'bulk'), parameters={'w': 'w', 'l': 'l'})
+    mapping = ParserConfig(models={'nch': DeviceMapping('nmos', **_mos), 'pch': DeviceMapping('pmos', **_mos),
+                                   'vsource': DeviceMapping('vsource', terminals=('PLUS', 'MINUS'), roles=('positive', 'negative'),
+                                                            parameters={'dc': 'dc'})},
+                           net_roles={'0': ('ground',)})
+    stages = ''.join(f'T{i} (t{i} vb 0 0) nch w=2u l=1u\nA{i} (x{i} ip{i} t{i} 0) nch w=4u l=500n\n'
+                     f'B{i} (y{i} in{i} t{i} 0) nch w=4u l=500n\nL{i} (x{i} x{i} vdd vdd) pch w=2u l=1u\n'
+                     f'R{i} (y{i} x{i} vdd vdd) pch w=2u l=1u\n' for i in range(160))
+    graph = SpectreParser(mapping).parse_text(stages + 'V1 (vdd 0) vsource dc=1\n')
+    started = time.perf_counter()
+    found = structures.recognize(graph)
+    elapsed = time.perf_counter() - started
+    kinds = {}
+    for s in found:
+        kinds[s.kind] = kinds.get(s.kind, 0) + 1
+    assert kinds == dict(differential_pair=160, tail_source=160, active_load=160)
+    assert [s.devices for s in found[:2]] == [('A0', 'B0'), ('T0',)]
+    assert next(s.devices for s in found if s.kind == 'active_load') == ('L0', 'R0')
+    assert elapsed < 3.0, elapsed                                 # every pair against every pair took 12 s here

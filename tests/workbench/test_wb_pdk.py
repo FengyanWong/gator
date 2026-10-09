@@ -15,6 +15,9 @@ from gator_workbench import checkpoints as ckpt, pdk, runs, schema, task_registr
 from gator_workbench.storage import read_json
 from helpers import execute, make_config, roots_for, run_prepared, SMALL_NET, workbench_app
 from pdk_support import FIXTURE, raw_material
+from gator_workbench import pdk_record
+import re
+import shutil
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
 pytestmark = pytest.mark.xdist_group('test_wb_pdk')
@@ -529,3 +532,163 @@ def test_a_cell_read_from_virtuoso_parses_its_pdk_components_once_the_pdk_is_loa
     mapping, unverified = native_cells.build_mapping(text, technology_library='demo045')
     assert unverified == []                          # the sources and the ideal capacitor were verified models already
     assert mapping['models']['dm_npn']['terminals'] == ['C', 'B', 'E', 'S'] and mapping['mapping_version'].startswith('native-draft-1+pdk-demo045-')
+
+
+@pytest.fixture
+def demo_pdk(tmp_path, monkeypatch):
+    """demo045 loaded in this test's settings and the MOCK demo circuit registered (as test_wb_pdk does)."""
+    scans = [pdk.scan_model_text((FIXTURE / 'models' / name).read_text(), f'/pdk/demo045/models/{name}')
+             for name in ('demo045.scs', 'demo045_mos.scs', 'demo045_passive.scs')]
+    record = pdk.finish_load(dict(technology_library='demo045', cdf_text=(FIXTURE / 'cdf.txt').read_text(), scans=scans,
+                                  sources=dict(model_files=[])))
+    models = pdk.parse_models(record)
+    models['vsource'] = dict(kind='vsource', terminals=['PLUS', 'MINUS'], roles=['positive', 'negative'], parameters={'dc': 'dc'})
+    models['capacitor'] = dict(kind='capacitor', terminals=['PLUS', 'MINUS'], roles=['positive', 'negative'], parameters={'c': 'c'})
+    mapping = tmp_path / 'demo_mapping.json'
+    mapping.write_text(json.dumps(dict(mapping_version='demo045-test', models=models, global_nets=['0'], net_roles={'0': ['ground']},
+                                       parameter_groups=[dict(id='input_w', parameter_kind='w', unit='m', lower=1e-6, upper=10e-6,
+                                                              members=[dict(device_id='XU1/M1', parameter='w')])])))
+    monkeypatch.setitem(task_registry.SYNTHETIC_FIXTURES, 'pdk_demo', dict(netlist=str(FIXTURE / 'demo_circuit.scs'), config=str(mapping),
+                                                                   circuit_class='opamp'))
+    loads = dict(load_record=0, list_pdks=0)
+    load, listing = pdk_record.load_record, pdk_record.list_pdks
+
+    def counted_load(*args, **kwargs):
+        loads['load_record'] += 1
+        return load(*args, **kwargs)
+
+    def counted_list(*args, **kwargs):
+        loads['list_pdks'] += 1
+        return listing(*args, **kwargs)
+    monkeypatch.setattr(pdk_record, 'load_record', counted_load)          # where validation and list_pdks read it
+    monkeypatch.setattr(pdk_record, 'list_pdks', counted_list)
+    return loads
+
+
+def test_a_validation_reads_the_pdk_record_once_and_lists_the_loaded_pdks_once(demo_pdk, tmp_path):
+    extra = [dict(variable_id=f'x{i}', instance_path=device, parameter_name=name, unit='1', lower=1, upper=4)
+             for i, (device, name) in enumerate((('XU1/Q1', 'area'), ('XU1/L1', 'nr'), ('XU1/M1', 'region'), ('XU1/M2', 'sa')))]
+
+    def config(vocabulary):
+        def mutate(raw):
+            raw['run']['network']['vocabulary'] = vocabulary
+            raw['parameters'] += extra
+        return make_config(tmp_path, 'synthetic:pdk_demo', mutate=mutate)
+    graph = tasks.load_task(schema.CircuitReference(source='registered_task', task_id='synthetic:pdk_demo')).base_graph
+    demo_pdk.update(load_record=0, list_pdks=0)
+    under_pdk = validation.validate(config('pdk:demo045'), graph=graph)
+    assert demo_pdk == dict(load_record=1, list_pdks=0)            # it was read four times
+    assert 'pdk_vocabulary' in [i.code for i in under_pdk.issues]
+    demo_pdk.update(load_record=0, list_pdks=0)
+    standard = validation.validate(config('standard'), graph=graph)
+    assert demo_pdk == dict(load_record=2, list_pdks=1)            # one listing (it loads each PDK) + one read, for all rows
+    hints = [i.message for i in standard.issues if i.code == 'parameter_kind_unsupported']
+    assert len(hints) == 4 and sum('The loaded PDK demo045 knows it' in m for m in hints) == 2
+
+
+def test_a_row_outside_the_pdks_own_range_is_refused_when_the_task_is_saved(tmp_path, monkeypatch):
+    """The PDK declares in its CDF what its property form accepts. It was never read, so a row outside it passed every
+    offline check and the first candidate the PDK clamped stopped the run - after a real evaluation was paid for."""
+    from gator_workbench import cdf_rules, pdk
+    text = '\n'.join([
+        'CELL|nmos1v|"nch"|("D" "G" "S" "B")|nil|("w" "l")|nil|nil|nil|nil|("schematic")',
+        'PARAM|nmos1v|w|"float"|"lengthMetric"|1e-06|"Width"|t|t|nil|nil|(1e-07 1e-05)',
+        'PARAM|nmos1v|l|"float"|"lengthMetric"|4.5e-08|"Length"|t|t|nil|nil|nil'])
+    cells = pdk.parse_cdf_text(text)['cells']
+    assert cells['nmos1v']['parameters']['w']['range'] == [1e-07, 1e-05]       # read from the PDK
+    assert cells['nmos1v']['parameters']['l']['range'] is None                 # the PDK declares none: unchanged
+    source = pdk.write_source(cells, 'nmos1v', 'w')
+    assert source['range'] == [1e-07, 1e-05]                                   # and it reaches the rules
+    assert pdk.numeric_range('(2 1)') is None and pdk.numeric_range(['1u', '5u']) is None      # only a plain pair counts
+    assert cdf_rules is not None
+
+
+PDK_FIXTURE = Path(__file__).parent / 'fixtures' / 'pdk_demo'
+
+
+MODEL = '/pdk/demo045/models/demo045.scs'
+
+
+# ---- the PDK's model files ----------------------------------------------------------------------------------------------
+class _Result:
+    def __init__(self, ok=True, output='', errors=()):
+        self.ok, self.output, self.errors = ok, output, list(errors)
+
+
+class _Host:
+    """The simulator host and Virtuoso, as the PDK reader sees them: the demo045 files, each with a modification time."""
+    def __init__(self, files, modified):
+        self.files, self.modified, self.downloads, self.stamp_queries, self.stamps_answer = files, modified, [], 0, True
+
+    def execute_skill(self, text, timeout):
+        if 'fileTimeModified' in text:
+            self.stamp_queries += 1
+            if not self.stamps_answer:
+                return _Result(ok=False, errors=['*Error* the session is busy'])
+            lines = [f'{p}|{len(self.files[p])}|{self.modified[p]}' if p in self.files else f'{p}|missing'
+                     for p in re.findall(r'"(/[^"]+)"', text)]
+            return _Result(output='\n'.join(lines))
+        if 'ddGetObj("analogLib")' in text:
+            return _Result(output=(PDK_FIXTURE / 'ideal.txt').read_text())
+        return _Result(output=(PDK_FIXTURE / 'cdf.txt').read_text())
+
+    def download_file(self, remote, local, timeout=None):
+        self.downloads.append(remote)
+        Path(local).write_bytes(self.files[remote])
+        return _Result()
+
+
+def test_the_pdk_model_files_are_downloaded_only_when_the_host_holds_others():
+    files = {f'/pdk/demo045/models/{name}': (PDK_FIXTURE / 'models' / name).read_bytes()
+             for name in ('demo045.scs', 'demo045_mos.scs', 'demo045_passive.scs')}
+    modified = {path: '1727000000' for path in files}
+
+    def read(host):
+        return pdk.read_from_virtuoso(host, technology_library='demo045', model_file=MODEL, decode=lambda text: text)
+    first_host = _Host(files, modified)
+    first = read(first_host)
+    assert sorted(first_host.downloads) == sorted(files)                       # the first read downloads every file
+    again = _Host(files, modified)
+    assert read(again) == first and again.downloads == [] and again.stamp_queries == 1   # nothing changed: nothing downloaded
+    passive = '/pdk/demo045/models/demo045_passive.scs'
+    changed_files = dict(files, **{passive: files[passive] + b'\n* one more line\n'})
+    changed = _Host(changed_files, dict(modified, **{passive: '1727000100'}))
+    answer = read(changed)
+    assert changed.downloads == [passive]                                      # only the file the host holds anew
+    assert answer['sources']['model_files'] != first['sources']['model_files']
+    copy = pdk.ModelFileCache('demo045')
+    kept = copy.folder / copy.index[MODEL]['sha256']
+    kept.write_bytes(b'* not the file any more\n')                              # a copy that changed is not trusted
+    damaged = _Host(changed_files, dict(modified, **{passive: '1727000100'}))
+    assert read(damaged) == answer and damaged.downloads == [MODEL]
+    busy = _Host(changed_files, dict(modified, **{passive: '1727000100'}))
+    busy.stamps_answer = False                                                 # no answer about the files: all downloaded
+    assert read(busy) == answer and sorted(busy.downloads) == sorted(files) and busy.stamp_queries == 1
+    shutil.rmtree(copy.folder)
+
+
+def test_the_model_file_copies_are_kept_per_host():
+    """Record 7.283 (Astra's review of 7.279): the same path on two hosts can carry the same size and modification time
+    with different content; the copies are kept per host, so the second host is never served the first one's file."""
+    files = {f'/pdk/demo045/models/{name}': (PDK_FIXTURE / 'models' / name).read_bytes()
+             for name in ('demo045.scs', 'demo045_mos.scs', 'demo045_passive.scs')}
+    modified = {path: '1727000000' for path in files}
+    passive = '/pdk/demo045/models/demo045_passive.scs'
+    other = dict(files, **{passive: files[passive][:-1] + (b'Y' if files[passive][-1:] != b'Y' else b'Z')})    # the same length
+
+    def read(host, identity):
+        return pdk.read_from_virtuoso(host, technology_library='demo045', model_file=MODEL, decode=lambda text: text, cache_host=identity)
+    folders = [pdk.ModelFileCache('demo045', identity).folder for identity in ('minlei@vm-a', 'minlei@vm-b')]
+    assert [f.parent.name for f in folders] == ['minlei@vm-a', 'minlei@vm-b'] and folders[0].parent.parent == folders[1].parent.parent
+    assert pdk.host_folder_name('user@host:22/../x') == 'user@host_22_.._x' and pdk.host_folder_name('') == 'host'
+    try:
+        a = read(_Host(files, modified), 'minlei@vm-a')
+        second = _Host(other, modified)                                           # the same stamps, another file
+        b = read(second, 'minlei@vm-b')
+        assert sorted(second.downloads) == sorted(files)                          # its own copies: everything downloaded
+        assert b['sources']['model_files'] != a['sources']['model_files']
+        again = _Host(files, modified)
+        assert read(again, 'minlei@vm-a') == a and again.downloads == []          # the first host's copies still serve it
+    finally:
+        for folder in folders:
+            shutil.rmtree(folder.parent, ignore_errors=True)

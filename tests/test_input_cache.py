@@ -348,3 +348,13 @@ def test_tensor_bytes_evictions_and_the_optional_byte_bound(opamp, ldo):
     with pytest.raises(ValueError):
         ObservationTensorCache(4, max_bytes=-1)
 
+
+def test_a_batch_keeps_its_own_source_metadata(opamp):
+    from analog_optimizer.models.inputs import batch_observations
+    from research_support import observation
+    opamp_observation = observation(opamp)
+    batch = batch_observations([opamp_observation])
+    metadata = batch.graph.graph_metadata[0]
+    metadata.source_metadata['changed_by_the_batch'] = True
+    again = batch_observations([opamp_observation]).graph.graph_metadata[0]
+    assert 'changed_by_the_batch' not in again.source_metadata

@@ -7,6 +7,8 @@ import pytest
 
 from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
 from analog_optimizer.measurements.specs import MetricSpec, RewardSettings, SpecificationEvaluator, spec_margin
+from pathlib import Path
+from analog_optimizer.models.inputs import SpecSchema
 
 
 NOMINAL = SimulationCondition(PVTCorner('nominal', 'tt', 27, 1))
@@ -161,3 +163,11 @@ def test_objective_contract():
     spec = MetricSpec('x', 'V', 'min', 1, lower=1, objective='max')
     with pytest.raises(ValueError, match='one active objective'):
         SpecificationEvaluator([spec, replace(spec, metric_id='y')])
+
+
+def test_the_registry_label_is_identity_and_the_layout_is_the_codes(opamp):
+    """F2: the M6 modules name their registries; a name must not be refused as an input layout."""
+    from analog_optimizer.evaluation.cross_category import load_categories
+    schema = SpecSchema(version='physical-m6-registry-v1', metrics=(('a', 'V', 1.0),))
+    assert schema.layout == 'spec-input-v2' and schema.width == 21 + 11
+    assert load_categories(Path(__file__).resolve().parents[1])                  # constructs its own labelled registry

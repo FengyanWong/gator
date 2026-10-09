@@ -78,3 +78,15 @@ def test_a_configuration_saved_with_a_removed_task_says_why_it_is_blocked(tmp_pa
     config['circuit']['task_id'] = 'synthetic:vco'
     report = client.post('/api/config/validate', json=dict(config=config)).json()
     assert report['blocks_run'] and 'synthetic:vco no longer exists' in json.dumps(report['issues'])
+
+
+def test_loading_the_mock_task_hashes_its_netlist_once(monkeypatch):
+    hashed, sha256 = [], tasks._sha256
+
+    def counting(path):
+        hashed.append(Path(path).name)
+        return sha256(path)
+    monkeypatch.setattr(tasks, '_sha256', counting)
+    runtime = tasks.load_task(schema.CircuitReference(source='registered_task', task_id='synthetic:gpdk045_ota5'))
+    assert sorted(hashed) == ['gpdk045_opamp.json', 'gpdk045_ota5.scs']
+    assert runtime.circuit['topology_id'] == f"netlist-sha256:{runtime.circuit['netlist_sha256'][:16]}"

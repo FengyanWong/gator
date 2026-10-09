@@ -134,3 +134,24 @@ def test_all_passed_means_accepted_without_mutating_nominal_reward():
     summary = summarize_corners(candidate, CORNERS, tuple(result(candidate, c) for c in CORNERS), SPECS)
     assert summary.disposition == 'accepted' and summary.pass_rate == 1
     assert summary.robust_score == candidate.nominal_reward == -0.1
+
+
+@pytest.mark.parametrize('gone', ['none', 'absent'])
+def test_a_missing_value_counted_as_failure_fails_its_corner_without_breaking_the_summary(gone):
+    specs = [replace(SPECS[0], missing_is_failure=True), *SPECS[1:]]
+    candidate = design()
+    results = []
+    for c in CORNERS:
+        corner_result = result(candidate, c)
+        if c.model_section == 'ss':
+            metrics, units, validity = dict(corner_result.metrics), dict(corner_result.metric_units), dict(corner_result.metric_validity)
+            if gone == 'none':
+                metrics['gain'], validity['gain'] = None, False
+            else:
+                del metrics['gain'], units['gain'], validity['gain']
+            corner_result = replace(corner_result, metrics=metrics, metric_units=units, metric_validity=validity)
+        results.append(corner_result)
+    summary = summarize_corners(candidate, CORNERS, tuple(results), specs)   # raised TypeError / KeyError
+    assert summary.failed_corners == 1 and summary.passed_corners == len(CORNERS) - 1
+    assert summary.disposition == 'rejected'
+    assert summary.worst_case_metrics['gain']['valid_corner_count'] == len(CORNERS) - 1

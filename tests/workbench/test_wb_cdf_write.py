@@ -22,6 +22,8 @@ from helpers import probe
 
 from ring_cell_support import CIRCUIT, FIXTURE                                    # the same cell as the profile tests'
 from cdf_write_support import config, make, read_cell, row, stage_rows
+from analog_optimizer.parameters.actions import ActionMapper
+from gator_workbench import compile as comp
 
 
 # ------------------------------------------------------------------------------------------ what the form lets you type
@@ -588,3 +590,30 @@ def test_by_default_most_netlists_are_built_from_the_readback_and_each_is_the_ce
         assert sources == ['native export'] + ['built from the readback'] * 4 + ['native export']
     finally:
         service.close()
+
+
+def test_a_form_writer_task_saved_before_keeps_matching_its_rows_and_its_top_value(tmp_path):
+    # The recorded ring oscillator's MIM capacitor side, 2 .. 5.6 um on the 5 nm grid, tops out at 5.600000000000001e-06.
+    # Such a task ran before (the form writer allows 1e-12 at its bounds); saved before compile took the top point, its
+    # mapping and rules hold 5.6e-06 - its rows must still pass the check at Start, without saving it again.
+    from analog_optimizer.envs.sizing import graph_contract
+    from gator_workbench import profiles
+    from cdf_write_support import config, make
+    entry = make(tmp_path)
+    directory = Path(entry['directory'])
+    mapping, rules = json.loads((directory / 'mapping.json').read_text()), json.loads((directory / 'rules.json').read_text())
+    side = next(g for g in mapping['parameter_groups'] if g['id'] == 'wc')
+    assert side['upper'] == 5.600000000000001e-06                          # saved now: the top grid point
+    side['upper'] = 5.6e-06
+    for write in rules['writes']:
+        if write['upper'] == 5.600000000000001e-06:
+            write['upper'] = 5.6e-06
+    (directory / 'mapping.json').write_text(json.dumps(mapping))
+    (directory / 'rules.json').write_text(json.dumps(rules))
+    profile = profiles.load_profile('ring_cdf')
+    graph = profile.optimization_graph()
+    compiled, _ = comp.build_graph(config(entry['parameters']), graph)
+    assert graph_contract(compiled) == graph_contract(graph)
+    top = ActionMapper(graph).legalize({g.id: 1.0 for g in graph.parameter_groups if g.mutable}).assignments
+    profile.validate_assignment(top)
+    assert {v for (device, name), v in top.items() if device.startswith('XU1/C') and name == 'w'} == {5.600000000000001e-06}

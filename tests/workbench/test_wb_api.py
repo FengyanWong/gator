@@ -18,6 +18,10 @@ from gator_workbench.storage.dataset import DatasetReader
 from gator_workbench.storage.tables import TABLES
 from helpers import make_config, workbench_app
 from helpers import probe, wait_for
+from gator_workbench import cli as workbench_cli
+from gator_workbench.api import app as app_module
+from helpers import roots_for
+from helpers import prepared
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -344,3 +348,89 @@ def test_serve_checks_the_connection_at_start_only_when_asked(monkeypatch):
     monkeypatch.setattr('uvicorn.run', lambda *args, **kwargs: None)
     assert cli.main(['serve']) == 0 and cli.main(['serve', '--connection-check-on-start']) == 0
     assert [kwargs['auto_check_on_start'] for kwargs in seen] == [False, True]
+
+
+def test_the_last_routes_that_took_a_nul_byte_as_a_server_error_refuse_it(tmp_path):
+    client = TestClient(workbench_app(tmp_path), raise_server_exceptions=False)
+    bad = str(tmp_path / 'a\x00b')
+    circuit = dict(source='registered_task', task_id='synthetic:gpdk045_ota5', netlist_path=bad)
+    assert client.post('/api/circuit/load', json=dict(circuit=circuit)).status_code == 403
+    assert client.post('/api/ngspice/read', json=dict(path=bad)).status_code == 403
+    check = client.post('/api/ngspice/check', json=dict(text='* a deck\nR1 a 0 1k\n.end\n', source_path=bad))
+    assert check.status_code < 500                                         # the deck is checked; the bad path is ignored
+
+
+# ------------------------------------------------------------------------------- a stop never waits for ever
+@pytest.mark.parametrize('ending', ['returns', 'raises'])
+def test_serve_bounds_its_wait_for_open_requests_however_it_ends(monkeypatch, ending):
+    import uvicorn
+    import gator_workbench.api
+    seen = {}
+
+    def run(app, **options):
+        seen.update(options)
+        if ending == 'raises':
+            raise KeyboardInterrupt
+    monkeypatch.setattr(uvicorn, 'run', run)
+    monkeypatch.setattr(gator_workbench.api, 'create_app', lambda **options: object())
+    if ending == 'raises':
+        with pytest.raises(KeyboardInterrupt):
+            workbench_cli.main(['serve', '--port', '1'])
+    else:
+        assert workbench_cli.main(['serve', '--port', '1']) == 0
+    assert seen['timeout_graceful_shutdown'] == workbench_cli.SHUTDOWN_GRACE_SECONDS
+
+
+# ------------------------------------------------------------------------------- A15: the Host allowlist
+@pytest.mark.parametrize('host, status', [('127.0.0.1:8765', 200), ('localhost:8765', 200), ('[::1]:8765', 200), ('testserver', 200),
+                                          ('rebound.example', 400), ('rebound.example:8765', 400), ('127.0.0.1.nip.io', 400)])
+def test_only_the_names_the_backend_is_served_under_are_answered(tmp_path, host, status):
+    client = TestClient(workbench_app(tmp_path))
+    assert client.get('/api/connection/profiles', headers={'Host': host}).status_code == status
+
+
+def test_the_host_the_operator_serves_on_is_answered_too(tmp_path):
+    client = TestClient(workbench_app(tmp_path, host='192.168.1.50'))
+    assert client.get('/api/connection/profiles', headers={'Host': '192.168.1.50:8765'}).status_code == 200
+    assert client.get('/api/connection/profiles', headers={'Host': 'rebound.example'}).status_code == 400
+    assert app_module.trusted_hosts('2001:db8::5')[-1] == '[2001:db8::5]'
+    assert app_module.trusted_hosts('Lab-PC.local')[-2:] == ['Lab-PC.local', 'lab-pc.local']
+    assert app_module.trusted_hosts('::1') == app_module.trusted_hosts('localhost') == app_module.trusted_hosts()
+    assert app_module.trusted_hosts('0.0.0.0') == app_module.trusted_hosts('::') == ['*']   # every interface: names unknown
+
+
+def test_serve_hands_its_host_to_the_app(monkeypatch):
+    import uvicorn
+    from gator_workbench import api, cli as cli_module
+    made, served = {}, {}
+    monkeypatch.setattr(api, 'create_app', lambda **options: made.update(options) or 'app')
+    monkeypatch.setattr(uvicorn, 'run', lambda app, **options: served.update(app=app, **options))
+    assert cli_module.main(['serve', '--host', '192.168.1.50', '--port', '8799']) == 0
+    assert made['host'] == '192.168.1.50' and served == dict(app='app', host='192.168.1.50', port=8799, log_level='info',
+                                                             timeout_graceful_shutdown=cli_module.SHUTDOWN_GRACE_SECONDS)
+
+
+# ------------------------------------------------------------------------------- A16: malformed bodies and NUL bytes
+def test_a_malformed_model_request_is_refused_not_a_server_error(tmp_path):
+    layout, _ = prepared(tmp_path)
+    client = TestClient(workbench_app(tmp_path))
+    for body in ({}, dict(run_dir=str(layout.run_dir), checkpoint_id=5), dict(run_dir=['x']),
+                 dict(run_dir=str(layout.run_dir), config=[1]), dict(run_dir=str(layout.run_dir), unexpected=1)):
+        assert client.post('/api/runs/model', json=body).status_code == 422, body
+    # what the page sends is still answered as before: no save point yet is a 404, a foreign folder a 403
+    assert client.post('/api/runs/model', json=dict(run_dir=str(layout.run_dir), checkpoint_id='latest')).status_code == 404
+    assert client.post('/api/runs/model', json=dict(run_dir='/etc', checkpoint_id='latest', config=None)).status_code == 403
+
+
+def test_a_nul_byte_in_a_path_is_refused_like_any_other_bad_path(tmp_path):
+    layout, _ = prepared(tmp_path)
+    client = TestClient(workbench_app(tmp_path), raise_server_exceptions=False)
+    bad = str(tmp_path / 'a\x00b')
+    assert client.get('/api/runs/status', params=dict(run_dir=bad)).status_code == 403
+    assert client.get('/api/output/browse', params=dict(path=bad)).status_code == 403
+    assert client.get('/api/runs', params=dict(output_root=bad)).status_code == 403
+    assert client.get('/api/runs/models', params=dict(output_root=bad)).status_code == 403
+    assert client.get('/api/runs/download', params=dict(run_dir=str(layout.run_dir), path='run_manifest.json\x00')).status_code == 403
+    check = client.post('/api/output/check', json=dict(path=bad))
+    assert check.status_code == 200 and check.json()['allowed'] is False and 'NUL' in check.json()['error']
+    assert roots_for(tmp_path).is_allowed(bad) is False

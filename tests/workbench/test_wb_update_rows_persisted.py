@@ -10,6 +10,7 @@ from gator_workbench import checkpoints as ckpt
 from gator_workbench.engine import RunEngine
 from gator_workbench.storage import DatasetReader, RawDataset, read_json
 from helpers import execute, make_config, rows
+from gator_workbench import schema
 
 
 def update_row(n, collected):
@@ -115,3 +116,54 @@ def test_every_save_points_cursor_covers_the_rows_of_the_updates_it_counts(tmp_p
             assert covered_rows(layout, meta) == meta['counters']['learner_updates'], (concurrency, meta['checkpoint_id'])
         assert len(rows(layout, 'learner_updates')) == max(p['counters']['learner_updates'] for p in points) > 0
         assert 'learner_update_rows_unrecorded' not in events_of(layout)
+
+
+# ---- 7.280 ---------------------------------------------------------------------------------------------------------------
+def test_the_new_output_defaults():
+    output = schema.OutputSettings()
+    assert output.checkpoint_every_evaluations == 200 and output.flush_every_evaluations == 64
+
+
+# ---- 7.281 ---------------------------------------------------------------------------------------------------------------
+def learner_facts(layout):
+    """The cumulative update count of every learner_updates row, and of every save point {evaluations: updates} - after
+    checking that each save point holds every update the results it covers triggered (the rows say which: evaluations_collected)."""
+    updates = sorted(rows(layout, 'learner_updates'), key=lambda row: row['cumulative_updates'])
+    points = {}
+    for folder in (layout.run_dir / 'checkpoints').iterdir():
+        meta = read_json(folder / 'metadata.json', default=None) if folder.is_dir() else None
+        if meta:
+            covered, learned = meta['counters']['evaluations_committed'], meta['counters']['learner_updates']
+            assert learned == sum(1 for row in updates if row['evaluations_collected'] <= covered), (covered, learned)
+            points[covered] = learned
+    return [row['cumulative_updates'] for row in updates], points
+
+
+def test_learning_after_the_dispatch_keeps_every_update_and_every_save_point(tmp_path):
+    def run(folder, switch, concurrency):
+        config = make_config(folder, run=dict(max_evaluations=30, concurrency=concurrency),
+                             advanced=dict(updates_per_transition=3, update_after_dispatch=switch),
+                             output=dict(checkpoint_every_evaluations=10))
+        return execute(config, folder)
+    for concurrency in (1, 2):
+        off, state_off = run(tmp_path / f'off{concurrency}', False, concurrency)
+        on, state_on = run(tmp_path / f'on{concurrency}', True, concurrency)
+        assert state_off == state_on == 'completed'
+        counts_off, points_off = learner_facts(off)
+        counts_on, points_on = learner_facts(on)
+        assert counts_on == counts_off and counts_on                       # every update made, and its row recorded
+        if concurrency == 1:                                               # one lane: the same results arrive at the same time
+            assert points_on == points_off and points_on
+        events = [json.loads(line)['event'] for line in (on.logs / 'events.jsonl').read_text().splitlines()]
+        assert 'learner_update_rows_unrecorded' not in events
+        assert read_json(on.manifest)['architecture']['sac']['update_after_dispatch'] is True
+
+
+def test_the_switch_keeps_the_hashes_of_configurations_without_it(tmp_path):
+    config = make_config(tmp_path)
+    raw = config.model_dump(mode='json')
+    del raw['run']['advanced']['update_after_dispatch']
+    assert schema.config_hash(config) == schema.config_hash(raw)                          # off: hashed as absent
+    switched = make_config(tmp_path, advanced=dict(update_after_dispatch=True))
+    assert schema.config_hash(switched) != schema.config_hash(config)
+    assert schema.task_definition_hash(switched) == schema.task_definition_hash(config)   # never a different task

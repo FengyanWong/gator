@@ -15,6 +15,7 @@ from gator_workbench.connection import ConnectionMonitor, LAYERS, run_layers
 from gator_workbench.storage.atomic import read_jsonl
 from helpers import bridge_settings as settings, execute, make_config, roots_for, rows, summary  # noqa: F401 - an imported fixture belongs to this module
 from fakes_connection import FakeBridge, OK_BODY, layers_json, monitor_for, reasons, states
+from helpers import workbench_app
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -410,3 +411,27 @@ def test_circuit_failures_do_not_count_as_infrastructure_failures(tmp_path):
                                                            max_consecutive_failures=50))
     layout, state = execute(config, tmp_path, scripts={'0': {n: 'invalid_design' for n in range(2, 40, 2)}})
     assert state == 'completed' and summary(layout)['stop_reason'] == 'budget_exhausted'
+
+
+# ---- the connection gate's run lookup -------------------------------------------------------------------------------
+def test_the_gate_asks_for_a_working_run_only_when_a_check_could_be_reused(tmp_path):
+    asked = []
+    monitor = monitor_for(tmp_path, OK_BODY, active_run_lookup=lambda profile_id: asked.append(profile_id))
+    monitor.gate('write_cellview', 'lab')                                     # nothing to reuse: only the probe asks
+    assert len(asked) == 1 and monitor.probes_started == 1
+    assert monitor.gate('read_cellview', 'lab')['check_reused'] and len(asked) == 2     # reusable: asked once, to compare
+    monitor.gate_reuse_seconds = 0.0
+    time.sleep(0.05)
+    assert not monitor.gate('read_cellview', 'lab')['check_reused']         # too old: not asked for the reuse any more
+    assert len(asked) == 3 and monitor.probes_started == 2
+
+
+def test_one_look_for_a_working_run_serves_the_gate_for_three_seconds(tmp_path, monkeypatch):
+    from gator_workbench.api import app as app_module
+    looks = []
+    monkeypatch.setattr(runs, 'list_runs', lambda roots, *args, **kwargs: looks.append(1) or [])
+    lookup = workbench_app(tmp_path).state.monitor.active_run_lookup
+    assert lookup('lab') is None and lookup('lab') is None and len(looks) == 1
+    assert lookup('other') is None and len(looks) == 2                      # each connection has its own answer
+    monkeypatch.setattr(app_module, 'ACTIVE_RUN_REUSE_SECONDS', 0.0)
+    assert lookup('lab') is None and len(looks) == 3

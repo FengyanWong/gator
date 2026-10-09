@@ -21,6 +21,7 @@ from gator_workbench.storage import DatasetReader, read_json
 from gator_workbench.storage.atomic import write_json
 from helpers import roots_for, workbench_app
 from fakes_connection import EXAMPLE, NGSPICE, REPO, ngspice_probe, write_profiles
+from gator_workbench import ngspice_tasks
 
 
 DECK = '''* a divider with a sized load in a subcircuit used once
@@ -459,3 +460,22 @@ def test_REAL_a_whole_run_on_the_installed_ngspice(tmp_path):
     assert written == pytest.approx(next(m['value'] for m in members if m['instance_path'] == 'xota/m1'), rel=1e-9)
     jobs = DatasetReader(layout.data).rows('simulator_jobs')                              # the job folders themselves are cleaned by retention
     assert len(jobs) == 4 and all(job['exit_status'] == 'ok' for job in jobs)
+
+
+# ------------------------------------------------------------------------------- the ngspice deck is published whole
+SMALL_DECK = '* a divider\nv1 in 0 dc 1\nr1 in out 1k\nr2 out 0 2k\n.op\n.end\n'
+
+
+def test_a_failed_save_leaves_the_deck_before_it_whole(monkeypatch):
+    ngspice_tasks.save('divider', SMALL_DECK)
+    deck = ngspice_tasks.task_dir('divider') / ngspice_tasks.FILES['netlist']
+    write = Path.write_text
+
+    def half_then_fail(self, text, *args, **kwargs):            # the disk fills up half way through the new deck
+        write(self, text[:len(text) // 2], *args, **kwargs)
+        raise OSError(28, 'No space left on device')
+    with monkeypatch.context() as patched, pytest.raises(OSError):
+        patched.setattr(Path, 'write_text', half_then_fail)
+        ngspice_tasks.save('divider', SMALL_DECK.replace('2k', '3k'))
+    assert deck.read_text() == SMALL_DECK                               # it was the half-written new deck before
+    assert ngspice_tasks.list_tasks()['divider']['revision'] == 1

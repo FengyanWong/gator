@@ -11,6 +11,7 @@ from gator_workbench import checkpoints as ckpt, runs
 from gator_workbench.engine import RunLock
 from gator_workbench.storage import read_json, read_jsonl
 from helpers import execute, make_config, roots_for, run_prepared, summary, workbench_app
+import json
 
 
 def send_after(layout, commands, evaluations, timeout=60):
@@ -155,3 +156,37 @@ def test_the_api_accepts_the_command_and_answers_a_refusal_in_plain_words(tmp_pa
     detail = response.json()['detail']
     assert detail['code'] == 'not_running' and detail['message'].startswith('This run is not running')
     assert client.post('/api/runs/command', json=dict(run_dir=str(finished.run_dir), command='save')).status_code == 422
+
+
+def _checkpoints(layout):
+    found = [read_json(p / 'metadata.json') for p in sorted((layout.run_dir / 'checkpoints').glob('ckpt-*'))]
+    return [(m['counters']['evaluations_committed'], m['kind'], m.get('relabelled_from')) for m in found]
+
+
+def test_a_run_that_completes_right_after_a_periodic_save_does_not_save_it_twice(tmp_path):
+    layout, state = execute(make_config(tmp_path, run=dict(max_evaluations=8), output=dict(checkpoint_every_evaluations=4)), tmp_path)
+    assert state == 'completed'
+    saved = _checkpoints(layout)
+    assert saved[-1] == (8, 'final', 'periodic') and [s for s in saved if s[0] == 8] == [saved[-1]]
+    latest = read_json(layout.run_dir / 'checkpoints' / 'latest.json')
+    assert latest['kind'] == 'final'
+    events = [json.loads(line) for line in (layout.logs / 'events.jsonl').read_text().splitlines()]
+    assert any(e.get('event') == 'checkpoint_saved' and e.get('kind') == 'final' and e.get('relabelled_from') == 'periodic' for e in events)
+
+
+def test_a_run_that_completes_between_two_periodic_saves_still_writes_its_final_save(tmp_path):
+    layout, state = execute(make_config(tmp_path, run=dict(max_evaluations=6), output=dict(checkpoint_every_evaluations=4)), tmp_path)
+    assert state == 'completed'
+    assert _checkpoints(layout)[-1] == (6, 'final', None)
+
+
+def test_one_save_hashes_the_optimizer_source_once(monkeypatch):
+    from analog_optimizer.training import sac
+    from gator_workbench import checkpoints
+    calls, real = [], sac.source_digest
+    monkeypatch.setattr(sac, 'source_digest', lambda: calls.append(1) or real())
+    with checkpoints._one_source_digest():
+        first, second, third = sac.source_digest(), sac.source_digest(), sac.source_digest()
+    assert first == second == third == real() and len(calls) == 1
+    sac.source_digest()
+    assert len(calls) == 2                                                       # the package's own function is back

@@ -14,6 +14,8 @@ from gator_workbench import runs
 from gator_workbench.engine import RunLock
 from gator_workbench.layout import RunLayout
 from gator_workbench.storage import write_json
+from helpers import roots_for
+from helpers import infrastructure_pause
 
 
 @pytest.fixture
@@ -105,3 +107,21 @@ def test_a_stopped_run_read_during_another_read_has_no_worker(tmp_path):
     finally:
         other.join()
     assert status['state'] == 'stopped' and status['worker_alive'] is False
+
+
+def test_a_resume_that_fails_writing_its_check_gives_the_run_lock_back(tmp_path, monkeypatch):
+    config, layout = infrastructure_pause(tmp_path)
+    resumed = config.model_copy(deep=True)
+    resumed.run.mode, resumed.run.model_source.run_dir = 'resume', str(layout.run_dir)
+    monkeypatch.setattr(runs, '_check_consistency', lambda *args: dict(ok=True))     # a saved task's check, written down
+    write = runs.write_json
+
+    def full_disk(path, value, **options):
+        if Path(path) == layout.manifest and value['segments'][-1].get('consistency_check'):
+            raise OSError(28, 'No space left on device')
+        return write(path, value, **options)
+    with monkeypatch.context() as patched, pytest.raises(OSError):
+        patched.setattr(runs, 'write_json', full_disk)
+        runs.prepare_run(resumed, roots_for(tmp_path))
+    again, _ = runs.prepare_run(resumed, roots_for(tmp_path))      # refused as "already running" until a restart before
+    runs.take_lock(again.run_dir).release()

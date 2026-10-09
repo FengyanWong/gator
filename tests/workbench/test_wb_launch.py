@@ -15,6 +15,12 @@ from gator_workbench import launch_requests, run_index, runs
 from gator_workbench.engine import RunLock
 from gator_workbench.storage.atomic import PersistenceError, write_json
 from helpers import execute, make_config, workbench_app
+from gator_workbench import worker
+from gator_workbench.storage import read_json
+from helpers import edit_json, prepared
+import sys
+from gator_workbench import schema
+from gator_workbench.storage import atomic
 
 FINE_TUNE = 'Fine-tune from its newest save point (a new run)'
 
@@ -280,3 +286,76 @@ def test_a_continue_sent_twice_continues_once(finished, tmp_path, no_worker):
     assert first['run_dir'] == again['run_dir'] == str(finished) and again['repeated'] is True
     manifest = manifest_of(finished)
     assert len(manifest['segments']) == 2 and manifest['budgets']['max_evaluations'] == 9 and no_worker == [str(finished)]
+
+
+@pytest.mark.parametrize('resting', ['paused', 'stopped', 'interrupted'])
+def test_a_continued_run_that_cannot_start_stays_resumable_and_says_why(tmp_path, resting):
+    layout, _ = prepared(tmp_path)
+    edit_json(layout.status, lambda s: s.update(state=resting))           # where the run rested when Continue was pressed
+
+    def continued_under_a_changed_schema(manifest):
+        manifest['segments'].append(dict(segment=len(manifest['segments']) + 1, entry='resume'))
+        manifest['task_definition_hash'] = '0' * 64
+    edit_json(layout.manifest, continued_under_a_changed_schema)
+    with pytest.raises(RuntimeError, match='no longer matches'):
+        worker.main(['--run-dir', str(layout.run_dir), '--threads'])
+    status = read_json(layout.status)
+    assert status['state'] == resting                                      # Continue stays on offer once the cause is gone
+    assert status['error'] == 'RuntimeError: effective_config.json no longer matches the task this run was created for'
+
+
+# ------------------------------------------------------------------------------- A3: a worker that fails at startup
+def test_a_worker_that_cannot_start_says_so_in_the_run_status(tmp_path):
+    layout, manifest = prepared(tmp_path)
+    # schema.py or compile.py changed under a running backend: the task hash no longer matches the run's manifest
+    edit_json(layout.manifest, lambda m: m.update(task_definition_hash='0' * 64))
+    with pytest.raises(RuntimeError, match='no longer matches'):         # still raised: the traceback goes to worker.log
+        worker.main(['--run-dir', str(layout.run_dir), '--threads'])
+    status = runs.run_status(layout.run_dir)
+    assert status['state'] == 'failed' and not status['worker_alive'] and status['run_id'] == manifest['run_id']
+    assert status['error'] == 'RuntimeError: effective_config.json no longer matches the task this run was created for'
+    assert status['paths'] == layout.subpaths()
+
+
+def test_a_mock_real_mismatch_is_a_failed_start_too(tmp_path, capsys):
+    layout, manifest = prepared(tmp_path)
+    edit_json(layout.manifest, lambda m: m.update(mock=False))
+    assert worker.main(['--run-dir', str(layout.run_dir), '--threads']) == 2
+    assert 'Mock/real provenance differs from the run manifest' in capsys.readouterr().err
+    status = read_json(layout.status)
+    assert status == dict(state='failed', run_id=manifest['run_id'], error='Mock/real provenance differs from the run manifest',
+                          paths=layout.subpaths())
+
+
+def test_a_half_edited_module_still_leaves_a_failed_status(tmp_path, monkeypatch):
+    layout, manifest = prepared(tmp_path)
+    # None in sys.modules makes an import fail, as a module another session is half-way through editing does. Even the
+    # storage and layout modules are gone here: the status is written with plain JSON.
+    for name in ('gator_workbench.engine', 'gator_workbench.storage.atomic', 'gator_workbench.layout'):
+        monkeypatch.setitem(sys.modules, name, None)
+    with pytest.raises(ImportError):
+        worker.main(['--run-dir', str(layout.run_dir), '--threads'])
+    status = json.loads(layout.status.read_text())
+    assert status == dict(state='failed', run_id=manifest['run_id'],
+                          error='ModuleNotFoundError: import of gator_workbench.engine halted; None in sys.modules')
+    assert not [p for p in layout.run_dir.iterdir() if atomic.TEMP_MARKER in p.name]
+
+
+def test_a_failed_start_outside_a_run_directory_creates_nothing(tmp_path):
+    missing = tmp_path / 'no_such_run'
+    with pytest.raises(FileNotFoundError):
+        worker.main(['--run-dir', str(missing), '--threads'])
+    assert not missing.exists()
+
+
+# ------------------------------------------------------------------------------- A11: the manifest's test conditions
+def test_a_nominal_only_manifest_keeps_its_exact_words(tmp_path):
+    _, manifest = prepared(tmp_path)
+    assert manifest['test_conditions'] == dict(conditions=['nominal'], note='The sizing environment is nominal-only')
+
+
+@pytest.mark.parametrize('policy, who', [('always', 'every design'), ('after_nominal', 'designs that pass nominal')])
+def test_a_corner_run_manifest_names_its_corners(policy, who):
+    stated = runs.manifest_conditions(schema.ConditionsConfig(policy=policy, corners=['ss_hot_low', 'fs_nominal']))
+    assert stated['conditions'] == ['nominal', 'ss_hot_low', 'fs_nominal']
+    assert 'nominal-only' not in stated['note'] and who in stated['note'] and f'policy {policy}' in stated['note']

@@ -13,6 +13,7 @@ from gator_workbench.engine import decode_action
 from gator_workbench.storage.dataset import map_to_dict
 from gator_workbench.trajectory import TrajectoryLoader
 from helpers import execute, make_config, workbench_app
+from pathlib import Path
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
 pytestmark = pytest.mark.xdist_group('test_wb_graph_view')
@@ -164,3 +165,34 @@ def test_the_api_serves_the_view_and_writes_nothing(transformer):
     assert client.post('/api/runs/model/graph-view', json=dict(run_dir=str(layout.run_dir), picture='x')).status_code == 422
     after = sorted((p.relative_to(layout.run_dir).as_posix(), p.stat().st_mtime_ns) for p in layout.run_dir.rglob('*') if p.is_file())
     assert after == before                                                      # nothing drawn or derived is written into the run
+
+
+# ------------------------------------------------------------------------------ B4: the graph view reads what it shows
+def test_the_graph_view_reads_one_transition_part_and_its_state_newest_first(tmp_path, monkeypatch):
+    config = make_config(tmp_path, run=dict(max_evaluations=30), output=dict(flush_every_evaluations=3, checkpoint_every_evaluations=10))
+    layout, state = execute(config, tmp_path)
+    assert state == 'completed'
+    import pyarrow.parquet as pq
+    filtered, read = [], pq.read_table
+
+    def counting(path, *args, **kwargs):
+        if kwargs.get('filters'):
+            filtered.append(Path(path).parent.name)
+        return read(path, *args, **kwargs)
+    monkeypatch.setattr(pq, 'read_table', counting)
+    # The transition: the one part of the flush that holds its number. Its state: that part or the one before (a state is
+    # written once, with the transition that first sees it - here the previous evaluation's). It was every part, oldest
+    # first, for both.
+    view = graph_view.graph_view(layout.run_dir)
+    assert filtered in (['transitions', 'states'], ['transitions', 'states', 'states']), filtered
+    from gator_workbench.trajectory import TrajectoryLoader
+    loader = TrajectoryLoader(layout.run_dir)
+    numbers = sorted(loader.reader.table('transitions', ['commit_seq'])['commit_seq'].to_pylist())
+    assert len(numbers) == view['step']['count'] > 10 and len(loader.reader.flushes) > 5          # parts to skip
+    for number in numbers:
+        filtered.clear()
+        row, _ = graph_view._step(loader, number, None)
+        assert filtered in (['transitions', 'states'], ['transitions', 'states', 'states']), (number, filtered)
+        whole = graph_view._one_row(loader.reader, 'transitions', 'commit_seq', number)            # every part, oldest first
+        assert {k: whole[k] for k in row} == row
+        assert loader._states == {row['state_ref']: graph_view._one_row(loader.reader, 'states', 'state_id', row['state_ref'])}

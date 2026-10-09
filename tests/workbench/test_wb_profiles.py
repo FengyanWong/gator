@@ -17,6 +17,8 @@ from gator_workbench.storage.atomic import sha256_file
 from helpers import bridge_is_importable, workbench_app   # noqa: F401 - an imported fixture belongs to this module
 from helpers import probe
 from ring_cell_support import CIRCUIT, ROWS, config, connection_file, read_cell, row
+from gator_workbench import baseline_reference, run_index
+from helpers import fabricate_run
 
 
 def test_the_ring_oscillator_becomes_a_registered_real_task(tmp_path):
@@ -515,3 +517,80 @@ def test_a_maestro_measured_task_records_its_own_outputs_as_the_reference(tmp_pa
     done = profiles.adopt_baseline_run(run_dir)
     assert done['recorded'] is True, done
     assert profiles.reference_metrics('ring_osc_3stage') == outputs
+
+
+def test_a_cell_read_from_virtuoso_is_validated_the_same_way_everywhere(tmp_path, monkeypatch):
+    # Before: the page left the metrics of a cell without a task unchecked, while the start checklist checked them against
+    # an EMPTY list - every probe was "metric_not_provided" there and nowhere else.
+    monkeypatch.setattr(tasks, 'bridge_importable', lambda: True)
+    read_cell(tmp_path)
+    connection_file()
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path)))
+    loaded = client.post('/api/circuit/load', json=dict(circuit=CIRCUIT)).json()
+    assert loaded['native_draft'] and loaded['testbench_probes']['rows']
+    raw = config().model_dump(mode='json')
+    raw['measurements'] = loaded['testbench_probes']['rows']
+    page = client.post('/api/config/validate', json=dict(config=raw)).json()
+    checklist = client.post('/api/agent/readiness', json=dict(config=raw)).json()
+    assert 'metric_not_provided' not in [i['code'] for i in page['issues']]
+    assert 'metric_not_provided' not in json.dumps(checklist) and 'it provides []' not in json.dumps(checklist)
+    assert 'circuit_profile_missing' in [i['code'] for i in page['issues']]            # and it still cannot be started
+
+
+def write_profile(folder_name, **fields):
+    folder = profiles.store_root() / folder_name
+    folder.mkdir(parents=True, exist_ok=True)
+    entry = dict(format=profiles.FORMAT, name=folder_name, circuit_class='oscillator', library='LIB', core_cell=f'{folder_name}_cell')
+    (folder / profiles.FILES['entry']).write_text(json.dumps({**entry, **fields}))
+    return folder
+
+
+# ---- one task's profile --------------------------------------------------------------------------------------------
+def test_one_profile_is_read_as_the_whole_list_reads_it():
+    write_profile('ring_a')
+    write_profile('ring_b', revision=3)
+    write_profile('other_format', format='gator-generated-profile-0')
+    write_profile('not_its_name', name='someone_else')
+    (profiles.store_root() / 'bad_json').mkdir()
+    (profiles.store_root() / 'bad_json' / profiles.FILES['entry']).write_text('{not json')
+    (profiles.store_root() / 'no_entry').mkdir()
+    listed = profiles.list_profiles()
+    assert set(listed) == {'ring_a', 'ring_b'}
+    for name in ('ring_a', 'ring_b', 'other_format', 'not_its_name', 'bad_json', 'no_entry', 'missing', 'Ring_a', '', '../x', None, 7):
+        assert profiles.profile_entry(name) == listed.get(name), name
+
+
+# ---- the task list ----------------------------------------------------------------------------------------------------
+def test_the_task_list_asks_once_what_blocks_generated_tasks_and_reads_each_reference_once(monkeypatch):
+    for name in ('ring_a', 'ring_b', 'ring_c'):
+        write_profile(name)
+    write_profile('maestro_x', recipe=profiles.MAESTRO, runnable=False)
+    blockers, references = [], []
+    monkeypatch.setattr(tasks, 'generated_backend_blocker', lambda profile_id=None: blockers.append(profile_id) or 'no link')
+    monkeypatch.setattr(profiles, 'reference_metrics', lambda name: references.append(name) or (dict(x=1) if name == 'ring_b' else None))
+    listed = {t['task_key']: t for t in tasks.list_tasks() if t.get('generated')}
+    assert blockers == [None] and sorted(references) == ['maestro_x', 'ring_a', 'ring_b', 'ring_c']
+    assert [listed[f'real:{n}']['blocker'] for n in ('ring_a', 'ring_b', 'ring_c')] == ['no link'] * 3
+    assert listed['real:maestro_x']['blocker'] == profiles.MAESTRO_NOT_RUNNABLE
+    assert listed['real:ring_b']['verified'] and not listed['real:ring_a']['verified']
+    assert listed['real:ring_a']['description'].endswith('No real baseline recorded yet.')
+    assert listed['real:ring_b']['description'].endswith('(Virtuoso + Spectre). ')
+
+
+def test_a_task_load_finds_its_newest_baseline_through_the_run_cache(tmp_path, monkeypatch):
+    fabricate_run(tmp_path, 'old', created='2026-10-01T10:00:00+00:00', kind=profiles.BASELINE_KIND)
+    newest = fabricate_run(tmp_path, 'new', created='2026-10-05T10:00:00+00:00', kind=profiles.BASELINE_KIND)
+    fabricate_run(tmp_path, 'failed', created='2026-10-06T10:00:00+00:00', kind=profiles.BASELINE_KIND, state='failed')
+    fabricate_run(tmp_path, 'other', created='2026-10-07T10:00:00+00:00', kind=profiles.BASELINE_KIND, task='real:ring_b')
+    fabricate_run(tmp_path, 'train', created='2026-10-07T11:00:00+00:00')
+    given = []
+
+    def adopt(run_dir, manifest=None):
+        given.append((Path(run_dir), manifest))
+        manifest['state'] = 'changed by the callee'                         # a copy: the run list's cache keeps its own
+        return dict(recorded=True, name='ring_a')
+    monkeypatch.setattr(baseline_reference, 'adopt_baseline_run', adopt)
+    assert profiles.adopt_latest_baseline('ring_a', tmp_path) == dict(recorded=True, name='ring_a')
+    assert [run for run, _ in given] == [newest]
+    assert run_index.run_facts(newest)['manifest']['state'] == 'completed'
+    assert profiles.adopt_latest_baseline('ring_none', tmp_path) is None

@@ -11,6 +11,11 @@ import pytest
 from gator_workbench import checkpoints as ckpt
 from gator_workbench.api import support
 from gator_workbench.storage import atomic
+import importlib.util
+import sys
+import time
+import datetime as dt
+import stat
 
 
 @pytest.mark.parametrize('block_size', [1, 7, 64, 65536])
@@ -187,3 +192,50 @@ def test_display_checksum_cache_invalidates_and_never_serves_execution(tmp_path,
     atomic.write_json(second / 'metadata.json', dict(meta, checkpoint_id='second', files={}))
     atomic.write_json(directory.parent / 'latest.json', dict(checkpoint_id='second'))
     assert ckpt.describe(tmp_path)['checkpoint_id'] == 'second'
+
+
+def test_scalars_do_not_search_for_a_missing_dateutil_per_value():
+    import pyarrow as pa
+    import gator_workbench.storage.dataset  # noqa: F401 - importing it is what sets the sentinel
+    assert 'dateutil' in sys.modules
+    if sys.modules['dateutil'] is not None:
+        pytest.skip('dateutil is installed here')
+    assert importlib.util.find_spec('dateutil') is None
+    started = time.perf_counter()
+    for value in range(2000):
+        pa.scalar(value)                                          # what a parquet filter does with its value
+    assert time.perf_counter() - started < 0.5                    # a failed import search per value was ~1 ms
+
+
+def test_timestamps_do_not_search_for_a_missing_pytz_per_value():
+    import importlib.util
+    import pyarrow as pa
+    import gator_workbench.storage.dataset  # noqa: F401 - importing it is what sets the sentinel
+    assert 'pytz' in sys.modules                          # the real package, or None: "not installed", answered at once
+    if sys.modules['pytz'] is not None:
+        pytest.skip('pytz is installed here')
+    assert importlib.util.find_spec('pytz') is None
+    column = pa.array([dt.datetime(2026, 9, 22, tzinfo=dt.timezone.utc)] * 2000, type=pa.timestamp('us', tz='UTC'))
+    started = time.perf_counter()
+    rows = pa.table({'t': column}).to_pylist()
+    assert rows[0]['t'].tzinfo is not None and time.perf_counter() - started < 0.5      # was ~1.25 ms per value
+
+
+def test_a_runs_files_listed_many_at_a_time_are_those_listed_one_by_one(tmp_path):
+    for relative in ('run_manifest.json', 'data/evaluations/part-0.parquet', 'data/_quarantine/x.bin', 'work/lane-1/job.json',
+                     'logs/events.jsonl', 'checkpoints/ckpt-a/metadata.json'):
+        (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / relative).write_text(relative)
+
+    def one_by_one(root, *, exclude_roots=(), exclude_dirs=()):          # run_files before record 7.279
+        entries = []
+        for directory, dirs, files in os.walk(root):
+            base = Path(directory)
+            dirs[:] = [d for d in dirs if d not in exclude_dirs and not (base == root and d in exclude_roots)]
+            for name in files:
+                info = (base / name).stat()
+                if stat.S_ISREG(info.st_mode):
+                    entries.append((base / name, (base / name).relative_to(root).as_posix(), info))
+        return sorted(entries, key=lambda entry: entry[1])
+    for options in (dict(), dict(exclude_roots=('work',)), dict(exclude_roots=('work', 'checkpoints'), exclude_dirs=('_quarantine',))):
+        assert support.run_files(tmp_path, **options) == one_by_one(tmp_path, **options)

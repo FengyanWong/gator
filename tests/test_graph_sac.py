@@ -21,6 +21,7 @@ from analog_optimizer.training.replay import Transition, ReplayBuffer
 from analog_optimizer.training.sac import SACLearner, SACConfig, temperature_loss
 from analog_optimizer.training.runner import collect_episode
 from research_support import observation
+import io
 
 MODEL = ModelConfig(hidden_dim=16, heads=2, layers=2)
 EXPERIMENT = {'origin': 'synthetic', 'split': 'training-fixture', 'designs': ['opamp-v1', 'ldo-v1']}
@@ -658,3 +659,14 @@ def test_replay_is_isolated_from_admitted_sampled_and_batched_objects(transition
     for _ in range(3):
         replay.update_learner(model, 4)
     assert [t.fingerprint() for t in replay._items] == fingerprints
+
+
+def test_the_replay_checkpoint_bytes_do_not_depend_on_the_copy():
+    from analog_optimizer.training.replay import ReplayBuffer
+    replay = ReplayBuffer(8, origin='synthetic')
+    replay._items = [{'a': [1, 2.5, 'x'], 'b': {'c': (3, 4)}}, {'a': [5], 'b': {}}]
+    copied, direct = io.BytesIO(), io.BytesIO()
+    torch.save(dict(replay=replay.state_dict()), copied)
+    torch.save(dict(replay=replay.state_dict(copy=False)), direct)
+    assert copied.getvalue() == direct.getvalue()
+    assert replay.state_dict()['items'] is not replay._items and replay.state_dict(copy=False)['items'] is replay._items

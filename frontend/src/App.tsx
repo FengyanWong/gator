@@ -1,17 +1,16 @@
-import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, ApiError, Json, NO_ANSWER, plainError, saveJson } from './api';
+import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
+import { api, ApiError, Json, NO_ANSWER, saveJson } from './api';
 import { Look, LOOK_NAMES, setLook, useLook } from './theme';
 import { Icon } from './panels/Icons';
 import { setUnitForms } from './units';
-import { rowsFrom, useConfig, usePolling, useRequest, useTaskSaves } from './store';
+import { rowsFrom, useConfig, useRequest, useTaskSaves } from './store';
 import { CircuitPanel } from './panels/Left';
 import { ConnectionButton } from './panels/Connection';
 import { CheckSteps } from './panels/Consistency';
 import { Editors } from './panels/Editors';
 import { ValidationStatus } from './panels/Issues';
 import { RunButtons } from './panels/RunControl';
-import { changesByItself, isLive, RESUMABLE, useRunControl } from './runState';
-import { HEADER_RUN_KEY, SHOWN_RUN_KEY } from './contract';
+import { isLive, RESUMABLE } from './runState';
 import { CALIBRATION_DESIGNS, launchKept, useLaunchActions } from './launch';
 import { LaunchRefusal } from './panels/LaunchRefusal';
 import { useRunBrief } from './panels/RunBrief';
@@ -25,9 +24,9 @@ import { CrashPanel } from './panels/CrashPanel';
 import { BottomPanel, type BottomTab, useBottomPanel } from './panels/BottomPanel';
 import { useCalibrationOffer } from './page/calibrationOffer';
 import { useRunWindowActions } from './page/runWindowActions';
+import { shownRun, useRunList, useShownRun } from './page/shownRun';
 import { useNewest } from './newest';
-import { keep, oncePerBrowser, readKept } from './kept';
-
+import { oncePerBrowser } from './kept';
 
 /** A configuration the backend cannot even read (HTTP 422): one blocking issue per field it names, in its plain words
  *  (schema.describe_errors), at the place the validation report uses (parameters[1].variable_id), so the list names the
@@ -41,7 +40,6 @@ function rejected(e: any): Json {
     : [e instanceof ApiError ? { level: 'error', code: 'schema', path: '', message: e.message } : { level: 'error', code: 'no_answer', path: '', message: NO_ANSWER }];
   return { blocks_run: true, issues, facts: {} };
 }
-const NO_RUNS: Json[] = [];                          // one empty list: a failed read does not make the model list read again
 
 /** The header's look switch (record 7.158): Whiteprint by day, Silicon Night by night. An icon, like the run buttons. */
 function LookSwitch() {
@@ -51,15 +49,6 @@ function LookSwitch() {
     title={`Switch look: now ${LOOK_NAMES[look]}; press for ${LOOK_NAMES[other]}. Kept in this browser; the pop-up windows follow.`}>
     <Icon name={look === 'silicon' ? 'sun' : 'moon'} label="Switch look" /></button>;
 }
-
-/** The run the bottom tabs show, kept in this browser (SHOWN_RUN_KEY) with the header's run of that moment (record 7.212): a page loaded
- *  again shows the run it showed - or none, after a task without runs was chosen. Unless the header holds another run by
- *  then (started in another tab of the page, say): the page opens on the header's run then, as it always did, and so does a
- *  browser that never kept one. */
-const shownRun = (): string | null => readKept(s => {
-  const header = s.getItem(HEADER_RUN_KEY) || null, kept = JSON.parse(s.getItem(SHOWN_RUN_KEY) ?? 'null');
-  return kept && typeof kept === 'object' && (kept.header ?? null) === header ? kept.run ?? null : header;
-}, () => null);
 
 /** Layout (specification section 2): left = project, connection, circuit; center = three editors;
  *  right = run configuration + output settings (always visible); bottom = status, logs, data, files, training, corner check,
@@ -81,8 +70,6 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const [schema, setSchema] = useState<Json>(null);
   const [meta, setMeta] = useState<Json>(null);
   const [circuit, setCircuit] = useState<Json>(null);
-  const [runs, setRuns] = useState<Json[]>(NO_RUNS);
-  const [runsError, setRunsError] = useState<string | null>(null);   // the run list could not be read: said, not shown as "no run yet"
   const [runDir, setRunDir] = useState<string | null>(shownRun);
   const [tab, setTab] = useState<BottomTab>('status');
   const panel = useBottomPanel(runDir);
@@ -118,24 +105,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
       if (remembered && store.fresh) setConfig((c: Json) => ({ ...c, run: { ...c.run, concurrency: remembered } }), false);
     }).catch(e => setFatal(e.message));
   }, []);
-  // Only the newest read of the run list may answer: while the output root is typed, a half-typed path outside the roots
-  // (403) used to empty the list when its answer came last.
-  const listing = useNewest();
-  // One function for the whole page (useCallback; the output root through a ref), so the panels that take it are not drawn
-  // again at every status update (record 7.275). A list that is the same as the one held keeps that array: what depends
-  // on the runs (the saved models, the Training tab) is not asked again for nothing. `fresh`: the backend reads every
-  // run folder anew (Refresh list; record 7.274).
-  const outputRoot = useRef(config.output.output_root);
-  outputRoot.current = config.output.output_root;
-  const readRuns = useCallback((fresh = false): Promise<{ list: Json[]; error: string | null }> => {
-    const mine = listing.next();
-    return api.runs(outputRoot.current ?? undefined, fresh).then(r => ({ list: r.runs as Json[], error: null }), e => ({ list: NO_RUNS, error: plainError(e) }))
-      .then(read => {
-        if (mine()) { setRuns(held => (JSON.stringify(held) === JSON.stringify(read.list) ? held : read.list)); setRunsError(read.error); }
-        return read;
-      });
-  }, []);
-  const refreshRuns = useCallback((fresh = false): Promise<Json[]> => readRuns(fresh).then(read => read.list), [readRuns]);
+  const { runs, runsError, readRuns, refreshRuns } = useRunList(config.output.output_root);
 
   // Debounce validation and ignore replies for a configuration that has since changed. `sent`: the configuration the
   // report is about - its row paths (targets[3]) name rows of THAT configuration, which Delete, Undo or Import may have
@@ -148,43 +118,8 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const validation = useMemo(() => validationRead.error ? { blocks_run: true, issues: [{ level: 'error', code: 'no_answer', path: '', message: validationRead.error }], facts: {} }
     : validationRead.value, [validationRead.value, validationRead.error]);
 
-  // How often the run shown is read: see the effect after useRunControl below.
-  const [statusEvery, setStatusEvery] = useState(1500);
-  // The run shown is gone (deleted, or outside the allowed roots by now - it may be the remembered one the page opened
-  // with): it is let go, as the header lets go of its own, instead of being asked for every 1.5 s for ever while the strip
-  // still names its folder. Two answers in a row: on the 9p-mounted D: drive a stat right after a rename can fail once,
-  // and one 404 of a run that is there must not take it off the page.
-  const gone = useRef(0);
-  useEffect(() => { gone.current = 0; }, [runDir]);
-  const readStatus = (dir: string, signal: AbortSignal) => api.status(dir, signal).then(value => { gone.current = 0; return value; }, e => {
-    if (e instanceof ApiError && (e.status === 403 || e.status === 404) && ++gone.current >= 2) setRunDir(shown => (shown === dir ? null : shown));
-    throw e;
-  });
-  const { value: polledStatus, error: statusError } = usePolling(signal => readStatus(runDir!, signal), statusEvery, !!runDir, [runDir]);
-  const status = polledStatus?.run_dir === runDir ? polledStatus : null;
-  // Corner check only where corners can be used (record 7.182, design advice): the loaded circuit simulates at corners, or the run
-  // shown is MOCK (its corners are analytic). No registered circuit does since 2026-09-30 (record 7.128); the tab comes back by
-  // itself with one that does.
-  const cornersUsable = circuit?.training_capabilities?.corners === true || !!status?.manifest?.mock;
-  useEffect(() => { if (tab === 'corners' && !cornersUsable) setTab('status'); }, [tab, cornersUsable]);
-  const isReal = circuit?.loaded && circuit.mock === false;
-  // The run the header buttons act on (Start -> Pause -> Resume, Abort). It is not the run the bottom tabs show.
-  const [looked, setLooked] = useState(false);
-  const control = useRunControl(status, looked);
-  // The run shown, kept with the header's run (shownRun above); again when the header takes or lets go of one.
-  useEffect(() => {
-    keep(s => s.setItem(SHOWN_RUN_KEY, JSON.stringify({ run: runDir, header: control.dir })));   // a private window: not kept
-  }, [runDir, control.dir]);
+  const { status, statusError, cornersUsable, isReal, control, setLooked } = useShownRun({ runDir, setRunDir, tab, setTab, circuit });
   const { calibrated, calibrationOffer, calibrationReady, answerCalibration } = useCalibrationOffer({ control, config, setConfig, setMessage });
-  // The run shown is read every 1.5 s while it can change by itself: a worker is alive, its state is a live one, or the
-  // header is starting, resuming, pausing or ending a run. Otherwise it waits for a press on this page: every 15 s while
-  // it could still be continued (paused, stopped, interrupted - another browser may continue it), once a minute once it
-  // has ended for good (completed, failed, cancelled). Until 2026-09-30 a paused or stopped run was read every 1.5 s, and
-  // each read re-reads its tables. The header's phase counts only when the header's run IS the run shown (record 7.125:
-  // a finished run in the tabs was read every 1.5 s while the header paused or aborted another one).
-  const transitional = control.dir === runDir && ['starting', 'resuming', 'pausing', 'aborting', 'finishing'].includes(control.phase);
-  useEffect(() => setStatusEvery(changesByItself(status, transitional) ? 1500
-    : ['completed', 'failed', 'cancelled'].includes(status.state) ? 60000 : 15000), [status?.worker_alive, status?.state, transitional]);
   // When the header's run comes to rest, the Project column reads its task again (a finished Baseline simulation
   // records the task's reference by itself, status record 7.78): a counter the column follows. Not on the page's first look,
   // and not after a start that never ran (refused or declined) or a paused run let go: nothing about the task changed.

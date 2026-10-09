@@ -451,3 +451,4 @@ One row per commit, newest last.
 | `e76d057` | 10-09 11:27 | 7.290 | Record 7.290: the browser checks against the refactored backend and page together |
 | `2b79f78` | 10-09 11:27 | 7.290 | Docs: the refactoring plan's row in the plans table - executed (7.290), not landed |
 | `ef1cc42` | 10-09 11:27 | 7.290 | the refactoring landed: the landed-state texts of record 7.290, its index row, the plan and the reference; the 47 above are the clean copy's commits replayed on 564928e (session "Refactoring plan") |
+| `7614718` | 10-09 11:48 | - | record only: record 7.290's Commit and Live lines, and the table rows for 564928e and the landing commits 7410f6f..ef1cc42 (session "Refactoring plan") |

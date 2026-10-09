@@ -294,6 +294,29 @@ class CircuitSizingEnv:
         self.steps += 1
         return self._evaluate(action, reset=False)
 
+    def continue_from(self, *, steps, episode, max_steps, observation):
+        """Continue the logical episode another process left: absolute sizing actions need no simulator state from it,
+        so only the episode's counters, its step budget and the recording's last observation are set back; nothing is
+        evaluated (the workbench's Continue; plan-refactoring E2 - the workbench wrote these attributes itself)."""
+        self._require_connection()
+        self.steps, self.episode = steps, episode
+        self.max_steps = max_steps
+        self._recording_observation = observation
+        self._done = False
+
+    def independent_episode(self):
+        """A new episode for an independent absolute design (the workbench's calibration): no simulated starting state,
+        and nothing for a replay transition to start from (plan-refactoring E2)."""
+        self._require_connection()
+        self.steps, self.episode, self._done = 0, self.episode + 1, False
+        self._recording_observation = None
+
+    def retry(self, action, *, reset):
+        """Evaluate a candidate again - the same legal action, or the reset - after its evaluation failed (the
+        workbench's retry; plan-refactoring E2). Returns what _evaluate returns."""
+        self._require_connection()
+        return self._evaluate(action, reset=reset)
+
     def authorize_launches(self, allowance, *, stop_file=None):
         if type(allowance) is not int or allowance < 0:
             raise ValueError('A finite nonnegative reserved launch allowance is required')

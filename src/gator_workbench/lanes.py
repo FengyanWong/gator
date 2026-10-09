@@ -121,11 +121,8 @@ class _EnvDriver:
         if op == 'continue':
             # Absolute sizing actions need no simulator state from the previous process.
             # Restore the logical episode only; this operation performs no evaluation.
-            env._require_connection()
-            env.steps, env.episode = proposal['steps'], proposal['episode']
-            env.max_steps = proposal['max_steps']
-            env._recording_observation = proposal['observation']
-            env._done = False
+            env.continue_from(steps=proposal['steps'], episode=proposal['episode'], max_steps=proposal['max_steps'],
+                              observation=proposal['observation'])
             return dict(ok=True)
         calls_before, started = env.simulation_calls, _now()
         result = dict(op=op, lane_id=self.lane_id, started_at=started, ok=False, step=None, exception=None,
@@ -143,18 +140,15 @@ class _EnvDriver:
             elif op in ('step', 'calibration'):
                 if op == 'calibration':
                     # Independent absolute random designs need no simulated starting state or replay transition.
-                    env._require_connection()
-                    env.steps, env.episode, env._done = 0, env.episode + 1, False
-                    env._recording_observation = None
+                    env.independent_episode()
                 action = env.mapper.legalize(proposal)      # invalid input costs nothing, as in env.step
                 self._last = ('step', action)
                 step = env.step(proposal)
             elif op == 'retry':
                 if self._last is None:
                     raise RuntimeError('Nothing to retry')
-                env._require_connection()
                 kind, action = self._last
-                step = env._evaluate(action, reset=kind == 'reset')
+                step = env.retry(action, reset=kind == 'reset')
                 if kind == 'reset':
                     observation, _, _, _, info = step
                     step = (observation, None, info['terminated'], info['truncated'], info)

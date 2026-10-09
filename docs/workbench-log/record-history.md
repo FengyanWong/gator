@@ -480,3 +480,5 @@ One row per commit, newest last.
 | `4d2eff0` | 10-09 18:59 | 7.292 | Docs: record 7.292 - the refactoring's follow-up: the small fixes, the optimizer's clean-up (group E) and styles.css (C11) |
 | `f3e0dfd` | 10-09 19:24 | - | record only: names the commits of record 7.292 and its Live line (session "Refactoring plan") |
 | `764fd63` | 10-09 19:48 | 7.293 | encoder study follow-ups: the cross-attention VCO rerun, the additions plan draft; a 7.289 amendment; docs only (session "Encoder run plan revision") |
+| `5d34318` | 10-09 19:48 | - | record only: names the commit of record 7.293 (764fd63) and adds the table rows for f3e0dfd and 764fd63 |
+| `44881d8` | 10-09 22:03 | 7.294 | audit of 2026-10-09: OCEAN's results let go after each measurement (`ocnResetResults()`), the learn-while-simulating switch on by default after its check, a plan for a cheaper check before each write (session "Frontend workbench layout design") |

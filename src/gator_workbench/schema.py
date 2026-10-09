@@ -672,8 +672,10 @@ def _hashed(data):
     differently since. So is the retired `run.threads_per_job` (2026-09-29, RETIRED_RUN_FIELDS). The search block retired
     on 2026-10-06 (record 7.226) is hashed as absent, as it was at its default. The RL model's label
     (`run.model_label`, record 7.159) is hashed as absent while it is not set, and so is the switch
-    `run.advanced.update_after_dispatch` (record 7.281) while it is off - the default until record 7.294, so a run's
-    recorded configuration of before keeps its hash, and one with the switch on hashes as the different run it is -, and
+    `run.advanced.update_after_dispatch` (record 7.281) while it is off - the default until record 7.294: a configuration
+    recorded since 7.281 states it off and keeps its hash, one with the switch on hashes as the different run it is, and
+    one written before 7.281 never stated it, so it reads as on since and keeps its hash only by stating it off (as the
+    pinned tests do) -, and
     `output.keep_simulator_host_folders`
     (record 7.282) while it is off. The research labels retired on 2026-10-03
     (record 7.163, RETIRED_RESEARCH_FIELDS) are hashed as present at their old defaults, and so are the Specs' target and

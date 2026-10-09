@@ -174,8 +174,8 @@ def test_learning_after_the_dispatch_keeps_every_update_and_every_save_point(tmp
 
 
 def test_the_switch_keeps_the_hashes_of_configurations_without_it(tmp_path):
-    # On by default since record 7.294. A configuration with it off - every run recorded before states it so - is hashed as
-    # one without the field was until then; one with it on hashes as the different run it is.
+    # On by default since record 7.294. A configuration with it off - every run recorded from 7.281 to 7.294 states it so -
+    # is hashed as one without the field was until then; one with it on hashes as the different run it is.
     assert make_config(tmp_path).run.advanced.update_after_dispatch is True
     off = make_config(tmp_path, advanced=dict(update_after_dispatch=False))
     raw = off.model_dump(mode='json')

@@ -1655,7 +1655,8 @@ so a pause right after them loses none: record 7.283); each design comes from a 
 evaluations table's `policy_version` says which. The check on real tasks (record 7.294: mscr_ota5t and mscr_ring3, seeds 2
 and 3, 400 evaluations, off against on): the feasible designs of the last third were 273 off and 332 on - not worse, the
 criterion written before the runs - and the runs were 18 % shorter (12-22 %). A configuration that never stated the switch
-runs with it on since; one that turned it off, every run recorded before included, keeps it off and its hash. No separate starting rate passed the extended
+runs with it on since, one written before record 7.281 included (a run of then, loaded and started again); one that
+turned it off, every run recorded from 7.281 to 7.294 included, keeps it off and its hash. No separate starting rate passed the extended
 1,000-update unit check, so new configurations leave it empty. Attributed failures continue the episode, while its normal
 horizon and configured success ending still apply.
 

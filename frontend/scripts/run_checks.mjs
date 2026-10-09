@@ -14,6 +14,7 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,9 @@ import { fileURLToPath } from 'node:url';
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(scripts, '..');
 const configFile = path.join(root, 'vite.config.ts');
+// Vite keeps its dependency cache in <root>/node_modules/.vite unless told otherwise: in a copy whose node_modules links the
+// live tree's packages, that wrote into the live tree (record 7.290). A folder in the temp folder instead, one per checkout.
+const cacheDir = path.join(tmpdir(), 'gator-checks-vite', createHash('sha256').update(root).digest('hex').slice(0, 12));
 
 const args = process.argv.slice(2);
 const option = (name, fallback = null) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : fallback; };
@@ -81,7 +85,7 @@ const killTree = pid => { try { execFileSync('taskkill', ['/PID', String(pid), '
 const servers = [];
 async function serve() {
   const vite = await import('vite');
-  const quiet = { configFile, root, logLevel: 'warn', clearScreen: false };
+  const quiet = { configFile, root, cacheDir, logLevel: 'warn', clearScreen: false };
   let dist = option('--build');
   if (!dist) {
     dist = path.join(out, 'dist');

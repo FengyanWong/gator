@@ -73,7 +73,8 @@ def bridge_state_dir() -> Path:
     (`directories`); GATOR_BRIDGE_STATE_DIR overrides it (the tests). Every GATOR process must name the same folder: one
     started with other settings (GATOR_WORKBENCH_SETTINGS_DIR) reads its own connection file, so it needs the same value
     there or the variable. Sessions before record 7.167 stay in artifacts/local/bridge-state."""
-    from .directories import local_path                   # imported here: directories -> connection -> this module
+    # lazy: directories imports this module
+    from .directories import local_path
     return local_path('adapter_state')
 
 

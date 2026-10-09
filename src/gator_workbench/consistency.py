@@ -133,7 +133,7 @@ def _connect_fix(detail) -> str:
 
 def copy_steps(monitor, profile_id, name, entry, saved, *, acknowledge_unknown=False, commands=None) -> list:
     """Parts 2 and 3: the saved task against its working copy in Virtuoso. Read-only; each step says what it found."""
-    from . import profile_preflight, profiles, working_copy
+    from . import profile_preflight, profiles, working_copy  # lazy: profiles imports the optimizer (torch)
     commands = commands or {}
     if lock_holder(bridge_state_dir() / 'session.lock'):           # record 7.207: the adapter could not take the lock
         return [_busy_step()]

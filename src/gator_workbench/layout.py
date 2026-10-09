@@ -113,7 +113,7 @@ def local_scratch(layout: RunLayout) -> Path | None:
     slow mount too, or with GATOR_LOCAL_SCRATCH=off."""
     if os.environ.get('GATOR_LOCAL_SCRATCH', '').strip().lower() in ('off', '0', 'no', 'false'):
         return None
-    from .directories import local_path
+    from .directories import local_path  # lazy: layout and directories import each other
     root = local_path('local_scratch')
     if filesystem_type(layout.run_dir) not in SLOW_FILESYSTEMS or filesystem_type(root.parent) in SLOW_FILESYSTEMS:
         return None

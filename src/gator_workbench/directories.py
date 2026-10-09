@@ -109,7 +109,7 @@ def normalized(key, raw) -> str | None:
 def check_local(key, text) -> None:
     """What a local folder must offer before it is saved: one that GATOR writes into is made when missing and written
     once; the scratch must not be on a slow mount; the bridge checkout must exist."""
-    from .layout import SLOW_FILESYSTEMS, filesystem_type
+    from .layout import SLOW_FILESYSTEMS, filesystem_type  # lazy: layout and directories import each other
     path, field = Path(text).expanduser(), FIELDS[key]
     if key == 'local_scratch' and filesystem_type(path) in SLOW_FILESYSTEMS:
         raise InvalidDirectory(key, f'{text} is on a slow mount ({filesystem_type(path)}): a scratch there would gain '

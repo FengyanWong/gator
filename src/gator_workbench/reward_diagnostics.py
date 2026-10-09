@@ -39,7 +39,7 @@ def load(run_dir):
 
 
 def _load(data):
-    from .storage.dataset import DatasetReader
+    from .storage.dataset import DatasetReader  # lazy: tests patch storage.dataset.DatasetReader
     reader = DatasetReader(data)
     total = reader.row_counts().get('evaluations', 0)
     limit = min(64, total)

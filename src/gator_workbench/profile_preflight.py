@@ -42,7 +42,7 @@ DECK_LATER = ('Not written: a task measured by Maestro gets its deck from the ru
 
 def run(name, profile_id, work_root) -> dict:
     """In the short-lived process. Returns {ok, steps: [{step, ok, detail}], deck}."""
-    from .generic_profile import RulesError
+    from .generic_profile import RulesError  # lazy: generic_profile imports the optimizer (torch)
     steps, deck, backend = [], None, None
 
     def done(step, detail=None):
@@ -101,7 +101,7 @@ def _main(argv=None):
 def preflight(monitor, name, profile_id, *, timeout=300.0, command=None, acknowledge_unknown=False) -> dict:
     """Gate, then the check process. Raises PermissionError when the gate blocks. `acknowledge_unknown`: the start this
     check belongs to acknowledged unknown connection layers, so this gate accepts them too."""
-    from . import profiles
+    from . import profiles  # lazy: profiles imports the optimizer (torch)
     directory = profiles.profile_dir(name)
     if profiles.profile_entry(name) is None:
         raise KeyError(name)

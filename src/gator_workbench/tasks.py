@@ -127,7 +127,7 @@ def list_tasks():
         tasks.append(dict(task_key=f'real:{name}', kind='real', circuit_class=info['circuit_class'], pdk_id='gpdk045',
                           available=blocker is None, blocker=blocker,
                           description='Verified GPDK045 bridge profile (Virtuoso + Spectre).'))
-    from . import profiles
+    from . import profiles  # lazy: profiles imports the optimizer (torch)
     # What keeps a generated task from running is the same for all of them (the active connection), and each task's
     # reference is read once: both were read per task, the reference twice (record 7.279; 141 file opens per list).
     shared_blocker = None
@@ -149,7 +149,7 @@ def list_tasks():
                           variables=len(entry.get('optimized_variables') or ()), results=len(entry.get('provided_metrics') or ()),
                           description=f"Profile generated from {entry['library']}/{entry['core_cell']} (Virtuoso + Spectre). "
                                       + ('' if reference else 'No real baseline recorded yet.')))
-    from . import ngspice_tasks
+    from . import ngspice_tasks  # lazy: ngspice_tasks imports the optimizer (torch)
     tasks.extend(ngspice_tasks.task_entries())                 # SPICE decks saved in the ngspice window
     for task in tasks:
         task['starter_project'] = starter_project(task['task_key'])
@@ -274,14 +274,14 @@ def load_task(circuit, *, allow_real=False, profile_id=None) -> TaskRuntime:
         if key in REMOVED_REAL_TASKS:
             raise TaskBlocked(real_task_removed(key))
         if kind == 'real' and name not in REAL_PROFILES:
-            from . import profiles
+            from . import profiles  # lazy: profiles imports the optimizer (torch)
             if profiles.profile_entry(name) is not None:
                 blocker = generated_backend_blocker(profile_id)
                 if blocker:
                     raise TaskBlocked(blocker, contract=REAL_INTERFACE_CONTRACT)
                 return _generated_runtime(key, name, profile_id, authorized=bool(allow_real))
         if kind == 'ngspice' and name:
-            from . import ngspice_tasks
+            from . import ngspice_tasks  # lazy: ngspice_tasks imports the optimizer (torch)
             return ngspice_tasks.runtime(key, name, profile_id, authorized=bool(allow_real))
         if kind == 'real' and name in REAL_PROFILES:
             blocker = real_backend_blocker(profile_id, name)
@@ -319,7 +319,7 @@ _view_cache: dict = {}
 def _view_stamp(name):
     """(name, size, mtime) of what a generated task is built from - its folder and every file in it, the folder of saved
     tasks, the connection file, the conditions file - or None when one of them cannot be read (then nothing is kept)."""
-    from . import profiles
+    from . import profiles  # lazy: profiles imports the optimizer (torch)
     try:
         store = profiles.store_root()
         folder = store / name
@@ -402,7 +402,7 @@ def generated_bridge_config(name, profile_id=None):
     """(BridgeConfig, profile object, registry entry) of a generated profile: the link and the model file of the
     connection profile, the cell's OWN library, the receipt of the profile's folder. Local files only."""
     import site
-    from . import profiles
+    from . import profiles  # lazy: profiles imports the optimizer (torch)
     blocker = generated_backend_blocker(profile_id)
     if blocker:
         raise TaskBlocked(blocker, contract=REAL_INTERFACE_CONTRACT)
@@ -430,7 +430,7 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
     """A profile created from a cell read out of Virtuoso (`profiles`): the file-driven class, the cell's OWN
     library, the receipt of its folder. Until a real baseline is recorded there is nothing to compare a worker's
     first evaluation with, so none is passed (the factory's comparison is optional)."""
-    from . import profiles, recipes
+    from . import profiles, recipes  # lazy: profiles and recipes import the optimizer (torch)
     config, profile, entry = generated_bridge_config(name, profile_id)
     directory = Path(entry['directory'])
     reference = profiles.reference_metrics(name)
@@ -442,6 +442,7 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
         if not authorized:
             raise TaskBlocked(REAL_AUTHORIZATION_REQUIRED, contract=REAL_INTERFACE_CONTRACT)
         from analog_optimizer.envs.sizing import graph_contract
+        # lazy: cdf_write imports the optimizer (torch)
         from .cdf_write import factory_class              # a task written by the PDK's form: the form writer owns the cell
         if graph_contract(compiled.graph) != graph_contract(graph):
             raise TaskBlocked('This task fixes which values may change, their ranges and their grid. The rows of the parameter '
@@ -573,7 +574,7 @@ def real_starter_config(task_key: str) -> dict:
     a verified circuit (REAL_TARGETS_OF_RECORD), each row stating its source; a profile generated from a cell has none,
     its requirements stay the user's to state. Probes - one row per result that carries a target; for a generated profile
     one per result a target can be set on. Run settings are left alone: a real budget is never suggested."""
-    from . import profiles
+    from . import profiles  # lazy: profiles imports the optimizer (torch)
     if task_key in REMOVED_REAL_TASKS:
         raise KeyError(task_key)
     name = task_key.partition(':')[2]
@@ -634,7 +635,7 @@ def starter_config(task_key: str) -> dict:
     if kind == 'real' and name:
         return real_starter_config(task_key)
     if kind == 'ngspice' and name:
-        from . import ngspice_tasks
+        from . import ngspice_tasks  # lazy: ngspice_tasks imports the optimizer (torch)
         return ngspice_tasks.starter_config(task_key)          # KeyError for a task that does not exist
     if kind != 'synthetic' or name not in task_registry.SYNTHETIC_FIXTURES:
         raise KeyError(task_key)

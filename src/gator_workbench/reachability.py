@@ -69,7 +69,7 @@ def assess(config, designs):
 
 
 def _recorded_designs(run_dir):
-    from .storage.dataset import DatasetReader
+    from .storage.dataset import DatasetReader  # lazy: tests patch storage.dataset.DatasetReader
     reader = DatasetReader(Path(run_dir) / 'data')
     grouped = defaultdict(lambda: defaultdict(lambda: dict(status='ok', candidate_evaluated=True,
         metrics={}, metric_units={}, metric_validity={})))

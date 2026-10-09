@@ -282,7 +282,7 @@ def reference_candidate(context):
 # ================================================================================ the plan (free)
 def plan(run_dir, *, designs=MAX_DESIGNS) -> dict:
     """What a check of this run would do and cost. Local files only: nothing is contacted, written or started."""
-    from .runs import run_status
+    from .runs import run_status  # lazy: tests patch runs.run_status
     designs = max(1, min(MAX_DESIGNS, int(designs)))
     layout = RunLayout(Path(run_dir))
     manifest = read_json(layout.manifest)

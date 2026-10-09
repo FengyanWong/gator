@@ -763,7 +763,7 @@ def record_reference(name, run_dir) -> dict:
     verified profiles. Taken from the run's own tables - the raw backend metrics of the evaluation with phase
     `baseline` - and only when that evaluation is real, came from a simulation and every metric of the recipe is
     there and valid. An existing reference is never replaced: a reference that moves is not a reference."""
-    from .storage.dataset import DatasetReader
+    from .storage.dataset import DatasetReader  # lazy: tests patch storage.dataset.DatasetReader
     entry = profile_entry(name)
     if entry is None:
         raise ProfileError(f'Unknown generated profile {name!r}')

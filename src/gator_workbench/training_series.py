@@ -666,7 +666,7 @@ def read_training(run_dir, flushes=0, *, max_rows=MAX_ROWS, tail_cursor=None, ca
             tail = pending.as_json()
         else:
             tail_page['more'] = True
-    from .runs import run_status
+    from .runs import run_status  # lazy: tests patch runs.run_status
     status = run_status(layout.run_dir)      # status.json + the run lock: whether a run compared beside the shown one still works
     return dict(run_dir=str(layout.run_dir), run_id=manifest.get('run_id'), mode=manifest.get('mode'),
                 mock=manifest.get('mock'), state=status.get('state'), worker_alive=bool(status.get('worker_alive')),

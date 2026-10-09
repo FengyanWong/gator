@@ -244,6 +244,7 @@ def read_file(path, roots) -> dict:
 # ------------------------------------------------------------------------------------------------ the connection
 def connection_problem(profile_id=None) -> str | None:
     """Why the named (or the active) connection cannot run this task, or None."""
+    # lazy: connection.KINDS, not this module's netlist KINDS
     from .connection import KINDS, family_of, load_profiles, profile_kind
     loaded = load_profiles()
     key = profile_id or loaded['active']

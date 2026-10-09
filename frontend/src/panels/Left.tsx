@@ -1,14 +1,12 @@
-import { migrateConfig, noteRowsFrom, useAsyncAction, useRequest } from '../store';
-import { CircuitDetails, gateText, namedTestbench, NativeSchematic, useVirtuosoBrowser } from './CircuitBrowser';
+import { CircuitDetails, NativeSchematic, useVirtuosoBrowser } from './CircuitBrowser';
 import { memo, MutableRefObject, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, Json, problemText } from '../api';
-import { connectionProfilesShared, tasksShared } from '../shared';
+import { api, Json } from '../api';
+import { tasksShared } from '../shared';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
 import { VIRTUOSO_WINDOW } from '../contract';
-import { PdkWindowButton, pdksChanged } from './Pdk';
-import { WorkingCopy } from './WorkingCopy';
+import { pdksChanged } from './Pdk';
 import { NgspiceButton } from './Ngspice';
 import { TaskBaseline } from './TaskBaseline';
 import { TaskSave, baselineText } from './TaskSave';
@@ -17,6 +15,11 @@ import { CheckSteps } from './Consistency';
 import { Typed } from './Typed';
 import { CircuitPicture } from './CircuitPicture';
 import { useNewest } from '../newest';
+import { sameRows } from './taskRows';
+import { useTaskActions } from './taskActions';
+import { useTestbenchProbes } from './testbenchProbes';
+import { type TaskLoad, useTaskChoice } from './taskChoice';
+import { VirtuosoWindow } from './VirtuosoWindow';
 
 /** The connection block lives in Connection.tsx: one button in this column that opens the connection window. */
 
@@ -31,9 +34,6 @@ import { useNewest } from '../newest';
 /** The circuit sources: a registered task (the column) and a Virtuoso cell (the window). "Import Spectre netlist" was
  *  removed (user request, status record 7.53): a configuration saved before still names `netlist`; the column then says so. */
 const SOURCES = ['registered_task', 'virtuoso'];
-/** A dropdown must be able to show the configured value even when the list does not (yet) contain it. */
-const withCurrent = (names: string[], current?: string | null) => (current && !names.includes(current) ? [current, ...names] : names);
-const sameJson = (a: Json, b: Json) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
 
 const CIRCUIT_CLASSES = ['opamp', 'ldo', 'vco', 'bandgap', 'comparator', 'oscillator', 'unspecified'];
 /** Use the page's themed dropdown; its Custom option keeps arbitrary research labels editable. */
@@ -56,15 +56,6 @@ function CircuitClass({ value, onChange }: { value?: string | null; onChange: (v
   </div>;
 }
 
-/** The three editors, by their configuration keys: Parameters, Specs, Probes. */
-const ROW_SECTIONS = ['parameters', 'targets', 'measurements'];
-/** The three tables as a reload leaves them (store.ts migrateConfig), for comparing: a task saved before a column retired
- *  still carries it (`tolerance: 0` on every spec of mscr_ota7t/ring3/vco_lin) and the page drops it when it reloads, so
- *  the rows compared as they came never matched again - switching task asked to discard edits nobody made (record 7.223).
- *  Both sides, as rows on the page can carry a retired field too (an answer that still names one). */
-const tablesOf = (config: Json): Json => migrateConfig(Object.fromEntries(ROW_SECTIONS.map(s => [s, config?.[s] ?? []])));
-const sameRows = (config: Json, starter: Json) => { const a = tablesOf(config), b = tablesOf(starter); return ROW_SECTIONS.every(s => sameJson(a[s], b[s])); };
-const noRows = (config: Json) => ROW_SECTIONS.every(s => !(config[s] ?? []).length);
 
 /** Asked before a cell is read (window.confirm, the project's confirmation style): the workbench writes into the cell it
  *  reads, so it has to be a copy the user made. OK = read it and work in it; Cancel = read nothing. */
@@ -88,12 +79,7 @@ function TitleFacts({ config, revision }: { config: Json; revision: number | str
     {fact('Class · PDK', `${ref.circuit_class ?? 'unspecified'} · ${ref.pdk_id ?? 'unspecified'}`)}{fact('RL model', model, ' tb-model')}</>;
 }
 
-/** The task load the Tasks window uses, for the Runs window's Load run and New run like this (record 7.267; plan "Load run":
- *  "chooseTask becomes one task load that the Tasks and Runs windows both call"). `change` joins the task's rows in the
- *  ONE change of the draft - one Undo step. Not loaded - the edits question answered Cancel, the task could not be read -
- *  nothing changed, and `why` says so in a sentence. */
-export type TaskLoaded = { loaded: true } | { loaded: false; why: string };
-export type TaskLoad = (taskId: string, change?: (c: Json) => Json, stale?: () => boolean) => Promise<TaskLoaded>;
+export type { TaskLoad, TaskLoaded } from './taskChoice';
 
 function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, taskSlot, taskNotes, titleSlot = null, taskEpoch = 0, runs = [], refreshRuns, taskLoad }:
   { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null;
@@ -183,74 +169,9 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
     refreshTasks();
     if (last.ok && last.task_key === latest.current.circuit.task_id) load(latest.current.circuit);
   };
-  // A saved task: "Check now" runs the check Start runs by itself before every run (backend consistency.py - the editors,
-  // the task file and the cell in Virtuoso must agree; the run adapter connects and exports without simulating). A
-  // finished Baseline simulation records its result as the task's reference by itself (status record 7.78; the
-  // manual "Record the baseline run as reference" went on 2026-09-29). Explicit presses, none starts a simulation.
-  // A check result goes as soon as the rows change: it was about the rows before. A message says which press it answers
-  // (`what`): the answer to Delete task stands by that button in the Tasks window.
-  const [taskCheck, setTaskCheck] = useState<Json>(null);
-  const [profileMessage, setProfileMessage] = useState<Json>(null);
-  const generatedName = ref.source === 'registered_task' && circuit?.generated_profile ? String(ref.task_id ?? '').replace(/^real:/, '') : null;
-  // Delete task is offered for a generated task (real:<name>, saved from a cell) whether it is loaded or blocked - one
-  // that no longer passes its checks is one to start over from; the task list says which tasks are generated.
-  const deletableName = generatedName ?? (ref.source === 'registered_task' && tasks.find(t => t.task_key === ref.task_id)?.generated
-    ? String(ref.task_id ?? '').replace(/^real:/, '') : null);
-  useEffect(() => { setTaskCheck(null); setProfileMessage(null); }, [generatedName]);
-  const rowsKey = (c: Json) => JSON.stringify([c.parameters, c.measurements, c.targets]);
-  useEffect(() => { setTaskCheck(null); }, [rowsKey(config)]);
-  const { busy: profileBusy, run: profileAction } = useAsyncAction((e, what) =>
-    setProfileMessage({ level: 'error', what, text: problemText(e, gateText) }), () => setProfileMessage(null));
-  // The check takes seconds (it connects and exports): an answer about rows or a task that changed meanwhile is not
-  // shown as the answer about the ones on the page now.
-  const checkTask = () => {
-    const rows = rowsKey(config), task = ref.task_id;
-    profileAction('check', async () => {
-      const answer = await api.taskCheck(profileId, config);
-      if (rowsKey(latest.current) === rows && latest.current.circuit.task_id === task) setTaskCheck(answer);
-      else setProfileMessage({ level: 'warn', what: 'check', text: 'The rows or the task changed while the check ran: press "Check now" again.' });
-    });
-  };
-  // Delete task: takes a saved task out of the list. Asked once more, because the task leaves the list. The backend keeps
-  // the files aside and refuses while a run of the task is working. The page then follows the cell the task was saved
-  // from, which is free again for a new task.
-  const [deleted, setDeleted] = useState<Json>(null);
-  const deleteProfile = (owner: Window) => {
-    if (!owner.confirm(`Delete the task real:${deletableName}?\n\nIt leaves the Registered task list, and its cell can get a new task. Runs already made `
-      + 'with it keep their data, but a paused one can no longer be resumed. A copy of the task\'s files is kept on the backend machine; the '
-      + 'cell in Virtuoso stays as it is, its Maestro test included.'
-      + (circuit?.baseline_recorded ? '\n\nIts recorded baseline goes with it: a new task needs a new real baseline simulation.' : ''))) return;
-    profileAction('delete', async () => {
-      const gone = await api.deleteProfile(deletableName!);
-      setDeleted(gone);
-      refreshTasks();
-      setConfig(c => ({ ...c, circuit: { ...c.circuit, source: 'virtuoso', task_id: null, library: gone.library, cell: gone.cell, view: 'schematic', testbench_cell: gone.testbench_cell ?? null } }));
-    });
-  };
-  const deletedHere = deleted && virtuosoOn && deleted.library === ref.library && deleted.cell === ref.cell ? deleted : null;
-  // The launchers follow the connection in use (user request 2026-09-23): a Virtuoso connection shows "Virtuoso cell..."
-  // only, an ngspice connection "ngspice netlist..." only; no connection (or one of a kind this page does not know) shows
-  // both. The family is read from the profile list - the workbench's own file, no probe - when the connection changes.
-  const { value: family } = useRequest<string>(() => connectionProfilesShared()
-    .then(p => (p.profiles ?? []).find((x: Json) => x.profile_id === profileId)?.family ?? null), [profileId], { enabled: !!profileId });
-  const showVirtuoso = family !== 'ngspice', showNgspice = family !== 'virtuoso';
-  // The task window follows the same rule for the ngspice tasks (user request 2026-09-24: the ngspice OTA example is to show
-  // only while ngspice is connected): while a Virtuoso connection is in use they are listed with the mark "choose its
-  // connection" (the old drop-down left them out; the window shows every task, record 7.227).
-  // An ngspice netlist task (Ngspice.tsx saves it; the page then follows it). Delete takes it out of the list: its folder
-  // is kept aside on the backend machine, and the page follows the first task left (the rows stay unless untouched).
-  const ngspiceTask = ref.source === 'registered_task' && /^ngspice:/.test(ref.task_id ?? '') ? String(ref.task_id).slice('ngspice:'.length) : null;
-  const deleteNgspice = (owner: Window) => {
-    if (!owner.confirm(`Delete the task ngspice:${ngspiceTask}?\n\nIt leaves the Registered task list. Runs already made with it keep their data, `
-      + 'but a paused one can no longer be resumed. Its deck and task file are kept aside on the backend machine.')) return;
-    profileAction('delete', async () => {
-      const gone = await api.ngspiceDelete(ngspiceTask!);
-      const left = await tasksShared(true).then(t => { setTasks(t.tasks); return t.tasks; }).catch(() => [] as Json[]);
-      setProfileMessage({ level: 'ok', what: 'delete', text: `Task ${gone.deleted} deleted; its files are kept in ${gone.kept_copy}.` });
-      const next = left.find((t: Json) => t.task_key !== gone.deleted);
-      if (next) chooseTask(next.task_key);
-    });
-  };
+  const { taskCheck, profileMessage, generatedName, deletableName, profileBusy, checkTask, setDeleted, deleteProfile, deletedHere, showVirtuoso,
+    showNgspice, ngspiceTask, deleteNgspice } = useTaskActions({ ref, virtuosoOn, config, setConfig, circuit, profileId, tasks, setTasks, latest,
+    refreshTasks, chooseTask: (key: string) => chooseTask(key) });
   // Reading a cell INTO the workbench is an explicit press: Virtuoso exports the netlist of the testbench (or of the cell)
   // and the sizes are read back - read-only, zero-cost, some seconds. The first read of a cell asks whether it is a copy
   // the user made (copyQuestion): "OK" reads it AND makes it the cell the task flow works in (import with work_here; the
@@ -281,101 +202,10 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
   };
   useEffect(() => { setPdkStep(null); }, [loadKey]);       // the line is about the cell it was read with
 
-  // Probes follow the testbench (user request 2026-09-21): a cell read THROUGH a testbench brings, in Probes, the results
-  // of the circuit type that testbench fits, each naming the testbench net or supply branch it is read from
-  // (profiles.testbench_probes - from the export that was read, not from what the box shows now). Only after a choice of
-  // library / cell / testbench or a press of Read, never on page load; and only over rows that are nobody's work - empty,
-  // brought by an earlier testbench, or still exactly the rows the last registered task brought. That task's untouched
-  // targets leave Specs with them (they point at its probes). Rows someone edited stay, and the line offers the exchange.
-  // A choice exchanges within its own Undo step; a press is a step of its own. (The circuit type a saved task measures
-  // with is read from its Probes when it is saved.)
-  const [probeNote, setProbeNote] = useState<Json>(null);  // { state: brought | kept | none, found, clearedTask? }
-  const brought = useRef<string[]>([]);                     // Probes this panel brought from a testbench (JSON), this page session
-  const followCount = useNewest();
-  const followTestbench = async (loaded: Json, press: boolean) => {
-    const mine = followCount.next();
-    const found = loaded?.loaded && loaded.native_draft && !loaded.profile_task ? loaded.testbench_probes : null;
-    if (!found) { setProbeNote(null); return; }
-    if (!found.rows.length) { setProbeNote({ state: 'none', found }); return; }
-    if (sameJson(latest.current.measurements, found.rows)) { setProbeNote(null); return; }
-    const taskId = latest.current.circuit.task_id;
-    const starter = taskId ? await api.starter(taskId).catch(() => null) : null;
-    if (!mine()) return;
-    const now = latest.current;
-    const untouched = !(now.measurements ?? []).length || brought.current.includes(JSON.stringify(now.measurements))
-      || (!!starter && sameJson(tablesOf(now).measurements, tablesOf(starter).measurements));
-    if (!untouched) { setProbeNote({ state: 'kept', found }); return; }
-    const staleTargets = !!starter && (now.targets ?? []).length > 0 && sameJson(tablesOf(now).targets, tablesOf(starter).targets);
-    brought.current.push(JSON.stringify(found.rows));
-    setConfig(c => ({ ...c, measurements: found.rows, ...(staleTargets ? { targets: [] } : {}) }), press);
-    setProbeNote({ state: 'brought', found, clearedTask: staleTargets ? taskId : null });
-  };
-  const takeTestbenchProbes = () => {
-    const found = probeNote.found;
-    brought.current.push(JSON.stringify(found.rows));
-    setConfig(c => ({ ...c, measurements: found.rows }));
-    setProbeNote({ state: 'brought', found });
-  };
-  const noteHere = probeNote && probeNote.found.library === ref.library && probeNote.found.cell === ref.cell ? probeNote : null;
-  const namedHere = namedTestbench(cells, chosen.cell);
-  const cellInfo = new Map<string, Json>((cells?.cells ?? []).map((c: Json) => [c.name, c]));   // one look-up per option, not a search
+  const { followTestbench, takeTestbenchProbes, followCount, noteHere } = useTestbenchProbes({ ref, latest, setConfig });
 
-  // Keep the current task and its rows together until the next task is ready. A switch is one Undo step, after any
-  // edited rows have been explicitly discarded. Project identity stays; the run label follows the selected task.
-  const [taskRows, setTaskRows] = useState<Json>(null);
-  const [taskLoading, setTaskLoading] = useState<string | null>(null);
-  const [taskLoadError, setTaskLoadError] = useState<string | null>(null);
-  const following = useNewest();
-  useEffect(() => () => { following.drop(); }, []);
-  const starterProblem = (e: any, taskId: string) => (e.status === 404 && taskId.startsWith('real:')
-    ? 'This backend is older than the page and has no starting rows for a real task yet: restart it (gator_workbench.cli serve).' : e.message);
-  const goneMock = (taskId?: string | null) => !!taskId && taskId.startsWith('synthetic:') && tasks.length > 0 && !tasks.some(t => t.task_key === taskId);
-  const removedMock = ref.source === 'registered_task' && goneMock(ref.task_id);
-  // `labels`: the class and PDK id of a task just saved (the ngspice window) - not in the task list read before the save.
-  // `change`: what else the same draft change brings (Load run: the run's model; record 7.267). True once loaded.
-  const chooseTask = async (taskId: string, labels?: { circuit_class?: string | null; pdk_id?: string | null }, reload = false,
-    change: (c: Json) => Json = c => c, stale: () => boolean = () => false): Promise<TaskLoaded> => {
-    const before = latest.current, mine = following.next();
-    const currentTask = before.circuit.source === 'registered_task' ? before.circuit.task_id : null;
-    // `stale`: the caller's own choice was overtaken (record 7.270: a newer Load run), so this load must not land either.
-    const stillHere = () => mine() && latest.current.circuit === before.circuit && !stale();
-    const brought = taskRows?.task === currentTask ? taskRows.starter : null;
-    setTaskLoadError(null);
-    setTaskLoading(taskId);
-    try {
-      const [previous, starter] = await Promise.all([
-        currentTask && currentTask !== taskId ? api.starter(currentTask).catch(() => null) : null,
-        api.starter(taskId)]);
-      if (!stillHere()) return { loaded: false, why: 'the page changed its task while the saved rows were read' };
-      // Check the rows NOW: the user can edit while the read is in flight. A saved-again task may differ from the
-      // rows it originally brought; either known baseline counts as untouched when switching to another task.
-      const now = latest.current, baseline = currentTask === taskId ? starter : previous;
-      const untouched = noRows(now) || sameRows(now, starter) || (!!baseline && sameRows(now, baseline))
-        || (!reload && !!brought && sameRows(now, brought));
-      if (!untouched && !window.confirm(`${reload ? 'Reload saved values' : `Switch to ${taskId}`}?\n\n`
-        + 'This replaces your unsaved Parameters, Probes and Specs edits.\n'
-        + 'OK = discard those edits and load the saved rows.\nCancel = keep the current task and edits. You can save them with Save as first.')) return { loaded: false, why: 'you chose Cancel, so the task and its edits stay as they were' };
-      if (!stillHere()) return { loaded: false, why: 'another choice came first' };     // the edits question may have taken a while
-      const nextCircuit = { ...starter.circuit, ...labels, source: 'registered_task', task_id: taskId };
-      setConfig(c => c.circuit !== before.circuit ? c : change({ ...c,
-        circuit: nextCircuit,
-        project: { ...c.project, task_name: starter.project.task_name },
-        parameters: starter.parameters, targets: starter.targets, measurements: starter.measurements }));
-      noteRowsFrom(taskId, starter.revision);    // which saved revision these rows are (record 7.203)
-      request.drop();                            // any pending circuit view still belongs to the previous task
-      followCount.drop();                        // a pending Virtuoso probe read cannot replace the new task's rows
-      setCircuit(null);
-      if (currentTask === taskId) load(nextCircuit);
-      setTaskRows({ task: taskId, state: 'brought', starter });
-      return { loaded: true };
-    } catch (e: any) {
-      if (stillHere()) setTaskLoadError(`Could not load ${taskId}. The current task and rows are unchanged. ${starterProblem(e, taskId)}`);
-      return { loaded: false, why: `${taskId} could not be read: ${starterProblem(e, taskId)}` };
-    } finally {
-      if (mine()) setTaskLoading(null);
-    }
-  };
-  if (taskLoad) taskLoad.current = (taskId, change, stale) => chooseTask(taskId, undefined, false, change, stale);
+  const { taskRows, taskLoading, taskLoadError, removedMock, chooseTask } = useTaskChoice({ ref, tasks, latest, setConfig, request, followCount,
+    setCircuit, load, taskLoad });
   // A cell that already has a registered task - the task saved from it, or one of the verified built-in circuits - gets
   // no second task: the note names the task. One short button, because it is about THIS cell (not a list of tasks); it
   // does what choosing the task in the Project column does.
@@ -393,12 +223,6 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
   const nativeSchematic = <NativeSchematic native={native} open={nativeOpen} setOpen={setNativeOpen} />;
   const circuitInfo = <CircuitDetails circuit={circuit} open={hierarchyOpen} setOpen={setHierarchyOpen}>
     {virtuosoOn && nativeSchematic}</CircuitDetails>;
-  const readable = !!profileId && !!chosenCell?.has_schematic && !importing && !listing;
-  // The warning stays in view (never folded): the confirm repeats it once, when Read is pressed.
-  const copyWarning = (
-    <p className="warn copy-warning"><b>Work on a copy, never on your design.</b> The workbench makes no copy of its own: saving a task writes the
-      Maestro test into the testbench, and every run sets device sizes in the cell (put back when the run ends). Copy the cell and its testbench
-      in Virtuoso first, choose the copy above, and confirm when Read asks.</p>);
 
   // ---- the left column: the project and the registered task --------------------------------------------------------------
   const column = (
@@ -516,132 +340,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
       </>)}
     </section>);
 
-  // ---- the Virtuoso window: library / cell / testbench, the read, the setup, the first save --------------------------------
-  const view = (
-    <div className="virtuoso-window">
-      <h2>Virtuoso cell</h2>
-      <p className="hint">Read a cell from Virtuoso into the workbench, set it up and save it as a task. Choosing lists what Virtuoso has (read-only,
-        no simulation); nothing is read on its own.</p>
-      {!profileId && <p className="warn">Press "Connection" in the workbench and choose a Virtuoso connection: the libraries are read from that Virtuoso.</p>}
-      {!virtuosoOn && offered && <p className="hint follows-task">The workbench follows the task <code>{ref.task_id}</code> now. Choosing a library here makes it follow the
-        cell instead; the task is one choice away in the Project column.</p>}
-      <label>Library
-        <select value={chosen.library ?? ''} disabled={!libraries || importing} onChange={e => patch({ source: 'virtuoso', library: e.target.value || null, cell: null, view: null, testbench_cell: null }, 'choice')}>
-          <option value="">{listing === 'libraries' ? 'Reading the libraries...' : libraries ? `(choose one of ${libraries.length})` : '(not listed)'}</option>
-          {withCurrent(libraries ?? [], chosen.library).map(l => <option key={l} value={l}>{l}</option>)}
-        </select>
-      </label>
-      <label title="Only a cell with a schematic view can be read.">Cell
-        {/* A new cell takes its own tb_<cell>; without one, a testbench chosen by hand stays and the old cell's tb_ goes. */}
-        <select value={chosen.cell ?? ''} disabled={!cells || importing} onChange={e => {
-          const cell = e.target.value || null;
-          patch({ source: 'virtuoso', cell, view: cell ? 'schematic' : null,
-            testbench_cell: namedTestbench(cells, cell) ?? (chosen.testbench_cell === namedHere ? null : chosen.testbench_cell ?? null) }, 'choice');
-        }}>
-          <option value="">{!chosen.library ? '(choose a library first)' : listing === 'cells' ? 'Reading the cells...' : cells ? `(choose one of ${cells.cells.length})` : '(not listed)'}</option>
-          {withCurrent((cells?.cells ?? []).map((c: Json) => c.name), chosen.cell).map(name => {
-            const readableCell = !cells || cellInfo.get(name)?.has_schematic !== false;
-            return <option key={name} value={name} disabled={!readableCell}>{name}{readableCell ? '' : '  (no schematic view)'}</option>;
-          })}
-        </select>
-      </label>
-      {chosenCell && <details className="more hint"><summary>View: <b>schematic</b></summary>
-        <p>The only view the reader opens, so there is nothing to choose.
-          {chosenCell.views.length > 1 && ` This cell also has: ${chosenCell.views.filter((v: string) => v !== 'schematic').join(', ')}.`}</p></details>}
-      <label title="The cell that holds the test setup around the design (supply, stimulus, load). A task simulates it and keeps its Maestro test there, and Probes are read from it. A cell named tb_ + the cell's name is chosen by itself.">Testbench cell
-        <select value={chosen.testbench_cell ?? ''} disabled={!cells || importing} onChange={e => patch({ source: 'virtuoso', testbench_cell: e.target.value || null }, 'choice')}>
-          <option value="">(none)</option>
-          {withCurrent((cells?.cells ?? []).filter((c: Json) => c.has_schematic).map((c: Json) => c.name), chosen.testbench_cell).map(name => <option key={name} value={name}>{name}</option>)}
-        </select>
-      </label>
-      {namedHere && chosen.testbench_cell === namedHere && <p className="hint tb-named">Found by its name: <code>tb_</code> + the cell's name.</p>}
-      <div className="row">
-        <button disabled={!profileId || !!listing} onClick={() => setRefresh(n => n + 1)} title="Reads the libraries, the cells and the schematic again, e.g. after the link came up or the design changed in Virtuoso. Read-only and zero-cost.">Refresh</button>
-        {listing && <span className="hint">Reading the {listing} from Virtuoso...</span>}
-        <PdkWindowButton profileId={profileId} circuitPdk={ref.pdk_id} />
-      </div>
-      {pdkStep && <p className={`pdk-step ${pdkStep.state === 'read' ? 'hint' : 'warn'}`}>{pdkStep.state === 'read'
-        ? <>PDK <b>{pdkStep.pdk_id}</b> read with the cell: {pdkStep.summary?.devices} components (version {String(pdkStep.sha256 ?? '').slice(0, 8)}){pdkStep.ideal_parts?.summary
-            ? ` and ${pdkStep.ideal_parts.summary.recognized} ideal parts of ${pdkStep.ideal_parts.library}` : pdkStep.ideal_parts?.error ? `; the ideal parts of ${pdkStep.ideal_parts.library} were not read (${pdkStep.ideal_parts.error})` : ''}. To build the network with it, choose it under Components in the RL model window.</>
-        : pdkStep.state === 'not_read' ? <>The cell was read; its PDK <b>{pdkStep.technology_library}</b> was not: {pdkStep.reason} "PDK window..." reads it by name.</>
-        : <>No PDK read with the cell: {pdkStep.reason}</>}</p>}
-      {cells?.truncated && <p className="hint">Only the first {cells.cells.length} cells are listed.</p>}
-      {nativeError && <p className="error">{nativeError}</p>}
-      {virtuosoOn && error && <p className="error">{error}</p>}
-      {circuit && taskNote}
-      {virtuosoOn && circuit && !circuit.loaded && !taskNote && (
-        // Not a fault and nothing to fix in this form: said in plain words. No list of the circuits that already have a
-        // task here (user, 2026-09-22): whoever wants one of those picks it in the Project column.
-        <div className="note">
-          <p><b>Browse only: you can look at this cell here, but the workbench cannot optimize it yet.</b></p>
-          <details className="more"><summary>Why: it has no <i>circuit profile</i> yet</summary>
-            <p>To optimize a circuit in the real Virtuoso, the workbench needs a circuit profile - a checked description of three things:</p>
-            <ul className="steps-list">
-              <li>which device sizes it may change, within which limits and in which steps (Virtuoso rounds what is typed, so this is tested for each circuit);</li>
-              <li>which testbench simulates the circuit, and under which conditions;</li>
-              <li>how the results - gain, frequency, current ... - are read from the simulation.</li>
-            </ul>
-            <p>Circuits that already have one are under Registered task, in the Project column.</p>
-          </details>
-          {copyWarning}
-          <p><b>To start a profile for this cell</b>, read it into the workbench
-            {chosen.testbench_cell ? <> through the testbench <code>{chosen.testbench_cell}</code>.</> : <> (choose its <b>Testbench cell</b> above first, if it has one).</>}</p>
-          <details className="more"><summary>What reading the cell does</summary>
-            <p>Virtuoso exports the netlist and the device sizes are read. Read-only, no simulation, some seconds. Reading asks once whether
-              the cell is a copy you made; "OK" makes it the cell the task flow works in.</p></details>
-          <div className="row"><button className="primary" disabled={!readable} onClick={importCell}>
-            {importing ? 'Reading the cell from Virtuoso...' : 'Read this cell into the workbench'}</button></div>
-          <details><summary>Technical details</summary><p>{circuit.blocker}</p>
-            {circuit.interface_contract && <pre>{JSON.stringify(circuit.interface_contract, null, 1)}</pre>}</details>
-        </div>)}
-      {virtuosoOn && circuit?.loaded && circuit.native_draft && !taskNote && (
-        <div className="note">
-          <p><b>Read from Virtuoso. Not optimizable yet: it has no circuit profile.</b></p>
-          <details className="more"><summary>What you can do with it now</summary>
-            <p>The workbench holds the export of this cell, so you can look at it and fill the three editors. Start stays disabled.</p>
-            <p>Next: fill Parameters, Probes and Specs - <b>Read setup</b> below takes the outputs and specs of the cell's Maestro test - then press
-              <b> Save as</b>: it writes the rows into this cell's Maestro view (the copy you declared) and reads it back. Claude Code or Codex
-              (the Agent window: "Agent..." among the bottom tabs) can help with any of it, from what you describe.</p>
-          </details>
-          {(circuit.circuit?.testbench_cell ?? null) !== (ref.testbench_cell ?? null) && (
-            <p className="warn tb-stale">This cell was read {circuit.circuit?.testbench_cell ? <>through <code>{circuit.circuit.testbench_cell}</code></> : 'without a testbench'}.
-              Press <b>Read the cell again</b> to read it {ref.testbench_cell ? <>through <code>{ref.testbench_cell}</code></> : 'without one'}: Probes then follow it.</p>)}
-          {!circuit.working_copy?.verified && copyWarning}
-          <div className="row">
-            <button disabled={!readable} onClick={importCell} title="After a change in Virtuoso, or to export through another testbench cell. Read-only.">{importing ? 'Reading...' : 'Read the cell again'}</button>
-          </div>
-          <WorkingCopy profileId={profileId} library={ref.library} cell={ref.cell} record={circuit.working_copy} config={config} setConfig={setConfig} />
-          {noteHere?.state === 'brought' && (() => {
-            const rows: Json[] = noteHere.found.rows, supply = rows.find(r => /:p$/.test(r.signal ?? ''))?.signal, net = rows.find(r => r.signal && !/[:\s]/.test(r.signal))?.signal;
-            return <>
-              <p className="hint tb-probes">Probes now show what the testbench <code>{noteHere.found.testbench_cell}</code> measures: {rows.length} results of the
-                circuit type <b>{noteHere.found.circuit_type_label}</b>.{noteHere.clearedTask && <> The targets of <code>{noteHere.clearedTask}</code> were removed from
-                Specs: they belonged to that task.</>} Undo brings the previous rows back.</p>
-              <details className="more hint"><summary>What the Probes rows say</summary>
-                <p>Each row is a result the circuit type computes from the simulation. Its <i>signal</i> says where in this testbench it is read
-                  {net && <>: a net such as <code>{net}</code></>}{supply && <>, or <code>{supply}</code>, the current through the supply
-                  source <code>{supply.slice(0, -2)}</code></>}. The circuit type decides how a result is measured, so changing <i>signal</i> does
-                  not move it. Targets on these results go in Specs.</p></details>
-            </>;
-          })()}
-          {noteHere?.state === 'kept' && <div className="row tb-probes"><span className="warn">Probes hold rows you edited, not the ones of the
-            testbench <code>{noteHere.found.testbench_cell}</code>.</span>
-            <button onClick={takeTestbenchProbes} title="Replaces the rows of Probes with the results this testbench gives. Undo takes it back.">Use testbench probes</button></div>}
-          {noteHere?.state === 'none' && (<>
-            <p className="hint tb-probes">Probes were left as they were. {noteHere.found.reason}</p>
-            {Object.keys(noteHere.found.not_fitting ?? {}).length > 0 && <details className="more hint"><summary>Why no circuit type fits</summary>
-              <ul className="steps-list">{Object.entries(noteHere.found.not_fitting).map(([type, why]: [string, any]) => <li key={type}><b>{type}</b>: {why}</li>)}</ul></details>}
-          </>)}
-          {/* The save itself sits at the right end of the editors' tab line (TaskSave portals, user request 2026-09-22). */}
-          <p><b>Then save it as a task:</b> <b>Save as</b> is above the editors in the workbench, next to their tabs.</p>
-          <details className="more hint"><summary>What Save as does</summary>
-            <p>It checks the rows, makes this cell's Maestro test say what the task says (its outputs, specs and analyses, read back afterwards),
-              reads the cell into the workbench again and stores the task file with the task's files next to it, then runs one baseline simulation automatically. Save as
-              asks for a new name with numbering. On a saved task it creates another task with its own DUT and testbench copies.</p></details>
-        </div>)}
-      {virtuosoOn && circuit?.loaded && circuitInfo}
-      {!(virtuosoOn && circuit?.loaded) && nativeSchematic}
-    </div>);
+  // ---- the Virtuoso window: library / cell / testbench, the read, the setup, the first save: VirtuosoWindow.tsx --------------------
   // The first save of a cell read from Virtuoso. It lives with the column, not in the Virtuoso window: its buttons sit on
   // the editors' tab line and hold what waits for the save (task-file parts applied) - closing the window took that away
   // (audit 2026-09-30).
@@ -650,7 +349,10 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
       config={config} setConfig={setConfig} onSaved={taskSaved} onSavedElsewhere={savedElsewhere} bar={taskSlot} notes={taskNotes} />);
   const titleFacts = titleSlot && createPortal(<TitleFacts config={config}
     revision={ref.source === 'registered_task' ? tasks.find(t => t.task_key === ref.task_id)?.revision ?? null : null} />, titleSlot);
-  return <>{column}{firstSave}{titleFacts}<PopupPortal popup={popup} root={root}>{view}</PopupPortal></>;
+  return <>{column}{firstSave}{titleFacts}<PopupPortal popup={popup} root={root}><VirtuosoWindow profileId={profileId} virtuosoOn={virtuosoOn} offered={offered}
+    circuitRef={ref} chosen={chosen} libraries={libraries} cells={cells} chosenCell={chosenCell} listing={listing} importing={importing} patch={patch} setRefresh={setRefresh}
+    pdkStep={pdkStep} nativeError={nativeError} error={error} circuit={circuit} taskNote={taskNote} importCell={importCell} config={config} setConfig={setConfig}
+    noteHere={noteHere} takeTestbenchProbes={takeTestbenchProbes} circuitInfo={circuitInfo} nativeSchematic={nativeSchematic} /></PopupPortal></>;
 }
 
 /** Memoised (record 7.275): its props change with the configuration, the circuit, the run list and the task - not with

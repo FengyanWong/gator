@@ -400,3 +400,5 @@ One row per commit, newest last.
 | `8bfb034` | 10-09 05:33 | - | record only: names the commit of record 7.288, and the table rows for 4323753 and ae20306 |
 | `b79198e` | 10-09 05:40 | 7.286 | Astra's review of 7.284: the compression pass refreshes the artifact manifest once per run, the Data tab reads only the shown columns (session "Compression integrity and manifest issues") |
 | `099defa` | 10-09 05:40 | 7.287 | plan: refactoring - the same behaviour, a structure that is easier to change; docs only (session "Refactoring plan") |
+| `40d5f4b` | 10-09 05:41 | - | record only: names the commits of records 7.286 and 7.287, and the table rows for 8bfb034, b79198e and 099defa |
+| `e18b9a9` | 10-09 11:08 | 7.289 | the encoder comparison closed: stage E and the study's verdict; docs only (session "Encoder run plan revision") |

@@ -15,8 +15,8 @@ from analog_optimizer.graph.circuit_graph import ParameterBinding, ParameterGrou
 from analog_optimizer.netlist.config import DeviceMapping, ParserConfig
 from analog_optimizer.netlist.spectre_parser import SpectreParser
 from analog_optimizer.parameters.actions import ActionMapper
-from gator_workbench import (compile as comp, engine as engine_module, engine_retention, graph_view, pdk, schema, structures,
-                             task_registry, tasks, units, validation)
+from gator_workbench import (compile as comp, engine as engine_module, engine_retention, graph_view, pdk, pdk_record, schema,
+                             structures, task_registry, tasks, units, validation)
 from gator_workbench.generic_profile import RULES_FORMAT, GenericMosWidthProfile
 from helpers import bridge_is_importable, execute, make_config, rows  # noqa: F401 - autouse here: the bridge counts as installed
 
@@ -259,7 +259,7 @@ def demo_pdk(tmp_path, monkeypatch):
     monkeypatch.setitem(task_registry.SYNTHETIC_FIXTURES, 'pdk_demo', dict(netlist=str(FIXTURE / 'demo_circuit.scs'), config=str(mapping),
                                                                    circuit_class='opamp'))
     loads = dict(load_record=0, list_pdks=0)
-    load, listing = pdk.load_record, pdk.list_pdks
+    load, listing = pdk_record.load_record, pdk_record.list_pdks
 
     def counted_load(*args, **kwargs):
         loads['load_record'] += 1
@@ -268,8 +268,8 @@ def demo_pdk(tmp_path, monkeypatch):
     def counted_list(*args, **kwargs):
         loads['list_pdks'] += 1
         return listing(*args, **kwargs)
-    monkeypatch.setattr(pdk, 'load_record', counted_load)
-    monkeypatch.setattr(pdk, 'list_pdks', counted_list)
+    monkeypatch.setattr(pdk_record, 'load_record', counted_load)          # where validation and list_pdks read it
+    monkeypatch.setattr(pdk_record, 'list_pdks', counted_list)
     return loads
 
 

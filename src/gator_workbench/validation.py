@@ -45,7 +45,7 @@ def _pdk_record(config):
     name = getattr(config.run.network, 'vocabulary', 'standard') or 'standard'
     if not name.startswith('pdk:'):
         return None
-    from .pdk import load_record  # lazy: tests patch pdk.load_record
+    from .pdk_record import load_record  # lazy: tests patch pdk_record.load_record
     return load_record(name[4:])
 
 
@@ -68,7 +68,7 @@ def _loaded_pdk_knowing(graph, p, loaded=None):
     device = next((d for d in graph.devices if d.id == p.instance_path), None)
     if device is None:
         return None
-    from .pdk import list_pdks, load_record, parameter_facts  # lazy: tests patch pdk.list_pdks and pdk.load_record
+    from .pdk_record import list_pdks, load_record  # lazy: tests patch pdk_record.list_pdks and pdk_record.load_record
     loaded = {} if loaded is None else loaded
     if 'ids' not in loaded:
         loaded.update(ids=[entry['pdk_id'] for entry in list_pdks()], records={})

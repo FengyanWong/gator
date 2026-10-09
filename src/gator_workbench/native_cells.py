@@ -33,6 +33,7 @@ import shutil
 from .paths import local_settings_dir, repo_root
 from .storage.atomic import sha256_file as _sha256, write_json
 from .storage.dataset import utcnow
+from .vocabulary import parse_models
 
 NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')          # a plain Cadence name; the same rule as bridge_read.NAME
 FILES = dict(netlist='netlist.scs', mapping='mapping.json', core_readback='core_readback.json',
@@ -99,7 +100,7 @@ def _mapping(netlist_text, *, circuit_id='native', technology_library=None) -> t
     fits = lambda found: {name: entry for name, entry in found.items() if nodes.get(name) == {len(entry['terminals'])}}
     verified, described, ideal, version, record = fits(verified_models()), {}, {}, 'native-draft-1', None
     if technology_library:
-        from .pdk import ideal_models, load_record, parse_models  # lazy: tests patch pdk.load_record
+        from .pdk_record import ideal_models, load_record  # lazy: tests patch pdk_record.load_record
         record = load_record(technology_library)
     if record is not None:
         described = {name: entry for name, entry in fits(parse_models(record)).items() if name not in verified}

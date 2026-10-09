@@ -30,6 +30,7 @@ from . import directories, virtuoso_setup
 from .connection import RealBridge, child_error, resolve_profile_id, run_child
 from .names import CADENCE_NAME
 from .paths import bridge_session_lock
+from .schematic_read import read_cell
 from .security import skill_string as _q
 
 NAME = re.compile(CADENCE_NAME)
@@ -128,7 +129,7 @@ def _skill(client, text, what, timeout=60):
 def _originals(client, library, cells):
     """Read-only fingerprints of the original schematics: compared before and after, they prove the copy wrote
     nothing into the user's cells."""
-    return {c['cell']: fingerprint(client.schematic.read(library, c['cell'], include_positions=True, param_filters=None))
+    return {c['cell']: fingerprint(read_cell(client, library, c['cell']))
             for c in cells if 'schematic' in c['views']}
 
 

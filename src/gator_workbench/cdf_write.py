@@ -44,6 +44,7 @@ from .cdf_rules import RULES_FORMAT
 from .generic_profile import GenericMosWidthProfile, RulesError, same_value
 from .names import CADENCE_NAME
 from .recipes import GenericMaestroProfile, GenericRingOscillatorProfile, MAESTRO, RING
+from .schematic_read import read_cell
 from .security import skill_string as _skill_string
 from .storage.atomic import read_json_quiet
 
@@ -531,7 +532,13 @@ def rules_format(rules_file):
 
 # ------------------------------------------------------------------------------------------ the backend and the factory
 class CdfBridgeBackend(VirtuosoBridgeBackend):
-    """The verified run adapter with the form writer in place of its transistor-width writer."""
+    """The verified run adapter with the form writer in place of its transistor-width writer, and the cell read built once
+    instead of line by line (record 7.296)."""
+
+    def _read_snapshot(self):
+        # The verified read (include_positions=True, param_filters=None), the same answer: 6 instead of 434 ms inside
+        # Virtuoso on mscr_vco_lin_c, and every candidate reads the cell before and after its write (schematic_read).
+        return read_cell(self.client, self.config.library, self.circuit.design['core_cell'])
 
     def _write_widths(self, parameters):
         skill = write_skill(self.config.library, self.circuit.design['core_cell'], self.circuit.cdf_plan(parameters))

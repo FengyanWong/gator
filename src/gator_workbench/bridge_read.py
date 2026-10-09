@@ -7,7 +7,9 @@ own example ``examples/01_virtuoso/basic/04_list_library_cells.py`` (copied, not
 memory; read-only ``dd`` calls that open no cellview and touch no window). The bridge has no method
 of its own for that listing. ``schematic.read`` always opens the view named ``schematic``, read-only,
 and closes it again - which is why a view is never asked for: the listing only tells which cells
-HAVE a schematic. Op ``pdk`` ("Load PDK", ``pdk.read_from_virtuoso``) reads a technology library's own description
+HAVE a schematic. Its program runs here with the answer built once instead of line by line
+(``schematic_read.read_cell``, record 7.296): the same answer, much faster on a large cell. Op ``pdk``
+("Load PDK", ``pdk.read_from_virtuoso``) reads a technology library's own description
 with one ``execute_skill`` query and fetches its Spectre model files with the bridge's ``client.download_file`` into a
 temporary folder outside the repository, deleted after scanning; one more query of the same kind reads the description
 of the ideal parts' library, analogLib (``pdk.read_ideal_parts``).
@@ -27,6 +29,7 @@ from . import native_cells, pdk
 from .connection import RealBridge, child_error, require_gate, resolve_profile_id, run_child
 from .names import CADENCE_NAME
 from .pdk import REMOTE_PATH
+from .schematic_read import read_cell
 from .security import redact
 
 NAME = re.compile(CADENCE_NAME)
@@ -120,10 +123,9 @@ def _main(argv=None):
                 exported = client.schematic.export_netlist(args.library, args.testbench or args.cell, out / 'package', timeout=120)
                 # include_positions=True as in the run adapter's _read_snapshot: it is what adds `view` to every instance,
                 # and a profile's reference readback must have the shape the adapter compares at run time.
-                readbacks = {'core_readback.json': client.schematic.read(args.library, args.cell, include_positions=True, param_filters=None)}
+                readbacks = {'core_readback.json': read_cell(client, args.library, args.cell)}
                 if args.testbench:
-                    readbacks['testbench_readback.json'] = client.schematic.read(args.library, args.testbench,
-                                                                                 include_positions=False, param_filters=None)
+                    readbacks['testbench_readback.json'] = read_cell(client, args.library, args.testbench, include_positions=False)
                 # What the property form of every instance lets a user type (cdf_facts: one more read-only query). A
                 # failed query leaves the import as before - transistor widths only - and keeps the reason.
                 from . import cdf_facts
@@ -157,7 +159,7 @@ def _main(argv=None):
                                          cache_host=host_identity(bridge, settings, args.profile_id))
             print(json.dumps(raw))
         else:
-            snapshot = client.schematic.read(args.library, args.cell, include_positions=False, param_filters=None)
+            snapshot = read_cell(client, args.library, args.cell, include_positions=False)
             print(json.dumps(dict(snapshot=snapshot), default=str))
     finally:
         client.close()

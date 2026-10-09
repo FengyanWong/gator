@@ -1946,6 +1946,18 @@ by side (`lanes.open_lanes`). Other findings:
   longer start.
 - Results come back in a varying order, so two multi-lane runs with the same seed can differ.
 
+**The read built once** (record 7.296, 2026-10-09). Those 0.4 s were almost all string handling. The bridge's read program
+(virtuoso-bridge 0.8.0, `read_schematic`) grows its answer a line at a time with `strcat`, which copies the whole answer
+for every line, so the time grows with the square of the answer. Inside Virtuoso, on `mscr_vco_lin_c` (34 instances,
+1,092 values, a 30 kB answer), the bridge's read took 434 ms, of which reading the values took about 4 ms. Since 7.296
+the workbench runs the same program with each line appended to a list and the list joined once
+(`schematic_read.read_cell`): the same text, parsed by the bridge's own parser, in 5.7 ms inside Virtuoso and 70 ms at
+the client instead of 498 ms. Most of what is left is the answer's transfer. Every candidate's read before and after its
+write uses it (`CdfBridgeBackend._read_snapshot`), as do Save task's fingerprints of the original cells and the cell
+import. A small cell gains nothing (`mscr_ota5t`, a 6 kB answer: about 16 ms either way). The foundry cells of record 7.295
+gain most: `asz_sys` answers about 100 kB, an estimated 4-5 s per read before. If the bridge's read program is ever not
+the one measured, the workbench reads with the bridge's own call.
+
 **Netlists built from the readback** (records 7.140 and 7.142). The decks of different candidates differ only in
 values: the written ones and those the PDK callbacks derive, which the readback after each write already holds (7.138).
 Since 7.142 (user decision of 2026-10-02) a real run works like this:

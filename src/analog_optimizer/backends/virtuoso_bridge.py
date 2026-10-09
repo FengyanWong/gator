@@ -147,9 +147,16 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
             raise BackendNotConnected('Call connect() before using the real backend')
         if threading.get_ident() != self._thread and not (delegable and self._delegated_here()):
             raise RuntimeError('Use the backend only from its owning thread')
+        self._check_binding('Bridge configuration changed during an active session')
+
+    def _check_binding(self, changed):
+        """The bridge configuration bound at attach still holds: the env file and the VB_ variables (else RuntimeError
+        `changed`, each backend's own words) and, with bridge 0.8.0, the runtime env binding. Shared by this adapter
+        and native_preparation's lane backend (plan-refactoring E7); `bridge_version` is set whenever either is
+        connected, so reading it with getattr changes nothing for the adapter."""
         if digest(self.config.env_file) != self._env_hash or self._vb_env() != self._bound_env:
-            raise RuntimeError('Bridge configuration changed during an active session')
-        if self.bridge_version == '0.8.0':
+            raise RuntimeError(changed)
+        if getattr(self, 'bridge_version', None) == '0.8.0':
             from virtuoso_bridge.env import get_runtime_env_file
             if get_runtime_env_file() != self.config.env_file.resolve():
                 raise RuntimeError('Runtime bridge environment binding changed')

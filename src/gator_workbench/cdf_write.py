@@ -565,37 +565,11 @@ class CdfPreparationFactory:
 
 @contextmanager
 def preparation_session(config, circuit, limits, report):
-    """`analog_optimizer.backends.native_preparation.preparation_session`, line for line, with the CDF backend as the
-    owner of the Virtuoso session."""
-    import multiprocessing
-    import tempfile
-    from uuid import uuid4
-    from analog_optimizer.backends.native_preparation import PreparationManager
-    from analog_optimizer.backends.virtuoso_bridge import parameter_rows
-    address = str(Path(tempfile.gettempdir()) / ('gator-preparation-' + uuid4().hex + '.sock'))
-    manager = PreparationManager(address=address, ctx=multiprocessing.get_context('spawn'))
-    service = None
-    original = None
-    manager.start()
-    try:
-        service = manager.PreparationService(CdfPreparationFactory(config, circuit), limits.operation_seconds)
-        report['preparation'] = service.baseline()
-        report['preparation']['initial_parameters'] = parameter_rows(report['preparation']['initial_parameters'])
+    """`analog_optimizer.backends.native_preparation.preparation_session` with the CDF backend as the owner of the
+    Virtuoso session (until 2026-10-09 a line-for-line copy of it; plan-refactoring E7)."""
+    from analog_optimizer.backends.native_preparation import preparation_session as session
+    with session(config, circuit, limits, report, factory=CdfPreparationFactory) as service:
         yield service
-    except BaseException as exc:
-        original = exc
-        raise
-    finally:
-        try:
-            if service is not None:
-                report['preparation_restoration'] = service.close()
-        except BaseException as exc:
-            report.update(passed=False, preparation_restoration=dict(state='recovery_required', error=str(exc)))
-            if original is None:
-                raise
-            original.cleanup_error = str(exc)
-        finally:
-            manager.shutdown()
 
 
 def factory_class(profile):

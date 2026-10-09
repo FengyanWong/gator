@@ -212,15 +212,17 @@ PreparationManager.register('PreparationService', PreparationService, exposed=('
 
 
 @contextmanager
-def preparation_session(config, circuit, limits, report):
-    """Keep the dedicated schematic owner alive until all Spectre lanes close."""
+def preparation_session(config, circuit, limits, report, *, factory=None):
+    """Keep the dedicated schematic owner alive until all Spectre lanes close. `factory(config, circuit)` makes the
+    session owner's backend factory: BridgePreparationFactory by default; the workbench's CDF writer passes its own."""
     address = str(Path(tempfile.gettempdir()) / ('gator-preparation-' + uuid4().hex + '.sock'))
     manager = PreparationManager(address=address, ctx=multiprocessing.get_context('spawn'))
     service = None
     original = None
     manager.start()
     try:
-        service = manager.PreparationService(BridgePreparationFactory(config, circuit), limits.operation_seconds)
+        owner = (factory or BridgePreparationFactory)(config, circuit)
+        service = manager.PreparationService(owner, limits.operation_seconds)
         report['preparation'] = service.baseline()
         # Tuple-key dictionaries are kept in IPC, not JSON reports.
         report['preparation']['initial_parameters'] = parameter_rows(report['preparation']['initial_parameters'])
@@ -291,12 +293,7 @@ class NativeCandidateBackend(VirtuosoBridgeBackend):
         if (threading.get_ident(), os.getpid()) != (self._thread, self._pid) \
                 and not (delegable and delegated_owner() == (self._thread, self._pid)):
             raise RuntimeError('Native backend must stay in its owning worker process/thread')
-        if digest(self.config.env_file) != self._env_hash or self._vb_env() != self._bound_env:
-            raise RuntimeError('Bridge configuration changed during an active worker')
-        if getattr(self, 'bridge_version', None) == '0.8.0':
-            from virtuoso_bridge.env import get_runtime_env_file
-            if get_runtime_env_file() != self.config.env_file.resolve():
-                raise RuntimeError('Runtime bridge environment binding changed')
+        self._check_binding('Bridge configuration changed during an active worker')
 
     def validate_condition(self, condition):
         condition = condition or self.nominal_condition()

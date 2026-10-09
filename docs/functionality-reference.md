@@ -341,6 +341,7 @@ Old configurations that name a removed function still load with their hashes unc
 | SKY130 benchmark | Section 4 | Parked by the user (2026-09-30) |
 | Report of the Graph Transformer experiments, with charts | `docs/report-gt-experiments-2026-10-07.md`; 7.272 | Written 2026-10-07 from the recorded runs; the charts on a private page. |
 | The general model over several starts and seeds, against scratch | `docs/plan-general-seeds-starts.md`; 7.266 | Plan only, compact form: starts C + D, seeds 2-4, scratch recipe both arms, 400 launches, 60 runs + 6 baselines (24,390 launches, about 11 h) in approvable blocks; criteria P1-P4. Nothing started. |
+| Refactoring: the same behaviour, a structure that is easier to change | `docs/plan-refactoring.md`; 7.287 | Plan only (2026-10-09): 42 packages in groups A (honest imports, `launching.py`, `register()` split, `run_lock.py`, CLI subcommands), B (the 20-module import knot untied with leaf modules and a structure test; `engine.py`, `profiles.py`, `pdk.py`, `runs.py` by job; route bodies into modules; repeated patterns; names; caches and locks), C (frontend splits that keep the DOM byte-identical), D (test helpers, feature-named test modules, markers, check-script library), E (optimizer package: advice only, no digest step); proofs per package; no group chosen yet. Scripts and HEAD measurements in `artifacts/local/reviews/refactoring-plan-2026-10-09/` |
 
 ## 10. Where things are recorded
 

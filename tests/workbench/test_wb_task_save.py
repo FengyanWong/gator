@@ -8,7 +8,7 @@ import sys
 import pytest
 from fastapi.testclient import TestClient
 
-from gator_workbench import profiles, schema, task_files, tasks, virtuoso_setup as vs, working_copy
+from gator_workbench import profiles, recipes, schema, task_files, tasks, virtuoso_setup as vs, working_copy
 from gator_workbench.api import create_app
 from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
 from test_wb_api import probe
@@ -154,9 +154,9 @@ def test_the_first_save_takes_the_cell_s_copy_and_registers_a_task_that_runs_on_
     # the task window's facts (record 7.227), all from the task's own entry: its testbench, when it was saved, no baseline yet,
     # how many sizes it varies and results it measures
     assert listed['testbench'] == TB and listed['saved_utc'] == entry['saved_utc'] and listed['baseline_recorded_utc'] is None
-    assert listed['variables'] == len(leaders) and listed['results'] == len(profiles.recipes.RING_METRICS) and listed['status'].startswith('unverified')
+    assert listed['variables'] == len(leaders) and listed['results'] == len(recipes.RING_METRICS) and listed['status'].startswith('unverified')
     runtime = tasks.load_task(schema.CircuitReference(source='registered_task', task_id='real:ring_osc'))
-    assert runtime.provided_metrics == tuple(profiles.recipes.RING_METRICS) and not runtime.authorized
+    assert runtime.provided_metrics == tuple(recipes.RING_METRICS) and not runtime.authorized
     config_, _, _ = tasks.generated_bridge_config('ring_osc')
     assert config_.library == COPY                                                                  # the real adapter opens the copy
     assert profiles.tasks_for_cell(LIB, CELL) == [dict(task_key='real:ring_osc', name='ring_osc', generated=True)]

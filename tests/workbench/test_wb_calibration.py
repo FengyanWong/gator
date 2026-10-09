@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from gator_workbench import calibration, profiles, runs
+from gator_workbench import baseline_reference, calibration, profiles, runs
 from gator_workbench.api import create_app
 from gator_workbench.storage import read_json
 from gator_workbench.storage.atomic import write_json
@@ -285,11 +285,11 @@ def test_a_stopped_calibration_run_can_still_give_the_reference(tmp_path, monkey
     """Stopped by the user among the random designs, the baseline evaluation is as finished as that of a run of one."""
     entry = dict(directory=str(tmp_path), saved_utc=None)
     monkeypatch.setattr(profiles, 'list_profiles', lambda: dict(demo=entry))
-    monkeypatch.setattr(profiles, 'profile_entry', lambda name: dict(demo=entry).get(name))        # one task's entry (7.279)
-    monkeypatch.setattr(profiles, 'reference_metrics', lambda name: None)
-    monkeypatch.setattr(profiles, '_run_outlived_the_task', lambda entry, manifest: None)
+    monkeypatch.setattr(baseline_reference, 'profile_entry', lambda name: dict(demo=entry).get(name))        # one task's entry (7.279)
+    monkeypatch.setattr(baseline_reference, 'reference_metrics', lambda name: None)
+    monkeypatch.setattr(baseline_reference, '_run_outlived_the_task', lambda entry, manifest: None)
     asked = []
-    monkeypatch.setattr(profiles, 'record_reference', lambda name, run_dir: asked.append(name) or dict(metrics={}))
+    monkeypatch.setattr(baseline_reference, 'record_reference', lambda name, run_dir: asked.append(name) or dict(metrics={}))
     manifest = dict(run_kind='baseline_preflight', mock=False, circuit=dict(task_key='real:demo'), state='stopped', run_id='r1')
     refused = profiles.adopt_baseline_run(tmp_path, manifest=manifest)
     assert refused['recorded'] is False and 'ended as stopped' in refused['note'] and not asked        # a plain baseline run: as before

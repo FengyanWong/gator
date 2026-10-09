@@ -14,7 +14,7 @@ import time
 
 import pytest
 
-from gator_workbench import checkpoints as ckpt, pdk, profiles, run_index, runs, tasks
+from gator_workbench import baseline_reference, checkpoints as ckpt, pdk, profiles, run_index, runs, tasks
 from gator_workbench.api import support
 from gator_workbench.storage.atomic import write_json
 from helpers import roots_for, workbench_app
@@ -165,7 +165,7 @@ def test_a_task_load_finds_its_newest_baseline_through_the_run_cache(tmp_path, m
         given.append((Path(run_dir), manifest))
         manifest['state'] = 'changed by the callee'                         # a copy: the run list's cache keeps its own
         return dict(recorded=True, name='ring_a')
-    monkeypatch.setattr(profiles, 'adopt_baseline_run', adopt)
+    monkeypatch.setattr(baseline_reference, 'adopt_baseline_run', adopt)
     assert profiles.adopt_latest_baseline('ring_a', tmp_path) == dict(recorded=True, name='ring_a')
     assert [run for run, _ in given] == [newest]
     assert runs._run_facts(newest)['manifest']['state'] == 'completed'

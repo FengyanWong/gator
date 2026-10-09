@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from gator_workbench import bridge_read, native_cells, profiles, recipes, schema, tasks
 from gator_workbench.api import create_app
 from gator_workbench.paths import bridge_state_dir, local_settings_dir
+from gator_workbench.storage.atomic import sha256_file
 from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
 from test_wb_api import probe
 
@@ -423,8 +424,8 @@ def baseline_run(tmp_path, monkeypatch, run_dir, *, run_id='r1', run_kind='basel
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / 'effective_config.json').write_text(json.dumps(dict(circuit=dict(source='registered_task', task_id=task_key))))
     directory = profiles.profile_dir('ring_osc_3stage')
-    facts = dict(task_key=task_key, netlist_sha256=profiles._sha256(directory / 'structure.scs'),
-                 parser_config_sha256=profiles._sha256(directory / 'mapping.json'), **(circuit or {}))
+    facts = dict(task_key=task_key, netlist_sha256=sha256_file(directory / 'structure.scs'),
+                 parser_config_sha256=sha256_file(directory / 'mapping.json'), **(circuit or {}))
     manifest = dict(run_id=run_id, mock=mock, run_kind=run_kind, state=state, created_utc=created, circuit=facts,
                     segments=[dict(segment=1, ended_utc='2026-09-23T22:45:32+00:00')], notes=[])
     (run_dir / 'run_manifest.json').write_text(json.dumps(manifest))

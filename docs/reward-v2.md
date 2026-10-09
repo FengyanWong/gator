@@ -243,7 +243,8 @@ the real stages or their evidence changes.
 Optimizer digest after the fixes: `f087a4ce40d9a1bd7db5c0c756851b5f46be71f659f3e2365d691ddb707b004a`. The real
 stages A/B/C above ran at `3473ed9c...`; the evaluator's arithmetic is unchanged since, and the identity check was
 re-run on the final source: 2,811 / 2,811 bitwise, 0 exclusions. New tests: `tests/test_reward_v2_audit_fixes.py`
-(the invocation rule on both origins, the label/layout rule, the M6 registries load) and
+(the invocation rule on both origins, the label/layout rule, the M6 registries load; since the refactoring of
+2026-10-09 in `tests/test_sizing_env.py` and `tests/test_reward_v2.py`) and
 `tests/workbench/test_wb_reward_v2_mock.py` (a MOCK run with a compressed ramp, share and bonus completes, its
 learner accepts the replay, one job row per toy call). The full-suite result is in record 7.98.
 

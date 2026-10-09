@@ -3036,6 +3036,24 @@ file and the conditions file are unchanged; the link is checked at every call. A
 line load it from the files (7.131).
 The legacy copy route still refuses copying; Save-as remains a supported backend request.
 
+The backend by module since the refactoring of 2026-10-09 (`docs/plan-refactoring.md` Groups A and B; routes, answers,
+files and messages unchanged, old names kept): `runs.py` keeps a run's start, resume and status and passes on what moved
+out of it - the run list and what it reads from a run folder (`run_index.py`), the remembered settings
+(`settings_store.py`), the run lock (`run_lock.py`), the definitions other modules need without the engine
+(`run_definitions.py`), an experiment's registry (`experiments.py`); `engine.py`'s `RunEngine` takes the simulator host's
+side, the committed rows and the raw-output retention from the mixins in `engine_host.py`, `engine_rows.py` and
+`engine_retention.py`. `tasks.py` passes on the registered tasks' facts (`task_registry.py`); `profiles.py` the profile
+store (`profile_store.py`), a configuration's rows against its saved task (`saved_rows.py`), the saved tasks around a cell
+(`saved_tasks.py`), the circuit types (`circuit_types.py`), profile generation (`profile_generate.py`), a task's real
+baseline (`baseline_reference.py`) and Save task (`task_save.py`); `pdk.py` the CDF text (`cdf_text.py`), the model files
+(`model_scan.py`), a PDK's record (`pdk_record.py`), the network's component list (`vocabulary.py`) and the reads out of
+Virtuoso (`pdk_remote.py`); `api/task_baseline.py` is the automatic baseline (it calls `start_run`). A module imports
+others at its top; an import inside a function says why in a comment, only three small import cycles remain, and only
+`api/` and the command line import the API (`tests/workbench/test_wb_structure.py`, which also refuses a test patching
+a name its module does not define or only keeps as an alias). Constants several modules share are in `names.py`; the
+quiet JSON reads in `storage/atomic.py` (`read_json_quiet`, `read_dict`); every cache a process keeps for its lifetime
+registers in `caches.py`, whose `clear_all()` empties them all (`tests/workbench/test_wb_caches.py`).
+
 The frontend keeps the Agent window and its "Agent..." button in `panels/Agent.tsx` and the run tabs in `panels/RunTabs.tsx`.
 `CircuitBrowser.tsx` owns the Virtuoso browsing chain and circuit details; `Left.tsx` coordinates task selection, with
 its jobs in `taskChoice.ts` (choosing a registered task), `taskActions.ts` (Check now, Delete task), `testbenchProbes.ts`
@@ -3076,6 +3094,11 @@ their inputs are unchanged, and validation issues are grouped once by row rather
 
 Tests share isolated HTTP servers and the MOCK helpers in `tests/workbench/helpers.py`, plus controlled
 browser input, passing validation replies, and optional connection fixtures in `frontend/scripts/lib/harness.mjs`.
+Test modules are named after the feature they test (refactoring Group D: the round-named modules are gone) and none
+imports another: the fakes and helpers several share are in `tests/workbench/helpers.py`, `fakes_connection.py`,
+`fakes_virtuoso.py`, `ring_cell_support.py`, `cdf_write_support.py`, `task_save_support.py`, `pdk_support.py` and
+`training_series_support.py`, and for the research tests in `tests/research_support.py` (an autouse fixture there acts
+only in a module that imports it). `xdist_group` marks only the tests that share a module-scoped fixture.
 `run_checks.mjs` keeps each check's measured duration in the OS temp folder (`gator-checks-durations.json`) and orders
 and limits the next run by it. `frontend/scripts/dom_identity_check.mjs` shows that a refactoring leaves the page as it
 was: `#root` and each open pop-up per step, in both looks, with the page's requests and storage - recorded once, then

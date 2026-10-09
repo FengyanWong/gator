@@ -6,6 +6,11 @@ changed, nothing was built, and no run, backend, Virtuoso, Spectre or agent CLI 
 since about 04:20). The two measuring scripts and the two proof scripts are in the session's
 scratchpad and are reproduced in section 7 so that the executing session can rebuild them.
 
+**State (2026-10-09, record 7.290):** groups A, B, C (C11 left out: its proof cannot see hover, focus or other widths) and D
+are done in a clean copy, one commit per package, each proved to change nothing; group E is not done (a source-digest
+change is the user's decision). Not landed in this tree yet: record 7.290 lists what each package did, what was left
+out and why.
+
 ## 0. In plain words
 
 A refactoring moves and splits code so that each file does one job and each job sits in one place. **Nothing the page

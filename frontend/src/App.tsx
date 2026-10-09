@@ -1,5 +1,4 @@
 import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { api, ApiError, Json, NO_ANSWER, plainError, saveJson } from './api';
 import { tasksShared } from './shared';
 import { Look, LOOK_NAMES, setLook, useLook } from './theme';
@@ -13,11 +12,10 @@ import { Editors } from './panels/Editors';
 import { ValidationStatus } from './panels/Issues';
 import { RunButtons } from './panels/RunControl';
 import { changesByItself, isLive, RESUMABLE, useRunControl } from './runState';
-import { BOTTOM_KEY, CALIBRATION_ANSWERED_KEY, HEADER_RUN_KEY, SHOWN_RUN_KEY } from './contract';
+import { CALIBRATION_ANSWERED_KEY, HEADER_RUN_KEY, SHOWN_RUN_KEY } from './contract';
 import { continueConsent, continueReadiness, featuresOf, launchKept, startReadiness, useContinuation, useLauncher } from './launch';
 import { LaunchRefusal } from './panels/LaunchRefusal';
 import { useRunBrief } from './panels/RunBrief';
-import { RunListButton } from './panels/RunList';
 import { RunPanel } from './panels/Right';
 import { MODE_NAME, type NextModel } from './panels/rlModelText';
 import { OutputPanel } from './panels/OutputPanel';
@@ -25,17 +23,13 @@ import { ResearchPanel } from './panels/ResearchPanel';
 import { modelNameAt } from './panels/ModelChooser';
 import { LOADS, readSavePoint, SavePoint, withSavePoint } from './savePoint';
 import { dateTime, folderName, runTitle } from './format';
-import { AgentWindowTab } from './panels/Agent';
-import { DataTab, FilesTab, LogsTab, StatusTab } from './panels/RunTabs';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './panels/calibrationPlan';
 import { requestTaskSave, TASK_BASELINE_STARTED } from './panels/TaskSave';
-import { CornerCheckTab } from './panels/CornerCheck';
-import { TrainingTab } from './panels/TrainingTab';
 import { CrashPanel } from './panels/CrashPanel';
+import { BottomPanel, type BottomTab, useBottomPanel } from './panels/BottomPanel';
 import { useNewest } from './newest';
 import { keep, oncePerBrowser, readKept } from './kept';
 
-type BottomTab = 'status' | 'logs' | 'data' | 'files' | 'training' | 'corners';
 
 /** A configuration the backend cannot even read (HTTP 422): one blocking issue per field it names, in its plain words
  *  (schema.describe_errors), at the place the validation report uses (parameters[1].variable_id), so the list names the
@@ -69,12 +63,6 @@ function LookSwitch() {
     <Icon name={look === 'silicon' ? 'sun' : 'moon'} label="Switch look" /></button>;
 }
 
-/** The bottom panel's height (record 7.158): dragged at its top edge, folded to its tab line with a double click there.
- *  Kept in this browser, like the folded modules; null = the default third of the window. */
-type Bottom = { height: number | null; folded: boolean };
-const storedBottom = (): Bottom => readKept(s => {
-  const b = JSON.parse(s.getItem(BOTTOM_KEY) ?? 'null'); return { height: typeof b?.height === 'number' && b.height > 0 ? b.height : null, folded: b?.folded === true };
-}, () => ({ height: null, folded: false }));
 
 /** Calibration evaluates only random designs. Task creation owns the fixed starting-design baseline. */
 const CALIBRATION_DESIGNS = 64;
@@ -114,19 +102,8 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const [runsError, setRunsError] = useState<string | null>(null);   // the run list could not be read: said, not shown as "no run yet"
   const [runDir, setRunDir] = useState<string | null>(shownRun);
   const [tab, setTab] = useState<BottomTab>('status');
-  const [bottom, setBottom] = useState<Bottom>(storedBottom);
-  // Folded while no run is shown (record 7.179, design advice 1): its tabs show a run, and with none it was a third of the page
-  // saying "No run selected". A tab, the splitter, a started or a chosen run opens it; the kept height and fold stay.
-  const [opened, setOpened] = useState(false);
-  const folded = bottom.folded || (!runDir && !opened);
-  const changeBottom = useCallback((change: (b: Bottom) => Bottom) => setBottom(b => {
-    const next = change(b);
-    if (next !== b) keep(s => s.setItem(BOTTOM_KEY, JSON.stringify(next)));   // a private window: not remembered
-    return next;
-  }), []);
-  // A press that asks to see something in the bottom panel (one of its tabs, the header's run) opens it.
-  const unfold = useCallback(() => { setOpened(true); changeBottom(b => (b.folded ? { ...b, folded: false } : b)); }, [changeBottom]);
-  const toggleBottom = () => (folded ? unfold() : changeBottom(b => ({ ...b, folded: true })));
+  const panel = useBottomPanel(runDir);
+  const { bottom, folded, unfold, layoutRef } = panel;
   const [titleSlot, setTitleSlot] = useState<HTMLElement | null>(null);            // the header's title block: the circuit panel puts the task's facts there
   const [taskSlot, setTaskSlot] = useState<HTMLElement | null>(null);              // editors' tab line: where the circuit panel puts "Save task"
   const [taskNotes, setTaskNotes] = useState<HTMLElement | null>(null);            // under the editors' toolbar: its messages and questions
@@ -497,36 +474,6 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     continueFrom: (row: Json) => runActions.current.continueFrom(row),
   }), []);
 
-  // ---- the splitter above the bottom panel (record 7.158): nothing moves unless it is dragged, double-clicked or keyed --------
-  const layoutRef = useRef<HTMLDivElement>(null);
-  const fitBottom = (px: number) => {
-    const tabs = layoutRef.current?.querySelector<HTMLElement>('footer > .tabs')?.offsetHeight ?? 34;
-    return Math.round(Math.max(tabs + 60, Math.min(px, window.innerHeight - 280)));   // the editors keep room
-  };
-  const dragBottom = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const layout = layoutRef.current, foot = e.currentTarget.parentElement;
-    if (e.button !== 0 || !layout || !foot) return;
-    e.preventDefault();
-    const handle = e.currentTarget, edge = foot.getBoundingClientRect().bottom;
-    handle.setPointerCapture(e.pointerId);
-    let height: number | null = null;          // drawn while dragged, remembered once let go
-    const move = (m: PointerEvent) => { height = fitBottom(edge - m.clientY); layout.style.setProperty('--foot', `${height}px`); layout.classList.remove('bottom-folded'); };
-    const end = () => {
-      handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end);
-      const dragged = height;
-      if (dragged !== null) { setOpened(true); changeBottom(() => ({ height: dragged, folded: false })); }
-    };
-    handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
-  };
-  const keyBottom = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleBottom(); return; }
-    const step = e.key === 'ArrowUp' ? 24 : e.key === 'ArrowDown' ? -24 : 0;
-    if (!step) return;
-    e.preventDefault();
-    const now = e.currentTarget.parentElement?.getBoundingClientRect().height ?? 0;
-    setOpened(true); changeBottom(() => ({ height: fitBottom(now + step), folded: false }));
-  };
-
   if (fatal) return <p className="error">Backend not reachable: {fatal}</p>;
   if (!schema) return <p>Loading schema...</p>;
   return (
@@ -596,31 +543,10 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
         <OutputPanel config={config} setConfig={setConfig} meta={meta} activeRun={status} />
         <ResearchPanel config={config} setConfig={setConfig} />
       </aside>
-      <footer>
-        <div className="splitter" role="separator" aria-orientation="horizontal" tabIndex={0} aria-label="Height of the bottom panel"
-          aria-valuemin={0} aria-valuemax={100} aria-valuenow={folded ? 0 : bottom.height ? Math.min(100, Math.round(bottom.height / window.innerHeight * 100)) : 34}
-          title="Drag to give the bottom panel more or less room. Double-click: fold it down to its tab line, or open it again. Kept in this browser."
-          onPointerDown={dragBottom} onDoubleClick={toggleBottom} onKeyDown={keyBottom} />
-        <div className="tabs">
-          <AgentWindowTab config={config} />
-          {(['status', 'logs', 'data', 'files', 'training', 'corners'] as BottomTab[]).filter(t => t !== 'corners' || cornersUsable).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); unfold(); }}>
-            {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', training: 'Training', corners: 'Corner check' }[t]}</button>)}
-          <span className="spacer" />
-          <RunListButton runs={runs} runsError={runsError} runDir={runDir} shownState={status?.run_dir === runDir ? status?.state ?? null : null}
-            onChoose={runWindow.choose} onRefresh={refreshRuns} onLoad={runWindow.load} onNewLike={runWindow.newLike} onContinue={runWindow.continueFrom} />
-        </div>
-        <div className="bottom-body">
-          {tab === 'status' && <StatusTab status={status} runDir={runDir} error={statusError} check={shownCheck} continueBlocked={continueBlocked} refusal={shownRefusal}
-            onContinue={continueShown} onDismissRefusal={() => launcher.setRefusal(null)} onFineTune={fineTuneFrom} config={config} setConfig={setConfig} ask={askContinue} />}
-          {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
-          {tab === 'data' && <DataTab runDir={runDir} status={status} />}
-          {tab === 'files' && <FilesTab runDir={runDir} />}
-          {/* Stays mounted: its recorded numbers and chosen charts survive a look at another tab; hidden - another
-              tab, or the panel folded to its tab line - it reads and draws nothing (record 7.193). */}
-          <TrainingTab hidden={tab !== 'training' || folded} runDir={runDir} status={status} runs={runs} />
-          {tab === 'corners' && cornersUsable && <CornerCheckTab runDir={runDir} />}
-        </div>
-      </footer>
+      <BottomPanel panel={panel} tab={tab} setTab={setTab} cornersUsable={cornersUsable} config={config} setConfig={setConfig} runs={runs} runsError={runsError}
+        runDir={runDir} status={status} statusError={statusError} runWindow={runWindow} refreshRuns={refreshRuns} shownCheck={shownCheck}
+        continueBlocked={continueBlocked} shownRefusal={shownRefusal} continueShown={continueShown} launcher={launcher} fineTuneFrom={fineTuneFrom}
+        askContinue={askContinue} />
     </div>
   );
 }

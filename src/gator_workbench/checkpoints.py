@@ -31,7 +31,7 @@ import stat
 import tempfile
 from uuid import uuid4
 
-from . import CHECKPOINT_METADATA_VERSION
+from . import caches, CHECKPOINT_METADATA_VERSION
 from .checkpoint_codec import write_compressed
 from .pdk import schema_label
 from .storage.atomic import PersistenceError, publish, read_dict, read_json, sha256_file, temporary_path, write_json
@@ -586,3 +586,7 @@ def rename_model(run_dir, label, *, taken) -> dict:
                   history=[*(before.get('history') or []), *([dict(model_label=previous, until_utc=utcnow().isoformat())] if previous else [])])
     write_json(run_dir / MODEL_LABEL_FILE, record)
     return record
+
+
+# The caches of this module: caches.clear_all() empties them with every other one (refactoring package B10).
+caches.register(globals(), '_display_digest')

@@ -31,7 +31,7 @@ from pathlib import Path
 import re
 import sys
 
-from . import model_library, native_cells, task_registry
+from . import caches, model_library, native_cells, task_registry
 from .connection import KINDS, family_of, named_or_active, profile_kind
 from .paths import bridge_state_dir, connection_file, repo_root
 from .spec_equations import EquationNativeFactory
@@ -676,3 +676,7 @@ def starter_config(task_key: str) -> dict:
 # The names these had before refactoring package B9 (2026-10-09), kept for code that still uses them.
 _member_variable_id = member_variable_id
 _profile_settings = profile_settings
+
+
+# The caches of this module: caches.clear_all() empties them with every other one (refactoring package B10).
+caches.register(globals(), '_view_cache')

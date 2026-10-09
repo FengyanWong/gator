@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os
 from pathlib import Path
+from . import caches
 from .layout import RunLayout
 from .spec_equations import is_finite_number
 
@@ -79,3 +80,7 @@ def kept(cache: dict, key, version, compute):
     value = compute()
     cache[key] = (version, value)
     return value
+
+
+# The caches of this module: caches.clear_all() empties them with every other one (refactoring package B10).
+caches.register(globals(), '_STEERING')

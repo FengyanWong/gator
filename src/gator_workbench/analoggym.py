@@ -19,6 +19,7 @@ import sys
 import threading
 
 from analog_optimizer.backends.backend import SimulationStatus
+from . import caches
 from .ngspice_analysis import instrument
 from .ngspice_backend import NgspiceBackend, NgspiceEnvFactory
 from .ngspice_netlist import parse_text
@@ -248,3 +249,7 @@ class AnalogGymFactory(NgspiceEnvFactory):
         return CircuitSizingEnv(backend,self.graph,self.specs,Path(self.work_root)/f'worker-{lane}',max_steps=self.max_steps,
             timeout_seconds=self.timeout_seconds,stop_on_success=self.stop_on_success,expected_origin='real',
             reward_settings=self.reward_settings)
+
+
+# The caches of this module: caches.clear_all() empties them with every other one (refactoring package B10).
+caches.register(globals(), 'evaluator_modules')

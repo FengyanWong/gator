@@ -5,7 +5,7 @@ from functools import lru_cache
 import json
 import math
 from pathlib import Path
-from . import runs
+from . import caches, runs
 from .compile import build_specs
 from .layout import find_runs
 from .paths import OutputRoots, repo_root
@@ -210,3 +210,11 @@ def check(config, *, roots=None):
         except Exception:
             continue
     return assess(config, designs)
+
+
+# The caches of this module: caches.clear_all() empties them with every other one (refactoring package B10).
+caches.register(globals(), '_DESIGNS')
+caches.register(globals(), '_SAVED')
+caches.register(globals(), '_stage_a_report')
+caches.register(globals(), '_job_result')
+caches.register(globals(), '_stage_runs')

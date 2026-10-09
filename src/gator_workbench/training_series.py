@@ -33,7 +33,7 @@ from pathlib import Path
 import stat
 import threading
 
-from . import schema
+from . import caches, schema
 from .compile import build_specs
 from .layout import RunLayout
 from .storage.atomic import read_dict, read_json, read_jsonl
@@ -675,3 +675,8 @@ def read_training(run_dir, flushes=0, *, max_rows=MAX_ROWS, tail_cursor=None, ca
                 objective=objective, learner=_learner(config or {}, manifest),
                 segments=[{k: s.get(k) for k in ('segment', 'entry', 'started_utc', 'ended_utc', 'end_state', 'stop_reason')}
                           for s in manifest.get('segments') or []])
+
+
+# The caches of this module: caches.clear_all() empties them with every other one (refactoring package B10).
+caches.register(globals(), '_FLUSH_LOGS', lock='_CACHE_LOCK')
+caches.register(globals(), '_CONFIGS', lock='_CACHE_LOCK')

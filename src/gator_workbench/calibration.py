@@ -27,7 +27,7 @@ from __future__ import annotations
 import math
 import statistics
 from types import SimpleNamespace
-from . import compile as compiler, schema, units
+from . import caches, compile as compiler, schema, units
 from .layout import RunLayout
 from .storage import DatasetReader, read_dict, read_json
 from .storage.dataset import utcnow
@@ -327,3 +327,7 @@ def current(run_dir, manifest=None):
             again = stored
         _AGAIN[key] = again
     return _AGAIN[key]
+
+
+# The caches of this module: caches.clear_all() empties them with every other one (refactoring package B10).
+caches.register(globals(), '_AGAIN')

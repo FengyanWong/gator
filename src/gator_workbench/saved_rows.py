@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 
 from pydantic import ValidationError
-from . import profile_store, units
+from . import caches, profile_store, units
 from .diffs import structured_diff
 from .profile_store import HISTORY, ProfileError, TASK_FILE, profile_dir
 from .schema import MeasurementDefinition, OptimizationParameter, PerformanceTarget
@@ -239,3 +239,7 @@ def describe_undone(name, undone) -> str:
     shown = '; '.join(lines[:4]) + (f'; and {len(lines) - 4} more' if len(lines) > 4 else '')
     return (f'real:{name} was saved again after these rows were loaded: it is revision {undone["current"]} now, the rows here '
             f'are revision {undone["base"]}\'s. Saving them would undo what was saved since: {shown}.')
+
+
+# The caches of this module: caches.clear_all() empties them with every other one (refactoring package B10).
+caches.register(globals(), '_FILES')

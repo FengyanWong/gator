@@ -14,7 +14,7 @@ from pathlib import Path
 import threading
 import time
 
-from . import checkpoints as ckpt
+from . import caches, checkpoints as ckpt
 from .names import WORKING_STATES
 from .run_lock import RunLock
 from .layout import RunLayout, find_runs
@@ -301,3 +301,7 @@ def output_root_of(run_dir) -> Path:
 
 # The name this had before refactoring package B9 (2026-10-09), kept for code that still uses it.
 _run_facts = run_facts
+
+
+# The caches of this module: caches.clear_all() empties them with every other one (refactoring package B10).
+caches.register(globals(), '_RUN_CACHE', lock='_RUN_CACHE_LOCK')

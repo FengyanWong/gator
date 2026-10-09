@@ -18,7 +18,7 @@ import sys
 import threading
 from uuid import uuid4
 
-from . import (CONFIG_SCHEMA_VERSION, OUTPUT_LAYOUT_VERSION, calibration, checkpoints as ckpt, connection,
+from . import (CONFIG_SCHEMA_VERSION, OUTPUT_LAYOUT_VERSION, caches, calibration, checkpoints as ckpt, connection,
                consistency, modes, pdk, run_index)
 from .compile import CompileError, compile_task
 from .connection import worker_environment
@@ -812,3 +812,7 @@ def status_view(path, connection) -> dict:
     result['calibration'] = None if not manifest.get('calibration') else dict(
         request=manifest['calibration'], result=calibration.current(path, manifest))
     return result
+
+
+# The caches of this module: caches.clear_all() empties them with every other one (refactoring package B10).
+caches.register(globals(), '_CONTRACTS', lock='_CONTRACTS_LOCK')

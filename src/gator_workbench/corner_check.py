@@ -46,7 +46,7 @@ from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
 from analog_optimizer.evaluation.corners import NominalDesign, summarize_corners
 from analog_optimizer.measurements.specs import SpecificationEvaluator
 
-from . import profiles, tasks
+from . import caches, profiles, tasks
 from .cdf_write import backend_class
 from .compile import CompileError, compile_task
 from .layout import RunLayout
@@ -813,3 +813,8 @@ def main(argv=None):
 
 if __name__ == '__main__':
     raise SystemExit(main())
+
+
+# The caches of this module: caches.clear_all() empties them with every other one (refactoring package B10).
+caches.register(globals(), '_TABLES')
+caches.register(globals(), 'checkable_real_tasks')

@@ -134,7 +134,7 @@ try {
   throw error;
 } finally {
   if (browser) await browser.close();
-  const files = ['src/panels/Right.tsx', 'src/panels/Editors.tsx', 'src/panels/RunTabs.tsx', 'src/styles.css', 'scripts/reward_v2_frontend_check.mjs', 'vite.reward-ui.config.mjs'];
+  const files = ['src/panels/Right.tsx', 'src/panels/useRlModel.ts', 'src/panels/rlModelText.ts', 'src/panels/RewardConditions.tsx', 'src/panels/Editors.tsx', 'src/panels/RunTabs.tsx', 'src/styles.css', 'scripts/reward_v2_frontend_check.mjs', 'vite.reward-ui.config.mjs'];
   writeFileSync(path.join(output, 'browser-report.json'), JSON.stringify({ origin: 'real', url, passed: completed && checks.every(c => c.passed),
     source: 'current Vite source; unchanged real optimizer/backend', run_directory: stage.run_directory,
     source_hashes: Object.fromEntries(files.map(file => [file, createHash('sha256').update(readFileSync(file)).digest('hex')])),

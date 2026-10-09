@@ -17,7 +17,8 @@ import { continueConsent, continueReadiness, featuresOf, launchKept, startReadin
 import { LaunchRefusal } from './panels/LaunchRefusal';
 import { useRunBrief } from './panels/RunBrief';
 import { RunListButton } from './panels/RunList';
-import { MODE_NAME, NextModel, RunPanel } from './panels/Right';
+import { RunPanel } from './panels/Right';
+import { MODE_NAME, type NextModel } from './panels/rlModelText';
 import { OutputPanel } from './panels/OutputPanel';
 import { ResearchPanel } from './panels/ResearchPanel';
 import { modelNameAt } from './panels/ModelChooser';

@@ -158,6 +158,21 @@ class SpectreParser:
 
     def parse_text(self, text: str, *, source: str = "<memory>",
                    circuit_id: str = "synthetic", top: str | None = None) -> CircuitGraph:
+        manifest, root, scopes, globals_, context = self._declarations(text, source)
+        graph = CircuitGraph(circuit_id, [], [], [], {}, metadata={
+            "parser_version": "spectre-subset-2", "mapping_version": self.config.mapping_version,
+            "source_manifest": manifest, "analysis_context": context, "selected_top": top,
+            "globals": sorted(globals_), "scope_parameters": {
+                name: s.parameters for name, s in [(root.name, root), *scopes.items()]},
+        })
+        self._expand(graph, root, scopes, globals_, source, top)
+        self._parameter_groups(graph)
+        graph.validate(require_complete=False)
+        return graph
+
+    def _declarations(self, text, source):
+        """The statements of `text` and of every file it includes (each file's sha256 in `manifest`), sorted into the
+        root scope and the subckt definitions: (manifest, root, scopes, globals_, context)."""
         manifest: dict[str, str] = {}
 
         def load(content: str, file: str, stack: tuple[Path, ...]) -> list[list[Token]]:
@@ -233,13 +248,11 @@ class SpectreParser:
                 scope.body.append(line)
         if scope is not root:
             raise ParseError(f"Unclosed subckt {scope.name}", SourceSpan(source, len(text.splitlines())))
+        return manifest, root, scopes, globals_, context
 
-        graph = CircuitGraph(circuit_id, [], [], [], {}, metadata={
-            "parser_version": "spectre-subset-2", "mapping_version": self.config.mapping_version,
-            "source_manifest": manifest, "analysis_context": context, "selected_top": top,
-            "globals": sorted(globals_), "scope_parameters": {
-                name: s.parameters for name, s in [(root.name, root), *scopes.items()]},
-        })
+    def _expand(self, graph, root, scopes, globals_, source, top):
+        """The devices, nets and connections of the selected top (or of the root scope), expanded through every subckt
+        instance into `graph`."""
         nets: dict[str, Net] = {}
 
         def net(name: str, path: str, port_map: dict[str, str]) -> str:
@@ -328,6 +341,9 @@ class SpectreParser:
             expand(root, root_env, "", {}, ())
             graph.metadata["ports"] = ()
         graph.nets = list(nets.values())
+
+    def _parameter_groups(self, graph):
+        """The configured parameter groups; a group without a value takes its first member's, read from the graph."""
         for item in self.config.parameter_groups:
             spec = dict(item)
             spec["members"] = tuple(ParameterBinding(**member) for member in spec["members"])
@@ -340,8 +356,6 @@ class SpectreParser:
                     raise ValueError(f"Unresolved parameter group {spec['id']}")
                 spec["value"] = value.value / member.ratio
             graph.parameter_groups.append(ParameterGroup(**spec))
-        graph.validate(require_complete=False)
-        return graph
 
     @staticmethod
     def _merge_parameters(scope: Scope, params: dict, source: SourceSpan) -> None:

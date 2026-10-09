@@ -1648,13 +1648,14 @@ keeps an empty scale, which the backend sizes from the threshold. Saved empty sc
 
 Reward and conditions holds the nominal gate band and objective shape in its Advanced fold (record 7.183, below). **RL model... → Advanced** exposes **Alpha learning rate**,
 stored per configuration; empty inherits the actor learning rate. Beside it, **Send the next design before learning**
-(`run.advanced.update_after_dispatch`, record 7.281, off by default, stored per configuration): a lane gets its next
-design before the learner's updates of the result it brought, so it simulates while the learner learns - an estimated
-11-27 % shorter run on last night's runs. The number of updates and what every save point holds stay as without it (the
+(`run.advanced.update_after_dispatch`, record 7.281, ON by default since record 7.294, stored per configuration): a lane
+gets its next design before the learner's updates of the result it brought, so it simulates while the learner learns. The number of updates and what every save point holds stay as without it (the
 rows of updates run after the last commit go into the data as a record of their own before a save point and at the end,
 so a pause right after them loses none: record 7.283); each design comes from a policy a few updates older, and the
-evaluations table's `policy_version` says which. It stays
-off until a check on real tasks shows that learning is not worse. No separate starting rate passed the extended
+evaluations table's `policy_version` says which. The check on real tasks (record 7.294: mscr_ota5t and mscr_ring3, seeds 2
+and 3, 400 evaluations, off against on): the feasible designs of the last third were 273 off and 332 on - not worse, the
+criterion written before the runs - and the runs were 18 % shorter (12-22 %). A configuration that never stated the switch
+runs with it on since; one that turned it off, every run recorded before included, keeps it off and its hash. No separate starting rate passed the extended
 1,000-update unit check, so new configurations leave it empty. Attributed failures continue the episode, while its normal
 horizon and configured success ending still apply.
 
@@ -2079,7 +2080,7 @@ whatever its settings folder.
 - `logs/timings.jsonl`: what each evaluation's stages took (preparation, queue wait, parameter update, netlisting,
   graph, simulation), written 16 at a time. The environment measured them before, and they went with each
   evaluation's journal.
-- **Send the next design before learning** (Advanced, record 7.281, off by default; see the RL model window).
+- **Send the next design before learning** (Advanced, record 7.281, on by default since record 7.294; see the RL model window).
 - **The simulator host's job folders** (record 7.282): the bridge keeps every Spectre job's folder on the host, and a
   night of runs left 58,000 of them while Virtuoso grew to 10.5 GB (68,871 folders, 49 GB, again by the next noon). A
   run now removes the host folders of the designs whose raw output it does not keep - each folder named by that
@@ -2853,7 +2854,11 @@ callbacks - and differs only in the deck each evaluation simulates and in how it
   folder as Spectre does (`OUT`, `XU1.N1`, `V0:p`); the names are translated once, at Save task, with the name maps
   Maestro's netlister writes (`amap/`, the maps ADE uses). A name the maps do not translate plainly - a terminal whose
   current is derived from another (a source's MINUS), an instance not in the maps - is refused then, in words. Values are
-  in base units (Hz, V, A), what the compiled specs compare with.
+  in base units (Hz, V, A), what the compiled specs compare with. After the last output the measurement lets the folder's
+  results go with `ocnResetResults()` (record 7.294): every folder opened stayed in Virtuoso's memory, about 260 KB per
+  evaluation (76.5 MB over 300 folders, nothing given back by `gc()`; Virtuoso had reached 10.2 GB after a day of runs).
+  With the reset the same test grew it by nothing and measured faster (35 ms against 50 ms), the values identical on
+  20 folders; `closeResults(dir)` released it as well, at 630 ms a call.
 * **The simulator mode: plain Spectre.** The optimizer's runs use plain Spectre; Maestro's default is APS, a faster engine
   that takes other time steps (448 against 575 on the ring oscillator), so its numbers differ in the last digits and more
   in fast transients. Writing a task's Maestro test therefore also sets plain Spectre, reads it back and compares it;

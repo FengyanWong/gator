@@ -13,7 +13,11 @@ string is translated once, when the task is saved. What the maps do not translat
 function of another, a signal not in the maps) is refused then, in words - never guessed.
 
 Side effect, stated: ``openResults`` / ``selectResult`` set OCEAN's current results in the user's Virtuoso session (as
-the bridge's own waveform export does); ADE and Maestro windows keep their own. OCEAN's ``simulator()`` is never called
+the bridge's own waveform export does); ADE and Maestro windows keep their own. The program lets them go again with
+``ocnResetResults()`` as its last step (record 7.294): each result folder opened stayed in Virtuoso's memory, about 260 KB
+per evaluation (+76.5 MB over 300 folders, nothing given back by ``gc()``; Virtuoso had reached 10.2 GB after a day of
+runs), and with the reset the same 300 grew it by nothing - and measured faster (35 ms against 50 ms), the values
+identical. ``closeResults(dir)`` released it too, at 630 ms a call. OCEAN's ``simulator()`` is never called
 (it would reset the OCEAN session).
 """
 from __future__ import annotations
@@ -156,7 +160,7 @@ def program(raw_dir, outputs) -> str:
         lines += [f"  errset(selectResult('{output['analysis']}) nil)",
                   f"  v = car(errset({output['spectre_expression']} nil))",
                   f'  out = strcat(out "{output["name"]}=" if(numberp(v) sprintf(nil "%.17g" float(v)) "nil") "\\n")']
-    lines += ['  out)']
+    lines += ['  ocnResetResults()', '  out)']             # let the folder's results go (record 7.294): the memory they held
     return '\n'.join(lines)
 
 

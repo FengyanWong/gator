@@ -359,10 +359,11 @@ class AdvancedRL(_Model):
     warmup_transitions: int = Field(8, ge=0, description='Random exploration until this many replay insertions.')
     update_every: int = Field(1, ge=1, description='Run learner updates every N admitted transitions.')
     updates_per_transition: int = Field(1, ge=1, le=64, description='Update-to-data ratio (UTD).')
-    update_after_dispatch: bool = Field(False,
+    update_after_dispatch: bool = Field(True,
         description='Send a lane its next design before the learner updates of the result it brought (record 7.281): the '
                     'lane simulates while the learner learns. The number of updates stays the same; each design comes from '
-                    'a policy a few updates older. Off until a check on real tasks shows that learning is not worse.')
+                    'a policy a few updates older. On by default since record 7.294: in the check on real tasks (2 tasks x '
+                    '2 seeds, 400 evaluations) learning was not worse and the runs were 18 % shorter.')
     replay_capacity: int = Field(10000, ge=1)
     episode_length: int = Field(4, ge=1, le=1000, description='Environment steps per episode (finite horizon).')
     episode_terminates_on_success: bool = Field(False,
@@ -671,7 +672,9 @@ def _hashed(data):
     differently since. So is the retired `run.threads_per_job` (2026-09-29, RETIRED_RUN_FIELDS). The search block retired
     on 2026-10-06 (record 7.226) is hashed as absent, as it was at its default. The RL model's label
     (`run.model_label`, record 7.159) is hashed as absent while it is not set, and so is the switch
-    `run.advanced.update_after_dispatch` (record 7.281) while it is off, and `output.keep_simulator_host_folders`
+    `run.advanced.update_after_dispatch` (record 7.281) while it is off - the default until record 7.294, so a run's
+    recorded configuration of before keeps its hash, and one with the switch on hashes as the different run it is -, and
+    `output.keep_simulator_host_folders`
     (record 7.282) while it is off. The research labels retired on 2026-10-03
     (record 7.163, RETIRED_RESEARCH_FIELDS) are hashed as present at their old defaults, and so are the Specs' target and
     tolerance and the Probes' expression retired the same day (RETIRED_TARGET_FIELDS, RETIRED_MEASUREMENT_FIELDS): a spec

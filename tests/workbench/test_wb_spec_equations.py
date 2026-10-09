@@ -71,7 +71,9 @@ PRE_EQUATIONS = json.loads((Path(__file__).parent / 'fixtures' / 'pre_equations_
 
 
 def test_a_configuration_from_before_equations_loads_and_keeps_both_hashes():
-    raw, pins = PRE_EQUATIONS['raw'], PRE_EQUATIONS['pins']
+    raw, pins = copy.deepcopy(PRE_EQUATIONS['raw']), PRE_EQUATIONS['pins']
+    # As it ran then: with the switch of record 7.281 off, its default until record 7.294 (an absent switch means on since).
+    raw['run'].setdefault('advanced', {})['update_after_dispatch'] = False
     assert 'measurement_id' in raw['targets'][0] and 'equation' not in raw['targets'][0]      # the old form, as saved then
     config = schema.WorkbenchConfig.model_validate(raw)
     assert config.targets[0].equation == 'm_score'                                            # its one probe is the equation

@@ -57,6 +57,8 @@ def test_the_ocean_program_reads_one_result_folder_and_its_answer_is_parsed():
                dict(name='gain', spectre_expression='dB20(VF("OUT"))', analysis='ac')]
     text = ocean.program('/tmp/vb/15f61d39/input.raw', outputs)
     assert text.count('openResults("/tmp/vb/15f61d39/input.raw")') == 1 and "selectResult('tran)" in text and "selectResult('ac)" in text
+    # Record 7.294: the results are let go after the last output - each folder held ~260 KB of Virtuoso's memory for good.
+    assert text.rstrip().endswith('ocnResetResults()\n  out)') and text.count('ocnResetResults()') == 1
     assert 'car(errset(frequency(VT("OUT")) nil))' in text and 'simulator(' not in text and 'design(' not in text
     assert ocean.parse('freq=1209256473.1920419\ngain=nil\n', outputs) == dict(freq=1209256473.1920419, gain=None)
     with pytest.raises(ValueError):

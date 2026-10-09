@@ -174,10 +174,13 @@ def test_learning_after_the_dispatch_keeps_every_update_and_every_save_point(tmp
 
 
 def test_the_switch_keeps_the_hashes_of_configurations_without_it(tmp_path):
-    config = make_config(tmp_path)
-    raw = config.model_dump(mode='json')
+    # On by default since record 7.294. A configuration with it off - every run recorded before states it so - is hashed as
+    # one without the field was until then; one with it on hashes as the different run it is.
+    assert make_config(tmp_path).run.advanced.update_after_dispatch is True
+    off = make_config(tmp_path, advanced=dict(update_after_dispatch=False))
+    raw = off.model_dump(mode='json')
     del raw['run']['advanced']['update_after_dispatch']
-    assert schema.config_hash(config) == schema.config_hash(raw)                          # off: hashed as absent
-    switched = make_config(tmp_path, advanced=dict(update_after_dispatch=True))
-    assert schema.config_hash(switched) != schema.config_hash(config)
-    assert schema.task_definition_hash(switched) == schema.task_definition_hash(config)   # never a different task
+    assert schema.config_hash(off) == schema.config_hash(raw)                             # off: hashed as absent
+    switched = make_config(tmp_path)
+    assert schema.config_hash(switched) != schema.config_hash(off)
+    assert schema.task_definition_hash(switched) == schema.task_definition_hash(off)      # never a different task

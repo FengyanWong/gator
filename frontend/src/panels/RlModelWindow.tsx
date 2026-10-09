@@ -48,10 +48,11 @@ function AdvancedFields({ m }: { m: RlModel }) {
     <details className="rl-advanced"><summary>Advanced (stored per encoder, like the network sizes)</summary>
       <p className="hint">Alpha learning rate and the tick box below belong to this configuration; the other settings belong to the selected encoder. The algorithm stays soft actor-critic; only its numbers change.</p>
       <Num label="Alpha learning rate" nullable value={adv.alpha_learning_rate} onChange={v => setAdv({ alpha_learning_rate: v })} title="Empty uses the actor learning rate. A separate rate is stored in this configuration." />
-      <Check label="Send the next design before learning (faster, experimental)" value={!!adv.update_after_dispatch} onChange={v => setAdv({ update_after_dispatch: v })}
+      <Check label="Send the next design before learning (faster)" value={adv.update_after_dispatch ?? schema.$defs.AdvancedRL.properties.update_after_dispatch.default ?? true}
+        onChange={v => setAdv({ update_after_dispatch: v })}
         title={'Off: after each result the learner makes its updates, then the lane gets its next design. On: the lane gets its next design first '
-          + 'and simulates while the learner learns - an estimated 11-27 % faster on the measured runs. The number of updates stays the same; each '
-          + 'design comes from a policy a few updates older. Off until a check on real tasks shows that learning is not worse (record 7.281).'} />
+          + 'and simulates while the learner learns. The number of updates stays the same; each design comes from a policy a few updates older. '
+          + 'On by default since record 7.294: on 2 real tasks x 2 seeds learning was not worse and the runs were 18 % shorter (record 7.281 built it).'} />
       {ADVANCED_ROWS.map((fields, i) => {
         const inputs = fields.map(([name, label, title]) => <Num key={name} label={label} title={title}
           value={adv[name] ?? entry?.advanced?.[name] ?? schema.$defs.AdvancedRL.properties[name].default}

@@ -414,9 +414,11 @@ def test_sigkill_recovery_loses_nothing_acknowledged_and_double_counts_nothing(t
     finally:
         process.wait(timeout=30)
     assert runs.run_status(layout.run_dir)['state'] == 'interrupted'
-    acknowledged = [b['evaluation_id'] for b in read_jsonl(layout.data / '_journal' / 'wal.jsonl')]
+    # Evaluations only: since record 7.283 the journal also holds rows-only records of learner updates (record_rows, keys
+    # <origin>:<table>:<seq>:<hex>), which the switch of record 7.281 - on by default since 7.294 - writes.
+    acknowledged = [b['evaluation_id'] for b in read_jsonl(layout.data / '_journal' / 'wal.jsonl') if (b.get('rows') or {}).get('evaluations')]
     started = [d['evaluation_id'] for d in read_jsonl(layout.data / '_journal' / 'dispatch.jsonl')]
-    flushed_before = {i for f in read_jsonl(layout.data / '_journal' / 'flushes.jsonl') for i in f['evaluation_ids']}
+    flushed_before = {i for f in read_jsonl(layout.data / '_journal' / 'flushes.jsonl') for i in f['evaluation_ids'] if ':' not in i}
     assert len(started) >= 10
 
     resumed = config.model_copy(deep=True)

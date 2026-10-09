@@ -6,6 +6,7 @@ written with them still loads (the schema's before-validators keep what they mea
 plain words), both hashes are unchanged for it (schema._hashed), and normalization_scale may now be left empty.
 On 2026-09-29 (record 7.105, the same decision) the Probes' conditions and aggregation followed: a run refused anything
 but [nominal] / nominal_only, and since reward v2 the test conditions are the run's and each spec's."""
+import copy
 import json
 from pathlib import Path
 
@@ -32,7 +33,9 @@ def test_an_old_configuration_loads_without_the_retired_fields():
 
 def test_both_hashes_of_an_old_configuration_are_unchanged(tmp_path):
     """Pinned with the code of the day before: the same task, the same configuration version."""
-    raw = FIXTURE['raw']
+    raw = copy.deepcopy(FIXTURE['raw'])
+    # As it ran then: with the switch of record 7.281 off, its default until record 7.294 (an absent switch means on since).
+    raw['run'].setdefault('advanced', {})['update_after_dispatch'] = False
     config = schema.WorkbenchConfig.model_validate(raw)
     assert schema.task_definition_hash(config) == FIXTURE['pins']['task'] == G7_TASK_HASH
     assert schema.config_hash(config) == FIXTURE['pins']['config'] == schema.config_hash(raw)   # the raw dict, keys and all

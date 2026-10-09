@@ -9,12 +9,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import consistency, profile_preflight, runs, schema, tasks, virtuoso_setup as vs
-from gator_workbench.api import create_app
 from gator_workbench.validation import validate
-from helpers import MOCK_TASK, bridge_is_importable, roots_for  # noqa: F401 - an imported fixture belongs to this module
-from test_wb_api import probe
-from test_wb_task_save import config as cell_config, maestro_netlister, ready, save
-from test_wb_virtuoso_setup import SETUP, setup_writer
+from helpers import bridge_is_importable, MOCK_TASK, roots_for, workbench_app   # noqa: F401 - an imported fixture belongs to this module
+from helpers import probe
+from task_save_support import config as cell_config, ready, save
+from fakes_virtuoso import maestro_netlister
+from fakes_virtuoso import SETUP, setup_writer
+from task_save_support import saved_ring, task_config
 
 OK_STEPS = [dict(step='profile', ok=True, detail='p'), dict(step='connect', ok=True, detail='c'),
             dict(step='export', ok=True, detail='e'), dict(step='deck', ok=True, detail='d')]
@@ -27,20 +28,6 @@ def preflight_process(tmp_path, steps, tag='check'):
                       f'print(json.dumps(dict(profile_preflight=True, name=sys.argv[2], ok={all(s["ok"] for s in steps)!r}, '
                       f'simulated=False, deck=None, steps={steps!r})))\n')
     return [sys.executable, str(script)]
-
-
-def task_config(tmp_path, name='ring_osc', **run):
-    """The configuration the page holds for a saved task: exactly its saved rows (what "Reload saved values" brings)."""
-    raw = tasks.starter_config(f'real:{name}')
-    raw['run'] = dict(dict(max_evaluations=3, connection_profile_id='lab'), **run)
-    raw['output'] = dict(output_root=str(tmp_path / 'out'), experiment_name='t')
-    return schema.WorkbenchConfig.model_validate(raw)
-
-
-def saved_ring(tmp_path):
-    ready(tmp_path)
-    save(tmp_path, extras=dict(expected_frequency_hz=1.2e9))
-    return task_config(tmp_path)
 
 
 def test_static_validation_says_when_the_editors_differ_from_the_saved_task(tmp_path):
@@ -209,7 +196,7 @@ def test_a_busy_virtuoso_is_named_and_the_task_is_not_blamed(tmp_path, monkeypat
 def test_the_check_route_replaces_check_against_virtuoso(tmp_path, monkeypatch):
     cfg = saved_ring(tmp_path)
     monkeypatch.setattr(profile_preflight, 'preflight', lambda monitor, name, profile_id, **kw: dict(profile_preflight=True, ok=True, steps=OK_STEPS))
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path), auto_check_on_start=True))
     answer = client.post('/api/virtuoso/task/check', json=dict(profile_id='lab', config=cfg.model_dump(mode='json'))).json()
     assert answer['ok'] and answer['task'] == 'real:ring_osc' and answer['steps'][0]['step'] == 'editors'
     mock = schema.WorkbenchConfig.model_validate(dict(tasks.starter_config(MOCK_TASK), run=dict(max_evaluations=3)))

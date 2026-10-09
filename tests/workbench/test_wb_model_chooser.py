@@ -8,9 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import checkpoints as ckpt, modes, runs
-from gator_workbench.api import create_app
 from gator_workbench.storage import read_json
-from helpers import SMALL_NET, execute, make_config, roots_for
+from helpers import execute, make_config, roots_for, SMALL_NET, workbench_app
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
 pytestmark = pytest.mark.xdist_group('test_wb_model_chooser')
@@ -95,7 +94,7 @@ def test_the_inspection_builds_the_learner_once_for_one_configuration(trained, m
     built, original = [], modes._new_learner
     monkeypatch.setattr(modes, '_new_learner', lambda *args, **kwargs: built.append(1) or original(*args, **kwargs))
     monkeypatch.setattr(runs, '_CONTRACTS', {})
-    client = TestClient(create_app(extra_output_roots=[str(root)], serve_frontend=False))
+    client = TestClient(workbench_app(root, auto_check_on_start=True))
     body = dict(run_dir=str(layout.run_dir), checkpoint_id='latest', config=make_config(root).model_dump(mode='json'))
     first, second = client.post('/api/runs/model', json=body).json(), client.post('/api/runs/model', json=body).json()
     assert first['compatibility']['compatible'] and first['compatibility'] == second['compatibility'] and len(built) == 1
@@ -108,7 +107,7 @@ def test_the_inspection_builds_the_learner_once_for_one_configuration(trained, m
 
 def test_the_api_serves_the_list_and_keeps_the_path_restriction(trained, tmp_path):
     root, layout = trained
-    client = TestClient(create_app(extra_output_roots=[str(root)], serve_frontend=False))
+    client = TestClient(workbench_app(root, auto_check_on_start=True))
     response = client.get('/api/runs/models', params=dict(output_root=str(root)))
     assert response.status_code == 200
     models = response.json()['models']
@@ -154,7 +153,7 @@ def test_an_incomplete_configuration_never_hides_the_saved_model(trained):
     because the configuration ON THE PAGE had an optimized row without bounds. The model's facts have nothing to do
     with that: they are still returned, and what is missing is said in plain words."""
     root, layout = trained
-    client = TestClient(create_app(extra_output_roots=[str(root)], serve_frontend=False))
+    client = TestClient(workbench_app(root, auto_check_on_start=True))
     raw = make_config(root).model_dump(mode='json')
     row = raw['parameters'][0]
     row['lower'] = row['upper'] = None

@@ -8,33 +8,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import bridge_read, native_cells, schema, tasks
-from gator_workbench.api import create_app
-from helpers import make_config
-from test_wb_api import probe
+from helpers import make_config, workbench_app
+from helpers import probe
 
-REPO = Path(__file__).resolve().parents[2]
-EXPORT = (REPO / 'examples/circuits/gpdk045_ota5.scs').read_text()            # a recorded REAL Virtuoso export
+from fakes_virtuoso import REPO                                                   # the same folder as here
+from fakes_virtuoso import EXPORT, fake_reader
 UNVERIFIED = EXPORT.rstrip('\n') + '\nC9 (VOUT 0 0) pdk_mystery_dev w=4.49u l=4.49u m=2\n'      # + a device type nobody verified
-
-
-def fake_reader(tmp_path, netlist=EXPORT, fail=False):
-    """Stands in for `python -m gator_workbench.bridge_read`: writes what the real reader writes."""
-    script = tmp_path / 'reader.py'
-    script.write_text(f'''
-import json, sys
-from pathlib import Path
-args = dict(zip(sys.argv[1::2], sys.argv[2::2]))
-out = Path(args['--output'])
-out.mkdir(parents=True)
-(out / 'netlist.scs').write_text({netlist!r})
-(out / 'core_readback.json').write_text(json.dumps(dict(origin='fixture', instances=[])))
-if {fail!r}:
-    sys.exit('Traceback\\nRuntimeError: export failed on the fixture')
-print('progress line the bridge might print')
-print(json.dumps(dict(library=args['--library'], cell=args['--cell'], testbench_cell=args.get('--testbench'),
-                      technology_library='gpdk045')))
-''')
-    return [sys.executable, str(script)]
 
 
 def reference(**fields):
@@ -113,8 +92,7 @@ def test_a_second_import_replaces_the_first_and_a_failed_one_leaves_nothing(tmp_
 def test_the_api_shows_a_draft_and_keeps_it_from_starting(tmp_path):
     bridge_read.read(probe(tmp_path), 'lab', 'import_cell', library='GATOR_TESTS', cell='ota5_v1',
                      testbench='tb_ota5_ac_v1', command=fake_reader(tmp_path))
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False,
-                                   monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path)))
     circuit = dict(source='virtuoso', library='GATOR_TESTS', cell='ota5_v1', testbench_cell='tb_ota5_ac_v1')
     loaded = client.post('/api/circuit/load', json=dict(circuit=circuit)).json()
     assert loaded['loaded'] and loaded['native_draft'] and loaded['mock'] is False and loaded['summary']['device_count'] == 10
@@ -127,8 +105,7 @@ def test_the_api_shows_a_draft_and_keeps_it_from_starting(tmp_path):
         started = client.post('/api/runs/start', json=dict(config=config, authorize_real_simulation=authorize))
         assert started.status_code >= 400 and 'no circuit profile yet' in json.dumps(started.json())
     assert not list(tmp_path.glob('**/run_manifest.json'))
-    down = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False,
-                                 monitor=probe(tmp_path, daemon='failed')))
+    down = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path, daemon='failed')))
     blocked = down.post('/api/virtuoso/import', json=dict(profile_id='lab', library='GATOR_TESTS', cell='ota5_v1'))
     assert blocked.status_code == 409 and blocked.json()['detail']['gate']['blocking'] == ['daemon']
     assert down.post('/api/virtuoso/import', json=dict(profile_id='lab', library='x y', cell='c')).status_code in (409, 422)
@@ -138,7 +115,7 @@ def test_the_api_shows_a_draft_and_keeps_it_from_starting(tmp_path):
 def pdk_reader(tmp_path, pdk='ok', technology_library='gpdk045', netlist=EXPORT):
     """The fake reader, answering `--op pdk` too: the demo045 material (pdk='ok') or a failure (pdk='fail'). Every call's
     arguments are logged, so a test can see what the backend asked for and in which order."""
-    from test_wb_pdk import raw_material
+    from pdk_support import raw_material
     material = tmp_path / 'pdk_material.json'
     material.write_text(json.dumps(raw_material()))
     script = tmp_path / 'reader_pdk.py'

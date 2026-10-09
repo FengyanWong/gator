@@ -3,7 +3,7 @@ ones the learner enforces on every replay batch - and keeps one counted job row 
 import json
 from pathlib import Path
 
-from tests.workbench.helpers import execute, make_config, rows, summary
+from helpers import execute, make_config, rows, summary
 
 
 def test_a_mock_run_uses_the_configured_reward_settings(tmp_path):

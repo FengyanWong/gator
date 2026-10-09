@@ -8,7 +8,7 @@ import torch
 from analog_optimizer.models import ModelConfig
 from analog_optimizer.training.replay import ReplayBuffer
 from analog_optimizer.training.sac import SACConfig, SACLearner
-from tests.reward_v21_support import algebraic_transitions
+from reward_v21_support import algebraic_transitions
 
 
 @pytest.mark.parametrize('rate', [0., -1., True, float('nan'), float('inf')])

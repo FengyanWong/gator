@@ -9,124 +9,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import profiles, recipes, schema, task_files, tasks, virtuoso_setup as vs, working_copy
-from gator_workbench.api import create_app
-from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
-from test_wb_api import probe
-from test_wb_profiles import FIXTURE, ROWS, connection_file, read_cell
-from test_wb_virtuoso_setup import SETUP, setup_writer
-from test_wb_working_copy import CELL, COPY, LIB, TB, fake_writer
-
-FREQUENCY_PROBE = dict(measurement_id='m_osc_frequency_hz', analysis='tran', result_source='backend_profile', source_name='osc_frequency_hz', unit='Hz')
-FREQUENCY_SPEC = dict(metric_id='osc_frequency_hz', equation='m_osc_frequency_hz', unit='Hz', constraint='>=', lower=1.1e9, normalization_scale=1e9)
-
-
-def copy_reader(tmp_path):
-    """Stands in for `bridge_read` reading a working copy INTO the workbench: the recorded export, with the names
-    Virtuoso gives the copy (its library in the comments, renamed cells for a "Save as" copy)."""
-    script = tmp_path / 'copy_reader.py'
-    script.write_text(f'''
-import json, re, shutil, sys
-from pathlib import Path
-args = dict(zip(sys.argv[1::2], sys.argv[2::2]))
-out = Path(args['--output']); out.mkdir(parents=True)
-text = (Path({str(FIXTURE)!r}) / 'netlist.scs').read_text().replace('// Library name: {LIB}', '// Library name: ' + args['--library'])
-text = re.sub(r'\\btb_ring_osc_3stage\\b', args['--testbench'], text)
-text = re.sub(r'(?<![A-Za-z0-9_])ring_osc_3stage(?![A-Za-z0-9_])', args['--cell'], text)
-(out / 'netlist.scs').write_text(text)
-shutil.copy(Path({str(FIXTURE)!r}) / 'core_readback.json', out / 'core_readback.json')
-bench = json.loads((Path({str(FIXTURE)!r}) / 'testbench_readback.json').read_text())
-for item in bench['instances']:                      # the copied testbench points at the copied cell
-    if item.get('cell') == 'ring_osc_3stage':
-        item.update(lib=args['--library'], cell=args['--cell'])
-(out / 'testbench_readback.json').write_text(json.dumps(bench))
-print(json.dumps(dict(library=args['--library'], cell=args['--cell'], testbench_cell=args.get('--testbench'), technology_library='gpdk045')))
-''')
-    return [sys.executable, str(script)]
-
-
-def task_copier(tmp_path):
-    """Stands in for `bridge_setup make_copy` making a "Save as" copy with renamed cells inside the copy library."""
-    script = tmp_path / 'task_copier.py'
-    script.write_text(f'''
-import json, re, sys
-from pathlib import Path
-argv = sys.argv[1:]
-args = {{a: argv[i + 1] for i, a in enumerate(argv) if a.startswith('--') and i + 1 < len(argv) and not argv[i + 1].startswith('--')}}
-rename = json.loads(args['--rename'])
-with open({str(tmp_path / 'copier_calls.jsonl')!r}, 'a') as f:
-    f.write(json.dumps(args) + '\\n')
-out = Path(args['--output'])
-text = (Path({str(FIXTURE)!r}) / 'netlist.scs').read_text().replace('// Library name: {LIB}', '// Library name: {COPY}')
-for old, new in sorted(rename.items(), key=lambda kv: -len(kv[0])):
-    text = re.sub(r'(?<![A-Za-z0-9_])' + re.escape(old) + r'(?![A-Za-z0-9_])', new, text)
-(out / 'progress.json').write_text(json.dumps(dict(created_library=False, copied=[v + '/schematic' for v in rename.values()])))
-(out / 'netlist.scs').write_text(text)
-same = 'a' * 64
-print(json.dumps(dict(library=args['--library'], cell=args['--cell'], testbench=args['--testbench'], copy_library=args['--copy-library'],
-                      copy_path='/home/minlei/{COPY}', copy_cell=rename[args['--cell']], copy_testbench=rename[args['--testbench']],
-                      rename=rename, technology_library='gpdk045', copy_technology_library='gpdk045', working_dir='/home/minlei',
-                      created_library=False, cds_lib='/home/minlei/cds.lib', cells=[], copied=[dict(cell=v, view='schematic') for v in rename.values()],
-                      remastered={{}}, originals_before={{k: same for k in rename}}, originals_after={{k: same for k in rename}})))
-''')
-    return [sys.executable, str(script)]
-
-
-MAESTRO_HEAD = ('// Generated for: spectre\nsimulator lang=spectre\nglobal 0\nparameters temperature=27\n'
-                'include "/pdk/model.scs" section=tt\n\n')
-MAESTRO_TAIL = ('\nsimulatorOptions options psfversion="1.4.0" reltol=1e-3 temp=27\n'
-                'tran tran stop=50n errpreset=conservative write="spectre.ic" annotate=status\n'
-                'finalTimeOP info what=oppoint where=rawfile\nsaveOptions options save=allpub\n')
-
-
-def maestro_netlister(tmp_path, circuit=None):
-    """Stands in for `bridge_setup maestro_netlist`: Maestro's netlist folder of the copy's test - input.scs = a head, the
-    circuit (the recorded export with the copy's names, as the copy reader gives it), a tail - plus name maps in the
-    format the real netlister writes (amap/). `circuit` replaces the circuit part (a netlist that differs)."""
-    script = tmp_path / 'maestro_netlister.py'
-    script.write_text(f'''
-import json, re, sys
-from pathlib import Path
-argv = sys.argv[1:]
-args = {{a: argv[i + 1] for i, a in enumerate(argv) if a.startswith('--') and i + 1 < len(argv)}}
-with open({str(tmp_path / 'netlister_calls.jsonl')!r}, 'a') as f:
-    f.write(json.dumps(dict(op=args['--op'], copy=args['--copy-library'], testbench=args['--testbench'])) + '\\n')
-text = {circuit!r} or (Path({str(FIXTURE)!r}) / 'netlist.scs').read_text().replace('// Library name: {LIB}', '// Library name: ' + args['--copy-library'])
-text = re.sub(r'\\btb_ring_osc_3stage\\b', args['--testbench'], text)
-text = re.sub(r'(?<![A-Za-z0-9_])ring_osc_3stage(?![A-Za-z0-9_])', args['--cell'], text)
-folder = Path(args['--output']) / 'maestro_netlist' / 'netlist'
-(folder / 'amap').mkdir(parents=True)
-(folder / 'netlist').write_text(text)
-(folder / 'input.scs').write_text({MAESTRO_HEAD!r} + text + {MAESTRO_TAIL!r})
-maps = {{'top_level_map.inst': [('__NEXT_FILE__', args['--testbench'])],
-        '__simulator_information__': [('__artInstanceTerminalDelimiter__', ':'), ('__artHierarchyDelimiter__', '.')],
-        args['--testbench'] + '.inst': [('V0n', 'analogLib_vdc_spectre'), ('XU1n', args['--cell'])],
-        args['--testbench'] + '.net': [('gnd!v', '0v')],
-        'analogLib_vdc_spectre.inst': [('PLUSv', ':pv'), ('MINUSv', '(FUNCTION minus(root("PLUS")))v')],
-        args['--cell'] + '.inst': [('MN1n MN2n MN3n', 'gpdk045_nmos1v_spectre'), ('OUTv', ':1v')],
-        'gpdk045_nmos1v_spectre.inst': [('Dv', ':dv'), ('Gv', ':gv')]}}
-for name, pairs in maps.items():
-    (folder / 'amap' / name).write_text('HEADER\\n"PSFversion" "1.00"\\n' + ''.join('"%s" "%s"\\n' % (k, v.replace('"', '\\\\"')) for k, v in pairs))
-print(json.dumps(dict(test='GATOR', remote='/tmp/gator_maestro_netlist/x', folder=str(folder))))
-''')
-    return [sys.executable, str(script)]
-
-
-def config(probes=(FREQUENCY_PROBE,), specs=(FREQUENCY_SPEC,), rows=ROWS):
-    return schema.WorkbenchConfig.model_validate(dict(
-        circuit=dict(source='virtuoso', library=LIB, cell=CELL, testbench_cell=TB, circuit_class='vco'),
-        parameters=list(rows), measurements=list(probes), targets=list(specs), run=dict(max_evaluations=5)))
-
-
-def ready(tmp_path):
-    """The user's ring oscillator read into the workbench through its testbench, with a verified working copy."""
-    connection_file()
-    read_cell(tmp_path)
-    assert working_copy.make(probe(tmp_path), 'lab', LIB, CELL, command=fake_writer(tmp_path))['verified']
-
-
-def save(tmp_path, name='ring_osc', cfg=None, **kwargs):
-    commands = dict(read=copy_reader(tmp_path), copy=task_copier(tmp_path), **kwargs.pop('commands', {}))
-    return profiles.save_task(probe(tmp_path), 'lab', name, cfg or config(), library=LIB, cell=CELL, commands=commands, **kwargs)
+from helpers import bridge_is_importable, workbench_app   # noqa: F401 - an imported fixture belongs to this module
+from helpers import probe
+from ring_cell_support import FIXTURE, ROWS, connection_file, read_cell
+from fakes_virtuoso import SETUP, setup_writer
+from fakes_virtuoso import CELL, COPY, LIB, TB, fake_writer
+from fakes_virtuoso import MAESTRO_HEAD, copy_reader, maestro_netlister
+from task_save_support import FREQUENCY_PROBE, FREQUENCY_SPEC, config, ready, save
 
 
 def test_the_first_save_takes_the_cell_s_copy_and_registers_a_task_that_runs_on_the_copy(tmp_path):
@@ -392,7 +281,7 @@ def test_deleting_the_task_frees_the_cell_s_copy_for_a_new_one(tmp_path):
 
 def test_the_task_file_routes_show_the_draft_and_check_hand_edits(tmp_path):
     ready(tmp_path)
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path), auto_check_on_start=True))
     body = dict(config=config().model_dump(mode='json'), library=LIB, cell=CELL, extras=dict(expected_frequency_hz=1.2e9))
     answer = client.post('/api/virtuoso/task/file', json=body).json()
     data = json.loads(answer['text'])

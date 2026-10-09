@@ -8,14 +8,10 @@ import sys
 import pytest
 
 from gator_workbench import bridge_setup, virtuoso_setup as vs, working_copy
-from helpers import make_config
-from test_wb_api import probe
-from test_wb_working_copy import CELL, COPY, LIB, TB, fake_writer, imported
-
-SETUP = dict(test='GATOR', model_files=[['/pdk/gpdk045.scs', 'tt']], analyses={'tran': {'stop': '50n', 'errpreset': 'conservative'}},
-             outputs=[dict(name='freq', expression='frequency(VT("/OUT"))'), dict(name='vmax', expression='ymax(VT("/OUT"))')],
-             specs=[dict(output='freq', op='gt', value='1e+09'), dict(output='vmax', op='range', value=['0.9', '1.1'])],
-             variables={'VSUP': '1.0'}, bindings=[dict(cell=TB, instance='V0', parameter='vdc', variable='VSUP')])
+from helpers import make_config, workbench_app
+from helpers import probe
+from fakes_virtuoso import CELL, COPY, LIB, TB, fake_writer, imported
+from fakes_virtuoso import SETUP, setup_writer
 
 
 def write(monitor, setup, **kw):
@@ -154,22 +150,6 @@ def test_the_conditions_are_written_with_the_setup_and_read_back(tmp_path):
                                                            'Initial condition on OUT: the task says 0.9, Virtuoso has (none)']
 
 
-def setup_writer(tmp_path, answer):
-    """Stands in for the setup ops of `python -m gator_workbench.bridge_setup`: logs the request, answers `answer`."""
-    script = tmp_path / 'setup_writer.py'
-    script.write_text(f'''
-import json, sys
-from pathlib import Path
-argv = sys.argv[1:]
-args = {{a: argv[i + 1] for i, a in enumerate(argv) if a.startswith('--') and i + 1 < len(argv)}}
-request = json.loads(Path(args['--request']).read_text())
-with open({str(tmp_path / 'setup_calls.jsonl')!r}, 'a') as f:
-    f.write(json.dumps(dict(op=args['--op'], copy=args['--copy-library'], testbench=args['--testbench'], request=request)) + '\\n')
-print(json.dumps({json.dumps(answer)!r} and json.loads({json.dumps(answer)!r})))
-''')
-    return [sys.executable, str(script)]
-
-
 def written_answer():
     return dict(exists=True, tests=['GATOR'], test='GATOR', model_files=SETUP['model_files'],
                 analyses={'tran': dict(SETUP['analyses']['tran'], trannoisemethod='default')}, variables=SETUP['variables'],
@@ -269,7 +249,7 @@ def test_the_copy_and_setup_routes_go_through_the_same_checks(tmp_path, monkeypa
         command = fake_writer(tmp_path) if op == 'make_copy' else setup_writer(tmp_path, answers[op])
         return real_run(profile_id, op, args=args, output=output, timeout=timeout, command=command)
     monkeypatch.setattr(bridge_setup, 'run', fake_run)
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path), auto_check_on_start=True))
     cell = dict(library=LIB, cell=CELL)
     assert client.post('/api/virtuoso/setup/read', json=dict(cell, profile_id='lab')).status_code == 409     # no copy yet
     # The page no longer makes copies (2026-09-23): the route refuses, the copy here is made the way Save as makes one.

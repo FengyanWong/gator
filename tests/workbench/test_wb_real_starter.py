@@ -8,11 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import profiles, recipes, schema, tasks
-from gator_workbench.api import create_app
 from gator_workbench.compile import compile_task
 from gator_workbench.validation import validate
-from test_wb_api import probe
-from test_wb_profiles import ROWS, config as cell_config, connection_file, read_cell
+from helpers import probe, workbench_app
+from ring_cell_support import ROWS, config as cell_config, connection_file, read_cell
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -61,7 +60,7 @@ def test_a_generated_profile_gets_its_parameters_and_probes_and_no_invented_targ
 
 
 def test_the_api_serves_the_rows_and_each_task_names_its_pdk(tmp_path):
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path), auto_check_on_start=True))
     listed = {t['task_key']: t for t in client.get('/api/tasks').json()['tasks']}
     assert listed['synthetic:gpdk045_ota5']['pdk_id'] == 'gpdk045'                            # the tests' stand-in
     for key, row in listed.items():                                                           # the page tells a starter-made project name by these

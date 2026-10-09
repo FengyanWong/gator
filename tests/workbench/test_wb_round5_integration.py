@@ -11,17 +11,11 @@ from fastapi.testclient import TestClient
 
 from gator_workbench import paths, runs, worker
 from gator_workbench.storage import read_json
-from helpers import make_config, roots_for, workbench_app
+from helpers import edit_json, make_config, roots_for, workbench_app
 
 
 def prepared(root):
     return runs.prepare_run(make_config(root), roots_for(root))
-
-
-def edit_json(path, change):
-    value = json.loads(Path(path).read_text())
-    change(value)
-    Path(path).write_text(json.dumps(value))
 
 
 @pytest.mark.parametrize('resting', ['paused', 'stopped', 'interrupted'])

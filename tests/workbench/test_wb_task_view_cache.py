@@ -11,7 +11,7 @@ import pytest
 from gator_workbench import paths, profiles, schema, tasks
 from gator_workbench.api.support import load_runtime
 from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
-from test_wb_profiles import config, connection_file, read_cell
+from ring_cell_support import config, connection_file, read_cell
 
 REF = schema.CircuitReference(source='registered_task', task_id='real:ring_osc_3stage')
 

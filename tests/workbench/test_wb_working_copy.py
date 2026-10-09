@@ -7,65 +7,8 @@ import sys
 import pytest
 
 from gator_workbench import bridge_read, bridge_setup, working_copy
-from test_wb_api import probe
-
-REPO = Path(__file__).resolve().parents[2]
-RING = (REPO / 'tests/workbench/fixtures/ring_osc/netlist.scs').read_text()        # the user's real ring-oscillator export
-LIB, CELL, TB, COPY = 'GPDK045_RINGOSC', 'ring_osc_3stage', 'tb_ring_osc_3stage', 'GPDK045_RINGOSC_GATOR'
-
-
-def imported(tmp_path):
-    script = tmp_path / 'reader.py'
-    script.write_text(f'''
-import json, sys
-from pathlib import Path
-args = dict(zip(sys.argv[1::2], sys.argv[2::2]))
-out = Path(args['--output'])
-out.mkdir(parents=True)
-(out / 'netlist.scs').write_text({RING!r})
-(out / 'core_readback.json').write_text(json.dumps(dict(origin='fixture', instances=[])))
-print(json.dumps(dict(library=args['--library'], cell=args['--cell'], testbench_cell=args.get('--testbench'), technology_library='gpdk045')))
-''')
-    return bridge_read.read(probe(tmp_path), 'lab', 'import_cell', library=LIB, cell=CELL, testbench=TB,
-                            command=[sys.executable, str(script)])
-
-
-def fake_writer(tmp_path, *, netlist=None, touched=False, fail_after=None, created=True, log='calls.jsonl'):
-    """Stands in for `python -m gator_workbench.bridge_setup`: writes what the real process writes."""
-    copy_netlist = RING.replace(f'// Library name: {LIB}', f'// Library name: {COPY}') if netlist is None else netlist
-    script = tmp_path / 'writer.py'
-    script.write_text(f'''
-import json, sys
-from pathlib import Path
-argv = sys.argv[1:]
-args = {{}}
-for i, a in enumerate(argv):
-    if a.startswith('--'):
-        args[a] = argv[i + 1] if i + 1 < len(argv) and not argv[i + 1].startswith('--') else True
-with open({str(tmp_path / log)!r}, 'a') as f:
-    f.write(json.dumps(args) + '\\n')
-out = Path(args['--output'])
-progress = dict(created_library={created!r} and '--reuse-library' not in args, copied=[])
-if progress['created_library']:
-    progress.update(copy_path='/home/minlei/{COPY}', copy_technology_library='gpdk045')
-for view in ['{TB}/schematic', '{CELL}/schematic', '{CELL}/symbol']:
-    if {fail_after!r} is not None and len(progress['copied']) == {fail_after!r}:
-        (out / 'progress.json').write_text(json.dumps(progress))
-        sys.exit('Traceback\\nRuntimeError: copying {CELL}/symbol: dbCopyCellView refused')
-    progress['copied'].append(view)
-(out / 'progress.json').write_text(json.dumps(progress))
-(out / 'netlist.scs').write_text({copy_netlist!r})
-same = 'a' * 64
-print(json.dumps(dict(library='{LIB}', cell='{CELL}', testbench='{TB}', copy_library='{COPY}', copy_path='/home/minlei/{COPY}',
-                      technology_library='gpdk045', copy_technology_library='gpdk045', working_dir='/home/minlei',
-                      created_library=progress['created_library'], cds_lib='/home/minlei/cds.lib',
-                      cells=[dict(cell='{TB}', views=['schematic'], has_cdf=False), dict(cell='{CELL}', views=['schematic', 'symbol'], has_cdf=False)],
-                      copied=[dict(cell=v.split('/')[0], view=v.split('/')[1]) for v in progress['copied']],
-                      remastered={{'{TB}': dict(headers=1, sch_check='(0 0)'), '{CELL}': dict(headers=0, sch_check='(0 0)')}},
-                      originals_before={{'{TB}': same, '{CELL}': same}},
-                      originals_after={{'{TB}': same, '{CELL}': 'b' * 64 if {touched!r} else same}})))
-''')
-    return [sys.executable, str(script)]
+from helpers import probe
+from fakes_virtuoso import CELL, COPY, LIB, RING, TB, fake_writer, imported
 
 
 def calls(tmp_path, log='calls.jsonl'):

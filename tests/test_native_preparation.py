@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from test_bridge_adapter import profile, adapter, changing_writer
+from research_support import profile, adapter, changing_writer
 from analog_optimizer.backends import native_preparation, virtuoso_bridge as bridge
 from analog_optimizer.backends.backend import SimulationRequest, SimulationResult, SimulationStatus
 from analog_optimizer.backends.gpdk045 import GEOMETRY, number

@@ -8,16 +8,15 @@ from pydantic import ValidationError
 from fastapi.testclient import TestClient
 
 from gator_workbench import modes, network_presets as presets, schema, tasks, validation
-from gator_workbench.api import create_app
 from gator_workbench.paths import local_settings_dir
-from helpers import make_config
+from helpers import make_config, workbench_app
 
 ALL_FIELDS = presets.NETWORK_FIELDS + presets.ADVANCED_FIELDS
 
 
 @pytest.fixture
 def client(tmp_path):
-    return TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False))
+    return TestClient(workbench_app(tmp_path, auto_check_on_start=True))
 
 
 def saved_file():

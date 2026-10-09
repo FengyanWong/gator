@@ -14,75 +14,9 @@ from gator_workbench import connection, runs, tasks
 from gator_workbench.connection import ConnectionMonitor, LAYERS, run_layers
 from gator_workbench.storage.atomic import read_jsonl
 from helpers import bridge_settings as settings, execute, make_config, roots_for, rows, summary  # noqa: F401 - an imported fixture belongs to this module
+from fakes_connection import FakeBridge, OK_BODY, layers_json, monitor_for, reasons, states
 
 REPO = Path(__file__).resolve().parents[2]
-LICENSE_OK = ['Users of Virtuoso_Multi_mode_Simulation:  (Total of 10 licenses issued;  Total of 3 licenses in use)']
-
-
-class FakeBridge:
-    """Configurable stand-in for the bridge facade. It has NO start/stop/restart method at all."""
-    def __init__(self, settings=None, **behaviour):
-        self.b = dict(version='0.8.0', resolved='__same__', roles=dict(daemon_host='eda-host', spectre_host='eda-host',
-                                                                       remote_user='alice'),
-                      local=False, state=dict(port=65432), running=True, skill=(True, []), client_error=None,
-                      user=dict(ok=True, skipped=False, error=''), windows=None, license=dict(
-                          spectre_path='/cad/spectre', version='@(#)$CDS: spectre 23.1', licenses=LICENSE_OK))
-        self.b.update(behaviour)
-        self.calls = []
-
-    def __call__(self, settings):                  # used as the factory
-        if self.b.get('import_error'):
-            raise ModuleNotFoundError("No module named 'virtuoso_bridge'")
-        return self
-
-    def version(self):
-        self.calls.append('version'); return self.b['version']
-
-    def bind_env(self, env_file):
-        self.calls.append('bind_env')
-
-    def resolve_profile(self, explicit):
-        return explicit if self.b['resolved'] == '__same__' else self.b['resolved']
-
-    def roles(self, profile):
-        return dict(self.b['roles'])
-
-    def is_local(self, host):
-        return self.b['local']
-
-    def tunnel_state(self, profile):
-        self.calls.append('tunnel_state'); return self.b['state'], self.b['running']
-
-    def client(self, profile, timeout):
-        self.calls.append('client')
-        if self.b['client_error']:
-            raise self.b['client_error']
-        return self
-
-    def skill_ok(self, client, timeout):
-        self.calls.append('skill'); return self.b['skill']
-
-    def daemon_user(self, client, profile, timeout):
-        return dict(self.b['user'])
-
-    def readiness(self, client):
-        self.calls.append('readiness')
-        if self.b['windows']:
-            raise RuntimeError('Active ADE/Maestro window conflicts with OCEAN export: ' + '; '.join(self.b['windows']))
-
-    def license(self, profile):
-        self.calls.append('license'); return dict(self.b['license'])
-
-    def close(self):
-        self.calls.append('close')
-
-
-def states(layers):
-    return {item['layer']: item['state'] for item in layers}
-
-
-def reasons(layers):
-    return {item['layer']: item['reason_code'] for item in layers if item['reason_code']}
 
 
 def check(settings, scope='full', run_active=False, **behaviour):
@@ -240,24 +174,6 @@ def test_the_probe_only_observes(settings, monkeypatch):
     for forbidden in ('SSHClient.start', '.stop(', 'restart(', 'warm_remote_session', 'ensure_ready', 'session.lock',
                       'virtuoso-bridge", "st', "'status'], ", 'shell=True'):
         assert forbidden not in source, forbidden
-
-
-# ------------------------------------------------------------------------------- monitor (probe process)
-def fake_probe(tmp_path, body):
-    script = tmp_path / 'fake_probe.py'
-    script.write_text('import sys, json, time, os\n' + body)
-    return [sys.executable, str(script)]
-
-
-def layers_json(**overrides):
-    return [dict(layer=n, state=overrides.get(n, 'ok'), reason_code=None, diagnostic=None, details={}) for n in LAYERS]
-
-
-def monitor_for(tmp_path, body, **kwargs):
-    return ConnectionMonitor(probe_command=fake_probe(tmp_path, body), **kwargs)
-
-
-OK_BODY = f'print(json.dumps(dict(layers={layers_json()!r})))'
 
 
 def test_status_is_unknown_before_the_first_check_and_when_stale(tmp_path):

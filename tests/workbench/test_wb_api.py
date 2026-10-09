@@ -12,41 +12,24 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import bridge_read, tasks
-from gator_workbench.api import create_app
 from gator_workbench.api.app import attachment, file_snapshot
 from gator_workbench.connection import ConnectionMonitor, LAYERS
 from gator_workbench.storage.dataset import DatasetReader
 from gator_workbench.storage.tables import TABLES
-from helpers import make_config
+from helpers import make_config, workbench_app
+from helpers import probe, wait_for
 
 REPO = Path(__file__).resolve().parents[2]
 
 
-def probe(tmp_path, **states):
-    layers = [dict(layer=n, state=states.get(n, 'ok'), reason_code=None, diagnostic=None, details={}) for n in LAYERS]
-    script = tmp_path / 'probe.py'
-    script.write_text(f'import json\nprint(json.dumps(dict(layers={layers!r})))\n')
-    return ConnectionMonitor(probe_command=[sys.executable, str(script)])
-
-
 @pytest.fixture
 def client(tmp_path):
-    app = create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path))
+    app = workbench_app(tmp_path, monitor=probe(tmp_path), auto_check_on_start=True)
     return TestClient(app)
 
 
 def config_json(tmp_path, **kwargs):
     return make_config(tmp_path, **kwargs).model_dump(mode='json')
-
-
-def wait_for(client, run_dir, states=('completed', 'failed', 'paused', 'stopped', 'cancelled'), timeout=180):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        status = client.get('/api/runs/status', params=dict(run_dir=run_dir)).json()
-        if status.get('state') in states and not status.get('worker_alive'):
-            return status
-        time.sleep(0.3)
-    raise AssertionError(f'run did not finish: {status}')
 
 
 # ------------------------------------------------------------------------------- schema / config
@@ -289,9 +272,8 @@ def test_connection_endpoints_accept_only_a_profile_identifier(client):
 
 
 def test_native_reads_are_gated_and_a_real_snapshot_is_summarised(tmp_path):
-    down = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False,
-                                 monitor=probe(tmp_path, bridge_package='failed', connection_profile='not_checked',
-                                               tunnel='not_checked', daemon='not_checked')))
+    down = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path, bridge_package='failed', connection_profile='not_checked',
+                                               tunnel='not_checked', daemon='not_checked'), auto_check_on_start=True))
     blocked = down.post('/api/virtuoso/libraries', json=dict(profile_id='lab'))
     assert blocked.status_code == 409 and blocked.json()['detail']['gate']['blocking'] == ['bridge_package']
     # offline work keeps working while the bridge is down
@@ -323,8 +305,7 @@ def test_cells_of_a_library_are_listed_with_their_views(tmp_path):
     for bad in (None, 'a"b', 'lib) ddDeleteObj(x'):                                   # nothing but a plain name reaches the SKILL text
         with pytest.raises(ValueError):
             bridge_read.read(probe(tmp_path), 'lab', 'cells', library=bad, command=[sys.executable, str(fake)])
-    down = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False,
-                                 monitor=probe(tmp_path, tunnel='failed', daemon='not_checked')))
+    down = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path, tunnel='failed', daemon='not_checked')))
     blocked = down.post('/api/virtuoso/cells', json=dict(profile_id='lab', library='GATOR_TESTS'))
     assert blocked.status_code == 409 and blocked.json()['detail']['gate']['blocking'] == ['tunnel']
 
@@ -335,7 +316,7 @@ def test_automatic_checks_are_cheap_only_at_start_and_on_profile_change(tmp_path
     settings_dir.mkdir(parents=True, exist_ok=True)
     (settings_dir / 'bridge_connection.json').write_text(json.dumps(dict(active='lab', profiles=dict(lab=dict(env_file='/x/.env')))))
     monitor = probe(tmp_path)
-    app = create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=monitor)
+    app = workbench_app(tmp_path, monitor=monitor, auto_check_on_start=True)
     app.state.auto_check_thread.join(timeout=60)
     started = monitor.status('lab')                       # backend start: one automatic check of the active profile
     assert started['trigger'] == 'auto' and started['scope'] == 'cheap' and monitor.probes_started == 1
@@ -346,13 +327,12 @@ def test_automatic_checks_are_cheap_only_at_start_and_on_profile_change(tmp_path
         assert http.post('/api/connection/check', json=dict(profile_id='lab', scope=scope, trigger='auto')).status_code == 422
     assert http.post('/api/connection/check', json=dict(profile_id='lab', scope='cheap', trigger='gate')).status_code == 422
     assert connection_module.public_profiles()['profiles'][0]['settings_present'] == ['env_file']     # presence only, no values
-    quiet = create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path), auto_check_on_start=False)
+    quiet = workbench_app(tmp_path, monitor=probe(tmp_path))
     assert not hasattr(quiet.state, 'auto_check_thread')
 
 
 def test_staleness_limit_is_configurable(tmp_path):
-    app = create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False,
-                     connection_stale_seconds=7.5)
+    app = workbench_app(tmp_path, connection_stale_seconds=7.5)
     assert app.state.monitor.stale_after_seconds == 7.5
 
 

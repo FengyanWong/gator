@@ -7,7 +7,7 @@ import pytest
 
 from analog_optimizer.backends.backend import SimulationStatus as Status
 from analog_optimizer.envs.sizing import CircuitSizingEnv
-from tests.reward_v21_support import NOMINAL, ScriptedRealBackend, specs
+from reward_v21_support import NOMINAL, reset, ScriptedRealBackend, specs
 
 FAILED = (Status.BACKEND_ERROR, False, {'score': None, 'other': None}, {'score': False, 'other': False},
           {'score': 'fixture', 'other': 'fixture'})
@@ -17,11 +17,6 @@ ABSENT = {'record', 'receipt', 'eval_id', 'record_path', 'candidate_id', 'job_id
 def env_for(graph, directory):
     backend = ScriptedRealBackend(graph, nominal_pass=True)
     return CircuitSizingEnv(backend, backend.graph, specs(), directory, max_steps=2, stop_on_success=False)
-
-
-def reset(env):
-    env.authorize_launches(1)
-    return env.reset()
 
 
 def step(env):

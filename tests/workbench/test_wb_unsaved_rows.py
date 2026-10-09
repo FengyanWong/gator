@@ -5,11 +5,10 @@ processes and the recorded ring-oscillator export only - no Virtuoso, no simulat
 from fastapi.testclient import TestClient
 
 from gator_workbench import schema, tasks
-from gator_workbench.api import create_app
 from gator_workbench.validation import validate
-from helpers import MOCK_TASK, bridge_is_importable, roots_for  # noqa: F401 - an imported fixture belongs to this module
-from test_wb_api import probe
-from test_wb_consistency import saved_ring
+from helpers import bridge_is_importable, MOCK_TASK, roots_for, workbench_app   # noqa: F401 - an imported fixture belongs to this module
+from helpers import probe
+from task_save_support import saved_ring
 
 SAME = dict(added=[], removed=[], changed={}, reordered=False)
 
@@ -61,7 +60,7 @@ def test_rows_are_marked_in_every_run_mode_and_only_for_a_saved_task(tmp_path):
 
 def test_the_page_gets_them_with_its_validation(tmp_path):
     cfg = saved_ring(tmp_path)
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path), auto_check_on_start=True))
     edited = cfg.model_copy(deep=True)
     edited.targets[0].lower = 1.3e9
     answer = client.post('/api/config/validate', json=dict(config=edited.model_dump(mode='json'))).json()

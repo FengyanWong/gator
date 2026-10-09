@@ -19,16 +19,9 @@ from analog_optimizer.models import ENCODER_TYPES, ModelConfig
 from analog_optimizer.models.inputs import context_features
 from analog_optimizer.training.replay import ReplayBuffer, Transition
 from analog_optimizer.training.sac import SACLearner
+from research_support import cpu
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-@pytest.fixture(autouse=True)
-def cpu():
-    old = torch.get_num_threads()
-    torch.set_num_threads(1)
-    yield
-    torch.set_num_threads(old)
 
 
 @pytest.fixture

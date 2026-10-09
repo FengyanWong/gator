@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import units
-from gator_workbench.api import create_app
+from helpers import workbench_app
 
 CASES = [  # stored number, the row's unit, as it is written
     (4.5e-7, 'm', '450 nm'), (0.6, 'um', '600 nm'), (1.205, 'um', '1.205 um'), (0.045, 'um', '45 nm'), (20.0, 'um', '20 um'),
@@ -30,7 +30,7 @@ def test_what_is_not_a_number_or_not_a_known_unit_stays_as_it_is():
 
 
 def test_the_page_gets_the_same_table_with_the_schema(tmp_path):
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False))
+    client = TestClient(workbench_app(tmp_path, auto_check_on_start=True))
     forms = client.get('/api/schema').json()['unit_forms']
     assert forms['spellings']['um'] == ['m', 1e-6, 0.0] and forms['spellings']['kΩ'] == ['ohm', 1e3, 0.0]
     assert 'Hz' in forms['prefixable'] and 'dB' not in forms['prefixable'] and forms['symbols']['Ω'] == 'ohm'

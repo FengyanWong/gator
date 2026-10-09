@@ -7,9 +7,8 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from gator_workbench import runs, schema
-from gator_workbench.api import create_app
 
-from helpers import execute, make_config, roots_for
+from helpers import execute, make_config, roots_for, workbench_app
 
 
 def test_the_label_is_typed_or_the_task_run_label():
@@ -54,7 +53,7 @@ def test_a_baseline_leaves_the_label_alone(tmp_path):
 
 def test_the_default_model_follows_the_label_then_the_old_project_name(tmp_path):
     layout, _ = execute(make_config(tmp_path, run=dict(model_label='label-default')), tmp_path)
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False))
+    client = TestClient(workbench_app(tmp_path))
     found = client.get('/api/runs/default-model', params=dict(label='label-default')).json()
     assert found['run_dir'] == str(layout.run_dir) and found['checkpoint_id'] == 'latest'
     # remembered under a project name before the label existed: asked when the label has none
@@ -120,7 +119,7 @@ def test_a_run_from_before_the_label_is_named_by_its_task_when_it_saved_a_model(
 def test_rename_a_saved_model(tmp_path):
     layout, _ = execute(make_config(tmp_path, run=dict(model_label='named')), tmp_path)
     other, _ = runs.prepare_run(make_config(tmp_path, run=dict(model_label='taken')), roots_for(tmp_path))
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False))
+    client = TestClient(workbench_app(tmp_path))
     rename = lambda run_dir, name: client.post('/api/runs/model/rename', json=dict(run_dir=run_dir, model_label=name))
     done = rename(str(layout.run_dir), '  gold  ')
     assert done.status_code == 200 and done.json() == dict(run_dir=str(layout.run_dir), model_label='gold', previous='named')

@@ -48,7 +48,7 @@ def test_a_statement_continued_on_the_next_line_goes_whole():
 
 
 def test_the_maestro_recipe_s_deck_leaves_them_out(tmp_path):
-    from test_wb_maestro_run import saved_maestro_task
+    from task_save_support import saved_maestro_task
     saved_maestro_task(tmp_path)
     profile = profiles.load_profile('ring_maestro')
     assert isinstance(profile, recipes.GenericMaestroProfile)

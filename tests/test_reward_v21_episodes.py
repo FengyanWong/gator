@@ -18,7 +18,7 @@ from analog_optimizer.training.parallel import collect_parallel_episodes
 from analog_optimizer.training.replay import ReplayBuffer, Transition
 from analog_optimizer.training.runner import collect_episode
 from analog_optimizer.training.sac import SACConfig, SACLearner
-from tests.reward_v21_support import NOMINAL, CORNERS, PLAN, ParallelFactory, environment, reset, step
+from reward_v21_support import NOMINAL, CORNERS, PLAN, ParallelFactory, environment, reset, step
 
 SCHEMA = SpecSchema(metrics=(('score', 'fixture', 1.), ('other', 'fixture', 1.)))
 

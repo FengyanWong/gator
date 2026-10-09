@@ -9,11 +9,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import checkpoints as ckpt, model_structure, modes, tasks
-from gator_workbench.api import create_app
 from gator_workbench.compile import compile_task
 from gator_workbench.engine import learner_experiment
 from gator_workbench.schema import task_definition_hash
-from helpers import SMALL_NET, ScriptedEnvFactory, execute, make_config
+from helpers import execute, make_config, ScriptedEnvFactory, SMALL_NET, workbench_app
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
 pytestmark = pytest.mark.xdist_group('test_wb_model_structure')
@@ -119,7 +118,7 @@ def test_types_are_never_guessed_and_a_changed_file_is_refused(saved, tmp_path, 
 
 def test_the_api_serves_the_table_for_a_chosen_save_point(saved):
     root, layout = saved
-    client = TestClient(create_app(extra_output_roots=[str(root)], serve_frontend=False, auto_check_on_start=False))
+    client = TestClient(workbench_app(root))
     point = ckpt.list_checkpoints(layout.run_dir)['checkpoints'][0]['checkpoint_id']
     response = client.post('/api/runs/model/structure', json=dict(run_dir=str(layout.run_dir), checkpoint_id=point))
     assert response.status_code == 200

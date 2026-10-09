@@ -11,9 +11,8 @@ from fastapi.testclient import TestClient
 
 from gator_workbench import schema, task_registry, tasks
 from gator_workbench.storage import read_json
-from gator_workbench.api import create_app
-from helpers import MOCK_TASK, execute, make_config, rows
-from test_wb_api import probe
+from helpers import execute, make_config, MOCK_TASK, rows, workbench_app
+from helpers import probe
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -70,7 +69,7 @@ def test_a_removed_mock_task_is_refused_with_a_plain_reason(removed, monkeypatch
 
 
 def test_a_configuration_saved_with_a_removed_task_says_why_it_is_blocked(tmp_path):
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path), auto_check_on_start=True))
     assert [t['task_key'] for t in client.get('/api/tasks').json()['tasks'] if t['kind'] == 'mock'] == [MOCK_TASK]
     loaded = client.post('/api/circuit/load', json=dict(circuit=dict(source='registered_task', task_id='synthetic:vco'))).json()
     assert loaded['loaded'] is False and loaded['blocker'].startswith('synthetic:vco no longer exists')

@@ -20,14 +20,7 @@ from analog_optimizer.models.graph_transformer import ModelConfig, GroupActor, G
 from analog_optimizer.models.inputs import batch_observations
 from analog_optimizer.training.replay import ReplayBuffer
 from analog_optimizer.training.sac import SACLearner
-
-
-@pytest.fixture(autouse=True)
-def cpu():
-    old = torch.get_num_threads()
-    torch.set_num_threads(1)
-    yield
-    torch.set_num_threads(old)
+from research_support import cpu
 
 
 def task(graph, name='train', partition='train', target=.99, transfer='specification'):

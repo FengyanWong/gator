@@ -23,53 +23,8 @@ from analog_optimizer.training.replay import ReplayBuffer, Transition
 from analog_optimizer.training.sac import SACLearner
 
 
-ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE = ROOT / 'artifacts/local/m6-real-cross-category/eedb54fe59d642edaff93ba9def27649'
-
-
-def read(path):
-    return json.loads(Path(path).read_text())
-
-
-def recorded_observation(record):
-    assert record['origin'] == 'real' and record['status'] == 'ok'
-    saved = deepcopy(record['observation'])
-    data = saved.pop('graph')
-    data['devices'] = [Device(**dict(d, terminals=tuple(d['terminals']), source=SourceSpan(**d['source']))) for d in data['devices']]
-    data['nets'] = [Net(**dict(n, roles=tuple(n['roles']))) for n in data['nets']]
-    data['connections'] = [Connection(**c) for c in data['connections']]
-    data['parameters'] = {d: {k: ParameterValue(**dict(v, source=SourceSpan(**v['source']))) for k, v in values.items()}
-                          for d, values in data['parameters'].items()}
-    data['parameter_groups'] = [ParameterGroup(**dict(g, members=tuple(ParameterBinding(**m) for m in g['members'])))
-                                for g in data['parameter_groups']]
-    data['diagnostics'] = [Diagnostic(**dict(d, source=SourceSpan(**d['source']))) for d in data['diagnostics']]
-    graph = CircuitGraph(**data)
-    condition = SimulationCondition.from_dict(saved.pop('condition'))
-    measurements = read(Path(record['artifact_directory']) / 'measurements.json')
-    assert measurements['origin'] == 'real' and measurements['job_id'] == record['job_id']
-    operating_points, unmatched = mapped_operating_points(graph, measurements.get('operating_points'))
-    row = ConditionResult(condition, saved['status'], record['candidate_evaluated'], saved['metrics'],
-                          saved['metric_units'], saved['metric_validity'], saved['job_id'], record['reason_code'],
-                          measurements.get('operating_points') or {})
-    saved['specs'] = tuple(MetricSpec(**s) for s in saved['specs'])
-    return Observation(graph=graph, condition=condition, **saved, condition_results=(row,),
-                       planned_conditions=(condition,), operating_points=operating_points,
-                       unmatched_operating_points=unmatched)
-
-
-@pytest.fixture(scope='module')
-def real_transition():
-    if not EVIDENCE.is_dir():
-        pytest.fail('Required local REAL evidence is unavailable; do not substitute a simulator mock')
-    report = read(EVIDENCE / 'opamp/report.json')
-    phase = next(p for p in report['phases'] if p['circuit_class'] == 'opamp')
-    before, after = (read(p) for p in phase['records'][:2])
-    first, last = recorded_observation(before), recorded_observation(after)
-    transition = Transition(first, after['proposal'], after['reward'], last, after['terminated'], after['truncated'],
-                            after['bootstrap'], {(p['device'], p['parameter']): p['value'] for p in after['applied_parameters']},
-                            after['candidate_id'], phase['records'][1])
-    transition.validate()
-    return transition
+from research_support import ROOT                                                  # the same folder as here
+from research_support import EVIDENCE, read, real_transition
 
 
 @pytest.mark.requires_evidence(EVIDENCE)

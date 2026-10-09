@@ -8,14 +8,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import bridge_read, profiles, tasks, working_copy, virtuoso_setup as vs
-from gator_workbench.api import create_app
-from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
-from test_wb_api import probe
-from test_wb_native_cells import fake_reader
-from test_wb_profiles import connection_file, read_cell
-from test_wb_task_save import config, copy_reader, maestro_netlister
-from test_wb_virtuoso_setup import SETUP, setup_writer
-from test_wb_working_copy import CELL, COPY, LIB, RING, TB, fake_writer, imported
+from helpers import bridge_is_importable, workbench_app   # noqa: F401 - an imported fixture belongs to this module
+from helpers import probe
+from fakes_virtuoso import fake_reader
+from ring_cell_support import connection_file, read_cell
+from task_save_support import config
+from fakes_virtuoso import copy_reader, maestro_netlister
+from fakes_virtuoso import SETUP, setup_writer
+from fakes_virtuoso import CELL, COPY, LIB, RING, TB, fake_writer, imported
 
 
 def test_the_cells_of_a_declared_copy_come_from_the_netlister_comments():
@@ -73,7 +73,7 @@ def test_the_import_route_declares_on_request_and_the_copy_route_refuses(tmp_pat
     real_read = bridge_read.read
     reader = fake_reader(tmp_path)
     monkeypatch.setattr(bridge_read, 'read', lambda monitor, profile_id, op, **kw: real_read(monitor, profile_id, op, command=reader, **kw))
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False, monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path)))
     body = dict(profile_id='lab', library='MY_LIB', cell='ota5_v1', testbench='tb_ota5_ac_v1')
     circuit = dict(source='virtuoso', library='MY_LIB', cell='ota5_v1', testbench_cell='tb_ota5_ac_v1')
     monkeypatch.setattr(working_copy, 'netlist_cells', lambda text, library: [dict(cell='ota5_v1', views=['schematic']), dict(cell='tb_ota5_ac_v1', views=['schematic'])])

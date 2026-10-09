@@ -9,9 +9,8 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from gator_workbench import compile as comp, schema, task_registry, tasks, validation
-from gator_workbench.api import create_app
-from helpers import MOCK_TASK
-from test_wb_api import probe
+from helpers import MOCK_TASK, workbench_app
+from helpers import probe
 
 SYNTHETIC = [f'synthetic:{name}' for name in sorted(task_registry.SYNTHETIC_FIXTURES)]
 OLD_IDS = ['input_pair_width__XU1/M2', 'mirror_pair_width__XU1/M4']
@@ -90,7 +89,7 @@ def test_other_rejections_read_plainly_too():
 
 
 def test_the_validation_endpoint_answers_a_rejection_field_by_field(tmp_path):
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path), auto_check_on_start=True))
     response = client.post('/api/config/validate', json=dict(config=dict(old_rows(), run=dict(max_evaluations=20))))
     assert response.status_code == 422
     detail = response.json()['detail']

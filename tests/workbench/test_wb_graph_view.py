@@ -9,11 +9,10 @@ import torch
 from fastapi.testclient import TestClient
 
 from gator_workbench import checkpoints as ckpt, graph_view, model_structure, tasks
-from gator_workbench.api import create_app
 from gator_workbench.engine import decode_action
 from gator_workbench.storage.dataset import map_to_dict
 from gator_workbench.trajectory import TrajectoryLoader
-from helpers import execute, make_config
+from helpers import execute, make_config, workbench_app
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
 pytestmark = pytest.mark.xdist_group('test_wb_graph_view')
@@ -151,7 +150,7 @@ def test_a_run_without_an_archive_and_a_changed_file_are_refused_in_plain_words(
 def test_the_api_serves_the_view_and_writes_nothing(transformer):
     root, _, layout = transformer
     before = sorted((p.relative_to(layout.run_dir).as_posix(), p.stat().st_mtime_ns) for p in layout.run_dir.rglob('*') if p.is_file())
-    client = TestClient(create_app(extra_output_roots=[str(root)], serve_frontend=False, auto_check_on_start=False))
+    client = TestClient(workbench_app(root))
     response = client.post('/api/runs/model/graph-view', json=dict(run_dir=str(layout.run_dir)))
     assert response.status_code == 200
     view = response.json()

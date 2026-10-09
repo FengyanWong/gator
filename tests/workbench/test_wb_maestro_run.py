@@ -13,8 +13,10 @@ from gator_workbench import ocean, profiles, recipes, schema, tasks, virtuoso_se
 from gator_workbench.spec_equations import SpecPlan
 from gator_workbench.validation import validate
 from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
-from test_wb_task_save import MAESTRO_HEAD, MAESTRO_TAIL, config as cell_config, maestro_netlister, ready, save
-from test_wb_virtuoso_setup import SETUP, setup_writer
+from task_save_support import config as cell_config, ready, save
+from fakes_virtuoso import MAESTRO_HEAD, MAESTRO_TAIL, maestro_netlister
+from fakes_virtuoso import SETUP, setup_writer
+from task_save_support import saved_maestro_task
 
 COMMAND = ('/opt/cadence/SPECTRE231/bin/spectre -64 /tmp/vb/15f61d39/input.scs +escchars +log /tmp/vb/15f61d39/spectre.out '
            '-format psfascii -raw /tmp/vb/15f61d39/input.raw +lqtimeout 900 -maxw 5 -maxn 5 +logstatus')
@@ -90,18 +92,6 @@ def test_maestro_s_deck_is_split_around_its_circuit():
         vs.split_deck(MAESTRO_HEAD + circuit + circuit + MAESTRO_TAIL, circuit)
     with pytest.raises(vs.SetupError, match='simulator line or its model include'):
         vs.split_deck('global 0\n' + circuit + MAESTRO_TAIL, circuit)
-
-
-def saved_maestro_task(tmp_path):
-    ready(tmp_path)
-    rows = vs.to_rows(SETUP)
-    answer = dict(exists=True, tests=['GATOR'], test='GATOR', model_files=[['/pdk/model.scs', 'tt']], analyses={'tran': {'stop': '50n'}},
-                  variables={}, bindings=[], outputs=SETUP['outputs'], specs=SETUP['specs'], raw_specs={})
-    save(tmp_path, name='ring_maestro', cfg=cell_config(probes=rows['measurements'], specs=rows['targets']),
-         extras=dict(analyses={'tran': {'stop': '50n'}}), commands=dict(setup=setup_writer(tmp_path, answer), deck=maestro_netlister(tmp_path)))
-    raw = tasks.starter_config('real:ring_maestro')
-    raw['run'] = dict(max_evaluations=3, connection_profile_id='lab')
-    return schema.WorkbenchConfig.model_validate(raw)
 
 
 def test_the_profile_runs_maestro_s_deck_around_the_export_and_measures_with_ocean(tmp_path, monkeypatch):

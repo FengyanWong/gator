@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from analog_optimizer.measurements.specs import MetricSpec, RewardSettings, SpecificationEvaluator, spec_margin
-from tests.reward_v21_support import NOMINAL, CORNERS, PLAN
+from reward_v21_support import NOMINAL, CORNERS, PLAN
 
 
 def row(values, condition=NOMINAL, status='ok', evaluated=True, **kwargs):

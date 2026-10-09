@@ -8,10 +8,9 @@ from fastapi.testclient import TestClient
 
 from gator_workbench import profiles, runs, tasks
 from gator_workbench.api import task_baseline
-from gator_workbench.api import create_app
 from gator_workbench.storage.atomic import read_json
-from helpers import make_config
-from test_wb_api import probe, wait_for
+from helpers import make_config, workbench_app
+from helpers import probe, wait_for
 
 
 def test_fixed_configuration_uses_saved_task_and_one_launch(tmp_path, monkeypatch):
@@ -35,7 +34,7 @@ def test_creation_starts_baseline_once_and_specs_only_update_does_not(tmp_path, 
     created = [True]
     monkeypatch.setattr(profiles, 'save_task', lambda *a, **k: dict(task_key='real:new_task', created=created[0],
         baseline_kept=not created[0], revision=1 if created[0] else 2, changed=[]))
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path), auto_check_on_start=True))
     raw = config.model_dump(mode='json')
     runs.save_settings(concurrency=4)
     raw['run'].update(mode='frozen', seed=99, concurrency=4, max_evaluations=10000, max_retries=9)
@@ -76,12 +75,12 @@ def test_ngspice_without_specs_checks_measurement_presence_only(tmp_path, monkey
 
 
 def test_new_ngspice_task_automatically_simulates_its_saved_start(tmp_path):
-    from test_wb_ngspice import NGSPICE, EXAMPLE, ngspice_probe, write_profiles
+    from fakes_connection import NGSPICE, EXAMPLE, ngspice_probe, write_profiles
     from gator_workbench.storage.dataset import DatasetReader
     if not NGSPICE:
         pytest.skip('ngspice is not installed')
     write_profiles(sim=dict(kind='ngspice_local', ngspice_bin=NGSPICE))
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=ngspice_probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=ngspice_probe(tmp_path), auto_check_on_start=True))
     response = client.post('/api/ngspice/task/save', json=dict(name='new_ota', text=EXAMPLE.read_text(),
         source_path=str(EXAMPLE), profile_id='sim', output_root=str(tmp_path)))
     assert response.status_code == 200, response.text

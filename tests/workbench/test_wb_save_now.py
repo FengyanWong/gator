@@ -8,10 +8,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import checkpoints as ckpt, runs
-from gator_workbench.api import create_app
 from gator_workbench.engine import RunLock
 from gator_workbench.storage import read_json, read_jsonl
-from helpers import execute, make_config, roots_for, run_prepared, summary
+from helpers import execute, make_config, roots_for, run_prepared, summary, workbench_app
 
 
 def send_after(layout, commands, evaluations, timeout=60):
@@ -116,7 +115,7 @@ def test_save_now_is_refused_with_the_reason_when_nothing_would_come_of_it(tmp_p
 
 def test_save_now_over_http_with_a_real_detached_worker(tmp_path):
     """The whole path of the button: API -> control file -> detached worker process -> status.json -> model list."""
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False))
+    client = TestClient(workbench_app(tmp_path))
     raw = make_config(tmp_path, threshold=1.5, run=dict(max_evaluations=2000, concurrency=2)).model_dump(mode='json')
     run_dir = client.post('/api/runs/start', json=dict(config=raw)).json()['run_dir']
 
@@ -150,7 +149,7 @@ def test_save_now_over_http_with_a_real_detached_worker(tmp_path):
 
 def test_the_api_accepts_the_command_and_answers_a_refusal_in_plain_words(tmp_path):
     finished, _ = execute(make_config(tmp_path, run=dict(max_evaluations=6)), tmp_path)
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False))
+    client = TestClient(workbench_app(tmp_path))
     response = client.post('/api/runs/command', json=dict(run_dir=str(finished.run_dir), command='checkpoint'))
     assert response.status_code == 409
     detail = response.json()['detail']

@@ -13,10 +13,9 @@ from fastapi.testclient import TestClient
 from analog_optimizer.backends.backend import SimulationStatus
 
 from gator_workbench import corner_check as cc
-from gator_workbench.api import create_app
 from gator_workbench.engine import RunLock
 from gator_workbench.storage.atomic import read_json, write_json
-from helpers import execute, make_config
+from helpers import execute, make_config, workbench_app
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
 pytestmark = pytest.mark.xdist_group('test_wb_corner_check')
@@ -184,7 +183,7 @@ def test_a_changed_plan_or_count_is_refused(finished):
 # ------------------------------------------------------------------------------------------------ HTTP + detached worker
 def test_api_plan_start_status_and_stop(finished):
     root, layout = finished
-    client = TestClient(create_app(extra_output_roots=[str(root)], serve_frontend=False, auto_check_on_start=False))
+    client = TestClient(workbench_app(root))
     run_dir = str(layout.run_dir)
     plan = client.get('/api/runs/corner-check/plan', params=dict(run_dir=run_dir, designs=2)).json()
     assert plan['supported'] and plan['simulations'] == 10

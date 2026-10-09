@@ -17,18 +17,13 @@ from gator_workbench import checkpoints as ckpt, layout as layout_module, paths,
 from gator_workbench.api import app as app_module
 from gator_workbench.storage import atomic, read_dict, read_json
 from helpers import execute, make_config, roots_for, workbench_app
+from helpers import edit_json
 
 
 def prepared(root, **kwargs):
     """A MOCK run as prepare_run leaves it for its worker: state `created`."""
     layout, manifest = runs.prepare_run(make_config(root, **kwargs), roots_for(root))
     return layout, manifest
-
-
-def edit_json(path, change):
-    value = json.loads(Path(path).read_text())
-    change(value)
-    Path(path).write_text(json.dumps(value))
 
 
 # ------------------------------------------------------------------------------- A3: a worker that fails at startup

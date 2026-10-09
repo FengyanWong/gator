@@ -6,22 +6,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import profiles, task_saving, virtuoso_setup as vs, working_copy
-from gator_workbench.api import create_app
-from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
-from test_wb_api import probe
-from test_wb_task_save import config, maestro_netlister, ready, save
-from test_wb_virtuoso_setup import SETUP, setup_writer
-from test_wb_working_copy import CELL, LIB
+from helpers import bridge_is_importable, workbench_app   # noqa: F401 - an imported fixture belongs to this module
+from helpers import probe
+from task_save_support import config, ready, save
+from fakes_virtuoso import maestro_netlister
+from fakes_virtuoso import SETUP, setup_writer
+from fakes_virtuoso import CELL, LIB
+from helpers import _no_save_yet
 
 MAESTRO_STEPS = ['setup', 'deck', 'read', 'files']
-
-
-@pytest.fixture(autouse=True)
-def _no_save_yet(monkeypatch):
-    """The module keeps the running save and the last one for the whole process: each test starts without either."""
-    monkeypatch.setattr(task_saving, '_running', None)
-    monkeypatch.setattr(task_saving, '_last', None)
-    monkeypatch.setattr(task_saving, '_took', {})
 
 
 def test_a_save_reports_each_step_as_it_starts_with_every_step_it_takes(tmp_path):
@@ -50,7 +43,7 @@ def test_a_maestro_task_reports_its_two_virtuoso_steps_first(tmp_path):
 
 
 def _client(tmp_path):
-    return TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
+    return TestClient(workbench_app(tmp_path, monitor=probe(tmp_path), auto_check_on_start=True))
 
 
 def _held_save(monkeypatch, *, revision=7):

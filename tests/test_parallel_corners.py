@@ -12,7 +12,7 @@ from analog_optimizer.backends.backend import SimulationStatus as Status
 from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
 from analog_optimizer.backends.native_preparation import NativeCandidateBackend
 from analog_optimizer.envs.sizing import CircuitSizingEnv
-from tests.reward_v21_support import NOMINAL, ScriptedRealBackend, specs
+from reward_v21_support import NOMINAL, ScriptedRealBackend, specs
 
 CORNERS = tuple(SimulationCondition(PVTCorner(f'corner_{i}', 'ss', 125., .9), purpose='pvt_training') for i in range(4))
 PLAN = (NOMINAL, *CORNERS)

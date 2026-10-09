@@ -13,21 +13,11 @@ import pytest
 
 from gator_workbench import checkpoints as ckpt, pdk, runs, schema, task_registry, tasks, validation
 from gator_workbench.storage import read_json
-from helpers import SMALL_NET, execute, make_config, roots_for, run_prepared
+from helpers import execute, make_config, roots_for, run_prepared, SMALL_NET, workbench_app
+from pdk_support import FIXTURE, raw_material
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
 pytestmark = pytest.mark.xdist_group('test_wb_pdk')
-
-FIXTURE = Path(__file__).parent / 'fixtures' / 'pdk_demo'
-MODEL_FILES = ('demo045.scs', 'demo045_mos.scs', 'demo045_passive.scs')
-
-
-def raw_material():
-    """What the reader process hands the backend (pdk.read_from_virtuoso), built from the fixture files."""
-    scans = [pdk.scan_model_text((FIXTURE / 'models' / name).read_text(), f'/pdk/demo045/models/{name}') for name in MODEL_FILES]
-    return dict(technology_library='demo045', cdf_text=(FIXTURE / 'cdf.txt').read_text(), scans=scans,
-                ideal=dict(library='analogLib', cdf_text=(FIXTURE / 'ideal.txt').read_text()),
-                sources=dict(model_files=[dict(path=f'/pdk/demo045/models/{n}', bytes=1, sha256='0' * 64) for n in MODEL_FILES]))
 
 
 def load_demo():
@@ -435,7 +425,7 @@ def test_the_api_lists_shows_and_loads_a_pdk(tmp_path, monkeypatch):
         calls.append((profile_id, op, kwargs))
         return pdk.describe(pdk.finish_load(raw_material()))
     monkeypatch.setattr(bridge_read, 'read', fake_read)
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False))
+    client = TestClient(workbench_app(tmp_path))
     assert client.get('/api/pdks').json()['pdks'] == []
     loaded = client.post('/api/pdks/load', json=dict(profile_id='lab', technology_library='demo045')).json()
     assert calls == [('lab', 'pdk', dict(library='demo045', model_file=None))]

@@ -139,7 +139,7 @@ def test_the_replay_checkpoint_bytes_do_not_depend_on_the_copy():
 
 def test_a_batch_keeps_its_own_source_metadata(opamp):
     from analog_optimizer.models.inputs import batch_observations
-    from test_graph_sac import observation
+    from research_support import observation
     opamp_observation = observation(opamp)
     batch = batch_observations([opamp_observation])
     metadata = batch.graph.graph_metadata[0]

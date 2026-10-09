@@ -8,9 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import runs
-from gator_workbench.api import create_app
 from gator_workbench.storage import read_json
-from helpers import MOCK_TASK, execute, make_config, roots_for
+from helpers import execute, make_config, MOCK_TASK, roots_for, workbench_app
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
 pytestmark = pytest.mark.xdist_group('test_wb_run_list')
@@ -110,7 +109,7 @@ def test_a_real_mock_run_is_listed_with_the_times_its_manifest_holds(finished):
 
 def test_the_api_serves_the_same_rows(finished):
     root, layout = finished
-    client = TestClient(create_app(extra_output_roots=[str(root)], serve_frontend=False, auto_check_on_start=False))
+    client = TestClient(workbench_app(root))
     row, = client.get('/api/runs', params=dict(output_root=str(root))).json()['runs']
     assert row == json.loads(json.dumps(runs.list_runs(roots_for(root), root)[0]))
     assert {'started_utc', 'ended_utc', 'last_seen_utc', 'active_seconds', 'paused_seconds', 'segments', 'task_key'} <= set(row)
@@ -128,7 +127,7 @@ def wait_for(client, run_dir, timeout=180):
 
 def test_a_detached_run_is_listed_while_it_works_after_a_pause_and_after_it_continued(tmp_path):
     """The three shapes of a row, from the real worker: an open segment, a pause, a second segment."""
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False))
+    client = TestClient(workbench_app(tmp_path))
     listed = lambda: client.get('/api/runs', params=dict(output_root=str(tmp_path))).json()['runs'][0]
     raw = make_config(tmp_path, threshold=1.5, run=dict(max_evaluations=400, concurrency=2)).model_dump(mode='json')
     run_dir = client.post('/api/runs/start', json=dict(config=raw)).json()['run_dir']

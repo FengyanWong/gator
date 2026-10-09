@@ -12,65 +12,7 @@ from analog_optimizer.backends.backend import (VirtuosoBackend, NetlistArtifact,
                                                SimulationStatus)
 from analog_optimizer.envs import CircuitSizingEnv
 from analog_optimizer.measurements.specs import MetricSpec
-
-
-class SyntheticSizingFixture(VirtuosoBackend):
-    def __init__(self, graph):
-        self.graph = deepcopy(graph)
-        self.initial = graph.assignments({g.id: g.value for g in graph.parameter_groups if g.mutable})
-        self.parameters = dict(self.initial)
-        self.status, self.evaluated, self.unit = SimulationStatus.OK, True, 'fixture'
-        self.valid, self.value_override = True, None
-        self.connected, self.calls, self.writes = False, 0, 0
-        self.exports = {}
-
-    def connect(self):
-        self.connected = True
-
-    def close(self):
-        self.connected = False
-
-    def restore(self):
-        self.parameters = dict(self.initial)
-
-    def read_parameters(self):
-        return dict(self.parameters)
-
-    def set_parameters(self, parameters):
-        self.writes += 1
-        self.parameters = dict(parameters)
-
-    def generate_netlist(self, work_root):
-        job_id = uuid4().hex
-        directory = work_root / job_id
-        directory.mkdir(parents=True)
-        path = directory / 'fixture.json'
-        path.write_text(json.dumps(sorted(self.parameters.items())))
-        self.exports[job_id] = dict(self.parameters)
-        return NetlistArtifact(path, job_id, hashlib.sha256(path.read_bytes()).hexdigest(), 'synthetic')
-
-    def get_circuit_graph(self, artifact):
-        graph, values = deepcopy(self.graph), self.exports[artifact.job_id]
-        for group_index, group in enumerate(graph.parameter_groups):
-            if not group.mutable:
-                continue
-            for member in group.members:
-                old = graph.parameters[member.device_id][member.parameter]
-                key = (member.device_id, old.source_name or member.parameter)
-                graph.parameters[member.device_id][member.parameter] = replace(old, value=values[key], raw=str(values[key]))
-            graph.parameter_groups[group_index] = replace(group, value=values[key] / member.ratio)
-        return graph
-
-    def run_simulation(self, request):
-        self.calls += 1
-        directory = request.work_root / uuid4().hex
-        directory.mkdir(parents=True)
-        value = next(iter(self.parameters.values())) / 1e-6
-        if self.value_override is not None:
-            value = self.value_override
-        return SimulationResult(directory.name, 'synthetic-sizing-fixture', 'synthetic', self.status,
-                                'injected_fixture', False, self.evaluated, {'score': value},
-                                {'score': self.unit}, {'score': self.valid}, dict(self.parameters), directory, 0.01)
+from research_support import SyntheticSizingFixture, environment
 
 
 @pytest.fixture
@@ -78,11 +20,6 @@ def fixture_backend(opamp):
     opamp.parameter_groups[0] = replace(opamp.parameter_groups[0], scale='linear')
     opamp.parameter_groups[1] = replace(opamp.parameter_groups[1], mutable=False)
     return SyntheticSizingFixture(opamp)
-
-
-def environment(backend, tmp_path, **kwargs):
-    return CircuitSizingEnv(backend, backend.graph, [MetricSpec('score', 'fixture', 'min', 1, lower=3)],
-                            tmp_path, expected_origin='synthetic', **kwargs)
 
 
 def test_reset_step_success_actual_graph_and_restoration(fixture_backend, tmp_path):

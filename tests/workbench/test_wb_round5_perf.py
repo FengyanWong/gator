@@ -168,7 +168,7 @@ def test_a_form_writer_task_saved_before_keeps_matching_its_rows_and_its_top_val
     # mapping and rules hold 5.6e-06 - its rows must still pass the check at Start, without saving it again.
     from analog_optimizer.envs.sizing import graph_contract
     from gator_workbench import profiles
-    from test_wb_cdf_write import config, make
+    from cdf_write_support import config, make
     entry = make(tmp_path)
     directory = Path(entry['directory'])
     mapping, rules = json.loads((directory / 'mapping.json').read_text()), json.loads((directory / 'rules.json').read_text())

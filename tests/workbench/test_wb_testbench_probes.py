@@ -9,10 +9,9 @@ import sys
 from fastapi.testclient import TestClient
 
 from gator_workbench import bridge_read, native_cells, profiles, recipes, schema, tasks
-from gator_workbench.api import create_app
-from test_wb_api import probe
+from helpers import probe, workbench_app
 from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
-from test_wb_profiles import CIRCUIT, FIXTURE, config, connection_file, read_cell
+from ring_cell_support import CIRCUIT, FIXTURE, config, connection_file, read_cell
 
 REPO = Path(__file__).resolve().parents[2]
 RING_SIGNALS = dict(m_osc_frequency_hz='OUT', m_supply_power_w='V0:p', m_supply_current_a='V0:p', m_osc_minimum_swing_v='OUT XU1.N1 XU1.N2',
@@ -96,7 +95,7 @@ def test_a_testbench_without_the_cell_says_so(tmp_path):
 
 def test_the_circuit_load_answers_the_probes_of_the_copy_and_they_validate(tmp_path):
     read_cell(tmp_path)
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False, monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path)))
     loaded = client.post('/api/circuit/load', json=dict(circuit=CIRCUIT)).json()
     assert loaded['native_draft'] and loaded['circuit']['testbench_cell'] == 'tb_ring_osc_3stage'
     assert loaded['testbench_probes'] == json.loads(json.dumps(profiles.testbench_probes(ring_import())))

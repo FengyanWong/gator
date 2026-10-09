@@ -20,6 +20,7 @@ from analog_optimizer.models.graph_transformer import ModelConfig, GroupActor, G
 from analog_optimizer.training.replay import Transition, ReplayBuffer
 from analog_optimizer.training.sac import SACLearner, SACConfig, temperature_loss
 from analog_optimizer.training.runner import collect_episode
+from research_support import observation
 
 MODEL = ModelConfig(hidden_dim=16, heads=2, layers=2)
 EXPERIMENT = {'origin': 'synthetic', 'split': 'training-fixture', 'designs': ['opamp-v1', 'ldo-v1']}
@@ -34,11 +35,6 @@ def deterministic_cpu():
     yield
     torch.set_num_threads(threads)
     torch.set_rng_state(rng)
-
-
-def observation(graph, *, steps=4):
-    return Observation(deepcopy(graph), (MetricSpec('score', 'fixture', 'min', 1, lower=.95),),
-                       {'score': .6}, {'score': True}, {'score': 'fixture'}, 'ok', 'synthetic', steps, 'fixture')
 
 
 @pytest.fixture

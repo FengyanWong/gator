@@ -6,19 +6,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import consistency, profiles, schema, task_saving, tasks
-from gator_workbench.api import create_app
-from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
-from test_wb_api import probe
-from test_wb_task_save import FREQUENCY_PROBE, FREQUENCY_SPEC, config, copy_reader, ready, save
+from helpers import _no_save_yet, bridge_is_importable, workbench_app   # noqa: F401 - an imported fixture belongs to this module
+from helpers import probe
+from task_save_support import FREQUENCY_PROBE, FREQUENCY_SPEC, config, ready, save
+from fakes_virtuoso import copy_reader
 
 LOOSE = dict(FREQUENCY_SPEC, normalization_scale=2e8)          # what revision 2 saves: another Scale
-
-
-@pytest.fixture(autouse=True)
-def _no_save_yet(monkeypatch):
-    monkeypatch.setattr(task_saving, '_running', None)
-    monkeypatch.setattr(task_saving, '_last', None)
-    monkeypatch.setattr(task_saving, '_took', {})
 
 
 def two_revisions(tmp_path):
@@ -100,7 +93,7 @@ def test_save_task_refuses_older_rows_before_any_step_until_the_user_says_save_a
 
 def test_the_page_is_asked_and_told_through_the_routes(tmp_path, monkeypatch):
     two_revisions(tmp_path)
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path), auto_check_on_start=True))
     real = profiles.save_task
     monkeypatch.setattr(profiles, 'save_task', lambda *a, **k: real(*a, **dict(k, commands=dict(read=copy_reader(tmp_path)))))
     old = page().model_dump(mode='json')

@@ -8,11 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import baseline_reference, calibration, profiles, runs
-from gator_workbench.api import create_app
 from gator_workbench.storage import read_json
 from gator_workbench.storage.atomic import write_json
-from helpers import make_config, roots_for, rows, run_prepared, summary
-from test_wb_api import probe, wait_for
+from helpers import make_config, roots_for, rows, run_prepared, summary, workbench_app
+from helpers import probe, wait_for
 
 COMPRESSED = dict(violation_shape='compressed', worst_spec_share=0.5)
 
@@ -301,7 +300,7 @@ def test_a_stopped_calibration_run_can_still_give_the_reference(tmp_path, monkey
 # ------------------------------------------------------------------------------- the routes
 @pytest.fixture
 def client(tmp_path):
-    return TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=probe(tmp_path)))
+    return TestClient(workbench_app(tmp_path, monitor=probe(tmp_path), auto_check_on_start=True))
 
 
 def test_the_start_route_takes_the_calibration_with_the_baseline_only(client, tmp_path):

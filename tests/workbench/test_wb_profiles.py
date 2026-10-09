@@ -12,52 +12,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import bridge_read, native_cells, profiles, recipes, schema, tasks
-from gator_workbench.api import create_app
 from gator_workbench.paths import bridge_state_dir, local_settings_dir
 from gator_workbench.storage.atomic import sha256_file
-from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
-from test_wb_api import probe
-
-FIXTURE = Path(__file__).parent / 'fixtures' / 'ring_osc'
-CIRCUIT = dict(source='virtuoso', library='GPDK045_RINGOSC', cell='ring_osc_3stage', testbench_cell='tb_ring_osc_3stage', circuit_class='vco')
-
-
-def fake_reader(tmp_path, *, testbench=True):
-    script = tmp_path / 'ring_reader.py'
-    script.write_text(f'''
-import json, shutil, sys
-from pathlib import Path
-args = dict(zip(sys.argv[1::2], sys.argv[2::2]))
-out = Path(args['--output']); out.mkdir(parents=True)
-for name in ('netlist.scs', 'core_readback.json') + (('testbench_readback.json',) if {testbench!r} else ()):
-    shutil.copy(Path({str(FIXTURE)!r}) / name, out / name)
-print(json.dumps(dict(library=args['--library'], cell=args['--cell'], testbench_cell=args.get('--testbench'), technology_library='gpdk045')))
-''')
-    return [sys.executable, str(script)]
-
-
-def read_cell(tmp_path, testbench='tb_ring_osc_3stage'):
-    return bridge_read.read(probe(tmp_path), 'lab', 'import_cell', library='GPDK045_RINGOSC', cell='ring_osc_3stage',
-                            testbench=testbench, command=fake_reader(tmp_path, testbench=bool(testbench)))
-
-
-def row(variable_id, instance, lower=None, upper=None, leader=None, **more):
-    return dict(dict(variable_id=variable_id, instance_path=instance, parameter_name='w', unit='um', optimized=True, lower=lower,
-                     upper=upper, binding_group=leader, ratio=1.0), **more)
-
-
-ROWS = [row('wn', 'XU1/MN1', 0.6, 1.6), row('wn2', 'XU1/MN2', leader='wn'), row('wn3', 'XU1/MN3', leader='wn'),
-        row('wp', 'XU1/MP1', 1.2003, 3.2), row('wp2', 'XU1/MP2', leader='wp'), row('wp3', 'XU1/MP3', leader='wp')]
-
-
-def config(rows=ROWS, **circuit):
-    return schema.WorkbenchConfig.model_validate(dict(circuit=dict(CIRCUIT, **circuit), parameters=rows, run=dict(max_evaluations=5)))
-
-
-def connection_file():
-    target = local_settings_dir() / 'bridge_connection.json'
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(dict(active='lab', profiles=dict(lab=dict(env_file='/x/.env', library='GATOR_TESTS', model_file='/pdk/model.scs')))))
+from helpers import bridge_is_importable, workbench_app   # noqa: F401 - an imported fixture belongs to this module
+from helpers import probe
+from ring_cell_support import CIRCUIT, ROWS, config, connection_file, read_cell, row
 
 
 def test_the_ring_oscillator_becomes_a_registered_real_task(tmp_path):
@@ -165,7 +124,7 @@ def test_preconditions_names_and_duplicates(tmp_path):
 def test_a_created_profile_makes_the_cell_a_registered_task_over_the_api(tmp_path):
     read_cell(tmp_path)
     connection_file()
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False, monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path)))
     before = client.post('/api/circuit/load', json=dict(circuit=CIRCUIT)).json()
     assert before['native_draft'] and before['profile_task'] is None and 'profile_recipes' not in before
     # The Create profile form went in 7.57 and its route on 2026-09-22 (the page saves tasks); create_profile stays the
@@ -224,8 +183,7 @@ def test_the_no_simulation_check_is_gated_and_reports_the_step_that_failed(tmp_p
     assert bridge_state_dir().is_dir() and bridge_state_dir().is_relative_to(tmp_path), outcome   # failed once under load: say why
     assert outcome['ok'] is False and outcome['simulated'] is False and outcome['steps'][0] == dict(step='profile', ok=True, detail=profile_preflight.MEANING['profile'])
     assert outcome['steps'][1]['step'] == 'connect' and outcome['steps'][1]['ok'] is False
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False,
-                                   monitor=probe(tmp_path, tunnel='failed', daemon='not_checked', session_readiness='not_checked')))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path, tunnel='failed', daemon='not_checked', session_readiness='not_checked')))
     # "Check against Virtuoso" became a part of the check before every run (consistency.py): its own route is gone
     assert client.post('/api/virtuoso/profile/preflight', json=dict(name='ring_osc_3stage', profile_id='lab')).status_code in (404, 405)
     from gator_workbench import runs
@@ -337,7 +295,7 @@ def test_a_cell_of_a_built_in_circuit_is_said_to_have_its_registered_task(tmp_pa
     assert profiles.task_for_cell('GATOR_TESTS', 'ota5_v1')['task_key'] == 'real:gpdk045_ota5'
     assert profiles.task_for_cell('MY_COPIES', 'vco_m6_v1') is None               # the same name in another library is another cell
     assert profiles.task_for_cell('GATOR_TESTS', 'ring_osc_3stage') is None and profiles.task_for_cell('GATOR_TESTS', None) is None
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False, monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path)))
     shown = client.post('/api/circuit/load', json=dict(circuit=dict(source='virtuoso', library='GATOR_TESTS', cell='vco_m6_v1'))).json()
     assert shown['loaded'] is False and shown['profile_task'] == 'real:gpdk045_vco' and shown['profile_task_generated'] is False
     # ... and Create profile refuses it, whatever was read: the ring oscillator stands in for such a cell here
@@ -397,7 +355,7 @@ def test_a_generated_profile_is_deleted_by_moving_it_aside(tmp_path):
 def test_the_api_deletes_a_generated_profile_and_the_cell_offers_a_new_one(tmp_path):
     read_cell(tmp_path)
     connection_file()
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False, monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path)))
     profiles.create_profile('ring_osc_3stage', config(), recipe='ring_oscillator', expected_frequency_hz=1.2e9)
     shown = client.post('/api/circuit/load', json=dict(circuit=CIRCUIT)).json()
     assert shown['profile_task'] == 'real:ring_osc_3stage' and shown['profile_task_generated'] is True
@@ -520,7 +478,7 @@ def test_a_baseline_made_before_is_adopted_when_the_task_is_loaded(tmp_path, mon
     baseline_run(tmp_path, monkeypatch, other, run_id='other', task_key='real:gpdk045_ota7', created='2026-09-24T11:00:00+00:00')
     _, reads = baseline_run(tmp_path, monkeypatch, newest, run_id='newest', created='2026-09-23T22:45:18+00:00')
     (out / 'mock' / 'experiment__m' / 'runs' / 'x' / 'y').mkdir(parents=True)
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False, monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path)))
     registered = dict(circuit=dict(source='registered_task', task_id='real:ring_osc_3stage'))
     assert client.post('/api/circuit/load', json=registered).json()['baseline_recorded'] is False and not reads      # nothing remembered: no scan
     runs.save_settings(output_root=str(out))

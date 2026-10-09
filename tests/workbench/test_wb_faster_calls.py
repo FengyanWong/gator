@@ -18,7 +18,7 @@ from gator_workbench import baseline_reference, checkpoints as ckpt, pdk, profil
 from gator_workbench.api import support
 from gator_workbench.storage.atomic import write_json
 from helpers import roots_for, workbench_app
-from test_wb_connection import OK_BODY, monitor_for
+from fakes_connection import OK_BODY, monitor_for
 
 PDK_FIXTURE = Path(__file__).parent / 'fixtures' / 'pdk_demo'
 MODEL = '/pdk/demo045/models/demo045.scs'

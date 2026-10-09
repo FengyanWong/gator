@@ -10,7 +10,7 @@ from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
 from analog_optimizer.envs import CircuitSizingEnv
 from analog_optimizer.measurements.specs import MetricSpec
 from analog_optimizer.models.inputs import SpecSchema
-from tests.test_sizing_env import SyntheticSizingFixture, environment
+from research_support import SyntheticSizingFixture, environment
 
 NOMINAL = SimulationCondition(PVTCorner('nominal', 'tt', 27.0, 1.0))
 

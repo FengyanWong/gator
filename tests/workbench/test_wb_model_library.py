@@ -246,7 +246,7 @@ LIBRARY = dict(model_file='/pdk/model.scs', sections=dict(tt=['include "/pdk/mos
 
 
 def test_a_maestro_deck_takes_the_run_s_library(tmp_path):
-    from test_wb_maestro_run import saved_maestro_task
+    from task_save_support import saved_maestro_task
     saved_maestro_task(tmp_path)
     maestro = profiles.load_profile('ring_maestro')
     whole = maestro.build_deck('XU1 (OUT VDD 0) ring_osc_3stage\n', '/pdk/model.scs', 'tt')
@@ -258,7 +258,7 @@ def test_a_maestro_deck_takes_the_run_s_library(tmp_path):
 
 
 def test_the_ring_and_adapter_decks_take_the_run_s_library(tmp_path):
-    from test_wb_profiles import config as ring_config, read_cell
+    from ring_cell_support import config as ring_config, read_cell
     from analog_optimizer.backends.virtuoso_bridge import build_deck
     read_cell(tmp_path)
     profiles.create_profile('ring_osc_3stage', ring_config(), recipe='ring_oscillator', expected_frequency_hz=1.2e9)

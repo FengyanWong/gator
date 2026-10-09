@@ -11,11 +11,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import tasks
-from gator_workbench.api import create_app
 from gator_workbench.storage import read_json
-from helpers import execute, make_config
-from test_wb_api import probe
-from test_wb_profiles import CIRCUIT, config, connection_file, read_cell
+from helpers import execute, make_config, workbench_app
+from helpers import probe
+from ring_cell_support import CIRCUIT, config, connection_file, read_cell
 
 
 def test_a_cell_read_from_virtuoso_is_validated_the_same_way_everywhere(tmp_path, monkeypatch):
@@ -24,8 +23,7 @@ def test_a_cell_read_from_virtuoso_is_validated_the_same_way_everywhere(tmp_path
     monkeypatch.setattr(tasks, 'bridge_importable', lambda: True)
     read_cell(tmp_path)
     connection_file()
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False,
-                                   monitor=probe(tmp_path)))
+    client = TestClient(workbench_app(tmp_path, monitor=probe(tmp_path)))
     loaded = client.post('/api/circuit/load', json=dict(circuit=CIRCUIT)).json()
     assert loaded['native_draft'] and loaded['testbench_probes']['rows']
     raw = config().model_dump(mode='json')

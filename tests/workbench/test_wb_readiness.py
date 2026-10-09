@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from gator_workbench import readiness
 from gator_workbench.api.app import create_app
-from helpers import make_config
+from helpers import make_config, workbench_app
 
 
 def task(mock=True, devices=7):
@@ -116,7 +116,7 @@ def test_an_unreadable_circuit_is_the_first_thing_missing(tmp_path):
 
 # ------------------------------------------------------------------------------- over HTTP
 def test_the_checklist_is_free_and_computed_by_the_backend(tmp_path):
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False))
+    client = TestClient(workbench_app(tmp_path))
     config = complete(tmp_path)
     ready = client.post('/api/agent/readiness', json=dict(config=config)).json()
     assert ready['ready'] and 'No model was called' in ready['note'] and set(ready) == {'ready', 'next', 'items', 'note'}

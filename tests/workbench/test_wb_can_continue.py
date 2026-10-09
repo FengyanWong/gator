@@ -7,8 +7,7 @@ import shutil
 from fastapi.testclient import TestClient
 
 from gator_workbench import runs
-from gator_workbench.api import create_app
-from helpers import roots_for
+from helpers import roots_for, workbench_app
 
 POINT = 'ckpt-000800-final'
 
@@ -64,7 +63,7 @@ def test_no_summary_and_none_stay_as_they_are(tmp_path):
 def test_the_status_answer_names_the_save_point_continue_would_use(tmp_path):
     whole = fabricate(tmp_path, 'scratch__seed0__aaaaaaaaaaaa', state='stopped')
     copy = fabricate(tmp_path, 'scratch__seed0__cccccccccccc', save=False, state='stopped')
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False))
+    client = TestClient(workbench_app(tmp_path))
     status = lambda run: client.get('/api/runs/status', params=dict(run_dir=str(run))).json()
     assert status(whole)['save_point'] == POINT and status(copy)['save_point'] is None
     listed = {row['run_id']: row['resumability'] for row in client.get('/api/runs', params=dict(output_root=str(tmp_path))).json()['runs']}
@@ -85,6 +84,6 @@ def test_a_save_point_of_older_optimizer_code_reads_model_only(tmp_path):
     assert rows(tmp_path) == {'aaaaaaaaaaaa': 'full_state', 'bbbbbbbbbbbb': 'weights_only', 'cccccccccccc': 'none'}
     assert runs.save_point_code(current) == 'current' and runs.save_point_code(older) == 'older'
     assert runs.save_point_code(copy) is None
-    client = TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False))
+    client = TestClient(workbench_app(tmp_path))
     status = lambda run: client.get('/api/runs/status', params=dict(run_dir=str(run))).json()
     assert [status(run)['save_point_code'] for run in (current, older, copy)] == ['current', 'older', None]

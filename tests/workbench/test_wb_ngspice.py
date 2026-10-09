@@ -19,11 +19,9 @@ from gator_workbench.connection import NGSPICE_LAYERS, ConnectionMonitor
 from gator_workbench.ngspice_backend import NgspiceBackend, NgspiceLink
 from gator_workbench.storage import DatasetReader, read_json
 from gator_workbench.storage.atomic import write_json
-from helpers import roots_for
+from helpers import roots_for, workbench_app
+from fakes_connection import EXAMPLE, NGSPICE, REPO, ngspice_probe, write_profiles
 
-REPO = Path(__file__).resolve().parents[2]
-EXAMPLE = REPO / 'examples/circuits/ngspice_ota5_level1.cir'
-NGSPICE = shutil.which('ngspice')
 
 DECK = '''* a divider with a sized load in a subcircuit used once
 .param rl=2k
@@ -49,18 +47,6 @@ ugf_hz              =  2.86474e+07
 vout_v = 1.178058e+00
 ngspice-47 done
 '''
-
-
-def ngspice_probe(tmp_path, **states):
-    """A probe process that answers the four ngspice layers (ok unless stated)."""
-    layers = [dict(layer=n, state=states.get(n, 'ok'), reason_code=None, diagnostic=None, details={}) for n in NGSPICE_LAYERS]
-    script = tmp_path / 'probe.py'
-    script.write_text(f'import json\nprint(json.dumps(dict(layers={layers!r})))\n')
-    return ConnectionMonitor(probe_command=[sys.executable, str(script)])
-
-
-def write_profiles(**profiles):
-    write_json(connection.connection_file(), dict(active=next(iter(profiles)), profiles=profiles))
 
 
 def circuit(task_key):
@@ -347,7 +333,7 @@ def test_a_run_needs_an_authorization_and_a_connection_of_the_right_family(tmp_p
 
 def test_a_virtuoso_task_on_an_ngspice_connection_is_refused_before_anything_is_probed(tmp_path):
     """Shown with the built-in OTA7 until it was removed (record 7.128): a task saved from a cell is refused the same way."""
-    from test_wb_cdf_write import make
+    from cdf_write_support import make
     make(tmp_path)
     write_profiles(lab=dict(env_file='/x/.env'), sim=dict(kind='ngspice_local'))
     monitor = ngspice_probe(tmp_path)
@@ -362,7 +348,7 @@ def test_a_virtuoso_task_on_an_ngspice_connection_is_refused_before_anything_is_
 # ------------------------------------------------------------------------------- the routes
 @pytest.fixture
 def client(tmp_path):
-    return TestClient(create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, monitor=ngspice_probe(tmp_path)))
+    return TestClient(workbench_app(tmp_path, monitor=ngspice_probe(tmp_path), auto_check_on_start=True))
 
 
 def test_the_routes_read_check_save_load_and_delete(client, tmp_path):

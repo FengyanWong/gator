@@ -33,6 +33,11 @@ from gator_workbench import runs, schema, task_registry, tasks
 from gator_workbench.engine import RunEngine
 from gator_workbench.paths import OutputRoots
 from gator_workbench.storage import DatasetReader, read_json
+import sys
+from gator_workbench.connection import ConnectionMonitor, LAYERS
+import json
+from gator_workbench import task_saving
+from gator_workbench import validation
 
 SMALL_NET = dict(encoder_type='graph_transformer', hidden_dim=16, heads=2, layers=1)
 
@@ -200,3 +205,43 @@ def rows(layout, table, columns=None):
 
 def summary(layout):
     return read_json(layout.summary)
+
+
+def probe(tmp_path, **states):
+    layers = [dict(layer=n, state=states.get(n, 'ok'), reason_code=None, diagnostic=None, details={}) for n in LAYERS]
+    script = tmp_path / 'probe.py'
+    script.write_text(f'import json\nprint(json.dumps(dict(layers={layers!r})))\n')
+    return ConnectionMonitor(probe_command=[sys.executable, str(script)])
+
+
+def wait_for(client, run_dir, states=('completed', 'failed', 'paused', 'stopped', 'cancelled'), timeout=180):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        status = client.get('/api/runs/status', params=dict(run_dir=run_dir)).json()
+        if status.get('state') in states and not status.get('worker_alive'):
+            return status
+        time.sleep(0.3)
+    raise AssertionError(f'run did not finish: {status}')
+
+
+def edit_json(path, change):
+    value = json.loads(Path(path).read_text())
+    change(value)
+    Path(path).write_text(json.dumps(value))
+
+
+@pytest.fixture(autouse=True)
+def _no_save_yet(monkeypatch):
+    """The module keeps the running save and the last one for the whole process: each test starts without either."""
+    monkeypatch.setattr(task_saving, '_running', None)
+    monkeypatch.setattr(task_saving, '_last', None)
+    monkeypatch.setattr(task_saving, '_took', {})
+
+
+def issues(report, level=None):
+    return {i.code for i in report.issues if level is None or i.level == level}
+
+
+def check(config, task='synthetic:gpdk045_ota5'):
+    runtime = tasks.load_task(config.circuit)
+    return validation.validate(config, graph=runtime.base_graph, provided_metrics=set(runtime.provided_metrics)), runtime

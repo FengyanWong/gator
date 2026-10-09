@@ -8,15 +8,7 @@ from pydantic import ValidationError
 from gator_workbench import compile as comp, schema, spec_equations, tasks, units, validation
 from gator_workbench.engine import decode_action
 from helpers import make_config
-
-
-def issues(report, level=None):
-    return {i.code for i in report.issues if level is None or i.level == level}
-
-
-def check(config, task='synthetic:gpdk045_ota5'):
-    runtime = tasks.load_task(config.circuit)
-    return validation.validate(config, graph=runtime.base_graph, provided_metrics=set(runtime.provided_metrics)), runtime
+from helpers import check, issues
 
 
 # ------------------------------------------------------------------------------- units

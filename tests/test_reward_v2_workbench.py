@@ -11,7 +11,7 @@ import pytest
 from gator_workbench.schema import WorkbenchConfig
 from gator_workbench.storage.tables import arrow_schema, normalize_row
 from gator_workbench.trajectory import StateEncoder
-from test_reward_v2_real_data import real_transition  # Actual M6 measurements, no simulator implementation.
+from research_support import real_transition   # Actual M6 measurements, no simulator implementation.
 
 ROOT = Path(__file__).resolve().parents[1]
 # Every test here reads recorded REAL evidence (artifacts/ is not in git); skipped where it is absent.

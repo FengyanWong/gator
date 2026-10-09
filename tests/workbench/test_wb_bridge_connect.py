@@ -13,22 +13,9 @@ from gator_workbench.api.app import create_app
 from gator_workbench.bridge_connect import BridgeConnector, ciw_lines, describe, perform_connect, summarize
 from gator_workbench.connection import ConnectionMonitor, LAYERS, run_layers
 from gator_workbench.storage.atomic import read_jsonl
-from helpers import bridge_settings as settings  # noqa: F401 - an imported fixture belongs to this module
-from test_wb_connection import FakeBridge
-
-SETUP = '/tmp/virtuoso_bridge_alice/38094/virtuoso_bridge/virtuoso_setup.il'
-
-
-class FakeTunnel(FakeBridge):
-    """The check's fake plus the one starting call. It has NO stop/restart method at all."""
-    def __init__(self, **behaviour):
-        super().__init__(**dict(dict(start_error=None, comes_up=True, state=dict(port=65432, setup_path=SETUP)), **behaviour))
-
-    def start_tunnel(self, profile):
-        self.calls.append('start_tunnel')
-        if self.b['start_error']:
-            raise self.b['start_error']
-        self.b['running'] = self.b['comes_up']
+from helpers import bridge_settings as settings, workbench_app   # noqa: F401 - an imported fixture belongs to this module
+from fakes_connection import FakeBridge
+from fakes_connection import FakeTunnel, SETUP
 
 
 def connect(settings, **behaviour):
@@ -261,8 +248,7 @@ def api(tmp_path, connector_body=None, **probe_states):
     script = tmp_path / 'probe.py'
     script.write_text(f'import json\nprint(json.dumps(dict(layers={layers!r})))\n')
     connector = BridgeConnector(command=fake_process(tmp_path, connector_body or f'print(json.dumps({outcome_json()!r}))'))
-    app = create_app(extra_output_roots=[str(tmp_path)], serve_frontend=False, auto_check_on_start=False,
-                     monitor=ConnectionMonitor(probe_command=[sys.executable, str(script)]), connector=connector)
+    app = workbench_app(tmp_path, monitor=ConnectionMonitor(probe_command=[sys.executable, str(script)]), connector=connector)
     return TestClient(app), connector
 
 

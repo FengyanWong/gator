@@ -9,7 +9,7 @@ from analog_optimizer.envs.sizing import CircuitSizingEnv, Observation
 from analog_optimizer.measurements.specs import MetricSpec, RewardSettings, SpecificationEvaluator
 from analog_optimizer.parameters.actions import ActionMapper
 from analog_optimizer.training.replay import Transition
-from tests.test_sizing_env import SyntheticSizingFixture
+from research_support import SyntheticSizingFixture
 
 NOMINAL = SimulationCondition(PVTCorner('nominal', 'tt', 27., 1.))
 CORNERS = tuple(SimulationCondition(PVTCorner(f'corner_{i}', 'ss', 125., .9), purpose='pvt_training')

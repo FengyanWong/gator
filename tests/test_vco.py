@@ -11,7 +11,7 @@ from analog_optimizer.backends.backend import UnsupportedCapability
 from analog_optimizer.backends.conditions import SimulationCondition, PVTCorner
 from analog_optimizer.measurements.vco import oscillation_metrics, window_mean
 from analog_optimizer.parameters.actions import ActionMapper
-from test_bridge_adapter import adapter, changing_writer
+from research_support import adapter, changing_writer
 import analog_optimizer.backends.virtuoso_bridge as adapter_module
 
 ROOT = Path(__file__).resolve().parents[1]

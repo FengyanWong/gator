@@ -10,7 +10,6 @@ import math
 from .schema import WorkbenchConfig
 
 
-
 INFRASTRUCTURE_FAILURES = ('timeout', 'transport_error', 'license_error', 'backend_error')
 
 

@@ -15,7 +15,6 @@ import time
 from .storage.dataset import utcnow
 
 
-
 def iso(value=None):
     return (value or utcnow()).astimezone(timezone.utc).isoformat()
 

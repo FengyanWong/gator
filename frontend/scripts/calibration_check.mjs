@@ -46,8 +46,7 @@ await runChecks(browser, async () => {
   const cells = () => evaluate(`[...(${BLOCK}?.querySelectorAll('table tbody tr') ?? [])].map(tr => [...tr.children].map(td => td.textContent.trim()))`);
 
   await page.trackSaves();
-  // This browser had unticked "+ calibration" under record 7.197: the choice it kept is no longer read.
-  await page.seed({ config: CONFIG, when: 'once', also: `localStorage.setItem('gator-workbench-baseline-calibration-v1', 'off');` });
+  await page.seed({ config: CONFIG, when: 'once' });
   await send('Page.navigate', { url: APP });
   if (!(await until(`!!(${BASELINE}) && !${BASELINE}.disabled`, 200))) throw new Error('the baseline button never became available: ' + consoleErrors.join(' | ').slice(0, 300));
 

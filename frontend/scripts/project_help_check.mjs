@@ -15,7 +15,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/project_help_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, reportRefused, sleep, TASK_PANEL, workbenchUrl, VIRTUOSO_WINDOW } from './lib/harness.mjs';
+import { check, launchEdge, outDir, reportRefused, runChecks, sleep, TASK_PANEL, VIRTUOSO_WINDOW, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -41,7 +41,7 @@ const generated = task => ({ loaded: true, task_key: task, mock: false, native_d
 const ROWS = [{ variable_id: 'wn_fixture', instance_path: 'XU1/M1', parameter_name: 'w', unit: 'um', optimized: true, lower: 0.6, upper: 1.6, step: 0.005,
   value_type: 'continuous', scale: 'linear', ratio: 1, notes: '' }];
 
-try {
+await runChecks(browser, async () => {
   // The connection profile comes from the configuration: seeded, so the check does not depend on the connection UI.
   const profiles = await (await fetch(new URL('api/connection/profiles', APP))).json().catch(() => ({}));
   const CONFIG = { schema_version: 'gator-workbench-config-v1', project: { name: 'fixture', task_name: 'fixture', notes: '' },
@@ -233,10 +233,4 @@ try {
   reportRefused(refused);
   check('the page asked to start, continue, command, connect or open an agent CLI on its own: never', !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify)/.test(r)), refused.join(', '));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-  if (consoleErrors.length) console.log('page errors: ' + consoleErrors.join(' | ').slice(0, 600));
-} finally {
-  await browser.close();
-}
-finish();
+}, { afterError: () => { if (consoleErrors.length) console.log('page errors: ' + consoleErrors.join(' | ').slice(0, 600)); } });

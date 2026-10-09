@@ -1,9 +1,9 @@
 // Requires a Vite source preview. No backend requests: the fixture holds and resolves every read in memory.
-import { check, fail, finish, launchEdge, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const base = await workbenchUrl();
 const browser = await launchEdge('request-lifecycle');
-try {
+await runChecks(browser, async () => {
   const page = await browser.open();
   await page.intercept(['*/api/*'], p => page.refuse(p.requestId));
   await page.send('Page.navigate', { url: new URL('/scripts/fixtures/request_lifecycle.html', base).href });
@@ -99,5 +99,4 @@ try {
   await resolve('events', 'A', { kind: 'events', entries: [{ event: 'FIXTURE recovered log' }] });
   check('log retry recovers without changing the run', await page.until(`${panel}.includes('FIXTURE recovered log') && !${panel}.includes('FIXTURE read failed')`));
   check('no browser exceptions', page.consoleErrors.length === 0, JSON.stringify(page.consoleErrors));
-} catch (error) { fail(error); } finally { await browser.close(); }
-finish();
+});

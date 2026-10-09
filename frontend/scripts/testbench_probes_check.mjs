@@ -11,7 +11,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/testbench_probes_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, MOCK_PAGE_CONFIG, outDir, sleep, TASK_PANEL, taskWindow, workbenchUrl, VIRTUOSO_WINDOW } from './lib/harness.mjs';
+import { check, launchEdge, MOCK_PAGE_CONFIG, outDir, runChecks, sleep, TASK_PANEL, taskWindow, VIRTUOSO_WINDOW, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -53,7 +53,7 @@ const draft = (library, cell) => {
 const browseOnly = { loaded: false, blocker: 'FIXTURE: a native cellview needs a verified circuit profile', interface_contract: null,
   profile_task: null, profile_task_generated: null };
 
-try {
+await runChecks(browser, async () => {
   const page = await browser.open({ errors: consoleErrors });
   const { send, evaluate, fulfil } = page;
   const calls = []; let agentRequests = 0; const dialogs = [];
@@ -219,10 +219,4 @@ try {
   check('no agent CLI was opened', agentRequests === 0, `${agentRequests} request(s)`);
   check('the only question on screen was the one about the copy, asked once', dialogs.length === 1 && dialogs[0].includes('COPY you made'), dialogs.join(' | '));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
-} catch (error) {
-  fail(error);
-  if (consoleErrors.length) console.log('page errors: ' + consoleErrors.join(' | ').slice(0, 600));
-} finally {
-  await browser.close();
-}
-finish();
+}, { afterError: () => { if (consoleErrors.length) console.log('page errors: ' + consoleErrors.join(' | ').slice(0, 600)); } });

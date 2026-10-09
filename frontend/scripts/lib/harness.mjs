@@ -21,7 +21,8 @@
 //   page.seed / trackSaves / saved / stored     the page's configuration in localStorage and its 800 ms save timer
 //   page.shot(file, element | clip)             a PNG of one element (or of the page), brought to the front first
 //   check / fail / finish, outDir PASS / FAIL lines, the summary, exit code 1 on any failure; the screenshot folder
-//   runChecks(browser, body)      a check's body, then its end: an exception is counted (fail), Edge closed, finish()
+//   runChecks(browser, body)      a check's body, then its end: an exception is counted (fail), Edge closed, finish();
+//                                 { afterError } says more after an exception (the page's own errors)
 //   reportRefused(refused, never) the INFO line of the writing requests refused, and the check that none is a NEVER_* one
 //   answerDialogs / starterConfig the page's confirm dialogs answered as planned; the MOCK task as "Load task" merges it
 //   browser.close()               Edge ends, and every temporary folder of the check is removed (also after a failure, and
@@ -75,13 +76,14 @@ export function finish() {
   console.log(failed ? `${failed} of ${passed + failed} check(s) FAILED` : stopped ? `the check stopped early (${passed} check(s) passed before)` : `all ${passed} checks passed`);
   process.exit(failures() ? 1 : 0);
 }
-/** A check's body, then the end every check has: an exception stops it (counted by `fail`), Edge is closed whatever
- *  happened, and `finish` prints the summary and sets the exit code. */
-export async function runChecks(browser, body) {
+/** A check's body, then the end every check has: an exception stops it (counted by `fail`; `afterError` may say more, after
+ *  it), Edge is closed whatever happened, and `finish` prints the summary and sets the exit code. */
+export async function runChecks(browser, body, { afterError = null } = {}) {
   try {
     await body();
   } catch (error) {
     fail(error);
+    afterError?.();
   } finally {
     await browser.close();
   }

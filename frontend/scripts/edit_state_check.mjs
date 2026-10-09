@@ -1,9 +1,9 @@
 // Vite source preview: StrictMode must replay updaters, unlike the production-only checks.
-import { check, fail, finish, launchEdge, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
 
 const base = await workbenchUrl();
 const browser = await launchEdge('edit-state');
-try {
+await runChecks(browser, async () => {
   const page = await browser.open();
   await page.intercept(['*/api/*'], p => page.refuse(p.requestId));
   const go = async kind => {
@@ -88,5 +88,4 @@ try {
   await finishSave(index, true);
   check('a stale save error is not shown on another task', await page.evaluate('!document.querySelector("#notes").textContent.includes("Fixture save failed")'));
   check('no browser exceptions', page.consoleErrors.length === 0, JSON.stringify(page.consoleErrors));
-} catch (error) { fail(error); } finally { await browser.close(); }
-finish();
+});

@@ -19,7 +19,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/virtuoso_source_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, MOCK_PAGE_CONFIG, outDir, sleep, TASK_PANEL, taskWindow, workbenchUrl, VIRTUOSO_WINDOW } from './lib/harness.mjs';
+import { check, launchEdge, MOCK_PAGE_CONFIG, outDir, runChecks, sleep, TASK_PANEL, taskWindow, VIRTUOSO_WINDOW, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -62,7 +62,7 @@ const browseOnly = { loaded: false, blocker: 'FIXTURE: a native cellview needs a
   profile_task_generated: null, working_copy: null };
 const gateBlocked = { message: 'The connection gate blocked reading the native design', gate: { allowed: false, status: 'blocked', blocking: ['tunnel'], uncertain: [] } };
 
-try {
+await runChecks(browser, async () => {
   const page = await browser.open({ errors: consoleErrors });
   const { send, evaluate, fulfil } = page;
   const calls = []; let mode = 'ok'; let inFlight = 0, overlap = false;
@@ -446,10 +446,4 @@ try {
   check('every question on screen was planned by this check', dialogs.every(d => d.planned), JSON.stringify(dialogs.filter(d => !d.planned)));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
   console.log(`INFO  other writing requests the page sent on its own, all refused here: ${[...new Set(page.refused)].join(', ') || 'none'}`);
-} catch (error) {
-  fail(error);
-  if (consoleErrors.length) console.log('page errors: ' + consoleErrors.join(' | ').slice(0, 600));
-} finally {
-  await browser.close();
-}
-finish();
+}, { afterError: () => { if (consoleErrors.length) console.log('page errors: ' + consoleErrors.join(' | ').slice(0, 600)); } });

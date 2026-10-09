@@ -9,8 +9,7 @@ from fastapi.testclient import TestClient
 from gator_workbench import profiles, runs, tasks
 from gator_workbench.api import task_baseline
 from gator_workbench.storage.atomic import read_json
-from helpers import make_config, workbench_app
-from helpers import probe, wait_for
+from helpers import make_config, probe, wait_for, workbench_app
 
 
 def test_fixed_configuration_uses_saved_task_and_one_launch(tmp_path, monkeypatch):

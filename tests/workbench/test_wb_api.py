@@ -11,17 +11,13 @@ import zipfile
 import pytest
 from fastapi.testclient import TestClient
 
-from gator_workbench import bridge_read, tasks
+from gator_workbench import bridge_read, cli as workbench_cli, tasks
 from gator_workbench.api.app import attachment, file_snapshot
-from gator_workbench.connection import ConnectionMonitor, LAYERS
+from gator_workbench.connection import LAYERS
 from gator_workbench.storage.dataset import DatasetReader
 from gator_workbench.storage.tables import TABLES
-from helpers import make_config, workbench_app
-from helpers import probe, wait_for
-from gator_workbench import cli as workbench_cli
+from helpers import make_config, prepared, probe, roots_for, wait_for, workbench_app
 from gator_workbench.api import app as app_module
-from helpers import roots_for
-from helpers import prepared
 
 REPO = Path(__file__).resolve().parents[2]
 

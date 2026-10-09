@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from gator_workbench import corner_check, tasks
+from gator_workbench import corner_check, reward_diagnostics, tasks
 from gator_workbench.compile import build_specs, normalization_scale, training_conditions
 from gator_workbench.modes import sac_config_from
 from gator_workbench.schema import WorkbenchConfig, config_hash, task_definition_hash, editor_columns
@@ -15,7 +15,6 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 from fastapi.testclient import TestClient
-from gator_workbench import reward_diagnostics
 from gator_workbench.storage.dataset import DatasetReader
 from helpers import execute, make_config, workbench_app
 

@@ -6,24 +6,20 @@ the fields it sets, then their callbacks - emulated here (a test model, not the 
 fingers x finger width and folds when told to, a MIM capacitor side is clamped). No Virtuoso, no simulation."""
 from copy import deepcopy
 import json
-import math
 from pathlib import Path
 import re
-import sys
-from types import SimpleNamespace
 
 import pytest
 
-from analog_optimizer.backends.virtuoso_bridge import BridgeConfig, VirtuosoBridgeBackend
-from gator_workbench import bridge_read, cdf_facts, cdf_write, paths, profiles, schema, tasks
+from analog_optimizer.backends.virtuoso_bridge import VirtuosoBridgeBackend
+from gator_workbench import cdf_facts, cdf_write, compile as comp, paths, profiles, schema, tasks
 from gator_workbench.generic_profile import GenericMosWidthProfile
-from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
-from helpers import probe
+from helpers import bridge_is_importable, probe   # noqa: F401 - an imported fixture belongs to this module
 
-from ring_cell_support import CIRCUIT, FIXTURE                                    # the same cell as the profile tests'
+from ring_cell_support import CIRCUIT, FIXTURE   # the same cell as the profile tests'
 from cdf_write_support import config, make, read_cell, row, stage_rows
 from analog_optimizer.parameters.actions import ActionMapper
-from gator_workbench import compile as comp
+from fakes_virtuoso import FakeVirtuoso, backend_of, num, wpe
 
 
 # ------------------------------------------------------------------------------------------ what the form lets you type
@@ -148,194 +144,6 @@ def test_one_candidate_is_one_transaction_and_pdk_text_stays_a_string():
         cdf_write.write_skill('LIB"', 'cell', [])
     with pytest.raises(ValueError):
         cdf_write.write_skill('LIB', 'cell', [dict(instance='C1', form=dict(init='x); system("rm'), targets=[(count, 2.0)])])
-
-
-# ------------------------------------------------------------------------------------------ the fake Virtuoso
-MOS_NETLIST = dict(w='w', l='l', nf='fingers', m='m', **{k: k for k in ('as', 'ad', 'ps', 'pd', 'nrd', 'nrs')})
-CAP_NETLIST = dict(w='w', l='l', m='m')
-SET = re.compile(r'cdfgData~>(\w+)~>value = ("(?:[^"\\]|\\.)*"|[^\s)]+)')
-CALL = re.compile(r'unless\(errsetstring\("((?:[^"\\]|\\.)*)"\) error')
-BLOCK = re.compile(r'x~>name == "([^"]+)"')
-HOLDS = re.compile(r'funcall\(same cdfParseFloatString\(or\(cdfgData~>(\w+)~>value ""\)\) ([-\d.e+]+)\)'
-                   r'|funcall\(same cdfgData~>(\w+)~>value ([-\d.e+]+)\)'
-                   r'|equal\(cdfgData~>(\w+)~>value "([^"]*)"\)'
-                   r'|equal\(cdfgData~>(\w+)~>value (\d+)\)')
-FINAL = re.compile(r'unless\((.+?) error\("%s" "((?:[^"\\]|\\.)*)"\)\)$')
-ROUNDS = re.compile(r'rounds < (\d+)')
-PROC = re.compile(r'funcall\(stringToSymbol\("(\w+)"\) (cdfgData|inst)\)')
-
-
-def holds_of(text):
-    """(field, wanted, numeric) of a generated "does the instance hold this value" test."""
-    m = HOLDS.search(text)
-    if not m:
-        return None
-    groups = [g for g in m.groups() if g is not None]
-    field, wanted = groups[0], groups[1]
-    return field, wanted, m.group(5) is None
-
-
-def num(text):
-    from analog_optimizer.backends.gpdk045 import number
-    return number(text)
-
-
-def wpe(length):
-    """Stand-in for a GPDK045 well-proximity value (sca): its width callback computes it from the current length."""
-    return format(3.25e-6 / length, '.7g')
-
-
-class FakeVirtuoso:
-    """Runs the writer's SKILL as the form would: the fields it sets, then the callbacks. Test model only."""
-
-    def __init__(self, reference, netlist, *, clamp=5.6e-6, fold_above=None, keep_capacitance=False, proximity=False):
-        self.state, self.netlist, self.clamp, self.fold_above = deepcopy(reference), netlist, clamp, fold_above
-        self.proximity = proximity                                           # model the well-proximity value (sca)
-        self.keep_capacitance = keep_capacitance
-        self.skill, self.saves, self.opened, self.form_calls, self.rounds = [], 0, [], [], {}
-        self.schematic = SimpleNamespace(read=lambda *a, **kw: deepcopy(self.state), export_netlist=self.export)
-
-    def list_windows(self):
-        return []
-
-    def close(self):
-        pass
-
-    def params(self, name):
-        return next(i for i in self.state['instances'] if i['name'] == name)['params']
-
-    def callback(self, name, text):
-        p, field = self.params(name), re.search(r"'\s*(\w+)", text).group(1)
-        if text.startswith('gpdk045_mosCB'):
-            w, fingers = num(p['w']), num(p['fingers'])
-            if field == 'w' and self.fold_above and w > self.fold_above:
-                fingers = math.ceil(w / self.fold_above)                     # the form folds a wide transistor
-                p['fingers'] = str(fingers)
-            if field == 'fw':
-                w = num(p['fw']) * fingers
-                p['w'] = format(w, '.12g')
-            p['fw'] = format(w / fingers, '.12g')
-            for key in ('ad', 'as'):
-                p[key] = format(w * 1.4e-7, '.12g')
-            for key in ('pd', 'ps'):
-                p[key] = format(2 * w + 2.8e-7, '.12g')
-            for key in ('nrd', 'nrs'):
-                p[key] = format(1.4e-7 / w, '.12g')
-            if field == 'w' and self.proximity:                              # from the length it has NOW (GPDK045's does)
-                p['sca'] = wpe(num(p['l']))
-        elif text.startswith('gpdk045_capCB'):
-            if field == 'm' and self.keep_capacitance:                       # a form that keeps the total capacitance
-                p['w'] = format(num(p['w']) * 0.5, '.12g')                   # moves a value written before it
-            else:
-                p[field] = format(min(self.clamp, max(1e-6, num(p[field]))), '.12g')
-            w, l = num(p['w']), num(p['l'])
-            p['c'] = format(1.025e-3 * w * l + 2.425e-10 * 2 * (w + l), '.6g')       # area + fringe, 6 digits
-            p['pasUpdateParamList'] = f'{field} c'                           # bookkeeping the form rewrites
-
-    def holds(self, name, test):
-        field, wanted, numeric = test
-        have = self.params(name).get(field)
-        return (have is not None and num(have) is not None and math.isclose(num(have), float(wanted), rel_tol=1e-9, abs_tol=1e-30)
-                if numeric else have == wanted)
-
-    def blocks(self, skill):
-        """The generated SKILL as the writer means it: per instance its form procedures, the ordered (test, field, value,
-        callback) of the round, the round limit and the final checks. Nothing is assumed: what is not in the text does not
-        happen here either."""
-        out, current = [], None
-        for line in skill.splitlines():
-            block = BLOCK.search(line)
-            if block:
-                current = dict(instance=block.group(1), init=None, done=None, rounds=0, targets=[], final=[], pending=[])
-                out.append(current)
-            if current is None:
-                continue
-            for name, argument in PROC.findall(line):
-                current['init' if argument == 'cdfgData' else 'done'] = name
-            if 'when(or(' in line:
-                current['pending'] = [t for t in (holds_of(part) for part in line.split(' !')) if t]
-            found = ROUNDS.search(line)
-            if found:
-                current['rounds'] = int(found.group(1))
-            if 'lengthTyped = t' in line:
-                current['retype'] = True                                     # the width is typed again after a length
-            if line.strip().startswith('unless(') and holds_of(line) and 'error(' not in line:
-                current['test'] = holds_of(line)                             # the round's "unless it already holds"
-            setter = SET.search(line)
-            if setter and current.get('test'):
-                value = setter.group(2)
-                current['targets'].append(dict(test=current.pop('test'), field=setter.group(1),
-                                               value=json.loads(value) if value.startswith('"') else value, callback=None))
-            called = CALL.search(line)
-            if called and current['targets']:
-                current['targets'][-1]['callback'] = json.loads(f'"{called.group(1)}"')
-            end = FINAL.search(line.strip())
-            if end and holds_of(end.group(1)) and 'value = ' not in line:
-                current['final'].append((holds_of(end.group(1)), end.group(2)))
-        return out
-
-    def execute_skill(self, skill, timeout=60):
-        """Run it as Virtuoso would: an instance whose values all hold is not touched, the round repeats while something
-        was written (at most the generated limit), and a generated final check that fails is the answer."""
-        self.skill.append(skill)
-        changed = False
-        for block in self.blocks(skill):
-            name = block['instance']
-            if block['pending'] and all(self.holds(name, test) for test in block['pending']):
-                continue                                                     # untouched: no form procedure, no callback
-            self.opened.append(name)
-            if block['init']:
-                self.form_calls.append((name, block['init']))
-            for round_number in range(block['rounds']):
-                self.rounds[name] = round_number + 1
-                wrote, length_typed = False, False
-                for target in block['targets']:
-                    again = block.get('retype') and target['field'] == 'w' and length_typed
-                    if self.holds(name, target['test']) and not again:
-                        continue
-                    self.params(name)[target['field']] = target['value']
-                    if target['callback']:
-                        self.callback(name, target['callback'])
-                    length_typed = target['field'] == 'l' or (length_typed and target['field'] != 'w')
-                    wrote = True
-                if not wrote:
-                    break
-            for test, message in block['final']:
-                if not self.holds(name, test):
-                    return SimpleNamespace(ok=False, output=None, errors=[message])
-            if block['done']:
-                self.form_calls.append((name, block['done']))
-            changed = True
-        if changed:
-            self.saves += 1
-        return SimpleNamespace(ok=True, output='t', errors=[])
-
-    def export(self, lib, cell, output, timeout):
-        """The fixture's netlist with the values of the cell as it is now."""
-        output.mkdir()
-        text = self.netlist.replace('\\\n', ' ')
-        for inst in self.state['instances']:
-            names = MOS_NETLIST if inst['cell'] in ('nmos1v', 'pmos1v') else CAP_NETLIST
-            def put(match):
-                key = match.group(1)
-                return f'{key}={inst["params"][names[key]]}' if key in names and names[key] in inst['params'] else match.group(0)
-            text = re.sub(rf'(?m)^(\s*{inst["name"]} \(.*)$',
-                          lambda line: re.sub(r'\b(\w+)=\(?([^\s()]+)\)?', put, line.group(1)), text)
-        (output / 'netlist').write_text(text)
-        return {'input_file': str(output / 'input.scs')}
-
-
-def backend_of(tmp_path, monkeypatch, profile, directory, **fake):
-    client = FakeVirtuoso(profile.reference, (directory / 'structure.scs').read_text(), **fake)
-
-    def attach(self):
-        self.bridge_version = 'offline-fault-injection'
-        return client
-    monkeypatch.setattr(VirtuosoBridgeBackend, '_attach', attach)
-    env = tmp_path / 'bridge.env'
-    env.write_text('# offline test configuration\n')
-    config = BridgeConfig(env, 'GPDK045_RINGOSC', directory / 'creation.json', tmp_path / 'state', '/models/gpdk045.scs')
-    return cdf_write.backend_class(profile)(config, profile), client
 
 
 def test_the_form_writer_writes_checks_exports_and_restores(tmp_path, monkeypatch):

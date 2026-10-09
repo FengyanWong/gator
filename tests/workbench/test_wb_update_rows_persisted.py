@@ -6,11 +6,10 @@ import json
 
 import pytest
 
-from gator_workbench import checkpoints as ckpt
+from gator_workbench import checkpoints as ckpt, schema
 from gator_workbench.engine import RunEngine
 from gator_workbench.storage import DatasetReader, RawDataset, read_json
 from helpers import execute, make_config, rows
-from gator_workbench import schema
 
 
 def update_row(n, collected):

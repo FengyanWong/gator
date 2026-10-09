@@ -10,15 +10,12 @@ import time
 
 import pytest
 
-from gator_workbench import checkpoints as ckpt, run_index, runs
+from gator_workbench import checkpoints as ckpt, layout as layout_module, run_index, runs
 from gator_workbench.layout import find_runs
 from gator_workbench.storage.atomic import write_json
-from helpers import roots_for
+from helpers import execute, fabricate_run, make_config, roots_for
 from pathlib import Path
-from gator_workbench import layout as layout_module
 from gator_workbench.storage import read_dict, read_json
-from helpers import execute, make_config
-from helpers import fabricate_run
 
 
 def fabricate(root, name, *, created='2026-10-07T10:00:00+00:00', state='completed', label='ota', summary=None):

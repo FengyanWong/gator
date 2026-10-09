@@ -6,7 +6,6 @@ and exports are accepted. No Virtuoso, no simulation."""
 from copy import deepcopy
 import importlib
 import json
-from pathlib import Path
 import pickle
 
 import pytest
@@ -15,13 +14,11 @@ from analog_optimizer.backends.gpdk045 import number
 from analog_optimizer.backends.provenance import profile_contract
 from analog_optimizer.envs.sizing import graph_contract
 from analog_optimizer.parameters.actions import ActionMapper
-from gator_workbench import tasks
+from gator_workbench import compile as comp, schema, tasks
 from gator_workbench.generic_profile import GenericMosWidthProfile, RULES_FORMAT
 
-from helpers import REPO                                                          # the same folder as here
-from gator_workbench import compile as comp, schema
-from helpers import make_config
-from helpers import TOP
+from helpers import make_config, REPO, TOP   # the same folder as here
+from helpers import bridge_installed  # noqa: F401 - a fixture its marked tests use
 # The bounds written into the hand-written classes whose example files remain (the OTA7 and LDO ones left with their files
 # on 2026-09-30, record 7.128, and with them the test of what the verified backend cannot honour, built on the OTA7).
 BOUNDS = dict(
@@ -176,6 +173,7 @@ def _ota5_profile(tmp_path, lower, upper, step):
                                   conditions_file=REPO / 'configs/gpdk045_conditions.json')
 
 
+@pytest.mark.usefixtures('bridge_installed')
 def test_a_generated_profile_whose_range_was_typed_in_decimals_loads_and_accepts_its_top_value(tmp_path):
     # Before: refused at load with "Width of XU1/M1 outside its bounds or off the CDF-compatible grid" - its own check of
     # the corners of the action space met the top grid point, a hair above the rules' upper bound.
@@ -199,6 +197,7 @@ def test_a_generated_profile_whose_range_was_typed_in_decimals_loads_and_accepts
     assert next(g for g in graph.parameter_groups if g.id == 'input_pair_width').upper == TOP
 
 
+@pytest.mark.usefixtures('bridge_installed')
 def test_a_generated_profile_whose_top_is_not_above_its_bound_keeps_its_bounds_exactly(tmp_path):
     profile = _ota5_profile(tmp_path, 3.6e-06, 4.4e-06, 5e-09)            # the verified OTA5 range
     assert profile.bounds == {'XU1/M1': (3.6e-06, 4.4e-06), 'XU1/M2': (3.6e-06, 4.4e-06)}

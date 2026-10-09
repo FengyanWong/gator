@@ -11,16 +11,12 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from gator_workbench import launch_requests, run_index, runs
+from gator_workbench import launch_requests, run_index, runs, schema, worker
 from gator_workbench.engine import RunLock
 from gator_workbench.storage.atomic import PersistenceError, write_json
-from helpers import execute, make_config, workbench_app
-from gator_workbench import worker
-from gator_workbench.storage import read_json
-from helpers import edit_json, prepared
+from helpers import edit_json, execute, make_config, prepared, workbench_app
+from gator_workbench.storage import atomic, read_json
 import sys
-from gator_workbench import schema
-from gator_workbench.storage import atomic
 
 FINE_TUNE = 'Fine-tune from its newest save point (a new run)'
 

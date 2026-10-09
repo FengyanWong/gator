@@ -5,16 +5,13 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from gator_workbench import compile as comp, schema, spec_equations, tasks, units, validation
+from gator_workbench import compile as comp, engine as engine_module, schema, spec_equations, tasks, units, validation
 from gator_workbench.engine import decode_action
-from helpers import make_config
-from helpers import check, issues
+from helpers import check, execute, issues, make_config, rows, TOP
 import math
 import random
 from analog_optimizer.graph.circuit_graph import ParameterBinding, ParameterGroup
-from gator_workbench import engine as engine_module
-from helpers import execute, rows
-from helpers import TOP
+from helpers import bridge_installed  # noqa: F401 - a fixture its marked tests use
 
 
 # ------------------------------------------------------------------------------- units
@@ -334,6 +331,7 @@ def decimal_range(raw):
 
 
 # ------------------------------------------------------------------------------ A7: the top of a decimal range
+@pytest.mark.usefixtures('bridge_installed')
 def test_the_optimizers_top_grid_point_is_the_compiled_upper_bound_and_nothing_else_moves(tmp_path):
     config = make_config(tmp_path, mutate=decimal_range)
     base = tasks.load_task(config.circuit).base_graph
@@ -356,6 +354,7 @@ def test_the_optimizers_top_grid_point_is_the_compiled_upper_bound_and_nothing_e
         (1e-06, 1e-05, None), (2e-06, 2e-05, None), (1e-06, 1e-05, None)]
 
 
+@pytest.mark.usefixtures('bridge_installed')
 def test_a_followers_own_clamp_at_the_leaders_range_moves_with_the_top_point(tmp_path):
     def clamp_follower(raw):
         decimal_range(raw)
@@ -368,6 +367,7 @@ def test_a_followers_own_clamp_at_the_leaders_range_moves_with_the_top_point(tmp
     assert group.upper == TOP and follower.upper == TOP and follower.lower == 1.84e-06
 
 
+@pytest.mark.usefixtures('bridge_installed')
 def test_grid_top_is_the_top_that_project_reaches_on_thousands_of_typed_ranges():
     rng = random.Random(5)
     moved = 0
@@ -399,6 +399,7 @@ class _AlwaysTop(random.Random):
         return b
 
 
+@pytest.mark.usefixtures('bridge_installed')
 def test_a_mock_run_that_always_proposes_the_top_of_a_decimal_range_evaluates_every_candidate(tmp_path, monkeypatch):
     # Before: each such candidate failed "invalid bounds/current value" in the optimizer's own group check (an
     # execution_error), and the first one ended the run.

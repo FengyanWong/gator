@@ -5,9 +5,8 @@ processes and the recorded ring-oscillator export only - no Virtuoso, no simulat
 import pytest
 from fastapi.testclient import TestClient
 
-from gator_workbench import consistency, profiles, schema, task_saving, tasks
-from helpers import _no_save_yet, bridge_is_importable, workbench_app   # noqa: F401 - an imported fixture belongs to this module
-from helpers import probe
+from gator_workbench import consistency, profiles, schema, tasks
+from helpers import _no_save_yet, bridge_is_importable, probe, workbench_app   # noqa: F401 - an imported fixture belongs to this module
 from task_save_support import FREQUENCY_PROBE, FREQUENCY_SPEC, config, ready, save
 from fakes_virtuoso import copy_reader
 

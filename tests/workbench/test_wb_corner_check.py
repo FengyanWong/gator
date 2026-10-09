@@ -2,7 +2,6 @@
 
 MOCK runs go through the whole path, the detached worker included. The REAL path runs against a fake adapter that
 records every call: no Virtuoso, no Spectre, no budget."""
-import json
 import math
 from pathlib import Path
 import time
@@ -12,12 +11,11 @@ from fastapi.testclient import TestClient
 
 from analog_optimizer.backends.backend import SimulationStatus
 
-from gator_workbench import corner_check as cc
+from gator_workbench import corner_check as cc, reward_diagnostics, spec_equations
 from gator_workbench.engine import RunLock
 from gator_workbench.storage.atomic import read_json, write_json
 from helpers import execute, make_config, workbench_app
 import pyarrow.parquet as pq
-from gator_workbench import reward_diagnostics, spec_equations
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
 

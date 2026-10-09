@@ -10,8 +10,7 @@ from fastapi.testclient import TestClient
 from gator_workbench import baseline_reference, calibration, profiles, runs
 from gator_workbench.storage import read_json
 from gator_workbench.storage.atomic import write_json
-from helpers import make_config, roots_for, rows, run_prepared, summary, workbench_app
-from helpers import probe, wait_for
+from helpers import make_config, probe, roots_for, rows, run_prepared, summary, wait_for, workbench_app
 
 COMPRESSED = dict(violation_shape='compressed', worst_spec_share=0.5)
 

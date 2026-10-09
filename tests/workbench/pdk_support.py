@@ -1,8 +1,10 @@
 """The demo PDK of the PDK tests - its fixture folder, model files and a read of them - shared with other test modules (refactoring package D1)."""
 
 from pathlib import Path
-from gator_workbench import pdk
 import json
+
+from gator_workbench import pdk
+
 from helpers import make_config, SMALL_NET
 
 

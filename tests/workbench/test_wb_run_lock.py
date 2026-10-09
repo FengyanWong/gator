@@ -14,8 +14,7 @@ from gator_workbench import runs
 from gator_workbench.engine import RunLock
 from gator_workbench.layout import RunLayout
 from gator_workbench.storage import write_json
-from helpers import roots_for
-from helpers import infrastructure_pause
+from helpers import infrastructure_pause, roots_for
 
 
 @pytest.fixture

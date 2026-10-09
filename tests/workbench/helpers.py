@@ -29,15 +29,13 @@ import pytest
 from analog_optimizer.backends.backend import SimulationResult, SimulationStatus
 from analog_optimizer.backends.synthetic_sizing import SyntheticSizingBackend
 
-from gator_workbench import runs, schema, task_registry, tasks
+from gator_workbench import runs, schema, task_registry, task_saving, tasks, validation
 from gator_workbench.engine import RunEngine
 from gator_workbench.paths import OutputRoots
 from gator_workbench.storage import DatasetReader, read_json
 import sys
 from gator_workbench.connection import ConnectionMonitor, LAYERS
 import json
-from gator_workbench import task_saving
-from gator_workbench import validation
 from gator_workbench.storage.atomic import write_json
 
 REPO = Path(__file__).resolve().parents[2]
@@ -78,6 +76,13 @@ def workbench_server(root):
 @pytest.fixture(autouse=True)
 def bridge_is_importable(monkeypatch):
     """The Virtuoso bridge package counts as installed, so a real task is not blocked for the want of it."""
+    monkeypatch.setattr(tasks, 'bridge_importable', lambda: True)
+
+
+@pytest.fixture
+def bridge_installed(monkeypatch):
+    """bridge_is_importable for one test, by @pytest.mark.usefixtures('bridge_installed'), in a module whose other tests
+    must not have it: the tests that moved between modules (refactoring package D2/D4) keep the fixtures they ran with."""
     monkeypatch.setattr(tasks, 'bridge_importable', lambda: True)
 
 

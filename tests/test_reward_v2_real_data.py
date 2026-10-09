@@ -1,17 +1,11 @@
 """Recorded REAL data contracts. No simulator, synthetic backend, or fabricated electrical data."""
 from copy import deepcopy
-from dataclasses import asdict, replace
-import json
-from pathlib import Path
+from dataclasses import replace
 
 import pytest
 import torch
 
 from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
-from analog_optimizer.envs.sizing import ConditionResult, Observation, mapped_operating_points
-from analog_optimizer.graph.circuit_graph import (
-    CircuitGraph, Connection, Device, Diagnostic, Net, ParameterBinding, ParameterGroup, ParameterValue, SourceSpan,
-)
 from analog_optimizer.graph.pyg_converter import FeatureSchema, OPERATING_POINT_COLUMNS, OPERATING_POINT_REFERENCES
 from analog_optimizer.measurements.specs import MetricSpec, RewardSettings, SpecificationEvaluator, spec_margin
 from analog_optimizer.models import ModelConfig
@@ -19,12 +13,11 @@ from analog_optimizer.models.inputs import ObservationTensorCache, SpecSchema, b
 from analog_optimizer.recording import ExperimentStore, RecordingConfig
 from analog_optimizer.recording.codec import pack, raw, unpack
 from analog_optimizer.recording.session import transition_from_store
-from analog_optimizer.training.replay import ReplayBuffer, Transition
+from analog_optimizer.training.replay import ReplayBuffer
 from analog_optimizer.training.sac import SACLearner
 
 
-from research_support import ROOT                                                  # the same folder as here
-from research_support import EVIDENCE, read, real_transition
+from research_support import EVIDENCE, read, real_transition, ROOT   # the same folder as here
 
 # every test here reads the recorded REAL evidence (one test also needs a frozen source file: its own mark adds it)
 pytestmark = pytest.mark.requires_evidence(EVIDENCE)

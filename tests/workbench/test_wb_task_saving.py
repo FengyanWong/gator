@@ -2,17 +2,12 @@
 record 7.198). FAKE bridge processes and stand-in saves only - no Virtuoso, no simulation."""
 import threading
 
-import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import profiles, task_saving, virtuoso_setup as vs, working_copy
-from helpers import bridge_is_importable, workbench_app   # noqa: F401 - an imported fixture belongs to this module
-from helpers import probe
+from helpers import _no_save_yet, bridge_is_importable, probe, workbench_app   # noqa: F401 - an imported fixture belongs to this module
 from task_save_support import config, ready, save
-from fakes_virtuoso import maestro_netlister
-from fakes_virtuoso import SETUP, setup_writer
-from fakes_virtuoso import CELL, LIB
-from helpers import _no_save_yet
+from fakes_virtuoso import CELL, LIB, maestro_netlister, SETUP, setup_writer
 
 MAESTRO_STEPS = ['setup', 'deck', 'read', 'files']
 

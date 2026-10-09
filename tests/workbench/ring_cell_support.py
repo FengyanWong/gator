@@ -3,8 +3,10 @@
 import json
 from pathlib import Path
 import sys
+
 from gator_workbench import bridge_read, schema
 from gator_workbench.paths import local_settings_dir
+
 from helpers import probe
 
 

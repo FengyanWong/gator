@@ -1,24 +1,28 @@
 """Fixtures several research test modules share (refactoring package D1)."""
-import pytest
 from copy import deepcopy
 from dataclasses import replace
 import hashlib
 import json
 from uuid import uuid4
-from analog_optimizer.backends.backend import VirtuosoBackend, NetlistArtifact, SimulationResult, SimulationStatus
-from analog_optimizer.envs import CircuitSizingEnv
-from analog_optimizer.measurements.specs import MetricSpec
 from pathlib import Path
 from types import SimpleNamespace
-from analog_optimizer.backends.gpdk045 import Gpdk045OtaProfile, GEOMETRY, number
-from analog_optimizer.backends.virtuoso_bridge import BridgeConfig, VirtuosoBridgeBackend
-from analog_optimizer.envs.sizing import Observation
-from analog_optimizer.backends.conditions import SimulationCondition
-from analog_optimizer.envs.sizing import ConditionResult, mapped_operating_points
-from analog_optimizer.graph.circuit_graph import CircuitGraph, Connection, Device, Diagnostic, Net, ParameterBinding, ParameterGroup, ParameterValue, SourceSpan
-from analog_optimizer.training.replay import Transition
 
+import pytest
 torch = pytest.importorskip('torch')
+
+from analog_optimizer.backends.backend import NetlistArtifact, SimulationResult, SimulationStatus, VirtuosoBackend
+from analog_optimizer.envs import CircuitSizingEnv
+from analog_optimizer.measurements.specs import MetricSpec
+from analog_optimizer.backends.gpdk045 import GEOMETRY, Gpdk045OtaProfile, number
+from analog_optimizer.backends.virtuoso_bridge import BridgeConfig, VirtuosoBridgeBackend
+from analog_optimizer.envs.sizing import ConditionResult, mapped_operating_points, Observation
+from analog_optimizer.backends.conditions import SimulationCondition
+from analog_optimizer.graph.circuit_graph import (CircuitGraph, Connection, Device, Diagnostic, Net, ParameterBinding, ParameterGroup, ParameterValue, SourceSpan)
+from analog_optimizer.training.replay import Transition
+from analog_optimizer.backends.synthetic_sizing import SyntheticSizingBackend
+from analog_optimizer.models.graph_transformer import ModelConfig
+from analog_optimizer.training.sac import SACLearner
+
 
 
 @pytest.fixture(autouse=True)
@@ -197,3 +201,45 @@ def real_transition():
                             after['candidate_id'], phase['records'][1])
     transition.validate()
     return transition
+
+
+EXPERIMENT = {'origin': 'synthetic', 'split': 'training-fixture', 'designs': ['opamp-v1', 'ldo-v1']}
+
+
+@pytest.fixture(autouse=True)
+def deterministic_cpu():
+    threads = torch.get_num_threads()
+    rng = torch.get_rng_state()
+    torch.set_num_threads(1)
+    torch.manual_seed(135)
+    yield
+    torch.set_num_threads(threads)
+    torch.set_rng_state(rng)
+
+
+@pytest.fixture
+def transitions(opamp, ldo, tmp_path):
+    result = []
+    for graph in (opamp, ldo):
+        backend = SyntheticSizingBackend(graph, targets={'w': .4, 'c': -.3})
+        with CircuitSizingEnv(backend, graph, observation(graph).specs, tmp_path,
+                              max_steps=3, stop_on_success=False, expected_origin='synthetic') as env:
+            current, _ = env.reset()
+            for value in (-.6, .2, .7):
+                proposal = {g: value for g in env.mapper.group_ids}
+                step = env.step(proposal)
+                result.append(Transition.from_step(current, proposal, step))
+                current = step[0]
+        assert backend.parameters == backend.initial
+    return result
+
+
+def model_config(encoder):
+    return ModelConfig(hidden_dim=16, heads=2, layers=2, encoder_type=encoder)
+
+
+def learner(encoder='graph_transformer', **kwargs):
+    return SACLearner(experiment=EXPERIMENT, model_config=model_config(encoder), **kwargs)
+
+
+MODEL = ModelConfig(hidden_dim=16, heads=2, layers=2)

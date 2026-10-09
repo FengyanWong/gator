@@ -1,6 +1,4 @@
 """Temperature optimizer contracts on algebraic replay; no circuit/backend run."""
-from dataclasses import replace
-import math
 
 import pytest
 import torch

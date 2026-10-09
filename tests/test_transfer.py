@@ -13,11 +13,9 @@ from analog_optimizer.backends.synthetic_sizing import SyntheticSizingBackend
 from analog_optimizer.envs.sizing import CircuitSizingEnv
 from analog_optimizer.evaluation.benchmark import (
     PatternSearch, admit_transition, benchmark_models, run_benchmark, run_episode, transfer_weights, weight_digest)
-from analog_optimizer.evaluation.transfer import (
-    TransferTask, aggregate_runs, freeze_protocol, same_topology, summarize_run, validate_split)
+from analog_optimizer.evaluation.transfer import TransferTask, aggregate_runs, freeze_protocol, same_topology, validate_split
 from analog_optimizer.measurements.specs import MetricSpec
-from analog_optimizer.models.graph_transformer import ModelConfig, GroupActor, GraphCritic
-from analog_optimizer.models.inputs import batch_observations
+from analog_optimizer.models.graph_transformer import ModelConfig
 from analog_optimizer.training.replay import ReplayBuffer
 from analog_optimizer.training.sac import SACLearner
 from research_support import cpu

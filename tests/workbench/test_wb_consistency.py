@@ -10,12 +10,9 @@ from fastapi.testclient import TestClient
 
 from gator_workbench import consistency, profile_preflight, runs, schema, tasks, virtuoso_setup as vs
 from gator_workbench.validation import validate
-from helpers import bridge_is_importable, MOCK_TASK, roots_for, workbench_app   # noqa: F401 - an imported fixture belongs to this module
-from helpers import probe
-from task_save_support import config as cell_config, ready, save
-from fakes_virtuoso import maestro_netlister
-from fakes_virtuoso import SETUP, setup_writer
-from task_save_support import saved_ring, task_config
+from helpers import bridge_is_importable, MOCK_TASK, probe, roots_for, workbench_app   # noqa: F401 - an imported fixture belongs to this module
+from task_save_support import config as cell_config, ready, save, saved_ring, task_config
+from fakes_virtuoso import maestro_netlister, SETUP, setup_writer
 
 OK_STEPS = [dict(step='profile', ok=True, detail='p'), dict(step='connect', ok=True, detail='c'),
             dict(step='export', ok=True, detail='e'), dict(step='deck', ok=True, detail='d')]

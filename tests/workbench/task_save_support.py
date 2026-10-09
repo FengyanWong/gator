@@ -1,15 +1,12 @@
 """Saving a task of the ring-oscillator cell the way the task-save tests do - its configuration with a frequency probe and spec, a ready working copy, Save task with fake programs - shared with other test modules (refactoring package D1)."""
 
 import sys
-from gator_workbench import profiles, schema, working_copy
+
+from gator_workbench import profiles, schema, tasks, virtuoso_setup as vs, working_copy
+
 from helpers import probe
-from ring_cell_support import FIXTURE, ROWS, connection_file, read_cell
-from fakes_virtuoso import CELL, COPY, LIB, TB, fake_writer
-from fakes_virtuoso import copy_reader
-from gator_workbench import tasks
-from gator_workbench import virtuoso_setup as vs
-from fakes_virtuoso import maestro_netlister
-from fakes_virtuoso import SETUP, setup_writer
+from ring_cell_support import connection_file, FIXTURE, read_cell, ROWS
+from fakes_virtuoso import CELL, COPY, copy_reader, fake_writer, LIB, maestro_netlister, SETUP, setup_writer, TB
 
 
 FREQUENCY_PROBE = dict(measurement_id='m_osc_frequency_hz', analysis='tran', result_source='backend_profile', source_name='osc_frequency_hz', unit='Hz')

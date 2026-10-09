@@ -9,8 +9,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from gator_workbench import compile as comp, schema, task_registry, tasks, validation
-from helpers import MOCK_TASK, workbench_app
-from helpers import probe
+from helpers import MOCK_TASK, probe, workbench_app
 
 SYNTHETIC = [f'synthetic:{name}' for name in sorted(task_registry.SYNTHETIC_FIXTURES)]
 OLD_IDS = ['input_pair_width__XU1/M2', 'mirror_pair_width__XU1/M4']

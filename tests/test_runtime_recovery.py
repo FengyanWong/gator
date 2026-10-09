@@ -18,11 +18,10 @@ from analog_optimizer.models import ModelConfig
 from analog_optimizer.training.parallel import collect_parallel_episodes
 from analog_optimizer.training.recovery import ROUND, RUN, restore_parallel
 from analog_optimizer.training.runtime import RunResources
-from analog_optimizer.training.workers import OwnedWorker, WorkerLimits, WorkerTimeout
+from analog_optimizer.training.workers import DeadlineFuture, OwnedWorker, WorkerLimits, WorkerTimeout
 from analog_optimizer.training.replay import ReplayBuffer
 from analog_optimizer.training.sac import SACLearner
 from concurrent.futures import Future, TimeoutError
-from analog_optimizer.training.workers import DeadlineFuture
 
 ROOT = Path(__file__).resolve().parents[1]
 

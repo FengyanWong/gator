@@ -11,8 +11,8 @@ from fastapi.testclient import TestClient
 
 from gator_workbench import schema, task_registry, tasks
 from gator_workbench.storage import read_json
-from helpers import execute, make_config, MOCK_TASK, rows, workbench_app
-from helpers import probe
+from helpers import execute, make_config, MOCK_TASK, probe, rows, workbench_app
+from helpers import bridge_installed  # noqa: F401 - a fixture its marked tests use
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -80,6 +80,7 @@ def test_a_configuration_saved_with_a_removed_task_says_why_it_is_blocked(tmp_pa
     assert report['blocks_run'] and 'synthetic:vco no longer exists' in json.dumps(report['issues'])
 
 
+@pytest.mark.usefixtures('bridge_installed')
 def test_loading_the_mock_task_hashes_its_netlist_once(monkeypatch):
     hashed, sha256 = [], tasks._sha256
 

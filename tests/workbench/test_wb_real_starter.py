@@ -1,7 +1,6 @@
 """Choosing a REAL task brings that task's rows: the parameters its profile fixes, and no invented target - not the MOCK
 fixture's `score`. The built-in verified circuits and their targets of record are gone (the last two, OTA7 and LDO, on
 2026-09-30, record 7.128, with their tests). Local files only; nothing here contacts a bridge or starts a simulation."""
-import json
 from pathlib import Path
 
 import pytest

@@ -1,5 +1,4 @@
 """Scripted real-labelled mechanism tests. No Spectre, Virtuoso or bridge calls."""
-from dataclasses import asdict, replace
 import json
 from pathlib import Path
 import random

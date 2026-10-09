@@ -1,15 +1,12 @@
 """Explicit synthetic contract fixtures; these functions do not model a circuit."""
 from copy import deepcopy
 from dataclasses import replace
-import hashlib
 import json
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
 
-from analog_optimizer.backends.backend import (VirtuosoBackend, NetlistArtifact, SimulationResult,
-                                               SimulationStatus)
+from analog_optimizer.backends.backend import NetlistArtifact, SimulationStatus
 from analog_optimizer.envs import CircuitSizingEnv
 from analog_optimizer.measurements.specs import MetricSpec
 from research_support import SyntheticSizingFixture, environment

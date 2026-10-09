@@ -1,9 +1,7 @@
 """Offline CDF fixtures and real IPC/process scheduling; no Cadence certification."""
-from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import json
-import multiprocessing
 import os
 from pathlib import Path
 import random
@@ -18,8 +16,7 @@ from research_support import profile, adapter, changing_writer
 from analog_optimizer.backends import native_preparation, virtuoso_bridge as bridge
 from analog_optimizer.backends.backend import SimulationRequest, SimulationResult, SimulationStatus
 from analog_optimizer.backends.gpdk045 import GEOMETRY, number
-from analog_optimizer.backends.native_preparation import (
-    NativeCandidateBackend, PreparationService, PreparationManager)
+from analog_optimizer.backends.native_preparation import NativeCandidateBackend, PreparationService
 from analog_optimizer.backends.virtuoso_bridge import VirtuosoBridgeBackend, BridgeConfig, digest
 from analog_optimizer.training.parallel import NativeEnvironmentFactory, collect_parallel_episodes
 from analog_optimizer.measurements.specs import MetricSpec

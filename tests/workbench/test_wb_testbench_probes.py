@@ -9,8 +9,7 @@ import sys
 from fastapi.testclient import TestClient
 
 from gator_workbench import bridge_read, native_cells, profiles, recipes, schema, tasks
-from helpers import probe, workbench_app
-from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
+from helpers import bridge_is_importable, probe, workbench_app   # noqa: F401 - an imported fixture belongs to this module
 from ring_cell_support import CIRCUIT, FIXTURE, config, connection_file, read_cell
 
 REPO = Path(__file__).resolve().parents[2]

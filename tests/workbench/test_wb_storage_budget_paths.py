@@ -7,13 +7,11 @@ import threading
 
 import pytest
 
-from gator_workbench import paths
+from gator_workbench import layout as layout_module, paths
 from gator_workbench.budget import BudgetError, BudgetLedger
-from gator_workbench.storage import DatasetReader, RawDataset, data_dictionary, read_json, write_json
-from gator_workbench.storage import atomic
+from gator_workbench.storage import atomic, data_dictionary, DatasetReader, RawDataset, read_json, write_json
 from gator_workbench.storage.tables import TABLES, arrow_schema, normalize_row
 import subprocess
-from gator_workbench import layout as layout_module
 
 
 def metric_bundle(seq, *, value=0.5):

@@ -3,18 +3,14 @@
 processes and the recorded real ring-oscillator export only - no Virtuoso, no simulation."""
 import json
 from pathlib import Path
-import sys
 
 import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import profiles, recipes, schema, task_files, tasks, virtuoso_setup as vs, working_copy
-from helpers import bridge_is_importable, workbench_app   # noqa: F401 - an imported fixture belongs to this module
-from helpers import probe
+from helpers import bridge_is_importable, probe, workbench_app   # noqa: F401 - an imported fixture belongs to this module
 from ring_cell_support import FIXTURE, ROWS, connection_file, read_cell
-from fakes_virtuoso import SETUP, setup_writer
-from fakes_virtuoso import CELL, COPY, LIB, TB, fake_writer
-from fakes_virtuoso import MAESTRO_HEAD, copy_reader, maestro_netlister
+from fakes_virtuoso import CELL, COPY, copy_reader, fake_writer, LIB, MAESTRO_HEAD, maestro_netlister, SETUP, setup_writer, TB
 from task_save_support import FREQUENCY_PROBE, FREQUENCY_SPEC, config, ready, save
 
 

@@ -13,9 +13,8 @@ import pytest
 from gator_workbench import connection, runs, tasks
 from gator_workbench.connection import ConnectionMonitor, LAYERS, run_layers
 from gator_workbench.storage.atomic import read_jsonl
-from helpers import bridge_settings as settings, execute, make_config, roots_for, rows, summary  # noqa: F401 - an imported fixture belongs to this module
+from helpers import bridge_settings as settings, execute, make_config, roots_for, rows, summary, workbench_app   # noqa: F401 - an imported fixture belongs to this module
 from fakes_connection import FakeBridge, OK_BODY, layers_json, monitor_for, reasons, states
-from helpers import workbench_app
 
 REPO = Path(__file__).resolve().parents[2]
 

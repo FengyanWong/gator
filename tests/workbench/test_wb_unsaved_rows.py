@@ -6,8 +6,7 @@ from fastapi.testclient import TestClient
 
 from gator_workbench import schema, tasks
 from gator_workbench.validation import validate
-from helpers import bridge_is_importable, MOCK_TASK, roots_for, workbench_app   # noqa: F401 - an imported fixture belongs to this module
-from helpers import probe
+from helpers import bridge_is_importable, MOCK_TASK, probe, roots_for, workbench_app   # noqa: F401 - an imported fixture belongs to this module
 from task_save_support import saved_ring
 
 SAME = dict(added=[], removed=[], changed={}, reordered=False)

@@ -13,8 +13,7 @@ import pytest
 from pydantic import ValidationError
 
 from gator_workbench import compile as comp, consistency, schema
-from helpers import make_config
-from helpers import check, issues
+from helpers import check, issues, make_config
 
 FIXTURE = json.loads((Path(__file__).parent / 'fixtures' / 'old_format_config.json').read_text())
 RETIRED = {'parameters': schema.RETIRED_PARAMETER_FIELDS, 'measurements': schema.RETIRED_MEASUREMENT_FIELDS}

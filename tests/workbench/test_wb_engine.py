@@ -12,16 +12,15 @@ import time
 
 import pytest
 
-from gator_workbench import runs, schema, tasks
+from gator_workbench import engine as engine_module, engine_retention, runs, schema, tasks
 from gator_workbench.engine import RunEngine, RunLock
 from gator_workbench.storage import DatasetReader, read_json
 from gator_workbench.storage.atomic import read_jsonl
-from helpers import ScriptedEnvFactory, execute, make_config, roots_for, rows, run_prepared, summary
-from helpers import infrastructure_pause
-from gator_workbench import engine as engine_module, engine_retention
+from helpers import execute, infrastructure_pause, make_config, roots_for, rows, run_prepared, ScriptedEnvFactory, summary
 from concurrent.futures import Future
 import threading
 from types import SimpleNamespace
+from helpers import bridge_installed  # noqa: F401 - a fixture its marked tests use
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -555,6 +554,7 @@ def test_a_candidate_a_pause_stops_before_its_launch_is_cancelled_not_a_failure_
 
 
 # ------------------------------------------------------------------------------ B9 and D: reads per evaluation / per load
+@pytest.mark.usefixtures('bridge_installed')
 def test_a_mock_run_resolves_its_work_folder_and_reads_the_waveform_index_once(tmp_path, monkeypatch):
     reads, resolved = [], []
     read_json, resolve = engine_module.read_json, Path.resolve

@@ -1,14 +1,15 @@
 """The remembered settings (settings.json): saved whole under concurrent writers, a file with a typo never overwritten, unreadable files said and kept (refactoring package D2: from test_wb_round5_integration and test_wb_round5_safety)."""
 from __future__ import annotations
 
-from gator_workbench import paths, runs
 import threading
+
 import pytest
 from fastapi.testclient import TestClient
-from gator_workbench import settings_store
+
+from gator_workbench import paths, runs, settings_store
 from gator_workbench.storage import read_json
-from helpers import workbench_app
-from helpers import prepared
+
+from helpers import prepared, workbench_app
 
 
 def test_a_settings_file_with_a_typo_is_never_overwritten(tmp_path):

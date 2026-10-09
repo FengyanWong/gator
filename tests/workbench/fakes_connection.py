@@ -1,11 +1,11 @@
 """Fake connection layers, probes and bridges that several test modules share (refactoring package D1)."""
 
 import sys
-from gator_workbench.connection import ConnectionMonitor, LAYERS
 from pathlib import Path
 import shutil
+
+from gator_workbench.connection import ConnectionMonitor, LAYERS, NGSPICE_LAYERS
 from gator_workbench import connection
-from gator_workbench.connection import NGSPICE_LAYERS
 from gator_workbench.storage.atomic import write_json
 
 

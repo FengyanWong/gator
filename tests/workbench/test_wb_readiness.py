@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from gator_workbench import readiness
-from gator_workbench.api.app import create_app
 from helpers import make_config, workbench_app
 
 

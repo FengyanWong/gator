@@ -9,13 +9,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import bridge_connect, connection
-from gator_workbench.api.app import create_app
 from gator_workbench.bridge_connect import BridgeConnector, ciw_lines, describe, perform_connect, summarize
 from gator_workbench.connection import ConnectionMonitor, LAYERS, run_layers
 from gator_workbench.storage.atomic import read_jsonl
 from helpers import bridge_settings as settings, workbench_app   # noqa: F401 - an imported fixture belongs to this module
-from fakes_connection import FakeBridge
-from fakes_connection import FakeTunnel, SETUP
+from fakes_connection import FakeBridge, FakeTunnel, SETUP
 
 
 def connect(settings, **behaviour):

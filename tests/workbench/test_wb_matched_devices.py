@@ -14,6 +14,7 @@ from gator_workbench.circuit_summary import circuit_summary
 from gator_workbench.validation import independent_action_count, validate
 from helpers import workbench_app
 import time
+from helpers import bridge_installed  # noqa: F401 - a fixture its marked tests use
 
 REPO = Path(__file__).resolve().parents[2]
 EXAMPLE = REPO / 'examples' / 'circuits' / 'ngspice_ota5_level1.cir'
@@ -240,6 +241,7 @@ def test_the_route_says_plainly_when_the_circuit_cannot_be_read(tmp_path):
 
 
 # ------------------------------------------------------------------------------ B7: matched devices on a large circuit
+@pytest.mark.usefixtures('bridge_installed')
 def test_matched_devices_of_800_transistors_are_found_without_trying_every_pair_against_every_pair():
     _mos = dict(terminals=('D', 'G', 'S', 'B'), roles=('drain', 'gate', 'source', 'bulk'), parameters={'w': 'w', 'l': 'l'})
     mapping = ParserConfig(models={'nch': DeviceMapping('nmos', **_mos), 'pch': DeviceMapping('pmos', **_mos),

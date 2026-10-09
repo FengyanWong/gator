@@ -4,24 +4,19 @@ and its starter rows (ngspice_tasks), the evaluation backend (ngspice_backend), 
 Fake runners and a fake probe process everywhere, except the tests marked REAL: they run the ngspice installed on this
 machine on the example deck (skipped when there is none). No Virtuoso, no network, no agent CLI."""
 from pathlib import Path
-import shutil
 import subprocess
-import sys
 import tempfile
 
 import pytest
 from fastapi.testclient import TestClient
 
 from analog_optimizer.backends.backend import SimulationRequest, SimulationStatus
-from gator_workbench import connection, ngspice_backend, ngspice_netlist as ng, ngspice_tasks as nt, runs, schema, tasks
-from gator_workbench.api.app import create_app
-from gator_workbench.connection import NGSPICE_LAYERS, ConnectionMonitor
+from gator_workbench import ngspice_backend, ngspice_netlist as ng, ngspice_tasks, ngspice_tasks as nt, runs, schema, tasks
+from gator_workbench.connection import NGSPICE_LAYERS
 from gator_workbench.ngspice_backend import NgspiceBackend, NgspiceLink
 from gator_workbench.storage import DatasetReader, read_json
-from gator_workbench.storage.atomic import write_json
 from helpers import roots_for, workbench_app
 from fakes_connection import EXAMPLE, NGSPICE, REPO, ngspice_probe, write_profiles
-from gator_workbench import ngspice_tasks
 
 
 DECK = '''* a divider with a sized load in a subcircuit used once

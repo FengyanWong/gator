@@ -1,12 +1,13 @@
 """Runs made with a PDK component list: built with the list, refused across lists, fine-tuned and resumed, shown in the graph view (refactoring package D3: the tests of test_wb_pdk that use its module-scoped run, kept on one worker)."""
 
-import json
+
 import pytest
+
 from gator_workbench import checkpoints as ckpt, pdk, runs, schema, task_registry
 from gator_workbench.storage import read_json
+
 from helpers import execute, make_config, roots_for, run_prepared, SMALL_NET
-from pdk_support import FIXTURE, raw_material
-from pdk_support import demo_config, load_demo, parser_config
+from pdk_support import demo_config, FIXTURE, load_demo, parser_config, raw_material
 
 # one worker builds the module's PDK run once for the four tests that use it (--dist loadgroup)
 pytestmark = pytest.mark.xdist_group('test_wb_pdk_run')

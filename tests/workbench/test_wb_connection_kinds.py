@@ -12,13 +12,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import bridge_connect, connection, ngspice_link, tasks
-from gator_workbench.api.app import create_app
 from gator_workbench.bridge_connect import BridgeConnector, describe, perform_connect, summarize
 from gator_workbench.connection import ConnectionMonitor, LAYERS, NGSPICE_LAYERS, run_layers
 from gator_workbench.storage.atomic import read_json, read_jsonl, write_json
 from helpers import bridge_settings as settings, workbench_app   # noqa: F401 - an imported fixture belongs to this module
-from fakes_connection import FakeTunnel
-from fakes_connection import FakeBridge, reasons, states, write_profiles
+from fakes_connection import FakeBridge, FakeTunnel, reasons, states, write_profiles
 
 VERSION_TEXT = '******\n** ngspice-36 : Circuit level simulation program\n** The U. C. Berkeley CAD Group\n******\n'
 SOLVED = 'Doing analysis at TEMP = 27.000000 and TNOM = 27.000000\n\nNo. of Data Rows : 1\nv(out) = 5.000000e-01\nngspice-36 done\n'

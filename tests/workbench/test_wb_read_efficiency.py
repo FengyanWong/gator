@@ -16,6 +16,7 @@ import sys
 import time
 import datetime as dt
 import stat
+from helpers import bridge_installed  # noqa: F401 - a fixture its marked tests use
 
 
 @pytest.mark.parametrize('block_size', [1, 7, 64, 65536])
@@ -194,6 +195,7 @@ def test_display_checksum_cache_invalidates_and_never_serves_execution(tmp_path,
     assert ckpt.describe(tmp_path)['checkpoint_id'] == 'second'
 
 
+@pytest.mark.usefixtures('bridge_installed')
 def test_scalars_do_not_search_for_a_missing_dateutil_per_value():
     import pyarrow as pa
     import gator_workbench.storage.dataset  # noqa: F401 - importing it is what sets the sentinel

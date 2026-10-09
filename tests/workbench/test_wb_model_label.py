@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from gator_workbench import runs, schema
+from gator_workbench import checkpoints as ckpt, runs, schema
 
 from helpers import execute, make_config, roots_for, workbench_app
 
@@ -69,7 +69,6 @@ def test_the_default_model_follows_the_label_then_the_old_project_name(tmp_path)
 # ---------------------------------------------------------------------------- names of their own (record 7.225)
 # User, 2026-10-06: "for saved rl models with same names add numbering to them by default and add a functionality of rename
 # saved model". No two models under one output root carry the same name; a rename lives in the run folder's model_label.json.
-from gator_workbench import checkpoints as ckpt
 from gator_workbench.storage.atomic import read_json
 
 

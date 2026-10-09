@@ -2,7 +2,6 @@
 with the system's gawk and with mawk, as the host runs it), the parts kept per section for a circuit's devices, the deck's
 model include replaced, and when a run gets it. A made-up library in GPDK045's shape - no PDK file, no simulator."""
 import os
-from pathlib import Path
 import shutil
 import subprocess
 

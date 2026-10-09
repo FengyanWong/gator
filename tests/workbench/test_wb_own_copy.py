@@ -8,14 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import bridge_read, profiles, tasks, working_copy, virtuoso_setup as vs
-from helpers import bridge_is_importable, workbench_app   # noqa: F401 - an imported fixture belongs to this module
-from helpers import probe
-from fakes_virtuoso import fake_reader
+from helpers import bridge_is_importable, probe, workbench_app   # noqa: F401 - an imported fixture belongs to this module
+from fakes_virtuoso import CELL, COPY, copy_reader, fake_reader, fake_writer, imported, LIB, maestro_netlister, RING, SETUP, setup_writer, TB
 from ring_cell_support import connection_file, read_cell
 from task_save_support import config
-from fakes_virtuoso import copy_reader, maestro_netlister
-from fakes_virtuoso import SETUP, setup_writer
-from fakes_virtuoso import CELL, COPY, LIB, RING, TB, fake_writer, imported
 
 
 def test_the_cells_of_a_declared_copy_come_from_the_netlister_comments():

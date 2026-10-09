@@ -8,11 +8,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import bridge_read, native_cells, schema, tasks
-from helpers import make_config, workbench_app
-from helpers import probe
+from helpers import make_config, probe, workbench_app
 
-from fakes_virtuoso import REPO                                                   # the same folder as here
-from fakes_virtuoso import EXPORT, fake_reader
+from fakes_virtuoso import EXPORT, fake_reader, REPO   # the same folder as here
 UNVERIFIED = EXPORT.rstrip('\n') + '\nC9 (VOUT 0 0) pdk_mystery_dev w=4.49u l=4.49u m=2\n'      # + a device type nobody verified
 
 

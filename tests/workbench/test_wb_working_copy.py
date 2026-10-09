@@ -2,11 +2,10 @@
 user's cells. FAKE write process and recorded netlists only - no Virtuoso."""
 import json
 from pathlib import Path
-import sys
 
 import pytest
 
-from gator_workbench import bridge_read, bridge_setup, working_copy
+from gator_workbench import bridge_setup, working_copy
 from helpers import probe
 from fakes_virtuoso import CELL, COPY, LIB, RING, TB, fake_writer, imported
 

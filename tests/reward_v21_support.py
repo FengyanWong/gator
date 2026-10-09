@@ -3,7 +3,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from analog_optimizer.backends.backend import NetlistArtifact, SimulationStatus
+from analog_optimizer.backends.backend import SimulationStatus
 from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
 from analog_optimizer.envs.sizing import CircuitSizingEnv, Observation
 from analog_optimizer.measurements.specs import MetricSpec, RewardSettings, SpecificationEvaluator

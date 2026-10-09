@@ -8,8 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from analog_optimizer.backends.backend import SimulationRequest, SimulationStatus, UnsupportedCapability
-from analog_optimizer.backends.gpdk045 import Gpdk045OtaProfile, GEOMETRY, number
-from analog_optimizer.backends.virtuoso_bridge import BridgeConfig, VirtuosoBridgeBackend, build_deck
+from analog_optimizer.backends.virtuoso_bridge import VirtuosoBridgeBackend, build_deck
 import analog_optimizer.backends.virtuoso_bridge as module
 from research_support import ROOT, adapter, changing_writer, profile
 

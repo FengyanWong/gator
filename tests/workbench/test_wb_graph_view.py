@@ -14,6 +14,7 @@ from gator_workbench.storage.dataset import map_to_dict
 from gator_workbench.trajectory import TrajectoryLoader
 from helpers import execute, make_config, workbench_app
 from pathlib import Path
+from helpers import bridge_installed  # noqa: F401 - a fixture its marked tests use
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
 pytestmark = pytest.mark.xdist_group('test_wb_graph_view')
@@ -168,6 +169,7 @@ def test_the_api_serves_the_view_and_writes_nothing(transformer):
 
 
 # ------------------------------------------------------------------------------ B4: the graph view reads what it shows
+@pytest.mark.usefixtures('bridge_installed')
 def test_the_graph_view_reads_one_transition_part_and_its_state_newest_first(tmp_path, monkeypatch):
     config = make_config(tmp_path, run=dict(max_evaluations=30), output=dict(flush_every_evaluations=3, checkpoint_every_evaluations=10))
     layout, state = execute(config, tmp_path)

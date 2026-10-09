@@ -3,15 +3,12 @@ what the working copy's Maestro view holds and how it maps onto the rows. FAKE w
 answer shapes (spec lists, output expressions, bindings) are the ones the live IC23.1 gave on 2026-09-21."""
 import json
 from pathlib import Path
-import sys
 
 import pytest
 
 from gator_workbench import bridge_setup, virtuoso_setup as vs, working_copy
-from helpers import make_config, workbench_app
-from helpers import probe
-from fakes_virtuoso import CELL, COPY, LIB, TB, fake_writer, imported
-from fakes_virtuoso import SETUP, setup_writer
+from helpers import make_config, probe, workbench_app
+from fakes_virtuoso import CELL, COPY, fake_writer, imported, LIB, SETUP, setup_writer, TB
 
 
 def write(monitor, setup, **kw):

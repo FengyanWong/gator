@@ -11,14 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from gator_workbench import checkpoints as ckpt, pdk, runs, schema, task_registry, tasks, validation
-from gator_workbench.storage import read_json
+from gator_workbench import pdk, pdk_record, schema, task_registry, tasks, validation
 from helpers import execute, make_config, roots_for, run_prepared, SMALL_NET, workbench_app
-from pdk_support import FIXTURE, raw_material
-from gator_workbench import pdk_record
+from pdk_support import demo_config, FIXTURE, load_demo, parser_config, raw_material
 import re
 import shutil
-from pdk_support import demo_config, load_demo, parser_config
+from helpers import bridge_installed  # noqa: F401 - a fixture its marked tests use
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
 
@@ -457,6 +455,7 @@ def demo_pdk(tmp_path, monkeypatch):
     return loads
 
 
+@pytest.mark.usefixtures('bridge_installed')
 def test_a_validation_reads_the_pdk_record_once_and_lists_the_loaded_pdks_once(demo_pdk, tmp_path):
     extra = [dict(variable_id=f'x{i}', instance_path=device, parameter_name=name, unit='1', lower=1, upper=4)
              for i, (device, name) in enumerate((('XU1/Q1', 'area'), ('XU1/L1', 'nr'), ('XU1/M1', 'region'), ('XU1/M2', 'sa')))]

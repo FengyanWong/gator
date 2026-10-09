@@ -10,8 +10,8 @@ import { CheckSteps } from './panels/Consistency';
 import { Editors } from './panels/Editors';
 import { ValidationStatus } from './panels/Issues';
 import { RunButtons } from './panels/RunControl';
-import { isLive, RESUMABLE } from './runState';
-import { CALIBRATION_DESIGNS, launchKept, useLaunchActions } from './launch';
+import { RESUMABLE } from './runState';
+import { CALIBRATION_DESIGNS, useLaunchActions } from './launch';
 import { LaunchRefusal } from './panels/LaunchRefusal';
 import { useRunBrief } from './panels/RunBrief';
 import { RunPanel } from './panels/Right';
@@ -25,6 +25,7 @@ import { BottomPanel, type BottomTab, useBottomPanel } from './panels/BottomPane
 import { useCalibrationOffer } from './page/calibrationOffer';
 import { useRunWindowActions } from './page/runWindowActions';
 import { shownRun, useRunList, useShownRun } from './page/shownRun';
+import { useLiveRunAdoption } from './page/liveRunAdoption';
 import { useNewest } from './newest';
 import { oncePerBrowser } from './kept';
 
@@ -129,32 +130,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     if (control.phase === 'idle' && ['starting', 'resuming', 'running', 'pausing', 'aborting', 'finishing'].includes(lastPhase.current)) setTaskEpoch(n => n + 1);
     lastPhase.current = control.phase;
   }, [control.phase]);
-  const adopted = useRef(false);
-  const controlNow = useRef(control);              // the header as it is when the list arrives (a launch recovered after a reload may hold one by then)
-  controlNow.current = control;
-  useEffect(() => {
-    // The list follows the output root while it is typed: read 1 s after the last keystroke, not once per key (each read
-    // looks at every run under the root; record 7.275). The first read, when the page opens, goes at once.
-    const timer = setTimeout(() => refreshRuns().then(list => {
-      // Once, when the page opens: a run that is live although this page does not hold it (started from another browser or
-      // the CLI, or the browser's memory was cleared) is taken over, so the header offers Pause and Abort, not a second Start.
-      if (adopted.current) return;
-      adopted.current = true;
-      const header = controlNow.current;
-      const running = list.some(r => r.run_dir === header.dir && isLive(r)) ? null : list.find(isLive);
-      if (running) {
-        // Said (record 7.261), with the paused run the header held: it stays paused, and Runs continues it.
-        const resting = list.find(r => r.run_dir === header.dir && RESUMABLE.includes(r.state));
-        header.take(running.run_dir); setRunDir(running.run_dir);
-        // A launch of this tab sent before a reload may have made it: the launcher says so once it has asked.
-        const where = launchKept() ? 'a live run' : 'a live run started elsewhere (another browser tab, the command line or a task\'s baseline)';
-        setMessage({ level: 'info', text: `The header took over ${folderName(running.run_dir)}, ${where}: its Pause and Abort act on it.`
-          + (resting ? ` ${folderName(resting.run_dir)} stays paused; continue it from Runs.` : '') });
-      }
-      setLooked(true);
-    }), adopted.current ? 1000 : 0);
-    return () => clearTimeout(timer);
-  }, [config.output.output_root]);
+  useLiveRunAdoption({ control, outputRoot: config.output.output_root, refreshRuns, setRunDir, setMessage, setLooked });
   // The bottom tabs follow the registered task (record 7.212, user: "after selecting specific task, it automatically load the
   // most recent corresponding run of the registered task. If there is no recent run, then leave run selection and run status
   // default blank unless you choose other runs"). When the page's task changes - chosen under Task, saved for the first time,

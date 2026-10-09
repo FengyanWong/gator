@@ -11,7 +11,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from gator_workbench import launch_requests, runs
+from gator_workbench import launch_requests, run_index, runs
 from gator_workbench.engine import RunLock
 from gator_workbench.storage.atomic import PersistenceError, write_json
 from helpers import execute, make_config, workbench_app
@@ -80,7 +80,7 @@ def test_no_save_point_means_no_continue_and_nothing_to_fine_tune_from(finished)
 
 
 def test_a_save_point_of_older_optimizer_code_continues_only_as_a_new_run(finished, monkeypatch):
-    monkeypatch.setattr(runs, 'current_source_digest', lambda max_age=30.0: 'another-version-of-the-code')
+    monkeypatch.setattr(run_index, 'current_source_digest', lambda max_age=30.0: 'another-version-of-the-code')
     answer = runs.continuation(finished, max_evaluations=10)
     assert answer['code'] == 'older_code' and 'older version of the optimizer code' in answer['reason']
     assert answer['alternative']['action'] == 'fine_tune' and answer['alternative']['checkpoint_id'] == answer['save_point']

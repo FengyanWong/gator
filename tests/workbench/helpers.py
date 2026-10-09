@@ -29,7 +29,7 @@ import pytest
 from analog_optimizer.backends.backend import SimulationResult, SimulationStatus
 from analog_optimizer.backends.synthetic_sizing import SyntheticSizingBackend
 
-from gator_workbench import runs, schema, tasks
+from gator_workbench import runs, schema, task_registry, tasks
 from gator_workbench.engine import RunEngine
 from gator_workbench.paths import OutputRoots
 from gator_workbench.storage import DatasetReader, read_json
@@ -147,12 +147,12 @@ def other_circuits(*names):
     """synthetic:<name> for each named OTHER_CIRCUITS entry, in this process only (runs through `execute`, not a detached
     worker, which would not see them). Removed again afterwards."""
     added = {name: dict(OTHER_CIRCUITS[name], description='test only') for name in names}
-    tasks.SYNTHETIC_FIXTURES.update(added)
+    task_registry.SYNTHETIC_FIXTURES.update(added)
     try:
         yield [f'synthetic:{name}' for name in names]
     finally:
         for name in added:
-            tasks.SYNTHETIC_FIXTURES.pop(name, None)
+            task_registry.SYNTHETIC_FIXTURES.pop(name, None)
 
 
 def make_config(root, task=MOCK_TASK, *, threshold=0.95, run=None, output=None, research=None,

@@ -14,7 +14,7 @@ import time
 
 import pytest
 
-from gator_workbench import checkpoints as ckpt, pdk, profiles, runs, tasks
+from gator_workbench import checkpoints as ckpt, pdk, profiles, run_index, runs, tasks
 from gator_workbench.api import support
 from gator_workbench.storage.atomic import write_json
 from helpers import roots_for, workbench_app
@@ -99,16 +99,16 @@ def test_the_source_digest_is_hashed_again_in_a_thread_once_known(monkeypatch):
             release.wait(5)
         return value
     monkeypatch.setattr(sac, 'source_digest', digest)
-    monkeypatch.setattr(runs, '_SOURCE_DIGEST', dict(value=None, at=0.0, refreshing=False))
-    assert runs.current_source_digest() == 'first'                         # the first one: hashed at once
-    assert runs.current_source_digest(max_age=0.0) == 'first'              # older: answered at once, hashed in a thread
-    assert runs._SOURCE_DIGEST['refreshing'] and runs.current_source_digest(max_age=0.0) == 'first'   # one thread at a time
+    monkeypatch.setattr(run_index, '_SOURCE_DIGEST', dict(value=None, at=0.0, refreshing=False))
+    assert run_index.current_source_digest() == 'first'                         # the first one: hashed at once
+    assert run_index.current_source_digest(max_age=0.0) == 'first'              # older: answered at once, hashed in a thread
+    assert run_index._SOURCE_DIGEST['refreshing'] and run_index.current_source_digest(max_age=0.0) == 'first'   # one thread at a time
     release.set()
     for _ in range(200):
-        if not runs._SOURCE_DIGEST['refreshing']:
+        if not run_index._SOURCE_DIGEST['refreshing']:
             break
         time.sleep(0.01)
-    assert runs.current_source_digest() == 'second'
+    assert run_index.current_source_digest() == 'second'
 
 
 def test_a_started_job_gives_its_answer_or_its_error():

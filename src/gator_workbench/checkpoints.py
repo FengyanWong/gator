@@ -32,7 +32,7 @@ import tempfile
 from uuid import uuid4
 
 from . import CHECKPOINT_METADATA_VERSION
-from .save_point_compression import write_compressed
+from .checkpoint_codec import write_compressed
 from .storage.atomic import PersistenceError, publish, read_json, sha256_file, temporary_path, write_json
 from .storage.dataset import utcnow
 

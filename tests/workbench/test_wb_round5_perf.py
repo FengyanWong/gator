@@ -15,7 +15,7 @@ from analog_optimizer.graph.circuit_graph import ParameterBinding, ParameterGrou
 from analog_optimizer.netlist.config import DeviceMapping, ParserConfig
 from analog_optimizer.netlist.spectre_parser import SpectreParser
 from analog_optimizer.parameters.actions import ActionMapper
-from gator_workbench import compile as comp, engine as engine_module, graph_view, pdk, schema, structures, tasks, units, validation
+from gator_workbench import compile as comp, engine as engine_module, graph_view, pdk, schema, structures, task_registry, tasks, units, validation
 from gator_workbench.generic_profile import RULES_FORMAT, GenericMosWidthProfile
 from helpers import bridge_is_importable, execute, make_config, rows  # noqa: F401 - autouse here: the bridge counts as installed
 
@@ -255,7 +255,7 @@ def demo_pdk(tmp_path, monkeypatch):
     mapping.write_text(json.dumps(dict(mapping_version='demo045-test', models=models, global_nets=['0'], net_roles={'0': ['ground']},
                                        parameter_groups=[dict(id='input_w', parameter_kind='w', unit='m', lower=1e-6, upper=10e-6,
                                                               members=[dict(device_id='XU1/M1', parameter='w')])])))
-    monkeypatch.setitem(tasks.SYNTHETIC_FIXTURES, 'pdk_demo', dict(netlist=str(FIXTURE / 'demo_circuit.scs'), config=str(mapping),
+    monkeypatch.setitem(task_registry.SYNTHETIC_FIXTURES, 'pdk_demo', dict(netlist=str(FIXTURE / 'demo_circuit.scs'), config=str(mapping),
                                                                    circuit_class='opamp'))
     loads = dict(load_record=0, list_pdks=0)
     load, listing = pdk.load_record, pdk.list_pdks

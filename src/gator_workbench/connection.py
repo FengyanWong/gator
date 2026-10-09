@@ -55,10 +55,12 @@ import threading
 import time
 from types import SimpleNamespace
 
-from .paths import append_local_log, local_settings_dir, repo_root
+from .paths import append_local_log, repo_root
 from .security import redact
 from .storage.atomic import read_json
 from .storage.dataset import utcnow
+# re-exported: moved to paths.py by the refactoring (docs/plan-refactoring.md)
+from .paths import connection_file
 
 VERIFIED_BRIDGE_VERSION = '0.8.0'      # mirrors the pin in analog_optimizer/backends/virtuoso_bridge.py (a test pins both)
 LAYERS = ('bridge_package', 'connection_profile', 'tunnel', 'daemon', 'session_readiness', 'spectre', 'spectre_license')
@@ -179,11 +181,6 @@ def layer(name, state='not_checked', reason=None, diagnostic=None, **details):
         raise ValueError(state)
     return dict(layer=name, state=state, reason_code=reason, diagnostic=redact(diagnostic, 600),
                 details={k: v for k, v in details.items() if v is not None})
-
-
-# ---------------------------------------------------------------------------- profiles
-def connection_file() -> Path:
-    return local_settings_dir() / 'bridge_connection.json'
 
 
 def load_profiles() -> dict:

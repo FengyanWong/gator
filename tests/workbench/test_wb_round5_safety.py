@@ -13,7 +13,7 @@ import threading
 import pytest
 from fastapi.testclient import TestClient
 
-from gator_workbench import checkpoints as ckpt, layout as layout_module, paths, runs, schema, worker
+from gator_workbench import checkpoints as ckpt, layout as layout_module, paths, run_index, runs, schema, settings_store, worker
 from gator_workbench.api import app as app_module
 from gator_workbench.storage import atomic, read_json
 from helpers import execute, make_config, roots_for, workbench_app
@@ -78,7 +78,7 @@ def test_a_failed_start_outside_a_run_directory_creates_nothing(tmp_path):
 # ------------------------------------------------------------------------------- A4: two saves of settings.json at once
 def test_concurrent_settings_saves_keep_every_update(monkeypatch):
     # Both saves read the file before either writes (the barrier), unless the lock makes the second wait for the first.
-    barrier, original = threading.Barrier(2), runs.write_json
+    barrier, original = threading.Barrier(2), settings_store.write_json
 
     def write_after_both_read(path, value, **kwargs):
         try:
@@ -86,14 +86,14 @@ def test_concurrent_settings_saves_keep_every_update(monkeypatch):
         except threading.BrokenBarrierError:
             pass
         return original(path, value, **kwargs)
-    monkeypatch.setattr(runs, 'write_json', write_after_both_read)
-    threads = [threading.Thread(target=runs.save_settings, kwargs={key: value})
+    monkeypatch.setattr(settings_store, 'write_json', write_after_both_read)
+    threads = [threading.Thread(target=settings_store.save_settings, kwargs={key: value})
                for key, value in (('agent', dict(provider='disabled')), ('output_root', '/tmp/somewhere'))]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join(timeout=10)
-    assert runs.load_settings() == dict(agent=dict(provider='disabled'), output_root='/tmp/somewhere')
+    assert settings_store.load_settings() == dict(agent=dict(provider='disabled'), output_root='/tmp/somewhere')
 
 
 def publish_with(tmp_path):
@@ -311,7 +311,7 @@ def test_the_run_list_reads_each_status_once_and_the_model_list_no_manifest(two_
     assert len(rows) == 2 and rows == json.loads(json.dumps(rows))     # plain JSON as ever
     read = []
     monkeypatch.setattr(layout_module, 'read_json', lambda path, *a, **k: read.append(Path(path).name) or read_json(path, *a, **k))
-    monkeypatch.setattr(runs, 'read_json', lambda path, *a, **k: read.append(Path(path).name) or read_json(path, *a, **k))
+    monkeypatch.setattr(run_index, 'read_json', lambda path, *a, **k: read.append(Path(path).name) or read_json(path, *a, **k))
     monkeypatch.setattr(ckpt, 'read_json', lambda path, *a, **k: read.append(Path(path).name) or read_json(path, *a, **k))
     listed = runs.list_runs(roots_for(two_runs), two_runs, fresh=True)     # read from disk (Refresh list): each file once
     assert read.count('status.json') == 2 and read.count('run_manifest.json') == 2

@@ -631,7 +631,7 @@ def registry_for(config):
     if custom is None:
         if config.circuit.source == 'virtuoso':
             return None                   # a cell without a profile: its registry comes with the profile, nothing to check yet
-        from .profiles import task_spec_registry
+        from .profile_store import task_spec_registry
         generated = task_spec_registry(config.circuit)       # a generated profile brings the results of its circuit type
         if generated is not None:
             return {entry['metric_id']: entry['unit'] for entry in generated}
@@ -681,24 +681,24 @@ def _in(value, unit) -> str:
 
 
 def _check_saved_task(config, report, rows_from=None):
-    """A saved task runs exactly as it was saved (task flow part 4, consistency.py): Parameters, Probes or Specs rows that
+    """A saved task runs exactly as it was saved (task flow part 4, saved_rows.py): Parameters, Probes or Specs rows that
     differ from its task file block a start until "Save task" stores them, or "Reload saved values" takes the saved
     rows back. A resume runs the run's own saved rows, so it is not blocked. Rows older than the saved task - saving
     them would undo what was saved since - point to Reload saved values (record 7.203; `rows_from`: the revision the
     page's rows came from, when it knows). Which rows differ, row by row, goes to `report.unsaved_rows` in every run
     mode: the editors mark them (record 7.222)."""
-    from . import consistency
-    found = consistency.saved_task(config, with_entry=False)
+    from . import saved_rows
+    found = saved_rows.saved_task(config, with_entry=False)
     if found is None:
         return
     name, _, saved = found
-    report.unsaved_rows = consistency.unsaved_rows(config, saved)
+    report.unsaved_rows = saved_rows.unsaved_rows(config, saved)
     if config.run.mode == 'resume':
         return
-    differences = consistency.row_differences(config, saved)
-    undone = consistency.undone_by_saving(config, name, saved, base=rows_from) if differences else None
+    differences = saved_rows.row_differences(config, saved)
+    undone = saved_rows.undone_by_saving(config, name, saved, base=rows_from) if differences else None
     older = {item['section'] for item in undone['items']} if undone else set()
     for section, lines in differences.items():
-        fix = consistency.FIX_NEWER.format(**undone) if section in older else consistency.FIX_ROWS
+        fix = saved_rows.FIX_NEWER.format(**undone) if section in older else saved_rows.FIX_ROWS
         report.add('error', 'task_not_saved', section,
-                   consistency.describe_rows(section, lines, name=name, revision=saved.get('revision')) + ' ' + fix)
+                   saved_rows.describe_rows(section, lines, name=name, revision=saved.get('revision')) + ' ' + fix)

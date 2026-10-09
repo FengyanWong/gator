@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from gator_workbench import checkpoints as ckpt, runs
+from gator_workbench import checkpoints as ckpt, run_index, runs
 from gator_workbench.layout import find_runs
 from gator_workbench.storage.atomic import write_json
 from helpers import roots_for
@@ -87,11 +87,11 @@ def test_a_linked_save_point_folder_is_not_offered(tmp_path):
 def test_the_code_of_the_save_point_is_compared_with_the_source_digest_of_now(tmp_path, monkeypatch):
     run = fabricate(tmp_path, 'r1')
     save(run, 'ckpt-a', code='old-code')
-    monkeypatch.setattr(runs, 'current_source_digest', lambda max_age=30.0: 'new-code')
+    monkeypatch.setattr(run_index, 'current_source_digest', lambda max_age=30.0: 'new-code')
     assert runs.save_point_facts(run) == ('ckpt-a', 'older')
     row, = runs.list_runs(roots_for(tmp_path), tmp_path)
     assert row['resumability'] == 'weights_only'                        # a full save point of older code: model only (7.221)
-    monkeypatch.setattr(runs, 'current_source_digest', lambda max_age=30.0: 'old-code')
+    monkeypatch.setattr(run_index, 'current_source_digest', lambda max_age=30.0: 'old-code')
     row, = runs.list_runs(roots_for(tmp_path), tmp_path)                 # the cache keeps the code, never the verdict
     assert row['resumability'] == 'full_state' and runs.save_point_code(run) == 'current'
 
@@ -126,7 +126,7 @@ def test_a_replaced_file_is_seen_at_the_next_read(tmp_path):
 
 
 def test_a_new_or_pruned_save_point_is_seen(tmp_path, monkeypatch):
-    monkeypatch.setattr(runs, 'current_source_digest', lambda max_age=30.0: 'abc')     # the code save() writes
+    monkeypatch.setattr(run_index, 'current_source_digest', lambda max_age=30.0: 'abc')     # the code save() writes
     run = fabricate(tmp_path, 'r1')
     assert rows_of(tmp_path)['r1']['resumability'] == 'none'             # the summary claims one, the folder holds none
     save(run, 'ckpt-00000010-a')
@@ -163,9 +163,9 @@ def test_an_entry_is_kept_however_old_until_its_folder_changes(tmp_path, monkeyp
 
 def test_a_removed_run_leaves_the_list_and_the_cache(tmp_path):
     keep, gone = fabricate(tmp_path, 'r1'), fabricate(tmp_path, 'r2', created='2026-10-07T11:00:00+00:00')
-    assert set(rows_of(tmp_path)) == {'r1', 'r2'} and str(gone) in runs._RUN_CACHE
+    assert set(rows_of(tmp_path)) == {'r1', 'r2'} and str(gone) in run_index._RUN_CACHE
     shutil.rmtree(gone)
-    assert set(rows_of(tmp_path)) == {'r1'} and str(gone) not in runs._RUN_CACHE and str(keep) in runs._RUN_CACHE
+    assert set(rows_of(tmp_path)) == {'r1'} and str(gone) not in run_index._RUN_CACHE and str(keep) in run_index._RUN_CACHE
 
 
 def test_the_lock_is_probed_only_for_runs_that_say_they_work(tmp_path, monkeypatch):
@@ -223,7 +223,7 @@ class _Guarded(dict):
     two lists at once could end in "dictionary changed size during iteration" while one let go of entries and the other
     added some (Astra's review of 2026-10-08)."""
     def _held(self):
-        assert runs._RUN_CACHE_LOCK.mine(), 'the run cache was touched without its lock'
+        assert run_index._RUN_CACHE_LOCK.mine(), 'the run cache was touched without its lock'
 
     def get(self, *args):
         self._held()
@@ -243,14 +243,14 @@ class _Guarded(dict):
 
 
 def test_the_cache_is_touched_under_its_lock_only_and_the_files_are_read_outside_it(tmp_path, monkeypatch):
-    monkeypatch.setattr(runs, '_RUN_CACHE', _Guarded())
-    monkeypatch.setattr(runs, '_RUN_CACHE_LOCK', _OwnedLock())
-    original = runs.read_json
+    monkeypatch.setattr(run_index, '_RUN_CACHE', _Guarded())
+    monkeypatch.setattr(run_index, '_RUN_CACHE_LOCK', _OwnedLock())
+    original = run_index.read_json
 
     def read_outside(*args, **kwargs):
-        assert not runs._RUN_CACHE_LOCK.mine(), 'a run file was read while the cache lock was held'
+        assert not run_index._RUN_CACHE_LOCK.mine(), 'a run file was read while the cache lock was held'
         return original(*args, **kwargs)
-    monkeypatch.setattr(runs, 'read_json', read_outside)
+    monkeypatch.setattr(run_index, 'read_json', read_outside)
     kept, gone = fabricate(tmp_path, 'r1'), fabricate(tmp_path, 'r2', created='2026-10-07T11:00:00+00:00')
     save(kept, 'ckpt-a')
     (tmp_path / 'exp__0123456789ab' / 'runs' / 'task' / 'no-manifest').mkdir()         # a folder without a manifest: let go

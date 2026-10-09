@@ -28,72 +28,21 @@ from dataclasses import asdict
 from datetime import datetime
 import json
 import math
-import os
 from pathlib import Path
-import re
 import shutil
 
 from . import native_cells, recipes, units
 from .generic_profile import RULES_FORMAT, VERIFIED_WIDTH_STEP, check_writable_record
-from .paths import local_settings_dir, repo_root
+from .paths import repo_root
 from .storage.atomic import sha256_file as _sha256, write_json
 from .storage.dataset import utcnow
+# re-exported: moved to profile_store.py by the refactoring (docs/plan-refactoring.md)
+from .profile_store import (NAME, FORMAT, FILES, ProfileError, store_root, profile_dir, list_profiles, profile_entry,
+                            task_spec_registry, reference_metrics, TASK_FILE, HISTORY, task_file)
 
-NAME = re.compile(r'^[a-z][a-z0-9_]{1,39}$')
-FORMAT = 'gator-generated-profile-1'
-FILES = dict(design='design.json', mapping='mapping.json', structure='structure.scs', readback='readback.cdf.json',
-             rules='rules.json', receipt='creation.json', entry='profile.json', reference='reference_measurements.json',
-             maestro_deck='maestro_deck.json')
 RECIPES = {'ring_oscillator': dict(label='Ring oscillator (free-running)', circuit_class='vco'),
            'opamp_ac': dict(label='Op-amp / OTA (AC gain)', circuit_class='opamp')}
 OPAMP_NETS = dict(VDD='supply', VINP='input', VINN='input', VOUT='output', VBIAS='bias')
-
-
-class ProfileError(ValueError):
-    """Why a profile cannot be created, in words the form can show."""
-
-
-def store_root() -> Path:
-    return local_settings_dir() / 'profiles'
-
-
-def profile_dir(name) -> Path:
-    if not isinstance(name, str) or not NAME.match(name):
-        raise ProfileError('The profile name must be lowercase letters, digits and "_" (2-40 characters, starting with a letter)')
-    return store_root() / name
-
-
-def list_profiles() -> dict:
-    found = {}
-    root = store_root()
-    for entry_file in sorted(root.glob(f'*/{FILES["entry"]}')) if root.is_dir() else ():
-        try:
-            entry = json.loads(entry_file.read_text())
-        except (OSError, ValueError):
-            continue
-        if entry.get('format') == FORMAT and entry.get('name') == entry_file.parent.name and NAME.match(entry['name']):
-            found[entry['name']] = dict(entry, directory=str(entry_file.parent))
-    return found
-
-
-def profile_entry(name) -> dict | None:
-    """`list_profiles().get(name)`, from that one profile's file (record 7.279): the list reads every profile.json in the
-    store - about 35 files on the 9p-mounted D: drive, 0.15 s - and the check of each edit, a task's load and the saved
-    model's check each wanted one. The same answer: a folder of exactly that name (a case-insensitive drive opens
-    other spellings too), readable JSON of this format naming itself."""
-    root = store_root()
-    if not isinstance(name, str) or not NAME.match(name) or not root.is_dir():
-        return None
-    entry_file = root / name / FILES['entry']
-    try:
-        if name not in os.listdir(root):
-            return None
-        entry = json.loads(entry_file.read_text())
-    except (OSError, ValueError):
-        return None
-    if entry.get('format') == FORMAT and entry.get('name') == name:
-        return dict(entry, directory=str(entry_file.parent))
-    return None
 
 
 def tasks_for_cell(library, cell) -> list:
@@ -158,25 +107,6 @@ def _refuse_recorded_group_values(name, mapping_file):
         raise ProfileError(f'real:{name} was saved before the mapping stopped recording a fixed value per variable, so its '
                            f'first changed candidate would be refused by its own graph check ({", ".join(map(str, stale[:3]))}'
                            f'{"..." if len(stale) > 3 else ""}). Open the task and press "Save task" once; nothing else changes.')
-
-
-def task_spec_registry(circuit) -> list | None:
-    """The result registry of the generated profile a configuration runs, or None (any other task: the default
-    registry, or whatever the configuration states itself)."""
-    task_id = getattr(circuit, 'task_id', None) or ''
-    if getattr(circuit, 'source', None) != 'registered_task' or not task_id.startswith('real:'):
-        return None
-    entry = profile_entry(task_id[len('real:'):])
-    return None if entry is None else entry.get('spec_registry')
-
-
-def reference_metrics(name) -> dict | None:
-    """The recorded REAL baseline of a generated profile, once there is one."""
-    try:
-        reference = json.loads((profile_dir(name) / FILES['reference']).read_text())
-    except (OSError, ValueError):
-        return None
-    return reference['metrics'] if reference.get('origin') == 'real' and isinstance(reference.get('metrics'), dict) else None
 
 
 # ---------------------------------------------------------------------------------- creation
@@ -614,10 +544,6 @@ def create_profile(name, config, *, recipe, expected_frequency_hz=None) -> dict:
 
 
 # ---------------------------------------------------------------------------------- saving a task: "Save task" / "Save as"
-TASK_FILE = 'task.json'
-HISTORY = 'history'
-
-
 def measurement_kind(config) -> str:
     """How a task measures, read from its Probes: all Maestro outputs -> 'maestro'; all results of one circuit type ->
     that type."""
@@ -637,13 +563,6 @@ def measurement_kind(config) -> str:
         raise ProfileError('The probes fit both circuit types (only supply results): add a probe that says which one, '
                            'e.g. osc_frequency_hz or gain_db_at_start')
     raise ProfileError('The probes mix Maestro outputs and results of a circuit type: a task measures one way')
-
-
-def task_file(name) -> dict | None:
-    try:
-        return json.loads((profile_dir(name) / TASK_FILE).read_text())
-    except (OSError, ValueError, ProfileError):
-        return None
 
 
 def save_task(monitor, profile_id, name, config, *, library=None, cell=None, task=None, as_new=False, extras=None,
@@ -692,7 +611,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
     if refused:
         raise ProfileError(' '.join(refused))
     if updating and not replace_newer:
-        from .consistency import describe_undone, undone_by_saving
+        from .saved_rows import describe_undone, undone_by_saving
         undone = undone_by_saving(config, name, task_file(name), base=base_revision)
         if undone:
             raise NewerSaved(describe_undone(name, undone) + ' Press Reload saved values to take the saved rows, or save anyway.',
@@ -984,11 +903,11 @@ def adopt_latest_baseline(name, data_root) -> dict | None:
     The manifests come from the run list's cache, read many runs at a time (record 7.279: every manifest was read
     on each such load, 2.3 s instead of 0.2 s)."""
     import copy
-    from . import runs
+    from . import run_index
     from .layout import find_runs
     newest = None
     found = find_runs(data_root, manifest=False)
-    for run_dir, facts in zip(found, runs.read_many(runs._run_facts, found)):
+    for run_dir, facts in zip(found, run_index.read_many(run_index._run_facts, found)):
         if facts is None:                          # no readable manifest
             continue
         manifest = facts['manifest']

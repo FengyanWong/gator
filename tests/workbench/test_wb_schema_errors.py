@@ -8,12 +8,12 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from gator_workbench import compile as comp, schema, tasks, validation
+from gator_workbench import compile as comp, schema, task_registry, tasks, validation
 from gator_workbench.api import create_app
 from helpers import MOCK_TASK
 from test_wb_api import probe
 
-SYNTHETIC = [f'synthetic:{name}' for name in sorted(tasks.SYNTHETIC_FIXTURES)]
+SYNTHETIC = [f'synthetic:{name}' for name in sorted(task_registry.SYNTHETIC_FIXTURES)]
 OLD_IDS = ['input_pair_width__XU1/M2', 'mirror_pair_width__XU1/M4']
 
 

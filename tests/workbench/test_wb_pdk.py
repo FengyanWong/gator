@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from gator_workbench import checkpoints as ckpt, pdk, runs, schema, tasks, validation
+from gator_workbench import checkpoints as ckpt, pdk, runs, schema, task_registry, tasks, validation
 from gator_workbench.storage import read_json
 from helpers import SMALL_NET, execute, make_config, roots_for, run_prepared
 
@@ -56,7 +56,7 @@ def demo_task(tmp_path, monkeypatch):
     """A MOCK registered task on the demo circuit (analytic toy score), with demo045 loaded in this test's settings."""
     record = load_demo()
     mapping = parser_config(tmp_path, record)
-    monkeypatch.setitem(tasks.SYNTHETIC_FIXTURES, 'pdk_demo', dict(netlist=str(FIXTURE / 'demo_circuit.scs'),
+    monkeypatch.setitem(task_registry.SYNTHETIC_FIXTURES, 'pdk_demo', dict(netlist=str(FIXTURE / 'demo_circuit.scs'),
                                                                    config=str(mapping), circuit_class='opamp'))
     return record
 
@@ -355,7 +355,7 @@ def pdk_run(tmp_path_factory):
     patch.setenv('GATOR_WORKBENCH_SETTINGS_DIR', str(root / '_settings'))
     record = load_demo()
     mapping = parser_config(root, record)
-    patch.setitem(tasks.SYNTHETIC_FIXTURES, 'pdk_demo', dict(netlist=str(FIXTURE / 'demo_circuit.scs'), config=str(mapping),
+    patch.setitem(task_registry.SYNTHETIC_FIXTURES, 'pdk_demo', dict(netlist=str(FIXTURE / 'demo_circuit.scs'), config=str(mapping),
                                                              circuit_class='opamp'))
     layout, state = execute(demo_config(root, run=dict(max_evaluations=20, seed=5), project=dict(task_name='pdk_source')), root)
     yield root, layout, state, record

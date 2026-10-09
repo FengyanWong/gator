@@ -19,7 +19,7 @@ import os
 from pathlib import Path
 import re
 
-from .connection import connection_file
+from .paths import connection_file
 from .storage.atomic import read_json
 
 LOCAL, SIMULATOR = 'local', 'simulator'

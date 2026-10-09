@@ -193,7 +193,7 @@ def _task_spec_schema(config: WorkbenchConfig):
     from analog_optimizer.models.inputs import SpecSchema
     custom = config.run.advanced.spec_registry
     if custom is None:
-        from .profiles import task_spec_registry
+        from .profile_store import task_spec_registry
         generated = task_spec_registry(config.circuit)       # see validation.registry_for: the same fallback, the same order
         if generated is None:
             from .task_registry import verified_spec_registry

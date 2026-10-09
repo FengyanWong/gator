@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from analog_optimizer.backends.virtuoso_bridge import BridgeConfig, VirtuosoBridgeBackend
-from gator_workbench import bridge_read, cdf_facts, cdf_write, profiles, schema, tasks
+from gator_workbench import bridge_read, cdf_facts, cdf_write, paths, profiles, schema, tasks
 from gator_workbench.generic_profile import GenericMosWidthProfile
 from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
 from test_wb_api import probe
@@ -542,7 +542,7 @@ def test_a_rules_file_whose_step_left_the_pdk_grid_does_not_load(tmp_path):
 # ------------------------------------------------------------------------------------------ the run
 def test_a_real_run_of_such_a_task_prepares_candidates_with_the_form_writer(tmp_path):
     made = make(tmp_path)
-    target = profiles.local_settings_dir() / 'bridge_connection.json'
+    target = paths.local_settings_dir() / 'bridge_connection.json'
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(dict(active='lab', profiles=dict(lab=dict(env_file='/x/.env', library='GATOR_TESTS',
                                                                           model_file='/pdk/model.scs')))))

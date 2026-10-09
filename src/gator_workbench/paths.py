@@ -280,3 +280,8 @@ def safe_child(base: Path, relative: str) -> Path:
     if target != base and base not in target.parents:
         raise PathNotAllowed('Path escapes the run directory')
     return target
+
+
+# ---------------------------------------------------------------------------- profiles
+def connection_file() -> Path:
+    return local_settings_dir() / 'bridge_connection.json'

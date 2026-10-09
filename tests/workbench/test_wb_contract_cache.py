@@ -6,7 +6,7 @@ built one."""
 import pytest
 
 from analog_optimizer.training import sac
-from gator_workbench import checkpoints as ckpt, modes, runs, schema, tasks
+from gator_workbench import checkpoints as ckpt, modes, run_index, runs, schema, tasks
 from gator_workbench.compile import compile_task
 from helpers import SMALL_NET, make_config
 
@@ -18,7 +18,7 @@ def builds(monkeypatch):
     built, original = [], modes._new_learner
     monkeypatch.setattr(modes, '_new_learner', lambda *args, **kwargs: built.append(1) or original(*args, **kwargs))
     monkeypatch.setattr(runs, '_CONTRACTS', {})
-    monkeypatch.setattr(runs, 'current_source_digest', lambda max_age=30.0: 'digest-of-now')
+    monkeypatch.setattr(run_index, 'current_source_digest', lambda max_age=30.0: 'digest-of-now')
     monkeypatch.setattr(sac, 'source_digest', lambda: 'digest-of-now')
     return built
 
@@ -56,7 +56,7 @@ def test_other_settings_are_another_contract(tmp_path, builds, monkeypatch):
     contract_of(make_config(tmp_path), cached=True)
     contract_of(make_config(tmp_path, run=dict(network=dict(SMALL_NET, hidden_dim=SMALL_NET['hidden_dim'] * 2))), cached=True)
     contract_of(make_config(tmp_path, advanced=dict(gamma=0.5)), cached=True)
-    monkeypatch.setattr(runs, 'current_source_digest', lambda max_age=30.0: 'the-package-changed')
+    monkeypatch.setattr(run_index, 'current_source_digest', lambda max_age=30.0: 'the-package-changed')
     contract_of(make_config(tmp_path), cached=True)
     assert len(builds) == 4
 

@@ -265,16 +265,16 @@ def run_episode(env, task, method, *, learner=None, replay=None, seed=0, batch_s
                 summary['unconfirmed_evaluation'] = dict(id=env.recorder.last_eval_id, error=str(recording_error))
         raise
     finally:
-        summary.update(statistics.summary(calls=env.simulation_calls,
-                                     wall_seconds=perf_counter()-started, budget=1+env.max_steps))
-        summary.update(updates=history['updates_count'], update_log=updates, weight_before=before,
-                       weight_after=weight_digest(learner) if learner else None,
-                       replay_insertions=0 if replay is None else replay.insertions)
-        restore = env.directory / 'restoration.json'
-        summary['restoration'] = json.loads(restore.read_text()) if restore.exists() else {'state': 'unknown'}
-        write_report_preserving_error(env.directory / 'run.json', summary)
+        _finish_episode(summary, statistics, env, started, history, updates, before, learner, replay)
     if not training and summary['weight_before'] != summary['weight_after']:
         raise RuntimeError('Frozen evaluation changed model weights')
+    _save_episode(training, task, phase, seed, env, summary, checkpoints, learner, replay, checkpoint)
+    return summary
+
+
+def _save_episode(training, task, phase, seed, env, summary, checkpoints, learner, replay, checkpoint):
+    """A learning episode's model and replay saved at its end: a forced save point and the policy (checkpoints), or the
+    one checkpoint file asked for."""
     if training:
         state = dict(task=task.id, phase=phase, seed=seed, simulation_calls=env.simulation_calls,
                      boundary='completed_benchmark_episode', summary=summary)
@@ -284,7 +284,19 @@ def run_episode(env, task, method, *, learner=None, replay=None, seed=0, batch_s
             summary['checkpoint'] = str(path)
         elif checkpoint:
             learner.save(checkpoint, replay, run_state=state)
-    return summary
+
+
+def _finish_episode(summary, statistics, env, started, history, updates, before, learner, replay):
+    """The episode's summary completed - statistics, updates, the weights before and after, the restoration record - and
+    written to run.json, preserving an error already recorded."""
+    summary.update(statistics.summary(calls=env.simulation_calls,
+                                 wall_seconds=perf_counter()-started, budget=1+env.max_steps))
+    summary.update(updates=history['updates_count'], update_log=updates, weight_before=before,
+                   weight_after=weight_digest(learner) if learner else None,
+                   replay_insertions=0 if replay is None else replay.insertions)
+    restore = env.directory / 'restoration.json'
+    summary['restoration'] = json.loads(restore.read_text()) if restore.exists() else {'state': 'unknown'}
+    write_report_preserving_error(env.directory / 'run.json', summary)
 
 
 def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance, progress=print,
@@ -298,34 +310,8 @@ def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance
         raise ValueError('Parallel benchmark requires isolated immutable-netlist or synthetic environments')
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    planned = benchmark_call_budget(tasks, settings)
-    schema_settings = settings.get('spec_schema')
-    spec_schema = (SpecSchema() if schema_settings is None else SpecSchema(
-        version=schema_settings['version'], metrics=tuple(tuple(m) for m in schema_settings['metrics'])))
-    registry = {name: unit for name, unit, _ in spec_schema.metrics}
-    for task in tasks:
-        if any(registry.get(s.metric_id) != s.unit for s in task.specs):
-            raise ValueError('Task metric identity/unit is absent from the frozen specification schema')
-    seeds = settings['seeds']
-    train = [t for t in tasks if t.partition == 'train']
-    validation = [t for t in tasks if t.partition == 'validation']
-    test = [t for t in tasks if t.partition == 'test']
-    models, methods, validation_models = benchmark_models(settings)
-    frozen = dict(**settings, origin=origin, methods=tuple(methods), planned_calls=planned,
-                  models={k: asdict(v) for k, v in models.items()}, provenance=provenance,
-                  method_models={k: dict(model=v[0], phase=v[1]) for k, v in methods.items()},
-                  validation_models=validation_models,
-                  capacity_control='common width/depth; report actual actor+Q1+Q2 parameters, not parameter matched',
-                  source_sha256=source_digest(), adaptation='fresh optimizers/replay; copied weights and alpha',
-                  validation='frozen diagnostic only; no model/hyperparameter selection',
-                  frozen_policy='deterministic mean, no parameter updates',
-                  budget_unit=('one analytic toy evaluation including reset, no cache/retries' if origin == 'synthetic'
-                               else 'one nominal candidate package including reset, no cache/retries'),
-                  resolved_spec_schema=asdict(spec_schema),
-                  source_task_order=[t.id for t in train],
-                  source_sampling='sequential episodes; one shared learner/replay per encoder and seed',
-                  normalizer='fixed physical references; no data fitting', stop_on_success=False)
-    protocol_sha = freeze_protocol(directory / 'protocol.json', tasks, frozen)
+    (planned, spec_schema, seeds, train, validation, test, models, methods, validation_models,
+     protocol_sha) = _frozen_protocol(tasks, settings, directory, origin, provenance)
     report = {} if report is None else report
     report.update(origin=origin, protocol_sha256=protocol_sha, completed=False, phases=[], methods=tuple(methods),
                   models={k: asdict(v) for k, v in models.items()},
@@ -466,14 +452,55 @@ def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance
         report.update(exception_type=type(exc).__name__, error=str(exc))
         raise
     finally:
-        finished = {(r['task'], r['method'], r['seed']) for r in report['test_runs']}
-        report['unexecuted_test_runs'] = [dict(task=t.id, method=m, seed=s) for t in test
-                                         for m in methods for s in execution_seeds if (t.id, m, s) not in finished]
-        report['cost_by_partition'] = {part: dict(calls=sum(r['calls'] for r in report['phases'] if r['partition'] == part),
-                                                  wall_seconds=sum(r['wall_seconds'] for r in report['phases'] if r['partition'] == part))
-                                       for part in ('train', 'validation', 'test')}
-        report.update(aggregate=aggregate_runs(report['test_runs']), elapsed_seconds=perf_counter()-started,
-                      real_simulation_calls=report['calls'] if origin == 'real' else 0,
-                      synthetic_calls=report['calls'] if origin == 'synthetic' else 0)
-        write_report_preserving_error(directory / 'report.json', report)
+        _finish_report(report, test, methods, execution_seeds, started, origin, directory)
     return report
+
+
+def _finish_report(report, test, methods, execution_seeds, started, origin, directory):
+    """The report's closing facts - the test runs left unexecuted, the cost by partition, the aggregate, the elapsed
+    time and the call kinds - written, preserving an error already recorded."""
+    finished = {(r['task'], r['method'], r['seed']) for r in report['test_runs']}
+    report['unexecuted_test_runs'] = [dict(task=t.id, method=m, seed=s) for t in test
+                                     for m in methods for s in execution_seeds if (t.id, m, s) not in finished]
+    report['cost_by_partition'] = {part: dict(calls=sum(r['calls'] for r in report['phases'] if r['partition'] == part),
+                                              wall_seconds=sum(r['wall_seconds'] for r in report['phases'] if r['partition'] == part))
+                                   for part in ('train', 'validation', 'test')}
+    report.update(aggregate=aggregate_runs(report['test_runs']), elapsed_seconds=perf_counter()-started,
+                  real_simulation_calls=report['calls'] if origin == 'real' else 0,
+                  synthetic_calls=report['calls'] if origin == 'synthetic' else 0)
+    write_report_preserving_error(directory / 'report.json', report)
+
+
+def _frozen_protocol(tasks, settings, directory, origin, provenance):
+    """The benchmark's protocol, checked against the frozen specification schema and frozen in protocol.json before any
+    call: the planned call budget, the schema, the seeds, the train/validation/test tasks, the models and methods, and
+    the protocol's sha256."""
+    planned = benchmark_call_budget(tasks, settings)
+    schema_settings = settings.get('spec_schema')
+    spec_schema = (SpecSchema() if schema_settings is None else SpecSchema(
+        version=schema_settings['version'], metrics=tuple(tuple(m) for m in schema_settings['metrics'])))
+    registry = {name: unit for name, unit, _ in spec_schema.metrics}
+    for task in tasks:
+        if any(registry.get(s.metric_id) != s.unit for s in task.specs):
+            raise ValueError('Task metric identity/unit is absent from the frozen specification schema')
+    seeds = settings['seeds']
+    train = [t for t in tasks if t.partition == 'train']
+    validation = [t for t in tasks if t.partition == 'validation']
+    test = [t for t in tasks if t.partition == 'test']
+    models, methods, validation_models = benchmark_models(settings)
+    frozen = dict(**settings, origin=origin, methods=tuple(methods), planned_calls=planned,
+                  models={k: asdict(v) for k, v in models.items()}, provenance=provenance,
+                  method_models={k: dict(model=v[0], phase=v[1]) for k, v in methods.items()},
+                  validation_models=validation_models,
+                  capacity_control='common width/depth; report actual actor+Q1+Q2 parameters, not parameter matched',
+                  source_sha256=source_digest(), adaptation='fresh optimizers/replay; copied weights and alpha',
+                  validation='frozen diagnostic only; no model/hyperparameter selection',
+                  frozen_policy='deterministic mean, no parameter updates',
+                  budget_unit=('one analytic toy evaluation including reset, no cache/retries' if origin == 'synthetic'
+                               else 'one nominal candidate package including reset, no cache/retries'),
+                  resolved_spec_schema=asdict(spec_schema),
+                  source_task_order=[t.id for t in train],
+                  source_sampling='sequential episodes; one shared learner/replay per encoder and seed',
+                  normalizer='fixed physical references; no data fitting', stop_on_success=False)
+    protocol_sha = freeze_protocol(directory / 'protocol.json', tasks, frozen)
+    return planned, spec_schema, seeds, train, validation, test, models, methods, validation_models, protocol_sha

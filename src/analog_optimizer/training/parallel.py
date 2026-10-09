@@ -175,22 +175,8 @@ def collect_parallel_episodes(factory, learner, replay, rng, *, max_workers,
         prepare_context = getattr(factory, 'preparation_context', None)
         if callable(prepare_context):
             factory = preparation_stack.enter_context(prepare_context(limits, report))
-        # Separate single-process executors pin each stateful environment to its
-        # owner. A shared process pool cannot guarantee state/worker affinity.
-        for lane in range(count):
-            pools.append(OwnedWorker(lane, limits))
-        pending = [pool.submit(_open, factory, lane, recorder) for lane, pool in enumerate(pools)]
-        opened = []
-        for lane, future in enumerate(pending):
-            try:
-                info = future.result()
-                opened.append(info)
-                report['workers'].append(info)
-                if info['origin'] != replay.origin:
-                    raise ValueError('Worker origin differs from learner/replay')
-            except BaseException as exc:
-                primary_error = primary_error or exc
-                failed(lane, 'open', exc)
+        opened, primary_error = _open_lanes(count, limits, pools, factory, recorder, report, replay, failed,
+                                            primary_error)
         if primary_error:
             raise primary_error
         next_episode = 0
@@ -202,24 +188,8 @@ def collect_parallel_episodes(factory, learner, replay, rng, *, max_workers,
             episode_ids = {lane: next_episode + lane for lane in lanes}
             next_episode += len(lanes)
             active = {lane: dict(operation='reset', episode=episode_ids[lane]) for lane in lanes}
-            resets = {lane: pools[lane].submit(_reset) for lane in lanes}
-            report['peak_in_flight'] = max(report['peak_in_flight'], len(resets))
-            observations = {}
-            for lane, future in resets.items():
-                report['dispatch_attempts'] += 1
-                try:
-                    obs, info = future.result()
-                    budget.finish(lane, info['simulation_calls'] - calls[lane], uncertain=info.get('uncertain_calls', 0))
-                    active.pop(lane, None)
-                    calls[lane] = info['simulation_calls']
-                    report['simulation_calls'] = sum(calls.values())
-                    append_history(report, 'resets', dict(lane=lane, episode=episode_ids[lane], **info), history_limit)
-                    if obs is None or info['terminated'] or info['truncated'] or not info['evaluation_valid']:
-                        raise RuntimeError(f'Worker {lane} reset failed: {info["record_path"]}')
-                    observations[lane] = obs
-                except BaseException as exc:
-                    primary_error = primary_error or exc
-                    failed(lane, 'reset', exc)
+            observations, primary_error = _reset_round(lanes, pools, report, budget, calls, active, episode_ids,
+                                                       history_limit, failed, primary_error)
             if primary_error:
                 raise primary_error
             while observations:
@@ -301,35 +271,7 @@ def collect_parallel_episodes(factory, learner, replay, rng, *, max_workers,
         primary_error = exc
         report['errors'].append(dict(type=type(exc).__name__, message=str(exc)))
     finally:
-        closing = []
-        for lane, pool in enumerate(pools):
-            try:
-                closing.append((lane, pool.submit(_close, timeout=limits.shutdown_seconds)))
-            except BaseException as exc:
-                primary_error = primary_error or exc
-                failed(lane, 'close', exc)
-        for lane, future in closing:
-            try:
-                restored = future.result()
-                report['restorations'].append(restored)
-                calls[lane] = restored['simulation_calls']
-            except BaseException as exc:
-                primary_error = primary_error or exc
-                failed(lane, 'close', exc)
-        for lane, pool in enumerate(pools):
-            try:
-                stopped = pool.shutdown()
-                report['worker_shutdown'].append(stopped)
-                if stopped['state'] == 'still_alive':
-                    raise RuntimeError(f'Worker {lane} did not stop')
-            except BaseException as exc:
-                primary_error = primary_error or exc
-                failed(lane, 'shutdown', exc)
-        try:
-            preparation_stack.close()
-        except BaseException as exc:
-            primary_error = primary_error or exc
-            report['errors'].append(dict(operation='preparation_close', type=type(exc).__name__, message=str(exc)))
+        primary_error = _close_lanes(pools, limits, report, calls, failed, preparation_stack, primary_error)
         report['simulation_calls'] = sum(calls.values())
         report['launch_budget'] = budget.snapshot()
         report['candidate_evaluations'] = budget.candidates
@@ -341,3 +283,84 @@ def collect_parallel_episodes(factory, learner, replay, rng, *, max_workers,
     if primary_error:
         raise primary_error
     return report
+
+
+def _close_lanes(pools, limits, report, calls, failed, preparation_stack, primary_error):
+    """Every lane closed (its environment restored), every worker stopped, the preparation context left; each failure
+    reported, the first one kept."""
+    closing = []
+    for lane, pool in enumerate(pools):
+        try:
+            closing.append((lane, pool.submit(_close, timeout=limits.shutdown_seconds)))
+        except BaseException as exc:
+            primary_error = primary_error or exc
+            failed(lane, 'close', exc)
+    for lane, future in closing:
+        try:
+            restored = future.result()
+            report['restorations'].append(restored)
+            calls[lane] = restored['simulation_calls']
+        except BaseException as exc:
+            primary_error = primary_error or exc
+            failed(lane, 'close', exc)
+    for lane, pool in enumerate(pools):
+        try:
+            stopped = pool.shutdown()
+            report['worker_shutdown'].append(stopped)
+            if stopped['state'] == 'still_alive':
+                raise RuntimeError(f'Worker {lane} did not stop')
+        except BaseException as exc:
+            primary_error = primary_error or exc
+            failed(lane, 'shutdown', exc)
+    try:
+        preparation_stack.close()
+    except BaseException as exc:
+        primary_error = primary_error or exc
+        report['errors'].append(dict(operation='preparation_close', type=type(exc).__name__, message=str(exc)))
+    return primary_error
+
+
+def _reset_round(lanes, pools, report, budget, calls, active, episode_ids, history_limit, failed, primary_error):
+    """The round's episode resets, one per lane, charged to the launch budget: (the actionable observations by lane,
+    the first error)."""
+    resets = {lane: pools[lane].submit(_reset) for lane in lanes}
+    report['peak_in_flight'] = max(report['peak_in_flight'], len(resets))
+    observations = {}
+    for lane, future in resets.items():
+        report['dispatch_attempts'] += 1
+        try:
+            obs, info = future.result()
+            budget.finish(lane, info['simulation_calls'] - calls[lane], uncertain=info.get('uncertain_calls', 0))
+            active.pop(lane, None)
+            calls[lane] = info['simulation_calls']
+            report['simulation_calls'] = sum(calls.values())
+            append_history(report, 'resets', dict(lane=lane, episode=episode_ids[lane], **info), history_limit)
+            if obs is None or info['terminated'] or info['truncated'] or not info['evaluation_valid']:
+                raise RuntimeError(f'Worker {lane} reset failed: {info["record_path"]}')
+            observations[lane] = obs
+        except BaseException as exc:
+            primary_error = primary_error or exc
+            failed(lane, 'reset', exc)
+    return observations, primary_error
+
+
+def _open_lanes(count, limits, pools, factory, recorder, report, replay, failed, primary_error):
+    """One single-process worker per lane (each stateful environment pinned to its owner: a shared pool cannot
+    guarantee state/worker affinity), every lane's environment opened: (opened lanes' facts, the first error)."""
+    # Separate single-process executors pin each stateful environment to its
+    # owner. A shared process pool cannot guarantee state/worker affinity.
+    for lane in range(count):
+        pools.append(OwnedWorker(lane, limits))
+    pending = [pool.submit(_open, factory, lane, recorder) for lane, pool in enumerate(pools)]
+    opened = []
+    for lane, future in enumerate(pending):
+        try:
+            info = future.result()
+            opened.append(info)
+            report['workers'].append(info)
+            if info['origin'] != replay.origin:
+                raise ValueError('Worker origin differs from learner/replay')
+        except BaseException as exc:
+            primary_error = primary_error or exc
+            failed(lane, 'open', exc)
+    return opened, primary_error

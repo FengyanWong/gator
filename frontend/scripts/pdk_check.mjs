@@ -27,7 +27,7 @@
 // Exit code 1 if any check fails.
 import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 import path from 'node:path';
-import { check, launchEdge, mockStarter, outDir, runChecks, sleep, TASK_PANEL, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, outDir, runChecks, sleep, TASK_PANEL, validConfiguration, workbenchUrl, VIRTUOSO_WINDOW, PDK_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -165,13 +165,13 @@ await runChecks(browser, async () => {
   const openPdkWindow = async except => {
     if (!virtuoso) {
       await evaluate(`${LAUNCH}.click()`);
-      const found = await browser.window('GATOR - Virtuoso cell', { ms: 10000 }).catch(() => null);
+      const found = await browser.window(VIRTUOSO_WINDOW, { ms: 10000 }).catch(() => null);
       if (!found) return null;
       virtuoso = await browser.attach(found, { errors: consoleErrors, prefix: 'Virtuoso window: ' });
       await virtuoso.until(`!!document.querySelector('.virtuoso-window button.pdk-open')`, 60);
     }
     await virtuoso.evaluate(`document.querySelector('.virtuoso-window button.pdk-open').click()`, true);
-    return browser.window('GATOR - PDK', { ms: 10000, ...(except ? { except } : {}) }).catch(() => null);
+    return browser.window(PDK_WINDOW, { ms: 10000, ...(except ? { except } : {}) }).catch(() => null);
   };
   const target = await openPdkWindow();
   check('"PDK window..." in the Virtuoso window opens the PDK window (a pop-up from a pop-up)', !!target);
@@ -267,7 +267,7 @@ await runChecks(browser, async () => {
     // instead of leaving it blank, with nothing left to draw it.
     second.close();
     await send('Target.closeTarget', { targetId: virtuoso.target.id });
-    check('closing the Virtuoso window closes the PDK window opened from it', await browser.window('GATOR - PDK', { present: false, ms: 5000 }).then(() => true, () => false));
+    check('closing the Virtuoso window closes the PDK window opened from it', await browser.window(PDK_WINDOW, { present: false, ms: 5000 }).then(() => true, () => false));
   } else check('without a connection, the window opens again after a reload', false, 'no second window');
 
   check('no writing request other than the canned ones reached the backend', refused.length === 0, refused.join(', '));

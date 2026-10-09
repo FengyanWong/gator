@@ -42,7 +42,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { check, fail, finish, launchEdge, NO_WRITES, PAGE_OPEN_TEST, readOnly, sleep, TASK_PANEL, workbenchUrl } from './lib/harness.mjs';
+import { AGENT_WINDOW, APP_ROOT_ID, check, CONFIG_KEY, CONNECTION_WINDOW, fail, finish, HEADER_RUN_KEY, launchEdge, LOOK_KEY, NGSPICE_WINDOW, NO_WRITES, PAGE_OPEN_TEST, PDK_WINDOW,
+  readOnly, RL_MODEL_WINDOW, RUNNING_WINDOW, RUNS_WINDOW, sleep, TASK_PANEL, TASKS_WINDOW, TRAINING_COMPARE_KEY, VIRTUOSO_WINDOW, workbenchUrl } from './lib/harness.mjs';
 
 const args = process.argv.slice(2);
 const option = name => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : null; };
@@ -223,7 +224,7 @@ const FIXED_CLOCK = `(() => { const Real = Date, fixed = new Real(2026, 9, 9, 12
   Object.defineProperty(FixedDate.prototype, 'constructor', { value: FixedDate, writable: true, configurable: true });
   globalThis.Date = FixedDate; })();`;
 const lines = html => html.replace(/ data-react[\w-]*="[^"]*"/g, '').replace(/></g, '>\n<');
-const PAGE_DOM = `(() => { const r = document.getElementById('root'); return (document.documentElement.dataset.theme ?? '') + '\\n' + (r ? r.outerHTML : '(no #root)'); })()`;
+const PAGE_DOM = `(() => { const r = document.getElementById(${JSON.stringify(APP_ROOT_ID)}); return (document.documentElement.dataset.theme ?? '') + '\\n' + (r ? r.outerHTML : '(no #root)'); })()`;
 const WINDOW_DOM = `(document.documentElement.dataset.theme ?? '') + '\\n' + (document.body ? document.body.outerHTML : '(no body)')`;
 const STORAGE = `JSON.stringify({ local: Object.fromEntries(Object.keys(localStorage).sort().map(k => [k, localStorage.getItem(k)])),
   session: Object.fromEntries(Object.keys(sessionStorage).sort().map(k => [k, sessionStorage.getItem(k)])) }, null, 1)`;
@@ -269,7 +270,7 @@ async function scene(look, name, local, body) {
     });
     await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*', requestStage: 'Request' }] });
     await send('Page.addScriptToEvaluateOnNewDocument', { source: FIXED_CLOCK });
-    const put = Object.entries({ 'gator-workbench-look-v1': look, ...local }).map(([k, v]) => `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join(' ');
+    const put = Object.entries({ [LOOK_KEY]: look, ...local }).map(([k, v]) => `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join(' ');
     await send('Page.addScriptToEvaluateOnNewDocument', { source: `if (location.protocol.startsWith('http') && !sessionStorage.getItem('dom-seeded')) { sessionStorage.setItem('dom-seeded', '1'); ${put} }` });
     const popups = async () => {
       const open = (await browser.pages()).filter(t => t.id !== page.target.id && t.title.startsWith('GATOR - '));
@@ -344,7 +345,6 @@ kept.starter = STARTER;
 const CONFIG = { schema_version: 'gator-workbench-config-v1', ...STARTER, run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, seed: 0, ...STARTER.run },
   output: { experiment_name: 'fixture' }, research: {} };
 const LOADED = { ...CONFIG, run: { ...CONFIG.run, mode: 'fine_tune', network: { ...NETWORK }, model_source: { run_dir: RUN, checkpoint_id: CKPT } } };
-const CONFIG_KEY = 'gator-workbench-config-v1', RUN_KEY = 'gator-workbench-current-run-v1';
 const seeded = (config, extra = {}) => ({ [CONFIG_KEY]: JSON.stringify(config), ...extra });
 const FOOTER_TAB = label => `[...document.querySelectorAll('footer .tabs > button')].find(b => b.textContent.trim() === ${JSON.stringify(label)})`;
 const MODE = mode => `document.querySelector('.rl-modes button[data-mode="${mode}"]')`;
@@ -353,7 +353,7 @@ try {
   for (const look of LOOKS) {
     await scene(look, 'fresh', {}, async s => {
       let tasks = null;
-      await s.take('tasks-window', async () => { tasks = await s.popup(s.page, `${TASK_PANEL}.querySelector('.task-row button.task-list-button')`, 'GATOR - tasks', { width: 1500, height: 760 }); });
+      await s.take('tasks-window', async () => { tasks = await s.popup(s.page, `${TASK_PANEL}.querySelector('.task-row button.task-list-button')`, TASKS_WINDOW, { width: 1500, height: 760 }); });
       await s.take('task-chosen', async () => {
         await tasks.until(`!!document.querySelector('table.task-table tr[data-task-key="synthetic:gpdk045_ota5"] code')`, 100);
         const at = await tasks.evaluate(`(() => { const el = document.querySelector('table.task-table tr[data-task-key="synthetic:gpdk045_ota5"] code'); el.scrollIntoView({ block: 'center' });
@@ -361,45 +361,45 @@ try {
         await tasks.clickAt(at, { count: 2 });
       });
     });
-    await scene(look, 'tabs', seeded(CONFIG, { [RUN_KEY]: RUN, 'gator-workbench-training-compare-v1': JSON.stringify([RUN2]) }), async s => {
+    await scene(look, 'tabs', seeded(CONFIG, { [HEADER_RUN_KEY]: RUN, [TRAINING_COMPARE_KEY]: JSON.stringify([RUN2]) }), async s => {
       for (const [label, file] of [['Logs', 'logs'], ['Data tables', 'data'], ['Output files', 'files'], ['Training', 'training'], ['Corner check', 'corners'], ['Run status', 'status']])
         if (await s.evaluate(`!!(${FOOTER_TAB(label)})`)) await s.take(`tab-${file}`, () => s.evaluate(`${FOOTER_TAB(label)}.click()`));
     });
-    await scene(look, 'runs', seeded(CONFIG, { [RUN_KEY]: RUN }), async s => {
+    await scene(look, 'runs', seeded(CONFIG, { [HEADER_RUN_KEY]: RUN }), async s => {
       let runs = null;
-      await s.take('runs-window', async () => { runs = await s.popup(s.page, `document.querySelector('footer .tabs button.run-list-button')`, 'GATOR - runs', { width: 1500, height: 860 }); });
+      await s.take('runs-window', async () => { runs = await s.popup(s.page, `document.querySelector('footer .tabs button.run-list-button')`, RUNS_WINDOW, { width: 1500, height: 860 }); });
       await s.take('run-details', () => runs.evaluate(`[...document.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(RUN)}).querySelector('button.notes-link').click()`));
     });
     await scene(look, 'rl', seeded(CONFIG), async s => {
       let rl = null;
-      await s.take('rl-window', async () => { rl = await s.popup(s.page, `document.querySelector('button.rl-networks-open')`, 'GATOR - RL model', { width: 1100, height: 900 }); });
+      await s.take('rl-window', async () => { rl = await s.popup(s.page, `document.querySelector('button.rl-networks-open')`, RL_MODEL_WINDOW, { width: 1100, height: 900 }); });
       for (const mode of ['fine_tune', 'frozen', 'scratch']) await s.take(`mode-${mode}`, () => rl.evaluate(`${MODE(mode)}.click()`));
     });
     await scene(look, 'rl-loaded', seeded(LOADED), async s => {
       let rl = null;
-      await s.take('rl-window', async () => { rl = await s.popup(s.page, `document.querySelector('button.rl-networks-open')`, 'GATOR - RL model', { width: 1100, height: 900 }); });
+      await s.take('rl-window', async () => { rl = await s.popup(s.page, `document.querySelector('button.rl-networks-open')`, RL_MODEL_WINDOW, { width: 1100, height: 900 }); });
       await s.take('mode-frozen', () => rl.evaluate(`${MODE('frozen')}.click()`));
     });
     await scene(look, 'virtuoso', seeded(CONFIG), async s => {
       let cell = null;
-      await s.take('virtuoso-window', async () => { cell = await s.popup(s.page, `${TASK_PANEL}.querySelector('button.virtuoso-button')`, 'GATOR - Virtuoso cell', { width: 720, height: 980 }); });
-      await s.take('pdk-window', () => s.popup(cell, `document.querySelector('button.pdk-open')`, 'GATOR - PDK', { width: 1100, height: 900 }));
+      await s.take('virtuoso-window', async () => { cell = await s.popup(s.page, `${TASK_PANEL}.querySelector('button.virtuoso-button')`, VIRTUOSO_WINDOW, { width: 720, height: 980 }); });
+      await s.take('pdk-window', () => s.popup(cell, `document.querySelector('button.pdk-open')`, PDK_WINDOW, { width: 1100, height: 900 }));
     });
     await scene(look, 'ngspice', seeded(CONFIG), async s => {
-      await s.take('ngspice-window', () => s.popup(s.page, `document.querySelector('button.ngspice-button')`, 'GATOR - ngspice netlist', { width: 760, height: 980 }));
+      await s.take('ngspice-window', () => s.popup(s.page, `document.querySelector('button.ngspice-button')`, NGSPICE_WINDOW, { width: 760, height: 980 }));
     });
     await scene(look, 'connection', seeded(CONFIG), async s => {
       let connection = null;
-      await s.take('connection-window', async () => { connection = await s.popup(s.page, `document.querySelector('header button.connection-button')`, 'GATOR - connection', { width: 660, height: 920 }); });
+      await s.take('connection-window', async () => { connection = await s.popup(s.page, `document.querySelector('header button.connection-button')`, CONNECTION_WINDOW, { width: 660, height: 920 }); });
       await s.take('folders', () => connection.evaluate(`[...document.querySelectorAll('.connection-window button')].find(b => b.textContent.trim() === 'Folders...').click()`));
     });
     await scene(look, 'agent', seeded(CONFIG), async s => {
       let agent = null;
-      await s.take('agent-window', async () => { agent = await s.popup(s.page, `document.querySelector('footer .tabs button.agent-tab')`, 'GATOR - agent', { width: 780, height: 760 }); });
+      await s.take('agent-window', async () => { agent = await s.popup(s.page, `document.querySelector('footer .tabs button.agent-tab')`, AGENT_WINDOW, { width: 780, height: 760 }); });
       await s.take('whats-missing', () => agent.evaluate(`document.querySelector('.agent-window button.missing').click()`));
     });
-    await scene(look, 'brief', seeded(CONFIG, { [RUN_KEY]: RUN }), async s => {
-      await s.take('brief-window', () => s.popup(s.page, `document.querySelector('header button.run-chip')`, 'GATOR - running now', { width: 470, height: 540 }));
+    await scene(look, 'brief', seeded(CONFIG, { [HEADER_RUN_KEY]: RUN }), async s => {
+      await s.take('brief-window', () => s.popup(s.page, `document.querySelector('header button.run-chip')`, RUNNING_WINDOW, { width: 470, height: 540 }));
     });
   }
   if (!REPLAY) write('answers.json', `${JSON.stringify(kept, null, 1)}\n`);

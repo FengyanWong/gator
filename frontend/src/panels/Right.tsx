@@ -10,6 +10,7 @@ import { LOADS, NETWORK_FIELDS, networkOf, pick, readSavePoint, withSavePoint } 
 import { ComponentList } from './Pdk';
 import { Typed } from './Typed';
 import { BLOCKED, usePopupWindow } from './popupWindow';
+import { MODULE_KEY_PREFIX, OUTPUT_ROOT_ID, PRESET_RATE_KEY, RL_MODEL_WINDOW } from '../contract';
 
 function Num({ label, value, onChange, title, nullable, disabled, note, after, placeholder, bounded }: { label: string; value: Json; onChange: (v: Json) => void; title?: string; nullable?: boolean; disabled?: boolean; note?: string; after?: ReactNode; placeholder?: string; bounded?: boolean }) {
   // `Typed` keeps what is being typed while the box has focus ("0." and "3e-" are steps towards 0.005 and 3e-4, not
@@ -69,7 +70,7 @@ type Every = 'evaluations' | 'seconds';
 // stops working (the network still follows a chosen model, the output root is still looked at). Folded, the line says the
 // module's main values, and whether something inside asks for attention - an error or a warning is never just hidden.
 function Module({ id, title, summary, children }: { id: string; title: string; summary: string; children: ReactNode }) {
-  const key = `gator-workbench-module-${id}`;
+  const key = `${MODULE_KEY_PREFIX}${id}`;
   const [open, setOpen] = useState(() => { try { return localStorage.getItem(key) !== 'closed'; } catch { return true; } });
   const [inside, setInside] = useState<'error' | 'warn' | null>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -191,7 +192,7 @@ function RunPanelBody({ config, setConfig, runs, circuit, schema, onNext }: { co
   const net = run.network ?? {};
   // Keep the configuration, preset writes and compatibility checks here even when the window is closed.
   const networkWindow = usePopupWindow('gator-rl-networks', {
-    title: 'GATOR - RL model', features: 'popup,width=1180,height=920',
+    title: RL_MODEL_WINDOW, features: 'popup,width=1180,height=920',
     rootId: 'rl-networks-root', rootClass: 'rl-networks-window', closeOnUnmount: true,
   });
 
@@ -308,7 +309,7 @@ function RunPanelBody({ config, setConfig, runs, circuit, schema, onNext }: { co
       // storage. Upgrade only that otherwise-identical restored preset. Check once per browser, including when no
       // upgrade is needed: Undo, a later edit or an imported configuration must keep its chosen rate on reload.
       try {
-        const key = 'gator-workbench-preset-rate-2026-10-05';
+        const key = PRESET_RATE_KEY;
         if (localStorage.getItem(key)) return;
         localStorage.setItem(key, 'checked');
       } catch { return; } // Without durable storage, do not repeatedly override a rate the user may have restored.
@@ -736,9 +737,9 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
   return (
     <Module id="output" title="Output settings" summary={[out.experiment_name, tail ? `.../${tail}` : 'no output root'].filter(Boolean).join(' - ')}>
       {/* "Copy path" is a sibling of the label, not inside it: a button inside would become what the label's text clicks. */}
-      <div className="field-head"><label htmlFor="output-root" title="A backend directory inside an allowed root. Not a browser upload folder.">Output root</label>
+      <div className="field-head"><label htmlFor={OUTPUT_ROOT_ID} title="A backend directory inside an allowed root. Not a browser upload folder.">Output root</label>
         <button className="text-link" title="Copy the output root to the clipboard" onClick={() => copy(root)}>Copy path</button></div>
-      <input id="output-root" value={root} disabled={locked} onChange={e => set({ output_root: e.target.value })} />
+      <input id={OUTPUT_ROOT_ID} value={root} disabled={locked} onChange={e => set({ output_root: e.target.value })} />
       <div className="row"><button disabled={locked} onClick={() => ask(() => api.browse(), setBrowse)}>Browse allowed roots...</button>
         <button onClick={() => { const at = root; if (at) ask(() => api.checkOutput(at, true), value => setTested({ root: at, value })); }}>Test writability</button></div>
       {problem && <p className="error">{problem}</p>}

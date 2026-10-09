@@ -25,7 +25,7 @@
 // the check then refuses the live backend (port 8765). From WSL: WSLENV=GATOR_WORKBENCH_URL:GATOR_CONNECTION_LIVE.
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl, CONNECTION_WINDOW } from './lib/harness.mjs';
 
 const LIVE = process.env.GATOR_CONNECTION_LIVE === '1';
 const APP = await workbenchUrl({ writes: LIVE });
@@ -114,12 +114,12 @@ await runChecks(browser, async () => {
   const settle = async (mark, ms = 4000) => { for (let waited = 0; waited < ms && seen.length === mark; waited += 100) await sleep(100); await sleep(500); };
 
   // ---- the window: a second page, found by its title, with a DevTools session of its own ---------------------------
-  const windowTarget = present => browser.window('GATOR - connection', { present, except: page.target.id });
+  const windowTarget = present => browser.window(CONNECTION_WINDOW, { present, except: page.target.id });
   const BUTTON = `document.querySelector('header button.connection-button')`;
   const WINDOW = `document.querySelector('.connection-window')`;
   let far = null, farPage = null;
   const openWindow = async () => {
-    far = await browser.popup(page, BUTTON, 'GATOR - connection', { width: 660, height: 920, ready: WINDOW });
+    far = await browser.popup(page, BUTTON, CONNECTION_WINDOW, { width: 660, height: 920, ready: WINDOW });
     farPage = far.target;
     await sleep(400);
   };
@@ -161,7 +161,7 @@ await runChecks(browser, async () => {
   // ---- pressing it opens the connection window; opening checks nothing ----------------------------------------------
   let mark = seen.length;
   await openWindow();
-  check('pressing the button opens a window of its own, titled "GATOR - connection"', !!farPage && farPage.title === 'GATOR - connection');
+  check('pressing the button opens a window of its own, titled "GATOR - connection"', !!farPage && farPage.title === CONNECTION_WINDOW);
   check('the window shows the block under the heading "Connection"', (await far.evaluate(`${WINDOW}.querySelector('h2')?.textContent`)) === 'Connection');
   check('opening the window sends NO request at all', seen.length === mark, names(mark).join(', '));
   check('the window shows the test made when the page opened: its clock time and OK', /^tested at \d/.test(await hint()) && (await badge()) === 'OK', `${await badge()} | ${await hint()}`);

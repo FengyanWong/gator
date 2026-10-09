@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { LOOK_KEY } from './contract';
 
 /** The page's two looks (record 7.158, the user's choice of 2026-10-03): Whiteprint, light, a drawing sheet with the task
  *  in its title block (the default), and Silicon Night, dark like Virtuoso's canvas. A look is a name on <html>
@@ -6,7 +7,7 @@ import { useSyncExternalStore } from 'react';
  *  before the page draws, so a dark choice never flashes light. The choice is kept in this browser, like the folded
  *  modules, and every pop-up window of the page follows it. */
 export type Look = 'whiteprint' | 'silicon';
-export const LOOK_KEY = 'gator-workbench-look-v1';
+export { LOOK_KEY };
 export const LOOK_NAMES: Record<Look, string> = { whiteprint: 'Whiteprint', silicon: 'Silicon Night' };
 
 const isLook = (value: unknown): value is Look => value === 'whiteprint' || value === 'silicon';

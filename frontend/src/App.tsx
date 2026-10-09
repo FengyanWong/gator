@@ -11,7 +11,8 @@ import { CheckSteps } from './panels/Consistency';
 import { Editors } from './panels/Editors';
 import { ValidationStatus } from './panels/Issues';
 import { RunButtons } from './panels/RunControl';
-import { changesByItself, HEADER_RUN_KEY, isLive, RESUMABLE, useRunControl } from './runState';
+import { changesByItself, isLive, RESUMABLE, useRunControl } from './runState';
+import { BOTTOM_KEY, CALIBRATION_ANSWERED_KEY, HEADER_RUN_KEY, SHOWN_RUN_KEY } from './contract';
 import { continueConsent, continueReadiness, featuresOf, launchKept, startReadiness, useContinuation, useLauncher } from './launch';
 import { LaunchRefusal } from './panels/LaunchRefusal';
 import { useRunBrief } from './panels/RunBrief';
@@ -68,7 +69,6 @@ function LookSwitch() {
 /** The bottom panel's height (record 7.158): dragged at its top edge, folded to its tab line with a double click there.
  *  Kept in this browser, like the folded modules; null = the default third of the window. */
 type Bottom = { height: number | null; folded: boolean };
-const BOTTOM_KEY = 'gator-workbench-bottom-v1';
 const storedBottom = (): Bottom => {
   try { const b = JSON.parse(localStorage.getItem(BOTTOM_KEY) ?? 'null'); return { height: typeof b?.height === 'number' && b.height > 0 ? b.height : null, folded: b?.folded === true }; }
   catch { return { height: null, folded: false }; }
@@ -76,15 +76,13 @@ const storedBottom = (): Bottom => {
 
 /** Calibration evaluates only random designs. Task creation owns the fixed starting-design baseline. */
 const CALIBRATION_DESIGNS = 64;
-/** "Calibration ready" (record 7.204, user: "build the prompt when the run finishes"): when the header's Calibration run that has ended with proposals the page does not hold yet, a line under the header says so, with Apply
- *  calibration and Not now - so the proposals cannot be missed in Run status. Still the user's press: nothing is applied by
- *  itself. The run whose line was answered is kept in this browser, so a reload does not ask again. */
-const CALIBRATION_ANSWERED_KEY = 'gator-workbench-calibration-answered-v1';
-/** The run the bottom tabs show, kept in this browser with the header's run of that moment (record 7.212): a page loaded
+// "Calibration ready" (record 7.204, user: "build the prompt when the run finishes"): when the header's Calibration run that has ended with proposals the page does not hold yet, a line under the header says so, with Apply
+// calibration and Not now - so the proposals cannot be missed in Run status. Still the user's press: nothing is applied by
+// itself. The run whose line was answered is kept in this browser (CALIBRATION_ANSWERED_KEY), so a reload does not ask again.
+/** The run the bottom tabs show, kept in this browser (SHOWN_RUN_KEY) with the header's run of that moment (record 7.212): a page loaded
  *  again shows the run it showed - or none, after a task without runs was chosen. Unless the header holds another run by
  *  then (started in another tab of the page, say): the page opens on the header's run then, as it always did, and so does a
  *  browser that never kept one. */
-const SHOWN_RUN_KEY = 'gator-workbench-shown-run-v1';
 const shownRun = (): string | null => {
   try {
     const header = localStorage.getItem(HEADER_RUN_KEY) || null, kept = JSON.parse(localStorage.getItem(SHOWN_RUN_KEY) ?? 'null');

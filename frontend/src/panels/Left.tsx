@@ -4,6 +4,7 @@ import { memo, MutableRefObject, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, connectionProfilesShared, Json, problemText, tasksShared } from '../api';
 import { BLOCKED, usePopupWindow } from './popupWindow';
+import { VIRTUOSO_WINDOW } from '../contract';
 import { PdkWindowButton, pdksChanged } from './Pdk';
 import { WorkingCopy } from './WorkingCopy';
 import { NgspiceButton } from './Ngspice';
@@ -115,7 +116,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
   };
   // The Virtuoso window: one named pop-up, drawn through a portal (popupWindow.ts, as the connection window is).
   const { popup, root, blocked, open: openWindow } = usePopupWindow('gator-virtuoso',
-    { title: 'GATOR - Virtuoso cell', features: 'popup,width=720,height=980', rootId: 'virtuoso-root' });
+    { title: VIRTUOSO_WINDOW, features: 'popup,width=720,height=980', rootId: 'virtuoso-root' });
 
   useEffect(() => { tasksShared().then(t => setTasks(t.tasks)).catch(e => setError(e.message)); }, []);
   // follow: 'choice' (a library / cell / testbench was chosen) or 'press' (the cell was read): a Virtuoso draft that loads

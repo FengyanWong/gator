@@ -1,6 +1,7 @@
 import { Fragment, memo, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
+import { RUNS_WINDOW } from '../contract';
 import { api, bytes, Json, short, tasksShared } from '../api';
 import { clock, folderName, stamp, two } from '../format';
 import { isLive } from '../runState';
@@ -179,7 +180,7 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
   onLoad?: (row: Json) => void; onNewLike?: (row: Json) => void; onContinue?: (row: Json) => void }) {
   // While `popup` is set, the run window is open (one pop-up window for the whole page: `popupWindow.ts`).
   const { popup, root, blocked, open: openPopup } = usePopupWindow('gator-runs',
-    { title: 'GATOR - runs', features: 'popup,width=1500,height=860', rootId: 'runs-root' });
+    { title: RUNS_WINDOW, features: 'popup,width=1500,height=860', rootId: 'runs-root' });
   const [loading, setLoading] = useState(false);
   const [readAt, setReadAt] = useState<string | null>(null);
   const table = useTableView('started', true);

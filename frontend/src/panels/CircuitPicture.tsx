@@ -1,6 +1,7 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { Json } from '../api';
 import { hintedLayout } from './circuitLayout';
+import { CIRCUIT_PICTURE_KEY } from '../contract';
 
 /** The circuit picture of the Project column (record 7.158, the user's choice of 2026-10-03: "move 5"). The loaded circuit as
  *  a small node-link drawing in the manner of the circuit graph view - devices as boxes, nets as dots, supply on top and
@@ -24,7 +25,6 @@ const FAMILY: Record<string, string> = { nmos: 'nmos', pmos: 'pmos', resistor: '
   diode: 'passive', vsource: 'source', isource: 'source' };
 const GROUND = /^(0|gnd!?|vss!?|ground)$/i;
 const CONDUCTING = (role: string) => !['gate', 'base', 'bulk'].includes(role);
-const FOLD_KEY = 'gator-workbench-circuit-picture-v1';
 const W = 276, PAD = 18, MAX_H = 300;
 
 type Point = { x: number; y: number };
@@ -118,7 +118,7 @@ function netLabels(graph: Graph, at: Record<string, Point>) {
 
 export function CircuitPicture({ circuit }: { circuit: Json }) {
   // Folded at first, like every block of the Project column (the user's rule); opened once, it stays open in this browser.
-  const [open, setOpen] = useState(() => { try { return localStorage.getItem(FOLD_KEY) === 'open'; } catch { return false; } });
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(CIRCUIT_PICTURE_KEY) === 'open'; } catch { return false; } });
   const graph = useMemo(() => (circuit?.loaded ? pictureGraph(circuit.summary) : null), [circuit]);
   const layout = useMemo(() => {
     if (!graph) return null;
@@ -132,7 +132,7 @@ export function CircuitPicture({ circuit }: { circuit: Json }) {
   const roleOf = (net: Json) => (net.roles as string[]).find(r => r !== 'normal') ?? 'normal';
   return (
     <details className="section circuit-picture" open={open}
-      onToggle={e => { const now = e.currentTarget.open; setOpen(now); try { localStorage.setItem(FOLD_KEY, now ? 'open' : 'closed'); } catch { /* not remembered */ } }}>
+      onToggle={e => { const now = e.currentTarget.open; setOpen(now); try { localStorage.setItem(CIRCUIT_PICTURE_KEY, now ? 'open' : 'closed'); } catch { /* not remembered */ } }}>
       <summary><h3>Circuit picture</h3> <span className="hint">{graph.devices.length} devices · {graph.nets.length} nets</span></summary>
       <svg viewBox={`0 0 ${W} ${height}`} role="img"
         aria-label={`The circuit as a picture: ${graph.devices.length} devices and ${graph.nets.length} nets, supply at the top and ground at the bottom.`}>

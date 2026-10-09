@@ -16,7 +16,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_run_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, NEVER_ASKED, outDir, reportRefused, RUN_KEY, runChecks, sleep, TASK_PANEL, taskWindow, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, NEVER_ASKED, outDir, reportRefused, RUN_KEY, runChecks, sleep, TASK_PANEL, taskWindow, validConfiguration, workbenchUrl, RUNS_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -120,7 +120,7 @@ await runChecks(browser, async () => {
   let far = null;
   const openWindow = async () => {
     const before = lists();
-    far = await browser.popup(page, `document.querySelector('footer .tabs button.run-list-button')`, 'GATOR - runs',
+    far = await browser.popup(page, `document.querySelector('footer .tabs button.run-list-button')`, RUNS_WINDOW,
       { width: 1500, height: 860, ready: `${WINDOW}?.querySelector('table.run-table')` });
     for (let i = 0; i < 50 && lists() === before; i++) await sleep(50);
     await sleep(300);

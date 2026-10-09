@@ -23,7 +23,7 @@
 // Run (Windows node through WSL interop, ~1.5 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
-import { check, launchEdge, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl, NEVER_ASKED_OR_SAVED } from './lib/harness.mjs';
+import { check, launchEdge, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl, NEVER_ASKED_OR_SAVED, RUNS_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -572,7 +572,7 @@ await runChecks(browser, async () => {
   /** The run window (Runs...): a double click on the run's row shows it in the bottom tabs; the window is closed again. */
   const pickRun = async run => {
     await evaluate(`${RUNS_BUTTON}.click()`, true);
-    const target = await browser.window('GATOR - runs', { present: true, except: page.target.id });
+    const target = await browser.window(RUNS_WINDOW, { present: true, except: page.target.id });
     const far = await browser.attach(target, { errors: consoleErrors, prefix: 'run window: ' });
     await far.send('Emulation.setDeviceMetricsOverride', { width: 1500, height: 860, deviceScaleFactor: 1, mobile: false });
     let at = null;
@@ -582,7 +582,7 @@ await runChecks(browser, async () => {
       if (!at) await sleep(100);
     }
     if (at) await far.clickAt(at, { count: 2 });
-    await send('Target.closeTarget', { targetId: target.id }); await browser.window('GATOR - runs', { present: false, except: page.target.id }); far.close();
+    await send('Target.closeTarget', { targetId: target.id }); await browser.window(RUNS_WINDOW, { present: false, except: page.target.id }); far.close();
     await press('Training');
     return !!at;
   };

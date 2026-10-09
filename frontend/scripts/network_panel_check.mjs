@@ -10,7 +10,7 @@
 // Exit code 1 if any check fails.
 import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 import path from 'node:path';
-import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl, RL_MODEL_WINDOW, PRESET_RATE_KEY } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -63,7 +63,7 @@ await runChecks(browser, async () => {
   check('opening succeeds after a blocked attempt and clears the message', !await evaluate(`document.querySelector('.right').textContent.includes('blocked the new window')`));
   const originalWindow = networkPage.target.id;
   await evaluate(`document.querySelector('.rl-networks-open').click()`, true);
-  check('pressing the launcher again reuses the same window', (await browser.pages()).filter(p => p.title === 'GATOR - RL model').length === 1 && (await browser.window('GATOR - RL model')).id === originalWindow);
+  check('pressing the launcher again reuses the same window', (await browser.pages()).filter(p => p.title === RL_MODEL_WINDOW).length === 1 && (await browser.window('GATOR - RL model')).id === originalWindow);
   for (let i = 0; i < 100 && !(await evaluate(`!!(${H3})`)); i++) await sleep(100);
   for (let i = 0; i < 50 && !(await evaluate(`!!${NETWORK_PANEL}.querySelector('.in-use')`)); i++) await sleep(100);
   await sleep(600);
@@ -125,7 +125,7 @@ await runChecks(browser, async () => {
   await networkPage.send('Input.insertText', { text: '64' });
   // Close before the debounced write returns: closing the view must not abandon a valid edit or its preference save.
   await networkPage.evaluate('window.close()');                                  // the window's own close (it has no button of its own)
-  await browser.window('GATOR - RL model', { present: false });
+  await browser.window(RL_MODEL_WINDOW, { present: false });
   const write = await nextWrite();
   check('an edit is sent to the backend for the chosen encoder', !!write && write.method === 'PUT' && write.url.endsWith('/api/network-settings/rgcn'), write ? `${write.method} ${write.url}` : 'no request');
   const body = write ? JSON.parse(write.postData) : {};
@@ -168,12 +168,12 @@ await runChecks(browser, async () => {
 
   check('the network controls and their values are there (SAC is the only search method)', await page.until(`!document.querySelector('.rl-networks-open').disabled && !!${NETWORK_PANEL}.querySelector('.component-list')`) && (await numbers())[0] === String(rgcn.hidden_dim));
   await networkPage.evaluate('window.close()');
-  await browser.window('GATOR - RL model', { present: false });
+  await browser.window(RL_MODEL_WINDOW, { present: false });
   networkPage = await openNetworks(page, browser);
   check('the browser close button also permits reopening', await networkPage.evaluate(`!!document.querySelector('.component-list')`));
   await send('Page.reload');
-  await browser.window('GATOR - RL model', { present: false });
-  check('reloading the workbench closes its network window', !(await browser.pages()).some(p => p.title === 'GATOR - RL model'));
+  await browser.window(RL_MODEL_WINDOW, { present: false });
+  check('reloading the workbench closes its network window', !(await browser.pages()).some(p => p.title === RL_MODEL_WINDOW));
 
   // A restored configuration can intentionally differ from the remembered encoder defaults, including Advanced.
   await page.until(`!!document.querySelector('.rl-networks-open')`, 150);
@@ -214,7 +214,7 @@ await runChecks(browser, async () => {
 
   // The screenshot's stale rate is the sole difference from the old starting preset. The one-time browser upgrade
   // follows the current preset, without saving preferences or repeatedly undoing an intentional choice of 3e-4.
-  const rateMigrationKey = 'gator-workbench-preset-rate-2026-10-05';
+  const rateMigrationKey = PRESET_RATE_KEY;
   const oldPreset = { ...restored, run: { ...restored.run,
     network: { encoder_type: 'graph_transformer', ...gt, operating_points: true },
     advanced: { ...settings.settings.graph_transformer.advanced, learning_rate: 0.0003 } } };

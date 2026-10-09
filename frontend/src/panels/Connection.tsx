@@ -2,6 +2,7 @@ import { useAsyncAction } from '../store';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
+import { CONNECTION_WINDOW } from '../contract';
 import { api, connectionProfilesChanged, connectionProfilesShared, Json } from '../api';
 import { ConnectionFolders } from './ConnectionFolders';
 import { Icon } from './Icons';
@@ -39,7 +40,7 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
   const [copied, setCopied] = useState<string | null>(null);
   // While `popup` is set, the connection window is open (one pop-up window for the whole page: `popupWindow.ts`).
   const { popup, root, blocked, open: openWindow } = usePopupWindow('gator-connection',
-    { title: 'GATOR - connection', features: 'popup,width=660,height=920', rootId: 'connection-root' });
+    { title: CONNECTION_WINDOW, features: 'popup,width=660,height=920', rootId: 'connection-root' });
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<Json>({ kind: 'virtuoso_ssh', name: '', ssh_host: '', bridge_profile: '' });
   const [created, setCreated] = useState<Json>(null);

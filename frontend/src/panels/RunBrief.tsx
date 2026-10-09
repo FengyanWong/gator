@@ -5,6 +5,7 @@ import { clock, folderName, two } from '../format';
 import { startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
 import { BLOCKED, usePopupWindow } from './popupWindow';
+import { RUNNING_WINDOW } from '../contract';
 import { cardLive, isLive, type RunControl } from '../runState';
 
 /** The run brief (record 7.264; plan "The run brief", added by record 7.259 - user: "pressing the green running text on
@@ -62,7 +63,7 @@ function BriefCard({ dir, row, status, header, byDir, from, onShow }: { dir: str
 export function useRunBrief({ control, runs, onRefreshRuns, onShow }: { control: RunControl; runs: Json[]; onRefreshRuns: () => Promise<Json[]>;
   onShow: (dir: string) => void }) {
   const { popup, root, blocked, open: openPopup } = usePopupWindow('gator-running',
-    { title: 'GATOR - running now', features: 'popup,width=470,height=540', rootId: 'running-root' });
+    { title: RUNNING_WINDOW, features: 'popup,width=470,height=540', rootId: 'running-root' });
   const [others, setOthers] = useState<{ row: Json; status: Json | null }[]>([]);
   const [readAt, setReadAt] = useState<string | null>(null);
   const [reading, setReading] = useState(false);

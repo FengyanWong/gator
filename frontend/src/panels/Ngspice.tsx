@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { api, Json, problemText } from '../api';
 import { baselineText, followTaskBaseline } from './TaskSave';
 import { BLOCKED, usePopupWindow } from './popupWindow';
+import { NGSPICE_WINDOW } from '../contract';
 
 /** The ngspice window (user request 2026-09-23): a SPICE deck pasted or loaded from a file on the backend machine, checked,
  *  and saved as the task ngspice:<name> - one more entry of the Registered task list, which then runs on an ngspice
@@ -22,7 +23,7 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged }:
   const followed: string | null = ref.source === 'registered_task' && /^ngspice:/.test(ref.task_id ?? '') ? ref.task_id.slice('ngspice:'.length) : null;
   // A Virtuoso connection hides this button (Left.tsx): the window closes with it instead of staying blank and orphaned.
   const { popup, root, blocked, open: openWindow } = usePopupWindow('gator-ngspice',
-    { title: 'GATOR - ngspice netlist', features: 'popup,width=760,height=980', rootId: 'ngspice-root', closeOnUnmount: true });
+    { title: NGSPICE_WINDOW, features: 'popup,width=760,height=980', rootId: 'ngspice-root', closeOnUnmount: true });
   const [name, setName] = useState('');
   const [text, setText] = useState('');
   const [kinds, setKinds] = useState('');

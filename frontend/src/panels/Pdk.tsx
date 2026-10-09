@@ -2,6 +2,7 @@ import { useAsyncAction } from '../store';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
+import { PDK_WINDOW } from '../contract';
 import { api, gateText, Json, problemText } from '../api';
 
 // Load PDK (user request 2026-09-21; backend src/gator_workbench/pdk.py). The RL network is BUILT from a list of the
@@ -85,7 +86,7 @@ export function PdkWindowButton({ profileId, circuitPdk }: { profileId: string |
   // The button lives in the Virtuoso window: when that window closes, this one closes with it - it would stay blank,
   // with nothing left to draw it.
   const { popup, root, blocked, open: openWindow } = usePopupWindow('gator-pdk',
-    { title: 'GATOR - PDK', features: 'popup,width=1100,height=900', rootId: 'pdk-root', closeOnUnmount: true });
+    { title: PDK_WINDOW, features: 'popup,width=1100,height=900', rootId: 'pdk-root', closeOnUnmount: true });
   const { list, error } = usePdkList(popup);
   return (<>
     <button className="pdk-open" onClick={e => openWindow(e.currentTarget.ownerDocument.defaultView)} title="Opens the PDK window: read one technology library by name through the connection (read-only, no simulation) and see what was read. Reading a cell into the workbench reads its PDK by itself.">PDK window...</button>

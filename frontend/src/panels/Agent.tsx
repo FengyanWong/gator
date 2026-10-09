@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { api, Json, plainError } from '../api';
 import { clock } from '../format';
 import { BLOCKED, usePopupWindow } from './popupWindow';
+import { AGENT_WINDOW } from '../contract';
 
 /** The Agent window (record 7.253; the user: "make the agent tab pop out window only (no tab view)", then "make it still a
  *  tab style but not button style"): "Agent...", first in the bottom panel's tab line and drawn as a tab, opens it - there is
@@ -32,7 +33,7 @@ export function AgentWindowTab({ config }: { config: Json }) {
   const [opening, setOpening] = useState<string | null>(null);
   const [check, setCheck] = useState<Json>(null);         // { report?, error?, at } of the last "What's missing?"
   const [checking, setChecking] = useState(false);
-  const agent = usePopupWindow('gator-agent', { title: 'GATOR - agent', features: 'popup,width=780,height=760', rootId: 'agent-root' });
+  const agent = usePopupWindow('gator-agent', { title: AGENT_WINDOW, features: 'popup,width=780,height=760', rootId: 'agent-root' });
 
   // Opened inside the click (the pop-up rule). A window opened anew starts clean; one already open comes to the front. Either
   // way the CLIs are looked for again, so one installed since shows.

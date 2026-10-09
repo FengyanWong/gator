@@ -15,7 +15,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/project_help_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, outDir, reportRefused, sleep, TASK_PANEL, workbenchUrl } from './lib/harness.mjs';
+import { check, fail, finish, launchEdge, outDir, reportRefused, sleep, TASK_PANEL, workbenchUrl, VIRTUOSO_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -80,7 +80,7 @@ try {
   const WIN = `document.querySelector('.virtuoso-window')`;
   let far = null;
   const openWindow = async () => {
-    far = await browser.popup(page, LAUNCH, 'GATOR - Virtuoso cell', { width: 720, height: 2000, ready: WIN, onDialog });   // tall: the whole window on one picture
+    far = await browser.popup(page, LAUNCH, VIRTUOSO_WINDOW, { width: 720, height: 2000, ready: WIN, onDialog });   // tall: the whole window on one picture
     await sleep(400);
   };
   // The same questions asked of the column (page session, PANEL) and of the window (far session, WIN).

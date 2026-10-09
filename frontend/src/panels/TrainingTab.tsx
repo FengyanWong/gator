@@ -5,6 +5,7 @@ import { useLook } from '../theme';
 import { unitLabel } from '../units';
 import { Icon } from './Icons';
 import { shownLive } from '../runState';
+import { TRAINING_CAPS_KEY, TRAINING_COMPARE_KEY } from '../contract';
 import { TrainingChart } from './TrainingChart';
 import { build, buildCompare, catalog, ChartSpec, COMPARE_MAX, Context, ENDS, keyNumbers, LearnerX, RECENT, setCaps, TrainingStore, View } from './trainingData';
 import type { Built } from './trainingData';
@@ -54,13 +55,12 @@ function storedSettings(): Settings {
 const columnsFor = (n: number) => (n <= 3 ? n : n === 4 ? 2 : n <= 6 ? 3 : 4);
 const chartName = (id: string) => (id.startsWith('spec:') ? id.slice(5) : id.replace(/_/g, ' '));
 try {      // a browser check of the memory bound sets lower caps for its own page (trainingData.ts setCaps)
-  const caps = JSON.parse(localStorage.getItem('gator-workbench-training-caps-v1') ?? 'null');
+  const caps = JSON.parse(localStorage.getItem(TRAINING_CAPS_KEY) ?? 'null');
   if (caps) setCaps(caps);
 } catch { /* blocked storage: the default caps */ }
 
-const COMPARE_KEY = 'gator-workbench-training-compare-v1';
 function storedCompare(): string[] {
-  try { const list = JSON.parse(localStorage.getItem(COMPARE_KEY) ?? '[]'); return Array.isArray(list) ? list.filter(d => typeof d === 'string').slice(0, COMPARE_MAX - 1) : []; }
+  try { const list = JSON.parse(localStorage.getItem(TRAINING_COMPARE_KEY) ?? '[]'); return Array.isArray(list) ? list.filter(d => typeof d === 'string').slice(0, COMPARE_MAX - 1) : []; }
   catch { return []; }
 }
 const readError = (e: any) => (e instanceof ApiError && (e.status === 405 || (e.status === 404 && e.detail === 'Not Found')) ? OLDER_BACKEND : plainError(e));
@@ -178,7 +178,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
 
   // ---- other runs on the same charts (record 7.200): each its own store, read like the shown one, apart from it
   const [compare, setCompare] = useState<string[]>(storedCompare);
-  const keepCompare = (next: string[]) => { setCompare(next); try { localStorage.setItem(COMPARE_KEY, JSON.stringify(next)); } catch { /* not remembered */ } };
+  const keepCompare = (next: string[]) => { setCompare(next); try { localStorage.setItem(TRAINING_COMPARE_KEY, JSON.stringify(next)); } catch { /* not remembered */ } };
   const others = compare.filter(dir => dir !== runDir).slice(0, COMPARE_MAX - 1);
   const othersKey = others.join('\n');
   const compared = useRef(new Map<string, TrainingStore>());

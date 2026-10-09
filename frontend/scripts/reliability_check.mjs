@@ -1,7 +1,7 @@
 // Hermetic regression: no simulations, agent launches or backend settings writes. Only temporary browser storage changes.
 import { NETWORK_DOCUMENT, openNetworks } from './lib/rl_networks.mjs';
 import path from 'node:path';
-import { check, launchEdge, outDir, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl, CONFIG_KEY } from './lib/harness.mjs';
 
 const APP = await workbenchUrl(), out = outDir();
 const browser = await launchEdge('reliability');
@@ -75,7 +75,7 @@ await runChecks(browser, async () => {
   holdWrites = false;
   await page.saved();
 
-  const key = 'gator-workbench-config-v1';
+  const key = CONFIG_KEY;
   const before = (await page.stored()).parameters.length;
   await page.evaluate(`window.realSetItem = Storage.prototype.setItem; window.blockSave = true;
     Storage.prototype.setItem = function(k, v) { if (window.blockSave && k === '${key}') throw new DOMException('FIXTURE quota exceeded', 'QuotaExceededError'); return window.realSetItem.call(this, k, v); };`);

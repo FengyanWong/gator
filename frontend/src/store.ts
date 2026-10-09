@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 import { readWithDeadline, type Json } from './api';
+import { CONFIG_KEY } from './contract';
 
-export const STORAGE_KEY = 'gator-workbench-config-v1';
+export const STORAGE_KEY = CONFIG_KEY;
 /** Which saved revision of which task the editors' rows came from (record 7.203): noted when a task's rows are loaded
  *  (choosing it, Reload saved values) and after each Save task - for this tab, and for the next load of the page. Save
  *  task and the check send it, so rows older than the saved task are not saved over it unasked. */

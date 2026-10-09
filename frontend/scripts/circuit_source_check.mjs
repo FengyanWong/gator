@@ -14,10 +14,9 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/circuit_source_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, outDir, runChecks, sleep, TASK_PANEL, taskWindow, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, TASK_PANEL, taskWindow, workbenchUrl, CONFIG_KEY } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
-const STORAGE_KEY = 'gator-workbench-config-v1';
 const out = outDir();
 const browser = await launchEdge('src');
 
@@ -51,7 +50,7 @@ await runChecks(browser, async () => {
   const text = () => evaluate(`${PANEL}.textContent`);
   const choose = (label, v) => tw.choose(v, { tries: 0 });
   const settle = async (mark, ms = 6000) => { for (let waited = 0; waited < ms && loads.length === mark; waited += 100) await sleep(100); await sleep(900); };
-  const saved = () => evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)}) || 'null')?.circuit ?? null`);
+  const saved = () => evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(CONFIG_KEY)}) || 'null')?.circuit ?? null`);
   const shot = async name => {                                                      // the left column scrolls: bring the task into view, clip to what is visible
     const H3 = `[...${PANEL}.querySelectorAll('h3')].find(h => h.textContent.trim() === 'Registered task')`;
     await evaluate(`${H3}.scrollIntoView({ block: 'start' })`); await sleep(200);

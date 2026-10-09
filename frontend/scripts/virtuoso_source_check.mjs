@@ -19,7 +19,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/virtuoso_source_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, fail, finish, launchEdge, MOCK_PAGE_CONFIG, outDir, sleep, TASK_PANEL, taskWindow, workbenchUrl } from './lib/harness.mjs';
+import { check, fail, finish, launchEdge, MOCK_PAGE_CONFIG, outDir, sleep, TASK_PANEL, taskWindow, workbenchUrl, VIRTUOSO_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -181,11 +181,11 @@ try {
     await page.shot(path.join(out, name), `document.querySelector('.left')`, { scale: 2, maxHeight: 1400 });
   };
   // ---- the window: a second page, found by its title, with a DevTools session of its own -------------------------------
-  const windowTarget = present => browser.window('GATOR - Virtuoso cell', { present, except: page.target.id });
+  const windowTarget = present => browser.window(VIRTUOSO_WINDOW, { present, except: page.target.id });
   let far = null, farPage = null;
   const WIN = `document.querySelector('.virtuoso-window')`;
   const openWindow = async () => {
-    far = await browser.popup(page, LAUNCH, 'GATOR - Virtuoso cell', { width: 720, height: 980, ready: WIN, onDialog });
+    far = await browser.popup(page, LAUNCH, VIRTUOSO_WINDOW, { width: 720, height: 980, ready: WIN, onDialog });
     farPage = far.target;
     await sleep(400);
   };
@@ -227,7 +227,7 @@ try {
 
   // ---- opening the window lists the libraries: no button ------------------------------------------------------------------
   await openWindow(); await quiet();
-  check('the button opens a window of its own, titled "GATOR - Virtuoso cell", with the heading "Virtuoso cell"', !!farPage && farPage.title === 'GATOR - Virtuoso cell'
+  check('the button opens a window of its own, titled "GATOR - Virtuoso cell", with the heading "Virtuoso cell"', !!farPage && farPage.title === VIRTUOSO_WINDOW
     && (await far.evaluate(`${WIN}.querySelector('h2')?.textContent`)) === 'Virtuoso cell');
   check('opening the window lists the libraries by itself, once', JSON.stringify(ops()) === JSON.stringify(['libraries']), ops().join(' | '));
   check('there is no "List libraries" button', !(await wHas('List libraries')));

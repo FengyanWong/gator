@@ -19,7 +19,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl, RUNS_WINDOW, TASKS_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -128,12 +128,12 @@ await runChecks(browser, async () => {
 
   // ---- the window: a second page, found by its title, with a DevTools session of its own ---------------------------
   const pages = () => browser.pages();
-  const windowTarget = present => browser.window('GATOR - runs', { present, except: page.target.id });
+  const windowTarget = present => browser.window(RUNS_WINDOW, { present, except: page.target.id });
   const BUTTON = `document.querySelector('footer .tabs button.run-list-button')`;
   const WINDOW = `document.querySelector('.run-window')`;
   let far = null, farPage = null;
   const openWindow = async () => {
-    far = await browser.popup(page, BUTTON, 'GATOR - runs', { width: 1500, height: 860, ready: WINDOW });
+    far = await browser.popup(page, BUTTON, RUNS_WINDOW, { width: 1500, height: 860, ready: WINDOW });
     farPage = far.target;
     await sleep(500);
   };
@@ -179,7 +179,7 @@ await runChecks(browser, async () => {
 
   // ---- 2. pressing it opens the run window with every run ----------------------------------------------------------------
   await openWindow();
-  check('pressing the button opens a window of its own, titled "GATOR - runs"', !!farPage && farPage.title === 'GATOR - runs');
+  check('pressing the button opens a window of its own, titled "GATOR - runs"', !!farPage && farPage.title === RUNS_WINDOW);
   check('pressing the button read the list again (it is the request to see the current runs)', lists() === 2, `${lists()} list request(s)`);
   check('the strip button still reads only "Runs..." and is marked as open', (await strip()).text === 'Runs...' && (await strip()).open, JSON.stringify(await strip()));
   let rows = await table();
@@ -286,12 +286,12 @@ await runChecks(browser, async () => {
     && history.steps[1].startsWith('synthetic:gpdk045_ota5 · scratch · 60 evaluations · fixture') && /^this run - loaded the one above at its save point ckpt-000040-final$/.test(history.steps[2]),
     JSON.stringify(history));
   await far.evaluate(`[...${WINDOW}.querySelector('table.run-relations').querySelectorAll('tr')].find(tr => tr.children[0].textContent === 'Task').querySelector('button.item-link').click()`, true);
-  const taskTarget = await browser.window('GATOR - tasks').catch(() => null);
+  const taskTarget = await browser.window(TASKS_WINDOW).catch(() => null);
   const tasksWindow = taskTarget && await browser.attach(taskTarget);
   check('the task is a link: the Tasks window opens at it, its Details open, nothing chosen', !!tasksWindow
     && await tasksWindow.until(`(() => { const tr = [...document.querySelectorAll('table.task-table tbody > tr')].find(tr => tr.dataset.taskKey === 'synthetic:gpdk045_ota5');
       return !!tr && [...tr.querySelectorAll('button')].pop().getAttribute('aria-expanded') === 'true'; })()`, 80));
-  tasksWindow?.close(); if (taskTarget) { await send('Target.closeTarget', { targetId: taskTarget.id }); await browser.window('GATOR - tasks', { present: false }); }
+  tasksWindow?.close(); if (taskTarget) { await send('Target.closeTarget', { targetId: taskTarget.id }); await browser.window(TASKS_WINDOW, { present: false }); }
   check('following the links chose nothing: the bottom tabs show the run they showed', await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(RESUMED.run_dir)})`));
   await pressIn(RESUMED, 'Hide details');
 
@@ -389,7 +389,7 @@ await runChecks(browser, async () => {
   await doubleClick(DONE);
   check('a run chosen there is shown in the workbench', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DONE.run_dir)})`));
   await evaluate(`${BUTTON}.click()`, true); await sleep(800);
-  check('pressing the button while the window is open opens no second window', (await pages()).filter(t => t.title === 'GATOR - runs').length === 1);
+  check('pressing the button while the window is open opens no second window', (await pages()).filter(t => t.title === RUNS_WINDOW).length === 1);
   await shot('main', 'footer', 'runs-4-footer-with-run.png');
   await send('Target.closeTarget', { targetId: farPage.id }); await windowTarget(false); far.close();
 

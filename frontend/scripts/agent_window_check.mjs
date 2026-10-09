@@ -17,7 +17,7 @@
 //     reload of the page closes the window, and a window opened anew starts clean.
 // Run: bash frontend/scripts/run_checks.sh --only agent_window_check. About 12 s.
 import path from 'node:path';
-import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl, AGENT_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -65,7 +65,7 @@ await runChecks(browser, async () => {
   const BUTTON = text => `[...${WINDOW}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const LIST = `${WINDOW}.querySelector('.missing-list')`;
   const posts = () => seen.filter(s => s.method === 'POST');
-  const agentWindows = async () => (await browser.pages()).filter(t => t.title === 'GATOR - agent').length;
+  const agentWindows = async () => (await browser.pages()).filter(t => t.title === AGENT_WINDOW).length;
 
   // ---- the tab line: no Agent tab view; "Agent..." first, drawn as a tab, not as the "Runs..." button -------------------------------
   check('no Agent tab view: "Agent..." is first in the tab line, drawn like the Logs tab (same background, border and weight; not like "Runs..."), not the active tab; Run status follows',
@@ -82,7 +82,7 @@ await runChecks(browser, async () => {
 
   // ---- the window --------------------------------------------------------------------------------------------------------------
   await evaluate(`${AGENT_BUTTON}.click()`, true);
-  const target = await browser.window('GATOR - agent', { except: page.target.id });
+  const target = await browser.window(AGENT_WINDOW, { except: page.target.id });
   const far = await browser.attach(target, { errors: consoleErrors, prefix: 'window: ' });
   await far.send('Emulation.setDeviceMetricsOverride', { width: 780, height: 760, deviceScaleFactor: 1, mobile: false });
   check('"Agent..." opens the agent window: the folder the CLIs open in, then Claude Code and Codex, and What\'s missing? at the right end',
@@ -148,9 +148,9 @@ await runChecks(browser, async () => {
   codex = false;
   await send('Page.reload');
   await page.until(`!!document.querySelector('.editors table.editor tbody tr')`, 200);
-  check('a reload of the page closes the agent window with it', await browser.window('GATOR - agent', { present: false, ms: 5000 }) === null);
+  check('a reload of the page closes the agent window with it', await browser.window(AGENT_WINDOW, { present: false, ms: 5000 }) === null);
   await evaluate(`${AGENT_BUTTON}.click()`, true);
-  const again = await browser.attach(await browser.window('GATOR - agent', { except: page.target.id }), { errors: consoleErrors, prefix: 'window: ' });
+  const again = await browser.attach(await browser.window(AGENT_WINDOW, { except: page.target.id }), { errors: consoleErrors, prefix: 'window: ' });
   check('a CLI the backend did not find: its button is disabled, with the reason beside it and in its tooltip',
     await again.until(`!!(${BUTTON('Codex')}) && (${BUTTON('Codex')}).disabled && !(${BUTTON('Claude Code')}).disabled`)
     && await again.evaluate(`${BUTTON('Codex')}.title.startsWith('Codex is not installed') && ${WINDOW}.textContent.includes('Codex is not installed for this user')`));

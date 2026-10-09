@@ -15,7 +15,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/ngspice_window_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, outDir, PAGE_OPEN_TEST, runChecks, sleep, TASK_PANEL, taskWindow, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, PAGE_OPEN_TEST, runChecks, sleep, TASK_PANEL, taskWindow, workbenchUrl, NGSPICE_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -102,7 +102,7 @@ await runChecks(browser, async () => {
 
   // ---- the window opens on the press, reads nothing by itself -------------------------------------------------------------------
   await evaluate(`${LAUNCHER}.querySelector('button.ngspice-button').click()`, true);
-  const target = await browser.window('GATOR - ngspice netlist', { ms: 8000 });
+  const target = await browser.window(NGSPICE_WINDOW, { ms: 8000 });
   check('the window opened with its title', !!target);
   const win = await browser.attach(target);
   const W = `document.querySelector('.ngspice-window')`;

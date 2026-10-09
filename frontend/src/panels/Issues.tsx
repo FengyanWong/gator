@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Json } from '../api';
+import { BLOCKING_ISSUES_ID } from '../contract';
 
 const BLOCKING = ['error', 'blocker'];
 
@@ -22,9 +23,9 @@ export function ValidationStatus({ validation, config, schema }: { validation: J
   if (!blocked) return <span className="ok">{validation ? 'configuration valid' : 'validating...'}</span>;
   const blocking: Json[] = (validation.issues ?? []).filter((i: Json) => BLOCKING.includes(i.level));
   return (<>
-    <button className={`issues-button${open ? ' active' : ''}`} aria-expanded={open} aria-controls="blocking-issues"
+    <button className={`issues-button${open ? ' active' : ''}`} aria-expanded={open} aria-controls={BLOCKING_ISSUES_ID}
       title={open ? 'Hide the list' : 'Show every blocking issue'} onClick={() => setOpen(o => !o)}>{blocking.length} blocking issue(s)</button>
-    {open && <div id="blocking-issues" className="issue-list" role="region" aria-label="Blocking issues">
+    {open && <div id={BLOCKING_ISSUES_ID} className="issue-list" role="region" aria-label="Blocking issues">
       <div className="issue-list-head"><b>{blocking.length} blocking issue(s)</b>
         <span className="hint">Start and the baseline simulation stay disabled until all of them are resolved. The list follows every edit.</span>
         <span className="spacer" /><button onClick={() => setOpen(false)}>Hide</button></div>

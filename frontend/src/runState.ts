@@ -4,9 +4,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRequest } from './store';
 import { api, ApiError, Json } from './api';
+import { HEADER_RUN_KEY } from './contract';
 
-/** The run the header's buttons act on, kept in this browser; App.tsx reads it too (the run the bottom tabs show). */
-export const HEADER_RUN_KEY = 'gator-workbench-current-run-v1';
 const TERMINAL = ['completed', 'paused', 'stopped', 'cancelled', 'failed'];
 /** A run at rest that can go on: paused, or interrupted (its worker died). */
 export const RESUMABLE = ['paused', 'interrupted'];

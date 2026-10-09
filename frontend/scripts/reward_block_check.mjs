@@ -9,7 +9,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/reward_block_check.mjs)" [screenshot-dir]
 import path from 'node:path';
 import { NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
-import { check, launchEdge, outDir, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, runChecks, sleep, starterConfig, workbenchUrl, RL_MODEL_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -101,7 +101,7 @@ await runChecks(browser, async () => {
   check('the configuration now runs the saved setting\'s 8 updates per evaluation and temperature 0.01, and nothing was written', advanced.updates_per_transition === 8
     && advanced.initial_alpha === 0.01 && advanced.gamma === held.gamma && paused.length === 0, JSON.stringify(advanced));
   await networkPage.evaluate('window.close()');
-  await browser.window('GATOR - RL model', { present: false });
+  await browser.window(RL_MODEL_WINDOW, { present: false });
 
   // ---- Specs: the scale behind "More columns", headed "Scale", suggested as the size of the limit --------------------------
   const EDITORS = `document.querySelector('.editors')`;

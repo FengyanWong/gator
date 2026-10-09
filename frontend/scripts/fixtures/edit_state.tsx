@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { api, type Json } from '../../src/api';
 import { useConfig } from '../../src/store';
 import { CircuitPanel } from '../../src/panels/Left';
+import { CONFIG_KEY } from '../../src/contract';
 
 const fixture: any = { pending: [], state: null };
 (window as any).fixture = fixture;
@@ -41,5 +42,5 @@ function HistoryFixture() {
 }
 
 const task = new URL(location.href).searchParams.get('case') === 'task';
-if (!task) localStorage.removeItem('gator-workbench-config-v1');
+if (!task) localStorage.removeItem(CONFIG_KEY);
 createRoot(document.getElementById('root')!).render(<React.StrictMode>{task ? <TaskFixture /> : <HistoryFixture />}</React.StrictMode>);

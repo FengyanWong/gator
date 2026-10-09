@@ -30,10 +30,14 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+// The names the page and these checks share - storage keys, window titles, element ids - from the page's own source, loaded
+// as it is under Node's type stripping (plan-refactoring C2): a name changed there reaches every check, one taken away fails
+// them here when they load. Re-exported for the checks.
+import { CONFIG_KEY, HEADER_RUN_KEY, TASKS_WINDOW } from '../../src/contract.ts';
+export * from '../../src/contract.ts';
 
 export const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 export const LIVE_PORT = '8765';                                  // the user's own backend
-export const CONFIG_KEY = 'gator-workbench-config-v1';            // the page's saved configuration (store.ts)
 // A page that opens on the tests' MOCK stand-in, as a fresh page did until the MOCK task was deleted from the workbench
 // (2026-09-30, record 7.128: a fresh page has no task now). The check's backend must register the stand-in (run_checks.sh).
 export const MOCK_PAGE_CONFIG = {
@@ -43,7 +47,7 @@ export const MOCK_PAGE_CONFIG = {
   run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, seed: 0, reward: { violation_shape: 'compressed', worst_spec_share: 0.5 } },
   output: { experiment_name: 'experiment' }, research: {},
 };
-export const RUN_KEY = 'gator-workbench-current-run-v1';          // the run this browser remembers
+export const RUN_KEY = HEADER_RUN_KEY;                           // the run this browser remembers (the header's run)
 export const NO_WRITES = 'FIXTURE: this check lets no writing request through';
 /** The page tests the connection in use ONCE when it opens (status record 7.80, user request 2026-09-24): a hermetic check
  *  answers that one POST /api/connection/check here, as "not tested" - nothing is probed, and it is not a request the page
@@ -462,9 +466,9 @@ export function taskWindow(page, browser, { width = 1500, height = 760 } = {}) {
   const alive = () => far && !far.closed;
   const open = async () => {
     if (alive()) { try { await far.evaluate('1'); return far; } catch { far = null; } }
-    if (far) { far = null; try { await browser.window('GATOR - tasks', { present: false, ms: 3000, except: page.target.id }); } catch { /* the old window lingers: attach by title below */ } }
+    if (far) { far = null; try { await browser.window(TASKS_WINDOW, { present: false, ms: 3000, except: page.target.id }); } catch { /* the old window lingers: attach by title below */ } }
     await page.evaluate(`${ROW}.querySelector('button.task-list-button').click()`, true);
-    far = await browser.attach(await browser.window('GATOR - tasks', { except: page.target.id }), { errors: page.consoleErrors, prefix: 'task window: ' });
+    far = await browser.attach(await browser.window(TASKS_WINDOW, { except: page.target.id }), { errors: page.consoleErrors, prefix: 'task window: ' });
     await far.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
     for (let i = 0; i < 80 && !(await far.evaluate(`!!(${TABLE}) || !!document.querySelector('.task-window .task-empty, .task-window .task-list-error')`)); i++) await sleep(100);
     await sleep(200);

@@ -1,6 +1,7 @@
 import { Fragment, MouseEvent, ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
+import { TASKS_WINDOW } from '../contract';
 import { api, Json, si } from '../api';
 import { clock, stamp } from '../format';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
@@ -95,7 +96,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   onDelete?: (owner: Window) => void; deleting?: boolean; deleteDisabled?: boolean; deleteTitle?: string; deleteNotice?: ReactNode }) {
   // While `popup` is set, the task window is open (one pop-up window for the whole page: `popupWindow.ts`).
   const { popup, root, blocked, open: openPopup } = usePopupWindow('gator-tasks',
-    { title: 'GATOR - tasks', features: 'popup,width=1500,height=760', rootId: 'tasks-root' });
+    { title: TASKS_WINDOW, features: 'popup,width=1500,height=760', rootId: 'tasks-root' });
   const [reading, setReading] = useState(false);
   const [readAt, setReadAt] = useState<string | null>(null);
   const [tasksError, setTasksError] = useState<string | null>(null);

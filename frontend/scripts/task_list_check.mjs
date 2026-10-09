@@ -10,7 +10,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, starterConfig, taskWindow, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, starterConfig, taskWindow, validConfiguration, workbenchUrl, TASKS_WINDOW, RUNS_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -129,7 +129,7 @@ await runChecks(browser, async () => {
   // ---- 2. the window opens and reads the task list once; the run list is the page's own ---------------------------------------
   await tw.open();
   let far = tw.window;
-  check('pressing the button opens a window of its own, titled "GATOR - tasks", headed Tasks', far.target.title === 'GATOR - tasks' && (await far.evaluate(`${WINDOW}.querySelector('h2')?.textContent`)) === 'Tasks');
+  check('pressing the button opens a window of its own, titled "GATOR - tasks", headed Tasks', far.target.title === TASKS_WINDOW && (await far.evaluate(`${WINDOW}.querySelector('h2')?.textContent`)) === 'Tasks');
   check('opening it reads the task list once, and does not read the run list again (the page\'s own list is shown)', count('/api/tasks') === opened.tasks + 1 && count('/api/runs') === opened.runs, JSON.stringify(seen));
   check('the button is marked open while the window is', await evaluate(`${ROW}.querySelector('button.task-list-button').classList.contains('open')`));
   const heads = await far.evaluate(`[...${TABLE}.querySelectorAll('thead th')].map(th => th.textContent.replace(/[ ▲▼]+$/, '').trim())`);
@@ -161,7 +161,7 @@ await runChecks(browser, async () => {
   const linksBefore = { starters: seen.filter(s => s.startsWith('starter')).length, shown: await evaluate(`document.querySelector('footer .tabs .run-list-current')?.textContent ?? ''`) };
   const runsLink = n => far.evaluate(`${ROWS}.find(tr => tr.dataset.taskKey === ${JSON.stringify(OTA.task_key)}).children[${n + 1}].querySelector('button.item-link').click()`, true);
   await runsLink(8);
-  const runsTarget = await browser.window('GATOR - runs').catch(() => null);
+  const runsTarget = await browser.window(RUNS_WINDOW).catch(() => null);
   const runsWindow = runsTarget && await browser.attach(runsTarget);
   const RUN_ROWS = `[...document.querySelectorAll('.run-window table.run-table tbody > tr:not(.run-details-row)')]`;
   check('the run count is a link: the Runs window opens with this task\'s runs only, and says so', !!runsWindow
@@ -172,7 +172,7 @@ await runChecks(browser, async () => {
     return !!tr && [...tr.querySelectorAll('button')].pop().getAttribute('aria-expanded') === 'true'; })()`, 80));
   check('following them chose no task and changed the run shown', seen.filter(s => s.startsWith('starter')).length === linksBefore.starters
     && (await evaluate(`document.querySelector('footer .tabs .run-list-current')?.textContent ?? ''`)) === linksBefore.shown, JSON.stringify(linksBefore));
-  runsWindow?.close(); if (runsTarget) { await send('Target.closeTarget', { targetId: runsTarget.id }); await browser.window('GATOR - runs', { present: false }); }
+  runsWindow?.close(); if (runsTarget) { await send('Target.closeTarget', { targetId: runsTarget.id }); await browser.window(RUNS_WINDOW, { present: false }); }
 
   // ---- 4. a double click makes the page follow the task --------------------------------------------------------------------------
   const starters = count('starter real:fixture_ota');

@@ -19,7 +19,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, outDir, reportRefused, RUN_KEY, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, reportRefused, RUN_KEY, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl, RUNS_WINDOW, RUNNING_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -214,7 +214,7 @@ await runChecks(browser, async () => {
   // (RunList.tsx, a page of its own with its own DevTools session), and "Clear" (it shows no run) is pressed there.
   const showNoRun = async () => {
     await evaluate(`document.querySelector('footer .tabs button.run-list-button').click()`, true);   // a click that may open a window
-    const target = await browser.window('GATOR - runs').catch(() => null);
+    const target = await browser.window(RUNS_WINDOW).catch(() => null);
     if (!target) throw new Error('the run window did not open');
     const far = await browser.attach(target);
     const ok = await far.evaluate(`new Promise(done => { let tries = 0; const tick = () => {
@@ -249,7 +249,7 @@ await runChecks(browser, async () => {
   // the chip's press did until then, and Open in Runs opens the Runs window at the run.
   const tabsBefore = await evaluate(`document.querySelector('footer .tabs .run-list-current')?.textContent ?? ''`);
   await evaluate(`${CHIP}.click()`, true);                                       // a click that opens a window
-  const briefTarget = await browser.window('GATOR - running now').catch(() => null);
+  const briefTarget = await browser.window(RUNNING_WINDOW).catch(() => null);
   check('pressing the run in the header opens the run brief, a window of its own', !!briefTarget);
   if (!briefTarget) throw new Error('the run brief did not open');
   const brief = await browser.attach(briefTarget);
@@ -265,7 +265,7 @@ await runChecks(browser, async () => {
   await brief.evaluate(`[...document.querySelector('.brief-card').querySelectorAll('button')].find(b => b.textContent === 'Show results').click()`);
   check('Show results in the brief shows the run under Run status again', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DIR)})`));
   await brief.evaluate(`[...document.querySelector('.brief-card').querySelectorAll('button')].find(b => b.textContent === 'Open in Runs').click()`, true);
-  const runsTarget = await browser.window('GATOR - runs').catch(() => null);
+  const runsTarget = await browser.window(RUNS_WINDOW).catch(() => null);
   const runsWindow = runsTarget && await browser.attach(runsTarget);
   check('Open in Runs opens the Runs window at the run: its Details open', !!runsWindow && await runsWindow.until(`(() => { const tr = [...document.querySelectorAll('table.run-table tbody > tr')]
     .find(tr => tr.title === ${JSON.stringify(DIR)}); return !!tr && tr.querySelector('button.notes-link')?.getAttribute('aria-expanded') === 'true'; })()`, 60));
@@ -396,7 +396,7 @@ await runChecks(browser, async () => {
   // It used to start a second live run that had no Pause or Abort anywhere on the page (the tab's run buttons went on 2026-09-29).
   const showInTabs = async dir => {                                               // the run window: a double click on the run's row
     await evaluate(`document.querySelector('footer .tabs button.run-list-button').click()`, true);
-    const target = await browser.window('GATOR - runs').catch(() => null);
+    const target = await browser.window(RUNS_WINDOW).catch(() => null);
     if (!target) throw new Error('the run window did not open');
     const far = await browser.attach(target);
     const ok = await far.evaluate(`new Promise(done => { let tries = 0; const tick = () => {

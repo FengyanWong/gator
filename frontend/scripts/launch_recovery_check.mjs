@@ -14,15 +14,13 @@
 //      what became of it and takes the run ("sent a moment ago, whose answer did not arrive, made this run"); exactly one
 //      POST /api/runs/start. Before 7.268 any error answer forgot the id, and "Start" was offered again.
 // Exit code 1 if any check fails.
-import { check, launchEdge, outDir, reportRefused, RUN_KEY, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, outDir, reportRefused, RUN_KEY, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl, LAUNCH_KEY, SHOWN_RUN_KEY } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 outDir();
 const browser = await launchEdge('launch-recovery');
 
 const DIR = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task__scratch__seed0__0001';
-const LAUNCH_KEY = 'gator-workbench-launch-v1';                 // launch.ts: the launch kept in this tab until it is answered
-const SHOWN_KEY = 'gator-workbench-shown-run-v1';                // App.tsx: the run the bottom tabs show, with the header's run of that time
 // A second, PAUSED run for the bottom tabs: with the header's run shown there as well, the page's own poll would feed the
 // header, and the header's own read (what scenario 1 checks) would never run.
 const OTHER = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task__scratch__seed1__0002';
@@ -88,7 +86,7 @@ await runChecks(browser, async () => {
     await send('Page.addScriptToEvaluateOnNewDocument', { source: `if (location.protocol.startsWith('http')) {
       localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(CONFIG))});
       ${remembered ? `localStorage.setItem(${JSON.stringify(RUN_KEY)}, ${JSON.stringify(remembered)})` : `localStorage.removeItem(${JSON.stringify(RUN_KEY)})`};
-      ${shown ? `localStorage.setItem(${JSON.stringify(SHOWN_KEY)}, ${JSON.stringify(JSON.stringify({ run: shown, header: remembered }))})` : `localStorage.removeItem(${JSON.stringify(SHOWN_KEY)})`};
+      ${shown ? `localStorage.setItem(${JSON.stringify(SHOWN_RUN_KEY)}, ${JSON.stringify(JSON.stringify({ run: shown, header: remembered }))})` : `localStorage.removeItem(${JSON.stringify(SHOWN_RUN_KEY)})`};
       if (!sessionStorage.getItem('fixture-seeded')) { sessionStorage.setItem('fixture-seeded', '1');
         ${kept ? `sessionStorage.setItem(${JSON.stringify(LAUNCH_KEY)}, ${JSON.stringify(JSON.stringify(kept))})` : `sessionStorage.removeItem(${JSON.stringify(LAUNCH_KEY)})`}; }
       window.__seen = [];

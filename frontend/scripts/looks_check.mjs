@@ -20,13 +20,12 @@
 // Run: WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=<a scratch build> "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w
 // frontend/scripts/looks_check.mjs)" [screenshot-dir], or bash frontend/scripts/run_checks.sh --only looks_check. About 40 s.
 import path from 'node:path';
-import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, workbenchUrl, LOOK_KEY, BOTTOM_KEY, CIRCUIT_PICTURE_KEY, RUNS_WINDOW } from './lib/harness.mjs';
 import { NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
 const browser = await launchEdge('looks');
-const LOOK_KEY = 'gator-workbench-look-v1', BOTTOM_KEY = 'gator-workbench-bottom-v1', PICTURE_KEY = 'gator-workbench-circuit-picture-v1';
 const RUN = '/fixture/looks/run';
 const ID = '8b2325fb546f4df7b5a21341f9d23dcb';
 const STATUS = { state: 'completed', run_id: 'fixture-run', mode: 'scratch', entry: 'start', provenance: 'mock', mock: true, worker_alive: false, run_dir: RUN,
@@ -153,7 +152,7 @@ await runChecks(browser, async () => {
   check('a reload keeps Silicon Night (set before the page draws)', await theme() === 'silicon');
   await sleep(800);
   await evaluate(`[...document.querySelectorAll('footer button')].find(b => b.textContent.trim().startsWith('Runs'))?.click()`, true);
-  const target = await browser.window('GATOR - runs', { ms: 8000 }).catch(() => null);
+  const target = await browser.window(RUNS_WINDOW, { ms: 8000 }).catch(() => null);
   check('the Runs window opens', !!target);
   if (target) {
     const runs = await browser.attach(target);
@@ -331,7 +330,7 @@ await runChecks(browser, async () => {
     await evaluate(`(() => { const d = document.querySelector('.circuit-picture'); return !!d && !d.open; })()`));
   await evaluate(`document.querySelector('.circuit-picture > summary').click()`);
   await sleep(250);
-  check('one click opens it, and it stays open in this browser', await evaluate(`document.querySelector('.circuit-picture').open && localStorage.getItem('${PICTURE_KEY}') === 'open'`));
+  check('one click opens it, and it stays open in this browser', await evaluate(`document.querySelector('.circuit-picture').open && localStorage.getItem('${CIRCUIT_PICTURE_KEY}') === 'open'`));
   const picture = await evaluate(`(() => { const d = document.querySelector('.circuit-picture'); return d && { devices: d.querySelectorAll('.cp-dev').length,
     nets: d.querySelectorAll('.cp-net').length, names: [...d.querySelectorAll('.cp-dev text')].map(t => t.textContent), rails: d.querySelectorAll('.cp-net.supply, .cp-net.ground').length }; })()`);
   check('it draws the loaded circuit: devices, nets, supply and ground', !!picture && picture.devices >= 3 && picture.nets >= 3 && picture.rails >= 2, JSON.stringify(picture));
@@ -354,7 +353,7 @@ await runChecks(browser, async () => {
   check('a reload keeps it open', await evaluate(`document.querySelector('.circuit-picture').open`));
   await evaluate(`document.querySelector('.circuit-picture > summary').click()`);
   await sleep(200);
-  check('...and folding it is kept too', await evaluate(`!document.querySelector('.circuit-picture').open && localStorage.getItem('${PICTURE_KEY}') === 'closed'`));
+  check('...and folding it is kept too', await evaluate(`!document.querySelector('.circuit-picture').open && localStorage.getItem('${CIRCUIT_PICTURE_KEY}') === 'closed'`));
 
   reportRefused(page.refused, NEVER_ASKED_OR_SAVED);
   check('no console error', !consoleErrors.length, consoleErrors.slice(0, 3).join(' | '));

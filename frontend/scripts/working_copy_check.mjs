@@ -18,7 +18,7 @@
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/working_copy_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { answerDialogs, check, launchEdge, outDir, runChecks, sleep, TASK_PANEL, workbenchUrl } from './lib/harness.mjs';
+import { answerDialogs, check, launchEdge, outDir, runChecks, sleep, TASK_PANEL, workbenchUrl, VIRTUOSO_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -91,7 +91,7 @@ await runChecks(browser, async () => {
   const BLOCK = `${WIN}?.querySelector('.working-copy')`;
   let far = null;
   const openWindow = async () => {
-    far = await browser.popup(page, LAUNCH, 'GATOR - Virtuoso cell', { width: 720, height: 980, ready: BLOCK, onDialog });
+    far = await browser.popup(page, LAUNCH, VIRTUOSO_WINDOW, { width: 720, height: 980, ready: BLOCK, onDialog });
     await sleep(600);
   };
   const BUTTON = text => `[...(${BLOCK}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;

@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, Json, plainError } from './api';
 import { useRequest } from './store';
 import { restingFor, type RunControl } from './runState';
+import { LAUNCH_KEY } from './contract';
 
 export type Action = 'start' | 'calibration' | 'resume' | 'continue';
 export type Features = { requests: boolean; continuation: boolean };
@@ -24,7 +25,6 @@ export const featuresOf = (meta: Json): Features => {
 };
 
 // ---- the launch on its way, kept in this tab (sessionStorage) until its answer has arrived ----------------------------------
-const LAUNCH_KEY = 'gator-workbench-launch-v1';
 type SentLaunch = { id: string; action: Action; run_dir: string | null; at: number };
 const sentLaunch = (): SentLaunch | null => {
   try {

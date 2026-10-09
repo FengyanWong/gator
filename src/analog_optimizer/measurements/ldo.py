@@ -5,7 +5,7 @@ from pathlib import Path
 from statistics import mean
 
 from analog_optimizer.backends.gpdk045 import number
-from analog_optimizer.backends.spectre_validation import validate_completion
+from analog_optimizer.measurements.spectre_job import completion_evidence, raw_folder, read_result
 
 
 def real_vector(values, name):
@@ -73,14 +73,14 @@ def load_step_metrics(time, output, current, *, delay, rise, stop, low, high, no
 def analyze(job, *, design, result_name='bridge_result.json', mos_names=('M1','M2','M3','M4','M5','MP')):
     from virtuoso_bridge.spectre.psf import read_psf_ascii, result_file, scalar, vector, frequency_hz
     job=Path(job)
-    result=json.loads((job/result_name).read_text())
+    result=read_result(job,result_name)
     if result['status']!='success':
         raise ValueError('Simulation did not succeed')
     condition=result['condition']
     if condition['purpose']!='nominal' or condition.get('monte_carlo') is not None:
         raise ValueError('LDO measurements currently require nominal-only execution')
-    evidence=validate_completion((job/'results/spectre.out').read_text(),result['metadata']['returncode'],result['errors'])
-    raw=Path(result['metadata']['output_dir'])
+    evidence=completion_evidence(job,result)
+    raw=raw_folder(result)
     datasets={name:read_psf_ascii(result_file(raw,filename)) for name,filename in (
         ('dc','dcOp.dc'),('op','dcOpInfo.info'),('ac','ac.ac'),
         ('line','lineSweep.dc'),('load','loadSweep.dc'),('tran','tran.tran.tran'))}

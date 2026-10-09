@@ -6,8 +6,8 @@ from pathlib import Path
 from statistics import mean, median
 
 from analog_optimizer.backends.gpdk045 import number
-from analog_optimizer.backends.spectre_validation import validate_completion
 from .ldo import real_vector
+from .spectre_job import completion_evidence, raw_folder, read_result
 
 
 def checked_trace(time, values):
@@ -101,15 +101,15 @@ def oscillation_metrics(time, voltage, *, supply, start, stop, minimum_cycles=8,
 def analyze(job, *, design, analysis_settings=None, result_name='bridge_result.json', mos_names=()):
     from virtuoso_bridge.spectre.psf import read_psf_ascii, result_file, scalar, vector
     job = Path(job)
-    result = json.loads((job/result_name).read_text())
+    result = read_result(job, result_name)
     recorded_settings = result.get('analysis_settings')
     if recorded_settings != analysis_settings:
         raise ValueError('VCO analysis settings differ from executed manifest')
     condition = result['condition']
     if result['status'] != 'success' or condition['purpose'] != 'nominal' or condition.get('monte_carlo') is not None:
         raise ValueError('VCO measurements require a successful nominal execution')
-    evidence = validate_completion((job/'results/spectre.out').read_text(),result['metadata']['returncode'],result['errors'])
-    raw = Path(result['metadata']['output_dir'])
+    evidence = completion_evidence(job, result)
+    raw = raw_folder(result)
     dc = read_psf_ascii(result_file(raw,'dcOp.dc'))
     op = read_psf_ascii(result_file(raw,'dcOpInfo.info'))
     supply, start, stop = (number(design[k]) for k in ('supply_v','measurement_start','tran_stop'))

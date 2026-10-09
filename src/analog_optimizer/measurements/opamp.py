@@ -3,19 +3,17 @@ from __future__ import annotations
 import csv
 import json
 import math
-from pathlib import Path
 from .ac import measure_ac
-from analog_optimizer.backends.spectre_validation import validate_completion
+from .spectre_job import completion_evidence, raw_folder, read_result
 
 
 def analyze(job, *, result_name="result.json", mos_names=tuple(f'M{i}' for i in range(1, 6))):
     from virtuoso_bridge.spectre.psf import read_psf_ascii, result_file, scalar, vector, frequency_hz
-    result = json.loads((job / result_name).read_text())
+    result = read_result(job, result_name)
     if result['status'] != 'success':
         raise ValueError('Simulation did not succeed')
-    raw = Path(result['metadata']['output_dir'])
-    log_path = job / 'results' / 'spectre.out'
-    evidence = validate_completion(log_path.read_text(), result['metadata']['returncode'], result['errors'])
+    raw = raw_folder(result)
+    evidence = completion_evidence(job, result)
     dc = read_psf_ascii(result_file(raw, 'dcOp.dc'))
     op = read_psf_ascii(result_file(raw, 'dcOpInfo.info'))
     ac = read_psf_ascii(result_file(raw, 'ac.ac'))

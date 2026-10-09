@@ -5,109 +5,29 @@ No SSH transport, daemon, Spectre runner or PSF reader is reimplemented here.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager, redirect_stdout, redirect_stderr
+from contextlib import redirect_stdout, redirect_stderr
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 import fcntl
-import hashlib
 import importlib.metadata
 import json
 import math
 import os
 from pathlib import Path
 import re
-import sys
 import threading
 from time import perf_counter
 from uuid import uuid4
 
 from .backend import (BackendNotConnected, NetlistArtifact, SimulationRequest,
                       SimulationResult, SimulationStatus, UnsupportedCapability, VirtuosoBackend)
+# The generic helpers live in their own modules since 2026-10-09 (plan-refactoring E6); they are still read from here.
+from .common import digest, parameter_rows, write_json
+from .delegation import _captured, _delegation, delegated_owner
+from .spectre_deck import build_deck, build_deck_header
 from .gpdk045 import Gpdk045OtaProfile, GEOMETRY, equal, number, set_gpdk_mos
-from .conditions import PVTCorner, SimulationCondition, finite_number
+from .conditions import PVTCorner, SimulationCondition
 from analog_optimizer.measurements.opamp import analyze
-
-
-def digest(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
-def write_json(path, value):
-    path = Path(path)
-    temporary = path.with_name(path.name + '.tmp')
-    temporary.write_text(json.dumps(value, indent=2, allow_nan=False, default=str) + '\n')
-    temporary.replace(path)
-
-
-def parameter_rows(parameters):
-    return [{'device': d, 'parameter': p, 'value': value} for (d, p), value in sorted(parameters.items())]
-
-
-# A candidate's condition jobs may run side by side on helper threads of the backend's owning thread (2026-09-30). Such
-# a helper carries its owner's token here, and only run_simulation accepts it: every call that touches the Virtuoso
-# session still demands the owning thread itself.
-_delegation = threading.local()
-_capture = threading.local()
-_capture_install = threading.Lock()
-
-
-def delegated_owner():
-    """(thread id, pid) of the owner this helper thread runs a simulation for, else None."""
-    return getattr(_delegation, 'owner', None)
-
-
-class _ThreadRoutedStream:
-    """Stands in for sys.stdout / sys.stderr: a thread that captures writes to its own log, every other thread to the
-    stream this one replaced. contextlib.redirect_stdout swaps the process-wide stream, which two simulations running
-    side by side would mix into each other's logs."""
-    def __init__(self, original, name):
-        self._original, self._name = original, name
-
-    def write(self, text):
-        return (getattr(_capture, self._name, None) or self._original).write(text)
-
-    def flush(self):
-        (getattr(_capture, self._name, None) or self._original).flush()
-
-    def __getattr__(self, item):
-        return getattr(self._original, item)
-
-
-@contextmanager
-def _captured(log):
-    """This thread's stdout and stderr go to `log` while inside; other threads keep theirs."""
-    with _capture_install:
-        for name in ('stdout', 'stderr'):
-            if not isinstance(getattr(sys, name), _ThreadRoutedStream):
-                setattr(sys, name, _ThreadRoutedStream(getattr(sys, name), name))
-    before = getattr(_capture, 'stdout', None), getattr(_capture, 'stderr', None)
-    _capture.stdout = _capture.stderr = log
-    try:
-        yield
-    finally:
-        _capture.stdout, _capture.stderr = before
-
-
-def build_deck_header(structure, model_file, section='tt', *, temperature_c=27.0):
-    if not model_file.startswith('/') or any(c in model_file for c in '\n\r"'):
-        raise ValueError('Model file must be an absolute Spectre-host path')
-    if not re.fullmatch(r'[A-Za-z_]\w*', section):
-        raise ValueError('Invalid model section')
-    if re.search(r'^\s*(include|ahdl_include|simulator|global)\b', structure, re.M):
-        raise ValueError('Expected structure-only export')
-    if not finite_number(temperature_c) or temperature_c <= -273.15:
-        raise ValueError('Invalid simulation temperature')
-    return ('simulator lang=spectre\nglobal 0\n'
-            + f'include "{model_file}" section={section}\n' + structure + '\n'
-            + f'simulatorOptions options reltol=1e-5 vabstol=1e-8 iabstol=1e-13 temp={temperature_c:.12g} tnom=27\n')
-
-
-def build_deck(structure, model_file, section='tt', *, temperature_c=27.0):
-    return (build_deck_header(structure, model_file, section, temperature_c=temperature_c)
-            + 'dcOp dc\ndcOpInfo info what=oppoint where=rawfile\n'
-            + 'ac ac start=10 stop=1G dec=60\n'
-            + 'save VOUT VINP VINN VDD VBIAS XU1.NTAIL XU1.NLOAD VDD:p\n'
-            + 'saveOptions options save=allpub\n')
 
 
 @dataclass(frozen=True)

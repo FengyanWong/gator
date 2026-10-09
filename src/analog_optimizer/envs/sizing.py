@@ -13,6 +13,7 @@ from time import perf_counter
 from uuid import uuid4
 
 from analog_optimizer.backends.backend import SimulationRequest, SimulationStatus, UnsupportedCapability
+from analog_optimizer.backends.common import parameter_rows
 from analog_optimizer.backends.conditions import SimulationCondition
 from analog_optimizer.graph.circuit_graph import CircuitGraph
 from analog_optimizer.measurements.specs import REWARD_VERSION, CLEARANCE_RULE, MetricSpec, RewardSettings, SpecificationEvaluator
@@ -31,10 +32,6 @@ def write_record(path, value, *, durable=True):
         if durable:
             os.fsync(stream.fileno())
     temporary.replace(path)
-
-
-def parameter_rows(parameters):
-    return [{'device': d, 'parameter': p, 'value': v} for (d, p), v in sorted(parameters.items())]
 
 
 def same_parameters(actual, expected):

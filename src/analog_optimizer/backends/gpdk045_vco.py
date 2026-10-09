@@ -3,6 +3,7 @@ import math
 
 from .backend import UnsupportedCapability
 from .gpdk045 import Gpdk045MappedProfile, number
+from .spectre_deck import build_deck_header
 
 
 class Gpdk045VcoProfile(Gpdk045MappedProfile):
@@ -70,7 +71,6 @@ class Gpdk045VcoProfile(Gpdk045MappedProfile):
         return settings
 
     def build_deck(self, structure, model_file, section='tt', *, temperature_c=27.):
-        from .virtuoso_bridge import build_deck_header
         cfg = self.design
         settings = self.analysis_settings
         deck = build_deck_header(structure, model_file, section, temperature_c=temperature_c)

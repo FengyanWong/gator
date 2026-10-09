@@ -3,6 +3,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 
 from .codec import identity
+from analog_optimizer.backends.common import parameter_rows
 from analog_optimizer.measurements.specs import REWARD_VERSION, RewardSettings
 
 
@@ -131,7 +132,6 @@ def evaluation_record(store, eval_id):
     record.update(candidate_id=eval_id, status=result['status'],
                   **{key: result.get(key) for key in ('metrics', 'metric_units', 'metric_validity', 'applied_parameters')})
     if isinstance(record['applied_parameters'], dict):
-        from analog_optimizer.backends.virtuoso_bridge import parameter_rows
         record['applied_parameters'] = parameter_rows(record['applied_parameters'])
     return record
 

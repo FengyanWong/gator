@@ -3,6 +3,7 @@ import math
 
 from .backend import UnsupportedCapability
 from .gpdk045 import Gpdk045MappedProfile, equal, number
+from .spectre_deck import build_deck_header
 
 
 class Gpdk045LdoProfile(Gpdk045MappedProfile):
@@ -57,7 +58,6 @@ class Gpdk045LdoProfile(Gpdk045MappedProfile):
             raise ValueError('LDO input pair must remain matched')
 
     def build_deck(self, structure, model_file, section='tt', *, temperature_c=27.):
-        from .virtuoso_bridge import build_deck_header
         cfg=self.design
         return (build_deck_header(structure,model_file,section,temperature_c=temperature_c)
             + 'dcOp dc\ndcOpInfo info what=oppoint where=rawfile\n'

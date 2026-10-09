@@ -9,7 +9,8 @@ from analog_optimizer.backends.conditions import SimulationCondition
 from analog_optimizer.backends.gpdk045 import Gpdk045OtaProfile, GEOMETRY, equal, number
 from analog_optimizer.backends.gpdk045_ldo import Gpdk045LdoProfile
 from analog_optimizer.backends.gpdk045_vco import Gpdk045VcoProfile
-from analog_optimizer.backends.virtuoso_bridge import build_deck, digest as file_digest
+from analog_optimizer.backends.common import digest as file_digest
+from analog_optimizer.backends.spectre_deck import build_deck
 from analog_optimizer.envs.sizing import graph_contract
 from analog_optimizer.graph.pyg_converter import FeatureSchema
 from analog_optimizer.measurements.specs import MetricSpec, SpecificationEvaluator

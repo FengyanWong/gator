@@ -24,7 +24,9 @@ from uuid import uuid4
 
 from .backend import BackendNotConnected, UnsupportedCapability
 from .provenance import content_hash, profile_contract
-from .virtuoso_bridge import VirtuosoBridgeBackend, delegated_owner, digest, parameter_rows, write_json
+from .common import digest, parameter_rows, write_json
+from .delegation import delegated_owner
+from .virtuoso_bridge import VirtuosoBridgeBackend
 
 MAX_SPECTRE_WORKERS = 6       # 4 until record 7.143 (user decision of 2026-10-02): the simulator host has 8 cores
 # GATOR_NETLIST_BUILD (record 7.142, user decision of 2026-10-02): "skip" (default) builds a candidate's netlist from its

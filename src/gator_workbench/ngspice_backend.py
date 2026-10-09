@@ -36,8 +36,8 @@ import subprocess
 from time import perf_counter
 from uuid import uuid4
 
-from analog_optimizer.backends.backend import (BackendNotConnected, NetlistArtifact, SimulationResult, SimulationStatus,
-                                               UnsupportedCapability, VirtuosoBackend)
+from analog_optimizer.backends.backend import (BackendNotConnected, HeldParameters, NetlistArtifact, SimulationResult,
+                                               SimulationStatus, UnsupportedCapability, VirtuosoBackend)
 from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
 from analog_optimizer.measurements.specs import RewardSettings
 
@@ -141,7 +141,7 @@ def deck_condition(text) -> SimulationCondition:
     return SimulationCondition(PVTCorner('nominal', 'nominal', temperature, supply if supply > 0 else 1.0))
 
 
-class NgspiceBackend(VirtuosoBackend):
+class NgspiceBackend(HeldParameters, VirtuosoBackend):
     """One deck, one connection; sizes set and read back through the deck's own tokens."""
     def __init__(self, text, graph, link: NgspiceLink, *, units=None, device_kinds=None, include_root=None,
                  circuit_id='ngspice', runner=None, source='<task>'):
@@ -162,15 +162,9 @@ class NgspiceBackend(VirtuosoBackend):
                 raise ValueError(f'{key[0]}.{key[1]} is not a value this netlist can write')
 
     # ---------------------------------------------------------------- the contract
-    def connect(self):
-        self.connected = True
-
-    def close(self):
-        self.connected = False
-
-    def _check(self):
-        if not self.connected:
-            raise BackendNotConnected('ngspice backend is not connected')
+    # connect, close, _check, restore, read_parameters and set_parameters: HeldParameters (the package's, record 7.292)
+    not_connected = 'ngspice backend is not connected'
+    unexpected_assignment = 'Unexpected ngspice parameter assignment'
 
     def nominal_condition(self):
         return self.condition
@@ -178,20 +172,6 @@ class NgspiceBackend(VirtuosoBackend):
     def validate_condition(self, condition):
         if condition is not None and condition != self.condition:
             raise UnsupportedCapability('The ngspice backend runs the deck as written: only its own nominal condition')
-
-    def restore(self):
-        self._check()
-        self.parameters = dict(self.initial)
-
-    def read_parameters(self):
-        self._check()
-        return dict(self.parameters)
-
-    def set_parameters(self, parameters):
-        self._check()
-        if parameters.keys() != self.initial.keys() or not all(math.isfinite(v) for v in parameters.values()):
-            raise ValueError('Unexpected ngspice parameter assignment')
-        self.parameters = dict(parameters)
 
     def deck(self, parameters=None) -> str:
         """The deck for `parameters` (default: the current ones)."""

@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 
 
-def digest(path):
+def file_digest(path):
+    """SHA-256 of a file's bytes (of a JSON value: evaluation.transfer.json_digest). virtuoso_bridge.digest names it too."""
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 

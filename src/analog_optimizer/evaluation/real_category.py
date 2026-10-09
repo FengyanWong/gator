@@ -9,7 +9,7 @@ from analog_optimizer.backends.conditions import SimulationCondition
 from analog_optimizer.backends.gpdk045 import Gpdk045OtaProfile, GEOMETRY, equal, number
 from analog_optimizer.backends.gpdk045_ldo import Gpdk045LdoProfile
 from analog_optimizer.backends.gpdk045_vco import Gpdk045VcoProfile
-from analog_optimizer.backends.common import digest as file_digest
+from analog_optimizer.backends.common import file_digest
 from analog_optimizer.backends.spectre_deck import build_deck
 from analog_optimizer.envs.sizing import graph_contract
 from analog_optimizer.graph.pyg_converter import FeatureSchema
@@ -17,7 +17,7 @@ from analog_optimizer.measurements.specs import MetricSpec, SpecificationEvaluat
 from analog_optimizer.models.inputs import SpecSchema
 from analog_optimizer.training.sac import SACConfig, source_digest
 from .benchmark import benchmark_call_budget, benchmark_models
-from .transfer import TransferTask, digest, validate_split
+from .transfer import TransferTask, json_digest, validate_split
 
 
 def read(path):
@@ -184,7 +184,7 @@ def bind_references(suite, bindings):
         references[name]=dict(measurements=str(measured_path),metrics=measured['metrics'],
             metric_units=measured['metric_units'],metric_validity=measured['metric_validity'],
             deck_sha256=file_digest(deck),analysis_settings=settings,
-            graph_sha256=digest(graph_contract(profile.optimization_graph())),
+            graph_sha256=json_digest(graph_contract(profile.optimization_graph())),
             condition=asdict(condition),baseline_used_for_learning=False)
         for p in (receipt_path,measured_path,job/'result.json',job/'bridge_result.json',deck):
             files[str(p)] = file_digest(p)
@@ -221,7 +221,7 @@ def build_plan(root, manifest, bindings_path):
             warmup_random_transitions=1,updates_per_eligible_step=1,
             prior_data='qualification only, no saved transitions/checkpoints imported',
             cross_fold_selection=False,blind_category_test=False))
-    plan['sha256']=digest(plan)
+    plan['sha256']=json_digest(plan)
     # Canonical JSON types make a freshly built plan equal to its saved form.
     return suite,json.loads(json.dumps(plan,allow_nan=False))
 
@@ -237,7 +237,7 @@ def freeze_plan(path, plan):
 def validate_frozen_plan(root, path):
     saved = read(path)
     payload = {k:v for k,v in saved.items() if k!='sha256'}
-    require(saved.get('sha256')==digest(payload), 'Frozen plan digest mismatch')
+    require(saved.get('sha256')==json_digest(payload), 'Frozen plan digest mismatch')
     suite,current = build_plan(root,saved['manifest_path'],saved['bindings_path'])
     require(current==saved, 'Frozen plan no longer matches code, definitions, dependencies or qualification evidence')
     return suite,saved
@@ -251,14 +251,14 @@ class PhysicalFactory:
     parallel_safe: bool = False
 
     def __post_init__(self):
-        self._expected = {t.id:digest(asdict(t)) for heldout in self.suite.definition['heldout']
+        self._expected = {t.id:json_digest(asdict(t)) for heldout in self.suite.definition['heldout']
                           for t in self.suite.tasks(heldout)}
 
     def __call__(self, task, steps, output):
         return self.create_recorded(task,steps,output,None)
 
     def create_recorded(self, task, steps, output, recorder):
-        require(digest(asdict(task))==self._expected.get(task.id),
+        require(json_digest(asdict(task))==self._expected.get(task.id),
                 'Task differs from frozen physical definition')
         expected_steps = {'train':self.suite.definition['settings']['pretrain_steps'],
                           'validation':1,'test':self.suite.definition['settings']['test_steps']}[task.partition]

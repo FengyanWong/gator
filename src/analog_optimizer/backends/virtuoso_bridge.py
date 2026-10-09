@@ -22,12 +22,14 @@ from uuid import uuid4
 from .backend import (BackendNotConnected, NetlistArtifact, SimulationRequest,
                       SimulationResult, SimulationStatus, UnsupportedCapability, VirtuosoBackend)
 # The generic helpers live in their own modules since 2026-10-09 (plan-refactoring E6); they are still read from here.
-from .common import digest, parameter_rows, write_json
+from .common import file_digest, parameter_rows, write_json
 from .delegation import _captured, _delegation, delegated_owner
 from .spectre_deck import build_deck, build_deck_header
 from .gpdk045 import Gpdk045OtaProfile, GEOMETRY, equal, number, set_gpdk_mos
 from .conditions import PVTCorner, SimulationCondition
 from analog_optimizer.measurements.opamp import analyze
+
+digest = file_digest       # the name the pinned examples and the tests read here (a file's bytes; plan-refactoring E8)
 
 
 @dataclass(frozen=True)
@@ -104,7 +106,7 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                 if receipt[key] != expected:
                     raise ValueError('Creation receipt does not match the selected test circuit')
             build_deck('', self.config.model_file, self.config.section)
-            self._env_hash = digest(self.config.env_file)
+            self._env_hash = file_digest(self.config.env_file)
             self.client = self._attach()
             self._thread = threading.get_ident()
             self._bound_env = self._vb_env()
@@ -154,7 +156,7 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         `changed`, each backend's own words) and, with bridge 0.8.0, the runtime env binding. Shared by this adapter
         and native_preparation's lane backend (plan-refactoring E7); `bridge_version` is set whenever either is
         connected, so reading it with getattr changes nothing for the adapter."""
-        if digest(self.config.env_file) != self._env_hash or self._vb_env() != self._bound_env:
+        if file_digest(self.config.env_file) != self._env_hash or self._vb_env() != self._bound_env:
             raise RuntimeError(changed)
         if getattr(self, 'bridge_version', None) == '0.8.0':
             from virtuoso_bridge.env import get_runtime_env_file
@@ -364,19 +366,19 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         deck.write_text(builder(prepared, self.config.model_file, corner.model_section,
                                temperature_c=corner.temperature_c))
         self.timings['netlisting'] = perf_counter() - started
-        artifact = NetlistArtifact(deck, job_id, digest(deck), 'real', condition)
+        artifact = NetlistArtifact(deck, job_id, file_digest(deck), 'real', condition)
         metadata = {'job_id': job_id, 'origin': 'real', 'bridge_version': self.bridge_version,
                     'library': self.config.library, 'cell': self.circuit.design['testbench_cell'],
                     'section': corner.model_section, 'temperature_c': corner.temperature_c,
                     'supply_v': corner.supply_v, 'condition': asdict(condition),
                     'condition_fingerprint': condition.fingerprint, 'model_file': self.config.model_file,
                     'original_structure_path': str(original_structure.resolve()),
-                    'original_structure_sha256': digest(original_structure),
+                    'original_structure_sha256': file_digest(original_structure),
                     'netlist_source': 'built from the readback' if built is not None else 'native export',
-                    'source_sha256': digest(structure), 'executed_sha256': artifact.sha256,
+                    'source_sha256': file_digest(structure), 'executed_sha256': artifact.sha256,
                     'structure_path': str(structure.resolve()),
                     'applied_parameters': parameter_rows(parameters), 'timings': dict(self.timings),
-                    'files': {str(p.relative_to(directory)): digest(p) for p in directory.rglob('*') if p.is_file()}}
+                    'files': {str(p.relative_to(directory)): file_digest(p) for p in directory.rglob('*') if p.is_file()}}
         if hasattr(self.circuit, 'analysis_settings'):
             metadata['analysis_settings'] = self.circuit.analysis_settings
         write_json(directory / 'manifest.json', metadata)
@@ -391,10 +393,10 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
             raise ValueError('Derivation requires this candidate\'s registered nominal export')
         if condition.purpose != 'pvt_training' or condition.monte_carlo is not None:
             raise UnsupportedCapability('Derived candidate decks require a deterministic training condition')
-        if digest(base.path) != base.sha256:
+        if file_digest(base.path) != base.sha256:
             raise ValueError('Nominal deck changed before derivation')
         original = Path(metadata['original_structure_path'])
-        if digest(original) != metadata['original_structure_sha256']:
+        if file_digest(original) != metadata['original_structure_sha256']:
             raise ValueError('Original native export changed before derivation')
         self.circuit.validate_assignment(parameters)
         prepared = self.circuit.structure_for_condition(original.read_text(), condition)
@@ -407,13 +409,13 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         corner = condition.corner
         builder = getattr(self.circuit, 'build_deck', build_deck)
         deck.write_text(builder(prepared, self.config.model_file, corner.model_section, temperature_c=corner.temperature_c))
-        artifact = NetlistArtifact(deck, job_id, digest(deck), 'real', condition)
+        artifact = NetlistArtifact(deck, job_id, file_digest(deck), 'real', condition)
         derived = dict(metadata, job_id=job_id, derived_from_export_job_id=base.job_id,
                        section=corner.model_section, temperature_c=corner.temperature_c, supply_v=corner.supply_v,
                        condition=asdict(condition), condition_fingerprint=condition.fingerprint,
-                       source_sha256=digest(structure), executed_sha256=artifact.sha256,
+                       source_sha256=file_digest(structure), executed_sha256=artifact.sha256,
                        structure_path=str(structure),
-                       files={p.name: digest(p) for p in (structure, deck)})
+                       files={p.name: file_digest(p) for p in (structure, deck)})
         write_json(directory / 'manifest.json', derived)
         self._exports[job_id] = (artifact, deepcopy(parameters), derived)
         return artifact
@@ -421,10 +423,10 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
     def get_circuit_graph(self, artifact):
         self._require_connection()
         saved, _, metadata = self._exports.get(artifact.job_id, (None, None, None))
-        if saved != artifact or digest(artifact.path) != artifact.sha256:
+        if saved != artifact or file_digest(artifact.path) != artifact.sha256:
             raise ValueError('Unknown or modified netlist artifact')
         structure = Path(metadata['structure_path'])
-        if digest(structure) != metadata['source_sha256']:
+        if file_digest(structure) != metadata['source_sha256']:
             raise ValueError('Exported structure changed after validation')
         graph = self.circuit.optimization_graph(structure)
         graph.metadata['simulation_condition'] = asdict(artifact.condition)
@@ -474,7 +476,7 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         if request.analysis:
             raise UnsupportedCapability('Only the analyses prepared by the circuit profile are supported')
         artifact, applied, metadata = self._exports.get(request.netlist.job_id, (None, None, None))
-        if artifact != request.netlist or artifact is None or digest(artifact.path) != artifact.sha256:
+        if artifact != request.netlist or artifact is None or file_digest(artifact.path) != artifact.sha256:
             raise ValueError('Unknown or modified netlist artifact')
         if request.parameters and (request.parameters.keys() != applied.keys() or
                                    any(not equal(v, applied[k]) for k, v in request.parameters.items())):
@@ -487,7 +489,7 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         job.mkdir(parents=True, exist_ok=False)
         deck = job / getattr(self.circuit, 'deck_name', 'opamp.scs')
         deck.write_bytes(artifact.path.read_bytes())
-        if digest(deck) != artifact.sha256:
+        if file_digest(deck) != artifact.sha256:
             raise ValueError('Netlist changed while preparing the simulation')
         manifest = {**metadata, 'job_id': job_id, 'export_job_id': artifact.job_id,
                     'proposed_parameters': parameter_rows(request.parameters),

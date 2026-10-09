@@ -186,6 +186,29 @@ def sized_graph(text, groups):
     return graph
 
 
+def test_the_backend_holds_its_parameters_and_refuses_in_its_own_words(tmp_path):
+    """Record 7.292 (plan-refactoring E8): connect, close and the held parameters come from the package's HeldParameters;
+    the messages stay the ngspice backend's own (this test passes on the code before that step too)."""
+    graph = sized_graph(DECK, {'r1': ('r', 500.0, 4000.0)})
+    backend = NgspiceBackend(DECK, graph, NgspiceLink('ngspice_local'), units={'vout_v': 'V'}, runner=FakeRunner([]))
+    assert backend.connected is False
+    for call in (backend.restore, backend.read_parameters, lambda: backend.set_parameters({}),
+                 lambda: backend.generate_netlist(tmp_path)):
+        with pytest.raises(ngspice_backend.BackendNotConnected, match=r'^ngspice backend is not connected$'):
+            call()
+    backend.connect()
+    assert backend.read_parameters() == {('r1', 'r'): 1000.0}
+    backend.set_parameters({('r1', 'r'): 1500.0})
+    for bad in ({}, {('r1', 'r'): 1500.0, ('r2', 'r'): 1.0}, {('r1', 'r'): float('nan')}):
+        with pytest.raises(ValueError, match=r'^Unexpected ngspice parameter assignment$'):
+            backend.set_parameters(bad)
+    assert backend.read_parameters() == {('r1', 'r'): 1500.0}
+    backend.restore()
+    assert backend.read_parameters() == {('r1', 'r'): 1000.0}
+    backend.close()
+    assert backend.connected is False
+
+
 def test_the_backend_writes_the_deck_reads_it_back_and_reports_each_outcome(tmp_path):
     ok = (0, 'vout_v = 6.000000e-01\nngspice-47 done\n', '')
     runner = FakeRunner([ok, (0, 'vout_v: no data\n .meas failed!\n', ''), (1, 'Error: timestep too small\n', ''),

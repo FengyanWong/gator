@@ -24,7 +24,7 @@ from uuid import uuid4
 
 from .backend import BackendNotConnected, UnsupportedCapability
 from .provenance import content_hash, profile_contract
-from .common import digest, parameter_rows, write_json
+from .common import file_digest, parameter_rows, write_json
 from .delegation import delegated_owner
 from .virtuoso_bridge import VirtuosoBridgeBackend
 
@@ -278,7 +278,7 @@ class NativeCandidateBackend(VirtuosoBridgeBackend):
             load_vb_env()
             if resolve_profile(self.config.profile) != self.config.profile:
                 raise RuntimeError('Explicit bridge profile required')
-            self._env_hash, self._bound_env = digest(self.config.env_file), self._vb_env()
+            self._env_hash, self._bound_env = file_digest(self.config.env_file), self._vb_env()
             self._thread, self._pid = threading.get_ident(), os.getpid()
             self._active = True
         except BaseException:
@@ -312,7 +312,7 @@ class NativeCandidateBackend(VirtuosoBridgeBackend):
         if (metadata['candidate_id'] != candidate_id or artifact.condition != condition
                 or applied.keys() != parameters.keys()
                 or any(not math.isclose(applied[k], v, rel_tol=1e-8, abs_tol=1e-24) for k, v in parameters.items())
-                or digest(artifact.path) != artifact.sha256):
+                or file_digest(artifact.path) != artifact.sha256):
             raise ValueError('Prepared candidate identity/parameters/hash mismatch')
         # At most one export is needed by a lane. Records own historical artifacts.
         self._exports = {artifact.job_id: (artifact, dict(applied), metadata)}

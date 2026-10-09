@@ -12,8 +12,12 @@ from analog_optimizer.graph.circuit_graph import CircuitGraph
 from analog_optimizer.measurements.specs import MetricSpec, SpecificationEvaluator
 
 
-def digest(value):
+def json_digest(value):
+    """SHA-256 of a JSON value, keys sorted (of a file's bytes: backends.common.file_digest)."""
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
+
+
+digest = json_digest        # the name the pinned examples import (plan-refactoring E8)
 
 
 def topology_graph(graph):
@@ -106,7 +110,7 @@ def freeze_protocol(path, tasks, settings):
     validate_split(tasks)
     version = 'm6-cross-category-v1' if any(t.transfer == 'category' for t in tasks) else 'm5-transfer-v1'
     payload = dict(version=version, tasks=[asdict(t) for t in tasks], settings=settings)
-    payload['sha256'] = digest(payload)
+    payload['sha256'] = json_digest(payload)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open('x') as stream:

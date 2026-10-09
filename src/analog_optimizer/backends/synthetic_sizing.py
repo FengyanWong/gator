@@ -8,10 +8,10 @@ from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 
-from .backend import VirtuosoBackend, NetlistArtifact, SimulationResult, SimulationStatus, BackendNotConnected
+from .backend import HeldParameters, VirtuosoBackend, NetlistArtifact, SimulationResult, SimulationStatus
 
 
-class SyntheticSizingBackend(VirtuosoBackend):
+class SyntheticSizingBackend(HeldParameters, VirtuosoBackend):
     """Evaluates a bounded quadratic score of executed normalized group values.
 
     Targets are declared per parameter kind, never inferred from instance names.
@@ -30,32 +30,12 @@ class SyntheticSizingBackend(VirtuosoBackend):
         self.parameters, self.exports = dict(self.initial), {}
         self.connected, self.calls = False, 0
 
-    def connect(self):
-        self.connected = True
+    not_connected = 'Synthetic sizing backend is not connected'
+    unexpected_assignment = 'Unexpected synthetic parameter assignment'
 
-    def close(self):
-        self.connected = False
-
-    def _check(self):
-        if not self.connected:
-            raise BackendNotConnected('Synthetic sizing backend is not connected')
-
-    def restore(self):
+    def generate_netlist(self, work_root, *, condition=None):
         self._check()
-        self.parameters = dict(self.initial)
-
-    def read_parameters(self):
-        self._check()
-        return dict(self.parameters)
-
-    def set_parameters(self, parameters):
-        self._check()
-        if parameters.keys() != self.initial.keys() or not all(math.isfinite(v) for v in parameters.values()):
-            raise ValueError('Unexpected synthetic parameter assignment')
-        self.parameters = dict(parameters)
-
-    def generate_netlist(self, work_root):
-        self._check()
+        self.validate_condition(condition)
         job_id = uuid4().hex
         directory = Path(work_root) / job_id
         directory.mkdir(parents=True)

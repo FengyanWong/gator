@@ -452,3 +452,5 @@ One row per commit, newest last.
 | `2b79f78` | 10-09 11:27 | 7.290 | Docs: the refactoring plan's row in the plans table - executed (7.290), not landed |
 | `ef1cc42` | 10-09 11:27 | 7.290 | the refactoring landed: the landed-state texts of record 7.290, its index row, the plan and the reference; the 47 above are the clean copy's commits replayed on 564928e (session "Refactoring plan") |
 | `7614718` | 10-09 11:48 | - | record only: record 7.290's Commit and Live lines, and the table rows for 564928e and the landing commits 7410f6f..ef1cc42 (session "Refactoring plan") |
+| `088584d` | 10-09 16:02 | 7.289 | record only: 7.289 amended - the two `_a` LDO tasks and their four MScR cells deleted on the user's word; and the table row for 7614718 |
+| `0be5b18` | 10-09 18:56 | 7.291 | the Tasks, Runs and RL model windows close once a task, run or saved model is chosen (a choice that does not go through leaves them open); the record file rolled over to `7.291-and-later.md` (session "Frontend workbench layout design") |

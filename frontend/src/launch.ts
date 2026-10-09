@@ -11,12 +11,14 @@
 // Request ids and the continuation check are used only where the backend lists them (GET /api/meta `features`): a page
 // newer than its backend works as before until the backend is restarted.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, plainError } from './api';
 import { useRequest } from './store';
 import { restingFor, type RunControl } from './runState';
 import { LAUNCH_KEY } from './contract';
 import { keepInTab, readKeptInTab } from './kept';
+import { folderName } from './format';
+import type { NextModel } from './panels/rlModelText';
 
 export type Action = 'start' | 'calibration' | 'resume' | 'continue';
 export type Features = { requests: boolean; continuation: boolean };
@@ -263,4 +265,83 @@ export function useLauncher({ control, features, onLaunched, onMessage }: {
   }, [features.requests, askAbout]);
 
   return { go, refusal, setRefusal, busy: going };
+}
+
+// ---- the page's launches (plan-refactoring C5, out of App.tsx's Page) ---------------------------------------------------------
+/** A draft whose Mode is still `resume` (record 7.267; plan "The draft": "An old saved draft with mode: resume"): no Mode is
+ *  chosen, and nothing starts until one is. The value stays `resume` in the configuration, which every backend route still
+ *  reads (the command line still starts one); the page shows it as no Mode chosen. */
+const NO_MODE = 'Choose a Mode in the RL model window first: this configuration still says resume, which is no longer a choice (Continue... in the Runs window continues a run).';
+/** Calibration evaluates only random designs. Task creation owns the fixed starting-design baseline. */
+export const CALIBRATION_DESIGNS = 64;
+
+/** The page's launcher: Start, Calibration, Continue... of the run shown and Resume of the header's run, the continuation checks
+ *  they depend on, why each cannot go now, the refusals kept beside them, the header's "Next" line (`setNextModel`: Run
+ *  configuration's part of it) and Fine-tune from a run's newest save point. `launchedRun`: the page's "the run has started". */
+export function useLaunchActions({ control, meta, config, setConfig, configKey, validation, runDir, status, circuit, isReal, launchedRun, setMessage }: {
+  control: RunControl; meta: Json; config: Json; setConfig: (next: Json | ((c: Json) => Json), record?: boolean) => void; configKey: string;
+  validation: Json; runDir: string | null; status: Json; circuit: Json; isReal: boolean; launchedRun: (started: Json, as: 'start' | 'resume', note?: string) => void;
+  setMessage: (message: Json) => void }) {
+  const features = useMemo(() => featuresOf(meta), [meta]);
+  const launcher = useLauncher({ control, features, onLaunched: launchedRun, onMessage: setMessage });
+  // The backend's continuation check (when it has one): of the run shown, for Continue..., and of the header's paused run,
+  // for Resume - the reason either cannot go on is said before the press.
+  const shownCheck = useContinuation(features, runDir, status);
+  const heldCheck = useContinuation(features, control.dir, control.phase === 'paused' ? control.status : null);
+  const startBlocked = startReadiness(control.phase, validation) ?? (config.run.mode === 'resume' ? NO_MODE : null);
+  // What Start would start (record 7.269; plan "The draft": "What Start will start is one line beside it ... It is also Start's
+  // tooltip, with the reason when Start is disabled"): the task, Run configuration's model and network, the budget.
+  const [nextModel, setNextModel] = useState<NextModel | null>(null);
+  const nextTask: string | null = config.circuit?.source === 'registered_task' ? (config.circuit.task_id ? String(config.circuit.task_id).replace(/^real:/, '') : null)
+    : config.circuit?.cell ? `${config.circuit.library}/${config.circuit.cell}` : null;
+  const nextLine = nextModel ? `Next: ${nextTask ?? 'no task chosen'} · ${nextModel.model} · ${nextModel.network} · ${config.run.max_evaluations} evaluations` : null;
+  const resumeBlocked = control.phase === 'paused'
+    ? continueReadiness({ status: control.status, check: heldCheck, phase: control.phase, held: true, total: 'unchanged' }) : null;
+  const continueBlocked = continueReadiness({ status, check: shownCheck, phase: control.phase, held: control.dir === runDir, total: 'form' });
+  // What a refusal depends on: the configuration for Start and Calibration; for Resume and Continue the run - its state, save
+  // point and total (a heartbeat is no reason: a paused run's status is read again and again without a change).
+  const continueKey = (dir: string | null, of: Json) => `continue|${dir}|${of?.state}|${of?.worker_alive}|${of?.save_point}|${of?.budget?.max_evaluations}`;
+  const refusal = launcher.refusal;
+  const headerRefusal = refusal && ((refusal.action === 'start' || refusal.action === 'calibration') ? refusal.key === configKey
+    : refusal.action === 'resume' && refusal.key === continueKey(control.dir, control.status)) ? refusal : null;
+  const shownRefusal = refusal?.action === 'continue' && refusal.key === continueKey(runDir, status) ? refusal : null;
+  // An ngspice netlist task is real too (circuit simulations, counted and recorded as such), only without a license.
+  const start = (calibration_only: boolean) => {
+    setMessage(null);
+    const calibration_designs = calibration_only ? CALIBRATION_DESIGNS : 0;
+    const budget = calibration_only ? calibration_designs : config.run.max_evaluations;
+    const calibrationText = calibration_only ? `\n(${calibration_designs} random designs for calibration; no starting-design baseline.)` : '';
+    launcher.go(calibration_only ? 'calibration' : 'start', configKey, null,
+      flags => api.start({ config, calibration_only, ...(calibration_designs ? { calibration_designs } : {}), ...flags }), { real: !!isReal, transfer: true,
+        authorizeText: (!isReal ? `Start ${budget} synthetic MOCK evaluations?` : circuit?.simulator === 'ngspice' ? `This starts ngspice simulations of the task (no license; every one is counted as a real evaluation).\nRun a budget of ${budget} candidate evaluation(s)?`
+          : `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?`) + calibrationText },
+      'Not started: you answered no, so nothing was created.');
+  };
+  // Continue... of the Run status tab: the run shown there, with the total of the budget form (null = unchanged). The
+  // header's Resume is Continue of its own paused run with the total unchanged. Both go on from the run's own saved
+  // configuration; the run becomes the header's run.
+  const continueShown = (total: number | null) => {
+    const dir = runDir;
+    if (!dir) return;
+    setMessage(null);
+    launcher.go('continue', continueKey(dir, status), dir, flags => api.continueRun({ run_dir: dir, max_evaluations: total, ...flags }),
+      continueConsent(status, shownCheck, total), 'Not continued: you answered no. The run stays as it was.');
+  };
+  const resumeHeld = () => {
+    const dir = control.dir;
+    if (!dir) return;
+    setMessage(null);
+    launcher.go('resume', continueKey(dir, control.status), dir, flags => api.continueRun({ run_dir: dir, max_evaluations: null, ...flags }),
+      continueConsent(control.status, heldCheck, null), 'Not resumed: you answered no. The run stays paused.');
+  };
+  // The backend's alternative when Continue cannot go on (a changed task, older optimizer code...): the next run on this
+  // page fine-tunes from the run's newest save point - pinned, as one Undo step. Nothing starts until Start.
+  const fineTuneFrom = (alternative: Json) => {
+    setConfig((c: Json) => ({ ...c, run: { ...c.run, mode: 'fine_tune',
+      model_source: { ...(c.run.model_source ?? {}), run_dir: alternative.run_dir, checkpoint_id: alternative.checkpoint_id } } }));
+    setMessage({ level: 'info', text: `The next run fine-tunes from ${folderName(alternative.run_dir)} at its save point ${alternative.checkpoint_id}, as a new `
+      + 'run (Undo takes it back). Look at RL model..., then press Start.' });
+  };
+  return { launcher, shownCheck, startBlocked, setNextModel, nextLine, resumeBlocked, continueBlocked, headerRefusal, shownRefusal, start,
+    continueShown, resumeHeld, fineTuneFrom };
 }

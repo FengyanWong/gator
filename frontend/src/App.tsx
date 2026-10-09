@@ -12,11 +12,10 @@ import { ValidationStatus } from './panels/Issues';
 import { RunButtons } from './panels/RunControl';
 import { changesByItself, isLive, RESUMABLE, useRunControl } from './runState';
 import { HEADER_RUN_KEY, SHOWN_RUN_KEY } from './contract';
-import { continueConsent, continueReadiness, featuresOf, launchKept, startReadiness, useContinuation, useLauncher } from './launch';
+import { CALIBRATION_DESIGNS, launchKept, useLaunchActions } from './launch';
 import { LaunchRefusal } from './panels/LaunchRefusal';
 import { useRunBrief } from './panels/RunBrief';
 import { RunPanel } from './panels/Right';
-import type { NextModel } from './panels/rlModelText';
 import { OutputPanel } from './panels/OutputPanel';
 import { ResearchPanel } from './panels/ResearchPanel';
 import { folderName } from './format';
@@ -43,10 +42,6 @@ function rejected(e: any): Json {
   return { blocks_run: true, issues, facts: {} };
 }
 const NO_RUNS: Json[] = [];                          // one empty list: a failed read does not make the model list read again
-/** A draft whose Mode is still `resume` (record 7.267; plan "The draft": "An old saved draft with mode: resume"): no Mode is
- *  chosen, and nothing starts until one is. The value stays `resume` in the configuration, which every backend route still
- *  reads (the command line still starts one); the page shows it as no Mode chosen. */
-const NO_MODE = 'Choose a Mode in the RL model window first: this configuration still says resume, which is no longer a choice (Continue... in the Runs window continues a run).';
 
 /** The header's look switch (record 7.158): Whiteprint by day, Silicon Night by night. An icon, like the run buttons. */
 function LookSwitch() {
@@ -57,9 +52,6 @@ function LookSwitch() {
     <Icon name={look === 'silicon' ? 'sun' : 'moon'} label="Switch look" /></button>;
 }
 
-
-/** Calibration evaluates only random designs. Task creation owns the fixed starting-design baseline. */
-const CALIBRATION_DESIGNS = 64;
 /** The run the bottom tabs show, kept in this browser (SHOWN_RUN_KEY) with the header's run of that moment (record 7.212): a page loaded
  *  again shows the run it showed - or none, after a task without runs was chosen. Unless the header holds another run by
  *  then (started in another tab of the page, say): the page opens on the header's run then, as it always did, and so does a
@@ -289,66 +281,9 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const brief = useRunBrief({ control, runs, onRefreshRuns: refreshRuns, onShow: dir => { setRunDir(dir); setTab('status'); unfold(); } });
 
   // ---- the launcher (record 7.261, launch.ts): Start, Calibration, Resume and Continue -------------------------------------
-  const features = useMemo(() => featuresOf(meta), [meta]);
-  const launcher = useLauncher({ control, features, onLaunched: launchedRun, onMessage: setMessage });
-  // The backend's continuation check (when it has one): of the run shown, for Continue..., and of the header's paused run,
-  // for Resume - the reason either cannot go on is said before the press.
-  const shownCheck = useContinuation(features, runDir, status);
-  const heldCheck = useContinuation(features, control.dir, control.phase === 'paused' ? control.status : null);
-  const startBlocked = startReadiness(control.phase, validation) ?? (config.run.mode === 'resume' ? NO_MODE : null);
-  // What Start would start (record 7.269; plan "The draft": "What Start will start is one line beside it ... It is also Start's
-  // tooltip, with the reason when Start is disabled"): the task, Run configuration's model and network, the budget.
-  const [nextModel, setNextModel] = useState<NextModel | null>(null);
-  const nextTask: string | null = config.circuit?.source === 'registered_task' ? (config.circuit.task_id ? String(config.circuit.task_id).replace(/^real:/, '') : null)
-    : config.circuit?.cell ? `${config.circuit.library}/${config.circuit.cell}` : null;
-  const nextLine = nextModel ? `Next: ${nextTask ?? 'no task chosen'} · ${nextModel.model} · ${nextModel.network} · ${config.run.max_evaluations} evaluations` : null;
-  const resumeBlocked = control.phase === 'paused'
-    ? continueReadiness({ status: control.status, check: heldCheck, phase: control.phase, held: true, total: 'unchanged' }) : null;
-  const continueBlocked = continueReadiness({ status, check: shownCheck, phase: control.phase, held: control.dir === runDir, total: 'form' });
-  // What a refusal depends on: the configuration for Start and Calibration; for Resume and Continue the run - its state, save
-  // point and total (a heartbeat is no reason: a paused run's status is read again and again without a change).
-  const continueKey = (dir: string | null, of: Json) => `continue|${dir}|${of?.state}|${of?.worker_alive}|${of?.save_point}|${of?.budget?.max_evaluations}`;
-  const refusal = launcher.refusal;
-  const headerRefusal = refusal && ((refusal.action === 'start' || refusal.action === 'calibration') ? refusal.key === configKey
-    : refusal.action === 'resume' && refusal.key === continueKey(control.dir, control.status)) ? refusal : null;
-  const shownRefusal = refusal?.action === 'continue' && refusal.key === continueKey(runDir, status) ? refusal : null;
-  // An ngspice netlist task is real too (circuit simulations, counted and recorded as such), only without a license.
-  const start = (calibration_only: boolean) => {
-    setMessage(null);
-    const calibration_designs = calibration_only ? CALIBRATION_DESIGNS : 0;
-    const budget = calibration_only ? calibration_designs : config.run.max_evaluations;
-    const calibrationText = calibration_only ? `\n(${calibration_designs} random designs for calibration; no starting-design baseline.)` : '';
-    launcher.go(calibration_only ? 'calibration' : 'start', configKey, null,
-      flags => api.start({ config, calibration_only, ...(calibration_designs ? { calibration_designs } : {}), ...flags }), { real: !!isReal, transfer: true,
-        authorizeText: (!isReal ? `Start ${budget} synthetic MOCK evaluations?` : circuit?.simulator === 'ngspice' ? `This starts ngspice simulations of the task (no license; every one is counted as a real evaluation).\nRun a budget of ${budget} candidate evaluation(s)?`
-          : `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?`) + calibrationText },
-      'Not started: you answered no, so nothing was created.');
-  };
-  // Continue... of the Run status tab: the run shown there, with the total of the budget form (null = unchanged). The
-  // header's Resume is Continue of its own paused run with the total unchanged. Both go on from the run's own saved
-  // configuration; the run becomes the header's run.
-  const continueShown = (total: number | null) => {
-    const dir = runDir;
-    if (!dir) return;
-    setMessage(null);
-    launcher.go('continue', continueKey(dir, status), dir, flags => api.continueRun({ run_dir: dir, max_evaluations: total, ...flags }),
-      continueConsent(status, shownCheck, total), 'Not continued: you answered no. The run stays as it was.');
-  };
-  const resumeHeld = () => {
-    const dir = control.dir;
-    if (!dir) return;
-    setMessage(null);
-    launcher.go('resume', continueKey(dir, control.status), dir, flags => api.continueRun({ run_dir: dir, max_evaluations: null, ...flags }),
-      continueConsent(control.status, heldCheck, null), 'Not resumed: you answered no. The run stays paused.');
-  };
-  // The backend's alternative when Continue cannot go on (a changed task, older optimizer code...): the next run on this
-  // page fine-tunes from the run's newest save point - pinned, as one Undo step. Nothing starts until Start.
-  const fineTuneFrom = (alternative: Json) => {
-    setConfig((c: Json) => ({ ...c, run: { ...c.run, mode: 'fine_tune',
-      model_source: { ...(c.run.model_source ?? {}), run_dir: alternative.run_dir, checkpoint_id: alternative.checkpoint_id } } }));
-    setMessage({ level: 'info', text: `The next run fine-tunes from ${folderName(alternative.run_dir)} at its save point ${alternative.checkpoint_id}, as a new `
-      + 'run (Undo takes it back). Look at RL model..., then press Start.' });
-  };
+  const { launcher, shownCheck, startBlocked, setNextModel, nextLine, resumeBlocked, continueBlocked, headerRefusal, shownRefusal, start,
+    continueShown, resumeHeld, fineTuneFrom } = useLaunchActions({ control, meta, config, setConfig, configKey, validation, runDir, status, circuit,
+    isReal: !!isReal, launchedRun, setMessage });
 
   // ---- the Runs window's actions (record 7.267; plan "Load run" and "Existing runs: continued in place"): page/runWindowActions.ts
   const { taskLoad, askContinue, runWindow } = useRunWindowActions({ config, setConfig, runs, taskKey, followedTask, loadSerial, setMessage, setRunDir, setTab, unfold });

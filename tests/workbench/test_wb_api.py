@@ -15,6 +15,7 @@ from gator_workbench import bridge_read, tasks
 from gator_workbench.api import create_app
 from gator_workbench.api.app import attachment, file_snapshot
 from gator_workbench.connection import ConnectionMonitor, LAYERS
+from gator_workbench.storage.dataset import DatasetReader
 from gator_workbench.storage.tables import TABLES
 from helpers import make_config
 
@@ -170,6 +171,10 @@ def test_start_pause_continue_stop_and_data_access(client, tmp_path):
     assert finished['state'] == 'completed' and finished['summary']['totals']['candidate_evaluations_charged'] == done + 6
     table = client.get('/api/runs/table', params=dict(run_dir=run_dir, table='evaluations', limit=5)).json()
     assert table['total_rows'] == done + 6 and len(table['rows']) == 5 and table['rows'][-1]['provenance'] == 'mock'
+    # The shown columns only are read (record 7.286): no `_json` column, and the same rows as a read of every column.
+    assert not any(c.endswith('_json') for c in table['columns']) and all(list(r) == table['columns'] for r in table['rows'])
+    whole = DatasetReader(Path(run_dir) / 'data').tail('evaluations', 5).to_pylist()
+    assert 'condition_results_json' in whole[0] and [r['evaluation_id'] for r in whole] == [r['evaluation_id'] for r in table['rows']]
     files = client.get('/api/runs/files', params=dict(run_dir=run_dir)).json()
     names = {f['path'] for f in files['files']}
     assert {'run_manifest.json', 'effective_config.json', 'run_summary.json', 'artifact_manifest.json'} <= names

@@ -86,8 +86,8 @@ def test_steering_is_kept_until_a_flush(tmp_path, monkeypatch):
         flush(data, dict(evaluations=rows, learner_updates=[dict(alpha=0.2, mean_log_prob=-1.0 - part)]))
     assert reward_diagnostics.load(tmp_path) == steering_as_before(tmp_path)
     reads = []
-    real = pq.read_table
-    monkeypatch.setattr(pq, 'read_table', lambda *a, **k: reads.append(a[0]) or real(*a, **k))
+    real = pq.ParquetFile                                   # a part is read through its one open (record 7.286)
+    monkeypatch.setattr(pq, 'ParquetFile', lambda *a, **k: reads.append(a[0]) or real(*a, **k))
     reward_diagnostics._STEERING.clear()
     answer = reward_diagnostics.load(tmp_path)
     assert answer['scored_designs'] == 50 and reads, 'read once after the flush'
@@ -114,8 +114,8 @@ def test_a_plan_reads_the_run_tables_once_per_flush_journal(tmp_path, monkeypatc
     layout, _ = execute(make_config(tmp_path, threshold=0.9, run=dict(max_evaluations=12)), tmp_path)
     first = cc.plan(layout.run_dir)
     reads = []
-    real = pq.read_table
-    monkeypatch.setattr(pq, 'read_table', lambda *a, **k: reads.append(a[0]) or real(*a, **k))
+    real = pq.ParquetFile                                   # a part is read through its one open (record 7.286)
+    monkeypatch.setattr(pq, 'ParquetFile', lambda *a, **k: reads.append(a[0]) or real(*a, **k))
     assert cc.plan(layout.run_dir) == first and cc.plan(layout.run_dir, designs=1)['designs'] == first['designs'][:1]
     assert reads == []
     cc._TABLES.clear()

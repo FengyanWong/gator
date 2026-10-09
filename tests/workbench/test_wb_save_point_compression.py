@@ -4,6 +4,7 @@ checking every original against its recorded checksum first and every entry afte
 import dataclasses
 import io
 import json
+from pathlib import Path
 import zipfile
 
 import numpy as np
@@ -12,6 +13,7 @@ import torch
 
 from gator_workbench import checkpoints, cli, save_point_compression as spc
 from gator_workbench.engine import RunLock
+from gator_workbench.layout import build_artifact_manifest
 from gator_workbench.storage.atomic import read_json, sha256_file, write_json
 from helpers import execute, make_config
 
@@ -160,3 +162,52 @@ def test_a_pass_stopped_between_its_two_writes_still_verifies_and_is_completed(t
     assert spc.compress_save_point(point, apply=True)['status'] == 'repaired'
     assert read_json(point / 'metadata.json') == compressed_meta and spc.is_deflated(state)
     assert checkpoints.verify_files(point) == [] and same(torch.load(state, weights_only=False), content)
+
+
+def manifest_rows_match_files(layout):
+    """The artifact manifest's rows for every save point's training_state.pt and metadata.json against the files: []
+    when each row's size, its checksum (where the row carries one) and the total agree with what is on disk."""
+    manifest = read_json(layout.run_dir / 'artifact_manifest.json')
+    problems = []
+    for row in manifest['files']:
+        if row['path'].startswith('checkpoints/') and row['path'].rsplit('/', 1)[1] in spc.REWRITTEN:
+            file = layout.run_dir / row['path']
+            if row['bytes'] != file.stat().st_size or (row['sha256'] and row['sha256'] != sha256_file(file)):
+                problems.append(row['path'])
+    if manifest['total_bytes'] != sum(r['bytes'] for r in manifest['files']):
+        problems.append('total_bytes')
+    return problems
+
+
+def test_the_pass_refreshes_each_runs_manifest_once_and_a_later_pass_repairs_stale_rows(tmp_path, monkeypatch):
+    """Astra's review of 7.284: the workers rewrote the manifest per save point (3 of 4 updates lost), a second pass never
+    came back to it, and the rows of the rewritten metadata.json were never refreshed (616 stale checksums, 628 sizes)."""
+    layout, _ = execute(make_config(tmp_path, run=dict(max_evaluations=16), output=dict(checkpoint_every_evaluations=4)),
+                        tmp_path)
+    points = save_points(layout)
+    assert len(points) >= 4                                               # four workers on one run: the lost-update case
+    for point in points:
+        as_written_before(point)
+    manifest_file = layout.run_dir / 'artifact_manifest.json'
+    build_artifact_manifest(layout, run_id=read_json(manifest_file)['run_id'], final=True)   # describes the old files exactly
+    assert manifest_rows_match_files(layout) == []
+    writes, original = [], spc.write_json
+    monkeypatch.setattr(spc, 'write_json', lambda path, value, **kw: writes.append(Path(path).name) or original(path, value, **kw))
+    dry = spc.compress_save_points(tmp_path)
+    assert dry['manifests_to_refresh'] == 1 and dry['manifests_refreshed'] == 0 and writes == []
+    totals = spc.compress_save_points(tmp_path, apply=True, workers=4)
+    assert totals['compressed'] == len(points) and totals['manifests_refreshed'] == 1
+    assert totals['manifest_rows_refreshed'] == 2 * len(points) and writes.count('artifact_manifest.json') == 1
+    assert manifest_rows_match_files(layout) == []
+    manifest = read_json(manifest_file)                   # a manifest an earlier pass left stale (its rows written per save point)
+    for row in manifest['files']:
+        if row['path'].startswith('checkpoints/') and row['path'].rsplit('/', 1)[1] in spc.REWRITTEN:
+            row['bytes'], row['sha256'] = 1, '0' * 64     # a training_state.pt row with a checksum: the one metadata.json records
+    manifest['total_bytes'] = 1
+    write_json(manifest_file, manifest)
+    again = spc.compress_save_points(tmp_path, apply=True)
+    assert again['already'] == len(points) and again['manifests_refreshed'] == 1 and again['manifest_rows_refreshed'] == 2 * len(points)
+    assert manifest_rows_match_files(layout) == [] and writes.count('artifact_manifest.json') == 2
+    assert spc.NOTE in read_json(manifest_file)['notes']
+    third = spc.compress_save_points(tmp_path, apply=True)
+    assert third['manifests_refreshed'] == 0 and writes.count('artifact_manifest.json') == 2     # right already: not rewritten

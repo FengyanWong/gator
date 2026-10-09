@@ -277,14 +277,16 @@ class DatasetReader:
 
     @staticmethod
     def _read_part(path, table, columns=None):
-        """Old Parquet parts acquire newly added nullable columns on read only."""
+        """Old Parquet parts acquire newly added nullable columns on read only. One open of the part serves its schema
+        and its data: the second open cost a Data tab read on the 9p mount 20-40 ms (record 7.286)."""
         import pyarrow as pa
         import pyarrow.parquet as pq
         schema = arrow_schema(table)
         if columns is not None:
             schema = pa.schema([schema.field(c) for c in columns])
-        present = pq.read_schema(path).names
-        result = pq.read_table(path, columns=[name for name in schema.names if name in present])
+        with pq.ParquetFile(path) as part:
+            present = part.schema_arrow.names
+            result = part.read(columns=[name for name in schema.names if name in present])
         arrays = []
         for field in schema:
             if field.name in result.column_names:

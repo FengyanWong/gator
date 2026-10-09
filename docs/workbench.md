@@ -1222,9 +1222,12 @@ Mapping to the recommended layout of the specification:
   `gator-workbench compress-save-points [--root DIR] [--exclude PATTERN] [--apply]` (a dry run without
   `--apply`): it checks each original against its recorded checksum (a mismatch is reported, never
   touched), compares every entry after compressing, keeps the original's size and checksum under
-  `compressed_from` in `metadata.json`, corrects the run's `artifact_manifest.json` sizes, leaves alone a
-  run a worker holds, and completes a pass stopped between its two writes (the original it left still
-  verifies).
+  `compressed_from` in `metadata.json`, leaves alone a run a worker holds, and completes a pass stopped
+  between its two writes (the original it left still verifies). The run's `artifact_manifest.json` it
+  refreshes once per run, after all of the run's save points and never from a worker (record 7.286): the
+  rows of the two files it rewrites, `training_state.pt` (size) and `metadata.json` (size and checksum),
+  and the total; a later pass repairs rows an earlier one left stale, and a manifest that is right is not
+  rewritten.
 * A part file belongs to the dataset only if `data/_journal/flushes.jsonl` lists it.
 * When a writer reopens a journal after a crash, it truncates only the incomplete final line before appending.
   Complete corrupt records stop recovery with a persistence error; they never silently hide later records.

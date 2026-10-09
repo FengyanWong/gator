@@ -374,20 +374,22 @@ def register(app: FastAPI, context: ApiContext):
             fail(404, 'Unknown table')
         reader = DatasetReader(context.run_path(run_dir) / 'data')
         # Only the rows shown are read from disk and turned into Python: `tail` walks the parts from the newest backwards
-        # (it read every part of the run, then kept 20).
-        part = reader.tail(table, limit) if tail else reader.table(table).slice(0, limit)
+        # (it read every part of the run, then kept 20). And only the columns shown: the `_json` columns (a state's graph
+        # patch and observation fields, an evaluation's condition results) were read and decoded, then dropped - 7.4 MB
+        # of a VCO run's states for the 65 KB shown (Astra's review of 7.284, record 7.286).
+        columns = [c for c in TABLES[table]['columns'] if not c.name.endswith('_json')]
+        names = [c.name for c in columns]
+        part = reader.tail(table, limit, names) if tail else reader.table(table, names).slice(0, limit)
         rows = part.to_pylist()
-        clean = []
         for row in rows:
-            for column in TABLES[table]['columns']:
+            for column in columns:
                 value = row[column.name]
                 if column.type.startswith('map') and value is not None:
                     row[column.name] = map_to_dict(value)
                 elif hasattr(value, 'isoformat'):
                     row[column.name] = value.isoformat()
-            clean.append({k: v for k, v in row.items() if not k.endswith('_json')})
         return dict(table=table, total_rows=reader.row_counts()[table], cutoff_commit_seq=reader.cutoff_seq,
-                    columns=[c.name for c in TABLES[table]['columns'] if not c.name.endswith('_json')], rows=clean)
+                    columns=names, rows=rows)
 
     @app.get('/api/runs/logs')
     def logs(run_dir: str, kind: str = Query('events', pattern='^(events|errors)$'), limit: int = Query(100, ge=1, le=1000)):

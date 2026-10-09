@@ -70,7 +70,7 @@ def main(argv=None):
         totals = compress_save_points(args.root or default_output_root(), apply=args.apply, exclude=args.exclude,
                                       workers=args.workers, progress=say)
         print(json.dumps(totals, indent=2), flush=True)
-        return 1 if totals['skipped'] else 0
+        return 1 if totals['problems'] else 0
 
     if args.command == 'pretrain':
         from .pretrain import execute

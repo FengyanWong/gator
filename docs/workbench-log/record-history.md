@@ -478,3 +478,5 @@ One row per commit, newest last.
 | `7317923` | 10-09 18:59 | 7.292 | C11: proof tools for regrouping styles.css (css_order_proof.mjs, dom_identity_check --styles) |
 | `ad47d17` | 10-09 18:59 | 7.292 | C11: styles.css regrouped where the cascade allows, restated selectors merged |
 | `4d2eff0` | 10-09 18:59 | 7.292 | Docs: record 7.292 - the refactoring's follow-up: the small fixes, the optimizer's clean-up (group E) and styles.css (C11) |
+| `f3e0dfd` | 10-09 19:24 | - | record only: names the commits of record 7.292 and its Live line (session "Refactoring plan") |
+| `764fd63` | 10-09 19:48 | 7.293 | encoder study follow-ups: the cross-attention VCO rerun, the additions plan draft; a 7.289 amendment; docs only (session "Encoder run plan revision") |

@@ -25,8 +25,8 @@ import shutil
 from pathlib import Path
 from uuid import uuid4
 
-from . import bridge_setup, native_cells, virtuoso_setup
-from .connection import require_gate
+from . import bridge_setup, native_cells, ocean, virtuoso_setup
+from .connection import require_gate, resolve_profile_id
 from .paths import local_settings_dir
 from .storage.atomic import write_json
 from .storage.dataset import utcnow
@@ -499,7 +499,6 @@ def read_setup(monitor, profile_id, library, cell, *, command=None) -> dict:
 def default_model_files(profile_id):
     """The model file a new test gets: the connection's own (the file every real run of the project includes), in the
     verified nominal section. None known: the test keeps what it has."""
-    from .connection import resolve_profile_id
     try:
         model_file = resolve_profile_id(profile_id).get('model_file')
     except (KeyError, ValueError, OSError):
@@ -575,7 +574,6 @@ def maestro_deck_on(monitor, profile_id, target, outputs, *, command=None, ackno
     Maestro's netlist has an unexpected layout, an output reads an analysis the deck does not run, or a signal name
     cannot be translated plainly."""
     import hashlib
-    from . import ocean
     require_gate(monitor, 'read_cellview', profile_id, 'netlisting the copy\'s Maestro test', acknowledge_unknown=acknowledge_unknown)
     answer = _run_setup('maestro_netlist', profile_id, target, dict(cells=target['schematics'], test=virtuoso_setup.TEST), command=command)
     folder = Path(answer['folder'])

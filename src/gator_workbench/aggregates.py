@@ -24,7 +24,8 @@ from statistics import mean, median
 from . import EXPORTER_VERSION
 from .layout import RunLayout
 from .storage.atomic import publish, read_json, temporary_path, write_json
-from .storage.dataset import DatasetReader, utcnow
+from .storage.dataset import DatasetReader, map_to_dict, utcnow
+from .storage.tables import TABLES
 
 FIRST_FEASIBLE_CONVENTION = 'evaluations_charged_when_scheduler_confirmed_feasibility_including_in_flight'
 
@@ -417,8 +418,6 @@ def _cumulative(rows):
 
 def export_table_csv(run_dir, table, *, cutoff_seq=None):
     """On-demand detailed CSV copy of one raw table into <run>/exports (derived, fixed snapshot)."""
-    from .storage.dataset import map_to_dict
-    from .storage.tables import TABLES
     import json
     if table not in TABLES:
         raise KeyError(table)

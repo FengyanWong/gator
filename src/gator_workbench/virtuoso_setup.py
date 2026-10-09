@@ -30,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from . import units
 
 TEST = 'GATOR'
 # The Maestro simulator mode of a task's test: plain Spectre, what the optimizer's runs use (the run adapter passes no
@@ -271,7 +272,6 @@ def from_rows(config, *, test=TEST, model_files=(), analyses=None, variables=Non
 
 def _number_text(value, unit):
     """A limit as Maestro gets it: in the probe's canonical unit, as a plain number (Maestro has no units)."""
-    from . import units
     try:
         return format(units.to_canonical(float(value), unit), '.12g')
     except Exception:

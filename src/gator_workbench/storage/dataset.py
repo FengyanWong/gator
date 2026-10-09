@@ -26,9 +26,9 @@ import shutil
 import sys
 
 from .. import TABLE_SCHEMA_VERSION
-from .atomic import (JsonlAppender, PersistenceError, publish, read_jsonl, remove_registered_temporaries,
-                     sha256_file, temporary_path, write_json)
-from .tables import FLUSH_ORDER, TABLES, arrow_schema, normalize_row
+from .atomic import (JsonlAppender, PersistenceError, publish, read_jsonl, remove_registered_temporaries, sha256_file,
+                     temporary_path, write_json)
+from .tables import FLUSH_ORDER, TABLES, arrow_schema, data_dictionary, normalize_row
 
 TIMESTAMP_COLUMNS = {table: [c.name for c in spec['columns'] if c.type == 'timestamp']
                      for table, spec in TABLES.items()}
@@ -349,5 +349,4 @@ def map_to_dict(pairs):
 
 
 def write_data_dictionary(path):
-    from .tables import data_dictionary
     return write_json(path, data_dictionary())

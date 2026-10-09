@@ -1,6 +1,7 @@
 """An engineering summary of a parsed circuit - identifiers and numbers only - as the circuit panel shows it. Moved here
 from the Agent tab's prompts on 2026-10-06 (record 7.226), which no longer exist."""
 from __future__ import annotations
+from .structures import recognize
 
 MAX_SUMMARY_DEVICES = 400
 
@@ -32,7 +33,6 @@ def circuit_summary(graph, *, circuit: dict | None = None) -> dict:
 def _structures(graph) -> list:
     """The matched structures of the circuit (structures.recognize, status record 7.103), one sentence each. A circuit
     they cannot be read from is summarized without them: the summary never fails because of this list."""
-    from .structures import recognize
     try:
         return [s.text for s in recognize(graph)]
     except Exception:                                   # a graph without the usual pins: no structures, not no summary

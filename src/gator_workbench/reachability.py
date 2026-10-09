@@ -5,12 +5,17 @@ from functools import lru_cache
 import json
 import math
 from pathlib import Path
+from . import runs
+from .compile import build_specs
+from .layout import find_runs
+from .paths import OutputRoots, repo_root
 from .reward_diagnostics import file_identity, kept, tables_version
+from .schema import WorkbenchConfig
+from .spec_equations import SpecPlan
+from .storage.atomic import read_json, read_jsonl
 
 
 def assess(config, designs):
-    from .compile import build_specs
-    from .spec_equations import SpecPlan
     specs, _, _ = build_specs(config)
     hard = [s for s in specs if s.active and s.required]
     plan = SpecPlan.from_config(config)
@@ -65,7 +70,6 @@ def assess(config, designs):
 
 def _recorded_designs(run_dir):
     from .storage.dataset import DatasetReader
-    from .storage.atomic import read_jsonl
     reader = DatasetReader(Path(run_dir) / 'data')
     grouped = defaultdict(lambda: defaultdict(lambda: dict(status='ok', candidate_evaluated=True,
         metrics={}, metric_units={}, metric_validity={})))
@@ -105,7 +109,6 @@ def _designs(run):
 
 def _saved(run):
     """A run's effective_config.json as saved, read again only when the file changed (a continued run rewrites it)."""
-    from .storage.atomic import read_json
     path = Path(run) / 'effective_config.json'
     return kept(_SAVED, str(path), file_identity(path), lambda: read_json(path, default={}) or {})
 
@@ -116,7 +119,6 @@ def _qualification_reference(config, *, all_candidates=False):
     This is optional recorded evidence, not a runtime dependency or a claim of
     reachability. Current hard specs are recomputed from its raw measured values.
     """
-    from .paths import repo_root
     if config.circuit.task_id != 'real:gpdk045_ota7':
         return []
     root = repo_root() / 'artifacts/local/reward-v2-real/20260926-qualification-04'
@@ -152,7 +154,6 @@ def _qualification_reference(config, *, all_candidates=False):
 @lru_cache(maxsize=4)
 def _stage_a_report(root, version):
     """The stage-A report. `version`, its stat, only keys the cache."""
-    from .storage.atomic import read_json
     return read_json(Path(root) / 'stage-a/report.json', default={}) or {}
 
 
@@ -167,7 +168,6 @@ def _job_result(directory, root, version):
 
 
 def _qualification_runs(config):
-    from .paths import repo_root
     if config.circuit.task_id != 'real:gpdk045_ota7':
         return []
     root = repo_root() / 'artifacts/local/reward-v2-real/20260926-qualification-05'
@@ -177,7 +177,6 @@ def _qualification_runs(config):
 @lru_cache(maxsize=4)
 def _stage_runs(root, versions):
     """The run folders the stage-B and stage-C reports name inside `root`. `versions`, their stats, only key the cache."""
-    from .storage.atomic import read_json
     root, paths = Path(root), []
     for stage in ('b', 'c'):
         report = read_json(root / f'stage-{stage}/report.json', default={}) or {}
@@ -188,10 +187,6 @@ def _stage_runs(root, versions):
 
 
 def check(config, *, roots=None):
-    from .paths import OutputRoots
-    from . import runs
-    from .layout import find_runs
-    from .schema import WorkbenchConfig
     if config.run.conditions.policy == 'off':
         return None
     roots = roots or OutputRoots()

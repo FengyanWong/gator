@@ -33,6 +33,7 @@ from uuid import uuid4
 
 from . import CHECKPOINT_METADATA_VERSION
 from .checkpoint_codec import write_compressed
+from .pdk import schema_label
 from .storage.atomic import PersistenceError, publish, read_json, sha256_file, temporary_path, write_json
 from .storage.dataset import utcnow
 
@@ -367,7 +368,6 @@ def check_compatibility(metadata, *, mode, task_definition_hash, contract) -> di
         same = saved.get(key) == contract.get(key)
         add(key, same, 'identical' if same else 'Different reward/condition contract; fine-tune resets critics, targets and replay.',
             fatal=strict)
-    from .pdk import schema_label
     same = saved['feature_schema'] == contract['feature_schema']
     add('graph feature schema (components the network knows)', same,
         'identical' if same else f"this model knows the {schema_label(saved['feature_schema'])} component list; this run "

@@ -35,12 +35,15 @@ from uuid import uuid4
 from . import best_design, checkpoints as ckpt, modes
 from .budget import BudgetLedger
 from .compile import compile_task, hard_constraints
+from .connection import classify_infrastructure_failure
 from .lanes import ScratchLinked, open_lanes, unlink_scratch
 from .layout import RunLayout, build_artifact_manifest, local_scratch, run_bytes
+from .pdk import run_vocabulary
 from .schema import WorkbenchConfig, task_definition_hash
 from .security import redact
 from .storage.atomic import JsonlAppender, PersistenceError, read_json, read_jsonl, write_json
 from .storage.dataset import DatasetReader, RawDataset, utcnow
+from .summary import build_run_summary
 from .trajectory import StateEncoder, TrajectoryLoader
 # re-exported: moved to run_lock.py by the refactoring (docs/plan-refactoring.md)
 from .run_lock import iso, RunLock
@@ -151,7 +154,6 @@ class RunEngine:
         self.archive = out.save_transition_archive
         experiment = learner_experiment(cfg, self.task, self.task_hash)
         self.experiment = experiment
-        from .pdk import run_vocabulary
         self.vocabulary = run_vocabulary(self.layout.run_dir)      # the run's own component list; None = standard
         input_options = modes.runtime_options(cfg, self.vocabulary)
         source_dir = source_meta = None
@@ -800,7 +802,6 @@ class RunEngine:
                 self._event('limit_reached', reason=self.stop_reason,
                             note='the starting design gave no valid result: no calibration design is simulated')
         failed = not valid
-        from .connection import classify_infrastructure_failure
         infrastructure = None if valid else classify_infrastructure_failure(
             status, record.get('reason_code'), ' '.join(str(x) for x in (record.get('error'), (result.get('exception') or {}).get('message')) if x))
         receipts = record.get('jobs') or [dict(status=status, reason_code=record.get('reason_code'))]
@@ -1519,7 +1520,6 @@ class RunEngine:
         self._event('calibration', status=result['status'], designs=result['designs'], note=note)
 
     def _write_outputs(self, final_state, checkpoint, persistence_ok):
-        from .summary import build_run_summary
         task = self.task
         reparse, exporter, netlist_name = None, None, 'optimized_dut.scs'
         if task.netlist_path and task.parser_config_path:

@@ -21,7 +21,7 @@ from statistics import mean
 
 from analog_optimizer.backends.gpdk045 import number
 
-from . import model_library
+from . import model_library, ocean, units
 from .generic_profile import GenericMosWidthProfile, RulesError
 
 RING = 'ring_oscillator'
@@ -264,7 +264,6 @@ class GenericMaestroProfile(GenericMosWidthProfile):
         bridge keeps them). Values in the canonical unit of each probe - what OCEAN returns, and what the compiled
         specs compare with. No operating points: only the recorder would read them, and it can do without."""
         from analog_optimizer.backends.spectre_validation import validate_completion
-        from . import ocean, units
         job, deck, settings = Path(job), self.maestro, self.analysis_settings
         result = json.loads((job / result_name).read_text())
         if result.get('analysis_settings') != settings:

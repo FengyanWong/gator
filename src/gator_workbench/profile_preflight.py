@@ -24,6 +24,7 @@ from pathlib import Path
 import sys
 import traceback
 
+from . import tasks
 from .connection import child_error, json_lines, require_gate, run_child
 from .security import redact
 from .storage.dataset import utcnow
@@ -41,7 +42,6 @@ DECK_LATER = ('Not written: a task measured by Maestro gets its deck from the ru
 
 def run(name, profile_id, work_root) -> dict:
     """In the short-lived process. Returns {ok, steps: [{step, ok, detail}], deck}."""
-    from . import tasks
     from .generic_profile import RulesError
     steps, deck, backend = [], None, None
 

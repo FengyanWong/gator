@@ -31,11 +31,17 @@ import math
 from pathlib import Path
 import shutil
 
-from . import native_cells, recipes, units
+from . import (bridge_read, cdf_facts, cdf_write, native_cells, recipes, run_index, task_files, units, virtuoso_setup,
+               working_copy)
+from .compile import CompileError, build_graph
+from .connection import load_profiles
 from .generic_profile import RULES_FORMAT, VERIFIED_WIDTH_STEP, check_writable_record
+from .layout import find_runs
 from .paths import repo_root
 from .storage.atomic import sha256_file as _sha256, write_json
 from .storage.dataset import utcnow
+from .task_registry import REAL_PROFILES, REMOVED_REAL_TASKS, RESULT_ANALYSIS
+from .validation import Report, _check_equation, resolve_leaders
 # re-exported: moved to profile_store.py by the refactoring (docs/plan-refactoring.md)
 from .profile_store import (NAME, FORMAT, FILES, ProfileError, store_root, profile_dir, list_profiles, profile_entry,
                             task_spec_registry, reference_metrics, TASK_FILE, HISTORY, task_file)
@@ -62,8 +68,6 @@ def task_for_cell(library, cell) -> dict | None:
     generated = tasks_for_cell(library, cell)
     if generated:
         return generated[0]
-    from .connection import load_profiles
-    from .task_registry import REAL_PROFILES
     if not library or not cell or library not in {settings.get('library') for settings in load_profiles()['profiles'].values()
                                                   if isinstance(settings, dict)}:
         return None
@@ -84,7 +88,7 @@ def load_profile(name):
         raise ProfileError(f'Unknown generated profile {name!r}')
     directory = Path(entry['directory'])
     _refuse_recorded_group_values(name, directory / FILES['mapping'])
-    from . import cdf_write                                  # rules of format 2: any value the PDK's form lets a user type
+    # rules of format 2: any value the PDK's form lets a user type
     classes = cdf_write.PROFILE_CLASSES if cdf_write.rules_format(directory / FILES['rules']) == cdf_write.RULES_FORMAT \
         else recipes.PROFILE_CLASSES
     return classes[entry['recipe']](
@@ -128,7 +132,6 @@ def _group_step(ratios, wanted):
 
 def _adjust_rows(config, graph, core):
     """Rows of the parameter editor -> the rows a real run can honour. Raises ProfileError with the reason."""
-    from .validation import resolve_leaders
     rows = [row.model_copy() for row in config.parameters]
     try:
         leaders = resolve_leaders(rows)
@@ -297,7 +300,6 @@ def probe_results(recipe, spec_registry=None) -> dict:
 
 def probe_rows(recipe, results, signals, testbench) -> list:
     """Rows of the Probes editor: one per result, naming the testbench net or supply branch it is read from."""
-    from .task_registry import RESULT_ANALYSIS
     label, rows = RECIPES[recipe]['label'], []
     for metric, unit in results.items():
         where, meaning = PROBES[recipe][metric]
@@ -384,7 +386,6 @@ def _checked_import(imported, name):
 def _form_facts(imported):
     """What the property form of each instance lets a user type, read together with the cell (`cdf_facts`), or None
     for a cell read before that was recorded."""
-    from . import cdf_facts
     try:
         facts = json.loads((Path(imported['directory']) / cdf_facts.FILE).read_text())
     except (OSError, ValueError):
@@ -404,7 +405,6 @@ def _generate(name, config, *, recipe, imported, staging, expected_frequency_hz=
     receipt and registry entry. Refuses, in plain words, whatever the verified real backend cannot do."""
     from analog_optimizer.netlist.config import ParserConfig
     from analog_optimizer.netlist.spectre_parser import SpectreParser
-    from .compile import CompileError, build_graph
     text, mapping, reference = _checked_import(imported, name)
     write_json(staging / FILES['mapping'], mapping)
     (staging / FILES['structure']).write_text(text)
@@ -510,7 +510,6 @@ def _generate(name, config, *, recipe, imported, staging, expected_frequency_hz=
 
 def create_profile(name, config, *, recipe, expected_frequency_hz=None) -> dict:
     """The older route (API only; the page saves tasks with `save_task`): a profile of the ORIGINAL cell."""
-    from .task_registry import REAL_PROFILES
     directory = profile_dir(name)
     if name in REAL_PROFILES or directory.exists():
         raise ProfileError(f'A profile called {name!r} already exists')
@@ -584,8 +583,6 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
     * Rows older than the saved task - saving them would undo what was saved since (`consistency.undone_by_saving`;
       `base_revision`: the revision the page's rows came from) - are refused with what they would undo (`NewerSaved`),
       before anything is written, until the user answers "Save anyway" (`replace_newer`; record 7.203)."""
-    from . import bridge_read, task_files, virtuoso_setup, working_copy
-    from .task_registry import REAL_PROFILES, REMOVED_REAL_TASKS
     commands, extras = commands or {}, dict(extras or {})
     directory = profile_dir(name)                                # validates the name
     current = profile_entry(task) if task else None
@@ -603,7 +600,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
                                'that it is a copy you made) and save a new task')
     elif name in REAL_PROFILES or f'real:{name}' in REMOVED_REAL_TASKS or directory.exists():   # a removed one's name stays reserved
         raise ProfileError(f'A task called real:{name} already exists: choose another name')
-    from .validation import Report, _check_equation              # a spec must judge Probes the task has (the editors' check)
+    # a spec must judge Probes the task has (the editors' check)
     probes, refused = {m.measurement_id: m for m in config.measurements}, []
     for spec in config.targets:
         _check_equation(spec, spec.metric_id, report := Report(), probes)
@@ -903,8 +900,6 @@ def adopt_latest_baseline(name, data_root) -> dict | None:
     The manifests come from the run list's cache, read many runs at a time (record 7.279: every manifest was read
     on each such load, 2.3 s instead of 0.2 s)."""
     import copy
-    from . import run_index
-    from .layout import find_runs
     newest = None
     found = find_runs(data_root, manifest=False)
     for run_dir, facts in zip(found, run_index.read_many(run_index._run_facts, found)):
@@ -947,7 +942,6 @@ def delete_profile(name, *, run_rows=()) -> dict:
     simulation, and the runs made with the profile refer to these files. The copy of the cell that was read from
     Virtuoso stays where it is. Refused while a worker is on a run of the task. Runs that were made keep their data;
     a paused one can no longer be resumed. The verified built-in circuits are not in this store and cannot be deleted."""
-    from .task_registry import REAL_PROFILES
     entry = profile_entry(name)
     if entry is None:
         raise ProfileError(f'real:{name} is a verified built-in circuit, not a generated profile: it cannot be deleted'

@@ -27,6 +27,10 @@ from __future__ import annotations
 import math
 import statistics
 from types import SimpleNamespace
+from . import compile as compiler, schema, units
+from .layout import RunLayout
+from .storage import DatasetReader, read_json
+from .storage.dataset import utcnow
 
 FORMAT = 'gator-calibration-1'
 FILE = 'calibration.json'
@@ -82,14 +86,12 @@ def _round(value):
 
 def _text(value, unit):
     """A number of a note, three digits, written as every quantity is (record 7.208): 300 mV, 25 MHz, 9.6 deg."""
-    from . import units
     return units.text(float(f'{value:.3g}'), unit)
 
 
 def _rewards(config, designs, values):
     """The reward of each design under `config`'s Specs rows and reward settings, by the reward code a run uses."""
     from analog_optimizer.measurements.specs import SpecificationEvaluator
-    from . import compile as compiler
     specs = compiler.build_specs(config)[0]
     evaluator = SpecificationEvaluator(specs, compiler.reward_settings(config))
     units = {spec.metric_id: spec.unit for spec in specs}
@@ -110,7 +112,6 @@ def calibrate(config, evaluations, metric_rows) -> dict:
     """The proposals from a run's rows. `evaluations`: rows of the evaluations table (evaluation_id, dispatch_index,
     action_source, status, reward, all_hard_constraints_satisfied). `metric_rows`: the metrics table's rows of the Specs
     (aggregation_level 'aggregate', hard not None): evaluation_id, metric_name, raw_value (canonical unit), valid."""
-    from . import compile as compiler, units
     designs = sorted((e for e in evaluations if e.get('action_source') == RANDOM_SOURCE), key=lambda e: e.get('dispatch_index') or 0)
     wanted = {e['evaluation_id'] for e in designs}
     values: dict = {}
@@ -269,10 +270,6 @@ def sentence(result) -> str:
 
 def from_run(run_dir, manifest=None) -> dict:
     """The calibration of a finished baseline run, from its tables and its effective configuration."""
-    from . import schema
-    from .layout import RunLayout
-    from .storage import DatasetReader, read_json
-    from .storage.dataset import utcnow
     layout = RunLayout(run_dir)
     manifest = manifest if manifest is not None else (read_json(layout.manifest, default={}) or {})
     config = schema.WorkbenchConfig.model_validate(read_json(layout.effective_config))
@@ -302,7 +299,6 @@ def current(run_dir, manifest=None):
     only the arithmetic changed). Nothing is written: the run's file stays what the run said at its end, and the answer
     names both rules (`recalculated`). None: the run has no calibration result (yet)."""
     from pathlib import Path
-    from .storage import read_json
     stored = read_json(Path(run_dir) / FILE, default=None)
     if not isinstance(stored, dict) or (stored.get('rule') or {}).get('version') == RULE:
         return stored

@@ -21,6 +21,9 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
+from .schema import OptimizationParameter
+from .tasks import _member_variable_id
+from .validation import resolve_leaders
 
 MOS = ('nmos', 'pmos')
 TAIL_ELEMENTS = ('isource', 'resistor')          # below a pair, besides the drain of a transistor of the pair's own type
@@ -213,7 +216,6 @@ def plan_ties(graph, rows, structures=None) -> list:
     """One suggestion per matched structure: what tying its devices would change in `rows` (schema.OptimizationParameter
     objects). Rows are never changed here. Each change: tie (an existing row follows the leader), add (a follower row for
     a device that has none), kept (already tied that way) or skip (with the reason)."""
-    from .validation import resolve_leaders
     structures = recognize(graph) if structures is None else structures
     try:
         leaders = resolve_leaders(rows)
@@ -280,7 +282,6 @@ def apply_ties(graph, rows, chosen, structures=None) -> list:
     a new follower row right after the rows of its leader's group. The suggestions are planned again after each one is
     made, so two that share a device never tie it in a circle (the second one sees the first as kept). Unknown IDs are
     ignored; nothing changes that `plan_ties` would not list as tie or add."""
-    from .schema import OptimizationParameter
     structures = recognize(graph) if structures is None else structures
     out = [r.model_dump() for r in rows]
     for structure in structures:
@@ -293,7 +294,6 @@ def apply_ties(graph, rows, chosen, structures=None) -> list:
 
 def _make(out, suggestion) -> list:
     """The rows (dicts) with one planned suggestion's tie and add changes made."""
-    from .tasks import _member_variable_id
     out = [dict(r) for r in out]
     used = {r['variable_id'] for r in out}
     why = WHY[suggestion['kind']]

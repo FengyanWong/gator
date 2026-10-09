@@ -46,17 +46,20 @@ from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
 from analog_optimizer.evaluation.corners import NominalDesign, summarize_corners
 from analog_optimizer.measurements.specs import SpecificationEvaluator
 
-from . import tasks
+from . import profiles, tasks
+from .cdf_write import backend_class
 from .compile import CompileError, compile_task
-from .run_definitions import INFRASTRUCTURE_FAILURES as INFRASTRUCTURE
-from .run_lock import RunLock
 from .layout import RunLayout
 from .paths import bridge_state_dir, repo_root
 from .reward_diagnostics import kept, tables_version
+from .run_definitions import INFRASTRUCTURE_FAILURES as INFRASTRUCTURE
+from .run_lock import RunLock
+from .runs import connection_gate, spawn_detached
 from .schema import WorkbenchConfig, task_definition_hash
 from .security import redact
 from .storage.atomic import JsonlAppender, read_json, read_jsonl, write_json
 from .storage.dataset import DatasetReader
+from .tasks import MOCK_TARGETS
 
 CHECK_DIR = 'corner_checks'
 MAX_DESIGNS = 3
@@ -108,7 +111,6 @@ def _real_profile(task_key):
                            code='unsupported_task')
     if name in tasks.offered_real_profiles():
         return tasks._verified_profile(name)
-    from . import profiles
     if profiles.profile_entry(name) is None:
         raise CheckRefused(f'{task_key} is no longer registered, so its designs cannot be simulated again.',
                            code='task_blocked')
@@ -371,7 +373,6 @@ _STARTING = {}
 
 
 def _prepared(run_dir, proposal, chosen, *, allow_real, acknowledge_unknown, monitor):
-    from .runs import connection_gate
     layout = RunLayout(Path(run_dir))
     manifest = read_json(layout.manifest)
     gate = None
@@ -414,7 +415,6 @@ def launch(directory, *, allow_real=False) -> int:
         _release_start(directory.parent.parent)
         raise
     _release_start(directory.parent.parent)
-    from .runs import spawn_detached
     return spawn_detached('corner_check', ['--check-dir', str(directory)] + (['--allow-real'] if allow_real else []),
                           lock, directory / 'worker.log')
 
@@ -611,7 +611,6 @@ class Worker:
 
     def _run_mock(self):
         from analog_optimizer.backends.synthetic_sizing import SyntheticSizingBackend
-        from .tasks import MOCK_TARGETS
         graph, plan_, work = self.context.compiled.graph, self.context.compiled.plan, self.directory / 'work'
         kinds = {g.parameter_kind for g in graph.parameter_groups if g.mutable}
         timeout = self.context.config.run.advanced.simulation_timeout_seconds
@@ -649,7 +648,7 @@ class Worker:
         return config, profile
 
     def _run_real(self):
-        from .cdf_write import backend_class              # a task that writes by the PDK's form writes the same way here
+        # a task that writes by the PDK's form writes the same way here
         config, profile = self._bridge_parts()
         backend = self.context.compiled.plan.wrap(backend_class(profile)(config, profile))
         work = self.directory / 'work'

@@ -42,7 +42,10 @@ from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
 from analog_optimizer.measurements.specs import RewardSettings
 
 from . import ngspice_netlist
+from .ngspice_analysis import counts, instrument as instrument_analyses
 from .ngspice_link import PROGRAM, SSH_HOST, VERSION, scrub_host as _scrub, ssh_argv
+from .ngspice_operating_points import instrument, read as read_operating_points
+from .storage.atomic import write_json
 
 BACKEND_KIND = 'ngspice-batch-v1'
 LOCAL_CONCURRENCY = max(1, min(8, (os.cpu_count() or 2) // 2))     # ngspice jobs on this machine at once
@@ -205,8 +208,6 @@ class NgspiceBackend(VirtuosoBackend):
         directory = Path(work_root) / job_id
         directory.mkdir(parents=True)
         path = directory / 'deck.cir'
-        from .ngspice_operating_points import instrument
-        from .ngspice_analysis import instrument as instrument_analyses
         path.write_text(instrument_analyses(instrument(self.deck(), self.graph)), encoding='utf8')
         artifact = NetlistArtifact(path, job_id, hashlib.sha256(path.read_bytes()).hexdigest(), 'real', self.condition)
         self.exports[job_id] = (artifact, dict(self.parameters))
@@ -268,8 +269,6 @@ class NgspiceBackend(VirtuosoBackend):
             status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, 'launch_failed', True, False, 0
             err = f'{type(exc).__name__}: {exc}'
         (directory / 'ngspice.log').write_text(f'# exit code: {code}\n# stdout:\n{out}\n# stderr:\n{err}\n', encoding='utf8')
-        from .ngspice_analysis import counts
-        from .storage.atomic import write_json
         write_json(directory / 'analysis-counts.json', counts(out, complete=code is not None))
         version = VERSION.search(out + '\n' + err)
         self.version = version.group(1) if version else self.version
@@ -299,7 +298,6 @@ class NgspiceBackend(VirtuosoBackend):
         metrics = {name: found.get(name) for name in wanted}
         units = {name: self.units.get(name) or self.parsed.units.get(name) or '1' for name in wanted}
         validity = {name: name in found for name in wanted}
-        from .ngspice_operating_points import read as read_operating_points
         operating_points = read_operating_points(out, self.graph) if evaluated else {}
         return SimulationResult(directory.name, BACKEND_KIND, 'real', status, reason, retryable, evaluated, metrics, units,
                                 validity, dict(exported), directory, perf_counter() - started, condition=self.condition,

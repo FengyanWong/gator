@@ -26,6 +26,7 @@ import json
 from pydantic import ValidationError
 
 from . import virtuoso_setup
+from .schema import MeasurementDefinition, OptimizationParameter, PerformanceTarget
 
 FORMAT = 'gator-task-1'
 HELP = {
@@ -96,7 +97,6 @@ def parse(text) -> tuple[dict, dict, list[str]]:
     """(rows, extras, problems) of a task file someone edited. rows = {parameters, measurements, targets} as the
     configuration spells them; extras = what the page keeps beside the rows. Every row is checked with the schema of
     the editors; nothing is saved here."""
-    from .schema import MeasurementDefinition, OptimizationParameter, PerformanceTarget
     try:
         data = json.loads(text)
     except ValueError as exc:

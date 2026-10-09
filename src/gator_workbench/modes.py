@@ -18,6 +18,10 @@ from __future__ import annotations
 import random
 
 from . import checkpoints as ckpt
+from .compile import reward_settings, training_conditions
+from .pdk import learner_class
+from .storage.atomic import read_json
+from .validation import native_count_columns
 
 
 def sac_config_from(advanced):
@@ -45,8 +49,6 @@ def seed_everything(seed):
 def runtime_options(config, vocabulary=None):
     from dataclasses import replace
     from analog_optimizer.graph.pyg_converter import FeatureSchema, OPERATING_POINT_COLUMNS, OPERATING_POINT_REFERENCES
-    from .compile import reward_settings, training_conditions
-    from .validation import native_count_columns
     schema = FeatureSchema() if vocabulary is None else vocabulary.schema
     # ngspice PDK subcircuits can expose additional multiplicity parameters.
     # The compiled action kind is already m/1; retain the native writeback names
@@ -66,7 +68,6 @@ def runtime_options(config, vocabulary=None):
 def _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary=None, runtime=None):
     """`vocabulary`: None = the optimizer's standard component list; a loaded PDK's list (pdk.Vocabulary) otherwise.
     Either way the learner is the package's own SACLearner (pdk.learner_class only adds the PDK view at its input)."""
-    from .pdk import learner_class
     options = dict(feature_schema=None if vocabulary is None else vocabulary.schema)
     options.update(runtime or {})
     return learner_class(vocabulary)(experiment=experiment, model_config=model_config, config=sac_config, spec_schema=spec_schema,
@@ -104,7 +105,6 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
           source_dir=None, source_metadata=None, task_definition_hash=None, vocabulary=None, runtime=None):
     """Returns dict(learner, replay, run_state, policy, freeze). `vocabulary`: the run's component list (None = standard)."""
     from analog_optimizer.training.replay import ReplayBuffer
-    from .pdk import learner_class
     import torch
     seed_everything(seed)
     policy = dict(mode=mode, source_checkpoint=None, loaded=[], reset=[], frozen_modules=[], notes=[])
@@ -211,7 +211,6 @@ def source_cost(source_run_dir):
     Unknown stays unknown (None + status); it is never turned into 0.
     """
     from pathlib import Path
-    from .storage.atomic import read_json
     chain, total, known = [], 0, True
     pending, seen = [(Path(source_run_dir), True, set())], set()
     while pending:

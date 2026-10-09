@@ -19,21 +19,24 @@ import threading
 import time
 from uuid import uuid4
 
-from . import CONFIG_SCHEMA_VERSION, OUTPUT_LAYOUT_VERSION, checkpoints as ckpt, modes, run_index
+from . import (CONFIG_SCHEMA_VERSION, OUTPUT_LAYOUT_VERSION, checkpoints as ckpt, connection, consistency, modes, pdk,
+               run_index)
 from .compile import CompileError, compile_task
-from .run_definitions import learner_experiment
-from .run_lock import RunLock
+from .connection import worker_environment
 from .layout import RunLayout, code_provenance, environment_versions, new_experiment_dir, new_run_dir, read_run
 from .paths import OutputRoots, is_mock_path, repo_root
+from .pdk import run_vocabulary, write_run_vocabulary
+from .run_definitions import learner_experiment
+from .run_lock import RunLock
 from .schema import REMOVED_SEARCH_METHODS, WorkbenchConfig, canonical_json, config_hash, task_definition_hash
 from .storage.atomic import read_json, write_json
 from .storage.dataset import utcnow, write_data_dictionary
-from .tasks import TaskBlocked, load_task
+from .tasks import TaskBlocked, load_task, load_task_view
 from .validation import validate
 # re-exported: moved to settings_store.py by the refactoring (docs/plan-refactoring.md)
 from .settings_store import _SETTINGS_LOCK, read_settings, load_settings, save_settings, remembered_output_root
-# re-exported: moved to run_index.py by the refactoring (docs/plan-refactoring.md)
 # (not current_source_digest and the caches' own state: they are read and patched as run_index.<name>)
+# re-exported: moved to run_index.py by the refactoring (docs/plan-refactoring.md)
 from .run_index import (SEGMENT_FACTS, run_timing, lineage, _RunRow, _code_of, save_point_code, save_point_facts,
                         save_point, _resumability, READ_THREADS, LIVE_STATES, _fingerprint, _run_facts,
                         checkpoint_listing, _read_pool, read_many, checkpoint_listings, list_runs, model_label_rows,
@@ -149,7 +152,6 @@ def _vocabulary_for(config, source_run=None):
     """The component list a new run's network is built with (None = the standard list). A run that LOADS a saved model
     takes that model's own list when it names the same PDK - the network follows the model, as its sizes do - even if
     the PDK was loaded again since; the model's list is copied from its run folder."""
-    from . import pdk
     wanted = pdk.requested(config)
     if source_run is not None:
         own = pdk.run_vocabulary(source_run)
@@ -163,7 +165,6 @@ def _vocabulary_for(config, source_run=None):
 
 def vocabulary_record(vocabulary) -> dict:
     """What the manifest says about the component list (the list itself is the run's network_vocabulary.json)."""
-    from . import pdk
     if vocabulary is None:
         return dict(name=pdk.STANDARD, label=pdk.label(None))
     return dict(name=vocabulary.name, label=vocabulary.label, pdk_id=vocabulary.pdk_id, version=vocabulary.version,
@@ -237,7 +238,6 @@ def connection_gate(task, config, monitor, *, acknowledge_unknown=False):
                           'There is no fallback to another profile or to mock mode.', code='connection_gate')
     # The connection must be of the family the task runs on: an ngspice netlist task never probes Virtuoso, and a
     # Virtuoso task never runs on ngspice. Said before the gate probes anything.
-    from . import connection
     family = getattr(task, 'connection_family', 'virtuoso')
     settings = connection.load_profiles()['profiles'].get(profile_id)
     if settings is not None and connection.family_of(connection.profile_kind(settings if isinstance(settings, dict) else {})) != family:
@@ -263,7 +263,6 @@ def _check_consistency(config, task, monitor, acknowledge_unknown):
     start before anything is created; None for every other task."""
     if task.mock:
         return None
-    from . import consistency
     if consistency.saved_task(config, with_entry=False) is None:
         return None
     result = consistency.check(monitor, config.run.connection_profile_id, config, rows=False, acknowledge_unknown=acknowledge_unknown)
@@ -400,7 +399,6 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
                                                                  config.output.experiment_id)
     layout, run_id = new_run_dir(experiment_dir, config.project.task_name, config.run.mode, config.run.seed)
     layout.create()
-    from .pdk import write_run_vocabulary
     write_run_vocabulary(layout.run_dir, vocabulary)          # the run's own copy: resume and later loads use it
     config = config.model_copy(deep=True)
     config.output.output_root, config.output.experiment_id = str(roots.resolve(output_root)), experiment_id
@@ -548,7 +546,6 @@ def _resume_checks(config, task, task_hash, layout, manifest, run_dir):
         raise RunRejected(f"max_evaluations ({merged.run.max_evaluations}) is below the {meta['ledger']['charged']} "
                           'evaluations this run already consumed; resume keeps existing counters', code='budget')
     compiled = compile_task(merged, task.base_graph)
-    from .pdk import run_vocabulary
     contract = modes.current_contract(learner_experiment(merged, task, task_hash),
                                       modes.model_config_from(merged.run.network),
                                       modes.sac_config_from(merged.run.advanced), compiled.spec_schema,
@@ -620,7 +617,6 @@ def continuation(run_dir, *, max_evaluations=None) -> dict:
     config.run.mode, config.run.model_source.run_dir = 'resume', str(run_dir)
     if max_evaluations:
         config.run.max_evaluations = max_evaluations
-    from .tasks import load_task_view
     try:
         task = load_task_view(config.circuit, profile_id=config.run.connection_profile_id)
     except TaskBlocked as exc:
@@ -733,7 +729,6 @@ def spawn_detached(module, args, lock, log_path) -> int:
     """`python -m gator_workbench.<module> <args> --lock-fd N` in a session of its own, holding `lock`: it is handed over
     through pass_fds and this process lets go of it without releasing it. Output goes to `log_path`. Returns the pid.
     Run workers and corner-check workers start this way."""
-    from .connection import worker_environment
     log = Path(log_path).open('ab')
     try:
         process = subprocess.Popen([sys.executable, '-m', f'gator_workbench.{module}', *args, '--lock-fd', str(lock.fileno())],

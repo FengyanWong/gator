@@ -8,7 +8,7 @@ from urllib.parse import quote
 import zipfile
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
-from .. import tasks
+from .. import runs, tasks
 from ..security import redact
 from ..validation import validate
 
@@ -74,7 +74,6 @@ def zip_download(members, name: str):
 def run_files(root, *, exclude_roots=(), exclude_dirs=()):
     """Prune excluded directories before touching their files. Return one stat per included file. The stats go many at
     a time (runs.read_many, record 7.279): one by one, a run's ~760 files took 3.6 s on the 9p-mounted D: drive."""
-    from .. import runs
     root = Path(root)
     paths = []
     for directory, dirs, files in os.walk(root):

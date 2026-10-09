@@ -21,7 +21,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import checkpoints as ckpt, model_structure
+from .pdk import run_vocabulary
+from .run_definitions import decode_action
 from .storage.dataset import map_to_dict
+from .trajectory import TrajectoryLoader
 
 READING = ('Attention is normalized per RECEIVING node: over all connections arriving at one node, the values of a '
            'head sum to 1. A node with a single connection always shows 1.0 - that says nothing. Compare a value with '
@@ -154,8 +157,6 @@ def _family(device, vocabulary):
 
 
 def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
-    from .run_definitions import decode_action
-    from .trajectory import TrajectoryLoader
     from analog_optimizer.models.inputs import batch_observations
     run_dir = Path(run_dir)
     directory = ckpt.resolve_checkpoint(run_dir, checkpoint_id)
@@ -167,7 +168,6 @@ def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
     observation = loader.observation(row['state_ref'])
     # A run built with a PDK's component list saw every circuit through that PDK's view: replay it the same way, and
     # draw what the network saw (the PDK kinds and pin roles). The run's own copy of the list is used, never a newer load.
-    from .pdk import run_vocabulary
     vocabulary = run_vocabulary(run_dir)
     if vocabulary is not None:
         if vocabulary.schema != features:

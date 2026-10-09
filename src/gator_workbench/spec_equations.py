@@ -26,6 +26,7 @@ import ast
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 import math
+from . import units
 
 MAX_LENGTH = 512                                                      # schema.PerformanceTarget.equation
 _ALLOWED = (ast.Expression, ast.Constant, ast.Name, ast.Load, ast.UnaryOp, ast.UAdd, ast.USub,
@@ -115,7 +116,6 @@ class SpecPlan:
 
     @classmethod
     def from_config(cls, config) -> 'SpecPlan':
-        from . import units
         probes = tuple((m.measurement_id, m.source_name) for m in config.measurements)
         table = {p[0]: p for p in probes}
         specs = []
@@ -246,7 +246,6 @@ class EquationNativeFactory:
 
 # ---------------------------------------------------------------------------------- the result registry
 def magnitude(unit) -> float:
-    from . import units
     canonical = units.canonical_unit(unit) if isinstance(unit, str) and units.known(unit) else unit
     return float(UNIT_MAGNITUDE.get(canonical, 1.0))
 

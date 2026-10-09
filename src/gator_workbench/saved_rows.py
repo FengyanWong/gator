@@ -11,6 +11,10 @@ from __future__ import annotations
 import json
 
 from pydantic import ValidationError
+from . import profile_store
+from .diffs import structured_diff
+from .profile_store import HISTORY, ProfileError, TASK_FILE, profile_dir
+from .schema import MeasurementDefinition, OptimizationParameter, PerformanceTarget
 
 
 # (configuration key, editor name, row ID field, task file part)
@@ -30,7 +34,6 @@ def saved_task(config, *, with_entry=True):
     circuit = config.circuit
     if circuit.source != 'registered_task' or not (circuit.task_id or '').startswith('real:'):
         return None
-    from . import profile_store
     name = circuit.task_id[len('real:'):]
     saved = profile_store.task_file(name)
     if saved is None or not with_entry:
@@ -58,8 +61,6 @@ def _brief(value, unit=None) -> str:
 def row_differences(config, saved) -> dict:
     """{configuration key: [plain sentences]} for each editor whose rows differ from the task file `saved`. Rows are
     compared as the schema reads them, so a field shown with its default equals one left out."""
-    from .diffs import structured_diff
-    from .schema import MeasurementDefinition, OptimizationParameter, PerformanceTarget
     models = dict(parameters=OptimizationParameter, measurements=MeasurementDefinition, targets=PerformanceTarget)
     normal = lambda model, row: model.model_validate(row if isinstance(row, dict) else row.model_dump()).model_dump(mode='json', exclude_none=True)
     found = {}
@@ -120,7 +121,6 @@ def _read_json(path):
 
 def revision_file(name, revision) -> dict | None:
     """The task file of revision `revision` of real:<name>: the current one, or the copy kept in history/r<N>/."""
-    from .profile_store import HISTORY, TASK_FILE, ProfileError, profile_dir
     try:
         folder = profile_dir(name)
     except ProfileError:
@@ -133,7 +133,6 @@ def revision_file(name, revision) -> dict | None:
 
 
 def _models():
-    from .schema import MeasurementDefinition, OptimizationParameter, PerformanceTarget
     return dict(parameters=OptimizationParameter, measurements=MeasurementDefinition, targets=PerformanceTarget)
 
 

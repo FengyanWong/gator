@@ -4,16 +4,18 @@ import mimetypes
 from pathlib import Path
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
-from .. import aggregates, checkpoints as ckpt, launch_requests, runs, schema
-from .. import calibration, corner_check
+from .. import (aggregates, calibration, checkpoints as ckpt, corner_check, graph_view, launch_requests,
+                model_structure, pdk, runs, schema, training_series)
 from ..layout import RunLayout
 from ..paths import PathNotAllowed, safe_child
+from ..reward_diagnostics import load as steering_check
 from ..storage.atomic import read_json, read_jsonl_tail
 from ..storage.dataset import DatasetReader, map_to_dict, utcnow
 from ..storage.tables import TABLES
-from .models import CommandBody, ContinueBody, CornerCheckBody, CornerStopBody, ExportBody, GraphViewBody, ModelStructureBody, RenameModelBody, StartBody
-from .support import attachment, compatibility_unchecked, fail, file_snapshot, run_files, zip_download
 from .context import ApiContext
+from .models import (CommandBody, ContinueBody, CornerCheckBody, CornerStopBody, ExportBody, GraphViewBody,
+                     ModelStructureBody, RenameModelBody, StartBody)
+from .support import attachment, compatibility_unchecked, fail, file_snapshot, run_files, zip_download
 
 
 # /api/runs/model took any dict: {}, a numeric checkpoint_id or a list as run_dir failed with HTTP 500 (review of 2026-09-29).
@@ -137,7 +139,6 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
         except FileNotFoundError as exc:
             fail(404, exc)
         result = dict(description=description)
-        from .. import pdk
         own = pdk.run_vocabulary(run_dir)                  # the model's component list: the page's list follows it
         result['vocabulary'] = dict(name=own.name if own else pdk.STANDARD, label=own.label if own else pdk.label(None),
                                     pdk_id=own.pdk_id if own else None, sha256=own.sha256 if own else None,
@@ -227,7 +228,6 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
         """Every layer of the chosen saved model with its type, shape and parameter count - a table, no plot.
         Tensor-only read of `model_weights.pt` after its checksum matched; types only when the rebuilt network
         holds exactly the saved tensors."""
-        from .. import model_structure
         run_dir = context.run_path(body.run_dir)
         try:
             return model_structure.structure(ckpt.resolve_checkpoint(run_dir, body.checkpoint_id))
@@ -241,7 +241,6 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
         """The data of the circuit graph view: the chosen save point replayed on a state its own run ARCHIVED -
         the circuit, the attention on every connection, the size the policy proposes per group. One forward pass on
         the CPU; nothing is simulated and nothing is written. The picture is drawn in the browser only."""
-        from .. import graph_view
         run_dir = context.run_path(body.run_dir)
         try:
             return graph_view.graph_view(run_dir, body.checkpoint_id, evaluation=body.evaluation)
@@ -301,7 +300,6 @@ def _launch_and_control_routes(app: FastAPI, context: ApiContext):
         path = context.run_path(run_dir)
         layout = RunLayout(path)
         result = runs.run_status(path)
-        from ..reward_diagnostics import load as steering_check
         try:
             result['steering'] = steering_check(path)
         except Exception:                   # a diagnostic line: a missing or damaged data part leaves it empty, never the status
@@ -419,7 +417,6 @@ def _run_data_routes(app: FastAPI, context: ApiContext):
         """The Training tab's numbers (record 7.193): the run's recorded evaluations, learner updates and spec values
         from flush record `flushes` on, then the journal's bundles no flush has published yet. Read-only; nothing is
         computed into them, and nothing is simulated."""
-        from .. import training_series
         try:
             return training_series.read_training(context.run_path(run_dir), flushes, tail_cursor=tail_cursor)
         except FileNotFoundError as exc:

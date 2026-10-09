@@ -23,8 +23,10 @@ import math
 
 from . import cdf_facts, units
 from .cdf_facts import NotWritable
+from .compile import group_unit
 from .generic_profile import VERIFIED_WIDTH_STEP
 from .pdk import _number
+from .validation import resolve_leaders
 
 RULES_FORMAT = 'gator-profile-rules-2'
 LENGTH_GRID = VERIFIED_WIDTH_STEP
@@ -180,8 +182,6 @@ def _short(value):
 def adjust(config, graph, core, facts, reference):
     """Rows of the parameter editor -> (rows a real run honours, optimized leader ids, leaders, {key: spec}).
     Raises RowError with the reason."""
-    from .compile import group_unit
-    from .validation import resolve_leaders
     rows = [row.model_copy() for row in config.parameters]
     try:
         leaders = resolve_leaders(rows)

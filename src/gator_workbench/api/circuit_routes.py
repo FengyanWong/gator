@@ -3,17 +3,20 @@ from __future__ import annotations
 from pathlib import Path
 from fastapi import FastAPI
 from pydantic import ValidationError
-from .. import bridge_read, runs, schema, tasks
-from .. import consistency, ngspice_tasks, profiles, structures, task_files, task_saving, virtuoso_setup, working_copy
 from . import task_baseline
+from .. import (bridge_read, consistency, ngspice_tasks, profiles, runs, schema, structures, task_files, task_saving,
+                tasks, virtuoso_setup, working_copy)
 from ..circuit_summary import circuit_summary
+from ..diffs import structured_diff
 from ..native_cells import load_import as load_cell_import
 from ..paths import PathNotAllowed, refuse_nul
 from ..security import redact
-from .models import CircuitBody, ConfigBody, CopyBody, DiffBody, MatchedBody, NativeReadBody, NgspiceCheckBody, NgspiceNameBody, NgspiceReadBody, NgspiceSaveBody, ProfileActionBody, SetupBody, TaskCheckBody, TaskFileBody, TaskFileTextBody, TaskSaveBody, ValidateBody
-from .support import _bridge_call, fail, load_runtime, validate_loaded
+from ..validation import independent_action_count
 from .context import ApiContext
-from .models import TaskBaselineBody
+from .models import (CircuitBody, ConfigBody, CopyBody, DiffBody, MatchedBody, NativeReadBody, NgspiceCheckBody,
+                     NgspiceNameBody, NgspiceReadBody, NgspiceSaveBody, ProfileActionBody, SetupBody,
+                     TaskBaselineBody, TaskCheckBody, TaskFileBody, TaskFileTextBody, TaskSaveBody, ValidateBody)
+from .support import _bridge_call, fail, load_runtime, validate_loaded
 
 COPY_REFUSED = ((working_copy.CopyError, virtuoso_setup.SetupError), 'refused')
 
@@ -357,7 +360,6 @@ def _configuration_routes(app: FastAPI, context: ApiContext):
 
     @app.post('/api/config/diff')
     def config_diff(body: DiffBody):
-        from ..diffs import structured_diff
         return dict(diff=structured_diff(body.before, body.after))
 
     @app.post('/api/parameters/matched')
@@ -365,8 +367,6 @@ def _configuration_routes(app: FastAPI, context: ApiContext):
         """Matched devices... (status record 7.103): the structures of the loaded circuit and the ties they suggest for
         the Parameters rows; with `apply`, also those rows with the chosen ties made, their diff and what validation says
         about them. Local files only: nothing is simulated, nothing is stored - the page applies the rows or not."""
-        from ..diffs import structured_diff
-        from ..validation import independent_action_count
         config, runtime, blocked = context.load_config(body.config)
         if runtime is None:
             return dict(applicable=False, blocked=True, why_not=f'The circuit could not be read: {blocked["blocker"]}',

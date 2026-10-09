@@ -33,6 +33,8 @@ from pathlib import Path
 import stat
 import threading
 
+from . import schema
+from .compile import build_specs
 from .layout import RunLayout
 from .storage.atomic import read_json, read_jsonl
 from .storage.tables import arrow_schema
@@ -587,8 +589,6 @@ def cache_stats():
 
 
 def _objective(config):
-    from . import schema
-    from .compile import build_specs
     if not config:
         return None
     try:

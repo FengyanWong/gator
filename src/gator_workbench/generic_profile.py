@@ -32,6 +32,8 @@ from pathlib import Path
 
 from analog_optimizer.backends.backend import UnsupportedCapability
 from analog_optimizer.backends.gpdk045 import GEOMETRY, Gpdk045OtaProfile, equal, number
+from . import model_library
+from .compile import grid_top
 
 RULES_FORMAT = 'gator-profile-rules-1'
 VERIFIED_WIDTH_STEP = 5e-9
@@ -46,7 +48,6 @@ class RulesError(ValueError):
 def _to_grid_top(group):
     """`group` with the optimizer's top grid point as its upper bound when that lands above it (compile.grid_top), a
     member clamp at that range moved with it - what compile.build_graph makes of the same row; else `group` itself."""
-    from .compile import grid_top
     top = grid_top(group.lower, group.upper, group.step, group.domain == 'integer') if group.mutable else group.upper
     if not top > group.upper:
         return group
@@ -160,7 +161,6 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
         """The adapter's own deck (`virtuoso_bridge.build_deck`, which the adapter used before this method existed), with
         a run's trimmed model library in place of its model include (record 7.154)."""
         from analog_optimizer.backends.virtuoso_bridge import build_deck
-        from . import model_library
         return model_library.apply(build_deck(structure, model_file, section, temperature_c=temperature_c),
                                    model_file, section, getattr(self, 'model_library', None))
 

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from pathlib import Path
 from threading import Lock
 
-from .. import schema, tasks, units
+from .. import runs, schema, tasks, units
 from ..security import redact
 from ..storage.atomic import read_json, write_json
 
@@ -25,7 +25,6 @@ def _directory(task_key):
 
 
 def status(task_key):
-    from .. import runs
     try:
         result = read_json(_directory(task_key) / FILE, default=None)
     except ValueError:

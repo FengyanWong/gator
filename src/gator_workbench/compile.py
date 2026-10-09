@@ -15,6 +15,7 @@ import math
 
 from . import spec_equations, units
 from .schema import WorkbenchConfig
+from .task_registry import CORNER_TASKS, _verified_profile
 from .validation import resolve_leaders
 
 
@@ -217,7 +218,6 @@ def training_conditions(config):
     if config.run.conditions.policy == 'off':
         return ()
     from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
-    from .task_registry import CORNER_TASKS, _verified_profile
     if config.circuit.task_id not in CORNER_TASKS:
         raise CompileError('No task trains at corners: the only one, the real OTA7 task, was removed on 2026-09-30')
     profile = _verified_profile(config.circuit.task_id.partition(':')[2])

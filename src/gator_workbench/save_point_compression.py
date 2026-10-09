@@ -23,6 +23,10 @@ import io
 import os
 from pathlib import Path
 
+from .checkpoints import verify_files
+from .layout import find_runs
+from .paths import MOCK_SUBDIR
+from .run_lock import RunLock
 from .storage.atomic import publish, read_json, sha256_file, temporary_path, write_json
 # re-exported: moved to checkpoint_codec.py by the refactoring (docs/plan-refactoring.md)
 from .checkpoint_codec import LEVEL, is_deflated, deflate, write_compressed
@@ -41,7 +45,6 @@ def compress_save_point(directory, *, apply=False) -> dict:
     repaired, skipped. Nothing is written unless `apply`, and never for a file that does not match the checksum its
     metadata.json records (reported, not "fixed"). The run's artifact_manifest.json is not touched here: the pass over a
     folder refreshes it once per run (refresh_artifact_manifest)."""
-    from .checkpoints import verify_files
     directory = Path(directory)
     state, metadata_file = directory / STATE, directory / 'metadata.json'
     metadata = read_json(metadata_file, default=None)
@@ -125,9 +128,6 @@ def save_point_folders(root, *, exclude=()) -> list:
     """[(save point folder, why it is left alone or None)] for every save point of every run under `root`: a run that
     is working (a worker holds its lock), lies in an excluded experiment folder, or is a link to a folder elsewhere is
     left alone."""
-    from .run_lock import RunLock
-    from .layout import find_runs
-    from .paths import MOCK_SUBDIR
     root, found = Path(root).resolve(), []
     for run_dir in find_runs(root) + find_runs(root / MOCK_SUBDIR):      # the run list's two places (runs.list_runs)
         reason = None

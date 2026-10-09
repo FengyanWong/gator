@@ -18,8 +18,10 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, asdict
 
-from . import units
+from . import saved_rows, units
+from .pdk import parameter_facts
 from .schema import WorkbenchConfig
+from .spec_equations import parse
 
 FEATURE_PARAMETER_KINDS = ('w', 'l', 'm', 'nf', 'r', 'c', 'ind', 'dc')
 BLOCKING = ('error', 'blocker')
@@ -52,7 +54,6 @@ def _pdk_facts(record, graph, p):
     device = next((d for d in graph.devices if d.id == p.instance_path), None)
     if device is None or device.model_ref not in record['devices']:
         return None
-    from .pdk import parameter_facts
     return parameter_facts(record, device.model_ref, p.parameter_name)
 
 
@@ -383,14 +384,12 @@ def _check_measurements(config, report, *, provided_metrics):
 def _expression_symbols(expression):
     # Read off the formula, not by trial evaluation: (m_a - m_b) / (m_c - m_d) with every symbol at 1.0 divided by
     # zero and was rejected as unsupported.
-    from .spec_equations import parse
     return parse(expression)
 
 
 def _check_equation(t, path, report, measurement_ids):
     """A spec judges the value of its equation over the probes (spec_equations). Returns the probe when the equation
     is exactly one Probe ID - the simplest equation, whose unit can be checked."""
-    from .spec_equations import parse
     equation = t.equation.strip()
     probe = measurement_ids.get(equation)
     if probe is not None:
@@ -687,7 +686,6 @@ def _check_saved_task(config, report, rows_from=None):
     them would undo what was saved since - point to Reload saved values (record 7.203; `rows_from`: the revision the
     page's rows came from, when it knows). Which rows differ, row by row, goes to `report.unsaved_rows` in every run
     mode: the editors mark them (record 7.222)."""
-    from . import saved_rows
     found = saved_rows.saved_task(config, with_entry=False)
     if found is None:
         return

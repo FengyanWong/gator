@@ -46,6 +46,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from .paths import local_settings_dir
+from .security import redact
 from .storage.atomic import read_json, write_json
 from .storage.dataset import utcnow
 
@@ -1452,7 +1453,6 @@ def read_from_virtuoso(client, *, technology_library, model_file, decode=None, c
 def read_ideal_parts(client, decode, library=IDEAL_LIBRARY) -> dict:
     """Runs in the bridge reader process, with the PDK: the generic library's description in one read-only query.
     Whatever goes wrong is returned as the reason - the PDK itself is read and stored all the same."""
-    from .security import redact
     try:
         result = client.execute_skill(ideal_skill(library), timeout=120)
         if not result.ok:

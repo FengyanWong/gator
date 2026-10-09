@@ -16,6 +16,8 @@ from pathlib import Path
 import random
 import time
 
+from .checkpoints import CheckpointStore
+from .modes import seed_everything
 from .storage.atomic import read_json, write_json
 from .trajectory import TrajectoryLoader
 
@@ -248,8 +250,6 @@ def execute(request, output, *, audit_only=False, progress=None):
     from analog_optimizer.models import ModelConfig
     from analog_optimizer.training.replay import ReplayBuffer
     from analog_optimizer.training.sac import SACConfig, SACLearner
-    from .checkpoints import CheckpointStore
-    from .modes import seed_everything
 
     output = Path(output).resolve()
     if request['origin'] == 'synthetic' and 'mock' not in output.parts:

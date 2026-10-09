@@ -22,10 +22,13 @@ from pathlib import Path
 import re
 import shutil
 
-from .ngspice_netlist import NetlistError, Parsed, parse_text
+from .connection import load_profiles
+from .ngspice_backend import NgspiceEnvFactory, NgspiceLink, NgspiceLinkError
+from .ngspice_netlist import KINDS, NetlistError, Parsed, parse_text, rewrite
 from .paths import local_settings_dir
 from .storage.atomic import publish, temporary_path, write_json
 from .storage.dataset import utcnow
+from .task_registry import REAL_AUTHORIZATION_REQUIRED, TaskBlocked, TaskRuntime, starter_project
 
 PREFIX = 'ngspice'
 FILES = dict(netlist='netlist.cir', entry='task.json')
@@ -177,7 +180,6 @@ def save(name, text, *, device_kinds=None, source_path=None, circuit_class='unsp
 
 
 def _clean_kinds(device_kinds) -> dict:
-    from .ngspice_netlist import KINDS
     cleaned = {}
     for key, value in (device_kinds or {}).items():
         key, value = str(key).strip().lower(), str(value).strip().lower()
@@ -257,8 +259,6 @@ def connection_problem(profile_id=None) -> str | None:
 
 def link_for(profile_id=None):
     """The validated NgspiceLink of the named (or active) connection; NgspiceLinkError otherwise."""
-    from .connection import load_profiles
-    from .ngspice_backend import NgspiceLink, NgspiceLinkError
     loaded = load_profiles()
     key = profile_id or loaded['active']
     settings = loaded['profiles'].get(key) if key else None
@@ -271,7 +271,6 @@ def link_for(profile_id=None):
 def runtime(task_key, name, profile_id=None, *, authorized=False):
     """The TaskRuntime of ngspice:<name>. Local files only; the connection is looked at for the notes and checked
     again when the environment is built (in the run worker)."""
-    from .task_registry import REAL_AUTHORIZATION_REQUIRED, TaskBlocked, TaskRuntime
     try:
         entry, text = load(name)
     except KeyError:
@@ -287,7 +286,6 @@ def runtime(task_key, name, profile_id=None, *, authorized=False):
     netlist_file = directory / FILES['netlist']
 
     def builder(compiled, work_root, run_settings):
-        from .ngspice_backend import NgspiceEnvFactory, NgspiceLinkError
         if not authorized:
             raise TaskBlocked(REAL_AUTHORIZATION_REQUIRED)
         try:
@@ -368,7 +366,6 @@ def export_deck(task):
         return benchmark_exporter
 
     def exporter(netlist_text, graph, members):
-        from .ngspice_netlist import rewrite
         kinds = (task.circuit or {}).get('device_kinds') or {}
         root = str(Path(task.circuit['source_path']).parent) if (task.circuit or {}).get('source_path') else None
         try:
@@ -426,7 +423,6 @@ def probe_rows(parsed: Parsed) -> list:
 
 def starter_config(task_key) -> dict:
     """The rows the editors start from: KeyError for a task that does not exist."""
-    from .task_registry import starter_project
     name = task_key.partition(':')[2]
     entry, text = load(name)
     if entry.get('starter') and entry.get('analoggym'):

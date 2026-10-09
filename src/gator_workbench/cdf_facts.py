@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 
-from .pdk import CDF_UNITS, _number, _write_source, parse_cdf_text, skill_value
+from .pdk import CDF_UNITS, _fields, _number, _write_source, parse_cdf_text, skill_value
 
 FORMAT = 'gator-cdf-facts-1'
 FILE = 'core_cdf.json'
@@ -102,7 +102,6 @@ def facts_skill(library, cell) -> str:
 
 def parse_facts(text, *, library, cell) -> dict:
     """The query's lines -> {format, library, cell, instances, masters, cells, leaves, rules, modified, conflicts}."""
-    from .pdk import _fields
     instances, masters, rules, conflicts, opened, after = {}, {}, {}, [], None, None
     for raw in (text or '').splitlines():
         parts = _fields(raw.rstrip('\r'))

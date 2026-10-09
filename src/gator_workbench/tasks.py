@@ -31,8 +31,10 @@ from pathlib import Path
 import re
 import sys
 
-from . import task_registry
-from .paths import bridge_state_dir, repo_root
+from . import model_library, native_cells, task_registry
+from .connection import KINDS, family_of, load_profiles, profile_kind
+from .paths import bridge_state_dir, local_settings_dir, repo_root
+from .spec_equations import EquationNativeFactory
 from .storage.atomic import sha256_file as _sha256
 # re-exported: moved to task_registry.py by the refactoring (docs/plan-refactoring.md)
 from .task_registry import (ENV_SYNTHETIC_FIXTURES, REAL_LANES, _registered_fixtures, MOCK_PDK, MOCK_DESCRIPTION,
@@ -99,7 +101,6 @@ def _with_computed_specs(factory, compiled):
     specs computed from the probes reach the reward (spec_equations.EquationNativeFactory)."""
     if not compiled.plan.injected:
         return factory
-    from .spec_equations import EquationNativeFactory
     return EquationNativeFactory(factory, compiled.plan)
 
 
@@ -161,7 +162,6 @@ def bridge_importable() -> bool:
 
 
 def _profile_settings(profile_id=None):
-    from .connection import load_profiles
     loaded = load_profiles()
     key = profile_id or loaded['active']
     return loaded, (loaded['profiles'].get(key) if key else None)
@@ -170,7 +170,6 @@ def _profile_settings(profile_id=None):
 def _not_a_virtuoso_connection(profile_id, settings):
     """Every real task here is a Virtuoso + Spectre testbench. A connection of another kind (ngspice) is named as
     such, instead of being reported as a Virtuoso profile with missing settings."""
-    from .connection import KINDS, family_of, profile_kind
     kind = profile_kind(settings)
     if kind is None or family_of(kind) == 'virtuoso':
         return None                                   # an unknown kind is named by the connection check itself
@@ -321,7 +320,6 @@ def _view_stamp(name):
     """(name, size, mtime) of what a generated task is built from - its folder and every file in it, the folder of saved
     tasks, the connection file, the conditions file - or None when one of them cannot be read (then nothing is kept)."""
     from . import profiles
-    from .paths import local_settings_dir
     try:
         store = profiles.store_root()
         folder = store / name
@@ -367,7 +365,6 @@ def load_task_view(circuit, *, profile_id=None) -> TaskRuntime:
 def _native_draft_runtime(imported, circuit):
     """A cell imported from Virtuoso (`native_cells`), loaded from its LOCAL copy: it can be shown, edited
     against, validated and summarized for the agent. It cannot execute - there is nothing to build."""
-    from . import native_cells
     graph = native_cells.draft_graph(imported)
 
     def builder(compiled, work_root, run_settings):
@@ -451,7 +448,7 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
                               'editor differ from what was saved; press "Save task" to save the new rows first.')
         adv = run_settings.advanced
         from analog_optimizer.measurements.specs import RewardSettings
-        from . import model_library                       # its decks load only the parts of the model file it uses (7.154)
+        # its decks load only the parts of the model file it uses (7.154)
         model_library.attach(profile, config, reference=reference, structure=structure.read_text())
         return _with_computed_specs(factory_class(profile)(config, profile, compiled.specs, Path(work_root), adv.episode_length,
                                                            adv.simulation_timeout_seconds, reference,

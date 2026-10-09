@@ -23,6 +23,7 @@ import json
 import re
 import sys
 
+from . import pdk
 from .connection import RealBridge, child_error, require_gate, resolve_profile_id, run_child
 from .security import redact
 
@@ -247,7 +248,6 @@ def pdk_with_import(monitor, profile_id, technology_library, *, command=None) ->
         described = read(monitor, profile_id, 'pdk', library=technology_library, command=command)
     except Exception as exc:                      # the gate, a timeout, the reader, a PDK nothing was recognized in: all in words
         return dict(state='not_read', technology_library=technology_library, reason=str(exc) or exc.__class__.__name__)
-    from . import pdk
     return dict(state='read', technology_library=technology_library, pdk_id=described['pdk_id'], vocabulary=described['vocabulary'],
                 label=described['label'], version=described['version'], sha256=described['sha256'], summary=described['summary'],
                 loaded_utc=described['loaded_utc'], ideal_parts=pdk.describe_ideal_parts(pdk.load_record(described['pdk_id']), brief=True))

@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os
 from pathlib import Path
+from .layout import RunLayout
 from .spec_equations import _finite
 
 VERDICT = ('The network is still choosing close to random: the reward differences are smaller '
@@ -33,7 +34,6 @@ def load(run_dir):
     """The steering check of a run. The run status asks for it on every poll (1.5 s apart), and each answer read 7 to 18
     data parts (90-590 ms on the 9p-mounted repository), so it is kept until a flush changes the tables. The parts are
     read through DatasetReader.tail, as always: whatever the reader does to a part (an old part's missing columns) holds."""
-    from .layout import RunLayout
     data = RunLayout(run_dir).data
     return dict(kept(_STEERING, str(data), tables_version(data), lambda: _load(data)))
 

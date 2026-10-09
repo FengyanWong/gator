@@ -23,7 +23,7 @@ from uuid import uuid4
 
 from . import OUTPUT_LAYOUT_VERSION, __version__
 from .paths import directory_bytes, environment_label, repo_root
-from .storage.atomic import TEMP_MARKER, read_json, sha256_file, write_json
+from .storage.atomic import TEMP_MARKER, read_json, read_jsonl, sha256_file, write_json
 from .storage.dataset import utcnow
 
 PURPOSES = {
@@ -215,7 +215,6 @@ def build_artifact_manifest(layout: RunLayout, *, run_id, final: bool, dataset_s
 
 
 def _flushes(layout):
-    from .storage.atomic import read_jsonl
     return read_jsonl(layout.data / '_journal' / 'flushes.jsonl')
 
 

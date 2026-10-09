@@ -2,15 +2,15 @@
 from __future__ import annotations
 from pathlib import Path
 from fastapi import FastAPI, Query
-from .. import __version__, bridge_connect, bridge_read, connection, directories, runs, schema, units
-from .. import network_presets
+from .. import (__version__, bridge_connect, bridge_read, connection, directories, network_presets, pdk, runs, schema,
+                units)
 from ..layout import environment_versions
 from ..paths import PathNotAllowed, default_output_root, directory_bytes, repo_root
 from ..storage.tables import TABLES, data_dictionary
+from .context import ApiContext
 from .models import (ConnectBody, ConnectionBody, CreateConnectionBody, DirectoriesBody, NetworkSettingsBody,
                      PROFILE_ID, PathBody, PdkLoadBody)
 from .support import _bridge_call, fail
-from .context import ApiContext
 
 
 def register(app: FastAPI, context: ApiContext):
@@ -65,7 +65,6 @@ def _pdk_routes(app: FastAPI, context: ApiContext):
     @app.get('/api/pdks')
     def loaded_pdks():
         """The PDKs loaded so far (local files only). Each one can be the network's component list."""
-        from .. import pdk
         return dict(pdks=pdk.list_pdks(), standard=dict(vocabulary=pdk.STANDARD, label=pdk.label(None),
                                                          kinds=list(pdk.standard_schema().device_kinds),
                                                          parameters=list(pdk.standard_schema().parameters)))
@@ -73,7 +72,6 @@ def _pdk_routes(app: FastAPI, context: ApiContext):
     @app.get('/api/pdks/{pdk_id}')
     def loaded_pdk(pdk_id: str):
         """Everything that was read about one loaded PDK: every component, its pins and roles, its parameters."""
-        from .. import pdk
         record = pdk.load_record(pdk_id)
         if record is None:
             fail(404, f'PDK {pdk_id} is not loaded')

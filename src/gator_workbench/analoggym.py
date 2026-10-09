@@ -19,6 +19,7 @@ import sys
 import threading
 
 from analog_optimizer.backends.backend import SimulationStatus
+from .ngspice_analysis import instrument
 from .ngspice_backend import NgspiceBackend, NgspiceEnvFactory
 from .ngspice_netlist import parse_text
 
@@ -186,7 +187,6 @@ class AnalogGymBackend(NgspiceBackend):
     def generate_netlist(self, work_root, *, condition=None):
         artifact = super().generate_netlist(work_root, condition=condition)
         companion = artifact.path.parent / 'transient.cir'
-        from .ngspice_analysis import instrument
         companion.write_text(instrument(substitute(self.bundle['transient'], self.native_values())))
         text = artifact.path.read_text()
         text = re.sub(r'(?im)^\s*\.endc\s*$', 'source transient.cir\n.endc', text, count=1)

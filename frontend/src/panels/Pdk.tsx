@@ -2,6 +2,7 @@ import { useAsyncAction } from '../store';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
+import { signal } from '../signal';
 import { PDK_WINDOW } from '../contract';
 import { api, gateText, Json, problemText } from '../api';
 
@@ -29,8 +30,8 @@ const USABLE_PDK_ID = (id?: string | null) => !!id && /^[A-Za-z_][A-Za-z0-9_.\-]
 
 // "The loaded PDKs changed" (a cell read in the Virtuoso window brought one, a Load in the PDK window): every Components
 // list on the page reads the local list again - one GET each, no timer.
-const watchers = new Set<() => void>();
-export function pdksChanged() { watchers.forEach(w => w()); }
+const watchers = signal(null);
+export function pdksChanged() { watchers.notify(); }
 const listProblem = (e: any) => e.status === 404 ? 'This workbench server is older than the page: restart it to load PDKs.' : `The loaded PDKs cannot be listed: ${e.message}`;
 
 /** The loaded PDKs (local files only), read while `watch` is set - a list on the page, an open window - and again
@@ -41,8 +42,8 @@ function usePdkList(watch: unknown) {
   const refresh = () => api.pdks().then(l => { setList(l); setError(null); }).catch(e => setError(listProblem(e)));
   useEffect(() => {
     if (!watch) return undefined;
-    refresh(); watchers.add(refresh);
-    return () => { watchers.delete(refresh); };
+    refresh();
+    return watchers.subscribe(refresh);
   }, [watch]);
   return { list, error };
 }

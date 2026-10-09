@@ -1,7 +1,8 @@
-import { useMemo, useState, useSyncExternalStore } from 'react';
+import { useMemo, useState } from 'react';
 import { Json } from '../api';
 import { hintedLayout } from './circuitLayout';
 import { CIRCUIT_PICTURE_KEY } from '../contract';
+import { signal } from '../signal';
 
 /** The circuit picture of the Project column (record 7.158, the user's choice of 2026-10-03: "move 5"). The loaded circuit as
  *  a small node-link drawing in the manner of the circuit graph view - devices as boxes, nets as dots, supply on top and
@@ -11,14 +12,13 @@ import { CIRCUIT_PICTURE_KEY } from '../contract';
  *  Pointing at a Parameters row (Editors.tsx) lights the devices that row sizes: its own and the rows tied to it. */
 
 // ---- the devices the pointer is on: Editors.tsx says, the picture listens (nothing else re-renders) -------------------------
-let pointed: string[] = [];
-const listeners = new Set<() => void>();
+const pointed = signal<string[]>([]);
 export function pointAt(paths: string[]) {
-  if (paths.length === pointed.length && paths.every((p, i) => p === pointed[i])) return;
-  pointed = paths;
-  listeners.forEach(listener => listener());
+  const now = pointed.get();
+  if (paths.length === now.length && paths.every((p, i) => p === now[i])) return;
+  pointed.set(paths);
 }
-const usePointed = () => useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, () => pointed);
+const usePointed = () => pointed.use();
 
 const SOURCES = ['vsource', 'isource'];
 const FAMILY: Record<string, string> = { nmos: 'nmos', pmos: 'pmos', resistor: 'passive', capacitor: 'passive', varactor: 'passive', inductor: 'passive',

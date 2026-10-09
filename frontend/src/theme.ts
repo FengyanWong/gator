@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from 'react';
 import { LOOK_KEY } from './contract';
+import { signal } from './signal';
 
 /** The page's two looks (record 7.158, the user's choice of 2026-10-03): Whiteprint, light, a drawing sheet with the task
  *  in its title block (the default), and Silicon Night, dark like Virtuoso's canvas. A look is a name on <html>
@@ -12,19 +12,18 @@ export const LOOK_NAMES: Record<Look, string> = { whiteprint: 'Whiteprint', sili
 
 const isLook = (value: unknown): value is Look => value === 'whiteprint' || value === 'silicon';
 const named = document.documentElement.dataset.theme;
-let current: Look = isLook(named) ? named : 'whiteprint';
-const put = (doc: Document) => { doc.documentElement.dataset.theme = current; };
+const current = signal<Look>(isLook(named) ? named : 'whiteprint');
+const put = (doc: Document) => { doc.documentElement.dataset.theme = current.get(); };
 put(document);                                   // index.html could not read the stored choice (blocked storage): the default
-const listeners = new Set<() => void>();
 const followers = new Set<Window>();
 
 /** An explicit press of the header's switch: the page, every open pop-up, and the stored choice. */
 export function setLook(look: Look) {
-  current = look;
+  current.put(look);
   put(document);
   followers.forEach(w => { try { if (!w.closed) put(w.document); } catch { /* the window went away meanwhile */ } });
   try { localStorage.setItem(LOOK_KEY, look); } catch { /* a private window: this look lasts until the page is closed */ }
-  listeners.forEach(listener => listener());
+  current.notify();
 }
 
 /** A pop-up window takes the page's look now and whenever it changes; the function returned lets go of it. */
@@ -35,5 +34,5 @@ export function followLook(win: Window) {
 }
 
 export function useLook(): Look {
-  return useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, () => current);
+  return current.use();
 }
